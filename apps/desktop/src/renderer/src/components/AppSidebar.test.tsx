@@ -70,7 +70,20 @@ const mockEnvironment = {
     lastActiveAt?: number
     missing?: boolean
   }>> => []),
-  listSessions: vi.fn(async () => []),
+  listSessions: vi.fn(async (
+    _connectionId: string,
+    projectId: string,
+    options?: { limit?: number; offset?: number },
+  ) => {
+    // Local Environment API passes folder path as projectId during migration.
+    const rows = sessionsByFolder[projectId] ?? []
+    if (options?.limit != null) {
+      const offset = options.offset ?? 0
+      return rows.slice(offset, offset + options.limit)
+    }
+    const offset = options?.offset ?? 0
+    return offset > 0 ? rows.slice(offset) : rows
+  }),
 }
 
 const toastWarning = vi.fn()
@@ -501,7 +514,11 @@ describe('AppSidebar interactions', () => {
     render(<AppSidebar />)
 
     await waitFor(() => {
-      expect(mockWindowApp.listSessionsForFolderPage).toHaveBeenCalledWith('/project-a', 13, 0)
+      expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
+        'local',
+        '/project-a',
+        { limit: 13, offset: 0 },
+      )
     })
     expect(screen.queryByText('New session')).toBeNull()
   })
@@ -530,7 +547,11 @@ describe('AppSidebar interactions', () => {
     render(<AppSidebar />)
 
     await waitFor(() => {
-      expect(mockWindowApp.listSessionsForFolderPage).toHaveBeenCalledWith('/project-a', 13, 13)
+      expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
+        'local',
+        '/project-a',
+        { limit: 13, offset: 13 },
+      )
     })
   })
 

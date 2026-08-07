@@ -42,9 +42,23 @@ Two namespaces exposed via preload:
 
 - **`window.agent`** — AI agent interaction, scoped by `projectPath`: `sendMessage()`, `interrupt()`, `respondToPermission()`, `resetSession()`, `parkSession()`, `activateSession()`, `onAgentEvent()`
 - **`window.app`** — Global operations: folder management, git ops (including worktrees), session DB (CRUD), resource discovery, Claude setup/install, auto-update, Codex integration, plugin/skill/MCP/agent management, window state
+- **`window.environment`** — Multi-environment gateway (local + remote nodes): projects, session list, workspace, terminals, pairing. Prefer this over environment-specific `window.app` paths when both exist.
 - **`window.miniapp`** — Mini-app lifecycle: `list()`, `open()`, `close()`, `install()`, `uninstall()`, `pack()`, `getInstallMeta()`, tool/fs bridging, dev app detection
 
-All IPC channels are defined as constants in `AgentIpcChannels` (`packages/shared/src/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `miniapp:`, `sessions:`, `updater:`).
+All IPC channels are defined as constants in `AgentIpcChannels` (`packages/shared/src/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `miniapp:`, `sessions:`, `updater:`, `environment:`).
+
+### Environment API migration (local = one environment)
+
+**Direction:** product features should go through `EnvironmentHost` / `window.environment`. Local desktop is an `ExecutionEnvironment` (`connectionId: 'local'`), not a permanent special case beside remote.
+
+| Area | Status |
+|------|--------|
+| Session **list** (always `limit`+`offset`) | ✅ Unified — `environment.listSessions` + renderer `lib/session-list-ops.ts` (no unpaginated dump; search pages until short) |
+| Session create / send / rename / delete / pin / messages | ⏳ Still `app` / `agent` IPC for local; remote partially on environment |
+| Workspace / git / terminals on remote | ✅ Environment gateway |
+| Workspace / agent turns on local | ⏳ Still desktop SessionManager + raw IPC |
+
+When adding or refactoring session (or project/workspace) product surfaces, extend the Environment gateway first and thin-wrap legacy IPC only if needed for back-compat. Do not add new permanent `if (remote) … else app…` branches in the renderer.
 
 ### Remote Control (Mobile) Architecture
 

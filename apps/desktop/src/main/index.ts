@@ -1242,9 +1242,14 @@ function registerIpcHandlers(): void {
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_LIST_SESSIONS,
-    async (_e, connectionId: string, projectId: string) => {
+    async (
+      _e,
+      connectionId: string,
+      projectId: string,
+      options: { limit: number; offset: number },
+    ) => {
       const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().listSessions(connectionId, projectId)
+      return getEnvironmentHost().listSessions(connectionId, projectId, options)
     },
   )
   ipcMain.handle(

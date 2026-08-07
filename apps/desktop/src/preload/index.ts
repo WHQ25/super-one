@@ -292,11 +292,16 @@ const environmentAPI = {
       connectionId,
       input,
     ) as Promise<{ projectId?: string; path: string; name?: string; lastActiveAt?: number }>,
-  listSessions: (connectionId: string, projectId: string) =>
+  listSessions: (
+    connectionId: string,
+    projectId: string,
+    options: { limit: number; offset: number },
+  ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_LIST_SESSIONS,
       connectionId,
       projectId,
+      options,
     ) as Promise<
       Array<{
         sessionId: string
@@ -304,6 +309,16 @@ const environmentAPI = {
         lastActiveAt: string
         provider?: string
         messageCount: number
+        isPinned?: boolean
+        isHidden?: boolean
+        worktreePath?: string | null
+        isWorktree?: boolean
+        parentSessionId?: string
+        gitBranch?: string
+        isAutomation?: boolean
+        automationId?: string
+        acpAgentId?: string
+        providerSessionId?: string
       }>
     >,
   createSession: (

@@ -293,7 +293,11 @@ describe('Phase 2 workspace integration', () => {
       sessionId: string
     }
     expect(created.sessionId).toBeTruthy()
-    const listed = (await rpc('session.list', { projectId: opened.projectId })) as Array<{
+    const listed = (await rpc('session.list', {
+      projectId: opened.projectId,
+      limit: 100,
+      offset: 0,
+    })) as Array<{
       sessionId: string
     }>
     expect(listed.some((s) => s.sessionId === created.sessionId)).toBe(true)
@@ -337,7 +341,11 @@ describe('Phase 2 workspace integration', () => {
       generation: lease.generation,
     })) as { sessionId: string }
     expect(removed.sessionId).toBe(created.sessionId)
-    const after = (await rpc('session.list', { projectId: opened.projectId })) as Array<{
+    const after = (await rpc('session.list', {
+      projectId: opened.projectId,
+      limit: 100,
+      offset: 0,
+    })) as Array<{
       sessionId: string
     }>
     expect(after.some((s) => s.sessionId === created.sessionId)).toBe(false)

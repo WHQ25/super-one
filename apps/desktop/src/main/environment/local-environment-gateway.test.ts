@@ -51,7 +51,7 @@ describe('LocalEnvironmentGateway', () => {
     expect(snapshot.snapshotSequence).toBe('0')
   })
 
-  it('keeps session methods unwired so existing IPC remains authoritative', async () => {
+  it('keeps session create unwired until Environment API migration covers it', async () => {
     const gw = new LocalEnvironmentGateway({ dataDir: tempDir() })
     await expect(
       gw.sessions.create({
@@ -59,6 +59,40 @@ describe('LocalEnvironmentGateway', () => {
         providerId: 'claude',
       }),
     ).rejects.toThrow(/not wired yet/)
+    await expect(
+      gw.sessions.list(
+        { environmentId: gw.getEnvironmentId(), projectId: 'p' },
+        { limit: 30, offset: 0 },
+      ),
+    ).rejects.toThrow(/not wired yet/)
+  })
+
+  it('lists sessions through the injected port with limit/offset', async () => {
+    const listed: unknown[] = []
+    const gw = new LocalEnvironmentGateway({
+      dataDir: tempDir(),
+      sessions: {
+        create: () => ({ sessionId: 'x' }),
+        get: () => null,
+        list: (projectId, options) => {
+          listed.push({ projectId, options })
+          return [{ sessionId: 's1', title: 't' }]
+        },
+        send: async () => ({}),
+        acquireControl: () => ({
+          leaseId: 'l',
+          generation: 'g',
+          holderClientId: 'c',
+          expiresAt: new Date().toISOString(),
+        }),
+      },
+    })
+    const rows = await gw.sessions.list(
+      { environmentId: gw.getEnvironmentId(), projectId: 'proj-1' },
+      { limit: 10, offset: 5 },
+    )
+    expect(rows).toEqual([{ sessionId: 's1', title: 't' }])
+    expect(listed).toEqual([{ projectId: 'proj-1', options: { limit: 10, offset: 5 } }])
   })
 
   it('subscribeEvents completes without yielding when no local event log exists', async () => {

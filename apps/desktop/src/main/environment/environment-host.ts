@@ -57,8 +57,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join as pathJoin, resolve as pathResolve } from 'node:path'
 import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { getRecentFolders, addRecentFolder, removeRecentFolder } from '../recent-folders'
+import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from '../recent-folders'
+import { listSessionsForProjectId } from '../db-sessions'
 import type { ProjectSnapshot } from '@superone/shared/environment'
+import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 import {
   RemoteHostActionConsumer,
@@ -190,6 +192,30 @@ export class EnvironmentHost {
           lastActiveAt: Date.parse(f.lastOpened) || undefined,
         }
       },
+      // Local session list is the first Environment API surface for desktop DB.
+      // create/send/etc. still use app/agent IPC until those migrate.
+      sessions: {
+        create: () => {
+          throw new Error(
+            'LocalEnvironmentGateway.sessions.create is not wired yet; use app/agent session IPC',
+          )
+        },
+        get: () => null,
+        list: (projectId, options) => {
+          if (!projectId) return []
+          return listSessionsForProjectId(projectId, options.limit, options.offset)
+        },
+        send: async () => {
+          throw new Error(
+            'LocalEnvironmentGateway.sessions.send is not wired yet; use agent IPC',
+          )
+        },
+        acquireControl: () => {
+          throw new Error(
+            'LocalEnvironmentGateway.sessions.acquireControl is not wired yet',
+          )
+        },
+      },
     })
     this.tunnels = options.tunnels ?? new SshTunnelManager()
     this.bootstrap = options.bootstrapOverSsh ?? bootstrapNodeOverSsh
@@ -298,6 +324,8 @@ export class EnvironmentHost {
       harnessId?: string
       providerId?: string
       transcript?: unknown[]
+      /** Slim session.list rows prefer this over shipping full transcript. */
+      messageCount?: number
       status?: string
       isPinned?: boolean
       isHidden?: boolean
@@ -307,12 +335,18 @@ export class EnvironmentHost {
     const sessionId = String(s.sessionId ?? '')
     const ts = s.updatedAt ?? s.createdAt ?? Date.now()
     const cwd = typeof s.cwd === 'string' && s.cwd.trim() ? s.cwd.trim() : null
+    const messageCount =
+      typeof s.messageCount === 'number' && Number.isFinite(s.messageCount)
+        ? Math.max(0, Math.floor(s.messageCount))
+        : Array.isArray(s.transcript)
+          ? s.transcript.length
+          : 0
     return {
       sessionId,
       title: (s.title && String(s.title).trim()) || 'New session',
       lastActiveAt: new Date(ts).toISOString(),
       provider: s.harnessId || s.providerId || 'claude',
-      messageCount: Array.isArray(s.transcript) ? s.transcript.length : 0,
+      messageCount,
       isPinned: Boolean(s.isPinned),
       isHidden: Boolean(s.isHidden),
       // Node sessions use cwd for worktree isolation; surface as desktop worktree fields.
@@ -322,32 +356,63 @@ export class EnvironmentHost {
   }
 
   /**
-   * List sessions for a project on a host.
-   * Local callers should keep using the desktop session DB; this is for remote nodes.
+   * Resolve a local project id from a UUID or absolute folder path.
+   * Path form is allowed so UI keys (folder paths) can call Environment API
+   * without a separate id lookup during migration.
+   */
+  private resolveLocalProjectId(projectIdOrPath: string): string | null {
+    if (!projectIdOrPath) return null
+    if (getProjectPathById(projectIdOrPath)) return projectIdOrPath
+    return getProjectId(projectIdOrPath)
+  }
+
+  /**
+   * List sessions for a project on any environment (local or remote).
+   * Always paginated — limit and offset are required (no full dump).
    */
   async listSessions(
     connectionId: string,
     projectId: string,
-  ): Promise<
-    Array<{
-      sessionId: string
-      title: string
-      lastActiveAt: string
-      provider?: string
-      messageCount: number
-    }>
-  > {
-    if (connectionId === 'local') {
-      throw Object.assign(new Error('listSessions via environment host is remote-only'), {
-        code: 'invalid_argument',
-      })
-    }
+    options: { limit: number; offset: number },
+  ): Promise<SessionHistoryEntry[]> {
     if (!projectId) {
       throw Object.assign(new Error('projectId is required'), { code: 'invalid_argument' })
     }
+    if (
+      !options ||
+      typeof options.limit !== 'number' ||
+      !Number.isFinite(options.limit) ||
+      typeof options.offset !== 'number' ||
+      !Number.isFinite(options.offset)
+    ) {
+      throw Object.assign(new Error('listSessions requires finite limit and offset'), {
+        code: 'invalid_argument',
+      })
+    }
+    const pageOpts = {
+      limit: Math.min(Math.max(Math.floor(options.limit), 0), 500),
+      offset: Math.max(Math.floor(options.offset), 0),
+    }
+
+    if (connectionId === 'local') {
+      const resolved = this.resolveLocalProjectId(projectId)
+      if (!resolved) return []
+      const local = this.registry.getLocal()
+      const listed = await local.sessions.list(
+        { environmentId: local.getEnvironmentId(), projectId: resolved },
+        pageOpts,
+      )
+      const rows = Array.isArray(listed) ? listed : []
+      // Local port already returns SessionHistoryEntry[] (metadata only — no messages).
+      return rows.filter((r): r is SessionHistoryEntry => {
+        return Boolean(r && typeof r === 'object' && typeof (r as SessionHistoryEntry).sessionId === 'string')
+      }) as SessionHistoryEntry[]
+    }
+
     const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const listed = await gateway.sessions.list({ environmentId, projectId })
+    const listed = await gateway.sessions.list({ environmentId, projectId }, pageOpts)
     const rows = Array.isArray(listed) ? listed : []
+    // Node already sorts newest-first when paginating; stable sort within the page.
     return rows
       .map((r) => this.mapRemoteSessionEntry(r))
       .filter((r) => r.sessionId)

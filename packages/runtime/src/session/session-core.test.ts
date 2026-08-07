@@ -78,6 +78,48 @@ describe('forkSessionTitle', () => {
   })
 })
 
+describe('SessionRuntime.list pagination', () => {
+  it('sorts newest-first then applies limit/offset', () => {
+    const { store, events, leases, rows } = memoryPorts()
+    for (let i = 0; i < 5; i++) {
+      const id = `s${i}`
+      rows.set(
+        id,
+        session({
+          sessionId: id,
+          projectId: 'p1',
+          title: `t${i}`,
+          createdAt: i * 1000,
+          updatedAt: i * 1000,
+        }),
+      )
+    }
+    rows.set(
+      'other',
+      session({
+        sessionId: 'other',
+        projectId: 'p2',
+        title: 'other',
+        updatedAt: 99_000,
+      }),
+    )
+    const rt = new SessionRuntime(
+      store,
+      events,
+      leases,
+      'env-list',
+      createSimulatedTurnRunner(),
+    )
+    const page0 = rt.list('p1', { limit: 2, offset: 0 })
+    expect(page0.map((s) => s.sessionId)).toEqual(['s4', 's3'])
+    const page1 = rt.list('p1', { limit: 2, offset: 2 })
+    expect(page1.map((s) => s.sessionId)).toEqual(['s2', 's1'])
+    const rest = rt.list('p1', { limit: 2, offset: 4 })
+    expect(rest.map((s) => s.sessionId)).toEqual(['s0'])
+    expect(rt.list('p1').map((s) => s.sessionId)).toEqual(['s4', 's3', 's2', 's1', 's0'])
+  })
+})
+
 describe('SessionRuntime.fork', () => {
   it('clones transcript and sets cwd without sharing providerResume', () => {
     const { store, events, leases } = memoryPorts()

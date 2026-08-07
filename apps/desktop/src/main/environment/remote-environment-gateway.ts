@@ -913,9 +913,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(ref.environmentId)
         return this.client.rpc('session.get', { sessionId: ref.sessionId })
       },
-      list: async (project: ProjectRef) => {
+      list: async (project: ProjectRef, options: { limit: number; offset: number }) => {
         this.assertEnv(project.environmentId)
-        return this.client.rpc('session.list', { projectId: project.projectId })
+        return this.client.rpc('session.list', {
+          projectId: project.projectId,
+          limit: options.limit,
+          offset: options.offset,
+        })
       },
       listMessages: async (input) => {
         this.assertEnv(input.session.environmentId)

@@ -685,10 +685,15 @@ export interface EnvironmentAPI {
     connectionId: string,
     input: { projectId?: string; path?: string },
   ): Promise<{ projectId?: string; path: string; name?: string; lastActiveAt?: number }>
-  /** List sessions on a remote node project (local uses window.app.listSessions*). */
+  /**
+   * List sessions for a project on any environment (local or remote).
+   * Local: connectionId `'local'`, projectId = project UUID or absolute folder path.
+   * Prefer this over window.app.listSessions* (legacy).
+   */
   listSessions(
     connectionId: string,
     projectId: string,
+    options: { limit: number; offset: number },
   ): Promise<
     Array<{
       sessionId: string
@@ -698,6 +703,14 @@ export interface EnvironmentAPI {
       messageCount: number
       isPinned?: boolean
       isHidden?: boolean
+      worktreePath?: string | null
+      isWorktree?: boolean
+      parentSessionId?: string
+      gitBranch?: string
+      isAutomation?: boolean
+      automationId?: string
+      acpAgentId?: string
+      providerSessionId?: string
     }>
   >
   /** Create a session on a remote node project. */

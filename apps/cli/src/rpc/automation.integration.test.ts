@@ -134,7 +134,11 @@ describe('automation RPC + scheduler', () => {
     expect(run.status).toBe('completed')
     expect(run.sessionId).toBeTruthy()
 
-    const sessions = (await client.rpc('session.list', { projectId: project.projectId })) as Array<{
+    const sessions = (await client.rpc('session.list', {
+      projectId: project.projectId,
+      limit: 100,
+      offset: 0,
+    })) as Array<{
       sessionId: string
       isAutomation?: boolean
       automationId?: string | null

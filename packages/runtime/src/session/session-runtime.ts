@@ -616,10 +616,22 @@ export class SessionRuntime {
     return s ? this.clone(s) : null
   }
 
-  list(projectId?: string): NodeSessionRecord[] {
-    return [...this.live.values()]
+  list(
+    projectId?: string,
+    options?: { limit?: number; offset?: number },
+  ): NodeSessionRecord[] {
+    const rows = [...this.live.values()]
       .filter((s) => !projectId || s.projectId === projectId)
-      .map((s) => this.clone(s))
+      // Newest first — pagination must sort before slice (same idea as desktop history).
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    const offset = Math.max(0, options?.offset ?? 0)
+    const limited =
+      options?.limit != null && options.limit >= 0
+        ? rows.slice(offset, offset + options.limit)
+        : offset > 0
+          ? rows.slice(offset)
+          : rows
+    return limited.map((s) => this.clone(s))
   }
 
   snapshotSequence(): string {

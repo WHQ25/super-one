@@ -515,24 +515,20 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     if (!activeProject) return
     try {
       const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-      const remote = parseRemoteProjectKey(activeProject)
-      if (remote) {
-        const projectId = useAppStore.getState().currentProjectId
-        if (!projectId) return
-        const { listRemoteSessionsForProject } = await import('@/lib/remote-session-ops')
-        const sessions = await listRemoteSessionsForProject(activeProject, projectId)
-        set((s) => updateProjectState(s, activeProject, () => ({
-          sessions,
-          sessionsPage: 1,
-          sessionsHasMore: false,
-        })))
-        return
-      }
-      const sessions = await window.app.listSessionsForFolderPage(activeProject, SESSIONS_PAGE_SIZE, 0)
+      const { listSessionsPage, sessionsPageHasMore } = await import('@/lib/session-list-ops')
+      // Local ignores projectId (path is authoritative). Remote may use currentProjectId.
+      const projectId = parseRemoteProjectKey(activeProject)
+        ? useAppStore.getState().currentProjectId
+        : null
+      const sessions = await listSessionsPage(activeProject, {
+        limit: SESSIONS_PAGE_SIZE,
+        offset: 0,
+        projectId,
+      })
       set((s) => updateProjectState(s, activeProject, () => ({
         sessions,
         sessionsPage: 1,
-        sessionsHasMore: sessions.length >= SESSIONS_PAGE_SIZE,
+        sessionsHasMore: sessionsPageHasMore(sessions, SESSIONS_PAGE_SIZE),
       })))
     } catch (err) { console.warn('[chat] fetchSessions failed:', err) }
   },
@@ -542,22 +538,25 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     if (!activeProject) return
     const project = getProject(get())
     if (!project.sessionsHasMore) return
-    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-    if (parseRemoteProjectKey(activeProject)) {
-      // Remote lists are returned in full by listSessions.
-      set((s) => updateProjectState(s, activeProject, () => ({ sessionsHasMore: false })))
-      return
-    }
     const pageToFetch = project.sessionsPage
     const offset = pageToFetch * SESSIONS_PAGE_SIZE
     try {
-      const page = await window.app.listSessionsForFolderPage(activeProject, SESSIONS_PAGE_SIZE, offset)
+      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+      const { listSessionsPage, sessionsPageHasMore } = await import('@/lib/session-list-ops')
+      const projectId = parseRemoteProjectKey(activeProject)
+        ? useAppStore.getState().currentProjectId
+        : null
+      const page = await listSessionsPage(activeProject, {
+        limit: SESSIONS_PAGE_SIZE,
+        offset,
+        projectId,
+      })
       set((s) => updateProjectState(s, activeProject, (proj) => {
         if (proj.sessionsPage !== pageToFetch) return {}
         return {
           sessions: [...proj.sessions, ...page],
           sessionsPage: pageToFetch + 1,
-          sessionsHasMore: page.length >= SESSIONS_PAGE_SIZE,
+          sessionsHasMore: sessionsPageHasMore(page, SESSIONS_PAGE_SIZE),
         }
       }))
     } catch (err) { console.warn('[chat] fetchSessionsPage failed:', err) }

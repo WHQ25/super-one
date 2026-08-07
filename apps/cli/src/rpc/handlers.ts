@@ -1959,8 +1959,35 @@ function handleSessionList(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
   const p = asRecord(payload)
+  const projectId = typeof p.projectId === 'string' ? p.projectId : undefined
+  if (typeof p.limit !== 'number' || !Number.isFinite(p.limit)) {
+    return { error: { code: 'invalid_argument', message: 'session.list requires finite limit' } }
+  }
+  if (typeof p.offset !== 'number' || !Number.isFinite(p.offset)) {
+    return { error: { code: 'invalid_argument', message: 'session.list requires finite offset' } }
+  }
+  const limit = Math.min(Math.max(Math.floor(p.limit), 0), 500)
+  const offset = Math.max(Math.floor(p.offset), 0)
+  // Metadata only. Transcript body is NOT returned — count via messageCount;
+  // full messages via session.get / session.messages.list.
+  const rows = ctx.sessions.list(projectId, { limit, offset })
   return {
-    result: ctx.sessions.list(typeof p.projectId === 'string' ? p.projectId : undefined),
+    result: rows.map((s) => ({
+      sessionId: s.sessionId,
+      projectId: s.projectId,
+      harnessId: s.harnessId,
+      providerId: s.providerId,
+      title: s.title,
+      status: s.status,
+      messageCount: Array.isArray(s.transcript) ? s.transcript.length : 0,
+      cwd: s.cwd,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      isPinned: s.isPinned,
+      isHidden: s.isHidden,
+      isAutomation: s.isAutomation === true,
+      automationId: s.automationId ?? null,
+    })),
   }
 }
 

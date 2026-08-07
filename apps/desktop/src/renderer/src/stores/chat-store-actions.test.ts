@@ -99,10 +99,16 @@ const mockMiniApp = {
   authorize: mockMiniAppAuthorize,
 }
 
+const mockWindowEnvironment = {
+  listSessions: vi.fn().mockResolvedValue([]),
+  listProjects: vi.fn().mockResolvedValue([]),
+}
+
 const eventTarget = new EventTarget()
 vi.stubGlobal('window', {
   agent: mockWindowAgent,
   app: mockWindowApp,
+  environment: mockWindowEnvironment,
   miniapp: mockMiniApp,
   localStorage: mockLocalStorage,
   dispatchEvent: (e: Event) => eventTarget.dispatchEvent(e),
@@ -579,27 +585,49 @@ describe('sendMessage: Claude IPC path', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('fetchSessions / fetchSessionsPage', () => {
+  beforeEach(() => {
+    mockWindowEnvironment.listSessions.mockReset()
+    mockWindowEnvironment.listSessions.mockResolvedValue([])
+  })
+
   it('writes the first page into project.sessions + sets hasMore based on page-full', async () => {
     setupProject()
-    const entries = Array.from({ length: 30 }, (_, i) => ({ sessionId: `s${i}`, title: `t${i}`, providerId: 'claude' }))
-    mockWindowApp.listSessionsForFolderPage.mockResolvedValueOnce(entries)
+    const entries = Array.from({ length: 30 }, (_, i) => ({
+      sessionId: `s${i}`,
+      title: `t${i}`,
+      lastActiveAt: new Date().toISOString(),
+      provider: 'claude',
+      messageCount: 0,
+    }))
+    mockWindowEnvironment.listSessions.mockResolvedValueOnce(entries)
     await useChatStore.getState().fetchSessions()
     const proj = activeProjectState()
     expect(proj.sessions.length).toBe(30)
     expect(proj.sessionsPage).toBe(1)
     expect(proj.sessionsHasMore).toBe(true)
+    expect(mockWindowEnvironment.listSessions).toHaveBeenCalledWith(
+      'local',
+      PATH,
+      { limit: 30, offset: 0 },
+    )
   })
 
   it("clears hasMore when a short page returns < SESSIONS_PAGE_SIZE", async () => {
     setupProject()
-    mockWindowApp.listSessionsForFolderPage.mockResolvedValueOnce([{ sessionId: 's1', title: 't1', providerId: 'claude' }])
+    mockWindowEnvironment.listSessions.mockResolvedValueOnce([{
+      sessionId: 's1',
+      title: 't1',
+      lastActiveAt: new Date().toISOString(),
+      provider: 'claude',
+      messageCount: 0,
+    }])
     await useChatStore.getState().fetchSessions()
     expect(activeProjectState().sessionsHasMore).toBe(false)
   })
 
   it('survives an IPC error without throwing', async () => {
     setupProject()
-    mockWindowApp.listSessionsForFolderPage.mockRejectedValueOnce(new Error('db locked'))
+    mockWindowEnvironment.listSessions.mockRejectedValueOnce(new Error('db locked'))
     await expect(useChatStore.getState().fetchSessions()).resolves.toBeUndefined()
   })
 
@@ -616,7 +644,13 @@ describe('fetchSessions / fetchSessionsPage', () => {
         },
       },
     }))
-    mockWindowApp.listSessionsForFolderPage.mockResolvedValueOnce([{ sessionId: 's1', title: 't1', providerId: 'claude' }])
+    mockWindowEnvironment.listSessions.mockResolvedValueOnce([{
+      sessionId: 's1',
+      title: 't1',
+      lastActiveAt: new Date().toISOString(),
+      provider: 'claude',
+      messageCount: 0,
+    }])
     await useChatStore.getState().fetchSessionsPage()
     const proj = activeProjectState()
     expect(proj.sessions.map((s) => s.sessionId)).toEqual(['s0', 's1'])
@@ -632,7 +666,7 @@ describe('fetchSessions / fetchSessionsPage', () => {
       },
     }))
     await useChatStore.getState().fetchSessionsPage()
-    expect(mockWindowApp.listSessionsForFolderPage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.listSessions).not.toHaveBeenCalled()
   })
 })
 

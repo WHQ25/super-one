@@ -19,8 +19,12 @@ import {
   reconcileTranscriptWithLocalMessages,
   type NodeSessionSnapshot,
 } from '@/lib/remote-session-messages'
+import { mapEnvironmentSessionRow } from '@/lib/session-list-ops'
 import { createDefaultPerSessionState } from '@/stores/chat-store/defaults'
 import type { ChatProvider, PerSessionState } from '@/stores/chat-store/types'
+
+/** @deprecated Prefer mapEnvironmentSessionRow from session-list-ops. */
+export const mapNodeRowToHistoryEntry = mapEnvironmentSessionRow
 
 export {
   createNodeSessionEventMapper,
@@ -33,38 +37,28 @@ export function isRemoteProjectKey(projectPath: string): boolean {
   return parseRemoteProjectKey(projectPath) !== null
 }
 
-export function mapNodeRowToHistoryEntry(row: {
-  sessionId: string
-  title: string
-  lastActiveAt: string
-  provider?: string
-  messageCount: number
-  isPinned?: boolean
-  isHidden?: boolean
-  worktreePath?: string | null
-  isWorktree?: boolean
-}): SessionHistoryEntry {
-  return {
-    sessionId: row.sessionId,
-    title: row.title,
-    lastActiveAt: row.lastActiveAt,
-    provider: (row.provider as SessionHistoryEntry['provider']) ?? 'claude',
-    messageCount: row.messageCount,
-    isPinned: row.isPinned,
-    isHidden: row.isHidden,
-    worktreePath: row.worktreePath ?? undefined,
-    isWorktree: row.isWorktree ?? Boolean(row.worktreePath),
-  }
-}
-
-export async function listRemoteSessionsForProject(
+/**
+ * Resolve the node projectId for a host-scoped project key.
+ * Prefer an explicit id; otherwise match listProjects by path (never trust
+ * another project's currentProjectId).
+ */
+export async function resolveRemoteProjectId(
   projectKey: string,
-  projectId: string,
-): Promise<SessionHistoryEntry[]> {
+  preferredProjectId?: string | null,
+): Promise<string | null> {
   const remote = parseRemoteProjectKey(projectKey)
-  if (!remote || !projectId) return []
-  const rows = await window.environment.listSessions(remote.connectionId, projectId)
-  return rows.map(mapNodeRowToHistoryEntry)
+  if (!remote) return null
+  if (preferredProjectId) return preferredProjectId
+  try {
+    const projects = await window.environment.listProjects(remote.connectionId)
+    const match = projects.find(
+      (p) =>
+        `remote:${remote.connectionId}:${p.path}` === projectKey || p.path === remote.path,
+    )
+    return match?.projectId ?? null
+  } catch {
+    return null
+  }
 }
 
 export async function hydrateRemotePerSession(

@@ -27,9 +27,12 @@ interface DbChatMessage {
   resume_point_id: string | null
 }
 
-/** List sessions for a project folder from DB (no external sync). */
-export function listSessionsForFolder(folderPath: string, limit?: number, offset?: number): SessionHistoryEntry[] {
-  const projectId = getProjectId(folderPath)
+/** List sessions for a project id from DB (Environment API / local gateway path). */
+export function listSessionsForProjectId(
+  projectId: string,
+  limit?: number,
+  offset?: number,
+): SessionHistoryEntry[] {
   if (!projectId) return []
 
   const db = getDb()
@@ -53,9 +56,14 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
     ORDER BY group_last_active_at DESC,
              CASE WHEN parent_session_id IS NULL THEN 0 ELSE 1 END,
              last_user_msg_at DESC`
+  const safeOffset = Math.max(0, offset ?? 0)
+  // Match remote SessionRuntime.list: apply offset even when limit is omitted.
+  // SQLite requires LIMIT with OFFSET; LIMIT -1 means "no upper bound".
   const rows = (limit != null
-    ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, offset ?? 0)
-    : db.prepare(baseSql).all(projectId)
+    ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, safeOffset)
+    : safeOffset > 0
+      ? db.prepare(`${baseSql} LIMIT -1 OFFSET ?`).all(projectId, safeOffset)
+      : db.prepare(baseSql).all(projectId)
   ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; parent_session_id: string | null }>
 
   return rows.map((r) => ({
@@ -75,6 +83,13 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
     ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
     ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
   }))
+}
+
+/** List sessions for a project folder from DB (no external sync). */
+export function listSessionsForFolder(folderPath: string, limit?: number, offset?: number): SessionHistoryEntry[] {
+  const projectId = getProjectId(folderPath)
+  if (!projectId) return []
+  return listSessionsForProjectId(projectId, limit, offset)
 }
 
 /** Create a new session record in DB. `sessionId` is the stable Session.id used across the app. */

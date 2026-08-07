@@ -14,8 +14,12 @@ import type { SessionMessagesListRequest, SessionMessagesListResult } from './se
  * Environment-scoped gateway — the only boundary desktop features should use
  * for project, Session, terminal, and workspace operations.
  *
- * LocalEnvironmentGateway delegates to in-process services.
+ * Local is one ExecutionEnvironment (in-process LocalEnvironmentGateway).
  * RemoteEnvironmentGateway delegates to an authenticated node RPC session.
+ *
+ * Migration: new and refactored product code should call EnvironmentHost /
+ * window.environment — not environment-specific raw app IPC. Session list is
+ * the reference path; create/send/rename/delete/pin and friends follow.
  */
 
 export interface EnvironmentGateway {
@@ -66,10 +70,18 @@ export interface PatchSessionSettingsInput extends Partial<MutatingControlContex
   apiProviderId?: string | null
 }
 
+export interface ListSessionsOptions {
+  /** Max rows to return (newest first). Required — no unpaginated product list. */
+  limit: number
+  /** Rows to skip after sort. Required (use 0 for the first page). */
+  offset: number
+}
+
 export interface SessionGateway {
   create(input: CreateSessionInput): Promise<{ sessionId: string }>
   get(ref: SessionRef): Promise<unknown | null>
-  list(project: ProjectRef): Promise<unknown[]>
+  /** Product session list is always paginated (limit + offset required). */
+  list(project: ProjectRef, options: ListSessionsOptions): Promise<unknown[]>
   send(input: SendMessageInput): Promise<void>
   /**
    * Persist turn defaults so subsequent send() calls need not re-send full options.

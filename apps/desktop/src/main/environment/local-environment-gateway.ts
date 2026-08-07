@@ -47,7 +47,7 @@ export interface LocalSessionPort {
     title?: string
   }): { sessionId: string }
   get(sessionId: string): unknown | null
-  list(projectId?: string): unknown[]
+  list(projectId?: string, options?: { limit: number; offset: number }): unknown[]
   send(input: {
     sessionId: string
     text: string
@@ -136,9 +136,9 @@ function notWired(method: string): never {
 /**
  * In-process environment gateway for the desktop runtime.
  *
- * Phase 0: descriptor + project listing are live. Session/terminal/workspace
- * methods throw until call sites migrate off raw IPC — local Session behavior
- * is intentionally unchanged.
+ * Local is one ExecutionEnvironment. Call sites should prefer EnvironmentHost /
+ * window.environment over raw app IPC; session list is the first fully wired
+ * local session surface (create/send/etc. still migrate incrementally).
  */
 export class LocalEnvironmentGateway implements EnvironmentGateway {
   readonly sessions: SessionGateway
@@ -248,7 +248,8 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
         return { sessionId: created.sessionId }
       },
       get: async (ref: SessionRef) => port.get(ref.sessionId),
-      list: async (project: ProjectRef) => port.list(project.projectId),
+      list: async (project: ProjectRef, options: { limit: number; offset: number }) =>
+        port.list(project.projectId, options),
       send: async (input: SendMessageInput) => {
         await port.send({
           sessionId: input.session.sessionId,

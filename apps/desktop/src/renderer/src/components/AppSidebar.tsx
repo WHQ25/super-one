@@ -281,46 +281,29 @@ export const AppSidebar = memo(function AppSidebar() {
       const startedAt = performance.now()
       traceSidebar('sessions_load:start', { folderPath, reason, pageSize: SESSIONS_FETCH_LIMIT }, folderPath)
       try {
-        const remote = parseRemoteProjectKey(folderPath)
-        if (remote) {
-          // Remote node sessions via EnvironmentGateway (project id from hostProjects).
-          const project = hostProjects.find((p) => p.path === folderPath)
-          const projectId = project?.id
-          if (!projectId) {
-            setFolderSessions((prev) => ({ ...prev, [folderPath]: [] }))
-            inFlightFolderSessions.current.delete(folderPath)
-            return []
-          }
-          const remoteRows = await window.environment.listSessions(remote.connectionId, projectId)
-          for (const row of remoteRows) {
-            sessions.push({
-              sessionId: row.sessionId,
-              title: row.title,
-              lastActiveAt: row.lastActiveAt,
-              provider: (row.provider as SessionHistoryEntry['provider']) ?? 'claude',
-              messageCount: row.messageCount,
-              isPinned: row.isPinned,
-              isHidden: row.isHidden,
-            })
-          }
-          visibleCount = sessions.length
-        } else {
-          while (sessions.filter((session) => !session.isHidden && !session.parentSessionId).length < SESSIONS_FETCH_ROOT_TARGET) {
-            const page = await window.app.listSessionsForFolderPage(folderPath, SESSIONS_FETCH_LIMIT, offset)
-            visibleCount += page.filter((session) => !session.isHidden && !session.parentSessionId).length
-            traceSidebar('sessions_load:page', {
-              folderPath,
-              reason,
-              offset,
-              pageCount: page.length,
-              visibleCount,
-              elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
-            }, folderPath)
-            if (page.length === 0) break
-            sessions.push(...page)
-            if (page.length < SESSIONS_FETCH_LIMIT) break
-            offset += page.length
-          }
+        // Unified Environment API (local + remote). Prefer hostProjects id for remote.
+        const { listSessionsPage } = await import('@/lib/session-list-ops')
+        const preferredProjectId = hostProjects.find((p) => p.path === folderPath)?.id ?? null
+        while (sessions.filter((session) => !session.isHidden && !session.parentSessionId).length < SESSIONS_FETCH_ROOT_TARGET) {
+          const page = await listSessionsPage(folderPath, {
+            limit: SESSIONS_FETCH_LIMIT,
+            offset,
+            projectId: preferredProjectId,
+          })
+          visibleCount += page.filter((session) => !session.isHidden && !session.parentSessionId).length
+          traceSidebar('sessions_load:page', {
+            folderPath,
+            reason,
+            offset,
+            pageCount: page.length,
+            visibleCount,
+            elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+            remote: Boolean(parseRemoteProjectKey(folderPath)),
+          }, folderPath)
+          if (page.length === 0) break
+          sessions.push(...page)
+          if (page.length < SESSIONS_FETCH_LIMIT) break
+          offset += page.length
         }
         setFolderSessions((prev) => {
           const existing = prev[folderPath]

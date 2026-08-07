@@ -1,6 +1,7 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
 import type { ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import { getBuiltinCapability } from '@superone/shared/capability-prompt-tags'
+import { normalizeToolIdKey, uiToolNameFromId } from '@superone/shared/tool-ui'
 
 type AcpToolLike = ToolCall | ToolCallUpdate
 
@@ -94,95 +95,12 @@ function extractFilePath(
   )
 }
 
-/** Map agent-native tool ids / variants → Claude-shaped UI names. */
-const TOOL_ID_TO_NAME: Record<string, string> = {
-  read: 'Read',
-  read_file: 'Read',
-  readfile: 'Read',
-  edit: 'Edit',
-  search_replace: 'Edit',
-  str_replace: 'Edit',
-  apply_patch: 'Edit',
-  write: 'Write',
-  write_file: 'Write',
-  writefile: 'Write',
-  create_file: 'Write',
-  bash: 'Bash',
-  shell: 'Bash',
-  run_terminal_command: 'Bash',
-  run_terminal_cmd: 'Bash',
-  run_command: 'Bash',
-  execute: 'Bash',
-  command: 'Bash',
-  grep: 'Grep',
-  search: 'Grep',
-  ripgrep: 'Grep',
-  glob: 'Glob',
-  find_files: 'Glob',
-  list_dir: 'LS',
-  listdir: 'LS',
-  ls: 'LS',
-  web_fetch: 'WebFetch',
-  webfetch: 'WebFetch',
-  fetch: 'WebFetch',
-  open_page: 'WebFetch',
-  open_page_with_find: 'WebFetch',
-  web_search: 'WebSearch',
-  websearch: 'WebSearch',
-  todo_write: 'TodoWrite',
-  todowrite: 'TodoWrite',
-  todo: 'TodoWrite',
-  search_tool: 'SearchTools',
-  searchtool: 'SearchTools',
-  tool_search: 'SearchTools',
-  toolsearch: 'SearchTools',
-  use_tool: 'UseTool',
-  usetool: 'UseTool',
-  call_tool: 'UseTool',
-  spawn_subagent: 'Task',
-  spawn_agent: 'Task',
-  task: 'Task',
-  agent: 'Task',
-  workflow: 'Workflow',
-  run_workflow: 'Workflow',
-  memory_search: 'MemorySearch',
-  memorysearch: 'MemorySearch',
-  search_memory: 'MemorySearch',
-  ask_user_question: 'AskUserQuestion',
-  askuserquestion: 'AskUserQuestion',
-  get_task_output: 'TaskOutput',
-  get_command_or_subagent_output: 'TaskOutput',
-  get_terminal_command_output: 'TaskOutput',
-  wait_tasks: 'TaskOutput',
-  wait_commands_or_subagents: 'TaskOutput',
-  kill_task: 'KillTask',
-  kill_command_or_subagent: 'KillTask',
-  kill_terminal_command: 'KillTask',
-  enter_plan_mode: 'EnterPlanMode',
-  exit_plan_mode: 'ExitPlanMode',
-  skill: 'Skill',
-  image_gen: 'ImageGen',
-  image_edit: 'ImageEdit',
-  image_to_video: 'ImageToVideo',
-  reference_to_video: 'ReferenceToVideo',
-  video_gen: 'VideoGen',
-  monitor: 'Monitor',
-  update_goal: 'UpdateGoal',
-  scheduler_create: 'SchedulerCreate',
-  scheduler_delete: 'SchedulerDelete',
-  scheduler_list: 'SchedulerList',
-}
-
 function normalizeToolId(id: string): string {
-  return id.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return normalizeToolIdKey(id)
 }
 
 function nameFromToolId(id: string | undefined | null): string | null {
-  if (!id || typeof id !== 'string') return null
-  // Human titles like "List `/path`" or "Web search:" are not tool ids
-  if (/[\s`/:]/.test(id) && !TOOL_ID_TO_NAME[normalizeToolId(id)]) return null
-  const key = normalizeToolId(id)
-  return TOOL_ID_TO_NAME[key] ?? null
+  return uiToolNameFromId(id)
 }
 
 function nameFromVariant(raw: Record<string, unknown>): string | null {
@@ -546,12 +464,19 @@ function normalizeInput(
       if (raw.limit != null) out.limit = raw.limit
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
+    case 'Agent':
     case 'Task': {
       const out: Record<string, unknown> = {}
       const desc = pickString(raw, ['description', 'prompt', 'name', 'task', 'objective'])
       if (desc) out.description = desc
       const sub = pickString(raw, ['subagent_type', 'agent_type', 'agent', 'type'])
       if (sub) out.subagent_type = sub
+      const prompt = pickString(raw, ['prompt'])
+      if (prompt) out.prompt = prompt
+      const model = pickString(raw, ['model'])
+      if (model) out.model = model
+      // Grok spawn_subagent uses `background`; Claude uses run_in_background.
+      // Do not default true on subagent_type alone — Claude foreground Agents also set type.
       if (raw.run_in_background === true || raw.background === true) out.run_in_background = true
       return Object.keys(out).length > 0 ? out : { ...raw }
     }

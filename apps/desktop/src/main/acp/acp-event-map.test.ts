@@ -911,7 +911,7 @@ describe('Grok full tool set mapping', () => {
     ['todo_write', 'other', 'Todo', { todos: [] }, 'TodoWrite'],
     ['search_tool', 'search_tool', 'Search Tools', { query: 'github issue' }, 'SearchTools'],
     ['use_tool', 'other', 'Use Tool', { tool_name: 'GitHub__list_issues' }, 'mcp__GitHub__list_issues'],
-    ['spawn_subagent', 'other', 'Spawn', { description: 'explore' }, 'Task'],
+    ['spawn_subagent', 'other', 'Spawn', { description: 'explore' }, 'Agent'],
     ['memory_search', 'search', 'Memory', { query: 'prior decision' }, 'MemorySearch'],
     ['ask_user_question', 'ask_user', 'Ask User', { questions: [{ question: 'Pick?', options: [{ label: 'A' }] }] }, 'AskUserQuestion'],
     ['get_command_or_subagent_output', 'other', 'Task Output', { task_ids: ['t1'], timeout_ms: 60000 }, 'TaskOutput'],

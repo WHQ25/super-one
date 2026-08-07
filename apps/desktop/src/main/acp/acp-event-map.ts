@@ -1,6 +1,11 @@
 import type { AgentEvent, ContentBlock, SlashCommandInfo } from '@superone/shared/agent-types'
 import type { SessionConfigOption, SessionUpdate, ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import { getBuiltinCapability } from '@superone/shared/capability-prompt-tags'
+import {
+  formatAgentToolOutput,
+  normalizeToolIdKey,
+  uiToolNameFromId,
+} from '@superone/shared/tool-ui'
 import { extractModeConfig, extractModelConfig } from './acp-config'
 import { isHiddenAcpPermissionSlashCommand } from './acp-slash-filter'
 
@@ -100,95 +105,12 @@ function extractFilePath(
   )
 }
 
-/** Map agent-native tool ids / variants → Claude-shaped UI names. */
-const TOOL_ID_TO_NAME: Record<string, string> = {
-  read: 'Read',
-  read_file: 'Read',
-  readfile: 'Read',
-  edit: 'Edit',
-  search_replace: 'Edit',
-  str_replace: 'Edit',
-  apply_patch: 'Edit',
-  write: 'Write',
-  write_file: 'Write',
-  writefile: 'Write',
-  create_file: 'Write',
-  bash: 'Bash',
-  shell: 'Bash',
-  run_terminal_command: 'Bash',
-  run_terminal_cmd: 'Bash',
-  run_command: 'Bash',
-  execute: 'Bash',
-  command: 'Bash',
-  grep: 'Grep',
-  search: 'Grep',
-  ripgrep: 'Grep',
-  glob: 'Glob',
-  find_files: 'Glob',
-  list_dir: 'LS',
-  listdir: 'LS',
-  ls: 'LS',
-  web_fetch: 'WebFetch',
-  webfetch: 'WebFetch',
-  fetch: 'WebFetch',
-  open_page: 'WebFetch',
-  open_page_with_find: 'WebFetch',
-  web_search: 'WebSearch',
-  websearch: 'WebSearch',
-  todo_write: 'TodoWrite',
-  todowrite: 'TodoWrite',
-  todo: 'TodoWrite',
-  search_tool: 'SearchTools',
-  searchtool: 'SearchTools',
-  tool_search: 'SearchTools',
-  toolsearch: 'SearchTools',
-  use_tool: 'UseTool',
-  usetool: 'UseTool',
-  call_tool: 'UseTool',
-  spawn_subagent: 'Task',
-  spawn_agent: 'Task',
-  task: 'Task',
-  agent: 'Task',
-  workflow: 'Workflow',
-  run_workflow: 'Workflow',
-  memory_search: 'MemorySearch',
-  memorysearch: 'MemorySearch',
-  search_memory: 'MemorySearch',
-  ask_user_question: 'AskUserQuestion',
-  askuserquestion: 'AskUserQuestion',
-  get_task_output: 'TaskOutput',
-  get_command_or_subagent_output: 'TaskOutput',
-  get_terminal_command_output: 'TaskOutput',
-  wait_tasks: 'TaskOutput',
-  wait_commands_or_subagents: 'TaskOutput',
-  kill_task: 'KillTask',
-  kill_command_or_subagent: 'KillTask',
-  kill_terminal_command: 'KillTask',
-  enter_plan_mode: 'EnterPlanMode',
-  exit_plan_mode: 'ExitPlanMode',
-  skill: 'Skill',
-  image_gen: 'ImageGen',
-  image_edit: 'ImageEdit',
-  image_to_video: 'ImageToVideo',
-  reference_to_video: 'ReferenceToVideo',
-  video_gen: 'VideoGen',
-  monitor: 'Monitor',
-  update_goal: 'UpdateGoal',
-  scheduler_create: 'SchedulerCreate',
-  scheduler_delete: 'SchedulerDelete',
-  scheduler_list: 'SchedulerList',
-}
-
 function normalizeToolId(id: string): string {
-  return id.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return normalizeToolIdKey(id)
 }
 
 function nameFromToolId(id: string | undefined | null): string | null {
-  if (!id || typeof id !== 'string') return null
-  // Human titles like "List `/path`" or "Web search:" are not tool ids
-  if (/[\s`/:]/.test(id) && !TOOL_ID_TO_NAME[normalizeToolId(id)]) return null
-  const key = normalizeToolId(id)
-  return TOOL_ID_TO_NAME[key] ?? null
+  return uiToolNameFromId(id)
 }
 
 function nameFromVariant(raw: Record<string, unknown>): string | null {
@@ -552,12 +474,19 @@ function normalizeInput(
       if (raw.limit != null) out.limit = raw.limit
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
+    case 'Agent':
     case 'Task': {
       const out: Record<string, unknown> = {}
       const desc = pickString(raw, ['description', 'prompt', 'name', 'task', 'objective'])
       if (desc) out.description = desc
       const sub = pickString(raw, ['subagent_type', 'agent_type', 'agent', 'type'])
       if (sub) out.subagent_type = sub
+      const prompt = pickString(raw, ['prompt'])
+      if (prompt) out.prompt = prompt
+      const model = pickString(raw, ['model'])
+      if (model) out.model = model
+      // Grok spawn_subagent uses `background`; Claude uses run_in_background.
+      // Do not default true on subagent_type alone — Claude foreground Agents also set type.
       if (raw.run_in_background === true || raw.background === true) out.run_in_background = true
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
@@ -675,231 +604,12 @@ function toolUseBlock(tool: AcpToolLike, opts?: { terminalCommand?: string }): C
 }
 
 
-function bytesOrStringToText(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value) && value.every((n) => typeof n === 'number')) {
-    try {
-      return Buffer.from(value as number[]).toString('utf8')
-    } catch {
-      return ''
-    }
-  }
-  return ''
-}
-
-function formatSearchToolPayload(obj: Record<string, unknown>): string | null {
-  let data: unknown = obj
-  if (typeof obj.content === 'string' && obj.content.trim()) {
-    try {
-      data = JSON.parse(obj.content)
-    } catch {
-      // content may already be a display string
-      if (!obj.results) return obj.content
-    }
-  }
-  if (!data || typeof data !== 'object') return null
-  const root = data as Record<string, unknown>
-  const results = root.results
-  if (!Array.isArray(results)) {
-    if (typeof root.content === 'string') return root.content
-    return null
-  }
-  const lines: string[] = []
-  const count = typeof obj.result_count === 'number' ? obj.result_count : results.length
-  lines.push(`Found ${count} tool${count === 1 ? '' : 's'}`)
-  for (const entry of results) {
-    if (!entry || typeof entry !== 'object') continue
-    const group = entry as Record<string, unknown>
-    const server = typeof group.server === 'string' ? group.server : 'MCP'
-    lines.push('')
-    lines.push(`[${server}]`)
-    const tools = group.tools
-    if (!Array.isArray(tools)) continue
-    for (const tool of tools) {
-      if (!tool || typeof tool !== 'object') continue
-      const t = tool as Record<string, unknown>
-      const name = typeof t.tool_name === 'string' ? t.tool_name : typeof t.name === 'string' ? t.name : 'tool'
-      const desc = typeof t.description === 'string' ? t.description : ''
-      const score = typeof t.score === 'number' ? ` · ${t.score.toFixed(1)}` : ''
-      lines.push(desc ? `  ${name}${score} — ${desc}` : `  ${name}${score}`)
-    }
-  }
-  if (typeof root.note === 'string' && root.note.trim()) {
-    lines.push('')
-    lines.push(root.note)
-  }
-  return lines.join('\n').trim() || null
-}
-
 /**
- * Unwrap agent-native rawOutput envelopes (Grok Build / OpenCode / similar) into UI text.
- * Prefer the human tree/listing string over dumping the whole JSON wrapper.
+ * Unwrap agent-native rawOutput envelopes into UI text.
+ * Shared with transcript replay via @superone/shared/tool-ui.
  */
-function isAgentOutputEnvelope(obj: Record<string, unknown>): boolean {
-  const t = obj.type
-  return (
-    t === 'MCP'
-    || t === 'ListDir'
-    || t === 'list_dir'
-    || t === 'LS'
-    || t === 'Todo'
-    || t === 'SearchTool'
-    || t === 'GrepSearch'
-    || t === 'grep'
-    || obj.TodosUpdated != null
-    || (obj.Content != null && typeof obj.Content === 'object')
-    || Array.isArray(obj.results)
-    || (obj.action != null && typeof obj.action === 'object')
-  )
-}
-
 export function formatAcpRawOutput(raw: unknown): string {
-  if (raw == null) return ''
-  if (typeof raw === 'string') {
-    const trimmed = raw.trim()
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-      try {
-        const parsed = JSON.parse(trimmed)
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && isAgentOutputEnvelope(parsed as Record<string, unknown>)) {
-          return formatAcpRawOutput(parsed)
-        }
-        return raw
-      } catch {
-        return raw
-      }
-    }
-    return raw
-  }
-  if (typeof raw !== 'object') return String(raw)
-
-  const obj = raw as Record<string, unknown>
-
-  // MCP: { type: "MCP", server_name, tool_name, output: { OkayOutput: "<payload>" } }.
-  // The output key is grok's serde variant tag — read the payload structurally so error
-  // variants unwrap the same way without hardcoding the tag set.
-  if (obj.type === 'MCP' && obj.output != null) {
-    if (typeof obj.output === 'string') return obj.output
-    if (typeof obj.output === 'object') {
-      const values = Object.values(obj.output as Record<string, unknown>)
-      if (values.length === 1 && typeof values[0] === 'string') return values[0]
-    }
-  }
-
-  // ListDir: { type: "ListDir", Content: { content: "- /path\n  - a", absolute_root_path?: string } }
-  const listContent = obj.Content ?? obj.content
-  if (
-    (obj.type === 'ListDir' || obj.type === 'list_dir' || obj.type === 'LS')
-    && listContent
-    && typeof listContent === 'object'
-  ) {
-    const body = listContent as Record<string, unknown>
-    if (typeof body.content === 'string' && body.content.trim()) return body.content
-    if (typeof body.text === 'string' && body.text.trim()) return body.text
-  }
-  // Sometimes Content is the tree string directly
-  if ((obj.type === 'ListDir' || obj.type === 'list_dir') && typeof obj.Content === 'string') {
-    return obj.Content
-  }
-  if (typeof obj.content === 'string' && obj.content.includes('\n') && (obj.type === 'ListDir' || obj.absolute_root_path != null)) {
-    return obj.content
-  }
-
-  // Todo: { type: "Todo", TodosUpdated: { summary_for_prompt: "..." } }
-  if (obj.type === 'Todo' || obj.TodosUpdated != null) {
-    const todos = obj.TodosUpdated
-    if (todos && typeof todos === 'object') {
-      const t = todos as Record<string, unknown>
-      if (typeof t.summary_for_prompt === 'string' && t.summary_for_prompt.trim()) return t.summary_for_prompt
-      if (typeof t.summary === 'string' && t.summary.trim()) return t.summary
-    }
-  }
-
-  // SearchTool: MCP tool discovery results (envelope or bare { results: [...] })
-  if (
-    obj.type === 'SearchTool'
-    || Array.isArray(obj.results)
-    || (obj.result_count != null && (obj.content != null || obj.results != null))
-  ) {
-    const formatted = formatSearchToolPayload(obj)
-    if (formatted) return formatted
-  }
-
-  // GrepSearch: stdout may be a UTF-8 byte array
-  if (obj.type === 'GrepSearch' || obj.type === 'grep' || Array.isArray(obj.stdout)) {
-    const text = bytesOrStringToText(obj.stdout ?? obj.content ?? obj.output)
-    if (text) return text
-  }
-
-  // Web search action payload: { action: { type: "search", query, sources: [...] } }
-  const action = obj.action
-  if (action && typeof action === 'object') {
-    const a = action as Record<string, unknown>
-    if (a.type === 'search') {
-      const lines: string[] = []
-      if (typeof a.query === 'string') lines.push(`Query: ${a.query}`)
-      const sources = a.sources
-      if (Array.isArray(sources)) {
-        for (const s of sources) {
-          if (s && typeof s === 'object') {
-            const src = s as Record<string, unknown>
-            if (typeof src.url === 'string') lines.push(src.url)
-            else if (typeof src.title === 'string') lines.push(src.title)
-          }
-        }
-      }
-      if (typeof a.result === 'string') lines.push(a.result)
-      if (typeof a.snippet === 'string') lines.push(a.snippet)
-      if (lines.length > 0) return lines.join('\n')
-    }
-  }
-
-  // Nested Content envelope without type (or type casing variants)
-  if (listContent && typeof listContent === 'object') {
-    const body = listContent as Record<string, unknown>
-    for (const key of ['content', 'text', 'output', 'result']) {
-      if (typeof body[key] === 'string' && (body[key] as string).trim()) {
-        // Prefer tree-looking listings from ListDir-like payloads
-        if (
-          obj.type === 'ListDir'
-          || obj.type === 'list_dir'
-          || obj.type === 'LS'
-          || body.absolute_root_path != null
-          || /^[\s-]*\//.test(body[key] as string)
-        ) {
-          return body[key] as string
-        }
-      }
-    }
-  }
-
-  // Grok WorkflowToolOutput always includes a human `message` plus run_id/task_id.
-  // Prefer compact JSON so tool_result.summary keeps ids for progressive-bus
-  // correlation and WorkflowBlock launch parsing (message-only unwrap would drop them).
-  if (typeof obj.run_id === 'string' || typeof obj.runId === 'string') {
-    try {
-      return JSON.stringify(raw)
-    } catch {
-      return String(raw)
-    }
-  }
-
-  // Generic nested result / output / text / stdout
-  for (const key of ['result', 'output', 'text', 'stdout', 'message', 'summary']) {
-    const v = obj[key]
-    if (typeof v === 'string' && v.trim()) return v
-  }
-  if (listContent && typeof listContent === 'object') {
-    const body = listContent as Record<string, unknown>
-    for (const key of ['content', 'text', 'output', 'result']) {
-      if (typeof body[key] === 'string' && (body[key] as string).trim()) return body[key] as string
-    }
-  }
-
-  try {
-    return JSON.stringify(raw, null, 2)
-  } catch {
-    return String(raw)
-  }
+  return formatAgentToolOutput(raw)
 }
 
 /**

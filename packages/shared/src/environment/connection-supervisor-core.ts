@@ -69,6 +69,8 @@ export class ConnectionSupervisorCore {
   private stableTimer: ReturnType<typeof setTimeout> | null = null
   private disposed = false
   private wakeInFlight: Promise<void> | null = null
+  /** Latest wake reason while a wake is in flight (drained after current wake). */
+  private pendingWake: SupervisorWakeReason | null = null
   private readonly baseDelayMs: number
   private readonly maxDelayMs: number
   private readonly stableAfterMs: number
@@ -110,11 +112,22 @@ export class ConnectionSupervisorCore {
    */
   async wake(reason: SupervisorWakeReason): Promise<void> {
     if (this.disposed || this.state === 'blocked') return
+    // Always keep the latest reason; drain after the current wake completes so
+    // offline→online (or reverse) edges are not dropped by single-flight.
+    this.pendingWake = reason
     if (this.wakeInFlight) return this.wakeInFlight
-    this.wakeInFlight = this.doWake(reason).finally(() => {
+    this.wakeInFlight = this.drainWake().finally(() => {
       this.wakeInFlight = null
     })
     return this.wakeInFlight
+  }
+
+  private async drainWake(): Promise<void> {
+    while (this.pendingWake && !this.disposed) {
+      const reason = this.pendingWake
+      this.pendingWake = null
+      await this.doWake(reason)
+    }
   }
 
   /**
@@ -184,6 +197,8 @@ export class ConnectionSupervisorCore {
 
     if (reason === 'network-offline') {
       if (this.state === 'available' || this.state === 'blocked') return
+      // Bump generation so an in-flight runConnect cannot land on connected/backoff.
+      this.generation += 1
       this.clearTimer()
       this.clearStableTimer()
       try {
@@ -250,6 +265,8 @@ export class ConnectionSupervisorCore {
       this.scheduleStableReset(gen)
     } catch (err) {
       if (this.disposed || gen !== this.generation) return
+      // Offline supersedes failed dial — do not schedule backoff while offline.
+      if (this.state === 'offline') return
       const message = (err as Error).message || 'connect failed'
       const code = (err as { code?: string }).code
       if (code === 'unauthorized' || code === 'revoked') {

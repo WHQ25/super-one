@@ -33,6 +33,7 @@ import { WorkspaceRouter } from './workspace-router'
 import { probeEndpointHealth, discoverTailscaleHost } from './endpoint-probes'
 import type { KnownEnvironmentRecord } from './node-connection-manager'
 import { SshTunnelManager } from './ssh-tunnel-manager'
+import { formatConnectionLog } from './connection-log'
 import {
   bootstrapNodeOverSsh,
   restartNodeOverSsh,
@@ -145,8 +146,10 @@ export class EnvironmentHost {
   private readonly hostActionExecutor: HostActionExecutor
   private readonly hostActionConcurrency: number
   private readonly hostActionPollWaitMs: number
-  /** Coalesce concurrent app-resume / network-online storms. */
+  /** Coalesce concurrent app-resume / network storms; drain latest reason. */
   private wakeAllInFlight: Promise<void> | null = null
+  private pendingWakeReason: 'app-resume' | 'network-online' | 'network-offline' | null =
+    null
   /** Per-connection connect single-flight (startup / wake / manual Connect). */
   private readonly connectInFlight = new Map<string, Promise<ExecutionEnvironmentDescriptor>>()
 
@@ -2240,12 +2243,20 @@ export class EnvironmentHost {
   async wakeDesiredConnections(
     reason: 'app-resume' | 'network-online' | 'network-offline',
   ): Promise<void> {
-    // Coalesce concurrent resume+online storms.
+    this.pendingWakeReason = reason
     if (this.wakeAllInFlight) return this.wakeAllInFlight
-    this.wakeAllInFlight = this.doWakeDesiredConnections(reason).finally(() => {
+    this.wakeAllInFlight = this.drainWakeDesiredConnections().finally(() => {
       this.wakeAllInFlight = null
     })
     return this.wakeAllInFlight
+  }
+
+  private async drainWakeDesiredConnections(): Promise<void> {
+    while (this.pendingWakeReason) {
+      const reason = this.pendingWakeReason
+      this.pendingWakeReason = null
+      await this.doWakeDesiredConnections(reason)
+    }
   }
 
   private async doWakeDesiredConnections(
@@ -2685,6 +2696,23 @@ export class EnvironmentHost {
 
   private publishStatus(snapshot: SupervisorSnapshot): void {
     this.lastStatus.set(snapshot.connectionId, snapshot)
+    // Structured diagnostics (no secrets).
+    try {
+      // eslint-disable-next-line no-console
+      console.info(
+        formatConnectionLog({
+          type: 'connect_result',
+          connectionId: snapshot.connectionId,
+          state: snapshot.state,
+          attempt: snapshot.attempt,
+          generation: snapshot.generation,
+          error: snapshot.lastError,
+          blockReason: snapshot.blockReason,
+        }),
+      )
+    } catch {
+      /* ignore log failures */
+    }
     if (snapshot.state === 'connected') {
       // Supervisor-only recovery (backoff / wake) never goes through host.connect;
       // attach Host Action here so remote tools work without a manual Connect.

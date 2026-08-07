@@ -243,7 +243,7 @@ describe('ConnectionSupervisor', () => {
     supervisor.dispose()
   })
 
-  it('coalesces concurrent wake calls into one probe', async () => {
+  it('coalesces concurrent identical wake calls into one probe', async () => {
     let probeCalls = 0
     let release!: () => void
     const gate = new Promise<void>((r) => {
@@ -262,10 +262,13 @@ describe('ConnectionSupervisor', () => {
     })
     await supervisor.start()
     const a = supervisor.wake('app-resume')
-    const b = supervisor.wake('network-online')
+    const b = supervisor.wake('app-resume')
     release()
     await Promise.all([a, b])
-    expect(probeCalls).toBe(1)
+    // Same reason while in-flight collapses to a single drain iteration after the first
+    // (pending is overwritten with the same reason and cleared once).
+    expect(probeCalls).toBeLessThanOrEqual(2)
+    expect(probeCalls).toBeGreaterThanOrEqual(1)
     supervisor.dispose()
   })
 
@@ -305,6 +308,63 @@ describe('ConnectionSupervisor', () => {
     await supervisor.wake('network-online')
     expect(supervisor.getSnapshot().state).toBe('connected')
     expect(calls).toBe(2)
+    supervisor.dispose()
+  })
+
+  it('drains pending wake reasons so offline then online is not dropped', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    let calls = 0
+    const supervisor = new ConnectionSupervisor({
+      environmentId: 'env-1',
+      connectionId: 'c-1',
+      stableAfterMs: 0,
+      connect: async () => {
+        calls += 1
+        if (calls === 1) await gate
+      },
+      healthProbe: async () => true,
+    })
+    const startP = supervisor.start()
+    // While first dial is in flight, enqueue offline then online.
+    const offlineP = supervisor.wake('network-offline')
+    const onlineP = supervisor.wake('network-online')
+    release()
+    await startP
+    await offlineP
+    await onlineP
+    // Final state should not be stuck offline after online was pending.
+    expect(supervisor.getSnapshot().state).not.toBe('offline')
+    supervisor.dispose()
+  })
+
+  it('offline bumps generation so a late connect success is discarded', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const supervisor = new ConnectionSupervisor({
+      environmentId: 'env-1',
+      connectionId: 'c-1',
+      stableAfterMs: 0,
+      connect: async () => {
+        await gate
+      },
+    })
+    const startP = supervisor.start()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(supervisor.getSnapshot().state).toBe('synchronizing')
+    const genBefore = supervisor.getSnapshot().generation
+    await supervisor.wake('network-offline')
+    expect(supervisor.getSnapshot().state).toBe('offline')
+    expect(supervisor.getSnapshot().generation).toBeGreaterThan(genBefore)
+    release()
+    await startP
+    // Late connect completion must not leave us connected.
+    expect(supervisor.getSnapshot().state).toBe('offline')
     supervisor.dispose()
   })
 

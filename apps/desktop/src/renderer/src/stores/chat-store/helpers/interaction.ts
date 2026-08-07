@@ -167,6 +167,125 @@ export async function setPermissionModeImpl(
   set((s) => updateActivePerSession(s, () => ({ permissionMode: mode })))
 }
 
+/**
+ * After a remote question respond/dismiss succeeds, merge the node snapshot into
+ * the active session (mirror respondToPermissionImpl). Call only on RPC success —
+ * on failure leave pendingQuestion so the user can retry.
+ */
+async function hydrateAfterRemoteQuestionRespond(
+  set: ChatStoreSet,
+  activeProject: string,
+  connectionId: string,
+  targetSid: string,
+  snap: unknown,
+  codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null = null,
+): Promise<void> {
+  try {
+    const remoteMsgs = await import('@/lib/remote-session-messages')
+    const nodeSnap = (snap ??
+      (await window.environment.getSession(connectionId, targetSid))) as NodeSessionSnapshot | null
+    const pendingFields = remoteMsgs.nodePendingInteractionFields(nodeSnap?.pendingInteraction)
+    const stillLive =
+      pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
+    const providerId = nodeSnap?.harnessId || nodeSnap?.providerId || 'codex'
+    set((s) => {
+      const perSessionUpdate = updateActivePerSession(s, (sess) => {
+        let messages = remoteMsgs.reconcileTranscriptWithLocalMessages(
+          sess.messages,
+          nodeSnap?.transcript,
+          providerId,
+        )
+        if (codexQaItem) {
+          const lastIdx = messages.length - 1
+          const lastMsg = messages[lastIdx]
+          if (lastMsg?.metadata?.codex) {
+            const prevCodex = lastMsg.metadata.codex
+            messages = messages.map((msg, i) =>
+              i !== lastIdx
+                ? msg
+                : {
+                    ...msg,
+                    metadata: {
+                      ...msg.metadata,
+                      codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] },
+                    },
+                  },
+            )
+          }
+        }
+        return {
+          messages,
+          awaitingAssistantReply: stillLive,
+          status: stillLive
+            ? 'streaming'
+            : remoteMsgs.nodeStatusToAgentStatus(nodeSnap?.status),
+          pendingPermissions: pendingFields.pendingPermissions,
+          pendingQuestion: pendingFields.pendingQuestion,
+          pendingPlanApproval: pendingFields.pendingPlanApproval,
+          ...(nodeSnap?.title ? { _title: nodeSnap.title } : {}),
+        }
+      })
+      const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
+      if (proj) {
+        return {
+          projectSessions: {
+            ...(perSessionUpdate.projectSessions ?? s.projectSessions),
+            [activeProject]: {
+              ...proj,
+              hasPendingInteraction: _computeHasPendingInteraction(proj),
+            },
+          },
+        }
+      }
+      return perSessionUpdate
+    })
+  } catch (err) {
+    console.warn('[chat] remote question post-respond hydrate failed:', err)
+  }
+}
+
+function clearLocalPendingQuestion(
+  set: ChatStoreSet,
+  activeProject: string,
+  codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null,
+): void {
+  set((s) => {
+    const perSessionUpdate = updateActivePerSession(s, (prev) => {
+      if (!codexQaItem) return { pendingQuestion: null }
+      const lastMsg = prev.messages[prev.messages.length - 1]
+      if (!lastMsg?.metadata?.codex) return { pendingQuestion: null }
+      const prevCodex = lastMsg.metadata.codex
+      return {
+        pendingQuestion: null,
+        messages: prev.messages.map((msg, i) =>
+          i !== prev.messages.length - 1
+            ? msg
+            : {
+                ...msg,
+                metadata: {
+                  ...msg.metadata,
+                  codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] },
+                },
+              },
+        ),
+      }
+    })
+    const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
+    if (proj) {
+      return {
+        projectSessions: {
+          ...(perSessionUpdate.projectSessions ?? s.projectSessions),
+          [activeProject]: {
+            ...proj,
+            hasPendingInteraction: _computeHasPendingInteraction(proj),
+          },
+        },
+      }
+    }
+    return perSessionUpdate
+  })
+}
+
 export function answerQuestionImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
@@ -179,52 +298,44 @@ export function answerQuestionImpl(
   const session = getActivePerSession(get(), activeProject)
   const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
   const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
+  const codexQaItem =
+    session.sessionProvider === 'codex' && session.pendingQuestion
+      ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)
+      : null
+
   if (targetSid) {
     const remote = parseRemoteProjectKey(activeProject)
     if (remote) {
-      void window.environment.respondSessionQuestion(remote.connectionId, {
-        sessionId: targetSid,
-        interactionId: requestId,
-        answers: { answers, annotations },
-        continueDrain: {
-          projectPath: activeProject,
-          providerId: session.sessionProvider || undefined,
-        },
-      })
-    } else {
-      void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
-    }
-  }
-  const codexQaItem = session.sessionProvider === 'codex' && session.pendingQuestion
-    ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)
-    : null
-  set((s) => {
-    const perSessionUpdate = updateActivePerSession(s, (prev) => {
-      if (!codexQaItem) return { pendingQuestion: null }
-      const lastMsg = prev.messages[prev.messages.length - 1]
-      if (!lastMsg?.metadata?.codex) return { pendingQuestion: null }
-      const prevCodex = lastMsg.metadata.codex
-      return {
-        pendingQuestion: null,
-        messages: prev.messages.map((msg, i) =>
-          i !== prev.messages.length - 1 ? msg : {
-            ...msg,
-            metadata: { ...msg.metadata, codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] } },
+      // Do not clear pendingQuestion until the node ACK succeeds (issue #21).
+      // continueDrain restarts event polling only after both lease + respond win.
+      void window.environment
+        .respondSessionQuestion(remote.connectionId, {
+          sessionId: targetSid,
+          interactionId: requestId,
+          answers: { answers, annotations },
+          continueDrain: {
+            projectPath: activeProject,
+            providerId: session.sessionProvider || undefined,
           },
-        ),
-      }
-    })
-    const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
-    if (proj) {
-      return {
-        projectSessions: {
-          ...(perSessionUpdate.projectSessions ?? s.projectSessions),
-          [activeProject]: { ...proj, hasPendingInteraction: _computeHasPendingInteraction(proj) },
-        },
-      }
+        })
+        .then((snap) =>
+          hydrateAfterRemoteQuestionRespond(
+            set,
+            activeProject,
+            remote.connectionId,
+            targetSid,
+            snap,
+            codexQaItem,
+          ),
+        )
+        .catch((err) => {
+          console.warn('[chat] remote answerQuestion failed:', err)
+        })
+      return
     }
-    return perSessionUpdate
-  })
+    void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
+  }
+  clearLocalPendingQuestion(set, activeProject, codexQaItem)
 }
 
 export function dismissQuestionImpl(
@@ -237,36 +348,39 @@ export function dismissQuestionImpl(
   const session = getActivePerSession(get(), activeProject)
   const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
   const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
+
   if (targetSid) {
     const remote = parseRemoteProjectKey(activeProject)
     if (remote) {
       // Node has no dedicated dismiss — empty answers unblock the waiter (timeout-like).
-      void window.environment.respondSessionQuestion(remote.connectionId, {
-        sessionId: targetSid,
-        interactionId: requestId,
-        answers: {},
-        continueDrain: {
-          projectPath: activeProject,
-          providerId: session.sessionProvider || undefined,
-        },
-      })
-    } else {
-      void window.agent.dismissQuestion(targetSid, requestId)
+      // Same ACK-before-clear contract as answerQuestion (issue #21).
+      void window.environment
+        .respondSessionQuestion(remote.connectionId, {
+          sessionId: targetSid,
+          interactionId: requestId,
+          answers: {},
+          continueDrain: {
+            projectPath: activeProject,
+            providerId: session.sessionProvider || undefined,
+          },
+        })
+        .then((snap) =>
+          hydrateAfterRemoteQuestionRespond(
+            set,
+            activeProject,
+            remote.connectionId,
+            targetSid,
+            snap,
+          ),
+        )
+        .catch((err) => {
+          console.warn('[chat] remote dismissQuestion failed:', err)
+        })
+      return
     }
+    void window.agent.dismissQuestion(targetSid, requestId)
   }
-  set((s) => {
-    const perSessionUpdate = updateActivePerSession(s, () => ({ pendingQuestion: null }))
-    const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
-    if (proj) {
-      return {
-        projectSessions: {
-          ...(perSessionUpdate.projectSessions ?? s.projectSessions),
-          [activeProject]: { ...proj, hasPendingInteraction: _computeHasPendingInteraction(proj) },
-        },
-      }
-    }
-    return perSessionUpdate
-  })
+  clearLocalPendingQuestion(set, activeProject, null)
 }
 
 export function respondToPlanApprovalImpl(

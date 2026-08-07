@@ -934,6 +934,46 @@ describe('child session project attribution', () => {
     rmSync(parentWorktree, { recursive: true, force: true })
   })
 
+  it('does not register an unowned source dir when the launch cuts a worktree', async () => {
+    // Path-identity miss on the source (unowned dir) used to call addRecentFolder.
+    // A worktree cut must stay under the parent project even then.
+    const orphanSource = mkdtempSync(join(tmpdir(), 'collab-orphan-src-'))
+    const childWorktree = join(tmpdir(), 'collab-orphan-wt')
+    state.projects = [{ path: TEST_CWD }]
+    state.activateWorktree.mockResolvedValue({ ok: true, path: childWorktree, recordedBranch: 'feat' })
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(orphanSource, host, parent, {
+      worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'orphan-wt' },
+    })
+
+    expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    expect(createSession.mock.calls[0][0].cwd).toBe(childWorktree)
+    rmSync(orphanSource, { recursive: true, force: true })
+  })
+
+  it('does not register when the agent points cwd at an existing managed worktree', async () => {
+    // Parent is on the main project; agent (or a prior start result) sets cwd to
+    // an existing SuperOne worktree path without worktree.enabled.
+    const { homedir } = await import('os')
+    const managedRoot = join(homedir(), '.worktrees')
+    mkdirSync(managedRoot, { recursive: true })
+    const existingWt = mkdtempSync(join(managedRoot, 'agent-cwd-wt-'))
+    state.projects = [{ path: TEST_CWD }]
+    state.mainWorktreeByPath.set(existingWt, TEST_CWD)
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(existingWt, host, parent)
+
+    expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    expect(createSession.mock.calls[0][0].cwd).toBe(existingWt)
+    rmSync(existingWt, { recursive: true, force: true })
+  })
+
   it('restores the active session of the project it actually joined', async () => {
     state.projects = [{ path: TEST_CWD }, { path: OTHER_PROJECT }]
     const parent = fakeSession('parent')

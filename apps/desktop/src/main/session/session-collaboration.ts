@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'crypto'
-import { existsSync, statSync } from 'fs'
+import { existsSync, realpathSync, statSync } from 'fs'
 import { homedir } from 'os'
 import { resolve, sep } from 'path'
 import type {
@@ -375,7 +375,7 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
         ...profile.defaultConfig,
         permissionMode: 'default',
         sandboxMode: 'off',
-        cwd: parent.cwd,
+        cwd: defaultLaunchCwd(parent),
         ...launch.config,
         name,
         role,
@@ -623,15 +623,38 @@ function assertEndpoint(grant: GrantRow, callerSessionId: string): void {
   }
 }
 
+/**
+ * Default launch cwd. Prefer parent.cwd when it still lives under the opened
+ * project; if the parent is sitting in a SuperOne worktree (or any path outside
+ * the project root), fall back to projectPath so attribution does not key off
+ * `~/.worktrees/…`.
+ */
+function defaultLaunchCwd(parent: Session): string {
+  const project = resolve(parent.projectPath)
+  const cwd = resolve(parent.cwd)
+  if (isWithin(project, cwd)) return parent.cwd
+  return parent.projectPath
+}
+
 function resolveCwd(config: SessionAgentLaunchConfig, parent: Session): string {
-  const cwd = resolve(config.cwd || parent.cwd)
+  const cwd = resolve(config.cwd || defaultLaunchCwd(parent))
   if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new Error(`Working directory does not exist: ${cwd}`)
   return cwd
 }
 
+/** Resolve + realpath so symlink /var vs /private/var forms compare equal. */
+function canonicalPath(input: string): string {
+  const abs = resolve(input)
+  try {
+    return realpathSync(abs)
+  } catch {
+    return abs
+  }
+}
+
 function isWithin(root: string, target: string): boolean {
-  const normalizedRoot = resolve(root)
-  const normalizedTarget = resolve(target)
+  const normalizedRoot = canonicalPath(root)
+  const normalizedTarget = canonicalPath(target)
   return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(normalizedRoot + sep)
 }
 
@@ -648,24 +671,31 @@ function isManagedWorktreePath(dir: string): boolean {
  * resolve to the most specific match.
  *
  * Ownership is checked against the requested cwd *and* its git main checkout
- * when the cwd is a worktree: collab defaults `cwd` to `parent.cwd`, so a parent
- * already working in `~/.worktrees/…` would otherwise look unowned and get
- * registered as its own sidebar project.
+ * when the cwd is a worktree. Collab defaults `cwd` to `parent.cwd`, so a parent
+ * already working in `~/.worktrees/…` (fork, prior collab, resumed worktree
+ * session) would otherwise look unowned and get registered as its own sidebar
+ * project — even when the *user* thinks of the parent as "the main project".
  *
  * Call with the *requested* cwd, before worktree activation — a freshly cut
  * worktree lives outside every project but belongs to the project it was cut
  * from.
  *
- * When no open project covers the directory, register it as one: a session row
- * requires a `projects` row, and filing the child under the parent instead would
- * put it in a project that has nothing to do with where it works. Never register
- * a SuperOne-managed worktree path — those always belong to an existing project
- * (or, failing that, the parent).
+ * When no open project covers the directory:
+ * - never register SuperOne-managed worktree paths
+ * - never register when this launch will cut a worktree (the child always
+ *   belongs to the source project / parent; registering the source would still
+ *   be wrong if path identity failed, and registering the activated path is
+ *   what produces `tjdllgg-…` sidebar rows)
+ * - otherwise register the directory so the session has a projects row
  */
-async function ensureChildProject(cwd: string, parentProjectPath: string): Promise<string> {
-  const candidates = [resolve(cwd)]
+async function ensureChildProject(
+  cwd: string,
+  parentProjectPath: string,
+  opts?: { worktreeEnabled?: boolean },
+): Promise<string> {
+  const candidates = [canonicalPath(cwd)]
   try {
-    const mainDir = resolve(await resolveMainWorktreeDir(cwd))
+    const mainDir = canonicalPath(await resolveMainWorktreeDir(cwd))
     if (mainDir !== candidates[0]) candidates.push(mainDir)
   } catch {
     // Not a git worktree / not a repo — path-prefix ownership is enough.
@@ -675,7 +705,7 @@ async function ensureChildProject(cwd: string, parentProjectPath: string): Promi
   let ownerDepth = -1
   const consider = (projectPath: string, candidate: string) => {
     if (!isWithin(projectPath, candidate)) return
-    const depth = resolve(projectPath).length
+    const depth = canonicalPath(projectPath).length
     if (depth > ownerDepth) {
       owner = projectPath
       ownerDepth = depth
@@ -691,7 +721,7 @@ async function ensureChildProject(cwd: string, parentProjectPath: string): Promi
   if (owner) return owner
 
   // Worktrees under ~/.worktrees are never user-opened projects. Keep the parent.
-  if (isManagedWorktreePath(cwd)) return parentProjectPath
+  if (isManagedWorktreePath(cwd) || opts?.worktreeEnabled) return parentProjectPath
 
   addRecentFolder(cwd)
   return cwd
@@ -841,16 +871,19 @@ export async function startSessionAgent(
   if (!parent) return toolResult({ status: 'error', message: 'Parent session is not available' }, true)
   const config = parseConfig(grant.config_json)
   let cwd = resolveCwd(config, parent)
+  const worktreeEnabled = !!config.worktree?.enabled
   // Attribute before worktree activation so the child files under the source
   // project, not under ~/.worktrees/<new-wt> (see ensureChildProject).
-  const projectPath = await ensureChildProject(cwd, parent.projectPath)
+  let projectPath = await ensureChildProject(cwd, parent.projectPath, { worktreeEnabled })
+  // Defense in depth: never file a collab child under a managed worktree path.
+  if (isManagedWorktreePath(projectPath)) projectPath = parent.projectPath
   let gitBranch: string | null = null
-  if (config.worktree?.enabled) {
+  if (worktreeEnabled) {
     const worktree = await activateWorktree(cwd, {
-      baseBranch: config.worktree.baseBranch || 'HEAD',
-      mode: config.worktree.mode,
-      branchName: config.worktree.branchName,
-      carryLocalChanges: config.worktree.carryLocalChanges,
+      baseBranch: config.worktree!.baseBranch || 'HEAD',
+      mode: config.worktree!.mode,
+      branchName: config.worktree!.branchName,
+      carryLocalChanges: config.worktree!.carryLocalChanges,
     })
     cwd = worktree.path
     gitBranch = worktree.recordedBranch

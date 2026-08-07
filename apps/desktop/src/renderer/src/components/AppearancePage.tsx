@@ -19,12 +19,10 @@ import { useTheme } from '@/hooks/useTheme'
 import {
   type TerminalScheme,
   TERMINAL_FONT_SIZES,
-  DEFAULT_DARK_PALETTE_ID,
-  DEFAULT_LIGHT_PALETTE_ID,
-  getTerminalPalette,
-  terminalPalettesFor,
 } from '@/components/coding/terminal-palettes'
-import { TerminalThemePreview } from '@/components/coding/TerminalThemePreview'
+import { type MermaidScheme } from '@/components/chat/mermaid-themes'
+import { TerminalPalettePicker } from '@/components/settings/TerminalPalettePicker'
+import { MermaidThemePicker } from '@/components/settings/MermaidThemePicker'
 
 const THEME_PREVIEW_SURFACE: Record<'light' | 'dark', { sidebar: string; main: string; border: string; row: string; pill: string; userBubble: string; text: string; textSoft: string }> = {
   light: { sidebar: '#f2f1ee', main: '#fbfaf8', border: '#e4e2dd', row: '#e8e6e1', pill: '#ffffff', userBubble: '#e6e4de', text: '#cbc9c3', textSoft: '#dedcd6' },
@@ -158,8 +156,11 @@ export function AppearancePage() {
   const terminalDarkPalette = useAppStore((s) => s.terminalDarkPalette)
   const terminalFontSize = useAppStore((s) => s.terminalFontSize)
   const terminalFontFamily = useAppStore((s) => s.terminalFontFamily)
+  const mermaidLightTheme = useAppStore((s) => s.mermaidLightTheme)
+  const mermaidDarkTheme = useAppStore((s) => s.mermaidDarkTheme)
   const uiFontFamily = useAppStore((s) => s.uiFontFamily)
   const setTerminalPalette = useAppStore((s) => s.setTerminalPalette)
+  const setMermaidTheme = useAppStore((s) => s.setMermaidTheme)
   const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize)
   const setTerminalFontFamily = useAppStore((s) => s.setTerminalFontFamily)
   const setUiFontFamily = useAppStore((s) => s.setUiFontFamily)
@@ -171,11 +172,6 @@ export function AppearancePage() {
   const setDetailChatMode = useAppStore((s) => s.setDetailChatMode)
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
   const isMac = window.app.platform === 'darwin'
-
-  const selectedPaletteId: Record<TerminalScheme, string> = {
-    light: terminalLightPalette ?? DEFAULT_LIGHT_PALETTE_ID,
-    dark: terminalDarkPalette ?? DEFAULT_DARK_PALETTE_ID,
-  }
 
   const loadFonts = useCallback(async () => {
     if (fontsLoaded || fontsLoading) return
@@ -396,48 +392,22 @@ export function AppearancePage() {
           <div className="border-b border-border px-4 py-2">
             <p className="text-xs font-medium text-muted-foreground">{t('settings.general.terminal')}</p>
           </div>
-          {(['light', 'dark'] as TerminalScheme[]).map((scheme) => {
-            const selected = getTerminalPalette(selectedPaletteId[scheme], scheme)
-            return (
-              <div key={scheme} className="border-b border-border p-4">
-                <div className="flex items-center justify-between gap-4">
+          {(['light', 'dark'] as TerminalScheme[]).map((scheme) => (
+            <div key={scheme} className="border-b border-border p-4">
+              <TerminalPalettePicker
+                scheme={scheme}
+                value={scheme === 'light' ? terminalLightPalette : terminalDarkPalette}
+                onChange={(id) => setTerminalPalette(scheme, id)}
+                fontSize={terminalFontSize}
+                fontFamily={terminalFontFamily}
+                label={(
                   <p className="text-sm font-medium">
                     {t(scheme === 'light' ? 'settings.general.terminalTheme.light' : 'settings.general.terminalTheme.dark')}
                   </p>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="flex min-w-40 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
-                        <span className="truncate">{selected.name}</span>
-                        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      {terminalPalettesFor(scheme).map((palette) => (
-                        <DropdownMenuItem
-                          key={palette.id}
-                          onClick={() => setTerminalPalette(scheme, palette.id)}
-                          className="flex items-center justify-between gap-2"
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="flex size-4 overflow-hidden rounded-sm border border-border">
-                              <span className="flex-1" style={{ backgroundColor: palette.ansi.red }} />
-                              <span className="flex-1" style={{ backgroundColor: palette.ansi.green }} />
-                              <span className="flex-1" style={{ backgroundColor: palette.ansi.blue }} />
-                            </span>
-                            <span>{palette.name}</span>
-                          </span>
-                          {selectedPaletteId[scheme] === palette.id && <Check className="size-4 shrink-0 text-muted-foreground" />}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <div className="mt-3">
-                  <TerminalThemePreview ansi={selected.ansi} scheme={scheme} fontSize={terminalFontSize} fontFamily={terminalFontFamily} />
-                </div>
-              </div>
-            )
-          })}
+                )}
+              />
+            </div>
+          ))}
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">
               <p className="text-sm font-medium">{t('settings.general.terminalFont.label')}</p>
@@ -482,6 +452,29 @@ export function AppearancePage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+        </div>
+
+        <div className="rounded-lg border border-border">
+          <div className="border-b border-border px-4 py-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.mermaid')}</p>
+          </div>
+          {(['light', 'dark'] as MermaidScheme[]).map((scheme) => (
+            <div
+              key={scheme}
+              className={scheme === 'dark' ? 'p-4' : 'border-b border-border p-4'}
+            >
+              <MermaidThemePicker
+                scheme={scheme}
+                value={scheme === 'light' ? mermaidLightTheme : mermaidDarkTheme}
+                onChange={(id) => setMermaidTheme(scheme, id)}
+                label={(
+                  <p className="text-sm font-medium">
+                    {t(scheme === 'light' ? 'settings.general.mermaidTheme.light' : 'settings.general.mermaidTheme.dark')}
+                  </p>
+                )}
+              />
+            </div>
+          ))}
         </div>
       </div>
     </div>

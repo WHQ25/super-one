@@ -31,6 +31,8 @@ const CODEX_PERMISSION_VALUES = ['read-only', 'default', 'full-access'] as const
 const QUESTION_PREVIEW_FORMAT_VALUES = ['markdown', 'html'] as const
 const TERMINAL_LIGHT_PALETTE_VALUES = ['catppuccin-latte', 'github-light', 'atom-one-light', 'ayu-light', 'dayfox', 'bluloco-light'] as const
 const TERMINAL_DARK_PALETTE_VALUES = ['monokai-remastered', 'catppuccin-mocha', 'tokyo-night', 'dracula', 'gruvbox-dark', 'nord', 'rose-pine'] as const
+const MERMAID_LIGHT_THEME_VALUES = ['default', 'forest', 'neutral', 'neo', 'redux', 'redux-color'] as const
+const MERMAID_DARK_THEME_VALUES = ['dark', 'neutral', 'neo-dark', 'redux-dark', 'redux-dark-color'] as const
 
 const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
   {
@@ -103,7 +105,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
   {
     domain: 'appearance',
     label: 'Appearance',
-    description: 'Visual look of the app window and built-in terminal — matches the Appearance settings page.',
+    description: 'Visual look of the app window, built-in terminal, and mermaid diagrams — matches the Appearance settings page.',
     fields: [
       {
         key: 'liquidGlass',
@@ -182,6 +184,26 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         note: 'Clear to use the default.',
         read: (s) => s.terminalDarkPalette,
         toPatch: (v) => ({ terminalDarkPalette: v as string | null }),
+      },
+      {
+        key: 'mermaidLightTheme',
+        label: 'Mermaid Light Theme',
+        type: 'enum',
+        enumValues: MERMAID_LIGHT_THEME_VALUES,
+        clearTo: null,
+        note: 'Built-in mermaid theme for light mode. Clear to use default.',
+        read: (s) => s.mermaidLightTheme,
+        toPatch: (v) => ({ mermaidLightTheme: v as string | null }),
+      },
+      {
+        key: 'mermaidDarkTheme',
+        label: 'Mermaid Dark Theme',
+        type: 'enum',
+        enumValues: MERMAID_DARK_THEME_VALUES,
+        clearTo: null,
+        note: 'Built-in mermaid theme for dark mode. Clear to use dark.',
+        read: (s) => s.mermaidDarkTheme,
+        toPatch: (v) => ({ mermaidDarkTheme: v as string | null }),
       },
     ],
   },

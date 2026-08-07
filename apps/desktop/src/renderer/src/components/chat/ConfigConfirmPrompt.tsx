@@ -6,6 +6,16 @@ import { Kbd } from '@superone/ui/components/ui/kbd'
 import type { ConfigConfirmPayload } from '@superone/shared/agent-types'
 import { SettingField, type SettingFieldValue } from '../settings/SettingField'
 import { isStructuredFieldType, StructuredSettingField } from '../settings/StructuredSettingField'
+import {
+  TerminalPalettePicker,
+  terminalPaletteSchemeForKey,
+} from '../settings/TerminalPalettePicker'
+import {
+  MermaidThemePicker,
+  mermaidThemeSchemeForKey,
+} from '../settings/MermaidThemePicker'
+import { useAppStore } from '@/stores/app'
+import { DEFAULT_TERMINAL_FONT_SIZE } from '@/components/coding/terminal-palettes'
 import { diffConfigFieldValue, formatConfigFieldValue } from '@/lib/config-field-summary'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { isFocusInChat } from './is-focus-in-chat'
@@ -28,6 +38,11 @@ function isEditableElement(el: Element | null): boolean {
 // must swallow Escape/Tab so dismissing a picker never reaches the reject shortcut.
 const hasOpenPopover = hasOpenRadixOverlay
 
+function asNullableString(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null
+  return String(value)
+}
+
 export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConfirmPromptProps) {
   const { t } = useTranslation()
   const resource = payload.resource
@@ -41,6 +56,15 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const confirmBtnRef = useRef<HTMLButtonElement>(null)
   const feedbackRef = useRef<HTMLInputElement>(null)
+  // Preview sibling font settings: prefer values from this confirm batch, else live app store.
+  const storeTerminalFontSize = useAppStore((s) => s.terminalFontSize)
+  const storeTerminalFontFamily = useAppStore((s) => s.terminalFontFamily)
+  const previewFontSize = typeof values.terminalFontSize === 'number'
+    ? values.terminalFontSize
+    : (storeTerminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE)
+  const previewFontFamily = values.terminalFontFamily !== undefined
+    ? asNullableString(values.terminalFontFamily)
+    : storeTerminalFontFamily
 
   const setValue = (key: string, value: ConfigValue): void => {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -134,6 +158,9 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
           <div className="mb-3 flex flex-col divide-y divide-border/60 rounded border border-border/60 bg-muted/20">
             {fields.map((field) => {
               const structured = isStructuredFieldType(field.type)
+              const terminalScheme = terminalPaletteSchemeForKey(field.key)
+              const mermaidScheme = mermaidThemeSchemeForKey(field.key)
+              const themePreview = terminalScheme !== null || mermaidScheme !== null
               const diff = diffConfigFieldValue(field.type, field.currentValue, values[field.key])
               const meta = (
                 <div className="flex min-w-0 flex-col gap-0.5">
@@ -141,9 +168,41 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
                   <span className="truncate text-xs text-muted-foreground">
                     {diff ?? t('chat.configConfirm.currentValue', { value: formatConfigFieldValue(field.type, field.currentValue, emptyLabel) })}
                   </span>
-                  {field.note && !structured && <span className="truncate text-xs text-muted-foreground/70">{field.note}</span>}
+                  {field.note && !structured && !themePreview && (
+                    <span className="truncate text-xs text-muted-foreground/70">{field.note}</span>
+                  )}
                 </div>
               )
+              if (terminalScheme) {
+                return (
+                  <div key={field.key} className="flex flex-col gap-2 px-2.5 py-2">
+                    {meta}
+                    <TerminalPalettePicker
+                      scheme={terminalScheme}
+                      value={asNullableString(values[field.key])}
+                      onChange={(id) => setValue(field.key, id)}
+                      fontSize={previewFontSize}
+                      fontFamily={previewFontFamily}
+                      size="compact"
+                      clearable={field.clearable}
+                    />
+                  </div>
+                )
+              }
+              if (mermaidScheme) {
+                return (
+                  <div key={field.key} className="flex flex-col gap-2 px-2.5 py-2">
+                    {meta}
+                    <MermaidThemePicker
+                      scheme={mermaidScheme}
+                      value={asNullableString(values[field.key])}
+                      onChange={(id) => setValue(field.key, id)}
+                      size="compact"
+                      clearable={field.clearable}
+                    />
+                  </div>
+                )
+              }
               return structured ? (
                 <div key={field.key} className="flex flex-col gap-2 px-2.5 py-2">
                   {meta}

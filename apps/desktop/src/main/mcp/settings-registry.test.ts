@@ -25,6 +25,8 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     terminalDarkPalette: null,
     terminalFontSize: 14,
     terminalFontFamily: null,
+    mermaidLightTheme: null,
+    mermaidDarkTheme: null,
     uiFontFamily: null,
     liquidGlass: false,
     cdpEnabled: false,
@@ -210,6 +212,8 @@ describe('settings registry guide', () => {
       'terminalFontFamily',
       'terminalLightPalette',
       'terminalDarkPalette',
+      'mermaidLightTheme',
+      'mermaidDarkTheme',
     ])
   })
 

@@ -8,8 +8,10 @@ import { mermaidGrammar } from 'lowlight-mermaid'
 import { toHtml } from 'hast-util-to-html'
 import { tryCopy } from '@/lib/clipboard'
 import { useIsDark } from '@/hooks/use-is-dark'
+import { useAppStore } from '@/stores/app'
 import { MermaidPreview } from '@/components/chat/MermaidBlock'
 import { MermaidFullscreen } from '@/components/chat/MermaidFullscreen'
+import { resolveMermaidThemeId, type MermaidThemeId } from '@/components/chat/mermaid-themes'
 import type { MermaidOptions } from './mermaid-node'
 
 const lowlight = createLowlight()
@@ -23,11 +25,11 @@ function highlightMermaid(code: string): string {
   }
 }
 
-async function renderMermaidSvg(syntax: string, isDark: boolean): Promise<string> {
+async function renderMermaidSvg(syntax: string, theme: MermaidThemeId): Promise<string> {
   const mermaid = (await import('mermaid')).default
   mermaid.initialize({
     startOnLoad: false,
-    theme: isDark ? 'dark' : 'default',
+    theme,
     securityLevel: 'loose',
     suppressErrorRendering: true,
   })
@@ -40,6 +42,12 @@ export const MermaidView = ({ node, updateAttributes, selected, deleteNode, exte
   const { t } = useTranslation()
   const dictionary = (extension.options as MermaidOptions).dictionary
   const isDark = useIsDark()
+  const mermaidLightTheme = useAppStore((s) => s.mermaidLightTheme)
+  const mermaidDarkTheme = useAppStore((s) => s.mermaidDarkTheme)
+  const mermaidTheme = resolveMermaidThemeId(
+    isDark ? 'dark' : 'light',
+    isDark ? mermaidDarkTheme : mermaidLightTheme,
+  )
 
   const syntax = node.attrs.syntax as string
   const [svg, setSvg] = useState('')
@@ -50,7 +58,7 @@ export const MermaidView = ({ node, updateAttributes, selected, deleteNode, exte
   const [copied, setCopied] = useState(false)
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const prevDarkRef = useRef(isDark)
+  const prevThemeKeyRef = useRef(`${isDark}:${mermaidTheme}`)
 
   useEffect(() => {
     if (node.attrs.isEditing !== isEditing) setIsEditing(node.attrs.isEditing as boolean)
@@ -76,7 +84,8 @@ export const MermaidView = ({ node, updateAttributes, selected, deleteNode, exte
 
   useEffect(() => {
     if (isEditing || !syntax.trim()) return
-    const isThemeChange = prevDarkRef.current !== isDark
+    const themeKey = `${isDark}:${mermaidTheme}`
+    const isThemeChange = prevThemeKeyRef.current !== themeKey
     if (isThemeChange && svg) {
       setIsThemeSwitching(true)
     } else {
@@ -87,11 +96,11 @@ export const MermaidView = ({ node, updateAttributes, selected, deleteNode, exte
     let cancelled = false
     const render = async () => {
       try {
-        const rendered = await renderMermaidSvg(syntax, isDark)
+        const rendered = await renderMermaidSvg(syntax, mermaidTheme)
         if (!cancelled) {
           setSvg(rendered)
           setError('')
-          prevDarkRef.current = isDark
+          prevThemeKeyRef.current = themeKey
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to render diagram')
@@ -101,7 +110,7 @@ export const MermaidView = ({ node, updateAttributes, selected, deleteNode, exte
     render()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syntax, isEditing, isDark])
+  }, [syntax, isEditing, isDark, mermaidTheme])
 
   const enterEdit = () => { setIsEditing(true); updateAttributes({ isEditing: true }) }
   const exitEdit = () => {

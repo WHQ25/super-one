@@ -458,6 +458,11 @@ export type Messages = {
         label: string
         description: string
       }
+      mermaid: string
+      mermaidTheme: {
+        light: string
+        dark: string
+      }
       uiFont: {
         label: string
         description: string
@@ -2751,6 +2756,11 @@ export const en: Messages = {
       terminalFont: {
         label: 'Terminal Font',
         description: 'Monospace font for the integrated terminal, from fonts installed on your system.',
+      },
+      mermaid: 'Mermaid Diagrams',
+      mermaidTheme: {
+        light: 'Light Theme',
+        dark: 'Dark Theme',
       },
       uiFont: {
         label: 'Interface Font',

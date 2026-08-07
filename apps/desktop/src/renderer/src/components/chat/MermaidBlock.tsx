@@ -4,8 +4,10 @@ import { Check, Code, Copy, Expand, Eye, Loader2 } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import mermaid from 'mermaid'
 import { useIsDark } from '@/hooks/use-is-dark'
+import { useAppStore } from '@/stores/app'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { MermaidFullscreen } from './MermaidFullscreen'
+import { resolveMermaidThemeId } from './mermaid-themes'
 
 export const MAX_H = 500
 export const OVERFLOW_THRESHOLD = 0.3
@@ -89,13 +91,19 @@ interface MermaidBlockProps {
 export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps) {
   const { t } = useTranslation()
   const isDark = useIsDark()
+  const mermaidLightTheme = useAppStore((s) => s.mermaidLightTheme)
+  const mermaidDarkTheme = useAppStore((s) => s.mermaidDarkTheme)
+  const mermaidTheme = resolveMermaidThemeId(
+    isDark ? 'dark' : 'light',
+    isDark ? mermaidDarkTheme : mermaidLightTheme,
+  )
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showSource, setShowSource] = useState(false)
   const [copied, setCopied] = useState(false)
   const [isThemeSwitching, setIsThemeSwitching] = useState(false)
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
-  const prevDarkRef = useRef(isDark)
+  const prevThemeKeyRef = useRef(`${isDark}:${mermaidTheme}`)
 
   useEffect(() => {
     if (!isComplete) {
@@ -104,7 +112,8 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
       return
     }
 
-    const isThemeChange = prevDarkRef.current !== isDark
+    const themeKey = `${isDark}:${mermaidTheme}`
+    const isThemeChange = prevThemeKeyRef.current !== themeKey
     if (isThemeChange && svg) {
       setIsThemeSwitching(true)
     } else {
@@ -115,7 +124,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
     let cancelled = false
     mermaid.initialize({
       startOnLoad: false,
-      theme: isDark ? 'dark' : 'default',
+      theme: mermaidTheme,
       suppressErrorRendering: true,
     })
     const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -124,7 +133,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
         if (cancelled) return
         setSvg(result)
         setError(null)
-        prevDarkRef.current = isDark
+        prevThemeKeyRef.current = themeKey
       },
       (err) => {
         if (cancelled) return
@@ -134,7 +143,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
       if (!cancelled) setIsThemeSwitching(false)
     })
     return () => { cancelled = true }
-  }, [code, isComplete, isDark])
+  }, [code, isComplete, isDark, mermaidTheme])
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(code)

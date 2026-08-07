@@ -3044,6 +3044,16 @@ export interface AppSettings {
   terminalDarkPalette: string | null
   terminalFontSize: number
   terminalFontFamily: string | null
+  /**
+   * Mermaid diagram theme for light app chrome. Null → mermaid `default`.
+   * Built-in ids: default | forest | neutral | neo | redux | redux-color
+   */
+  mermaidLightTheme: string | null
+  /**
+   * Mermaid diagram theme for dark app chrome. Null → mermaid `dark`.
+   * Built-in ids: dark | neutral | neo-dark | redux-dark | redux-dark-color
+   */
+  mermaidDarkTheme: string | null
   uiFontFamily: string | null
   liquidGlass: boolean
   cdpEnabled: boolean
@@ -3111,6 +3121,8 @@ export interface AppSettingsPatch {
   terminalDarkPalette?: string | null
   terminalFontSize?: number
   terminalFontFamily?: string | null
+  mermaidLightTheme?: string | null
+  mermaidDarkTheme?: string | null
   uiFontFamily?: string | null
   liquidGlass?: boolean
   cdpEnabled?: boolean

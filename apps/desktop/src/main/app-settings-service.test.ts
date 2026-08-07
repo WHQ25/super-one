@@ -67,6 +67,8 @@ describe('app-settings-service', () => {
     terminalDarkPalette: null,
     terminalFontSize: 14,
     terminalFontFamily: null,
+    mermaidLightTheme: null,
+    mermaidDarkTheme: null,
     uiFontFamily: null,
     liquidGlass: false,
     miniAppOrder: {},
@@ -126,6 +128,8 @@ describe('app-settings-service', () => {
         terminalDarkPalette: null,
         terminalFontSize: 14,
         terminalFontFamily: null,
+        mermaidLightTheme: null,
+        mermaidDarkTheme: null,
         uiFontFamily: null,
         liquidGlass: false,
         miniAppOrder: {},
@@ -233,6 +237,8 @@ describe('app-settings-service', () => {
         terminalDarkPalette: null,
         terminalFontSize: 14,
         terminalFontFamily: null,
+        mermaidLightTheme: null,
+        mermaidDarkTheme: null,
         uiFontFamily: null,
         liquidGlass: false,
         miniAppOrder: {},
@@ -443,6 +449,27 @@ describe('app-settings-service', () => {
     it('falls back to null when a stored terminal palette is not a string', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({ terminalDarkPalette: 42 }))
       expect(readAppSettings().terminalDarkPalette).toBeNull()
+    })
+
+    it('persists light and dark mermaid themes independently', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      saveAppSettings({ mermaidLightTheme: 'forest', mermaidDarkTheme: 'neo-dark' })
+      const written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+      const reloaded = readAppSettings()
+      expect(reloaded.mermaidLightTheme).toBe('forest')
+      expect(reloaded.mermaidDarkTheme).toBe('neo-dark')
+    })
+
+    it('resets a mermaid theme back to null when patch passes null', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ mermaidDarkTheme: 'redux-dark' }))
+      const result = saveAppSettings({ mermaidDarkTheme: null })
+      expect(result.mermaidDarkTheme).toBeNull()
+    })
+
+    it('falls back to null when a stored mermaid theme is not a string', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ mermaidLightTheme: 7 }))
+      expect(readAppSettings().mermaidLightTheme).toBeNull()
     })
 
     it('persists terminalFontSize round-trip and clamps out-of-range values', () => {

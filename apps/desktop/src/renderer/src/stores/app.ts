@@ -165,11 +165,15 @@ interface AppState {
   terminalDarkPalette: string | null
   terminalFontSize: number
   terminalFontFamily: string | null
+  // Mermaid diagram themes (per light/dark app chrome)
+  mermaidLightTheme: string | null
+  mermaidDarkTheme: string | null
   uiFontFamily: string | null
   liquidGlass: boolean
   autoExpandFileDiffs: boolean
   detailChatMode: boolean
   setTerminalPalette: (scheme: 'light' | 'dark', id: string | null) => Promise<void>
+  setMermaidTheme: (scheme: 'light' | 'dark', id: string | null) => Promise<void>
   setTerminalFontSize: (size: number) => Promise<void>
   setTerminalFontFamily: (family: string | null) => Promise<void>
   setUiFontFamily: (family: string | null) => Promise<void>
@@ -761,6 +765,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   terminalDarkPalette: null,
   terminalFontSize: 14,
   terminalFontFamily: null,
+  mermaidLightTheme: null,
+  mermaidDarkTheme: null,
   uiFontFamily: null,
   liquidGlass: false,
   autoExpandFileDiffs: false,
@@ -789,6 +795,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         terminalDarkPalette: settings.terminalDarkPalette,
         terminalFontSize: settings.terminalFontSize,
         terminalFontFamily: settings.terminalFontFamily,
+        mermaidLightTheme: settings.mermaidLightTheme,
+        mermaidDarkTheme: settings.mermaidDarkTheme,
         uiFontFamily: settings.uiFontFamily,
         liquidGlass: settings.liquidGlass,
         autoExpandFileDiffs: settings.autoExpandFileDiffs,
@@ -877,6 +885,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     void window.app
       .saveAppSettings(patch)
       .catch((err) => console.error('[terminal-palette] persist failed:', err))
+  },
+
+  setMermaidTheme: async (scheme, id) => {
+    set(scheme === 'dark' ? { mermaidDarkTheme: id } : { mermaidLightTheme: id })
+    const patch = scheme === 'dark' ? { mermaidDarkTheme: id } : { mermaidLightTheme: id }
+    void window.app
+      .saveAppSettings(patch)
+      .catch((err) => console.error('[mermaid-theme] persist failed:', err))
   },
 
   setTerminalFontSize: async (size) => {
@@ -991,6 +1007,8 @@ if (typeof window !== 'undefined') {
       terminalDarkPalette: settings.terminalDarkPalette,
       terminalFontSize: settings.terminalFontSize,
       terminalFontFamily: settings.terminalFontFamily,
+      mermaidLightTheme: settings.mermaidLightTheme,
+      mermaidDarkTheme: settings.mermaidDarkTheme,
       uiFontFamily: settings.uiFontFamily,
       liquidGlass: settings.liquidGlass,
       autoExpandFileDiffs: settings.autoExpandFileDiffs,

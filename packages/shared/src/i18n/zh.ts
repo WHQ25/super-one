@@ -500,6 +500,11 @@ export const zh: Messages = {
         label: '终端字体',
         description: '集成终端的等宽字体,来自你系统中已安装的字体。',
       },
+      mermaid: 'Mermaid 图表',
+      mermaidTheme: {
+        light: '浅色主题',
+        dark: '深色主题',
+      },
       uiFont: {
         label: '界面字体',
         description: '应用界面字体,来自你系统中已安装的字体。',

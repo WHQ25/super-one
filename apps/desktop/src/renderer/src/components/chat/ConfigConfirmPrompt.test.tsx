@@ -10,6 +10,19 @@ vi.mock('@/stores/settings', () => ({
     selector({ platforms: [], credentials: [], fetchProviderData: vi.fn() }),
 }))
 
+vi.mock('@/stores/app', () => ({
+  useAppStore: (selector: (s: unknown) => unknown) =>
+    selector({ terminalFontSize: 14, terminalFontFamily: null }),
+}))
+
+// Heavy preview widgets — assert wiring via friendly names, not xterm/mermaid paint.
+vi.mock('@/components/coding/TerminalThemePreview', () => ({
+  TerminalThemePreview: () => <div data-testid="terminal-theme-preview" />,
+}))
+vi.mock('@/components/chat/MermaidThemePreview', () => ({
+  MermaidThemePreview: () => <div data-testid="mermaid-theme-preview" />,
+}))
+
 function envPayload(): ConfigConfirmPayload {
   return {
     resource: {
@@ -32,6 +45,48 @@ function envPayload(): ConfigConfirmPayload {
     },
   }
 }
+
+describe('config confirm dialog — appearance theme previews', () => {
+  it('reuses terminal + mermaid pickers with live previews for palette/theme fields', () => {
+    const onConfirm = vi.fn()
+    render(
+      <ConfigConfirmPrompt
+        payload={{
+          fields: [
+            {
+              key: 'terminalDarkPalette',
+              domain: 'appearance',
+              label: 'Terminal Dark Palette',
+              type: 'enum',
+              enumValues: ['dracula', 'nord'],
+              clearable: true,
+              currentValue: null,
+              proposedValue: 'dracula',
+            },
+            {
+              key: 'mermaidLightTheme',
+              domain: 'appearance',
+              label: 'Mermaid Light Theme',
+              type: 'enum',
+              enumValues: ['default', 'forest'],
+              clearable: true,
+              currentValue: null,
+              proposedValue: 'forest',
+            },
+          ],
+        }}
+        onConfirm={onConfirm}
+        onReject={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('terminal-theme-preview')).toBeInTheDocument()
+    expect(screen.getByTestId('mermaid-theme-preview')).toBeInTheDocument()
+    // Friendly names from the shared pickers — not raw enum ids as the only control.
+    expect(screen.getByRole('button', { name: /Dracula/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Forest/i })).toBeInTheDocument()
+  })
+})
 
 describe('config confirm dialog — structured provider fields', () => {
   it('edits an env override through the settings env table instead of a JSON blob', () => {

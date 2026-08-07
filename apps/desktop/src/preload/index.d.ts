@@ -617,6 +617,11 @@ export interface EnvironmentAPI {
       source: 'registry' | 'upload'
     }
   }>
+  /**
+   * Install this desktop's CLI version on an already-paired node, restart it,
+   * and reconnect. Only valid when `nodeUpgrade.canUpgradeOverSsh` is true.
+   */
+  upgradeNode(connectionId: string): Promise<{ version: string; warnings: string[] }>
   /** Host aliases from the local OpenSSH client config (~/.ssh/config). */
   listSshConfigHosts(): Promise<SshConfigHostEntry[]>
   /** Admin harness catalog on a connected remote node. */

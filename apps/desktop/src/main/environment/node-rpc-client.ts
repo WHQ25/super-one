@@ -52,6 +52,12 @@ function rpcTimeoutMs(method: string): number {
   if (method === 'session.hostActionsPoll') {
     return 45_000
   }
+  // Node spawns the harness to read its real model catalog; that probe alone
+  // budgets 20s (@superone/claude fetchClaudeModels). A 15s ceiling here would
+  // abort the cold call and silently fall back to the stale built-in slug table.
+  if (method === 'harness.resources' || method === 'harness.connect') {
+    return 40_000
+  }
   if (method.startsWith('git.')) {
     return GIT_READ_RPC_TIMEOUT_MS
   }

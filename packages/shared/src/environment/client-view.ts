@@ -33,7 +33,26 @@ export interface EnvironmentListItem {
   installationProfile?: InstallationProfile
   /** True when the refresh credential lives in memory only (§6.2 fail-closed). */
   credentialInMemoryOnly?: boolean
+  /**
+   * Set while the node CLI is older than this desktop. `connect` never upgrades
+   * a node on its own — it can be shared by other desktops — so this drives an
+   * explicit opt-in affordance instead.
+   */
+  nodeUpgrade?: NodeUpgradeAvailability
   updatedAt?: number
+}
+
+export interface NodeUpgradeAvailability {
+  /** CLI version currently running on the node. */
+  remoteVersion: string
+  /** Version this desktop would install. */
+  targetVersion: string
+  /**
+   * False when no ssh-forward endpoint is stored: the desktop reaches the node
+   * over a plain socket and cannot run the installer, so the UI must fall back
+   * to showing the manual command.
+   */
+  canUpgradeOverSsh: boolean
 }
 
 /**

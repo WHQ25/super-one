@@ -2708,6 +2708,8 @@ export const AgentIpcChannels = {
   // Environment management UI (Settings → Environments)
   ENVIRONMENT_LIST_ITEMS: 'environment:listItems',
   ENVIRONMENT_ADD_OVER_SSH: 'environment:addOverSsh',
+  /** Install this desktop's CLI on an already-paired node and restart it. */
+  ENVIRONMENT_UPGRADE_NODE: 'environment:upgradeNode',
   /** Read local ~/.ssh/config Host aliases for the add-device picker. */
   ENVIRONMENT_LIST_SSH_CONFIG_HOSTS: 'environment:listSshConfigHosts',
   /** Projects for a host (`local` or remote connectionId) — sidebar project list. */

@@ -1,5 +1,5 @@
 import { resolveNodeHome, DEFAULT_BIND_PORT } from '../../../../cli/src/config'
-import { renderSystemdUserUnit } from '../../../../cli/src/systemd/unit'
+import { renderSystemdUserUnit, SYSTEMD_USER_UNIT_NAME } from '../../../../cli/src/systemd/unit'
 import {
   findFreePort,
   sshCapture,
@@ -238,6 +238,77 @@ export function extractJsonObject(stdout: string): Record<string, unknown> | nul
 export function shellQuote(value: string): string {
   if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value
   return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+export interface RemoteRestartOptions {
+  destination: string
+  extraSshArgs?: string[]
+  sshPath?: string
+  /** Absolute path to the freshly installed superone launcher. */
+  remoteExec: string
+  remoteNodeHome: string
+  remotePort?: number
+  nodeBinDir?: string | null
+}
+
+/**
+ * Take the running node down and bring the newly installed build up.
+ *
+ * An in-place upgrade cannot reuse {@link buildBootstrapCommand}: that one only
+ * starts a node when health is *already* failing, so after npm swaps the files
+ * the previous build would keep serving from memory and the upgrade would look
+ * like a no-op. Stop first, wait for the port to go quiet, then start.
+ *
+ * Both supervision styles this repo produces are handled — the systemd user
+ * unit (`superone harness`/`install-systemd`) and the plain `nohup` launch used
+ * by SSH bootstrap. `systemctl` failing simply means the unit is absent.
+ */
+export function buildRemoteRestartCommand(input: {
+  remoteExec: string
+  remoteNodeHome: string
+  remotePort: number
+  nodeBinDir?: string | null
+}): string {
+  const pathPrefix = input.nodeBinDir?.trim()
+    ? `export PATH=${shellQuote(input.nodeBinDir.trim())}:$PATH; `
+    : ''
+  const execPath = shellQuote(input.remoteExec)
+  const nodeHome = shellQuote(input.remoteNodeHome)
+  const healthUrl = `http://127.0.0.1:${input.remotePort}/health`
+  // Node home is unique per environment, so it keeps pkill off unrelated nodes.
+  const startPattern = shellQuote(`start --foreground --home ${input.remoteNodeHome}`)
+  return (
+    pathPrefix +
+    [
+      `mkdir -p ${nodeHome}/logs`,
+      `systemctl --user stop ${SYSTEMD_USER_UNIT_NAME} >/dev/null 2>&1 || true`,
+      `pkill -f ${startPattern} >/dev/null 2>&1 || true`,
+      `i=0; while [ "$i" -lt 25 ]; do curl -fsS ${healthUrl} >/dev/null 2>&1 || break; i=$((i + 1)); sleep 0.2; done`,
+      `if ! systemctl --user start ${SYSTEMD_USER_UNIT_NAME} >/dev/null 2>&1; then nohup ${execPath} start --foreground --home ${nodeHome} --host 127.0.0.1 --port ${input.remotePort} >>${nodeHome}/logs/upgrade.log 2>&1 & fi`,
+      `healthy=0; i=0; while [ "$i" -lt 50 ]; do if curl -fsS ${healthUrl} >/dev/null 2>&1; then healthy=1; break; fi; i=$((i + 1)); sleep 0.2; done; if [ "$healthy" -ne 1 ]; then echo "remote node did not come back after upgrade" >&2; exit 1; fi`,
+      `echo SUPERONE_RESTART_OK`,
+    ].join('; ')
+  )
+}
+
+/** Restart the remote node so a freshly installed CLI build takes effect. */
+export async function restartNodeOverSsh(opts: RemoteRestartOptions): Promise<void> {
+  const result = await sshCapture({
+    destination: opts.destination,
+    extraArgs: opts.extraSshArgs,
+    sshPath: opts.sshPath,
+    command: buildRemoteRestartCommand({
+      remoteExec: opts.remoteExec,
+      remoteNodeHome: opts.remoteNodeHome,
+      remotePort: opts.remotePort ?? DEFAULT_BIND_PORT,
+      nodeBinDir: opts.nodeBinDir,
+    }),
+    timeoutMs: 120_000,
+  })
+  if (result.code !== 0 || !result.stdout.includes('SUPERONE_RESTART_OK')) {
+    const detail = (result.stderr.trim() || result.stdout.trim() || `code ${result.code}`).slice(0, 800)
+    throw new Error(`remote node restart failed: ${detail}`)
+  }
 }
 
 export function buildRemoteInstallCommands(input: {

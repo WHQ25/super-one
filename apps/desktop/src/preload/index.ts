@@ -213,6 +213,12 @@ const environmentAPI = {
     identityFile?: string
     label?: string
   }) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_ADD_OVER_SSH, input),
+  /** Install this desktop's CLI version on a paired node, restart it, reconnect. */
+  upgradeNode: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_UPGRADE_NODE, connectionId) as Promise<{
+      version: string
+      warnings: string[]
+    }>,
   listSshConfigHosts: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST_SSH_CONFIG_HOSTS) as Promise<
       Array<{

@@ -19,6 +19,8 @@ const appState = {
   selectProject: vi.fn(async () => {}),
   removeRecentFolder: vi.fn(async () => {}),
   setSidebarTab: vi.fn((tab: 'sessions' | 'files') => { appState.sidebarTab = tab }),
+  setSettingsTab: vi.fn(),
+  experimentalRemoteNodesEnabled: false,
 }
 
 const chatState = {
@@ -60,6 +62,7 @@ const mockEnvironment = {
   }>> => []),
   onStatusEvent: vi.fn(() => () => {}),
   connect: vi.fn(async () => {}),
+  upgradeNode: vi.fn(async () => ({ version: '0.50.3-alpha', warnings: [] as string[] })),
   listProjects: vi.fn(async (): Promise<Array<{
     projectId: string
     path: string
@@ -69,6 +72,18 @@ const mockEnvironment = {
   }>> => []),
   listSessions: vi.fn(async () => []),
 }
+
+const toastWarning = vi.fn()
+const toastSuccess = vi.fn()
+const toastError = vi.fn()
+vi.mock('sonner', () => ({
+  toast: {
+    warning: (...args: unknown[]) => toastWarning(...args),
+    success: (...args: unknown[]) => toastSuccess(...args),
+    error: (...args: unknown[]) => toastError(...args),
+    loading: () => 'toast-id',
+  },
+}))
 
 vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -191,6 +206,7 @@ beforeEach(() => {
   appState.currentFolder = '/project-a'
   appState.recentFolders = [{ name: 'project-a', path: '/project-a', addedAt: '2026-03-02T00:00:00.000Z' }]
   appState.selectedHostConnectionId = 'local'
+  appState.experimentalRemoteNodesEnabled = false
   sessionsByFolder = {
     '/project-a': [
       { sessionId: 'sid-1', title: 'Old Session', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 2 },
@@ -252,6 +268,101 @@ describe('AppSidebar interactions', () => {
         { connectionId: 'env-remote', projectId: 'project-1' },
       )
     })
+  })
+
+  it('upgrades a node that trails this desktop without asking, exactly once', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-stale'
+    appState.experimentalRemoteNodesEnabled = true
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      {
+        connectionId: 'env-stale',
+        kind: 'remote',
+        state: 'connected',
+        label: 'vps',
+        cliVersion: '0.49.4-alpha',
+        nodeUpgrade: {
+          remoteVersion: '0.49.4-alpha',
+          targetVersion: '0.50.3-alpha',
+          canUpgradeOverSsh: true,
+        },
+      },
+    ])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    const { rerender } = render(<AppSidebar />)
+
+    await waitFor(() => {
+      expect(mockEnvironment.upgradeNode).toHaveBeenCalledWith('env-stale')
+    })
+    await waitFor(() => {
+      expect(toastSuccess).toHaveBeenCalledTimes(1)
+    })
+    // Informed, not asked: no confirmation prompt stands between the two toasts.
+    expect(toastSuccess.mock.calls[0]![0]).toMatch(/0\.50\.3-alpha/)
+
+    // An upgrade bounces the node, so a re-render must not start a second one.
+    rerender(<AppSidebar />)
+    expect(mockEnvironment.upgradeNode).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks the user to upgrade by hand when the node has no SSH endpoint', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-socket'
+    appState.experimentalRemoteNodesEnabled = true
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      {
+        connectionId: 'env-socket',
+        kind: 'remote',
+        state: 'connected',
+        label: 'vps',
+        cliVersion: '0.49.4-alpha',
+        nodeUpgrade: {
+          remoteVersion: '0.49.4-alpha',
+          targetVersion: '0.50.3-alpha',
+          canUpgradeOverSsh: false,
+        },
+      },
+    ])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    await waitFor(() => {
+      expect(toastWarning).toHaveBeenCalledTimes(1)
+    })
+    expect(toastWarning.mock.calls[0]![0]).toMatch(/npm install -g @super-one\/cli/)
+    expect(mockEnvironment.upgradeNode).not.toHaveBeenCalled()
+  })
+
+  it('leaves a node alone when it already matches this desktop', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-current'
+    appState.experimentalRemoteNodesEnabled = true
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      {
+        connectionId: 'env-current',
+        kind: 'remote',
+        state: 'connected',
+        label: 'vps',
+        cliVersion: '0.50.3-alpha',
+      },
+    ])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    await waitFor(() => {
+      expect(mockEnvironment.listProjects).toHaveBeenCalledWith('env-current', undefined)
+    })
+    expect(mockEnvironment.upgradeNode).not.toHaveBeenCalled()
+    expect(toastWarning).not.toHaveBeenCalled()
   })
 
   it('does not select a missing remote project', async () => {

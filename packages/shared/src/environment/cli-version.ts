@@ -167,3 +167,18 @@ export function shouldBlockDesktopForNewerNode(
 ): boolean {
   return relationDesktopToRemote(desktopVersion, remoteCliVersion) === 'desktop_older'
 }
+
+/**
+ * True when the node CLI is behind this desktop and an upgrade is worth offering.
+ *
+ * Deliberately not the mirror image of {@link shouldBlockDesktopForNewerNode}:
+ * a node may be shared by several desktops, so an old node is surfaced as an
+ * opt-in prompt rather than blocking the connection or upgrading behind the
+ * user's back. `unknown` (either version unreadable) stays silent.
+ */
+export function shouldOfferNodeUpgrade(
+  desktopVersion: string,
+  remoteCliVersion: string | null | undefined,
+): boolean {
+  return relationDesktopToRemote(desktopVersion, remoteCliVersion) === 'desktop_newer'
+}

@@ -34,8 +34,13 @@ interface AddEnvironmentDialogProps {
 }
 
 /**
- * Over SSH: pick a Host from ~/.ssh/config (compact cards) + optional local dist upload.
- * Manual: free-form SSH (ports, identity, remote exec, …) or pair with an existing token.
+ * Add a remote node over SSH only.
+ * - Known Hosts: pick a Host from ~/.ssh/config (compact cards) + optional local dist upload.
+ * - Add New Host: free-form SSH (destination, ports, identity, remote exec, …).
+ *
+ * Pairing is performed inside the SSH bootstrap (pair-create on the remote, then
+ * desktop stores refresh credentials). Steady-state reconnect uses those stored
+ * credentials — there is no user-facing "paste a pairing token" path.
  */
 export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnvironmentDialogProps) {
   const { t } = useTranslation()

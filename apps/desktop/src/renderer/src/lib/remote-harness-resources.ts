@@ -100,7 +100,10 @@ export async function fetchRemoteHarnessResourcesForProject(
     }
     if (!raw || typeof raw !== 'object') return null
     return raw as RemoteHarnessResourcesBundle
-  } catch {
+  } catch (err) {
+    // Callers treat null as "node discovery unavailable" and quietly fall back
+    // to the stale slug table, so an RPC timeout here is otherwise invisible.
+    console.warn('[remote-harness-resources] harness.resources failed', err)
     return null
   }
 }

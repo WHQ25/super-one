@@ -59,7 +59,15 @@ function defaultProbeModels(
   return async (harnessId, cwd) => {
     if (harnessId !== 'claude') return []
     const binaryPath = resolveClaudeBinaryPath({ harnesses: ctx.harnesses })
-    if (!binaryPath) return []
+    if (!binaryPath) {
+      // Same resolver the turn runner uses, so this also predicts why sends
+      // fail with "Claude Agent SDK binary not available".
+      console.warn(
+        '[harness.resources] claude model probe skipped: no Agent SDK binary on this node ' +
+          '(reinstall the optional platform package or set SUPERONE_CLAUDE_BINARY)',
+      )
+      return []
+    }
     return getNodeClaudeModelCatalog({ cwd, binaryPath })
   }
 }
@@ -123,6 +131,12 @@ async function handleHarnessResources(
       const probe = ctx.probeModels ?? defaultProbeModels(ctx)
       const probed = await probe(hid, project.path)
       if (probed.length > 0) return probed
+      // Substituting the built-in slug table is a lie the client cannot detect —
+      // it looks like a real catalog. Say so here so `journalctl -u superone`
+      // explains a stale picker instead of leaving it to guesswork.
+      console.warn(
+        `[harness.resources] ${hid} probe returned no models; serving the built-in fallback table`,
+      )
       return listHarnessModels(ctx.providers, hid, apiProviderId ?? null) as ModelOption[]
     }
 

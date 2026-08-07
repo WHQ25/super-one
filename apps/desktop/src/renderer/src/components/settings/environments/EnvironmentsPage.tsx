@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
+  ArrowUpCircle,
   FlaskConical,
   Loader2,
   Monitor,
@@ -140,6 +141,14 @@ export function EnvironmentsPage() {
     void run(item.connectionId, () => window.environment.forget(item.connectionId))
   }
 
+  function handleUpgrade(item: EnvironmentListItem): void {
+    void run(item.connectionId, async () => {
+      const result = await window.environment.upgradeNode(item.connectionId)
+      toast.success(t('settings.environments.upgradeNodeSuccess', { version: result.version }))
+      for (const w of result.warnings) toast.warning(w)
+    })
+  }
+
   function handleAdded(warnings: string[]): void {
     toast.success(t('settings.environments.addSuccess'))
     for (const w of warnings) toast.warning(w)
@@ -167,6 +176,7 @@ export function EnvironmentsPage() {
                 void run(id, () => window.environment.disconnect(id))
               }
               onForget={handleForget}
+              onUpgrade={handleUpgrade}
             />
           )}
 
@@ -211,6 +221,7 @@ export function EnvironmentsPage() {
                             )
                           }
                           onForget={() => handleForget(item)}
+                          onUpgrade={() => handleUpgrade(item)}
                         />
                       </li>
                     ))}
@@ -246,6 +257,7 @@ interface LocalLabSectionProps {
   onConnect: (connectionId: string) => void
   onDisconnect: (connectionId: string) => void
   onForget: (item: EnvironmentListItem) => void
+  onUpgrade: (item: EnvironmentListItem) => void
 }
 
 /** Dev-only card: one-click pair to host-process lab on loopback. */
@@ -257,6 +269,7 @@ function LocalLabSection({
   onConnect,
   onDisconnect,
   onForget,
+  onUpgrade,
 }: LocalLabSectionProps) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<LocalLabStatusView | null>(null)
@@ -381,6 +394,7 @@ function LocalLabSection({
                 onConnect={() => onConnect(item.connectionId)}
                 onDisconnect={() => onDisconnect(item.connectionId)}
                 onForget={() => onForget(item)}
+                onUpgrade={() => onUpgrade(item)}
               />
             </li>
           ))}
@@ -396,6 +410,7 @@ interface EnvironmentDeviceRowProps {
   onConnect: () => void
   onDisconnect: () => void
   onForget: () => void
+  onUpgrade: () => void
 }
 
 /** Compact row aligned with paired phone/desktop rows on Control This Mac. */
@@ -405,6 +420,7 @@ function EnvironmentDeviceRow({
   onConnect,
   onDisconnect,
   onForget,
+  onUpgrade,
 }: EnvironmentDeviceRowProps) {
   const { t } = useTranslation()
   const live = LIVE_STATES.includes(item.state)
@@ -487,6 +503,35 @@ function EnvironmentDeviceRow({
         <p className="mt-1.5 text-xs text-destructive">
           {t('settings.environments.credentialInMemoryOnly')}
         </p>
+      )}
+
+      {item.nodeUpgrade && (
+        <div className="mt-1.5 space-y-1.5">
+          <p className="text-xs text-warning">
+            {t('settings.environments.nodeOutdated', {
+              remoteVersion: item.nodeUpgrade.remoteVersion,
+              targetVersion: item.nodeUpgrade.targetVersion,
+            })}
+          </p>
+          {item.nodeUpgrade.canUpgradeOverSsh ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={onUpgrade}
+              disabled={busy}
+            >
+              <ArrowUpCircle className="size-3.5" />
+              {busy
+                ? t('settings.environments.upgradingNode')
+                : t('settings.environments.upgradeNode')}
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {t('settings.environments.nodeOutdatedManual')}
+            </p>
+          )}
+        </div>
       )}
 
       {live ? <RemoteHarnessPanel connectionId={item.connectionId} /> : null}

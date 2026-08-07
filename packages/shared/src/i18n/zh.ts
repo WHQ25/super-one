@@ -35,6 +35,11 @@ export const zh: Messages = {
     thisPc: '这台电脑',
     hostDisconnected: '主机未连接',
     hostConnectHint: '请在 设置 → 远程控制 中连接该主机后再浏览项目。',
+    hostUpgrading: '正在把 {{label}} 从 SuperOne CLI {{remoteVersion}} 升级到 {{targetVersion}}…',
+    hostUpgraded: '{{label}} 已升级到 SuperOne CLI {{version}}',
+    hostUpgradeFailed: '{{label}} 升级失败：{{error}}',
+    hostOutdatedManual:
+      '{{label}} 运行的是 SuperOne CLI {{remoteVersion}}，低于本机桌面（{{targetVersion}}）。该节点不是通过 SSH 配对的，请在主机上执行 `npm install -g @super-one/cli@alpha` 后重启节点。',
     addProject: {
       title: '添加项目',
       description: '到 {{host}}',
@@ -303,6 +308,12 @@ export const zh: Messages = {
       addSuccess: '环境已连接',
       credentialInMemoryOnly: '系统安全存储不可用，该凭证仅保存在内存中，退出 SuperOne 后会丢失。',
       noSessionsCapability: '该节点尚未开放 Agent 会话能力，终端与工作区操作仍可正常使用。',
+      nodeOutdated:
+        '该节点运行的是 SuperOne CLI {{remoteVersion}}，本机桌面为 {{targetVersion}}。旧节点可能返回过时的模型列表，或根本跑不了对话。',
+      nodeOutdatedManual: '请在主机上执行 `npm install -g @super-one/cli@alpha` 后重启节点。',
+      upgradeNode: '升级节点',
+      upgradingNode: '正在升级节点…',
+      upgradeNodeSuccess: '节点已升级到 {{version}}',
       harness: {
         title: '运行时 (Harness)',
         loading: '加载 harness…',
@@ -340,7 +351,7 @@ export const zh: Messages = {
         trigger: '添加环境',
         title: '添加远程环境',
         description:
-          '通过 SSH 引导一个节点，或使用 `superone pair-create` 生成的配对令牌连接已在运行的节点。',
+          '通过 SSH 引导远程节点。配对在安装过程中自动完成；之后桌面端用已保存的凭证重连。',
         titleSsh: '通过 SSH 添加设备',
         descriptionSsh: '从本机 SSH 配置中选择 Host，或手动添加新主机。',
         sshTab: '通过 SSH',
@@ -353,7 +364,6 @@ export const zh: Messages = {
         sshPickRequired: '请先从列表中选择一个 SSH 主机。',
         sshManualOption: '手动输入…',
         manualSshSection: 'SSH 连接',
-        manualPairSection: '或配对已在运行的节点',
         destination: 'SSH 目标',
         destinationHint: 'user@host，或 ~/.ssh/config 中的 Host 别名。',
         autoInstallHint:
@@ -382,10 +392,6 @@ export const zh: Messages = {
           starting: '正在启动节点…',
           pairing: '正在配对…',
         },
-        baseUrl: '访问地址',
-        baseUrlHint: '本机能访问到节点的地址，例如已建立的 SSH 端口转发。',
-        pairingToken: '配对令牌',
-        pairingTokenHint: '一次性使用，有效期 10 分钟，不会写入磁盘。',
         submit: '连接',
       },
     },

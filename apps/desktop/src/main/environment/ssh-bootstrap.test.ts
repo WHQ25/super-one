@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import {
   buildRemoteInstallCommands,
   buildBootstrapCommand,
+  buildRemoteRestartCommand,
   extractJsonObject,
   shellQuote,
   waitForSshForwardHealth,
@@ -57,6 +58,29 @@ describe('ssh-bootstrap helpers', () => {
     expect(command).toContain('while [ "$i" -lt 50 ]')
     expect(command).toContain('pair-create')
     expect(command.split(' && ').length).toBeGreaterThan(3)
+  })
+
+  it('stops the old node before starting the upgraded one', () => {
+    const command = buildRemoteRestartCommand({
+      remoteExec: '/home/u/.local/bin/superone',
+      remoteNodeHome: '/home/u/.superone/node',
+      remotePort: 7788,
+      nodeBinDir: '/home/u/.nvm/versions/node/v22/bin',
+    })
+
+    // Order is the whole point: npm swaps the files, but a still-running old
+    // process keeps serving until it is taken down.
+    const stopAt = command.indexOf('pkill')
+    const startAt = command.indexOf('nohup')
+    expect(stopAt).toBeGreaterThan(-1)
+    expect(startAt).toBeGreaterThan(stopAt)
+    // Scoped to this node home so a second node on the host survives.
+    expect(command).toContain('start --foreground --home /home/u/.superone/node')
+    // Both supervision styles this repo produces.
+    expect(command).toContain('systemctl --user stop superone.service')
+    expect(command).toContain('systemctl --user start superone.service')
+    expect(command).toContain('export PATH=')
+    expect(command).toContain('SUPERONE_RESTART_OK')
   })
 
   it('waits until a delayed SSH-forwarded health endpoint is ready', async () => {

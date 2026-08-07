@@ -33,6 +33,10 @@ export type Messages = {
     thisPc: string
     hostDisconnected: string
     hostConnectHint: string
+    hostUpgrading: string
+    hostUpgraded: string
+    hostUpgradeFailed: string
+    hostOutdatedManual: string
     addProject: {
       title: string
       description: string
@@ -274,6 +278,11 @@ export type Messages = {
       addSuccess: string
       credentialInMemoryOnly: string
       noSessionsCapability: string
+      nodeOutdated: string
+      nodeOutdatedManual: string
+      upgradeNode: string
+      upgradingNode: string
+      upgradeNodeSuccess: string
       harness: {
         title: string
         loading: string
@@ -323,7 +332,6 @@ export type Messages = {
         sshPickRequired: string
         sshManualOption: string
         manualSshSection: string
-        manualPairSection: string
         destination: string
         destinationHint: string
         autoInstallHint: string
@@ -349,10 +357,6 @@ export type Messages = {
           starting: string
           pairing: string
         }
-        baseUrl: string
-        baseUrlHint: string
-        pairingToken: string
-        pairingTokenHint: string
         submit: string
       }
     }
@@ -2279,6 +2283,11 @@ export const en: Messages = {
     thisPc: 'This PC',
     hostDisconnected: 'Host offline',
     hostConnectHint: 'Connect this host in Settings → Remote Control to browse its projects.',
+    hostUpgrading: 'Upgrading {{label}} from SuperOne CLI {{remoteVersion}} to {{targetVersion}}…',
+    hostUpgraded: '{{label}} upgraded to SuperOne CLI {{version}}',
+    hostUpgradeFailed: 'Could not upgrade {{label}}: {{error}}',
+    hostOutdatedManual:
+      '{{label}} runs SuperOne CLI {{remoteVersion}}, older than this desktop ({{targetVersion}}). It was not paired over SSH, so upgrade it on the host with `npm install -g @super-one/cli@alpha` and restart the node.',
     addProject: {
       title: 'Add Project',
       description: 'on {{host}}',
@@ -2555,6 +2564,13 @@ export const en: Messages = {
         'OS secure storage is unavailable, so this credential is kept in memory only and will be lost when SuperOne quits.',
       noSessionsCapability:
         'This node does not advertise agent sessions yet. Terminal and workspace operations still work.',
+      nodeOutdated:
+        'This node runs SuperOne CLI {{remoteVersion}}; this desktop ships {{targetVersion}}. Older nodes can report stale model catalogs and fail to run turns.',
+      nodeOutdatedManual:
+        'Upgrade it on the host with `npm install -g @super-one/cli@alpha`, then restart the node.',
+      upgradeNode: 'Upgrade Node',
+      upgradingNode: 'Upgrading node…',
+      upgradeNodeSuccess: 'Node upgraded to {{version}}',
       harness: {
         title: 'Harnesses',
         loading: 'Loading harnesses…',
@@ -2592,7 +2608,7 @@ export const en: Messages = {
         trigger: 'Add Environment',
         title: 'Add Remote Environment',
         description:
-          'Bootstrap a node over SSH, or pair with one that is already running using a token from `superone pair-create`.',
+          'Bootstrap a remote node over SSH. Pairing runs automatically during install; afterward the desktop reconnects with stored credentials.',
         titleSsh: 'Add Device via SSH',
         descriptionSsh:
           'Pick a Host from your local SSH config, or add a new host manually.',
@@ -2608,7 +2624,6 @@ export const en: Messages = {
         sshPickRequired: 'Select an SSH host from the list.',
         sshManualOption: 'Enter manually…',
         manualSshSection: 'SSH connection',
-        manualPairSection: 'Or pair a running node',
         destination: 'SSH Destination',
         destinationHint: 'user@host, or a Host alias from ~/.ssh/config.',
         autoInstallHint:
@@ -2639,10 +2654,6 @@ export const en: Messages = {
           starting: 'Starting node…',
           pairing: 'Pairing…',
         },
-        baseUrl: 'Base URL',
-        baseUrlHint: 'Where this desktop can reach the node, e.g. through an existing SSH forward.',
-        pairingToken: 'Pairing Token',
-        pairingTokenHint: 'Single-use and valid for 10 minutes. It is never saved to disk.',
         submit: 'Connect',
       },
     },

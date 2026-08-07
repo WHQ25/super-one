@@ -39,6 +39,7 @@ vi.mock('electron', () => ({
 }))
 
 import { startNodeRuntime, type NodeRuntime } from '../../../../../apps/cli/src/runtime'
+import { resolveCliReleaseVersion } from '../../../../../apps/cli/src/cli-release-version'
 import { EnvironmentHost, resetEnvironmentHostForTests } from './environment-host'
 import { SshTunnelManager } from './ssh-tunnel-manager'
 import type {
@@ -48,6 +49,7 @@ import type {
   RemoteHostProbe,
 } from './remote-install'
 import type { SshForwardHandle } from './ssh-forward'
+import type { RemoteRestartOptions } from './ssh-bootstrap'
 
 const dirs: string[] = []
 const runtimes: NodeRuntime[] = []
@@ -409,6 +411,7 @@ describe('add over SSH without a remote path', () => {
       findArtifact?: (target: string) => { path: string; version: string; target: string } | null
       installNode?: (opts: InstallOptions) => Promise<InstallResult>
       installFromRegistry?: (opts: RegistryInstallOptions) => Promise<InstallResult>
+      restartNode?: (opts: RemoteRestartOptions) => Promise<void>
     },
   ): { host: EnvironmentHost; bootstrapExec: string[] } {
     const ud = temp('env-mgmt-ud-')
@@ -420,6 +423,7 @@ describe('add over SSH without a remote path', () => {
       findArtifact: overrides.findArtifact ?? (() => null),
       installNode: overrides.installNode,
       installFromRegistry: overrides.installFromRegistry,
+      restartNode: overrides.restartNode,
       defaultCliVersion: '1.2.3',
       bootstrapOverSsh: async (opts) => {
         bootstrapExec.push(opts.remoteExec)
@@ -670,6 +674,131 @@ describe('add over SSH without a remote path', () => {
     })
 
     expect(probes).toBe(0)
+    host.dispose()
+  })
+
+  it('installs the desktop version, restarts the node, and reconnects', async () => {
+    const rt = await bootNode()
+    const registry: RegistryInstallOptions[] = []
+    const restarts: RemoteRestartOptions[] = []
+    const { host } = hostWith(rt, {
+      probe: {
+        ...linuxProbe,
+        superonePath: '/home/superone/.local/bin/superone',
+        superoneVersion: '1.0.0',
+      },
+      installFromRegistry: async (opts) => {
+        registry.push(opts)
+        // Mirror installNodeFromRegistry, which reports the npm step.
+        opts.onProgress?.('npm', `@super-one/cli@${opts.version}`)
+        return {
+          remoteExec: '/home/superone/.local/bin/superone',
+          version: opts.version,
+          target: 'registry',
+          sha256: '',
+          source: 'registry',
+        }
+      },
+      restartNode: async (opts) => {
+        restarts.push(opts)
+      },
+    })
+
+    const added = await host.addRemoteOverSsh({ destination: 'superone@lab', label: 'lab' })
+    const before = (await host.listEnvironments()).find(
+      (e) => e.connectionId === added.connectionId,
+    )
+    expect(before?.nodeUpgrade?.canUpgradeOverSsh).toBe(true)
+
+    const phases: string[] = []
+    registry.length = 0
+    const result = await host.upgradeRemoteNode(added.connectionId, (p) => phases.push(p.phase))
+
+    expect(result.version).toBe('1.2.3')
+    expect(registry).toHaveLength(1)
+    expect(registry[0]!.version).toBe('1.2.3')
+    // Restart must target the installed launcher, not the pre-upgrade path.
+    expect(restarts).toHaveLength(1)
+    expect(restarts[0]!.remoteExec).toBe('/home/superone/.local/bin/superone')
+    expect(restarts[0]!.remoteNodeHome).toBe('/home/superone/.superone/node')
+    expect(phases).toEqual(['probing', 'installing', 'starting'])
+    // Pairing survives the restart: the same connection is live again.
+    expect(host.connections.getSupervisor(added.connectionId)?.state).toBe('connected')
+    host.dispose()
+  })
+})
+
+describe('outdated node upgrade', () => {
+  const linuxProbe: RemoteHostProbe = {
+    ok: true,
+    os: 'linux',
+    arch: 'x64',
+    musl: false,
+    home: '/home/superone',
+    superonePath: '/home/superone/.local/bin/superone',
+    superoneVersion: '1.0.0',
+    nodeMajor: 22,
+    hasNpm: true,
+    hasSystemd: true,
+    distTarget: 'linux-x64',
+  }
+
+  it('flags a node behind the desktop on connect without upgrading it', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'stale-box',
+    })
+
+    // Desktop is mocked at 1.2.3; the booted node reports the monorepo version.
+    const remote = (await host.listEnvironments()).find((e) => e.kind === 'remote')
+
+    expect(remote?.state).toBe('connected')
+    expect(remote?.nodeUpgrade?.targetVersion).toBe('1.2.3')
+    expect(remote?.nodeUpgrade?.remoteVersion).toBe(remote?.cliVersion)
+    // Paired over a plain socket: no SSH endpoint, so no in-app installer.
+    expect(remote?.nodeUpgrade?.canUpgradeOverSsh).toBe(false)
+    // Connect stayed non-destructive — the stale node is still usable.
+    expect(host.connections.getSupervisor(connectionId)?.state).toBe('connected')
+    host.dispose()
+  })
+
+  it('leaves nodeUpgrade unset when the node already matches the desktop', async () => {
+    const rt = await bootNode()
+    const ud = temp('env-mgmt-ud-')
+    electron.setUserData(ud)
+    // Pin the desktop target to exactly what this node runs.
+    const host = new EnvironmentHost(ud, { defaultCliVersion: resolveCliReleaseVersion() })
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'same-box',
+    })
+
+    const remote = (await host.listEnvironments()).find((e) => e.connectionId === connectionId)
+
+    expect(remote?.cliVersion).toBe(resolveCliReleaseVersion())
+    expect(remote?.nodeUpgrade).toBeUndefined()
+    host.dispose()
+  })
+
+  it('refuses to upgrade a node that was paired without an SSH endpoint', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'socket-only',
+    })
+
+    await expect(host.upgradeRemoteNode(connectionId)).rejects.toMatchObject({
+      code: 'failed_precondition',
+      message: expect.stringMatching(/npm install -g @super-one\/cli/),
+    })
+    // Refusing must not take the working connection down.
+    expect(host.connections.getSupervisor(connectionId)?.state).toBe('connected')
     host.dispose()
   })
 })

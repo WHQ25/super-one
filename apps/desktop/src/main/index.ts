@@ -1094,6 +1094,17 @@ function registerIpcHandlers(): void {
       }
     },
   )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_UPGRADE_NODE,
+    async (_e, connectionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      const host = getEnvironmentHost()
+      attachEnvironmentStatusBridge(host)
+      return host.upgradeRemoteNode(connectionId, (progress) => {
+        safeSend(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, progress)
+      })
+    },
+  )
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LIST_SSH_CONFIG_HOSTS, async () => {
     const { listSshConfigHosts } = await import('./environment/ssh-config')
     return listSshConfigHosts()

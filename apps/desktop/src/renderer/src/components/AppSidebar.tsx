@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor, ChevronDown, RotateCw } from 'lucide-react'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor, ChevronDown, RotateCw, TriangleAlert } from 'lucide-react'
+import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -133,6 +134,14 @@ export const AppSidebar = memo(function AppSidebar() {
   /** Bump to re-run remote project load / auto-connect. */
   const [hostProjectsRetryNonce, setHostProjectsRetryNonce] = useState(0)
   const forceHostProjectsRefreshRef = useRef(false)
+  /** Connection whose node is being upgraded — its socket is about to bounce. */
+  const [upgradingHostId, setUpgradingHostId] = useState<string | null>(null)
+  /**
+   * Nodes already handled this app run. An upgrade restarts the node, so
+   * retrying on every render would take the host down repeatedly. Failures are
+   * removed from the set so selecting the host again retries once.
+   */
+  const handledOutdatedHostsRef = useRef<Set<string>>(new Set())
   const [openProjectDialogOpen, setOpenProjectDialogOpen] = useState(false)
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const inFlightFolderSessions = useRef(new Map<string, Promise<SessionHistoryEntry[]>>())
@@ -184,6 +193,14 @@ export const AppSidebar = memo(function AppSidebar() {
     setHostProjectsLoading(true)
     setHostProjectsError(null)
 
+    // The node is mid-restart; connecting now just surfaces a transient error.
+    // The upgrade bumps hostProjectsRetryNonce when it settles.
+    if (upgradingHostId === selectedHostConnectionId) {
+      return () => {
+        cancelled = true
+      }
+    }
+
     void (async () => {
       try {
         const refresh = forceHostProjectsRefreshRef.current
@@ -225,7 +242,7 @@ export const AppSidebar = memo(function AppSidebar() {
     return () => {
       cancelled = true
     }
-  }, [selectedHostConnectionId, hostItems, hostProjectsRetryNonce])
+  }, [selectedHostConnectionId, hostItems, hostProjectsRetryNonce, upgradingHostId])
 
   const refreshHostProjects = useCallback(() => {
     if (selectedHostConnectionId === 'local' || hostProjectsLoading) return
@@ -578,6 +595,63 @@ export const AppSidebar = memo(function AppSidebar() {
   // Host switcher chrome is part of the remote-nodes experiment (even with zero remotes).
   const showHostSwitcher = experimentalRemoteNodesEnabled
 
+  // Keep the node on the desktop's CLI version without asking. Releases are
+  // frequent and a stale node breaks model discovery and agent turns outright,
+  // so the user is told what is happening rather than asked to approve it.
+  useEffect(() => {
+    if (selectedHostConnectionId === 'local') return
+    const host = remoteHosts.find((h) => h.connectionId === selectedHostConnectionId)
+    const upgrade = host?.nodeUpgrade
+    if (!upgrade) return
+    if (handledOutdatedHostsRef.current.has(host!.connectionId)) return
+    handledOutdatedHostsRef.current.add(host!.connectionId)
+
+    if (!upgrade.canUpgradeOverSsh) {
+      toast.warning(
+        t('sidebar.hostOutdatedManual', {
+          label: host!.label,
+          remoteVersion: upgrade.remoteVersion,
+          targetVersion: upgrade.targetVersion,
+        }),
+      )
+      return
+    }
+
+    const connectionId = host!.connectionId
+    setUpgradingHostId(connectionId)
+    const toastId = toast.loading(
+      t('sidebar.hostUpgrading', {
+        label: host!.label,
+        remoteVersion: upgrade.remoteVersion,
+        targetVersion: upgrade.targetVersion,
+      }),
+    )
+    void (async () => {
+      try {
+        const result = await window.environment.upgradeNode(connectionId)
+        toast.success(
+          t('sidebar.hostUpgraded', { label: host!.label, version: result.version }),
+          { id: toastId },
+        )
+        for (const w of result.warnings) toast.warning(w)
+      } catch (err) {
+        handledOutdatedHostsRef.current.delete(connectionId)
+        toast.error(
+          t('sidebar.hostUpgradeFailed', {
+            label: host!.label,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+          { id: toastId },
+        )
+      } finally {
+        setUpgradingHostId((current) => (current === connectionId ? null : current))
+        // Node restarted underneath us — reload its project list on the new socket.
+        forceHostProjectsRefreshRef.current = true
+        setHostProjectsRetryNonce((nonce) => nonce + 1)
+      }
+    })()
+  }, [selectedHostConnectionId, remoteHosts, t])
+
   const selectedHostLabel = useMemo(() => {
     if (selectedHostConnectionId === 'local') return localHostLabel
     return (
@@ -801,6 +875,18 @@ export const AppSidebar = memo(function AppSidebar() {
                     onClick={() => setSelectedHostConnectionId(host.connectionId)}
                   >
                     <span className="truncate">{host.label}</span>
+                    {/* Upgradable nodes fix themselves on select; only flag the
+                        ones that need the user to go run npm on the host. */}
+                    {host.nodeUpgrade && !host.nodeUpgrade.canUpgradeOverSsh && (
+                      <TriangleAlert
+                        className="ml-auto size-3 shrink-0 text-warning"
+                        aria-label={t('sidebar.hostOutdatedManual', {
+                          label: host.label,
+                          remoteVersion: host.nodeUpgrade.remoteVersion,
+                          targetVersion: host.nodeUpgrade.targetVersion,
+                        })}
+                      />
+                    )}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>

@@ -6,6 +6,7 @@ import type {
   EnvironmentInstallProgress,
   EnvironmentListItem,
   ExecutionEnvironmentDescriptor,
+  NodeUpgradeAvailability,
   ProjectRef,
   SupervisorSnapshot,
   TerminalReadResult,
@@ -18,6 +19,8 @@ import {
   desktopUpgradeRequiredMessage,
   selectEndpointWithFailover,
   shouldBlockDesktopForNewerNode,
+  shouldOfferNodeUpgrade,
+  sshArgsForSpec,
   tailscaleEndpoint,
   relayEndpoint,
   tunnelSpecFromEndpoint,
@@ -30,7 +33,13 @@ import { WorkspaceRouter } from './workspace-router'
 import { probeEndpointHealth, discoverTailscaleHost } from './endpoint-probes'
 import type { KnownEnvironmentRecord } from './node-connection-manager'
 import { SshTunnelManager } from './ssh-tunnel-manager'
-import { bootstrapNodeOverSsh, type SshBootstrapOptions, type SshBootstrapResult } from './ssh-bootstrap'
+import {
+  bootstrapNodeOverSsh,
+  restartNodeOverSsh,
+  type RemoteRestartOptions,
+  type SshBootstrapOptions,
+  type SshBootstrapResult,
+} from './ssh-bootstrap'
 import {
   installNodeFromRegistry,
   installNodeOverSsh,
@@ -63,6 +72,8 @@ export interface EnvironmentHostOptions {
   probeHost?: (target: SshTarget) => Promise<RemoteHostProbe>
   installNode?: (opts: InstallOptions) => Promise<InstallResult>
   installFromRegistry?: (opts: RegistryInstallOptions) => Promise<InstallResult>
+  /** Injectable for tests; production stops and restarts the node over SSH. */
+  restartNode?: (opts: RemoteRestartOptions) => Promise<void>
   findArtifact?: (target: string) => DistArtifact | null
   /** Default package version for registry installs (tests / overrides). */
   defaultCliVersion?: string
@@ -114,6 +125,7 @@ export class EnvironmentHost {
   private readonly probeHost: (target: SshTarget) => Promise<RemoteHostProbe>
   private readonly installNode: (opts: InstallOptions) => Promise<InstallResult>
   private readonly installFromRegistry: (opts: RegistryInstallOptions) => Promise<InstallResult>
+  private readonly restartNode: (opts: RemoteRestartOptions) => Promise<void>
   private readonly findArtifact: (target: string) => DistArtifact | null
   private readonly defaultCliVersion: string | undefined
   private readonly statusListeners = new Set<(snapshot: SupervisorSnapshot) => void>()
@@ -177,6 +189,7 @@ export class EnvironmentHost {
     this.probeHost = options.probeHost ?? probeRemoteHost
     this.installNode = options.installNode ?? installNodeOverSsh
     this.installFromRegistry = options.installFromRegistry ?? installNodeFromRegistry
+    this.restartNode = options.restartNode ?? restartNodeOverSsh
     this.findArtifact = options.findArtifact ?? ((target) => findDistArtifact(target))
     this.defaultCliVersion = options.defaultCliVersion
     this.connections = new NodeConnectionManager({
@@ -2088,6 +2101,7 @@ export class EnvironmentHost {
         preferredEndpointId: known.preferredEndpointId,
         installationProfile: known.installationProfile,
         credentialInMemoryOnly: !this.credentials.isSecureStorageAvailable(),
+        nodeUpgrade: this.nodeUpgradeFor(known, descriptor?.cliVersion),
         updatedAt: known.updatedAt,
       })
     }
@@ -2345,6 +2359,104 @@ export class EnvironmentHost {
     if (!shouldBlockDesktopForNewerNode(desktopVersion, remoteCliVersion)) return
     const message = desktopUpgradeRequiredMessage(desktopVersion, remoteCliVersion!.trim())
     throw Object.assign(new Error(message), { code: DESKTOP_UPGRADE_REQUIRED })
+  }
+
+  /**
+   * Flag a node that trails this desktop. Never throws and never upgrades:
+   * `connect` stays non-destructive because other desktops may share the node.
+   */
+  private nodeUpgradeFor(
+    known: KnownEnvironmentRecord,
+    remoteCliVersion: string | null | undefined,
+  ): NodeUpgradeAvailability | undefined {
+    let targetVersion: string
+    try {
+      targetVersion = this.resolveRegistryVersion()
+    } catch {
+      return undefined
+    }
+    if (!shouldOfferNodeUpgrade(targetVersion, remoteCliVersion)) return undefined
+    return {
+      remoteVersion: remoteCliVersion!.trim(),
+      targetVersion,
+      canUpgradeOverSsh: known.endpointProfiles.some(
+        (p) => p.kind === 'ssh-forward' && !!p.target,
+      ),
+    }
+  }
+
+  /**
+   * Install this desktop's CLI version on an already-paired node and restart it.
+   *
+   * Explicitly user-triggered — see {@link nodeUpgradeFor} for why connect will
+   * not do this on its own. Pairing survives: npm only replaces the launcher,
+   * while identity and credentials live in the node home.
+   */
+  async upgradeRemoteNode(
+    connectionId: string,
+    onProgress?: (progress: EnvironmentInstallProgress) => void,
+  ): Promise<{ version: string; warnings: string[] }> {
+    const known = this.connections.listKnown().find((k) => k.connectionId === connectionId)
+    if (!known) throw new Error(`unknown connection ${connectionId}`)
+
+    const spec = known.endpointProfiles
+      .map((p) => tunnelSpecFromEndpoint(p))
+      .find((s): s is NonNullable<typeof s> => s != null)
+    if (!spec) {
+      throw Object.assign(
+        new Error(
+          'This node was paired without an SSH endpoint, so the desktop cannot run ' +
+            'the installer on it. Upgrade it on the host with ' +
+            '`npm install -g @super-one/cli@alpha` and restart the node.',
+        ),
+        { code: 'failed_precondition' },
+      )
+    }
+
+    const targetVersion = this.resolveRegistryVersion()
+    const sshTarget: SshTarget = {
+      destination: spec.destination,
+      extraSshArgs: sshArgsForSpec(spec),
+    }
+
+    onProgress?.({ phase: 'probing' })
+    const probe = await this.probeHost(sshTarget)
+    const blocker = preflightBlocker(probe, 'registry')
+    if (blocker) throw Object.assign(new Error(blocker), { code: 'failed_precondition' })
+
+    const warnings: string[] = []
+    if (!probe.hasSystemd) {
+      warnings.push(
+        'systemd is not available on this host; the node will not restart automatically after reboot.',
+      )
+    }
+
+    // Drop our socket before the node goes down, otherwise the supervisor burns
+    // the restart window on reconnect attempts and lands in backoff.
+    this.disconnect(connectionId)
+
+    const installed = await this.installFromRegistry({
+      ...sshTarget,
+      nodeBinDir: probe.nodeBinDir,
+      version: targetVersion,
+      remoteHome: probe.home,
+      previousVersion: probe.superoneVersion ?? undefined,
+      onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
+    })
+
+    onProgress?.({ phase: 'starting' })
+    await this.restartNode({
+      ...sshTarget,
+      remoteExec: installed.remoteExec,
+      // Matches the default bootstrapNodeOverSsh derives; a custom node home is
+      // not persisted on the connection, so it is not recoverable here.
+      remoteNodeHome: `${probe.home}/.superone/node`,
+      remotePort: spec.remotePort,
+      nodeBinDir: probe.nodeBinDir,
+    })
+
+    await this.connect(connectionId)
+    return { version: installed.version, warnings }
   }
 
   /** Resolve a usable base URL, rebuilding an SSH tunnel when the endpoint needs one. */

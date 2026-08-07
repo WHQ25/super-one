@@ -183,9 +183,15 @@ export class AuthService {
   }
 
   /**
-   * Rotate refresh credential; reuse of an old refresh hash revokes the family.
-   * Requires proof signature over `proofPayload` with the registered device key
-   * (caller validates signature separately or passes already-verified flag).
+   * Rotate refresh credential.
+   *
+   * Reuse of a rotated refresh hash outside
+   * {@link AUTH_CREDENTIAL_LIFETIMES.refreshReuseGraceMs} is treated as theft
+   * and permanently revokes the family. Inside the grace window, presenting any
+   * previously rotated hash re-rotates the *current* session and returns a fresh
+   * pair (lost-response / concurrent-refresh races — RFC 6819 §5.2.2.3 style).
+   *
+   * Requires proof signature over `proofPayload` with the registered device key.
    */
   refreshAccess(input: {
     refreshToken: string
@@ -197,40 +203,71 @@ export class AuthService {
     const refreshHash = this.hashSecret(input.refreshToken)
     const now = Date.now()
 
-    const row = this.db
-      .prepare(
-        `SELECT client_session_id, device_public_key_pem, device_public_key_fingerprint,
-                scopes_json, refresh_family_id, refresh_hash, refresh_expires_at, revoked_at
-         FROM client_sessions WHERE refresh_hash = ?`,
-      )
-      .get(refreshHash) as
-      | {
-          client_session_id: string
-          device_public_key_pem: string
-          device_public_key_fingerprint: string
-          scopes_json: string
-          refresh_family_id: string
-          refresh_hash: string
-          refresh_expires_at: number
-          revoked_at: number | null
-        }
-      | undefined
+    type SessionRow = {
+      client_session_id: string
+      device_public_key_pem: string
+      device_public_key_fingerprint: string
+      scopes_json: string
+      refresh_family_id: string
+      refresh_hash: string
+      refresh_expires_at: number
+      revoked_at: number | null
+    }
+
+    const loadByHash = (hash: string): SessionRow | undefined =>
+      this.db
+        .prepare(
+          `SELECT client_session_id, device_public_key_pem, device_public_key_fingerprint,
+                  scopes_json, refresh_family_id, refresh_hash, refresh_expires_at, revoked_at
+           FROM client_sessions WHERE refresh_hash = ?`,
+        )
+        .get(hash) as SessionRow | undefined
+
+    const loadBySessionId = (clientSessionId: string): SessionRow | undefined =>
+      this.db
+        .prepare(
+          `SELECT client_session_id, device_public_key_pem, device_public_key_fingerprint,
+                  scopes_json, refresh_family_id, refresh_hash, refresh_expires_at, revoked_at
+           FROM client_sessions WHERE client_session_id = ?`,
+        )
+        .get(clientSessionId) as SessionRow | undefined
+
+    let row = loadByHash(refreshHash)
 
     if (!row) {
-      // Possible reuse of rotated token — revoke outside any failed transaction
-      // so the revocation commits even though the refresh itself errors.
+      // Rotated-away token: within grace → re-rotate current session (lost response /
+      // concurrent retries). Outside grace → permanent family revoke (theft signal).
+      // Any generation still inside its own grace window is accepted so two in-flight
+      // retries of the same previous hash do not cascade into revoke.
       const reused = this.db
-        .prepare('SELECT client_session_id FROM refresh_reuse_log WHERE refresh_hash = ?')
-        .get(refreshHash) as { client_session_id: string } | undefined
-      if (reused) {
-        this.db
-          .prepare('UPDATE client_sessions SET revoked_at = ? WHERE client_session_id = ? AND revoked_at IS NULL')
-          .run(now, reused.client_session_id)
-        // Drop live sockets immediately — DB revoke alone leaves WS connected.
-        this.onRevoke?.(reused.client_session_id)
-        throw Object.assign(new Error('refresh token reuse detected; session revoked'), { code: 'unauthorized' })
+        .prepare(
+          `SELECT client_session_id, seen_at FROM refresh_reuse_log WHERE refresh_hash = ?`,
+        )
+        .get(refreshHash) as { client_session_id: string; seen_at: number } | undefined
+
+      if (!reused) {
+        throw Object.assign(new Error('invalid refresh token'), { code: 'unauthorized' })
       }
-      throw Object.assign(new Error('invalid refresh token'), { code: 'unauthorized' })
+
+      const withinGrace =
+        now - reused.seen_at <= AUTH_CREDENTIAL_LIFETIMES.refreshReuseGraceMs
+
+      if (withinGrace) {
+        row = loadBySessionId(reused.client_session_id)
+        if (!row) {
+          throw Object.assign(new Error('invalid refresh token'), { code: 'unauthorized' })
+        }
+      } else {
+        this.db
+          .prepare(
+            'UPDATE client_sessions SET revoked_at = ? WHERE client_session_id = ? AND revoked_at IS NULL',
+          )
+          .run(now, reused.client_session_id)
+        this.onRevoke?.(reused.client_session_id)
+        throw Object.assign(new Error('refresh token reuse detected; session revoked'), {
+          code: 'unauthorized',
+        })
+      }
     }
 
     if (row.revoked_at) throw Object.assign(new Error('client session revoked'), { code: 'unauthorized' })
@@ -256,19 +293,22 @@ export class AuthService {
       throw Object.assign(new Error('proof timestamp out of window'), { code: 'unauthorized' })
     }
 
+    // Capture for the transaction closure (row is definitely defined here).
+    const session = row
+
     return this.db.transaction(() => {
-      const scopes = parseScopes(row.scopes_json)
+      const scopes = parseScopes(session.scopes_json)
       const newRefresh = randomToken(32)
       const newRefreshHash = this.hashSecret(newRefresh)
       const refreshExpiresAt = now + AUTH_CREDENTIAL_LIFETIMES.refreshInactivityMs
 
-      // Record old hash so later reuse is detected.
+      // Record current hash so later reuse of this generation is detected.
       this.db
         .prepare(
           `INSERT OR IGNORE INTO refresh_reuse_log (refresh_hash, client_session_id, seen_at)
            VALUES (?, ?, ?)`,
         )
-        .run(row.refresh_hash, row.client_session_id, now)
+        .run(session.refresh_hash, session.client_session_id, now)
 
       const updated = this.db
         .prepare(
@@ -276,7 +316,7 @@ export class AuthService {
            SET refresh_hash = ?, refresh_expires_at = ?, last_used_at = ?
            WHERE client_session_id = ? AND refresh_hash = ? AND revoked_at IS NULL`,
         )
-        .run(newRefreshHash, refreshExpiresAt, now, row.client_session_id, row.refresh_hash)
+        .run(newRefreshHash, refreshExpiresAt, now, session.client_session_id, session.refresh_hash)
       if (updated.changes !== 1) {
         throw Object.assign(new Error('refresh race; retry'), { code: 'conflict' })
       }
@@ -287,16 +327,16 @@ export class AuthService {
         aud: 'superone',
         exp: expiresAt,
         iat: now,
-        clientSessionId: row.client_session_id,
+        clientSessionId: session.client_session_id,
         scopes,
-        proofKeyThumbprint: row.device_public_key_fingerprint,
+        proofKeyThumbprint: session.device_public_key_fingerprint,
       })
 
       return {
         accessToken,
         expiresAt,
         scopes,
-        clientSessionId: row.client_session_id,
+        clientSessionId: session.client_session_id,
         refreshToken: newRefresh,
       }
     })()

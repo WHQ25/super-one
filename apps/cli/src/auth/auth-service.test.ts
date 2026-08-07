@@ -85,8 +85,8 @@ describe('AuthService', () => {
     expect(verified.ok).toBe(false)
   })
 
-  it('detects refresh token reuse and revokes the family', () => {
-    const { auth } = setup()
+  it('allows immediately-previous refresh within grace instead of revoking', () => {
+    const { auth, db } = setup()
     const device = generateEd25519KeyPair()
     const pairToken = auth.createPairingToken()
     const paired = auth.exchangePairingToken({
@@ -102,7 +102,54 @@ describe('AuthService', () => {
       verifyDeviceProof: verifyPayload,
     })
 
-    // Reuse old refresh token
+    // Lost-response / concurrent retry presents the just-rotated-away token.
+    const proof2 = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const recovered = auth.refreshAccess({
+      refreshToken: paired.refreshToken,
+      proofPayload: proof2,
+      proofSignature: signPayload(device.privateKeyPem, proof2),
+      verifyDeviceProof: verifyPayload,
+    })
+    expect(recovered.refreshToken).toBeTruthy()
+    expect(recovered.refreshToken).not.toBe(paired.refreshToken)
+    expect(recovered.refreshToken).not.toBe(first.refreshToken)
+
+    const st = db
+      .prepare('SELECT revoked_at FROM client_sessions WHERE client_session_id = ?')
+      .get(paired.clientSessionId) as { revoked_at: number | null }
+    expect(st.revoked_at).toBeNull()
+
+    // Current generation after grace recovery still works.
+    const proof3 = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const again = auth.refreshAccess({
+      refreshToken: recovered.refreshToken,
+      proofPayload: proof3,
+      proofSignature: signPayload(device.privateKeyPem, proof3),
+      verifyDeviceProof: verifyPayload,
+    })
+    expect(again.accessToken).toBeTruthy()
+  })
+
+  it('revokes when previous refresh is presented after grace expires', () => {
+    const { auth, db } = setup()
+    const device = generateEd25519KeyPair()
+    const pairToken = auth.createPairingToken()
+    const paired = auth.exchangePairingToken({
+      pairingToken: pairToken.token,
+      devicePublicKeyPem: device.publicKeyPem,
+    })
+
+    const proof1 = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const first = auth.refreshAccess({
+      refreshToken: paired.refreshToken,
+      proofPayload: proof1,
+      proofSignature: signPayload(device.privateKeyPem, proof1),
+      verifyDeviceProof: verifyPayload,
+    })
+
+    // Age the reuse-log entry past the grace window.
+    db.prepare('UPDATE refresh_reuse_log SET seen_at = ?').run(Date.now() - 120_000)
+
     const proof2 = `refresh:${paired.clientSessionId}:${Date.now()}`
     expect(() =>
       auth.refreshAccess({
@@ -113,13 +160,129 @@ describe('AuthService', () => {
       }),
     ).toThrow(/reuse/)
 
-    // New refresh should also fail because session was revoked
+    const st = db
+      .prepare('SELECT revoked_at FROM client_sessions WHERE client_session_id = ?')
+      .get(paired.clientSessionId) as { revoked_at: number | null }
+    expect(st.revoked_at).not.toBeNull()
+
     const proof3 = `refresh:${paired.clientSessionId}:${Date.now()}`
     expect(() =>
       auth.refreshAccess({
         refreshToken: first.refreshToken,
         proofPayload: proof3,
         proofSignature: signPayload(device.privateKeyPem, proof3),
+        verifyDeviceProof: verifyPayload,
+      }),
+    ).toThrow()
+  })
+
+  it('allows concurrent retries of the same previous token within grace', () => {
+    const { auth, db } = setup()
+    const device = generateEd25519KeyPair()
+    const pairToken = auth.createPairingToken()
+    const paired = auth.exchangePairingToken({
+      pairingToken: pairToken.token,
+      devicePublicKeyPem: device.publicKeyPem,
+    })
+
+    const t0 = paired.refreshToken
+    const proof1 = `refresh:${paired.clientSessionId}:${Date.now()}`
+    auth.refreshAccess({
+      refreshToken: t0,
+      proofPayload: proof1,
+      proofSignature: signPayload(device.privateKeyPem, proof1),
+      verifyDeviceProof: verifyPayload,
+    })
+
+    // Two in-flight clients both still hold t0 (classic race).
+    const proofA = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const a = auth.refreshAccess({
+      refreshToken: t0,
+      proofPayload: proofA,
+      proofSignature: signPayload(device.privateKeyPem, proofA),
+      verifyDeviceProof: verifyPayload,
+    })
+    const proofB = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const b = auth.refreshAccess({
+      refreshToken: t0,
+      proofPayload: proofB,
+      proofSignature: signPayload(device.privateKeyPem, proofB),
+      verifyDeviceProof: verifyPayload,
+    })
+    expect(a.refreshToken).toBeTruthy()
+    expect(b.refreshToken).toBeTruthy()
+
+    const st = db
+      .prepare('SELECT revoked_at FROM client_sessions WHERE client_session_id = ?')
+      .get(paired.clientSessionId) as { revoked_at: number | null }
+    expect(st.revoked_at).toBeNull()
+
+    // Last issued current still refreshes.
+    const proofC = `refresh:${paired.clientSessionId}:${Date.now()}`
+    expect(
+      auth.refreshAccess({
+        refreshToken: b.refreshToken,
+        proofPayload: proofC,
+        proofSignature: signPayload(device.privateKeyPem, proofC),
+        verifyDeviceProof: verifyPayload,
+      }).accessToken,
+    ).toBeTruthy()
+  })
+
+  it('revokes when a multi-generation-old token is presented after its grace expires', () => {
+    const { auth, db } = setup()
+    const device = generateEd25519KeyPair()
+    const pairToken = auth.createPairingToken()
+    const paired = auth.exchangePairingToken({
+      pairingToken: pairToken.token,
+      devicePublicKeyPem: device.publicKeyPem,
+    })
+
+    const t0 = paired.refreshToken
+    const proof1 = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const gen1 = auth.refreshAccess({
+      refreshToken: t0,
+      proofPayload: proof1,
+      proofSignature: signPayload(device.privateKeyPem, proof1),
+      verifyDeviceProof: verifyPayload,
+    })
+    const proof2 = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const gen2 = auth.refreshAccess({
+      refreshToken: gen1.refreshToken,
+      proofPayload: proof2,
+      proofSignature: signPayload(device.privateKeyPem, proof2),
+      verifyDeviceProof: verifyPayload,
+    })
+
+    // Age only the oldest reuse entry (t0) past grace; gen1 stays "fresh".
+    db.prepare(
+      `UPDATE refresh_reuse_log SET seen_at = ?
+       WHERE client_session_id = ? AND seen_at = (
+         SELECT MIN(seen_at) FROM refresh_reuse_log WHERE client_session_id = ?
+       )`,
+    ).run(Date.now() - 120_000, paired.clientSessionId, paired.clientSessionId)
+
+    const proof3 = `refresh:${paired.clientSessionId}:${Date.now()}`
+    expect(() =>
+      auth.refreshAccess({
+        refreshToken: t0,
+        proofPayload: proof3,
+        proofSignature: signPayload(device.privateKeyPem, proof3),
+        verifyDeviceProof: verifyPayload,
+      }),
+    ).toThrow(/reuse/)
+
+    const st = db
+      .prepare('SELECT revoked_at FROM client_sessions WHERE client_session_id = ?')
+      .get(paired.clientSessionId) as { revoked_at: number | null }
+    expect(st.revoked_at).not.toBeNull()
+
+    const proof4 = `refresh:${paired.clientSessionId}:${Date.now()}`
+    expect(() =>
+      auth.refreshAccess({
+        refreshToken: gen2.refreshToken,
+        proofPayload: proof4,
+        proofSignature: signPayload(device.privateKeyPem, proof4),
         verifyDeviceProof: verifyPayload,
       }),
     ).toThrow()

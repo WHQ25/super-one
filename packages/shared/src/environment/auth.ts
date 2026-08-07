@@ -34,6 +34,12 @@ export const AUTH_CREDENTIAL_LIFETIMES = {
   wsTicketMs: 30 * 1000,
   /** Refresh family expires after 90 days of inactivity. */
   refreshInactivityMs: 90 * 24 * 60 * 60 * 1000,
+  /**
+   * Immediately-previous refresh token remains redeemable this long after
+   * rotation. Mitigates lost-response / concurrent-refresh races without
+   * disabling reuse detection for older generations (RFC 6819 §5.2.2.3).
+   */
+  refreshReuseGraceMs: 60 * 1000,
 } as const
 
 export interface PairingTokenMetadata {

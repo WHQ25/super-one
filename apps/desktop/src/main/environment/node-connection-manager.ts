@@ -275,27 +275,44 @@ export class NodeConnectionManager {
       )
     }
 
-    const ensureAccess = async () => {
+    // Serialize refresh so concurrent ensureAccess (reconnect + manual Connect,
+    // parallel getWsTicket) cannot both present the same pre-rotation token.
+    // Server still has a grace window for lost-response; this cuts the race at the source.
+    let refreshInFlight: Promise<string> | null = null
+
+    const ensureAccess = async (): Promise<string> => {
       // Always retry encrypted persistence when memory is ahead of disk.
       if (credentialDirty) {
         tryPersistCredential()
       }
       if (accessToken && accessExpiresAt > Date.now() + 30_000) return accessToken
-      const tokens = await refreshNodeAccess({
-        baseUrl: credential.baseUrl,
-        refreshToken: credential.refreshToken,
-        devicePrivateKeyPem: credential.devicePrivateKeyPem,
-        clientSessionId: credential.clientSessionId,
-      })
-      // Server-returned rotated refresh is authoritative in memory even if disk save fails.
-      // Using the old refresh again would trigger reuse-revocation of the valid family.
-      credential.refreshToken = tokens.refreshToken
-      credential.clientSessionId = tokens.clientSessionId
-      accessToken = tokens.accessToken
-      accessExpiresAt = tokens.expiresAt
-      tryPersistCredential()
-      // Keep the connection usable; dirty state is retried on later ensureAccess/health.
-      return accessToken
+      if (refreshInFlight) return refreshInFlight
+
+      refreshInFlight = (async () => {
+        try {
+          // Re-check after winning the in-flight slot — a peer may have just refreshed.
+          if (accessToken && accessExpiresAt > Date.now() + 30_000) return accessToken
+          const tokens = await refreshNodeAccess({
+            baseUrl: credential.baseUrl,
+            refreshToken: credential.refreshToken,
+            devicePrivateKeyPem: credential.devicePrivateKeyPem,
+            clientSessionId: credential.clientSessionId,
+          })
+          // Server-returned rotated refresh is authoritative in memory even if disk save fails.
+          // Using the old refresh again would trigger reuse-revocation of the valid family.
+          credential.refreshToken = tokens.refreshToken
+          credential.clientSessionId = tokens.clientSessionId
+          accessToken = tokens.accessToken
+          accessExpiresAt = tokens.expiresAt
+          tryPersistCredential()
+          // Keep the connection usable; dirty state is retried on later ensureAccess/health.
+          return accessToken
+        } finally {
+          refreshInFlight = null
+        }
+      })()
+
+      return refreshInFlight
     }
 
     const client = new NodeRpcClient({

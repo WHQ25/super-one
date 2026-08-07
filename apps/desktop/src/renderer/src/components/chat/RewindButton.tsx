@@ -18,7 +18,7 @@ import {
   TooltipTrigger,
 } from '@superone/ui/components/ui/tooltip'
 import type { RewindFilesResult } from '@superone/shared/agent-types'
-import { isFocusInChat } from './is-focus-in-chat'
+import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
 type RewindMode = 'code' | 'conversation' | 'code_and_chat'
 
@@ -58,6 +58,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [rewindingMode, setRewindingMode] = useState<RewindMode | null>(null)
+  const chatRootRef = useChatRootRef()
 
   const previewRewind = useChatStore((s) => s.previewRewind)
   const rewindFiles = useChatStore((s) => s.rewindFiles)
@@ -128,7 +129,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
   useEffect(() => {
     if (!dialogOpen || !preview?.canRewind) return
     const handler = (e: KeyboardEvent) => {
-      if (!isFocusInChat()) return
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
       const num = parseInt(e.key)
       if (num >= 1 && num <= options.length) {
         e.preventDefault()
@@ -137,7 +138,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [dialogOpen, preview?.canRewind, options, handleSelect])
+  }, [dialogOpen, preview?.canRewind, options, handleSelect, chatRootRef])
 
   return (
     <>

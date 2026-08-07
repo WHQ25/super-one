@@ -12,7 +12,7 @@ import type {
   VideoGenProviderOption,
   VideoGenReferenceImage,
 } from '@superone/shared/agent-types'
-import { isFocusInChat } from './is-focus-in-chat'
+import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
 // Canonical definitions live in @superone/shared/agent-types (main + renderer share them);
 // re-exported here so existing importers (Storybook stories) keep working unchanged.
@@ -65,6 +65,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const confirmBtnRef = useRef<HTMLButtonElement>(null)
   const feedbackRef = useRef<HTMLInputElement>(null)
+  const chatRootRef = useChatRootRef()
 
   const provider = providers.find((p) => p.id === form.provider) ?? providers[0]
   const models = provider?.models ?? []
@@ -92,13 +93,16 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
 
   useEffect(() => {
     if (isCollapsed) return
-    requestAnimationFrame(() => confirmBtnRef.current?.focus())
-  }, [isCollapsed])
+    requestAnimationFrame(() => {
+      if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+      confirmBtnRef.current?.focus()
+    })
+  }, [isCollapsed, chatRootRef])
 
   useEffect(() => {
     if (isCollapsed) return
     function onKeyDown(e: KeyboardEvent): void {
-      if (!isFocusInChat()) return
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
       if (hasOpenPopover()) return
       if (isEditableElement(document.activeElement)) return
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -113,7 +117,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isCollapsed, canReject, feedback, onReject])
+  }, [isCollapsed, canReject, feedback, onReject, chatRootRef])
 
   const handleFeedbackKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {

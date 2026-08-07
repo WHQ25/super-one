@@ -5,7 +5,7 @@ import type { PermissionRequest } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppIcon } from '@/hooks/use-app-icon'
 import { PermissionActionButton } from './PermissionActionBar'
-import { isFocusInChat } from './is-focus-in-chat'
+import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
 interface Props {
   request: PermissionRequest
@@ -80,6 +80,7 @@ export function ComputerUseGrantPrompt({
   const { t } = useTranslation()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const chatRootRef = useChatRootRef()
   const grant = request.computerUseGrant
   const app = grant?.app ?? (typeof request.input.app === 'string' ? request.input.app : 'App')
   const bundleId = grant?.bundleId
@@ -93,13 +94,16 @@ export function ComputerUseGrantPrompt({
 
   useEffect(() => {
     if (!isCollapsed) {
-      requestAnimationFrame(() => btnRefs.current[0]?.focus())
+      requestAnimationFrame(() => {
+        if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+        btnRefs.current[0]?.focus()
+      })
     }
-  }, [request.requestId, isCollapsed])
+  }, [request.requestId, isCollapsed, chatRootRef])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (!isFocusInChat()) return
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
       if (isCollapsed) {
         if (e.key === ' ') {
           e.preventDefault()
@@ -124,7 +128,7 @@ export function ComputerUseGrantPrompt({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isCollapsed, onSessionAllow, onAlwaysAllow, onDeny])
+  }, [isCollapsed, onSessionAllow, onAlwaysAllow, onDeny, chatRootRef])
 
   const handleCollapse = useCallback(() => setIsCollapsed(true), [])
   const handleExpand = useCallback(() => setIsCollapsed(false), [])

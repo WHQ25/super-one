@@ -13,7 +13,7 @@ import {
   type PlanLineComment,
 } from './plan-feedback'
 import { PlanLineReview } from './PlanLineReview'
-import { isFocusInChat } from './is-focus-in-chat'
+import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
 export function PlanApprovalPrompt() {
   const { t } = useTranslation()
@@ -27,6 +27,7 @@ export function PlanApprovalPrompt() {
   const [freeform, setFreeform] = useState('')
   const [comments, setComments] = useState<PlanLineComment[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
+  const chatRootRef = useChatRootRef()
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const [switchAfterApproval, setSwitchAfterApproval] = useState(false)
   const requestId = pending?.requestId
@@ -130,7 +131,7 @@ export function PlanApprovalPrompt() {
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return
-      if (!isFocusInChat()) return
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
 
       const active = document.activeElement
       const inPrompt = !!(active && containerRef.current?.contains(active))
@@ -193,6 +194,7 @@ export function PlanApprovalPrompt() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [
+    chatRootRef,
     focusVisibleFeedbackInput,
     handleApprove,
     handleApproveFastMode,

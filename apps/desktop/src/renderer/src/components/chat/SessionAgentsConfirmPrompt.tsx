@@ -20,7 +20,7 @@ import { ApproveRejectBar } from './PermissionActionBar'
 import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
 import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
 import { useCollabLaunchModelSelector } from './model-selector/useCollabLaunchModelSelector'
-import { isFocusInChat } from './is-focus-in-chat'
+import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
 interface Props {
   payload: SessionAgentRequestPayload
@@ -216,6 +216,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const [feedback, setFeedback] = useState('')
   const [feedbackFocused, setFeedbackFocused] = useState(false)
   const feedbackRef = useRef<HTMLInputElement>(null)
+  const chatRootRef = useChatRootRef()
 
   const { launches, profiles } = payload
   const tabLabels = useMemo(() => buildTabLabels(launches, profiles), [launches, profiles])
@@ -243,7 +244,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (!isFocusInChat()) return
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
       if (hasOpenRadixOverlay()) return
       const typing = document.activeElement === feedbackRef.current
 
@@ -286,7 +287,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeIndex, launches.length, handleConfirm, handleReject])
+  }, [activeIndex, launches.length, handleConfirm, handleReject, chatRootRef])
 
   if (!activeLaunch) return null
 

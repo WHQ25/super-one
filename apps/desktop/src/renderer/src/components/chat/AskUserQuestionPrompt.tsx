@@ -5,7 +5,7 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { QuestionPreviewContent as PreviewContent } from './tool-result-views'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
-import { isFocusInChat } from './is-focus-in-chat'
+import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 import type { UserQuestion, QuestionAnnotations, QuestionPreviewFormat } from '@superone/shared/agent-types'
 
 function questionKey(q: UserQuestion): string {
@@ -275,6 +275,7 @@ export function AskUserQuestionPrompt() {
   const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
   const answerQuestion = useChatStore((s) => s.answerQuestion)
   const dismissQuestion = useChatStore((s) => s.dismissQuestion)
+  const chatRootRef = useChatRootRef()
   useRestoreChatInputFocus(!!pendingQuestion)
 
   const [selections, setSelections] = useState<Record<string, string>>({})
@@ -321,7 +322,9 @@ export function AskUserQuestionPrompt() {
     if (!pendingQuestion) return
     // When the user is working in another panel (file editor, terminal, browser
     // chrome, etc.), digit keys must type there — not select options here.
-    if (!isFocusInChat()) return
+    // Also require this mosaic pane's chat root so a sibling tile's prompt
+    // cannot swallow keys or steal focus from the pane being typed in.
+    if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
     const { questions } = pendingQuestion
     const typing = isTypingInInput()
 
@@ -397,7 +400,7 @@ export function AskUserQuestionPrompt() {
       setOtherFocused(true)
       return
     }
-  }, [pendingQuestion, activeTab, selections, otherTexts, otherFocused, notesTexts, dismissQuestion, answerQuestion, selectOption, isTypingInInput, resetState])
+  }, [pendingQuestion, activeTab, selections, otherTexts, otherFocused, notesTexts, dismissQuestion, answerQuestion, selectOption, isTypingInInput, resetState, chatRootRef])
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)

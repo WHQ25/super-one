@@ -24,6 +24,7 @@ import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-na
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { extractTurnOutline } from './turn-outline'
+import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 
 interface ChatContentProps {
@@ -460,6 +461,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col"
       style={densityStyle}
     >
+      <ChatRootContext.Provider value={containerRef}>
       {workflowView ? (
         <Suspense fallback={null}>
           <WorkflowFullView view={workflowView} />
@@ -497,6 +499,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
           </div>
         </>
       )}
+      </ChatRootContext.Provider>
     </div>
     </PlanFullscreenContext.Provider>
     </ForkNavigationContext.Provider>

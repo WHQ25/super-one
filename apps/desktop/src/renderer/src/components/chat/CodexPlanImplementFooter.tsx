@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
-import { isFocusInChat } from './is-focus-in-chat'
+import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
 interface CodexPlanImplementFooterProps {
   onApprove: () => void
@@ -14,6 +14,7 @@ export function CodexPlanImplementFooter({ onApprove, onReject }: CodexPlanImple
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const feedbackRef = useRef<HTMLInputElement>(null)
+  const chatRootRef = useChatRootRef()
 
   const submitReject = () => {
     onReject(feedback.trim() || undefined)
@@ -22,7 +23,7 @@ export function CodexPlanImplementFooter({ onApprove, onReject }: CodexPlanImple
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return
-      if (!isFocusInChat()) return
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
 
       const active = document.activeElement
       const feedbackInput = feedbackRef.current
@@ -52,7 +53,7 @@ export function CodexPlanImplementFooter({ onApprove, onReject }: CodexPlanImple
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [feedback, onApprove, onReject])
+  }, [feedback, onApprove, onReject, chatRootRef])
 
   return (
     <div ref={containerRef} className="flex w-full flex-col gap-2 @xl:flex-row @xl:items-center">

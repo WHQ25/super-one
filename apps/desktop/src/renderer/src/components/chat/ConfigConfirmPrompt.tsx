@@ -18,7 +18,7 @@ import { useAppStore } from '@/stores/app'
 import { DEFAULT_TERMINAL_FONT_SIZE } from '@/components/coding/terminal-palettes'
 import { diffConfigFieldValue, formatSettingsFieldDisplay } from '@/lib/config-field-summary'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
-import { isFocusInChat } from './is-focus-in-chat'
+import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
 type ConfigValue = unknown
 
@@ -56,6 +56,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const confirmBtnRef = useRef<HTMLButtonElement>(null)
   const feedbackRef = useRef<HTMLInputElement>(null)
+  const chatRootRef = useChatRootRef()
   // Preview sibling font settings: prefer values from this confirm batch, else live app store.
   const storeTerminalFontSize = useAppStore((s) => s.terminalFontSize)
   const storeTerminalFontFamily = useAppStore((s) => s.terminalFontFamily)
@@ -72,13 +73,16 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
 
   useEffect(() => {
     if (isCollapsed) return
-    requestAnimationFrame(() => confirmBtnRef.current?.focus())
-  }, [isCollapsed])
+    requestAnimationFrame(() => {
+      if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+      confirmBtnRef.current?.focus()
+    })
+  }, [isCollapsed, chatRootRef])
 
   useEffect(() => {
     if (isCollapsed) return
     function onKeyDown(e: KeyboardEvent): void {
-      if (!isFocusInChat()) return
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
       if (hasOpenPopover()) return
       if (isEditableElement(document.activeElement)) return
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -94,7 +98,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isCollapsed, feedback, onReject])
+  }, [isCollapsed, feedback, onReject, chatRootRef])
 
   const handleFeedbackKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {

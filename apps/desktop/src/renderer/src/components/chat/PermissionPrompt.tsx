@@ -20,7 +20,7 @@ import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
 import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
-import { isFocusInChat } from './is-focus-in-chat'
+import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
 interface MiniAppToolInfo {
   appId: string
@@ -127,6 +127,7 @@ export function PermissionPrompt() {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([])
   const feedbackRef = useRef<HTMLInputElement>(null)
+  const chatRootRef = useChatRootRef()
 
   const requestId = pendingPermission?.requestId
   const toolName = pendingPermission?.toolName
@@ -183,10 +184,15 @@ export function PermissionPrompt() {
   useEffect(() => {
     // VideoGenConfirmPrompt mounts its own window keydown listener and manages its
     // own focus — this autofocus effect must not fight it.
+    // Also skip when another mosaic chat pane owns keyboard focus so a background
+    // session's permission prompt cannot steal the composer caret.
     if (requestId && !isCollapsed && !isSelfManagedConfirm) {
-      requestAnimationFrame(() => btnRefs.current[0]?.focus())
+      requestAnimationFrame(() => {
+        if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+        btnRefs.current[0]?.focus()
+      })
     }
-  }, [requestId, isCollapsed, isSelfManagedConfirm])
+  }, [requestId, isCollapsed, isSelfManagedConfirm, chatRootRef])
 
   const btnCount = promptConfig.buttonCount
 
@@ -268,8 +274,9 @@ export function PermissionPrompt() {
     if (!requestId || isSelfManagedConfirm) return
 
     function onKeyDown(e: KeyboardEvent) {
-      // Enter/Esc/Space/digits must not fire while the user types in another panel.
-      if (!isFocusInChat()) return
+      // Enter/Esc/Space/digits must not fire while the user types in another panel
+      // or in a sibling mosaic chat pane.
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
 
       if (isCollapsed) {
         if (e.key === ' ') {
@@ -352,7 +359,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef])
 
   if (!pendingPermission) return null
 

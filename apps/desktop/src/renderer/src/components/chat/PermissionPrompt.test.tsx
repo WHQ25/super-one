@@ -1,8 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { createRef, type RefObject } from 'react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, ReactElement, ReactNode } from 'react'
+import { ChatRootContext } from './is-focus-in-chat'
 
 const chatState = {
   respondToPermission: vi.fn(),
@@ -66,9 +68,16 @@ vi.mock('./PermissionModeSelector', () => ({
 
 import { PermissionPrompt } from './PermissionPrompt'
 
-/** Shortcuts only fire while focus is inside [data-chat-root]. */
+/** Shortcuts only fire while focus is inside this pane's [data-chat-root]. */
 function renderInChat(ui: ReactElement) {
-  const result = render(<div data-chat-root="" tabIndex={-1}>{ui}</div>)
+  const rootRef = createRef<HTMLDivElement>()
+  const result = render(
+    <div ref={rootRef} data-chat-root="" tabIndex={-1}>
+      <ChatRootContext.Provider value={rootRef as RefObject<HTMLElement | null>}>
+        {ui}
+      </ChatRootContext.Provider>
+    </div>,
+  )
   ;(result.container.querySelector('[data-chat-root]') as HTMLElement).focus()
   return result
 }
@@ -117,5 +126,56 @@ describe('PermissionPrompt', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
 
     expect(chatState.respondToPermission).toHaveBeenCalledWith('req-1', false, undefined, undefined, undefined, 'cancel')
+  })
+
+  it('ignores Escape when focus is in a sibling mosaic chat pane', () => {
+    const rootA = createRef<HTMLDivElement>()
+    const rootB = createRef<HTMLDivElement>()
+    render(
+      <div>
+        <div ref={rootA} data-chat-root="" tabIndex={-1}>
+          <input data-testid="pane-a-input" />
+        </div>
+        <div ref={rootB} data-chat-root="" tabIndex={-1}>
+          <ChatRootContext.Provider value={rootB as RefObject<HTMLElement | null>}>
+            <PermissionPrompt />
+          </ChatRootContext.Provider>
+        </div>
+      </div>,
+    )
+
+    act(() => {
+      screen.getByTestId('pane-a-input').focus()
+    })
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(chatState.respondToPermission).not.toHaveBeenCalled()
+  })
+
+  it('does not autofocus permission buttons when another chat pane owns focus', async () => {
+    const rootA = createRef<HTMLDivElement>()
+    const rootB = createRef<HTMLDivElement>()
+    render(
+      <div>
+        <div ref={rootA} data-chat-root="" tabIndex={-1}>
+          <input data-testid="pane-a-input" />
+        </div>
+        <div ref={rootB} data-chat-root="" tabIndex={-1}>
+          <ChatRootContext.Provider value={rootB as RefObject<HTMLElement | null>}>
+            <PermissionPrompt />
+          </ChatRootContext.Provider>
+        </div>
+      </div>,
+    )
+
+    act(() => {
+      screen.getByTestId('pane-a-input').focus()
+    })
+    // Flush the rAF autofocus scheduled on mount
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r))
+    })
+
+    expect(document.activeElement).toBe(screen.getByTestId('pane-a-input'))
   })
 })

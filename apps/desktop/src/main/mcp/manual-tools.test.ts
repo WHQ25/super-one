@@ -37,6 +37,23 @@ describe('manualReadHandler', () => {
     expect(text).toMatch(/red.?green/i)
   })
 
+  it('returns product collaboration docs for session_collab worktree recipes', async () => {
+    const result = await manualReadHandler({ domain: 'product', topic: 'collaboration' })
+    const text = result.content[0].text
+    expect(result.isError).not.toBe(true)
+    expect(text).toMatch(/worktree/i)
+    expect(text).toMatch(/session_collab_request/)
+    expect(text).toMatch(/~\/\.worktrees/)
+  })
+
+  it('lists collaboration in product domain index', async () => {
+    const result = await manualReadHandler({ domain: 'product' })
+    expect(result.content[0].text).toMatch(/collaboration/)
+    for (const topic of PRODUCT_GUIDE_TOPICS) {
+      expect(result.content[0].text).toContain(topic)
+    }
+  })
+
   it('lists miniapp topics for domain only', async () => {
     const result = await manualReadHandler({ domain: 'miniapp' })
     const text = result.content[0].text

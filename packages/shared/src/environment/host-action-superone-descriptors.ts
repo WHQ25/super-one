@@ -19,7 +19,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_collab_request",
-    "description": "Request approval for one or more child-agent launches. Repeat an agentId to launch multiple sessions from one profile. Every launch must include name (an agent-chosen human label, not the harness name) and role (for example, Reviewer or Implementer). config is optional; omitted model/effort fields inherit the selected profile defaultConfig, while explicit values override it. Session title becomes \"Name - Role\". The user reviews and may edit model/effort/AI provider/permission/sandbox (task, name, role, agent profile, cwd, worktree stay as requested). On approval each launch returns a bearer credential. Each credential can create exactly one session and must be kept private.",
+    "description": "Request approval for one or more child-agent launches. Repeat an agentId to launch multiple sessions from one profile. Every launch must include name (an agent-chosen human label, not the harness name) and role (for example, Reviewer or Implementer). config is optional; omitted model/effort inherit profile defaultConfig. Before using config.worktree or config.cwd, call read_manual({ domain: \"product\", topic: \"collaboration\" }). Session title is \"Name - Role\". User may edit model/effort/provider/permission/sandbox (task, name, role, agent, cwd, worktree stay as requested). On approval each launch returns a private one-shot credential.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -91,10 +91,12 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                     ]
                   },
                   "cwd": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Child working directory. Default: parent project root. Set only for a different project/repo. Never set to ~/.worktrees/… — use config.worktree instead. Details: read_manual({ domain: \"product\", topic: \"collaboration\" })."
                   },
                   "worktree": {
                     "type": "object",
+                    "description": "Host-managed git worktree for same-repo isolation. Leave cwd at project root. See read_manual({ domain: \"product\", topic: \"collaboration\" }).",
                     "properties": {
                       "enabled": {
                         "type": "boolean"

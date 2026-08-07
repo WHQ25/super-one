@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { BUILT_IN_SUPERONE_TOOL_DEFS, BUILT_IN_SUPERONE_TOOL_NAMES, LAUNCH_PERMISSION_MODE_DESCRIPTION } from './superone-mcp-builtin-defs'
+import {
+  BUILT_IN_SUPERONE_TOOL_DEFS,
+  BUILT_IN_SUPERONE_TOOL_NAMES,
+  LAUNCH_PERMISSION_MODE_DESCRIPTION,
+  SESSION_REQUEST_AGENTS_DESCRIPTION,
+} from './superone-mcp-builtin-defs'
 
 /**
  * A built-in tool has to be declared on two surfaces: the Zod `registerTool` calls the in-process
@@ -81,6 +86,18 @@ describe('built-in superone tool registration surfaces', () => {
     const config = (launch.config as { properties: Record<string, { description?: string }> }).properties
     expect(config.permissionMode.description).toBe(LAUNCH_PERMISSION_MODE_DESCRIPTION)
     expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).toMatch(/bypassPermissions/)
+  })
+
+  it('points session_collab_request at product/collaboration for worktree recipes', () => {
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/read_manual/)
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/collaboration/)
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION.length).toBeLessThanOrEqual(700)
+    const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_request')!
+    const launch = (def.inputSchema.properties as Record<string, { items?: { properties?: Record<string, unknown> } }>)
+      .launches.items!.properties!
+    const config = (launch.config as { properties: Record<string, { description?: string }> }).properties
+    expect(config.cwd.description).toMatch(/read_manual/)
+    expect(config.worktree.description).toMatch(/read_manual/)
   })
 
   it('marks read_manual as alwaysLoad so Claude Tool Search does not hide it', () => {

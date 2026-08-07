@@ -29,6 +29,7 @@ import mediaNewapiVideoMd from './guides/media/newapi-video.md?raw'
 import productOverviewMd from './guides/product/overview.md?raw'
 import productContributeMd from './guides/product/contribute.md?raw'
 import productDebugMd from './guides/product/debug.md?raw'
+import productCollaborationMd from './guides/product/collaboration.md?raw'
 import {
   MANUAL_DOMAINS,
   MANUAL_READ_DESCRIPTION,
@@ -82,6 +83,7 @@ const PRODUCT_GUIDES = {
   overview: productOverviewMd,
   contribute: productContributeMd,
   debug: productDebugMd,
+  collaboration: productCollaborationMd,
 } satisfies Record<ProductGuideTopic, string>
 
 const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
@@ -117,7 +119,7 @@ const MEDIA_TOPIC_SUMMARIES: Record<MediaGuideTopic, string> = {
 }
 
 const DOMAIN_SUMMARIES: Record<ManualDomain, string> = {
-  product: 'Product support and contributing: overview, issues/PRs (contribute), logs and runtime paths (debug).',
+  product: 'Product support and contributing: overview, issues/PRs (contribute), logs (debug), agent collaboration / worktrees (collaboration).',
   miniapp: 'Mini-app development: scaffold, APIs, packaging, tools.',
   media: 'Image/video generation: provider-specific parameters and silent-failure modes.',
   widget: 'Inline chat widget design guidelines. Saved templates use widget_list_templates.',
@@ -149,7 +151,7 @@ function formatCatalog(): string {
     lines.push(DOMAIN_SUMMARIES[domain])
     if (domain === 'product') {
       lines.push(`Topics: ${PRODUCT_GUIDE_TOPICS.join(', ')}`)
-      lines.push('Issues / PRs: `domain: "product", topic: "contribute"`. Logs / paths: `topic: "debug"`.')
+      lines.push('Issues / PRs: `topic: "contribute"`. Logs: `topic: "debug"`. Collab/worktree: `topic: "collaboration"`.')
     } else if (domain === 'miniapp') {
       lines.push(`Topics: ${MINIAPP_GUIDE_TOPICS.join(', ')}`)
       lines.push('Start with `domain: "miniapp", topic: "overview"`.')
@@ -170,12 +172,14 @@ function formatDomainIndex(domain: ManualDomain): string {
   if (domain === 'product') {
     return [
       '# Product manual topics',
-      '- overview — product identity, links, when to use contribute vs debug',
+      '- overview — product identity, links, when to use contribute vs debug vs collaboration',
       '- contribute — GitHub issues and PRs (bugs, features, improvements); issue first, optional red–green PR',
       '- debug — log paths, userData, monorepo map, this machine’s runtime paths',
+      '- collaboration — session_collab_* launches: cwd vs worktree.enabled, parallel implementers/reviewers',
       '',
       'Call `read_manual({ domain: "product", topic: "contribute" })` for issues / PRs.',
       'Call `read_manual({ domain: "product", topic: "debug" })` for logs and local diagnosis.',
+      'Call `read_manual({ domain: "product", topic: "collaboration" })` before session_collab_request with worktrees.',
     ].join('\n')
   }
   if (domain === 'miniapp') {

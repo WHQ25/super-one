@@ -47,7 +47,7 @@ export {
 export const MANUAL_DOMAINS = ['product', 'miniapp', 'media', 'widget'] as const
 export type ManualDomain = (typeof MANUAL_DOMAINS)[number]
 
-export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug'] as const
+export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug', 'collaboration'] as const
 
 export const READ_MANUAL_INPUT_SCHEMA = {
   type: 'object',
@@ -112,9 +112,10 @@ export const MOBILE_SHARE_FILE_INPUT_SCHEMA = {
 export const MANUAL_READ_DESCRIPTION =
   'Read bundled SuperOne manuals. Omit domain to list all domains; pass domain to list its topics; ' +
   'pass domain with topic to read one topic. For widget, pass either topic or modules, never both. ' +
-  'Use product/contribute for GitHub issues and PRs (any bug or idea; issue-first, optional red–green PR), product/debug for support and runtime paths, miniapp/overview before mini-app development, ' +
-  'and media/overview before provider-specific options. Use config_read for live settings and ' +
-  'widget_list_templates for saved widgets.'
+  'Use product/contribute for GitHub issues and PRs (any bug or idea; issue-first, optional red–green PR), product/debug for support and runtime paths, ' +
+  'product/collaboration before session_collab_request (worktree vs cwd, parallel implementers/reviewers), ' +
+  'miniapp/overview before mini-app development, and media/overview before provider-specific options. ' +
+  'Use config_read for live settings and widget_list_templates for saved widgets.'
 
 export const MINIAPP_GUIDE_TOPIC_DESCRIPTION =
   'Read overview first, then choose the narrowest topic needed for the current implementation step.'
@@ -181,9 +182,10 @@ export const SESSION_LIST_AGENTS_DESCRIPTION =
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
   'Request approval for one or more child-agent launches. Repeat an agentId to launch multiple sessions from one profile. ' +
   'Every launch must include name (an agent-chosen human label, not the harness name) and role (for example, Reviewer or Implementer). ' +
-  'config is optional; omitted model/effort fields inherit the selected profile defaultConfig, while explicit values override it. ' +
-  'Session title becomes "Name - Role". The user reviews and may edit model/effort/AI provider/permission/sandbox (task, name, role, agent profile, cwd, worktree stay as requested). ' +
-  'On approval each launch returns a bearer credential. Each credential can create exactly one session and must be kept private.'
+  'config is optional; omitted model/effort inherit profile defaultConfig. ' +
+  'Before using config.worktree or config.cwd, call read_manual({ domain: "product", topic: "collaboration" }). ' +
+  'Session title is "Name - Role". User may edit model/effort/provider/permission/sandbox (task, name, role, agent, cwd, worktree stay as requested). ' +
+  'On approval each launch returns a private one-shot credential.'
 
 /**
  * Field-level guidance, not part of the tool description: `session_collab_request`
@@ -191,6 +193,9 @@ export const SESSION_REQUEST_AGENTS_DESCRIPTION =
  * the input schema is only read when the model actually fills the field in.
  * Both registration surfaces (JSON Schema for the Codex stdio bridge, Zod for the
  * in-process Claude server) must carry it — see superone-mcp-builtin-defs.test.ts.
+ *
+ * Long worktree/cwd recipes live in product/collaboration via read_manual — keep
+ * field blurbs short and point there.
  */
 export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
   'How autonomous the child session is. Prefer the most autonomous mode it can finish the task under — "bypassPermissions" (shown as Bypass on Claude-family harnesses, Full Access on Codex), or "auto" for ACP agents. ' +
@@ -198,8 +203,17 @@ export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
   'Requesting an autonomous mode is safe by construction: nothing runs until the user approves this very request, and that approval dialog is where they downgrade permission or sandbox per launch. ' +
   'Pick "plan" or "default" only when stopping for human review is the point of the launch.'
 
+export const LAUNCH_CWD_DESCRIPTION =
+  'Child working directory. Default: parent project root. Set only for a different project/repo. ' +
+  'Never set to ~/.worktrees/… (or any worktree leaf of the current repo) — use config.worktree instead. ' +
+  'Details: read_manual({ domain: "product", topic: "collaboration" }).'
+
+export const LAUNCH_WORKTREE_DESCRIPTION =
+  'Host-managed git worktree for same-repo isolation (preferred). Leave cwd at the project root; set enabled/baseBranch/mode. ' +
+  'mode branch|detach|attach — see read_manual({ domain: "product", topic: "collaboration" }) for recipes (parallel implementers, reviewers).'
+
 export const LAUNCH_BRANCH_NAME_DESCRIPTION =
-  'Branch to create for this worktree. Must be unique across launches — git cannot check out one branch in two worktrees.'
+  'Branch to create for this worktree when mode is "branch". Must be unique across launches — git cannot check out one branch in two worktrees.'
 
 export const SESSION_START_DESCRIPTION =
   'Create the real, user-visible collaboration child session authorized by one credential and deliver the approved launch task. ' +
@@ -208,17 +222,15 @@ export const SESSION_START_DESCRIPTION =
   'The child then works asynchronously — start every child you need back to back, and never block on one before starting the next.'
 
 export const SESSION_SEND_DESCRIPTION =
-  'Send a persistent mailbox message between the parent and child sessions authorized by a credential. Direction is derived from the calling session. ' +
-  'Write content as Markdown (headings, lists, code fences, emphasis, tables when useful) so peer agents and the SuperOne UI can render a structured handoff. ' +
-  'Use clientMessageId for retry-safe idempotency. Delivery is push-based both ways: the peer is woken by a task notification (even mid-turn), and when it replies the host wakes you the same way — a fresh turn starts, telling you to call session_collab_retrieve. ' +
-  'So after sending, move on to other work or end your turn; ending the turn IS how you wait here, and no reply is missed. Never sleep, re-send, or poll session_collab_retrieve while waiting.'
+  'Send a persistent mailbox message between parent and child sessions authorized by a credential. ' +
+  'Write content as Markdown so peers and the SuperOne UI can render a structured handoff. ' +
+  'Use clientMessageId for retry-safe idempotency. Delivery is push-based: the peer is woken (even mid-turn), and when it replies you get a wake turn to call session_collab_retrieve. ' +
+  'After sending, do other work or end your turn — ending the turn is how you wait. Never sleep, re-send, or poll while waiting.'
 
 export const SESSION_RETRIEVE_DESCRIPTION =
-  'Retrieve persistent mailbox messages addressed to this session. Non-blocking single read: returns the messages already waiting (status "messages") or nothing (status "empty"). ' +
-  'Each message content is Markdown written by the peer — parse structure (headings, lists, code) rather than treating it as plain text. ' +
-  'Pass multiple credentials to drain several parent/child mailboxes in one call. Returned messages advance only this agent endpoint cursor. ' +
-  'Call it when a collaboration wake notification arrives, or once to drain the inbox before you act on peer input. ' +
-  'Status "empty" means no peer has replied yet — it is NOT a retry signal: do not call again, do not sleep, do not spin. End your turn and the wake notification will start a new one the moment a message actually arrives.'
+  'Retrieve mailbox messages for this session. Non-blocking: status "messages" or "empty". Content is Markdown from the peer. ' +
+  'Pass multiple credentials to drain several mailboxes. Call on a collaboration wake, or once before acting on peer input. ' +
+  'Status "empty" is not a retry signal — end your turn; a wake starts a new one when mail arrives.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
@@ -266,9 +278,10 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                     description: LAUNCH_PERMISSION_MODE_DESCRIPTION,
                   },
                   sandboxMode: { type: 'string', enum: ['off', 'on', 'auto'] },
-                  cwd: { type: 'string' },
+                  cwd: { type: 'string', description: LAUNCH_CWD_DESCRIPTION },
                   worktree: {
                     type: 'object',
+                    description: LAUNCH_WORKTREE_DESCRIPTION,
                     properties: {
                       enabled: { type: 'boolean' },
                       baseBranch: { type: 'string' },

@@ -8,7 +8,7 @@ type MessageCompleteEvent = Extract<AgentEvent, { type: 'message_complete' }>
 
 export function reduceMessageComplete(session: PerSessionState, event: MessageCompleteEvent): Partial<PerSessionState> {
   const newCost = event.metadata?.costUsd ?? session.totalCostUsd
-  const lastAssistantId = session.messages.findLast((m) => m.role === 'assistant')?.id
+  const lastAssistantId = session.messages.findLast((m) => m.role === 'assistant' && m.providerId !== 'system')?.id
   const isCurrentTurn = event.messageId === lastAssistantId
   const ft = session.streamingTokens
   const consumedTokens = isCurrentTurn && (ft.input > 0 || ft.output > 0)

@@ -41,6 +41,57 @@ describe('reduceSlash: prompt_suggestion', () => {
   })
 })
 
+describe('reduceSlash: turn_summary / session_recap', () => {
+  it('appends a system turn_summary marker after existing messages', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('u1', { role: 'user' }),
+      makeMessage('a1', { role: 'assistant' }),
+    ]
+    const patch = reduceSlash(session, {
+      type: 'turn_summary',
+      summary: '  parser race fixed  ',
+      promptId: 'p1',
+    } as never)
+    const msgs = patch.messages!
+    expect(msgs).toHaveLength(3)
+    const meta = msgs[2]
+    expect(meta.providerId).toBe('system')
+    expect(meta.role).toBe('assistant')
+    const text = (meta.content[0] as { text: string }).text
+    expect(text.startsWith('__turn_meta__:')).toBe(true)
+    expect(JSON.parse(text.slice('__turn_meta__:'.length))).toEqual({
+      kind: 'summary',
+      text: 'parser race fixed',
+      promptId: 'p1',
+    })
+  })
+
+  it('ignores empty turn_summary', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeMessage('a1', { role: 'assistant' })]
+    expect(reduceSlash(session, { type: 'turn_summary', summary: '  ' } as never)).toEqual({})
+  })
+
+  it('appends a session_recap system marker', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeMessage('a1', { role: 'assistant' })]
+    const patch = reduceSlash(session, {
+      type: 'session_recap',
+      summary: 'You fixed the parser.',
+      auto: true,
+    } as never)
+    const meta = patch.messages!.at(-1)!
+    expect(meta.providerId).toBe('system')
+    const text = (meta.content[0] as { text: string }).text
+    expect(JSON.parse(text.slice('__turn_meta__:'.length))).toEqual({
+      kind: 'recap',
+      text: 'You fixed the parser.',
+      auto: true,
+    })
+  })
+})
+
 describe('reduceSlash: compact_boundary', () => {
   it('inserts a __compact__ assistant message before the last user message when no _pendingCompactUserId is set', () => {
     const session = createDefaultPerSessionState()

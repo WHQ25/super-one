@@ -16,21 +16,34 @@ Read this before `session_collab_request`, especially when a child needs an isol
 
 Treat `cwd` as the child session's **project identity**, not as a checkout path.
 
+**Default:** omit both when the child can share the current project checkout. That is the right default for **read-only review of the current WIP** (local dirty tree, same branch the parent is on). A worktree is not a free safety layer — it costs setup time, can desync uncommitted state, and is only required when isolation or a different checkout is actually needed.
+
 | Intent | `config.cwd` | `config.worktree` | Result |
 |--------|--------------|-------------------|--------|
-| Work in the current project, shared checkout | Omit it, or use the current project root | Omit it | Child uses the current checkout and stays in the current sidebar project. |
-| Work in the current project, isolated checkout | Omit it, or use the current project root | Set `enabled: true` | Host creates the checkout and keeps the child in the current sidebar project. |
-| Review a branch already checked out elsewhere | Omit it, or use the current project root | Set `enabled: true`, `mode: "detach"`, and `baseBranch` to the feature branch | Reviewer gets an isolated detached checkout without competing for the branch. |
+| Shared checkout (review current WIP, read-only explore, same tree as parent) | Omit it, or use the current project root | **Omit it** | Child uses the current checkout. Prefer this for pure review. |
+| Parallel implementers / write isolation in the current project | Omit it, or use the current project root | Set `enabled: true` (`mode: "branch"` + unique `branchName`) | Host creates an isolated checkout; child stays in the current sidebar project. |
+| Review a feature branch another implementer already has checked out | Omit it, or use the current project root | Set `enabled: true`, `mode: "detach"`, `baseBranch` = that feature branch | Reviewer gets a detached checkout without competing for the branch. Only when the branch is already owned elsewhere. |
 | Work in a genuinely different project/repo | Set it to that project's root | Optional; use it only to isolate work inside that repo | The other project may appear as its own sidebar project. |
+
+### When worktree is **not** needed
+
+| Situation | Why omit worktree |
+|-----------|-------------------|
+| Code review / design review of the **current** uncommitted or on-branch changes | Shared checkout already has the files; `git status` / `git diff` match the parent. |
+| Child task is read-only (report findings, no expected file edits) | Sandbox + permission mode already constrain writes; a second checkout adds cost without isolation benefit. |
+| Single implementer already working in the parent session's tree | No branch-ownership conflict to solve. |
+
+Use `sandboxMode` and a clear “review only — do not implement” task when you need guardrails for a shared checkout. Do **not** open a worktree solely because the role is “Reviewer”.
 
 ### Anti-patterns
 
 | Do not | Why it is wrong | Use instead |
 |--------|-----------------|-------------|
-| Set `cwd` to `~/.worktrees/<repo>/<leaf>` or another same-repo worktree leaf | It presents a checkout path as a new project and can create a fake sidebar project. | Keep `cwd` at the project root (or omit it) and enable `config.worktree`. |
-| Copy the `cwd` returned by `session_collab_start` into a later launch | The returned value is the child's resolved runtime checkout path, not a launch recipe. | Reuse the project root plus a fresh `config.worktree` request. |
-| Launch parallel `branch` or `attach` worktrees on the same branch | Git permits a branch to be checked out in only one worktree. | Give implementers unique `branchName` values; use `detach` for reviewers. |
-| Set `cwd` merely because the child needs isolation | `cwd` changes project identity; it does not express same-repo isolation. | Express isolation with `config.worktree`. |
+| Open a worktree for every reviewer by default | Unnecessary cost; `carryLocalChanges` can drift from the parent dirty tree; local WIP review becomes harder to verify. | Omit `config.worktree` for review of the current shared checkout. |
+| Set `cwd` to `~/.worktrees/<repo>/<leaf>` or another same-repo worktree leaf | It presents a checkout path as a new project and can create a fake sidebar project. | Keep `cwd` at the project root (or omit it). Use `config.worktree` only when isolation is required. |
+| Copy the `cwd` returned by `session_collab_start` into a later launch | The returned value is the child's resolved runtime checkout path, not a launch recipe. | Reuse the project root; add a fresh `config.worktree` only if isolation is still required. |
+| Launch parallel `branch` or `attach` worktrees on the same branch | Git permits a branch to be checked out in only one worktree. | Give implementers unique `branchName` values; reviewers use shared checkout or `detach` only when reviewing an implementer-owned branch. |
+| Set `cwd` merely because the child needs isolation | `cwd` changes project identity; it does not express same-repo isolation. | Express isolation with `config.worktree` when implementers need separate checkouts. |
 
 ## `config.worktree` fields
 
@@ -40,11 +53,32 @@ Treat `cwd` as the child session's **project identity**, not as a checkout path.
 | `baseBranch` | Branch, tag, or commit in the project-root repo to start from. |
 | `mode` | `branch` creates `branchName`; `detach` checks out `baseBranch` at detached HEAD; `attach` checks out the existing `baseBranch`. |
 | `branchName` | Required with `mode: "branch"`; it must be unique across concurrent worktrees. |
-| `carryLocalChanges` | Optional. Copy uncommitted source-checkout changes into the new worktree. |
+| `carryLocalChanges` | Optional. Copy uncommitted source-checkout changes into the new worktree. Prefer sharing the parent checkout for reviewing local WIP instead of relying on this copy. |
 
-Use `attach` only when no other worktree has that branch checked out. Use `detach` for read-only review of a branch that an implementer already owns.
+Use `attach` only when no other worktree has that branch checked out. Use `detach` only when reviewing a branch that an implementer **already owns** in another worktree (branch-checkout conflict). Pure review of the parent’s current tree does not need `detach`.
 
 ## Recipes
+
+### Review current WIP (no worktree)
+
+Default for “review my local changes” / “code review this session’s diff”. Omit `cwd` and `worktree` so the child sees the same checkout as the parent.
+
+```json
+{
+  "launches": [
+    {
+      "agentId": "codex-base",
+      "name": "Casey",
+      "role": "Reviewer",
+      "task": "Review the uncommitted work with git status/diff. Report bugs and risks with file:line. Do not implement fixes.",
+      "config": {
+        "permissionMode": "bypassPermissions",
+        "sandboxMode": "on"
+      }
+    }
+  ]
+}
+```
 
 ### Parallel implementers in the current project
 
@@ -85,9 +119,9 @@ Omit `cwd`. Give each implementer a unique branch.
 }
 ```
 
-### Reviewer for an implementer's branch
+### Reviewer for an implementer's already-owned branch
 
-The implementer already owns `feat/api-change`, so the reviewer uses `mode: "detach"`.
+Only when an implementer already has `feat/api-change` checked out in another worktree. Shared checkout cannot hold that branch twice, so the reviewer uses `mode: "detach"`. If you are reviewing the parent’s current dirty tree instead, use **Review current WIP** above — no worktree.
 
 ```json
 {

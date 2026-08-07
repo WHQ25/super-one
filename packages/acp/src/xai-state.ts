@@ -6,6 +6,8 @@
  *
  * @see docs/design/grok-xai-ext-notifications.md
  */
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AgentEvent, ContextUsageInfo } from '@superone/shared/agent-types'
 
 // ── Method names ────────────────────────────────────────────────────────────
@@ -44,6 +46,11 @@ export interface BgTaskInfo {
 }
 
 export interface XaiCorrelationState {
+  /**
+   * Parent session cwd (ACP launch cwd). Used to resolve Grok child-session
+   * transcripts at ~/.grok/sessions/<urlencode(cwd)>/<child_id>/chat_history.jsonl.
+   */
+  cwd?: string
   /** workflow run_id → launch tool_use_id */
   workflowToolByRunId: Map<string, string>
   /** last applied revision per run_id */
@@ -64,6 +71,8 @@ export interface XaiCorrelationState {
   pendingToolNamesById: Map<string, string>
   /** subagent_id → spawn tool_use_id */
   subagentToolById: Map<string, string>
+  /** subagent_id → child chat_history.jsonl path (once resolved) */
+  subagentOutputById: Map<string, string>
   /** subagent_ids that already emitted task_started */
   subagentStarted: Set<string>
   /** task_id → bg task info */
@@ -78,8 +87,9 @@ export interface XaiCorrelationState {
   lastMessageId: string | null
 }
 
-export function createXaiCorrelationState(): XaiCorrelationState {
+export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelationState {
   return {
+    ...(opts?.cwd ? { cwd: opts.cwd } : {}),
     workflowToolByRunId: new Map(),
     workflowRevision: new Map(),
     workflowStarted: new Set(),
@@ -87,6 +97,7 @@ export function createXaiCorrelationState(): XaiCorrelationState {
     smokeWorkflowToolIds: new Set(),
     pendingToolNamesById: new Map(),
     subagentToolById: new Map(),
+    subagentOutputById: new Map(),
     subagentStarted: new Set(),
     bgTaskById: new Map(),
     goalStarted: new Set(),
@@ -94,6 +105,32 @@ export function createXaiCorrelationState(): XaiCorrelationState {
     lastUsage: null,
     lastMessageId: null,
   }
+}
+
+/**
+ * Grok child-session transcript path.
+ * Layout: ~/.grok/sessions/<urlencode(cwd)>/<child_session_id>/chat_history.jsonl
+ * (same as first-party TUI / workflow-transcripts listGrokWorkflowAgents).
+ */
+export function resolveGrokChildChatHistoryPath(
+  cwd: string | undefined | null,
+  childSessionId: string | undefined | null,
+): string | undefined {
+  if (!cwd || !childSessionId) return undefined
+  return join(homedir(), '.grok', 'sessions', encodeURIComponent(cwd), childSessionId, 'chat_history.jsonl')
+}
+
+/** Resolve + cache Grok subagent output path on correlation state. */
+export function noteSubagentOutputFile(
+  state: XaiCorrelationState,
+  subagentId: string,
+  childSessionId?: string | null,
+): string | undefined {
+  const existing = state.subagentOutputById.get(subagentId)
+  if (existing) return existing
+  const path = resolveGrokChildChatHistoryPath(state.cwd, childSessionId || subagentId)
+  if (path) state.subagentOutputById.set(subagentId, path)
+  return path
 }
 
 function isSubagentLaunchToolName(name: string | undefined): boolean {

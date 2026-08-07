@@ -173,6 +173,46 @@ describe('createAcpRuntime (in-process agent)', () => {
     expect(clientInfo?.version).not.toBe('0.0.0')
   })
 
+  it('parses sessionRecap from initialize and requests x.ai/recap', async () => {
+    const recapCalls: Array<Record<string, unknown>> = []
+    const agentApp = agent({ name: 'recap-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+        _meta: { sessionRecap: true },
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'recap-session' }))
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(
+        'x.ai/recap',
+        (raw: unknown) => raw,
+        async (ctx) => {
+          recapCalls.push(ctx.params as Record<string, unknown>)
+          return { ok: true }
+        },
+      )
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    expect(runtime.isSessionRecapAvailable()).toBe(true)
+    await runtime.requestRecap(true)
+    expect(recapCalls).toEqual([{ sessionId: 'recap-session', auto: true }])
+    await runtime.close()
+  })
+
   it('passes yoloMode on session/new when permissionMode is bypassPermissions', async () => {
     const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
     const runtime = await createAcpRuntime({

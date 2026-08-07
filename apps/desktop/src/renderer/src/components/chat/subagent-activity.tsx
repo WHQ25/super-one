@@ -2,12 +2,17 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
+import { uiToolNameFromId } from '@superone/shared/tool-ui'
 import { getToolDisplay, getToolVerb } from './tool-display'
 import { ToolIcon } from './ToolIcon'
 import { ToolBlock } from './ToolBlock'
 import { StructuredOutputBlock } from './StructuredOutputView'
 import type { SubagentColorClasses } from './subagent-colors'
 import type { JsonlEntry } from './subagent-utils'
+
+function displayToolName(toolName: string): string {
+  return uiToolNameFromId(toolName) ?? toolName
+}
 import {
   streamdownPlugins,
   streamdownRehypePlugins,
@@ -48,14 +53,15 @@ export function SubagentScrollArea({ children, borderClass, maxHeightClass = 'ma
   )
 }
 
-/** Single tool row for an async subagent (no input/result, just name + summary). */
+/** Single tool row for live stubs only (no input/result yet). */
 export function AsyncToolRow({ toolName, description, isActive }: { toolName: string; description: string; isActive: boolean }) {
-  const icon = getToolDisplay(toolName, {}).icon
+  const name = displayToolName(toolName)
+  const icon = getToolDisplay(name, {}).icon
   return (
     <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs">
       <ToolIcon icon={icon} className="size-3 shrink-0 text-muted-foreground" />
       <span className="shrink-0 font-medium text-foreground">
-        {isActive ? <>{getToolVerb(toolName)}&hellip;</> : toolName}
+        {isActive ? <>{getToolVerb(name)}&hellip;</> : name}
       </span>
       {description && <span className="min-w-0 truncate text-muted-foreground">{description}</span>}
     </div>
@@ -116,7 +122,11 @@ export function renderJsonlEntry(entry: JsonlEntry, index: number, isStreaming =
   )
 }
 
-/** Async subagent activity — JSONL entries (text + tool interleaved), with live fallback. */
+/**
+ * Inline expanded agent activity — same ToolBlock UI as main session / full view
+ * when transcript entries carry input; compact AsyncToolRow only for live stubs
+ * (progress lastToolName / name-only fallback before chat_history is available).
+ */
 export function AgentActivity({ entries, fallbackTools, activeTool, isRunning, summary, colors }: {
   entries: JsonlEntry[]
   fallbackTools?: Array<{ toolName: string; description: string }>
@@ -133,6 +143,7 @@ export function AgentActivity({ entries, fallbackTools, activeTool, isRunning, s
     () => entries.filter((e): e is JsonlEntry & { type: 'tool' } => e.type === 'tool'),
     [entries],
   )
+  const useTranscriptTools = tools.length > 0
   return (
     <div className="border-t border-border/30">
       {summary && (
@@ -148,12 +159,43 @@ export function AgentActivity({ entries, fallbackTools, activeTool, isRunning, s
         </div>
       )}
       <SubagentScrollArea borderClass={colors.borderL}>
-        {(tools.length > 0 ? tools : fallbackTools ?? []).map((entry, i) => (
-          <AsyncToolRow key={i} toolName={entry.toolName} description={entry.description} isActive={false} />
-        ))}
-        {activeTool && (
-          <AsyncToolRow toolName={activeTool.toolName} description={activeTool.description} isActive />
+        {useTranscriptTools ? (
+          // Prefer full ToolBlock (via renderJsonlEntry) so expand matches full-view /
+          // main-session tool chrome once chat_history or agent JSONL is available.
+          tools.map((entry, i) => renderJsonlEntry(entry, i, false))
+        ) : (
+          (fallbackTools ?? []).map((entry, i) => (
+            <AsyncToolRow
+              key={`${entry.toolName}-${i}-${entry.description}`}
+              toolName={entry.toolName}
+              description={entry.description}
+              isActive={false}
+            />
+          ))
         )}
+        {activeTool && (() => {
+          if (useTranscriptTools) {
+            const last = tools[tools.length - 1]
+            // Avoid duplicating the live row when the transcript already has the current tool.
+            if (last && last.toolName === activeTool.toolName) return null
+            // Last tool may already be normalized (Read); active is raw (read_file).
+            if (last && last.toolName.toLowerCase().replace(/[\s-]+/g, '_') === activeTool.toolName.toLowerCase().replace(/[\s-]+/g, '_')) {
+              return null
+            }
+          } else {
+            const list = fallbackTools ?? []
+            const last = list[list.length - 1]
+            if (last && last.toolName === activeTool.toolName && !activeTool.description) return null
+          }
+          return (
+            <AsyncToolRow
+              key={`active-${activeTool.toolName}`}
+              toolName={activeTool.toolName}
+              description={activeTool.description}
+              isActive
+            />
+          )
+        })()}
       </SubagentScrollArea>
     </div>
   )

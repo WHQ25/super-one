@@ -46,6 +46,7 @@ import { AcpTerminalManager } from './acp-terminals'
 import {
   XAI_ASK_USER_QUESTION,
   XAI_EXIT_PLAN_MODE,
+  XAI_RECAP,
   parseGrokExitPlanModeParams,
   formatGrokExitPlanModeResponse,
   type GrokAskUserQuestionParams,
@@ -116,6 +117,15 @@ export interface AcpRuntime {
   setAcpSessionMode(modeId: string): Promise<void>
   /** Context usage from x.ai turn_completed / subagent progress (null until first sample). */
   getContextUsage(): Promise<ContextUsageInfo | null>
+  /**
+   * Whether initialize `_meta.sessionRecap` advertised recap (Grok fail-closed until true).
+   */
+  isSessionRecapAvailable(): boolean
+  /**
+   * Fire-and-forget `x.ai/recap` (auto return-from-away or manual).
+   * Result arrives later as `session_recap` session notification.
+   */
+  requestRecap(auto: boolean): Promise<void>
   prompt(
     text: string,
     messageId: string,
@@ -266,9 +276,13 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   let sessionModels: AcpModelConfig | null = null
   let agentCapabilities: AcpAgentCapabilities | null = null
   let mcpAttached = false
+  /** Grok initialize `_meta.sessionRecap` — fail-closed until advertised true. */
+  let sessionRecapAvailable = false
 
   // xAI progressive bus — handlers bind before session is ready; deliver is wired later.
-  const xaiCorrelation: XaiCorrelationState = createXaiCorrelationState()
+  const xaiCorrelation: XaiCorrelationState = createXaiCorrelationState({
+    cwd: launch.cwd,
+  })
   let xaiDeliver: ((event: AgentEvent) => void) | null = null
   let xaiMessageId: (() => string | null) | null = null
   /** Late-bound: close agent-initiated auto-wake turns on turn_completed. */
@@ -400,6 +414,15 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       },
     } as never)
     agentCapabilities = readAgentCapabilities(initResult)
+    {
+      const meta = (initResult as { _meta?: Record<string, unknown> | null })._meta
+      sessionRecapAvailable = meta?.sessionRecap === true
+      log.info(
+        '[acp-runtime] initialize agent=%s sessionRecap=%s',
+        launch.agentId,
+        sessionRecapAvailable,
+      )
+    }
     initModels = extractModelsFromInitializeResult(initResult)
     if (initModels) opts.onModelConfig?.(initModels)
 
@@ -827,6 +850,33 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   return {
     sessionId: activeSession.sessionId,
     launch,
+    isSessionRecapAvailable: () => sessionRecapAvailable,
+    async requestRecap(auto) {
+      if (!sessionRecapAvailable) {
+        log.debug('[acp-runtime] requestRecap skipped — sessionRecap not advertised')
+        return
+      }
+      try {
+        await activeConnection.agent.request(XAI_RECAP, {
+          sessionId: activeSession.sessionId,
+          auto,
+        })
+        log.info(
+          '[acp-runtime] x.ai/recap agent=%s session=%s auto=%s',
+          launch.agentId,
+          activeSession.sessionId,
+          auto,
+        )
+      } catch (err) {
+        log.warn(
+          '[acp-runtime] x.ai/recap failed agent=%s auto=%s:',
+          launch.agentId,
+          auto,
+          err,
+        )
+        throw err
+      }
+    },
     getConfigOptions() {
       return configOptions
     },

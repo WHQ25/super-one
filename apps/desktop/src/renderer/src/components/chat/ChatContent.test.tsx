@@ -129,6 +129,8 @@ vi.mock('./ChatMessage', async () => {
     ApiRetryIndicator: () => <div data-testid="api-retry" />,
     ModelFallbackIndicator: () => <div data-testid="model-fallback" />,
     parseCompactMarker: () => null,
+    parseTurnMetaMarker: () => null,
+    TurnMetaIndicator: () => <div data-testid="turn-meta" />,
   }
 })
 vi.mock('./WorkflowFullView', () => ({

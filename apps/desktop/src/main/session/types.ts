@@ -237,6 +237,11 @@ export interface SessionBackend {
   /** Sync a live provider session title when the harness exposes one. */
   setTitle?(title: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
+  /**
+   * Grok ACP auto/manual session recap (`x.ai/recap`). Optional — only ACP/Grok.
+   * Returns true when the RPC was sent (false = skipped: no runtime / busy / not advertised).
+   */
+  requestSessionRecap?(auto: boolean): Promise<boolean>
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
   hasActiveBackgroundTasks?(): boolean
@@ -308,6 +313,8 @@ export interface Session {
   send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin }): Promise<void>
   interrupt(): Promise<boolean>
   setPermissionMode(mode: PermissionMode): Promise<void>
+  /** Grok ACP return-from-away / `/recap` — no-op for other harnesses. Returns true if RPC sent. */
+  requestSessionRecap?(auto: boolean): Promise<boolean>
   setSandboxMode(mode: SandboxMode): Promise<SandboxInfo>
   getCurrentPermissionMode(): PermissionMode
   getCurrentSandboxInfo(): SandboxInfo

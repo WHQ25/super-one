@@ -8,7 +8,7 @@ import { useActiveSession } from '@/stores/chat'
 import { useSubagentNavigation, type SubagentViewState } from './subagent-navigation-context'
 import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-colors'
 import { ToolBlock } from './ToolBlock'
-import { AsyncToolRow, renderJsonlEntry } from './subagent-activity'
+import { renderJsonlEntry } from './subagent-activity'
 import { NestedToolContext } from './nested-tool-context'
 import {
   parseTaskInput,
@@ -100,17 +100,22 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
   // shows an empty body with its tools hidden in the full view.
   const usesProgressActivity = childItems.length === 0
   const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
-  const outputFile = asyncOutputPath ?? progress?.outputFile
+  const outputFile = asyncOutputPath
+    ?? progress?.outputFile
+    ?? segment?.taskBlock.taskOutputFile
+    ?? segment?.resultBlock?.outputPath
   const isRunning = progress
     ? !progress.completed
     : (isAsync ? !segment?.taskBlock.taskResultText : !segment?.resultBlock)
 
+  const isGrokChatHistory = !!outputFile && outputFile.endsWith('chat_history.jsonl')
   const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
     toolUseId: view.toolUseId,
     taskResultText: segment?.taskBlock.taskResultText,
     outputFile,
-    enabled: usesProgressActivity,
+    enabled: usesProgressActivity && !!outputFile,
     isRunning,
+    skipAuthoritativeRead: isGrokChatHistory,
   })
 
   if (!segment || !taskInput) {
@@ -237,13 +242,11 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
           )}
 
           {usesProgressActivity ? (
-            <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
+            // Full view: tools are expandable for detail inspection.
+            <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: true }}>
               <div className="space-y-2">
                 {asyncEntries.map((entry, i) => renderJsonlEntry(entry, i, isRunning))}
-                {isRunning && progress?.description && (
-                  <AsyncToolRow toolName={progress.lastToolName ?? ''} description={progress.description} isActive />
-                )}
-                {asyncEntries.length === 0 && !progress?.description && (
+                {asyncEntries.length === 0 && (
                   <div className="px-1 py-2 text-xs text-muted-foreground">
                     {isRunning ? t('chat.subagent.running') : t('chat.subagent.noActivity', 'No activity recorded')}
                   </div>
@@ -251,7 +254,7 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
               </div>
             </NestedToolContext.Provider>
           ) : (
-            <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
+            <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: true }}>
               <div className="space-y-2">
                 {childItems.map((item, i) =>
                   item.kind === 'subagent' ? (

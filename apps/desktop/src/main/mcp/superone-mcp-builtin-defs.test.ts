@@ -111,6 +111,8 @@ describe('built-in superone tool registration surfaces', () => {
     expect(LAUNCH_CWD_DESCRIPTION).toMatch(/never pass ~\/\.worktrees/i)
     expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/same-repo isolation/i)
     expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/cwd stays omitted or at the project root/i)
+    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/not for default read-only review/i)
+    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/detach only when reviewing/i)
   })
 
   it('keeps collaboration host-action descriptors aligned with desktop discovery', () => {

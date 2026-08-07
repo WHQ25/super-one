@@ -840,10 +840,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
   const { t } = useTranslation()
   const nestedDefaults = useNestedToolDefaults()
   const autoExpandFileDiffs = useAppStore((s) => s.autoExpandFileDiffs)
+  // Subagent card nests tools with allowExpand:false (header-only rows). Full view omits it.
+  const allowExpand = nestedDefaults?.allowExpand !== false
   // Bash and other non-diff tools keep the historical default of auto-expand.
   // File diffs (Edit/Write/FileChange) honor the user setting (default: off).
-  const effectiveAutoExpand = autoExpand ?? nestedDefaults?.defaultAutoExpand ?? true
-  const shouldAutoExpandDiff = autoExpand ?? nestedDefaults?.defaultAutoExpand ?? autoExpandFileDiffs
+  const effectiveAutoExpand = allowExpand && (autoExpand ?? nestedDefaults?.defaultAutoExpand ?? true)
+  const shouldAutoExpandDiff = allowExpand && (autoExpand ?? nestedDefaults?.defaultAutoExpand ?? autoExpandFileDiffs)
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const streamingInputPreview = useActiveSession((s) => toolUseId ? s._streamingToolInputPreviews[toolUseId] : undefined)
@@ -949,6 +951,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         resultOutputPath={resultOutputPath}
         runInBackground={runInBackground}
         autoExpand={effectiveAutoExpand}
+        allowExpand={allowExpand}
         backgroundActivity={backgroundActivity}
         trailingAction={trailingAction}
       />
@@ -968,7 +971,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
   }
   const hasResult = !!cleanResult && !isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
-  const expandable = hasDiff || hasResult || hasQA
+  const expandable = allowExpand && (hasDiff || hasResult || hasQA)
 
   // Prefer parsed input summary; fall back to ACP/main toolSummary (Grok title / raw_output).
   const summary = display.summary
@@ -996,6 +999,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
           isDenied={isDenied}
           elapsedSeconds={elapsedSeconds}
           stallLevel={stallLevel}
+          allowExpand={allowExpand}
         />
       )
     }
@@ -1011,6 +1015,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
           isDenied={isDenied}
           elapsedSeconds={elapsedSeconds}
           stallLevel={stallLevel}
+          allowExpand={allowExpand}
         />
       )
     }
@@ -1090,12 +1095,39 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       )
     }
     if (mcpInfo.mcpToolName === 'media_list_providers') {
+      if (!allowExpand) {
+        return (
+          <CompactToolRow icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}>
+            <span className="font-medium text-foreground">
+              {isStreaming ? <>{t('chat.toolBlock.listingMediaProviders')}…</> : t('chat.toolBlock.listedMediaProviders')}
+            </span>
+          </CompactToolRow>
+        )
+      }
       return <MediaProvidersBlock result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
     }
     if (mcpInfo.mcpToolName === 'media_generate_video') {
+      if (!allowExpand) {
+        const prompt = typeof params.prompt === 'string' ? params.prompt.replace(/\s+/g, ' ').trim() : ''
+        return (
+          <CompactToolRow icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}>
+            <span className="shrink-0 font-medium text-foreground">
+              {isStreaming ? <>{t('chat.toolBlock.generatingVideo', 'Generating video')}…</> : t('chat.toolBlock.generatedVideo', 'Video')}
+            </span>
+            {prompt && <span className="min-w-0 truncate text-muted-foreground">{prompt}</span>}
+          </CompactToolRow>
+        )
+      }
       return <VideoGenToolBlock params={params} result={cleanResult} isStreaming={isStreaming} />
     }
     if (COLLAB_TOOLS.has(mcpInfo.mcpToolName) && !isError && !isDenied) {
+      if (!allowExpand) {
+        return (
+          <CompactToolRow icon={<ToolIcon icon="bot" className="size-3 shrink-0 text-muted-foreground" />}>
+            <span className="font-medium text-foreground">{mcpInfo.mcpToolName.replace(/_/g, ' ')}</span>
+          </CompactToolRow>
+        )
+      }
       return (
         <SessionCollabToolBlock
           toolName={mcpInfo.mcpToolName}
@@ -1146,7 +1178,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       const appName = canvasApp?.manifest.name ?? resolvedAppTool.app.manifest.name
       const toolReadableName = toolDef?.displayName ?? mcpToolNamePart.replace(/_/g, ' ')
       const runningText = toolDef?.runningText ?? toolReadableName
-      const appToolExpandable = !!(toolDef?.showResult && result && !isStreaming)
+      const appToolExpandable = allowExpand && !!(toolDef?.showResult && result && !isStreaming)
       const toolParams = resolvedAppTool.toolInput
       const inputSummary = toolDef?.inputSummaryField ? String(toolParams[toolDef.inputSummaryField] ?? '') : ''
       let resultSummary = ''
@@ -1232,6 +1264,20 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
     const inputComplete = !isStreaming || jsonComplete
     if (isStreaming && jsonComplete && widgetData) {
       window.app.trace?.('widget.ui', 'input_complete_early', { title: widgetData.title, inputLen: input.length })
+    }
+    // Subagent card: never mount the full widget UI — header-only stub.
+    if (!allowExpand) {
+      const title = widgetData && typeof (widgetData as { title?: unknown }).title === 'string'
+        ? (widgetData as { title: string }).title
+        : ''
+      return (
+        <CompactToolRow icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}>
+          <span className="font-medium text-foreground">
+            {isStreaming ? <>{t('chat.toolBlock.generatingWidget')}</> : t('chat.toolBlock.generateWidget')}
+          </span>
+          {title && <span className="min-w-0 truncate text-muted-foreground">{title}</span>}
+        </CompactToolRow>
+      )
     }
     if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} />
     return (
@@ -1528,6 +1574,7 @@ function BashTerminalView({
   resultOutputPath,
   runInBackground,
   autoExpand,
+  allowExpand = true,
   backgroundActivity,
   trailingAction,
 }: {
@@ -1543,6 +1590,8 @@ function BashTerminalView({
   resultOutputPath?: string
   runInBackground?: boolean
   autoExpand?: boolean
+  /** When false, header-only (subagent card); full view leaves default true. */
+  allowExpand?: boolean
   backgroundActivity?: boolean
   trailingAction?: ReactNode
 }) {
@@ -1564,8 +1613,8 @@ function BashTerminalView({
   const holdOpenForBackgroundTask = treatAsBackground
     ? (hasTaskState ? taskProgress.completed !== true : isRunning)
     : false
-  const autoExpanded = holdOpenForBackgroundTask
-  const [expanded, setExpanded] = useState(autoExpand ? autoExpanded : false)
+  const autoExpanded = allowExpand && holdOpenForBackgroundTask
+  const [expanded, setExpanded] = useState(allowExpand && autoExpand ? autoExpanded : false)
   const [outputFull, setOutputFull] = useState(false)
   const [extraContent, setExtraContent] = useState('')
   const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
@@ -1577,9 +1626,13 @@ function BashTerminalView({
   const restoredRef = useRef(false)
 
   useEffect(() => {
+    if (!allowExpand) {
+      setExpanded(false)
+      return
+    }
     if (autoExpand) setExpanded(autoExpanded)
     else setExpanded(false)
-  }, [autoExpand, autoExpanded])
+  }, [allowExpand, autoExpand, autoExpanded])
 
   useEffect(() => {
     if (!expanded) setOutputFull(false)
@@ -1668,13 +1721,18 @@ function BashTerminalView({
 
   return (
     <div className={cn(
-      'tool-node my-0.5 rounded transition-colors cursor-pointer',
-      isDenied ? 'denied bg-error/10 hover:bg-error/20' : showError ? 'errored bg-warning/10 hover:bg-warning/20' : 'bg-muted/20 hover:bg-muted/40',
+      'tool-node my-0.5 rounded transition-colors',
+      allowExpand && 'cursor-pointer',
+      isDenied
+        ? `denied bg-error/10${allowExpand ? ' hover:bg-error/20' : ''}`
+        : showError
+          ? `errored bg-warning/10${allowExpand ? ' hover:bg-warning/20' : ''}`
+          : `bg-muted/20${allowExpand ? ' hover:bg-muted/40' : ''}`,
       expanded && 'overflow-hidden',
     )}>
       <div
         className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
-        onClick={() => setExpanded((e) => !e)}
+        onClick={allowExpand ? () => setExpanded((e) => !e) : undefined}
       >
         {isDenied ? (
           <Ban className="size-3 shrink-0 text-error" />
@@ -1698,10 +1756,12 @@ function BashTerminalView({
         {isTimedOut && <span className="rounded bg-error/20 px-1 py-px text-xs text-error">{t('chat.toolBlock.timedOut')}</span>}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {trailingAction}
-          <ChevronRight className={cn('size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+          {allowExpand && (
+            <ChevronRight className={cn('size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+          )}
         </div>
       </div>
-      {expanded && (fileExpired ? (
+      {allowExpand && expanded && (fileExpired ? (
         <div className="px-3 py-1.5 text-xs text-muted-foreground/50 italic">
           {t('chat.toolBlock.outputFileExpired', { path: resultOutputPath!.split('/').pop() })}
         </div>

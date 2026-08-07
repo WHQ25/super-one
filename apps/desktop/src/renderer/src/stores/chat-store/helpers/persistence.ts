@@ -57,7 +57,9 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     preferredProvider: session.sessionProvider ? session.preferredProvider : persistedProvider,
     _gitBranch: session._gitBranch ?? saved.gitBranch,
     _worktreePath: session._worktreePath ?? saved.worktreePath,
-    lastAssistantMessageId: mergedMessages.findLast((message) => message.role === 'assistant')?.id ?? session.lastAssistantMessageId,
+    lastAssistantMessageId:
+      mergedMessages.findLast((message) => message.role === 'assistant' && message.providerId !== 'system')?.id
+      ?? session.lastAssistantMessageId,
     apiProviderId: session.apiProviderId ?? saved.apiProviderId ?? null,
     acpAgentId: session.acpAgentId ?? saved.acpAgentId ?? null,
     openCodeAgentId: session.openCodeAgentId
@@ -86,7 +88,9 @@ export function _mergeHydratedSessionState(
     preferredProvider: session.sessionProvider ? session.preferredProvider : hydrated.preferredProvider,
     _gitBranch: session._gitBranch ?? hydrated._gitBranch,
     _worktreePath: session._worktreePath ?? hydrated._worktreePath,
-    lastAssistantMessageId: mergedMessages.findLast((message) => message.role === 'assistant')?.id ?? session.lastAssistantMessageId,
+    lastAssistantMessageId:
+      mergedMessages.findLast((message) => message.role === 'assistant' && message.providerId !== 'system')?.id
+      ?? session.lastAssistantMessageId,
     apiProviderId: session.apiProviderId ?? hydrated.apiProviderId,
     acpAgentId: session.acpAgentId ?? hydrated.acpAgentId,
     openCodeAgentId: session.openCodeAgentId ?? hydrated.openCodeAgentId,

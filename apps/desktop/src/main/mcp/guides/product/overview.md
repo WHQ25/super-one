@@ -18,7 +18,7 @@ SuperOne is an Electron desktop meta-app: chat agents (Claude / Codex / Grok), m
 | `overview` | This page — product identity and routing |
 | `contribute` | **Any** GitHub issue or PR (bugs, features, improvements, docs). Issue first, then optional PR. |
 | `debug` | Crashes / wrong behavior: log paths, userData, monorepo map, this machine’s runtime paths |
-| `collaboration` | Before setting `config.cwd` or `config.worktree` in `session_collab_request`; covers same-repo isolation, cross-project launches, implementers, and reviewers |
+| `collaboration` | Before setting `config.cwd` or `config.worktree` in `session_collab_request`; covers shared checkout (default for read-only review), same-repo isolation for implementers, cross-project launches |
 
 ```text
 read_manual({ domain: "product", topic: "contribute" })

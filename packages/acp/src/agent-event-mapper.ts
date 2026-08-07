@@ -254,6 +254,8 @@ export interface AcpAgentEventMapperOptions extends MapSessionUpdateOptions {
   messageId: string
   emit: (event: AgentEvent) => void
   now?: () => number
+  /** Session cwd — resolves Grok child chat_history.jsonl paths. */
+  cwd?: string
 }
 
 export function mapStopReason(stopReason: string): { complete: boolean; interrupted: boolean } {
@@ -339,7 +341,9 @@ export function createAcpAgentEventMapper(
   const nativeToLocal = new Map<string, string>()
   const localMessageIds = new Set<string>([options.messageId])
   const openTools = new Set<string>()
-  const xaiCorrelation = createXaiCorrelationState()
+  const xaiCorrelation = createXaiCorrelationState(
+    options.cwd ? { cwd: options.cwd } : undefined,
+  )
   let currentMessageId = options.messageId
   let started = false
   let terminal = false

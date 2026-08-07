@@ -208,8 +208,9 @@ export const LAUNCH_CWD_DESCRIPTION =
 
 export const LAUNCH_WORKTREE_DESCRIPTION =
   'Request a host-managed worktree for same-repo isolation while cwd stays omitted or at the project root. ' +
-  'Set enabled, baseBranch, and mode; use a unique branchName with branch. ' +
-  'See read_manual({ domain: "product", topic: "collaboration" }) for implementer and reviewer recipes.'
+  'Use for parallel implementers (mode branch + unique branchName), not for default read-only review of the current shared checkout. ' +
+  'Use mode detach only when reviewing a feature branch another implementer already has checked out. ' +
+  'See read_manual({ domain: "product", topic: "collaboration" }).'
 
 export const LAUNCH_BRANCH_NAME_DESCRIPTION =
   'With mode "branch", create this unique branch. Git cannot check out one branch in two worktrees.'

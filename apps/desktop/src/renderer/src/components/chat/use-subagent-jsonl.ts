@@ -3,7 +3,8 @@ import { useChatStore, useBashOutput } from '@/stores/chat'
 import { mapMessagesStructural } from '@/stores/chat-store/event-reducer/shared'
 import { parseJsonlOutput, entriesFromRecords, type JsonlEntry } from './subagent-utils'
 
-const SUBAGENT_OUTPUT_TAIL_LINES = 400
+/** Live tail while running; completed agents get a full authoritative read. */
+const SUBAGENT_OUTPUT_TAIL_LINES = 2000
 
 /** Persist the latest async subagent result text back onto its Task tool_use block. */
 function persistTaskResultText(toolUseId: string, resultText: string): void {

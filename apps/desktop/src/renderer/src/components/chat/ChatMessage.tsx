@@ -542,6 +542,64 @@ export function parseCompactMarker(message: ChatMessageType): { trigger: string;
   }
 }
 
+export type TurnMetaMarker =
+  | { kind: 'summary'; text: string }
+  | { kind: 'recap'; text: string; auto?: boolean }
+
+/** Grok turn summary / session recap system markers (not agent reply). */
+export function parseTurnMetaMarker(message: ChatMessageType): TurnMetaMarker | null {
+  if (message.providerId !== 'system') return null
+  const firstBlock = message.content[0]
+  if (!firstBlock || firstBlock.type !== 'text') return null
+  // Inline parse keeps ChatMessage free of store imports (circular risk).
+  // Must stay in sync with TURN_META_PREFIX / parseTurnMetaText in event-reducer/slash.ts.
+  const prefix = '__turn_meta__:'
+  if (!firstBlock.text.startsWith(prefix)) return null
+  try {
+    const raw = JSON.parse(firstBlock.text.slice(prefix.length)) as Record<string, unknown>
+    const text = typeof raw.text === 'string' ? raw.text.trim() : ''
+    if (!text) return null
+    if (raw.kind === 'summary') return { kind: 'summary', text }
+    if (raw.kind === 'recap') {
+      return {
+        kind: 'recap',
+        text,
+        ...(typeof raw.auto === 'boolean' ? { auto: raw.auto } : {}),
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** End-of-turn meta line: secondary color, not treated as agent content. */
+export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
+  if (meta.kind === 'recap') {
+    return (
+      <div
+        className="my-0.5 px-0.5 text-xs leading-relaxed text-muted-foreground italic"
+        data-turn-meta="recap"
+        role="note"
+      >
+        {!meta.auto && (
+          <span className="mr-1.5 not-italic font-medium text-muted-foreground/80">Recap</span>
+        )}
+        {meta.text}
+      </div>
+    )
+  }
+  return (
+    <div
+      className="my-0.5 px-0.5 text-xs leading-relaxed text-muted-foreground"
+      data-turn-meta="summary"
+      role="note"
+    >
+      {meta.text}
+    </div>
+  )
+}
+
 /** Format token count for compact display. */
 function formatCompactTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`

@@ -24,6 +24,7 @@ import {
   upsertAcpAgentSlashCommands,
 } from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
+import { notifySessionRecapReceived } from '../../acp/acp-recap-focus'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
 import { shouldAutoAllowAcpPermission } from '../../acp/acp-permission-preapprove'
 import {
@@ -606,6 +607,12 @@ export class AcpBackend implements SessionBackend {
 
   private routeSessionEvent(event: AgentEvent, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
+    if (event.type === 'session_recap') {
+      // Stop further auto recap attempts for this session's away period.
+      const sid = this.startOpts?.sessionId?.trim()
+      if (sid) notifySessionRecapReceived(sid)
+      else log.debug('[AcpBackend] session_recap mark-shown skipped — no SuperOne sessionId')
+    }
     if (event.type === 'acp_models') {
       this.modelConfigId = event.configId ?? null
       if (event.selectedModelId) this.selectedModelId = event.selectedModelId
@@ -1006,6 +1013,35 @@ export class AcpBackend implements SessionBackend {
       log.info('[AcpBackend] setPermissionMode applied mode=%s agent=%s', mode, this.config.agentId ?? '')
     } catch (err) {
       log.warn('[AcpBackend] setPermissionMode failed mode=%s:', mode, err)
+    }
+  }
+
+  /**
+   * Grok auto/manual session recap. No-op without a live runtime (do not spawn
+   * solely for recap — matches keeping TUI agent warm).
+   * @returns true only when the `x.ai/recap` RPC was sent successfully.
+   */
+  async requestSessionRecap(auto: boolean): Promise<boolean> {
+    const runtime = this.runtime
+    if (!runtime) {
+      log.debug('[AcpBackend] requestSessionRecap skipped — no runtime auto=%s', auto)
+      return false
+    }
+    if (!runtime.isSessionRecapAvailable()) {
+      log.debug('[AcpBackend] requestSessionRecap skipped — not advertised auto=%s', auto)
+      return false
+    }
+    // Grok eligibility: idle, no pending interaction, established session.
+    if (this.activePrompt || this.getPendingInteractions().length > 0) {
+      log.debug('[AcpBackend] requestSessionRecap skipped — busy auto=%s', auto)
+      return false
+    }
+    try {
+      await runtime.requestRecap(auto)
+      return true
+    } catch (err) {
+      log.warn('[AcpBackend] requestSessionRecap failed auto=%s:', auto, err)
+      return false
     }
   }
 

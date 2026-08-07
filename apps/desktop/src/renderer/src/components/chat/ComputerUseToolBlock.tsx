@@ -32,6 +32,8 @@ interface ComputerUseToolBlockProps {
   isDenied?: boolean
   elapsedSeconds?: number
   stallLevel: StallLevel
+  /** When false, header-only (subagent card). Default true. */
+  allowExpand?: boolean
 }
 
 function resultSummary(
@@ -161,6 +163,7 @@ export function ComputerUseToolBlock({
   isDenied,
   elapsedSeconds,
   stallLevel,
+  allowExpand = true,
 }: ComputerUseToolBlockProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
@@ -205,9 +208,10 @@ export function ComputerUseToolBlock({
   // Header expand reveals the body. With a screenshot, body shows image + a
   // nested collapsed JSON row; without one, body is the full PrettyJSON.
   const expandable =
-    !isStreaming &&
-    !!result &&
-    (failed || hasScreenshot || isReadComputerOp(op, params) || op === 'act')
+    allowExpand
+    && !isStreaming
+    && !!result
+    && (failed || hasScreenshot || isReadComputerOp(op, params) || op === 'act')
 
   return (
     <div

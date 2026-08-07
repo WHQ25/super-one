@@ -6,6 +6,8 @@
  *
  * @see docs/design/grok-xai-ext-notifications.md
  */
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type {
   AgentEvent,
   ContextUsageInfo,
@@ -49,6 +51,11 @@ export interface BgTaskInfo {
 }
 
 export interface XaiCorrelationState {
+  /**
+   * Parent session cwd (ACP launch cwd). Used to resolve Grok child-session
+   * transcripts at ~/.grok/sessions/<urlencode(cwd)>/<child_id>/chat_history.jsonl.
+   */
+  cwd?: string
   /** workflow run_id → launch tool_use_id */
   workflowToolByRunId: Map<string, string>
   /** last applied revision per run_id */
@@ -69,6 +76,8 @@ export interface XaiCorrelationState {
   pendingToolNamesById: Map<string, string>
   /** subagent_id → spawn tool_use_id */
   subagentToolById: Map<string, string>
+  /** subagent_id → child chat_history.jsonl path (once resolved) */
+  subagentOutputById: Map<string, string>
   /** subagent_ids that already emitted task_started */
   subagentStarted: Set<string>
   /** task_id → bg task info */
@@ -83,8 +92,9 @@ export interface XaiCorrelationState {
   lastMessageId: string | null
 }
 
-export function createXaiCorrelationState(): XaiCorrelationState {
+export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelationState {
   return {
+    ...(opts?.cwd ? { cwd: opts.cwd } : {}),
     workflowToolByRunId: new Map(),
     workflowRevision: new Map(),
     workflowStarted: new Set(),
@@ -92,6 +102,7 @@ export function createXaiCorrelationState(): XaiCorrelationState {
     workflowOwnedSubagents: new Set(),
     pendingToolNamesById: new Map(),
     subagentToolById: new Map(),
+    subagentOutputById: new Map(),
     subagentStarted: new Set(),
     bgTaskById: new Map(),
     goalStarted: new Set(),
@@ -99,6 +110,27 @@ export function createXaiCorrelationState(): XaiCorrelationState {
     lastUsage: null,
     lastMessageId: null,
   }
+}
+
+/** Grok child-session transcript: ~/.grok/sessions/<urlencode(cwd)>/<child_id>/chat_history.jsonl */
+export function resolveGrokChildChatHistoryPath(
+  cwd: string | undefined | null,
+  childSessionId: string | undefined | null,
+): string | undefined {
+  if (!cwd || !childSessionId) return undefined
+  return join(homedir(), '.grok', 'sessions', encodeURIComponent(cwd), childSessionId, 'chat_history.jsonl')
+}
+
+function noteSubagentOutputFile(
+  state: XaiCorrelationState,
+  subagentId: string,
+  childSessionId?: string | null,
+): string | undefined {
+  const existing = state.subagentOutputById.get(subagentId)
+  if (existing) return existing
+  const path = resolveGrokChildChatHistoryPath(state.cwd, childSessionId || subagentId)
+  if (path) state.subagentOutputById.set(subagentId, path)
+  return path
 }
 
 /** Normalized tool names that launch a SubagentBlock (Claude Agent / Grok spawn). */
@@ -462,6 +494,13 @@ export function mapXaiSessionUpdate(
       return mapAutoRecoveryStarted(update)
     case 'auto_recovery_exhausted':
       return mapAutoRecoveryExhausted(update)
+    case 'last_turn_summary':
+      return mapLastTurnSummary(update, ctx)
+    case 'session_recap':
+      return mapSessionRecap(update)
+    case 'session_recap_unavailable':
+      // Manual /recap spinner clear only — SuperOne has no spinner for this.
+      return []
     case 'unknown':
       return []
     default:
@@ -716,6 +755,8 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
     state.subagentToolById.delete(id)
   }
   const toolUseId = workflowRunId ? undefined : state.subagentToolById.get(id)
+  const childSessionId = strField(u, 'child_session_id', 'childSessionId') ?? id
+  const outputFile = workflowRunId ? undefined : noteSubagentOutputFile(state, id, childSessionId)
 
   return [{
     type: 'task_started',
@@ -723,6 +764,7 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
     ...(toolUseId ? { toolUseId } : {}),
     description,
     ...(subagentType ? { taskType: subagentType } : {}),
+    ...(outputFile ? { outputFile } : {}),
   }]
 }
 
@@ -731,6 +773,8 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
   if (!id) return []
   // Workflow-owned children: workflow_updated already carries agent rows + tokens.
   if (state.workflowOwnedSubagents.has(id)) return []
+  const childSessionId = strField(u, 'child_session_id', 'childSessionId') ?? id
+  const outputFile = noteSubagentOutputFile(state, id, childSessionId)
   const events: AgentEvent[] = []
   if (!state.subagentStarted.has(id)) {
     state.subagentStarted.add(id)
@@ -739,28 +783,27 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
       taskId: id,
       ...(state.subagentToolById.get(id) ? { toolUseId: state.subagentToolById.get(id)! } : {}),
       description: id,
+      ...(outputFile ? { outputFile } : {}),
     })
   }
   const durationMs = numField(u, 'duration_ms', 'durationMs') ?? 0
   const toolCalls = numField(u, 'tool_call_count', 'toolCallCount') ?? 0
   const tokens = numField(u, 'tokens_used', 'tokensUsed') ?? 0
+  // tools_used is a *distinct name set* — set order is not call order, so do
+  // NOT derive lastToolName / active tool from it. Live rows come from
+  // chat_history.jsonl (outputFile).
   const toolsUsed = (arrField(u, 'tools_used', 'toolsUsed') ?? [])
     .filter((t): t is string => typeof t === 'string' && t.length > 0)
-  const recent = toolsUsed.slice(-8)
-  const lastTool = recent[recent.length - 1]
-  const activityText = recent.length ? recent.join(', ') : undefined
-  const toolEntries = recent.map((toolName) => ({ toolName, description: '' }))
+  const activityText = toolsUsed.length ? toolsUsed.join(', ') : undefined
   const toolUseId = state.subagentToolById.get(id)
   events.push({
     type: 'task_progress',
     taskId: id,
     ...(toolUseId ? { toolUseId } : {}),
-    // Prefer last tool name as description so reducer toolHistory advances.
-    description: lastTool ?? id,
-    ...(lastTool ? { lastToolName: lastTool } : {}),
+    description: id,
     usage: { totalTokens: tokens, toolUses: toolCalls, durationMs },
     ...(activityText ? { activityText } : {}),
-    ...(toolEntries.length ? { toolEntries } : {}),
+    ...(outputFile ? { outputFile } : {}),
   })
   // Subagent tokens/window are child-session local — do not overwrite the parent
   // context ring (lastUsage is for the main session / getContextUsage()).
@@ -783,6 +826,8 @@ function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationSt
   const durationMs = numField(u, 'duration_ms', 'durationMs') ?? 0
   const toolCalls = numField(u, 'tool_calls', 'toolCalls') ?? 0
   const tokens = numField(u, 'tokens_used', 'tokensUsed') ?? 0
+  const childSessionId = strField(u, 'child_session_id', 'childSessionId') ?? id
+  const outputFile = noteSubagentOutputFile(state, id, childSessionId) ?? ''
 
   const events: AgentEvent[] = []
   if (!state.subagentStarted.has(id)) {
@@ -792,6 +837,7 @@ function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationSt
       taskId: id,
       ...(toolUseId ? { toolUseId } : {}),
       description: id,
+      ...(outputFile ? { outputFile } : {}),
     })
   }
   events.push({
@@ -799,7 +845,7 @@ function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationSt
     taskId: id,
     ...(toolUseId ? { toolUseId } : {}),
     taskStatus,
-    outputFile: '',
+    outputFile,
     summary: error ?? status,
     usage: { totalTokens: tokens, toolUses: toolCalls, durationMs },
     ...(output ? { resultText: output } : error ? { resultText: error } : {}),
@@ -1195,6 +1241,34 @@ function mapAutoCompactCompleted(
     }
   }
   return events
+}
+
+/** Grok `last_turn_summary` — one-line dashboard fragment after a successful turn. */
+function mapLastTurnSummary(
+  u: Record<string, unknown>,
+  ctx: MapXaiNotifyContext,
+): AgentEvent[] {
+  const summary = strField(u, 'summary')?.trim()
+  if (!summary) return []
+  const promptId = strField(u, 'prompt_id', 'promptId')
+  return [{
+    type: 'turn_summary',
+    summary,
+    ...(promptId ? { promptId } : {}),
+    ...(ctx.messageId ? { messageId: ctx.messageId } : {}),
+  }]
+}
+
+/** Grok `session_recap` — one-sentence return-from-idle / `/recap` body. */
+function mapSessionRecap(u: Record<string, unknown>): AgentEvent[] {
+  const summary = strField(u, 'summary')?.trim()
+  if (!summary) return []
+  const auto = boolField(u, 'auto')
+  return [{
+    type: 'session_recap',
+    summary,
+    ...(auto != null ? { auto } : {}),
+  }]
 }
 
 function mapAutoCompactFailed(u: Record<string, unknown>): AgentEvent[] {

@@ -55,6 +55,77 @@ beforeEach(() => {
 })
 
 describe('SubagentBlock activity surface', () => {
+  it('resolves outputFile from persisted taskOutputFile when live taskProgress is empty (history reload)', () => {
+    hoisted.sessionState.taskProgress = {}
+    hoisted.jsonl = {
+      entries: [
+        {
+          type: 'tool',
+          toolName: 'Read',
+          description: 'a.ts',
+          toolUseId: 'tc1',
+          input: JSON.stringify({ file_path: 'a.ts' }),
+        },
+      ],
+      resultText: undefined,
+    }
+    render(
+      <SubagentBlock
+        taskBlock={agentBlock('toolu_reload', true, {
+          taskOutputFile: '/tmp/child/chat_history.jsonl',
+          taskUsage: { totalTokens: 10, toolUses: 1, durationMs: 100 },
+          taskResultText: 'done',
+        })}
+        childBlocks={[]}
+        resultBlock={{ type: 'tool_result', toolUseId: 'toolu_reload', summary: 'done', outputPath: '/tmp/child/chat_history.jsonl' } as ContentBlock}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByTestId('tool-block')).toHaveAttribute('data-tool', 'Read')
+  })
+
+  it('renders full ToolBlock for jsonl tools that carry input (not AsyncToolRow fallback)', () => {
+    hoisted.sessionState.taskProgress = {
+      toolu_jsonl: {
+        description: 'sa', totalTokens: 100, toolUses: 2, durationMs: 1000,
+        toolHistory: [], outputFile: '/tmp/child/chat_history.jsonl',
+      },
+    }
+    hoisted.jsonl = {
+      entries: [
+        {
+          type: 'tool',
+          toolName: 'Read',
+          description: 'src/a.ts',
+          toolUseId: 'tc1',
+          input: JSON.stringify({ file_path: 'src/a.ts' }),
+        },
+        {
+          type: 'tool',
+          toolName: 'Grep',
+          description: 'foo',
+          toolUseId: 'tc2',
+          input: JSON.stringify({ pattern: 'foo' }),
+          result: '1 match',
+        },
+      ],
+      resultText: undefined,
+    }
+    render(
+      <SubagentBlock
+        taskBlock={agentBlock('toolu_jsonl', true)}
+        childBlocks={[]}
+        isStreaming
+        defaultExpanded
+      />,
+    )
+    const blocks = screen.getAllByTestId('tool-block')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]).toHaveAttribute('data-tool', 'Read')
+    expect(blocks[1]).toHaveAttribute('data-tool', 'Grep')
+  })
+
   it('shows tool calls from task_progress when a nested non-async agent has no inline childBlocks', () => {
     // Workflow-spawned parallel agent: run_in_background:false, tools ran in its own
     // session, activity only in task_progress. Must still surface its tool calls.
@@ -77,7 +148,8 @@ describe('SubagentBlock activity surface', () => {
       />,
     )
     expect(screen.getByText('WebSearch')).toBeInTheDocument()
-    expect(screen.getByText('ToolSearch')).toBeInTheDocument()
+    // ToolSearch id normalizes to SearchTools in AsyncToolRow display.
+    expect(screen.getByText('SearchTools')).toBeInTheDocument()
   })
 
   it('shows tool calls from the persisted block on history reload (empty live store)', () => {
@@ -101,7 +173,7 @@ describe('SubagentBlock activity surface', () => {
       />,
     )
     expect(screen.getByText('WebSearch')).toBeInTheDocument()
-    expect(screen.getByText('ToolSearch')).toBeInTheDocument()
+    expect(screen.getByText('SearchTools')).toBeInTheDocument()
   })
 
   it('renders as running when taskProgress is active, even though the tool_result arrived and the turn is idle', () => {

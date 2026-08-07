@@ -23,11 +23,14 @@ function emptyTaskProgress(): TaskProgressEntry {
 type ToolHistoryEntry = { toolName: string; description: string }
 
 /**
- * Merge a Grok-style rolling tools_used snapshot into accumulated toolHistory.
- * Snapshots are ordered recent windows (often with empty descriptions); uniqueness
+ * Merge a chronological toolEntries snapshot into accumulated toolHistory.
+ * Snapshots may be ordered recent windows (often with empty descriptions); uniqueness
  * by toolName alone would collapse legitimate re-uses (read → grep → read).
  * Match the longest suffix of history that is a prefix of the snapshot, then append
  * only the unseen suffix so the same tool can reappear after another tool.
+ *
+ * Note: Grok SubagentProgress.tools_used is a *distinct name set*, not a call window —
+ * do not feed it here; use child chat_history.jsonl for Grok tool rows.
  */
 export function mergeToolEntriesSnapshot(
   history: ToolHistoryEntry[],
@@ -285,6 +288,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         description: event.description,
         taskId: event.taskId ?? prev?.taskId,
         completed: prev?.completed === true ? true : false,
+        ...(event.outputFile ? { outputFile: event.outputFile } : {}),
       }
       return { taskProgress: commitTaskProgress(session.taskProgress, write, next) }
     }
@@ -293,13 +297,20 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       const write = resolveTaskProgressWrite(session.taskProgress, event.toolUseId, event.taskId)
       if (!write) return {}
       const prev = write.prev
-      // Grok subagent_progress sends tools_used as toolEntries (rolling snapshot).
-      // Prefer that for activity rows; otherwise accumulate from description transitions
-      // (Claude task_progress style).
+      // Chronological tool rows only from real toolEntries (Claude progress / explicit).
+      // Grok no longer sends tools_used as toolEntries (distinct-name set); full rows
+      // come from child chat_history.jsonl via outputFile — skip description-transition
+      // accumulation when a transcript path is available so we don't invent sparse rows.
       let toolHistory = prev?.toolHistory ? [...prev.toolHistory] : []
+      const transcriptPath = event.outputFile ?? prev?.outputFile
       if (event.toolEntries?.length) {
         toolHistory = mergeToolEntriesSnapshot(toolHistory, event.toolEntries)
-      } else if (prev && prev.description && prev.description !== event.description) {
+      } else if (
+        !transcriptPath
+        && prev
+        && prev.description
+        && prev.description !== event.description
+      ) {
         toolHistory.push({ toolName: prev.lastToolName ?? '', description: prev.description })
         if (toolHistory.length > 50) toolHistory = toolHistory.slice(-50)
       }
@@ -325,6 +336,9 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         // from a prior foreign notification (workflow child hijack).
         completed: false,
         status: undefined,
+        ...(event.outputFile || prev?.outputFile
+          ? { outputFile: event.outputFile ?? prev?.outputFile }
+          : {}),
         ...(workflowAgents ? { workflowAgents } : {}),
         ...(workflowPhases ? { workflowPhases } : {}),
         ...(currentPhase ? { currentPhase } : {}),
@@ -339,6 +353,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
             },
             taskToolHistory: toolHistory,
             taskSummary: progressSummary,
+            ...(transcriptPath ? { taskOutputFile: transcriptPath } : {}),
             ...(workflowAgents ? { workflowAgents } : {}),
             ...(workflowPhases ? { workflowPhases } : {}),
             ...(currentPhase ? { workflowCurrentPhase: currentPhase } : {}),
@@ -419,6 +434,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         : prevProgress?.workflowPhases
       const currentPhase = event.currentPhase ?? prevProgress?.currentPhase
       const resultText = event.resultText ?? prevProgress?.resultText
+      const outputPath = file || prevProgress?.outputFile
       const toolPatch = {
         taskUsage: {
           totalTokens: finalUsage.totalTokens,
@@ -428,6 +444,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         taskToolHistory: finalToolHistory,
         taskSummary: finalSummary,
         ...(resultText ? { taskResultText: resultText } : {}),
+        ...(outputPath ? { taskOutputFile: outputPath } : {}),
         ...(workflowAgents ? { workflowAgents } : {}),
         ...(workflowPhases ? { workflowPhases } : {}),
         ...(currentPhase ? { workflowCurrentPhase: currentPhase } : {}),

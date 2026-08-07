@@ -37,6 +37,7 @@ import { resolveMiniappCallConfirm, rejectMiniappCallConfirm } from '../mcp/mini
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { nextEventSeq } from './event-seq'
+import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
 import { collectChangedMessageIds } from './message-dirty'
 import {
   redactTaskNotificationForDisplay,
@@ -220,9 +221,21 @@ export class Session implements SessionContract {
    * A session can be rendered in more than one place at once (e.g. a mosaic tile
    * and a mini window on the same session) — ref-count so unmounting one place
    * doesn't drop foreground status while another is still visible.
+   *
+   * Transitions 0↔>0 also drive ACP auto session-recap away/return tracking
+   * (user switched chats), not whole-window OS focus.
    */
   setForeground(visible: boolean): void {
+    const prev = this._foregroundRefCount
     this._foregroundRefCount = Math.max(0, this._foregroundRefCount + (visible ? 1 : -1))
+    const next = this._foregroundRefCount
+    if (prev === next) return
+    if (this.harnessId !== 'acp') return
+    if (prev > 0 && next === 0) {
+      notifySessionRecapForeground(this.id, false)
+    } else if (prev === 0 && next > 0) {
+      notifySessionRecapForeground(this.id, true)
+    }
   }
 
   hasActiveRuntime(): boolean {
@@ -586,6 +599,28 @@ export class Session implements SessionContract {
       void this.clearComputerUseVisuals('interrupt')
     }
     return true
+  }
+
+  async requestSessionRecap(auto: boolean): Promise<boolean> {
+    if (this._status === 'disposed') return false
+    if (this.harnessId !== 'acp') return false
+    const busy =
+      this._status === 'streaming'
+      || this._status === 'starting'
+      || this._status === 'interrupting'
+    if (busy) return false
+    if (this.backend.getPendingInteractions().length > 0) return false
+    if (!this.backend.hasActiveRuntime()) return false
+    try {
+      return (await this.backend.requestSessionRecap?.(auto)) ?? false
+    } catch (err) {
+      log.debug(
+        '[Session] requestSessionRecap failed sid=%s: %s',
+        this.id,
+        err instanceof Error ? err.message : String(err),
+      )
+      return false
+    }
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
@@ -1028,6 +1063,9 @@ export class Session implements SessionContract {
 
   async dispose(): Promise<void> {
     if (this._status === 'disposed') return
+    if (this.harnessId === 'acp') {
+      notifySessionRecapSessionRemoved(this.id)
+    }
     trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
     this._status = 'disposed'
     this._pendingQueuedRequests.clear()

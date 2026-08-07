@@ -170,48 +170,56 @@ describe('ACP xAI AgentEvent mapping', () => {
   })
 
   it('maps subagent progress and completion without changing parent usage', () => {
-    const state = createXaiCorrelationState()
+    const state = createXaiCorrelationState({ cwd: '/proj' })
     state.subagentToolById.set('subagent-1', 'subagent-tool')
 
-    expect(mapXaiSessionUpdate({
+    const spawned = mapXaiSessionUpdate({
       sessionUpdate: 'subagent_spawned',
       subagent_id: 'subagent-1',
+      child_session_id: 'subagent-1',
       subagent_type: 'explore',
       description: 'Inspect source',
-    }, state)).toEqual([{
+    }, state)
+    expect(spawned[0]).toMatchObject({
       type: 'task_started',
       taskId: 'subagent-1',
       toolUseId: 'subagent-tool',
       description: 'Inspect source',
       taskType: 'explore',
-    }])
-    expect(mapXaiSessionUpdate({
+    })
+    expect(spawned[0]).toMatchObject({
+      outputFile: expect.stringContaining('/subagent-1/chat_history.jsonl'),
+    })
+    const progress = mapXaiSessionUpdate({
       sessionUpdate: 'subagent_progress',
       subagent_id: 'subagent-1',
+      child_session_id: 'subagent-1',
       tools_used: ['read_file', 'grep'],
       tokens_used: 500,
       context_window_tokens: 200_000,
-    }, state)[0]).toMatchObject({
+    }, state)[0]
+    expect(progress).toMatchObject({
       type: 'task_progress',
       taskId: 'subagent-1',
-      description: 'grep',
-      lastToolName: 'grep',
+      // Stable id description — never last tools_used element as "active tool"
+      description: 'subagent-1',
       activityText: 'read_file, grep',
-      toolEntries: [
-        { toolName: 'read_file', description: '' },
-        { toolName: 'grep', description: '' },
-      ],
+      outputFile: expect.stringContaining('/subagent-1/chat_history.jsonl'),
     })
+    expect(progress).not.toHaveProperty('toolEntries')
+    expect(progress).not.toHaveProperty('lastToolName')
     expect(state.lastUsage).toBeNull()
     expect(mapXaiSessionUpdate({
       sessionUpdate: 'subagent_finished',
       subagent_id: 'subagent-1',
+      child_session_id: 'subagent-1',
       status: 'failed',
       error: 'failed to inspect',
     }, state)[0]).toMatchObject({
       type: 'task_notification',
       taskStatus: 'failed',
       resultText: 'failed to inspect',
+      outputFile: expect.stringContaining('/subagent-1/chat_history.jsonl'),
     })
   })
 
@@ -375,6 +383,36 @@ describe('ACP xAI AgentEvent mapping', () => {
       delayMs: 0,
       message: 'timeout',
     }])
+  })
+
+  it('maps last_turn_summary and session_recap', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'last_turn_summary',
+      summary: '  queue_worker shutdown race fixed; suite green  ',
+      prompt_id: 'prompt-42',
+    }, state, { messageId: 'msg-1' })).toEqual([{
+      type: 'turn_summary',
+      summary: 'queue_worker shutdown race fixed; suite green',
+      promptId: 'prompt-42',
+      messageId: 'msg-1',
+    }])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'last_turn_summary',
+      summary: '   ',
+    }, state)).toEqual([])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'session_recap',
+      summary: 'You fixed the parser race and wired retry backoff.',
+      auto: true,
+    }, state)).toEqual([{
+      type: 'session_recap',
+      summary: 'You fixed the parser race and wired retry backoff.',
+      auto: true,
+    }])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'session_recap_unavailable',
+    }, state)).toEqual([])
   })
 
   it('deduplicates non-workflow notifications by event sequence', () => {

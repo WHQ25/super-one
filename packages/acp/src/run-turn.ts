@@ -154,6 +154,7 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
         ? createAcpAgentEventMapper({
             messageId: input.messageId ?? blockId,
             emit: input.onAgentEvent,
+            cwd,
           })
         : null
       agentEventMapper?.start(sessionId)

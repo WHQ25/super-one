@@ -180,7 +180,7 @@ describe('mapXaiSessionUpdate — workflow', () => {
 
 describe('mapXaiSessionUpdate — subagent', () => {
   it('maps spawned / progress / finished', () => {
-    const state = createXaiCorrelationState()
+    const state = createXaiCorrelationState({ cwd: '/Users/me/proj' })
     state.subagentToolById.set('sa1', 'tool_sa')
 
     const spawned = mapXaiSessionUpdate({
@@ -191,13 +191,14 @@ describe('mapXaiSessionUpdate — subagent', () => {
       subagent_type: 'explore',
       description: 'Search codebase',
     }, state)
-    expect(spawned).toEqual([{
+    expect(spawned[0]).toMatchObject({
       type: 'task_started',
       taskId: 'sa1',
       toolUseId: 'tool_sa',
       description: 'Search codebase',
       taskType: 'explore',
-    }])
+      outputFile: expect.stringContaining('%2FUsers%2Fme%2Fproj/sa1/chat_history.jsonl'),
+    })
 
     const progress = mapXaiSessionUpdate({
       sessionUpdate: 'subagent_progress',
@@ -216,14 +217,13 @@ describe('mapXaiSessionUpdate — subagent', () => {
     expect(progress[0]).toMatchObject({
       type: 'task_progress',
       taskId: 'sa1',
-      description: 'grep',
-      lastToolName: 'grep',
+      description: 'sa1',
       activityText: 'read_file, grep',
-      toolEntries: [
-        { toolName: 'read_file', description: '' },
-        { toolName: 'grep', description: '' },
-      ],
+      outputFile: expect.stringContaining('/sa1/chat_history.jsonl'),
     })
+    // tools_used is a distinct-name set — no call-history rows, no lastToolName from set order
+    expect(progress[0]).not.toHaveProperty('toolEntries')
+    expect(progress[0]).not.toHaveProperty('lastToolName')
     // Subagent occupancy must not pollute parent context ring cache.
     expect(state.lastUsage).toBeNull()
 
@@ -242,11 +242,42 @@ describe('mapXaiSessionUpdate — subagent', () => {
       type: 'task_notification',
       taskStatus: 'failed',
       resultText: 'boom',
+      outputFile: expect.stringContaining('/sa1/chat_history.jsonl'),
     })
   })
 })
 
 describe('mapXaiSessionUpdate — session meta', () => {
+  it('maps last_turn_summary and session_recap', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'last_turn_summary',
+      summary: '  queue_worker shutdown race fixed; suite green  ',
+      prompt_id: 'prompt-42',
+    }, state, { messageId: 'msg-1' })).toEqual([{
+      type: 'turn_summary',
+      summary: 'queue_worker shutdown race fixed; suite green',
+      promptId: 'prompt-42',
+      messageId: 'msg-1',
+    }])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'last_turn_summary',
+      summary: '   ',
+    }, state)).toEqual([])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'session_recap',
+      summary: 'You fixed the parser race and wired retry backoff.',
+      auto: true,
+    }, state)).toEqual([{
+      type: 'session_recap',
+      summary: 'You fixed the parser race and wired retry backoff.',
+      auto: true,
+    }])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'session_recap_unavailable',
+    }, state)).toEqual([])
+  })
+
   it('maps auto-compact lifecycle', () => {
     const state = createXaiCorrelationState()
     expect(mapXaiSessionUpdate({ sessionUpdate: 'auto_compact_started', tokens_used: 1, context_window: 2, percentage: 80, reason: 'x' }, state)).toEqual([

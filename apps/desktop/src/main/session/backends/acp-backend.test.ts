@@ -102,6 +102,8 @@ function mockRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
     setModel: async () => {},
     setAcpSessionMode: async () => {},
     getContextUsage: async () => null,
+    isSessionRecapAvailable: () => true,
+    requestRecap: async () => {},
     prompt: async (_text, messageId, onEvent) => {
       onEvent({
         type: 'content_delta',

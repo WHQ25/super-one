@@ -65,6 +65,8 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'slash_command_output':
     case 'compact_boundary':
     case 'checkpoint_captured':
+    case 'turn_summary':
+    case 'session_recap':
       return reduceSlash(session, event)
 
     case 'codex_thread_started':

@@ -8,6 +8,8 @@ import type {
 /** Grok ACP client methods (agent → client). */
 export const XAI_ASK_USER_QUESTION = 'x.ai/ask_user_question'
 export const XAI_EXIT_PLAN_MODE = 'x.ai/exit_plan_mode'
+/** Client → agent: request session recap (manual `/recap` or auto return-from-away). */
+export const XAI_RECAP = 'x.ai/recap'
 
 export interface GrokAskUserQuestionParams {
   sessionId?: string

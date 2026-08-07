@@ -2,18 +2,94 @@ import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { findCheckpointTarget } from '../helpers/chat-helpers'
 import type { PerSessionState } from '../types'
 
+/** System-message marker for turn summary / session recap (not agent reply). */
+export const TURN_META_PREFIX = '__turn_meta__:'
+
+export type TurnMetaPayload =
+  | { kind: 'summary'; text: string; promptId?: string }
+  | { kind: 'recap'; text: string; auto?: boolean }
+
+export function encodeTurnMeta(payload: TurnMetaPayload): string {
+  return `${TURN_META_PREFIX}${JSON.stringify(payload)}`
+}
+
+export function parseTurnMetaText(text: string): TurnMetaPayload | null {
+  if (!text.startsWith(TURN_META_PREFIX)) return null
+  try {
+    const raw = JSON.parse(text.slice(TURN_META_PREFIX.length)) as Record<string, unknown>
+    const kind = raw.kind
+    const body = typeof raw.text === 'string' ? raw.text.trim() : ''
+    if (!body) return null
+    if (kind === 'summary') {
+      return {
+        kind: 'summary',
+        text: body,
+        ...(typeof raw.promptId === 'string' && raw.promptId ? { promptId: raw.promptId } : {}),
+      }
+    }
+    if (kind === 'recap') {
+      return {
+        kind: 'recap',
+        text: body,
+        ...(typeof raw.auto === 'boolean' ? { auto: raw.auto } : {}),
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function appendSystemTurnMeta(
+  session: PerSessionState,
+  payload: TurnMetaPayload,
+  idPrefix: string,
+): Partial<PerSessionState> {
+  const msg: ChatMessage = {
+    id: `${idPrefix}_${Date.now().toString(36)}`,
+    role: 'assistant',
+    status: 'complete',
+    content: [{ type: 'text', text: encodeTurnMeta(payload) }],
+    createdAt: new Date().toISOString(),
+    providerId: 'system',
+  }
+  return { messages: [...session.messages, msg] }
+}
+
 type SlashEvent = Extract<AgentEvent, {
   type:
     | 'prompt_suggestion'
     | 'slash_command_output'
     | 'compact_boundary'
     | 'checkpoint_captured'
+    | 'turn_summary'
+    | 'session_recap'
 }>
 
 export function reduceSlash(session: PerSessionState, event: SlashEvent): Partial<PerSessionState> {
   switch (event.type) {
     case 'prompt_suggestion':
       return { promptSuggestion: event.suggestion }
+
+    case 'turn_summary': {
+      const summary = event.summary.trim()
+      if (!summary) return {}
+      return appendSystemTurnMeta(session, {
+        kind: 'summary',
+        text: summary,
+        ...(event.promptId ? { promptId: event.promptId } : {}),
+      }, 'turn_summary')
+    }
+
+    case 'session_recap': {
+      const summary = event.summary.trim()
+      if (!summary) return {}
+      return appendSystemTurnMeta(session, {
+        kind: 'recap',
+        text: summary,
+        ...(event.auto != null ? { auto: event.auto } : {}),
+      }, 'session_recap')
+    }
 
     case 'compact_boundary': {
       const compactUserId = session._pendingCompactUserId

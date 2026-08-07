@@ -7,7 +7,7 @@ import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, RateLimitIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, RateLimitIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, TurnMetaIndicator } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -301,6 +301,14 @@ function ChatTranscript({
                       setExpandLevel(isExpanded ? rank : rank + 1)
                     }}
                   />
+                )
+              }
+              const turnMeta = parseTurnMetaMarker(msg)
+              if (turnMeta) {
+                return (
+                  <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                    <TurnMetaIndicator meta={turnMeta} />
+                  </div>
                 )
               }
               return (

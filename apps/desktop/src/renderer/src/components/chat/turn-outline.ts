@@ -35,7 +35,13 @@ export function extractTurnOutline(messages: ChatMessage[]): TurnOutlineEntry[] 
       entries.push(open)
       continue
     }
-    if (open && open.reply === undefined && message.role === 'assistant') {
+    // Skip system markers (compact / turn_summary / recap) — not agent replies.
+    if (
+      open
+      && open.reply === undefined
+      && message.role === 'assistant'
+      && message.providerId !== 'system'
+    ) {
       const replyText = textOf(message)
       if (replyText) open.reply = replyText
     }

@@ -44,6 +44,7 @@ import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessa
 import { coerceSandboxModeForCapability, getSandboxCapability } from '../sandbox-platform'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { SessionClaimConflictError, SessionLockedError } from '../session/types'
+import { installAcpRecapFocus } from '../acp/acp-recap-focus'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -1407,6 +1408,25 @@ export class AgentService {
   setSessionManager(sessionManager: import('../session/session-manager').SessionManagerImpl): void {
     this.sessionManager = sessionManager
     this.wireComputerUseStop()
+    this.wireAcpRecapFocus()
+  }
+
+  /**
+   * Auto session-recap when a Grok/ACP chat loses session foreground long enough
+   * (user switched to another SuperOne session), not whole-app window blur.
+   * Synchronous install so setForeground events cannot race a pending dynamic import.
+   */
+  private wireAcpRecapFocus(): void {
+    const mgr = this.sessionManager
+    if (!mgr) return
+    installAcpRecapFocus({
+      requestAutoRecap: async (sessionId) => {
+        const session = mgr.getSession(sessionId)
+        if (!session?.requestSessionRecap) return false
+        return session.requestSessionRecap(true)
+      },
+    })
+    log.info('[agent-service] ACP auto session-recap (per-session focus) installed')
   }
 
   /**

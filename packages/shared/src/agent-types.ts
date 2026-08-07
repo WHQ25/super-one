@@ -62,6 +62,11 @@ interface AgentTaskData {
   taskToolHistory?: Array<{ toolName: string; description: string }>
   taskSummary?: string
   taskResultText?: string
+  /**
+   * Persisted path to child transcript (Grok chat_history.jsonl / Claude agent-*.jsonl).
+   * Survives history reload when live taskProgress is empty.
+   */
+  taskOutputFile?: string
 }
 
 /** Live or persisted agent row on a Workflow tool_use (Grok snapshot or Claude). */
@@ -1089,7 +1094,7 @@ export type AgentEventBase =
   | { type: 'hook_complete'; hook: HookEvent }
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
-  | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string }
+  | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string; outputFile?: string }
   | {
     type: 'task_progress'
     taskId: string
@@ -1099,7 +1104,10 @@ export type AgentEventBase =
     summary?: string
     usage: { totalTokens: number; toolUses: number; durationMs: number }
     activityText?: string
+    /** Chronological tool rows (Claude JSONL / Grok chat_history). Not Grok tools_used (distinct names). */
     toolEntries?: Array<{ toolName: string; description: string }>
+    /** Transcript path for live/full activity (e.g. Grok child chat_history.jsonl). */
+    outputFile?: string
     workflowAgents?: WorkflowAgentRow[]
     workflowPhases?: WorkflowPhaseRow[]
     currentPhase?: string
@@ -1149,6 +1157,16 @@ export type AgentEventBase =
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
+  /**
+   * Ultra-short one-line summary of the just-finished turn (Grok `last_turn_summary`).
+   * Display-only meta — not part of the agent reply.
+   */
+  | { type: 'turn_summary'; summary: string; promptId?: string; messageId?: string }
+  /**
+   * One-sentence session recap (Grok `session_recap` / `/recap` / return-from-away).
+   * Display-only meta — not part of the agent reply.
+   */
+  | { type: 'session_recap'; summary: string; auto?: boolean }
   | { type: 'shared_file'; shareId: string; file: ShareFilePayload; sentAt: number }
   | { type: 'shared_file_progress'; path: string; loaded: number; total: number }
   /** ACP session/new or set_config_option model catalog for the active session. */

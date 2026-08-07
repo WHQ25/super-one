@@ -872,7 +872,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       _worktreePath: savedWorktreePath ?? null,
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
-      lastAssistantMessageId: savedMessages.findLast((m) => m.role === 'assistant')?.id ?? null,
+      lastAssistantMessageId:
+        savedMessages.findLast((m) => m.role === 'assistant' && m.providerId !== 'system')?.id ?? null,
       apiProviderId: savedApiProviderId,
       acpAgentId: restoredProvider === 'acp' ? savedAcpAgentId : null,
       openCodeAgentId: restoredProvider === 'opencode'

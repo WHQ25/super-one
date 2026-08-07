@@ -21,6 +21,8 @@ interface BrowserToolBlockProps {
   isDenied?: boolean
   elapsedSeconds?: number
   stallLevel: StallLevel
+  /** When false, header-only (subagent card). Default true. */
+  allowExpand?: boolean
 }
 
 function formatBytes(n: number): string {
@@ -29,7 +31,7 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function BrowserToolBlock({ op, params, result, isStreaming, isError, isDenied, elapsedSeconds, stallLevel }: BrowserToolBlockProps) {
+export function BrowserToolBlock({ op, params, result, isStreaming, isError, isDenied, elapsedSeconds, stallLevel, allowExpand = true }: BrowserToolBlockProps) {
   if (op === 'download') {
     return (
       <BrowserDownloadBlock
@@ -69,7 +71,9 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
 
   const screenshotLabel = hasScreenshot ? (primary || t('chat.toolBlock.browser.viewport')) : ''
   const isMockDetail = op === 'mock' && params.clear !== true && !failed
-  const expandable = !isStreaming && (isMockDetail || (!!result && (isReadBrowserOp(op) || info.status === 'error' || hasScreenshot)))
+  const expandable = allowExpand
+    && !isStreaming
+    && (isMockDetail || (!!result && (isReadBrowserOp(op) || info.status === 'error' || hasScreenshot)))
 
   return (
     <div

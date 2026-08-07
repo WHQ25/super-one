@@ -153,14 +153,34 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
   const childItems = useMemo(() => groupSubagentChildren(childBlocks, taskBlock.toolUseId), [childBlocks, taskBlock.toolUseId])
   const rawResultText = rawResultTextEarly
   const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
-  const outputFile = asyncOutputPath ?? progress?.outputFile
+  // Prefer live progress, then persisted Agent fields / tool_result path (history reload).
+  const resultOutputPath = resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined
+  const outputFile = asyncOutputPath
+    ?? progress?.outputFile
+    ?? taskBlock.taskOutputFile
+    ?? resultOutputPath
+  // A sub-agent's tool activity arrives one of two ways: inline childBlocks
+  // (parentToolUseId === this agent) for ordinary nested calls, or via the
+  // task_progress / JSONL channel when the agent ran in its own session —
+  // background agents AND workflow-spawned parallel agents, which are NOT
+  // run_in_background yet still produce no inline blocks. Drive the activity
+  // surface off "are there inline children?": with inline children we render those
+  // (the structured source of truth); without, fall back to the progress/JSONL
+  // channel. Keying off isAsync instead would hide a nested non-async agent's
+  // tools (empty shell) and double-render a background agent that has both.
+  const usesProgressActivity = childItems.length === 0
 
+  // Grok child chat_history.jsonl is not Claude agent-*.jsonl — skip SDK transcript read.
+  const isGrokChatHistory = !!outputFile && outputFile.endsWith('chat_history.jsonl')
   const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
     toolUseId: taskBlock.toolUseId,
     taskResultText: taskBlock.taskResultText,
     outputFile,
-    enabled: expanded,
+    // Demand-driven: only watch while the card is expanded (or on full-view open).
+    // Collapsed running agents still show footer counts from taskProgress.
+    enabled: usesProgressActivity && !!outputFile && expanded,
     isRunning,
+    skipAuthoritativeRead: isGrokChatHistory,
   })
 
   const resultText = isAsync
@@ -173,25 +193,21 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
     }
     return count
   }, [childItems])
-  // A sub-agent's tool activity arrives one of two ways: inline childBlocks
-  // (parentToolUseId === this agent) for ordinary nested calls, or via the
-  // task_progress / JSONL channel when the agent ran in its own session —
-  // background agents AND workflow-spawned parallel agents, which are NOT
-  // run_in_background yet still produce no inline blocks. Drive the activity
-  // surface off "are there inline children?": with inline children we render those
-  // (the structured source of truth); without, fall back to the progress/JSONL
-  // channel. Keying off isAsync instead would hide a nested non-async agent's
-  // tools (empty shell) and double-render a background agent that has both.
-  const usesProgressActivity = childItems.length === 0
 
   // task_progress is live store state and is lost on history reload; the same
   // history/usage is persisted onto the Agent block (taskToolHistory/taskUsage via
   // _patchAgentBlock). Prefer live, fall back to persisted so a reloaded session
   // still renders the activity instead of an empty shell.
+  // Prefer JSONL transcript (Grok chat_history / Claude agent-*.jsonl) for tool rows —
+  // progress.toolHistory from Grok tools_used is only a distinct-name set.
   const activityHistory = (progress?.toolHistory?.length ? progress.toolHistory : taskBlock.taskToolHistory) ?? []
-  const activityToolUses = progress?.toolUses ?? taskBlock.taskUsage?.toolUses ?? activityHistory.length
+  const activityToolUses = progress?.toolUses
+    ?? taskBlock.taskUsage?.toolUses
+    ?? (jsonlEntries.length > 0
+      ? jsonlEntries.reduce((n, e) => (e.type === 'tool' ? n + 1 : n), 0)
+      : activityHistory.length)
   const activityTokens = progress?.totalTokens ?? taskBlock.taskUsage?.totalTokens ?? 0
-  const hasActivity = activityHistory.length > 0 || !!progress
+  const hasActivity = jsonlEntries.length > 0 || activityHistory.length > 0 || !!progress
 
   const isExpandable = !showSpawningPlaceholder
   const isExpanded = expanded && isExpandable
@@ -302,19 +318,24 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
 
           {/* Agent activity — JSONL entries (text + tool interleaved), with live fallback */}
           {usesProgressActivity && (jsonlEntries.length > 0 || hasActivity) && (
-            <AgentActivity
-              entries={jsonlEntries}
-              fallbackTools={jsonlEntries.length === 0 ? activityHistory : undefined}
-              activeTool={isRunning && progress?.description ? { toolName: progress.lastToolName ?? '', description: progress.description } : undefined}
-              isRunning={isRunning}
-              summary={undefined}
-              colors={colors}
-            />
+            // Card body: proper ToolBlock chrome but header-only (no expand). Details open in full view.
+            <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: false }}>
+              <AgentActivity
+                entries={jsonlEntries}
+                // Only use progress toolHistory when no transcript yet (name-only stubs).
+                fallbackTools={jsonlEntries.length === 0 ? activityHistory : undefined}
+                // Active tool comes from the last transcript row, not tools_used set order.
+                activeTool={undefined}
+                isRunning={isRunning}
+                summary={undefined}
+                colors={colors}
+              />
+            </NestedToolContext.Provider>
           )}
 
-          {/* Sub tool calls + nested sub-agents — scrollable, tools default collapsed */}
+          {/* Sub tool calls + nested sub-agents — header-only rows (Claude parity); expand in full view */}
           {childItems.length > 0 && (
-            <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
+            <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: false }}>
               <SubagentScrollArea borderClass={colors.borderL}>
                 {childItems.map((item, i) =>
                   item.kind === 'subagent' ? (

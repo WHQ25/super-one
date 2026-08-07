@@ -347,7 +347,7 @@ describe('reduceTool: task_progress', () => {
     expect(patch.taskProgress?.['task-1'].toolHistory).toEqual([])
   })
 
-  it('merges toolEntries from Grok subagent_progress into toolHistory', () => {
+  it('merges chronological toolEntries into toolHistory', () => {
     const session = createDefaultPerSessionState()
     session.taskProgress = {
       'task-1': { description: 'sa1', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] },
@@ -363,14 +363,76 @@ describe('reduceTool: task_progress', () => {
         { toolName: 'read_file', description: '' },
         { toolName: 'grep', description: '' },
       ],
+      outputFile: '/tmp/child/chat_history.jsonl',
     } as never)
     expect(patch.taskProgress?.['task-1'].toolHistory).toEqual([
       { toolName: 'read_file', description: '' },
       { toolName: 'grep', description: '' },
     ])
+    expect(patch.taskProgress?.['task-1'].outputFile).toBe('/tmp/child/chat_history.jsonl')
   })
 
-  it('allows the same tool to reappear after another tool in Grok toolEntries snapshots', () => {
+  it('stores Grok chat_history path without inventing toolHistory from lastToolName alone', () => {
+    const session = createDefaultPerSessionState()
+    session.taskProgress = {
+      'task-1': { description: 'read_file', lastToolName: 'read_file', totalTokens: 10, toolUses: 1, durationMs: 50, toolHistory: [] },
+    }
+    const patch = reduceTool(session, {
+      type: 'task_progress',
+      toolUseId: 'task-1',
+      taskId: 'sa1',
+      description: 'grep',
+      lastToolName: 'grep',
+      usage: { totalTokens: 40, toolUses: 12, durationMs: 100 },
+      outputFile: '/home/u/.grok/sessions/%2Fproj/sa1/chat_history.jsonl',
+    } as never)
+    // With transcript path, do not invent sparse rows from description transitions.
+    expect(patch.taskProgress?.['task-1'].toolHistory).toEqual([])
+    expect(patch.taskProgress?.['task-1'].outputFile).toContain('chat_history.jsonl')
+    expect(patch.taskProgress?.['task-1'].toolUses).toBe(12)
+  })
+
+  it('persists taskOutputFile on Agent tool_use so history reload can recover transcript path', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeAssistant('m1', [
+        { type: 'tool_use', toolUseId: 'agent-1', toolName: 'Agent', input: '{}' } as ContentBlock,
+        { type: 'tool_result', toolUseId: 'agent-1', summary: 'started' } as ContentBlock,
+      ]),
+    ]
+    session.taskProgress = {
+      'agent-1': { description: 'sa', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [], taskId: 'sa1' },
+    }
+    const path = '/home/u/.grok/sessions/%2Fproj/sa1/chat_history.jsonl'
+    const progressPatch = reduceTool(session, {
+      type: 'task_progress',
+      toolUseId: 'agent-1',
+      taskId: 'sa1',
+      description: 'sa1',
+      usage: { totalTokens: 10, toolUses: 2, durationMs: 100 },
+      outputFile: path,
+    } as never)
+    const agentAfterProgress = progressPatch.messages?.[0].content[0] as { taskOutputFile?: string }
+    expect(agentAfterProgress.taskOutputFile).toBe(path)
+
+    const nextSession = { ...session, messages: progressPatch.messages!, taskProgress: progressPatch.taskProgress! }
+    const donePatch = reduceTool(nextSession, {
+      type: 'task_notification',
+      toolUseId: 'agent-1',
+      taskId: 'sa1',
+      taskStatus: 'completed',
+      outputFile: path,
+      usage: { totalTokens: 20, toolUses: 3, durationMs: 200 },
+      resultText: 'done',
+    } as never)
+    const agentDone = donePatch.messages?.[0].content[0] as { taskOutputFile?: string; taskResultText?: string }
+    const resultDone = donePatch.messages?.[0].content[1] as { outputPath?: string }
+    expect(agentDone.taskOutputFile).toBe(path)
+    expect(agentDone.taskResultText).toBe('done')
+    expect(resultDone.outputPath).toBe(path)
+  })
+
+  it('allows the same tool to reappear after another tool in toolEntries snapshots', () => {
     const session = createDefaultPerSessionState()
     session.taskProgress = {
       'task-1': {

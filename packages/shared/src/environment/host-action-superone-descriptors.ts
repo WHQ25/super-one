@@ -96,7 +96,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                   },
                   "worktree": {
                     "type": "object",
-                    "description": "Request a host-managed worktree for same-repo isolation while cwd stays omitted or at the project root. Set enabled, baseBranch, and mode; use a unique branchName with branch. See read_manual({ domain: \"product\", topic: \"collaboration\" }) for implementer and reviewer recipes.",
+                    "description": "Request a host-managed worktree for same-repo isolation while cwd stays omitted or at the project root. Use for parallel implementers (mode branch + unique branchName), not for default read-only review of the current shared checkout. Use mode detach only when reviewing a feature branch another implementer already has checked out. See read_manual({ domain: \"product\", topic: \"collaboration\" }).",
                     "properties": {
                       "enabled": {
                         "type": "boolean"

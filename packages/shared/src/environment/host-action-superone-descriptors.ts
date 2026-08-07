@@ -10,7 +10,7 @@ export interface HostActionSuperoneToolDescriptor {
 export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
   {
     "name": "session_collab_list_agents",
-    "description": "List the built-in agent profiles (harness + config) available for user-approved child sessions. Each profile includes defaultConfig with the model/effort inherited when a request omits them. Call this before session_collab_request. The same profile may be requested more than once.",
+    "description": "List the agent profiles available for user-approved child sessions. Inspect each profile's harness and defaultConfig before session_collab_request. You may reuse one agentId for multiple launches.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -19,7 +19,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_collab_request",
-    "description": "Request approval for one or more child-agent launches. Repeat an agentId to launch multiple sessions from one profile. Every launch must include name (an agent-chosen human label, not the harness name) and role (for example, Reviewer or Implementer). config is optional; omitted model/effort inherit profile defaultConfig. Before using config.worktree or config.cwd, call read_manual({ domain: \"product\", topic: \"collaboration\" }). Session title is \"Name - Role\". User may edit model/effort/provider/permission/sandbox (task, name, role, agent, cwd, worktree stay as requested). On approval each launch returns a private one-shot credential.",
+    "description": "Request user approval for one or more child sessions. Call session_collab_list_agents first; repeat an agentId to reuse a profile. Invent a human-friendly name and a task-specific role for every launch. Omitted config fields inherit profile defaults. Before setting config.cwd or config.worktree, call read_manual({ domain: \"product\", topic: \"collaboration\" }); same-repo isolation belongs in config.worktree, not a worktree-leaf cwd. The user may edit model, effort, provider, permission, and sandbox settings. Each approved launch returns a private one-shot credential for session_collab_start.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -92,11 +92,11 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                   },
                   "cwd": {
                     "type": "string",
-                    "description": "Child working directory. Default: parent project root. Set only for a different project/repo. Never set to ~/.worktrees/… — use config.worktree instead. Details: read_manual({ domain: \"product\", topic: \"collaboration\" })."
+                    "description": "Set only to a genuinely different project root. Omit for the current project. Never pass ~/.worktrees/... or another same-repo worktree leaf; use config.worktree for same-repo isolation. See read_manual({ domain: \"product\", topic: \"collaboration\" })."
                   },
                   "worktree": {
                     "type": "object",
-                    "description": "Host-managed git worktree for same-repo isolation. Leave cwd at project root. See read_manual({ domain: \"product\", topic: \"collaboration\" }).",
+                    "description": "Request a host-managed worktree for same-repo isolation while cwd stays omitted or at the project root. Set enabled, baseBranch, and mode; use a unique branchName with branch. See read_manual({ domain: \"product\", topic: \"collaboration\" }) for implementer and reviewer recipes.",
                     "properties": {
                       "enabled": {
                         "type": "boolean"
@@ -114,7 +114,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                       },
                       "branchName": {
                         "type": "string",
-                        "description": "Branch to create for this worktree. Must be unique across launches \u2014 git cannot check out one branch in two worktrees."
+                        "description": "With mode \"branch\", create this unique branch. Git cannot check out one branch in two worktrees."
                       },
                       "carryLocalChanges": {
                         "type": "boolean"
@@ -152,7 +152,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_collab_start",
-    "description": "Create the real, user-visible collaboration child session authorized by one credential and deliver the approved launch task. Returns as soon as the child agent begins replying (does not wait for the full first turn). A credential creates at most one session; repeated calls are idempotent and return the same session id. The child then works asynchronously \u2014 start every child you need back to back, and never block on one before starting the next.",
+    "description": "Start the approved child session for one credential and deliver its task. The call returns when the child begins replying, not when its first turn finishes. A credential starts at most one session; retries return the same session id. Start all approved children back-to-back, then continue other work while they run asynchronously.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -168,7 +168,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_collab_send",
-    "description": "Send a persistent mailbox message between the parent and child sessions authorized by a credential. Direction is derived from the calling session. Write content as Markdown (headings, lists, code fences, emphasis, tables when useful) so peer agents and the SuperOne UI can render a structured handoff. Use clientMessageId for retry-safe idempotency. Delivery is push-based both ways: the peer is woken by a task notification (even mid-turn), and when it replies the host wakes you the same way \u2014 a fresh turn starts, telling you to call session_collab_retrieve. So after sending, move on to other work or end your turn; ending the turn IS how you wait here, and no reply is missed. Never sleep, re-send, or poll session_collab_retrieve while waiting.",
+    "description": "Send a persistent Markdown message through one parent-child mailbox. Use clientMessageId for retry-safe delivery. The host wakes the peer and later wakes you when it replies. After sending, continue other work or end your turn. Never sleep, resend, or poll session_collab_retrieve while waiting.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -193,7 +193,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_collab_retrieve",
-    "description": "Retrieve persistent mailbox messages addressed to this session. Non-blocking single read: returns the messages already waiting (status \"messages\") or nothing (status \"empty\"). Each message content is Markdown written by the peer \u2014 parse structure (headings, lists, code) rather than treating it as plain text. Pass multiple credentials to drain several parent/child mailboxes in one call. Returned messages advance only this agent endpoint cursor. Call it when a collaboration wake notification arrives, or once to drain the inbox before you act on peer input. Status \"empty\" means no peer has replied yet \u2014 it is NOT a retry signal: do not call again, do not sleep, do not spin. End your turn and the wake notification will start a new one the moment a message actually arrives.",
+    "description": "Retrieve queued Markdown messages for this session from one or more parent-child mailboxes. Call after a collaboration wake, or once before acting on peer input. This is a non-blocking read: status \"empty\" is not a retry signal. Do not sleep or poll; end your turn and wait for the next wake.",
     "inputSchema": {
       "type": "object",
       "properties": {

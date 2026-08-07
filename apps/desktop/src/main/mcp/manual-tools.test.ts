@@ -44,6 +44,9 @@ describe('manualReadHandler', () => {
     expect(text).toMatch(/worktree/i)
     expect(text).toMatch(/session_collab_request/)
     expect(text).toMatch(/~\/\.worktrees/)
+    expect(text).toMatch(/genuinely different project\/repo/i)
+    expect(text).toMatch(/mode: "detach"/)
+    expect(text).toMatch(/fake sidebar project/i)
   })
 
   it('lists collaboration in product domain index', async () => {

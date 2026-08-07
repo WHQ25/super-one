@@ -1,61 +1,54 @@
-# SuperOne — agent collaboration (session_collab_*)
+# SuperOne agent collaboration (`session_collab_*`)
 
-Use this before launching child agents with `session_collab_request` / `session_collab_start`, especially when children need **git worktree isolation** or when one child must review another child's branch.
+Read this before `session_collab_request`, especially when a child needs an isolated checkout or a different project.
 
-## Flow (short)
+## Launch flow
 
-1. `session_collab_list_agents` — pick `agentId` profiles.
-2. `session_collab_request` — one or more launches (`name`, `role`, `task`, optional `config`).
-3. User approves in the UI → you get a **private credential** per launch.
-4. `session_collab_start` with each credential (can start several back-to-back; do not wait for one to finish before starting the next).
-5. `session_collab_send` / `session_collab_retrieve` for mailbox handoffs (Markdown). Delivery is push-based: end your turn to wait; a wake notification starts a new turn when mail arrives.
+| Step | Action |
+|------|--------|
+| 1 | Call `session_collab_list_agents` and choose an `agentId`. A profile can launch more than one session. |
+| 2 | Call `session_collab_request` with one or more launches. Give every launch an agent-chosen `name`, `role`, and focused `task`. |
+| 3 | Wait for user approval. Each approved launch returns a private, one-shot credential. |
+| 4 | Call `session_collab_start` for every credential back-to-back. Children run asynchronously, so do not wait for one before starting the next. |
+| 5 | Exchange durable Markdown handoffs with `session_collab_send` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. |
 
-## cwd vs worktree (critical)
+## Choose `cwd` or `worktree`
 
-| Intent | What to set |
-|--------|-------------|
-| Work **inside the current project**, isolated checkout | `cwd` = **project root** (or omit). Set `config.worktree.enabled = true`. |
-| Work in a **different project/repo** | `cwd` = that project's root path (may register a new sidebar project). Optional `worktree` for isolation **inside that repo**. |
-| Review another child's feature branch | Still: `cwd` = **project root**, `worktree.enabled = true`, `mode = "detach"`, `baseBranch` = that feature branch name. |
+Treat `cwd` as the child session's **project identity**, not as a checkout path.
 
-### Do **not**
+| Intent | `config.cwd` | `config.worktree` | Result |
+|--------|--------------|-------------------|--------|
+| Work in the current project, shared checkout | Omit it, or use the current project root | Omit it | Child uses the current checkout and stays in the current sidebar project. |
+| Work in the current project, isolated checkout | Omit it, or use the current project root | Set `enabled: true` | Host creates the checkout and keeps the child in the current sidebar project. |
+| Review a branch already checked out elsewhere | Omit it, or use the current project root | Set `enabled: true`, `mode: "detach"`, and `baseBranch` to the feature branch | Reviewer gets an isolated detached checkout without competing for the branch. |
+| Work in a genuinely different project/repo | Set it to that project's root | Optional; use it only to isolate work inside that repo | The other project may appear as its own sidebar project. |
 
-- Put SuperOne worktree paths in `config.cwd` (paths under `~/.worktrees/…`, or names like `tjdllgg-735f677`).
-- Copy `config.cwd` from a previous `session_collab_start` result into a later launch. After start, that field is the child's **runtime** worktree path for display — not a launch recipe.
-- Expect two worktrees to check out the **same branch** (`mode: "branch"` / `"attach"`). Git allows a branch in only one worktree at a time.
+### Anti-patterns
 
-### Do
-
-- Prefer **host-managed** worktrees via `config.worktree` so the session stays under the **same sidebar project** as the main checkout.
-- Use a **new unique `branchName`** per Implementer when `mode: "branch"`.
-- For Reviewers of a branch already checked out by an Implementer, use `mode: "detach"` and `baseBranch` = that branch (detached HEAD at that ref).
+| Do not | Why it is wrong | Use instead |
+|--------|-----------------|-------------|
+| Set `cwd` to `~/.worktrees/<repo>/<leaf>` or another same-repo worktree leaf | It presents a checkout path as a new project and can create a fake sidebar project. | Keep `cwd` at the project root (or omit it) and enable `config.worktree`. |
+| Copy the `cwd` returned by `session_collab_start` into a later launch | The returned value is the child's resolved runtime checkout path, not a launch recipe. | Reuse the project root plus a fresh `config.worktree` request. |
+| Launch parallel `branch` or `attach` worktrees on the same branch | Git permits a branch to be checked out in only one worktree. | Give implementers unique `branchName` values; use `detach` for reviewers. |
+| Set `cwd` merely because the child needs isolation | `cwd` changes project identity; it does not express same-repo isolation. | Express isolation with `config.worktree`. |
 
 ## `config.worktree` fields
 
-```json
-{
-  "cwd": "/path/to/project-root",
-  "worktree": {
-    "enabled": true,
-    "baseBranch": "main",
-    "mode": "branch",
-    "branchName": "feat/my-isolated-work",
-    "carryLocalChanges": false
-  }
-}
-```
-
 | Field | Meaning |
 |-------|---------|
-| `enabled` | Must be `true` to create a host-managed worktree. |
-| `baseBranch` | Git ref in the **cwd** repo (branch, tag, or commit). |
-| `mode` | `branch` — create `branchName` from `baseBranch`. `detach` — detached HEAD at `baseBranch` (safe when that branch is already checked out elsewhere). `attach` — check out existing `baseBranch` (fails if already checked out in another worktree). |
-| `branchName` | Required for `mode: "branch"`. Unique across concurrent worktrees. |
-| `carryLocalChanges` | Optional; copy uncommitted changes from the source into the new worktree. |
+| `enabled` | Set to `true` to request a host-managed worktree. |
+| `baseBranch` | Branch, tag, or commit in the project-root repo to start from. |
+| `mode` | `branch` creates `branchName`; `detach` checks out `baseBranch` at detached HEAD; `attach` checks out the existing `baseBranch`. |
+| `branchName` | Required with `mode: "branch"`; it must be unique across concurrent worktrees. |
+| `carryLocalChanges` | Optional. Copy uncommitted source-checkout changes into the new worktree. |
 
-## Examples
+Use `attach` only when no other worktree has that branch checked out. Use `detach` for read-only review of a branch that an implementer already owns.
 
-### Parallel implementers on one repo
+## Recipes
+
+### Parallel implementers in the current project
+
+Omit `cwd`. Give each implementer a unique branch.
 
 ```json
 {
@@ -64,27 +57,27 @@ Use this before launching child agents with `session_collab_request` / `session_
       "agentId": "claude-base",
       "name": "Alice",
       "role": "Implementer",
-      "task": "…",
+      "task": "Implement the API change and run focused tests.",
       "config": {
         "worktree": {
           "enabled": true,
           "baseBranch": "main",
           "mode": "branch",
-          "branchName": "feat/alice-piece"
+          "branchName": "feat/api-change"
         }
       }
     },
     {
-      "agentId": "claude-base",
-      "name": "Bob",
+      "agentId": "codex-base",
+      "name": "Blake",
       "role": "Implementer",
-      "task": "…",
+      "task": "Implement the UI change and run focused tests.",
       "config": {
         "worktree": {
           "enabled": true,
           "baseBranch": "main",
           "mode": "branch",
-          "branchName": "feat/bob-piece"
+          "branchName": "feat/ui-change"
         }
       }
     }
@@ -92,48 +85,60 @@ Use this before launching child agents with `session_collab_request` / `session_
 }
 ```
 
-### Reviewer of an implementer's branch
+### Reviewer for an implementer's branch
+
+The implementer already owns `feat/api-change`, so the reviewer uses `mode: "detach"`.
 
 ```json
 {
-  "agentId": "codex-base",
-  "name": "Review",
-  "role": "Reviewer",
-  "task": "Review feat/alice-piece …",
-  "config": {
-    "worktree": {
-      "enabled": true,
-      "baseBranch": "feat/alice-piece",
-      "mode": "detach"
+  "launches": [
+    {
+      "agentId": "codex-base",
+      "name": "Casey",
+      "role": "Reviewer",
+      "task": "Review feat/api-change and report correctness risks with file references.",
+      "config": {
+        "worktree": {
+          "enabled": true,
+          "baseBranch": "feat/api-change",
+          "mode": "detach"
+        }
+      }
     }
-  }
+  ]
 }
 ```
-
-Omit `cwd` (or set it to the project root). Do **not** set `cwd` to `~/.worktrees/<repo>/…`.
 
 ### Child in a different project
 
+Set `cwd` only because this launch targets a genuinely different project root. The optional worktree is then created inside that repo.
+
 ```json
 {
-  "config": {
-    "cwd": "/Users/you/Code/OtherApp",
-    "worktree": {
-      "enabled": true,
-      "baseBranch": "main",
-      "mode": "branch",
-      "branchName": "feat/other-work"
+  "launches": [
+    {
+      "agentId": "claude-base",
+      "name": "Dana",
+      "role": "Implementer",
+      "task": "Implement the matching client change in OtherApp.",
+      "config": {
+        "cwd": "/Users/you/Code/OtherApp",
+        "worktree": {
+          "enabled": true,
+          "baseBranch": "main",
+          "mode": "branch",
+          "branchName": "feat/client-change"
+        }
+      }
     }
-  }
+  ]
 }
 ```
 
-That may add **OtherApp** as its own sidebar project. Same-repo worktrees never become separate projects when you use `worktree` correctly.
+## Permission and sandbox
 
-## Permission / sandbox
-
-Nobody watches child sessions. Prefer `permissionMode: "bypassPermissions"` (or `"auto"` for ACP) so the child is not stuck on an unanswered approval prompt. The user can still downgrade modes in the approval dialog. Details live on the `permissionMode` field of `session_collab_request`.
+Nobody watches child sessions. Prefer the most autonomous mode that can finish the task: `permissionMode: "bypassPermissions"` for Claude-family and Codex harnesses, or `"auto"` for ACP. The user can downgrade permission and sandbox settings in the approval dialog. Use `"plan"` or `"default"` only when stopping for human review is the purpose of the launch.
 
 ## Mailbox
 
-Write `session_collab_send` content as Markdown. After send, end the turn or do other work — do not poll. On wake, call `session_collab_retrieve`.
+Write `session_collab_send` content as structured Markdown. Use `clientMessageId` when a send may be retried. After sending, continue other work or end the turn. When a collaboration wake arrives, call `session_collab_retrieve`; an `empty` result is not a reason to sleep or poll.

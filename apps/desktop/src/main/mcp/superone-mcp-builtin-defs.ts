@@ -175,17 +175,15 @@ export const VIDEO_STATUS_DESCRIPTION =
   'Poll roughly every 30 seconds while it is running. Do not tell the user the video is ready until this returns `generated`.'
 
 export const SESSION_LIST_AGENTS_DESCRIPTION =
-  'List the built-in agent profiles (harness + config) available for user-approved child sessions. ' +
-  'Each profile includes defaultConfig with the model/effort inherited when a request omits them. ' +
-  'Call this before session_collab_request. The same profile may be requested more than once.'
+  'List the agent profiles available for user-approved child sessions. ' +
+  'Inspect each profile\'s harness and defaultConfig before session_collab_request. ' +
+  'You may reuse one agentId for multiple launches.'
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
-  'Request approval for one or more child-agent launches. Repeat an agentId to launch multiple sessions from one profile. ' +
-  'Every launch must include name (an agent-chosen human label, not the harness name) and role (for example, Reviewer or Implementer). ' +
-  'config is optional; omitted model/effort inherit profile defaultConfig. ' +
-  'Before using config.worktree or config.cwd, call read_manual({ domain: "product", topic: "collaboration" }). ' +
-  'Session title is "Name - Role". User may edit model/effort/provider/permission/sandbox (task, name, role, agent, cwd, worktree stay as requested). ' +
-  'On approval each launch returns a private one-shot credential.'
+  'Request user approval for one or more child sessions. Call session_collab_list_agents first; repeat an agentId to reuse a profile. ' +
+  'Invent a human-friendly name and a task-specific role for every launch. Omitted config fields inherit profile defaults. ' +
+  'Before setting config.cwd or config.worktree, call read_manual({ domain: "product", topic: "collaboration" }); same-repo isolation belongs in config.worktree, not a worktree-leaf cwd. ' +
+  'The user may edit model, effort, provider, permission, and sandbox settings. Each approved launch returns a private one-shot credential for session_collab_start.'
 
 /**
  * Field-level guidance, not part of the tool description: `session_collab_request`
@@ -204,33 +202,33 @@ export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
   'Pick "plan" or "default" only when stopping for human review is the point of the launch.'
 
 export const LAUNCH_CWD_DESCRIPTION =
-  'Child working directory. Default: parent project root. Set only for a different project/repo. ' +
-  'Never set to ~/.worktrees/… (or any worktree leaf of the current repo) — use config.worktree instead. ' +
-  'Details: read_manual({ domain: "product", topic: "collaboration" }).'
+  'Set only to a genuinely different project root. Omit for the current project. ' +
+  'Never pass ~/.worktrees/... or another same-repo worktree leaf; use config.worktree for same-repo isolation. ' +
+  'See read_manual({ domain: "product", topic: "collaboration" }).'
 
 export const LAUNCH_WORKTREE_DESCRIPTION =
-  'Host-managed git worktree for same-repo isolation (preferred). Leave cwd at the project root; set enabled/baseBranch/mode. ' +
-  'mode branch|detach|attach — see read_manual({ domain: "product", topic: "collaboration" }) for recipes (parallel implementers, reviewers).'
+  'Request a host-managed worktree for same-repo isolation while cwd stays omitted or at the project root. ' +
+  'Set enabled, baseBranch, and mode; use a unique branchName with branch. ' +
+  'See read_manual({ domain: "product", topic: "collaboration" }) for implementer and reviewer recipes.'
 
 export const LAUNCH_BRANCH_NAME_DESCRIPTION =
-  'Branch to create for this worktree when mode is "branch". Must be unique across launches — git cannot check out one branch in two worktrees.'
+  'With mode "branch", create this unique branch. Git cannot check out one branch in two worktrees.'
 
 export const SESSION_START_DESCRIPTION =
-  'Create the real, user-visible collaboration child session authorized by one credential and deliver the approved launch task. ' +
-  'Returns as soon as the child agent begins replying (does not wait for the full first turn). ' +
-  'A credential creates at most one session; repeated calls are idempotent and return the same session id. ' +
-  'The child then works asynchronously — start every child you need back to back, and never block on one before starting the next.'
+  'Start the approved child session for one credential and deliver its task. ' +
+  'The call returns when the child begins replying, not when its first turn finishes. ' +
+  'A credential starts at most one session; retries return the same session id. ' +
+  'Start all approved children back-to-back, then continue other work while they run asynchronously.'
 
 export const SESSION_SEND_DESCRIPTION =
-  'Send a persistent mailbox message between parent and child sessions authorized by a credential. ' +
-  'Write content as Markdown so peers and the SuperOne UI can render a structured handoff. ' +
-  'Use clientMessageId for retry-safe idempotency. Delivery is push-based: the peer is woken (even mid-turn), and when it replies you get a wake turn to call session_collab_retrieve. ' +
-  'After sending, do other work or end your turn — ending the turn is how you wait. Never sleep, re-send, or poll while waiting.'
+  'Send a persistent Markdown message through one parent-child mailbox. ' +
+  'Use clientMessageId for retry-safe delivery. The host wakes the peer and later wakes you when it replies. ' +
+  'After sending, continue other work or end your turn. Never sleep, resend, or poll session_collab_retrieve while waiting.'
 
 export const SESSION_RETRIEVE_DESCRIPTION =
-  'Retrieve mailbox messages for this session. Non-blocking: status "messages" or "empty". Content is Markdown from the peer. ' +
-  'Pass multiple credentials to drain several mailboxes. Call on a collaboration wake, or once before acting on peer input. ' +
-  'Status "empty" is not a retry signal — end your turn; a wake starts a new one when mail arrives.'
+  'Retrieve queued Markdown messages for this session from one or more parent-child mailboxes. ' +
+  'Call after a collaboration wake, or once before acting on peer input. This is a non-blocking read: status "empty" is not a retry signal. ' +
+  'Do not sleep or poll; end your turn and wait for the next wake.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {

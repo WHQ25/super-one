@@ -119,7 +119,7 @@ const MEDIA_TOPIC_SUMMARIES: Record<MediaGuideTopic, string> = {
 }
 
 const DOMAIN_SUMMARIES: Record<ManualDomain, string> = {
-  product: 'Product support and contributing: overview, issues/PRs (contribute), logs (debug), agent collaboration / worktrees (collaboration).',
+  product: 'Product support and contributing: overview, issues/PRs, logs, and collaboration launch location rules.',
   miniapp: 'Mini-app development: scaffold, APIs, packaging, tools.',
   media: 'Image/video generation: provider-specific parameters and silent-failure modes.',
   widget: 'Inline chat widget design guidelines. Saved templates use widget_list_templates.',
@@ -175,11 +175,11 @@ function formatDomainIndex(domain: ManualDomain): string {
       '- overview — product identity, links, when to use contribute vs debug vs collaboration',
       '- contribute — GitHub issues and PRs (bugs, features, improvements); issue first, optional red–green PR',
       '- debug — log paths, userData, monorepo map, this machine’s runtime paths',
-      '- collaboration — session_collab_* launches: cwd vs worktree.enabled, parallel implementers/reviewers',
+      '- collaboration — session_collab_* launches: same-repo worktrees, cross-project cwd, implementers, and reviewers',
       '',
       'Call `read_manual({ domain: "product", topic: "contribute" })` for issues / PRs.',
       'Call `read_manual({ domain: "product", topic: "debug" })` for logs and local diagnosis.',
-      'Call `read_manual({ domain: "product", topic: "collaboration" })` before session_collab_request with worktrees.',
+      'Call `read_manual({ domain: "product", topic: "collaboration" })` before setting config.cwd or config.worktree in session_collab_request.',
     ].join('\n')
   }
   if (domain === 'miniapp') {

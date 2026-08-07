@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment/host-action-superone-descriptors'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
+  LAUNCH_CWD_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
+  LAUNCH_WORKTREE_DESCRIPTION,
+  SESSION_COLLABORATION_TOOL_NAMES,
   SESSION_REQUEST_AGENTS_DESCRIPTION,
 } from './superone-mcp-builtin-defs'
 
@@ -89,8 +93,10 @@ describe('built-in superone tool registration surfaces', () => {
   })
 
   it('points session_collab_request at product/collaboration for worktree recipes', () => {
-    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/read_manual/)
-    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/collaboration/)
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toContain(
+      'read_manual({ domain: "product", topic: "collaboration" })',
+    )
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/same-repo isolation belongs in config\.worktree/i)
     expect(SESSION_REQUEST_AGENTS_DESCRIPTION.length).toBeLessThanOrEqual(700)
     const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_request')!
     const launch = (def.inputSchema.properties as Record<string, { items?: { properties?: Record<string, unknown> } }>)
@@ -98,6 +104,23 @@ describe('built-in superone tool registration surfaces', () => {
     const config = (launch.config as { properties: Record<string, { description?: string }> }).properties
     expect(config.cwd.description).toMatch(/read_manual/)
     expect(config.worktree.description).toMatch(/read_manual/)
+  })
+
+  it('reserves cwd for a different project and worktree for same-repo isolation', () => {
+    expect(LAUNCH_CWD_DESCRIPTION).toMatch(/different project root/i)
+    expect(LAUNCH_CWD_DESCRIPTION).toMatch(/never pass ~\/\.worktrees/i)
+    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/same-repo isolation/i)
+    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/cwd stays omitted or at the project root/i)
+  })
+
+  it('keeps collaboration host-action descriptors aligned with desktop discovery', () => {
+    for (const name of SESSION_COLLABORATION_TOOL_NAMES) {
+      const desktop = BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === name)
+      const hostAction = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === name)
+      expect(hostAction?.description, `${name} description`).toBe(desktop?.description)
+      expect(hostAction?.inputSchema, `${name} input schema`).toEqual(desktop?.inputSchema)
+      expect(hostAction?.description.length, `${name} description length`).toBeLessThanOrEqual(700)
+    }
   })
 
   it('marks read_manual as alwaysLoad so Claude Tool Search does not hide it', () => {

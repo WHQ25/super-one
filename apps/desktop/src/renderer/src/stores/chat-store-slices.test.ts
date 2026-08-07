@@ -331,24 +331,15 @@ describe('claude-slice: setSelectedModel', () => {
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
 
-  it("downgrades permissionMode to 'default' when active mode is 'auto' but the model can't sustain Auto Mode", () => {
+  it("keeps permissionMode='auto' when switching models (no client-side auto-mode gate)", () => {
     setupProject()
     setClaudeResources({ models: [opus, sonnet], account: { subscriptionType: 'Claude Max' } as AccountInfo })
     patchSession({ permissionMode: 'auto' })
 
     useChatStore.getState().setSelectedModel('sonnet-4-6')
 
-    expect(activeSession().permissionMode).toBe('default')
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(PATH, 'default')
-  })
-
-  it("keeps permissionMode='auto' when the picked model still supports Auto Mode", () => {
-    setupProject()
-    setClaudeResources({ models: [opus, sonnet], account: { subscriptionType: 'Claude Max' } as AccountInfo })
-    patchSession({ permissionMode: 'auto' })
-
-    useChatStore.getState().setSelectedModel('opus-4-8')
     expect(activeSession().permissionMode).toBe('auto')
+    expect(activeSession().selectedModel).toBe('sonnet-4-6')
     expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
   })
 

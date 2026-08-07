@@ -89,7 +89,9 @@ export function PermissionModeList({ activeMode, availableModes, autoEligibility
     <>
       <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.permissionModeTitle')}</div>
       {visibleModes.map((mode) => {
-        const isAutoBlocked = mode.id === 'auto' && autoEligibility?.ok !== true
+        // Only block when eligibility is provided and explicitly fails. Missing
+        // eligibility (remote, or SuperOne no longer gating) keeps Auto selectable.
+        const isAutoBlocked = mode.id === 'auto' && autoEligibility != null && autoEligibility.ok === false
         const label = t(`chat.permissionModes.${mode.id}.label`)
         const description = isAutoBlocked
           ? autoEligibility?.message ?? t(`chat.permissionModes.${mode.id}.description`)

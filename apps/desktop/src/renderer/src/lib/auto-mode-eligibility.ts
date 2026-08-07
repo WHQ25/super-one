@@ -1,5 +1,11 @@
 import type { AccountInfo, ModelOption } from '@superone/shared/agent-types'
 
+/**
+ * Historical reasons kept for UI/tests that still branch on them.
+ * SuperOne no longer client-gates Auto Mode (Anthropic enables it for Pro/Max/Team
+ * as of 2026-08; remote nodes also lack subscription metadata). Claude SDK / account
+ * policy is the source of truth if a session rejects `permissionMode: 'auto'`.
+ */
 export type AutoModeReason =
   | 'ok'
   | 'unauthenticated'
@@ -35,58 +41,27 @@ export function normalizePlan(input: string | undefined): PlanKind | undefined {
   return undefined
 }
 
+const ALWAYS_OK: AutoModeEligibility = {
+  ok: true,
+  reason: 'ok',
+  message: 'Auto Mode available',
+}
+
 /**
- * The SDK already filters `ModelInfo.supportsAutoMode` by the authenticated
- * account's plan (verified 2026-05-29 against SDK 0.3.154: on a Max account
- * supportsAutoMode is now set on both Opus 4.8 and Sonnet 4.6; earlier Claude
- * Code releases only flagged Opus). So we do NOT duplicate the plan × model
- * matrix on the client — we trust `modelSupportsAutoMode` as the authoritative
- * signal and only surface higher-level gates (provider, unauthenticated, Pro
- * plan, admin kill switch) to produce differentiated error messages.
+ * Always allows Auto Mode. Plan / provider / model / admin gates were removed
+ * so local and remote sessions can select `auto` freely; the Claude runtime
+ * decides support.
  */
-export function checkAutoModeEligibility(ctx: AutoModeCtx): AutoModeEligibility {
-  if (ctx.apiProvider && ctx.apiProvider !== 'firstParty') {
-    return {
-      ok: false,
-      reason: 'provider_not_supported',
-      message: 'Auto Mode requires Anthropic API (not Bedrock/Vertex/Foundry)',
-    }
-  }
-
-  const plan = normalizePlan(ctx.subscriptionType)
-  if (!plan) {
-    return { ok: false, reason: 'unauthenticated', message: 'Sign in to a Claude account to use Auto Mode' }
-  }
-  if (plan === 'pro') {
-    return { ok: false, reason: 'pro_not_supported', message: 'Auto Mode is not available on the Pro plan' }
-  }
-
-  if (ctx.disableAutoModeSetting === 'disable') {
-    return { ok: false, reason: 'admin_disabled', message: 'Auto Mode has been disabled by your administrator' }
-  }
-
-  if (ctx.modelSupportsAutoMode !== true) {
-    return {
-      ok: false,
-      reason: 'model_not_supported',
-      message: 'This model does not support Auto Mode on your plan',
-    }
-  }
-
-  return { ok: true, reason: 'ok', message: 'Auto Mode available' }
+export function checkAutoModeEligibility(_ctx: AutoModeCtx = {}): AutoModeEligibility {
+  return ALWAYS_OK
 }
 
 export function eligibilityFromStore(
-  account: AccountInfo | null | undefined,
-  model: ModelOption | undefined,
-  disableAutoModeSetting?: 'disable',
+  _account?: AccountInfo | null,
+  _model?: ModelOption,
+  _disableAutoModeSetting?: 'disable',
 ): AutoModeEligibility {
-  return checkAutoModeEligibility({
-    subscriptionType: account?.subscriptionType,
-    apiProvider: account?.apiProvider,
-    modelSupportsAutoMode: model?.supportsAutoMode,
-    disableAutoModeSetting,
-  })
+  return ALWAYS_OK
 }
 
 /**
@@ -94,13 +69,8 @@ export function eligibilityFromStore(
  * that are not bound to a selected model (e.g. global preferences).
  */
 export function checkAutoModePlanEligibility(
-  account: AccountInfo | null | undefined,
-  disableAutoModeSetting?: 'disable',
+  _account?: AccountInfo | null,
+  _disableAutoModeSetting?: 'disable',
 ): AutoModeEligibility {
-  return checkAutoModeEligibility({
-    subscriptionType: account?.subscriptionType,
-    apiProvider: account?.apiProvider,
-    modelSupportsAutoMode: true,
-    disableAutoModeSetting,
-  })
+  return ALWAYS_OK
 }

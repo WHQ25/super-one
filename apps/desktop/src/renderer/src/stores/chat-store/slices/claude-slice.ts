@@ -1,7 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
-import { checkAutoModeEligibility } from '../../../lib/auto-mode-eligibility'
-import type { ChatStore, PerSessionState } from '../types'
+import type { ChatStore } from '../types'
 import { getDefaultEffortForModel } from '../defaults'
 import {
   applyDefaultModel,
@@ -261,29 +260,19 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const availableModels = isRemote
       ? (getProject(state, activeProject).claudeModels ?? [])
       : (claude?.models ?? [])
-    const account = isRemote ? {} : (claude?.account ?? {})
     const modelInfo = availableModels.find((m) => m.id === model)
     const defaultEffort = getDefaultEffortForModel(modelInfo)
-    const shouldDowngrade =
-      session.permissionMode === 'auto' &&
-      !checkAutoModeEligibility({
-        subscriptionType: account?.subscriptionType,
-        apiProvider: account?.apiProvider,
-        modelSupportsAutoMode: modelInfo?.supportsAutoMode,
-      }).ok
-    const patch: Partial<PerSessionState> = {
+    // Keep permissionMode as-is when switching models — SuperOne no longer
+    // client-gates Auto Mode (local or remote). Claude runtime enforces support.
+    set((s) => updateActivePerSession(s, () => ({
       selectedModel: model,
       selectedEffort: defaultEffort,
       modelUserChosen: true,
       effortUserChosen: false,
       contextWindow: null,
-    }
-    // Remote has no Claude subscription account — do not auto-downgrade permission mode.
-    if (shouldDowngrade && !isRemote) patch.permissionMode = 'default'
-    set((s) => updateActivePerSession(s, () => patch))
+    })))
     // Desktop SessionManager does not own remote node drafts — skip local IPC.
     if (!isRemote) {
-      if (shouldDowngrade) void window.agent.setPermissionMode(activeProject, 'default')
       void window.agent.setSessionSettings(activeProject, { model, effort: defaultEffort ?? null })
       if (getActivePerSession(get(), activeProject).draftText.length > 0) {
         triggerPrewarm(get(), activeProject)

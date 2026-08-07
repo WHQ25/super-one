@@ -4728,31 +4728,11 @@ describe('handleAgentEvent supplemental', () => {
 })
 
 describe('cyclePermissionMode', () => {
-  it('skips auto when ineligible: default → plan → acceptEdits → default', async () => {
+  it('cycles Claude modes including auto: default → plan → auto → acceptEdits → default', async () => {
     setupProject('/test')
 
     const session = getActiveDraftSession('/test')!
     expect(session.permissionMode).toBe('default')
-
-    await useChatStore.getState().cyclePermissionMode()
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
-
-    await useChatStore.getState().cyclePermissionMode()
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
-
-    await useChatStore.getState().cyclePermissionMode()
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
-  })
-
-  it('includes auto when account + model qualify: default → plan → auto → acceptEdits → default', async () => {
-    setupProject('/test')
-    setClaude({
-      account: { subscriptionType: 'max', apiProvider: 'firstParty' },
-      models: [
-        { id: 'claude-opus-4-8', name: 'Opus 4.8', description: '', supportsAutoMode: true },
-      ] as never[],
-    })
-    patchDraftSession('/test', { selectedModel: 'claude-opus-4-8' })
 
     await useChatStore.getState().cyclePermissionMode()
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
@@ -4768,7 +4748,7 @@ describe('cyclePermissionMode', () => {
   })
 })
 
-describe('setSelectedModel auto-mode downgrade', () => {
+describe('setSelectedModel permission mode preservation', () => {
   it('immediately replaces a stale prewarm when the draft already has text', () => {
     setupProject('/test')
     setClaude({
@@ -4785,7 +4765,7 @@ describe('setSelectedModel auto-mode downgrade', () => {
     expect(mockWindowAgent.prewarm).toHaveBeenCalledWith('/test', expect.objectContaining({ model: 'claude-opus-4-8' }))
   })
 
-  it('downgrades permissionMode from auto to default when new model does not support auto mode', () => {
+  it('keeps permissionMode=auto when switching models (no client-side auto-mode gate)', () => {
     setupProject('/test')
     setClaude({
       account: { subscriptionType: 'max', apiProvider: 'firstParty' },
@@ -4796,28 +4776,11 @@ describe('setSelectedModel auto-mode downgrade', () => {
     })
     patchDraftSession('/test', { selectedModel: 'claude-opus-4-8', permissionMode: 'auto' })
 
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
-
     useChatStore.getState().setSelectedModel('claude-haiku-4-5')
 
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
-    expect(getActiveDraftSession('/test')!.selectedModel).toBe('claude-haiku-4-5')
-  })
-
-  it('keeps permissionMode when new model still qualifies for auto', () => {
-    setupProject('/test')
-    setClaude({
-      account: { subscriptionType: 'team', apiProvider: 'firstParty' },
-      models: [
-        { id: 'claude-opus-4-8', name: 'Opus 4.8', description: '', supportsAutoMode: true },
-        { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', description: '', supportsAutoMode: true },
-      ] as never[],
-    })
-    patchDraftSession('/test', { selectedModel: 'claude-opus-4-8', permissionMode: 'auto' })
-
-    useChatStore.getState().setSelectedModel('claude-sonnet-4-6')
-
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
+    expect(getActiveDraftSession('/test')!.selectedModel).toBe('claude-haiku-4-5')
+    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
   })
 })
 

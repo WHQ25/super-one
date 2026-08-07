@@ -267,22 +267,25 @@ describe('PermissionPrompt + real store integration', () => {
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
   })
 
-  it('keeps forwarding the acceptEdits suggestion when auto mode is unavailable', async () => {
+  it('upgrades acceptEdits setMode suggestions to auto even without account/model metadata', async () => {
+    // SuperOne no longer client-gates Auto Mode (remote has no subscription
+    // account; Pro/Max/Team all get Auto from Anthropic). Always prefer auto.
     seedProjectWithActiveSession('/proj', 'alpha')
     firePermissionRequest('alpha', 'r1', [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }])
 
     render(<PermissionPrompt />)
 
-    fireEvent.click(screen.getByText(/Switch to acceptEdits/).closest('button')!)
+    const suggestionBtn = screen.getByText(/Switch to auto/).closest('button')!
+    fireEvent.click(suggestionBtn)
     await act(async () => {
       fireEvent.click(screen.getByText('Allow'))
       await Promise.resolve()
     })
 
     expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
-      expect.any(String), 'r1', true, undefined, undefined, [0], undefined, undefined,
+      expect.any(String), 'r1', true, undefined, undefined, undefined, undefined, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
   })
 
   it('leaves the active-session prompt intact when message_interrupted targets a different session', () => {

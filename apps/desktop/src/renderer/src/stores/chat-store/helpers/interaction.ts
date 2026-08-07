@@ -5,7 +5,6 @@ import type {
   SandboxMode,
 } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
-import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { ACP_PERMISSION_MODES } from '@/components/chat/acpPermissionModes'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractModeFromSuggestions } from './chat-helpers'
@@ -624,22 +623,8 @@ export function cyclePermissionModeImpl(get: () => ChatStore): void {
       : PERMISSION_MODES
   const startIdx = permissionModes.indexOf(session.permissionMode)
   const anchor = startIdx === -1 ? 0 : startIdx
-  for (let step = 1; step <= permissionModes.length; step++) {
-    const candidate = permissionModes[(anchor + step) % permissionModes.length]
-    if (candidate === 'auto' && provider === 'claude') {
-      const claude = get().harnessResources.claude
-      const account = claude?.account ?? {}
-      const modelInfo = claude?.models.find((model) => model.id === session.selectedModel)
-      const elig = checkAutoModeEligibility({
-        subscriptionType: account?.subscriptionType,
-        apiProvider: account?.apiProvider,
-        modelSupportsAutoMode: modelInfo?.supportsAutoMode,
-      })
-      if (!elig.ok) continue
-    }
-    get().setPermissionMode(candidate)
-    return
-  }
+  const next = permissionModes[(anchor + 1) % permissionModes.length]
+  get().setPermissionMode(next)
 }
 
 export function togglePlanModeShortcutImpl(get: () => ChatStore): void {

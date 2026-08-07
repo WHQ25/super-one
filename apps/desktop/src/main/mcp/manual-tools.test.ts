@@ -28,6 +28,15 @@ describe('manualReadHandler', () => {
     expect(result.content[0].text).toMatch(/github\.com\/WHQ25\/super-one/)
   })
 
+  it('returns product contribute docs with issue-first and PR flow', async () => {
+    const result = await manualReadHandler({ domain: 'product', topic: 'contribute' })
+    const text = result.content[0].text
+    expect(result.isError).not.toBe(true)
+    expect(text).toMatch(/issue first/i)
+    expect(text).toMatch(/Fixes #N/)
+    expect(text).toMatch(/red.?green/i)
+  })
+
   it('lists miniapp topics for domain only', async () => {
     const result = await manualReadHandler({ domain: 'miniapp' })
     const text = result.content[0].text

@@ -1,6 +1,10 @@
-# SuperOne — debug, logs, and filing issues
+# SuperOne — debug, logs, and local paths
 
-Use this when the user is stuck, sees a crash, wrong behavior, or wants to contribute a bug report. Combine **logs + source** so maintainers can act quickly.
+Use this when the user is stuck, sees a crash, or wrong behavior and you need **logs + source layout** to diagnose. Combine with product/contribute when they want to file an issue or open a fix PR.
+
+For **issues and PRs** (bugs, features, improvements):  
+`read_manual({ domain: "product", topic: "contribute" })`  
+— issue first, then optional PR; bugfix PRs use strict red–green.
 
 ## Source code
 
@@ -19,8 +23,6 @@ Monorepo layout (high signal for bugs):
 | `apps/relay/` | Relay worker (if remote-control related) |
 | `packages/shared/` | Shared types, miniapp runtime, i18n |
 | `packages/ui/` | Shared UI primitives |
-
-Open issues: https://github.com/WHQ25/super-one/issues/new
 
 ## Log files (by platform)
 
@@ -72,33 +74,6 @@ Multi-instance: if `SUPERONE_INSTANCE` is set, userData is `…/super-one/instan
 
 Dev registry (mini-app source pointers): `~/.superone/dev-registry.json`
 
-## How to help the user file a good issue
+## After you have a diagnosis
 
-Paste this checklist into the issue body (fill in with them):
-
-```markdown
-### Summary
-<!-- one line -->
-
-### Environment
-- SuperOne version:
-- OS:
-- Agent / harness (Claude, Codex, Grok, …):
-- Install: packaged DMG/NSIS vs `bun run dev`
-
-### Steps to reproduce
-1.
-2.
-
-### Expected
-### Actual
-
-### Logs
-<!-- paste the last ~50–100 lines from main.log / dev.log around the failure -->
-<!-- redact API keys / tokens / absolute home paths if sensitive -->
-
-### Related code (if known)
-<!-- e.g. apps/desktop/src/main/... -->
-```
-
-Use the resolved paths in the runtime appendix when available. Summarize the relevant error window instead of copying an entire log, and redact credentials, tokens, and private home-directory segments before sharing it externally.
+If the user may want to report or fix upstream, switch to product/contribute: ask about filing an issue first, then (only with an issue number) ask about a PR. Do not skip contribute and invent a one-off PR process here.

@@ -47,7 +47,7 @@ export {
 export const MANUAL_DOMAINS = ['product', 'miniapp', 'media', 'widget'] as const
 export type ManualDomain = (typeof MANUAL_DOMAINS)[number]
 
-export const PRODUCT_GUIDE_TOPICS = ['overview', 'debug'] as const
+export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug'] as const
 
 export const READ_MANUAL_INPUT_SCHEMA = {
   type: 'object',
@@ -112,7 +112,7 @@ export const MOBILE_SHARE_FILE_INPUT_SCHEMA = {
 export const MANUAL_READ_DESCRIPTION =
   'Read bundled SuperOne manuals. Omit domain to list all domains; pass domain to list its topics; ' +
   'pass domain with topic to read one topic. For widget, pass either topic or modules, never both. ' +
-  'Use product/debug for support and runtime paths, miniapp/overview before mini-app development, ' +
+  'Use product/contribute for GitHub issues and PRs (any bug or idea; issue-first, optional red–green PR), product/debug for support and runtime paths, miniapp/overview before mini-app development, ' +
   'and media/overview before provider-specific options. Use config_read for live settings and ' +
   'widget_list_templates for saved widgets.'
 

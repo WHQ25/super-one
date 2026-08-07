@@ -27,6 +27,7 @@ import mediaGoogleImageMd from './guides/media/google-image.md?raw'
 import mediaGoogleVideoMd from './guides/media/google-video.md?raw'
 import mediaNewapiVideoMd from './guides/media/newapi-video.md?raw'
 import productOverviewMd from './guides/product/overview.md?raw'
+import productContributeMd from './guides/product/contribute.md?raw'
 import productDebugMd from './guides/product/debug.md?raw'
 import {
   MANUAL_DOMAINS,
@@ -79,6 +80,7 @@ const MEDIA_GUIDES = {
 
 const PRODUCT_GUIDES = {
   overview: productOverviewMd,
+  contribute: productContributeMd,
   debug: productDebugMd,
 } satisfies Record<ProductGuideTopic, string>
 
@@ -115,7 +117,7 @@ const MEDIA_TOPIC_SUMMARIES: Record<MediaGuideTopic, string> = {
 }
 
 const DOMAIN_SUMMARIES: Record<ManualDomain, string> = {
-  product: 'Support: GitHub repo, log locations, userData paths, filing issues. Start here for bugs.',
+  product: 'Product support and contributing: overview, issues/PRs (contribute), logs and runtime paths (debug).',
   miniapp: 'Mini-app development: scaffold, APIs, packaging, tools.',
   media: 'Image/video generation: provider-specific parameters and silent-failure modes.',
   widget: 'Inline chat widget design guidelines. Saved templates use widget_list_templates.',
@@ -147,7 +149,7 @@ function formatCatalog(): string {
     lines.push(DOMAIN_SUMMARIES[domain])
     if (domain === 'product') {
       lines.push(`Topics: ${PRODUCT_GUIDE_TOPICS.join(', ')}`)
-      lines.push('Bugs / logs / GitHub: `domain: "product", topic: "debug"`.')
+      lines.push('Issues / PRs: `domain: "product", topic: "contribute"`. Logs / paths: `topic: "debug"`.')
     } else if (domain === 'miniapp') {
       lines.push(`Topics: ${MINIAPP_GUIDE_TOPICS.join(', ')}`)
       lines.push('Start with `domain: "miniapp", topic: "overview"`.')
@@ -168,10 +170,12 @@ function formatDomainIndex(domain: ManualDomain): string {
   if (domain === 'product') {
     return [
       '# Product manual topics',
-      '- overview — links (repo, website), when to file an issue',
-      '- debug — log paths, userData, issue template, monorepo map',
+      '- overview — product identity, links, when to use contribute vs debug',
+      '- contribute — GitHub issues and PRs (bugs, features, improvements); issue first, optional red–green PR',
+      '- debug — log paths, userData, monorepo map, this machine’s runtime paths',
       '',
-      'Call `read_manual({ domain: "product", topic: "debug" })` for support / bug reports.',
+      'Call `read_manual({ domain: "product", topic: "contribute" })` for issues / PRs.',
+      'Call `read_manual({ domain: "product", topic: "debug" })` for logs and local diagnosis.',
     ].join('\n')
   }
   if (domain === 'miniapp') {

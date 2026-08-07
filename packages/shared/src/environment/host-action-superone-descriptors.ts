@@ -212,7 +212,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "read_manual",
-    "description": "Read bundled SuperOne manuals. Omit domain to list all domains; pass domain to list its topics; pass domain with topic to read one topic. For widget, pass either topic or modules, never both. Use product/debug for support and runtime paths, miniapp/overview before mini-app development, and media/overview before provider-specific options. Use config_read for live settings and widget_list_templates for saved widgets.",
+    "description": "Read bundled SuperOne manuals. Omit domain to list all domains; pass domain to list its topics; pass domain with topic to read one topic. For widget, pass either topic or modules, never both. Use product/contribute for GitHub issues and PRs (issue-first, optional red–green), product/debug for support and runtime paths, miniapp/overview before mini-app development, and media/overview before provider-specific options. Use config_read for live settings and widget_list_templates for saved widgets.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -9,7 +9,9 @@ export interface EnvironmentConnectivityDeps {
   /** Subscribe to online transitions; return unsubscribe. */
   onOnlineEdge: (handler: () => void) => () => void
   startDesiredConnections: () => Promise<void>
-  wakeDesiredConnections: (reason: 'app-resume' | 'network-online') => Promise<void>
+  wakeDesiredConnections: (
+    reason: 'app-resume' | 'network-online' | 'network-offline',
+  ) => Promise<void>
   log?: (message: string) => void
 }
 
@@ -60,14 +62,18 @@ export function createOnlineEdgeWatcher(
   intervalMs = 2_000,
 ): {
   onOnlineEdge: (handler: () => void) => () => void
+  onOfflineEdge: (handler: () => void) => () => void
   stop: () => void
 } {
   const handlers = new Set<() => void>()
   let wasOnline = isOnline()
+  const offlineHandlers = new Set<() => void>()
   const timer = setInterval(() => {
     const online = isOnline()
     if (online && !wasOnline) {
       for (const h of handlers) h()
+    } else if (!online && wasOnline) {
+      for (const h of offlineHandlers) h()
     }
     wasOnline = online
   }, intervalMs)
@@ -83,9 +89,16 @@ export function createOnlineEdgeWatcher(
         handlers.delete(handler)
       }
     },
+    onOfflineEdge(handler: () => void) {
+      offlineHandlers.add(handler)
+      return () => {
+        offlineHandlers.delete(handler)
+      }
+    },
     stop() {
       clearInterval(timer)
       handlers.clear()
+      offlineHandlers.clear()
     },
   }
 }

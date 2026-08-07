@@ -170,6 +170,38 @@ describe('environment list', () => {
   })
 })
 
+describe('repairPairing', () => {
+  it('rejects identity mismatch without overwriting credentials', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'repair-me',
+    })
+    const before = host.credentials.get(connectionId)
+    expect(before).toBeTruthy()
+
+    // Force known identity to disagree with live node.
+    host.connections.updateKnown(connectionId, {
+      environmentId: 'env-other',
+      nodePublicKeyFingerprint: 'fp-other',
+    })
+
+    await expect(
+      host.repairPairing({
+        connectionId,
+        baseUrl: rt.server.url,
+        pairingToken: rt.auth.createPairingToken().token,
+      }),
+    ).rejects.toMatchObject({ code: 'identity_conflict' })
+
+    const after = host.credentials.get(connectionId)
+    expect(after?.refreshToken).toBe(before?.refreshToken)
+    host.dispose()
+  })
+})
+
 describe('desired auto-connect semantics', () => {
   it('migrates omitted desired to auto-connect on startDesiredConnections', async () => {
     const rt = await bootNode()

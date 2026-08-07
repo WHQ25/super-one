@@ -285,6 +285,29 @@ describe('ConnectionSupervisor', () => {
     supervisor.dispose()
   })
 
+  it('network-offline suspends retry and network-online dials again', async () => {
+    let calls = 0
+    const supervisor = new ConnectionSupervisor({
+      environmentId: 'env-1',
+      connectionId: 'c-1',
+      baseDelayMs: 10_000,
+      maxDelayMs: 10_000,
+      random: () => 0,
+      stableAfterMs: 0,
+      connect: async () => {
+        calls += 1
+      },
+    })
+    await supervisor.start()
+    expect(calls).toBe(1)
+    await supervisor.wake('network-offline')
+    expect(supervisor.getSnapshot().state).toBe('offline')
+    await supervisor.wake('network-online')
+    expect(supervisor.getSnapshot().state).toBe('connected')
+    expect(calls).toBe(2)
+    supervisor.dispose()
+  })
+
   it('retryNow resets attempt and starts a dial from backoff', async () => {
     let calls = 0
     const supervisor = new ConnectionSupervisor({

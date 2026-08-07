@@ -71,6 +71,29 @@ describe('SshTunnelManager', () => {
     expect(starter).toHaveBeenCalledTimes(1)
   })
 
+  it('rebuilds when readiness fails on a process-alive tunnel', async () => {
+    const dead = fakeProcess({})
+    const live = fakeProcess({})
+    const stop = vi.fn()
+    const starter: ForwardStarter = vi
+      .fn()
+      .mockResolvedValueOnce(handleFor(dead, 'http://127.0.0.1:40011', stop))
+      .mockResolvedValueOnce(handleFor(live, 'http://127.0.0.1:40012'))
+    const manager = new SshTunnelManager(starter)
+
+    expect(await manager.ensure('c1', baseSpec)).toBe('http://127.0.0.1:40011')
+    let readinessCalls = 0
+    const url = await manager.ensure('c1', baseSpec, {
+      readiness: async () => {
+        readinessCalls += 1
+        if (readinessCalls === 1) throw new Error('stale')
+      },
+    })
+    expect(url).toBe('http://127.0.0.1:40012')
+    expect(starter).toHaveBeenCalledTimes(2)
+    expect(stop).toHaveBeenCalled()
+  })
+
   it('rebuilds when exitCode is set while killed is still false', async () => {
     const dead = fakeProcess({ killed: false, exitCode: 1 })
     const live = fakeProcess({})

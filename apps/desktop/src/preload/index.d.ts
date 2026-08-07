@@ -852,6 +852,14 @@ export interface EnvironmentAPI {
   connect(connectionId: string): Promise<unknown>
   disconnect(connectionId: string): Promise<void>
   forget(connectionId: string): Promise<void>
+  retryNow(
+    connectionId: string,
+  ): Promise<'started' | 'already_connected' | 'blocked' | 'disposed'>
+  repairPairing(input: {
+    connectionId: string
+    baseUrl: string
+    pairingToken: string
+  }): Promise<unknown>
 
   /**
    * Node harness.resources aggregate (models + skills/commands/agents/prompts).

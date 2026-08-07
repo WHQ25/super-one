@@ -17,6 +17,16 @@ export type ForwardStarter = (opts: {
   extraArgs?: string[]
 }) => Promise<SshForwardHandle>
 
+export type TunnelReadiness = (localBaseUrl: string) => Promise<void>
+
+export interface EnsureTunnelOptions {
+  /**
+   * Process-alive is necessary but not sufficient. When provided, existing and
+   * newly spawned tunnels must pass this HTTP readiness check before reuse.
+   */
+  readiness?: TunnelReadiness
+}
+
 const defaultStarter: ForwardStarter = (opts) =>
   startSshLocalForward({
     destination: opts.destination,
@@ -39,13 +49,18 @@ export class SshTunnelManager {
 
   /**
    * Return a loopback base URL for this connection, reusing a live tunnel when
-   * its spec is unchanged and the ssh process is still running.
+   * its spec is unchanged, the ssh process is still running, and optional HTTP
+   * readiness succeeds.
    */
-  async ensure(connectionId: string, spec: SshTunnelSpec): Promise<string> {
+  async ensure(
+    connectionId: string,
+    spec: SshTunnelSpec,
+    options?: EnsureTunnelOptions,
+  ): Promise<string> {
     const pending = this.inflight.get(connectionId)
     if (pending) return pending
 
-    const work = this.ensureOnce(connectionId, spec).finally(() => {
+    const work = this.ensureOnce(connectionId, spec, options).finally(() => {
       if (this.inflight.get(connectionId) === work) {
         this.inflight.delete(connectionId)
       }
@@ -54,15 +69,27 @@ export class SshTunnelManager {
     return work
   }
 
-  private async ensureOnce(connectionId: string, spec: SshTunnelSpec): Promise<string> {
+  private async ensureOnce(
+    connectionId: string,
+    spec: SshTunnelSpec,
+    options?: EnsureTunnelOptions,
+  ): Promise<string> {
     const existing = this.live.get(connectionId)
     if (existing && sameSpec(existing.spec, spec) && isSshProcessAlive(existing.handle.process)) {
-      return existing.handle.localBaseUrl
-    }
-
-    // Stop a dead/mismatched live tunnel without clearing our own inflight entry
-    // (close() would delete inflight and let a concurrent ensure start a second dial).
-    if (existing) {
+      if (!options?.readiness) return existing.handle.localBaseUrl
+      try {
+        await options.readiness(existing.handle.localBaseUrl)
+        return existing.handle.localBaseUrl
+      } catch {
+        // Stale half-open forward: rebuild.
+        this.live.delete(connectionId)
+        try {
+          existing.handle.stop()
+        } catch {
+          /* already gone */
+        }
+      }
+    } else if (existing) {
       this.live.delete(connectionId)
       try {
         existing.handle.stop()
@@ -87,6 +114,29 @@ export class SshTunnelManager {
         /* already gone */
       }
       throw new Error(`ssh tunnel ensure aborted for ${connectionId}`)
+    }
+
+    if (options?.readiness) {
+      try {
+        await options.readiness(handle.localBaseUrl)
+      } catch (err) {
+        try {
+          handle.stop()
+        } catch {
+          /* ignore */
+        }
+        throw err instanceof Error
+          ? err
+          : new Error(`ssh tunnel readiness failed for ${connectionId}`)
+      }
+      if ((this.generation.get(connectionId) ?? 0) !== gen) {
+        try {
+          handle.stop()
+        } catch {
+          /* ignore */
+        }
+        throw new Error(`ssh tunnel ensure aborted for ${connectionId}`)
+      }
     }
 
     this.attachLive(connectionId, handle, spec)
@@ -121,7 +171,6 @@ export class SshTunnelManager {
 
   close(connectionId: string): void {
     this.bumpGeneration(connectionId)
-    // Drop a doomed inflight promise so the next ensure starts fresh.
     this.inflight.delete(connectionId)
     const existing = this.live.get(connectionId)
     if (!existing) return

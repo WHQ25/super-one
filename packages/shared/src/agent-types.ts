@@ -2766,6 +2766,10 @@ export const AgentIpcChannels = {
   ENVIRONMENT_CONNECT: 'environment:connect',
   ENVIRONMENT_DISCONNECT: 'environment:disconnect',
   ENVIRONMENT_FORGET: 'environment:forget',
+  /** Explicit transient retry (does not unblock auth). */
+  ENVIRONMENT_RETRY_NOW: 'environment:retryNow',
+  /** Re-pair existing connectionId with a new pairing token (identity-safe). */
+  ENVIRONMENT_REPAIR_PAIRING: 'environment:repairPairing',
   /** Main → renderer supervisor state push. */
   ENVIRONMENT_STATUS_EVENT: 'environment:statusEvent',
   /** Main → renderer SSH probe/install progress push. */

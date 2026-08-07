@@ -1021,6 +1021,9 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   void import('./environment/environment-connectivity-monitor')
     .then(({ attachEnvironmentConnectivityMonitor, createOnlineEdgeWatcher }) => {
       const online = createOnlineEdgeWatcher(() => net.isOnline())
+      const unsubOffline = online.onOfflineEdge?.(() => {
+        void host.wakeDesiredConnections('network-offline')
+      })
       const disposeMonitor = attachEnvironmentConnectivityMonitor({
         onResume: () => {
           /* resume wired in powerMonitor */
@@ -1032,6 +1035,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
       })
       environmentConnectivityDisposer = () => {
         disposeMonitor()
+        unsubOffline?.()
         online.stop()
       }
     })
@@ -1554,6 +1558,20 @@ function registerIpcHandlers(): void {
     const { getEnvironmentHost } = await import('./environment')
     getEnvironmentHost().forget(connectionId)
   })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_RETRY_NOW, async (_e, connectionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().retryNow(connectionId)
+  })
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING,
+    async (
+      _e,
+      input: { connectionId: string; baseUrl: string; pairingToken: string },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().repairPairing(input)
+    },
+  )
 
   ipcMain.handle(
     AgentIpcChannels.TERMINAL_CREATE,

@@ -2238,7 +2238,7 @@ export class EnvironmentHost {
    * desired ones that are not live, and rebuild tunnels via connect() when needed.
    */
   async wakeDesiredConnections(
-    reason: 'app-resume' | 'network-online',
+    reason: 'app-resume' | 'network-online' | 'network-offline',
   ): Promise<void> {
     // Coalesce concurrent resume+online storms.
     if (this.wakeAllInFlight) return this.wakeAllInFlight
@@ -2249,9 +2249,11 @@ export class EnvironmentHost {
   }
 
   private async doWakeDesiredConnections(
-    reason: 'app-resume' | 'network-online',
+    reason: 'app-resume' | 'network-online' | 'network-offline',
   ): Promise<void> {
     await this.connections.wakeLiveConnections(reason)
+    if (reason === 'network-offline') return
+
     // Supervisor-only recovery can reach connected without host.connect();
     // ensure Host Action consumer (and version policy) still attach.
     for (const connectionId of this.connections.listDesiredConnectionIds()) {
@@ -2294,6 +2296,50 @@ export class EnvironmentHost {
       generation: (previous?.generation ?? 0) + 1,
     }
     this.publishStatus(snapshot)
+  }
+
+  async retryNow(connectionId: string) {
+    return this.connections.retryNow(connectionId)
+  }
+
+  /**
+   * Re-pair under the same connectionId after auth/revocation. Preserves
+   * label/endpoints/projects; never auto-unblocks without a successful re-pair.
+   */
+  async repairPairing(input: {
+    connectionId: string
+    baseUrl: string
+    pairingToken: string
+  }): Promise<ExecutionEnvironmentDescriptor> {
+    const known = this.connections.listKnown().find((k) => k.connectionId === input.connectionId)
+    if (!known) throw new Error(`unknown connection ${input.connectionId}`)
+
+    // Prefer explicit baseUrl; for SSH endpoints rebuild tunnel first.
+    let baseUrl = input.baseUrl.replace(/\/$/, '')
+    const preferred =
+      known.endpointProfiles.find((p) => p.endpointId === known.preferredEndpointId) ??
+      known.endpointProfiles[0]
+    if (preferred && tunnelSpecFromEndpoint(preferred)) {
+      const resolved = await this.resolveBaseUrl(known)
+      if (resolved) baseUrl = resolved
+    }
+
+    const descriptor = await this.connections.repairPairing({
+      connectionId: input.connectionId,
+      baseUrl,
+      pairingToken: input.pairingToken,
+    })
+    try {
+      this.assertDesktopNotOlderThanNode(descriptor.cliVersion)
+    } catch (err) {
+      this.stopHostActionConsumer(input.connectionId, 'disconnect')
+      this.abortConnectionSessionDrains(input.connectionId, 'disconnect')
+      this.connections.disconnect(input.connectionId)
+      this.tunnels.close(input.connectionId)
+      throw err
+    }
+    this.startHostActionConsumer(input.connectionId)
+    return descriptor
   }
 
   /** Disconnect and erase all client-local state for this environment. */
@@ -2452,9 +2498,15 @@ export class EnvironmentHost {
         boot.forward.stop()
         throw err
       }
+      // Never claim systemd-user when bootstrap only used nohup / failed linger.
+      const degraded = warnings.some(
+        (w) =>
+          /linger|nohup|systemd/i.test(w) &&
+          !/installed|enabled/i.test(w),
+      )
       this.connections.updateKnown(paired.connectionId, {
         preferredEndpointId: 'ssh',
-        installationProfile: 'systemd-user',
+        installationProfile: degraded ? 'nohup' : 'systemd-user',
       })
       // Hand the bootstrap tunnel to the manager so it is closed with the connection.
       this.tunnels.adopt(paired.connectionId, boot.forward, {
@@ -2613,7 +2665,18 @@ export class EnvironmentHost {
     if (!preferred) return known.baseUrl
 
     const spec = tunnelSpecFromEndpoint(preferred)
-    if (spec) return this.tunnels.ensure(known.connectionId, spec)
+    if (spec) {
+      return this.tunnels.ensure(known.connectionId, spec, {
+        // Process-alive alone is not enough: require HTTP health + identity.
+        readiness: async (localBaseUrl) => {
+          const { assertNodeIdentity } = await import('./node-connection-manager')
+          await assertNodeIdentity(localBaseUrl, {
+            environmentId: known.environmentId,
+            nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,
+          })
+        },
+      })
+    }
     if (preferred.kind === 'direct-wss' || preferred.kind === 'tailscale') {
       return preferred.target || known.baseUrl
     }

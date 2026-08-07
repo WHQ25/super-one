@@ -4,7 +4,14 @@
 
 export type EndpointKind = 'direct-wss' | 'tailscale' | 'ssh-forward' | 'relay' | 'local'
 
-export type InstallationProfile = 'systemd-user' | 'systemd-system' | 'container' | 'manual' | 'local-electron'
+export type InstallationProfile =
+  | 'systemd-user'
+  | 'systemd-system'
+  | 'container'
+  /** Explicit degraded install: nohup / foreground without OS service supervision. */
+  | 'nohup'
+  | 'manual'
+  | 'local-electron'
 
 export interface EndpointProfile {
   endpointId: string

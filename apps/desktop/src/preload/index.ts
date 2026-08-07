@@ -540,6 +540,12 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DISCONNECT, connectionId),
   forget: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_FORGET, connectionId),
+  retryNow: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_RETRY_NOW, connectionId) as Promise<
+      'started' | 'already_connected' | 'blocked' | 'disposed'
+    >,
+  repairPairing: (input: { connectionId: string; baseUrl: string; pairingToken: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING, input),
 
   /**
    * Node harness.resources aggregate (models + skills/commands/agents/prompts).

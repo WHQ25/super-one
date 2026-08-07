@@ -222,6 +222,45 @@ export function EnvironmentsPage() {
                           }
                           onForget={() => handleForget(item)}
                           onUpgrade={() => handleUpgrade(item)}
+                          onRetry={() =>
+                            void run(item.connectionId, async () => {
+                              const d = await window.environment.retryNow(item.connectionId)
+                              if (d === 'blocked') {
+                                toast.error(
+                                  t('settings.environments.retryBlocked', {
+                                    defaultValue: 'Connection is blocked — re-pair required',
+                                  }),
+                                )
+                              }
+                            })
+                          }
+                          onRepair={() => {
+                            const token = window.prompt(
+                              t('settings.environments.repairTokenPrompt', {
+                                defaultValue: 'Paste a fresh pairing token from the node',
+                              }),
+                            )
+                            if (!token?.trim()) return
+                            const base =
+                              item.endpointProfiles.find((p) => p.endpointId === item.preferredEndpointId)
+                                ?.target ||
+                              item.endpointProfiles[0]?.target ||
+                              ''
+                            const baseUrl = window.prompt(
+                              t('settings.environments.repairBaseUrlPrompt', {
+                                defaultValue: 'Node base URL (http://host:port)',
+                              }),
+                              base.startsWith('http') ? base : '',
+                            )
+                            if (!baseUrl?.trim()) return
+                            void run(item.connectionId, () =>
+                              window.environment.repairPairing({
+                                connectionId: item.connectionId,
+                                baseUrl: baseUrl.trim(),
+                                pairingToken: token.trim(),
+                              }),
+                            )
+                          }}
                         />
                       </li>
                     ))}
@@ -411,6 +450,8 @@ interface EnvironmentDeviceRowProps {
   onDisconnect: () => void
   onForget: () => void
   onUpgrade: () => void
+  onRetry?: () => void
+  onRepair?: () => void
 }
 
 /** Compact row aligned with paired phone/desktop rows on Control This Mac. */
@@ -421,9 +462,13 @@ function EnvironmentDeviceRow({
   onDisconnect,
   onForget,
   onUpgrade,
+  onRetry,
+  onRepair,
 }: EnvironmentDeviceRowProps) {
   const { t } = useTranslation()
   const live = LIVE_STATES.includes(item.state)
+  const blocked = item.state === 'blocked'
+  const authBlocked = blocked && (item.blockReason === 'auth' || item.blockReason === 'revoked')
   const subtitle =
     item.endpointProfiles[0]?.target ||
     item.endpointProfiles[0]?.label ||
@@ -436,7 +481,7 @@ function EnvironmentDeviceRow({
           <Server
             className={cn(
               'size-3.5 shrink-0',
-              live ? 'text-success' : 'text-muted-foreground',
+              live ? 'text-success' : blocked ? 'text-destructive' : 'text-muted-foreground',
             )}
           />
           <span className="truncate text-sm font-medium">{item.label}</span>
@@ -458,16 +503,39 @@ function EnvironmentDeviceRow({
               <Unplug className="size-3.5" />
               {t('settings.environments.disconnect')}
             </Button>
-          ) : (
+          ) : authBlocked && onRepair ? (
             <Button
               variant="ghost"
               size="sm"
               className="h-7 text-xs text-muted-foreground"
-              onClick={onConnect}
+              onClick={onRepair}
             >
-              <Plug className="size-3.5" />
-              {t('settings.environments.connect')}
+              <RefreshCw className="size-3.5" />
+              {t('settings.environments.repairPairing', { defaultValue: 'Repair pairing' })}
             </Button>
+          ) : (
+            <>
+              {item.state === 'backoff' && onRetry ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground"
+                  onClick={onRetry}
+                >
+                  <RefreshCw className="size-3.5" />
+                  {t('settings.environments.retryNow', { defaultValue: 'Retry' })}
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={onConnect}
+              >
+                <Plug className="size-3.5" />
+                {t('settings.environments.connect')}
+              </Button>
+            </>
           )}
           <Button
             variant="ghost"

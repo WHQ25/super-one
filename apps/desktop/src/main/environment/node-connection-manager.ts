@@ -222,6 +222,78 @@ export class NodeConnectionManager {
     return live.supervisor.retryNow()
   }
 
+  /**
+   * Re-pair an existing connectionId with a fresh pairing token without changing
+   * environment identity. Credentials are replaced only after identity validation
+   * and a successful encrypted save.
+   */
+  async repairPairing(input: {
+    connectionId: string
+    baseUrl: string
+    pairingToken: string
+  }): Promise<ExecutionEnvironmentDescriptor> {
+    const known = this.known.get(input.connectionId)
+    if (!known) throw new Error(`unknown connection ${input.connectionId}`)
+    const baseUrl = input.baseUrl.replace(/\/$/, '')
+
+    // Unauthenticated identity probe before consuming the one-time token.
+    await assertNodeIdentity(baseUrl, {
+      environmentId: known.environmentId,
+      nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,
+    })
+
+    const device = generateDeviceKeyPair()
+    const paired = await pairWithNode({
+      baseUrl,
+      pairingToken: input.pairingToken,
+      devicePublicKeyPem: device.publicKeyPem,
+      label: known.label,
+    })
+    if (paired.environmentId !== known.environmentId) {
+      throw Object.assign(
+        new Error(
+          `environment identity mismatch: expected ${known.environmentId}, got ${paired.environmentId}`,
+        ),
+        { code: 'identity_conflict' },
+      )
+    }
+    if (paired.nodePublicKeyFingerprint !== known.nodePublicKeyFingerprint) {
+      throw Object.assign(
+        new Error(
+          `node public key fingerprint mismatch: expected ${known.nodePublicKeyFingerprint}, got ${paired.nodePublicKeyFingerprint}`,
+        ),
+        { code: 'identity_conflict' },
+      )
+    }
+
+    const credential: NodeDeviceCredential = {
+      connectionId: known.connectionId,
+      environmentId: paired.environmentId,
+      nodePublicKeyFingerprint: paired.nodePublicKeyFingerprint,
+      clientSessionId: paired.clientSessionId,
+      devicePrivateKeyPem: device.privateKeyPem,
+      devicePublicKeyPem: device.publicKeyPem,
+      refreshToken: paired.refreshToken,
+      baseUrl,
+      label: known.label,
+      updatedAt: Date.now(),
+    }
+    const saveResult = this.opts.credentialStore.save(credential)
+    if (!saveResult.ok) {
+      throw new Error(`failed to store node credentials: ${saveResult.reason}`)
+    }
+
+    this.updateKnown(known.connectionId, {
+      desired: true,
+      baseUrl,
+      updatedAt: Date.now(),
+    })
+
+    return this.connectWithCredential(credential, {
+      resolveEndpointFromFirstAttempt: true,
+    })
+  }
+
   disconnect(connectionId: string): void {
     const live = this.lives.get(connectionId)
     if (!live) return

@@ -58,6 +58,8 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_CONNECT).toBe('environment:connect')
     expect(AgentIpcChannels.ENVIRONMENT_DISCONNECT).toBe('environment:disconnect')
     expect(AgentIpcChannels.ENVIRONMENT_FORGET).toBe('environment:forget')
+    expect(AgentIpcChannels.ENVIRONMENT_RETRY_NOW).toBe('environment:retryNow')
+    expect(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING).toBe('environment:repairPairing')
     expect(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT).toBe('environment:statusEvent')
     expect(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS).toBe('environment:installProgress')
     expect(AgentIpcChannels.ENVIRONMENT_HARNESS_LIST).toBe('environment:harnessList')

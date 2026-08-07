@@ -12,6 +12,8 @@ export type SupervisorState =
   | 'disconnected'
   | 'backoff'
   | 'blocked'
+  /** OS reports no network; auto-retry suspended until network-online. */
+  | 'offline'
 
 export type BlockReason =
   | 'auth'
@@ -22,7 +24,7 @@ export type BlockReason =
   | 'user'
 
 /** Lifecycle wake that probes or preempts backoff without unblocking auth failures. */
-export type SupervisorWakeReason = 'app-resume' | 'network-online'
+export type SupervisorWakeReason = 'app-resume' | 'network-online' | 'network-offline'
 
 export type RetryNowDisposition = 'started' | 'already_connected' | 'blocked' | 'disposed'
 
@@ -106,10 +108,10 @@ export class ConnectionSupervisorCore {
    * Backoff/disconnected: preempt timer and re-dial immediately without clearing
    * the failure streak (unlike retryNow).
    */
-  async wake(_reason: SupervisorWakeReason): Promise<void> {
+  async wake(reason: SupervisorWakeReason): Promise<void> {
     if (this.disposed || this.state === 'blocked') return
     if (this.wakeInFlight) return this.wakeInFlight
-    this.wakeInFlight = this.doWake().finally(() => {
+    this.wakeInFlight = this.doWake(reason).finally(() => {
       this.wakeInFlight = null
     })
     return this.wakeInFlight
@@ -177,8 +179,21 @@ export class ConnectionSupervisorCore {
     this.clearStableTimer()
   }
 
-  private async doWake(): Promise<void> {
+  private async doWake(reason?: SupervisorWakeReason): Promise<void> {
     if (this.disposed || this.state === 'blocked') return
+
+    if (reason === 'network-offline') {
+      if (this.state === 'available' || this.state === 'blocked') return
+      this.clearTimer()
+      this.clearStableTimer()
+      try {
+        await this.opts.invalidateTransport?.('network offline')
+      } catch {
+        /* best-effort */
+      }
+      this.transition('offline', 'network offline')
+      return
+    }
 
     if (this.state === 'connected') {
       if (!this.opts.healthProbe) return
@@ -192,26 +207,24 @@ export class ConnectionSupervisorCore {
       if (this.disposed || this.state !== 'connected') return
       if (ok) return
 
-      const reason = this.lastError || 'health probe failed'
+      const failReason = this.lastError || 'health probe failed'
       try {
-        await this.opts.invalidateTransport?.(reason)
+        await this.opts.invalidateTransport?.(failReason)
       } catch {
         /* best-effort */
       }
       if (this.disposed) return
       this.clearStableTimer()
-      // Leave connected only if still there (invalidate may race a real close).
       if (this.state === 'connected') {
-        this.transition('disconnected', reason)
+        this.transition('disconnected', failReason)
       }
-      // Immediate re-dial; preserve failure streak (no attempt reset).
       await this.runConnect()
       return
     }
 
     if (this.state === 'connecting' || this.state === 'synchronizing') return
 
-    // Preempt backoff timer and dial now without clearing the streak.
+    // Preempt backoff / leave offline and dial now without clearing the streak.
     this.clearTimer()
     this.nextRetryAt = undefined
     await this.runConnect()

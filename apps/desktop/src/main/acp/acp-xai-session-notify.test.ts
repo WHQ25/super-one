@@ -216,7 +216,13 @@ describe('mapXaiSessionUpdate — subagent', () => {
     expect(progress[0]).toMatchObject({
       type: 'task_progress',
       taskId: 'sa1',
+      description: 'grep',
+      lastToolName: 'grep',
       activityText: 'read_file, grep',
+      toolEntries: [
+        { toolName: 'read_file', description: '' },
+        { toolName: 'grep', description: '' },
+      ],
     })
     // Subagent occupancy must not pollute parent context ring cache.
     expect(state.lastUsage).toBeNull()
@@ -543,5 +549,155 @@ describe('noteToolCorrelationFromAgentEvents', () => {
       },
     ], state)
     expect(state.workflowToolByRunId.get('wf_real')).toBe('tu_wf')
+  })
+
+  it('does not bind run_id for validate_only workflow smoke-checks', () => {
+    const state = createXaiCorrelationState()
+    noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_use',
+          toolName: 'Workflow',
+          toolUseId: 'tu_smoke',
+          input: JSON.stringify({ script: 'let meta = #{ name: "x" };', validate_only: true }),
+          status: 'complete',
+        },
+      },
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'tu_smoke',
+          summary: JSON.stringify({ run_id: 'wf-smoke', ok: true }),
+          isError: false,
+        },
+      },
+    ], state)
+    expect(state.smokeWorkflowToolIds.has('tu_smoke')).toBe(true)
+    expect(state.workflowToolByRunId.has('wf-smoke')).toBe(false)
+  })
+
+  it('stashes subagent_id from Grok plain-text spawn ack', () => {
+    const state = createXaiCorrelationState()
+    const summary = [
+      'Subagent started in background.',
+      'subagent_id: 019fdacb-c941-7893-979b-de49ff78a03f',
+      'type: general-purpose',
+      'description: [reviewer] commit 498e25ff',
+      '',
+      'Use get_command_or_subagent_output with task_ids=["019fdacb-c941-7893-979b-de49ff78a03f"] and',
+      'timeout_ms to wait for results.',
+    ].join('\n')
+    noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'tu_spawn',
+          summary,
+          isError: false,
+        },
+      },
+    ], state)
+    expect(state.subagentToolById.get('019fdacb-c941-7893-979b-de49ff78a03f')).toBe('tu_spawn')
+    // Pure spawn ack must not dual-write bgTaskById (taskId falls back to subagentId).
+    expect(state.bgTaskById.has('019fdacb-c941-7893-979b-de49ff78a03f')).toBe(false)
+  })
+
+  it('does not rebind subagent_id when a later tool echoes the spawn ack', () => {
+    const state = createXaiCorrelationState()
+    const summary = [
+      'Subagent started in background.',
+      'subagent_id: sa-echo',
+    ].join('\n')
+    noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_use',
+          toolName: 'Agent',
+          toolUseId: 'tu_spawn',
+          input: '{"description":"x"}',
+          status: 'complete',
+        },
+      },
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'tu_spawn',
+          summary,
+          isError: false,
+        },
+      },
+    ], state)
+    expect(state.subagentToolById.get('sa-echo')).toBe('tu_spawn')
+
+    noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_use',
+          toolName: 'TaskOutput',
+          toolUseId: 'tu_out',
+          input: '{"task_ids":["sa-echo"]}',
+          status: 'complete',
+        },
+      },
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'tu_out',
+          summary: 'subagent_id: sa-echo\nstarted in background',
+          isError: false,
+        },
+      },
+    ], state)
+    expect(state.subagentToolById.get('sa-echo')).toBe('tu_spawn')
+  })
+
+  it('emits migration task_progress when correlating after provisional start', () => {
+    const state = createXaiCorrelationState()
+    state.subagentStarted.add('sa-late')
+    const migrate = noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_use',
+          toolName: 'Agent',
+          toolUseId: 'tu_late',
+          input: '{}',
+          status: 'complete',
+        },
+      },
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'tu_late',
+          summary: 'Subagent started in background.\nsubagent_id: sa-late',
+          isError: false,
+        },
+      },
+    ], state)
+    expect(state.subagentToolById.get('sa-late')).toBe('tu_late')
+    expect(migrate).toEqual([{
+      type: 'task_progress',
+      taskId: 'sa-late',
+      toolUseId: 'tu_late',
+      description: 'sa-late',
+      usage: { totalTokens: 0, toolUses: 0, durationMs: 0 },
+    }])
   })
 })

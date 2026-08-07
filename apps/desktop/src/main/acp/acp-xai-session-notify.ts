@@ -55,6 +55,18 @@ export interface XaiCorrelationState {
   workflowRevision: Map<string, number>
   /** run_ids that already emitted task_started */
   workflowStarted: Set<string>
+  /**
+   * Workflow tool_use ids launched with validate_only (authoring smoke-check).
+   * Their results must not bind run_id → WorkflowBlock correlation.
+   */
+  smokeWorkflowToolIds: Set<string>
+  /**
+   * Subagents owned by a workflow run. Their progress/finish must not share the
+   * parent workflow toolUseId (that would mark the workflow complete early).
+   */
+  workflowOwnedSubagents: Set<string>
+  /** tool_use_id → toolName (for gating plain-text spawn ack correlation) */
+  pendingToolNamesById: Map<string, string>
   /** subagent_id → spawn tool_use_id */
   subagentToolById: Map<string, string>
   /** subagent_ids that already emitted task_started */
@@ -76,6 +88,9 @@ export function createXaiCorrelationState(): XaiCorrelationState {
     workflowToolByRunId: new Map(),
     workflowRevision: new Map(),
     workflowStarted: new Set(),
+    smokeWorkflowToolIds: new Set(),
+    workflowOwnedSubagents: new Set(),
+    pendingToolNamesById: new Map(),
     subagentToolById: new Map(),
     subagentStarted: new Set(),
     bgTaskById: new Map(),
@@ -83,6 +98,41 @@ export function createXaiCorrelationState(): XaiCorrelationState {
     lastEventSeq: null,
     lastUsage: null,
     lastMessageId: null,
+  }
+}
+
+/** Normalized tool names that launch a SubagentBlock (Claude Agent / Grok spawn). */
+function isSubagentLaunchToolName(name: string | undefined): boolean {
+  if (!name) return false
+  const n = name.toLowerCase()
+  return n === 'agent' || n === 'task' || n === 'spawn_subagent' || n === 'spawn_agent'
+}
+
+/**
+ * Bind subagent_id → launch toolUseId. First binder wins (no rebind from later
+ * tools that echo the id). When the subagent already started under a provisional
+ * taskId key, emit a migration task_progress so the reducer moves to toolUseId.
+ */
+function bindSubagentToolId(
+  state: XaiCorrelationState,
+  subagentId: string,
+  toolUseId: string,
+  description: string | undefined,
+  migrateOut: AgentEvent[],
+): void {
+  if (state.workflowOwnedSubagents.has(subagentId)) return
+  const existing = state.subagentToolById.get(subagentId)
+  if (existing && existing !== toolUseId) return
+  const isNew = !existing
+  if (isNew) state.subagentToolById.set(subagentId, toolUseId)
+  if (isNew && state.subagentStarted.has(subagentId)) {
+    migrateOut.push({
+      type: 'task_progress',
+      taskId: subagentId,
+      toolUseId,
+      description: description ?? subagentId,
+      usage: { totalTokens: 0, toolUses: 0, durationMs: 0 },
+    })
   }
 }
 
@@ -160,13 +210,52 @@ export function parseXaiExtParams(raw: unknown): Record<string, unknown> {
 // ── Correlation from standard tool results ──────────────────────────────────
 
 /**
- * When a workflow / spawn tool completes with JSON containing run_id / subagent_id / task_id,
- * stash the toolUseId so progressive events can attach to the launch chip.
+ * Parse Grok plain-text spawn / bg-task acks, e.g.:
+ *   Subagent started in background.
+ *   subagent_id: 019fdacb-…
+ *   type: general-purpose
+ *   Use get_command_or_subagent_output with task_ids=["…"] …
+ */
+export function parsePlainTextTaskAck(text: string): {
+  subagentId?: string
+  taskId?: string
+  outputFile?: string
+  description?: string
+  subagentType?: string
+} {
+  const subagentId =
+    text.match(/subagent_id:\s*(\S+)/i)?.[1]
+    ?? text.match(/task_ids?\s*=\s*\[\s*"([^"]+)"/i)?.[1]
+  const taskId =
+    text.match(/(?:^|\n)\s*task_id:\s*(\S+)/i)?.[1]
+    ?? subagentId
+  const outputFile = text.match(/output_file:\s*(\S+)/i)?.[1]
+  const description = text.match(/(?:^|\n)\s*description:\s*(.+)$/im)?.[1]?.trim()
+  const subagentType =
+    text.match(/(?:^|\n)\s*(?:type|subagent_type):\s*(\S+)/i)?.[1]
+  return {
+    ...(subagentId ? { subagentId } : {}),
+    ...(taskId ? { taskId } : {}),
+    ...(outputFile ? { outputFile } : {}),
+    ...(description ? { description } : {}),
+    ...(subagentType ? { subagentType } : {}),
+  }
+}
+
+/**
+ * When a workflow / spawn tool completes with JSON (or Grok plain-text ack)
+ * containing run_id / subagent_id / task_id, stash the toolUseId so progressive
+ * events can attach to the launch chip (SubagentBlock / WorkflowBlock).
+ */
+/**
+ * Returns migration events when a provisional subagent_id key should move onto
+ * the launch toolUseId (deliver these after the standard tool deltas).
  */
 export function noteToolCorrelationFromAgentEvents(
   events: AgentEvent[],
   state: XaiCorrelationState,
-): void {
+): AgentEvent[] {
+  const migrate: AgentEvent[] = []
   for (const event of events) {
     if (event.type === 'message_usage') {
       state.lastMessageId = event.messageId
@@ -175,41 +264,116 @@ export function noteToolCorrelationFromAgentEvents(
     if (event.type !== 'content_delta') continue
     const d = event.delta
     if (d.type === 'tool_use') {
-      // Remember pending tool ids by name for later result correlation.
+      if (d.toolUseId && d.toolName) {
+        state.pendingToolNamesById.set(d.toolUseId, d.toolName)
+      }
+      // Remember authoring smoke-checks so tool_result run_id is not bound to WorkflowBlock.
+      const toolName = (d.toolName ?? '').toLowerCase()
+      if (
+        (toolName === 'workflow' || toolName === 'run_workflow')
+        && d.toolUseId
+        && isValidateOnlyToolInput(d.input)
+      ) {
+        state.smokeWorkflowToolIds.add(d.toolUseId)
+      }
       continue
     }
     if (d.type !== 'tool_result' || !d.summary) continue
     const toolUseId = d.toolUseId
+    const launchName = state.pendingToolNamesById.get(toolUseId)
+    const isSpawnLaunch = isSubagentLaunchToolName(launchName)
     const parsed = tryParseJsonObject(d.summary)
-    if (!parsed) continue
+    if (parsed) {
+      const runId = strField(parsed, 'run_id', 'runId')
+      if (runId && toolUseId && !state.smokeWorkflowToolIds.has(toolUseId)) {
+        state.workflowToolByRunId.set(runId, toolUseId)
+      }
+      const explicitSubagentId = strField(parsed, 'subagent_id', 'subagentId')
+      const agentId = strField(parsed, 'agent_id', 'agentId')
+      const hasSubagentShape = !!(
+        explicitSubagentId
+        || strField(parsed, 'subagent_type', 'subagentType')
+        || (agentId && !runId)
+      )
+      const subagentId =
+        explicitSubagentId
+        ?? agentId
+        ?? strField(parsed, 'task_id', 'taskId')
+      // spawn_subagent results often use task_id / subagent_id
+      if (subagentId && (explicitSubagentId || strField(parsed, 'subagent_type', 'subagentType'))) {
+        if (isSpawnLaunch || !launchName) {
+          bindSubagentToolId(state, subagentId, toolUseId, strField(parsed, 'description', 'name'), migrate)
+        }
+      } else if (subagentId && agentId && !runId) {
+        if (isSpawnLaunch || !launchName) {
+          bindSubagentToolId(state, subagentId, toolUseId, strField(parsed, 'description', 'name'), migrate)
+        }
+      }
 
-    const runId = strField(parsed, 'run_id', 'runId')
-    if (runId) {
-      state.workflowToolByRunId.set(runId, toolUseId)
-    }
-    const subagentId =
-      strField(parsed, 'subagent_id', 'subagentId')
-      ?? strField(parsed, 'agent_id', 'agentId')
-      ?? strField(parsed, 'task_id', 'taskId')
-    // spawn_subagent results often use task_id / subagent_id
-    if (subagentId && (strField(parsed, 'subagent_id', 'subagentId') || strField(parsed, 'subagent_type', 'subagentType'))) {
-      state.subagentToolById.set(subagentId, toolUseId)
-    } else if (subagentId && strField(parsed, 'agent_id', 'agentId') && !runId) {
-      state.subagentToolById.set(subagentId, toolUseId)
+      // Pure bg-task map only — do not dual-write spawn chips into bgTaskById
+      // (progressive subagent_* events already bind via subagentToolById).
+      const taskId = strField(parsed, 'task_id', 'taskId')
+      if (taskId && !runId && !hasSubagentShape) {
+        const existing = state.bgTaskById.get(taskId)
+        if (!existing?.toolUseId || existing.toolUseId === toolUseId) {
+          state.bgTaskById.set(taskId, {
+            toolUseId: toolUseId ?? existing?.toolUseId,
+            description: existing?.description
+              ?? strField(parsed, 'description', 'name')
+              ?? taskId,
+            outputFile: strField(parsed, 'output_file', 'outputFile') ?? existing?.outputFile,
+          })
+        }
+      }
+      continue
     }
 
-    const taskId = strField(parsed, 'task_id', 'taskId')
-    if (taskId && !runId) {
-      const existing = state.bgTaskById.get(taskId)
-      state.bgTaskById.set(taskId, {
-        toolUseId: toolUseId ?? existing?.toolUseId,
-        description: existing?.description
-          ?? strField(parsed, 'description', 'name')
-          ?? taskId,
-        outputFile: strField(parsed, 'output_file', 'outputFile') ?? existing?.outputFile,
-      })
+    // Grok spawn_subagent / bg task often returns a human-readable ack, not JSON.
+    // Gate: only Agent/Task launches, or a clear "started in background" spawn ack.
+    // Never rebind an already-mapped subagent_id from a later tool that echoes the id.
+    const plain = parsePlainTextTaskAck(d.summary)
+    const allowPlain =
+      isSpawnLaunch
+      || /started in background/i.test(d.summary)
+    if (allowPlain && plain.subagentId) {
+      bindSubagentToolId(state, plain.subagentId, toolUseId, plain.description, migrate)
+    }
+    // Only map bgTaskById for true bg-task shapes: explicit task_id distinct from
+    // subagent_id, and/or an output_file. Pure spawn acks (subagent_id only, with
+    // taskId falling back to subagentId) must not dual-write.
+    const explicitTaskId = d.summary.match(/(?:^|\n)\s*task_id:\s*(\S+)/i)?.[1]
+    const bgTaskId =
+      plain.outputFile
+        ? (explicitTaskId ?? plain.taskId)
+        : explicitTaskId && explicitTaskId !== plain.subagentId
+          ? explicitTaskId
+          : explicitTaskId && !plain.subagentId
+            ? explicitTaskId
+            : undefined
+    if (allowPlain && bgTaskId) {
+      const existing = state.bgTaskById.get(bgTaskId)
+      if (!existing?.toolUseId || existing.toolUseId === toolUseId) {
+        state.bgTaskById.set(bgTaskId, {
+          toolUseId: toolUseId ?? existing?.toolUseId,
+          description: plain.description ?? existing?.description ?? bgTaskId,
+          outputFile: plain.outputFile ?? existing?.outputFile,
+        })
+      }
     }
   }
+  return migrate
+}
+
+/** True when a workflow tool_use input is authoring smoke-check (validate_only). */
+export function isValidateOnlyToolInput(input: string | undefined | null): boolean {
+  if (!input) return false
+  try {
+    const o = tryParseJsonObject(input)
+    if (o) return o.validate_only === true || o.validateOnly === true
+  } catch {
+    // fall through
+  }
+  return /"validate_only"\s*:\s*true/.test(input) || /"validateOnly"\s*:\s*true/.test(input)
 }
 
 function tryParseJsonObject(text: string): Record<string, unknown> | null {
@@ -543,18 +707,20 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
 
   const description = strField(u, 'description') ?? id
   const subagentType = strField(u, 'subagent_type', 'subagentType')
-  const toolUseId = state.subagentToolById.get(id)
-  // Also correlate workflow-spawned children under workflow run if present.
+  // Workflow-spawned children must NOT share the workflow toolUseId. Doing so
+  // makes the first child's task_notification mark the whole workflow complete.
+  // Their lifecycle is already mirrored on workflow_updated.agents rows.
   const workflowRunId = strField(u, 'workflow_run_id', 'workflowRunId')
-  if (workflowRunId && !toolUseId) {
-    const wfTool = state.workflowToolByRunId.get(workflowRunId)
-    if (wfTool) state.subagentToolById.set(id, wfTool)
+  if (workflowRunId) {
+    state.workflowOwnedSubagents.add(id)
+    state.subagentToolById.delete(id)
   }
+  const toolUseId = workflowRunId ? undefined : state.subagentToolById.get(id)
 
   return [{
     type: 'task_started',
     taskId: id,
-    ...(state.subagentToolById.get(id) ? { toolUseId: state.subagentToolById.get(id) } : {}),
+    ...(toolUseId ? { toolUseId } : {}),
     description,
     ...(subagentType ? { taskType: subagentType } : {}),
   }]
@@ -563,6 +729,8 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
 function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const id = strField(u, 'subagent_id', 'subagentId')
   if (!id) return []
+  // Workflow-owned children: workflow_updated already carries agent rows + tokens.
+  if (state.workflowOwnedSubagents.has(id)) return []
   const events: AgentEvent[] = []
   if (!state.subagentStarted.has(id)) {
     state.subagentStarted.add(id)
@@ -576,16 +744,23 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
   const durationMs = numField(u, 'duration_ms', 'durationMs') ?? 0
   const toolCalls = numField(u, 'tool_call_count', 'toolCallCount') ?? 0
   const tokens = numField(u, 'tokens_used', 'tokensUsed') ?? 0
-  const toolsUsed = arrField(u, 'tools_used', 'toolsUsed')
-  const activityText = toolsUsed?.filter((t): t is string => typeof t === 'string').slice(-5).join(', ')
+  const toolsUsed = (arrField(u, 'tools_used', 'toolsUsed') ?? [])
+    .filter((t): t is string => typeof t === 'string' && t.length > 0)
+  const recent = toolsUsed.slice(-8)
+  const lastTool = recent[recent.length - 1]
+  const activityText = recent.length ? recent.join(', ') : undefined
+  const toolEntries = recent.map((toolName) => ({ toolName, description: '' }))
   const toolUseId = state.subagentToolById.get(id)
   events.push({
     type: 'task_progress',
     taskId: id,
     ...(toolUseId ? { toolUseId } : {}),
-    description: id,
+    // Prefer last tool name as description so reducer toolHistory advances.
+    description: lastTool ?? id,
+    ...(lastTool ? { lastToolName: lastTool } : {}),
     usage: { totalTokens: tokens, toolUses: toolCalls, durationMs },
     ...(activityText ? { activityText } : {}),
+    ...(toolEntries.length ? { toolEntries } : {}),
   })
   // Subagent tokens/window are child-session local — do not overwrite the parent
   // context ring (lastUsage is for the main session / getContextUsage()).
@@ -595,6 +770,8 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
 function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const id = strField(u, 'subagent_id', 'subagentId')
   if (!id) return []
+  // Same as progress: workflow children finish is reflected by workflow_updated.
+  if (state.workflowOwnedSubagents.has(id)) return []
   const status = (strField(u, 'status') ?? 'completed').toLowerCase()
   const taskStatus =
     status === 'completed' || status === 'complete' ? 'completed' as const

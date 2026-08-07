@@ -377,16 +377,23 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
   const durationMs = numField(u, 'duration_ms', 'durationMs') ?? 0
   const toolCalls = numField(u, 'tool_call_count', 'toolCallCount') ?? 0
   const tokens = numField(u, 'tokens_used', 'tokensUsed') ?? 0
-  const toolsUsed = arrField(u, 'tools_used', 'toolsUsed')
-  const activityText = toolsUsed?.filter((t): t is string => typeof t === 'string').slice(-5).join(', ')
+  const toolsUsed = (arrField(u, 'tools_used', 'toolsUsed') ?? [])
+    .filter((t): t is string => typeof t === 'string' && t.length > 0)
+  const recent = toolsUsed.slice(-8)
+  const lastTool = recent[recent.length - 1]
+  const activityText = recent.length ? recent.join(', ') : undefined
+  const toolEntries = recent.map((toolName) => ({ toolName, description: '' }))
   const toolUseId = state.subagentToolById.get(id)
   events.push({
     type: 'task_progress',
     taskId: id,
     ...(toolUseId ? { toolUseId } : {}),
-    description: id,
+    // Prefer last tool name as description so reducer toolHistory advances.
+    description: lastTool ?? id,
+    ...(lastTool ? { lastToolName: lastTool } : {}),
     usage: { totalTokens: tokens, toolUses: toolCalls, durationMs },
     ...(activityText ? { activityText } : {}),
+    ...(toolEntries.length ? { toolEntries } : {}),
   })
   // Subagent tokens/window are child-session local — do not overwrite the parent
   // context ring (lastUsage is for the main session / getContextUsage()).

@@ -62,6 +62,7 @@ export {
   XAI_TASK_COMPLETED,
   createXaiCorrelationState,
   noteToolCorrelationFromAgentEvents,
+  parsePlainTextTaskAck,
   parseXaiExtParams,
   parseXaiSessionNotificationEnvelope,
   type BgTaskInfo,

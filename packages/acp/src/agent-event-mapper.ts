@@ -421,7 +421,7 @@ export function createAcpAgentEventMapper(
         })
       }
       trackOpenAcpTools(openTools, events)
-      noteToolCorrelationFromAgentEvents(events, xaiCorrelation)
+      const migrate = noteToolCorrelationFromAgentEvents(events, xaiCorrelation)
       let textDelta = ''
       for (const event of events) {
         if (
@@ -433,6 +433,7 @@ export function createAcpAgentEventMapper(
         }
         options.emit(event)
       }
+      for (const event of migrate) options.emit(event)
       return { textDelta: textDelta || null }
     },
     applyXaiNotification(method, params) {
@@ -443,8 +444,9 @@ export function createAcpAgentEventMapper(
         { messageId: currentMessageId },
       )
       trackOpenAcpTools(openTools, events)
-      noteToolCorrelationFromAgentEvents(events, xaiCorrelation)
+      const migrate = noteToolCorrelationFromAgentEvents(events, xaiCorrelation)
       for (const event of events) options.emit(event)
+      for (const event of migrate) options.emit(event)
     },
     complete(stopReason = 'end_turn') {
       if (terminal) return

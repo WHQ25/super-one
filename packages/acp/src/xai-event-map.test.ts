@@ -27,6 +27,107 @@ describe('ACP xAI AgentEvent mapping', () => {
     expect(parseXaiSessionNotificationEnvelope({ update: 'invalid' })).toBeNull()
   })
 
+  it('correlates Grok plain-text subagent spawn ack to toolUseId', () => {
+    const state = createXaiCorrelationState()
+    noteToolCorrelationFromAgentEvents([{
+      type: 'content_delta',
+      messageId: 'message-1',
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'spawn-tool',
+        summary: [
+          'Subagent started in background.',
+          'subagent_id: 019fdacb-c941-7893-979b-de49ff78a03f',
+          'type: general-purpose',
+        ].join('\n'),
+        isError: false,
+      },
+    }], state)
+    expect(state.subagentToolById.get('019fdacb-c941-7893-979b-de49ff78a03f')).toBe('spawn-tool')
+    // Pure spawn ack must not dual-write bgTaskById (taskId falls back to subagentId).
+    expect(state.bgTaskById.has('019fdacb-c941-7893-979b-de49ff78a03f')).toBe(false)
+  })
+
+  it('does not rebind subagent_id from a non-spawn tool that echoes the ack', () => {
+    const state = createXaiCorrelationState()
+    noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_use',
+          toolName: 'Agent',
+          toolUseId: 'spawn-tool',
+          input: '{}',
+          status: 'complete',
+        },
+      },
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'spawn-tool',
+          summary: 'Subagent started in background.\nsubagent_id: sa-1',
+          isError: false,
+        },
+      },
+    ], state)
+    noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_use',
+          toolName: 'TaskOutput',
+          toolUseId: 'out-tool',
+          input: '{}',
+          status: 'complete',
+        },
+      },
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'out-tool',
+          summary: 'Subagent started in background.\nsubagent_id: sa-1',
+          isError: false,
+        },
+      },
+    ], state)
+    expect(state.subagentToolById.get('sa-1')).toBe('spawn-tool')
+  })
+
+  it('does not correlate validate_only workflow tool results to run_id', () => {
+    const state = createXaiCorrelationState()
+    noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'message-1',
+        delta: {
+          type: 'tool_use',
+          toolName: 'Workflow',
+          toolUseId: 'smoke-tool',
+          input: JSON.stringify({ script: 'let meta = #{ name: "x" };', validate_only: true }),
+          status: 'complete',
+        },
+      },
+      {
+        type: 'content_delta',
+        messageId: 'message-1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'smoke-tool',
+          summary: JSON.stringify({ run_id: 'wf-smoke', ok: true }),
+          isError: false,
+        },
+      },
+    ], state)
+    expect(state.smokeWorkflowToolIds.has('smoke-tool')).toBe(true)
+    expect(state.workflowToolByRunId.has('wf-smoke')).toBe(false)
+  })
+
   it('correlates workflow progress and drops stale revisions', () => {
     const state = createXaiCorrelationState()
     noteToolCorrelationFromAgentEvents([{
@@ -93,7 +194,13 @@ describe('ACP xAI AgentEvent mapping', () => {
     }, state)[0]).toMatchObject({
       type: 'task_progress',
       taskId: 'subagent-1',
+      description: 'grep',
+      lastToolName: 'grep',
       activityText: 'read_file, grep',
+      toolEntries: [
+        { toolName: 'read_file', description: '' },
+        { toolName: 'grep', description: '' },
+      ],
     })
     expect(state.lastUsage).toBeNull()
     expect(mapXaiSessionUpdate({

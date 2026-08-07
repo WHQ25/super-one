@@ -4,6 +4,21 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.4-alpha] - 2026-08-07
+
+### Added
+
+- Opt-in remote node CLI upgrade over SSH when a paired node runs an older CLI than the desktop pin (non-SSH nodes get the manual npm command); drop misleading Settings copy that implied paste-token pairing.
+
+### Fixed
+
+- Collab worktrees no longer become sidebar projects: attribute via the git main checkout, never register managed worktree paths, harden non-worktree parent attribution, mark attach-style collab cwd as worktree, and allow genuinely new directories as projects while sharing same-repo worktree leaves with the main checkout.
+- Environment refresh: accept previous token hashes for 60s and serialize desktop refresh so concurrent ensureAccess / lost responses do not permanently kill the client session (#19).
+
+### Changed
+
+- Product collaboration manual and collab tool copy: cwd-as-project identity vs worktree isolation, shorter tool descriptions with links to worktree recipes.
+
 ## [0.50.3-alpha] - 2026-08-07
 
 ### Added

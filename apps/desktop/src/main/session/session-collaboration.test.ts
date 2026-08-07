@@ -911,6 +911,89 @@ describe('child session project attribution', () => {
     rmSync(parentWorktree, { recursive: true, force: true })
   })
 
+  it('repro: parent is a worktree session of main — default launch cwd is project root, not the worktree leaf', async () => {
+    // Exact packaged-app failure (2026-08-07):
+    //   parent project_path = …/Projects/super-one
+    //   parent.cwd / worktree_path = …/.worktrees/super-one/tjdnup-b375880
+    //   collab request omitted cwd → grant stored parent.cwd → fake project "tjdnup-…"
+    const { homedir } = await import('os')
+    const { realpathSync } = await import('fs')
+    const managedRoot = join(homedir(), '.worktrees', 'super-one-repro')
+    mkdirSync(managedRoot, { recursive: true })
+    const parentWt = mkdtempSync(join(managedRoot, 'tjdnup-'))
+    const parentWtCanon = realpathSync(parentWt)
+    state.projects = [{ path: TEST_CWD }]
+    state.mainWorktreeByPath.set(parentWt, TEST_CWD)
+    state.mainWorktreeByPath.set(parentWtCanon, TEST_CWD)
+    const parent = fakeSession('parent', { cwd: parentWt, projectPath: TEST_CWD })
+    const { host, createSession } = fakeHost(parent)
+
+    // No config.cwd — exercises defaultLaunchCwd (must NOT copy parent.cwd).
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{
+        launchId: 'repro-default-cwd',
+        agentId: 'claude-base',
+        task: 'Polish collab copy',
+        name: 'CopySmith',
+        role: 'Implementer',
+        config: { model: 'test-model', effort: 'high' },
+      }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const proposed = event.request.sessionAgentsConfirm!.launches[0]!
+    expect(proposed.config.cwd).toBe(TEST_CWD)
+    expect(proposed.config.cwd).not.toBe(parentWt)
+    expect(proposed.config.cwd).not.toBe(parentWtCanon)
+
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
+    })
+    const grants = resultJson(await promise).launches as Array<{ credential: string }>
+    await startSessionAgent('parent', grants[0]!.credential, host)
+
+    expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    expect(createSession.mock.calls[0][0].cwd).toBe(TEST_CWD)
+    const row = state.db!.prepare(
+      'SELECT project_path, is_worktree, worktree_path FROM sessions WHERE id != ?',
+    ).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
+    expect(row.project_path).toBe(TEST_CWD)
+    // Runtime cwd is project root (no worktree cut) — not a worktree session.
+    expect(row.is_worktree).toBe(0)
+    expect(row.worktree_path).toBeNull()
+    rmSync(parentWt, { recursive: true, force: true })
+  })
+
+  it('repro: even if grant cwd is already the parent worktree path, never register it as a project', async () => {
+    // Adversarial / old-client grant: config.cwd already points at the worktree leaf.
+    // start must still file under main and record worktree_path.
+    const { homedir } = await import('os')
+    const { realpathSync } = await import('fs')
+    const managedRoot = join(homedir(), '.worktrees', 'super-one-repro2')
+    mkdirSync(managedRoot, { recursive: true })
+    const parentWt = mkdtempSync(join(managedRoot, 'tjdnup-'))
+    const parentWtCanon = realpathSync(parentWt)
+    state.projects = [{ path: TEST_CWD }]
+    state.mainWorktreeByPath.set(parentWt, TEST_CWD)
+    state.mainWorktreeByPath.set(parentWtCanon, TEST_CWD)
+    const parent = fakeSession('parent', { cwd: parentWt, projectPath: TEST_CWD })
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(parentWt, host, parent)
+
+    expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    expect(createSession.mock.calls[0][0].cwd).toBe(parentWt)
+    const row = state.db!.prepare(
+      'SELECT project_path, is_worktree, worktree_path FROM sessions WHERE id != ?',
+    ).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
+    expect(row.project_path).toBe(TEST_CWD)
+    expect(row.is_worktree).toBe(1)
+    expect(row.worktree_path).toBe(parentWt)
+    rmSync(parentWt, { recursive: true, force: true })
+  })
+
   it('does not register a managed ~/.worktrees path when main-dir lookup fails', async () => {
     const { homedir } = await import('os')
     const managedWt = mkdtempSync(join(homedir(), '.worktrees', 'collab-managed-'))

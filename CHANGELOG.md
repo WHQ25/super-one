@@ -4,6 +4,20 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.5-alpha] - 2026-08-07
+
+### Added
+
+- Grok chat: render subagent and workflow activity in existing ToolBlock views, with progressive status aligned to completion.
+- ACP: surface Grok agent-initiated turns after the user prompt has ended (synthetic assistant message for workflow follow-up output).
+
+### Fixed
+
+- Grok subagent progress: merge rolling tool snapshots without collapsing repeated tools; correlate task/workflow events so workflow-owned children do not complete the parent early.
+- Unify ACP tool normalization across desktop and package runtime paths so Grok tools render consistently.
+- Close full-screen chat overlays when the pane's displayed session changes (ChatContent stays mounted across switches).
+- Remote AskUserQuestion: await ACK before clearing the prompt, hydrate the answering session after ACK, and recover stuck prompts on RPC failure so lease/network errors do not silently drop questions or duplicate transcript rows (#21).
+
 ## [0.50.4-alpha] - 2026-08-07
 
 ### Added

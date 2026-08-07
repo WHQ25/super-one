@@ -113,6 +113,35 @@ export class NodeRpcClient {
     return this.baseUrl
   }
 
+  /**
+   * Drop a half-open promoted socket without permanently closing the client.
+   * Used when a health probe fails while readyState is still OPEN so the next
+   * supervisor dial is not stuck on a dead transport.
+   * Does not fire onUnexpectedDisconnect (listeners removed first).
+   */
+  invalidateTransport(_reason?: string): void {
+    if (this.closed) return
+    this.dropCurrentSocket()
+    // Also cancel an in-flight handshake so setBaseUrl/reconnect can proceed.
+    const cancelConnect = this.connectFail
+    this.connectFail = null
+    this.connectGeneration += 1
+    this.connectPromise = null
+    if (cancelConnect) {
+      cancelConnect(transportError('transport invalidated'))
+    }
+    const connecting = this.connectingWs
+    this.connectingWs = null
+    if (connecting) {
+      try {
+        connecting.removeAllListeners()
+        connecting.close()
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   async connect(): Promise<void> {
     if (this.closed) throw transportError('client closed')
     if (this.connected) return

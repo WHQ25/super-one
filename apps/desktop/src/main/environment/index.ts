@@ -25,6 +25,10 @@ export {
   gatewayForProject,
 } from './environment-host'
 export {
+  attachEnvironmentConnectivityMonitor,
+  createOnlineEdgeWatcher,
+} from './environment-connectivity-monitor'
+export {
   listRemoteManagedSkills,
   listRemoteManagedMcp,
   saveRemoteManagedMcp,

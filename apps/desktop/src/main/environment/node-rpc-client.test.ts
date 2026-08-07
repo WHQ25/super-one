@@ -130,4 +130,23 @@ describe('NodeRpcClient disconnect signaling', () => {
     expect(() => client.setBaseUrl('http://127.0.0.1:3333')).toThrow(/setBaseUrl/)
     client.close()
   })
+
+  it('invalidateTransport drops the socket without firing unexpected disconnect', async () => {
+    const onUnexpectedDisconnect = vi.fn()
+    const { client, ws } = await connectClient({
+      supervised: true,
+      onUnexpectedDisconnect,
+    })
+    expect(client.connected).toBe(true)
+    client.invalidateTransport('probe failed')
+    expect(client.connected).toBe(false)
+    expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
+    // After invalidate, setBaseUrl is allowed again.
+    client.setBaseUrl('http://127.0.0.1:9999')
+    expect(client.getBaseUrl()).toBe('http://127.0.0.1:9999')
+    // Stale close event must not fire after listeners removed.
+    ws.emit('close')
+    expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
+    client.close()
+  })
 })

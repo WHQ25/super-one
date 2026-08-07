@@ -21,6 +21,11 @@ export type BlockReason =
   | 'identity_conflict'
   | 'user'
 
+/** Lifecycle wake that probes or preempts backoff without unblocking auth failures. */
+export type SupervisorWakeReason = 'app-resume' | 'network-online'
+
+export type RetryNowDisposition = 'started' | 'already_connected' | 'blocked' | 'disposed'
+
 export interface SupervisorSnapshot {
   environmentId: string
   connectionId: string
@@ -37,6 +42,13 @@ export interface SupervisorCoreOptions {
   connectionId: string
   connect: () => Promise<void>
   healthProbe?: () => Promise<boolean>
+  /**
+   * Drop a half-open transport before an immediate re-dial (e.g. OPEN but dead WS).
+   * Called from wake() when a health probe fails while connected.
+   */
+  invalidateTransport?: (reason: string) => void | Promise<void>
+  /** Continuous connected time before attempt/backoff ladder resets. Default 30s. */
+  stableAfterMs?: number
   baseDelayMs?: number
   maxDelayMs?: number
   now?: () => number
@@ -52,15 +64,19 @@ export class ConnectionSupervisorCore {
   private nextRetryAt?: number
   private generation = 0
   private timer: ReturnType<typeof setTimeout> | null = null
+  private stableTimer: ReturnType<typeof setTimeout> | null = null
   private disposed = false
+  private wakeInFlight: Promise<void> | null = null
   private readonly baseDelayMs: number
   private readonly maxDelayMs: number
+  private readonly stableAfterMs: number
   private readonly now: () => number
   private readonly random: () => number
 
   constructor(private readonly opts: SupervisorCoreOptions) {
     this.baseDelayMs = opts.baseDelayMs ?? 500
     this.maxDelayMs = opts.maxDelayMs ?? 30_000
+    this.stableAfterMs = opts.stableAfterMs ?? 30_000
     this.now = opts.now ?? (() => Date.now())
     this.random = opts.random ?? Math.random
   }
@@ -84,29 +100,48 @@ export class ConnectionSupervisorCore {
     await this.runConnect()
   }
 
+  /**
+   * App resume / network online. Coalesced. Never unblocks auth failures.
+   * Connected: health probe; failure invalidates transport and re-dials immediately.
+   * Backoff/disconnected: preempt timer and re-dial immediately without clearing
+   * the failure streak (unlike retryNow).
+   */
+  async wake(_reason: SupervisorWakeReason): Promise<void> {
+    if (this.disposed || this.state === 'blocked') return
+    if (this.wakeInFlight) return this.wakeInFlight
+    this.wakeInFlight = this.doWake().finally(() => {
+      this.wakeInFlight = null
+    })
+    return this.wakeInFlight
+  }
+
+  /**
+   * Explicit user/system retry: resets the transient backoff ladder.
+   * Does not clear a blocked auth/protocol/identity state.
+   */
+  async retryNow(): Promise<RetryNowDisposition> {
+    if (this.disposed) return 'disposed'
+    if (this.state === 'blocked') return 'blocked'
+    if (this.state === 'connected') return 'already_connected'
+    if (this.state === 'connecting' || this.state === 'synchronizing') return 'started'
+    this.attempt = 0
+    this.nextRetryAt = undefined
+    this.clearTimer()
+    await this.runConnect()
+    return 'started'
+  }
+
+  /**
+   * @deprecated Prefer wake() for lifecycle and retryNow() for explicit reset.
+   * Kept for call sites; connected path probes, else resets attempt and dials.
+   */
   async probeOrRetry(): Promise<void> {
     if (this.disposed || this.state === 'blocked') return
-    this.clearTimer()
     if (this.state === 'connected') {
-      if (!this.opts.healthProbe) {
-        // Already connected and no probe configured — do not force a reconnect.
-        return
-      }
-      try {
-        const ok = await this.opts.healthProbe()
-        if (!ok) {
-          this.transition('disconnected', 'health probe failed')
-          await this.scheduleBackoff()
-        }
-        return
-      } catch (err) {
-        this.transition('disconnected', (err as Error).message)
-        await this.scheduleBackoff()
-        return
-      }
+      await this.wake('app-resume')
+      return
     }
-    this.attempt = 0
-    await this.runConnect()
+    await this.retryNow()
   }
 
   /**
@@ -117,12 +152,14 @@ export class ConnectionSupervisorCore {
   notifyDisconnected(error?: string): void {
     if (this.disposed || this.state === 'blocked') return
     if (this.state !== 'connected') return
+    this.clearStableTimer()
     this.transition('disconnected', error)
     void this.scheduleBackoff()
   }
 
   block(reason: BlockReason, error?: string): void {
     this.clearTimer()
+    this.clearStableTimer()
     this.blockReason = reason
     this.transition('blocked', error)
   }
@@ -137,13 +174,55 @@ export class ConnectionSupervisorCore {
   dispose(): void {
     this.disposed = true
     this.clearTimer()
+    this.clearStableTimer()
+  }
+
+  private async doWake(): Promise<void> {
+    if (this.disposed || this.state === 'blocked') return
+
+    if (this.state === 'connected') {
+      if (!this.opts.healthProbe) return
+      let ok = false
+      try {
+        ok = await this.opts.healthProbe()
+      } catch (err) {
+        ok = false
+        this.lastError = (err as Error).message
+      }
+      if (this.disposed || this.state !== 'connected') return
+      if (ok) return
+
+      const reason = this.lastError || 'health probe failed'
+      try {
+        await this.opts.invalidateTransport?.(reason)
+      } catch {
+        /* best-effort */
+      }
+      if (this.disposed) return
+      this.clearStableTimer()
+      // Leave connected only if still there (invalidate may race a real close).
+      if (this.state === 'connected') {
+        this.transition('disconnected', reason)
+      }
+      // Immediate re-dial; preserve failure streak (no attempt reset).
+      await this.runConnect()
+      return
+    }
+
+    if (this.state === 'connecting' || this.state === 'synchronizing') return
+
+    // Preempt backoff timer and dial now without clearing the streak.
+    this.clearTimer()
+    this.nextRetryAt = undefined
+    await this.runConnect()
   }
 
   private async runConnect(): Promise<void> {
     if (this.disposed || this.state === 'blocked') return
     // A live dial already owns the generation; do not start a second one.
-    if (this.state === 'connecting' || this.state === 'synchronizing') return
+    if (this.state === 'connecting' || this.state === 'synchronizing' || this.state === 'connected') return
     this.clearTimer()
+    this.clearStableTimer()
     this.generation += 1
     const gen = this.generation
     this.transition('connecting')
@@ -151,10 +230,11 @@ export class ConnectionSupervisorCore {
       this.transition('synchronizing')
       await this.opts.connect()
       if (this.disposed || gen !== this.generation) return
-      this.attempt = 0
+      // Do not reset attempt here — short flaps must keep escalating backoff.
       this.nextRetryAt = undefined
       this.clearTimer()
       this.transition('connected')
+      this.scheduleStableReset(gen)
     } catch (err) {
       if (this.disposed || gen !== this.generation) return
       const message = (err as Error).message || 'connect failed'
@@ -190,6 +270,19 @@ export class ConnectionSupervisorCore {
     }, jitter)
   }
 
+  private scheduleStableReset(gen: number): void {
+    this.clearStableTimer()
+    if (this.stableAfterMs <= 0) {
+      this.attempt = 0
+      return
+    }
+    this.stableTimer = setTimeout(() => {
+      this.stableTimer = null
+      if (this.disposed || this.generation !== gen || this.state !== 'connected') return
+      this.attempt = 0
+    }, this.stableAfterMs)
+  }
+
   private transition(state: SupervisorState, error?: string): void {
     this.state = state
     if (error !== undefined) this.lastError = error
@@ -201,6 +294,13 @@ export class ConnectionSupervisorCore {
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
+    }
+  }
+
+  private clearStableTimer(): void {
+    if (this.stableTimer) {
+      clearTimeout(this.stableTimer)
+      this.stableTimer = null
     }
   }
 }

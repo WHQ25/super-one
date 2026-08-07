@@ -8,4 +8,6 @@ export {
   type BlockReason,
   type SupervisorSnapshot,
   type SupervisorCoreOptions as SupervisorOptions,
+  type SupervisorWakeReason,
+  type RetryNowDisposition,
 } from '@superone/shared/environment'

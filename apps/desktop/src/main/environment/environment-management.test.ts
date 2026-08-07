@@ -170,6 +170,150 @@ describe('environment list', () => {
   })
 })
 
+describe('desired auto-connect semantics', () => {
+  it('migrates omitted desired to auto-connect on startDesiredConnections', async () => {
+    const rt = await bootNode()
+    const ud = temp('env-mgmt-ud-')
+    electron.setUserData(ud)
+    const host = new EnvironmentHost(ud)
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'desired-node',
+    })
+    // Simulate legacy record without desired field.
+    host.connections.updateKnown(connectionId, { desired: undefined })
+    host.disconnect(connectionId)
+    // disconnect sets desired=false — flip back to legacy omit.
+    host.connections.updateKnown(connectionId, { desired: undefined })
+    expect(host.connections.listKnown().find((k) => k.connectionId === connectionId)?.desired).toBeUndefined()
+
+    await host.startDesiredConnections()
+    expect(host.connections.isConnected(connectionId)).toBe(true)
+    host.dispose()
+  })
+
+  it('does not auto-connect when desired is false after explicit disconnect', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'stay-down',
+    })
+    host.disconnect(connectionId)
+    expect(host.connections.listKnown().find((k) => k.connectionId === connectionId)?.desired).toBe(
+      false,
+    )
+    await host.startDesiredConnections()
+    expect(host.connections.isConnected(connectionId)).toBe(false)
+    host.dispose()
+  })
+
+  it('single-flights concurrent connect calls for the same connection', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'single-flight',
+    })
+    host.disconnect(connectionId)
+
+    const a = host.connect(connectionId)
+    const b = host.connect(connectionId)
+    const [da, db] = await Promise.all([a, b])
+    expect(da.environmentId).toBe(db.environmentId)
+    expect(host.connections.isConnected(connectionId)).toBe(true)
+    host.dispose()
+  })
+
+  it('starts host action consumer when supervisor recovers without host.connect', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'ha-recover',
+    })
+    // Simulate dispose of consumer while leaving desired live path: disconnect
+    // and reconnect via connect() failure-then-wake is hard; instead force
+    // publishStatus-connected by reconnecting after stopHostActionConsumer.
+    host.disconnect(connectionId)
+    await host.connect(connectionId)
+    // Tear consumer only (not the live socket) by stopping via private map is hard;
+    // use wakeDesired after a fresh connect path that reaches connected via supervisor.
+    // If already connected, wake is a no-op probe; force a disconnect of consumer:
+    const before = (host as unknown as { hostActionConsumers: Map<string, unknown> })
+      .hostActionConsumers
+    expect(before.has(connectionId)).toBe(true)
+    before.delete(connectionId)
+    // publishStatus on next connected transition — simulate by waking then
+    // manually invoking connect which short-circuits connected and would not
+    // restart consumer; instead re-publish via supervisor notify is heavy.
+    // Call connect while connected: finalize path won't run. Use wake after
+    // temporarily dropping consumer — wake healthy probe stays connected and
+    // doWakeDesiredConnections should re-attach consumer.
+    await host.wakeDesiredConnections('app-resume')
+    expect(
+      (host as unknown as { hostActionConsumers: Map<string, unknown> }).hostActionConsumers.has(
+        connectionId,
+      ),
+    ).toBe(true)
+    host.dispose()
+  })
+
+  it('leaves a live supervisor when the first endpoint resolve fails', async () => {
+    const ud = temp('env-mgmt-ud-')
+    electron.setUserData(ud)
+    const tunnels = new SshTunnelManager(async () => {
+      throw new Error('ssh unreachable')
+    })
+    const host = new EnvironmentHost(ud, { tunnels })
+
+    // Seed a known SSH environment with credentials by pairing a real node, then
+    // switch the preferred endpoint to ssh-forward so resolve goes through tunnels.
+    const rt = await bootNode()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'ssh-fail',
+      endpointProfiles: [
+        {
+          endpointId: 'ssh',
+          kind: 'ssh-forward',
+          label: 'SSH: dead',
+          target: 'nobody@127.0.0.1',
+          ssh: { remotePort: 7788 },
+        },
+      ],
+    })
+    host.disconnect(connectionId)
+    host.connections.updateKnown(connectionId, {
+      desired: true,
+      preferredEndpointId: 'ssh',
+      endpointProfiles: [
+        {
+          endpointId: 'ssh',
+          kind: 'ssh-forward',
+          label: 'SSH: dead',
+          target: 'nobody@127.0.0.1',
+          ssh: { remotePort: 7788 },
+        },
+      ],
+    })
+
+    await expect(host.connect(connectionId)).rejects.toThrow()
+    // Live supervisor owns retry even though dial failed.
+    expect(host.connections.getClient(connectionId)).toBeTruthy()
+    expect(host.connections.getSupervisor(connectionId)?.state).toMatch(/backoff|disconnected/)
+    expect(host.connections.listKnown().find((k) => k.connectionId === connectionId)?.desired).toBe(
+      true,
+    )
+    host.dispose()
+  })
+})
+
 describe('environment connect and disconnect', () => {
   it('fetches the remote project list once per connection generation', async () => {
     const rt = await bootNode()
@@ -289,6 +433,8 @@ describe('environment connect and disconnect', () => {
         },
       ],
     })
+    // Pair dials the loopback baseUrl directly; rebuild via preferred SSH endpoint.
+    host.disconnect(connectionId)
     await host.connect(connectionId)
     expect(tunnels.has(connectionId)).toBe(true)
 

@@ -1005,6 +1005,7 @@ async function runCodexTurnViaSessionManager(
  * Attached lazily so the environment subsystem stays unloaded until used.
  */
 let environmentStatusBridgeAttached = false
+let environmentConnectivityDisposer: (() => void) | null = null
 function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   if (environmentStatusBridgeAttached) return
   environmentStatusBridgeAttached = true
@@ -1015,6 +1016,31 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   host.setAgentEventSink((event) => {
     safeSend(AgentIpcChannels.EVENT, event)
   })
+  // Auto-connect desired remotes + network-online edge wake.
+  // (powerMonitor resume also wakes via registerAgentService.)
+  void import('./environment/environment-connectivity-monitor')
+    .then(({ attachEnvironmentConnectivityMonitor, createOnlineEdgeWatcher }) => {
+      const online = createOnlineEdgeWatcher(() => net.isOnline())
+      const disposeMonitor = attachEnvironmentConnectivityMonitor({
+        onResume: () => {
+          /* resume wired in powerMonitor */
+        },
+        onOnlineEdge: online.onOnlineEdge,
+        startDesiredConnections: () => host.startDesiredConnections(),
+        wakeDesiredConnections: (reason) => host.wakeDesiredConnections(reason),
+        log: (message) => log.info(message),
+      })
+      environmentConnectivityDisposer = () => {
+        disposeMonitor()
+        online.stop()
+      }
+    })
+    .catch((err) => {
+      log.warn(
+        '[environment] connectivity monitor failed to start: %s',
+        err instanceof Error ? err.message : String(err),
+      )
+    })
 }
 
 function registerIpcHandlers(): void {
@@ -3536,6 +3562,15 @@ function registerIpcHandlers(): void {
   powerMonitor.on('resume', () => {
     log.info('[RemoteControl] System resumed, restarting channel')
     remoteControlService.resume()
+    // Remote node supervisors: probe live sockets / re-dial desired connections.
+    void import('./environment')
+      .then(({ getEnvironmentHost }) => getEnvironmentHost().wakeDesiredConnections('app-resume'))
+      .catch((err) => {
+        log.warn(
+          '[environment] wakeDesiredConnections on resume failed: %s',
+          err instanceof Error ? err.message : String(err),
+        )
+      })
   })
 
   ipcMain.handle(AgentIpcChannels.GET_FULLSCREEN, () => getMainWindow().isFullScreen())
@@ -4187,6 +4222,19 @@ app.whenReady().then(async () => {
   fixPath()
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
   ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
+
+  // Warm environment host so desired remotes auto-connect without waiting for Settings.
+  void import('./environment')
+    .then(({ getEnvironmentHost }) => {
+      const host = getEnvironmentHost()
+      attachEnvironmentStatusBridge(host)
+    })
+    .catch((err) => {
+      log.warn(
+        '[environment] startup auto-connect init failed: %s',
+        err instanceof Error ? err.message : String(err),
+      )
+    })
   getDb() // Initialize database
   void (async () => {
     try {

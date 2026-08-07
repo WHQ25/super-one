@@ -145,6 +145,10 @@ export class EnvironmentHost {
   private readonly hostActionExecutor: HostActionExecutor
   private readonly hostActionConcurrency: number
   private readonly hostActionPollWaitMs: number
+  /** Coalesce concurrent app-resume / network-online storms. */
+  private wakeAllInFlight: Promise<void> | null = null
+  /** Per-connection connect single-flight (startup / wake / manual Connect). */
+  private readonly connectInFlight = new Map<string, Promise<ExecutionEnvironmentDescriptor>>()
 
   constructor(userDataDir?: string, options: EnvironmentHostOptions = {}) {
     const dataDir = userDataDir || app.getPath('userData')
@@ -198,8 +202,9 @@ export class EnvironmentHost {
       saveKnownEnvironment: (env) => this.saveKnown(env),
       deleteKnownEnvironment: (connectionId) => this.deleteKnown(connectionId),
       onSupervisorState: (snapshot) => this.publishStatus(snapshot),
-      // Automatic supervisor retries rebuild SSH tunnels; first dial uses the
-      // URL already resolved (or adopted) by the explicit connect/pair path.
+      // Existing-connection dials (including first) rebuild tunnels here under the
+      // supervisor. Pairing still skips the first resolve so bootstrap adopt() is
+      // not raced (see resolveEndpointFromFirstAttempt).
       resolveReconnectBaseUrl: (known) => this.resolveBaseUrl(known),
     })
     this.registry.setConnectionManager(this.connections)
@@ -2115,33 +2120,171 @@ export class EnvironmentHost {
   /**
    * Open (or reopen) a connection to a paired environment.
    *
-   * For `ssh-forward` endpoints the stored base URL points at an ephemeral local
-   * port that no longer exists after an app restart, so the tunnel is rebuilt
-   * first and the fresh loopback URL is used for the connection.
+   * Tunnel/endpoint resolution for existing connections runs inside the
+   * supervisor connect path so a temporary SSH failure still leaves a live
+   * backoff owner. Concurrent callers share one in-flight promise per id.
    */
   async connect(connectionId: string): Promise<ExecutionEnvironmentDescriptor> {
     const known = this.connections.listKnown().find((k) => k.connectionId === connectionId)
     if (!known) throw new Error(`unknown connection ${connectionId}`)
 
-    const baseUrl = await this.resolveBaseUrl(known)
-    const descriptor = await this.connections.connectExisting(connectionId, baseUrl)
+    // Persist intent before any dial so even a failing first attempt stays desired.
+    this.connections.updateKnown(connectionId, { desired: true })
+
+    if (this.connections.isConnected(connectionId)) {
+      const client = this.connections.getClient(connectionId)
+      if (client) return client.getDescriptor()
+    }
+
+    const inflight = this.connectInFlight.get(connectionId)
+    if (inflight) return inflight
+
+    const work = this.doConnect(connectionId).finally(() => {
+      if (this.connectInFlight.get(connectionId) === work) {
+        this.connectInFlight.delete(connectionId)
+      }
+    })
+    this.connectInFlight.set(connectionId, work)
+    return work
+  }
+
+  private async doConnect(connectionId: string): Promise<ExecutionEnvironmentDescriptor> {
+    // If a live supervisor already exists (e.g. backoff), prefer retryNow over
+    // tearing it down — preserves generation and avoids double refresh races.
+    if (this.connections.getClient(connectionId) && !this.connections.isConnected(connectionId)) {
+      const disposition = await this.connections.retryNow(connectionId)
+      if (this.connections.isConnected(connectionId)) {
+        return this.finalizeConnected(connectionId)
+      }
+      // Live still owns the connection: do NOT fall through to connectExisting
+      // (that disconnect()s and races an in-flight dial or backoff owner).
+      if (this.connections.getClient(connectionId)) {
+        const snap = this.connections.getSupervisor(connectionId)
+        if (disposition === 'blocked' || snap?.state === 'blocked') {
+          throw Object.assign(new Error(snap?.lastError || 'connection blocked'), {
+            code: snap?.blockReason === 'auth' ? 'unauthorized' : 'unavailable',
+          })
+        }
+        throw Object.assign(new Error(snap?.lastError || 'connection not ready'), {
+          code: 'unavailable',
+        })
+      }
+      // Client gone (disposed concurrently) — full supervised dial below.
+    }
+
+    // No pre-resolve here: connectExisting resolves tunnels under the supervisor
+    // from the first attempt so SSH blips leave a backoff owner.
+    const descriptor = await this.connections.connectExisting(connectionId)
     try {
       this.assertDesktopNotOlderThanNode(descriptor.cliVersion)
     } catch (err) {
       // Drop the socket so the UI does not show a half-connected remote.
-      this.disconnect(connectionId)
+      // Keep desired=true so auto-recovery continues after upgrade.
+      this.stopHostActionConsumer(connectionId, 'disconnect')
+      this.abortConnectionSessionDrains(connectionId, 'disconnect')
+      this.connections.disconnect(connectionId)
+      this.tunnels.close(connectionId)
       throw err
     }
     this.startHostActionConsumer(connectionId)
     return descriptor
   }
 
-  /** Close the socket and any SSH tunnel; credentials and metadata are kept. */
+  /**
+   * Post-connect host-side hooks shared by explicit connect and supervisor-only
+   * recovery (wake/backoff). Idempotent for host-action consumer start.
+   */
+  private finalizeConnected(connectionId: string): Promise<ExecutionEnvironmentDescriptor> {
+    this.startHostActionConsumer(connectionId)
+    const client = this.connections.getClient(connectionId)
+    if (!client) {
+      return Promise.reject(new Error(`no client for ${connectionId}`))
+    }
+    return client.getDescriptor().then((descriptor) => {
+      try {
+        this.assertDesktopNotOlderThanNode(descriptor.cliVersion)
+      } catch (err) {
+        this.stopHostActionConsumer(connectionId, 'disconnect')
+        this.abortConnectionSessionDrains(connectionId, 'disconnect')
+        this.connections.disconnect(connectionId)
+        this.tunnels.close(connectionId)
+        throw err
+      }
+      return descriptor
+    })
+  }
+
+  /**
+   * Auto-connect every paired environment marked desired (or legacy omit).
+   * Bounded concurrency avoids SSH fan-out storms at startup.
+   */
+  async startDesiredConnections(opts?: { concurrency?: number }): Promise<void> {
+    const concurrency = Math.max(1, opts?.concurrency ?? 2)
+    const ids = this.connections
+      .listDesiredConnectionIds()
+      .filter((id) => !this.connections.isConnected(id))
+    await mapPool(ids, concurrency, async (connectionId) => {
+      try {
+        await this.connect(connectionId)
+      } catch {
+        /* If a LiveConnection was created, supervisor owns backoff; otherwise
+         * desired remains true for the next resume/online wake. */
+      }
+    })
+  }
+
+  /**
+   * Lifecycle wake for all desired connections: probe live sockets, reconnect
+   * desired ones that are not live, and rebuild tunnels via connect() when needed.
+   */
+  async wakeDesiredConnections(
+    reason: 'app-resume' | 'network-online',
+  ): Promise<void> {
+    // Coalesce concurrent resume+online storms.
+    if (this.wakeAllInFlight) return this.wakeAllInFlight
+    this.wakeAllInFlight = this.doWakeDesiredConnections(reason).finally(() => {
+      this.wakeAllInFlight = null
+    })
+    return this.wakeAllInFlight
+  }
+
+  private async doWakeDesiredConnections(
+    reason: 'app-resume' | 'network-online',
+  ): Promise<void> {
+    await this.connections.wakeLiveConnections(reason)
+    // Supervisor-only recovery can reach connected without host.connect();
+    // ensure Host Action consumer (and version policy) still attach.
+    for (const connectionId of this.connections.listDesiredConnectionIds()) {
+      if (!this.connections.isConnected(connectionId)) continue
+      if (this.hostActionConsumers.has(connectionId)) continue
+      try {
+        await this.finalizeConnected(connectionId)
+      } catch {
+        /* version skew or race — leave supervisor owning retry */
+      }
+    }
+    // Desired but not live (e.g. never started, or disposed). Shares connect()
+    // single-flight with startup/manual Connect.
+    const missing = this.connections
+      .listDesiredConnectionIds()
+      .filter((id) => !this.connections.isConnected(id) && !this.connections.getClient(id))
+    await mapPool(missing, 2, async (connectionId) => {
+      try {
+        await this.connect(connectionId)
+      } catch {
+        /* best-effort */
+      }
+    })
+  }
+
+  /** Close the socket and any SSH tunnel; credentials are kept. Marks not desired. */
   disconnect(connectionId: string): void {
     this.stopHostActionConsumer(connectionId, 'disconnect')
     this.abortConnectionSessionDrains(connectionId, 'disconnect')
     this.connections.disconnect(connectionId)
     this.tunnels.close(connectionId)
+    // Persist user intent: stay down until explicit Connect.
+    this.connections.updateKnown(connectionId, { desired: false })
     const previous = this.lastStatus.get(connectionId)
     const snapshot: SupervisorSnapshot = {
       environmentId: previous?.environmentId ?? '',
@@ -2480,6 +2623,9 @@ export class EnvironmentHost {
   private publishStatus(snapshot: SupervisorSnapshot): void {
     this.lastStatus.set(snapshot.connectionId, snapshot)
     if (snapshot.state === 'connected') {
+      // Supervisor-only recovery (backoff / wake) never goes through host.connect;
+      // attach Host Action here so remote tools work without a manual Connect.
+      this.startHostActionConsumer(snapshot.connectionId)
       void this.loadRemoteProjects(snapshot.connectionId, snapshot.generation).catch(() => {})
     } else {
       this.remoteProjectCache.delete(snapshot.connectionId)
@@ -2655,4 +2801,22 @@ export function gatewayForProject(ref: ProjectRef): EnvironmentGateway {
   const gw = host.getGateway(ref.environmentId)
   if (!gw) throw new Error(`unknown environment ${ref.environmentId}`)
   return gw
+}
+
+/** Run async work over items with a fixed concurrency limit. */
+async function mapPool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return
+  let next = 0
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next
+      next += 1
+      await worker(items[i]!)
+    }
+  })
+  await Promise.all(runners)
 }

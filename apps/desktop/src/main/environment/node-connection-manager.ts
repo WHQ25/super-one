@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { ExecutionEnvironmentDescriptor, KnownEnvironment } from '@superone/shared/environment'
-import { ConnectionSupervisor, type SupervisorSnapshot } from './connection-supervisor'
+import {
+  ConnectionSupervisor,
+  type RetryNowDisposition,
+  type SupervisorSnapshot,
+  type SupervisorWakeReason,
+} from './connection-supervisor'
 import {
   generateDeviceKeyPair,
   mintWsTicket,
@@ -26,9 +31,9 @@ export interface NodeConnectionManagerOptions {
   deleteKnownEnvironment?: (connectionId: string) => void
   onSupervisorState?: (snapshot: SupervisorSnapshot) => void
   /**
-   * Rebuild endpoint plumbing (e.g. SSH local forward) for automatic retries.
-   * Called only on supervisor attempts after the first so bootstrap tunnels
-   * adopted during pairing are not raced by a second ensure().
+   * Rebuild endpoint plumbing (e.g. SSH local forward) during supervised dials.
+   * Pairing skips this on the first attempt only; reconnect/startup uses it from
+   * attempt 1 so ephemeral loopback URLs are never reused blindly.
    */
   resolveReconnectBaseUrl?: (
     known: Readonly<KnownEnvironmentRecord>,
@@ -152,6 +157,7 @@ export class NodeConnectionManager {
         },
       ],
       preferredEndpointId: 'primary',
+      desired: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       baseUrl: credential.baseUrl,
@@ -159,7 +165,11 @@ export class NodeConnectionManager {
     this.known.set(connectionId, known)
     this.opts.saveKnownEnvironment?.(known)
 
-    const descriptor = await this.connectWithCredential(credential)
+    // Pairing already has an adopted/fresh baseUrl — skip resolver on the first
+    // dial so bootstrap adopt() is not raced by a second tunnels.ensure().
+    const descriptor = await this.connectWithCredential(credential, {
+      resolveEndpointFromFirstAttempt: false,
+    })
     return {
       connectionId,
       descriptor,
@@ -171,11 +181,45 @@ export class NodeConnectionManager {
   async connectExisting(connectionId: string, baseUrl?: string): Promise<ExecutionEnvironmentDescriptor> {
     const credential = this.opts.credentialStore.get(connectionId)
     if (!credential) throw new Error(`no credentials for connection ${connectionId}`)
+    // Persist desired *before* dial so a failed endpoint prep still auto-recovers.
+    this.updateKnown(connectionId, { desired: true })
     if (baseUrl) {
       credential.baseUrl = baseUrl.replace(/\/$/, '')
       this.opts.credentialStore.save(credential)
     }
-    return this.connectWithCredential(credential)
+    // Existing connections must rebuild tunnels/endpoints under the supervisor so
+    // a temporary SSH failure leaves a live backoff owner (not a silent available).
+    return this.connectWithCredential(credential, {
+      resolveEndpointFromFirstAttempt: true,
+    })
+  }
+
+  /** Known environments that should be kept connected (legacy omit => desired). */
+  listDesiredConnectionIds(): string[] {
+    return this.listKnown()
+      .filter((k) => k.desired !== false)
+      .filter((k) => this.opts.credentialStore.get(k.connectionId) != null)
+      .map((k) => k.connectionId)
+  }
+
+  /** Wake all live supervisors (resume / network online). */
+  async wakeLiveConnections(reason: SupervisorWakeReason): Promise<void> {
+    const lives = [...this.lives.values()]
+    await Promise.all(
+      lives.map(async (live) => {
+        try {
+          await live.supervisor.wake(reason)
+        } catch {
+          /* per-connection isolation */
+        }
+      }),
+    )
+  }
+
+  async retryNow(connectionId: string): Promise<RetryNowDisposition> {
+    const live = this.lives.get(connectionId)
+    if (!live) return 'disposed'
+    return live.supervisor.retryNow()
   }
 
   disconnect(connectionId: string): void {
@@ -223,7 +267,10 @@ export class NodeConnectionManager {
     return this.lives.get(connectionId)?.credentialPersistError
   }
 
-  private async connectWithCredential(credential: NodeDeviceCredential): Promise<ExecutionEnvironmentDescriptor> {
+  private async connectWithCredential(
+    credential: NodeDeviceCredential,
+    options?: { resolveEndpointFromFirstAttempt?: boolean },
+  ): Promise<ExecutionEnvironmentDescriptor> {
     this.disconnect(credential.connectionId)
 
     let accessToken = ''
@@ -325,9 +372,10 @@ export class NodeConnectionManager {
       return refreshInFlight
     }
 
-    // First supervisor attempt uses the caller-supplied baseUrl (bootstrap may
-    // already have adopted an SSH forward). Subsequent retries rebuild via host.
-    let initialAttempt = true
+    // When false (pairing), first dial uses credential.baseUrl as-is so bootstrap
+    // tunnels are not raced. When true (reconnect/startup), every attempt including
+    // the first goes through resolveReconnectBaseUrl under the supervisor.
+    let skipResolverOnce = options?.resolveEndpointFromFirstAttempt !== true
 
     const client = new NodeRpcClient({
       baseUrl: credential.baseUrl,
@@ -368,15 +416,16 @@ export class NodeConnectionManager {
     const supervisor = new ConnectionSupervisor({
       environmentId: credential.environmentId,
       connectionId: credential.connectionId,
+      stableAfterMs: 30_000,
       connect: async () => {
-        if (!initialAttempt && this.opts.resolveReconnectBaseUrl) {
+        if (!skipResolverOnce && this.opts.resolveReconnectBaseUrl) {
           const known = this.known.get(credential.connectionId)
           if (known) {
             const resolved = await this.opts.resolveReconnectBaseUrl(known)
             if (resolved) applyBaseUrl(resolved)
           }
         }
-        initialAttempt = false
+        skipResolverOnce = false
         // Probe unauthenticated health first so clone/regenerate surfaces as
         // identity_conflict before auth errors obscure the root cause.
         await assertNodeIdentity(credential.baseUrl, {
@@ -394,6 +443,9 @@ export class NodeConnectionManager {
         } catch {
           return false
         }
+      },
+      invalidateTransport: (reason) => {
+        client.invalidateTransport(reason)
       },
       onStateChange: (snap) => this.opts.onSupervisorState?.(snap),
     })

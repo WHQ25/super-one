@@ -53,6 +53,12 @@ export interface KnownEnvironment {
   endpointProfiles: EndpointProfile[]
   preferredEndpointId?: string
   installationProfile?: InstallationProfile
+  /**
+   * Whether the desktop should keep this connection up automatically.
+   * - `true` / omitted (legacy migration): auto-connect on startup and wake
+   * - `false`: user explicitly disconnected; stay down until Connect
+   */
+  desired?: boolean
   /** Client-local presentation only. */
   createdAt: number
   updatedAt: number

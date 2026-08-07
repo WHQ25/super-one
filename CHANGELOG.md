@@ -4,6 +4,29 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.3-alpha] - 2026-08-07
+
+### Added
+
+- Mermaid diagram themes (per light/dark) with live previews in Appearance and config confirm.
+- Add Project: path browse/clone UX polish, GitHub “your repos” list with infinite scroll, and path-entry autocomplete behavior.
+- Require an explicit click to download updates (auto-check still runs; download starts from the Update button).
+
+### Fixed
+
+- Scope prompt shortcuts and permission autofocus to the focused mosaic chat pane.
+- Unblock config confirm apply for OpenCode/ACP and related harnesses.
+- Stop mermaid theme preview reflow when switching themes in the confirm dialog.
+- Keep slash command names single-line in the popup (hints truncate instead of wrapping the name).
+- Stop Grok workflows completing early when subagents finish; surface result summaries.
+- Align mention chips with body text baseline.
+- Count only visible process segments for the compact Detail badge and collapse threshold.
+- Enable third-party providers and live models in the collab model picker.
+
+### Performance
+
+- Scan installed apps asynchronously for @ mentions so the first Computer Use @ does not block the main process.
+
 ## [0.50.2-alpha] - 2026-08-07
 
 ### Fixed

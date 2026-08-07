@@ -88,14 +88,59 @@ vi.mock('@superone/ui/components/ui/scroll-area', () => ({
 
 vi.mock('./ChatInput', () => ({ ChatInput: () => <div data-testid="chat-input" /> }))
 vi.mock('./ChatStatusBar', () => ({ ChatStatusBar: () => <div data-testid="chat-status-bar" /> }))
-vi.mock('./ChatMessage', () => ({
-  ChatMessage: () => <div data-testid="chat-message" />,
-  CompactingIndicator: () => <div data-testid="compacting" />,
-  CompactIndicator: () => <div data-testid="compact" />,
-  RateLimitIndicator: () => <div data-testid="rate-limit" />,
-  ApiRetryIndicator: () => <div data-testid="api-retry" />,
-  ModelFallbackIndicator: () => <div data-testid="model-fallback" />,
-  parseCompactMarker: () => null,
+vi.mock('./ChatMessage', async () => {
+  const { useWorkflowNavigation } = await import('./workflow-navigation-context')
+  const { useSubagentNavigation } = await import('./subagent-navigation-context')
+  const { useForkNavigation } = await import('./fork-navigation-context')
+  return {
+    ChatMessage: () => {
+      const workflowNav = useWorkflowNavigation()
+      const subagentNav = useSubagentNavigation()
+      const forkNav = useForkNavigation()
+      return (
+        <div data-testid="chat-message">
+          <button
+            type="button"
+            data-testid="open-workflow"
+            onClick={() => workflowNav.open({ toolUseId: 'wf-1', name: 'demo-workflow' })}
+          >
+            open workflow
+          </button>
+          <button
+            type="button"
+            data-testid="open-subagent"
+            onClick={() => subagentNav.open({ toolUseId: 'sa-1' })}
+          >
+            open subagent
+          </button>
+          <button
+            type="button"
+            data-testid="open-fork"
+            onClick={() => forkNav.open({ collabId: 'c1', threadId: 't1' })}
+          >
+            open fork
+          </button>
+        </div>
+      )
+    },
+    CompactingIndicator: () => <div data-testid="compacting" />,
+    CompactIndicator: () => <div data-testid="compact" />,
+    RateLimitIndicator: () => <div data-testid="rate-limit" />,
+    ApiRetryIndicator: () => <div data-testid="api-retry" />,
+    ModelFallbackIndicator: () => <div data-testid="model-fallback" />,
+    parseCompactMarker: () => null,
+  }
+})
+vi.mock('./WorkflowFullView', () => ({
+  WorkflowFullView: ({ view }: { view: { name: string } }) => (
+    <div data-testid="workflow-full-view">{view.name}</div>
+  ),
+}))
+vi.mock('./SubagentFullView', () => ({
+  SubagentFullView: () => <div data-testid="subagent-full-view" />,
+}))
+vi.mock('./ForkedThreadView', () => ({
+  ForkedThreadView: () => <div data-testid="forked-thread-view" />,
 }))
 vi.mock('./ChatSuggestions', () => ({ ChatSuggestions: () => <div data-testid="chat-suggestions" /> }))
 vi.mock('./PermissionPrompt', () => ({ PermissionPrompt: () => <div data-testid="permission-prompt" /> }))
@@ -289,6 +334,108 @@ describe('ChatContent scroll-area key follows the pane-displayed session (mosaic
     rerender(<ChatContent scrollViewportRef={ref} />)
 
     expect(hoisted.scrollMounts.count).toBe(mountsAfterFirst + 1)
+  })
+})
+
+describe('ChatContent closes full-screen overlays on session switch', () => {
+  function prepareSession(id: string) {
+    hoisted.scope.value = null
+    hoisted.sessionState._activeSessionId = id
+    hoisted.sessionState.session = { sessionId: id }
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.messages = [{ id: 'm1' }]
+    hoisted.sessionState.pendingPlanApproval = null
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.isRemoteLocked.value = false
+  }
+
+  it('dismisses workflow full view when the displayed session changes', async () => {
+    prepareSession('sid-1')
+
+    const ref = createRef<HTMLDivElement>()
+    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+
+    await act(async () => {
+      screen.getByTestId('open-workflow').click()
+    })
+    // lazy() + Suspense — wait for the mocked WorkflowFullView to appear
+    expect(await screen.findByTestId('workflow-full-view')).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-message')).toBeNull()
+
+    hoisted.sessionState._activeSessionId = 'sid-2'
+    hoisted.sessionState.session = { sessionId: 'sid-2' }
+    rerender(<ChatContent scrollViewportRef={ref} />)
+
+    expect(screen.queryByTestId('workflow-full-view')).toBeNull()
+    expect(screen.getByTestId('chat-message')).toBeInTheDocument()
+  })
+
+  it('dismisses subagent and fork full views when the displayed session changes', async () => {
+    prepareSession('sid-1')
+    const ref = createRef<HTMLDivElement>()
+    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+
+    await act(async () => {
+      screen.getByTestId('open-subagent').click()
+    })
+    expect(screen.getByTestId('subagent-full-view')).toBeInTheDocument()
+
+    hoisted.sessionState._activeSessionId = 'sid-2'
+    hoisted.sessionState.session = { sessionId: 'sid-2' }
+    rerender(<ChatContent scrollViewportRef={ref} />)
+    expect(screen.queryByTestId('subagent-full-view')).toBeNull()
+    expect(screen.getByTestId('chat-message')).toBeInTheDocument()
+
+    await act(async () => {
+      screen.getByTestId('open-fork').click()
+    })
+    expect(screen.getByTestId('forked-thread-view')).toBeInTheDocument()
+
+    hoisted.sessionState._activeSessionId = 'sid-3'
+    hoisted.sessionState.session = { sessionId: 'sid-3' }
+    rerender(<ChatContent scrollViewportRef={ref} />)
+    expect(screen.queryByTestId('forked-thread-view')).toBeNull()
+    expect(screen.getByTestId('chat-message')).toBeInTheDocument()
+  })
+
+  it('does not clear overlays when only the project-active session changes under mosaic scope', async () => {
+    prepareSession('sid-1')
+    hoisted.scope.value = { projectPath: '/p', sessionId: 'sid-1' }
+
+    const ref = createRef<HTMLDivElement>()
+    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+
+    await act(async () => {
+      screen.getByTestId('open-workflow').click()
+    })
+    expect(await screen.findByTestId('workflow-full-view')).toBeInTheDocument()
+
+    // Focusing another pane flips project-level active session; this pane stays on sid-1.
+    hoisted.sessionState._activeSessionId = 'sid-2'
+    rerender(<ChatContent scrollViewportRef={ref} />)
+
+    expect(screen.getByTestId('workflow-full-view')).toBeInTheDocument()
+  })
+
+  it('allows reopening workflow after a session-switch dismiss', async () => {
+    prepareSession('sid-1')
+    const ref = createRef<HTMLDivElement>()
+    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+
+    await act(async () => {
+      screen.getByTestId('open-workflow').click()
+    })
+    expect(await screen.findByTestId('workflow-full-view')).toBeInTheDocument()
+
+    hoisted.sessionState._activeSessionId = 'sid-2'
+    hoisted.sessionState.session = { sessionId: 'sid-2' }
+    rerender(<ChatContent scrollViewportRef={ref} />)
+    expect(screen.queryByTestId('workflow-full-view')).toBeNull()
+
+    await act(async () => {
+      screen.getByTestId('open-workflow').click()
+    })
+    expect(await screen.findByTestId('workflow-full-view')).toBeInTheDocument()
   })
 })
 

@@ -450,6 +450,18 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     close: () => setWorkflowView(null),
   }), [workflowView])
 
+  // Full-screen overlays are local UI state; ChatContent stays mounted across
+  // session switches. Adjust during render (React "store info from previous
+  // renders" pattern) so the old overlay never paints over the new session.
+  const [overlaySessionId, setOverlaySessionId] = useState(displayedSessionId)
+  if (displayedSessionId !== overlaySessionId) {
+    setOverlaySessionId(displayedSessionId)
+    setWorkflowView(null)
+    setSubagentView(null)
+    setFork(null)
+    setFullscreenPlan(null)
+  }
+
   return (
     <WorkflowNavigationContext.Provider value={workflowNav}>
     <SubagentNavigationContext.Provider value={subagentNav}>

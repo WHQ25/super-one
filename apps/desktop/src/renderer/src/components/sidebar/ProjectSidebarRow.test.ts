@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
-import { groupSidebarSessions } from './ProjectSidebarRow'
+import { groupSidebarSessions, visibleChildSessions } from './ProjectSidebarRow'
 
 function session(sessionId: string, parentSessionId?: string): SessionHistoryEntry {
   return {
@@ -27,5 +27,30 @@ describe('groupSidebarSessions', () => {
 
   it('keeps an orphaned child visible when its parent is outside the loaded page', () => {
     expect(groupSidebarSessions([session('child', 'missing')])[0].parent.sessionId).toBe('child')
+  })
+})
+
+describe('visibleChildSessions', () => {
+  const children = [session('live', 'parent'), session('idle', 'parent'), session('unseen', 'parent')]
+  const liveIds = new Set(['live', 'unseen'])
+  const isLive = (s: SessionHistoryEntry) => liveIds.has(s.sessionId)
+
+  it('shows every child when the parent list is expanded', () => {
+    expect(visibleChildSessions(children, true, isLive).map((c) => c.sessionId)).toEqual([
+      'live',
+      'idle',
+      'unseen',
+    ])
+  })
+
+  it('keeps only live/unseen children when the parent list is collapsed', () => {
+    expect(visibleChildSessions(children, false, isLive).map((c) => c.sessionId)).toEqual([
+      'live',
+      'unseen',
+    ])
+  })
+
+  it('hides all children when collapsed and none are live', () => {
+    expect(visibleChildSessions([session('idle', 'parent')], false, () => false)).toEqual([])
   })
 })

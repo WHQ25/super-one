@@ -74,16 +74,19 @@ export const SessionRow = memo(function SessionRow({
   const remoteSessionIds = useChatStore((s) => s.remoteSessions[folderPath] ?? EMPTY_REMOTE_SESSION_IDS)
   // Deliberately does NOT select `lastEventAt` — it changes on every content
   // delta, and the only consumer (SessionStatusSpinner) reads it lazily.
-  const { activeSid, status, isUnseen, pendingReason } = useChatStore(useShallow((s) => {
+  const { activeSid, status, isUnseen, pendingPermissions, pendingQuestion, pendingPlanApproval } = useChatStore(useShallow((s) => {
     const proj = s.projectSessions[folderPath]
     const entry = proj?._sessions?.[session.sessionId]
     return {
       activeSid: proj?._activeSessionId ?? null,
       status: entry?.status,
       isUnseen: proj?.unseenCompletedSessions?.has(session.sessionId) ?? false,
-      pendingReason: getPendingReason(entry?.pendingPermissions, entry?.pendingQuestion, entry?.pendingPlanApproval),
+      pendingPermissions: entry?.pendingPermissions,
+      pendingQuestion: entry?.pendingQuestion,
+      pendingPlanApproval: entry?.pendingPlanApproval,
     }
   }))
+  const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval, t)
 
   const isProjectActive = hasRealProject && folderPath === currentFolder
   const isRunning = status === 'streaming'

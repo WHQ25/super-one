@@ -1,5 +1,6 @@
 import { useRef, useCallback, useEffect, useState, useLayoutEffect, memo } from 'react'
 import { motion, useMotionValue, animate } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 import { useChatStore, useActiveSession, extractSessionTitle } from '@/stores/chat'
 import { ChevronDown, Plus } from 'lucide-react'
 import { ChatContent } from './ChatContent'
@@ -98,6 +99,7 @@ function createDragCapture(cursor: string) {
 }
 
 export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchorBoundaryRef: React.RefObject<HTMLElement | null> }) {
+  const { t } = useTranslation()
   const isOpen = useChatStore((s) => s.isOpen)
   const corner = useChatStore((s) => s.corner) as Anchor
   const setCorner = useChatStore((s) => s.setCorner)
@@ -117,7 +119,7 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
   const resetSession = useChatStore((s) => s.resetSession)
 
   const isRunning = sessionStatus === 'streaming' || sessionStatus === 'background'
-  const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval)
+  const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval, t)
 
   // Clear unseen flag when user opens panel
   useEffect(() => {

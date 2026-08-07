@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 import { Bot, Loader2, MessageSquare, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
 import { useCtrlTabSwitcher } from '@/hooks/useCtrlTabSwitcher'
-import { getPendingReason, isLiveSession, resolveSessionTitle } from '@/components/sidebar/session-state-utils'
+import { getPendingReason, isLiveSession, resolveSessionTitle, type PendingReasonT } from '@/components/sidebar/session-state-utils'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
@@ -150,7 +151,7 @@ export function collectAllActiveRows(input: CollectActiveRowsInput): ActiveRow[]
   return rows
 }
 
-function toSwitcherRow(row: ActiveRow): SwitcherRow {
+function toSwitcherRow(row: ActiveRow, t: PendingReasonT): SwitcherRow {
   return {
     projectPath: row.projectPath,
     sessionId: row.sessionId,
@@ -169,6 +170,7 @@ function toSwitcherRow(row: ActiveRow): SwitcherRow {
       row.liveSession.pendingPermissions,
       row.liveSession.pendingQuestion,
       row.liveSession.pendingPlanApproval,
+      t,
     ),
   }
 }
@@ -190,6 +192,7 @@ function collectFromState(state: ReturnType<typeof useChatStore.getState>): Acti
 }
 
 export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
+  const { t } = useTranslation()
   const frozenOrderRef = useRef<FrozenKey[] | null>(null)
 
   const getItems = useCallback((): { count: number; currentIndex: number } | null => {
@@ -245,7 +248,10 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
     }
     return ordered
   }, [isOpen, projectSessions, remoteSessions, activeProject, previousFocusedSession, agentTitles])
-  const viewRows = useMemo<SwitcherRow[]>(() => internalRows.map(toSwitcherRow), [internalRows])
+  const viewRows = useMemo<SwitcherRow[]>(
+    () => internalRows.map((row) => toSwitcherRow(row, t)),
+    [internalRows, t],
+  )
 
   return <SessionSwitcherView rows={viewRows} selectedIndex={selectedIndex} isOpen={isOpen} />
 }

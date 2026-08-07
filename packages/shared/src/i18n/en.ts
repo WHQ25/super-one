@@ -131,6 +131,25 @@ export type Messages = {
     renameSession: {
       title: string
     }
+    /** One-line chips under session titles (sidebar / switcher / collapsed panel). */
+    pending: {
+      allowTool: string
+      allowApp: string
+      allowComputerUse: string
+      approveVideoGen: string
+      confirmNamed: string
+      confirmSettings: string
+      confirmConfig: string
+      waitingInput: string
+      reviewPlan: string
+      collabFallback: string
+      collabOne: string
+      collabOneWithRole: string
+      collabTwo: string
+      collabMany: string
+      agentLaunch: string
+      toolFallback: string
+    }
     contextMenu: {
       sessionHistory: string
       removeProject: string
@@ -2380,6 +2399,24 @@ export const en: Messages = {
     },
     renameSession: {
       title: 'Rename Session',
+    },
+    pending: {
+      allowTool: 'Allow {{tool}}?',
+      allowApp: 'Allow {{app}}?',
+      allowComputerUse: 'Allow computer use?',
+      approveVideoGen: 'Approve video generation?',
+      confirmNamed: 'Confirm {{name}}?',
+      confirmSettings: 'Confirm {{count}} settings?',
+      confirmConfig: 'Confirm config change?',
+      waitingInput: 'Waiting for input',
+      reviewPlan: 'Review plan',
+      collabFallback: 'Approve agent launch?',
+      collabOne: 'Launch {{name}}?',
+      collabOneWithRole: 'Launch {{name}} · {{role}}?',
+      collabTwo: 'Launch {{a}} + {{b}}?',
+      collabMany: 'Launch {{count}} agents?',
+      agentLaunch: 'agent launch',
+      toolFallback: 'tool',
     },
     contextMenu: {
       sessionHistory: 'Session History',

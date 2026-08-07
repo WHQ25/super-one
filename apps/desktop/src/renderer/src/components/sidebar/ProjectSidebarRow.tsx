@@ -68,6 +68,20 @@ export function groupSidebarSessions(sessions: SessionHistoryEntry[]): SidebarSe
     .map((parent) => ({ parent, children: children.get(parent.sessionId) ?? [] }))
 }
 
+/**
+ * Mirrors project-list collapse: when the parent's child list is collapsed,
+ * still surface live/unseen children (streaming, pending, unseen, …).
+ * Expanded lists show every child.
+ */
+export function visibleChildSessions(
+  children: SessionHistoryEntry[],
+  childrenExpanded: boolean,
+  isLive: (session: SessionHistoryEntry) => boolean,
+): SessionHistoryEntry[] {
+  if (childrenExpanded) return children
+  return children.filter(isLive)
+}
+
 interface ProjectSidebarRowProps extends SessionRowCallbacks {
   folder: RecentFolder
   isExpanded: boolean
@@ -122,11 +136,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   const INITIAL_EXPAND_LEVEL = 6
   const [expandLevel, setExpandLevel] = useState<number>(INITIAL_EXPAND_LEVEL)
   const [historyMode, setHistoryMode] = useState(false)
-  /** Parent session ids whose collab children are collapsed in the sidebar. */
-  const [collapsedChildrenIds, setCollapsedChildrenIds] = useState<Set<string>>(() => new Set())
+  /** Parent session ids whose collab child list is fully expanded. Default: collapsed. */
+  const [expandedChildrenIds, setExpandedChildrenIds] = useState<Set<string>>(() => new Set())
 
-  const toggleChildrenCollapsed = useCallback((sessionId: string) => {
-    setCollapsedChildrenIds((prev) => {
+  const toggleChildrenExpanded = useCallback((sessionId: string) => {
+    setExpandedChildrenIds((prev) => {
       const next = new Set(prev)
       if (next.has(sessionId)) next.delete(sessionId)
       else next.add(sessionId)
@@ -199,6 +213,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       totalCount: groups.length,
       hasMoreThanInitial: groups.length > expandLevel,
       hasOverflow: groups.length > maxSessions,
+      isLive,
     }
   }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel])
 
@@ -402,7 +417,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             ) : (
               derived.groupsToShow.map(({ parent, children }) => {
                 const hasChildren = children.length > 0
-                const childrenCollapsed = hasChildren && collapsedChildrenIds.has(parent.sessionId)
+                const childrenExpanded = hasChildren && expandedChildrenIds.has(parent.sessionId)
+                const childrenCollapsed = hasChildren && !childrenExpanded
+                const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isLive)
                 return (
                 <div key={parent.sessionId}>
                   <SessionRow
@@ -410,14 +427,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     folderPath={folder.path}
                     hasChildren={hasChildren}
                     childrenCollapsed={childrenCollapsed}
-                    onToggleChildren={hasChildren ? () => toggleChildrenCollapsed(parent.sessionId) : undefined}
+                    onToggleChildren={hasChildren ? () => toggleChildrenExpanded(parent.sessionId) : undefined}
                     onSwitchSession={onSwitchSession}
                     onPinSession={onPinSession}
                     onHideSession={onHideSession}
                     onRenameSession={onRenameSession}
                     onDeleteSession={onDeleteSession}
                   />
-                  {!childrenCollapsed && children.map((child) => (
+                  {childrenToShow.map((child) => (
                     <SessionRow
                       key={child.sessionId}
                       session={child}

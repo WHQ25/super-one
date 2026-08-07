@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.6-alpha] - 2026-08-08
+
+### Added
+
+- Environment: auto-connect desired remotes on startup, wake on app resume / network-online, and complete local-parity recovery (identity-safe re-pair, HTTP readiness before SSH tunnel reuse, offline supervisor phase, structured connection logs).
+- Environment: paginate session lists through the unified environment API with slim metadata (local + remote) so sidebar loads stay fast and complete.
+- Chat: always expose Claude Auto Mode in the permission cycle; stop blocking auto by plan, provider, or model (Anthropic enables Auto for Pro/Max/Team; remote nodes lack subscription metadata).
+- Sidebar: collab parent rows default to a collapsed child list while still peaking live/unseen sessions; localize pending-reason chips and summarize collab launches by agent name.
+- ACP / Grok: surface turn summary and session recap (auto recap on per-session foreground); prefer Grok child `chat_history` for subagent tool rows; collab docs default read-only review to a shared checkout without worktrees.
+
+### Fixed
+
+- Environment: auto-recover remote nodes after restart (supervisor owns dial/backoff; rebuild SSH tunnels with process liveness and ServerAlive keepalive).
+- Environment: preserve offline wake edges and dial generation so in-flight dials cannot re-enter connected or schedule backoff incorrectly.
+- ACP: tail remote Grok child `chat_history` transcripts via workspace.tailWatch so subagent cards no longer stay empty under `~/.grok/sessions`.
+
 ## [0.50.5-alpha] - 2026-08-07
 
 ### Added

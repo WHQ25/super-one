@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import { existsSync, statSync } from 'fs'
+import { homedir } from 'os'
 import { resolve, sep } from 'path'
 import type {
   EffortLevel,
@@ -20,7 +21,7 @@ import {
   selectEndpoint,
   type Credential,
 } from '@superone/shared/platform-registry'
-import { activateWorktree } from '../git/worktree-ops'
+import { activateWorktree, resolveMainWorktreeDir } from '../git/worktree-ops'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { readAppSettings } from '../app-settings-service'
 import { decryptSecret, encryptSecret } from '../crypto/secret-store'
@@ -630,7 +631,14 @@ function resolveCwd(config: SessionAgentLaunchConfig, parent: Session): string {
 
 function isWithin(root: string, target: string): boolean {
   const normalizedRoot = resolve(root)
-  return target === normalizedRoot || target.startsWith(normalizedRoot + sep)
+  const normalizedTarget = resolve(target)
+  return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(normalizedRoot + sep)
+}
+
+/** SuperOne places collab/agent worktrees under `~/.worktrees/<repo>/…`. */
+function isManagedWorktreePath(dir: string): boolean {
+  const managedRoot = resolve(homedir(), '.worktrees')
+  return isWithin(managedRoot, dir)
 }
 
 /**
@@ -639,26 +647,52 @@ function isWithin(root: string, target: string): boolean {
  * right sidebar entry instead of hiding under the parent's. Nested projects
  * resolve to the most specific match.
  *
+ * Ownership is checked against the requested cwd *and* its git main checkout
+ * when the cwd is a worktree: collab defaults `cwd` to `parent.cwd`, so a parent
+ * already working in `~/.worktrees/…` would otherwise look unowned and get
+ * registered as its own sidebar project.
+ *
+ * Call with the *requested* cwd, before worktree activation — a freshly cut
+ * worktree lives outside every project but belongs to the project it was cut
+ * from.
+ *
  * When no open project covers the directory, register it as one: a session row
  * requires a `projects` row, and filing the child under the parent instead would
- * put it in a project that has nothing to do with where it works.
- *
- * Call with the *requested* cwd, before worktree activation — a worktree lives
- * outside every project but belongs to the project it was cut from, so resolving
- * after activation would register `~/.worktrees/...` as its own project.
+ * put it in a project that has nothing to do with where it works. Never register
+ * a SuperOne-managed worktree path — those always belong to an existing project
+ * (or, failing that, the parent).
  */
-function ensureChildProject(cwd: string, parentProjectPath: string): string {
-  let owner: string | null = isWithin(parentProjectPath, cwd) ? parentProjectPath : null
-  let ownerDepth = owner ? resolve(owner).length : -1
-  for (const project of getRecentFolders()) {
-    if (project.missing || !isWithin(project.path, cwd)) continue
-    const depth = resolve(project.path).length
+async function ensureChildProject(cwd: string, parentProjectPath: string): Promise<string> {
+  const candidates = [resolve(cwd)]
+  try {
+    const mainDir = resolve(await resolveMainWorktreeDir(cwd))
+    if (mainDir !== candidates[0]) candidates.push(mainDir)
+  } catch {
+    // Not a git worktree / not a repo — path-prefix ownership is enough.
+  }
+
+  let owner: string | null = null
+  let ownerDepth = -1
+  const consider = (projectPath: string, candidate: string) => {
+    if (!isWithin(projectPath, candidate)) return
+    const depth = resolve(projectPath).length
     if (depth > ownerDepth) {
-      owner = project.path
+      owner = projectPath
       ownerDepth = depth
     }
   }
+  for (const candidate of candidates) {
+    consider(parentProjectPath, candidate)
+    for (const project of getRecentFolders()) {
+      if (project.missing) continue
+      consider(project.path, candidate)
+    }
+  }
   if (owner) return owner
+
+  // Worktrees under ~/.worktrees are never user-opened projects. Keep the parent.
+  if (isManagedWorktreePath(cwd)) return parentProjectPath
+
   addRecentFolder(cwd)
   return cwd
 }
@@ -807,7 +841,9 @@ export async function startSessionAgent(
   if (!parent) return toolResult({ status: 'error', message: 'Parent session is not available' }, true)
   const config = parseConfig(grant.config_json)
   let cwd = resolveCwd(config, parent)
-  const projectPath = ensureChildProject(cwd, parent.projectPath)
+  // Attribute before worktree activation so the child files under the source
+  // project, not under ~/.worktrees/<new-wt> (see ensureChildProject).
+  const projectPath = await ensureChildProject(cwd, parent.projectPath)
   let gitBranch: string | null = null
   if (config.worktree?.enabled) {
     const worktree = await activateWorktree(cwd, {

@@ -12,6 +12,11 @@ const state = vi.hoisted(() => ({
   db: null as Database.Database | null,
   enabled: true,
   activateWorktree: vi.fn(),
+  /** path → main checkout; default: identity (cwd is not a worktree). */
+  mainWorktreeByPath: new Map<string, string>(),
+  resolveMainWorktreeDir: vi.fn(async (folderPath: string) => {
+    return state.mainWorktreeByPath.get(folderPath) ?? folderPath
+  }),
   resourceCache: {
     claude: {
       models: [{ id: 'test-model', name: 'Test Model', supportedEffortLevels: ['low', 'high'] }],
@@ -66,6 +71,7 @@ vi.mock('./session-provider-repo', () => ({
 }))
 vi.mock('../git/worktree-ops', () => ({
   activateWorktree: state.activateWorktree,
+  resolveMainWorktreeDir: (folderPath: string) => state.resolveMainWorktreeDir(folderPath),
 }))
 vi.mock('../db-sessions', () => ({
   createSession: (projectPath: string, sessionId: string, title?: string) => {
@@ -146,12 +152,17 @@ function createSchema(db: Database.Database): void {
   `)
 }
 
-function fakeSession(id: string, events: AgentEvent[] = []): Session {
+function fakeSession(
+  id: string,
+  eventsOrOpts: AgentEvent[] | { events?: AgentEvent[]; cwd?: string; projectPath?: string } = [],
+): Session {
+  const opts = Array.isArray(eventsOrOpts) ? { events: eventsOrOpts } : eventsOrOpts
+  const events = opts.events ?? []
   const listeners = new Set<(event: AgentEvent) => void>()
   return {
     id,
-    projectPath: TEST_CWD,
-    cwd: TEST_CWD,
+    projectPath: opts.projectPath ?? TEST_CWD,
+    cwd: opts.cwd ?? TEST_CWD,
     snapshot: { id, providerId: 'claude-base', harnessId: 'claude', status: 'idle' } as never,
     emitHostEvent: vi.fn((event: AgentEvent) => events.push(event)),
     send: vi.fn(async () => {}),
@@ -244,6 +255,8 @@ beforeEach(() => {
     .run('parent', TEST_CWD, 'Parent', 'claude-base')
   state.enabled = true
   state.activateWorktree.mockReset()
+  state.mainWorktreeByPath.clear()
+  state.resolveMainWorktreeDir.mockClear()
   state.resourceCache = {
     claude: {
       models: [
@@ -867,6 +880,58 @@ describe('child session project attribution', () => {
     expect(state.activateWorktree).toHaveBeenCalledWith(OTHER_PROJECT, expect.anything())
     expect(createSession.mock.calls[0][0].projectPath).toBe(OTHER_PROJECT)
     expect(createSession.mock.calls[0][0].cwd).toBe(worktreePath)
+  })
+
+  it('files a child whose cwd is a git worktree under the main project, not as its own project', async () => {
+    // Collab defaults cwd to parent.cwd. When the parent already works in a
+    // SuperOne worktree, that path sits outside every project root and used to
+    // be registered as a sidebar project (tjdllgg-… style folder names).
+    const parentWorktree = mkdtempSync(join(tmpdir(), 'parent-wt-'))
+    state.projects = [{ path: TEST_CWD }]
+    state.mainWorktreeByPath.set(parentWorktree, TEST_CWD)
+    const parent = fakeSession('parent', { cwd: parentWorktree, projectPath: TEST_CWD })
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(parentWorktree, host, parent)
+
+    expect(state.projects).toEqual([{ path: TEST_CWD }])
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    expect(createSession.mock.calls[0][0].cwd).toBe(parentWorktree)
+    rmSync(parentWorktree, { recursive: true, force: true })
+  })
+
+  it('does not register a managed ~/.worktrees path when main-dir lookup fails', async () => {
+    const { homedir } = await import('os')
+    const managedWt = mkdtempSync(join(homedir(), '.worktrees', 'collab-managed-'))
+    state.projects = [{ path: TEST_CWD }]
+    // Simulate a stale / unreadable worktree: no main-dir mapping.
+    const parent = fakeSession('parent', { cwd: managedWt, projectPath: TEST_CWD })
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(managedWt, host, parent)
+
+    expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    rmSync(managedWt, { recursive: true, force: true })
+  })
+
+  it('cuts a child worktree while parent is already in a worktree without registering either', async () => {
+    const parentWorktree = mkdtempSync(join(tmpdir(), 'parent-wt-'))
+    const childWorktree = join(tmpdir(), 'child-wt-fresh')
+    state.projects = [{ path: TEST_CWD }]
+    state.mainWorktreeByPath.set(parentWorktree, TEST_CWD)
+    state.activateWorktree.mockResolvedValue({ ok: true, path: childWorktree, recordedBranch: 'review' })
+    const parent = fakeSession('parent', { cwd: parentWorktree, projectPath: TEST_CWD })
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(parentWorktree, host, parent, {
+      worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'review-g1' },
+    })
+
+    expect(state.projects).toEqual([{ path: TEST_CWD }])
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    expect(createSession.mock.calls[0][0].cwd).toBe(childWorktree)
+    rmSync(parentWorktree, { recursive: true, force: true })
   })
 
   it('restores the active session of the project it actually joined', async () => {

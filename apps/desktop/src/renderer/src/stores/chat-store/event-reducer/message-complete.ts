@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { isSubagentToolName } from '@superone/shared/tool-ui'
 import { getCodexCompletionEventMeta, getCodexContextTokens } from '../helpers/codex-helpers'
 import type { PerSessionState } from '../types'
 import { clearStreamingToolInput } from './shared'
@@ -21,7 +22,7 @@ export function reduceMessageComplete(session: PerSessionState, event: MessageCo
   if (completingMsg) {
     for (const b of completingMsg.content) {
       if (b.type === 'tool_use') {
-        if (b.toolName === 'Agent') agentToolIds.add(b.toolUseId)
+        if (isSubagentToolName(b.toolName)) agentToolIds.add(b.toolUseId)
         // Drop any leftover partial Edit/Write buffers for tools on this message.
         clearStreamingToolInput(b.toolUseId)
         if (nextPreviews[b.toolUseId]) {

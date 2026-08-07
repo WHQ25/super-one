@@ -20,6 +20,52 @@ function emptyTaskProgress(): TaskProgressEntry {
   return { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }
 }
 
+type ToolHistoryEntry = { toolName: string; description: string }
+
+/**
+ * Merge a Grok-style rolling tools_used snapshot into accumulated toolHistory.
+ * Snapshots are ordered recent windows (often with empty descriptions); uniqueness
+ * by toolName alone would collapse legitimate re-uses (read → grep → read).
+ * Match the longest suffix of history that is a prefix of the snapshot, then append
+ * only the unseen suffix so the same tool can reappear after another tool.
+ */
+export function mergeToolEntriesSnapshot(
+  history: ToolHistoryEntry[],
+  snapshot: ToolHistoryEntry[],
+): ToolHistoryEntry[] {
+  if (snapshot.length === 0) return history
+  if (history.length === 0) return [...snapshot]
+
+  let bestK = 0
+  const maxK = Math.min(history.length, snapshot.length)
+  for (let k = maxK; k >= 1; k--) {
+    let match = true
+    for (let i = 0; i < k; i++) {
+      const h = history[history.length - k + i]!
+      const s = snapshot[i]!
+      if (h.toolName !== s.toolName) {
+        match = false
+        break
+      }
+      // Empty description is a Grok wildcard; only compare when both are set.
+      if (h.description && s.description && h.description !== s.description) {
+        match = false
+        break
+      }
+    }
+    if (match) {
+      bestK = k
+      break
+    }
+  }
+  const TOOL_HISTORY_CAP = 50
+  if (bestK === snapshot.length) {
+    return history.length > TOOL_HISTORY_CAP ? history.slice(-TOOL_HISTORY_CAP) : history
+  }
+  const next = [...history, ...snapshot.slice(bestK)]
+  return next.length > TOOL_HISTORY_CAP ? next.slice(-TOOL_HISTORY_CAP) : next
+}
+
 /**
  * Resolve the taskProgress write key.
  *
@@ -247,9 +293,15 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       const write = resolveTaskProgressWrite(session.taskProgress, event.toolUseId, event.taskId)
       if (!write) return {}
       const prev = write.prev
-      const toolHistory = prev?.toolHistory ? [...prev.toolHistory] : []
-      if (prev && prev.description && prev.description !== event.description) {
+      // Grok subagent_progress sends tools_used as toolEntries (rolling snapshot).
+      // Prefer that for activity rows; otherwise accumulate from description transitions
+      // (Claude task_progress style).
+      let toolHistory = prev?.toolHistory ? [...prev.toolHistory] : []
+      if (event.toolEntries?.length) {
+        toolHistory = mergeToolEntriesSnapshot(toolHistory, event.toolEntries)
+      } else if (prev && prev.description && prev.description !== event.description) {
         toolHistory.push({ toolName: prev.lastToolName ?? '', description: prev.description })
+        if (toolHistory.length > 50) toolHistory = toolHistory.slice(-50)
       }
       const progressSummary = event.summary ?? prev?.summary
       const workflowAgents = event.workflowAgents?.length
@@ -388,7 +440,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         msgs = mapMessagesStructural(msgs, (block) => {
           if (
             block.type === 'tool_use'
-            && (block.toolName === 'Agent' || block.toolName === 'Workflow')
+            && (block.toolName === 'Agent' || block.toolName === 'Task' || block.toolName === 'Workflow')
             && block.toolUseId === patchToolId
           ) {
             return { ...block, ...toolPatch }

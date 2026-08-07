@@ -7,6 +7,7 @@ import { diffLines } from 'diff'
 import log from './logger'
 import { ProcessTitle } from './process-titles'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
+import { isSubagentToolName } from '@superone/shared/tool-ui'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
@@ -581,7 +582,7 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
       if (block.type === 'tool_use' && block.toolName.endsWith('__widget_show')) {
         widgetIds.add(block.toolUseId)
       }
-      if (block.type === 'tool_use' && block.toolName === 'Agent') {
+      if (block.type === 'tool_use' && isSubagentToolName(block.toolName)) {
         agentIds.add(block.toolUseId)
       }
       if (block.type === 'tool_use' && block.toolName === 'Workflow') {
@@ -1327,7 +1328,7 @@ export class RemoteControlService {
       if (event.delta.type === 'tool_use' && event.delta.toolName.endsWith('__widget_show')) {
         this.widgetToolIds.add(event.delta.toolUseId)
       }
-      if (event.delta.type === 'tool_use' && event.delta.toolName === 'Agent') {
+      if (event.delta.type === 'tool_use' && isSubagentToolName(event.delta.toolName)) {
         this.agentToolIds.add(event.delta.toolUseId)
       }
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Workflow') {

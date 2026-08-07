@@ -82,13 +82,13 @@ export function mapMessagesStructural(
   return anyMsgChanged ? next : messages
 }
 
-/** Tool names that host progressive task_* events (Agent subagents + Workflow). */
-const TASK_PROGRESS_TOOL_NAMES = new Set(['Agent', 'Workflow'])
+/** Tool names that host progressive task_* events (Agent/Task subagents + Workflow). */
+const TASK_PROGRESS_TOOL_NAMES = new Set(['Agent', 'Task', 'Workflow'])
 
 /**
- * Patch the per-message `tool_use` block whose toolName is 'Agent' and whose
+ * Patch the per-message `tool_use` block whose toolName is Agent/Task/Workflow and whose
  * `toolUseId === tid`. Used by task_progress / task_notification reducers to
- * surface live taskUsage / taskSummary / taskToolHistory on the Agent block.
+ * surface live taskUsage / taskSummary / taskToolHistory on the launch block.
  */
 export function _patchAgentBlock(
   messages: ChatMessage[],

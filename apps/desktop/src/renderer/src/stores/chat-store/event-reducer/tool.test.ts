@@ -347,6 +347,63 @@ describe('reduceTool: task_progress', () => {
     expect(patch.taskProgress?.['task-1'].toolHistory).toEqual([])
   })
 
+  it('merges toolEntries from Grok subagent_progress into toolHistory', () => {
+    const session = createDefaultPerSessionState()
+    session.taskProgress = {
+      'task-1': { description: 'sa1', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] },
+    }
+    const patch = reduceTool(session, {
+      type: 'task_progress',
+      toolUseId: 'task-1',
+      taskId: 'sa1',
+      description: 'grep',
+      lastToolName: 'grep',
+      usage: { totalTokens: 40, toolUses: 2, durationMs: 100 },
+      toolEntries: [
+        { toolName: 'read_file', description: '' },
+        { toolName: 'grep', description: '' },
+      ],
+    } as never)
+    expect(patch.taskProgress?.['task-1'].toolHistory).toEqual([
+      { toolName: 'read_file', description: '' },
+      { toolName: 'grep', description: '' },
+    ])
+  })
+
+  it('allows the same tool to reappear after another tool in Grok toolEntries snapshots', () => {
+    const session = createDefaultPerSessionState()
+    session.taskProgress = {
+      'task-1': {
+        description: 'grep',
+        totalTokens: 10,
+        toolUses: 2,
+        durationMs: 50,
+        toolHistory: [
+          { toolName: 'read_file', description: '' },
+          { toolName: 'grep', description: '' },
+        ],
+      },
+    }
+    const patch = reduceTool(session, {
+      type: 'task_progress',
+      toolUseId: 'task-1',
+      taskId: 'sa1',
+      description: 'read_file',
+      lastToolName: 'read_file',
+      usage: { totalTokens: 40, toolUses: 3, durationMs: 100 },
+      toolEntries: [
+        { toolName: 'read_file', description: '' },
+        { toolName: 'grep', description: '' },
+        { toolName: 'read_file', description: '' },
+      ],
+    } as never)
+    expect(patch.taskProgress?.['task-1'].toolHistory).toEqual([
+      { toolName: 'read_file', description: '' },
+      { toolName: 'grep', description: '' },
+      { toolName: 'read_file', description: '' },
+    ])
+  })
+
   it('is a no-op when both toolUseId and taskId are missing', () => {
     expect(reduceTool(createDefaultPerSessionState(), {
       type: 'task_progress', description: 'x', usage: { totalTokens: 0, toolUses: 0, durationMs: 0 },

@@ -53,6 +53,8 @@ import {
 } from './acp-xai-extensions'
 import {
   XAI_EXT_NOTIFICATION_METHODS,
+  XAI_SESSION_NOTIFICATION,
+  XAI_SESSION_UPDATE,
   createXaiCorrelationState,
   mapXaiStandaloneNotification,
   noteContextTokensFromMeta,
@@ -170,6 +172,31 @@ type AcpAgentWithAttach = {
   }): ActiveSession
 }
 
+/** Content that must land on an assistant bubble (user prompt or agent auto-wake). */
+function isAgentInitiatedContentUpdate(update: { sessionUpdate?: string }): boolean {
+  const kind = update.sessionUpdate
+  return kind === 'agent_message_chunk'
+    || kind === 'agent_thought_chunk'
+    || kind === 'tool_call'
+    || kind === 'tool_call_update'
+    || kind === 'plan'
+}
+
+/**
+ * Grok durable turn terminal (`turn_completed` on the session_notification rail).
+ * Used to close SuperOne assistant bubbles for agent-initiated auto-wake turns.
+ */
+function isXaiTurnCompletedNotification(method: string, params: Record<string, unknown>): boolean {
+  const bare = method.replace(/^_/, '')
+  if (bare !== XAI_SESSION_NOTIFICATION && bare !== XAI_SESSION_UPDATE) return false
+  const update = (params.update && typeof params.update === 'object' && !Array.isArray(params.update))
+    ? params.update as Record<string, unknown>
+    : null
+  if (!update) return false
+  const kind = update.sessionUpdate ?? update.session_update
+  return kind === 'turn_completed'
+}
+
 /** Discard historical session/update events replayed by session/load (UI uses SuperOne DB). */
 async function drainLoadReplay(session: ActiveSession, maxQuietMs = 40, maxEvents = 20_000): Promise<number> {
   let drained = 0
@@ -244,6 +271,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   const xaiCorrelation: XaiCorrelationState = createXaiCorrelationState()
   let xaiDeliver: ((event: AgentEvent) => void) | null = null
   let xaiMessageId: (() => string | null) | null = null
+  /** Late-bound: close agent-initiated auto-wake turns on turn_completed. */
+  const agentWakeCtl = {
+    isPromptActive: () => false,
+    hasOpen: () => false,
+    complete: (_reason: 'complete' | 'interrupted' = 'complete') => {},
+  }
 
   const handleXaiExtNotification = async (
     method: string,
@@ -256,7 +289,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         xaiCorrelation,
         { messageId: xaiMessageId?.() ?? null },
       )
-      if (events.length === 0) return
       log.debug(
         '[acp-runtime] x.ai ext method=%s events=%d',
         method,
@@ -264,6 +296,15 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       )
       for (const event of events) {
         xaiDeliver?.(event)
+      }
+      // Durable turn end for agent-initiated wakes (workflow-completed-*, …).
+      // Grok does not call session/prompt for these — SuperOne must close the bubble.
+      if (
+        isXaiTurnCompletedNotification(method, ctx.params)
+        && !agentWakeCtl.isPromptActive()
+        && agentWakeCtl.hasOpen()
+      ) {
+        agentWakeCtl.complete('complete')
       }
     } catch (err) {
       log.warn('[acp-runtime] x.ai ext handler error method=%s:', method, err)
@@ -585,6 +626,14 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   let openToolIds = new Set<string>()
   let primaryPromptMessageId: string | null = null
   let systemPromptSent = false
+  /**
+   * Grok auto-wake (WorkflowCompleted / TaskCompleted / NotificationDrain) runs a
+   * synthetic turn without SuperOne calling session/prompt. Streamed
+   * agent_message_chunk / tool_call must still open a local assistant bubble.
+   * Completion depends on xAI turn terminal (`turn_completed` / orphan stop) or
+   * the next SuperOne user prompt (which finalizes the wake bubble first).
+   */
+  let agentInitiatedMessageId: string | null = null
 
   const deliver = (event: AgentEvent) => {
     if (event.type === 'acp_commands') {
@@ -598,10 +647,76 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     else opts.onSessionEvent?.(event)
   }
 
+  const startAssistantMessage = (id: string, opts?: { emitStatus?: boolean }) => {
+    deliver({
+      type: 'message_start',
+      message: {
+        id,
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'acp',
+      },
+    })
+    // Mid-prompt multi-message only needs message_start; auto-wake also flips session status.
+    if (opts?.emitStatus !== false) {
+      deliver({ type: 'status_change', status: 'streaming' })
+    }
+    xaiCorrelation.lastMessageId = id
+  }
+
+  const completeAgentInitiated = (
+    reason: 'complete' | 'interrupted' = 'complete',
+    options: { emitIdle?: boolean } = {},
+  ) => {
+    const id = agentInitiatedMessageId
+    if (!id || promptOnEvent) return
+    for (const ev of cancelOpenToolEvents(id, openToolIds)) {
+      deliver(ev)
+    }
+    openToolIds.clear()
+    if (reason === 'interrupted') {
+      deliver({ type: 'message_interrupted', messageId: id })
+    } else {
+      deliver({ type: 'message_complete', messageId: id })
+    }
+    if (options.emitIdle !== false) {
+      deliver({ type: 'status_change', status: 'idle' })
+    }
+    agentInitiatedMessageId = null
+    // Drop agentMid→local maps so late chunks cannot re-home onto a completed bubble.
+    agentMsgToLocal.clear()
+    log.debug('[acp-runtime] completed agent-initiated turn messageId=%s reason=%s', id, reason)
+  }
+
+  const ensureAgentInitiatedMessage = (agentMid: string | null): string => {
+    if (agentMid) {
+      const existing = agentMsgToLocal.get(agentMid)
+      if (existing) {
+        agentInitiatedMessageId = existing
+        return existing
+      }
+    }
+    if (agentInitiatedMessageId) {
+      if (agentMid) agentMsgToLocal.set(agentMid, agentInitiatedMessageId)
+      return agentInitiatedMessageId
+    }
+    const newId = `acp_wake_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+    agentInitiatedMessageId = newId
+    if (agentMid) agentMsgToLocal.set(agentMid, newId)
+    startAssistantMessage(newId)
+    log.debug('[acp-runtime] opened agent-initiated turn messageId=%s agentMid=%s', newId, agentMid)
+    return newId
+  }
+
   // Wire xAI ExtNotification delivery (handlers registered above close over these).
   // progressive events often arrive after session/prompt returns → onSessionEvent path.
   xaiDeliver = deliver
-  xaiMessageId = () => promptMessageId ?? primaryPromptMessageId
+  xaiMessageId = () => promptMessageId ?? primaryPromptMessageId ?? agentInitiatedMessageId
+  agentWakeCtl.isPromptActive = () => !!promptOnEvent
+  agentWakeCtl.hasOpen = () => !!agentInitiatedMessageId
+  agentWakeCtl.complete = completeAgentInitiated
 
   void (async () => {
     while (pumping && !closed) {
@@ -619,7 +734,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         if (message.kind === 'stop') {
           const waiter = promptStopWaiters.shift()
           if (waiter) waiter(String(message.stopReason))
-          else log.debug('[acp-runtime] stop with no active prompt reason=%s', message.stopReason)
+          else {
+            // Agent-initiated turn end (rare stop without SuperOne prompt).
+            log.debug('[acp-runtime] stop with no active prompt reason=%s', message.stopReason)
+            completeAgentInitiated('complete')
+          }
           continue
         }
         const update = message.update
@@ -630,34 +749,32 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         const nextContextTokens = xaiCorrelation.lastUsage?.totalTokens ?? 0
         const contextChanged = nextContextTokens > 0 && nextContextTokens !== prevContextTokens
         trace('acp.session', update.sessionUpdate, update, promptMessageId ?? activeSession.sessionId)
-        let messageId = promptMessageId ?? `acp_session_${activeSession.sessionId}`
+        let messageId = promptMessageId
+          ?? agentInitiatedMessageId
+          ?? `acp_session_${activeSession.sessionId}`
         const agentMid = getAgentChunkMessageId(update)
-        if (agentMid && promptOnEvent) {
-          const existing = agentMsgToLocal.get(agentMid)
-          if (existing) {
-            messageId = existing
-            promptMessageId = existing
-          } else if (agentMsgToLocal.size === 0 && primaryPromptMessageId) {
-            agentMsgToLocal.set(agentMid, primaryPromptMessageId)
-            messageId = primaryPromptMessageId
-            promptMessageId = primaryPromptMessageId
-          } else {
-            const newId = `acp_msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-            agentMsgToLocal.set(agentMid, newId)
-            messageId = newId
-            promptMessageId = newId
-            deliver({
-              type: 'message_start',
-              message: {
-                id: newId,
-                role: 'assistant',
-                status: 'streaming',
-                content: [],
-                createdAt: new Date().toISOString(),
-                providerId: 'acp',
-              },
-            })
+        if (promptOnEvent) {
+          if (agentMid) {
+            const existing = agentMsgToLocal.get(agentMid)
+            if (existing) {
+              messageId = existing
+              promptMessageId = existing
+            } else if (agentMsgToLocal.size === 0 && primaryPromptMessageId) {
+              agentMsgToLocal.set(agentMid, primaryPromptMessageId)
+              messageId = primaryPromptMessageId
+              promptMessageId = primaryPromptMessageId
+            } else {
+              const newId = `acp_msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+              agentMsgToLocal.set(agentMid, newId)
+              messageId = newId
+              promptMessageId = newId
+              // Already streaming under the user prompt — do not re-emit status.
+              startAssistantMessage(newId, { emitStatus: false })
+            }
           }
+        } else if (isAgentInitiatedContentUpdate(update)) {
+          // Workflow / task / notification auto-wake while SuperOne is idle.
+          messageId = ensureAgentInitiatedMessage(agentMid)
         }
         const mapped = mapSessionUpdate(update, { messageId }, {
           resolveTerminalCommand: (id) => terminalManager.getCommandLine(id),
@@ -680,8 +797,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           })
         }
         trackOpenTools(openToolIds, mapped)
-        noteToolCorrelationFromAgentEvents(mapped, xaiCorrelation)
+        const migrate = noteToolCorrelationFromAgentEvents(mapped, xaiCorrelation)
         for (const event of mapped) {
+          deliver(event)
+        }
+        for (const event of migrate) {
           deliver(event)
         }
       } catch (err) {
@@ -690,7 +810,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     }
   })()
-
   const setAcpSessionMode: AcpRuntime['setAcpSessionMode'] = async (modeId) => {
     const id = modeId.trim() || 'default'
     try {
@@ -804,6 +923,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         settled = true
         onEvent({ type: 'message_error', messageId, error })
         onEvent({ type: 'status_change', status: 'error' })
+      }
+
+      // Finish any in-flight agent auto-wake before a user-driven prompt. AcpBackend
+      // has already emitted streaming for the new prompt, so do not overwrite it with idle.
+      if (agentInitiatedMessageId) {
+        completeAgentInitiated('complete', { emitIdle: false })
       }
 
       const gen = ++promptGen

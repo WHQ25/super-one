@@ -15,6 +15,7 @@ import { useAppStore } from '@/stores/app'
 import { ToolIcon } from './ToolIcon'
 import { DraggableFileIcon } from './DraggableFileIcon'
 import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
+import { isWorkflowSmokeCheck } from './workflow-utils'
 import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
@@ -978,7 +979,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
 
   const displayName = mcpInfo
     ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName.replace(/_/g, ' ')}</>
-    : getToolLabel(toolName)
+    : toolName === 'Workflow' && isWorkflowSmokeCheck(params)
+      ? 'Smoke check'
+      : getToolLabel(toolName)
 
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
     const browserOp = getBrowserOp(mcpInfo.mcpToolName)

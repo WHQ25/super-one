@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { ContentBlock } from '@superone/shared/agent-types'
-import { parseJsonlOutput, entriesFromRecords, computeSubagentElapsed, groupSubagentChildren, collectSubagentSubtree, type SubagentChildItem } from './subagent-utils'
+import {
+  parseJsonlOutput,
+  entriesFromRecords,
+  normalizeTranscriptTool,
+  computeSubagentElapsed,
+  groupSubagentChildren,
+  collectSubagentSubtree,
+  parseSubagentIdFromText,
+  looksLikeBackgroundSubagentAck,
+  resolveTaskProgressEntry,
+  type SubagentChildItem,
+} from './subagent-utils'
 
 function line(content: Array<{ type: string; name?: string; text?: string; input?: Record<string, unknown> }>): string {
   return JSON.stringify({ type: 'assistant', message: { content } })
@@ -17,7 +28,12 @@ describe('parseJsonlOutput', () => {
     const { entries, resultText } = parseJsonlOutput(raw)
     expect(entries).toHaveLength(3)
     expect(entries[0]).toEqual({ type: 'activity', text: 'thinking...' })
-    expect(entries[1]).toEqual({ type: 'tool', toolName: 'Read', description: '/a.ts' })
+    expect(entries[1]).toMatchObject({
+      type: 'tool',
+      toolName: 'Read',
+      description: '/a.ts',
+      input: JSON.stringify({ file_path: '/a.ts' }),
+    })
     expect(entries[2]).toEqual({ type: 'activity', text: 'done' })
     expect(resultText).toBe('done')
   })
@@ -29,7 +45,7 @@ describe('parseJsonlOutput', () => {
     ].join('\n')
 
     const { entries } = parseJsonlOutput(raw)
-    expect(entries[0]).toEqual({ type: 'tool', toolName: 'Read', description: '/a.ts' })
+    expect(entries[0]).toMatchObject({ type: 'tool', toolName: 'Read', description: '/a.ts' })
     expect(entries[1]).toEqual({ type: 'structured', data: { verdict: 'CONFIRMED', evidence: 'line 42' } })
   })
 
@@ -94,11 +110,103 @@ describe('parseJsonlOutput', () => {
     const { entries, resultText } = parseJsonlOutput(raw)
     expect(entries).toEqual([
       { type: 'activity', text: 'Scanning session ops' },
-      { type: 'tool', toolName: 'grep', description: 'session in /proj' },
-      { type: 'tool', toolName: 'list_dir', description: '/proj/src' },
+      {
+        type: 'tool',
+        toolName: 'Grep',
+        description: 'session in /proj',
+        toolUseId: 'c1',
+        input: JSON.stringify({ pattern: 'session', path: '/proj' }),
+        result: '…hits…',
+      },
+      {
+        type: 'tool',
+        toolName: 'LS',
+        description: '/proj/src',
+        toolUseId: 'c2',
+        input: JSON.stringify({ target_directory: '/proj/src', path: '/proj/src' }),
+        result: '…dirs…',
+      },
       { type: 'activity', text: 'Found 3 local-only gaps.' },
     ])
     expect(resultText).toBe('Found 3 local-only gaps.')
+  })
+
+  it('unwraps ListDir JSON tool_result envelopes for ToolBlock display', () => {
+    const tree = '- /proj\n  - a.ts\n'
+    const raw = [
+      JSON.stringify({
+        type: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'l1', name: 'list_dir', arguments: { target_directory: '/proj' } },
+        ],
+      }),
+      JSON.stringify({
+        type: 'tool_result',
+        tool_call_id: 'l1',
+        content: JSON.stringify({
+          type: 'ListDir',
+          Content: { content: tree, absolute_root_path: '/proj' },
+        }),
+      }),
+    ].join('\n')
+    const { entries } = parseJsonlOutput(raw)
+    expect(entries[0]).toMatchObject({ type: 'tool', toolName: 'LS', result: tree })
+  })
+
+  it('normalizes Grok read_file / run_terminal_command onto Read / Bash with Claude-shaped input', () => {
+    const raw = [
+      JSON.stringify({
+        type: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'r1', name: 'read_file', arguments: { target_file: '/a.ts', offset: 10, limit: 20 } },
+          { id: 'b1', name: 'run_terminal_command', arguments: { command: 'ls', description: 'list' } },
+          { id: 'u1', name: 'use_tool', arguments: { tool_name: 'superone__session_rename', tool_input: { title: 'x' } } },
+        ],
+      }),
+      JSON.stringify({ type: 'tool_result', tool_call_id: 'r1', content: 'file body' }),
+    ].join('\n')
+
+    const { entries } = parseJsonlOutput(raw)
+    expect(entries[0]).toMatchObject({
+      type: 'tool',
+      toolName: 'Read',
+      toolUseId: 'r1',
+      description: '/a.ts',
+      result: 'file body',
+    })
+    expect(JSON.parse((entries[0] as { input: string }).input)).toEqual({
+      target_file: '/a.ts',
+      offset: 10,
+      limit: 20,
+      file_path: '/a.ts',
+    })
+    expect(entries[1]).toMatchObject({
+      type: 'tool',
+      toolName: 'Bash',
+      toolUseId: 'b1',
+      description: 'ls',
+    })
+    expect(JSON.parse((entries[1] as { input: string }).input)).toMatchObject({ command: 'ls', description: 'list' })
+    expect(entries[2]).toMatchObject({
+      type: 'tool',
+      toolName: 'mcp__superone__session_rename',
+      toolUseId: 'u1',
+    })
+    expect(JSON.parse((entries[2] as { input: string }).input)).toEqual({ title: 'x' })
+  })
+})
+
+describe('normalizeTranscriptTool', () => {
+  it('maps search_replace → Edit and keeps old/new strings', () => {
+    const { toolName, input } = normalizeTranscriptTool('search_replace', {
+      file_path: '/x.ts',
+      old_string: 'a',
+      new_string: 'b',
+    })
+    expect(toolName).toBe('Edit')
+    expect(input).toEqual({ file_path: '/x.ts', old_string: 'a', new_string: 'b' })
   })
 })
 
@@ -106,14 +214,22 @@ describe('entriesFromRecords', () => {
   it('maps SDK-shaped assistant records identically to parseJsonlOutput', () => {
     const records = [
       { type: 'assistant', message: { content: [{ type: 'text', text: 'thinking...' }] } },
-      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/a.ts' } }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/a.ts' } }] } },
       { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'StructuredOutput', input: { verdict: 'ok' } }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'body' }] } },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } },
     ]
     const { entries, resultText } = entriesFromRecords(records)
     expect(entries).toEqual([
       { type: 'activity', text: 'thinking...' },
-      { type: 'tool', toolName: 'Read', description: '/a.ts' },
+      {
+        type: 'tool',
+        toolName: 'Read',
+        description: '/a.ts',
+        toolUseId: 't1',
+        input: JSON.stringify({ file_path: '/a.ts' }),
+        result: 'body',
+      },
       { type: 'structured', data: { verdict: 'ok' } },
       { type: 'activity', text: 'done' },
     ])
@@ -253,5 +369,27 @@ describe('computeSubagentElapsed', () => {
   it('uses live progress.durationMs when the block carries no recorded duration', () => {
     const block = task({ startedAt: NOW - 999_999 })
     expect(computeSubagentElapsed(block, { durationMs: 8000 }, true, NOW)).toBe(8)
+  })
+})
+
+describe('subagent progress helpers', () => {
+  it('parses subagent_id from Grok plain-text ack', () => {
+    expect(parseSubagentIdFromText('Subagent started in background.\nsubagent_id: abc-1\n')).toBe('abc-1')
+    expect(parseSubagentIdFromText('task_ids=["xyz-9"]')).toBe('xyz-9')
+  })
+
+  it('requires started-in-background or background+subagent_id for bg ack', () => {
+    expect(looksLikeBackgroundSubagentAck('Subagent started in background.\nsubagent_id: x')).toBe(true)
+    expect(looksLikeBackgroundSubagentAck('subagent_id: x\nrun in background')).toBe(true)
+    expect(looksLikeBackgroundSubagentAck('see subagent_id: x in docs')).toBe(false)
+  })
+
+  it('resolves provisional taskId key when toolUseId entry is missing', () => {
+    const map = {
+      'sa-1': { taskId: 'sa-1', description: 'work', completed: true },
+    }
+    expect(resolveTaskProgressEntry(map, 'tu-1', 'sa-1')).toEqual(map['sa-1'])
+    expect(resolveTaskProgressEntry({ 'tu-1': { taskId: 'sa-1', description: 'a' } }, 'tu-1', 'sa-1'))
+      .toEqual({ taskId: 'sa-1', description: 'a' })
   })
 })

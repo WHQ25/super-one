@@ -1,10 +1,20 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { Streamdown } from 'streamdown'
 import { getToolDisplay, getToolVerb } from './tool-display'
 import { ToolIcon } from './ToolIcon'
+import { ToolBlock } from './ToolBlock'
+import { StructuredOutputBlock } from './StructuredOutputView'
 import type { SubagentColorClasses } from './subagent-colors'
 import type { JsonlEntry } from './subagent-utils'
+import {
+  streamdownPlugins,
+  streamdownRehypePlugins,
+  streamdownControls,
+  streamdownComponents,
+  streamdownLinkSafety,
+} from './chat-shared'
 
 /** Scrollable container that auto-scrolls to bottom on new content, unless user scrolled up. */
 export function SubagentScrollArea({ children, borderClass, maxHeightClass = 'max-h-25' }: {
@@ -49,6 +59,60 @@ export function AsyncToolRow({ toolName, description, isActive }: { toolName: st
       </span>
       {description && <span className="min-w-0 truncate text-muted-foreground">{description}</span>}
     </div>
+  )
+}
+
+/**
+ * Full-view / expanded transcript entry: ToolBlock when the JSONL parser kept
+ * input (workflow agent history, completed JSONL), compact AsyncToolRow only
+ * for live progress stubs that have name+description alone.
+ *
+ * Intentionally omits `toolUseId` on ToolBlock — child-session ids must not
+ * collide with live parent-session store keys (_streamingToolInputPreviews,
+ * toolRenderers). React keys still use the transcript id for stable identity.
+ */
+export function renderJsonlEntry(entry: JsonlEntry, index: number, isStreaming = false): ReactNode {
+  if (entry.type === 'tool') {
+    // Prefer full ToolBlock whenever we have structured input (even `{}`) so
+    // workflow/subagent full views match the main Grok session tool UI.
+    if (entry.input != null) {
+      return (
+        <ToolBlock
+          key={entry.toolUseId ?? `tool-${index}`}
+          toolName={entry.toolName}
+          input={entry.input}
+          status="complete"
+          result={entry.result}
+          isError={entry.isError}
+          autoExpand={false}
+        />
+      )
+    }
+    return (
+      <AsyncToolRow
+        key={entry.toolUseId ?? `tool-${index}`}
+        toolName={entry.toolName}
+        description={entry.description}
+        isActive={false}
+      />
+    )
+  }
+  if (entry.type === 'structured') {
+    return <StructuredOutputBlock key={`structured-${index}`} data={entry.data} />
+  }
+  return (
+    <Streamdown
+      key={`activity-${index}`}
+      className="chat-md text-xs"
+      plugins={streamdownPlugins}
+      rehypePlugins={streamdownRehypePlugins}
+      components={streamdownComponents}
+      controls={streamdownControls}
+      linkSafety={streamdownLinkSafety}
+      isAnimating={isStreaming}
+    >
+      {entry.text}
+    </Streamdown>
   )
 }
 

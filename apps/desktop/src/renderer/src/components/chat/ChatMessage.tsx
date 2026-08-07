@@ -7,6 +7,7 @@ import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
+import { isWorkflowSmokeCheck } from './workflow-utils'
 import {
   countVisibleClaudeProcessSegments,
   isClaudeConclusionSegment,
@@ -19,6 +20,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
+import { isSubagentToolName } from './subagent-utils'
 import { WorkflowBlock } from './WorkflowBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
@@ -95,7 +97,7 @@ export function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): Gro
   for (const block of content) {
     if (block.type === 'tool_use') {
       toolNameMap.set(block.toolUseId, block.toolName)
-      if (block.toolName === 'Agent') taskToolUseIds.add(block.toolUseId)
+      if (isSubagentToolName(block.toolName)) taskToolUseIds.add(block.toolUseId)
     } else if (block.type === 'tool_result') {
       if (block.summary) toolResultMap.set(block.toolUseId, block.summary)
       if (block.isTimedOut) timedOutToolIds.add(block.toolUseId)
@@ -172,7 +174,7 @@ export function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): Gro
     // out as top-level blocks of the main agent.
     const parentId = 'parentToolUseId' in block ? block.parentToolUseId ?? null : null
     if (parentId) {
-      if (block.type === 'tool_use' && block.toolName === 'Agent') agentToParent.set(block.toolUseId, parentId)
+      if (block.type === 'tool_use' && isSubagentToolName(block.toolName)) agentToParent.set(block.toolUseId, parentId)
       const top = topAncestorSubagent(parentId)
       if (top) {
         activeSubagents.get(top)!.childBlocks.push(block)
@@ -190,8 +192,8 @@ export function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): Gro
       continue
     }
 
-    // Start a new subagent segment for Task tool_use
-    if (block.type === 'tool_use' && block.toolName === 'Agent') {
+    // Start a new subagent segment for Agent/Task tool_use (Claude Agent, Grok spawn)
+    if (block.type === 'tool_use' && isSubagentToolName(block.toolName)) {
       flush()
       flushAppGroup()
       const seg: RenderSegment & { kind: 'subagent' } = {
@@ -213,8 +215,13 @@ export function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): Gro
       continue
     }
 
-    // Start a new workflow segment for Workflow tool_use
-    if (block.type === 'tool_use' && block.toolName === 'Workflow') {
+    // Live workflow runs → WorkflowBlock. Authoring smoke-check (validate_only)
+    // stays a normal tool row so it does not look like an empty multi-agent run.
+    if (
+      block.type === 'tool_use'
+      && block.toolName === 'Workflow'
+      && !isWorkflowSmokeCheck(block.input)
+    ) {
       flush()
       flushAppGroup()
       const seg: RenderSegment & { kind: 'workflow' } = {

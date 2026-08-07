@@ -98,6 +98,24 @@ describe('getToolDisplay', () => {
     })
   })
 
+  it('maps Workflow smoke-check to wrench + smoke-check summary', () => {
+    expect(getToolDisplay('Workflow', { validate_only: true, name: 'mobile-adapt' })).toEqual({
+      icon: 'wrench',
+      summary: 'smoke-check · mobile-adapt',
+    })
+    expect(getToolDisplay('Workflow', {
+      validate_only: true,
+      script_path: '/Users/x/.grok/workflows/review-changes.rhai',
+    })).toEqual({
+      icon: 'wrench',
+      summary: 'smoke-check · review-changes',
+    })
+    expect(getToolDisplay('Workflow', { validate_only: true })).toEqual({
+      icon: 'wrench',
+      summary: 'smoke-check',
+    })
+  })
+
   it('omits trailing colon when TaskUpdate has only status', () => {
     expect(getToolDisplay('TaskUpdate', { status: 'completed' })).toEqual({
       icon: 'clipboard-list',

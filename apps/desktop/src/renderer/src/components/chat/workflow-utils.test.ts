@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { parseWorkflowScript, parseWorkflowInput, parseWorkflowLaunch } from './workflow-utils'
+import {
+  parseWorkflowScript,
+  parseWorkflowInput,
+  parseWorkflowLaunch,
+  isWorkflowSmokeCheck,
+  workflowToolTargetLabel,
+} from './workflow-utils'
 
 const REAL_SCRIPT = `export const meta = {
   name: 'ui-test-minimal',
@@ -41,6 +47,35 @@ describe('parseWorkflowInput', () => {
     const meta = parseWorkflowInput(JSON.stringify({ script: REAL_SCRIPT }))
     expect(meta.name).toBe('ui-test-minimal')
     expect(meta.phases).toHaveLength(2)
+  })
+})
+
+describe('isWorkflowSmokeCheck', () => {
+  it('detects validate_only on parsed object and JSON string', () => {
+    expect(isWorkflowSmokeCheck({ validate_only: true, script: 'x' })).toBe(true)
+    expect(isWorkflowSmokeCheck({ validateOnly: true })).toBe(true)
+    expect(isWorkflowSmokeCheck(JSON.stringify({ script: 'x', validate_only: true }))).toBe(true)
+  })
+
+  it('is false for live runs and empty input', () => {
+    expect(isWorkflowSmokeCheck({ name: 'review-changes' })).toBe(false)
+    expect(isWorkflowSmokeCheck({ validate_only: false })).toBe(false)
+    expect(isWorkflowSmokeCheck(JSON.stringify({ name: 'review-changes' }))).toBe(false)
+    expect(isWorkflowSmokeCheck(undefined)).toBe(false)
+    expect(isWorkflowSmokeCheck('')).toBe(false)
+  })
+
+  it('detects validate_only in partial streaming JSON', () => {
+    expect(isWorkflowSmokeCheck('{"script":"let meta","validate_only":true')).toBe(true)
+    expect(isWorkflowSmokeCheck('{"script":"let meta"')).toBe(false)
+  })
+})
+
+describe('workflowToolTargetLabel', () => {
+  it('prefers name, then script path basename, then meta.name from script', () => {
+    expect(workflowToolTargetLabel({ name: 'review-changes' })).toBe('review-changes')
+    expect(workflowToolTargetLabel({ script_path: '/home/x/.grok/workflows/mobile-adapt.rhai' })).toBe('mobile-adapt')
+    expect(workflowToolTargetLabel(JSON.stringify({ script: REAL_SCRIPT }))).toBe('ui-test-minimal')
   })
 })
 

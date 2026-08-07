@@ -14,9 +14,9 @@ import type { ReplayAgentRecord } from './workflow-replay'
 import { buildDag, agentPhaseByPrompt, assignAgentsToNodes, type DagNode } from './workflow-dag'
 import { WorkflowDagCanvas } from './WorkflowDagCanvas'
 import { useSubagentJsonl } from './use-subagent-jsonl'
-import { AsyncToolRow } from './subagent-activity'
-import { StructuredOutputView, StructuredOutputBlock } from './StructuredOutputView'
-import type { JsonlEntry } from './subagent-utils'
+import { renderJsonlEntry } from './subagent-activity'
+import { NestedToolContext } from './nested-tool-context'
+import { StructuredOutputView } from './StructuredOutputView'
 import {
   streamdownPlugins,
   streamdownRehypePlugins,
@@ -65,7 +65,11 @@ function AgentTranscript({ agent, colors, phase }: { agent: WorkflowAgentInfo; c
           {t('chat.subagent.noActivity', 'No activity recorded')}
         </div>
       )}
-      {entries.map((entry, i) => renderEntry(entry, i))}
+      <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
+        <div className="space-y-1">
+          {entries.map((entry, i) => renderJsonlEntry(entry, i))}
+        </div>
+      </NestedToolContext.Provider>
       {entries.length === 0 && finalText && (
         <Streamdown
           className="chat-md text-xs"
@@ -79,28 +83,6 @@ function AgentTranscript({ agent, colors, phase }: { agent: WorkflowAgentInfo; c
         </Streamdown>
       )}
     </div>
-  )
-}
-
-function renderEntry(entry: JsonlEntry, index: number) {
-  if (entry.type === 'tool') {
-    return <AsyncToolRow key={index} toolName={entry.toolName} description={entry.description} isActive={false} />
-  }
-  if (entry.type === 'structured') {
-    return <StructuredOutputBlock key={index} data={entry.data} />
-  }
-  return (
-    <Streamdown
-      key={index}
-      className="chat-md text-xs"
-      plugins={streamdownPlugins}
-      rehypePlugins={streamdownRehypePlugins}
-      components={streamdownComponents}
-      controls={streamdownControls}
-      linkSafety={streamdownLinkSafety}
-    >
-      {entry.text}
-    </Streamdown>
   )
 }
 

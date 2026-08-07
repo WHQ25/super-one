@@ -6,6 +6,7 @@ import {
   isSuccessfulGenerationResult,
   isVideoStatusStillRunning,
 } from './media-generation'
+import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
 
 const PARTIAL_STRING_FIELDS: Record<string, string[]> = {
   Edit: ['file_path', 'old_string', 'new_string'],
@@ -199,8 +200,17 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       const questions = Array.isArray(input.questions) ? input.questions : []
       return { icon: 'message-circle', summary: questions.length > 0 ? `${questions.length} question${questions.length !== 1 ? 's' : ''}` : '' }
     }
+    case 'Agent':
     case 'Task':
       return { icon: 'bot', summary: String(input.name ?? input.subagent_type ?? input.description ?? '') }
+    case 'Workflow': {
+      // Smoke-check (validate_only) renders as a normal ToolBlock; live runs use WorkflowBlock.
+      const target = workflowToolTargetLabel(input)
+      if (isWorkflowSmokeCheck(input)) {
+        return { icon: 'wrench', summary: target ? `smoke-check · ${target}` : 'smoke-check' }
+      }
+      return { icon: 'wrench', summary: target }
+    }
     case 'TaskOutput': {
       const ids = Array.isArray(input.task_ids)
         ? input.task_ids.filter((id): id is string => typeof id === 'string')

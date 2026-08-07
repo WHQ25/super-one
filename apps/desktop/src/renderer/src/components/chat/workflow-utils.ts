@@ -87,6 +87,65 @@ export function parseWorkflowInput(input: string): WorkflowMeta {
   return { name, description: '', phases: [] }
 }
 
+/**
+ * Authoring / compile smoke-check (`validate_only: true`) is not a live
+ * multi-agent run. Hosts should render it as a normal tool row, not WorkflowBlock.
+ */
+export function isWorkflowSmokeCheck(input: string | Record<string, unknown> | undefined | null): boolean {
+  if (input == null) return false
+  if (typeof input === 'string') {
+    try {
+      const parsed = JSON.parse(input) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return isWorkflowSmokeCheck(parsed as Record<string, unknown>)
+      }
+    } catch {
+      // Streaming partial JSON: only treat explicit true as smoke (avoid false positives).
+      return /"validate_only"\s*:\s*true/.test(input) || /"validateOnly"\s*:\s*true/.test(input)
+    }
+    return false
+  }
+  return input.validate_only === true || input.validateOnly === true
+}
+
+/** Display label for a workflow tool call (name, script path basename, or meta.name). */
+export function workflowToolTargetLabel(input: string | Record<string, unknown> | undefined | null): string {
+  if (input == null) return ''
+  let o: Record<string, unknown> | null = null
+  if (typeof input === 'string') {
+    try {
+      const parsed = JSON.parse(input) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        o = parsed as Record<string, unknown>
+      }
+    } catch {
+      const namePartial = extractJsonStringValue(input, 'name')
+      if (namePartial) return namePartial
+      const pathPartial = extractJsonStringValue(input, 'script_path')
+        ?? extractJsonStringValue(input, 'scriptPath')
+      if (pathPartial) return pathPartial.replace(/\\/g, '/').split('/').pop() || pathPartial
+      const scriptPartial = extractJsonStringValue(input, 'script')
+      if (scriptPartial) return parseWorkflowScript(scriptPartial).name
+      return ''
+    }
+  } else {
+    o = input
+  }
+  if (!o) return ''
+  if (typeof o.name === 'string' && o.name.trim()) return o.name.trim()
+  const scriptPath = typeof o.script_path === 'string' ? o.script_path
+    : typeof o.scriptPath === 'string' ? o.scriptPath
+      : ''
+  if (scriptPath) {
+    const base = scriptPath.replace(/\\/g, '/').split('/').pop()
+    if (base) return base.replace(/\.rhai$/i, '')
+  }
+  if (typeof o.script === 'string' && o.script) {
+    return parseWorkflowScript(o.script).name
+  }
+  return ''
+}
+
 function strField(o: Record<string, unknown>, ...keys: string[]): string | undefined {
   for (const k of keys) {
     const v = o[k]

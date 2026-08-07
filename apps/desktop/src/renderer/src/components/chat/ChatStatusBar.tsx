@@ -31,7 +31,13 @@ import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { parseToolInput } from './tool-display'
 import { ToolBlock } from './ToolBlock'
 import { SubagentBlock } from './SubagentBlock'
-import { collectSubagentSubtree } from './subagent-utils'
+import {
+  collectSubagentSubtree,
+  isSubagentToolName,
+  looksLikeBackgroundSubagentAck,
+  parseSubagentIdFromText,
+  resolveTaskProgressEntry,
+} from './subagent-utils'
 import type { ContentBlock, GitInfo } from '@superone/shared/agent-types'
 
 interface WorktreeStateLike {
@@ -67,7 +73,26 @@ export type BackgroundActivityItem =
       resultBlock?: ContentBlock & { type: 'tool_result' }
     }
 
-type TaskProgress = Record<string, { description: string; completed?: boolean; [k: string]: unknown }>
+type TaskProgress = Record<string, {
+  description: string
+  taskId?: string
+  completed?: boolean
+  [k: string]: unknown
+}>
+
+export function computeBackgroundActivitySignature(messages: Array<{ content: ContentBlock[] }>): string {
+  let blockCount = 0
+  const completedSubagentIds: string[] = []
+  for (const message of messages) {
+    blockCount += message.content.length
+    for (const block of message.content) {
+      if (block.type === 'tool_use' && isSubagentToolName(block.toolName) && block.taskResultText) {
+        completedSubagentIds.push(block.toolUseId)
+      }
+    }
+  }
+  return JSON.stringify([messages.length, blockCount, completedSubagentIds])
+}
 
 export function collectBackgroundActivities(
   messages: Array<{ content: ContentBlock[] }>,
@@ -112,19 +137,28 @@ export function collectBackgroundActivities(
         continue
       }
 
-      if (block.toolName === 'Agent') {
+      if (isSubagentToolName(block.toolName)) {
         const params = parseToolInput(block.input, block.toolName)
-        const isAsync = params.run_in_background === true
-        const progress = taskProgress[block.toolUseId]
+        const isAsync = params.run_in_background === true || params.background === true
         const resultBlock = results.get(block.toolUseId)
+        const resultSummary = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
+        const taskIdHint = parseSubagentIdFromText(resultSummary) ?? parseSubagentIdFromText(block.taskResultText)
+        // Prefer toolUseId key; fall back to provisional Grok subagent_id key.
+        const progress = resolveTaskProgressEntry(taskProgress, block.toolUseId, taskIdHint)
         // taskProgress is the authoritative running signal: every sub-agent (top-level,
         // nested, background or foreground) emits task_started→task_notification, so a
         // background agent stays "running" after its early tool_result and a nested
         // agent stays "running" while the main turn is idle. Agents without task
         // tracking fall back to: no result yet AND (async hint OR turn still streaming).
+        // Grok spawn often returns an early plain-text ack without run_in_background —
+        // treat that as async (like SubagentBlock): still running until taskResultText
+        // (from task_notification) arrives, not forever via the ack alone.
+        const looksLikeBgAck = looksLikeBackgroundSubagentAck(resultSummary)
         const isRunning = progress
           ? progress.completed !== true
-          : (!resultBlock && (isAsync || isStreaming))
+          : looksLikeBgAck
+            ? !block.taskResultText
+            : (!resultBlock && (isAsync || isStreaming))
         if (!isRunning) continue
         const childBlocks = collectSubagentSubtree(message.content, block.toolUseId)
         const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Agent').trim() || 'Agent'
@@ -150,14 +184,8 @@ export function ChatStatusBar() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
   const scope = useSessionScope()
-  // Subscribe to a cheap signature instead of the whole messages array so text deltas (which
-  // grow the tail block's text without adding blocks) don't re-render this status bar. The
-  // signature changes only when a block is added/removed — the events that alter activities.
-  const activitySignature = useActiveSession((s) => {
-    const msgs = s.messages
-    const tail = msgs[msgs.length - 1]
-    return `${msgs.length}:${tail?.content.length ?? 0}`
-  })
+  // Track structural changes plus subagent result arrival without subscribing to text deltas.
+  const activitySignature = useActiveSession((s) => computeBackgroundActivitySignature(s.messages))
   const sessionStatus = useActiveSession((s) => s.status)
   const taskProgress = useActiveSession((s) => s.taskProgress)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)

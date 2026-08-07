@@ -10,7 +10,17 @@ import { useSubagentNavigation } from './subagent-navigation-context'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
-import { parseTaskInput, buildToolResultMap, buildToolErrorMaps, computeSubagentElapsed, groupSubagentChildren, type ToolErrorMaps } from './subagent-utils'
+import {
+  parseTaskInput,
+  parseSubagentIdFromText,
+  looksLikeBackgroundSubagentAck,
+  resolveTaskProgressEntry,
+  buildToolResultMap,
+  buildToolErrorMaps,
+  computeSubagentElapsed,
+  groupSubagentChildren,
+  type ToolErrorMaps,
+} from './subagent-utils'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import { AgentActivity, SubagentScrollArea } from './subagent-activity'
 import { SubagentRetryBadge } from './SubagentRetryBadge'
@@ -72,12 +82,24 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
   const { t } = useTranslation()
   const childBlocks = useStableArray(childBlocksProp)
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
-  const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
+  const rawResultTextEarly = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
+  const taskIdHint = useMemo(
+    () => parseSubagentIdFromText(rawResultTextEarly) ?? parseSubagentIdFromText(taskBlock.taskResultText),
+    [rawResultTextEarly, taskBlock.taskResultText],
+  )
+  // Prefer launch toolUseId; fall back to provisional Grok subagent_id key.
+  const progress = useActiveSession((s) =>
+    resolveTaskProgressEntry(s.taskProgress, taskBlock.toolUseId, taskIdHint),
+  )
   const colorIdx = useActiveSession((s) => s.subagentColors[taskBlock.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
   const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
   const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
-  const isAsync = taskInput.runInBackground
+  // Grok spawn often returns a plain-text "started in background" ack without
+  // run_in_background on the tool input — treat that as async so the early
+  // tool_result does not seal the card before task_notification.
+  const looksLikeBgAck = looksLikeBackgroundSubagentAck(rawResultTextEarly)
+  const isAsync = taskInput.runInBackground || looksLikeBgAck
   // taskProgress is the authoritative running signal: every sub-agent (top-level,
   // nested, background or foreground) reports task_started→task_notification. A
   // background agent's early tool_result and an idle main turn must NOT read as
@@ -129,7 +151,7 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
   const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
   const toolErrorMaps = useMemo(() => buildToolErrorMaps(childBlocks), [childBlocks])
   const childItems = useMemo(() => groupSubagentChildren(childBlocks, taskBlock.toolUseId), [childBlocks, taskBlock.toolUseId])
-  const rawResultText = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
+  const rawResultText = rawResultTextEarly
   const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
   const outputFile = asyncOutputPath ?? progress?.outputFile
 

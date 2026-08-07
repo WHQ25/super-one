@@ -1,8 +1,30 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
+import {
+  formatTranscriptToolResult as formatSharedTranscriptToolResult,
+  isSubagentToolName,
+  normalizeTranscriptTool,
+} from '@superone/shared/tool-ui'
 import { parseToolInput } from './tool-display'
 
+export { normalizeTranscriptTool } from '@superone/shared/tool-ui'
+export { formatTranscriptToolResult } from '@superone/shared/tool-ui'
+export { isSubagentToolName } from '@superone/shared/tool-ui'
+
+/** Tool activity from subagent/workflow JSONL — carries enough data for full ToolBlock UI. */
+export type JsonlToolEntry = {
+  type: 'tool'
+  toolName: string
+  description: string
+  /** Stable id for correlating tool_result (Grok tool_call_id / Claude tool_use id). */
+  toolUseId?: string
+  /** JSON string of normalized Claude-shaped input for ToolBlock. */
+  input?: string
+  result?: string
+  isError?: boolean
+}
+
 export type JsonlEntry =
-  | { type: 'tool'; toolName: string; description: string }
+  | JsonlToolEntry
   | { type: 'activity'; text: string }
   | { type: 'structured'; data: unknown }
 
@@ -22,12 +44,74 @@ function summarizeToolInput(toolName: string, input: Record<string, unknown>): s
   if (input.path) return String(input.path)
   if (input.prompt) return String(input.prompt).slice(0, 120)
   if (input.description) return String(input.description).slice(0, 120)
+  if (toolName.startsWith('mcp__')) {
+    const parts = toolName.split('__')
+    return parts[parts.length - 1] ?? toolName
+  }
   return ''
+}
+
+function toolInputJson(input: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(input)
+  } catch {
+    return '{}'
+  }
+}
+
+function makeToolEntry(
+  rawName: string,
+  rawInput: Record<string, unknown>,
+  toolUseId?: string,
+): JsonlToolEntry | { type: 'structured'; data: unknown } {
+  if (rawName === STRUCTURED_OUTPUT_TOOL) {
+    return { type: 'structured', data: rawInput }
+  }
+  const { toolName, input } = normalizeTranscriptTool(rawName, rawInput)
+  return {
+    type: 'tool',
+    toolName,
+    description: summarizeToolInput(toolName, input),
+    ...(toolUseId ? { toolUseId } : {}),
+    input: toolInputJson(input),
+  }
+}
+
+function attachToolResult(
+  entries: JsonlEntry[],
+  byId: Map<string, number>,
+  toolUseId: string | undefined,
+  content: unknown,
+  isError?: boolean,
+): void {
+  if (!toolUseId) return
+  const idx = byId.get(toolUseId)
+  if (idx == null) return
+  const entry = entries[idx]
+  if (entry?.type !== 'tool') return
+  // format + cap — shared with live ACP output unwrapping (ListDir/MCP/Grep envelopes).
+  const result = formatSharedTranscriptToolResult(content)
+  entries[idx] = {
+    ...entry,
+    ...(result ? { result } : {}),
+    ...(isError ? { isError: true } : {}),
+  }
 }
 
 export interface JsonlRecord {
   type?: string
-  message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }> }
+  message?: {
+    content?: Array<{
+      type: string
+      id?: string
+      name?: string
+      input?: Record<string, unknown>
+      text?: string
+      tool_use_id?: string
+      content?: unknown
+      is_error?: boolean
+    }>
+  }
 }
 
 /** Grok Build child-session chat_history.jsonl line (not Claude agent-*.jsonl). */
@@ -36,6 +120,7 @@ export interface GrokChatHistoryRecord {
   content?: string | Array<{ type?: string; text?: string; name?: string; input?: Record<string, unknown> }>
   tool_calls?: Array<{ id?: string; name?: string; arguments?: string | Record<string, unknown> }>
   tool_call_id?: string
+  is_error?: boolean
 }
 
 function parseToolArguments(raw: unknown): Record<string, unknown> {
@@ -60,9 +145,12 @@ function isGrokChatHistoryRecord(rec: Record<string, unknown>): boolean {
 /**
  * Maps Grok child-session chat_history.jsonl into the same JsonlEntry stream the
  * Workflow/Subagent full views already render (tool rows + text activity).
+ * Tool entries carry normalized names + full input/result for ToolBlock parity
+ * with the main Grok session UI.
  */
 export function entriesFromGrokChatHistory(records: GrokChatHistoryRecord[]): { entries: JsonlEntry[]; resultText?: string; toolCount: number } {
   const entries: JsonlEntry[] = []
+  const toolIndexById = new Map<string, number>()
   let lastTextIndex = -1
   let toolCount = 0
   for (const record of records) {
@@ -81,16 +169,17 @@ export function entriesFromGrokChatHistory(records: GrokChatHistoryRecord[]): { 
       for (const tc of record.tool_calls ?? []) {
         const name = typeof tc.name === 'string' && tc.name ? tc.name : 'tool'
         const input = parseToolArguments(tc.arguments)
+        const id = typeof tc.id === 'string' && tc.id ? tc.id : undefined
         toolCount += 1
-        if (name === STRUCTURED_OUTPUT_TOOL) {
-          entries.push({ type: 'structured', data: input })
-        } else {
-          entries.push({ type: 'tool', toolName: name, description: summarizeToolInput(name, input) })
-        }
+        const entry = makeToolEntry(name, input, id)
+        if (entry.type === 'tool' && id) toolIndexById.set(id, entries.length)
+        entries.push(entry)
       }
       continue
     }
-    // tool_result lines are available for future expand-in-place; skip bulk content here.
+    if (record.type === 'tool_result' && typeof record.tool_call_id === 'string') {
+      attachToolResult(entries, toolIndexById, record.tool_call_id, record.content, record.is_error === true)
+    }
   }
   const resultText = lastTextIndex >= 0 ? (entries[lastTextIndex] as { type: 'activity'; text: string }).text : undefined
   return { entries, resultText, toolCount }
@@ -103,14 +192,26 @@ export function entriesFromGrokChatHistory(records: GrokChatHistoryRecord[]): { 
  */
 export function entriesFromRecords(records: JsonlRecord[]): { entries: JsonlEntry[]; resultText?: string } {
   const entries: JsonlEntry[] = []
+  const toolIndexById = new Map<string, number>()
   let lastTextIndex = -1
   for (const record of records) {
+    if (record.type === 'user' && Array.isArray(record.message?.content)) {
+      for (const block of record.message.content) {
+        if (block.type === 'tool_result' && block.tool_use_id) {
+          attachToolResult(entries, toolIndexById, block.tool_use_id, block.content ?? block.text, block.is_error === true)
+        }
+      }
+      continue
+    }
     if (record.type !== 'assistant' || !record.message?.content) continue
     for (const block of record.message.content) {
       if (block.type === 'tool_use' && block.name === STRUCTURED_OUTPUT_TOOL) {
         entries.push({ type: 'structured', data: block.input ?? {} })
       } else if (block.type === 'tool_use' && block.name) {
-        entries.push({ type: 'tool', toolName: block.name, description: summarizeToolInput(block.name, block.input ?? {}) })
+        const id = typeof block.id === 'string' && block.id ? block.id : undefined
+        const entry = makeToolEntry(block.name, block.input ?? {}, id)
+        if (entry.type === 'tool' && id) toolIndexById.set(id, entries.length)
+        entries.push(entry)
       } else if (block.type === 'text' && block.text) {
         lastTextIndex = entries.length
         entries.push({ type: 'activity', text: block.text })
@@ -150,7 +251,61 @@ export interface ParsedTaskInput {
   runInBackground: boolean
 }
 
-/** Parse Task tool input to extract display info. */
+/**
+ * Extract Grok/Claude subagent id from a spawn tool_result ack (plain text or JSON-ish).
+ * Used to resolve provisional taskProgress keys keyed by subagent_id.
+ */
+export function parseSubagentIdFromText(text: string | undefined | null): string | undefined {
+  if (!text) return undefined
+  const fromLabel = text.match(/subagent_id:\s*(\S+)/i)?.[1]
+  if (fromLabel) return fromLabel.replace(/[,;]+$/, '')
+  const fromTaskIds = text.match(/task_ids?\s*=\s*\[\s*"([^"]+)"/i)?.[1]
+  if (fromTaskIds) return fromTaskIds
+  // JSON spawn result
+  try {
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      const o = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>
+      const id = o.subagent_id ?? o.subagentId ?? o.task_id ?? o.taskId
+      if (typeof id === 'string' && id) return id
+    }
+  } catch { /* ignore */ }
+  return undefined
+}
+
+/**
+ * Grok background spawn ack. Prefer the explicit phrase; bare `subagent_id:` alone
+ * is too easy to false-positive (docs, TaskOutput echo).
+ */
+export function looksLikeBackgroundSubagentAck(text: string | undefined | null): boolean {
+  if (!text) return false
+  if (/started in background/i.test(text)) return true
+  return /subagent_id:\s*\S+/i.test(text) && /\bbackground\b/i.test(text)
+}
+
+/**
+ * Resolve live taskProgress for a subagent launch chip.
+ * Prefer the established toolUseId key; fall back to provisional taskId key
+ * (Grok progress often lands under subagent_id before tool_result correlates).
+ */
+export function resolveTaskProgressEntry<T extends { taskId?: string }>(
+  taskProgress: Record<string, T>,
+  toolUseId: string,
+  taskIdHint?: string | null,
+): T | undefined {
+  const byTool = taskProgress[toolUseId]
+  if (byTool) return byTool
+  const id = taskIdHint?.trim()
+  if (!id) return undefined
+  if (taskProgress[id]) return taskProgress[id]
+  for (const entry of Object.values(taskProgress)) {
+    if (entry.taskId === id) return entry
+  }
+  return undefined
+}
+
+/** Parse Task/Agent tool input to extract display info. */
 export function parseTaskInput(input: string): ParsedTaskInput {
   const params = parseToolInput(input, 'Task')
   return {
@@ -160,7 +315,7 @@ export function parseTaskInput(input: string): ParsedTaskInput {
     subagentType: String(params.subagent_type ?? ''),
     prompt: String(params.prompt ?? ''),
     model: params.model ? String(params.model) : undefined,
-    runInBackground: params.run_in_background === true,
+    runInBackground: params.run_in_background === true || params.background === true,
   }
 }
 
@@ -190,7 +345,7 @@ export type SubagentChildItem =
 export function groupSubagentChildren(blocks: ContentBlock[], ownerToolUseId: string): SubagentChildItem[] {
   const agentParent = new Map<string, string | null>()
   for (const b of blocks) {
-    if (b.type === 'tool_use' && b.toolName === 'Agent') agentParent.set(b.toolUseId, blockParentToolUseId(b))
+    if (b.type === 'tool_use' && isSubagentToolName(b.toolName)) agentParent.set(b.toolUseId, blockParentToolUseId(b))
   }
   // The direct-child-of-owner agent whose subtree contains `parentId`, or null.
   const directChildAgent = (parentId: string | null): string | null => {
@@ -214,7 +369,7 @@ export function groupSubagentChildren(blocks: ContentBlock[], ownerToolUseId: st
     }
     const parentId = blockParentToolUseId(block)
     if (parentId === ownerToolUseId) {
-      if (block.type === 'tool_use' && block.toolName === 'Agent') {
+      if (block.type === 'tool_use' && isSubagentToolName(block.toolName)) {
         const segment: NestedSubagentSegment = { taskBlock: block, childBlocks: [] }
         items.push({ kind: 'subagent', segment })
         segments.set(block.toolUseId, segment)
@@ -241,7 +396,7 @@ export function groupSubagentChildren(blocks: ContentBlock[], ownerToolUseId: st
 export function collectSubagentSubtree(content: ContentBlock[], rootToolUseId: string): ContentBlock[] {
   const agentParent = new Map<string, string | null>()
   for (const b of content) {
-    if (b.type === 'tool_use' && b.toolName === 'Agent') agentParent.set(b.toolUseId, blockParentToolUseId(b))
+    if (b.type === 'tool_use' && isSubagentToolName(b.toolName)) agentParent.set(b.toolUseId, blockParentToolUseId(b))
   }
   const inSubtree = (parentId: string | null): boolean => {
     let cur = parentId

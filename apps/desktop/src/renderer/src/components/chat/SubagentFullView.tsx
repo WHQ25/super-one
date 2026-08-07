@@ -8,10 +8,13 @@ import { useActiveSession } from '@/stores/chat'
 import { useSubagentNavigation, type SubagentViewState } from './subagent-navigation-context'
 import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-colors'
 import { ToolBlock } from './ToolBlock'
-import { AsyncToolRow } from './subagent-activity'
-import { StructuredOutputBlock } from './StructuredOutputView'
+import { AsyncToolRow, renderJsonlEntry } from './subagent-activity'
+import { NestedToolContext } from './nested-tool-context'
 import {
   parseTaskInput,
+  parseSubagentIdFromText,
+  looksLikeBackgroundSubagentAck,
+  resolveTaskProgressEntry,
   buildToolResultMap,
   buildToolErrorMaps,
   collectSubagentSubtree,
@@ -66,7 +69,6 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
   const messages = useActiveSession((s) => s.messages)
   const tokens = useActiveSession((s) => s.subagentTokens[view.toolUseId] ?? ZERO_TOKENS)
   const colorIdx = useActiveSession((s) => s.subagentColors[view.toolUseId])
-  const progress = useActiveSession((s) => s.taskProgress[view.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
 
   const segment = useMemo(() => findSubagentSegment(messages, view.toolUseId), [messages, view.toolUseId])
@@ -80,7 +82,16 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
     [childItems],
   )
 
-  const isAsync = taskInput?.runInBackground ?? false
+  const rawResultText = segment?.resultBlock?.summary
+  const taskIdHint = useMemo(
+    () => parseSubagentIdFromText(rawResultText) ?? parseSubagentIdFromText(segment?.taskBlock.taskResultText),
+    [rawResultText, segment?.taskBlock.taskResultText],
+  )
+  const progress = useActiveSession((s) =>
+    resolveTaskProgressEntry(s.taskProgress, view.toolUseId, taskIdHint),
+  )
+  const looksLikeBgAck = looksLikeBackgroundSubagentAck(rawResultText)
+  const isAsync = (taskInput?.runInBackground ?? false) || looksLikeBgAck
   // Tool activity arrives either as inline childBlocks (ordinary nested calls) or
   // via the task_progress/JSONL channel when the agent ran in its own session
   // (background agents AND workflow-spawned parallel agents, which are NOT
@@ -88,7 +99,6 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
   // inline children, surface the progress channel — else a nested non-async agent
   // shows an empty body with its tools hidden in the full view.
   const usesProgressActivity = childItems.length === 0
-  const rawResultText = segment?.resultBlock?.summary
   const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
   const outputFile = asyncOutputPath ?? progress?.outputFile
   const isRunning = progress
@@ -227,33 +237,37 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
           )}
 
           {usesProgressActivity ? (
-            <div className="space-y-2">
-              {asyncEntries.map((entry, i) => renderAsyncEntry(entry, i, isRunning))}
-              {isRunning && progress?.description && (
-                <AsyncToolRow toolName={progress.lastToolName ?? ''} description={progress.description} isActive />
-              )}
-              {asyncEntries.length === 0 && !progress?.description && (
-                <div className="px-1 py-2 text-xs text-muted-foreground">
-                  {isRunning ? t('chat.subagent.running') : t('chat.subagent.noActivity', 'No activity recorded')}
-                </div>
-              )}
-            </div>
+            <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
+              <div className="space-y-2">
+                {asyncEntries.map((entry, i) => renderJsonlEntry(entry, i, isRunning))}
+                {isRunning && progress?.description && (
+                  <AsyncToolRow toolName={progress.lastToolName ?? ''} description={progress.description} isActive />
+                )}
+                {asyncEntries.length === 0 && !progress?.description && (
+                  <div className="px-1 py-2 text-xs text-muted-foreground">
+                    {isRunning ? t('chat.subagent.running') : t('chat.subagent.noActivity', 'No activity recorded')}
+                  </div>
+                )}
+              </div>
+            </NestedToolContext.Provider>
           ) : (
-            <div className="space-y-2">
-              {childItems.map((item, i) =>
-                item.kind === 'subagent' ? (
-                  <SubagentBlock
-                    key={`sa-${item.segment.taskBlock.toolUseId}`}
-                    taskBlock={item.segment.taskBlock}
-                    childBlocks={item.segment.childBlocks}
-                    resultBlock={item.segment.resultBlock}
-                    isStreaming={isRunning}
-                  />
-                ) : (
-                  renderFullViewBlock(item.block, i, isRunning, toolResultMap, toolErrorMaps)
-                )
-              )}
-            </div>
+            <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
+              <div className="space-y-2">
+                {childItems.map((item, i) =>
+                  item.kind === 'subagent' ? (
+                    <SubagentBlock
+                      key={`sa-${item.segment.taskBlock.toolUseId}`}
+                      taskBlock={item.segment.taskBlock}
+                      childBlocks={item.segment.childBlocks}
+                      resultBlock={item.segment.resultBlock}
+                      isStreaming={isRunning}
+                    />
+                  ) : (
+                    renderFullViewBlock(item.block, i, isRunning, toolResultMap, toolErrorMaps)
+                  )
+                )}
+              </div>
+            </NestedToolContext.Provider>
           )}
 
           {outputText && !(isAsync && isRunning) && (
@@ -303,30 +317,6 @@ function ViewShell({ colors, title, onClose, children }: {
       </div>
       <div className="flex-1 overflow-y-auto">{children}</div>
     </div>
-  )
-}
-
-/** Render an async subagent JSONL entry (tool row or activity text). */
-function renderAsyncEntry(entry: JsonlEntry, index: number, isStreaming: boolean) {
-  if (entry.type === 'tool') {
-    return <AsyncToolRow key={index} toolName={entry.toolName} description={entry.description} isActive={false} />
-  }
-  if (entry.type === 'structured') {
-    return <StructuredOutputBlock key={index} data={entry.data} />
-  }
-  return (
-    <Streamdown
-      key={index}
-      className="chat-md text-xs"
-      plugins={streamdownPlugins}
-      rehypePlugins={streamdownRehypePlugins}
-      components={streamdownComponents}
-      controls={streamdownControls}
-      linkSafety={streamdownLinkSafety}
-      isAnimating={isStreaming}
-    >
-      {entry.text}
-    </Streamdown>
   )
 }
 

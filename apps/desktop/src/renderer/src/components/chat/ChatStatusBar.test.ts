@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect } from 'vitest'
-import { collectBackgroundActivities, computeIsInWorktree } from './ChatStatusBar'
+import {
+  collectBackgroundActivities,
+  computeBackgroundActivitySignature,
+  computeIsInWorktree,
+} from './ChatStatusBar'
 import type { ContentBlock } from '@superone/shared/agent-types'
 
 function toolUse(id: string, toolName: string, input: Record<string, unknown>, status: 'streaming' | 'complete' = 'streaming'): ContentBlock & { type: 'tool_use' } {
@@ -198,6 +202,38 @@ describe('collectBackgroundActivities', () => {
       const progress = { A: { description: 'Background research', completed: false } }
       const { agentActivities } = collectBackgroundActivities(messages, progress, false)
       expect(agentActivities.map((a) => a.id)).toEqual(['A'])
+    })
+
+    it('shows Grok plain-text spawn ack as running until taskResultText arrives', () => {
+      const messages = [msg(
+        toolUse('A', 'Agent', { description: 'Review' }, 'complete'),
+        toolResult('A', { summary: 'Subagent started in background.\nsubagent_id: sa-1' }),
+      )]
+      const { agentActivities: running } = collectBackgroundActivities(messages, {}, false)
+      expect(running.map((a) => a.id)).toEqual(['A'])
+
+      const doneBlock = {
+        ...toolUse('A', 'Agent', { description: 'Review' }, 'complete'),
+        taskResultText: 'review complete',
+      } as ContentBlock
+      const doneMessages = [msg(
+        doneBlock,
+        toolResult('A', { summary: 'Subagent started in background.\nsubagent_id: sa-1' }),
+      )]
+      const { agentActivities: done } = collectBackgroundActivities(doneMessages, {}, false)
+      expect(done).toHaveLength(0)
+    })
+
+    it('changes the activity signature when taskResultText arrives without adding a block', () => {
+      const running = [msg(toolUse('A', 'Agent', { description: 'Review' }, 'complete'))]
+      const completed = [msg({
+        ...toolUse('A', 'Agent', { description: 'Review' }, 'complete'),
+        taskResultText: 'review complete',
+      } as ContentBlock)]
+
+      expect(completed[0]!.content).toHaveLength(running[0]!.content.length)
+      expect(computeBackgroundActivitySignature(completed))
+        .not.toBe(computeBackgroundActivitySignature(running))
     })
 
     it('shows nested sub-agents of a background agent while the main turn is idle', () => {

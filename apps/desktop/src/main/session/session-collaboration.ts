@@ -898,7 +898,13 @@ export async function startSessionAgent(
     task: grant.task,
   })
   const title = collaborationSessionTitle(displayName, role)
-  createSessionRecord(projectPath, childSessionId, title, !!config.worktree?.enabled, gitBranch ?? undefined, cwd !== projectPath ? cwd : undefined)
+  // is_worktree / worktree_path: either host cut a worktree (worktree.enabled) or
+  // the agent pointed cwd at an existing worktree of the project (common for
+  // reviewers reading an implementer's tree). Never key is_worktree only off the
+  // config flag — that left attach-style children with project_path=worktree.
+  const isWorktreeSession = worktreeEnabled || resolve(cwd) !== resolve(projectPath)
+  const worktreePath = isWorktreeSession ? cwd : undefined
+  createSessionRecord(projectPath, childSessionId, title, isWorktreeSession, gitBranch ?? undefined, worktreePath)
   let child: Session
   // createSession always promotes the new session to project-active. Collaboration
   // children must not steal routing from the parent for unscoped main-process ops.

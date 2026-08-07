@@ -74,12 +74,21 @@ vi.mock('../git/worktree-ops', () => ({
   resolveMainWorktreeDir: (folderPath: string) => state.resolveMainWorktreeDir(folderPath),
 }))
 vi.mock('../db-sessions', () => ({
-  createSession: (projectPath: string, sessionId: string, title?: string) => {
+  createSession: (
+    projectPath: string,
+    sessionId: string,
+    title?: string,
+    isWorktree?: boolean,
+    _gitBranch?: string,
+    worktreePath?: string,
+  ) => {
     // Mirrors the real guard: a session can only be filed under a known project.
     if (!state.projects.some((project) => project.path === projectPath)) {
       throw new Error(`Project not found for path: ${projectPath}`)
     }
-    state.db!.prepare('INSERT INTO sessions (id, project_path, title) VALUES (?, ?, ?)').run(sessionId, projectPath, title ?? null)
+    state.db!.prepare(
+      'INSERT INTO sessions (id, project_path, title, is_worktree, worktree_path) VALUES (?, ?, ?, ?, ?)',
+    ).run(sessionId, projectPath, title ?? null, isWorktree ? 1 : 0, worktreePath ?? null)
     return sessionId
   },
 }))
@@ -115,7 +124,9 @@ function createSchema(db: Database.Database): void {
       title TEXT,
       provider_id TEXT,
       provider TEXT,
-      acp_agent_id TEXT
+      acp_agent_id TEXT,
+      is_worktree INTEGER DEFAULT 0,
+      worktree_path TEXT
     );
     CREATE TABLE session_collaboration_grants (
       credential_hash TEXT PRIMARY KEY,
@@ -957,6 +968,9 @@ describe('child session project attribution', () => {
   it('does not register when the agent points cwd at an existing managed worktree', async () => {
     // Parent is on the main project; agent (or a prior start result) sets cwd to
     // an existing SuperOne worktree path without worktree.enabled.
+    // Real-world pattern (VibeInspo): Reviewer grants use implementer worktree
+    // as cwd so they can read that tree — host must file under main, not spawn
+    // a sidebar project named like `tjdllgg-735f677`.
     const { homedir } = await import('os')
     const managedRoot = join(homedir(), '.worktrees')
     mkdirSync(managedRoot, { recursive: true })
@@ -971,6 +985,13 @@ describe('child session project attribution', () => {
     expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
     expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
     expect(createSession.mock.calls[0][0].cwd).toBe(existingWt)
+    // DB row: project = main, is_worktree + worktree_path even without worktree.enabled
+    const row = state.db!.prepare(
+      'SELECT project_path, is_worktree, worktree_path FROM sessions WHERE id != ?',
+    ).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
+    expect(row.project_path).toBe(TEST_CWD)
+    expect(row.is_worktree).toBe(1)
+    expect(row.worktree_path).toBe(existingWt)
     rmSync(existingWt, { recursive: true, force: true })
   })
 

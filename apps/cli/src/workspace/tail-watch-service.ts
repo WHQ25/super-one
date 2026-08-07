@@ -1,5 +1,6 @@
-import { existsSync, fstatSync, openSync, closeSync, statSync } from 'node:fs'
+import { existsSync, fstatSync, openSync, closeSync, statSync, readSync, realpathSync } from 'node:fs'
 import {
+  assertAgentTranscriptAbsolutePath,
   isToolOutputRelativePath,
   normalizeProjectRelativePath,
   resolveProjectPath,
@@ -20,7 +21,10 @@ export type TailWatchPollResult = {
 
 type TailWatchEntry = {
   projectId: string
+  /** Project-relative path under temp/, or empty when absolutePath is set. */
   relativePath: string
+  /** Allowlisted host absolute path (Grok/Claude agent transcripts). */
+  absolutePath?: string
   offset: number
   owner: string
 }
@@ -28,8 +32,9 @@ type TailWatchEntry = {
 const MAX_POLL_BYTES = 10 * 1024 * 1024
 
 /**
- * Byte-offset tail watches for tool output files under project `temp/`.
- * Poll returns only the appended window (base64), reusing WorkspaceFsService.readFile offset.
+ * Byte-offset tail watches for:
+ * - tool output files under project `temp/`
+ * - host agent transcripts under ~/.grok/sessions or ~/.claude/projects
  */
 export class WorkspaceTailWatchService {
   private readonly entries = new Map<string, TailWatchEntry>()
@@ -42,22 +47,52 @@ export class WorkspaceTailWatchService {
   start(
     projectId: string,
     relativePath: string,
-    opts?: { offset?: number; ownerClientId?: string },
-  ): { watchId: string; offset: number; relativePath: string } {
+    opts?: { offset?: number; ownerClientId?: string; absolutePath?: string },
+  ): { watchId: string; offset: number; relativePath: string; absolutePath?: string } {
     const project = this.projects.get(projectId)
     if (!project) throw Object.assign(new Error('project not found'), { code: 'not_found' })
 
-    const rel = normalizeProjectRelativePath(relativePath || '')
-    if (!isToolOutputRelativePath(rel)) {
-      throw Object.assign(
-        new Error('tail watch is limited to project-relative paths under temp/'),
-        { code: 'invalid_argument' },
-      )
-    }
+    const absolutePath = typeof opts?.absolutePath === 'string' && opts.absolutePath
+      ? opts.absolutePath
+      : undefined
 
-    const resolved = resolveProjectPath(project.path, rel)
-    if (!resolved.ok) {
-      throw Object.assign(new Error(resolved.reason), { code: 'invalid_argument' })
+    let rel = ''
+    let resolvedAbs = ''
+
+    if (absolutePath) {
+      if (!assertAgentTranscriptAbsolutePath(absolutePath)) {
+        throw Object.assign(
+          new Error('absolute tail watch is limited to agent transcript roots (~/.grok/sessions, ~/.claude/projects)'),
+          { code: 'invalid_argument' },
+        )
+      }
+      // Prefer realpath when the file already exists so we open the resolved target
+      // only after it has been verified under a root (assert above).
+      try {
+        resolvedAbs = existsSync(absolutePath) ? realpathSync(absolutePath) : absolutePath
+      } catch {
+        resolvedAbs = absolutePath
+      }
+      if (!assertAgentTranscriptAbsolutePath(resolvedAbs)) {
+        throw Object.assign(
+          new Error('absolute tail watch resolved outside agent transcript roots'),
+          { code: 'invalid_argument' },
+        )
+      }
+      rel = absolutePath
+    } else {
+      rel = normalizeProjectRelativePath(relativePath || '')
+      if (!isToolOutputRelativePath(rel)) {
+        throw Object.assign(
+          new Error('tail watch is limited to project-relative paths under temp/'),
+          { code: 'invalid_argument' },
+        )
+      }
+      const resolved = resolveProjectPath(project.path, rel)
+      if (!resolved.ok) {
+        throw Object.assign(new Error(resolved.reason), { code: 'invalid_argument' })
+      }
+      resolvedAbs = resolved.absolutePath
     }
 
     let offset = opts?.offset ?? 0
@@ -67,10 +102,9 @@ export class WorkspaceTailWatchService {
       })
     }
 
-    // Clamp start offset to current size when the file already exists.
-    if (existsSync(resolved.absolutePath)) {
+    if (existsSync(resolvedAbs)) {
       try {
-        const st = statSync(resolved.absolutePath)
+        const st = statSync(resolvedAbs)
         if (!st.isFile()) {
           throw Object.assign(new Error('not a file'), { code: 'invalid_argument' })
         }
@@ -85,12 +119,19 @@ export class WorkspaceTailWatchService {
     const watchId = crypto.randomUUID()
     this.entries.set(watchId, {
       projectId,
-      relativePath: rel,
+      relativePath: absolutePath ? '' : rel,
+      // Store resolved path so poll opens the verified target, not a swapped symlink.
+      ...(absolutePath ? { absolutePath: resolvedAbs } : {}),
       offset,
       owner: opts?.ownerClientId ?? '',
     })
     this.projects.touch(projectId)
-    return { watchId, offset, relativePath: rel }
+    return {
+      watchId,
+      offset,
+      relativePath: absolutePath ? '' : rel,
+      ...(absolutePath ? { absolutePath: resolvedAbs } : {}),
+    }
   }
 
   poll(watchId: string, ownerClientId?: string): TailWatchPollResult {
@@ -104,12 +145,22 @@ export class WorkspaceTailWatchService {
       throw Object.assign(new Error('project not found'), { code: 'not_found' })
     }
 
-    const resolved = resolveProjectPath(project.path, entry.relativePath)
-    if (!resolved.ok) {
-      throw Object.assign(new Error(resolved.reason), { code: 'invalid_argument' })
+    let absolutePath = entry.absolutePath
+    if (!absolutePath) {
+      const resolved = resolveProjectPath(project.path, entry.relativePath)
+      if (!resolved.ok) {
+        throw Object.assign(new Error(resolved.reason), { code: 'invalid_argument' })
+      }
+      absolutePath = resolved.absolutePath
+    } else if (!assertAgentTranscriptAbsolutePath(absolutePath)) {
+      // Re-validate on each poll (symlink swap race).
+      throw Object.assign(
+        new Error('absolute tail watch resolved outside agent transcript roots'),
+        { code: 'invalid_argument' },
+      )
     }
 
-    if (!existsSync(resolved.absolutePath)) {
+    if (!existsSync(absolutePath)) {
       return {
         content: '',
         encoding: 'base64',
@@ -121,7 +172,7 @@ export class WorkspaceTailWatchService {
 
     let size = 0
     try {
-      const fd = openSync(resolved.absolutePath, 'r')
+      const fd = openSync(absolutePath, 'r')
       try {
         size = fstatSync(fd).size
       } finally {
@@ -147,14 +198,27 @@ export class WorkspaceTailWatchService {
     }
 
     const toRead = Math.min(MAX_POLL_BYTES, size - entry.offset)
-    const slice = this.fs.readFile(entry.projectId, entry.relativePath, {
-      offset: entry.offset,
-      limit: toRead,
-    })
+    let contentB64: string
+    if (entry.absolutePath) {
+      const buf = Buffer.alloc(toRead)
+      const fd = openSync(absolutePath, 'r')
+      try {
+        const n = readSync(fd, buf, 0, toRead, entry.offset)
+        contentB64 = buf.subarray(0, n).toString('base64')
+      } finally {
+        closeSync(fd)
+      }
+    } else {
+      const slice = this.fs.readFile(entry.projectId, entry.relativePath, {
+        offset: entry.offset,
+        limit: toRead,
+      })
+      contentB64 = slice.content
+    }
     entry.offset = entry.offset + toRead
     this.projects.touch(entry.projectId)
     return {
-      content: slice.content,
+      content: contentB64,
       encoding: 'base64',
       offset: entry.offset,
       size,

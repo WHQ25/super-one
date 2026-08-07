@@ -567,6 +567,20 @@ export interface EnvironmentAPI {
     project: { environmentId: string; projectId: string },
     relativePath: string,
   ): Promise<unknown>
+  workspaceTailWatchStart(
+    project: { environmentId: string; projectId: string },
+    relativePath: string,
+    offset?: number,
+    absolutePath?: string,
+  ): Promise<{ watchId: string; offset: number; relativePath: string; absolutePath?: string }>
+  workspaceTailWatchPoll(
+    watchId: string,
+    project?: { environmentId: string; projectId: string },
+  ): Promise<{ content: string; encoding: 'base64'; offset: number; size: number; missing?: boolean }>
+  workspaceTailWatchStop(
+    watchId: string,
+    project: { environmentId: string; projectId: string },
+  ): Promise<{ ok: boolean }>
   pairRemote(input: {
     baseUrl: string
     pairingToken: string

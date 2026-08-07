@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -7,6 +7,9 @@ import {
   listFilesUnderRoot,
   discoverClaudeSkillsAndCommands,
   isToolOutputRelativePath,
+  isAgentTranscriptAbsolutePath,
+  assertAgentTranscriptAbsolutePath,
+  getAgentTranscriptRoots,
   toProjectRelativePath,
 } from './index'
 
@@ -59,6 +62,41 @@ describe('tool output path helpers', () => {
       expect(toProjectRelativePath(dir, '/etc/passwd')).toBeNull()
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('allowlists Grok/Claude agent transcript absolute paths', () => {
+    const home = '/Users/me'
+    const roots = getAgentTranscriptRoots({ homeDir: home })
+    expect(roots.some((r) => r.includes('.grok/sessions'))).toBe(true)
+    // Client-side shape check (any user home)
+    expect(isAgentTranscriptAbsolutePath(
+      `${home}/.grok/sessions/%2Fproj/sa1/chat_history.jsonl`,
+    )).toBe(true)
+    expect(isAgentTranscriptAbsolutePath(
+      `${home}/.claude/projects/-Users-me-proj/agent-abc.jsonl`,
+    )).toBe(true)
+    expect(isAgentTranscriptAbsolutePath('/etc/passwd')).toBe(false)
+    // Server-side host roots (non-existent file: lexical under root)
+    expect(assertAgentTranscriptAbsolutePath(
+      `${home}/.grok/sessions/%2Fproj/sa1/chat_history.jsonl`,
+      { homeDir: home },
+    )).toBe(true)
+    expect(assertAgentTranscriptAbsolutePath('/etc/passwd', { homeDir: home })).toBe(false)
+  })
+
+  it('rejects symlink escape outside agent transcript roots', () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-home-'))
+    const sessions = join(home, '.grok', 'sessions', 'sa1')
+    mkdirSync(sessions, { recursive: true })
+    const outside = join(home, 'secret.txt')
+    writeFileSync(outside, 'secret')
+    const link = join(sessions, 'chat_history.jsonl')
+    try {
+      symlinkSync(outside, link)
+      expect(assertAgentTranscriptAbsolutePath(link, { homeDir: home })).toBe(false)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
     }
   })
 })

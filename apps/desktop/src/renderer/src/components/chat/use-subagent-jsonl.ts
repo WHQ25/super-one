@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBashOutput } from '@/stores/chat'
 import { mapMessagesStructural } from '@/stores/chat-store/event-reducer/shared'
+import {
+  startBashOutputLive,
+  stopBashOutputLive,
+} from '@/stores/chat-store/helpers/bash-output-live'
 import { parseJsonlOutput, entriesFromRecords, type JsonlEntry } from './subagent-utils'
 
 /** Live tail while running; completed agents get a full authoritative read. */
@@ -57,6 +61,9 @@ interface UseSubagentJsonlOptions {
  * Watches an async subagent's JSONL output file and parses it into interleaved
  * tool/activity entries. Shared by the inline SubagentBlock and the full-screen
  * SubagentFullView so both render identical async subagent activity.
+ *
+ * Local: desktop fs.watch. Remote: EnvironmentHost → node workspace.tailWatch*
+ * (project temp/ or allowlisted ~/.grok/sessions|~/.claude/projects absolute paths).
  */
 export function useSubagentJsonl({
   toolUseId,
@@ -90,11 +97,18 @@ export function useSubagentJsonl({
         },
       },
     }))
-    window.app.trace?.('subagent.output', 'start_watching', { outputFile, isRunning }, toolUseId)
-    window.app.watchBashOutput(toolUseId, outputFile, SUBAGENT_OUTPUT_TAIL_LINES).catch((err) => {
-      window.app.trace?.('subagent.output', 'watch_error', { outputFile, error: String(err) }, toolUseId)
+    const projectKey = useChatStore.getState().activeProject
+    window.app.trace?.('subagent.output', 'start_watching', { outputFile, isRunning, projectKey }, toolUseId)
+    // Local fs.watch or remote node tailWatch (incl. agent transcript absolute paths).
+    const stop = startBashOutputLive({
+      toolUseId,
+      outputPath: outputFile,
+      projectKey,
+      tailLines: SUBAGENT_OUTPUT_TAIL_LINES,
     })
-    return () => { window.app.unwatchBashOutput(toolUseId).catch(() => {}) }
+    return () => {
+      stop()
+    }
   }, [enabled, isRunning, outputFile, toolUseId])
 
   useEffect(() => {
@@ -111,7 +125,7 @@ export function useSubagentJsonl({
 
   useEffect(() => {
     if (!enabled || isRunning || bashOutput?.outputPath !== outputFile || bashOutput?.finished !== true) return
-    window.app.unwatchBashOutput(toolUseId).catch(() => {})
+    stopBashOutputLive(toolUseId)
   }, [bashOutput?.finished, bashOutput?.outputPath, enabled, isRunning, outputFile, toolUseId])
 
   // Once the agent has finished, do one authoritative full read and overwrite the
@@ -119,25 +133,42 @@ export function useSubagentJsonl({
   // degrades to the live-tailed result rather than blanking it.
   // - Claude agent-*.jsonl: SDK parentUuid chain (getSubagentMessages)
   // - Grok chat_history.jsonl: full file read (parseJsonlOutput understands both formats)
+  // - Remote Grok: live remote tail already accumulated full content; prefer that when present.
   useEffect(() => {
     if (!enabled || !outputFile || isRunning) return
     if (authoritativeReadFor.current === outputFile) return
     authoritativeReadFor.current = outputFile
 
     if (skipAuthoritativeRead) {
+      // Prefer content already tailed (works for local + remote). Fall back to local file read.
+      if (watchedContent) {
+        const parsed = parseJsonlOutput(watchedContent)
+        if (parsed.entries.length > 0 || parsed.resultText) {
+          setEntries(parsed.entries)
+          setResultText(parsed.resultText)
+          window.app.trace?.('subagent.output', 'grok_history_from_tail', {
+            entries: parsed.entries.length,
+            hasResultText: !!parsed.resultText,
+          }, toolUseId)
+          return
+        }
+      }
       const root = useChatStore.getState().activeProject || outputFile
-      void window.app.readProjectFile?.(root, outputFile).then((file) => {
-        const content = typeof file?.content === 'string' ? file.content : ''
-        if (!content) return
-        const parsed = parseJsonlOutput(content)
-        if (parsed.entries.length === 0 && !parsed.resultText) return
-        setEntries(parsed.entries)
-        setResultText(parsed.resultText)
-        window.app.trace?.('subagent.output', 'grok_history_read', {
-          entries: parsed.entries.length,
-          hasResultText: !!parsed.resultText,
-        }, toolUseId)
-      }).catch(() => {})
+      // Local absolute read only (remote paths outside project won't work here).
+      if (root && !String(root).startsWith('remote:')) {
+        void window.app.readProjectFile?.(root, outputFile).then((file) => {
+          const content = typeof file?.content === 'string' ? file.content : ''
+          if (!content) return
+          const parsed = parseJsonlOutput(content)
+          if (parsed.entries.length === 0 && !parsed.resultText) return
+          setEntries(parsed.entries)
+          setResultText(parsed.resultText)
+          window.app.trace?.('subagent.output', 'grok_history_read', {
+            entries: parsed.entries.length,
+            hasResultText: !!parsed.resultText,
+          }, toolUseId)
+        }).catch(() => {})
+      }
       return
     }
 
@@ -153,7 +184,7 @@ export function useSubagentJsonl({
         persistTaskResultText(toolUseId, parsed.resultText)
       }
     }).catch(() => {})
-  }, [enabled, outputFile, isRunning, toolUseId, taskResultText, skipAuthoritativeRead])
+  }, [enabled, outputFile, isRunning, toolUseId, taskResultText, skipAuthoritativeRead, watchedContent])
 
   return { entries, resultText }
 }

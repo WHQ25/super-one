@@ -47,6 +47,90 @@ describe('toToolOutputRelativePath', () => {
   })
 })
 
+describe('startBashOutputLive agent transcript absolute paths (remote)', () => {
+  beforeEach(() => {
+    mockWatchBashOutput.mockReset()
+    mockUnwatchBashOutput.mockReset()
+    for (const k of Object.keys(bashOutputs)) delete bashOutputs[k]
+  })
+
+  afterEach(() => {
+    stopBashOutputLive('tool-sa')
+  })
+
+  it('routes ~/.grok/sessions chat_history via absolutePath on remote port', async () => {
+    const abs = '/Users/me/.grok/sessions/%2Fwork%2Fapp/sa-1/chat_history.jsonl'
+    const start = vi.fn().mockResolvedValue({
+      watchId: 'w-sa',
+      offset: 0,
+      relativePath: '',
+      absolutePath: abs,
+    })
+    const poll = vi
+      .fn()
+      .mockResolvedValueOnce({
+        content: Buffer.from('{"type":"assistant","tool_calls":[]}\n').toString('base64'),
+        encoding: 'base64',
+        offset: 40,
+        size: 40,
+      })
+      .mockResolvedValue({
+        content: '',
+        encoding: 'base64',
+        offset: 40,
+        size: 40,
+      })
+    const stop = vi.fn().mockResolvedValue({ ok: true })
+
+    startBashOutputLive({
+      toolUseId: 'tool-sa',
+      outputPath: abs,
+      projectKey: 'remote:conn-1:/work/app',
+      projectId: 'proj-remote-1',
+      environmentId: 'env-node-1',
+      port: { start, poll, stop },
+      pollIntervalMs: 20,
+    })
+
+    await vi.waitFor(() => {
+      expect(start).toHaveBeenCalledWith({
+        project: { environmentId: 'env-node-1', projectId: 'proj-remote-1' },
+        relativePath: '',
+        absolutePath: abs,
+        offset: 0,
+      })
+    })
+    expect(mockWatchBashOutput).not.toHaveBeenCalled()
+    await vi.waitFor(() => {
+      expect(bashOutputs['tool-sa']?.content).toContain('tool_calls')
+    })
+    // Poll only receives watchId — project was bound at start (router routing).
+    expect(poll).toHaveBeenCalledWith({ watchId: 'w-sa' })
+    stopBashOutputLive('tool-sa')
+    await vi.waitFor(() => {
+      expect(stop).toHaveBeenCalledWith({ watchId: 'w-sa' })
+    })
+  })
+
+  it('rejects remote paths that are neither temp/ nor agent transcript roots', () => {
+    startBashOutputLive({
+      toolUseId: 'tool-bad',
+      outputPath: '/etc/passwd',
+      projectKey: 'remote:conn-1:/work/app',
+      projectId: 'proj-remote-1',
+      environmentId: 'env-node-1',
+      port: {
+        start: vi.fn(),
+        poll: vi.fn(),
+        stop: vi.fn(),
+      },
+    })
+    expect(bashOutputs['tool-bad']?.finished).toBe(true)
+    expect(bashOutputs['tool-bad']?.content).toBe('')
+    stopBashOutputLive('tool-bad')
+  })
+})
+
 describe('startBashOutputLive', () => {
   beforeEach(() => {
     mockWatchBashOutput.mockReset()
@@ -64,7 +148,7 @@ describe('startBashOutputLive', () => {
       outputPath: '/tmp/job.output',
       projectKey: '/Users/me/proj',
     })
-    expect(mockWatchBashOutput).toHaveBeenCalledWith('tool-1', '/tmp/job.output')
+    expect(mockWatchBashOutput).toHaveBeenCalledWith('tool-1', '/tmp/job.output', undefined)
   })
 
   it('remote project calls tailWatch port (node RPC path) instead of local fs.watch', async () => {

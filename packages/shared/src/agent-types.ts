@@ -2717,6 +2717,10 @@ export const AgentIpcChannels = {
   ENVIRONMENT_GET_LOCAL_ID: 'environment:getLocalId',
   ENVIRONMENT_WORKSPACE_LIST_DIR: 'environment:workspaceListDir',
   ENVIRONMENT_WORKSPACE_READ_FILE: 'environment:workspaceReadFile',
+  /** Remote tool-output / agent-transcript byte-offset tail watch. */
+  ENVIRONMENT_WORKSPACE_TAIL_WATCH_START: 'environment:workspaceTailWatchStart',
+  ENVIRONMENT_WORKSPACE_TAIL_WATCH_POLL: 'environment:workspaceTailWatchPoll',
+  ENVIRONMENT_WORKSPACE_TAIL_WATCH_STOP: 'environment:workspaceTailWatchStop',
   ENVIRONMENT_PAIR_REMOTE: 'environment:pairRemote',
   ENVIRONMENT_CONNECT_FAILOVER: 'environment:connectWithFailover',
   /** Dev-only: probe local remote-node lab (`bun run dev:cli:lab`). */

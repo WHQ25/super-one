@@ -189,10 +189,18 @@ export interface WorkspaceWatchInput {
   relativePath?: string
 }
 
-/** Byte-offset tail of a tool-output file under project `temp/`. */
+/**
+ * Byte-offset tail of:
+ * - tool-output files under project `temp/` (`relativePath`), or
+ * - host agent transcripts under ~/.grok/sessions or ~/.claude/projects (`absolutePath`).
+ * Provide exactly one of relativePath (temp/) or absolutePath (agent roots).
+ */
 export interface WorkspaceTailWatchStartInput {
   project: ProjectRef
+  /** Project-relative path under `temp/` (omit when absolutePath is set). */
   relativePath: string
+  /** Allowlisted host absolute path for Grok/Claude agent transcripts. */
+  absolutePath?: string
   /** Starting byte offset (default 0). Clamped to file size when larger. */
   offset?: number
 }
@@ -254,12 +262,12 @@ export interface WorkspaceGateway {
   /** Cancel by returning / aborting the async iterable consumer. */
   watch(input: WorkspaceWatchInput): AsyncIterable<{ path: string; type: string }>
   /**
-   * Byte-offset tail watch for tool output paths under project `temp/`.
+   * Byte-offset tail watch for project `temp/` outputs or host agent transcripts.
    * Poll returns only appended bytes (base64); stop releases the watch id.
    */
   tailWatchStart(
     input: WorkspaceTailWatchStartInput,
-  ): Promise<{ watchId: string; offset: number; relativePath: string }>
+  ): Promise<{ watchId: string; offset: number; relativePath: string; absolutePath?: string }>
   tailWatchPoll(input: { watchId: string }): Promise<WorkspaceTailWatchPollResult>
   tailWatchStop(input: { watchId: string }): Promise<{ ok: boolean }>
 }

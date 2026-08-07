@@ -1333,12 +1333,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       },
       tailWatchStart: async (input) => {
         this.assertEnv(input.project.environmentId)
-        return this.client.rpc<{ watchId: string; offset: number; relativePath: string }>(
+        return this.client.rpc<{ watchId: string; offset: number; relativePath: string; absolutePath?: string }>(
           'workspace.tailWatchStart',
           {
             projectId: input.project.projectId,
             relativePath: input.relativePath,
             offset: input.offset,
+            ...(input.absolutePath ? { absolutePath: input.absolutePath } : {}),
           },
         )
       },

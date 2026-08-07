@@ -1381,10 +1381,12 @@ function handleWorkspaceTailWatchStart(payload: unknown, ctx: RpcContext): RpcRe
   const p = asRecord(payload)
   try {
     const offset = typeof p.offset === 'number' ? p.offset : undefined
+    const absolutePath = typeof p.absolutePath === 'string' ? p.absolutePath : undefined
     return {
       result: ctx.workspaceTailWatch.start(String(p.projectId ?? ''), String(p.relativePath ?? ''), {
         offset,
         ownerClientId: ctx.client.clientSessionId,
+        ...(absolutePath ? { absolutePath } : {}),
       }),
     }
   } catch (err) {

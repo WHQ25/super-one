@@ -1,6 +1,9 @@
 import { realpathSync, existsSync, lstatSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, normalize, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
+import { isAgentTranscriptAbsolutePath as isAgentTranscriptPathShape } from '@superone/shared/agent-transcript-path'
+
+export { isAgentTranscriptAbsolutePath } from '@superone/shared/agent-transcript-path'
 
 /**
  * Resolve a project-relative path and ensure it stays inside the project root.
@@ -109,6 +112,68 @@ export function isToolOutputRelativePath(relativePath: string): boolean {
   const n = normalizeProjectRelativePath(relativePath)
   if (n === '.' || n === '' || n === '..' || n.startsWith('../')) return false
   return n === 'temp' || n.startsWith(TOOL_OUTPUT_REL_PREFIX)
+}
+
+/**
+ * Host agent transcript roots (Grok child sessions, Claude project agents).
+ * Used for remote tail/read of absolute paths outside the project tree.
+ */
+export function getAgentTranscriptRoots(opts?: { homeDir?: string }): string[] {
+  const homeDir = opts?.homeDir ?? homedir()
+  return [
+    join(homeDir, '.grok', 'sessions'),
+    join(homeDir, '.claude', 'projects'),
+  ]
+}
+
+/**
+ * Server-side allowlist: absolute path must resolve under this host's agent
+ * transcript roots (~/.grok/sessions, ~/.claude/projects).
+ *
+ * Uses realpath on existing paths so a symlink under an agent root cannot
+ * escape. Handles macOS `/var` vs `/private/var` by matching both resolved and
+ * realpath forms of roots. Missing targets only climb within the claimed root.
+ */
+export function assertAgentTranscriptAbsolutePath(
+  filePath: string,
+  opts?: { homeDir?: string },
+): boolean {
+  if (!isAgentTranscriptPathShape(filePath)) return false
+  if (!isAbsolute(filePath) && !filePath.replace(/\\/g, '/').startsWith('/')) return false
+
+  const candidate = normalizeSep(resolve(filePath))
+  const roots = getAgentTranscriptRoots(opts).map((root) => {
+    const resolved = normalizeSep(resolve(root))
+    const real = existsSync(resolved) ? normalizeSep(resolveRealPath(resolved)) : resolved
+    return { resolved, real }
+  })
+
+  const underAnyRoot = (abs: string): boolean => {
+    const n = normalizeSep(abs)
+    return roots.some(
+      (r) => n === r.resolved || n.startsWith(r.resolved + sep)
+        || n === r.real || n.startsWith(r.real + sep),
+    )
+  }
+
+  // Must claim a root lexically (or via realpath form, e.g. /private/var/...).
+  if (!underAnyRoot(candidate)) return false
+
+  // Target exists: realpath must stay under a root.
+  if (existsSync(candidate)) {
+    return underAnyRoot(resolveRealPath(candidate))
+  }
+
+  // Missing target: climb only while still under some root form.
+  let existing = candidate
+  while (!existsSync(existing)) {
+    const parent = dirname(existing)
+    if (parent === existing) return true
+    if (!underAnyRoot(parent)) return true // climbed past root — empty tree OK
+    existing = parent
+  }
+
+  return underAnyRoot(resolveRealPath(existing))
 }
 
 /**

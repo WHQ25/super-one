@@ -172,6 +172,29 @@ const environmentAPI = {
     project: { environmentId: string; projectId: string },
     relativePath: string,
   ) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_WORKSPACE_READ_FILE, project, relativePath),
+  workspaceTailWatchStart: (
+    project: { environmentId: string; projectId: string },
+    relativePath: string,
+    offset?: number,
+    absolutePath?: string,
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_WORKSPACE_TAIL_WATCH_START,
+      project,
+      relativePath,
+      offset,
+      absolutePath,
+    ),
+  workspaceTailWatchPoll: (
+    watchId: string,
+    project?: { environmentId: string; projectId: string },
+  ) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_WORKSPACE_TAIL_WATCH_POLL, watchId, project),
+  workspaceTailWatchStop: (
+    watchId: string,
+    project: { environmentId: string; projectId: string },
+  ) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_WORKSPACE_TAIL_WATCH_STOP, watchId, project),
   pairRemote: (input: { baseUrl: string; pairingToken: string; label: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE, input),
   connectWithFailover: (connectionId: string) =>

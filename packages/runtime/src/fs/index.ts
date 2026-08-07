@@ -13,6 +13,9 @@ export {
   TOOL_OUTPUT_REL_PREFIX,
   normalizeProjectRelativePath,
   isToolOutputRelativePath,
+  getAgentTranscriptRoots,
+  isAgentTranscriptAbsolutePath, // re-export browser-safe from shared
+  assertAgentTranscriptAbsolutePath,
   toProjectRelativePath,
 } from './path-security'
 export {

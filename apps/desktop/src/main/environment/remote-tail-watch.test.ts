@@ -3,7 +3,7 @@
  */
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const electron = vi.hoisted(() => {
@@ -100,5 +100,63 @@ describe('RemoteEnvironmentGateway workspace.tailWatch', () => {
     expect(stop.ok).toBe(true)
 
     manager.disconnectAll()
+  })
+
+  it('start/poll absolute Grok chat_history via node RPC absolutePath', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'rtw-home-'))
+    const nodeHome = mkdtempSync(join(tmpdir(), 'rtw-node-abs-'))
+    const desk = mkdtempSync(join(tmpdir(), 'rtw-desk-abs-'))
+    const projectDir = mkdtempSync(join(tmpdir(), 'rtw-proj-abs-'))
+    dirs.push(home, nodeHome, desk, projectDir)
+    mkdirSync(join(projectDir, 'temp'), { recursive: true })
+
+    const transcript = join(home, '.grok', 'sessions', 'sa-remote', 'chat_history.jsonl')
+    mkdirSync(dirname(transcript), { recursive: true })
+    writeFileSync(transcript, '{"type":"assistant","tool_calls":[{"name":"read_file"}]}\n')
+
+    const prevHome = process.env.HOME
+    process.env.HOME = home
+    try {
+      const port = 38100 + Math.floor(Math.random() * 1000)
+      const rt = await startNodeRuntime({
+        nodeHome,
+        bindHost: '127.0.0.1',
+        bindPort: port,
+        simulatedHarness: true,
+      })
+      runtimes.push(rt)
+
+      const store = new NodeCredentialStore(desk)
+      const manager = new NodeConnectionManager({ credentialStore: store })
+      const pair = rt.auth.createPairingToken()
+      const { descriptor } = await manager.pairAndConnect({
+        baseUrl: rt.server.url,
+        pairingToken: pair.token,
+        label: 'remote-tail-abs',
+      })
+
+      const gw = manager.getGateway(descriptor.environmentId) as RemoteEnvironmentGateway
+      const project = await gw.openProject(projectDir, 'p')
+      const projectRef = { environmentId: descriptor.environmentId, projectId: project.projectId }
+
+      const started = await gw.workspace.tailWatchStart({
+        project: projectRef,
+        relativePath: '',
+        absolutePath: transcript,
+        offset: 0,
+      })
+      expect(started.watchId).toBeTruthy()
+      expect(started.absolutePath).toBeTruthy()
+
+      const first = await gw.workspace.tailWatchPoll({ watchId: started.watchId })
+      expect(Buffer.from(first.content, 'base64').toString('utf8')).toContain('read_file')
+
+      const stop = await gw.workspace.tailWatchStop({ watchId: started.watchId })
+      expect(stop.ok).toBe(true)
+      manager.disconnectAll()
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME
+      else process.env.HOME = prevHome
+    }
   })
 })

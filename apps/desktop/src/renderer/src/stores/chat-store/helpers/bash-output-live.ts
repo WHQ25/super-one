@@ -5,7 +5,11 @@
  * Remote projects must never touch local fs.watch — they go through
  * EnvironmentHost → node `workspace.tailWatch*` RPC (or a readFile-offset
  * composition adapter when the dedicated IPC is not yet exposed).
+ *
+ * Remote also allows host absolute paths under agent transcript roots
+ * (~/.grok/sessions, ~/.claude/projects) via tailWatchStart.absolutePath.
  */
+import { isAgentTranscriptAbsolutePath } from '@superone/shared/agent-transcript-path'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useAppStore } from '../../app'
 import { useChatStore } from '../index'
@@ -14,6 +18,7 @@ export type BashTailWatchStartResult = {
   watchId: string
   offset: number
   relativePath: string
+  absolutePath?: string
 }
 
 export type BashTailWatchPollResult = {
@@ -29,6 +34,7 @@ export interface BashTailWatchPort {
   start(input: {
     project: { environmentId: string; projectId: string }
     relativePath: string
+    absolutePath?: string
     offset?: number
   }): Promise<BashTailWatchStartResult>
   poll(input: { watchId: string }): Promise<BashTailWatchPollResult>
@@ -97,25 +103,31 @@ function pushBashOutput(toolUseId: string, content: string, finished: boolean, o
  * when exposed on `window.environment`, otherwise composes full-file reads through
  * `workspaceReadFile` (same content as offset poll for small tool outputs).
  */
+type EnvTailApi = {
+  workspaceTailWatchStart?: (
+    project: { environmentId: string; projectId: string },
+    relativePath: string,
+    offset?: number,
+    absolutePath?: string,
+  ) => Promise<BashTailWatchStartResult>
+  workspaceTailWatchPoll?: (
+    watchId: string,
+    project?: { environmentId: string; projectId: string },
+  ) => Promise<BashTailWatchPollResult>
+  workspaceTailWatchStop?: (
+    watchId: string,
+    project: { environmentId: string; projectId: string },
+  ) => Promise<{ ok: boolean }>
+  workspaceReadFile?: (
+    project: { environmentId: string; projectId: string },
+    relativePath: string,
+  ) => Promise<{ content: string | Uint8Array; hash?: string }>
+}
+
 export function createEnvironmentBashTailPort(): BashTailWatchPort | null {
   const env = (
     typeof window !== 'undefined'
-      ? (window as unknown as {
-          environment?: {
-            workspaceTailWatchStart?: (
-              project: { environmentId: string; projectId: string },
-              relativePath: string,
-              offset?: number,
-            ) => Promise<BashTailWatchStartResult>
-            workspaceTailWatchPoll?: (watchId: string) => Promise<BashTailWatchPollResult>
-            workspaceTailWatchStop?: (watchId: string) => Promise<{ ok: boolean }>
-            workspaceReadFile?: (
-              project: { environmentId: string; projectId: string },
-              relativePath: string,
-            ) => Promise<{ content: string | Uint8Array; hash?: string }>
-            getLocalId?: () => Promise<string>
-          }
-        }).environment
+      ? (window as unknown as { environment?: EnvTailApi }).environment
       : undefined
   )
   if (!env) return null
@@ -125,11 +137,32 @@ export function createEnvironmentBashTailPort(): BashTailWatchPort | null {
     typeof env.workspaceTailWatchPoll === 'function' &&
     typeof env.workspaceTailWatchStop === 'function'
   ) {
+    // Bind project on start so poll/stop can route without re-passing it.
+    const projectByWatch = new Map<string, { environmentId: string; projectId: string }>()
+    const startFn = env.workspaceTailWatchStart
+    const pollFn = env.workspaceTailWatchPoll
+    const stopFn = env.workspaceTailWatchStop
     return {
-      start: (input) =>
-        env.workspaceTailWatchStart!(input.project, input.relativePath, input.offset),
-      poll: (input) => env.workspaceTailWatchPoll!(input.watchId),
-      stop: (input) => env.workspaceTailWatchStop!(input.watchId),
+      start: async (input) => {
+        const started = await startFn(
+          input.project,
+          input.relativePath,
+          input.offset,
+          input.absolutePath,
+        )
+        projectByWatch.set(started.watchId, input.project)
+        return started
+      },
+      poll: async (input) => {
+        const project = projectByWatch.get(input.watchId)
+        return pollFn(input.watchId, project)
+      },
+      stop: async (input) => {
+        const project = projectByWatch.get(input.watchId)
+        projectByWatch.delete(input.watchId)
+        if (!project) return { ok: true }
+        return stopFn(input.watchId, project)
+      },
     }
   }
 
@@ -197,6 +230,8 @@ export type StartBashOutputLiveOptions = {
   /** Injectable for tests; production uses createEnvironmentBashTailPort(). */
   port?: BashTailWatchPort | null
   pollIntervalMs?: number
+  /** Local fs.watch only: max lines to retain (default watcher default). */
+  tailLines?: number
 }
 
 async function resolveRemoteEnvironmentId(connectionId: string): Promise<string> {
@@ -229,7 +264,11 @@ export function startBashOutputLive(opts: StartBashOutputLiveOptions): () => voi
 
   const remote = projectKey ? parseRemoteProjectKey(projectKey) : null
   if (!remote) {
-    void window.app.watchBashOutput(toolUseId, outputPath)
+    void window.app.watchBashOutput(
+      toolUseId,
+      outputPath,
+      opts.tailLines,
+    )
     return () => {
       void window.app.unwatchBashOutput(toolUseId)
     }
@@ -244,8 +283,9 @@ export function startBashOutputLive(opts: StartBashOutputLiveOptions): () => voi
   }
 
   const relativePath = toToolOutputRelativePath(remote.path, outputPath)
-  if (!relativePath) {
-    // Outside project/temp — path-security rejection (mirror node).
+  const agentTranscriptAbs = isAgentTranscriptAbsolutePath(outputPath) ? outputPath : null
+  if (!relativePath && !agentTranscriptAbs) {
+    // Outside project/temp and not an allowlisted agent transcript.
     pushBashOutput(toolUseId, '', true, outputPath)
     return () => {}
   }
@@ -286,7 +326,8 @@ export function startBashOutputLive(opts: StartBashOutputLiveOptions): () => voi
         opts.environmentId ?? (await resolveRemoteEnvironmentId(remote.connectionId))
       const started = await port.start({
         project: { environmentId, projectId },
-        relativePath,
+        relativePath: relativePath ?? '',
+        ...(agentTranscriptAbs ? { absolutePath: agentTranscriptAbs } : {}),
         offset: 0,
       })
       if (stopped) {

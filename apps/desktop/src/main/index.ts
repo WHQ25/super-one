@@ -1045,6 +1045,41 @@ function registerIpcHandlers(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_WORKSPACE_TAIL_WATCH_START,
+    async (
+      _e,
+      project: { environmentId: string; projectId: string },
+      relativePath: string,
+      offset?: number,
+      absolutePath?: string,
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().workspace().tailWatchStart({
+        project,
+        relativePath: relativePath ?? '',
+        offset,
+        ...(absolutePath ? { absolutePath } : {}),
+      })
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_WORKSPACE_TAIL_WATCH_POLL,
+    async (_e, watchId: string, project?: { environmentId: string; projectId: string }) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().workspace().tailWatchPoll({
+        watchId,
+        ...(project ? { project } : {}),
+      })
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_WORKSPACE_TAIL_WATCH_STOP,
+    async (_e, watchId: string, project: { environmentId: string; projectId: string }) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().workspace().tailWatchStop({ watchId, project })
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE,
     async (_e, input: { baseUrl: string; pairingToken: string; label: string }) => {
       const { getEnvironmentHost } = await import('./environment')

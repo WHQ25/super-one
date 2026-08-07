@@ -1,12 +1,11 @@
 /**
  * Host permission_request gate for non-preapproved miniapp_call.
  *
- * Pattern: session_agents_confirm / video_gen_confirm — raise a host
+ * Pattern: session_agents_confirm / config_confirm / video_gen_confirm — raise a host
  * permission_request from inside the tool executor and block until the user
  * answers via Session.respondToPermission. Works on all harnesses because:
  * - outbound: Session.emitHostEvent → forwardEvent (harness-agnostic)
  * - inbound: Session.respondToPermission resolves this map *before* backends
- *   (same as session_agents_confirm; NOT only on Claude/Codex like video_gen)
  */
 
 import type { AgentEvent } from '@superone/shared/agent-types'

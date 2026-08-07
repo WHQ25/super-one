@@ -110,4 +110,14 @@ describe('config confirm dialog — structured provider fields', () => {
 
     expect(screen.getByText('API_TIMEOUT_MS 60000 → 120000, −KEEP_ME')).toBeInTheDocument()
   })
+
+  it('allows reject without feedback', () => {
+    const onReject = vi.fn()
+    render(<ConfigConfirmPrompt payload={envPayload()} onConfirm={vi.fn()} onReject={onReject} />)
+
+    const rejectBtn = screen.getByRole('button', { name: /Reject/i })
+    expect(rejectBtn).not.toBeDisabled()
+    fireEvent.click(rejectBtn)
+    expect(onReject).toHaveBeenCalledWith('')
+  })
 })

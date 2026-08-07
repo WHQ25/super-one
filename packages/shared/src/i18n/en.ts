@@ -3359,7 +3359,7 @@ export const en: Messages = {
       confirm: 'Confirm & Apply',
       deleteConfirm: 'Delete',
       reject: 'Reject',
-      feedbackPlaceholder: 'Feedback (required, Enter to submit)',
+      feedbackPlaceholder: 'Feedback (optional)',
       currentValue: 'Current: {{value}}',
       defaultOption: 'Default',
       clearedValue: 'Default',

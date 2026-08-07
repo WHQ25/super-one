@@ -1,5 +1,9 @@
 import type { ConfigFieldType } from '@superone/shared/agent-types'
 import { FAMILY_TASKS, type CapabilityTask, type EndpointModel, type PlanCapabilities, type ProtocolFamily } from '@superone/shared/platform-registry'
+import { getMermaidThemeOption } from '@/components/chat/mermaid-themes'
+import { mermaidThemeSchemeForKey } from '@/components/settings/MermaidThemePicker'
+import { getTerminalPalette } from '@/components/coding/terminal-palettes'
+import { terminalPaletteSchemeForKey } from '@/components/settings/TerminalPalettePicker'
 
 /**
  * Human-readable rendering of config values. Structured provider fields (env maps, model-mapping slots,
@@ -68,6 +72,31 @@ export function formatConfigFieldValue(type: ConfigFieldType, value: unknown, em
     default:
       return typeof value === 'object' ? JSON.stringify(value) : String(value)
   }
+}
+
+/**
+ * Like {@link formatConfigFieldValue}, but maps known appearance enum ids
+ * (mermaid themes, terminal palettes) to the same labels the pickers show.
+ */
+export function formatSettingsFieldDisplay(
+  key: string,
+  type: ConfigFieldType,
+  value: unknown,
+  emptyLabel: string,
+): string {
+  if (value === null || value === undefined || value === '') return emptyLabel
+
+  const mermaidScheme = mermaidThemeSchemeForKey(key)
+  if (mermaidScheme) {
+    return getMermaidThemeOption(mermaidScheme, String(value)).name
+  }
+
+  const terminalScheme = terminalPaletteSchemeForKey(key)
+  if (terminalScheme) {
+    return getTerminalPalette(String(value), terminalScheme).name
+  }
+
+  return formatConfigFieldValue(type, value, emptyLabel)
 }
 
 function mapDiff(prev: Record<string, unknown>, next: Record<string, unknown>, render: (v: unknown) => string): string[] {

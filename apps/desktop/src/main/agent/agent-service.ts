@@ -1681,7 +1681,12 @@ export class AgentService {
       trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
       trace('permission.flow', 'ipc_response', { projectPath: session.snapshot.projectPath, sessionId, allow, alwaysAllow, reason, decision, formAnswers }, requestId)
       const result = session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
-      this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'permission', requestId, projectPath: session.snapshot.projectPath, sessionId })
+      // Only clear the pending UI when something actually handled the response.
+      // Unconditional broadcast used to dismiss config/video confirms on harnesses
+      // that did not resolve the host gate, leaving config_apply hung until timeout.
+      if (result) {
+        this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'permission', requestId, projectPath: session.snapshot.projectPath, sessionId })
+      }
       return result
     })
 

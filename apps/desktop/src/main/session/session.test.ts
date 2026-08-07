@@ -11,6 +11,30 @@ vi.mock('../agent/event-trace', () => ({
   trace: (...args: unknown[]) => traceMock(...args),
 }))
 
+const resolveConfigConfirmMock = vi.fn(() => false)
+const rejectConfigConfirmMock = vi.fn(() => false)
+vi.mock('../mcp/config-tools', () => ({
+  resolveConfigConfirm: (...args: unknown[]) => resolveConfigConfirmMock(...args),
+  rejectConfigConfirm: (...args: unknown[]) => rejectConfigConfirmMock(...args),
+}))
+
+const resolveVideoConfirmMock = vi.fn(() => false)
+const rejectVideoConfirmMock = vi.fn(() => false)
+vi.mock('../mcp/media-tools', () => ({
+  resolveVideoConfirm: (...args: unknown[]) => resolveVideoConfirmMock(...args),
+  rejectVideoConfirm: (...args: unknown[]) => rejectVideoConfirmMock(...args),
+}))
+
+vi.mock('../mcp/miniapp-call-confirm', () => ({
+  resolveMiniappCallConfirm: () => false,
+  rejectMiniappCallConfirm: () => false,
+}))
+
+vi.mock('./session-collaboration-confirm', () => ({
+  resolveSessionAgentsConfirm: () => false,
+  rejectSessionAgentsConfirm: () => false,
+}))
+
 import { Session, type SessionConstructorOptions } from './session'
 
 class FakeBackend implements SessionBackend {
@@ -108,7 +132,24 @@ class FakeBackend implements SessionBackend {
   async stopTask(taskId: string): Promise<void> {
     this.stopTaskCalls.push(taskId)
   }
-  respondToPermission(): boolean { return true }
+  respondToPermissionCalls: Array<{
+    requestId: string
+    allow: boolean
+    formAnswers?: Record<string, unknown>
+  }> = []
+  respondToPermissionResult = false
+  respondToPermission(
+    requestId: string,
+    allow: boolean,
+    _alwaysAllow?: boolean,
+    _reason?: string,
+    _selectedSuggestions?: number[],
+    _decision?: 'cancel',
+    formAnswers?: Record<string, unknown>,
+  ): boolean {
+    this.respondToPermissionCalls.push({ requestId, allow, formAnswers })
+    return this.respondToPermissionResult
+  }
   respondToQuestion(): void {}
   dismissQuestion(): void {}
   respondToPlanApproval(): void {}
@@ -163,6 +204,48 @@ function makeSession(overrides: Partial<SessionConstructorOptions> = {}): { sess
   })
   return { session, backend }
 }
+
+describe('Session.respondToPermission host confirms', () => {
+  beforeEach(() => {
+    resolveConfigConfirmMock.mockReset().mockReturnValue(false)
+    rejectConfigConfirmMock.mockReset().mockReturnValue(false)
+    resolveVideoConfirmMock.mockReset().mockReturnValue(false)
+    rejectVideoConfirmMock.mockReset().mockReturnValue(false)
+  })
+
+  it('resolves config_confirm before backends so OpenCode/ACP unblocks config_apply', () => {
+    const { session, backend } = makeSession({ harnessId: 'opencode' as never })
+    const formAnswers = { configJson: '{"mermaidLightTheme":"forest"}' }
+    resolveConfigConfirmMock.mockReturnValue(true)
+
+    const handled = session.respondToPermission('configconfirm_1', true, undefined, undefined, undefined, undefined, formAnswers)
+
+    expect(handled).toBe(true)
+    expect(resolveConfigConfirmMock).toHaveBeenCalledWith('configconfirm_1', 'accept', formAnswers)
+    expect(backend.respondToPermissionCalls).toHaveLength(0)
+  })
+
+  it('rejects config_confirm on cancel without reaching the backend', () => {
+    const { session, backend } = makeSession()
+    rejectConfigConfirmMock.mockReturnValue(true)
+
+    const handled = session.respondToPermission('configconfirm_2', false, undefined, undefined, undefined, 'cancel')
+
+    expect(handled).toBe(true)
+    expect(rejectConfigConfirmMock).toHaveBeenCalledWith('configconfirm_2', 'User cancelled')
+    expect(backend.respondToPermissionCalls).toHaveLength(0)
+  })
+
+  it('falls through to the backend when no host confirm matches', () => {
+    const { session, backend } = makeSession()
+    backend.respondToPermissionResult = true
+
+    const handled = session.respondToPermission('perm-1', true)
+
+    expect(handled).toBe(true)
+    expect(backend.respondToPermissionCalls).toEqual([{ requestId: 'perm-1', allow: true, formAnswers: undefined }])
+  })
+})
 
 describe('Session state machine', () => {
   let session: Session

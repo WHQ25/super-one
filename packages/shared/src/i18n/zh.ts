@@ -1102,7 +1102,7 @@ export const zh: Messages = {
       confirm: '确认并应用',
       deleteConfirm: '删除',
       reject: '拒绝',
-      feedbackPlaceholder: '反馈意见（必填，按 Enter 提交）',
+      feedbackPlaceholder: '反馈意见（可选）',
       currentValue: '当前：{{value}}',
       defaultOption: '默认',
       clearedValue: '默认',

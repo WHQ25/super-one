@@ -2154,6 +2154,22 @@ describe('IPC interaction-response broadcasts', () => {
     expect(broadcasts).toHaveLength(0)
   })
 
+  it('PERMISSION_RESPONSE handler does not broadcast when nothing handled the response', async () => {
+    const respondToPermission = vi.fn(() => false)
+    const session = makeMockSession({
+      id: 'sid-miss',
+      snapshot: { projectPath: '/p', harnessId: 'opencode', messages: [] },
+      respondToPermission,
+    })
+    const { broadcasts } = setupServiceWithSession(session)
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.PERMISSION_RESPONSE)!
+
+    await handler(null, 'sid-miss', 'req-orphan', true, false)
+
+    expect(respondToPermission).toHaveBeenCalled()
+    expect(broadcasts.filter((b) => (b as { type?: string }).type === 'interaction_resolved')).toHaveLength(0)
+  })
+
   it('ANSWER_QUESTION handler broadcasts interaction_resolved to sync mini-window state', async () => {
     const respondToQuestion = vi.fn()
     const session = makeMockSession({

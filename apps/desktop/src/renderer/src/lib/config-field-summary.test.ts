@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffConfigFieldValue, formatConfigFieldValue } from './config-field-summary'
+import { diffConfigFieldValue, formatConfigFieldValue, formatSettingsFieldDisplay } from './config-field-summary'
 
 const EMPTY = 'Not set'
 
@@ -44,5 +44,13 @@ describe('config field summaries', () => {
       formatConfigFieldValue('capabilities', { families: ['openai'], tasks: { openai: ['chat', 'image'] }, extras: {} }, EMPTY),
     ).toBe('OpenAI · chat, image')
     expect(formatConfigFieldValue('env', {}, EMPTY)).toBe(EMPTY)
+  })
+
+  it('maps mermaid / terminal palette ids to the same labels the pickers show', () => {
+    expect(formatSettingsFieldDisplay('mermaidDarkTheme', 'enum', 'dark', EMPTY)).toBe('Default Dark')
+    expect(formatSettingsFieldDisplay('mermaidLightTheme', 'enum', 'forest', EMPTY)).toBe('Forest')
+    expect(formatSettingsFieldDisplay('mermaidLightTheme', 'enum', null, EMPTY)).toBe(EMPTY)
+    expect(formatSettingsFieldDisplay('terminalDarkPalette', 'enum', 'dracula', EMPTY)).toBe('Dracula+')
+    expect(formatSettingsFieldDisplay('updateChannel', 'enum', 'beta', EMPTY)).toBe('beta')
   })
 })

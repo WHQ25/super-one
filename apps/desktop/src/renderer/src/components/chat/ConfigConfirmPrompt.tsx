@@ -16,7 +16,7 @@ import {
 } from '../settings/MermaidThemePicker'
 import { useAppStore } from '@/stores/app'
 import { DEFAULT_TERMINAL_FONT_SIZE } from '@/components/coding/terminal-palettes'
-import { diffConfigFieldValue, formatConfigFieldValue } from '@/lib/config-field-summary'
+import { diffConfigFieldValue, formatSettingsFieldDisplay } from '@/lib/config-field-summary'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { isFocusInChat } from './is-focus-in-chat'
 
@@ -70,8 +70,6 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
     setValues((prev) => ({ ...prev, [key]: value }))
   }
 
-  const canReject = feedback.trim().length > 0
-
   useEffect(() => {
     if (isCollapsed) return
     requestAnimationFrame(() => confirmBtnRef.current?.focus())
@@ -88,22 +86,23 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
         feedbackRef.current?.focus()
         return
       }
-      if (e.key === 'Escape' && canReject) {
+      // Reject is always available (feedback optional).
+      if (e.key === 'Escape') {
         e.preventDefault()
         onReject(feedback.trim())
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isCollapsed, canReject, feedback, onReject])
+  }, [isCollapsed, feedback, onReject])
 
   const handleFeedbackKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      if (canReject) onReject(feedback.trim())
+      onReject(feedback.trim())
     } else if (e.key === 'Escape') {
       e.preventDefault()
-      feedbackRef.current?.blur()
+      onReject(feedback.trim())
     }
   }
 
@@ -166,7 +165,9 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-xs font-medium text-foreground">{field.label}</span>
                   <span className="truncate text-xs text-muted-foreground">
-                    {diff ?? t('chat.configConfirm.currentValue', { value: formatConfigFieldValue(field.type, field.currentValue, emptyLabel) })}
+                    {diff ?? t('chat.configConfirm.currentValue', {
+                      value: formatSettingsFieldDisplay(field.key, field.type, field.currentValue, emptyLabel),
+                    })}
                   </span>
                   {field.note && !structured && !themePreview && (
                     <span className="truncate text-xs text-muted-foreground/70">{field.note}</span>
@@ -243,14 +244,13 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
           </Button>
           <Button
             size="sm"
-            disabled={!canReject}
-            className="h-7 cursor-pointer bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-destructive focus:outline-none"
+            className="h-7 cursor-pointer bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90 focus:ring-2 focus:ring-destructive focus:outline-none"
             onClick={() => onReject(feedback.trim())}
           >
             {t('chat.configConfirm.reject')}
-            {canReject && (
-              <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
-            )}
+            <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">
+              {isFeedbackFocused ? '↵' : 'esc'}
+            </Kbd>
           </Button>
           <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
             <input

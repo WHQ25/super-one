@@ -34,6 +34,8 @@ import {
   RENAME_SESSION_DESCRIPTION,
   LAUNCH_BRANCH_NAME_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
+  LAUNCH_SUMMARY_DESCRIPTION,
+  LAUNCH_TASK_DESCRIPTION,
   SESSION_LIST_AGENTS_DESCRIPTION,
   SESSION_REQUEST_AGENTS_DESCRIPTION,
   LAUNCH_CWD_DESCRIPTION,
@@ -304,7 +306,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
           launches: z.array(z.object({
             launchId: z.string().optional(),
             agentId: z.string(),
-            task: z.string().min(1).max(100_000),
+            summary: z.string().trim().min(1).describe(LAUNCH_SUMMARY_DESCRIPTION),
+            task: z.string().min(1).max(100_000).describe(LAUNCH_TASK_DESCRIPTION),
             name: z.string().trim().min(1).max(64),
             role: z.string().trim().min(1).max(64),
             config: z.object({

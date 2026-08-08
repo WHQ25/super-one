@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { Bot, FolderClosed, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Streamdown } from 'streamdown'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
 import type {
@@ -14,6 +15,12 @@ import type {
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { useAppStore } from '@/stores/app'
+import {
+  streamdownComponents,
+  streamdownControls,
+  streamdownLinkSafety,
+  streamdownPlugins,
+} from './chat-shared'
 import { HarnessPermissionPopover } from './HarnessPermissionPopover'
 import { harnessSupportsSandbox, SandboxModePopover } from './SandboxModeSelector'
 import { ApproveRejectBar } from './PermissionActionBar'
@@ -111,18 +118,36 @@ function workDirStateOf(worktree: SessionAgentWorktreeConfig | null): WorkDirSta
   return { kind: 'createBranch', name: worktree.branchName ?? '' }
 }
 
+function TaskMarkdown({ text }: { text: string }) {
+  return (
+    <div className="github-md text-xs leading-snug text-foreground/90 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_pre]:my-1.5 [&_pre]:text-[11px]">
+      <Streamdown
+        plugins={streamdownPlugins}
+        components={streamdownComponents}
+        controls={streamdownControls}
+        linkSafety={streamdownLinkSafety}
+      >
+        {text}
+      </Streamdown>
+    </div>
+  )
+}
+
 function LaunchPanel({
   launch,
   profile,
+  taskExpanded,
+  onToggleTask,
   onChange,
 }: {
   launch: SessionAgentLaunchProposal
   profile: SessionAgentProfile | undefined
+  taskExpanded: boolean
+  onToggleTask: () => void
   onChange: (patch: EditableConfig) => void
 }) {
   const { t } = useTranslation()
   const sandboxCapability = useAppStore((state) => state.sandboxCapability)
-  const [taskExpanded, setTaskExpanded] = useState(false)
   const { config } = launch
   const harnessId = profile?.harnessId ?? 'claude'
   const modelSelector = useCollabLaunchModelSelector({
@@ -134,25 +159,54 @@ function LaunchPanel({
     onChange,
   })
   const workDirState = workDirStateOf(config.worktree?.enabled ? config.worktree : null)
-
   const nameRole = launchNameRoleLine(launch)
+  const summary = launch.summary?.trim() || launch.task
 
   return (
-    <div className="px-2.5 py-2">
-      <div className="mb-1.5 text-xs font-medium text-foreground">{nameRole}</div>
-      <button
-        type="button"
-        onClick={() => setTaskExpanded((expanded) => !expanded)}
-        title={t(taskExpanded ? 'chat.sessionAgentsConfirm.collapseTask' : 'chat.sessionAgentsConfirm.expandTask')}
+    <div className={cn('flex min-h-0 flex-col px-2.5 py-2', taskExpanded && 'flex-1')}>
+      <div className="mb-1.5 shrink-0 text-xs font-medium text-foreground">{nameRole}</div>
+
+      {/*
+        Collapsed: short 2–3 sentence summary. Expanded: same slot becomes a Markdown
+        task preview. max-height animates so the whole confirm card grows; overflow scrolls.
+      */}
+      <div
         className={cn(
-          'block w-full cursor-pointer whitespace-pre-wrap break-words text-left text-xs leading-snug text-foreground/90',
-          !taskExpanded && 'line-clamp-2',
+          'min-h-0 transition-[max-height] duration-300 ease-out',
+          taskExpanded
+            ? 'flex max-h-[min(50vh,calc(100dvh-14rem))] flex-1 flex-col overflow-hidden rounded-md border border-border/60 bg-muted/15'
+            : 'max-h-12',
         )}
       >
-        {launch.task}
-      </button>
+        {taskExpanded ? (
+          <>
+            <button
+              type="button"
+              onClick={onToggleTask}
+              title={t('chat.sessionAgentsConfirm.collapseTask')}
+              className="line-clamp-2 shrink-0 border-b border-border/50 px-2 py-1 text-left text-[11px] leading-snug text-muted-foreground hover:text-foreground"
+            >
+              {summary}
+            </button>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1.5">
+              <TaskMarkdown text={launch.task} />
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={onToggleTask}
+            title={t('chat.sessionAgentsConfirm.expandTask')}
+            className="block w-full cursor-pointer text-left"
+          >
+            <span className="line-clamp-2 whitespace-pre-wrap break-words text-xs leading-snug text-foreground/90">
+              {summary}
+            </span>
+          </button>
+        )}
+      </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1">
         {config.cwd && (
           <MetaChip
             icon={FolderClosed}
@@ -168,7 +222,7 @@ function LaunchPanel({
         </span>
       </div>
 
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
+      <div className="mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
         <GroupedModelEffortSelector
           models={modelSelector.models}
           modelGroups={modelSelector.modelGroups}
@@ -213,6 +267,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const { t } = useTranslation()
   const [overrides, setOverrides] = useState<Record<string, EditableConfig>>({})
   const [activeTab, setActiveTab] = useState(0)
+  const [taskExpanded, setTaskExpanded] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackFocused, setFeedbackFocused] = useState(false)
   const feedbackRef = useRef<HTMLInputElement>(null)
@@ -223,6 +278,11 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const multiple = launches.length > 1
   const activeIndex = Math.min(activeTab, launches.length - 1)
   const activeLaunch = launches[activeIndex]
+
+  // Switching agents collapses the task preview so a tall panel does not stick around.
+  useEffect(() => {
+    setTaskExpanded(false)
+  }, [activeIndex])
 
   const resolved = useMemo(
     () => launches.map((launch) => {
@@ -282,18 +342,28 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
       }
       if (event.key === 'Escape') {
         event.preventDefault()
+        if (taskExpanded) {
+          setTaskExpanded(false)
+          return
+        }
         handleReject()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeIndex, launches.length, handleConfirm, handleReject, chatRootRef])
+  }, [activeIndex, launches.length, handleConfirm, handleReject, chatRootRef, taskExpanded])
 
   if (!activeLaunch) return null
 
   return (
-    <div className="@container mx-3 mb-2 overflow-hidden rounded-lg border border-primary/40 bg-card">
-      <div className="flex items-center gap-1.5 px-2.5 pt-2">
+    <div
+      className={cn(
+        '@container mx-3 mb-2 flex flex-col overflow-hidden rounded-lg border border-primary/40 bg-card',
+        // Cap the whole confirm card so expanded task content never leaves the viewport.
+        'max-h-[min(80vh,calc(100dvh-5rem))]',
+      )}
+    >
+      <div className="flex shrink-0 items-center gap-1.5 px-2.5 pt-2">
         <Users className="size-3.5 shrink-0 text-primary" />
         <span className="min-w-0 truncate text-xs font-medium text-foreground">
           {t('chat.sessionAgentsConfirm.title')}
@@ -309,7 +379,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
 
       {/* Agent identity: a tab strip when several were requested, a plain line for a single one.
           The strip is the only scrolling box, so the ⇥ hint stays pinned no matter how narrow. */}
-      <div className={cn('mt-1.5 flex items-stretch gap-1 px-1.5', multiple && 'border-b border-border/50')}>
+      <div className={cn('mt-1.5 flex shrink-0 items-stretch gap-1 px-1.5', multiple && 'border-b border-border/50')}>
         <div role={multiple ? 'tablist' : undefined} className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto">
         {launches.map((launch, index) => {
           const profile = profiles.find((item) => item.id === launch.agentId)
@@ -352,17 +422,21 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
         )}
       </div>
 
-      <LaunchPanel
-        key={activeLaunch.launchId}
-        launch={resolved[activeIndex]}
-        profile={profiles.find((profile) => profile.id === activeLaunch.agentId)}
-        onChange={(patch) => setOverrides((current) => ({
-          ...current,
-          [activeLaunch.launchId]: { ...current[activeLaunch.launchId], ...patch },
-        }))}
-      />
+      <div className={cn('flex min-h-0 flex-col', taskExpanded && 'min-h-0 flex-1')}>
+        <LaunchPanel
+          key={activeLaunch.launchId}
+          launch={resolved[activeIndex]}
+          profile={profiles.find((profile) => profile.id === activeLaunch.agentId)}
+          taskExpanded={taskExpanded}
+          onToggleTask={() => setTaskExpanded((value) => !value)}
+          onChange={(patch) => setOverrides((current) => ({
+            ...current,
+            [activeLaunch.launchId]: { ...current[activeLaunch.launchId], ...patch },
+          }))}
+        />
+      </div>
 
-      <div className="border-t border-border/50 px-2.5 py-2">
+      <div className="shrink-0 border-t border-border/50 px-2.5 py-2">
         <ApproveRejectBar
           feedbackRef={feedbackRef}
           onApprove={handleConfirm}

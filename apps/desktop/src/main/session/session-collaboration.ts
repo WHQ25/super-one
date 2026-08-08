@@ -11,7 +11,11 @@ import type {
   SessionAgentLaunchProposal,
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
-import { SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
+import {
+  resolveLaunchSummary,
+  SESSION_AGENT_LAUNCHES_FIELD,
+  SESSION_AGENT_TASK_MAX,
+} from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import {
@@ -44,6 +48,8 @@ export interface RequestSessionAgentsArgs {
   launches: Array<{
     launchId?: string
     agentId: string
+    /** Short confirm-UI description. Optional for back-compat; derived from task when omitted. */
+    summary?: string
     task: string
     /** Agent-chosen human label (not harness name). Used in `Name - Role`. */
     name: string
@@ -357,7 +363,11 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
     if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
     const task = launch.task?.trim()
     if (!task) throw new Error('Every launch must include a non-empty task')
-    if (task.length > 100_000) throw new Error('A launch task may contain at most 100,000 characters')
+    if (task.length > SESSION_AGENT_TASK_MAX) {
+      throw new Error(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`)
+    }
+    const summary = resolveLaunchSummary(task, launch.summary)
+    if (!summary) throw new Error('Every launch must include a non-empty summary')
     const name = launch.name?.trim()
     if (!name) throw new Error('Every launch must include a non-empty name')
     if (name.length > 64) throw new Error('A launch name may contain at most 64 characters')
@@ -368,6 +378,7 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
     return {
       launchId,
       agentId: launch.agentId,
+      summary,
       task,
       name,
       role,
@@ -390,9 +401,9 @@ const EDITABLE_PERMISSION_MODES = new Set<PermissionMode>([
 const EDITABLE_SANDBOX_MODES = new Set<SandboxMode>(['off', 'on', 'auto'])
 
 /**
- * Trust only the fields the confirm UI is allowed to edit. agentId / task / cwd /
- * worktree / harnessConfig always come from the server-side proposal the agent
- * requested — never from renderer IPC formAnswers.
+ * Trust only the fields the confirm UI is allowed to edit. agentId / summary /
+ * task / cwd / worktree / harnessConfig always come from the server-side proposal
+ * the agent requested — never from renderer IPC formAnswers.
  */
 function mergeConfirmedLaunches(
   proposed: SessionAgentLaunchProposal[],
@@ -445,6 +456,7 @@ function mergeConfirmedLaunches(
     return {
       launchId: base.launchId,
       agentId: base.agentId,
+      summary: base.summary,
       task: base.task,
       name: base.name,
       role: base.role,
@@ -525,6 +537,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
   return getDb().transaction(() => launches.map((launch) => {
     if (!profiles.has(launch.agentId)) throw new Error(`Unknown agent profile: ${launch.agentId}`)
     if (!launch.task?.trim()) throw new Error('Every launch must include a non-empty task')
+    if (!launch.summary?.trim()) throw new Error('Every launch must include a non-empty summary')
     const name = launch.name?.trim()
     if (!name) throw new Error('Every launch must include a non-empty name')
     const role = launch.role?.trim()
@@ -534,6 +547,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       ...launch.config,
       name,
       role,
+      summary: launch.summary.trim(),
     }
     insert.run(
       hashCredential(credential),
@@ -548,6 +562,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
     return {
       launchId: launch.launchId,
       agentId: launch.agentId,
+      summary: launch.summary.trim(),
       task: launch.task.trim(),
       name,
       role,

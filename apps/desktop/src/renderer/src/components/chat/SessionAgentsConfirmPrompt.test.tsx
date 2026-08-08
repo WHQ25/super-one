@@ -39,6 +39,7 @@ function payload(): SessionAgentRequestPayload {
       {
         launchId: 'review-tests',
         agentId: 'claude-base',
+        summary: 'Review failing tests',
         task: 'Review the failing tests and report the root cause.',
         name: 'DiffBot',
         role: 'Reviewer',
@@ -53,6 +54,7 @@ function payload(): SessionAgentRequestPayload {
       {
         launchId: 'inspect-types',
         agentId: 'codex-base',
+        summary: 'Classify typecheck errors',
         task: 'Classify the current typecheck errors.',
         name: 'TypeBot',
         role: 'Analyst',
@@ -70,18 +72,27 @@ function payload(): SessionAgentRequestPayload {
 }
 
 describe('session agents confirm prompt', () => {
-  it('shows only the active agent and switches panels with Tab', () => {
+  it('shows only the active agent summary and switches panels with Tab', () => {
     renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
-    expect(screen.getByText(/Review the failing tests/)).toBeInTheDocument()
-    expect(screen.queryByText(/Classify the current typecheck errors/)).toBeNull()
+    expect(screen.getByText('Review failing tests')).toBeInTheDocument()
+    expect(screen.queryByText('Classify typecheck errors')).toBeNull()
+    // Full task is hidden until the summary is expanded.
+    expect(screen.queryByText(/report the root cause/)).toBeNull()
 
     fireEvent.keyDown(window, { key: 'Tab' })
-    expect(screen.getByText(/Classify the current typecheck errors/)).toBeInTheDocument()
-    expect(screen.queryByText(/Review the failing tests/)).toBeNull()
+    expect(screen.getByText('Classify typecheck errors')).toBeInTheDocument()
+    expect(screen.queryByText('Review failing tests')).toBeNull()
     // Shift+Tab walks back the other way.
     fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
-    expect(screen.getByText(/Review the failing tests/)).toBeInTheDocument()
+    expect(screen.getByText('Review failing tests')).toBeInTheDocument()
+  })
+
+  it('expands the summary to show the full Markdown task', () => {
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review failing tests' }))
+    expect(screen.getByText(/report the root cause/)).toBeInTheDocument()
   })
 
   it('keeps agent-owned fields read-only while exposing the permission mode picker', () => {
@@ -186,6 +197,7 @@ describe('session agents confirm prompt', () => {
       mode: 'branch',
       branchName: 'agent/types',
     })
+    expect(launches[0].summary).toBe('Review failing tests')
     expect(launches[0].task).toBe('Review the failing tests and report the root cause.')
   })
 

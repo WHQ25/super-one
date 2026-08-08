@@ -19,7 +19,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_collab_request",
-    "description": "Request user approval for one or more child sessions. Call session_collab_list_agents first; repeat an agentId to reuse a profile. Invent a human-friendly name and a task-specific role for every launch. Omitted config fields inherit profile defaults. Before setting config.cwd or config.worktree, call read_manual({ domain: \"product\", topic: \"collaboration\" }); same-repo isolation belongs in config.worktree, not a worktree-leaf cwd. The user may edit model, effort, provider, permission, and sandbox settings. Each approved launch returns a private one-shot credential for session_collab_start.",
+    "description": "Request user approval for one or more child sessions. Call session_collab_list_agents first; repeat an agentId to reuse a profile. Invent a human-friendly name and role for every launch. Pass a short 2–3 sentence summary (confirm UI) and a full Markdown task (delivered on start; expandable in the UI). Omitted config fields inherit profile defaults. Before setting config.cwd or config.worktree, call read_manual({ domain: \"product\", topic: \"collaboration\" }); same-repo isolation belongs in config.worktree. The user may edit model, effort, provider, permission, and sandbox. Each approved launch returns a one-shot credential for session_collab_start.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -38,10 +38,15 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                 "type": "string",
                 "description": "Agent profile id from session_collab_list_agents."
               },
+              "summary": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Short 2–3 sentence task summary shown collapsed in the confirm dialog. Not the full brief — put detail in task."
+              },
               "task": {
                 "type": "string",
-                "maxLength": 100000,
-                "description": "The task shown to the user and delivered to this child session."
+                "minLength": 1,
+                "description": "Full task brief in Markdown. Delivered to the child session on session_collab_start. The user can expand the summary in the confirm UI to preview it."
               },
               "name": {
                 "type": "string",
@@ -136,6 +141,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
             },
             "required": [
               "agentId",
+              "summary",
               "task",
               "name",
               "role"

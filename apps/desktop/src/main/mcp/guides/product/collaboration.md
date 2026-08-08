@@ -7,9 +7,9 @@ Read this before `session_collab_request`, especially when a child needs an isol
 | Step | Action |
 |------|--------|
 | 1 | Call `session_collab_list_agents` and choose an `agentId`. A profile can launch more than one session. |
-| 2 | Call `session_collab_request` with one or more launches. Give every launch an agent-chosen `name`, `role`, and focused `task`. |
+| 2 | Call `session_collab_request` with one or more launches. Give every launch an agent-chosen `name`, `role`, a short `summary` (2–3 sentence task summary for the confirm UI), and a full Markdown `task` (delivered on start; user can expand the summary to preview it). |
 | 3 | Wait for user approval. Each approved launch returns a private, one-shot credential. |
-| 4 | Call `session_collab_start` for every credential back-to-back. Children run asynchronously, so do not wait for one before starting the next. |
+| 4 | Call `session_collab_start` for every credential back-to-back. The host delivers that launch's `task` to the child. Children run asynchronously, so do not wait for one before starting the next. |
 | 5 | Exchange durable Markdown handoffs with `session_collab_send` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. |
 
 ## Choose `cwd` or `worktree`
@@ -70,6 +70,7 @@ Default for “review my local changes” / “code review this session’s diff
       "agentId": "codex-base",
       "name": "Casey",
       "role": "Reviewer",
+      "summary": "Review uncommitted WIP (read-only)",
       "task": "Review the uncommitted work with git status/diff. Report bugs and risks with file:line. Do not implement fixes.",
       "config": {
         "permissionMode": "bypassPermissions",
@@ -91,6 +92,7 @@ Omit `cwd`. Give each implementer a unique branch.
       "agentId": "claude-base",
       "name": "Alice",
       "role": "Implementer",
+      "summary": "Implement API change + tests",
       "task": "Implement the API change and run focused tests.",
       "config": {
         "worktree": {
@@ -105,6 +107,7 @@ Omit `cwd`. Give each implementer a unique branch.
       "agentId": "codex-base",
       "name": "Blake",
       "role": "Implementer",
+      "summary": "Implement UI change + tests",
       "task": "Implement the UI change and run focused tests.",
       "config": {
         "worktree": {

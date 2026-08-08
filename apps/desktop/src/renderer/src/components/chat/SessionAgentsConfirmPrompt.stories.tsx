@@ -62,6 +62,7 @@ const profiles: SessionAgentProfile[] = [
 function launch(
   launchId: string,
   agentId: string,
+  summary: string,
   task: string,
   config: SessionAgentLaunchProposal['config'],
   opts: { name: string; role: string },
@@ -70,6 +71,7 @@ function launch(
   return {
     launchId,
     agentId,
+    summary,
     task,
     name,
     role,
@@ -87,17 +89,38 @@ function launch(
 const payload: SessionAgentRequestPayload = {
   profiles,
   launches: [
-    launch('review-tests', 'claude-base', 'Review the focused test failures and report the root cause. Do not edit files.', {
-      model: 'claude-sonnet',
-      effort: 'medium',
-      sandboxMode: 'on',
-    }, { name: 'DiffBot', role: 'Reviewer' }),
-    launch('inspect-types', 'codex-base', 'Inspect the current typecheck errors and classify existing versus new failures.', {
-      model: 'gpt-5.4',
-      effort: 'high',
-      permissionMode: 'bypassPermissions',
-      worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'agent/typecheck-review' },
-    }, { name: 'TypeBot', role: 'Analyst' }),
+    launch(
+      'review-tests',
+      'claude-base',
+      'Review focused test failures',
+      [
+        '## Task',
+        'Review the focused test failures and report the root cause.',
+        '',
+        '- Inspect the failing suite',
+        '- List root causes with `file:line`',
+        '- Do **not** edit files',
+      ].join('\n'),
+      {
+        model: 'claude-sonnet',
+        effort: 'medium',
+        sandboxMode: 'on',
+      },
+      { name: 'DiffBot', role: 'Reviewer' },
+    ),
+    launch(
+      'inspect-types',
+      'codex-base',
+      'Classify typecheck errors',
+      'Inspect the current typecheck errors and classify existing versus new failures.',
+      {
+        model: 'gpt-5.4',
+        effort: 'high',
+        permissionMode: 'bypassPermissions',
+        worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'agent/typecheck-review' },
+      },
+      { name: 'TypeBot', role: 'Analyst' },
+    ),
   ],
 }
 
@@ -135,9 +158,14 @@ export const NarrowManyAgents: Story = {
     value: {
       profiles,
       launches: Array.from({ length: 5 }, (_, index) =>
-        launch(`narrow-${index}`, index % 2 ? 'codex-base' : 'claude-base', `Task number ${index + 1}.`, {
-          model: index % 2 ? 'gpt-5.4' : 'claude-sonnet',
-        }, { name: `Agent ${index + 1}`, role: 'Worker' }),
+        launch(
+          `narrow-${index}`,
+          index % 2 ? 'codex-base' : 'claude-base',
+          `Task ${index + 1}`,
+          `Task number ${index + 1}.`,
+          { model: index % 2 ? 'gpt-5.4' : 'claude-sonnet' },
+          { name: `Agent ${index + 1}`, role: 'Worker' },
+        ),
       ),
     },
   },
@@ -156,10 +184,10 @@ export const EveryHarness: Story = {
     value: {
       profiles,
       launches: [
-        launch('h-claude', 'claude-base', 'Claude runs the full permission-mode list.', { model: 'claude-sonnet', permissionMode: 'plan' }, { name: 'PlannerBot', role: 'Planner' }),
-        launch('h-codex', 'codex-base', 'Codex shows sandbox presets instead of permission modes.', { model: 'gpt-5.4', permissionMode: 'bypassPermissions' }, { name: 'CoderBot', role: 'Coder' }),
-        launch('h-grok', 'acp-base', 'Grok shows the ACP ask/plan/auto/always baselines.', { model: 'grok-4.5', permissionMode: 'auto' }, { name: 'DiffBot', role: 'Reviewer' }),
-        launch('h-opencode', 'opencode-base', 'OpenCode shows only the modes its backend implements.', { model: 'kimi-k2', permissionMode: 'dontAsk' }, { name: 'Scout', role: 'Explorer' }),
+        launch('h-claude', 'claude-base', 'Claude permission modes', 'Claude runs the full permission-mode list.', { model: 'claude-sonnet', permissionMode: 'plan' }, { name: 'PlannerBot', role: 'Planner' }),
+        launch('h-codex', 'codex-base', 'Codex sandbox presets', 'Codex shows sandbox presets instead of permission modes.', { model: 'gpt-5.4', permissionMode: 'bypassPermissions' }, { name: 'CoderBot', role: 'Coder' }),
+        launch('h-grok', 'acp-base', 'Grok ACP baselines', 'Grok shows the ACP ask/plan/auto/always baselines.', { model: 'grok-4.5', permissionMode: 'auto' }, { name: 'DiffBot', role: 'Reviewer' }),
+        launch('h-opencode', 'opencode-base', 'OpenCode mode subset', 'OpenCode shows only the modes its backend implements.', { model: 'kimi-k2', permissionMode: 'dontAsk' }, { name: 'Scout', role: 'Explorer' }),
       ],
     },
   },
@@ -171,8 +199,8 @@ export const GrokRoles: Story = {
     value: {
       profiles,
       launches: [
-        launch('alpha', 'acp-base', 'You are Reviewer. Review the diff and report issues only.', { model: 'grok-4.5' }, { name: 'DiffBot', role: 'Reviewer' }),
-        launch('beta', 'acp-base', 'You are Implementer. Apply the approved fix.', { model: 'grok-4.5' }, { name: 'FixBot', role: 'Implementer' }),
+        launch('alpha', 'acp-base', 'Review the diff (read-only)', 'You are Reviewer. Review the diff and report issues only.', { model: 'grok-4.5' }, { name: 'DiffBot', role: 'Reviewer' }),
+        launch('beta', 'acp-base', 'Apply the approved fix', 'You are Implementer. Apply the approved fix.', { model: 'grok-4.5' }, { name: 'FixBot', role: 'Implementer' }),
       ],
     },
   },
@@ -187,22 +215,22 @@ export const WorkingLocations: Story = {
     value: {
       profiles,
       launches: [
-        launch('loc-parent', 'claude-base', 'Runs in the parent session\'s own working directory — no worktree.', {
+        launch('loc-parent', 'claude-base', 'Parent working directory', 'Runs in the parent session\'s own working directory — no worktree.', {
           model: 'claude-sonnet',
         }, { name: 'ParentBot', role: 'Worker' }),
-        launch('loc-branch', 'claude-base', 'Runs in a fresh worktree on a newly created branch.', {
+        launch('loc-branch', 'claude-base', 'Fresh branch worktree', 'Runs in a fresh worktree on a newly created branch.', {
           model: 'claude-sonnet',
           worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'agent/refactor', carryLocalChanges: true },
         }, { name: 'BranchBot', role: 'Worker' }),
-        launch('loc-detach', 'claude-base', 'Runs in a detached worktree — no branch of its own.', {
+        launch('loc-detach', 'claude-base', 'Detached worktree', 'Runs in a detached worktree — no branch of its own.', {
           model: 'claude-sonnet',
           worktree: { enabled: true, baseBranch: 'main', mode: 'detach' },
         }, { name: 'DetachBot', role: 'Worker' }),
-        launch('loc-attach', 'claude-base', 'Runs in a worktree attached to an existing branch.', {
+        launch('loc-attach', 'claude-base', 'Attach existing branch', 'Runs in a worktree attached to an existing branch.', {
           model: 'claude-sonnet',
           worktree: { enabled: true, baseBranch: 'main', mode: 'attach', branchName: 'feat/multi-agents-collab' },
         }, { name: 'AttachBot', role: 'Worker' }),
-        launch('loc-nested', 'codex-base', 'Runs in a nested sub-package directory.', {
+        launch('loc-nested', 'codex-base', 'Nested sub-package cwd', 'Runs in a nested sub-package directory.', {
           model: 'gpt-5.4',
           cwd: '/Users/me/projects/super-one/apps/desktop',
         }, { name: 'NestedBot', role: 'Worker' }),
@@ -217,9 +245,14 @@ export const ManyAgents: Story = {
     value: {
       profiles,
       launches: Array.from({ length: 6 }, (_, index) =>
-        launch(`launch-${index}`, index % 2 ? 'codex-base' : 'claude-base', `${payload.launches[index % 2].task} (#${index + 1})`, {
-          model: index % 2 ? 'gpt-5.4' : 'claude-sonnet',
-        }, { name: `Agent ${index + 1}`, role: 'Worker' }),
+        launch(
+          `launch-${index}`,
+          index % 2 ? 'codex-base' : 'claude-base',
+          payload.launches[index % 2].summary,
+          `${payload.launches[index % 2].task} (#${index + 1})`,
+          { model: index % 2 ? 'gpt-5.4' : 'claude-sonnet' },
+          { name: `Agent ${index + 1}`, role: 'Worker' },
+        ),
       ),
     },
   },

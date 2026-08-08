@@ -9,7 +9,9 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { resolve as pathResolve } from 'node:path'
 import {
+  resolveLaunchSummary,
   SESSION_AGENT_LAUNCHES_FIELD,
+  SESSION_AGENT_TASK_MAX,
   type SessionAgentLaunchConfig,
   type SessionAgentLaunchProposal,
   type SessionAgentProfile,
@@ -293,6 +295,8 @@ export class CollaborationService {
     launches: Array<{
       launchId?: string
       agentId: string
+      /** Short confirm-UI description. Optional for back-compat; derived from task when omitted. */
+      summary?: string
       task: string
       name: string
       role: string
@@ -306,6 +310,7 @@ export class CollaborationService {
         launches: Array<{
           launchId: string
           agentId: string
+          summary: string
           task: string
           name: string
           role: string
@@ -362,8 +367,15 @@ export class CollaborationService {
           code: 'invalid_argument',
         })
       }
-      if (task.length > 100_000) {
-        throw Object.assign(new Error('A launch task may contain at most 100,000 characters'), {
+      if (task.length > SESSION_AGENT_TASK_MAX) {
+        throw Object.assign(
+          new Error(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`),
+          { code: 'invalid_argument' },
+        )
+      }
+      const summary = resolveLaunchSummary(task, launch.summary)
+      if (!summary) {
+        throw Object.assign(new Error('Every launch must include a non-empty summary'), {
           code: 'invalid_argument',
         })
       }
@@ -399,6 +411,7 @@ export class CollaborationService {
       return {
         launchId,
         agentId: launch.agentId,
+        summary,
         task,
         name,
         role,
@@ -451,7 +464,12 @@ export class CollaborationService {
       confirmed.map((launch) => {
         const credential = `s1sc_${randomBytes(32).toString('base64url')}`
         const credentialHash = hashCredential(credential)
-        const config = { ...launch.config, name: launch.name, role: launch.role }
+        const config = {
+          ...launch.config,
+          name: launch.name,
+          role: launch.role,
+          summary: launch.summary,
+        }
         insert.run(
           credentialHash,
           this.deps.secrets.encrypt(credential),
@@ -475,6 +493,7 @@ export class CollaborationService {
         return {
           launchId: launch.launchId,
           agentId: launch.agentId,
+          summary: launch.summary,
           task: launch.task,
           name: launch.name,
           role: launch.role,

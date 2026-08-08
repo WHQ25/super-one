@@ -141,6 +141,7 @@ describe('getPendingReason', () => {
         launches: [{
           launchId: 'l1',
           agentId: 'claude-base',
+          summary: 'review',
           task: 'review',
           name: 'DiffBot',
           role: 'Reviewer',
@@ -164,6 +165,7 @@ describe('getPendingReason', () => {
           {
             launchId: 'l1',
             agentId: 'claude-base',
+            summary: 'a',
             task: 'a',
             name: 'DiffBot',
             role: 'Reviewer',
@@ -172,6 +174,7 @@ describe('getPendingReason', () => {
           {
             launchId: 'l2',
             agentId: 'codex-base',
+            summary: 'b',
             task: 'b',
             name: 'TypeBot',
             role: 'Analyst',
@@ -187,6 +190,7 @@ describe('getPendingReason', () => {
     const launches = [1, 2, 3].map((n) => ({
       launchId: `l${n}`,
       agentId: 'claude-base',
+      summary: 't',
       task: 't',
       name: `Agent${n}`,
       role: 'Worker',
@@ -215,6 +219,7 @@ describe('getPendingReason', () => {
         launches: [{
           launchId: 'l1',
           agentId: 'claude-base',
+          summary: 'review',
           task: 'review',
           name: 'DiffBot',
           role: 'Reviewer',

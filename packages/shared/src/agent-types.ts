@@ -675,9 +675,32 @@ export interface SessionAgentLaunchConfig {
   role?: string
 }
 
+/** Max length for the full task delivered to a collab child session. */
+export const SESSION_AGENT_TASK_MAX = 100_000
+
+/**
+ * Resolve the user-facing summary for a collab launch.
+ * Prefer an explicit summary; otherwise take the first line of the task.
+ * Soft guidance (not enforced): keep to a short 2–3 sentence task summary.
+ */
+export function resolveLaunchSummary(task: string, summary?: string | null): string {
+  const explicit = typeof summary === 'string' ? summary.trim() : ''
+  if (explicit) return explicit
+  return task.split(/\n/, 1)[0]?.trim() || task.trim()
+}
+
 export interface SessionAgentLaunchProposal {
   launchId: string
   agentId: string
+  /**
+   * Short task summary shown collapsed in the confirm UI (soft guidance: 2–3 sentences).
+   * Full brief belongs in `task`.
+   */
+  summary: string
+  /**
+   * Full task brief (Markdown) delivered to the child on session_collab_start.
+   * Shown when the user expands the summary in the confirm UI.
+   */
   task: string
   /**
    * Agent-chosen human label (e.g. "Alice", "Diff Reviewer") — not the harness

@@ -55,6 +55,7 @@ const LAUNCHES_ONE = {
       agentId: 'acp-base',
       name: 'DiffBot',
       role: 'Reviewer',
+      summary: 'Review the diff (read-only)',
       task: 'Review the diff and report issues only.',
     },
   ],
@@ -67,6 +68,7 @@ const LAUNCHES_TWO = {
       agentId: 'claude-base',
       name: 'Alice',
       role: 'Reviewer',
+      summary: 'Review focused test failures',
       task: 'Review the focused test failures and report the root cause.',
     },
     {
@@ -74,6 +76,7 @@ const LAUNCHES_TWO = {
       agentId: 'codex-base',
       name: 'Bob',
       role: 'Implementer',
+      summary: 'Implement the approved fix',
       task: 'Implement the approved fix.',
     },
   ],

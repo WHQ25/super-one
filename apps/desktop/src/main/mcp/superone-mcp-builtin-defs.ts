@@ -181,9 +181,15 @@ export const SESSION_LIST_AGENTS_DESCRIPTION =
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
   'Request user approval for one or more child sessions. Call session_collab_list_agents first; repeat an agentId to reuse a profile. ' +
-  'Invent a human-friendly name and a task-specific role for every launch. Omitted config fields inherit profile defaults. ' +
-  'Before setting config.cwd or config.worktree, call read_manual({ domain: "product", topic: "collaboration" }); same-repo isolation belongs in config.worktree, not a worktree-leaf cwd. ' +
-  'The user may edit model, effort, provider, permission, and sandbox settings. Each approved launch returns a private one-shot credential for session_collab_start.'
+  'Invent a human-friendly name and role for every launch. Pass a short 2–3 sentence summary (confirm UI) and a full Markdown task (delivered on start; expandable in the UI). ' +
+  'Omitted config fields inherit profile defaults. Before setting config.cwd or config.worktree, call read_manual({ domain: "product", topic: "collaboration" }); same-repo isolation belongs in config.worktree. ' +
+  'The user may edit model, effort, provider, permission, and sandbox. Each approved launch returns a one-shot credential for session_collab_start.'
+
+export const LAUNCH_SUMMARY_DESCRIPTION =
+  'Short 2–3 sentence task summary shown collapsed in the confirm dialog. Not the full brief — put detail in task.'
+
+export const LAUNCH_TASK_DESCRIPTION =
+  'Full task brief in Markdown. Delivered to the child session on session_collab_start. The user can expand the summary in the confirm UI to preview it.'
 
 /**
  * Field-level guidance, not part of the tool description: `session_collab_request`
@@ -252,7 +258,16 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
             properties: {
               launchId: { type: 'string', description: 'Optional caller correlation id.' },
               agentId: { type: 'string', description: 'Agent profile id from session_collab_list_agents.' },
-              task: { type: 'string', maxLength: 100000, description: 'The task shown to the user and delivered to this child session.' },
+              summary: {
+                type: 'string',
+                minLength: 1,
+                description: LAUNCH_SUMMARY_DESCRIPTION,
+              },
+              task: {
+                type: 'string',
+                minLength: 1,
+                description: LAUNCH_TASK_DESCRIPTION,
+              },
               name: {
                 type: 'string',
                 minLength: 1,
@@ -296,7 +311,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                 additionalProperties: false,
               },
             },
-            required: ['agentId', 'task', 'name', 'role'],
+            required: ['agentId', 'summary', 'task', 'name', 'role'],
             additionalProperties: false,
           },
         },

@@ -8,11 +8,13 @@ import {
   useChatStore,
 } from '@/stores/chat'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { SidebarFrame } from './sidebar/SidebarFrame'
 import { UsageStatusIcon } from './UsageStatusIcon'
 
 /** Must match `.storybook/preview.tsx` applyHarness() so the global harness toolbar does not stomp a different project key. */
 const SB_PROJECT = '__storybook__'
 const SB_SESSION = 'sb'
+const SIDEBAR_WIDTH = 240
 
 type RateLimitTipSeed = {
   status: 'allowed_warning' | 'rejected'
@@ -74,25 +76,41 @@ function fireTip(status: 'allowed_warning' | 'rejected'): RateLimitTipSeed {
   }
 }
 
-function SidebarFooterMock({ children }: { children: ReactNode }) {
+function SidebarPreview({ children }: { children: ReactNode }) {
   return (
-    <div className="w-[240px] overflow-visible rounded-lg border border-border bg-sidebar text-sidebar-foreground">
-      <div className="border-b border-border/60 px-3 py-2 text-[11px] font-medium text-muted-foreground">
-        Sessions
+    <div className="flex min-h-0 flex-1 overflow-hidden bg-sidebar">
+      <div className="relative flex shrink-0">
+        <SidebarFrame open width={SIDEBAR_WIDTH}>
+          <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
+            <div className="h-11 shrink-0" />
+            <div className="mx-2 mb-2 h-8 shrink-0 rounded-md border border-sidebar-border" />
+            <div className="mx-2 mb-3 flex h-8 shrink-0 gap-1 rounded-md bg-sidebar-accent p-1">
+              <div className="flex-1 rounded-sm bg-background/70" />
+              <div className="flex-1 rounded-sm" />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col gap-1.5 px-2">
+              <div className="h-7 rounded-md bg-sidebar-accent/80" />
+              <div className="h-7 rounded-md bg-muted/40" />
+              <div className="h-7 rounded-md bg-muted/40" />
+            </div>
+            <div className="flex items-center gap-1 px-3 py-2">
+              <IconButton size="sm" tooltip="Settings">
+                <Settings />
+              </IconButton>
+              <IconButton size="sm" tooltip="Remote">
+                <Wifi />
+              </IconButton>
+              {children}
+            </div>
+          </div>
+        </SidebarFrame>
       </div>
-      <div className="flex min-h-[200px] flex-col gap-1.5 p-2">
-        <div className="h-7 rounded-md bg-sidebar-accent/80" />
-        <div className="h-7 rounded-md bg-muted/40" />
-        <div className="h-7 rounded-md bg-muted/40" />
-      </div>
-      <div className="flex items-center gap-1 overflow-visible border-t border-border/60 px-2 py-2">
-        <IconButton size="sm" tooltip="Settings">
-          <Settings />
-        </IconButton>
-        <IconButton size="sm" tooltip="Remote">
-          <Wifi />
-        </IconButton>
-        <div className="relative overflow-visible">{children}</div>
+      <div className="relative z-20 m-[5px] ml-0 flex min-w-0 flex-1 overflow-hidden rounded-xl border border-border/50 bg-card">
+        <div className="flex flex-1 flex-col gap-3 p-4">
+          <div className="h-7 w-2/5 rounded-md bg-muted/60" />
+          <div className="h-24 rounded-md bg-muted/30" />
+          <div className="h-24 rounded-md bg-muted/30" />
+        </div>
       </div>
     </div>
   )
@@ -144,8 +162,8 @@ function Playground({ initial = null }: { initial?: RateLimitTipSeed }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
+    <div className="flex h-screen flex-col overflow-hidden bg-sidebar text-foreground">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-background px-3 py-2">
         <button
           type="button"
           className="rounded-md border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted"
@@ -167,14 +185,11 @@ function Playground({ initial = null }: { initial?: RateLimitTipSeed }) {
         >
           Clear
         </button>
+        <p className="ml-auto text-xs font-medium tabular-nums text-foreground">{statusLine}</p>
       </div>
-      <p className="max-w-md text-xs text-muted-foreground">
-        Tip auto-dismisses after 6s; gauge highlight clears with it. Use the toolbar language switch for zh/en.
-      </p>
-      <p className="text-xs font-medium tabular-nums text-foreground">{statusLine}</p>
-      <SidebarFooterMock>
+      <SidebarPreview>
         <UsageStatusIcon key={mountKey} />
-      </SidebarFooterMock>
+      </SidebarPreview>
     </div>
   )
 }
@@ -182,7 +197,7 @@ function Playground({ initial = null }: { initial?: RateLimitTipSeed }) {
 const meta: Meta = {
   title: 'Sidebar/UsageStatusIcon',
   parameters: {
-    layout: 'padded',
+    layout: 'fullscreen',
     docs: {
       description: {
         component:

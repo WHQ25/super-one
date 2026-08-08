@@ -60,8 +60,25 @@ vi.mock('motion/react', () => ({
 
 vi.mock('@superone/ui/components/ui/popover', () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PopoverAnchor: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PopoverContent: ({ children, side, align, collisionPadding, role }: {
+    children: React.ReactNode
+    side?: string
+    align?: string
+    collisionPadding?: number
+    role?: string
+  }) => (
+    <div
+      role={role}
+      data-slot="popover-content"
+      data-side={side}
+      data-align={align}
+      data-collision-padding={collisionPadding}
+    >
+      {children}
+    </div>
+  ),
 }))
 
 vi.mock('@superone/ui/components/ui/icon-button', () => ({
@@ -130,6 +147,23 @@ describe('UsageStatusIcon rate-limit tip', () => {
     })
 
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('uses a collision-aware popover for the tip', async () => {
+    hoisted.sessionState.rateLimitInfo = {
+      status: 'allowed_warning',
+      utilization: 0.82,
+    }
+
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const tip = screen.getByRole('status')
+    expect(tip).toHaveAttribute('data-side', 'top')
+    expect(tip).toHaveAttribute('data-align', 'end')
+    expect(tip).toHaveAttribute('data-collision-padding', '8')
   })
 
   it('shows the tip again for a new episode after the limit clears', async () => {

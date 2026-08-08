@@ -20,6 +20,7 @@ import {
 import { useHarnessTheme } from '../src/renderer/src/hooks/useHarnessTheme'
 import { clampBrandHue, brandHueToOklch } from '@superone/shared/harness-brand'
 import type { HarnessId } from '@superone/shared/session-types'
+import { cn } from '@superone/ui/lib/utils'
 
 installIpcMocks()
 
@@ -100,7 +101,10 @@ const HarnessThemeBridge: React.FC<{ children: React.ReactNode }> = ({ children 
 
 const ThemeDecorator = (
   Story: React.ComponentType,
-  ctx: { globals: { theme?: 'light' | 'dark'; harness?: HarnessId; locale?: Locale } },
+  ctx: {
+    globals: { theme?: 'light' | 'dark'; harness?: HarnessId; locale?: Locale }
+    parameters: { layout?: 'centered' | 'fullscreen' | 'padded' }
+  },
 ) => {
   const theme = ctx.globals.theme ?? 'light'
   const harness: HarnessId = ctx.globals.harness ?? 'claude'
@@ -121,7 +125,7 @@ const ThemeDecorator = (
   return (
     <HarnessThemeBridge>
       <MockLocaleProvider locale={locale}>
-        <div className="bg-background text-foreground min-h-screen p-6">
+        <div className={cn('min-h-screen bg-background text-foreground', ctx.parameters.layout !== 'fullscreen' && 'p-6')}>
           <Story />
           {theme === 'light' && <BrandHueDial harness={harness} />}
         </div>

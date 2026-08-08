@@ -13,6 +13,7 @@ import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
 import { MosaicDropPreview } from '@/components/mosaic/MosaicDropPreview'
 import { measureMin } from '@/components/mosaic/mosaic-tree'
 import { AppSidebar } from '@/components/AppSidebar'
+import { SidebarFrame } from '@/components/sidebar/SidebarFrame'
 import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
@@ -500,16 +501,14 @@ function App(): React.JSX.Element {
       <GitAutoRefresh />
       <>
       <div className="relative flex shrink-0">
-      <div
-        ref={sidebarRef}
-        data-sidebar-outer=""
-        className="relative shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-        style={{ width: showSidebar ? sidebarWidth : 0 }}
+      <SidebarFrame
+        open={showSidebar}
+        width={sidebarWidth}
+        outerRef={sidebarRef}
+        innerRef={sidebarInnerRef}
       >
-        <div ref={sidebarInnerRef} className="h-full" style={{ width: sidebarWidth }}>
-          <AppSidebar />
-        </div>
-      </div>
+        <AppSidebar />
+      </SidebarFrame>
         {showSidebar && (
           <div
             data-resize-handle

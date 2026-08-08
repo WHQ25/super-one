@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { AlertTriangle, Gauge, OctagonX, RefreshCw } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
+import { motion } from 'motion/react'
 import { toast } from 'sonner'
-import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
@@ -252,14 +252,15 @@ function RateLimitTipBubble({ tip }: { tip: RateLimitTipInfo }) {
   ].filter(Boolean).join(' · ')
 
   return (
-    <motion.div
+    <PopoverContent
       role="status"
-      initial={{ opacity: 0, y: 6, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 4, scale: 0.98 }}
-      transition={{ duration: 0.2 }}
+      side="top"
+      align="end"
+      sideOffset={8}
+      collisionPadding={8}
+      onOpenAutoFocus={(event) => event.preventDefault()}
       className={cn(
-        'absolute bottom-full right-0 z-50 mb-2 w-52 rounded-md border bg-background p-2 text-xs shadow-none',
+        'pointer-events-none w-52 rounded-md border bg-background p-2 text-xs shadow-none',
         isRejected ? 'border-error/40' : 'border-warning/40',
       )}
     >
@@ -282,19 +283,19 @@ function RateLimitTipBubble({ tip }: { tip: RateLimitTipInfo }) {
           transition={{ duration: RATE_LIMIT_TIP_MS / 1000, ease: 'linear' }}
         />
       </div>
-    </motion.div>
+    </PopoverContent>
   )
 }
 
 function RateLimitTipHost({ tip, children }: { tip: RateLimitTipInfo | null; children: ReactNode }) {
   if (!children) return null
   return (
-    <div className="relative">
-      <AnimatePresence>
-        {tip && <RateLimitTipBubble key={rateLimitTipKey(tip)} tip={tip} />}
-      </AnimatePresence>
-      {children}
-    </div>
+    <Popover open={tip !== null}>
+      <PopoverAnchor asChild>
+        <div>{children}</div>
+      </PopoverAnchor>
+      {tip && <RateLimitTipBubble key={rateLimitTipKey(tip)} tip={tip} />}
+    </Popover>
   )
 }
 

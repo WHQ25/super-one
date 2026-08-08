@@ -375,6 +375,26 @@ body[data-scroll-locked] {
   box-shadow: none;
 }
 
+/*
+ * Recharts / usage charts: SVG surfaces become :focus-visible on click and pick up
+ * the global brand focus ring (can look like a harsh yellow/amber border). Charts
+ * are pointer-driven; hide that ring without affecting real keyboard controls.
+ */
+.recharts-wrapper,
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-surface:focus,
+.recharts-surface:focus-visible,
+.recharts-wrapper *:focus,
+.recharts-wrapper *:focus-visible,
+.usage-chart:focus,
+.usage-chart:focus-visible,
+.usage-chart *:focus,
+.usage-chart *:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .tiptap p {
   margin: 0;
 }

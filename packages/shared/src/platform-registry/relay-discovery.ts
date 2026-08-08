@@ -39,25 +39,70 @@ export function normalizeModelId(id: string): string {
   return (slash >= 0 ? id.slice(slash + 1) : id).toLowerCase()
 }
 
-const CANONICAL_CATALOG_PROVIDERS = ['openai', 'anthropic', 'google']
+/** Highest-priority first-party vendors for bare-id collisions (chat + multimodal). */
+const CANONICAL_CATALOG_PROVIDERS = ['openai', 'anthropic', 'google'] as const
+
+/**
+ * Model-manufacturer first parties whose models.dev rows carry official API list prices.
+ * Hosting platforms / aggregators (openrouter, anyapi, fireworks, together, nano-gpt, …) are
+ * excluded so bare-id collisions prefer the manufacturer row (and its cost) over a null-cost
+ * or marked-up proxy entry.
+ */
+const FIRST_PARTY_CATALOG_PROVIDERS = new Set<string>([
+  ...CANONICAL_CATALOG_PROVIDERS,
+  'xai',
+  'deepseek',
+  'mistral',
+  'cohere',
+  'meta',
+  'moonshotai',
+  'moonshotai-cn',
+  'zhipuai',
+  'zhipuai-coding-plan',
+  'alibaba',
+  'alibaba-cn',
+  'minimax',
+  'minimax-cn',
+  'bytedance',
+  'perplexity',
+])
+
+/**
+ * Higher is better for bare-id collision resolution.
+ * Order: canonical (openai/anthropic/google) > other first-party vendors > everyone else;
+ * within a tier, prefer rows that publish list-price `cost` (so anyapi null-cost never shadows
+ * deepseek official pricing).
+ */
+export function catalogModelCollisionScore(model: CatalogModel): number {
+  const providerId = model.providerId
+  let score = 0
+  if ((CANONICAL_CATALOG_PROVIDERS as readonly string[]).includes(providerId)) score += 300
+  else if (FIRST_PARTY_CATALOG_PROVIDERS.has(providerId)) score += 200
+  else score += 100
+  if (model.cost) score += 1
+  return score
+}
 
 /**
  * Index every models.dev catalog model by its bare id so a discovered model with no
  * `supported_endpoint_types` (a plain OpenAI-compatible `/v1/models` response) can borrow its
- * real capability tasks instead of defaulting to chat-only. Canonical vendors win id collisions
- * since relays overwhelmingly proxy those ids verbatim (e.g. `gpt-image-1`, `dall-e-3`).
+ * real capability tasks instead of defaulting to chat-only. First-party vendors win id collisions
+ * over aggregators; among peers, rows with list prices win so cost-aware UI is not blanked by
+ * null-cost proxy entries (e.g. anyapi's `deepseek/deepseek-chat`).
  */
 export function buildCatalogTaskIndex(catalog: ModelCatalog): Map<string, CapabilityTask[]> {
   const index = new Map<string, CapabilityTask[]>()
-  const providers = [...catalog.providers].sort(
-    (a, b) => Number(CANONICAL_CATALOG_PROVIDERS.includes(b.id)) - Number(CANONICAL_CATALOG_PROVIDERS.includes(a.id)),
-  )
-  for (const provider of providers) {
+  const scores = new Map<string, number>()
+  for (const provider of catalog.providers) {
     for (const model of provider.models) {
-      const key = normalizeModelId(model.id)
-      if (index.has(key)) continue
       const tasks = modelTasks(model)
-      if (tasks.length > 0) index.set(key, tasks)
+      if (tasks.length === 0) continue
+      const key = normalizeModelId(model.id)
+      const score = catalogModelCollisionScore(model)
+      const prev = scores.get(key)
+      if (prev != null && prev >= score) continue
+      scores.set(key, score)
+      index.set(key, tasks)
     }
   }
   return index
@@ -70,13 +115,15 @@ export function buildCatalogTaskIndex(catalog: ModelCatalog): Map<string, Capabi
  */
 export function buildCatalogModelIndex(catalog: ModelCatalog): Map<string, CatalogModel> {
   const index = new Map<string, CatalogModel>()
-  const providers = [...catalog.providers].sort(
-    (a, b) => Number(CANONICAL_CATALOG_PROVIDERS.includes(b.id)) - Number(CANONICAL_CATALOG_PROVIDERS.includes(a.id)),
-  )
-  for (const provider of providers) {
+  const scores = new Map<string, number>()
+  for (const provider of catalog.providers) {
     for (const model of provider.models) {
       const key = normalizeModelId(model.id)
-      if (!index.has(key)) index.set(key, model)
+      const score = catalogModelCollisionScore(model)
+      const prev = scores.get(key)
+      if (prev != null && prev >= score) continue
+      scores.set(key, score)
+      index.set(key, model)
     }
   }
   return index

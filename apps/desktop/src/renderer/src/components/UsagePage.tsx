@@ -3,7 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts'
 import { cn } from '@superone/ui/lib/utils'
-import { buildCatalogModelIndex } from '@superone/shared/platform-registry'
+import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
+import {
+  estimateUsageCostBreakdown,
+  formatUsd,
+  type UsageCostBreakdown,
+} from '@superone/shared/usage-cost'
+import type { CatalogModel } from '@superone/shared/model-catalog-types'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useChatStore } from '@/stores/chat'
 import { ModelGlyph } from './providers/ModelGlyph'
@@ -30,7 +36,11 @@ function SizedChart({ height, className, children }: { height: number | string; 
   }, [])
   const heightStyle = typeof height === 'number' ? `${height}px` : height
   return (
-    <div ref={ref} style={{ height: heightStyle, minWidth: 0 }} className={cn('w-full', className)}>
+    <div
+      ref={ref}
+      style={{ height: heightStyle, minWidth: 0 }}
+      className={cn('usage-chart w-full outline-none', className)}
+    >
       {size.width > 0 && size.height > 0 ? children(size) : null}
     </div>
   )
@@ -58,9 +68,16 @@ interface ByModelRow {
   output: number
   cacheRead: number
   cacheCreation: number
+  /** Estimated USD from models.dev; null when the model has no list price. */
+  costUsd: number | null
+  costInput: number
+  costOutput: number
+  costCacheRead: number
+  costCacheCreation: number
 }
 
 type RangePreset = 'today' | '7d' | '30d' | '90d' | 'all'
+type UsageMetric = 'tokens' | 'cost'
 
 const PRESETS: { id: RangePreset; days: number | null }[] = [
   { id: 'today', days: 1 },
@@ -100,6 +117,30 @@ function rowTotal(r: UsageRow): number {
   return r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_creation_tokens
 }
 
+function zeroCostBreakdown(): UsageCostBreakdown {
+  return { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
+}
+
+function rowCostBreakdown(
+  r: UsageRow,
+  catalogModels: ReadonlyMap<string, CatalogModel>,
+): UsageCostBreakdown | null {
+  const model = catalogModels.get(normalizeModelId(usageModelId(r.model)))
+  return estimateUsageCostBreakdown(
+    {
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      cacheReadTokens: r.cache_read_tokens,
+      cacheCreationTokens: r.cache_creation_tokens,
+    },
+    model?.cost,
+  )
+}
+
+function formatMetric(value: number, metric: UsageMetric): string {
+  return metric === 'cost' ? formatUsd(value) : formatNumber(value)
+}
+
 export function UsagePage() {
   const { t } = useTranslation()
   const { catalog } = useModelCatalog()
@@ -110,6 +151,7 @@ export function UsagePage() {
   const [backfilling, setBackfilling] = useState(false)
   const [preset, setPreset] = useState<RangePreset>('today')
   const [harnessFilter, setHarnessFilter] = useState<HarnessFilter>('all')
+  const [metric, setMetric] = useState<UsageMetric>('tokens')
   const catalogModels = useMemo(
     () => catalog ? buildCatalogModelIndex(catalog) : new Map(),
     [catalog],
@@ -178,35 +220,64 @@ export function UsagePage() {
     return total
   }, [filteredRows])
 
+  const costSummary = useMemo(() => {
+    let total = 0
+    let unpricedModels = 0
+    const seenUnpriced = new Set<string>()
+    for (const r of filteredRows) {
+      const cost = rowCostBreakdown(r, catalogModels)
+      if (cost) {
+        total += cost.total
+      } else if (rowTotal(r) > 0) {
+        const key = `${r.harness}::${usageModelId(r.model)}`
+        if (!seenUnpriced.has(key)) {
+          seenUnpriced.add(key)
+          unpricedModels++
+        }
+      }
+    }
+    return { total, unpricedModels }
+  }, [filteredRows, catalogModels])
+
   const dailyByHarness = useMemo(() => {
     const byDay = new Map<string, { claude: number; codex: number; grok: number }>()
     for (const r of rows) {
       const cur = byDay.get(r.day) ?? { claude: 0, codex: 0, grok: 0 }
-      const tokens = rowTotal(r)
-      if (r.harness === 'claude') cur.claude += tokens
-      else if (r.harness === 'codex') cur.codex += tokens
-      else cur.grok += tokens
+      const amount = metric === 'cost'
+        ? (rowCostBreakdown(r, catalogModels)?.total ?? 0)
+        : rowTotal(r)
+      if (r.harness === 'claude') cur.claude += amount
+      else if (r.harness === 'codex') cur.codex += amount
+      else cur.grok += amount
       byDay.set(r.day, cur)
     }
     return Array.from(byDay.entries())
       .sort(([a], [b]) => a < b ? -1 : 1)
       .map(([day, v]) => ({ day, claude: v.claude, codex: v.codex, grok: v.grok }))
-  }, [rows])
+  }, [rows, metric, catalogModels])
 
   const dailyByTokenType = useMemo(() => {
     const byDay = new Map<string, { input: number; output: number; cacheRead: number; cacheCreation: number }>()
     for (const r of filteredRows) {
       const cur = byDay.get(r.day) ?? { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
-      cur.input += r.input_tokens
-      cur.output += r.output_tokens
-      cur.cacheRead += r.cache_read_tokens
-      cur.cacheCreation += r.cache_creation_tokens
+      if (metric === 'cost') {
+        const cost = rowCostBreakdown(r, catalogModels) ?? zeroCostBreakdown()
+        cur.input += cost.input
+        cur.output += cost.output
+        cur.cacheRead += cost.cacheRead
+        cur.cacheCreation += cost.cacheCreation
+      } else {
+        cur.input += r.input_tokens
+        cur.output += r.output_tokens
+        cur.cacheRead += r.cache_read_tokens
+        cur.cacheCreation += r.cache_creation_tokens
+      }
       byDay.set(r.day, cur)
     }
     return Array.from(byDay.entries())
       .sort(([a], [b]) => a < b ? -1 : 1)
       .map(([day, v]) => ({ day, ...v }))
-  }, [filteredRows])
+  }, [filteredRows, metric, catalogModels])
 
   const byModel = useMemo(() => {
     const map = new Map<string, ByModelRow>()
@@ -221,15 +292,33 @@ export function UsagePage() {
         output: 0,
         cacheRead: 0,
         cacheCreation: 0,
+        costUsd: null as number | null,
+        costInput: 0,
+        costOutput: 0,
+        costCacheRead: 0,
+        costCacheCreation: 0,
       }
       cur.input += r.input_tokens
       cur.output += r.output_tokens
       cur.cacheRead += r.cache_read_tokens
       cur.cacheCreation += r.cache_creation_tokens
+      const cost = rowCostBreakdown(r, catalogModels)
+      if (cost) {
+        cur.costUsd = (cur.costUsd ?? 0) + cost.total
+        cur.costInput += cost.input
+        cur.costOutput += cost.output
+        cur.costCacheRead += cost.cacheRead
+        cur.costCacheCreation += cost.cacheCreation
+      }
       map.set(key, cur)
     }
-    return Array.from(map.values()).sort((a, b) => (b.input + b.output + b.cacheRead + b.cacheCreation) - (a.input + a.output + a.cacheRead + a.cacheCreation))
-  }, [filteredRows, catalogModels, knownModelNames])
+    return Array.from(map.values()).sort((a, b) => {
+      if (metric === 'cost') {
+        return (b.costUsd ?? -1) - (a.costUsd ?? -1)
+      }
+      return (b.input + b.output + b.cacheRead + b.cacheCreation) - (a.input + a.output + a.cacheRead + a.cacheCreation)
+    })
+  }, [filteredRows, catalogModels, knownModelNames, metric])
 
   const isAll = harnessFilter === 'all'
   const isToday = preset === 'today'
@@ -238,19 +327,22 @@ export function UsagePage() {
   const dayTotalsMap = useMemo(() => {
     const m = new Map<string, number>()
     for (const r of filteredRows) {
-      m.set(r.day, (m.get(r.day) ?? 0) + rowTotal(r))
+      const amount = metric === 'cost'
+        ? (rowCostBreakdown(r, catalogModels)?.total ?? 0)
+        : rowTotal(r)
+      m.set(r.day, (m.get(r.day) ?? 0) + amount)
     }
     return m
-  }, [filteredRows])
+  }, [filteredRows, metric, catalogModels])
   const chartData = isToday ? byModel : (isAll ? dailyByHarness : dailyByTokenType)
   const chartEmpty = isHeatmap ? dayTotalsMap.size === 0 : chartData.length === 0
   const chartTitleKey = isHeatmap
-    ? 'settings.usage.daily.titleHeatmap'
+    ? (metric === 'cost' ? 'settings.usage.daily.titleHeatmapCost' : 'settings.usage.daily.titleHeatmap')
     : isToday
-      ? 'settings.usage.daily.titleToday'
+      ? (metric === 'cost' ? 'settings.usage.daily.titleTodayCost' : 'settings.usage.daily.titleToday')
       : isAll
-        ? 'settings.usage.daily.titleByHarness'
-        : 'settings.usage.daily.titleByTokenType'
+        ? (metric === 'cost' ? 'settings.usage.daily.titleByHarnessCost' : 'settings.usage.daily.titleByHarness')
+        : (metric === 'cost' ? 'settings.usage.daily.titleByTokenTypeCost' : 'settings.usage.daily.titleByTokenType')
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -297,10 +389,35 @@ export function UsagePage() {
             </button>
           ))}
         </div>
+        <div className="flex gap-1 rounded-lg border border-border p-0.5">
+          {(['tokens', 'cost'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMetric(m)}
+              className={cn(
+                'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                metric === m
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {t(`settings.usage.metric.${m}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryCard label={t('settings.usage.summary.totalTokens')} value={formatNumber(filteredTokenTotal)} />
+        <SummaryCard
+          label={t('settings.usage.summary.estimatedCost')}
+          value={formatUsd(costSummary.total)}
+          hint={
+            costSummary.unpricedModels > 0
+              ? t('settings.usage.summary.unpricedHint', { count: costSummary.unpricedModels })
+              : t('settings.usage.summary.estimatedCostHint')
+          }
+        />
         <SummaryCard label={t('settings.usage.summary.sessions')} value={counts.sessions.toLocaleString()} />
         <SummaryCard label={t('settings.usage.summary.messages')} value={counts.messages.toLocaleString()} />
       </div>
@@ -338,17 +455,17 @@ export function UsagePage() {
             {t('settings.usage.daily.empty')}
           </div>
         ) : isHeatmap ? (
-          <ContributionHeatmap dayTotals={dayTotalsMap} t={t} />
+          <ContributionHeatmap dayTotals={dayTotalsMap} metric={metric} t={t} />
         ) : isToday ? (
-          <TodayByModelChart data={byModel} t={t} />
+          <TodayByModelChart data={byModel} metric={metric} t={t} />
         ) : isAll ? (
           isAreaRange
-            ? <DailyHarnessAreaChart data={dailyByHarness} t={t} />
-            : <DailyHarnessChart data={dailyByHarness} t={t} showTopLabels={preset === '7d'} />
+            ? <DailyHarnessAreaChart data={dailyByHarness} metric={metric} t={t} />
+            : <DailyHarnessChart data={dailyByHarness} metric={metric} t={t} showTopLabels={preset === '7d'} />
         ) : (
           isAreaRange
-            ? <DailyTokenTypeAreaChart data={dailyByTokenType} t={t} />
-            : <DailyTokenTypeChart data={dailyByTokenType} t={t} showTopLabels={preset === '7d'} />
+            ? <DailyTokenTypeAreaChart data={dailyByTokenType} metric={metric} t={t} />
+            : <DailyTokenTypeChart data={dailyByTokenType} metric={metric} t={t} showTopLabels={preset === '7d'} />
         )}
       </div>
 
@@ -370,6 +487,7 @@ export function UsagePage() {
                 <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.cacheRead')}</th>
                 <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.cacheCreation')}</th>
                 <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.total')}</th>
+                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.cost')}</th>
               </tr>
             </thead>
             <tbody>
@@ -390,6 +508,9 @@ export function UsagePage() {
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheRead)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheCreation)}</td>
                     <td className="px-4 py-2 text-right font-semibold tabular-nums">{formatNumber(total)}</td>
+                    <td className="px-4 py-2 text-right font-semibold tabular-nums">
+                      {m.costUsd == null ? t('settings.usage.byModel.unpriced') : formatUsd(m.costUsd)}
+                    </td>
                   </tr>
                 )
               })}
@@ -428,7 +549,7 @@ function parseLocalDay(s: string): Date {
 
 type HeatmapCell = { x: number; y: number; level: number; date: string; value: number }
 
-function ContributionHeatmap({ dayTotals, t }: { dayTotals: Map<string, number>; t: (key: string) => string }) {
+function ContributionHeatmap({ dayTotals, metric, t }: { dayTotals: Map<string, number>; metric: UsageMetric; t: (key: string) => string }) {
   const [hover, setHover] = useState<HeatmapCell | null>(null)
   if (dayTotals.size === 0) return null
   const days = Array.from(dayTotals.keys()).sort()
@@ -488,8 +609,8 @@ function ContributionHeatmap({ dayTotals, t }: { dayTotals: Map<string, number>;
   ]
 
   return (
-    <div className="relative w-full overflow-x-auto">
-      <svg width={width} height={height} className="overflow-visible">
+    <div className="usage-chart relative w-full overflow-x-auto outline-none">
+      <svg width={width} height={height} className="overflow-visible outline-none" focusable="false">
         {monthLabels.map((m) => (
           <text key={`${m.x}-${m.label}`} x={m.x} y={11} className="fill-muted-foreground" style={{ fontSize: 10 }}>
             {m.label}
@@ -533,7 +654,9 @@ function ContributionHeatmap({ dayTotals, t }: { dayTotals: Map<string, number>;
           <div className="font-medium">{hover.date}</div>
           <div className="text-muted-foreground">
             {hover.value > 0
-              ? `${formatNumber(hover.value)} ${t('settings.usage.heatmap.tokens')}`
+              ? metric === 'cost'
+                ? `${formatUsd(hover.value)} ${t('settings.usage.heatmap.cost')}`
+                : `${formatNumber(hover.value)} ${t('settings.usage.heatmap.tokens')}`
               : t('settings.usage.heatmap.noActivity')}
           </div>
         </div>
@@ -564,7 +687,7 @@ function HeatmapLegend({ t }: { t: (key: string) => string }) {
 interface DailyHarnessRow { day: string; claude: number; codex: number; grok: number }
 interface DailyTokenTypeRow { day: string; input: number; output: number; cacheRead: number; cacheCreation: number }
 
-function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: string) => string }) {
+function DailyHarnessAreaChart({ data, metric, t }: { data: DailyHarnessRow[]; metric: UsageMetric; t: (key: string) => string }) {
   return (
     <SizedChart height={224}>
       {({ width: cw, height: ch }) => (
@@ -602,10 +725,10 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
               return (
                 <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
                   <div className="mb-1 font-medium">{label}</div>
-                  <TooltipRow color="var(--primary)" label="Claude" value={claude} />
-                  <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" value={codex} />
-                  <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" value={grok} />
-                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={claude + codex + grok} bold />
+                  <TooltipRow color="var(--primary)" label="Claude" value={claude} metric={metric} />
+                  <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" value={codex} metric={metric} />
+                  <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" value={grok} metric={metric} />
+                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={claude + codex + grok} metric={metric} bold />
                 </div>
               )
             }}
@@ -619,7 +742,7 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
   )
 }
 
-function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (key: string) => string }) {
+function DailyTokenTypeAreaChart({ data, metric, t }: { data: DailyTokenTypeRow[]; metric: UsageMetric; t: (key: string) => string }) {
   return (
     <SizedChart height={224}>
       {({ width: cw, height: ch }) => (
@@ -652,9 +775,10 @@ function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (k
                       opacity={TOKEN_TYPE_COLORS[k].opacity}
                       label={t(`settings.usage.tokenTypes.${k}`)}
                       value={values[k]}
+                      metric={metric}
                     />
                   ))}
-                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={total} bold />
+                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={total} metric={metric} bold />
                 </div>
               )
             }}
@@ -677,16 +801,16 @@ function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (k
     </SizedChart>
   )
 }
-function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) => string }) {
+function TodayByModelChart({ data, metric, t }: { data: ByModelRow[]; metric: UsageMetric; t: (key: string) => string }) {
   const chartData = data.map((m) => ({
     key: `${m.harness}::${m.model}`,
     model: m.model,
     displayName: m.displayName,
     providerBrand: m.providerBrand,
-    input: m.input,
-    output: m.output,
-    cacheRead: m.cacheRead,
-    cacheCreation: m.cacheCreation,
+    input: metric === 'cost' ? m.costInput : m.input,
+    output: metric === 'cost' ? m.costOutput : m.output,
+    cacheRead: metric === 'cost' ? m.costCacheRead : m.cacheRead,
+    cacheCreation: metric === 'cost' ? m.costCacheCreation : m.cacheCreation,
   }))
   const height = Math.max(120, chartData.length * 36 + 24)
   return (
@@ -727,9 +851,10 @@ function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) =
                       opacity={TOKEN_TYPE_COLORS[k].opacity}
                       label={t(`settings.usage.tokenTypes.${k}`)}
                       value={values[k]}
+                      metric={metric}
                     />
                   ))}
-                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={total} bold />
+                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={total} metric={metric} bold />
                 </div>
               )
             }}
@@ -776,7 +901,7 @@ function ModelAxisTick({
   )
 }
 
-function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]; t: (key: string) => string; showTopLabels?: boolean }) {
+function DailyHarnessChart({ data, metric, t, showTopLabels }: { data: DailyHarnessRow[]; metric: UsageMetric; t: (key: string) => string; showTopLabels?: boolean }) {
   const totals = data.map((d) => d.claude + d.codex + d.grok)
   const positives = totals.filter((v) => v > 0)
   const avg = positives.length > 0 ? positives.reduce((a, b) => a + b, 0) / positives.length : 0
@@ -815,7 +940,7 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
               strokeDasharray="4 4"
               strokeOpacity={0.6}
               label={{
-                value: `${t('settings.usage.tooltip.avg')} ${formatNumber(Math.round(avg))}`,
+                value: `${t('settings.usage.tooltip.avg')} ${formatMetric(metric === 'cost' ? avg : Math.round(avg), metric)}`,
                 position: 'insideTopRight',
                 fill: 'var(--muted-foreground)',
                 fontSize: 10,
@@ -832,10 +957,10 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
               return (
                 <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
                   <div className="mb-1 font-medium">{label}</div>
-                  <TooltipRow color="var(--primary)" label="Claude" value={claude} />
-                  <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" value={codex} />
-                  <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" value={grok} />
-                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={claude + codex + grok} bold />
+                  <TooltipRow color="var(--primary)" label="Claude" value={claude} metric={metric} />
+                  <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" value={codex} metric={metric} />
+                  <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" value={grok} metric={metric} />
+                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={claude + codex + grok} metric={metric} bold />
                 </div>
               )
             }}
@@ -847,7 +972,7 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
               <LabelList
                 dataKey={(entry: DailyHarnessRow) => entry.claude + entry.codex + entry.grok}
                 position="top"
-                formatter={(v) => typeof v === 'number' && v > 0 ? formatNumber(v) : ''}
+                formatter={(v) => typeof v === 'number' && v > 0 ? formatMetric(v, metric) : ''}
                 style={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
               />
             )}
@@ -858,7 +983,7 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
   )
 }
 
-function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeRow[]; t: (key: string) => string; showTopLabels?: boolean }) {
+function DailyTokenTypeChart({ data, metric, t, showTopLabels }: { data: DailyTokenTypeRow[]; metric: UsageMetric; t: (key: string) => string; showTopLabels?: boolean }) {
   const totals = data.map((d) => d.input + d.output + d.cacheRead + d.cacheCreation)
   const positives = totals.filter((v) => v > 0)
   const avg = positives.length > 0 ? positives.reduce((a, b) => a + b, 0) / positives.length : 0
@@ -883,7 +1008,7 @@ function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeR
               strokeDasharray="4 4"
               strokeOpacity={0.6}
               label={{
-                value: `${t('settings.usage.tooltip.avg')} ${formatNumber(Math.round(avg))}`,
+                value: `${t('settings.usage.tooltip.avg')} ${formatMetric(metric === 'cost' ? avg : Math.round(avg), metric)}`,
                 position: 'insideTopRight',
                 fill: 'var(--muted-foreground)',
                 fontSize: 10,
@@ -909,9 +1034,10 @@ function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeR
                       opacity={TOKEN_TYPE_COLORS[k].opacity}
                       label={t(`settings.usage.tokenTypes.${k}`)}
                       value={values[k]}
+                      metric={metric}
                     />
                   ))}
-                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={total} bold />
+                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={total} metric={metric} bold />
                 </div>
               )
             }}
@@ -932,7 +1058,7 @@ function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeR
                   <LabelList
                     dataKey={(entry: DailyTokenTypeRow) => entry.input + entry.output + entry.cacheRead + entry.cacheCreation}
                     position="top"
-                    formatter={(v) => typeof v === 'number' && v > 0 ? formatNumber(v) : ''}
+                    formatter={(v) => typeof v === 'number' && v > 0 ? formatMetric(v, metric) : ''}
                     style={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   />
                 )}
@@ -945,21 +1071,22 @@ function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeR
   )
 }
 
-function TooltipRow({ color, opacity = 1, label, value, bold }: { color: string; opacity?: number; label: string; value: number; bold?: boolean }) {
+function TooltipRow({ color, opacity = 1, label, value, metric = 'tokens', bold }: { color: string; opacity?: number; label: string; value: number; metric?: UsageMetric; bold?: boolean }) {
   return (
     <div className={cn('flex items-center gap-2', bold && 'mt-1 border-t border-border pt-1 font-medium')}>
       <span className="size-2 rounded-sm" style={{ backgroundColor: color, opacity }} />
       <span className="text-muted-foreground">{label}</span>
-      <span className="ml-auto tabular-nums">{formatNumber(value)}</span>
+      <span className="ml-auto tabular-nums">{formatMetric(value, metric)}</span>
     </div>
   )
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+      {hint ? <div className="mt-1 text-[11px] leading-snug text-muted-foreground/80">{hint}</div> : null}
     </div>
   )
 }

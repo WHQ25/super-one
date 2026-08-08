@@ -337,6 +337,61 @@ describe('buildCatalogModelIndex', () => {
     const index = buildCatalogModelIndex(catalog)
     expect(index.get('gpt-4o')?.providerId).toBe('openai')
   })
+
+  it('prefers first-party vendor with list price over aggregator null-cost on bare-id collision', () => {
+    const catalog: ModelCatalog = {
+      generatedAt: '2026-01-01',
+      source: 'snapshot',
+      providers: [
+        {
+          id: 'anyapi',
+          name: 'AnyAPI',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'deepseek/deepseek-v4-flash',
+              name: 'DeepSeek V4 Flash (proxy)',
+              providerId: 'anyapi',
+              inputModalities: ['text'],
+              outputModalities: ['text'],
+              reasoning: false,
+              toolCall: true,
+              attachment: false,
+            },
+          ],
+        },
+        {
+          id: 'deepseek',
+          name: 'DeepSeek',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'deepseek-v4-flash',
+              name: 'DeepSeek V4 Flash',
+              providerId: 'deepseek',
+              cost: { input: 0.14, output: 0.28, cacheRead: 0.0028 },
+              inputModalities: ['text'],
+              outputModalities: ['text'],
+              reasoning: false,
+              toolCall: true,
+              attachment: false,
+            },
+          ],
+        },
+      ],
+    }
+    const index = buildCatalogModelIndex(catalog)
+    expect(index.get('deepseek-v4-flash')?.providerId).toBe('deepseek')
+    expect(index.get('deepseek-v4-flash')?.cost).toEqual({
+      input: 0.14,
+      output: 0.28,
+      cacheRead: 0.0028,
+    })
+  })
 })
 
 describe('mergeDiscovered', () => {

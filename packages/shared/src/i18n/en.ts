@@ -688,20 +688,32 @@ export type Messages = {
       }
       summary: {
         totalTokens: string
+        estimatedCost: string
+        estimatedCostHint: string
+        unpricedHint: string
         sessions: string
         messages: string
+      }
+      metric: {
+        tokens: string
+        cost: string
       }
       daily: {
         titleByHarness: string
         titleByTokenType: string
         titleToday: string
         titleHeatmap: string
+        titleByHarnessCost: string
+        titleByTokenTypeCost: string
+        titleTodayCost: string
+        titleHeatmapCost: string
         empty: string
       }
       heatmap: {
         less: string
         more: string
         tokens: string
+        cost: string
         noActivity: string
       }
       tokenTypes: {
@@ -720,6 +732,8 @@ export type Messages = {
         harness: string
         model: string
         total: string
+        cost: string
+        unpriced: string
         input: string
         output: string
         cacheRead: string
@@ -3035,20 +3049,32 @@ export const en: Messages = {
       },
       summary: {
         totalTokens: 'Total Tokens',
+        estimatedCost: 'Est. Cost',
+        estimatedCostHint: 'Raw API Cost',
+        unpricedHint: '{{count}} models lack list prices',
         sessions: 'Sessions',
         messages: 'Messages',
+      },
+      metric: {
+        tokens: 'Tokens',
+        cost: 'Cost',
       },
       daily: {
         titleByHarness: 'Daily Usage (by Harness)',
         titleByTokenType: 'Daily Usage (by Token Type)',
         titleToday: "Today's Usage by Model",
         titleHeatmap: 'Activity Heatmap',
+        titleByHarnessCost: 'Daily Est. Cost (by Harness)',
+        titleByTokenTypeCost: 'Daily Est. Cost (by Token Type)',
+        titleTodayCost: "Today's Est. Cost by Model",
+        titleHeatmapCost: 'Cost Heatmap',
         empty: 'No data in the selected range',
       },
       heatmap: {
         less: 'Less',
         more: 'More',
         tokens: 'tokens',
+        cost: 'est. cost',
         noActivity: 'No activity',
       },
       tokenTypes: {
@@ -3067,6 +3093,8 @@ export const en: Messages = {
         harness: 'Harness',
         model: 'Model',
         total: 'Total',
+        cost: 'Est. Cost',
+        unpriced: '—',
         input: 'Input',
         output: 'Output',
         cacheRead: 'Cache Read',

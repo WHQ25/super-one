@@ -213,15 +213,26 @@ export function customPlatformEndpoints(
   return out
 }
 
-/**
- * The protocols a chat harness consumer accepts, in preference order.
- * Native wires first; openai-chat providers are bridged through the built-in
- * protocol proxy (Messages/Responses ↔ Chat Completions) — see
- * `@superone/runtime/llm-proxy` ensureProxy / desktop llm-proxy-manager.
- */
+/** The protocols a chat harness accepts without experimental adapters. */
 export const HARNESS_CHAT_PROTOCOLS: Record<'claude' | 'codex', WireProtocol[]> = {
-  claude: ['anthropic-messages', 'openai-chat'],
+  claude: ['anthropic-messages'],
   codex: ['openai-responses', 'openai-chat'],
+}
+
+export interface HarnessProtocolOptions {
+  /** Opt in to the Messages -> Chat Completions proxy for Claude Code. */
+  experimentalClaudeOpenAiChatEnabled?: boolean
+}
+
+/** Harness-compatible protocols in preference order, including enabled experiments. */
+export function harnessChatProtocols(
+  harness: 'claude' | 'codex',
+  options?: HarnessProtocolOptions,
+): WireProtocol[] {
+  if (harness === 'claude' && options?.experimentalClaudeOpenAiChatEnabled) {
+    return [...HARNESS_CHAT_PROTOCOLS.claude, 'openai-chat']
+  }
+  return HARNESS_CHAT_PROTOCOLS[harness]
 }
 
 export const PROXY_TRANSFORMERS_ENV = 'SUPERONE_PROXY_TRANSFORMERS'

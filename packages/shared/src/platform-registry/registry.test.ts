@@ -165,14 +165,17 @@ describe('selectEndpoint', () => {
     expect(claude?.protocol).toBe('anthropic-messages')
   })
 
-  it('resolves chat:claude against an openai-chat-only endpoint via proxy bridge', () => {
+  it('requires the experiment before bridging chat:claude to an openai-chat-only endpoint', () => {
     const plan: Plan = {
       id: 'api',
       name: 'API',
       auth: 'api-key',
       endpoints: [{ id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-chat'] }],
     }
-    const selected = selectEndpoint(plan, 'chat:claude')
+    expect(selectEndpoint(plan, 'chat:claude')).toBeUndefined()
+    const selected = selectEndpoint(plan, 'chat:claude', undefined, undefined, plan.endpoints, {
+      experimentalClaudeOpenAiChatEnabled: true,
+    })
     expect(selected?.endpoint.id).toBe('openai')
     expect(selected?.protocol).toBe('openai-chat')
   })

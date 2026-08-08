@@ -20,6 +20,7 @@ export function useSelectorProviders(harness: HarnessId) {
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
+  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
 
   // Keep scope aligned with host even if chat opened without a host-switch path.
   useEffect(() => {
@@ -38,16 +39,18 @@ export function useSelectorProviders(harness: HarnessId) {
 
   const consumer = consumerForHarness(harness)
   const filtered = useMemo<Credential[]>(
-    () => credentialsForConsumer(platforms, credentials, consumer),
-    [platforms, credentials, consumer],
+    () => credentialsForConsumer(platforms, credentials, consumer, { experimentalClaudeOpenAiChatEnabled }),
+    [platforms, credentials, consumer, experimentalClaudeOpenAiChatEnabled],
   )
 
   // When the session has no explicit override, show the globally-bound default provider,
   // not the abstract "Default" entry — resolveEffective mirrors the main-process selection.
   const resolvedProviderId = useMemo(() => {
     if (apiProviderId) return apiProviderId
-    return resolveEffective(platforms, credentials, bindings, consumer, apiProviderId)?.credential.id ?? null
-  }, [apiProviderId, platforms, credentials, bindings, consumer])
+    return resolveEffective(platforms, credentials, bindings, consumer, apiProviderId, {
+      experimentalClaudeOpenAiChatEnabled,
+    })?.credential.id ?? null
+  }, [apiProviderId, platforms, credentials, bindings, consumer, experimentalClaudeOpenAiChatEnabled])
 
   const providers = useMemo<SelectorProviderOption[]>(() => {
     const defaultLabel = harness === 'codex'

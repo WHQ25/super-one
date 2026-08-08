@@ -225,7 +225,9 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
       || 'grok-build'
     return { ...base, agentId }
   }
-  const resolved = resolveChatService(provider.harnessId, apiProviderId)
+  const resolved = resolveChatService(provider.harnessId, apiProviderId, {
+    experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
+  })
   if (!resolved) return provider.config
 
   if (resolved.protocol === 'openai-chat') {
@@ -338,7 +340,9 @@ const sessionManager = new SessionManagerImpl({
   },
   getActiveProvider: (harnessId, apiProviderId) => {
     if (harnessId === 'acp' || harnessId === 'opencode') return null
-    return buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null), harnessId)
+    return buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null, {
+      experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
+    }), harnessId)
   },
   getActiveDefaultApiProviderId: (harnessId) => {
     if (harnessId === 'acp' || harnessId === 'opencode') return null
@@ -553,6 +557,9 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       }
       notifySessionToolsChanged(session.id)
     })
+  }
+  if (patch?.experimentalClaudeOpenAiChatEnabled !== undefined) {
+    sessionManager.markAllNeedsRebuild('claude')
   }
   if (patch?.computerUseEnabled === false) {
     // Feature off → immediately drop any lingering control chrome.

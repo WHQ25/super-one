@@ -198,6 +198,8 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
           resolveProjectPath: (projectId) => projects.get(projectId)?.path ?? null,
           allowSimulatedFallback: allowSimulatedTurnFallback,
           providers,
+          experimentalClaudeOpenAiChatEnabled: () =>
+            loadNodeAgentSettings(paths.configJson).experimentalClaudeOpenAiChatEnabled,
           // Claude: in-process SDK MCP (same core tools as HTTP).
           createHostActionClaudeMcp: (sessionId) => hostActionMcp.createClaudeSdkMcp(sessionId),
           // Codex / ACP / OpenCode: loopback HTTP with per-session HMAC.
@@ -232,6 +234,8 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     secrets: collabSecrets,
     sessionProviders,
     isEnabled: isCollabEnabled,
+    experimentalClaudeOpenAiChatEnabled: () =>
+      loadNodeAgentSettings(paths.configJson).experimentalClaudeOpenAiChatEnabled,
   })
   collaborationRef = collaboration
   collaboration.rehydrateSystemPrompts()

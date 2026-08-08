@@ -54,6 +54,8 @@ export interface NodeClaudeRunnerOptions {
   skipSdkBinary?: boolean
   /** Node provider store — injects API keys for this turn. */
   providers?: ProviderStore
+  /** Re-read per turn so settings.patch takes effect without restarting the node. */
+  experimentalClaudeOpenAiChatEnabled?: () => boolean
   /**
    * Host Action MCP for this session.
    * Prefer in-process SDK MCP (type: 'sdk'). Bound to the long-lived
@@ -223,7 +225,9 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       opts.providers
         ? await buildHarnessEnvWithProxy(
             'claude',
-            resolveHarnessService(opts.providers, 'claude', input.apiProviderId),
+            resolveHarnessService(opts.providers, 'claude', input.apiProviderId, {
+              experimentalClaudeOpenAiChatEnabled: opts.experimentalClaudeOpenAiChatEnabled?.() ?? false,
+            }),
           )
         : {}
     const authEnv: NodeJS.ProcessEnv = {

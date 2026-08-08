@@ -78,6 +78,7 @@ export interface CollaborationDeps {
   sessionProviders?: SessionProviderStore
   /** When false, session_collab_* tools and service calls fail closed. */
   isEnabled?: () => boolean
+  experimentalClaudeOpenAiChatEnabled?: () => boolean
 }
 
 function hashCredential(credential: string): string {
@@ -176,6 +177,10 @@ export class CollaborationService {
     const { harnesses, providers, sessions, sessionProviders } = this.deps
     const profiles: SessionAgentProfile[] = []
     const seen = new Set<string>()
+    const providerOptions = {
+      experimentalClaudeOpenAiChatEnabled:
+        this.deps.experimentalClaudeOpenAiChatEnabled?.() ?? false,
+    }
 
     const pushProfile = (
       profileId: string,
@@ -190,14 +195,14 @@ export class CollaborationService {
         return
       }
       seen.add(profileId)
-      const models = listHarnessModels(providers, harnessId, null).map((m) => ({
+      const models = listHarnessModels(providers, harnessId, null, providerOptions).map((m) => ({
         id: m.id,
         name: m.name || m.id,
         ...(m.description ? { description: m.description } : {}),
       }))
       const defaultModel = models.find((m) => (m as { isDefault?: boolean }).isDefault) ?? models[0]
       const efforts = new Set<string>()
-      for (const m of listHarnessModels(providers, harnessId, null)) {
+      for (const m of listHarnessModels(providers, harnessId, null, providerOptions)) {
         for (const e of m.supportedEffortLevels ?? []) efforts.add(e)
       }
       const cfg =
@@ -234,7 +239,7 @@ export class CollaborationService {
         },
         models: models.length > 0 ? models : [{ id: 'default', name: 'Default' }],
         efforts: [...efforts],
-        apiProviders: listHarnessApiProviders(providers, harnessId),
+        apiProviders: listHarnessApiProviders(providers, harnessId, providerOptions),
       })
     }
 

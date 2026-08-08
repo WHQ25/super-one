@@ -14,6 +14,7 @@ const defaults: AppSettings = {
   analyticsEnabled: true,
   experimentalAgentsEnabled: false,
   experimentalAgentCollaborationEnabled: false,
+  experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
   crispText: true,
   autoExpandFileDiffs: false,
@@ -301,6 +302,9 @@ export function readAppSettings(): AppSettings {
       experimentalAgentCollaborationEnabled: typeof data.experimentalAgentCollaborationEnabled === 'boolean'
         ? data.experimentalAgentCollaborationEnabled
         : defaults.experimentalAgentCollaborationEnabled,
+      experimentalClaudeOpenAiChatEnabled: typeof data.experimentalClaudeOpenAiChatEnabled === 'boolean'
+        ? data.experimentalClaudeOpenAiChatEnabled
+        : defaults.experimentalClaudeOpenAiChatEnabled,
       experimentalRemoteNodesEnabled: typeof data.experimentalRemoteNodesEnabled === 'boolean'
         ? data.experimentalRemoteNodesEnabled
         : defaults.experimentalRemoteNodesEnabled,
@@ -346,6 +350,7 @@ export function readAppSettings(): AppSettings {
       analyticsEnabled: defaults.analyticsEnabled,
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
       experimentalAgentCollaborationEnabled: defaults.experimentalAgentCollaborationEnabled,
+      experimentalClaudeOpenAiChatEnabled: defaults.experimentalClaudeOpenAiChatEnabled,
       experimentalRemoteNodesEnabled: defaults.experimentalRemoteNodesEnabled,
       crispText: defaults.crispText,
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
@@ -391,6 +396,8 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       ?? current.experimentalAgentsEnabled,
     experimentalAgentCollaborationEnabled: patch.experimentalAgentCollaborationEnabled
       ?? current.experimentalAgentCollaborationEnabled,
+    experimentalClaudeOpenAiChatEnabled: patch.experimentalClaudeOpenAiChatEnabled
+      ?? current.experimentalClaudeOpenAiChatEnabled,
     experimentalRemoteNodesEnabled: patch.experimentalRemoteNodesEnabled
       ?? current.experimentalRemoteNodesEnabled,
     crispText: patch.crispText ?? current.crispText,

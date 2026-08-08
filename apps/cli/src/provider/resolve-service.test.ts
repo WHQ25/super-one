@@ -114,7 +114,7 @@ describe('resolve-service', () => {
     expect(listHarnessApiProviders(store, 'acp')).toEqual([])
   })
 
-  it('resolves openai-chat custom platform for Claude and Codex', () => {
+  it('requires the experiment for Claude but keeps Codex chat bridging available', () => {
     store.upsertCustomPlatform({
       id: 'custom:relay',
       brand: 'relay',
@@ -137,9 +137,17 @@ describe('resolve-service', () => {
     store.setBinding({ consumer: 'chat:claude', credentialId: cred.id })
     store.setBinding({ consumer: 'chat:codex', credentialId: cred.id })
 
-    const claude = resolveHarnessService(store, 'claude', null)
+    expect(resolveHarnessService(store, 'claude', null)).toBeNull()
+    expect(listHarnessApiProviders(store, 'claude').some((p) => p.id === cred.id)).toBe(false)
+
+    const claude = resolveHarnessService(store, 'claude', null, {
+      experimentalClaudeOpenAiChatEnabled: true,
+    })
     expect(claude?.protocol).toBe('openai-chat')
     expect(claude?.baseUrl).toMatch(/relay\.example/)
+    expect(listHarnessApiProviders(store, 'claude', {
+      experimentalClaudeOpenAiChatEnabled: true,
+    }).some((p) => p.id === cred.id)).toBe(true)
 
     const codex = resolveHarnessService(store, 'codex', null)
     expect(codex?.protocol).toBe('openai-chat')
@@ -183,6 +191,7 @@ describe('buildHarnessEnvWithProxy', () => {
       baseUrl: 'https://relay.example/v1',
       apiKey: 'sk-upstream-secret',
       auth: 'api-key',
+      models: [],
     })
     expect(env.OPENAI_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
     expect(env.CODEX_BASE_URL).toBe(env.OPENAI_BASE_URL)
@@ -201,6 +210,7 @@ describe('buildHarnessEnvWithProxy', () => {
       baseUrl: 'https://api.anthropic.com',
       apiKey: 'sk-ant-native',
       auth: 'api-key',
+      models: [],
     })
     expect(env.ANTHROPIC_BASE_URL).toBe('https://api.anthropic.com')
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-native')
@@ -218,6 +228,7 @@ describe('buildHarnessEnvWithProxy', () => {
       baseUrl: 'https://api.openai.com/v1',
       apiKey: 'sk-openai-native',
       auth: 'api-key',
+      models: [],
     })
     expect(env.OPENAI_BASE_URL).toBe('https://api.openai.com/v1')
     expect(env.CODEX_BASE_URL).toBe('https://api.openai.com/v1')

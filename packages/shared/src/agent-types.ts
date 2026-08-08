@@ -3098,6 +3098,8 @@ export interface AppSettings {
   analyticsEnabled: boolean
   experimentalAgentsEnabled: boolean
   experimentalAgentCollaborationEnabled: boolean
+  /** Allow Claude Code to use OpenAI Chat Completions through the local protocol proxy. */
+  experimentalClaudeOpenAiChatEnabled: boolean
   /**
    * Opt-in remote execution environments (node / Other Devices + sidebar host
    * switcher). Default off — mobile remote-control of this host stays available.
@@ -3190,6 +3192,7 @@ export interface AppSettingsPatch {
   analyticsEnabled?: boolean
   experimentalAgentsEnabled?: boolean
   experimentalAgentCollaborationEnabled?: boolean
+  experimentalClaudeOpenAiChatEnabled?: boolean
   experimentalRemoteNodesEnabled?: boolean
   crispText?: boolean
   autoExpandFileDiffs?: boolean

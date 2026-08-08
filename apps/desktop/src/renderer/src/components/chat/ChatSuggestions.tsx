@@ -271,6 +271,7 @@ function ActiveProviderHint() {
   const providerScope = useSettingsStore((s) => s.providerScope)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
+  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
 
   useEffect(() => {
     const next =
@@ -288,7 +289,14 @@ function ActiveProviderHint() {
 
   if (preferredProvider === 'acp' || preferredProvider === 'opencode') return null
 
-  const effective = resolveEffective(platforms, credentials, bindings, consumerForHarness(preferredProvider), sessionApiProviderId)
+  const effective = resolveEffective(
+    platforms,
+    credentials,
+    bindings,
+    consumerForHarness(preferredProvider),
+    sessionApiProviderId,
+    { experimentalClaudeOpenAiChatEnabled },
+  )
   const defaultBrand = preferredProvider === 'codex' ? 'openai' : 'claude'
   const defaultLabel = preferredProvider === 'codex'
     ? t('resources.providers.defaultLabelCodex')

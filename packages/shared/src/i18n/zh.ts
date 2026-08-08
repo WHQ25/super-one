@@ -567,6 +567,12 @@ export const zh: Messages = {
         enabled: '已开启 Agent Session 协作',
         disabled: '已关闭 Agent Session 协作',
       },
+      experimentalClaudeOpenAiChat: {
+        label: 'Claude Chat Completions 协议桥',
+        description: '允许 Claude Code 通过 SuperOne 本地协议代理使用仅支持 OpenAI Chat Completions 的服务商。',
+        enabled: '已开启 Claude Chat Completions 协议桥',
+        disabled: '已关闭 Claude Chat Completions 协议桥',
+      },
       experimentalRemoteNodes: {
         label: '远程节点',
         description: '将 SuperOne 连接到远程执行环境（Linux 节点 / lab），在侧边栏切换节点并在该机器上运行 Agent 会话。实验功能——安装、配对与 harness 配置可能变化。',

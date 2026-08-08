@@ -13,6 +13,10 @@ import {
   type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
 
+export interface ProviderResolveOptions {
+  experimentalClaudeOpenAiChatEnabled?: boolean
+}
+
 export function consumerForHarness(harness: HarnessId): ConsumerId {
   if (harness === 'codex') return 'chat:codex'
   return 'chat:claude'
@@ -35,13 +39,14 @@ export function credentialsForConsumer(
   platforms: Platform[],
   credentials: Credential[],
   consumer: ConsumerId,
+  options?: ProviderResolveOptions,
 ): Credential[] {
   return credentials.filter((c) => {
     const platform = findPlatform(platforms, c.platformId)
     const plan = findPlan(platform, c.planId)
     if (!platform || !plan) return false
     const endpoints = effectiveEndpoints(platform, plan, c)
-    return !!selectEndpoint(plan, consumer, undefined, c, endpoints)
+    return !!selectEndpoint(plan, consumer, undefined, c, endpoints, options)
   })
 }
 
@@ -55,6 +60,7 @@ export function resolveEffective(
   bindings: ConsumerBinding[],
   consumer: ConsumerId,
   sessionCredentialId?: string | null,
+  options?: ProviderResolveOptions,
 ): EffectiveService | null {
   const binding = bindings.find((b) => b.consumer === consumer)
   const pick = (id: string | null | undefined): Credential | undefined =>
@@ -66,7 +72,14 @@ export function resolveEffective(
   if (!platform || !plan) return null
   const usingBound = cred.id === binding?.credentialId
   const endpoints = effectiveEndpoints(platform, plan, cred)
-  const selected = selectEndpoint(plan, consumer, usingBound ? binding?.endpointId : undefined, cred, endpoints)
+  const selected = selectEndpoint(
+    plan,
+    consumer,
+    usingBound ? binding?.endpointId : undefined,
+    cred,
+    endpoints,
+    options,
+  )
   if (!selected) return null
   const { endpoint } = selected
   const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], usingBound ? binding?.config : undefined)

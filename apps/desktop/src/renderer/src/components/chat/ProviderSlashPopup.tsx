@@ -26,14 +26,15 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
   const setSessionApiProviderId = useChatStore((s) => s.setSessionApiProviderId)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
+  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
   const isStreaming = status === 'streaming'
 
   useEffect(() => { void fetchProviderData() }, [fetchProviderData])
 
   const consumer = consumerForHarness(harness)
   const filtered = useMemo<Credential[]>(
-    () => credentialsForConsumer(platforms, credentials, consumer),
-    [platforms, credentials, consumer],
+    () => credentialsForConsumer(platforms, credentials, consumer, { experimentalClaudeOpenAiChatEnabled }),
+    [platforms, credentials, consumer, experimentalClaudeOpenAiChatEnabled],
   )
 
   const items = useMemo<ProviderItem[]>(() => {

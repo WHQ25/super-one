@@ -1,6 +1,7 @@
 import log from '../logger'
 import type { ProviderRateLimits } from '@superone/shared/agent-types'
 import { resolveChatService } from '../providers/resolver'
+import { readAppSettings } from '../app-settings-service'
 import {
   detectProvider,
   parseGlmUsage,
@@ -68,7 +69,9 @@ async function fetchMinimax(detected: DetectedProvider, apiKey: string): Promise
 
 export async function getProviderRateLimits(apiProviderId: string, force = false): Promise<ProviderRateLimits | null> {
   try {
-    const resolved = resolveChatService('claude', apiProviderId)
+    const resolved = resolveChatService('claude', apiProviderId, {
+      experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
+    })
     if (!resolved?.apiKey) return null
 
     const detected = detectProvider(resolved.baseUrl?.trim() || null)

@@ -14,6 +14,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     analyticsEnabled: true,
     experimentalAgentsEnabled: false,
     experimentalAgentCollaborationEnabled: false,
+    experimentalClaudeOpenAiChatEnabled: false,
     experimentalRemoteNodesEnabled: false,
     crispText: true,
     autoExpandFileDiffs: false,

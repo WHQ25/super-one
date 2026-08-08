@@ -1,7 +1,7 @@
 /**
  * Persist node agent defaults under SUPERONE_NODE_HOME/config.json.
  *
- * Agent keys only (claude/codex defaults + experimentalAgentCollaborationEnabled).
+ * Agent keys only (claude/codex defaults + experimental feature flags).
  * Electron-free; CLI and tests own the file path.
  */
 
@@ -31,6 +31,7 @@ export const DEFAULT_NODE_AGENT_SETTINGS: NodeAgentSettings = {
     permissionPreset: '',
   },
   experimentalAgentCollaborationEnabled: false,
+  experimentalClaudeOpenAiChatEnabled: false,
 }
 
 /** File root shape: merge agent block into existing config.json without clobbering peers. */
@@ -94,6 +95,10 @@ export function normalizeNodeAgentSettings(raw: unknown): NodeAgentSettings {
       agent.experimentalAgentCollaborationEnabled,
       false,
     ),
+    experimentalClaudeOpenAiChatEnabled: asBoolean(
+      agent.experimentalClaudeOpenAiChatEnabled,
+      false,
+    ),
   }
 }
 
@@ -105,6 +110,7 @@ export function mergeNodeAgentSettings(
     claude: { ...current.claude },
     codex: { ...current.codex },
     experimentalAgentCollaborationEnabled: current.experimentalAgentCollaborationEnabled,
+    experimentalClaudeOpenAiChatEnabled: current.experimentalClaudeOpenAiChatEnabled,
   }
 
   if (patch.claude) {
@@ -147,6 +153,9 @@ export function mergeNodeAgentSettings(
   if (typeof patch.experimentalAgentCollaborationEnabled === 'boolean') {
     next.experimentalAgentCollaborationEnabled = patch.experimentalAgentCollaborationEnabled
   }
+  if (typeof patch.experimentalClaudeOpenAiChatEnabled === 'boolean') {
+    next.experimentalClaudeOpenAiChatEnabled = patch.experimentalClaudeOpenAiChatEnabled
+  }
 
   return normalizeNodeAgentSettings(next)
 }
@@ -169,7 +178,12 @@ export function loadNodeAgentSettings(configPath: string): NodeAgentSettings {
   const file = readConfigFile(configPath)
   if (file.agent) return normalizeNodeAgentSettings(file.agent)
   // Also accept flat claude/codex at root for hand-edited files.
-  if (file.claude || file.codex || typeof file.experimentalAgentCollaborationEnabled === 'boolean') {
+  if (
+    file.claude
+    || file.codex
+    || typeof file.experimentalAgentCollaborationEnabled === 'boolean'
+    || typeof file.experimentalClaudeOpenAiChatEnabled === 'boolean'
+  ) {
     return normalizeNodeAgentSettings(file)
   }
   return { ...DEFAULT_NODE_AGENT_SETTINGS, claude: { ...DEFAULT_NODE_AGENT_SETTINGS.claude, disabledSkills: [] }, codex: { ...DEFAULT_NODE_AGENT_SETTINGS.codex } }

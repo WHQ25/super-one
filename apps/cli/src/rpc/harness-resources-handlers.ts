@@ -36,6 +36,7 @@ export interface HarnessResourcesRpcContext {
   homeDir?: string
   /** Injectable model probe (tests). Default: probe the node's Claude harness. */
   probeModels?: (harnessId: string, cwd: string) => Promise<ModelOption[]>
+  experimentalClaudeOpenAiChatEnabled?: boolean
 }
 
 function requireScopes(
@@ -120,9 +121,18 @@ async function handleHarnessResources(
         : p.apiProviderId === null
           ? null
           : undefined
+    const providerOptions = {
+      experimentalClaudeOpenAiChatEnabled:
+        ctx.experimentalClaudeOpenAiChatEnabled ?? false,
+    }
 
     const listModels = (hid: string, apiId?: string | null): ModelOption[] => {
-      return listHarnessProviderModels(ctx.providers, hid, apiId ?? null) as ModelOption[]
+      return listHarnessProviderModels(
+        ctx.providers,
+        hid,
+        apiId ?? null,
+        providerOptions,
+      ) as ModelOption[]
     }
 
     // No bound credential: ask the harness on this node what it serves. The
@@ -137,7 +147,12 @@ async function handleHarnessResources(
       console.warn(
         `[harness.resources] ${hid} probe returned no models; serving the built-in fallback table`,
       )
-      return listHarnessModels(ctx.providers, hid, apiProviderId ?? null) as ModelOption[]
+      return listHarnessModels(
+        ctx.providers,
+        hid,
+        apiProviderId ?? null,
+        providerOptions,
+      ) as ModelOption[]
     }
 
     const bundle = await collectHarnessResources({

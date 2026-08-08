@@ -48,6 +48,7 @@ describe('node-agent-settings', () => {
     const base = mergeNodeAgentSettings(DEFAULT_NODE_AGENT_SETTINGS, {
       claude: { defaultModel: 'm1', permissionMode: 'plan' },
       experimentalAgentCollaborationEnabled: true,
+      experimentalClaudeOpenAiChatEnabled: true,
     })
     const next = mergeNodeAgentSettings(base, {
       claude: { defaultEffort: 'high' },
@@ -56,6 +57,7 @@ describe('node-agent-settings', () => {
     expect(next.claude.permissionMode).toBe('plan')
     expect(next.claude.defaultEffort).toBe('high')
     expect(next.experimentalAgentCollaborationEnabled).toBe(true)
+    expect(next.experimentalClaudeOpenAiChatEnabled).toBe(true)
   })
 
   it('resolveAgentTurnDefaults maps claude defaults for send fallback', () => {

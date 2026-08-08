@@ -20,7 +20,7 @@ function client(scopes: AuthenticatedClient['scopes']): AuthenticatedClient {
     deviceId: 'd1',
     scopes,
     pairedAt: Date.now(),
-  } as AuthenticatedClient
+  } as unknown as AuthenticatedClient
 }
 
 describe('harness.resources RPC', () => {
@@ -62,6 +62,7 @@ describe('harness.resources RPC', () => {
         projects,
         providers,
         homeDir,
+        probeModels: async () => [],
       },
     )
     expect(res?.error).toBeUndefined()
@@ -230,6 +231,57 @@ describe('harness.resources RPC', () => {
     const result = res?.result as { claude: { models: Array<{ id: string }> } }
     expect(result.claude.models.map((m) => m.id)).toEqual(['relay-opus'])
     expect(probeCalls).toBe(0)
+  })
+
+  it('exposes Chat Completions provider models only when the experiment is enabled', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-models-openai-chat-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+
+    const db = openNodeDatabase(join(projectDir, 'state.sqlite'))
+    const providers = new ProviderStore(db, join(projectDir, 'provider-secrets.key'))
+    providers.upsertCustomPlatform({
+      id: 'custom:relay',
+      brand: 'relay',
+      name: 'Relay',
+      plans: [{
+        id: 'api',
+        name: 'API',
+        auth: 'api-key',
+        endpoints: [{
+          id: 'openai',
+          baseUrl: 'https://relay.example/v1',
+          protocols: ['openai-chat'],
+          models: [{ id: 'relay-chat', name: 'Relay Chat' }],
+        }],
+      }],
+    })
+    const cred = providers.createCredential({
+      platformId: 'custom:relay',
+      planId: 'api',
+      name: 'relay',
+      secret: 'sk-upstream-secret',
+    })
+    providers.setBinding({ consumer: 'chat:claude', credentialId: cred.id })
+
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'claude' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+        experimentalClaudeOpenAiChatEnabled: true,
+        probeModels: async () => [{ id: 'native', name: 'Native', description: '' }],
+      },
+    )
+    db.close()
+
+    const result = res?.result as { claude: { models: Array<{ id: string }> } }
+    expect(result.claude.models.map((m) => m.id)).toEqual(['relay-chat'])
   })
 
   it('requires projectId', async () => {

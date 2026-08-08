@@ -174,6 +174,7 @@ export function useCollabLaunchModelSelector(args: {
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
+  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
   const activeProject = useChatStore((s) => s.activeProject)
   const claudeCatalog = useChatStore((s) => s.harnessResources.claude?.models ?? EMPTY_MODELS)
   const openCodeCatalog = useChatStore((s) => s.harnessResources.opencode?.models ?? EMPTY_MODELS)
@@ -203,7 +204,9 @@ export function useCollabLaunchModelSelector(args: {
 
   const liveProviders = useMemo<SelectorProviderOption[]>(() => {
     if (!consumer) return []
-    return credentialsForConsumer(platforms, credentials, consumer).map((credential) => {
+    return credentialsForConsumer(platforms, credentials, consumer, {
+      experimentalClaudeOpenAiChatEnabled,
+    }).map((credential) => {
       const name = findPlatform(platforms, credential.platformId)?.name ?? credential.name
       return {
         id: credential.id,
@@ -212,7 +215,7 @@ export function useCollabLaunchModelSelector(args: {
         keyName: credential.name,
       }
     })
-  }, [consumer, platforms, credentials])
+  }, [consumer, platforms, credentials, experimentalClaudeOpenAiChatEnabled])
 
   const defaultProviderLabel = harnessId === 'codex'
     ? t('resources.providers.defaultLabelCodex')
@@ -234,8 +237,10 @@ export function useCollabLaunchModelSelector(args: {
 
   const effective = useMemo(() => {
     if (!consumer) return null
-    return resolveEffective(platforms, credentials, bindings, consumer, selectedProviderId)
-  }, [consumer, platforms, credentials, bindings, selectedProviderId])
+    return resolveEffective(platforms, credentials, bindings, consumer, selectedProviderId, {
+      experimentalClaudeOpenAiChatEnabled,
+    })
+  }, [consumer, platforms, credentials, bindings, selectedProviderId, experimentalClaudeOpenAiChatEnabled])
 
   const activeModelEnv = useMemo(() => {
     if (harnessId !== 'claude') return null

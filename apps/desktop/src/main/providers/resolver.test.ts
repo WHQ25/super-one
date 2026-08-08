@@ -61,6 +61,18 @@ const googlePlatform: Platform = {
   ],
 }
 
+const openAiChatPlatform: Platform = {
+  id: 'custom:openai-chat',
+  brand: 'custom',
+  name: 'OpenAI Chat relay',
+  plans: [{
+    id: 'api',
+    name: 'API',
+    auth: 'api-key',
+    endpoints: [{ id: 'openai', baseUrl: 'https://relay.example.com/v1', protocols: ['openai-chat'] }],
+  }],
+}
+
 const mockedGetBinding = vi.mocked(getBinding)
 const mockedGetCred = vi.mocked(getCredentialDecrypted)
 const mockedGetPlatforms = vi.mocked(getPlatforms)
@@ -135,6 +147,22 @@ describe('resolveService', () => {
     mockedGetPlatforms.mockReturnValue([googlePlatform])
 
     expect(resolveService('media:image')?.baseUrl).toBe('https://relay.example.com/v1beta')
+  })
+
+  it('requires the experiment before resolving openai-chat for Claude', () => {
+    const openAiChatCred: Credential = {
+      ...cred,
+      platformId: openAiChatPlatform.id,
+      planId: 'api',
+    }
+    mockedGetBinding.mockReturnValue({ consumer: 'chat:claude', credentialId: openAiChatCred.id })
+    mockedGetCred.mockReturnValue(openAiChatCred)
+    mockedGetPlatforms.mockReturnValue([openAiChatPlatform])
+
+    expect(resolveService('chat:claude')).toBeNull()
+    expect(resolveService('chat:claude', {
+      experimentalClaudeOpenAiChatEnabled: true,
+    })?.protocol).toBe('openai-chat')
   })
 })
 

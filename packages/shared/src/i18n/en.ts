@@ -524,6 +524,12 @@ export type Messages = {
         enabled: string
         disabled: string
       }
+      experimentalClaudeOpenAiChat: {
+        label: string
+        description: string
+        enabled: string
+        disabled: string
+      }
       experimentalRemoteNodes: {
         label: string
         description: string
@@ -2860,6 +2866,12 @@ export const en: Messages = {
         description: 'Allow agents to request user-approved child sessions and communicate through a persistent mailbox. This feature is experimental.',
         enabled: 'Agent session collaboration enabled',
         disabled: 'Agent session collaboration disabled',
+      },
+      experimentalClaudeOpenAiChat: {
+        label: 'Claude Chat Completions Bridge',
+        description: 'Allow Claude Code to use providers that only support OpenAI Chat Completions through SuperOne\'s local protocol proxy.',
+        enabled: 'Claude Chat Completions bridge enabled',
+        disabled: 'Claude Chat Completions bridge disabled',
       },
       experimentalRemoteNodes: {
         label: 'Remote Nodes',

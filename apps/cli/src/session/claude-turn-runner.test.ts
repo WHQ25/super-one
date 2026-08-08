@@ -305,6 +305,7 @@ describe('createNodeClaudeTurnRunner', () => {
       resolveProjectPath: () => dir,
       queryFn,
       providers,
+      experimentalClaudeOpenAiChatEnabled: () => true,
       allowSimulatedFallback: false,
     })
 

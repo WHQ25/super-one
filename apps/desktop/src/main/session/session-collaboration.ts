@@ -262,7 +262,9 @@ function listApiProvidersForHarness(harnessId: 'claude' | 'codex'): Array<{
       const plan = findPlan(platform, credential.planId)
       if (!platform || !plan) return false
       const endpoints = effectiveEndpoints(platform, plan, credential)
-      return !!selectEndpoint(plan, consumer, undefined, credential, endpoints)
+      return !!selectEndpoint(plan, consumer, undefined, credential, endpoints, {
+        experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
+      })
     })
     .map(apiProviderOption)
 }

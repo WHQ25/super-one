@@ -156,6 +156,8 @@ interface AppState {
   setExperimentalAgentsEnabled: (enabled: boolean) => Promise<void>
   experimentalAgentCollaborationEnabled: boolean
   setExperimentalAgentCollaborationEnabled: (enabled: boolean) => Promise<void>
+  experimentalClaudeOpenAiChatEnabled: boolean
+  setExperimentalClaudeOpenAiChatEnabled: (enabled: boolean) => Promise<void>
   /** Remote execution environments (Other Devices + sidebar host switcher). */
   experimentalRemoteNodesEnabled: boolean
   setExperimentalRemoteNodesEnabled: (enabled: boolean) => Promise<void>
@@ -760,6 +762,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {} },
   experimentalAgentsEnabled: false,
   experimentalAgentCollaborationEnabled: false,
+  experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
   terminalLightPalette: null,
   terminalDarkPalette: null,
@@ -790,6 +793,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
         experimentalAgentCollaborationEnabled: settings.experimentalAgentCollaborationEnabled,
+        experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
         experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
         terminalLightPalette: settings.terminalLightPalette,
         terminalDarkPalette: settings.terminalDarkPalette,
@@ -825,6 +829,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ experimentalAgentCollaborationEnabled: result.experimentalAgentCollaborationEnabled })
     } catch (err) {
       console.error('[agent-collaboration] persist enabled failed:', err)
+      throw err
+    }
+  },
+
+  setExperimentalClaudeOpenAiChatEnabled: async (enabled) => {
+    set({ experimentalClaudeOpenAiChatEnabled: enabled })
+    try {
+      const result = await window.app.saveAppSettings({ experimentalClaudeOpenAiChatEnabled: enabled })
+      set({ experimentalClaudeOpenAiChatEnabled: result.experimentalClaudeOpenAiChatEnabled })
+    } catch (err) {
+      console.error('[claude-openai-chat] persist enabled failed:', err)
       throw err
     }
   },
@@ -1002,6 +1017,7 @@ if (typeof window !== 'undefined') {
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       experimentalAgentCollaborationEnabled: settings.experimentalAgentCollaborationEnabled,
+      experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
       experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
       terminalLightPalette: settings.terminalLightPalette,
       terminalDarkPalette: settings.terminalDarkPalette,

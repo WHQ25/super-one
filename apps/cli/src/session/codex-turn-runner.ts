@@ -74,6 +74,7 @@ export interface NodeProductionRunnerOptions extends NodeCodexRunnerOptions {
   claudeBinaryPath?: string | null
   /** Injectable Claude Agent SDK query for tests. */
   claudeQueryFn?: NodeClaudeRunnerOptions['queryFn']
+  experimentalClaudeOpenAiChatEnabled?: NodeClaudeRunnerOptions['experimentalClaudeOpenAiChatEnabled']
   acpBinaryPath?: string | null
   openCodeBinaryPath?: string | null
   /** Host Action MCP for Claude (in-process SDK). */
@@ -411,6 +412,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     queryFn: opts.claudeQueryFn,
     allowSimulatedFallback: opts.allowSimulatedFallback,
     providers: opts.providers,
+    experimentalClaudeOpenAiChatEnabled: opts.experimentalClaudeOpenAiChatEnabled,
     createHostActionClaudeMcp: opts.createHostActionClaudeMcp,
     mcpMergeMode: opts.mcpMergeMode,
     homeDir: opts.homeDir,

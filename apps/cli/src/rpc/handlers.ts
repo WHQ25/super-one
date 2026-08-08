@@ -292,6 +292,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
     projects: ctx.projects,
     providers: ctx.providers,
     harnesses: ctx.harnesses,
+    experimentalClaudeOpenAiChatEnabled:
+      loadNodeAgentSettings(ctx.settingsConfigPath).experimentalClaudeOpenAiChatEnabled,
   })
   if (harnessResources) return harnessResources
 
@@ -630,7 +632,12 @@ function handleProviderListModels(payload: unknown, ctx: RpcContext): RpcResult 
   const harness = String(p.harness ?? p.harnessId ?? 'claude')
   const apiProviderId =
     typeof p.apiProviderId === 'string' && p.apiProviderId.trim() ? p.apiProviderId.trim() : null
-  return { result: listHarnessModels(ctx.providers, harness, apiProviderId) }
+  return {
+    result: listHarnessModels(ctx.providers, harness, apiProviderId, {
+      experimentalClaudeOpenAiChatEnabled:
+        loadNodeAgentSettings(ctx.settingsConfigPath).experimentalClaudeOpenAiChatEnabled,
+    }),
+  }
 }
 
 function handleProviderImportBundle(payload: unknown, ctx: RpcContext): RpcResult {

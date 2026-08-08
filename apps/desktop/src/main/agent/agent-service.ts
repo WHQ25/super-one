@@ -261,7 +261,9 @@ export class AgentService {
   }
 
   private broadcastProviderChanged(harnessId: 'claude' | 'codex'): void {
-    const provider = buildRemoteActiveService(resolveChatService(harnessId), harnessId)
+    const provider = buildRemoteActiveService(resolveChatService(harnessId, null, {
+      experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
+    }), harnessId)
     const event: AgentEvent = { type: 'provider_changed', harnessId, provider }
     this.notifyEventSubscribers(event)
     this.broadcastEventToRenderer(event)
@@ -1008,7 +1010,9 @@ export class AgentService {
             const fetchStart = Date.now()
             const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
             log.info('[get_system_info] resolvedModels=%d source=%s modelsElapsed=%dms', models.length, cachedModels?.length ? 'cache' : 'fetch', Date.now() - fetchStart)
-            const activeProvider = buildRemoteActiveService(resolveChatService('claude'), 'claude')
+            const activeProvider = buildRemoteActiveService(resolveChatService('claude', null, {
+              experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
+            }), 'claude')
             await respond?.(command.requestId, {
               models,
               userSlashCommands: cached?.slashCommands ?? [],

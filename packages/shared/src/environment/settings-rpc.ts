@@ -38,6 +38,7 @@ export interface NodeAgentSettings {
   claude: NodeClaudeAgentDefaults
   codex: NodeCodexAgentDefaults
   experimentalAgentCollaborationEnabled: boolean
+  experimentalClaudeOpenAiChatEnabled: boolean
 }
 
 export type NodeAgentSettingsPatch = {
@@ -48,6 +49,7 @@ export type NodeAgentSettingsPatch = {
     }
   >
   experimentalAgentCollaborationEnabled?: boolean
+  experimentalClaudeOpenAiChatEnabled?: boolean
 }
 
 export interface SettingsGetRequest {

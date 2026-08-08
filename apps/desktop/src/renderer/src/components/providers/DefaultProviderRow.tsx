@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { useSettingsStore } from '@/stores/settings'
+import { useAppStore } from '@/stores/app'
 import { credentialsForConsumer } from '@/lib/provider-resolve'
 import { ProviderLabel } from '@/components/ProviderLabel'
 
@@ -48,14 +49,15 @@ export function DefaultProviderRow({
   const setBinding = useSettingsStore((s) => s.setBinding)
   const clearBinding = useSettingsStore((s) => s.clearBinding)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
+  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
 
   useEffect(() => {
     void fetchProviderData()
   }, [fetchProviderData])
 
   const candidates = useMemo(
-    () => credentialsForConsumer(platforms, credentials, consumer),
-    [platforms, credentials, consumer],
+    () => credentialsForConsumer(platforms, credentials, consumer, { experimentalClaudeOpenAiChatEnabled }),
+    [platforms, credentials, consumer, experimentalClaudeOpenAiChatEnabled],
   )
   const groups = useMemo(() => {
     const byPlatform = new Map<string, Credential[]>()

@@ -3,9 +3,11 @@ import type { CatalogProvider, ModelCatalog } from '../model-catalog-types'
 import {
   CAPABILITY_ORDER,
   HARNESS_CHAT_PROTOCOLS,
+  harnessChatProtocols,
   PROTOCOL_ORDER,
   PROTOCOL_TASKS,
   protocolServes,
+  type HarnessProtocolOptions,
   type WireProtocol,
 } from './protocols'
 import type { Credential, ConsumerId, EndpointModel, EndpointOverride, Plan, Platform, ServiceEndpoint } from './types'
@@ -59,9 +61,10 @@ export function selectProtocol(
   endpoint: ServiceEndpoint,
   task: CapabilityTask,
   harness?: 'claude' | 'codex',
+  options?: HarnessProtocolOptions,
 ): WireProtocol | undefined {
   const serving = endpoint.protocols.filter((p) => protocolServes(p, task))
-  if (harness) return HARNESS_CHAT_PROTOCOLS[harness].find((p) => serving.includes(p))
+  if (harness) return harnessChatProtocols(harness, options).find((p) => serving.includes(p))
   return [...serving].sort((a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))[0]
 }
 
@@ -78,11 +81,12 @@ export function selectEndpoint(
   endpointId?: string,
   credential?: Pick<Credential, 'overrides' | 'endpoints'>,
   endpoints: ServiceEndpoint[] = plan.endpoints,
+  options?: HarnessProtocolOptions,
 ): SelectedEndpoint | undefined {
   const task = CONSUMER_TASK[consumer]
   const harness = consumer === 'chat:claude' ? 'claude' : consumer === 'chat:codex' ? 'codex' : undefined
   const pick = (e: ServiceEndpoint): WireProtocol | undefined => {
-    const protocol = selectProtocol(e, task, harness)
+    const protocol = selectProtocol(e, task, harness, options)
     if (!protocol) return undefined
     if (harness) return protocol
     // Media: require an explicit enable list. Builtin uses overrides[ep].models; custom keys with
@@ -106,7 +110,7 @@ export function selectEndpoint(
     }
   }
   if (harness) {
-    for (const proto of HARNESS_CHAT_PROTOCOLS[harness]) {
+    for (const proto of harnessChatProtocols(harness, options)) {
       const endpoint = endpoints.find((e) => e.protocols.includes(proto) && protocolServes(proto, task))
       if (endpoint) return { endpoint, protocol: proto }
     }

@@ -24,6 +24,10 @@ import {
 } from '@superone/runtime/llm-proxy'
 import type { ProviderStore } from './provider-store'
 
+export interface ProviderResolveOptions {
+  experimentalClaudeOpenAiChatEnabled?: boolean
+}
+
 function credentialApiKey(cred: Credential): string {
   if (cred.secretEnv) return process.env[cred.secretEnv] ?? ''
   return cred.secret
@@ -41,6 +45,7 @@ export function resolveServiceFromCredential(
   cred: Credential,
   platforms: Platform[],
   binding?: { endpointId?: string; config?: Record<string, unknown> } | null,
+  options?: ProviderResolveOptions,
 ): ResolvedService | null {
   const platform = findPlatform(platforms, cred.platformId)
   const plan = findPlan(platform, cred.planId)
@@ -53,6 +58,7 @@ export function resolveServiceFromCredential(
     binding?.endpointId,
     cred,
     endpoints,
+    options,
   )
   if (!selected) return null
   const { endpoint, protocol } = selected
@@ -104,6 +110,7 @@ export function consumerForHarness(harness: string): ConsumerId | null {
 export function listHarnessApiProviders(
   store: ProviderStore,
   harness: string,
+  options?: ProviderResolveOptions,
 ): Array<{ id: string; name: string; brand?: string; keyName?: string }> {
   const consumer = consumerForHarness(harness)
   if (!consumer) return []
@@ -114,7 +121,7 @@ export function listHarnessApiProviders(
     const plan = findPlan(platform, cred.planId)
     if (!platform || !plan) continue
     const endpoints = effectiveEndpoints(platform, plan, cred)
-    if (!selectEndpoint(plan, consumer, undefined, cred, endpoints)) continue
+    if (!selectEndpoint(plan, consumer, undefined, cred, endpoints, options)) continue
     out.push({
       id: cred.id,
       name: platform.name ?? cred.name,
@@ -186,6 +193,7 @@ export function resolveHarnessService(
   store: ProviderStore,
   harness: string,
   apiProviderId?: string | null,
+  options?: ProviderResolveOptions,
 ): ResolvedService | null {
   const consumer = consumerForHarness(harness)
   if (!consumer) return null
@@ -204,6 +212,7 @@ export function resolveHarnessService(
     binding && binding.credentialId === cred.id
       ? { endpointId: binding.endpointId, config: binding.config as never }
       : null,
+    options,
   )
 }
 
@@ -239,8 +248,9 @@ export function listHarnessProviderModels(
   store: ProviderStore,
   harness: string,
   apiProviderId?: string | null,
+  options?: ProviderResolveOptions,
 ): ModelOptionWire[] {
-  const resolved = resolveHarnessService(store, harness, apiProviderId)
+  const resolved = resolveHarnessService(store, harness, apiProviderId, options)
   if (resolved) {
     const mapped = new Map<string, ModelOptionWire>()
     for (const m of resolved.models ?? []) {
@@ -280,8 +290,9 @@ export function listHarnessModels(
   store: ProviderStore,
   harness: string,
   apiProviderId?: string | null,
+  options?: ProviderResolveOptions,
 ): ModelOptionWire[] {
-  const fromProvider = listHarnessProviderModels(store, harness, apiProviderId)
+  const fromProvider = listHarnessProviderModels(store, harness, apiProviderId, options)
   if (fromProvider.length > 0) return fromProvider
   if (harness === 'claude') return DEFAULT_CLAUDE_MODELS
   if (harness === 'codex') return DEFAULT_CODEX_MODELS

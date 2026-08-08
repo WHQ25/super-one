@@ -18,6 +18,7 @@ import { getPlatforms } from './registry'
 
 export interface ResolveOverride {
   credentialId?: string | null
+  experimentalClaudeOpenAiChatEnabled?: boolean
 }
 
 function credentialApiKey(cred: Credential): string {
@@ -56,6 +57,7 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
     usingBoundCredential ? binding?.endpointId : undefined,
     cred,
     endpoints,
+    { experimentalClaudeOpenAiChatEnabled: override?.experimentalClaudeOpenAiChatEnabled },
   )
   if (!selected) return null
   const { endpoint, protocol } = selected
@@ -92,8 +94,12 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
 export function resolveChatService(
   harness: 'claude' | 'codex',
   credentialId?: string | null,
+  options?: { experimentalClaudeOpenAiChatEnabled?: boolean },
 ): ResolvedService | null {
-  return resolveService(harness === 'codex' ? 'chat:codex' : 'chat:claude', { credentialId })
+  return resolveService(harness === 'codex' ? 'chat:codex' : 'chat:claude', {
+    credentialId,
+    experimentalClaudeOpenAiChatEnabled: options?.experimentalClaudeOpenAiChatEnabled,
+  })
 }
 
 /**
@@ -104,6 +110,7 @@ export function resolveServiceFromCredential(
   consumer: ConsumerId,
   cred: Credential,
   binding?: { endpointId?: string; config?: { forcedEffort?: EffortLevel | 'auto'; modelMapping?: ResolvedService['modelMapping'] } } | null,
+  options?: { experimentalClaudeOpenAiChatEnabled?: boolean },
 ): ResolvedService | null {
   const platforms = getPlatforms()
   const platform = findPlatform(platforms, cred.platformId)
@@ -111,7 +118,7 @@ export function resolveServiceFromCredential(
   if (!platform || !plan) return null
 
   const endpoints = effectiveEndpoints(platform, plan, cred)
-  const selected = selectEndpoint(plan, consumer, binding?.endpointId, cred, endpoints)
+  const selected = selectEndpoint(plan, consumer, binding?.endpointId, cred, endpoints, options)
   if (!selected) return null
   const { endpoint, protocol } = selected
   const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], binding?.config)

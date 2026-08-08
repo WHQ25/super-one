@@ -4,6 +4,7 @@ import { Zap } from 'lucide-react'
 import type { EffortLevel } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore, selectClaudeModels } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
+import { useAppStore } from '@/stores/app'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { FireText } from '../FireText'
@@ -72,12 +73,15 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const bindings = useSettingsStore((s) => s.bindings)
   const providerScope = useSettingsStore((s) => s.providerScope)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
+  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
   useEffect(() => {
     void fetchProviderData()
   }, [fetchProviderData, providerScope])
   const effective = useMemo(
-    () => resolveEffective(platforms, credentials, bindings, consumerForHarness(activeProvider), sessionApiProviderId),
-    [platforms, credentials, bindings, activeProvider, sessionApiProviderId],
+    () => resolveEffective(platforms, credentials, bindings, consumerForHarness(activeProvider), sessionApiProviderId, {
+      experimentalClaudeOpenAiChatEnabled,
+    }),
+    [platforms, credentials, bindings, activeProvider, sessionApiProviderId, experimentalClaudeOpenAiChatEnabled],
   )
   const activeModelEnv = useMemo(() => {
     const mapping = effective?.modelMapping

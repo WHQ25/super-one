@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.8-alpha] - 2026-08-08
+
+### Added
+
+- Sidebar: surface temporary rate-limit tips on the usage gauge (6s, no residual highlight) instead of chat banners.
+- Collab confirm: show a short 2–3 sentence launch summary by default; full Markdown task expands in a viewport-capped, scrollable preview.
+- Harness icons: shared status chrome (pulse / breathe / check / clock) for Grok, OpenCode, and ACP static marks; Claude/Codex keep hand-tuned animations.
+- Claude Agent SDK 0.3.226: expose `resumeDropsTurn` / `resumeSessionAt`, pass through `fastModeDisabledReason` and modelUsage fields, and share refusal detection so hosts clear fork targets instead of retrying.
+
+### Fixed
+
+- Chat: keep capability mention chips (collab / computer / browser) inline with bubble text instead of stacking above the body.
+
 ## [0.50.7-alpha] - 2026-08-08
 
 ### Added

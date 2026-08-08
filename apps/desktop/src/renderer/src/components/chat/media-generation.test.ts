@@ -6,6 +6,7 @@ import {
   isMediaGenerateImageTool,
   isMediaGenerateVideoTool,
   isMediaVideoStatusTool,
+  isGrokVideoGenTool,
   collectCodexGeneratedImages,
   collectCodexGeneratedVideos,
 } from './media-generation'
@@ -152,6 +153,50 @@ describe('mapping Grok native image_gen results to gallery items', () => {
 
   it('keeps the ImageGen tool block visible on plain error text', () => {
     expect(isHiddenToolBlock('ImageGen', 'Image generation is a SuperGrok feature')).toBe(false)
+  })
+})
+
+describe('mapping Grok native video results to gallery items', () => {
+  const GROK_VIDEO_TYPED = JSON.stringify({
+    type: 'ImageToVideo',
+    path: '/Users/me/.grok/sessions/s/videos/1.mp4',
+    filename: '1.mp4',
+    session_folder: 'videos',
+  })
+  const GROK_VIDEO_NORMALIZED = JSON.stringify({
+    status: 'generated',
+    savedPaths: ['/Users/me/.grok/sessions/s/videos/1.mp4'],
+    provider: 'grok',
+  })
+
+  it('recognizes Grok video tool names', () => {
+    expect(isGrokVideoGenTool('ImageToVideo')).toBe(true)
+    expect(isGrokVideoGenTool('image_to_video')).toBe(true)
+    expect(isGrokVideoGenTool('ReferenceToVideo')).toBe(true)
+    expect(isGrokVideoGenTool('ImageGen')).toBe(false)
+  })
+
+  it('maps typed and ACP-normalized results into completed video cards', () => {
+    expect(toVideoStatusItems(GROK_VIDEO_TYPED)).toEqual([
+      {
+        id: '/Users/me/.grok/sessions/s/videos/1.mp4',
+        type: 'video_generation',
+        status: 'completed',
+        savedPath: '/Users/me/.grok/sessions/s/videos/1.mp4',
+      },
+    ])
+    expect(toVideoStatusItems(GROK_VIDEO_NORMALIZED)[0]?.savedPath).toBe(
+      '/Users/me/.grok/sessions/s/videos/1.mp4',
+    )
+  })
+
+  it('hides the Grok video tool block when the gallery will show the file', () => {
+    expect(isHiddenToolBlock('ImageToVideo', GROK_VIDEO_TYPED)).toBe(true)
+    expect(isHiddenToolBlock('image_to_video', GROK_VIDEO_NORMALIZED)).toBe(true)
+  })
+
+  it('keeps the Grok video tool block visible on failure text', () => {
+    expect(isHiddenToolBlock('ImageToVideo', 'Video generation failed')).toBe(false)
   })
 })
 

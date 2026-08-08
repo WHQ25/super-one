@@ -18,6 +18,8 @@ let server: Server | null = null
 let port = 0
 
 function getAllowedRoots(): string[] {
+  // Includes ~/.grok/sessions via getReadableAssetRoots (Grok Imagine / video tool output)
+  // plus SuperOne media-gen outputs under userData.
   return getReadableAssetRoots([
     ...getRecentFolders().map((f) => f.path),
     ...listWorktreePaths(),

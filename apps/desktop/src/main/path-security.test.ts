@@ -76,7 +76,7 @@ describe('sanitizeGitRef', () => {
 })
 
 describe('getReadableAssetRoots', () => {
-  it('includes project roots, temp roots, and codex plugin cache root', () => {
+  it('includes project roots, temp roots, codex plugin cache, and agent transcript roots', () => {
     expect(getReadableAssetRoots(['/projects/myapp'], { homeDir: '/Users/alice', tmpDir: '/var/tmp/test' })).toEqual([
       '/projects/myapp',
       '/var/tmp/test',
@@ -85,6 +85,8 @@ describe('getReadableAssetRoots', () => {
       '/Users/alice/.codex/.tmp/plugins',
       '/Users/alice/.codex/.tmp/bundled-marketplaces',
       '/Users/alice/.cache/codex-runtimes',
+      '/Users/alice/.grok/sessions',
+      '/Users/alice/.claude/projects',
     ])
   })
 
@@ -95,6 +97,19 @@ describe('getReadableAssetRoots', () => {
       '/Users/alice/.codex/.tmp/plugins',
       '/Users/alice/.codex/.tmp/bundled-marketplaces',
       '/Users/alice/.cache/codex-runtimes',
+      '/Users/alice/.grok/sessions',
+      '/Users/alice/.claude/projects',
     ])
+  })
+
+  it('allows Grok Imagine paths under ~/.grok/sessions for media-server gallery', () => {
+    const roots = getReadableAssetRoots(['/projects/myapp'], { homeDir: '/Users/alice', tmpDir: '/tmp' })
+    const grokImage =
+      '/Users/alice/.grok/sessions/%2Fprojects%2Fmyapp/sess-1/images/1.jpg'
+    const grokVideo =
+      '/Users/alice/.grok/sessions/%2Fprojects%2Fmyapp/sess-1/videos/1.mp4'
+    expect(isPathWithinAllowed(grokImage, roots)).toBe(true)
+    expect(isPathWithinAllowed(grokVideo, roots)).toBe(true)
+    expect(isPathWithinAllowed('/Users/alice/.ssh/id_rsa', roots)).toBe(false)
   })
 })

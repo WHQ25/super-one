@@ -15,7 +15,7 @@ import {
   splitTurnForCompactMode,
 } from './compact-chat-mode'
 import { TurnDetailSection } from './TurnDetailSection'
-import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
+import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, isGrokVideoGenTool, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
@@ -854,7 +854,9 @@ function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<stri
 function collectGeneratedVideos(content: ContentBlock[], toolResultMap: Map<string, string>): VideoGenerationItem[] {
   const byId = new Map<string, VideoGenerationItem>()
   for (const block of content) {
-    if (block.type !== 'tool_use' || !isMediaVideoStatusTool(block.toolName)) continue
+    if (block.type !== 'tool_use') continue
+    // SuperOne async poll, or Grok native video tools that return a finished path.
+    if (!isMediaVideoStatusTool(block.toolName) && !isGrokVideoGenTool(block.toolName)) continue
     for (const item of toVideoStatusItems(toolResultMap.get(block.toolUseId))) byId.set(item.id, item)
   }
   return [...byId.values()]

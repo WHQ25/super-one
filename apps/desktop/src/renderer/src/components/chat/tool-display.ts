@@ -1,6 +1,7 @@
 import { shortenPath } from '@/lib/path-utils'
 import { extractJsonStringValue } from '@superone/shared/partial-json'
 import {
+  isGrokVideoGenTool,
   isMediaGenerateImageTool,
   isMediaVideoStatusTool,
   isSuccessfulGenerationResult,
@@ -87,6 +88,9 @@ export function isAlwaysHiddenToolBlock(toolName: string): boolean {
 export function isHiddenToolBlock(toolName: string, result?: string): boolean {
   if (isAlwaysHiddenToolBlock(toolName)) return true
   if (isMediaGenerateImageTool(toolName)) return !result || isSuccessfulGenerationResult(result)
+  // Grok native video is synchronous (path on complete) — hide the tool row when the gallery
+  // will render the file, same as ImageGen.
+  if (isGrokVideoGenTool(toolName)) return !result || isSuccessfulGenerationResult(result)
   // The submit block stays visible: it is the only progress affordance during the minutes a video
   // renders, and the gallery card cannot stand in for it because the completing poll usually lands
   // in a later message. Polls are hidden while running (pure noise) and on success (the gallery

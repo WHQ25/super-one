@@ -6,6 +6,12 @@ const MEDIA_VIDEO_STATUS_TOOL = 'mcp__superone__media_video_status'
 
 /** Grok Build native Imagine tools (ACP title / resolved toolName). */
 const GROK_IMAGE_GEN_TOOLS = new Set(['ImageGen', 'ImageEdit', 'image_gen', 'image_edit'])
+const GROK_VIDEO_GEN_TOOLS = new Set([
+  'ImageToVideo',
+  'ReferenceToVideo',
+  'image_to_video',
+  'reference_to_video',
+])
 const GROK_MEDIA_OUTPUT_TYPES = new Set(['ImageGen', 'ImageEdit', 'ImageToVideo', 'ReferenceToVideo'])
 
 interface GenerationResult {
@@ -28,6 +34,11 @@ export function isMediaGenerateImageTool(toolName: string): boolean {
 
 export function isMediaGenerateVideoTool(toolName: string): boolean {
   return toolName === MEDIA_GENERATE_VIDEO_TOOL
+}
+
+/** Grok native video tools return a finished path (no SuperOne status poll). */
+export function isGrokVideoGenTool(toolName: string): boolean {
+  return GROK_VIDEO_GEN_TOOLS.has(toolName)
 }
 
 export function isMediaVideoStatusTool(toolName: string): boolean {

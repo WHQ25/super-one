@@ -242,7 +242,7 @@ export function isPathAtOrWithinAllowed(filePath: string, allowedRoots: string[]
   })
 }
 
-/** Default readable roots for agent assets (Codex plugins, tmp, …). */
+/** Default readable roots for agent assets (Codex plugins, Grok media, tmp, …). */
 export function getReadableAssetRoots(
   projectRoots: string[],
   opts?: { homeDir?: string; tmpDir?: string },
@@ -253,6 +253,10 @@ export function getReadableAssetRoots(
     join(homeDir, '.codex', '.tmp', 'plugins'),
     join(homeDir, '.codex', '.tmp', 'bundled-marketplaces'),
     join(homeDir, '.cache', 'codex-runtimes'),
+    // Grok Imagine / video tools write under ~/.grok/sessions/<cwd>/<session>/images|videos.
+    // Chat gallery streams those via media-server (and local-file fallback); without this
+    // root, successful generations show the red "failed to load" tile.
+    ...getAgentTranscriptRoots({ homeDir }),
   ]
   return Array.from(new Set([...projectRoots, ...tmpDirs, ...extraRoots]))
 }

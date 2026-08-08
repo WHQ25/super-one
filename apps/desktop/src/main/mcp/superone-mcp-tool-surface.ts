@@ -106,6 +106,7 @@ export async function executeSuperoneMcpTool(
   sessionId: string,
   toolName: string,
   args: Record<string, unknown>,
+  signal?: AbortSignal,
 ) {
   if (isBrowserToolName(toolName)) {
     return executeBrowserTool(sessionId, toolName, args)
@@ -144,6 +145,7 @@ export async function executeSuperoneMcpTool(
       sessionId,
       sessionHost: getSessionHost(),
       applyAppSettings: getAppSettingsApplier(),
+      signal,
     })
   }
 

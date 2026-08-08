@@ -34,6 +34,7 @@ interface PendingRequest {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
   timer: ReturnType<typeof setTimeout>
+  cleanup: () => void
 }
 
 interface SuperoneMcpToolResult {
@@ -77,28 +78,57 @@ class SuperoneIpcClient {
     }).then((result) => Array.isArray(result.tools) ? result.tools : [])
   }
 
-  callTool(name: string, args: Record<string, unknown>): Promise<SuperoneMcpToolResult> {
+  callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<SuperoneMcpToolResult> {
     return this.request<SuperoneMcpToolResult>('tools/call', {
       sessionId: this.sessionId,
       name,
       arguments: args,
-    })
+    }, signal)
   }
 
-  private request<T>(method: string, params: Record<string, unknown>): Promise<T> {
+  private request<T>(method: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     if (!this.socket) return Promise.reject(new Error('SuperOne MCP bridge is not connected'))
     const id = this.seq++
     const payload: IpcRequest = { id, method, token: this.token, params }
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const notifyCancelled = () => {
+        this.socket?.write(`${JSON.stringify({
+          method: 'requests/cancel',
+          token: this.token,
+          params: { sessionId: this.sessionId, requestId: id },
+        })}\n`)
+      }
+      const onAbort = () => {
+        const pending = this.pending.get(id)
+        if (!pending) return
         this.pending.delete(id)
+        pending.cleanup()
+        notifyCancelled()
+        reject(new Error(`SuperOne MCP bridge request cancelled: ${method}`))
+      }
+      const timer = setTimeout(() => {
+        const pending = this.pending.get(id)
+        if (!pending) return
+        this.pending.delete(id)
+        pending.cleanup()
+        notifyCancelled()
         reject(new Error(`SuperOne MCP bridge request timed out: ${method}`))
       }, 65_000)
+      const cleanup = () => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+      }
       this.pending.set(id, {
         resolve: (value) => resolve(value as T),
         reject,
         timer,
+        cleanup,
       })
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted) {
+        onAbort()
+        return
+      }
       this.socket!.write(`${JSON.stringify(payload)}\n`)
     })
   }
@@ -124,7 +154,7 @@ class SuperoneIpcClient {
     if (typeof message.id === 'number') {
       const pending = this.pending.get(message.id)
       if (!pending) return
-      clearTimeout(pending.timer)
+      pending.cleanup()
       this.pending.delete(message.id)
       if (message.error) {
         pending.reject(new Error(message.error.message ?? 'SuperOne MCP bridge request failed'))
@@ -141,7 +171,7 @@ class SuperoneIpcClient {
 
   private rejectAll(error: Error): void {
     for (const [id, pending] of this.pending) {
-      clearTimeout(pending.timer)
+      pending.cleanup()
       pending.reject(error)
       this.pending.delete(id)
     }
@@ -193,9 +223,9 @@ async function main(): Promise<void> {
         inputSchema: jsonSchemaToZodShape(tool.inputSchema),
         ...(tool._meta ? { _meta: tool._meta } : {}),
       },
-      async (args: Record<string, unknown>) => {
+      async (args: Record<string, unknown>, extra) => {
         try {
-          return await ipc.callTool(tool.name, args)
+          return await ipc.callTool(tool.name, args, extra.signal)
         } catch (err) {
           return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
         }

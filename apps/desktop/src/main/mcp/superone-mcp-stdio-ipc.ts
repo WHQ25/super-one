@@ -23,6 +23,7 @@ interface IpcClient {
   socket: Socket
   buffer: string
   sessionId: string | null
+  inFlight: Map<RequestId, AbortController>
 }
 
 interface IpcState {
@@ -88,7 +89,7 @@ async function handleRequest(client: IpcClient, raw: unknown): Promise<void> {
   const token = readString(rec.token)
   const params = readRecord(rec.params) ?? {}
 
-  if (id === null || !method) return
+  if (!method) return
 
   try {
     if (!state) throw new Error('SuperOne MCP bridge is unavailable')
@@ -98,6 +99,14 @@ async function handleRequest(client: IpcClient, raw: unknown): Promise<void> {
     if (!isValidSuperoneMcpSessionToken(state.token, sessionId, token)) {
       throw new Error('Unauthorized SuperOne MCP bridge request')
     }
+
+    if (method === 'requests/cancel') {
+      const requestId = readRequestId(params.requestId)
+      if (requestId !== null) client.inFlight.get(requestId)?.abort()
+      return
+    }
+
+    if (id === null) return
 
     if (method === 'tools/list') {
       client.sessionId = sessionId
@@ -111,8 +120,14 @@ async function handleRequest(client: IpcClient, raw: unknown): Promise<void> {
       const toolName = readString(params.name)
       if (!toolName) throw new Error('Missing tool name')
       const args = readRecord(params.arguments) ?? {}
-      const result = await executeSuperoneMcpTool(sessionId, toolName, args)
-      writeMessage(client.socket, { id, result })
+      const controller = new AbortController()
+      client.inFlight.set(id, controller)
+      try {
+        const result = await executeSuperoneMcpTool(sessionId, toolName, args, controller.signal)
+        writeMessage(client.socket, { id, result })
+      } finally {
+        client.inFlight.delete(id)
+      }
       return
     }
 
@@ -131,7 +146,7 @@ function handleSocket(socket: Socket): void {
     return
   }
 
-  const client: IpcClient = { socket, buffer: '', sessionId: null }
+  const client: IpcClient = { socket, buffer: '', sessionId: null, inFlight: new Map() }
   state.clients.add(client)
   socket.setEncoding('utf8')
 
@@ -153,6 +168,8 @@ function handleSocket(socket: Socket): void {
   })
 
   socket.on('close', () => {
+    for (const controller of client.inFlight.values()) controller.abort()
+    client.inFlight.clear()
     state?.clients.delete(client)
   })
   socket.on('error', (err) => {

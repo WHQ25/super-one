@@ -640,6 +640,34 @@ describe('session collaboration', () => {
     expect(parent.emitHostEvent).not.toHaveBeenCalled()
   })
 
+  it('dismisses the agent request when the MCP tool call is cancelled', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const controller = new AbortController()
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{
+        launchId: 'cancelled-launch',
+        agentId: 'claude-base',
+        task: 'This launch should never be approved',
+        name: 'Cancelled',
+        role: 'Worker',
+      }],
+    }, host, controller.signal)
+    const requestEvent = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (requestEvent.type !== 'permission_request') throw new Error('Expected permission request')
+
+    controller.abort()
+
+    expect(resultJson(await promise)).toMatchObject({ status: 'cancelled' })
+    expect(parent.emitHostEvent).toHaveBeenLastCalledWith({
+      type: 'interaction_resolved',
+      interactionType: 'permission',
+      requestId: requestEvent.request.requestId,
+      approved: false,
+    })
+    expect(resolveSessionAgentsConfirm(requestEvent.request.requestId, 'accept')).toBe(false)
+  })
+
   it('merges only editable confirm fields and ignores tampered agentId/task/cwd', async () => {
     const parent = fakeSession('parent')
     const { host, createSession } = fakeHost(parent)

@@ -90,6 +90,7 @@ export interface BuiltInSuperoneToolDeps {
   sessionHost: SessionTitleHost | null
   /** Persist an app-settings patch through the shared side-effect + broadcast path. */
   applyAppSettings: (patch: AppSettingsPatch) => Promise<AppSettings> | AppSettings
+  signal?: AbortSignal
 }
 
 interface SetupMiniAppDevArgs {
@@ -263,7 +264,7 @@ export async function executeBuiltInSuperoneTool(
       }))
     case 'session_collab_request':
       return import('../session/session-collaboration').then(({ requestSessionAgents }) =>
-        requestSessionAgents(deps.sessionId, args as unknown as RequestSessionAgentsArgs, collaborationHost(deps)))
+        requestSessionAgents(deps.sessionId, args as unknown as RequestSessionAgentsArgs, collaborationHost(deps), deps.signal))
     case 'session_collab_start':
       return import('../session/session-collaboration').then(({ startSessionAgent }) =>
         startSessionAgent(deps.sessionId, String(args.credential ?? ''), collaborationHost(deps)))
@@ -331,9 +332,9 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
           })).min(1).max(16),
         },
       },
-      async (args) => {
+      async (args, extra) => {
         const { requestSessionAgents } = await import('../session/session-collaboration')
-        return requestSessionAgents(deps.sessionId, args, collaborationHost(deps))
+        return requestSessionAgents(deps.sessionId, args, collaborationHost(deps), extra.signal)
       },
     )
     server.registerTool(

@@ -12,26 +12,51 @@ const pendingConfirms = new Map<string, {
   resolve: (outcome: SessionAgentsConfirmOutcome) => void
   reject: (error: Error) => void
   timer: ReturnType<typeof setTimeout>
+  session: { emitHostEvent(event: AgentEvent): void }
+  signal?: AbortSignal
+  onAbort?: () => void
 }>()
+
+function takePendingConfirm(requestId: string) {
+  const pending = pendingConfirms.get(requestId)
+  if (!pending) return undefined
+  clearTimeout(pending.timer)
+  if (pending.signal && pending.onAbort) {
+    pending.signal.removeEventListener('abort', pending.onAbort)
+  }
+  pendingConfirms.delete(requestId)
+  return pending
+}
+
+function emitConfirmResolved(
+  pending: NonNullable<ReturnType<typeof takePendingConfirm>>,
+  requestId: string,
+  approved: boolean,
+): void {
+  pending.session.emitHostEvent({
+    type: 'interaction_resolved',
+    interactionType: 'permission',
+    requestId,
+    approved,
+  })
+}
 
 export function resolveSessionAgentsConfirm(
   requestId: string,
   action: SessionAgentsConfirmOutcome['action'],
   content?: Record<string, unknown>,
 ): boolean {
-  const pending = pendingConfirms.get(requestId)
+  const pending = takePendingConfirm(requestId)
   if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingConfirms.delete(requestId)
+  emitConfirmResolved(pending, requestId, action === 'accept')
   pending.resolve({ action, content })
   return true
 }
 
 export function rejectSessionAgentsConfirm(requestId: string, reason: string): boolean {
-  const pending = pendingConfirms.get(requestId)
+  const pending = takePendingConfirm(requestId)
   if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingConfirms.delete(requestId)
+  emitConfirmResolved(pending, requestId, false)
   pending.reject(new Error(reason))
   return true
 }
@@ -39,14 +64,19 @@ export function rejectSessionAgentsConfirm(requestId: string, reason: string): b
 export function openSessionAgentsConfirm(
   session: { emitHostEvent(event: AgentEvent): void },
   payload: SessionAgentRequestPayload,
+  signal?: AbortSignal,
 ): Promise<SessionAgentsConfirmOutcome> {
+  if (signal?.aborted) return Promise.reject(new Error('Agent session request cancelled'))
   const requestId = `sessionagents_${Date.now()}_${randomUUID().slice(0, 8)}`
   return new Promise<SessionAgentsConfirmOutcome>((resolve, reject) => {
     const timer = setTimeout(() => {
-      pendingConfirms.delete(requestId)
-      reject(new Error('Agent session request timed out'))
+      rejectSessionAgentsConfirm(requestId, 'Agent session request timed out')
     }, CONFIRM_TIMEOUT_MS)
-    pendingConfirms.set(requestId, { resolve, reject, timer })
+    const onAbort = () => {
+      rejectSessionAgentsConfirm(requestId, 'Agent session request cancelled')
+    }
+    pendingConfirms.set(requestId, { resolve, reject, timer, session, signal, onAbort })
+    signal?.addEventListener('abort', onAbort, { once: true })
     session.emitHostEvent({
       type: 'permission_request',
       request: {

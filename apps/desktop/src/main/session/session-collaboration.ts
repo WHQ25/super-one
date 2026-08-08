@@ -579,6 +579,7 @@ export async function requestSessionAgents(
   callerSessionId: string,
   args: RequestSessionAgentsArgs,
   host: SessionManager,
+  signal?: AbortSignal,
 ) {
   assertEnabled()
   // Nested collab is not supported: sidebar only renders one parent→children level,
@@ -597,7 +598,7 @@ export async function requestSessionAgents(
   const launches = normalizeLaunches(args, parent)
   let outcome: SessionAgentsConfirmOutcome
   try {
-    outcome = await openSessionAgentsConfirm(parent, { launches, profiles: listSessionAgentProfiles() })
+    outcome = await openSessionAgentsConfirm(parent, { launches, profiles: listSessionAgentProfiles() }, signal)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (/timed out|cancelled/i.test(message)) return toolResult({ status: 'cancelled', message })

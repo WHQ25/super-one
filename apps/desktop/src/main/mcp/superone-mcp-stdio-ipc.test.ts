@@ -5,6 +5,8 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 
 const tmpRoot = mkdtempSync(join(tmpdir(), 'superone-mcp-ipc-'))
+const collaborationSettings = vi.hoisted(() => ({ enabled: false }))
+const requestSessionAgentsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => tmpRoot) },
@@ -14,7 +16,10 @@ vi.mock('../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 vi.mock('../app-settings-service', () => ({
-  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: false }),
+  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: collaborationSettings.enabled }),
+}))
+vi.mock('../session/session-collaboration', () => ({
+  requestSessionAgents: requestSessionAgentsMock,
 }))
 vi.mock('../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({ executable: '/mock/node', env: {} })),
@@ -66,6 +71,7 @@ const {
   initSuperoneMcpServer,
   notifyAppReady,
   resolveToolCall,
+  setSessionHostProvider,
 } = await import('./superone-mcp-server')
 import type { MiniAppToolDefinition } from '@superone/shared/miniapp-types'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
@@ -122,6 +128,10 @@ class TestClient {
     this.socket.destroy()
   }
 
+  notify(method: string, token: string, params: Record<string, unknown>): void {
+    this.socket.write(`${JSON.stringify({ method, token, params })}\n`)
+  }
+
   private onData(chunk: string): void {
     this.buffer += chunk
     let idx = this.buffer.indexOf('\n')
@@ -155,6 +165,8 @@ function getEndpoint(): string {
 
 describe('superone-mcp-stdio-ipc', () => {
   beforeEach(async () => {
+    collaborationSettings.enabled = false
+    requestSessionAgentsMock.mockReset()
     initSuperoneMcpServer(() => null)
     createSuperoneMcpServer(PROJ)
     await startSuperoneMcpStdioBridge()
@@ -164,6 +176,7 @@ describe('superone-mcp-stdio-ipc', () => {
     stopSuperoneMcpStdioBridge()
     unregisterAppTools(PROJ, PROJ, 'test-app')
     disposeSuperoneMcpServer(PROJ)
+    setSessionHostProvider(null)
   })
 
   it('registers a config with endpoint + token after start', () => {
@@ -253,6 +266,44 @@ describe('superone-mcp-stdio-ipc', () => {
       arguments: { domain: 'miniapp', topic: 'overview' },
     })
     expect(res.result?.content?.[0]?.text).toBe('overview content')
+    client.close()
+  })
+
+  it('forwards tool cancellation to an in-flight collaboration request', async () => {
+    collaborationSettings.enabled = true
+    setSessionHostProvider(() => ({
+      getSession: () => null,
+      createSession: vi.fn(),
+      disposeSession: vi.fn(),
+    } as never))
+    requestSessionAgentsMock.mockImplementation((
+      _sessionId: string,
+      _args: Record<string, unknown>,
+      _host: unknown,
+      signal?: AbortSignal,
+    ) => new Promise((resolve) => {
+      const finish = () => resolve({
+        content: [{ type: 'text', text: JSON.stringify({ status: 'cancelled' }) }],
+      })
+      if (signal?.aborted) finish()
+      else signal?.addEventListener('abort', finish, { once: true })
+    }))
+
+    const client = new TestClient(getEndpoint())
+    await client.ready()
+    const inflight = client.send('tools/call', getToken(), {
+      sessionId: PROJ,
+      name: 'session_collab_request',
+      arguments: { launches: [] },
+    })
+    await vi.waitFor(() => expect(requestSessionAgentsMock).toHaveBeenCalledOnce())
+    const signal = requestSessionAgentsMock.mock.calls[0][3] as AbortSignal
+
+    client.notify('requests/cancel', getToken(), { sessionId: PROJ, requestId: 1 })
+
+    const response = await inflight
+    expect(signal.aborted).toBe(true)
+    expect(response.result?.content?.[0]?.text).toContain('cancelled')
     client.close()
   })
 

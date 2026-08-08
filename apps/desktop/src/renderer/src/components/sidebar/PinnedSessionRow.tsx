@@ -1,8 +1,11 @@
-import { memo } from 'react'
+import { memo, useCallback } from 'react'
 import { Pin } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
+import { cn } from '@superone/ui/lib/utils'
+import { useChatStore } from '@/stores/chat'
+import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 
@@ -23,8 +26,19 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
   onSwitch,
   onUnpin,
 }: PinnedSessionRowProps) {
+  const isRunning = status === 'streaming'
+  const readLastEventAt = useCallback(
+    () => useChatStore.getState().projectSessions[session.folderPath]?._sessions?.[session.sessionId]?.lastEventAt ?? 0,
+    [session.folderPath, session.sessionId],
+  )
+  const stallLevel = useStallLevel(isRunning, readLastEventAt)
+  const titleClassName = cn(
+    'text-[13px]',
+    isRunning && 'transition-colors duration-500',
+    isRunning && getStallColor(stallLevel, ''),
+  )
   const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
-  const harnessStatus: SessionIconProps['status'] = status === 'streaming'
+  const harnessStatus: SessionIconProps['status'] = isRunning
     ? 'running'
     : status === 'background'
       ? 'background'
@@ -55,7 +69,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
           </span>
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className="text-[13px]" />
+          <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
           <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{session.folderName}</span>
         </div>
         <button

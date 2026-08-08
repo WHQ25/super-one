@@ -7,7 +7,7 @@ import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
 import { useCtrlTabSwitcher } from '@/hooks/useCtrlTabSwitcher'
 import { getPendingReason, isLiveSession, resolveSessionTitle, type PendingReasonT } from '@/components/sidebar/session-state-utils'
-import { useStallLevel, getStallColor } from '@/lib/stall-utils'
+import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
 import type { AgentStatus, HarnessId, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -333,6 +333,14 @@ function SessionList({ rows, selectedIndex }: { rows: SwitcherRow[]; selectedInd
 }
 
 function SessionRow({ row, idx, isSelected }: { row: SwitcherRow; idx: number; isSelected: boolean }) {
+  const isRunning = row.status === 'streaming'
+  const stallLevel = useStallLevel(isRunning, row.lastEventAt)
+  const titleClassName = cn(
+    'min-w-0 flex-1 truncate text-xs',
+    isRunning && 'transition-colors duration-500',
+    // Empty normal color → inherit row/accent foreground while streaming is healthy.
+    isRunning && getStallColor(stallLevel, ''),
+  )
   return (
     <div
       data-row-idx={idx}
@@ -344,14 +352,14 @@ function SessionRow({ row, idx, isSelected }: { row: SwitcherRow; idx: number; i
       <div className="flex items-center gap-2">
         <SessionStatusIcon
           status={row.status}
-          lastEventAt={row.lastEventAt}
+          stallLevel={stallLevel}
           isUnseen={row.isUnseen}
           isAutomation={row.isAutomation}
           isRemote={row.isRemote}
           provider={row.provider}
           acpAgentId={row.acpAgentId}
         />
-        <span className="min-w-0 flex-1 truncate text-xs">{row.title}</span>
+        <span className={titleClassName}>{row.title}</span>
         {row.isCurrent ? (
           <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">Current</span>
         ) : row.isPrevious ? (
@@ -370,7 +378,7 @@ function SessionRow({ row, idx, isSelected }: { row: SwitcherRow; idx: number; i
 
 interface SessionStatusIconProps {
   status: AgentStatus
-  lastEventAt: number
+  stallLevel: StallLevel
   isUnseen: boolean
   isAutomation: boolean
   isRemote: boolean
@@ -378,8 +386,7 @@ interface SessionStatusIconProps {
   acpAgentId?: string | null
 }
 
-function SessionStatusIcon({ status, lastEventAt, isUnseen, isAutomation, isRemote, provider, acpAgentId }: SessionStatusIconProps) {
-  const stallLevel = useStallLevel(status === 'streaming', lastEventAt)
+function SessionStatusIcon({ status, stallLevel, isUnseen, isAutomation, isRemote, provider, acpAgentId }: SessionStatusIconProps) {
   const isRunning = status === 'streaming'
   const isBackground = status === 'background'
   if (isRemote) {

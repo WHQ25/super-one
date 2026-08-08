@@ -8,7 +8,7 @@ import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
-import { useStallLevel, getStallColor } from '@/lib/stall-utils'
+import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
@@ -18,21 +18,27 @@ import { SessionTitleAnimated, useSessionTitleByAgent } from './AnimatedSessionT
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
-/** Reads `lastEventAt` lazily instead of subscribing: the store rewrites it on
- *  every content delta, so a subscription would re-render every session row at
- *  stream frequency just to drive a spinner that only repaints once a second. */
-function SessionStatusSpinner({ folderPath, sessionId }: { folderPath: string; sessionId: string }) {
-  const readLastEventAt = useCallback(
+/** Lazy `lastEventAt` reader — never subscribe; the store rewrites it on every
+ *  content delta and a subscription would re-render the whole session list at
+ *  stream frequency. Stall level only needs a 1 Hz sample. */
+function useSessionLastEventAt(folderPath: string, sessionId: string): () => number {
+  return useCallback(
     () => useChatStore.getState().projectSessions[folderPath]?._sessions?.[sessionId]?.lastEventAt ?? 0,
     [folderPath, sessionId],
   )
-  const level = useStallLevel(true, readLastEventAt)
-  return <Loader2 className={cn('size-3 animate-spin', getStallColor(level, 'text-sidebar-foreground/70'))} />
 }
 
-function PlainSessionTitle({ sessionId, fallback }: { sessionId: string; fallback: string }) {
+function useSessionStallLevel(folderPath: string, sessionId: string, isRunning: boolean): StallLevel {
+  return useStallLevel(isRunning, useSessionLastEventAt(folderPath, sessionId))
+}
+
+function SessionStatusSpinner({ stallLevel }: { stallLevel: StallLevel }) {
+  return <Loader2 className={cn('size-3 animate-spin', getStallColor(stallLevel, 'text-sidebar-foreground/70'))} />
+}
+
+function PlainSessionTitle({ sessionId, fallback, className }: { sessionId: string; fallback: string; className?: string }) {
   const title = useSessionTitleByAgent(sessionId, fallback)
-  return <span className="session-row-title min-w-0 flex-1 truncate text-[13px]">{title}</span>
+  return <span className={cn('session-row-title min-w-0 flex-1 truncate text-[13px]', className)}>{title}</span>
 }
 
 export interface SessionRowCallbacks {
@@ -73,7 +79,7 @@ export const SessionRow = memo(function SessionRow({
   const hasRealProject = useHasRealProject()
   const remoteSessionIds = useChatStore((s) => s.remoteSessions[folderPath] ?? EMPTY_REMOTE_SESSION_IDS)
   // Deliberately does NOT select `lastEventAt` — it changes on every content
-  // delta, and the only consumer (SessionStatusSpinner) reads it lazily.
+  // delta; stall level reads it lazily via getState() once per second.
   const { activeSid, status, isUnseen, pendingPermissions, pendingQuestion, pendingPlanApproval } = useChatStore(useShallow((s) => {
     const proj = s.projectSessions[folderPath]
     const entry = proj?._sessions?.[session.sessionId]
@@ -92,6 +98,16 @@ export const SessionRow = memo(function SessionRow({
   const isRunning = status === 'streaming'
   const isBackground = status === 'background'
   const isSessionActive = isProjectActive && activeSid === session.sessionId
+  // Stall color on the title (and fallback spinner) mirrors the chat turn
+  // footer: amber after 60s without events, red after 120s. Harness icons no
+  // longer carry this signal, so the title is the sidebar indicator.
+  const stallLevel = useSessionStallLevel(folderPath, session.sessionId, isRunning)
+  const titleClassName = cn(
+    'text-[13px]',
+    isRunning && 'transition-colors duration-500',
+    // Empty normal color → inherit sidebar foreground while streaming is healthy.
+    isRunning && getStallColor(stallLevel, ''),
+  )
   const harnessStatus: SessionIconProps['status'] = isRunning
     ? 'running'
     : isBackground
@@ -175,14 +191,14 @@ export const SessionRow = memo(function SessionRow({
                   : HarnessIcon && harnessStatus !== 'default'
                     ? <HarnessIcon status={harnessStatus} active={isSessionActive} renderLevel="compact" />
                     : isRunning
-                      ? <SessionStatusSpinner folderPath={folderPath} sessionId={session.sessionId} />
+                      ? <SessionStatusSpinner stallLevel={stallLevel} />
                       : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                 }
               </span>
             </div>
             {animateTitle
-              ? <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className="text-[13px]" />
-              : <PlainSessionTitle sessionId={session.sessionId} fallback={session.title} />
+              ? <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+              : <PlainSessionTitle sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
             }
             <div className="ml-auto flex shrink-0 items-center">
               {session.isWorktree && (

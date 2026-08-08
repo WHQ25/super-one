@@ -1369,6 +1369,46 @@ export function resolveModelContextWindow(model: { id?: string | null; resolvedM
   return modelHasExtendedContext(model) ? EXTENDED_CONTEXT_WINDOW : DEFAULT_CONTEXT_WINDOW
 }
 
+function positiveContextWindow(n: number | null | undefined): number | null {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null
+}
+
+/**
+ * Context ring denominator. Prefer models.dev catalog window over agent/session
+ * maxTokens (those are often wrong or include non-window padding).
+ *
+ * Priority:
+ * 1. models.dev `contextWindow` (when `[1m]` is set, at least {@link EXTENDED_CONTEXT_WINDOW})
+ * 2. `[1m]` → 1M when catalog missing
+ * 3. harness-reported model option window
+ * 4. Claude hardcoded 200k/1M fallback (when `claudeFallback`)
+ * 5. session / detailed-usage maxTokens as last resorts
+ */
+export function resolveRingContextWindow(input: {
+  modelId?: string | null
+  resolvedModel?: string | null
+  catalogContextWindow?: number | null
+  harnessContextWindow?: number | null
+  sessionContextWindow?: number | null
+  detailedMaxTokens?: number | null
+  claudeFallback?: boolean
+}): number | null {
+  const model = { id: input.modelId, resolvedModel: input.resolvedModel }
+  const extended = modelHasExtendedContext(model)
+  const catalog = positiveContextWindow(input.catalogContextWindow)
+  if (catalog != null) {
+    return extended ? Math.max(catalog, EXTENDED_CONTEXT_WINDOW) : catalog
+  }
+  if (extended) return EXTENDED_CONTEXT_WINDOW
+  const harness = positiveContextWindow(input.harnessContextWindow)
+  if (harness != null) return harness
+  if (input.claudeFallback) return resolveModelContextWindow(model)
+  return (
+    positiveContextWindow(input.sessionContextWindow)
+    ?? positiveContextWindow(input.detailedMaxTokens)
+  )
+}
+
 // --- File rewind ---
 
 export interface RewindFilesResult {

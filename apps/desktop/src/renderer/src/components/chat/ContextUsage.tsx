@@ -1,12 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels } from '@/stores/chat'
-import { resolveModelContextWindow } from '@superone/shared/agent-types'
+import { resolveRingContextWindow } from '@superone/shared/agent-types'
+import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
+import { useModelCatalog } from '@/hooks/useModelCatalog'
+import { stripOneM } from '@/lib/model-id'
 
 function formatTokens(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
   return String(n)
+}
+
+function lookupCatalogContextWindow(
+  modelIds: Array<string | null | undefined>,
+  catalogModels: ReadonlyMap<string, { contextWindow?: number }>,
+): number | null {
+  for (const raw of modelIds) {
+    if (!raw) continue
+    const model = catalogModels.get(normalizeModelId(stripOneM(raw)))
+    const window = model?.contextWindow
+    if (typeof window === 'number' && window > 0) return window
+  }
+  return null
 }
 
 export function ContextUsage() {
@@ -23,6 +39,11 @@ export function ContextUsage() {
   const availableModels = useChatStore(selectClaudeModels)
   const activeProject = useChatStore((s) => s.activeProject)
   const setDetailedUsage = useChatStore((s) => s.setDetailedUsage)
+  const { catalog } = useModelCatalog()
+  const catalogModels = useMemo(
+    () => (catalog ? buildCatalogModelIndex(catalog) : new Map()),
+    [catalog],
+  )
 
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -56,15 +77,23 @@ export function ContextUsage() {
   const activeProvider = sessionProvider ?? preferredProvider
   const currentModel = availableModels.find((m) => m.id === selectedModel)
   const effectiveTokens = detailedUsage?.totalTokens ?? contextTokens
-  const contextWindow =
-    detailedUsage?.maxTokens ??
-    (contextWindowFromSession && contextWindowFromSession > 0
-      ? contextWindowFromSession
-      : currentModel?.contextWindow && currentModel.contextWindow > 0
-        ? currentModel.contextWindow
-        : activeProvider === 'claude'
-          ? resolveModelContextWindow({ id: selectedModel, resolvedModel: currentModel?.resolvedModel })
-          : null)
+  const catalogContextWindow = useMemo(
+    () => lookupCatalogContextWindow(
+      [selectedModel, currentModel?.resolvedModel, detailedUsage?.model],
+      catalogModels,
+    ),
+    [selectedModel, currentModel?.resolvedModel, detailedUsage?.model, catalogModels],
+  )
+  // Denominator from models.dev first — agent maxTokens/session windows are often padded or stale.
+  const contextWindow = resolveRingContextWindow({
+    modelId: selectedModel,
+    resolvedModel: currentModel?.resolvedModel,
+    catalogContextWindow,
+    harnessContextWindow: currentModel?.contextWindow,
+    sessionContextWindow: contextWindowFromSession,
+    detailedMaxTokens: detailedUsage?.maxTokens,
+    claudeFallback: activeProvider === 'claude',
+  })
   const pct = contextWindow ? Math.min(effectiveTokens / contextWindow, 1) : 0
   const exceeded = contextWindow ? effectiveTokens > contextWindow : false
   const radius = 5

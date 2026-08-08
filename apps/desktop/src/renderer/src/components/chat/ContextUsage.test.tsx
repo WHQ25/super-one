@@ -2,9 +2,10 @@
 
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ModelCatalog } from '@superone/shared/model-catalog-types'
 
 const chatState = {
-  availableModels: [] as Array<{ id: string; name: string; description: string; resolvedModel?: string }>,
+  availableModels: [] as Array<{ id: string; name: string; description: string; resolvedModel?: string; contextWindow?: number }>,
   activeProject: '/test',
   setDetailedUsage: vi.fn(),
 }
@@ -22,6 +23,7 @@ const activeSessionState = {
 }
 
 let getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => null as unknown)
+let modelCatalog: ModelCatalog | null = null
 
 vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
@@ -30,7 +32,41 @@ vi.mock('@/stores/chat', () => ({
   selectClaudeModels: () => chatState.availableModels,
 }))
 
+vi.mock('@/hooks/useModelCatalog', () => ({
+  useModelCatalog: () => ({
+    catalog: modelCatalog,
+    loading: false,
+    refreshing: false,
+    refresh: async () => {},
+  }),
+}))
+
 import { ContextUsage } from './ContextUsage'
+
+function catalogWithModel(id: string, contextWindow: number, providerId = 'anthropic'): ModelCatalog {
+  return {
+    generatedAt: '2026-01-01',
+    source: 'snapshot',
+    providers: [{
+      id: providerId,
+      name: providerId,
+      npm: '',
+      env: [],
+      doc: '',
+      models: [{
+        id,
+        name: id,
+        providerId,
+        contextWindow,
+        inputModalities: ['text'],
+        outputModalities: ['text'],
+        reasoning: false,
+        toolCall: true,
+        attachment: false,
+      }],
+    }],
+  }
+}
 
 beforeEach(() => {
   chatState.availableModels = []
@@ -44,6 +80,7 @@ beforeEach(() => {
   activeSessionState.status = 'idle'
   activeSessionState.detailedUsage = null
   activeSessionState._activeSessionId = 'sid-1'
+  modelCatalog = null
   getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => null)
   Object.defineProperty(window, 'agent', {
     configurable: true,
@@ -212,5 +249,43 @@ describe('ContextUsage', () => {
     fireEvent.click(screen.getByRole('button'))
 
     expect(screen.getByText('Context: 50.0k / 500.0k (10%)')).toBeTruthy()
+  })
+
+  it('prefers models.dev catalog contextWindow over session and detailed maxTokens', () => {
+    modelCatalog = catalogWithModel('claude-sonnet-4-6', 1_000_000)
+    chatState.availableModels = [{ id: 'claude-sonnet-4-6', name: 'Sonnet', description: '' }]
+    activeSessionState.contextTokens = 120_000
+    activeSessionState.contextWindow = 258_400
+    activeSessionState.selectedModel = 'claude-sonnet-4-6'
+    activeSessionState.preferredProvider = 'claude'
+    activeSessionState.sessionProvider = 'claude'
+    activeSessionState.detailedUsage = {
+      totalTokens: 120_000,
+      maxTokens: 200_000,
+      percentage: 60,
+      model: 'claude-sonnet-4-6',
+      categories: [],
+    }
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
+    expect(screen.queryByText(/258\.4k/)).toBeNull()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
+  })
+
+  it('looks up models.dev by stripped [1m] id', () => {
+    modelCatalog = catalogWithModel('claude-sonnet-4-6', 1_000_000)
+    chatState.availableModels = [{ id: 'claude-sonnet-4-6[1m]', name: 'Sonnet', description: '' }]
+    activeSessionState.contextTokens = 120_000
+    activeSessionState.selectedModel = 'claude-sonnet-4-6[1m]'
+    activeSessionState.preferredProvider = 'claude'
+    activeSessionState.sessionProvider = 'claude'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
   })
 })

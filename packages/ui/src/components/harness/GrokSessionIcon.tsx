@@ -1,44 +1,24 @@
 import React from 'react'
 import type { SessionIconProps } from './ClaudeSessionIcon'
+import { HarnessIconFallback, harnessMarkSvgStyle } from './HarnessIconFallback'
 
-function wrapStyle(size?: number): React.CSSProperties | undefined {
-  return size ? { width: size, height: size } : undefined
-}
-
-function svgStyle(size?: number): React.CSSProperties | undefined {
-  return size ? { width: size - 2, height: size - 2 } : undefined
-}
+/** Official Grok mono mark path (matches @lobehub/icons Grok). */
+const GROK_MARK =
+  'M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815'
 
 /**
  * Compact Grok/xAI brand mark for ACP sessions whose agent is Grok.
- * Uses near-black by default so the glyph stays visible on light cards
- * (unlike a pure white fill which vanishes on --card).
+ * Status chrome comes from {@link HarnessIconFallback}; the mark itself is
+ * ink black and inverted in dark mode so it stays readable on light/dark cards.
  */
 export function GrokSessionIcon({ status, size }: SessionIconProps) {
-  const wrap = wrapStyle(size)
-  const svg = svgStyle(size)
-  const fill =
-    status === 'unseen' ? '#34d399'
-      : status === 'running' ? '#0a0a0a'
-        : status === 'background' ? '#71717a'
-          : status === 'automation' ? '#fbbf24'
-            // Default: ink black — xAI-adjacent and readable on light surfaces.
-            : '#0a0a0a'
+  const svg = harnessMarkSvgStyle(size)
 
   return (
-    <span
-      className="inline-flex items-center justify-center w-3.5 h-3.5 dark:invert"
-      style={wrap}
-      title="Grok"
-    >
-      <svg viewBox="0 0 24 24" fill="none" style={svg} aria-hidden>
-        {/* Stylized Grok star / X mark */}
-        <path
-          d="M12 2.5 L14.2 9.2 L21.5 9.2 L15.7 13.4 L17.9 20.5 L12 16.1 L6.1 20.5 L8.3 13.4 L2.5 9.2 L9.8 9.2 Z"
-          fill={fill}
-          opacity={status === 'background' ? 0.55 : 0.95}
-        />
+    <HarnessIconFallback status={status} size={size} title="Grok" markClassName="dark:invert">
+      <svg viewBox="0 0 24 24" className="w-3 h-3 text-[#0a0a0a]" style={svg} aria-hidden>
+        <path fill="currentColor" fillRule="evenodd" d={GROK_MARK} />
       </svg>
-    </span>
+    </HarnessIconFallback>
   )
 }

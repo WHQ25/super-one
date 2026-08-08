@@ -386,3 +386,79 @@
 .codex-session-cursor-run {
   animation: codex-session-cursor 0.5s step-end infinite;
 }
+
+/* --- Generic harness fallback (static mark → status chrome) ---
+   Used by Grok / OpenCode / ACP (and any future mark without custom art).
+   State-signaling motion (running / background) always runs; resting statuses
+   stay static so sidebar lists don't pin the compositor. */
+
+@keyframes harness-session-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.88); opacity: 0.75; }
+}
+
+@keyframes harness-session-breathe {
+  0%, 100% { opacity: 0.38; }
+  50% { opacity: 0.92; }
+}
+
+.harness-session-wrap {
+  position: relative;
+  overflow: visible;
+  line-height: 0;
+}
+
+.harness-session-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.harness-session-pulse {
+  will-change: transform, opacity;
+  animation: harness-session-pulse 1.1s ease-in-out infinite;
+}
+
+.harness-session-breathe {
+  will-change: opacity;
+  animation: harness-session-breathe 2s ease-in-out infinite;
+}
+
+.harness-session-corner {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sidebar, var(--background));
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.harness-session-corner svg {
+  display: block;
+  width: 9px;
+  height: 9px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.harness-session-corner-check {
+  color: #22c55e;
+}
+
+.harness-session-corner-clock {
+  color: #ba7517;
+}
+
+.dark .harness-session-corner-clock {
+  color: #fac775;
+}

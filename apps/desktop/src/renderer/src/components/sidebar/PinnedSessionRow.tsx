@@ -1,8 +1,8 @@
 import { memo } from 'react'
 import { Pin } from 'lucide-react'
-import { ClaudeSessionIcon, type SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
-import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
+import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
+import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 
@@ -23,11 +23,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
   onSwitch,
   onUnpin,
 }: PinnedSessionRowProps) {
-  const HarnessIcon = session.provider === 'codex'
-    ? CodexSessionIcon
-    : session.provider === 'claude'
-      ? ClaudeSessionIcon
-      : null
+  const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
   const harnessStatus: SessionIconProps['status'] = status === 'streaming'
     ? 'running'
     : status === 'background'

@@ -7,7 +7,7 @@ import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, RateLimitIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, TurnMetaIndicator } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, TurnMetaIndicator } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -120,14 +120,13 @@ function ChatTranscript({
 }: ChatTranscriptProps) {
   const scope = useSessionScope()
   const {
-    messages, isCompacting, compactError, rateLimitInfo, apiRetry, modelFallback,
+    messages, isCompacting, compactError, apiRetry, modelFallback,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
     compactError: s.compactError,
-    rateLimitInfo: s.rateLimitInfo,
     apiRetry: s.apiRetry,
     modelFallback: s.modelFallback,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
@@ -143,15 +142,6 @@ function ChatTranscript({
     deleteQueuedMessage: s.deleteQueuedMessage,
     dismissCompactError: s.dismissCompactError,
   })))
-
-  const [dismissedRateLimitKey, setDismissedRateLimitKey] = useState<string | null>(null)
-  const rateLimitInfoKey = useMemo(
-    () => rateLimitInfo
-      ? `${rateLimitInfo.status}:${rateLimitInfo.resetsAt ?? ''}:${rateLimitInfo.rateLimitType ?? ''}:${rateLimitInfo.utilization != null ? Math.floor(rateLimitInfo.utilization * 20) : ''}`
-      : null,
-    [rateLimitInfo],
-  )
-  const showRateLimitIndicator = !!rateLimitInfo && rateLimitInfoKey !== dismissedRateLimitKey
 
   const prevScrollHeightRef = useRef(0)
   const [expandLevel, setExpandLevel] = useState(0)
@@ -336,14 +326,6 @@ function ChatTranscript({
             {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
             {apiRetry && <ApiRetryIndicator info={apiRetry} />}
             {modelFallback && <ModelFallbackIndicator info={modelFallback} />}
-            {showRateLimitIndicator && rateLimitInfo && (
-              <RateLimitIndicator
-                info={rateLimitInfo}
-                onDismiss={() => {
-                  if (rateLimitInfoKey) setDismissedRateLimitKey(rateLimitInfoKey)
-                }}
-              />
-            )}
           </SelectionContextMenuZone>
         </ScrollArea>
       )}

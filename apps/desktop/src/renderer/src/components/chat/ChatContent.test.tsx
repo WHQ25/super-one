@@ -125,7 +125,6 @@ vi.mock('./ChatMessage', async () => {
     },
     CompactingIndicator: () => <div data-testid="compacting" />,
     CompactIndicator: () => <div data-testid="compact" />,
-    RateLimitIndicator: () => <div data-testid="rate-limit" />,
     ApiRetryIndicator: () => <div data-testid="api-retry" />,
     ModelFallbackIndicator: () => <div data-testid="model-fallback" />,
     parseCompactMarker: () => null,

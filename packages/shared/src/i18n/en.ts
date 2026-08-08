@@ -2262,6 +2262,12 @@ export type Messages = {
     updatedMinutesAgo: string
     updatedHoursAgo: string
     updatedDaysAgo: string
+    rateLimit: {
+      approaching: string
+      limited: string
+      percentUsed: string
+      resetsAt: string
+    }
     toast: {
       reset: string
       nothingToReset: string
@@ -4601,6 +4607,12 @@ export const en: Messages = {
     updatedMinutesAgo: 'Updated {{n}}m ago',
     updatedHoursAgo: 'Updated {{n}}h ago',
     updatedDaysAgo: 'Updated {{n}}d ago',
+    rateLimit: {
+      approaching: 'Approaching rate limit',
+      limited: 'Rate limited',
+      percentUsed: '{{percent}}% used',
+      resetsAt: 'resets at {{time}}',
+    },
     toast: {
       reset: 'Rate limit reset',
       nothingToReset: 'No active rate limit to reset',

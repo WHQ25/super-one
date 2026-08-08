@@ -2315,6 +2315,12 @@ export const zh: Messages = {
     updatedMinutesAgo: '{{n}} 分钟前更新',
     updatedHoursAgo: '{{n}} 小时前更新',
     updatedDaysAgo: '{{n}} 天前更新',
+    rateLimit: {
+      approaching: '即将达到速率限制',
+      limited: '已达速率限制',
+      percentUsed: '已使用 {{percent}}%',
+      resetsAt: '将于 {{time}} 重置',
+    },
     toast: {
       reset: '速率限制已重置',
       nothingToReset: '当前无活跃的速率限制',

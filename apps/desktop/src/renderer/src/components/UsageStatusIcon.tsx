@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { Gauge, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Gauge, OctagonX, RefreshCw } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import { toast } from 'sonner'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -11,6 +12,16 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
+const RATE_LIMIT_TIP_MS = 6_000
+
+type RateLimitTipInfo = {
+  status: 'allowed_warning' | 'rejected'
+  resetsAt?: number
+  rateLimitType?: string
+  utilization?: number
+}
+
+type GaugeHighlight = 'warning' | 'error' | null
 
 const RESET_OUTCOME_TOAST: Record<CodexRateLimitResetOutcome, { kind: 'success' | 'info' | 'error'; key: string }> = {
   reset: { kind: 'success', key: 'usageGauge.toast.reset' },
@@ -58,6 +69,20 @@ function formatUpdatedAgo(fetchedAt: number, now: number, t: TFunction): string 
   return t('usageGauge.updatedDaysAgo', { n: Math.floor(hr / 24) })
 }
 
+function formatResetTime(resetsAt?: number): string | null {
+  if (!resetsAt) return null
+  const date = new Date(resetsAt * 1000)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZoneName: 'short',
+  }).format(date)
+}
+
 function remainingPercent(usedPercent: number): number {
   return Math.round(Math.max(0, Math.min(100, 100 - usedPercent)))
 }
@@ -66,6 +91,25 @@ function remainingColor(percent: number): string {
   if (percent <= 10) return 'bg-red-500'
   if (percent <= 30) return 'bg-amber-500'
   return 'bg-green-500'
+}
+
+function rateLimitTipKey(info: RateLimitTipInfo): string {
+  return `${info.status}:${info.resetsAt ?? ''}:${info.rateLimitType ?? ''}:${info.utilization != null ? Math.floor(info.utilization * 20) : ''}`
+}
+
+/** Show a rate-limit tip for 6s when session rateLimitInfo changes; auto-dismiss with no residual state. */
+function useRateLimitTip(info: RateLimitTipInfo | null): RateLimitTipInfo | null {
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null)
+  const key = info ? rateLimitTipKey(info) : null
+  const visible = !!info && key !== dismissedKey
+
+  useEffect(() => {
+    if (!visible || !key) return
+    const timer = window.setTimeout(() => setDismissedKey(key), RATE_LIMIT_TIP_MS)
+    return () => window.clearTimeout(timer)
+  }, [visible, key])
+
+  return visible ? info : null
 }
 
 function WindowRow({ label, usedPercent, resetsAt }: { label: string; usedPercent: number; resetsAt: number | null }) {
@@ -182,7 +226,75 @@ function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
   )
 }
 
-function RateLimitGauge({ title, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, children }: { title: string; planType: string | null; badgeRemaining: number | null; onOpen?: () => void; onRefresh?: () => void; refreshing?: boolean; fetchedAt?: number | null; children: ReactNode }) {
+function RateLimitTipBubble({ tip }: { tip: RateLimitTipInfo }) {
+  const { t } = useTranslation()
+  const isRejected = tip.status === 'rejected'
+  const resetLabel = formatResetTime(tip.resetsAt)
+  const pct = tip.utilization != null ? Math.round(tip.utilization * 100) : null
+  const title = isRejected ? t('usageGauge.rateLimit.limited') : t('usageGauge.rateLimit.approaching')
+  const details = [
+    !isRejected && pct != null ? t('usageGauge.rateLimit.percentUsed', { percent: pct }) : null,
+    resetLabel ? t('usageGauge.rateLimit.resetsAt', { time: resetLabel }) : null,
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <motion.div
+      role="status"
+      initial={{ opacity: 0, y: 6, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 4, scale: 0.98 }}
+      transition={{ duration: 0.2 }}
+      className={cn(
+        'absolute bottom-full right-0 z-50 mb-2 w-52 rounded-md border bg-background p-2 text-xs shadow-none',
+        isRejected ? 'border-error/40' : 'border-warning/40',
+      )}
+    >
+      <div className="flex items-start gap-1.5">
+        {isRejected
+          ? <OctagonX className="mt-0.5 size-3.5 shrink-0 text-error" />
+          : <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
+        }
+        <div className="min-w-0">
+          <div className={cn('font-medium', isRejected ? 'text-error' : 'text-warning')}>{title}</div>
+          {details && <div className="mt-0.5 text-[11px] text-muted-foreground">{details}</div>}
+        </div>
+      </div>
+      <div className="mt-2 h-0.5 overflow-hidden rounded-full bg-border/60">
+        <motion.div
+          key={rateLimitTipKey(tip)}
+          className={cn('h-full origin-left', isRejected ? 'bg-error' : 'bg-warning')}
+          initial={{ scaleX: 1 }}
+          animate={{ scaleX: 0 }}
+          transition={{ duration: RATE_LIMIT_TIP_MS / 1000, ease: 'linear' }}
+        />
+      </div>
+    </motion.div>
+  )
+}
+
+function RateLimitTipHost({ tip, children }: { tip: RateLimitTipInfo | null; children: ReactNode }) {
+  if (!children) return null
+  return (
+    <div className="relative">
+      <AnimatePresence>
+        {tip && <RateLimitTipBubble key={rateLimitTipKey(tip)} tip={tip} />}
+      </AnimatePresence>
+      {children}
+    </div>
+  )
+}
+
+function RateLimitGauge({ title, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, highlight, children }: {
+  title: string
+  planType: string | null
+  badgeRemaining: number | null
+  onOpen?: () => void
+  onRefresh?: () => void
+  refreshing?: boolean
+  fetchedAt?: number | null
+  highlight?: GaugeHighlight
+  children: ReactNode
+}) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -202,7 +314,15 @@ function RateLimitGauge({ title, planType, badgeRemaining, onOpen, onRefresh, re
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <IconButton size="sm" className={cn(badgeRemaining != null && 'h-6 w-auto gap-1 px-1.5')}>
+        <IconButton
+          size="sm"
+          className={cn(
+            'transition-colors',
+            badgeRemaining != null && 'h-6 w-auto gap-1 px-1.5',
+            highlight === 'warning' && 'border border-warning/40 bg-warning/10 text-warning hover:bg-warning/15 hover:text-warning',
+            highlight === 'error' && 'border border-error/40 bg-error/10 text-error hover:bg-error/15 hover:text-error',
+          )}
+        >
           <Gauge />
           {badgeRemaining != null && (
             <span className="text-[11px] font-medium tabular-nums">{badgeRemaining}%</span>
@@ -246,7 +366,7 @@ function useRefetchOnTurnEnd(status: string, fetchLimits: () => void) {
   }, [status, fetchLimits])
 }
 
-function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPath: string; apiProviderId: string | null; status: string }) {
+function CodexRateLimitIcon({ projectPath, apiProviderId, status, tip, highlight }: { projectPath: string; apiProviderId: string | null; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
   const { t } = useTranslation()
   const [limits, setLimits] = useState<CodexRateLimits | null>(null)
   const [usage, setUsage] = useState<CodexAccountUsage | null>(null)
@@ -263,28 +383,36 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
-  if (!limits || (!limits.primary && !limits.secondary)) return null
+  if (!limits || (!limits.primary && !limits.secondary)) {
+    return (
+      <RateLimitTipHost tip={tip}>
+        {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
+      </RateLimitTipHost>
+    )
+  }
 
   const badgeWindow = limits.primary ?? limits.secondary
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
 
   return (
-    <RateLimitGauge title={t('usageGauge.codexTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits}>
-      {limits.primary && (
-        <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
-      )}
-      {limits.secondary && (
-        <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins, t)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
-      )}
-      {limits.resetCredits != null && limits.resetCredits > 0 && (
-        <ResetCreditsRow count={limits.resetCredits} credits={limits.resetCreditList} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={fetchLimits} />
-      )}
-      {usage && <AccountUsageSection usage={usage} />}
-    </RateLimitGauge>
+    <RateLimitTipHost tip={tip}>
+      <RateLimitGauge title={t('usageGauge.codexTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits} highlight={highlight}>
+        {limits.primary && (
+          <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
+        )}
+        {limits.secondary && (
+          <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins, t)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
+        )}
+        {limits.resetCredits != null && limits.resetCredits > 0 && (
+          <ResetCreditsRow count={limits.resetCredits} credits={limits.resetCreditList} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={fetchLimits} />
+        )}
+        {usage && <AccountUsageSection usage={usage} />}
+      </RateLimitGauge>
+    </RateLimitTipHost>
   )
 }
 
-function ClaudeRateLimitIcon({ status }: { status: string }) {
+function ClaudeRateLimitIcon({ status, tip, highlight }: { status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
   const { t } = useTranslation()
   const [limits, setLimits] = useState<ClaudeRateLimits | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -309,22 +437,30 @@ function ClaudeRateLimitIcon({ status }: { status: string }) {
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
-  if (!limits || limits.windows.length === 0) return null
+  if (!limits || limits.windows.length === 0) {
+    return (
+      <RateLimitTipHost tip={tip}>
+        {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
+      </RateLimitTipHost>
+    )
+  }
 
   const badgeWindow = limits.windows.find((w) => w.label === '5h') ?? limits.windows[0]
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
 
   return (
-    <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
-      {limits.windows.map((w) => (
-        <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
-      ))}
-      {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
-    </RateLimitGauge>
+    <RateLimitTipHost tip={tip}>
+      <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+        {limits.windows.map((w) => (
+          <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+        ))}
+        {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
+      </RateLimitGauge>
+    </RateLimitTipHost>
   )
 }
 
-function ProviderRateLimitIcon({ apiProviderId, status }: { apiProviderId: string; status: string }) {
+function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiProviderId: string; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
   const [limits, setLimits] = useState<ProviderRateLimits | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -352,17 +488,40 @@ function ProviderRateLimitIcon({ apiProviderId, status }: { apiProviderId: strin
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
-  if (!limits || limits.windows.length === 0) return null
+  if (!limits || limits.windows.length === 0) {
+    return (
+      <RateLimitTipHost tip={tip}>
+        {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
+      </RateLimitTipHost>
+    )
+  }
 
   const badgeWindow = limits.windows[0]
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
 
   return (
-    <RateLimitGauge title={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
-      {limits.windows.map((w) => (
-        <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
-      ))}
-    </RateLimitGauge>
+    <RateLimitTipHost tip={tip}>
+      <RateLimitGauge title={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+        {limits.windows.map((w) => (
+          <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+        ))}
+      </RateLimitGauge>
+    </RateLimitTipHost>
+  )
+}
+
+function FallbackRateLimitGauge({ highlight }: { highlight: GaugeHighlight }) {
+  return (
+    <IconButton
+      size="sm"
+      className={cn(
+        'transition-colors',
+        highlight === 'warning' && 'border border-warning/40 bg-warning/10 text-warning hover:bg-warning/15 hover:text-warning',
+        highlight === 'error' && 'border border-error/40 bg-error/10 text-error hover:bg-error/15 hover:text-error',
+      )}
+    >
+      <Gauge />
+    </IconButton>
   )
 }
 
@@ -372,21 +531,35 @@ export function UsageStatusIcon() {
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const apiProviderId = useActiveSession((s) => s.apiProviderId)
   const status = useActiveSession((s) => s.status)
+  const rateLimitInfo = useActiveSession((s) => s.rateLimitInfo)
   const claudeApiProvider = useChatStore((s) => s.harnessResources.claude?.account?.apiProvider)
   const activeProvider = sessionProvider ?? preferredProvider
+
+  const tip = useRateLimitTip(rateLimitInfo)
+  const highlight: GaugeHighlight = tip
+    ? (tip.status === 'rejected' ? 'error' : 'warning')
+    : null
 
   if (!activeProject) return null
 
   if (activeProvider === 'codex') {
-    return <CodexRateLimitIcon projectPath={activeProject} apiProviderId={apiProviderId ?? null} status={status} />
+    return <CodexRateLimitIcon projectPath={activeProject} apiProviderId={apiProviderId ?? null} status={status} tip={tip} highlight={highlight} />
   }
 
   if (activeProvider === 'claude' && claudeApiProvider === 'firstParty' && !apiProviderId) {
-    return <ClaudeRateLimitIcon status={status} />
+    return <ClaudeRateLimitIcon status={status} tip={tip} highlight={highlight} />
   }
 
   if (activeProvider === 'claude' && apiProviderId) {
-    return <ProviderRateLimitIcon apiProviderId={apiProviderId} status={status} />
+    return <ProviderRateLimitIcon apiProviderId={apiProviderId} status={status} tip={tip} highlight={highlight} />
+  }
+
+  if (tip) {
+    return (
+      <RateLimitTipHost tip={tip}>
+        <FallbackRateLimitGauge highlight={highlight} />
+      </RateLimitTipHost>
+    )
   }
 
   return null

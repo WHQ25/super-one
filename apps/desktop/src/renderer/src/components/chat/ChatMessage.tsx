@@ -771,65 +771,6 @@ export function ModelFallbackIndicator({ info }: { info: { trigger: string; from
   )
 }
 
-function formatResetTime(resetsAt?: number): string | null {
-  if (!resetsAt) return null
-  const date = new Date(resetsAt * 1000)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat(undefined, {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZoneName: 'short',
-  }).format(date)
-}
-
-export function RateLimitIndicator({
-  info,
-  onDismiss,
-}: {
-  info: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number }
-  onDismiss?: () => void
-}) {
-  const isRejected = info.status === 'rejected'
-  const resetLabel = formatResetTime(info.resetsAt)
-  const pct = info.utilization != null ? Math.round(info.utilization * 100) : null
-
-  return (
-    <div className={cn(
-      'my-0.5 flex items-center gap-1.5 rounded px-2 py-1.5 text-xs',
-      isRejected ? 'bg-error/10' : 'bg-warning/10',
-    )}>
-      {isRejected
-        ? <OctagonX className="size-3 shrink-0 text-error" />
-        : <AlertTriangle className="size-3 shrink-0 text-warning" />
-      }
-      <span className={cn('font-medium', isRejected ? 'text-error' : 'text-warning')}>
-        {isRejected ? 'Rate limited' : 'Approaching rate limit'}
-      </span>
-      {pct != null && !isRejected && (
-        <span className="text-warning/60">{pct}% used</span>
-      )}
-      {resetLabel && (
-        <span className={isRejected ? 'text-error/60' : 'text-warning/60'}>· resets at {resetLabel}</span>
-      )}
-      {onDismiss && (
-        <button
-          onClick={onDismiss}
-          aria-label="Dismiss rate limit notice"
-          className={cn(
-            'ml-auto cursor-pointer rounded p-0.5 transition-colors',
-            isRejected ? 'text-error/60 hover:text-error' : 'text-warning/60 hover:text-warning',
-          )}
-        >
-          <X className="size-3" />
-        </button>
-      )}
-    </div>
-  )
-}
-
 function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<string, string>): ImageGenerationItem[] {
   const items: ImageGenerationItem[] = []
   for (const block of content) {

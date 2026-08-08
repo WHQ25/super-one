@@ -73,9 +73,8 @@ function ProviderSelector() {
   )
 
   useEffect(() => {
-    if (!experimentalAgentsEnabled) return
     void initializeHarness('acp')
-  }, [experimentalAgentsEnabled, initializeHarness])
+  }, [initializeHarness])
 
   const selectProvider = useCallback(async (provider: ChatProvider) => {
     if (sessionScope) {
@@ -90,38 +89,41 @@ function ProviderSelector() {
   }, [sessionScope, setPreferredProvider])
 
   useEffect(() => {
-    if (!experimentalAgentsEnabled && isExperimentalAgentProvider(preferredProvider)) {
+    if (!experimentalAgentsEnabled && isExperimentalAgentProvider(preferredProvider, acpAgentId)) {
       setAgentMenuOpen(false)
-      void selectProvider('claude')
+      if (preferredProvider === 'acp') setAcpAgentId(DEFAULT_ACP_AGENT_ID)
+      else void selectProvider('claude')
     }
-  }, [experimentalAgentsEnabled, preferredProvider, selectProvider])
+  }, [experimentalAgentsEnabled, preferredProvider, acpAgentId, selectProvider, setAcpAgentId])
 
   useEffect(() => {
-    if (!experimentalAgentsEnabled) {
-      setLastAgentGroup('codex')
-      return
-    }
     if (preferredProvider === 'codex') setLastAgentGroup('codex')
     else if (preferredProvider === 'acp') setLastAgentGroup('acp')
-    else if (preferredProvider === 'opencode') setLastAgentGroup('opencode')
+    else if (preferredProvider === 'opencode' && experimentalAgentsEnabled) setLastAgentGroup('opencode')
   }, [experimentalAgentsEnabled, preferredProvider])
 
   const selectedAcpAgent = useMemo(() => {
     if (agents.length === 0) return null
-    return agents.find((a) => a.id === acpAgentId) ?? agents[0] ?? null
+    return agents.find((a) => a.id === acpAgentId)
+      ?? agents.find((a) => isGrokAcpAgent(a.id))
+      ?? agents[0]
+      ?? null
   }, [agents, acpAgentId])
 
+  const visibleAcpAgents = useMemo(
+    () => agents.filter((agent) => agent.id !== 'opencode' && (experimentalAgentsEnabled || isGrokAcpAgent(agent.id))),
+    [agents, experimentalAgentsEnabled],
+  )
+
   useEffect(() => {
-    if (!experimentalAgentsEnabled) return
     if (preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {
       setAcpAgentId(selectedAcpAgent.id)
     }
-  }, [experimentalAgentsEnabled, preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId])
+  }, [preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId])
 
   const effectiveAcpAgentId = selectedAcpAgent?.id ?? acpAgentId ?? DEFAULT_ACP_AGENT_ID
-  const showAcpLabel = experimentalAgentsEnabled && (preferredProvider === 'acp'
+  const showAcpLabel = preferredProvider === 'acp'
     || (preferredProvider === 'claude' && lastAgentGroup === 'acp')
-  )
   const agentTabLabel = showAcpLabel
     ? (selectedAcpAgent?.name
       ?? (acpAgentId || effectiveAcpAgentId === DEFAULT_ACP_AGENT_ID
@@ -134,9 +136,7 @@ function ProviderSelector() {
   const iconKey = preferredProvider === 'acp' ? `acp:${effectiveAcpAgentId}` : preferredProvider
   const tabsValue = preferredProvider === 'claude'
     ? 'claude'
-    : experimentalAgentsEnabled
-      ? 'agent'
-      : 'codex'
+    : 'agent'
 
   const selectBuiltin = (provider: 'claude' | 'codex') => {
     setAgentMenuOpen(false)
@@ -155,11 +155,7 @@ function ProviderSelector() {
   }
 
   const restoreAgentTab = () => {
-    if (!experimentalAgentsEnabled) {
-      selectBuiltin('codex')
-      return
-    }
-    if (lastAgentGroup === 'opencode') {
+    if (lastAgentGroup === 'opencode' && experimentalAgentsEnabled) {
       void selectProvider('opencode')
       return
     }
@@ -203,56 +199,54 @@ function ProviderSelector() {
       >
         <TabsList>
           <TabsTrigger value="claude" className="px-3 py-2">Claude Code</TabsTrigger>
-          {experimentalAgentsEnabled ? (
-            <DropdownMenu
-              open={agentMenuOpen}
-              onOpenChange={(open) => {
-                if (open && !agentTabActive) return
-                setAgentMenuOpen(open)
-              }}
-            >
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  role="tab"
-                  data-slot="tabs-trigger"
-                  data-state={agentTabActive ? 'active' : 'inactive'}
-                  className={cn(tabsTriggerClass, 'max-w-[9.5rem]')}
-                  onPointerDown={onAgentTabActivate}
-                  onClick={onAgentTabActivate}
-                >
-                  <span className="min-w-0 truncate">{agentTabLabel}</span>
-                  <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', agentMenuOpen && agentTabActive && 'rotate-180')} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="center" className="min-w-48">
-                <DropdownMenuItem onClick={() => selectBuiltin('codex')} className="gap-2 focus-visible:shadow-none">
-                  <span className="min-w-0 flex-1 truncate">Codex</span>
-                  {preferredProvider === 'codex' && <Check className="size-4 shrink-0 text-primary" />}
-                </DropdownMenuItem>
+          <DropdownMenu
+            open={agentMenuOpen}
+            onOpenChange={(open) => {
+              if (open && !agentTabActive) return
+              setAgentMenuOpen(open)
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                role="tab"
+                data-slot="tabs-trigger"
+                data-state={agentTabActive ? 'active' : 'inactive'}
+                className={cn(tabsTriggerClass, 'max-w-[9.5rem]')}
+                onPointerDown={onAgentTabActivate}
+                onClick={onAgentTabActivate}
+              >
+                <span className="min-w-0 truncate">{agentTabLabel}</span>
+                <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', agentMenuOpen && agentTabActive && 'rotate-180')} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="center" className="min-w-48">
+              <DropdownMenuItem onClick={() => selectBuiltin('codex')} className="gap-2 focus-visible:shadow-none">
+                <span className="min-w-0 flex-1 truncate">Codex</span>
+                {preferredProvider === 'codex' && <Check className="size-4 shrink-0 text-primary" />}
+              </DropdownMenuItem>
+              {experimentalAgentsEnabled && (
                 <DropdownMenuItem onClick={() => void selectProvider('opencode')} className="gap-2 focus-visible:shadow-none">
                   <span className="min-w-0 flex-1 truncate">OpenCode</span>
                   {preferredProvider === 'opencode' && <Check className="size-4 shrink-0 text-primary" />}
                 </DropdownMenuItem>
-                {agents.some((agent) => agent.id !== 'opencode') && <DropdownMenuSeparator />}
-                {agents.filter((agent) => agent.id !== 'opencode').map((agent) => {
-                  const selected = preferredProvider === 'acp' && effectiveAcpAgentId === agent.id
-                  return (
-                    <DropdownMenuItem key={agent.id} onClick={() => selectAcpAgent(agent.id)} className="gap-2 focus-visible:shadow-none">
-                      <span className="min-w-0 flex-1 truncate">{agent.name}</span>
-                      {!agent.installed && <span className="shrink-0 text-xs text-muted-foreground">{t('chat.suggestions.agentNotInstalled')}</span>}
-                      {selected && <Check className="size-4 shrink-0 text-primary" />}
-                    </DropdownMenuItem>
-                  )
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <TabsTrigger value="codex" className="px-3 py-2">Codex</TabsTrigger>
-          )}
+              )}
+              {visibleAcpAgents.length > 0 && <DropdownMenuSeparator />}
+              {visibleAcpAgents.map((agent) => {
+                const selected = preferredProvider === 'acp' && effectiveAcpAgentId === agent.id
+                return (
+                  <DropdownMenuItem key={agent.id} onClick={() => selectAcpAgent(agent.id)} className="gap-2 focus-visible:shadow-none">
+                    <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+                    {!agent.installed && <span className="shrink-0 text-xs text-muted-foreground">{t('chat.suggestions.agentNotInstalled')}</span>}
+                    {selected && <Check className="size-4 shrink-0 text-primary" />}
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </TabsList>
       </Tabs>
-      {experimentalAgentsEnabled && preferredProvider === 'acp' && selectedAcpAgent && !selectedAcpAgent.installed && (
+      {preferredProvider === 'acp' && selectedAcpAgent && !selectedAcpAgent.installed && (
         <p className="max-w-xs text-center text-xs text-muted-foreground">
           {t('chat.suggestions.agentInstallHint')}
         </p>

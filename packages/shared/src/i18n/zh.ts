@@ -557,7 +557,7 @@ export const zh: Messages = {
       experimental: '实验功能',
       experimentalAgents: {
         label: '实验性 Agent',
-        description: '显示 Claude Code 和 Codex 之外的实验性 Agent，包括 OpenCode、Grok Build 和其他 ACP 智能体。行为可能变化。',
+        description: '显示实验性 Agent，包括 OpenCode 和非 Grok ACP 智能体。行为可能变化。',
         enabled: '已开启实验性 Agent',
         disabled: '已关闭实验性 Agent',
       },

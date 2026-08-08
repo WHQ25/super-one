@@ -2857,7 +2857,7 @@ export const en: Messages = {
       experimental: 'Experimental',
       experimentalAgents: {
         label: 'Experimental Agents',
-        description: 'Show experimental agents other than Claude Code and Codex, including OpenCode, Grok Build, and other ACP agents. Behavior may change.',
+        description: 'Show experimental agents including OpenCode and non-Grok ACP agents. Behavior may change.',
         enabled: 'Experimental agents enabled',
         disabled: 'Experimental agents disabled',
       },

@@ -75,6 +75,29 @@ afterEach(() => {
 })
 
 describe('ChatMessage token footer', () => {
+  it('falls back to metadata.usage for completed ACP turns without consumedTokens', () => {
+    render(
+      <ChatMessage
+        message={{
+          ...createClaudeMessage([{ type: 'text', text: 'ok' }]),
+          providerId: 'acp',
+          metadata: {
+            usage: {
+              inputTokens: 1200,
+              outputTokens: 340,
+              cacheReadInputTokens: 0,
+              cacheCreationInputTokens: 0,
+            },
+          },
+        }}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+    expect(screen.getByText('1.2k')).toBeTruthy()
+    expect(screen.getByText('340')).toBeTruthy()
+  })
+
   it('clears token highlight when the message stops streaming', () => {
     const streamingMessage = createCodexMessage()
     const { rerender } = render(

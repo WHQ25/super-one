@@ -317,7 +317,100 @@ describe('message_usage persistence', () => {
         cacheReadInputTokens: 400,
         cacheCreationInputTokens: 0,
       },
+      // Footer history path reads consumedTokens, not streamingTokens.
+      consumedTokens: { input: 800, output: 300 },
     })
+  })
+
+  it('freezes metadata.usage into consumedTokens on message_complete when missing', () => {
+    let rt = createClaudeRuntime('/tmp/project', 'session-grok', {
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'acp',
+        metadata: {
+          usage: {
+            inputTokens: 100,
+            outputTokens: 40,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+          },
+        },
+      }],
+    })
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'message_complete',
+      messageId: 'msg-1',
+      metadata: { durationMs: 1200 },
+    })
+    expect(rt.messages[0]?.metadata).toMatchObject({
+      durationMs: 1200,
+      usage: { inputTokens: 100, outputTokens: 40 },
+      consumedTokens: { input: 100, output: 40 },
+    })
+  })
+})
+
+describe('turn_summary persistence', () => {
+  it('attaches turn_summary onto the matching assistant message', () => {
+    let rt = createClaudeRuntime('/tmp/project', 'session-grok', {
+      messages: [{
+        id: 'msg-a',
+        role: 'assistant',
+        status: 'complete',
+        content: [{ type: 'text', text: 'done' }],
+        createdAt: new Date().toISOString(),
+        providerId: 'acp',
+      }],
+    })
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'turn_summary',
+      summary: '  fixed the race  ',
+      messageId: 'msg-a',
+    })
+    expect(rt.messages[0]?.metadata?.turnSummary).toBe('fixed the race')
+    expect(rt.messages).toHaveLength(1)
+  })
+
+  it('falls back to last assistant when messageId is missing', () => {
+    let rt = createClaudeRuntime('/tmp/project', 'session-grok', {
+      messages: [
+        {
+          id: 'msg-old',
+          role: 'assistant',
+          status: 'complete',
+          content: [],
+          createdAt: new Date().toISOString(),
+          providerId: 'acp',
+        },
+        {
+          id: 'msg-new',
+          role: 'assistant',
+          status: 'complete',
+          content: [],
+          createdAt: new Date().toISOString(),
+          providerId: 'acp',
+        },
+      ],
+    })
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'turn_summary',
+      summary: 'latest turn only',
+    })
+    expect(rt.messages[0]?.metadata?.turnSummary).toBeUndefined()
+    expect(rt.messages[1]?.metadata?.turnSummary).toBe('latest turn only')
+  })
+
+  it('does not mint a system marker when no assistant exists', () => {
+    let rt = createClaudeRuntime('/tmp/project', 'session-empty')
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'turn_summary',
+      summary: 'orphan',
+    })
+    expect(rt.messages).toEqual([])
   })
 })
 

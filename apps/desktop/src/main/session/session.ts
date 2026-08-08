@@ -1361,11 +1361,16 @@ export class Session implements SessionContract {
     } else if (tagged.type === 'permission_mode_change') {
       this.mergeUiSettings({ permissionMode: tagged.mode })
     }
+    // Persist on complete/error and on late Grok metadata that often arrives
+    // after message_complete (turn usage + last_turn_summary).
     if (
       event.type === 'message_complete' ||
       event.type === 'message_interrupted' ||
       event.type === 'message_error' ||
-      event.type === 'checkpoint_captured'
+      event.type === 'checkpoint_captured' ||
+      event.type === 'turn_summary' ||
+      (event.type === 'message_usage'
+        && (event.inputTokens > 0 || event.outputTokens > 0 || (event.cacheReadTokens ?? 0) > 0))
     ) {
       this.notifyStateChange()
     }

@@ -266,15 +266,23 @@ export function applyClaudeEventToRuntime(
         ...runtime,
         totalCostUsd: event.metadata?.costUsd ?? runtime.totalCostUsd,
         contextTokens: contextTokens > 0 ? contextTokens : runtime.contextTokens,
-        messages: runtime.messages.map((message) => (
-          message.id !== event.messageId
-            ? message
-            : {
-                ...message,
-                status: 'complete' as const,
-                metadata: { ...message.metadata, ...event.metadata },
-              }
-        )),
+        messages: runtime.messages.map((message) => {
+          if (message.id !== event.messageId) return message
+          const metadata = { ...message.metadata, ...event.metadata }
+          // Footer history reads consumedTokens; freeze from usage when still missing
+          // (Grok often lands message_usage before complete, Claude after).
+          if (!metadata.consumedTokens && metadata.usage) {
+            const u = metadata.usage
+            if (u.inputTokens > 0 || u.outputTokens > 0) {
+              metadata.consumedTokens = { input: u.inputTokens, output: u.outputTokens }
+            }
+          }
+          return {
+            ...message,
+            status: 'complete' as const,
+            metadata,
+          }
+        }),
       }
     }
     case 'message_usage': {
@@ -304,11 +312,48 @@ export function applyClaudeEventToRuntime(
                         cacheReadInputTokens: event.cacheReadTokens ?? 0,
                         cacheCreationInputTokens: 0,
                       },
+                      // Persist footer tokens for history restore (Grok mid/late usage).
+                      ...(event.inputTokens > 0 || event.outputTokens > 0
+                        ? { consumedTokens: { input: event.inputTokens, output: event.outputTokens } }
+                        : {}),
                     },
                   }
             ))
           : runtime.messages,
       }
+    }
+    case 'turn_summary': {
+      // Attach onto the assistant bubble so history restores above the footer —
+      // do not mint system markers here (those render as a separate row below).
+      const summary = typeof event.summary === 'string' ? event.summary.trim() : ''
+      if (!summary) return runtime
+      let idx = -1
+      if (event.messageId) {
+        idx = runtime.messages.findIndex(
+          (m) => m.id === event.messageId && m.role === 'assistant' && m.providerId !== 'system',
+        )
+      }
+      if (idx < 0) {
+        for (let i = runtime.messages.length - 1; i >= 0; i--) {
+          const m = runtime.messages[i]
+          if (m.role === 'assistant' && m.providerId !== 'system') {
+            idx = i
+            break
+          }
+        }
+      }
+      if (idx < 0) return runtime
+      if (runtime.messages[idx].metadata?.turnSummary === summary) return runtime
+      const messages = runtime.messages.slice()
+      const target = messages[idx]
+      messages[idx] = {
+        ...target,
+        metadata: {
+          ...target.metadata,
+          turnSummary: summary,
+        },
+      }
+      return { ...runtime, messages }
     }
     case 'message_interrupted':
       return {

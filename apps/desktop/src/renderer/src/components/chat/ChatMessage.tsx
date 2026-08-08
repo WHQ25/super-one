@@ -1243,13 +1243,22 @@ function DurationFooter({
 
   const durationMs = isStreaming ? elapsed : (message.metadata?.durationMs ?? (elapsed || undefined))
   const ct = message.metadata?.consumedTokens
+  const metaUsage = message.metadata?.usage
   const codexUsage = message.metadata?.codex?.usage
+  // History / ACP: prefer consumedTokens; fall back to metadata.usage (main
+  // runtime stores Grok/Claude turn spend there) then Codex last-turn usage.
   const tokenInput = isStreaming
     ? streamingTokens.input
-    : (ct?.input ?? (codexUsage ? Math.max(0, codexUsage.lastInputTokens - codexUsage.lastCachedInputTokens) : undefined) ?? frozenTokensRef.current.input)
+    : (ct?.input
+      ?? (metaUsage && (metaUsage.inputTokens > 0 || metaUsage.outputTokens > 0) ? metaUsage.inputTokens : undefined)
+      ?? (codexUsage ? Math.max(0, codexUsage.lastInputTokens - codexUsage.lastCachedInputTokens) : undefined)
+      ?? frozenTokensRef.current.input)
   const tokenOutput = isStreaming
     ? streamingTokens.output
-    : (ct?.output ?? codexUsage?.lastOutputTokens ?? frozenTokensRef.current.output)
+    : (ct?.output
+      ?? (metaUsage && (metaUsage.inputTokens > 0 || metaUsage.outputTokens > 0) ? metaUsage.outputTokens : undefined)
+      ?? codexUsage?.lastOutputTokens
+      ?? frozenTokensRef.current.output)
   const hasTokens = tokenInput > 0 || tokenOutput > 0
 
   const showDuration = durationMs && (isStreaming ? durationMs >= 1000 : durationMs >= 20000)

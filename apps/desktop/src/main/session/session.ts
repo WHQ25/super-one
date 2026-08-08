@@ -5,6 +5,7 @@ import type {
   CodexGoalStatus,
   CodexUsageInfo,
   ContextUsageInfo,
+  ProviderRateLimits,
   McpServerInfo,
   PermissionMode,
   QuestionAnnotations,
@@ -805,6 +806,12 @@ export class Session implements SessionContract {
     if (!this.backendStarted) return null
     this.touchRuntimeActivity()
     return this.backend.getContextUsage()
+  }
+
+  /** Reading the gauge is not agent activity — deliberately no `touchRuntimeActivity()`. */
+  async getRateLimits(): Promise<ProviderRateLimits | null> {
+    if (!this.backendStarted) return null
+    return (await this.backend.getRateLimits?.()) ?? null
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

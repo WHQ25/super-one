@@ -10,6 +10,26 @@ export const XAI_ASK_USER_QUESTION = 'x.ai/ask_user_question'
 export const XAI_EXIT_PLAN_MODE = 'x.ai/exit_plan_mode'
 /** Client → agent: request session recap (manual `/recap` or auto return-from-away). */
 export const XAI_RECAP = 'x.ai/recap'
+/** Client → agent: permission/yolo baseline change for the live session. */
+export const XAI_YOLO_MODE_CHANGED = 'x.ai/yolo_mode_changed'
+/** Client → agent: Grok Build credits + subscription tier for the usage gauge. */
+export const XAI_BILLING = 'x.ai/billing'
+
+/**
+ * Wire name for an outgoing x.ai extension method.
+ *
+ * ACP routes non-standard methods by a leading `_`, and Grok only registers its
+ * `x.ai/*` handlers behind that prefix — verified against `grok agent stdio`
+ * 1.0.0, where the bare name answers `-32601 Method not found` for requests and
+ * is dropped with `failed to decode … Method not found` for notifications. The
+ * agent side strips the prefix again, so its handlers match the bare name.
+ *
+ * Incoming notifications are a separate matter: the JS SDK does not strip, so
+ * handlers are registered for both forms.
+ */
+export function xaiExtWireMethod(method: string): string {
+  return method.startsWith('_') ? method : `_${method}`
+}
 
 export interface GrokAskUserQuestionParams {
   sessionId?: string

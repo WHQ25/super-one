@@ -89,6 +89,7 @@ interface AppAPI {
   codexImportExternalAgentConfig(projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null): Promise<CodexExternalAgentImportResult | null>
   claudeGetRateLimits(force?: boolean): Promise<ClaudeRateLimits | null>
   providerGetRateLimits(apiProviderId: string, force?: boolean): Promise<ProviderRateLimits | null>
+  acpGetRateLimits(projectPath: string, agentId: string, force?: boolean): Promise<ProviderRateLimits | null>
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
   installUpdate(): Promise<void>
   checkForUpdates(): Promise<void>

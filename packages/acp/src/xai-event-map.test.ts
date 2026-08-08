@@ -433,4 +433,28 @@ describe('ACP xAI AgentEvent mapping', () => {
       state,
     )).toEqual([])
   })
+
+  it('flags a rate-limited turn terminal and clears it on the next served turn', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'turn_completed',
+      stop_reason: 'rate_limit',
+    }, state, { messageId: 'message-1' })).toEqual([
+      { type: 'rate_limit', status: 'rejected', rateLimitType: 'api' },
+    ])
+
+    const served = mapXaiSessionUpdate({
+      sessionUpdate: 'turn_completed',
+      stop_reason: 'end_turn',
+      usage: { inputTokens: 100, outputTokens: 10, modelCalls: 1 },
+    }, state, { messageId: 'message-2' })
+    expect(served[0]).toEqual({ type: 'rate_limit', status: 'allowed' })
+    expect(served[1]).toMatchObject({ type: 'message_usage', messageId: 'message-2' })
+
+    // Already clear — a served turn must not keep re-announcing it.
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'turn_completed',
+      stop_reason: 'end_turn',
+    }, state, { messageId: 'message-3' })).toEqual([])
+  })
 })

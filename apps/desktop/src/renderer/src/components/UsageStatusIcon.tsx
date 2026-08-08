@@ -13,6 +13,7 @@ import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLi
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 const RATE_LIMIT_TIP_MS = 6_000
+const GROK_AGENT_ID = 'grok-build'
 
 type RateLimitTipInfo = {
   status: 'allowed_warning' | 'rejected'
@@ -109,6 +110,13 @@ function useRateLimitTip(info: RateLimitTipInfo | null): RateLimitTipInfo | null
     return () => window.clearTimeout(timer)
   }, [visible, key])
 
+  // Dismissal is scoped to one rate-limit episode. Clearing the info ends the
+  // episode, so hitting the same limit again later tips afresh instead of being
+  // swallowed as a duplicate of the first hit.
+  useEffect(() => {
+    if (!info) setDismissedKey(null)
+  }, [info])
+
   return visible ? info : null
 }
 
@@ -143,6 +151,12 @@ function ExtraUsageRow({ extra }: { extra: ClaudeExtraUsage }) {
       <span className="font-medium tabular-nums">{value}</span>
     </div>
   )
+}
+
+/** Remaining prepaid ("bought") credits — spends after the included pool is gone. */
+function CreditBalanceRow({ dollars }: { dollars: number }) {
+  const { t } = useTranslation()
+  return <StatRow label={t('usageGauge.creditBalance')} value={`$${dollars.toFixed(2)}`} />
 }
 
 function StatRow({ label, value }: { label: string; value: string }) {
@@ -510,6 +524,64 @@ function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiP
   )
 }
 
+/**
+ * Grok Build credits, read from the live ACP runtime via `_x.ai/billing`.
+ * Only Grok exposes a billing surface, so other ACP agents keep the bare tip.
+ */
+function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { projectPath: string; agentId: string; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
+  const [limits, setLimits] = useState<ProviderRateLimits | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const fetchLimits = useCallback(() => {
+    window.app.acpGetRateLimits(projectPath, agentId).then(setLimits).catch(() => {})
+  }, [projectPath, agentId])
+
+  const refresh = useCallback(() => {
+    setRefreshing(true)
+    window.app
+      .acpGetRateLimits(projectPath, agentId, true)
+      .then(setLimits)
+      .catch(() => {})
+      .finally(() => setRefreshing(false))
+  }, [projectPath, agentId])
+
+  const refreshIfStale = useCallback(() => {
+    const fetchedAt = limits?.fetchedAt
+    if (fetchedAt == null || Date.now() - fetchedAt > FORCE_REFRESH_ON_OPEN_STALE_MS) refresh()
+  }, [limits?.fetchedAt, refresh])
+
+  useEffect(() => {
+    setLimits(null)
+  }, [projectPath, agentId])
+
+  useRefetchOnTurnEnd(status, fetchLimits)
+
+  if (!limits || limits.windows.length === 0) {
+    return (
+      <RateLimitTipHost tip={tip}>
+        {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
+      </RateLimitTipHost>
+    )
+  }
+
+  const badgeWindow = limits.windows[0]
+  const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
+
+  return (
+    <RateLimitTipHost tip={tip}>
+      <RateLimitGauge title={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+        {limits.windows.map((w) => (
+          <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+        ))}
+        {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
+        {limits.creditBalanceDollars != null && (
+          <CreditBalanceRow dollars={limits.creditBalanceDollars} />
+        )}
+      </RateLimitGauge>
+    </RateLimitTipHost>
+  )
+}
+
 function FallbackRateLimitGauge({ highlight }: { highlight: GaugeHighlight }) {
   return (
     <IconButton
@@ -530,6 +602,7 @@ export function UsageStatusIcon() {
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const apiProviderId = useActiveSession((s) => s.apiProviderId)
+  const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const status = useActiveSession((s) => s.status)
   const rateLimitInfo = useActiveSession((s) => s.rateLimitInfo)
   const claudeApiProvider = useChatStore((s) => s.harnessResources.claude?.account?.apiProvider)
@@ -552,6 +625,12 @@ export function UsageStatusIcon() {
 
   if (activeProvider === 'claude' && apiProviderId) {
     return <ProviderRateLimitIcon apiProviderId={apiProviderId} status={status} tip={tip} highlight={highlight} />
+  }
+
+  // Grok is the only ACP agent with a billing surface; asking the others would
+  // just be a round-trip to `method not found` on every turn end.
+  if (activeProvider === 'acp' && acpAgentId === GROK_AGENT_ID) {
+    return <AcpRateLimitIcon projectPath={activeProject} agentId={acpAgentId} status={status} tip={tip} highlight={highlight} />
   }
 
   if (tip) {

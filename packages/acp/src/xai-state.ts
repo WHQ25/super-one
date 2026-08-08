@@ -85,6 +85,12 @@ export interface XaiCorrelationState {
   lastUsage: ContextUsageInfo | null
   /** last known assistant message id (for message_usage) */
   lastMessageId: string | null
+  /**
+   * Whether the last turn terminal was `rate_limit`. Scopes the gauge tip to one
+   * rate-limit episode: only a served turn clears it (Grok sends no "you're fine
+   * again" signal).
+   */
+  rateLimited: boolean
 }
 
 export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelationState {
@@ -104,6 +110,7 @@ export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelati
     lastEventSeq: null,
     lastUsage: null,
     lastMessageId: null,
+    rateLimited: false,
   }
 }
 

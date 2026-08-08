@@ -45,10 +45,13 @@ import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
 import { AcpTerminalManager } from './acp-terminals'
 import {
   XAI_ASK_USER_QUESTION,
+  XAI_BILLING,
   XAI_EXIT_PLAN_MODE,
   XAI_RECAP,
+  XAI_YOLO_MODE_CHANGED,
   parseGrokExitPlanModeParams,
   formatGrokExitPlanModeResponse,
+  xaiExtWireMethod,
   type GrokAskUserQuestionParams,
   type GrokExitPlanModeParams,
 } from './acp-xai-extensions'
@@ -68,8 +71,31 @@ import {
   grokSessionPermissionMeta,
   grokYoloModeNotificationParams,
 } from './acp-permission-preapprove'
+import { parseGrokBilling } from './acp-billing'
+import { describeAcpRequestError } from './acp-request-error'
 import { pushBashOutput } from '../bash-output-watcher'
-import type { AgentEvent, ContextUsageInfo, ImageAttachment, PermissionMode } from '@superone/shared/agent-types'
+import type {
+  AgentEvent,
+  ContextUsageInfo,
+  ImageAttachment,
+  PermissionMode,
+  ProviderRateLimits,
+} from '@superone/shared/agent-types'
+
+/**
+ * How long `cancel()` waits for the agent's own stop before settling the turn
+ * locally. Grok ignores `session/cancel` when the turn already died server-side
+ * (quota exhausted), and without this the Stop button would do nothing.
+ */
+const CANCEL_STOP_FALLBACK_MS = 2000
+
+/**
+ * Consecutive `nextUpdate()` rejections tolerated before the pump gives up.
+ * A rejected `session/prompt` pushes its error through the session update queue
+ * (ACP SDK `ActiveSession.prompt`), which is recoverable — but a disposed or
+ * closed queue rejects forever, so the pump still needs a floor.
+ */
+const MAX_CONSECUTIVE_PUMP_ERRORS = 5
 
 export interface AcpRuntimeLaunchConfig {
   agentId?: string
@@ -117,6 +143,11 @@ export interface AcpRuntime {
   setAcpSessionMode(modeId: string): Promise<void>
   /** Context usage from x.ai turn_completed / subagent progress (null until first sample). */
   getContextUsage(): Promise<ContextUsageInfo | null>
+  /**
+   * Grok Build credits + subscription tier for the usage gauge. Null when the
+   * agent has no billing surface (non-Grok ACP agents, API-key auth, offline).
+   */
+  getRateLimits(): Promise<ProviderRateLimits | null>
   /**
    * Whether initialize `_meta.sessionRecap` advertised recap (Grok fail-closed until true).
    */
@@ -166,6 +197,8 @@ export interface AcpRuntimeOptions {
   resumeSessionId?: string
   /** Extra SuperOne instructions hidden inside the first ACP prompt (ACP has no system channel). */
   systemPromptAppend?: string
+  /** Override the post-`session/cancel` local stop fallback (tests). */
+  cancelStopFallbackMs?: number
 }
 
 /**
@@ -742,6 +775,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   agentWakeCtl.complete = completeAgentInitiated
 
   void (async () => {
+    let consecutiveErrors = 0
     while (pumping && !closed) {
       try {
         let connectionClosed = false
@@ -753,6 +787,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           }),
         ])
         if (connectionClosed || next.type === 'closed' || closed || !pumping) break
+        consecutiveErrors = 0
         const message = next.m
         if (message.kind === 'stop') {
           const waiter = promptStopWaiters.shift()
@@ -828,8 +863,16 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           deliver(event)
         }
       } catch (err) {
-        if (!closed) log.debug('[acp-runtime] update pump ended:', err)
-        break
+        if (closed || !pumping) break
+        // A failed session/prompt is delivered as a queue rejection, not a stop.
+        // Breaking here would leave a zombie runtime that never streams again,
+        // so keep pumping — the queue serves later notifications normally.
+        consecutiveErrors += 1
+        if (consecutiveErrors >= MAX_CONSECUTIVE_PUMP_ERRORS) {
+          log.debug('[acp-runtime] update pump ended after %d errors:', consecutiveErrors, err)
+          break
+        }
+        log.debug('[acp-runtime] update pump error %d/%d:', consecutiveErrors, MAX_CONSECUTIVE_PUMP_ERRORS, err)
       }
     }
   })()
@@ -857,7 +900,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         return
       }
       try {
-        await activeConnection.agent.request(XAI_RECAP, {
+        await activeConnection.agent.request(xaiExtWireMethod(XAI_RECAP), {
           sessionId: activeSession.sessionId,
           auto,
         })
@@ -937,6 +980,24 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     async getContextUsage() {
       return xaiCorrelation.lastUsage
     },
+    async getRateLimits() {
+      try {
+        const raw = await activeConnection.agent.request(xaiExtWireMethod(XAI_BILLING), {})
+        const limits = parseGrokBilling(raw)
+        log.info(
+          '[acp-runtime] x.ai/billing agent=%s plan=%s used=%s%%',
+          launch.agentId,
+          limits?.planType ?? '(none)',
+          limits?.windows[0]?.usedPercent ?? '?',
+        )
+        return limits
+      } catch (err) {
+        // Expected for non-Grok agents (method not found) and API-key auth
+        // (billing needs the grok.com OAuth session), so never louder than debug.
+        log.debug('[acp-runtime] x.ai/billing unavailable agent=%s:', launch.agentId, err)
+        return null
+      }
+    },
     async setPermissionMode(mode) {
       // Plan is ACP session mode, not Grok yolo/auto permission baseline.
       if (mode === 'plan') {
@@ -955,7 +1016,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
       const params = grokYoloModeNotificationParams(mode)
       try {
-        await activeConnection.agent.notify('x.ai/yolo_mode_changed', params)
+        await activeConnection.agent.notify(xaiExtWireMethod(XAI_YOLO_MODE_CHANGED), params)
         log.info(
           '[acp-runtime] yolo_mode_changed agent=%s mode=%s params=%j',
           launch.agentId,
@@ -971,6 +1032,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       const fail = (error: string) => {
         if (settled) return
         settled = true
+        for (const ev of cancelOpenToolEvents(promptMessageId ?? messageId, openToolIds)) {
+          onEvent(ev)
+        }
         onEvent({ type: 'message_error', messageId, error })
         onEvent({ type: 'status_change', status: 'error' })
       }
@@ -1009,9 +1073,19 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         })
       }
       const promptPromise = activeSession.prompt(promptBlocks as never)
+      // A rejected session/prompt (Grok quota exhausted → JSON-RPC -32003) never
+      // produces a stop message, so its failure must be raced explicitly or the
+      // turn hangs in `streaming` forever. Success stays on the stop rail: the
+      // SDK queues the response as a stop, and consuming it here instead would
+      // leave that stale stop to settle the *next* turn's waiter.
+      const promptFailure = promptPromise.then<string>(
+        () => new Promise<string>(() => {}),
+        (err) => { throw err },
+      )
       try {
         const stopReason = await Promise.race([
           stopPromise,
+          promptFailure,
           activeConnection.closed.then(() => {
             throw new Error(formatProcessExit(exitInfo))
           }),
@@ -1032,11 +1106,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           }
         }
         onEvent({ type: 'status_change', status: 'idle' })
-        await promptPromise
       } catch (err) {
         if (settled) return
-        const error = err instanceof Error ? err.message : String(err)
-        fail(error)
+        fail(describeAcpRequestError(err))
         throw err
       } finally {
         if (gen === promptGen) {
@@ -1058,6 +1130,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           promptOnEvent(ev)
         }
       }
+      const waiter = promptStopWaiters[0] ?? null
       try {
         await activeConnection.agent.notify(methods.agent.session.cancel, {
           sessionId: activeSession.sessionId,
@@ -1065,6 +1138,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       } catch (err) {
         log.debug('[acp-runtime] cancel failed:', err)
       }
+      // Grok drops session/cancel when the turn already died server-side, so the
+      // agent stop never arrives. Settle locally rather than leave Stop inert.
+      if (!waiter) return
+      const fallbackMs = opts.cancelStopFallbackMs ?? CANCEL_STOP_FALLBACK_MS
+      setTimeout(() => {
+        const idx = promptStopWaiters.indexOf(waiter)
+        if (idx < 0) return
+        promptStopWaiters.splice(idx, 1)
+        log.warn('[acp-runtime] no agent stop %dms after cancel — settling turn locally', fallbackMs)
+        waiter('cancelled')
+      }, fallbackMs).unref?.()
     },
     async close() {
       pumping = false

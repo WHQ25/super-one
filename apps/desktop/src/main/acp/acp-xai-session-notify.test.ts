@@ -424,6 +424,56 @@ describe('mapXaiSessionUpdate — session meta', () => {
   })
 })
 
+describe('mapXaiSessionUpdate — turn_completed rate limit', () => {
+  it('flags a quota-exhausted turn even though it carries no usage', () => {
+    const state = createXaiCorrelationState()
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'turn_completed',
+      prompt_id: 'p1',
+      stop_reason: 'rate_limit',
+    }, state, { messageId: 'msg-1' })
+    expect(events).toEqual([{ type: 'rate_limit', status: 'rejected', rateLimitType: 'api' }])
+  })
+
+  it('clears the limit on the next served turn, ahead of its usage', () => {
+    const state = createXaiCorrelationState()
+    mapXaiSessionUpdate({
+      sessionUpdate: 'turn_completed',
+      prompt_id: 'p1',
+      stop_reason: 'rate_limit',
+    }, state, { messageId: 'msg-1' })
+
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'turn_completed',
+      prompt_id: 'p2',
+      stop_reason: 'end_turn',
+      usage: { inputTokens: 100, outputTokens: 10, modelCalls: 1 },
+    }, state, { messageId: 'msg-2' })
+
+    expect(events[0]).toEqual({ type: 'rate_limit', status: 'allowed' })
+    expect(events[1]).toMatchObject({ type: 'message_usage', messageId: 'msg-2' })
+  })
+
+  it('stays silent on served turns when no limit was hit', () => {
+    const state = createXaiCorrelationState()
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'turn_completed',
+      prompt_id: 'p1',
+      stop_reason: 'end_turn',
+      usage: { inputTokens: 100, outputTokens: 10, modelCalls: 1 },
+    }, state, { messageId: 'msg-1' })
+    expect(events.some((e) => e.type === 'rate_limit')).toBe(false)
+  })
+
+  it('re-flags every rejected turn so a retry is not silent', () => {
+    const state = createXaiCorrelationState()
+    const update = { sessionUpdate: 'turn_completed', prompt_id: 'p1', stop_reason: 'rate_limit' }
+    mapXaiSessionUpdate(update, state, { messageId: 'msg-1' })
+    const second = mapXaiSessionUpdate({ ...update, prompt_id: 'p2' }, state, { messageId: 'msg-2' })
+    expect(second).toEqual([{ type: 'rate_limit', status: 'rejected', rateLimitType: 'api' }])
+  })
+})
+
 describe('mapXaiStandaloneNotification', () => {
   it('routes session_notification envelope', () => {
     const state = createXaiCorrelationState()

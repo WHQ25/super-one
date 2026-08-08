@@ -3,6 +3,7 @@ import type {
   ContextUsageInfo,
   McpServerInfo,
   PermissionMode,
+  ProviderRateLimits,
   QuestionAnnotations,
   RewindFilesResult,
   SandboxInfo,
@@ -833,6 +834,14 @@ export class AcpBackend implements SessionBackend {
     }
     this.rejectPendingQuestions()
     this.rejectPendingPlanApprovals('abandoned')
+    if (!this.runtime && this.ensureRuntimePromise) {
+      // send() is parked on ensureRuntime(); a stalled spawn (Grok retrying its
+      // settings fetch) has no session to cancel, so abort the spawn instead —
+      // otherwise Stop is a no-op and the turn streams forever.
+      log.info('[AcpBackend] interrupt during runtime spawn — aborting spawn sid=%s', this.startOpts?.sessionId)
+      await this.teardownRuntime()
+      return
+    }
     try {
       await this.runtime?.cancel()
     } catch (err) {
@@ -1102,6 +1111,19 @@ export class AcpBackend implements SessionBackend {
     if (!this.runtime) return null
     try {
       return await this.runtime.getContextUsage()
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Account credits for the usage gauge. Deliberately does not spawn: a panel
+   * open must never cold-start an agent process (matches requestSessionRecap).
+   */
+  async getRateLimits(): Promise<ProviderRateLimits | null> {
+    if (!this.runtime) return null
+    try {
+      return await this.runtime.getRateLimits()
     } catch {
       return null
     }

@@ -7,10 +7,21 @@ import {
   type Stream,
 } from '@agentclientprotocol/sdk'
 import { createAcpRuntime } from './acp-runtime'
+import {
+  XAI_RECAP,
+  XAI_YOLO_MODE_CHANGED,
+  xaiExtWireMethod,
+} from './acp-xai-extensions'
 import { setSuperoneMcpBridgeRuntime } from '../mcp/superone-mcp-stdio-state'
 import { deriveSuperoneMcpSessionToken } from '../mcp/superone-mcp-auth'
 import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
 import type { AgentEvent } from '@superone/shared/agent-types'
+
+// Grok routes x.ai methods only under the `_` wire prefix; the bare name is
+// rejected with `Method not found`. The in-process test agent mirrors the real
+// agent by registering the same wire names SuperOne must send.
+const XAI_RECAP_WIRE = xaiExtWireMethod(XAI_RECAP)
+const XAI_YOLO_MODE_CHANGED_WIRE = xaiExtWireMethod(XAI_YOLO_MODE_CHANGED)
 
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -96,11 +107,11 @@ function makeEchoAgentStream(
     .onNotification(methods.agent.session.cancel, async () => {})
     // Custom methods need an explicit params parser (same pattern as client onRequest).
     .onNotification(
-      'x.ai/yolo_mode_changed',
+      XAI_YOLO_MODE_CHANGED_WIRE,
       (raw: unknown) => raw,
       async (ctx) => {
         if (captured) {
-          captured.notifications.push({ method: 'x.ai/yolo_mode_changed', params: ctx.params })
+          captured.notifications.push({ method: XAI_YOLO_MODE_CHANGED_WIRE, params: ctx.params })
         }
       },
     )
@@ -185,7 +196,7 @@ describe('createAcpRuntime (in-process agent)', () => {
       .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
       .onNotification(methods.agent.session.cancel, async () => {})
       .onRequest(
-        'x.ai/recap',
+        XAI_RECAP_WIRE,
         (raw: unknown) => raw,
         async (ctx) => {
           recapCalls.push(ctx.params as Record<string, unknown>)
@@ -295,10 +306,10 @@ describe('createAcpRuntime (in-process agent)', () => {
       .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
       .onNotification(methods.agent.session.cancel, async () => {})
       .onNotification(
-        'x.ai/yolo_mode_changed',
+        XAI_YOLO_MODE_CHANGED_WIRE,
         (raw: unknown) => raw,
         async (ctx) => {
-          captured.notifications.push({ method: 'x.ai/yolo_mode_changed', params: ctx.params })
+          captured.notifications.push({ method: XAI_YOLO_MODE_CHANGED_WIRE, params: ctx.params })
         },
       )
 
@@ -321,12 +332,12 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.setPermissionMode('plan')
     await new Promise((r) => setTimeout(r, 20))
     expect(setModeCalls).toContainEqual({ sessionId: 'test-session-1', modeId: 'plan' })
-    expect(captured.notifications.filter((n) => n.method === 'x.ai/yolo_mode_changed')).toHaveLength(0)
+    expect(captured.notifications.filter((n) => n.method === XAI_YOLO_MODE_CHANGED_WIRE)).toHaveLength(0)
 
     await runtime.setPermissionMode('default')
     await new Promise((r) => setTimeout(r, 20))
     expect(setModeCalls.some((c) => c.modeId === 'default')).toBe(true)
-    expect(captured.notifications.some((n) => n.method === 'x.ai/yolo_mode_changed')).toBe(true)
+    expect(captured.notifications.some((n) => n.method === XAI_YOLO_MODE_CHANGED_WIRE)).toBe(true)
     await runtime.close()
   })
 
@@ -348,7 +359,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     // allow notify to flush across streams
     await new Promise((r) => setTimeout(r, 20))
     expect(captured.notifications).toContainEqual({
-      method: 'x.ai/yolo_mode_changed',
+      method: XAI_YOLO_MODE_CHANGED_WIRE,
       params: {
         yolo_mode: true,
         auto_mode: false,
@@ -359,7 +370,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.setPermissionMode('default')
     await new Promise((r) => setTimeout(r, 20))
     expect(captured.notifications.some((n) =>
-      n.method === 'x.ai/yolo_mode_changed'
+      n.method === XAI_YOLO_MODE_CHANGED_WIRE
       && (n.params as { permission_mode?: string }).permission_mode === 'ask',
     )).toBe(true)
     await runtime.close()

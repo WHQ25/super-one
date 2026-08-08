@@ -1973,6 +1973,8 @@ export interface ClaudeRateLimits {
 
 export interface ProviderRateLimits extends ClaudeRateLimits {
   title: string
+  /** Remaining prepaid ("bought") credit balance in USD, when the provider reports one. */
+  creditBalanceDollars?: number
 }
 
 export type CodexHookEventName =
@@ -2323,6 +2325,7 @@ export const AgentIpcChannels = {
 
   // Third-party provider usage channels
   PROVIDER_GET_RATE_LIMITS: 'provider:get-rate-limits',
+  ACP_GET_RATE_LIMITS: 'acp:get-rate-limits',
 
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',

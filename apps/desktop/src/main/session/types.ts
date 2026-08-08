@@ -5,6 +5,7 @@ import type {
   CodexGoal,
   CodexGoalStatus,
   ContextUsageInfo,
+  ProviderRateLimits,
   McpServerInfo,
   PermissionMode,
   QuestionAnnotations,
@@ -279,6 +280,8 @@ export interface SessionBackend {
   dismissQuestion(requestId: string): void
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
   getContextUsage(): Promise<ContextUsageInfo | null>
+  /** Account-level usage/credits for the gauge. Only harnesses that expose one implement it. */
+  getRateLimits?(): Promise<ProviderRateLimits | null>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp?(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
@@ -352,6 +355,7 @@ export interface Session {
   dismissQuestion(requestId: string): void
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
   getContextUsage(): Promise<ContextUsageInfo | null>
+  getRateLimits(): Promise<ProviderRateLimits | null>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>

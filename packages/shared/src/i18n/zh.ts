@@ -2303,6 +2303,7 @@ export const zh: Messages = {
     resetsSoon: '即将重置',
     resetsIn: '{{time}} 后重置',
     extraUsage: '额外用量',
+    creditBalance: '剩余额度',
     resetCredits: '重置额度',
     resetCreditDefault: '重置额度',
     resetCreditExpires: '{{date}} 到期',

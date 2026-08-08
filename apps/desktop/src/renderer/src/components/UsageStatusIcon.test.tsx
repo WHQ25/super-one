@@ -9,6 +9,7 @@ const hoisted = vi.hoisted(() => {
     preferredProvider: 'claude' as string | null,
     apiProviderId: null as string | null,
     status: 'idle',
+    acpAgentId: null as string | null,
     rateLimitInfo: null as null | {
       status: 'allowed_warning' | 'rejected'
       resetsAt?: number
@@ -84,7 +85,11 @@ describe('UsageStatusIcon rate-limit tip', () => {
     vi.useFakeTimers()
     hoisted.sessionState.rateLimitInfo = null
     hoisted.sessionState.status = 'idle'
+    hoisted.sessionState.sessionProvider = 'claude'
+    hoisted.sessionState.preferredProvider = 'claude'
+    hoisted.sessionState.acpAgentId = null
     vi.stubGlobal('app', {
+      acpGetRateLimits: vi.fn(async () => null),
       claudeGetRateLimits: vi.fn(async () => ({
         planType: 'pro',
         windows: [{ label: '5h', usedPercent: 82, resetsAt: Math.floor(Date.now() / 1000) + 3600 }],
@@ -124,6 +129,75 @@ describe('UsageStatusIcon rate-limit tip', () => {
       vi.advanceTimersByTime(6_000)
     })
 
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('shows the tip again for a new episode after the limit clears', async () => {
+    const rejected = { status: 'rejected' as const, rateLimitType: 'api' }
+    hoisted.sessionState.rateLimitInfo = rejected
+    const { rerender } = render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('Rate limited')
+
+    await act(async () => {
+      vi.advanceTimersByTime(6_000)
+    })
+    expect(screen.queryByRole('status')).toBeNull()
+
+    // A served turn ends the episode…
+    hoisted.sessionState.rateLimitInfo = null
+    rerender(<UsageStatusIcon />)
+    expect(screen.queryByRole('status')).toBeNull()
+
+    // …so hitting the same limit later is a new episode, not a stale duplicate.
+    hoisted.sessionState.rateLimitInfo = { ...rejected }
+    rerender(<UsageStatusIcon />)
+    expect(screen.getByRole('status')).toHaveTextContent('Rate limited')
+  })
+
+  it('renders the Grok credits gauge from acpGetRateLimits', async () => {
+    hoisted.sessionState.sessionProvider = 'acp'
+    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.acpAgentId = 'grok-build'
+    vi.stubGlobal('app', {
+      acpGetRateLimits: vi.fn(async () => ({
+        title: 'Grok Build',
+        planType: 'SuperGrok Heavy',
+        windows: [{ label: 'Weekly limit', usedPercent: 100, resetsAt: null }],
+        extraUsage: null,
+        creditBalanceDollars: 12.34,
+        fetchedAt: Date.now(),
+      })),
+    })
+
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Grok Build')).toBeInTheDocument()
+    expect(screen.getByText('SuperGrok Heavy')).toBeInTheDocument()
+    expect(screen.getByText('Weekly limit')).toBeInTheDocument()
+    // Fully spent pool reads as 0% left, and the badge mirrors it.
+    expect(screen.getAllByText('0% left').length).toBeGreaterThan(0)
+    expect(screen.getByText('$12.34')).toBeInTheDocument()
+  })
+
+  it('stays hidden for a non-Grok ACP agent with no billing surface', async () => {
+    hoisted.sessionState.sessionProvider = 'acp'
+    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.acpAgentId = 'opencode'
+    const acpGetRateLimits = vi.fn(async () => null)
+    vi.stubGlobal('app', { acpGetRateLimits })
+
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(acpGetRateLimits).not.toHaveBeenCalled()
     expect(screen.queryByRole('status')).toBeNull()
   })
 

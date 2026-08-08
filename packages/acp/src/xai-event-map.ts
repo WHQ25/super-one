@@ -743,8 +743,9 @@ function mapTurnCompleted(
   state: XaiCorrelationState,
   ctx: MapXaiNotifyContext,
 ): AgentEvent[] {
+  const events: AgentEvent[] = mapTurnStopReason(u, state)
   const usageRaw = asRecord(u.usage)
-  if (!usageRaw) return []
+  if (!usageRaw) return events
 
   // ACP PromptUsage identity: inputTokens is FULL (includes cache reads).
   const fullInput = numField(usageRaw, 'inputTokens', 'input_tokens') ?? 0
@@ -780,8 +781,8 @@ function mapTurnCompleted(
   }
 
   const messageId = ctx.messageId ?? state.lastMessageId
-  if (!messageId) return []
-  return [{
+  if (!messageId) return events
+  events.push({
     type: 'message_usage',
     messageId,
     // Footer: this-turn new spend (exclude cache hits).
@@ -790,7 +791,32 @@ function mapTurnCompleted(
     ...(contextTokens > 0 ? { contextTokens } : {}),
     ...(maxTokens > 0 ? { contextWindow: maxTokens } : {}),
     ...(costUsd != null ? { costUsd } : {}),
-  }]
+  })
+  return events
+}
+
+/**
+ * Quota state carried by the turn terminal. Grok reports an exhausted quota as
+ * `stop_reason: "rate_limit"` on this durable rail (the prose lives in the
+ * `session/prompt` RPC error), so it is the only place the usage gauge can learn
+ * about it. Re-emitted on every rejected turn — a retry that fails again is
+ * worth flagging — while the clear fires once, on the next served turn.
+ */
+function mapTurnStopReason(
+  u: Record<string, unknown>,
+  state: XaiCorrelationState,
+): AgentEvent[] {
+  const stopReason = strField(u, 'stopReason', 'stop_reason')
+  if (stopReason === 'rate_limit') {
+    state.rateLimited = true
+    return [{ type: 'rate_limit', status: 'rejected', rateLimitType: 'api' }]
+  }
+  // Only `end_turn` proves the API served us; `cancelled` says nothing about quota.
+  if (stopReason === 'end_turn' && state.rateLimited) {
+    state.rateLimited = false
+    return [{ type: 'rate_limit', status: 'allowed' }]
+  }
+  return []
 }
 
 function mapAutoCompactStarted(u: Record<string, unknown>): AgentEvent[] {

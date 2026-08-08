@@ -848,6 +848,11 @@ export type Messages = {
       expandTooltip: string
       collapseTooltip: string
     }
+    /** Grok last-turn summary / session recap chrome labels. */
+    turnMeta: {
+      summaryLabel: string
+      recapLabel: string
+    }
     pasteChip: {
       title_one: string
       title_other: string
@@ -3184,6 +3189,10 @@ export const en: Messages = {
       compactCollapsedDesc: 'Earlier conversation above is compacted. Click to expand.',
       expandTooltip: 'Expand earlier conversation',
       collapseTooltip: 'Collapse earlier conversation',
+    },
+    turnMeta: {
+      summaryLabel: 'Summary:',
+      recapLabel: 'Recap',
     },
     pasteChip: {
       title_one: 'Pasted text · {{count}} line',

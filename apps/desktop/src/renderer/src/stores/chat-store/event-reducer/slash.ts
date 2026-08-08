@@ -56,6 +56,45 @@ function appendSystemTurnMeta(
   return { messages: [...session.messages, msg] }
 }
 
+/** Attach Grok last-turn summary onto the matching assistant message (above footer). */
+function attachTurnSummaryToAssistant(
+  session: PerSessionState,
+  summary: string,
+  messageId?: string,
+): Partial<PerSessionState> {
+  const messages = session.messages
+  let idx = -1
+  if (messageId) {
+    idx = messages.findIndex(
+      (m) => m.id === messageId && m.role === 'assistant' && m.providerId !== 'system',
+    )
+  }
+  if (idx < 0) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.role === 'assistant' && m.providerId !== 'system') {
+        idx = i
+        break
+      }
+    }
+  }
+  // No assistant turn yet — keep a system marker so the line is not lost.
+  if (idx < 0) {
+    return appendSystemTurnMeta(session, { kind: 'summary', text: summary }, 'turn_summary')
+  }
+  const target = messages[idx]
+  if (target.metadata?.turnSummary === summary) return {}
+  const next = messages.slice()
+  next[idx] = {
+    ...target,
+    metadata: {
+      ...target.metadata,
+      turnSummary: summary,
+    },
+  }
+  return { messages: next }
+}
+
 type SlashEvent = Extract<AgentEvent, {
   type:
     | 'prompt_suggestion'
@@ -74,11 +113,7 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
     case 'turn_summary': {
       const summary = event.summary.trim()
       if (!summary) return {}
-      return appendSystemTurnMeta(session, {
-        kind: 'summary',
-        text: summary,
-        ...(event.promptId ? { promptId: event.promptId } : {}),
-      }, 'turn_summary')
+      return attachTurnSummaryToAssistant(session, summary, event.messageId)
     }
 
     case 'session_recap': {

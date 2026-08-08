@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox, History } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -573,29 +573,54 @@ export function parseTurnMetaMarker(message: ChatMessageType): TurnMetaMarker | 
   }
 }
 
-/** End-of-turn meta line: secondary color, not treated as agent content. */
+/** Standalone system marker (session recap / legacy turn summary). */
 export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
+  const { t } = useTranslation()
   if (meta.kind === 'recap') {
     return (
       <div
-        className="my-0.5 px-0.5 text-xs leading-relaxed text-muted-foreground italic"
+        className="my-0.5 flex items-center gap-1.5 text-xs leading-snug text-muted-foreground italic"
         data-turn-meta="recap"
         role="note"
       >
-        {!meta.auto && (
-          <span className="mr-1.5 not-italic font-medium text-muted-foreground/80">Recap</span>
-        )}
-        {meta.text}
+        <History className="size-3 shrink-0 not-italic text-muted-foreground/80" aria-hidden />
+        <span className="min-w-0">
+          {!meta.auto && (
+            <span className="mr-1.5 not-italic font-medium text-muted-foreground/80">
+              {t('chat.turnMeta.recapLabel')}
+            </span>
+          )}
+          {meta.text}
+        </span>
       </div>
     )
   }
+  // Legacy: older sessions stored turn summary as a system marker (now lives on message.metadata.turnSummary).
   return (
     <div
-      className="my-0.5 px-0.5 text-xs leading-relaxed text-muted-foreground"
+      className="my-0.5 text-xs leading-snug text-muted-foreground"
       data-turn-meta="summary"
       role="note"
     >
+      <span className="mr-1.5 font-medium text-muted-foreground/80">{t('chat.turnMeta.summaryLabel')}</span>
       {meta.text}
+    </div>
+  )
+}
+
+/** Grok last-turn summary, rendered above the assistant turn footer. */
+export function TurnSummaryAboveFooter({ summary }: { summary: string }) {
+  const { t } = useTranslation()
+  const text = summary.trim()
+  if (!text) return null
+  return (
+    <div
+      className="mt-2 text-xs leading-snug text-muted-foreground"
+      data-turn-meta="summary"
+      role="note"
+    >
+      <span className="mr-1.5 font-medium text-muted-foreground/80">{t('chat.turnMeta.summaryLabel')}</span>
+      {text}
     </div>
   )
 }
@@ -1107,7 +1132,17 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
             <span>Interrupted · What should I do instead?</span>
           </div>
         )}
-        {!isUser && <DurationFooter message={message} copyText={assistantCopyText} parentIsStreaming={isStreaming} />}
+        {!isUser && message.metadata?.turnSummary && (
+          <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
+        )}
+        {!isUser && (
+          <DurationFooter
+            message={message}
+            copyText={assistantCopyText}
+            parentIsStreaming={isStreaming}
+            className={message.metadata?.turnSummary ? 'mt-1' : undefined}
+          />
+        )}
       </div>
       {isUser && message.contexts && message.contexts.length > 0 && (
         <div className="mt-1.5">
@@ -1182,7 +1217,17 @@ function formatTerminalReason(reason: string): string {
 const ZERO_TOKENS = { input: 0, output: 0 }
 const STATIC_FOOTER = { isCompacting: false, pendingApproval: false, streamingTokens: ZERO_TOKENS }
 
-function DurationFooter({ message, copyText, parentIsStreaming }: { message: ChatMessageType; copyText?: string; parentIsStreaming: boolean }) {
+function DurationFooter({
+  message,
+  copyText,
+  parentIsStreaming,
+  className,
+}: {
+  message: ChatMessageType
+  copyText?: string
+  parentIsStreaming: boolean
+  className?: string
+}) {
   const { t } = useTranslation()
   const activeProject = useChatStore((s) => s.activeProject)
   const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
@@ -1295,7 +1340,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   const stallColor = isStreaming ? getStallColor(stallLevel) : 'text-muted-foreground'
 
   return (
-    <div className={cn('group/footer mt-2 flex items-center gap-1.5 text-xs transition-colors duration-500', stallColor)}>
+    <div className={cn('group/footer mt-2 flex items-center gap-1.5 text-xs transition-colors duration-500', stallColor, className)}>
       {showCopy && (
         <button
           onClick={handleCopy}

@@ -435,6 +435,11 @@ export interface MessageMetadata {
    */
   source?: ChatMessageSource
   collaboration?: CollaborationMessageMeta
+  /**
+   * Grok `last_turn_summary` — one-line dashboard fragment for this assistant turn.
+   * Rendered above the turn footer (not as a standalone system marker).
+   */
+  turnSummary?: string
 }
 
 // --- Todo items (derived from TaskCreate/TaskUpdate tool calls) ---

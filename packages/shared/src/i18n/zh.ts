@@ -904,6 +904,10 @@ export const zh: Messages = {
       expandTooltip: '展开更早的对话',
       collapseTooltip: '折叠更早的对话',
     },
+    turnMeta: {
+      summaryLabel: '小结：',
+      recapLabel: '回顾',
+    },
     pasteChip: {
       title_one: '已粘贴文本 · {{count}} 行',
       title_other: '已粘贴文本 · {{count}} 行',

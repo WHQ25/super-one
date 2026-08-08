@@ -42,7 +42,7 @@ describe('reduceSlash: prompt_suggestion', () => {
 })
 
 describe('reduceSlash: turn_summary / session_recap', () => {
-  it('appends a system turn_summary marker after existing messages', () => {
+  it('attaches turn_summary onto the last assistant message metadata', () => {
     const session = createDefaultPerSessionState()
     session.messages = [
       makeMessage('u1', { role: 'user' }),
@@ -54,16 +54,40 @@ describe('reduceSlash: turn_summary / session_recap', () => {
       promptId: 'p1',
     } as never)
     const msgs = patch.messages!
-    expect(msgs).toHaveLength(3)
-    const meta = msgs[2]
+    expect(msgs).toHaveLength(2)
+    expect(msgs[1].id).toBe('a1')
+    expect(msgs[1].metadata?.turnSummary).toBe('parser race fixed')
+    expect(msgs.some((m) => m.providerId === 'system')).toBe(false)
+  })
+
+  it('attaches turn_summary to the messageId when provided', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('a1', { role: 'assistant' }),
+      makeMessage('a2', { role: 'assistant' }),
+    ]
+    const patch = reduceSlash(session, {
+      type: 'turn_summary',
+      summary: 'older turn',
+      messageId: 'a1',
+    } as never)
+    expect(patch.messages![0].metadata?.turnSummary).toBe('older turn')
+    expect(patch.messages![1].metadata?.turnSummary).toBeUndefined()
+  })
+
+  it('falls back to a system marker when no assistant message exists', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeMessage('u1', { role: 'user' })]
+    const patch = reduceSlash(session, {
+      type: 'turn_summary',
+      summary: 'orphan summary',
+    } as never)
+    const meta = patch.messages!.at(-1)!
     expect(meta.providerId).toBe('system')
-    expect(meta.role).toBe('assistant')
     const text = (meta.content[0] as { text: string }).text
-    expect(text.startsWith('__turn_meta__:')).toBe(true)
     expect(JSON.parse(text.slice('__turn_meta__:'.length))).toEqual({
       kind: 'summary',
-      text: 'parser race fixed',
-      promptId: 'p1',
+      text: 'orphan summary',
     })
   })
 

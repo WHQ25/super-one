@@ -4,6 +4,29 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.51.0-alpha] - 2026-08-09
+
+### Added
+
+- Grok: available outside experimental agents; track usage by model; show mid-turn token usage in the chat footer; host-intercepted `/recap` command.
+- Agent collaboration: available without the experiment flag.
+- Usage: raw API cost estimates from models.dev.
+- Chat: rank suggestion harnesses by 7-day session count.
+- Sidebar: tint streaming session titles by stall level.
+
+### Fixed
+
+- Session: persist Grok turn tokens and summary so history restore keeps usage and recap state.
+- Chat: resolve the context-ring window from models.dev.
+- MCP: dismiss collaboration requests when the tool times out.
+- Sidebar: keep the rate-limit tip within window bounds.
+- ACP: recover Grok sessions when the quota runs out.
+- Updater: show spinner feedback while an update download prepares.
+
+### Changed
+
+- Providers: gate the Claude Chat Completions bridge behind an experiment flag.
+
 ## [0.50.8-alpha] - 2026-08-08
 
 ### Added

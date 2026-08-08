@@ -111,7 +111,8 @@ function forEachPluginScope(
 
 /**
  * Scan a skills directory and return SlashCommandInfo entries.
- * Reads SKILL.md frontmatter for `description` and `argument-hint`.
+ * Reads SKILL.md frontmatter for `description` and argument hint
+ * (`arguments` or `argument-hint`).
  */
 function scanSkillDir(dir: string): SlashCommandInfo[] {
   if (!existsSync(dir)) return []
@@ -123,7 +124,8 @@ function scanSkillDir(dir: string): SlashCommandInfo[] {
     skills.push({
       name: entry.name,
       description: fm['description'] ?? '',
-      argumentHint: fm['arguments'] ?? fm['argument-hint'] ?? '',
+      // Claude: `arguments:`; Grok: `argument-hint:` — accept either.
+      argumentHint: (fm['arguments'] ?? '').trim() || (fm['argument-hint'] ?? '').trim(),
       isSkill: true,
     })
   }
@@ -170,7 +172,8 @@ export function discoverSkills(cwd: string): SlashCommandInfo[] {
 
 /**
  * Scan a commands directory and return SlashCommandInfo entries.
- * Reads YAML frontmatter for `description` and `argument-hint`.
+ * Reads YAML frontmatter for `description` and argument hint
+ * (`arguments` or `argument-hint`).
  * Falls back to the first `# heading` line as description if no frontmatter.
  */
 export function scanCommandDir(dir: string, namePrefix = ''): SlashCommandInfo[] {
@@ -184,7 +187,8 @@ export function scanCommandDir(dir: string, namePrefix = ''): SlashCommandInfo[]
     commands.push({
       name,
       description: fm['description'] ?? extractDescription(content),
-      argumentHint: fm['argument-hint'] ?? '',
+      // Claude: `arguments:`; Grok: `argument-hint:` — accept either.
+      argumentHint: (fm['arguments'] ?? '').trim() || (fm['argument-hint'] ?? '').trim(),
       isSkill: false,
     })
   }

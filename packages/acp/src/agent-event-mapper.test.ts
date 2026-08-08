@@ -108,6 +108,37 @@ describe('ACP AgentEvent mapper', () => {
     }])
   })
 
+  it('fills argumentHint from skill path when input.hint is missing (arguments:)', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'acp-pkg-arg-hint-'))
+    const skillPath = join(dir, 'SKILL.md')
+    try {
+      writeFileSync(
+        skillPath,
+        '---\nname: release\narguments: "[channel] [bump]"\n---\n',
+        'utf8',
+      )
+      expect(mapSessionUpdate(update({
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'release', description: 'Ship', input: null, _meta: { path: skillPath } },
+        ],
+      }), { messageId: 'message-1' })).toEqual([{
+        type: 'acp_commands',
+        commands: [{
+          name: 'release',
+          description: 'Ship',
+          argumentHint: '[channel] [bump]',
+          isSkill: true,
+        }],
+      }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('shares correlation and context state across standard and xAI updates', () => {
     const events: AgentEvent[] = []
     const mapper = createAcpAgentEventMapper({

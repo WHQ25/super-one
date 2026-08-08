@@ -18,6 +18,7 @@ import { discoverAllAgents } from '../fs/agents-discover'
 import {
   discoverClaudeSkillsAndCommands,
   parseSimpleFrontmatter,
+  resolveArgumentHint,
 } from '../fs/skills-discover'
 
 export interface HarnessResourcesClaude {
@@ -134,7 +135,7 @@ export function discoverCodexUserPrompts(opts?: { homeDir?: string }): SlashComm
     out.push({
       name,
       description: fm.description ?? '',
-      argumentHint: fm['argument-hint'] ?? '',
+      argumentHint: resolveArgumentHint(fm),
       isSkill: false,
     })
   }

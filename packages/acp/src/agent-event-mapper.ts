@@ -1,5 +1,6 @@
 import type { AgentEvent, SlashCommandInfo } from '@superone/shared/agent-types'
 import type { SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk'
+import { readArgumentHintFromMarkdownFile } from '@superone/runtime/fs'
 import { extractModeConfig, extractModelConfig } from './config-map'
 import { isHiddenAcpPermissionSlashCommand } from './slash-filter'
 import {
@@ -225,6 +226,7 @@ export function mapSessionUpdate(
           name?: string
           description?: string
           input?: { hint?: string } | null
+          _meta?: { path?: string } | null
         }
         if (typeof c.name !== 'string' || !c.name.trim()) continue
         const name = c.name.replace(/^\//, '').trim()
@@ -232,15 +234,25 @@ export function mapSessionUpdate(
         // Host owns permission baseline via the status-bar selector — hide Grok's
         // /always-approve so users don't have two competing controls.
         if (isHiddenAcpPermissionSlashCommand(name)) continue
-        const hint =
+        let hint =
           c.input && typeof c.input === 'object' && typeof c.input.hint === 'string'
-            ? c.input.hint
+            ? c.input.hint.trim()
             : ''
+        // Grok only advertises input.hint for skills that use `argument-hint:`.
+        // Skills that still use Claude's `arguments:` send input:null — re-read
+        // the skill path when present so SuperOne's slash menu supports both keys.
+        if (!hint && c._meta && typeof c._meta === 'object' && typeof c._meta.path === 'string') {
+          hint = readArgumentHintFromMarkdownFile(c._meta.path)
+        }
+        const isSkill = Boolean(
+          c._meta && typeof c._meta === 'object' && typeof c._meta.path === 'string' &&
+          /SKILL\.md$/i.test(c._meta.path),
+        )
         commands.push({
           name,
           description: typeof c.description === 'string' ? c.description : '',
           argumentHint: hint,
-          isSkill: false,
+          isSkill,
         })
       }
       return [{ type: 'acp_commands', commands }]

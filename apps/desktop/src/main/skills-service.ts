@@ -73,10 +73,14 @@ function parseFrontmatter(filePath: string): { name: string; description: string
     if (!match) return { name: '', description: '', argumentHint: '' }
     const yaml = match[1]
     const name = yaml.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? ''
-    const argumentHint =
-      yaml.match(/^arguments:\s*(.+)$/m)?.[1]?.trim() ??
-      yaml.match(/^argument-hint:\s*(.+)$/m)?.[1]?.trim() ??
-      ''
+    // Claude: `arguments:`; Grok: `argument-hint:` — accept either (prefer arguments).
+    const rawArguments = yaml.match(/^arguments:\s*(.+)$/m)?.[1]?.trim() ?? ''
+    const rawArgumentHint = yaml.match(/^argument-hint:\s*(.+)$/m)?.[1]?.trim() ?? ''
+    const unquote = (v: string) => {
+      const m = v.match(/^(["'])(.*)\1$/)
+      return m ? m[2]! : v
+    }
+    const argumentHint = unquote(rawArguments) || unquote(rawArgumentHint)
     const lines = yaml.split('\n')
     let description = ''
     const descIdx = lines.findIndex(l => /^description:\s/.test(l))

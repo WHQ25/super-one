@@ -28,6 +28,8 @@ export {
 export {
   discoverClaudeSkillsAndCommands,
   parseSimpleFrontmatter,
+  resolveArgumentHint,
+  readArgumentHintFromMarkdownFile,
   type ClaudeSkillInfo,
 } from './skills-discover'
 export {

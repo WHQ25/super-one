@@ -35,6 +35,29 @@ export function parseSimpleFrontmatter(content: string): Record<string, string> 
   return result
 }
 
+/**
+ * Claude Code uses `arguments:`; Grok uses `argument-hint:`.
+ * Accept either so slash menus show a hint regardless of skill author convention.
+ * When both are set, prefer `arguments` (Claude / SuperOne historical order).
+ */
+export function resolveArgumentHint(
+  fm: Record<string, string | undefined | null> | null | undefined,
+): string {
+  if (!fm) return ''
+  const fromArguments = (fm.arguments ?? '').trim()
+  if (fromArguments) return fromArguments
+  return (fm['argument-hint'] ?? '').trim()
+}
+
+/** Read skill/command markdown and resolve Claude `arguments` or Grok `argument-hint`. */
+export function readArgumentHintFromMarkdownFile(filePath: string): string {
+  try {
+    return resolveArgumentHint(parseSimpleFrontmatter(safeReadText(filePath)))
+  } catch {
+    return ''
+  }
+}
+
 function firstMarkdownHeading(content: string): string {
   for (const line of content.split('\n')) {
     const m = line.match(/^#\s+(.+)$/)
@@ -74,7 +97,7 @@ export function discoverClaudeSkillsAndCommands(
       skills.push({
         name: ent.name,
         description: fm.description ?? '',
-        argumentHint: fm.arguments ?? fm['argument-hint'] ?? '',
+        argumentHint: resolveArgumentHint(fm),
         isSkill: true,
         scope,
       })
@@ -99,7 +122,7 @@ export function discoverClaudeSkillsAndCommands(
       commands.push({
         name,
         description: fm.description ?? firstMarkdownHeading(content),
-        argumentHint: fm['argument-hint'] ?? '',
+        argumentHint: resolveArgumentHint(fm),
         isSkill: false,
         scope,
       })

@@ -3,6 +3,7 @@ name: release
 description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, promote artifacts to draft release, and publish. Trigger with /release [alpha|beta|public] [major|feature|patch]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
 user_invocable: true
 arguments: "[alpha|beta|public] [major|feature|patch]"
+argument-hint: "[alpha|beta|public] [major|feature|patch]"
 ---
 
 # Release Skill

@@ -54,6 +54,16 @@ describe('parseFrontmatter (via scanCommandDir)', () => {
     ])
   })
 
+  it('reads arguments frontmatter as argumentHint for commands', () => {
+    readFileSyncMock.mockReturnValue(
+      '---\ndescription: Deploy\narguments: <env>\n---\nBody',
+    )
+    const result = scanCommandDir('/commands')
+    expect(result).toEqual([
+      { name: 'test', description: 'Deploy', argumentHint: '<env>', isSkill: false },
+    ])
+  })
+
   it('parses multi-line continuation values', () => {
     readFileSyncMock.mockReturnValue(
       '---\ndescription: Line one\n  continued here\n---\nBody',

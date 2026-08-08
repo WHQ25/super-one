@@ -352,6 +352,80 @@ describe('mapSessionUpdate', () => {
     }])
   })
 
+  it('fills argumentHint from skill file when Grok omits input.hint (arguments: key)', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'acp-arg-hint-'))
+    const skillPath = join(dir, 'SKILL.md')
+    try {
+      writeFileSync(
+        skillPath,
+        '---\nname: release\ndescription: Ship\narguments: "[alpha|beta] [patch]"\n---\nbody\n',
+        'utf8',
+      )
+      const update: SessionUpdate = {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          {
+            name: 'release',
+            description: 'Ship',
+            input: null,
+            _meta: { path: skillPath },
+          },
+        ],
+      } as SessionUpdate
+      const events = mapSessionUpdate(update, ctx)
+      expect(events).toEqual([{
+        type: 'acp_commands',
+        commands: [
+          {
+            name: 'release',
+            description: 'Ship',
+            argumentHint: '[alpha|beta] [patch]',
+            isSkill: true,
+          },
+        ],
+      }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('fills argumentHint from argument-hint when only that key is present on skill path', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'acp-arg-hint2-'))
+    const skillPath = join(dir, 'SKILL.md')
+    try {
+      writeFileSync(
+        skillPath,
+        '---\nname: review\ndescription: Review\nargument-hint: "[--local | --pr]"\n---\n',
+        'utf8',
+      )
+      const update: SessionUpdate = {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          {
+            name: 'review',
+            description: 'Review',
+            // Grok already sent hint — must not be overwritten by file.
+            input: { hint: 'from-input' },
+            _meta: { path: skillPath },
+          },
+        ],
+      } as SessionUpdate
+      const events = mapSessionUpdate(update, ctx)
+      expect(events[0]).toMatchObject({
+        type: 'acp_commands',
+        commands: [{ name: 'review', argumentHint: 'from-input', isSkill: true }],
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('hides /always-approve from acp slash commands (host permission selector owns it)', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'available_commands_update',

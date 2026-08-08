@@ -18,7 +18,7 @@ import { homedir as osHomedir } from 'node:os'
 import type { ResourceScope, SkillDetail, SkillFileEntry, SkillInfo } from '@superone/shared/agent-types'
 import type { ResourceProvider } from '@superone/shared/environment'
 import { isPathAtOrWithinAllowed, isPathWithinAllowed } from './path-security'
-import { parseSimpleFrontmatter } from './skills-discover'
+import { parseSimpleFrontmatter, resolveArgumentHint } from './skills-discover'
 
 export interface SkillDir {
   dir: string
@@ -80,7 +80,7 @@ function parseFrontmatterFile(filePath: string): {
     return {
       name: fm.name ?? '',
       description,
-      argumentHint: fm.arguments ?? fm['argument-hint'] ?? '',
+      argumentHint: resolveArgumentHint(fm),
     }
   } catch {
     return { name: '', description: '', argumentHint: '' }

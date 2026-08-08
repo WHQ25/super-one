@@ -327,11 +327,74 @@ describe('mapXaiSessionUpdate — session meta', () => {
       messageId: 'msg-1',
       inputTokens: 800, // 1200 - 400 uncached
       outputTokens: 300,
+      cacheReadTokens: 400,
       contextTokens: 42_000, // live occupancy, not billing total
       contextWindow: 200_000,
       costUsd: 1,
     }])
     expect(state.lastUsage?.totalTokens).toBe(42_000)
+    expect(state.turnTokens).toEqual({ input: 0, output: 0, cacheRead: 0 })
+  })
+
+  it('accumulates response_started/completed into mid-turn message_usage', () => {
+    const state = createXaiCorrelationState()
+    state.lastUsage = {
+      categories: [],
+      totalTokens: 50_000,
+      maxTokens: 200_000,
+      percentage: 25,
+      model: 'grok',
+    }
+
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'response_started',
+      input_tokens: 1_000,
+      cache_read_input_tokens: 200,
+    }, state, { messageId: 'msg-1' })).toEqual([{
+      type: 'message_usage',
+      messageId: 'msg-1',
+      inputTokens: 1_000,
+      outputTokens: 0,
+      cacheReadTokens: 200,
+      contextTokens: 50_000,
+      contextWindow: 200_000,
+    }])
+    expect(state.turnTokens).toEqual({ input: 0, output: 0, cacheRead: 0 })
+
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'response_completed',
+      usage: {
+        input_tokens: 1_000,
+        output_tokens: 150,
+        cache_read_input_tokens: 200,
+      },
+    }, state, { messageId: 'msg-1' })).toEqual([{
+      type: 'message_usage',
+      messageId: 'msg-1',
+      inputTokens: 1_000,
+      outputTokens: 150,
+      cacheReadTokens: 200,
+      contextTokens: 50_000,
+      contextWindow: 200_000,
+    }])
+
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'response_completed',
+      usage: {
+        inputTokens: 800,
+        outputTokens: 50,
+        cacheReadInputTokens: 100,
+      },
+    }, state, { messageId: 'msg-1' })).toEqual([{
+      type: 'message_usage',
+      messageId: 'msg-1',
+      inputTokens: 1_800,
+      outputTokens: 200,
+      cacheReadTokens: 300,
+      contextTokens: 50_000,
+      contextWindow: 200_000,
+    }])
+    expect(state.turnTokens).toEqual({ input: 1_800, output: 200, cacheRead: 300 })
   })
 
   it('falls back to fullInput+output for single-call turn without meta occupancy', () => {

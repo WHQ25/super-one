@@ -316,6 +316,71 @@ describe('ACP xAI AgentEvent mapping', () => {
     ])
   })
 
+  it('accumulates response_started/completed into mid-turn message_usage', () => {
+    const state = createXaiCorrelationState()
+    state.lastUsage = {
+      categories: [],
+      totalTokens: 50_000,
+      maxTokens: 200_000,
+      percentage: 25,
+      model: 'grok',
+    }
+
+    // Messages backend: early input before the first call finishes.
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'response_started',
+      input_tokens: 1_000,
+      cache_read_input_tokens: 200,
+    }, state, { messageId: 'message-1' })).toEqual([{
+      type: 'message_usage',
+      messageId: 'message-1',
+      inputTokens: 1_000,
+      outputTokens: 0,
+      cacheReadTokens: 200,
+      contextTokens: 50_000,
+      contextWindow: 200_000,
+    }])
+    // Provisional only — accumulators still empty until completed.
+    expect(state.turnTokens).toEqual({ input: 0, output: 0, cacheRead: 0 })
+
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'response_completed',
+      usage: {
+        input_tokens: 1_000,
+        output_tokens: 150,
+        cache_read_input_tokens: 200,
+      },
+    }, state, { messageId: 'message-1' })).toEqual([{
+      type: 'message_usage',
+      messageId: 'message-1',
+      inputTokens: 1_000,
+      outputTokens: 150,
+      cacheReadTokens: 200,
+      contextTokens: 50_000,
+      contextWindow: 200_000,
+    }])
+    expect(state.turnTokens).toEqual({ input: 1_000, output: 150, cacheRead: 200 })
+
+    // Second model call (tool loop) accumulates.
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'response_completed',
+      usage: {
+        inputTokens: 800,
+        outputTokens: 50,
+        cacheReadInputTokens: 100,
+      },
+    }, state, { messageId: 'message-1' })).toEqual([{
+      type: 'message_usage',
+      messageId: 'message-1',
+      inputTokens: 1_800,
+      outputTokens: 200,
+      cacheReadTokens: 300,
+      contextTokens: 50_000,
+      contextWindow: 200_000,
+    }])
+    expect(state.turnTokens).toEqual({ input: 1_800, output: 200, cacheRead: 300 })
+  })
+
   it('maps usage, compaction, model, and retry lifecycle', () => {
     const state = createXaiCorrelationState()
     state.lastUsage = {
@@ -325,6 +390,8 @@ describe('ACP xAI AgentEvent mapping', () => {
       percentage: 21,
       model: 'grok',
     }
+    // Seed mid-turn accumulators so turn_completed is proven to reset them.
+    state.turnTokens = { input: 100, output: 20, cacheRead: 10 }
     const usage = mapXaiSessionUpdate({
       sessionUpdate: 'turn_completed',
       usage: {
@@ -344,6 +411,7 @@ describe('ACP xAI AgentEvent mapping', () => {
       contextWindow: 200_000,
       costUsd: 1,
     }])
+    expect(state.turnTokens).toEqual({ input: 0, output: 0, cacheRead: 0 })
 
     const compact = mapXaiSessionUpdate({
       sessionUpdate: 'auto_compact_completed',

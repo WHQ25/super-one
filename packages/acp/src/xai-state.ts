@@ -86,6 +86,12 @@ export interface XaiCorrelationState {
   /** last known assistant message id (for message_usage) */
   lastMessageId: string | null
   /**
+   * Running this-turn token totals from live `response_started` /
+   * `response_completed` (Grok emits one pair per model call). Footer uses these
+   * mid-turn; `turn_completed.usage` is authoritative and resets the accumulators.
+   */
+  turnTokens: { input: number; output: number; cacheRead: number }
+  /**
    * Whether the last turn terminal was `rate_limit`. Scopes the gauge tip to one
    * rate-limit episode: only a served turn clears it (Grok sends no "you're fine
    * again" signal).
@@ -110,8 +116,14 @@ export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelati
     lastEventSeq: null,
     lastUsage: null,
     lastMessageId: null,
+    turnTokens: { input: 0, output: 0, cacheRead: 0 },
     rateLimited: false,
   }
+}
+
+/** Reset mid-turn token accumulators (new prompt / after durable turn terminal). */
+export function resetTurnTokens(state: XaiCorrelationState): void {
+  state.turnTokens = { input: 0, output: 0, cacheRead: 0 }
 }
 
 /**

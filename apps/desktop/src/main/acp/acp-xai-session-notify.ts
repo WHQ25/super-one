@@ -91,6 +91,12 @@ export interface XaiCorrelationState {
   /** last known assistant message id (for message_usage) */
   lastMessageId: string | null
   /**
+   * Running this-turn token totals from live `response_started` /
+   * `response_completed` (Grok emits one pair per model call). Footer uses these
+   * mid-turn; `turn_completed.usage` is authoritative and resets the accumulators.
+   */
+  turnTokens: { input: number; output: number; cacheRead: number }
+  /**
    * Whether the last turn terminal was `rate_limit`. Scopes the gauge tip to one
    * rate-limit episode: only a served turn clears it (Grok sends no "you're fine
    * again" signal).
@@ -115,8 +121,14 @@ export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelati
     lastEventSeq: null,
     lastUsage: null,
     lastMessageId: null,
+    turnTokens: { input: 0, output: 0, cacheRead: 0 },
     rateLimited: false,
   }
+}
+
+/** Reset mid-turn token accumulators (new prompt / after durable turn terminal). */
+export function resetTurnTokens(state: XaiCorrelationState): void {
+  state.turnTokens = { input: 0, output: 0, cacheRead: 0 }
 }
 
 /** Grok child-session transcript: ~/.grok/sessions/<urlencode(cwd)>/<child_id>/chat_history.jsonl */
@@ -483,6 +495,10 @@ export function mapXaiSessionUpdate(
       return mapScheduledTaskDeleted(update, state)
     case 'turn_completed':
       return mapTurnCompleted(update, state, ctx)
+    case 'response_started':
+      return mapResponseStarted(update, state, ctx)
+    case 'response_completed':
+      return mapResponseCompleted(update, state, ctx)
     case 'auto_compact_started':
       return mapAutoCompactStarted(update)
     case 'auto_compact_completed':
@@ -1141,6 +1157,77 @@ export function uncachedPromptInputTokens(fullInput: number, cachedRead: number)
   return Math.max(0, fullInput - cachedRead)
 }
 
+/**
+ * Build footer `message_usage` from mid-turn accumulators + live context cache.
+ */
+function messageUsageFromTurnTokens(
+  state: XaiCorrelationState,
+  ctx: MapXaiNotifyContext,
+  tokens: { input: number; output: number; cacheRead: number },
+): AgentEvent | null {
+  const messageId = ctx.messageId ?? state.lastMessageId
+  if (!messageId) return null
+  if (tokens.input <= 0 && tokens.output <= 0 && tokens.cacheRead <= 0) return null
+  const prev = state.lastUsage
+  const contextTokens = prev?.totalTokens && prev.totalTokens > 0 ? prev.totalTokens : 0
+  const maxTokens = prev?.maxTokens && prev.maxTokens > 0 ? prev.maxTokens : 0
+  return {
+    type: 'message_usage',
+    messageId,
+    inputTokens: tokens.input,
+    outputTokens: tokens.output,
+    ...(tokens.cacheRead > 0 ? { cacheReadTokens: tokens.cacheRead } : {}),
+    ...(contextTokens > 0 ? { contextTokens } : {}),
+    ...(maxTokens > 0 ? { contextWindow: maxTokens } : {}),
+  }
+}
+
+/**
+ * Grok `response_started` (Messages backend): early input-side counts for the
+ * open model call. Provisional — not committed to turnTokens (completed owns
+ * the commit so we never double-count).
+ */
+function mapResponseStarted(
+  u: Record<string, unknown>,
+  state: XaiCorrelationState,
+  ctx: MapXaiNotifyContext,
+): AgentEvent[] {
+  const input = numField(u, 'inputTokens', 'input_tokens') ?? 0
+  const cacheRead = numField(u, 'cacheReadInputTokens', 'cache_read_input_tokens') ?? 0
+  const provisional = {
+    input: state.turnTokens.input + input,
+    output: state.turnTokens.output,
+    cacheRead: state.turnTokens.cacheRead + cacheRead,
+  }
+  const event = messageUsageFromTurnTokens(state, ctx, provisional)
+  return event ? [event] : []
+}
+
+/**
+ * Grok `response_completed`: one model call finished. Accumulate and emit so
+ * the footer updates mid-turn (Claude/Codex parity for multi-step loops).
+ */
+function mapResponseCompleted(
+  u: Record<string, unknown>,
+  state: XaiCorrelationState,
+  ctx: MapXaiNotifyContext,
+): AgentEvent[] {
+  const usageRaw = asRecord(u.usage) ?? u
+  // ResponseUsage: input_tokens is uncached prompt portion for THIS call.
+  const input = numField(usageRaw, 'inputTokens', 'input_tokens') ?? 0
+  const output = numField(usageRaw, 'outputTokens', 'output_tokens') ?? 0
+  const cacheRead = numField(usageRaw, 'cacheReadInputTokens', 'cache_read_input_tokens') ?? 0
+  if (input <= 0 && output <= 0 && cacheRead <= 0) return []
+
+  state.turnTokens = {
+    input: state.turnTokens.input + input,
+    output: state.turnTokens.output + output,
+    cacheRead: state.turnTokens.cacheRead + cacheRead,
+  }
+  const event = messageUsageFromTurnTokens(state, ctx, state.turnTokens)
+  return event ? [event] : []
+}
+
 function mapTurnCompleted(
   u: Record<string, unknown>,
   state: XaiCorrelationState,
@@ -1148,7 +1235,10 @@ function mapTurnCompleted(
 ): AgentEvent[] {
   const events: AgentEvent[] = mapTurnStopReason(u, state)
   const usageRaw = asRecord(u.usage)
-  if (!usageRaw) return events
+  if (!usageRaw) {
+    resetTurnTokens(state)
+    return events
+  }
 
   // ACP PromptUsage identity: inputTokens is FULL (includes cache reads).
   const fullInput = numField(usageRaw, 'inputTokens', 'input_tokens') ?? 0
@@ -1183,18 +1273,28 @@ function mapTurnCompleted(
     }
   }
 
+  // Authoritative turn totals — keep accumulators aligned then clear for next turn.
+  state.turnTokens = {
+    input: uncachedInput,
+    output: outputTokens,
+    cacheRead: cachedRead,
+  }
+
   const messageId = ctx.messageId ?? state.lastMessageId
-  if (!messageId) return events
-  events.push({
-    type: 'message_usage',
-    messageId,
-    // Footer: this-turn new spend (exclude cache hits).
-    inputTokens: uncachedInput,
-    outputTokens,
-    ...(contextTokens > 0 ? { contextTokens } : {}),
-    ...(maxTokens > 0 ? { contextWindow: maxTokens } : {}),
-    ...(costUsd != null ? { costUsd } : {}),
-  })
+  if (messageId) {
+    events.push({
+      type: 'message_usage',
+      messageId,
+      // Footer: this-turn new spend (exclude cache hits).
+      inputTokens: uncachedInput,
+      outputTokens,
+      ...(cachedRead > 0 ? { cacheReadTokens: cachedRead } : {}),
+      ...(contextTokens > 0 ? { contextTokens } : {}),
+      ...(maxTokens > 0 ? { contextWindow: maxTokens } : {}),
+      ...(costUsd != null ? { costUsd } : {}),
+    })
+  }
+  resetTurnTokens(state)
   return events
 }
 

@@ -49,6 +49,17 @@ export interface ClaudeLiveSessionOptions {
   binaryPath?: string | null
   /** Initial resume id (prior claude-session). */
   sessionId?: string | null
+  /**
+   * Truncating resume (`Options.resumeSessionAt`). When set, also pass
+   * `resumeDropsTurn` (prompt UUID of the discarded turn).
+   */
+  resumeSessionAt?: string
+  /**
+   * With `resumeSessionAt`: UUID of the turn this truncating resume discards.
+   * On refusal (`Resume rejected by --resume-drops-turn:`), clear fork target
+   * and full-resume only — never retry the same args.
+   */
+  resumeDropsTurn?: string
   model?: string
   effort?: string
   permissionMode?: string
@@ -241,6 +252,8 @@ function buildLiveOptions(
         .join('\n\n'),
     },
     ...(opts.sessionId ? { resume: opts.sessionId } : {}),
+    ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}),
+    ...(opts.resumeDropsTurn ? { resumeDropsTurn: opts.resumeDropsTurn } : {}),
     ...(env ? { env } : {}),
   }
 

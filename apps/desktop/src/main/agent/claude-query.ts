@@ -1,6 +1,10 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import {
+  isResumeDropsTurnRefusal,
+  RESUME_DROPS_TURN_REFUSAL_PREFIX,
+} from '@superone/claude'
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { trace } from './event-trace'
@@ -12,6 +16,8 @@ import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
 import { persistAttachment, buildAttachmentPathNote } from './attachment-store'
+
+export { isResumeDropsTurnRefusal, RESUME_DROPS_TURN_REFUSAL_PREFIX }
 
 export interface SessionQueryOptions {
   /** SuperOne session id (Session class) — distinct from SDK sessionId (resume) */
@@ -27,6 +33,13 @@ export interface SessionQueryOptions {
   trackPlanFile?: (filePath: string) => void
   resume?: string
   resumeSessionAt?: string
+  /**
+   * With `resumeSessionAt`: UUID of the turn this truncating resume discards.
+   * Production paths that set `resumeSessionAt` MUST also set this. On refusal
+   * (`Resume rejected by --resume-drops-turn:`), clear the fork target and
+   * full-resume only — never retry the same args.
+   */
+  resumeDropsTurn?: string
   forkSession?: boolean
   sessionId?: string
   abortController?: AbortController
@@ -81,6 +94,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     settingSources: ['user', 'project', 'local'],
     resume: opts.resume,
     resumeSessionAt: opts.resumeSessionAt,
+    resumeDropsTurn: opts.resumeDropsTurn,
     forkSession: opts.forkSession,
     sessionId: opts.sessionId,
     abortController: opts.abortController,
@@ -471,6 +485,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 availableOutputStyles: sys.available_output_styles,
                 plugins: sys.plugins,
                 fastModeState: sys.fast_mode_state,
+                fastModeDisabledReason: sys.fast_mode_disabled_reason,
               },
             })
           } else if (sys.subtype === 'hook_started') {
@@ -959,6 +974,15 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           } else {
             const rawError = result.errors?.join('; ') ?? 'Unknown error'
             const decorated = decorateMessageErrorText(rawError, lastAssistantTypedError, metadata.apiErrorStatus)
+            if (isResumeDropsTurnRefusal(rawError)) {
+              // Deterministic refusal: clear any truncating fork target and full-resume only.
+              // Re-sending the same resumeSessionAt + resumeDropsTurn pair fails forever.
+              log.warn(
+                '[claude-query] resume-drops-turn refused session=%s — clear fork target, full resume, do not retry same args: %s',
+                opts.superoneSessionId,
+                rawError,
+              )
+            }
             if (result.terminal_reason === 'api_error') {
               log.error(
                 '[claude-query] API error session=%s message=%s httpStatus=%s error=%s',
@@ -1055,6 +1079,7 @@ function buildResultMetadata(result: any, startTime: number, pausedMs: number, l
     terminalReason: result.terminal_reason,
     resultText: result.result,
     fastModeState: result.fast_mode_state,
+    fastModeDisabledReason: result.fast_mode_disabled_reason,
     errorSubtype: result.subtype !== 'success' ? result.subtype : undefined,
     structuredOutput: result.structured_output,
     isError: result.is_error || undefined,
@@ -1095,6 +1120,8 @@ function buildResultMetadata(result: any, startTime: number, pausedMs: number, l
         webSearchRequests: u.webSearchRequests || undefined,
         contextWindow: u.contextWindow || undefined,
         maxOutputTokens: u.maxOutputTokens || undefined,
+        canonicalModel: typeof u.canonicalModel === 'string' ? u.canonicalModel : undefined,
+        provider: typeof u.provider === 'string' ? u.provider : undefined,
       }
     }
   }

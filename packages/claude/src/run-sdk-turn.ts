@@ -185,6 +185,8 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
         .join('\n\n'),
     },
     ...(opts.sessionId ? { resume: opts.sessionId } : {}),
+    ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}),
+    ...(opts.resumeDropsTurn ? { resumeDropsTurn: opts.resumeDropsTurn } : {}),
     ...(env ? { env } : {}),
   }
 

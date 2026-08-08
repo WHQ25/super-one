@@ -130,6 +130,7 @@ export function buildClaudeResultMetadata(
     terminalReason: result.terminal_reason,
     resultText: result.result,
     fastModeState: result.fast_mode_state,
+    fastModeDisabledReason: result.fast_mode_disabled_reason,
     errorSubtype: result.subtype !== 'success' ? result.subtype : undefined,
     structuredOutput: result.structured_output,
     isError: result.is_error || undefined,
@@ -167,10 +168,19 @@ export function buildClaudeResultMetadata(
         webSearchRequests: modelUsage.webSearchRequests || undefined,
         contextWindow: modelUsage.contextWindow || undefined,
         maxOutputTokens: modelUsage.maxOutputTokens || undefined,
+        canonicalModel: typeof modelUsage.canonicalModel === 'string' ? modelUsage.canonicalModel : undefined,
+        provider: typeof modelUsage.provider === 'string' ? modelUsage.provider : undefined,
       }
     }
   }
   return metadata
+}
+
+/** SDK refusal when `resumeDropsTurn` validation fails (deterministic — do not retry). */
+export const RESUME_DROPS_TURN_REFUSAL_PREFIX = 'Resume rejected by --resume-drops-turn:'
+
+export function isResumeDropsTurnRefusal(error: string): boolean {
+  return error.includes(RESUME_DROPS_TURN_REFUSAL_PREFIX)
 }
 
 function resultErrorText(result: Raw): string {
@@ -276,6 +286,7 @@ export function createClaudeAgentEventMapper(
             availableOutputStyles: system.available_output_styles,
             plugins: system.plugins,
             fastModeState: system.fast_mode_state,
+            fastModeDisabledReason: system.fast_mode_disabled_reason,
           },
         })
         break
@@ -696,6 +707,7 @@ export function createClaudeAgentEventMapper(
             if (pendingSlashOutput) emit({ type: 'slash_command_output', messageId, content: pendingSlashOutput })
             emit({ type: 'message_complete', messageId, metadata })
           } else {
+            // Hosts: if isResumeDropsTurnRefusal(error), clear fork target + full-resume only (never retry same args).
             emit({ type: 'message_error', messageId, error: decoratedError })
           }
           lastAssistantTypedError = undefined

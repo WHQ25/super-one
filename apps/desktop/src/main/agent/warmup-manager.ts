@@ -86,6 +86,7 @@ export class WarmupManager {
       cli: opts.pathToClaudeCodeExecutable ?? '',
       resume: opts.resume ?? '',
       resumeSessionAt: opts.resumeSessionAt ?? '',
+      resumeDropsTurn: opts.resumeDropsTurn ?? '',
       forkSession: opts.forkSession ?? false,
       sessionId: opts.sessionId ?? '',
       previewFormat: opts.toolConfig?.askUserQuestion?.previewFormat ?? '',

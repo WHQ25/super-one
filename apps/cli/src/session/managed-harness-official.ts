@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process'
 import type { ManagedHarnessId } from './managed-harness-release'
 
 /** Keep lockstep with apps/cli/scripts/pack-npm.ts CLAUDE_SDK_VERSION when possible. */
-export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.223'
+export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.226'
 
 /**
  * Pinned Codex CLI on npm. Bump deliberately with release notes — never bare `latest`

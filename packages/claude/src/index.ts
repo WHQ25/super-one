@@ -19,6 +19,8 @@ export {
   createClaudeAgentEventMapper,
   extractClaudeToolResultText,
   isClaudeToolLayerError,
+  isResumeDropsTurnRefusal,
+  RESUME_DROPS_TURN_REFUSAL_PREFIX,
   type ClaudeAgentEventApplyResult,
   type ClaudeAgentEventMapper,
   type ClaudeAgentEventMapperOptions,

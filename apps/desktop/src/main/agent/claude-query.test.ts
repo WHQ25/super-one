@@ -40,7 +40,13 @@ vi.mock('../mcp/superone-mcp-server', () => ({
   createSuperoneMcpServer: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })),
 }))
 
-import { buildUserMessage, buildClaudeOptions, createSessionQuery } from './claude-query'
+import {
+  buildUserMessage,
+  buildClaudeOptions,
+  createSessionQuery,
+  isResumeDropsTurnRefusal,
+  RESUME_DROPS_TURN_REFUSAL_PREFIX,
+} from './claude-query'
 import log from '../logger'
 
 beforeEach(() => {
@@ -48,6 +54,23 @@ beforeEach(() => {
   state.error = null
   state.queryMock.mockClear()
   vi.mocked(log.error).mockClear()
+})
+
+describe('buildClaudeOptions resume truncation', () => {
+  it('passes resumeSessionAt and resumeDropsTurn through to SDK options', () => {
+    const options = buildClaudeOptions({
+      superoneSessionId: 's1',
+      projectPath: '/repo',
+      cwd: '/repo',
+      permissionMode: 'default',
+      resume: 'sess-1',
+      resumeSessionAt: 'kept-uuid',
+      resumeDropsTurn: 'drop-uuid',
+    })
+    expect(options.resume).toBe('sess-1')
+    expect(options.resumeSessionAt).toBe('kept-uuid')
+    expect(options.resumeDropsTurn).toBe('drop-uuid')
+  })
 })
 
 describe('buildClaudeOptions permissionMode', () => {
@@ -163,7 +186,21 @@ describe('createSessionQuery', () => {
         type: 'user',
         message: { content: '<local-command-stdout>\nhello\n</local-command-stdout>' },
       },
-      { type: 'system', subtype: 'init', session_id: 'sess-1' },
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 'sess-1',
+        model: 'claude-opus',
+        tools: [],
+        mcp_servers: [],
+        permissionMode: 'default',
+        slash_commands: [],
+        skills: [],
+        claude_code_version: '1.0',
+        cwd: '/repo',
+        fast_mode_state: 'off',
+        fast_mode_disabled_reason: 'preference',
+      },
       { type: 'system', subtype: 'hook_started', hook_id: 'h1', hook_name: 'PreToolUse', hook_event: 'on-tool-start' },
       { type: 'system', subtype: 'hook_response', hook_id: 'h1', hook_name: 'PreToolUse', hook_event: 'on-tool-start', output: 'done', exit_code: 0, outcome: 'success' },
       { type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 123 } },
@@ -264,8 +301,12 @@ describe('createSessionQuery', () => {
             cacheReadInputTokens: 3,
             cacheCreationInputTokens: 4,
             costUSD: 0.04,
+            canonicalModel: 'claude-3-opus',
+            provider: 'firstParty',
           },
         },
+        fast_mode_state: 'off',
+        fast_mode_disabled_reason: 'preference',
       },
       { type: 'system', subtype: 'session_state_changed', state: 'idle', session_id: 'sess-1' },
     ]
@@ -303,6 +344,10 @@ describe('createSessionQuery', () => {
     expect(onSessionId).toHaveBeenCalledWith('sess-1')
     expect(trackPlanFile).toHaveBeenCalledWith('/tmp/plan.md')
 
+    const sessionInit = events.find((e) => e.type === 'session_init') as Record<string, unknown> | undefined
+    expect((sessionInit?.session as Record<string, unknown>)?.fastModeState).toBe('off')
+    expect((sessionInit?.session as Record<string, unknown>)?.fastModeDisabledReason).toBe('preference')
+
     const eventTypes = events.map((e) => e.type)
     expect(eventTypes).toContain('slash_command_output')
     expect(eventTypes).toContain('hook_started')
@@ -332,6 +377,10 @@ describe('createSessionQuery', () => {
     expect((metadata.usage as Record<string, unknown>).inputTokens).toBe(3)
     expect((metadata.usage as Record<string, unknown>).cacheReadInputTokens).toBe(0)
     expect(((metadata.modelUsage as Record<string, unknown>)['claude-3'] as Record<string, unknown>).outputTokens).toBe(20)
+    expect(((metadata.modelUsage as Record<string, unknown>)['claude-3'] as Record<string, unknown>).canonicalModel).toBe('claude-3-opus')
+    expect(((metadata.modelUsage as Record<string, unknown>)['claude-3'] as Record<string, unknown>).provider).toBe('firstParty')
+    expect(metadata.fastModeState).toBe('off')
+    expect(metadata.fastModeDisabledReason).toBe('preference')
 
     const topLevelUsage = events.filter((e) => e.type === 'message_usage')
     const lastTopLevelUsage = topLevelUsage[topLevelUsage.length - 1] as Record<string, unknown>
@@ -408,6 +457,42 @@ describe('createSessionQuery', () => {
       error: 'failure-1; failure-2',
     })
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
+  })
+
+  it('detects resume-drops-turn refusal and logs recovery guidance without changing the error text', async () => {
+    const refusal = `${RESUME_DROPS_TURN_REFUSAL_PREFIX} discarded range has extra user message`
+    expect(isResumeDropsTurnRefusal(refusal)).toBe(true)
+    expect(isResumeDropsTurnRefusal('other failure')).toBe(false)
+
+    state.messages = [
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        errors: [refusal],
+      },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { superoneSessionId: 'session-drop', cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-drop',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events).toContainEqual({
+      type: 'message_error',
+      messageId: 'msg-drop',
+      error: refusal,
+    })
+    expect(vi.mocked(log.warn)).toHaveBeenCalledWith(
+      expect.stringContaining('resume-drops-turn refused'),
+      'session-drop',
+      refusal,
+    )
   })
 
   it('logs the SDK error details when the terminal reason is api_error', async () => {

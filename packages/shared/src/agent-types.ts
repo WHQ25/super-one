@@ -120,6 +120,19 @@ export type ContentBlock =
 
 // --- Session info (from system init) ---
 
+/** Why Claude fast mode is unavailable (SDK `fast_mode_disabled_reason`). */
+export type FastModeDisabledReason =
+  | 'free'
+  | 'preference'
+  | 'extra_usage_disabled'
+  | 'network_error'
+  | 'unknown'
+  | 'not_first_party'
+  | 'disabled_by_env'
+  | 'model_not_allowed'
+  | 'sdk_opt_in_required'
+  | 'pending'
+
 export interface SessionInfo {
   sessionId: string
   model: string
@@ -137,6 +150,8 @@ export interface SessionInfo {
   availableOutputStyles?: string[]
   plugins?: { name: string; path: string }[]
   fastModeState?: 'off' | 'cooldown' | 'on'
+  /** Present when fast mode is not active; mirrors SDK system/init + result. */
+  fastModeDisabledReason?: FastModeDisabledReason
 }
 
 export interface ClaudePreferences {
@@ -161,6 +176,10 @@ export interface ModelUsageInfo {
   webSearchRequests?: number
   contextWindow?: number
   maxOutputTokens?: number
+  /** Canonical model id used for pricing (may differ from the map key). */
+  canonicalModel?: string
+  /** API provider that served this model (e.g. firstParty, bedrock, vertex). */
+  provider?: string
 }
 
 export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
@@ -422,6 +441,8 @@ export interface MessageMetadata {
   resultText?: string
   permissionDenials?: PermissionDenialInfo[]
   fastModeState?: 'off' | 'cooldown' | 'on'
+  /** Why fast mode is off for this result (SDK `fast_mode_disabled_reason`). */
+  fastModeDisabledReason?: FastModeDisabledReason
   errorSubtype?: string
   structuredOutput?: unknown
   isError?: boolean

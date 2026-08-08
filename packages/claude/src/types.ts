@@ -62,6 +62,17 @@ export interface RunClaudeSdkTurnOptions {
   cwd: string
   /** Prior Claude Code session id for SDK `resume`. */
   sessionId?: string | null
+  /**
+   * Truncating resume: only load chain up to this UUID (`Options.resumeSessionAt`).
+   * When set, also pass `resumeDropsTurn` (prompt UUID of the discarded turn).
+   */
+  resumeSessionAt?: string
+  /**
+   * With `resumeSessionAt`: UUID of the turn this truncating resume discards.
+   * On refusal (`Resume rejected by --resume-drops-turn:`), clear fork target
+   * and full-resume only — never retry the same args.
+   */
+  resumeDropsTurn?: string
   model?: string
   /**
    * Claude Agent SDK effort (`low` | `medium` | `high` | `xhigh` | `max`).

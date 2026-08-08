@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { createClaudeAgentEventMapper } from './agent-event-mapper'
+import {
+  createClaudeAgentEventMapper,
+  isResumeDropsTurnRefusal,
+  RESUME_DROPS_TURN_REFUSAL_PREFIX,
+} from './agent-event-mapper'
 
 describe('createClaudeAgentEventMapper', () => {
   it('maps streaming text, thinking, tool input, and stream boundaries like desktop', () => {
@@ -130,6 +134,19 @@ describe('createClaudeAgentEventMapper', () => {
       duration_api_ms: 90,
       total_cost_usd: 0.01,
       num_turns: 1,
+      fast_mode_state: 'off',
+      fast_mode_disabled_reason: 'preference',
+      modelUsage: {
+        'claude-x': {
+          inputTokens: 1,
+          outputTokens: 2,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          costUSD: 0.001,
+          canonicalModel: 'claude-x-canonical',
+          provider: 'firstParty',
+        },
+      },
     })
 
     expect(result).toMatchObject({ isResult: true, resultIsError: false, resultText: 'done' })
@@ -144,10 +161,51 @@ describe('createClaudeAgentEventMapper', () => {
           costUsd: 0.01,
           forkAnchorId: 'assistant-uuid',
           usage: expect.objectContaining({ inputTokens: 7 }),
+          fastModeState: 'off',
+          fastModeDisabledReason: 'preference',
+          modelUsage: expect.objectContaining({
+            'claude-x': expect.objectContaining({
+              canonicalModel: 'claude-x-canonical',
+              provider: 'firstParty',
+            }),
+          }),
         }),
       }),
       expect.objectContaining({ type: 'status_change', status: 'idle' }),
     ]))
+  })
+
+  it('maps session_init fastModeDisabledReason from system/init', () => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })
+    mapper.apply({
+      type: 'system',
+      subtype: 'init',
+      session_id: 's1',
+      model: 'claude-x',
+      tools: [],
+      mcp_servers: [],
+      permissionMode: 'default',
+      slash_commands: [],
+      skills: [],
+      claude_code_version: '1',
+      cwd: '/tmp',
+      fast_mode_state: 'off',
+      fast_mode_disabled_reason: 'model_not_allowed',
+    })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'session_init',
+      session: expect.objectContaining({
+        fastModeState: 'off',
+        fastModeDisabledReason: 'model_not_allowed',
+      }),
+    }))
+  })
+
+  it('matches SDK resume-drops-turn refusal prefix and rejects unrelated errors', () => {
+    expect(isResumeDropsTurnRefusal(`${RESUME_DROPS_TURN_REFUSAL_PREFIX} extra user message`)).toBe(true)
+    expect(isResumeDropsTurnRefusal('failure-1; failure-2')).toBe(false)
+    expect(isResumeDropsTurnRefusal('Resume rejected')).toBe(false)
   })
 
   it('decorates typed result errors with the desktop message semantics', () => {

@@ -95,6 +95,8 @@ describe('runClaudeSdkTurn', () => {
       prompt: 'continue',
       cwd: dir,
       sessionId: 'prior-99',
+      resumeSessionAt: 'kept-uuid',
+      resumeDropsTurn: 'drop-uuid',
       queryFn,
       onEvent: () => {},
       signal: new AbortController().signal,
@@ -104,6 +106,8 @@ describe('runClaudeSdkTurn', () => {
       options?: Options
     }
     expect(call.options?.resume).toBe('prior-99')
+    expect(call.options?.resumeSessionAt).toBe('kept-uuid')
+    expect(call.options?.resumeDropsTurn).toBe('drop-uuid')
 
     rmSync(dir, { recursive: true, force: true })
   })

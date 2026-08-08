@@ -65,15 +65,19 @@ describe('WarmupManager.keyOf', () => {
     expect(WarmupManager.keyOf(baseOpts())).toBe(WarmupManager.keyOf(baseOpts({ additionalDirectories: [] })))
   })
 
-  it('differs when resume / resumeSessionAt / forkSession / sessionId changes', () => {
+  it('differs when resume / resumeSessionAt / resumeDropsTurn / forkSession / sessionId changes', () => {
     const fresh = WarmupManager.keyOf(baseOpts())
     expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ resume: 'sess-abc' } as Partial<Options>)))
     expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ resumeSessionAt: 'uuid-1' } as Partial<Options>)))
+    expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ resumeDropsTurn: 'drop-uuid' } as Partial<Options>)))
     expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ forkSession: true } as Partial<Options>)))
     expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ sessionId: 'sess-xyz' } as Partial<Options>)))
     const a = WarmupManager.keyOf(baseOpts({ resume: 'sess-a' } as Partial<Options>))
     const b = WarmupManager.keyOf(baseOpts({ resume: 'sess-b' } as Partial<Options>))
     expect(a).not.toBe(b)
+    const at = WarmupManager.keyOf(baseOpts({ resumeSessionAt: 'kept', resumeDropsTurn: 'drop-a' } as Partial<Options>))
+    const bt = WarmupManager.keyOf(baseOpts({ resumeSessionAt: 'kept', resumeDropsTurn: 'drop-b' } as Partial<Options>))
+    expect(at).not.toBe(bt)
   })
 
   it('differs when AskUserQuestion previewFormat (toolConfig) changes', () => {

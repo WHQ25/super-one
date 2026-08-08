@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.7-alpha] - 2026-08-08
+
+### Added
+
+- Chat: place Grok turn summary with the assistant turn chrome (above footer) and keep session recap as a standalone History control with localized Summary/Recap labels.
+
+### Fixed
+
+- Chat: allow Grok Imagine/video media under `~/.grok/sessions` in the media server and gallery so successful generations no longer render as failed tiles.
+- Skills / ACP: accept both Claude `arguments:` and Grok `argument-hint:` frontmatter; when Grok omits `input.hint`, re-read the skill path so slash menus show argument hints for either convention.
+
 ## [0.50.6-alpha] - 2026-08-08
 
 ### Added

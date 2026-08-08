@@ -2640,6 +2640,7 @@ export const AgentIpcChannels = {
   // Usage statistics
   USAGE_QUERY: 'app:usage:query',
   USAGE_COUNTS_QUERY: 'app:usage:counts',
+  USAGE_HARNESS_SESSION_RANKS: 'app:usage:harness-session-ranks',
   USAGE_BACKFILL_STATUS: 'app:usage:backfill-status',
   USAGE_BACKFILL_DONE: 'app:usage:backfill-done',
 
@@ -3200,6 +3201,11 @@ export interface AppSettings {
    * node id); value is the path query refilled on the destination step.
    */
   defaultClonePaths: Record<string, string>
+  /**
+   * Manual ChatSuggestions harness pick. `null` means auto-select the top
+   * harness by last-7-day session count.
+   */
+  suggestionHarness: SuggestionHarnessPreference | null
   agentPreference: {
     claude: {
       defaultModel: string
@@ -3226,6 +3232,23 @@ export interface AppSettings {
     }
   }
 }
+
+/** ChatSuggestions fixed/dropdown harness identity. */
+export interface SuggestionHarnessPreference {
+  provider: HarnessId
+  /** Required when provider is `acp`; ignored otherwise. */
+  acpAgentId?: string | null
+}
+
+/** Last-N-days session counts grouped for ChatSuggestions harness ranking. */
+export interface HarnessSessionRank {
+  /** Stable key: `claude` | `codex` | `opencode` | `acp:<agentId>`. */
+  key: string
+  provider: HarnessId
+  acpAgentId: string | null
+  sessionCount: number
+}
+
 
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
@@ -3262,6 +3285,8 @@ export interface AppSettingsPatch {
    * connection's entry.
    */
   defaultClonePaths?: Record<string, string>
+  /** Pass `null` to clear and return to auto top-by-usage selection. */
+  suggestionHarness?: SuggestionHarnessPreference | null
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

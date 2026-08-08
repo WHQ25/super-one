@@ -1,4 +1,10 @@
-import type { CodexUsageInfo, MessageMetadata, ModelUsageInfo } from '@superone/shared/agent-types'
+import type {
+  CodexUsageInfo,
+  HarnessId,
+  HarnessSessionRank,
+  MessageMetadata,
+  ModelUsageInfo,
+} from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { getDb } from './database'
 
@@ -236,6 +242,65 @@ export function queryUsage(range: UsageQueryRange = {}): UsageQueryResult {
   `
   const rows = getDb().prepare(sql).all(...params) as UsageDailyRow[]
   return { rows }
+}
+
+const HARNESS_PROVIDERS = new Set<HarnessId>(['claude', 'codex', 'acp', 'opencode'])
+
+function normalizeSessionProvider(raw: string | null | undefined): HarnessId {
+  const value = (raw ?? '').trim().toLowerCase()
+  if (HARNESS_PROVIDERS.has(value as HarnessId)) return value as HarnessId
+  return 'claude'
+}
+
+export function harnessSessionRankKey(provider: HarnessId, acpAgentId?: string | null): string {
+  if (provider === 'acp') {
+    const agent = acpAgentId?.trim()
+    return agent ? `acp:${agent}` : 'acp'
+  }
+  return provider
+}
+
+/**
+ * Count non-hidden, non-automation sessions created in the last `days` days,
+ * grouped by top-level harness (claude/codex/opencode) or per ACP agent.
+ */
+export function queryHarnessSessionRanks(days = 7): HarnessSessionRank[] {
+  const windowDays = Number.isFinite(days) ? Math.max(1, Math.floor(days)) : 7
+  const from = new Date()
+  from.setHours(0, 0, 0, 0)
+  from.setDate(from.getDate() - (windowDays - 1))
+  const fromIso = from.toISOString()
+
+  const rows = getDb().prepare(`
+    SELECT
+      COALESCE(NULLIF(TRIM(provider), ''), 'claude') AS provider,
+      acp_agent_id AS acp_agent_id,
+      COUNT(*) AS session_count
+    FROM sessions
+    WHERE created_at >= ?
+      AND COALESCE(is_hidden, 0) = 0
+      AND COALESCE(is_automation, 0) = 0
+    GROUP BY 1, 2
+  `).all(fromIso) as Array<{ provider: string; acp_agent_id: string | null; session_count: number }>
+
+  const byKey = new Map<string, HarnessSessionRank>()
+  for (const row of rows) {
+    const provider = normalizeSessionProvider(row.provider)
+    const acpAgentId = provider === 'acp' ? (row.acp_agent_id?.trim() || null) : null
+    const key = harnessSessionRankKey(provider, acpAgentId)
+    const existing = byKey.get(key)
+    const sessionCount = Number(row.session_count) || 0
+    if (existing) {
+      existing.sessionCount += sessionCount
+    } else {
+      byKey.set(key, { key, provider, acpAgentId, sessionCount })
+    }
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => {
+    if (b.sessionCount !== a.sessionCount) return b.sessionCount - a.sessionCount
+    return a.key.localeCompare(b.key)
+  })
 }
 
 export function getBackfillStatus(): 'done' | 'pending' {

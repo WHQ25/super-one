@@ -1,7 +1,23 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings, AppSettingsPatch, BrowserBookmark, BrowserBookmarkGroup, CodexPermissionPreset, ComputerUseAlwaysAllowApp, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, ThemeMode, UpdateChannel } from '@superone/shared/agent-types'
+import type {
+  AppSettings,
+  AppSettingsPatch,
+  BrowserBookmark,
+  BrowserBookmarkGroup,
+  CodexPermissionPreset,
+  ComputerUseAlwaysAllowApp,
+  EffortLevel,
+  HarnessId,
+  Locale,
+  PermissionMode,
+  QuestionPreviewFormat,
+  SandboxMode,
+  SuggestionHarnessPreference,
+  ThemeMode,
+  UpdateChannel,
+} from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 
 export type { AppSettings, AppSettingsPatch }
@@ -41,6 +57,7 @@ const defaults: AppSettings = {
   browserBookmarks: [],
   browserBookmarkGroups: [],
   defaultClonePaths: {},
+  suggestionHarness: null,
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -66,6 +83,23 @@ const defaults: AppSettings = {
       selectedAgentId: null,
     },
   },
+}
+
+const HARNESS_IDS = new Set<HarnessId>(['claude', 'codex', 'acp', 'opencode'])
+
+function readSuggestionHarness(value: unknown): SuggestionHarnessPreference | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
+  const raw = value as Record<string, unknown>
+  const provider = typeof raw.provider === 'string' ? raw.provider.trim() : ''
+  if (!HARNESS_IDS.has(provider as HarnessId)) return null
+  const acpAgentId = typeof raw.acpAgentId === 'string' && raw.acpAgentId.trim()
+    ? raw.acpAgentId.trim()
+    : null
+  if (provider === 'acp' && !acpAgentId) return null
+  return {
+    provider: provider as HarnessId,
+    acpAgentId: provider === 'acp' ? acpAgentId : null,
+  }
 }
 
 function readBrandHue(value: unknown): number | null {
@@ -335,6 +369,7 @@ export function readAppSettings(): AppSettings {
       browserBookmarks: readBookmarks(data.browserBookmarks),
       browserBookmarkGroups: readBookmarkGroups(data.browserBookmarkGroups),
       defaultClonePaths: readDefaultClonePaths(data.defaultClonePaths),
+      suggestionHarness: readSuggestionHarness(data.suggestionHarness),
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -373,6 +408,7 @@ export function readAppSettings(): AppSettings {
       browserBookmarks: [],
       browserBookmarkGroups: [],
       defaultClonePaths: {},
+      suggestionHarness: null,
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -423,6 +459,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     browserBookmarks: patch.browserBookmarks === undefined ? current.browserBookmarks : readBookmarks(patch.browserBookmarks),
     browserBookmarkGroups: patch.browserBookmarkGroups === undefined ? current.browserBookmarkGroups : readBookmarkGroups(patch.browserBookmarkGroups),
     defaultClonePaths: mergeDefaultClonePaths(current.defaultClonePaths, patch.defaultClonePaths),
+    suggestionHarness: patch.suggestionHarness === undefined
+      ? current.suggestionHarness
+      : readSuggestionHarness(patch.suggestionHarness),
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

@@ -33,6 +33,8 @@ interface SessionRow {
   provider: string
   acp_agent_id?: string | null
   usage_counted_at: string | null
+  is_hidden?: number | null
+  is_automation?: number | null
 }
 
 const state = {
@@ -175,6 +177,28 @@ function fakeDb(): {
             provider: s.provider || 'claude',
             acp_agent_id: s.acp_agent_id ?? null,
           })),
+          get: () => undefined,
+          iterate: () => [],
+        }
+      }
+      if (trimmed.includes('COUNT(*) AS session_count') && trimmed.includes('FROM sessions')) {
+        return {
+          run: () => ({ changes: 0 }),
+          all: (fromIso: string) => {
+            const counts = new Map<string, { provider: string; acp_agent_id: string | null; session_count: number }>()
+            for (const s of state.sessions) {
+              if (s.created_at < fromIso) continue
+              if (s.is_hidden) continue
+              if (s.is_automation) continue
+              const provider = (s.provider || 'claude').trim() || 'claude'
+              const acp_agent_id = s.acp_agent_id ?? null
+              const key = `${provider}::${acp_agent_id ?? ''}`
+              const existing = counts.get(key)
+              if (existing) existing.session_count += 1
+              else counts.set(key, { provider, acp_agent_id, session_count: 1 })
+            }
+            return Array.from(counts.values())
+          },
           get: () => undefined,
           iterate: () => [],
         }
@@ -544,5 +568,33 @@ describe('usage-stats-service: backfill', () => {
     backfillFromHistory()
     expect(state.sessions[0].usage_counted_at).not.toBeNull()
     expect(state.messages[0].usage_counted_at).not.toBeNull()
+  })
+})
+
+describe('usage-stats-service: queryHarnessSessionRanks', () => {
+  it('counts recent sessions by top-level harness and per ACP agent', async () => {
+    const recent = new Date().toISOString()
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    state.sessions.push(
+      { id: 'c1', created_at: recent, provider: 'claude', usage_counted_at: null },
+      { id: 'c2', created_at: recent, provider: 'claude', usage_counted_at: null },
+      { id: 'x1', created_at: recent, provider: 'codex', usage_counted_at: null },
+      { id: 'x2', created_at: recent, provider: 'codex', usage_counted_at: null },
+      { id: 'x3', created_at: recent, provider: 'codex', usage_counted_at: null },
+      { id: 'g1', created_at: recent, provider: 'acp', acp_agent_id: 'grok-build', usage_counted_at: null },
+      { id: 'g2', created_at: recent, provider: 'acp', acp_agent_id: 'grok-build', usage_counted_at: null },
+      { id: 'g3', created_at: recent, provider: 'acp', acp_agent_id: 'grok-build', usage_counted_at: null },
+      { id: 'g4', created_at: recent, provider: 'acp', acp_agent_id: 'grok-build', usage_counted_at: null },
+      { id: 'old', created_at: old, provider: 'codex', usage_counted_at: null },
+      { id: 'hidden', created_at: recent, provider: 'codex', usage_counted_at: null, is_hidden: 1 },
+      { id: 'auto', created_at: recent, provider: 'claude', usage_counted_at: null, is_automation: 1 },
+    )
+
+    const { queryHarnessSessionRanks } = await import('./usage-stats-service')
+    const ranks = queryHarnessSessionRanks(7)
+    expect(ranks.map((r) => r.key)).toEqual(['acp:grok-build', 'codex', 'claude'])
+    expect(ranks[0]).toMatchObject({ provider: 'acp', acpAgentId: 'grok-build', sessionCount: 4 })
+    expect(ranks[1]).toMatchObject({ provider: 'codex', sessionCount: 3 })
+    expect(ranks[2]).toMatchObject({ provider: 'claude', sessionCount: 2 })
   })
 })

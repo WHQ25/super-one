@@ -388,6 +388,7 @@ interface AppAPI {
     sessions: number
     messages: number
   }>
+  queryHarnessSessionRanks(days?: number): Promise<import('@superone/shared/agent-types').HarnessSessionRank[]>
   getUsageBackfillStatus(): Promise<'done' | 'pending'>
   onUsageBackfillDone(callback: (summary: { scanned: number; claudeRecorded: number; codexRecorded: number; grokRecorded: number; durationMs: number }) => void): () => void
 

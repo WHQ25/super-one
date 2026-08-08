@@ -1424,6 +1424,15 @@ const appAPI = {
       sessions: number
       messages: number
     }>,
+  queryHarnessSessionRanks: (days?: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.USAGE_HARNESS_SESSION_RANKS, days ?? 7) as Promise<
+      Array<{
+        key: string
+        provider: 'claude' | 'codex' | 'acp' | 'opencode'
+        acpAgentId: string | null
+        sessionCount: number
+      }>
+    >,
   getUsageBackfillStatus: () =>
     ipcRenderer.invoke(AgentIpcChannels.USAGE_BACKFILL_STATUS) as Promise<'done' | 'pending'>,
   onUsageBackfillDone: (callback: (summary: { scanned: number; claudeRecorded: number; codexRecorded: number; grokRecorded: number; durationMs: number }) => void) => {

@@ -76,6 +76,7 @@ describe('app-settings-service', () => {
     browserBookmarks: [],
     browserBookmarkGroups: [],
     defaultClonePaths: {},
+    suggestionHarness: null,
     cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -137,6 +138,7 @@ describe('app-settings-service', () => {
         browserBookmarks: [],
         browserBookmarkGroups: [],
         defaultClonePaths: {},
+        suggestionHarness: null,
         cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -246,6 +248,7 @@ describe('app-settings-service', () => {
         browserBookmarks: [],
         browserBookmarkGroups: [],
         defaultClonePaths: {},
+        suggestionHarness: null,
         cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -265,6 +268,23 @@ describe('app-settings-service', () => {
           acp: defaultAcp,
         },
       })
+    })
+
+    it('reads and clears suggestionHarness preference', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        suggestionHarness: { provider: 'codex', acpAgentId: null },
+      }))
+      expect(readAppSettings().suggestionHarness).toEqual({ provider: 'codex', acpAgentId: null })
+
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        suggestionHarness: { provider: 'acp', acpAgentId: 'grok-build' },
+      }))
+      expect(readAppSettings().suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        suggestionHarness: { provider: 'acp' },
+      }))
+      expect(readAppSettings().suggestionHarness).toBeNull()
     })
 
     it('returns defaults on corrupt JSON', () => {

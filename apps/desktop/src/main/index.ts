@@ -126,7 +126,7 @@ import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
 import { getDb, closeDb, getCachedHarnessResources, getHarnessResourceCacheAgeMs, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
-import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
+import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { getCodexProviderOverrideFor } from './codex/app-server-connection'
@@ -3517,6 +3517,9 @@ function registerIpcHandlers(): void {
   })
   ipcMain.handle(AgentIpcChannels.USAGE_COUNTS_QUERY, (_e, range: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' } | undefined) => {
     return queryCounts(range ?? {})
+  })
+  ipcMain.handle(AgentIpcChannels.USAGE_HARNESS_SESSION_RANKS, (_e, days: number | undefined) => {
+    return queryHarnessSessionRanks(typeof days === 'number' ? days : 7)
   })
   ipcMain.handle(AgentIpcChannels.USAGE_BACKFILL_STATUS, () => {
     return getBackfillStatus()

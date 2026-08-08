@@ -3525,7 +3525,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.USAGE_QUERY, (_e, range: { from?: string; to?: string } | undefined) => {
     return queryUsage(range ?? {})
   })
-  ipcMain.handle(AgentIpcChannels.USAGE_COUNTS_QUERY, (_e, range: { from?: string; to?: string; harness?: 'claude' | 'codex' } | undefined) => {
+  ipcMain.handle(AgentIpcChannels.USAGE_COUNTS_QUERY, (_e, range: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' } | undefined) => {
     return queryCounts(range ?? {})
   })
   ipcMain.handle(AgentIpcChannels.USAGE_BACKFILL_STATUS, () => {

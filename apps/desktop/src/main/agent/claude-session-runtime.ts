@@ -278,6 +278,9 @@ export function applyClaudeEventToRuntime(
       }
     }
     case 'message_usage': {
+      const hasTurnUsage = event.inputTokens > 0
+        || event.outputTokens > 0
+        || (event.cacheReadTokens ?? 0) > 0
       return {
         ...runtime,
         contextTokens: typeof event.contextTokens === 'number' && event.contextTokens > 0
@@ -286,6 +289,25 @@ export function applyClaudeEventToRuntime(
         totalCostUsd: typeof event.costUsd === 'number' && event.costUsd >= 0
           ? event.costUsd
           : runtime.totalCostUsd,
+        messages: hasTurnUsage
+          ? runtime.messages.map((message) => (
+              message.id !== event.messageId
+                ? message
+                : {
+                    ...message,
+                    metadata: {
+                      ...message.metadata,
+                      ...(event.model ? { model: event.model } : {}),
+                      usage: {
+                        inputTokens: event.inputTokens,
+                        outputTokens: event.outputTokens,
+                        cacheReadInputTokens: event.cacheReadTokens ?? 0,
+                        cacheCreationInputTokens: 0,
+                      },
+                    },
+                  }
+            ))
+          : runtime.messages,
       }
     }
     case 'message_interrupted':

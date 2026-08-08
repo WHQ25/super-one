@@ -788,6 +788,7 @@ function mapTurnCompleted(
     // Footer: this-turn new spend (exclude cache hits).
     inputTokens: uncachedInput,
     outputTokens,
+    ...(cachedRead > 0 ? { cacheReadTokens: cachedRead } : {}),
     ...(contextTokens > 0 ? { contextTokens } : {}),
     ...(maxTokens > 0 ? { contextWindow: maxTokens } : {}),
     ...(costUsd != null ? { costUsd } : {}),

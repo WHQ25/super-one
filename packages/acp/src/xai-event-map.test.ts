@@ -339,6 +339,7 @@ describe('ACP xAI AgentEvent mapping', () => {
       messageId: 'message-1',
       inputTokens: 800,
       outputTokens: 300,
+      cacheReadTokens: 400,
       contextTokens: 42_000,
       contextWindow: 200_000,
       costUsd: 1,

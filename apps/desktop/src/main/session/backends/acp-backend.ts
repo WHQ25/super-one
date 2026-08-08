@@ -11,6 +11,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
+import { recordGrokFromUsage } from '../../usage-stats-service'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import {
   extractModeConfig,
@@ -618,6 +619,9 @@ export class AcpBackend implements SessionBackend {
       this.modelConfigId = event.configId ?? null
       if (event.selectedModelId) this.selectedModelId = event.selectedModelId
     }
+    if (event.type === 'agent_setting_change' && event.selectedModel) {
+      this.selectedModelId = event.selectedModel
+    }
     if (event.type === 'acp_modes') {
       this.modeConfigId = event.configId ?? null
     }
@@ -636,6 +640,21 @@ export class AcpBackend implements SessionBackend {
         event.commands.length,
         event.commands.slice(0, 12).map((c) => c.name).join(','),
       )
+    }
+    if (
+      agentId === 'grok-build'
+      && event.type === 'message_usage'
+      && (event.inputTokens > 0 || event.outputTokens > 0 || (event.cacheReadTokens ?? 0) > 0)
+    ) {
+      const model = this.selectedModelId ?? this.startOpts?.model ?? 'grok'
+      const usageEvent = { ...event, model }
+      try {
+        recordGrokFromUsage(usageEvent, model, new Date())
+      } catch (err) {
+        log.warn('[AcpBackend] Grok usage stats write failed:', err)
+      }
+      this.emit(usageEvent)
+      return
     }
     if (
       (event.type === 'acp_models' || event.type === 'acp_modes' || event.type === 'acp_commands')

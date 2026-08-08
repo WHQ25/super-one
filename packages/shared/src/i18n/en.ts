@@ -684,6 +684,7 @@ export type Messages = {
         all: string
         claude: string
         codex: string
+        grok: string
       }
       summary: {
         totalTokens: string
@@ -3030,6 +3031,7 @@ export const en: Messages = {
         all: 'All',
         claude: 'Claude',
         codex: 'Codex',
+        grok: 'Grok',
       },
       summary: {
         totalTokens: 'Total Tokens',

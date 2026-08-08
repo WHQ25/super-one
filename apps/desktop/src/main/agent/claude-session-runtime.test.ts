@@ -286,6 +286,41 @@ describe('message_start is an idempotent upsert', () => {
   })
 })
 
+describe('message_usage persistence', () => {
+  it('stores per-turn Grok usage and model metadata for history backfill', () => {
+    let rt = createClaudeRuntime('/tmp/project', 'session-grok')
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'message_start',
+      message: {
+        id: 'msg-grok',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'acp',
+      },
+    })
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'message_usage',
+      messageId: 'msg-grok',
+      inputTokens: 800,
+      outputTokens: 300,
+      cacheReadTokens: 400,
+      model: 'grok-4.5',
+    })
+
+    expect(rt.messages[0]?.metadata).toMatchObject({
+      model: 'grok-4.5',
+      usage: {
+        inputTokens: 800,
+        outputTokens: 300,
+        cacheReadInputTokens: 400,
+        cacheCreationInputTokens: 0,
+      },
+    })
+  })
+})
+
 describe('message_timestamp', () => {
   it('patches createdAt when the SDK origin timestamp arrives', () => {
     let rt = createClaudeRuntime('/test', 'sess-1', {

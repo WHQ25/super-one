@@ -1180,7 +1180,7 @@ export type AgentEventBase =
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
-  | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; codexUsage?: CodexUsageInfo; contextTokens?: number; contextWindow?: number; costUsd?: number }
+  | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; model?: string; codexUsage?: CodexUsageInfo; contextTokens?: number; contextWindow?: number; costUsd?: number }
   | { type: 'todos_updated'; todos: TodoItem[] }
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }

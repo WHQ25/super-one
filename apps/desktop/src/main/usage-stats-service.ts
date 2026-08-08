@@ -1,7 +1,8 @@
 import type { CodexUsageInfo, MessageMetadata, ModelUsageInfo } from '@superone/shared/agent-types'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { getDb } from './database'
 
-export type HarnessKind = 'claude' | 'codex'
+export type HarnessKind = 'claude' | 'codex' | 'grok'
 
 export interface UsageDailyRow {
   day: string
@@ -38,7 +39,7 @@ export interface UsageQueryResult {
 }
 
 const BACKFILL_KEY = 'usage_backfill_done'
-const BACKFILL_VERSION = 'v3'
+const BACKFILL_VERSION = 'v4'
 
 export function localDay(iso: string | number | Date): string {
   const date = iso instanceof Date ? iso : new Date(iso)
@@ -129,6 +130,21 @@ export function recordCodexFromUsage(
   const day = localDay(createdAt)
   if (!day) return
   upsertUsage(day, 'codex', model || 'codex', codexUsageStepDelta(usage))
+}
+
+export function recordGrokFromUsage(
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number },
+  model: string | null | undefined,
+  createdAt: string | number | Date,
+): void {
+  const day = localDay(createdAt)
+  if (!day) return
+  upsertUsage(day, 'grok', model || 'grok', {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? 0,
+    cacheCreationTokens: 0,
+  })
 }
 
 function upsertActivity(
@@ -246,12 +262,14 @@ interface SessionRow {
   id: string
   created_at: string
   provider: string | null
+  acp_agent_id: string | null
 }
 
 export interface BackfillSummary {
   scanned: number
   claudeRecorded: number
   codexRecorded: number
+  grokRecorded: number
   sessionsRecorded: number
   messagesRecorded: number
   durationMs: number
@@ -259,6 +277,12 @@ export interface BackfillSummary {
 
 function harnessOf(providerId: string, metadata: MessageMetadata | null): HarnessKind {
   return providerId === 'codex' || metadata?.codex ? 'codex' : 'claude'
+}
+
+function sessionHarness(provider: string | null, acpAgentId: string | null): HarnessKind {
+  if (provider === 'codex') return 'codex'
+  if (provider === 'acp' && isGrokAcpAgent(acpAgentId)) return 'grok'
+  return 'claude'
 }
 
 export function backfillFromHistory(): BackfillSummary {
@@ -274,15 +298,17 @@ export function backfillFromHistory(): BackfillSummary {
     const markMessage = db.prepare('UPDATE chat_messages SET usage_counted_at = ? WHERE id = ?')
 
     const sessionRows = db.prepare(`
-      SELECT id, created_at, COALESCE(NULLIF(provider, ''), 'claude') AS provider
+      SELECT id, created_at, COALESCE(NULLIF(provider, ''), 'claude') AS provider, acp_agent_id
       FROM sessions
     `).all() as SessionRow[]
 
     let sessionsRecorded = 0
+    const sessionHarnessById = new Map<string, HarnessKind>()
     for (const s of sessionRows) {
       const day = localDay(s.created_at)
       if (!day) continue
-      const harness: HarnessKind = s.provider === 'codex' ? 'codex' : 'claude'
+      const harness = sessionHarness(s.provider, s.acp_agent_id)
+      sessionHarnessById.set(s.id, harness)
       upsertActivity(day, harness, { sessionsStarted: 1 })
       markSession.run(now, s.id)
       sessionsRecorded++
@@ -296,6 +322,7 @@ export function backfillFromHistory(): BackfillSummary {
     let scanned = 0
     let claudeRecorded = 0
     let codexRecorded = 0
+    let grokRecorded = 0
     let messagesRecorded = 0
 
     const claudeSessionMaxByModel = new Map<string, Map<string, UsageStepDelta>>()
@@ -313,7 +340,7 @@ export function backfillFromHistory(): BackfillSummary {
         }
       }
 
-      const harness = harnessOf(raw.provider_id, metadata)
+      const harness = sessionHarnessById.get(raw.session_id) ?? harnessOf(raw.provider_id, metadata)
       const day = localDay(raw.created_at)
       if (!day) continue
 
@@ -337,6 +364,20 @@ export function backfillFromHistory(): BackfillSummary {
             upsertUsage(codexDay, 'codex', metadata.codex?.model || 'codex', codexUsageStepDelta(codexUsage))
             codexRecorded++
           }
+        }
+        continue
+      }
+
+      if (harness === 'grok') {
+        const usage = metadata.usage
+        if (usage) {
+          upsertUsage(day, 'grok', metadata.model || 'grok', {
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+            cacheReadTokens: usage.cacheReadInputTokens ?? 0,
+            cacheCreationTokens: usage.cacheCreationInputTokens ?? 0,
+          })
+          grokRecorded++
         }
         continue
       }
@@ -376,7 +417,7 @@ export function backfillFromHistory(): BackfillSummary {
       }
     }
 
-    return { scanned, claudeRecorded, codexRecorded, sessionsRecorded, messagesRecorded }
+    return { scanned, claudeRecorded, codexRecorded, grokRecorded, sessionsRecorded, messagesRecorded }
   })
 
   const summary = txn() as Omit<BackfillSummary, 'durationMs'>

@@ -376,7 +376,7 @@ interface AppAPI {
   queryUsage(range?: { from?: string; to?: string }): Promise<{
     rows: Array<{
       day: string
-      harness: 'claude' | 'codex'
+      harness: 'claude' | 'codex' | 'grok'
       model: string
       input_tokens: number
       output_tokens: number
@@ -384,12 +384,12 @@ interface AppAPI {
       cache_creation_tokens: number
     }>
   }>
-  queryUsageCounts(range?: { from?: string; to?: string; harness?: 'claude' | 'codex' }): Promise<{
+  queryUsageCounts(range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' }): Promise<{
     sessions: number
     messages: number
   }>
   getUsageBackfillStatus(): Promise<'done' | 'pending'>
-  onUsageBackfillDone(callback: (summary: { scanned: number; claudeRecorded: number; codexRecorded: number; durationMs: number }) => void): () => void
+  onUsageBackfillDone(callback: (summary: { scanned: number; claudeRecorded: number; codexRecorded: number; grokRecorded: number; durationMs: number }) => void): () => void
 
   onContentZoom(callback: (action: 'in' | 'out' | 'reset') => void): () => void
 

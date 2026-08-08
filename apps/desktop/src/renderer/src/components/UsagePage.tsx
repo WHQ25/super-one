@@ -3,6 +3,16 @@ import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts'
 import { cn } from '@superone/ui/lib/utils'
+import { buildCatalogModelIndex } from '@superone/shared/platform-registry'
+import { useModelCatalog } from '@/hooks/useModelCatalog'
+import { useChatStore } from '@/stores/chat'
+import { ModelGlyph } from './providers/ModelGlyph'
+import {
+  buildUsageModelNameIndex,
+  resolveUsageModelPresentation,
+  type UsageHarness,
+  usageModelId,
+} from './usage-model-presentation'
 
 function SizedChart({ height, className, children }: { height: number | string; className?: string; children: (size: { width: number; height: number }) => ReactNode }) {
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -26,7 +36,7 @@ function SizedChart({ height, className, children }: { height: number | string; 
   )
 }
 
-type Harness = 'claude' | 'codex'
+type Harness = UsageHarness
 type HarnessFilter = 'all' | Harness
 
 interface UsageRow {
@@ -39,6 +49,17 @@ interface UsageRow {
   cache_creation_tokens: number
 }
 
+interface ByModelRow {
+  harness: Harness
+  model: string
+  displayName: string
+  providerBrand: string
+  input: number
+  output: number
+  cacheRead: number
+  cacheCreation: number
+}
+
 type RangePreset = 'today' | '7d' | '30d' | '90d' | 'all'
 
 const PRESETS: { id: RangePreset; days: number | null }[] = [
@@ -49,7 +70,7 @@ const PRESETS: { id: RangePreset; days: number | null }[] = [
   { id: 'all', days: null },
 ]
 
-const HARNESS_FILTERS: HarnessFilter[] = ['all', 'claude', 'codex']
+const HARNESS_FILTERS: HarnessFilter[] = ['all', 'claude', 'codex', 'grok']
 
 const TOKEN_TYPE_KEYS = ['input', 'output', 'cacheRead', 'cacheCreation'] as const
 type TokenTypeKey = typeof TOKEN_TYPE_KEYS[number]
@@ -81,12 +102,30 @@ function rowTotal(r: UsageRow): number {
 
 export function UsagePage() {
   const { t } = useTranslation()
+  const { catalog } = useModelCatalog()
+  const harnessResources = useChatStore((state) => state.harnessResources)
   const [rows, setRows] = useState<UsageRow[]>([])
   const [counts, setCounts] = useState<{ sessions: number; messages: number }>({ sessions: 0, messages: 0 })
   const [loading, setLoading] = useState(true)
   const [backfilling, setBackfilling] = useState(false)
   const [preset, setPreset] = useState<RangePreset>('today')
   const [harnessFilter, setHarnessFilter] = useState<HarnessFilter>('all')
+  const catalogModels = useMemo(
+    () => catalog ? buildCatalogModelIndex(catalog) : new Map(),
+    [catalog],
+  )
+  const knownModelNames = useMemo(() => {
+    const acpModels = Object.values(harnessResources.acp?.modelsByAgentId ?? {})
+      .flatMap((entry) => entry.models)
+    const acpExtraModels = Object.values(harnessResources.acp?.configByAgentId ?? {})
+      .flatMap((entry) => entry.extraModels ?? [])
+    return buildUsageModelNameIndex([
+      ...(harnessResources.claude?.models ?? []),
+      ...(harnessResources.codex?.models ?? []),
+      ...acpModels,
+      ...acpExtraModels,
+    ])
+  }, [harnessResources])
 
   const range = useMemo(() => {
     const found = PRESETS.find((p) => p.id === preset)
@@ -140,17 +179,18 @@ export function UsagePage() {
   }, [filteredRows])
 
   const dailyByHarness = useMemo(() => {
-    const byDay = new Map<string, { claude: number; codex: number }>()
+    const byDay = new Map<string, { claude: number; codex: number; grok: number }>()
     for (const r of rows) {
-      const cur = byDay.get(r.day) ?? { claude: 0, codex: 0 }
+      const cur = byDay.get(r.day) ?? { claude: 0, codex: 0, grok: 0 }
       const tokens = rowTotal(r)
       if (r.harness === 'claude') cur.claude += tokens
-      else cur.codex += tokens
+      else if (r.harness === 'codex') cur.codex += tokens
+      else cur.grok += tokens
       byDay.set(r.day, cur)
     }
     return Array.from(byDay.entries())
       .sort(([a], [b]) => a < b ? -1 : 1)
-      .map(([day, v]) => ({ day, claude: v.claude, codex: v.codex }))
+      .map(([day, v]) => ({ day, claude: v.claude, codex: v.codex, grok: v.grok }))
   }, [rows])
 
   const dailyByTokenType = useMemo(() => {
@@ -169,10 +209,19 @@ export function UsagePage() {
   }, [filteredRows])
 
   const byModel = useMemo(() => {
-    const map = new Map<string, { harness: Harness; model: string; input: number; output: number; cacheRead: number; cacheCreation: number }>()
+    const map = new Map<string, ByModelRow>()
     for (const r of filteredRows) {
-      const key = `${r.harness}::${r.model}`
-      const cur = map.get(key) ?? { harness: r.harness, model: r.model, input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
+      const model = usageModelId(r.model)
+      const key = `${r.harness}::${model}`
+      const cur = map.get(key) ?? {
+        harness: r.harness,
+        model,
+        ...resolveUsageModelPresentation(model, r.harness, catalogModels, knownModelNames),
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheCreation: 0,
+      }
       cur.input += r.input_tokens
       cur.output += r.output_tokens
       cur.cacheRead += r.cache_read_tokens
@@ -180,7 +229,7 @@ export function UsagePage() {
       map.set(key, cur)
     }
     return Array.from(map.values()).sort((a, b) => (b.input + b.output + b.cacheRead + b.cacheCreation) - (a.input + a.output + a.cacheRead + a.cacheCreation))
-  }, [filteredRows])
+  }, [filteredRows, catalogModels, knownModelNames])
 
   const isAll = harnessFilter === 'all'
   const isToday = preset === 'today'
@@ -275,6 +324,7 @@ export function UsagePage() {
               <>
                 <LegendDot fill="var(--primary)" label="Claude" />
                 <LegendDot fill="var(--foreground)" opacity={0.4} label="Codex" />
+                <LegendDot fill="var(--warning)" opacity={0.75} label="Grok" />
               </>
             )}
           </div>
@@ -327,7 +377,14 @@ export function UsagePage() {
                 const total = m.input + m.output + m.cacheRead + m.cacheCreation
                 return (
                   <tr key={`${m.harness}::${m.model}`} className="border-b border-border/50 last:border-b-0">
-                    <td className="px-4 py-2 font-mono text-xs">{m.model}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex min-w-0 items-center gap-2" title={m.model}>
+                        <span className="flex size-5 shrink-0 items-center justify-center">
+                          <ModelGlyph modelId={m.model} providerBrand={m.providerBrand} size={18} />
+                        </span>
+                        <span className="truncate font-medium">{m.displayName}</span>
+                      </div>
+                    </td>
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.input)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.output)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheRead)}</td>
@@ -504,7 +561,7 @@ function HeatmapLegend({ t }: { t: (key: string) => string }) {
   )
 }
 
-interface DailyHarnessRow { day: string; claude: number; codex: number }
+interface DailyHarnessRow { day: string; claude: number; codex: number; grok: number }
 interface DailyTokenTypeRow { day: string; input: number; output: number; cacheRead: number; cacheCreation: number }
 
 function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: string) => string }) {
@@ -520,6 +577,10 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
             <linearGradient id="codexFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--foreground)" stopOpacity={0.4} />
               <stop offset="100%" stopColor="var(--foreground)" stopOpacity={0.05} />
+            </linearGradient>
+            <linearGradient id="grokFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--warning)" stopOpacity={0.55} />
+              <stop offset="100%" stopColor="var(--warning)" stopOpacity={0.08} />
             </linearGradient>
           </defs>
           <XAxis
@@ -537,17 +598,20 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
               if (!active || !payload || payload.length === 0) return null
               const claude = (payload.find((p) => p.dataKey === 'claude')?.value as number) ?? 0
               const codex = (payload.find((p) => p.dataKey === 'codex')?.value as number) ?? 0
+              const grok = (payload.find((p) => p.dataKey === 'grok')?.value as number) ?? 0
               return (
                 <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
                   <div className="mb-1 font-medium">{label}</div>
                   <TooltipRow color="var(--primary)" label="Claude" value={claude} />
                   <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" value={codex} />
-                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={claude + codex} bold />
+                  <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" value={grok} />
+                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={claude + codex + grok} bold />
                 </div>
               )
             }}
           />
           <Area type="monotone" dataKey="codex" stackId="usage" stroke="var(--foreground)" strokeOpacity={0.4} strokeWidth={1.5} fill="url(#codexFill)" />
+          <Area type="monotone" dataKey="grok" stackId="usage" stroke="var(--warning)" strokeOpacity={0.75} strokeWidth={1.5} fill="url(#grokFill)" />
           <Area type="monotone" dataKey="claude" stackId="usage" stroke="var(--primary)" strokeWidth={1.5} fill="url(#claudeFill)" />
         </AreaChart>
       )}
@@ -613,11 +677,12 @@ function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (k
     </SizedChart>
   )
 }
-interface ByModelRow { harness: Harness; model: string; input: number; output: number; cacheRead: number; cacheCreation: number }
-
 function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) => string }) {
   const chartData = data.map((m) => ({
-    label: `${m.harness} · ${m.model}`,
+    key: `${m.harness}::${m.model}`,
+    model: m.model,
+    displayName: m.displayName,
+    providerBrand: m.providerBrand,
     input: m.input,
     output: m.output,
     cacheRead: m.cacheRead,
@@ -631,16 +696,17 @@ function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) =
           <XAxis type="number" hide domain={[0, 'dataMax']} />
           <YAxis
             type="category"
-            dataKey="label"
-            tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+            dataKey="key"
+            tick={<ModelAxisTick rows={chartData} />}
             tickLine={false}
             axisLine={false}
             width={220}
           />
           <Tooltip
             cursor={{ fill: 'var(--accent)', opacity: 0.3 }}
-            content={({ active, payload, label }) => {
+            content={({ active, payload }) => {
               if (!active || !payload || payload.length === 0) return null
+              const modelRow = payload[0]?.payload as (typeof chartData)[number] | undefined
               const values: Record<TokenTypeKey, number> = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
               for (const k of TOKEN_TYPE_KEYS) {
                 values[k] = (payload.find((p) => p.dataKey === k)?.value as number) ?? 0
@@ -648,7 +714,12 @@ function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) =
               const total = values.input + values.output + values.cacheRead + values.cacheCreation
               return (
                 <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
-                  <div className="mb-1 font-medium">{label}</div>
+                  {modelRow && (
+                    <div className="mb-1 flex items-center gap-1.5 font-medium" title={modelRow.model}>
+                      <ModelGlyph modelId={modelRow.model} providerBrand={modelRow.providerBrand} size={16} />
+                      <span>{modelRow.displayName}</span>
+                    </div>
+                  )}
                   {TOKEN_TYPE_KEYS.map((k) => (
                     <TooltipRow
                       key={k}
@@ -680,8 +751,33 @@ function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) =
   )
 }
 
+function ModelAxisTick({
+  x = 0,
+  y = 0,
+  payload,
+  rows,
+}: {
+  x?: number
+  y?: number
+  payload?: { value?: string }
+  rows: Array<{ key: string; model: string; displayName: string; providerBrand: string }>
+}) {
+  const row = rows.find((item) => item.key === payload?.value)
+  if (!row) return null
+  return (
+    <foreignObject x={x - 216} y={y - 11} width={208} height={22}>
+      <div className="flex h-full min-w-0 items-center justify-end gap-1.5 text-[11px] text-muted-foreground" title={row.model}>
+        <span className="flex size-4 shrink-0 items-center justify-center">
+          <ModelGlyph modelId={row.model} providerBrand={row.providerBrand} size={15} />
+        </span>
+        <span className="truncate">{row.displayName}</span>
+      </div>
+    </foreignObject>
+  )
+}
+
 function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]; t: (key: string) => string; showTopLabels?: boolean }) {
-  const totals = data.map((d) => d.claude + d.codex)
+  const totals = data.map((d) => d.claude + d.codex + d.grok)
   const positives = totals.filter((v) => v > 0)
   const avg = positives.length > 0 ? positives.reduce((a, b) => a + b, 0) / positives.length : 0
   return (
@@ -696,6 +792,10 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
             <linearGradient id="barCodex" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--foreground)" stopOpacity={0.5} />
               <stop offset="100%" stopColor="var(--foreground)" stopOpacity={0.25} />
+            </linearGradient>
+            <linearGradient id="barGrok" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--warning)" stopOpacity={0.85} />
+              <stop offset="100%" stopColor="var(--warning)" stopOpacity={0.45} />
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
@@ -728,21 +828,24 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
               if (!active || !payload || payload.length === 0) return null
               const claude = (payload.find((p) => p.dataKey === 'claude')?.value as number) ?? 0
               const codex = (payload.find((p) => p.dataKey === 'codex')?.value as number) ?? 0
+              const grok = (payload.find((p) => p.dataKey === 'grok')?.value as number) ?? 0
               return (
                 <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
                   <div className="mb-1 font-medium">{label}</div>
                   <TooltipRow color="var(--primary)" label="Claude" value={claude} />
                   <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" value={codex} />
-                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={claude + codex} bold />
+                  <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" value={grok} />
+                  <TooltipRow color="transparent" label={t('settings.usage.tooltip.total')} value={claude + codex + grok} bold />
                 </div>
               )
             }}
           />
           <Bar dataKey="claude" name="Claude" fill="url(#barClaude)" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="codex" name="Codex" fill="url(#barCodex)" radius={[3, 3, 0, 0]}>
+          <Bar dataKey="codex" name="Codex" fill="url(#barCodex)" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="grok" name="Grok" fill="url(#barGrok)" radius={[3, 3, 0, 0]}>
             {showTopLabels && (
               <LabelList
-                dataKey={(entry: DailyHarnessRow) => entry.claude + entry.codex}
+                dataKey={(entry: DailyHarnessRow) => entry.claude + entry.codex + entry.grok}
                 position="top"
                 formatter={(v) => typeof v === 'number' && v > 0 ? formatNumber(v) : ''}
                 style={{ fontSize: 10, fill: 'var(--muted-foreground)' }}

@@ -1411,7 +1411,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.USAGE_QUERY, range ?? {}) as Promise<{
       rows: Array<{
         day: string
-        harness: 'claude' | 'codex'
+        harness: 'claude' | 'codex' | 'grok'
         model: string
         input_tokens: number
         output_tokens: number
@@ -1419,15 +1419,15 @@ const appAPI = {
         cache_creation_tokens: number
       }>
     }>,
-  queryUsageCounts: (range?: { from?: string; to?: string; harness?: 'claude' | 'codex' }) =>
+  queryUsageCounts: (range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' }) =>
     ipcRenderer.invoke(AgentIpcChannels.USAGE_COUNTS_QUERY, range ?? {}) as Promise<{
       sessions: number
       messages: number
     }>,
   getUsageBackfillStatus: () =>
     ipcRenderer.invoke(AgentIpcChannels.USAGE_BACKFILL_STATUS) as Promise<'done' | 'pending'>,
-  onUsageBackfillDone: (callback: (summary: { scanned: number; claudeRecorded: number; codexRecorded: number; durationMs: number }) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, summary: { scanned: number; claudeRecorded: number; codexRecorded: number; durationMs: number }): void => {
+  onUsageBackfillDone: (callback: (summary: { scanned: number; claudeRecorded: number; codexRecorded: number; grokRecorded: number; durationMs: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, summary: { scanned: number; claudeRecorded: number; codexRecorded: number; grokRecorded: number; durationMs: number }): void => {
       callback(summary)
     }
     ipcRenderer.on(AgentIpcChannels.USAGE_BACKFILL_DONE, handler)

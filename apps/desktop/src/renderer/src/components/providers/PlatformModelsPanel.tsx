@@ -18,7 +18,6 @@ import {
   Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { ModelIcon, modelMappings } from '@lobehub/icons'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -44,7 +43,7 @@ import { MODEL_TASK_ORDER, modelTasks } from '@superone/shared/model-tasks'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useSettingsStore } from '@/stores/settings'
 import { stripOneM } from '@/lib/model-id'
-import { ProviderLabel } from '../ProviderLabel'
+import { ModelGlyph } from './ModelGlyph'
 import {
   AddCustomModelPopover,
   listCustomModels,
@@ -120,11 +119,6 @@ const CATALOG_ID_ALIAS: Record<string, string> = {
   vertexai: 'google',
 }
 
-function hasModelIcon(id: string): boolean {
-  const m = id.toLowerCase()
-  return modelMappings.some((entry) => entry.keywords.some((k) => new RegExp(k, 'i').test(m)))
-}
-
 function matchCatalogProvider(providers: CatalogProvider[], platform: Platform, plan: Plan): CatalogProvider | null {
   const catalogId = catalogProviderIdFor(platform, plan)
   if (catalogId) {
@@ -188,7 +182,7 @@ function ModelIdBadge({ id }: { id: string }) {
   )
 }
 
-type ModelRow = { m: CatalogModel; iconMatched: boolean; endpoints: ServiceEndpoint[]; enabled: boolean; locked: boolean }
+type ModelRow = { m: CatalogModel; endpoints: ServiceEndpoint[]; enabled: boolean; locked: boolean }
 
 /** Every plan endpoint that serves any of a model's tasks — its enable state is stored on each. */
 function endpointsForTasks(plan: Plan, tasks: CapabilityTask[]): ServiceEndpoint[] {
@@ -257,7 +251,7 @@ export function PlatformModelsPanel({
   const annotated = useMemo(
     () =>
       (catProvider?.models ?? [])
-        .map((m) => ({ m, endpoints: endpointsForTasks(livePlan, modelTasks(m)), iconMatched: hasModelIcon(m.id) }))
+        .map((m) => ({ m, endpoints: endpointsForTasks(livePlan, modelTasks(m)) }))
         .filter((x) => x.endpoints.length > 0)
         .sort((a, b) => (b.m.releaseDate ?? '').localeCompare(a.m.releaseDate ?? '')),
     [catProvider, livePlan],
@@ -428,7 +422,7 @@ export function PlatformModelsPanel({
         if (q && !m.id.toLowerCase().includes(q) && !m.name.toLowerCase().includes(q)) return false
         return true
       })
-      .map(({ m, endpoints, iconMatched }) => ({ m, iconMatched, endpoints, ...modelState(endpoints, m.id) }))
+      .map(({ m, endpoints }) => ({ m, endpoints, ...modelState(endpoints, m.id) }))
   }, [annotated, activeTab, query, modelState])
 
   const enabledRows = useMemo(() => rows.filter((r) => r.enabled), [rows])
@@ -480,12 +474,10 @@ export function PlatformModelsPanel({
     </>
   )
 
-  const renderRow = ({ m, iconMatched, endpoints, enabled, locked }: ModelRow) => (
+  const renderRow = ({ m, endpoints, enabled, locked }: ModelRow) => (
     <div key={m.id} className="flex items-center gap-3 px-3 py-2.5">
       <div className="flex size-7 shrink-0 items-center justify-center">
-        {iconMatched
-          ? <ModelIcon model={m.id} type="color" size={26} />
-          : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
+        <ModelGlyph modelId={m.id} providerBrand={platform.brand} size={26} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -515,9 +507,7 @@ export function PlatformModelsPanel({
     return (
       <div key={cm.id} className="flex items-center gap-3 px-3 py-2.5">
         <div className="flex size-7 shrink-0 items-center justify-center">
-          {hasModelIcon(cm.id)
-            ? <ModelIcon model={cm.id} type="color" size={26} />
-            : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
+          <ModelGlyph modelId={cm.id} providerBrand={platform.brand} size={26} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -553,9 +543,7 @@ export function PlatformModelsPanel({
     return (
       <div key={d.id} className="flex items-center gap-3 px-3 py-2.5">
         <div className="flex size-7 shrink-0 items-center justify-center">
-          {hasModelIcon(d.id)
-            ? <ModelIcon model={d.id} type="color" size={26} />
-            : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
+          <ModelGlyph modelId={d.id} providerBrand={platform.brand} size={26} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">

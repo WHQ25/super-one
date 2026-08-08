@@ -31,6 +31,7 @@ interface SessionRow {
   id: string
   created_at: string
   provider: string
+  acp_agent_id?: string | null
   usage_counted_at: string | null
 }
 
@@ -168,7 +169,12 @@ function fakeDb(): {
       if (trimmed.startsWith('SELECT id, created_at, COALESCE(NULLIF(provider')) {
         return {
           run: () => ({ changes: 0 }),
-          all: () => state.sessions.map((s) => ({ id: s.id, created_at: s.created_at, provider: s.provider || 'claude' })),
+          all: () => state.sessions.map((s) => ({
+            id: s.id,
+            created_at: s.created_at,
+            provider: s.provider || 'claude',
+            acp_agent_id: s.acp_agent_id ?? null,
+          })),
           get: () => undefined,
           iterate: () => [],
         }
@@ -370,6 +376,25 @@ describe('usage-stats-service: recordCodexFromUsage', () => {
   })
 })
 
+describe('usage-stats-service: recordGrokFromUsage', () => {
+  it('records Grok usage by selected model with cached input separated', async () => {
+    const { recordGrokFromUsage, queryUsage } = await import('./usage-stats-service')
+    recordGrokFromUsage(
+      { inputTokens: 800, outputTokens: 300, cacheReadTokens: 400 },
+      'grok-4.5',
+      new Date(2026, 4, 4, 10),
+    )
+    expect(queryUsage().rows[0]).toMatchObject({
+      harness: 'grok',
+      model: 'grok-4.5',
+      input_tokens: 800,
+      output_tokens: 300,
+      cache_read_tokens: 400,
+      cache_creation_tokens: 0,
+    })
+  })
+})
+
 describe('usage-stats-service: activity counts', () => {
   it('records sessions_started and message counts independently', async () => {
     const { recordSessionStarted, recordMessageCounts, queryCounts } = await import('./usage-stats-service')
@@ -385,10 +410,13 @@ describe('usage-stats-service: activity counts', () => {
     const day = new Date(2026, 4, 4, 10)
     recordSessionStarted('claude', day)
     recordSessionStarted('codex', day)
+    recordSessionStarted('grok', day)
     recordMessageCounts('claude', day, { userMessages: 1, assistantMessages: 1 })
     recordMessageCounts('codex', day, { userMessages: 4, assistantMessages: 4 })
+    recordMessageCounts('grok', day, { userMessages: 2, assistantMessages: 3 })
     expect(queryCounts({ harness: 'claude' })).toEqual({ sessions: 1, messages: 2 })
     expect(queryCounts({ harness: 'codex' })).toEqual({ sessions: 1, messages: 8 })
+    expect(queryCounts({ harness: 'grok' })).toEqual({ sessions: 1, messages: 5 })
   })
 
   it('respects from/to range filter', async () => {
@@ -403,6 +431,12 @@ describe('usage-stats-service: activity counts', () => {
 })
 
 describe('usage-stats-service: backfill', () => {
+  it('reruns backfill after the Grok usage schema revision', async () => {
+    state.meta.set('usage_backfill_done', 'v3')
+    const { getBackfillStatus } = await import('./usage-stats-service')
+    expect(getBackfillStatus()).toBe('pending')
+  })
+
   it('starts in pending status and flips to done after backfill', async () => {
     const { getBackfillStatus, backfillFromHistory } = await import('./usage-stats-service')
     expect(getBackfillStatus()).toBe('pending')
@@ -460,6 +494,47 @@ describe('usage-stats-service: backfill', () => {
     const codexRow = queryUsage().rows.find((r) => r.harness === 'codex')!
     expect(codexRow.input_tokens).toBe((80 - 20) + (40 - 10))
     expect(codexRow.output_tokens).toBe(150 + 80)
+  })
+
+  it('backfills Grok activity and per-message model usage', async () => {
+    state.sessions.push({
+      id: 'g1',
+      created_at: new Date(2026, 4, 4, 10).toISOString(),
+      provider: 'acp',
+      acp_agent_id: 'grok-build',
+      usage_counted_at: null,
+    })
+    state.messages.push({
+      id: 'g1-a1',
+      session_id: 'g1',
+      metadata_json: JSON.stringify({
+        model: 'grok-4.5',
+        usage: {
+          inputTokens: 800,
+          outputTokens: 300,
+          cacheReadInputTokens: 400,
+          cacheCreationInputTokens: 0,
+        },
+      }),
+      created_at: new Date(2026, 4, 4, 10).toISOString(),
+      provider_id: 'acp',
+      role: 'assistant',
+      status: 'complete',
+      usage_counted_at: null,
+    })
+
+    const { backfillFromHistory, queryCounts, queryUsage } = await import('./usage-stats-service')
+    const summary = backfillFromHistory()
+
+    expect(summary.grokRecorded).toBe(1)
+    expect(queryCounts({ harness: 'grok' })).toEqual({ sessions: 1, messages: 1 })
+    expect(queryUsage().rows[0]).toMatchObject({
+      harness: 'grok',
+      model: 'grok-4.5',
+      input_tokens: 800,
+      output_tokens: 300,
+      cache_read_tokens: 400,
+    })
   })
 
   it('marks usage_counted_at on backfilled session and message rows', async () => {

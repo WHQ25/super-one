@@ -10,6 +10,13 @@ vi.mock('../../agent/resolve-cli', () => ({
   getNodeRuntime: () => ({ executable: '/fake/node', env: {} }),
 }))
 
+const { recordGrokFromUsageMock } = vi.hoisted(() => ({
+  recordGrokFromUsageMock: vi.fn(),
+}))
+vi.mock('../../usage-stats-service', () => ({
+  recordGrokFromUsage: recordGrokFromUsageMock,
+}))
+
 import { AcpBackend, setAcpRuntimeFactory } from './acp-backend'
 import type { BackendStartOptions } from '../types'
 import type { AcpRuntime } from '../../acp/acp-runtime'
@@ -122,6 +129,7 @@ function mockRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
 
 describe('AcpBackend', () => {
   beforeEach(() => {
+    recordGrokFromUsageMock.mockClear()
     setAcpRuntimeFactory(async () => mockRuntime())
   })
 
@@ -133,6 +141,47 @@ describe('AcpBackend', () => {
     const backend = new AcpBackend()
     expect(backend.kind).toBe('acp')
     await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.close()
+  })
+
+  it('records Grok turn usage with the selected model', async () => {
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getConfigOptions: () => [],
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.5',
+        models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      }),
+      prompt: async (_text, messageId, onEvent) => {
+        onEvent({ type: 'agent_setting_change', selectedModel: 'grok-4.6' })
+        onEvent({
+          type: 'message_usage',
+          messageId,
+          inputTokens: 800,
+          outputTokens: 300,
+          cacheReadTokens: 400,
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: 'hello', assistantMessageId: 'a1' })
+
+    expect(recordGrokFromUsageMock).toHaveBeenCalledWith(
+      expect.objectContaining({ inputTokens: 800, outputTokens: 300, cacheReadTokens: 400, model: 'grok-4.6' }),
+      'grok-4.6',
+      expect.any(Date),
+    )
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_usage',
+      messageId: 'a1',
+      model: 'grok-4.6',
+    }))
     await backend.close()
   })
 

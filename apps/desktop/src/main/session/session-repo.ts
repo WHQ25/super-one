@@ -3,6 +3,7 @@ import { getDb } from '../database'
 import log from '../logger'
 import { getProjectId } from '../recent-folders'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
 import type { HarnessId, MessagePersistMode } from './types'
 
@@ -344,8 +345,11 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
 
   const deleteMsgById = db.prepare('DELETE FROM chat_messages WHERE session_id = ? AND id = ?')
 
-  const harness: HarnessKind | null =
-    legacyProvider === 'codex' || legacyProvider === 'claude' ? legacyProvider : null
+  const harness: HarnessKind | null = legacyProvider === 'codex' || legacyProvider === 'claude'
+    ? legacyProvider
+    : legacyProvider === 'acp' && isGrokAcpAgent(input.acpAgentId)
+      ? 'grok'
+      : null
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false
   let sessionCreatedAt = now

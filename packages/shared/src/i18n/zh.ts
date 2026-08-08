@@ -730,6 +730,7 @@ export const zh: Messages = {
         all: '全部',
         claude: 'Claude',
         codex: 'Codex',
+        grok: 'Grok',
       },
       summary: {
         totalTokens: '总 Token',

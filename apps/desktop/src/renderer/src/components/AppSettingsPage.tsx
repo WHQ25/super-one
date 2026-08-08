@@ -352,9 +352,14 @@ function UpdateCheckRow({ version }: { version: string }) {
       </div>
       {downloading && (
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
+          {/* No progress events arrive while electron-updater fetches blockmaps, so an
+              0%-wide bar would read as a stalled download — pulse the full bar instead. */}
           <div
-            className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
-            style={{ width: `${percent}%` }}
+            className={cn(
+              'h-full rounded-full bg-primary',
+              updateStatus === 'preparing' ? 'animate-pulse' : 'transition-[width] duration-300 ease-out',
+            )}
+            style={{ width: updateStatus === 'preparing' ? '100%' : `${percent}%` }}
           />
         </div>
       )}

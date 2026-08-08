@@ -217,6 +217,7 @@ export type Messages = {
       available: string
       availableHint: string
       preparing: string
+      preparingShort: string
       upToDate: string
       downloading: string
       downloadingWithProgress: string
@@ -2508,6 +2509,7 @@ export const en: Messages = {
       available: 'Update',
       availableHint: 'Update {{version}} available — click to download',
       preparing: 'Preparing update {{version}}...',
+      preparingShort: 'Preparing',
       upToDate: "You're up to date",
       downloading: 'Downloading {{version}}...',
       downloadingWithProgress: 'Downloading {{version}}... {{progress}}%',

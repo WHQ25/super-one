@@ -227,6 +227,7 @@ export const zh: Messages = {
       available: '更新',
       availableHint: '有可用更新 {{version}} — 点击下载',
       preparing: '正在准备更新 {{version}}...',
+      preparingShort: '准备中',
       upToDate: '已是最新版本',
       downloading: '正在下载 {{version}}...',
       downloadingWithProgress: '正在下载 {{version}}... {{progress}}%',

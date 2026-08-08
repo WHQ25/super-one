@@ -2384,6 +2384,8 @@ export const AgentIpcChannels = {
   DISMISS_QUESTION: 'agent:dismiss-question',
   RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',
   RESET_SESSION: 'agent:reset-session',
+  /** Grok ACP manual `/recap` → `x.ai/recap` (auto=false). */
+  REQUEST_SESSION_RECAP: 'agent:request-session-recap',
   CREATE_SESSION: 'agent:create-session',
   TRUNCATE_AT_CHECKPOINT: 'agent:truncate-at-checkpoint',
   REWIND_FILES: 'agent:rewind-files',

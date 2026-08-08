@@ -550,6 +550,38 @@ describe('AgentService SEND_MESSAGE', () => {
     expect(send).toHaveBeenCalled()
   })
 
+  it('REQUEST_SESSION_RECAP calls session.requestSessionRecap(false)', async () => {
+    const service = new AgentService()
+    const requestSessionRecap = vi.fn().mockResolvedValue(true)
+    const existing = makeMockSession({
+      id: 'sid-grok',
+      cwd: '/repo/main',
+      snapshot: { harnessId: 'acp', messages: [] },
+      requestSessionRecap,
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.REQUEST_SESSION_RECAP)!
+
+    const ok = await handler(null, 'sid-grok')
+
+    expect(ok).toBe(true)
+    expect(requestSessionRecap).toHaveBeenCalledWith(false)
+  })
+
+  it('REQUEST_SESSION_RECAP returns false when session is missing', async () => {
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.REQUEST_SESSION_RECAP)!
+
+    await expect(handler(null, 'missing')).resolves.toBe(false)
+  })
+
   it('prewarm switches existing session cwd when worktreePath differs', async () => {
     const service = new AgentService()
     const switchCwd = vi.fn().mockResolvedValue(undefined)

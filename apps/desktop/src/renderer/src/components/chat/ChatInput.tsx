@@ -22,7 +22,7 @@ import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
 import type { CodexGoal, SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
-import { acpAgentDisplayName } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { InputSegment } from '@/stores/chat-store/types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
@@ -273,6 +273,15 @@ export function ChatInput() {
       const local: SlashCommandInfo[] = [
         { name: 'clear', description: t('chat.acpCommands.clearDesc'), argumentHint: '', isSkill: false },
       ]
+      // Host-only Grok `/recap` (x.ai/recap) — not an agent available_command.
+      if (isGrokAcpAgent(acpAgentId)) {
+        local.push({
+          name: 'recap',
+          description: t('chat.acpCommands.recapDesc'),
+          argumentHint: '',
+          isSkill: false,
+        })
+      }
       const seen = new Set(local.map((c) => c.name))
       const agentCmds = Array.isArray(acpSlashCommandsFromAgent) ? acpSlashCommandsFromAgent : []
       const fromAgent = agentCmds.filter((c) => {
@@ -287,7 +296,7 @@ export function ChatInput() {
         isSkill: false,
       }))
       return [...fromAgent, ...local]
-    }, [t, acpSlashCommandsFromAgent])
+    }, [t, acpSlashCommandsFromAgent, acpAgentId])
 
     // Never fall through to project-level Claude slashCommands/skills for ACP.
     const activeSlashCommands = useMemo(

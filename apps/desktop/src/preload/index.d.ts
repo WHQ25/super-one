@@ -27,6 +27,8 @@ interface AgentAPI {
   respondToPlanApproval(sessionId: string, requestId: string, approved: boolean, feedback?: string): Promise<void>
   createSession(projectPath: string): Promise<string>
   resetSession(sessionId: string, newSessionId?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | null>
+  /** Grok ACP manual `/recap` → `x.ai/recap` (auto=false). Returns false if skipped/unavailable. */
+  requestSessionRecap(sessionId: string): Promise<boolean>
   truncateAtCheckpoint(projectPath: string, checkpointId: string): Promise<boolean>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string): Promise<void>

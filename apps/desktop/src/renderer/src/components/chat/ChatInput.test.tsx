@@ -633,4 +633,34 @@ describe('ChatInput slash command grouping', () => {
     expect(labels.some((label) => label.startsWith('/release'))).toBe(false)
     expect(screen.queryByText('Skills')).toBeNull()
   })
+
+  it('shows host /recap for Grok ACP and hides it for other ACP agents', () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.acpSlashCommands = []
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    let labels = screen
+      .getAllByRole('button')
+      .map((b) => b.querySelector('.font-medium')?.textContent ?? '')
+      .filter(Boolean)
+    expect(labels.some((label) => label.startsWith('/recap'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/clear'))).toBe(true)
+
+    activeSessionState.acpAgentId = 'opencode'
+    rerender(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    labels = screen
+      .getAllByRole('button')
+      .map((b) => b.querySelector('.font-medium')?.textContent ?? '')
+      .filter(Boolean)
+    expect(labels.some((label) => label.startsWith('/recap'))).toBe(false)
+    expect(labels.some((label) => label.startsWith('/clear'))).toBe(true)
+  })
 })

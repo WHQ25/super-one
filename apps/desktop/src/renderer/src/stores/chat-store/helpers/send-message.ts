@@ -24,6 +24,7 @@ import {
   getScopedPerSession,
   mergeProjectAndSessionDirs,
 } from './store-helpers'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -42,7 +43,7 @@ import {
  * - provider resolution (claude vs codex) + codex slash-command parsing
  * - rotate SuperOne session id when first switching an empty draft to codex
  * - utility codex commands (help/reset/auth-status/auth-set/plan) routed to the popup
- * - intercepted slash commands (/provider, /clear, /mcp)
+ * - intercepted slash commands (/provider, /clear, /mcp, Grok /recap)
  * - user message appended (or queued during a claude streaming turn)
  * - dispatch: codex → runCodexCommand, claude → window.agent.sendMessage
  *
@@ -104,6 +105,24 @@ export async function sendMessageImpl(
         patchSession(() => ({ _pendingSlashCommand: '' }))
         await CLAUDE_INTERCEPTED_COMMANDS[m[1]!]!()
         return
+      }
+      // Grok manual `/recap` — host RPC only (never a user message / session.send).
+      if (m?.[1] === 'recap') {
+        const sess = getScopedPerSession(get(), writeTarget)
+        if (sess.sessionProvider === 'acp' || sess.preferredProvider === 'acp') {
+          if (isGrokAcpAgent(sess.acpAgentId)) {
+            patchSession(() => ({ _pendingSlashCommand: '' }))
+            const sid = resolveWriteSid()
+            if (sid) {
+              try {
+                await window.agent.requestSessionRecap(sid)
+              } catch {
+                /* fail closed — no spinner / error bubble */
+              }
+            }
+            return
+          }
+        }
       }
     }
 
@@ -877,6 +896,22 @@ export async function sendMessageImpl(
     if (m && CLAUDE_INTERCEPTED_COMMANDS[m[1]]) {
       patchSession(() => ({ _pendingSlashCommand: '' }))
       await CLAUDE_INTERCEPTED_COMMANDS[m[1]]()
+      return
+    }
+  }
+
+  // Grok ACP: intercept `/recap` → x.ai/recap (auto=false), not a prompt turn.
+  if (effectiveProvider === 'acp' && isGrokAcpAgent(session.acpAgentId)) {
+    if (/^\/recap$/.test(rawContent)) {
+      patchSession(() => ({ _pendingSlashCommand: '' }))
+      const sid = resolveWriteSid()
+      if (sid) {
+        try {
+          await window.agent.requestSessionRecap(sid)
+        } catch {
+          /* fail closed — result/unavailable arrives as session_recap* events */
+        }
+      }
       return
     }
   }

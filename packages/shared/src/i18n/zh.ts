@@ -799,6 +799,7 @@ export const zh: Messages = {
     },
     acpCommands: {
       clearDesc: '清空对话并重新开始',
+      recapDesc: '回顾本会话发生了什么',
       loading: '正在加载命令…',
       updating: '正在更新命令…',
       loadingHint: '正在从 agent 获取命令列表',

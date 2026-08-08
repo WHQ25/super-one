@@ -76,6 +76,10 @@ const agentAPI = {
   resetSession: (sessionId: string, newSessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, sessionId, newSessionId),
 
+  /** Grok ACP manual `/recap` — host RPC, not a prompt turn. */
+  requestSessionRecap: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REQUEST_SESSION_RECAP, sessionId) as Promise<boolean>,
+
   truncateAtCheckpoint: (projectPath: string, checkpointId: string): Promise<boolean> =>
     ipcRenderer.invoke(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, projectPath, checkpointId),
 

@@ -47,12 +47,15 @@ const mockEnvGetSession = vi.fn()
 const mockEnvCreateSession = vi.fn()
 const mockEnvSendSessionMessage = vi.fn()
 
+const mockRequestSessionRecap = vi.fn().mockResolvedValue(true)
+
 vi.stubGlobal('window', {
   agent: {
     sendMessage: mockSendMessage,
     resetSession: vi.fn().mockResolvedValue(undefined),
     parkSession: vi.fn().mockResolvedValue(undefined),
     prewarm: vi.fn().mockResolvedValue(undefined),
+    requestSessionRecap: mockRequestSessionRecap,
   },
   app: {
     activateWorktree: mockActivateWorktree,
@@ -108,6 +111,7 @@ beforeEach(() => {
   mockWorktreeState.pendingCarryLocalChanges = false
   mockActivateWorktree.mockReset().mockResolvedValue({ ok: true, path: '/wt/feature-x' })
   mockSendMessage.mockReset().mockResolvedValue(undefined)
+  mockRequestSessionRecap.mockReset().mockResolvedValue(true)
   mockSetActiveWorktree.mockReset()
   mockMiniAppAuthorize.mockReset().mockResolvedValue(undefined)
   mockResumeSession.mockReset().mockResolvedValue(null)
@@ -406,6 +410,35 @@ describe('sendMessageImpl: intercepted commands', () => {
     expect(project.showReviewPanel).toBe(true)
     expect(project.reviewPanelInitialMode).toBe('branch')
     expect(mockRunCodexCommand).not.toHaveBeenCalled()
+  })
+
+  it('intercepts Grok /recap and calls requestSessionRecap without sending a turn', async () => {
+    mockRequestSessionRecap.mockClear()
+    seedProject('/proj', 'sid-grok', {
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+    })
+
+    await useChatStore.getState().sendMessage('/recap')
+
+    expect(mockRequestSessionRecap).toHaveBeenCalledWith('sid-grok')
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(getActiveSession('/proj').messages).toEqual([])
+  })
+
+  it('does not intercept /recap for non-Grok ACP agents', async () => {
+    mockRequestSessionRecap.mockClear()
+    seedProject('/proj', 'sid-other', {
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'opencode',
+    })
+
+    await useChatStore.getState().sendMessage('/recap')
+
+    expect(mockRequestSessionRecap).not.toHaveBeenCalled()
+    expect(mockSendMessage).toHaveBeenCalled()
   })
 })
 

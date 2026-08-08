@@ -753,6 +753,7 @@ export type Messages = {
     }
     acpCommands: {
       clearDesc: string
+      recapDesc: string
       loading: string
       updating: string
       loadingHint: string
@@ -3107,6 +3108,7 @@ export const en: Messages = {
     },
     acpCommands: {
       clearDesc: 'Clear the conversation and start fresh',
+      recapDesc: 'Summarize what happened in this session',
       loading: 'Loading slash commands…',
       updating: 'Updating slash commands…',
       loadingHint: 'Fetching slash commands from the agent',

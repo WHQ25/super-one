@@ -1804,6 +1804,13 @@ export class AgentService {
       return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
     })
 
+    // Manual `/recap` (Grok ACP) — fire-and-forget x.ai/recap; result is session_recap event.
+    ipcMain.handle(AgentIpcChannels.REQUEST_SESSION_RECAP, async (_event, sessionId: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session?.requestSessionRecap) return false
+      return session.requestSessionRecap(false)
+    })
+
     ipcMain.handle(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, (_event, projectPath: string, checkpointId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return false
@@ -2840,6 +2847,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.DISMISS_QUESTION)
     ipcMain.removeHandler(AgentIpcChannels.RESPOND_PLAN_APPROVAL)
     ipcMain.removeHandler(AgentIpcChannels.RESET_SESSION)
+    ipcMain.removeHandler(AgentIpcChannels.REQUEST_SESSION_RECAP)
     ipcMain.removeHandler(AgentIpcChannels.CREATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT)
     ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES)

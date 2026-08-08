@@ -93,12 +93,6 @@ function toolResult(value: unknown, isError = false) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value) }], ...(isError ? { isError: true } : {}) }
 }
 
-function assertEnabled(): void {
-  if (!readAppSettings().experimentalAgentCollaborationEnabled) {
-    throw new Error('Agent session collaboration is disabled. Enable it in Settings > General > Experimental.')
-  }
-}
-
 function hashCredential(credential: string): string {
   return createHash('sha256').update(credential).digest('hex')
 }
@@ -318,7 +312,6 @@ export function collaborationSessionTitle(name: string, role: string): string {
 }
 
 export function listSessionAgentProfiles(): SessionAgentProfile[] {
-  assertEnabled()
   return listSessionProviders()
     .filter((provider) => provider.isBase)
     .flatMap((provider) => {
@@ -581,7 +574,6 @@ export async function requestSessionAgents(
   host: SessionManager,
   signal?: AbortSignal,
 ) {
-  assertEnabled()
   // Nested collab is not supported: sidebar only renders one parent→children level,
   // and grandchild grants would orphan intermediate sessions in the UI.
   const nested = getDb().prepare(`
@@ -863,7 +855,6 @@ export async function startSessionAgent(
   credential: string,
   host: SessionManager,
 ) {
-  assertEnabled()
   let grant = grantForCredential(credential)
   if (!grant) return toolResult({ status: 'error', message: 'Invalid collaboration credential' }, true)
   if (grant.parent_session_id !== callerSessionId) {
@@ -1025,7 +1016,6 @@ export async function sendSessionMessage(
   args: SessionSendArgs,
   host: SessionManager,
 ) {
-  assertEnabled()
   const grant = grantForCredential(args.credential)
   if (!grant) return toolResult({ status: 'error', message: 'Invalid collaboration credential' }, true)
   assertEndpoint(grant, callerSessionId)
@@ -1150,7 +1140,6 @@ export async function retrieveSessionMessages(
   callerSessionId: string,
   args: SessionRetrieveArgs,
 ) {
-  assertEnabled()
   if (!Array.isArray(args.credentials) || args.credentials.length === 0) {
     return toolResult({ status: 'error', message: 'credentials must not be empty' }, true)
   }

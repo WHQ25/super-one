@@ -3137,7 +3137,6 @@ export interface BrowserOpenTabRequest {
 export interface AppSettings {
   analyticsEnabled: boolean
   experimentalAgentsEnabled: boolean
-  experimentalAgentCollaborationEnabled: boolean
   /** Allow Claude Code to use OpenAI Chat Completions through the local protocol proxy. */
   experimentalClaudeOpenAiChatEnabled: boolean
   /**
@@ -3231,7 +3230,6 @@ export interface AppSettings {
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
   experimentalAgentsEnabled?: boolean
-  experimentalAgentCollaborationEnabled?: boolean
   experimentalClaudeOpenAiChatEnabled?: boolean
   experimentalRemoteNodesEnabled?: boolean
   crispText?: boolean

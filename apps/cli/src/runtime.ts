@@ -115,8 +115,6 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
   // CollaborationService in-process (late-bound — created after sessions).
   let sessionsRef: SessionRuntime | null = null
   let collaborationRef: CollaborationService | null = null
-  const isCollabEnabled = () =>
-    loadNodeAgentSettings(paths.configJson).experimentalAgentCollaborationEnabled
 
   const hostActionMcp = await startHostActionMcpServer({
     requestHostAction: (input) => {
@@ -128,7 +126,6 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       return sessionsRef.requestHostAction(input)
     },
     collab: {
-      isEnabled: isCollabEnabled,
       listAgents: () => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })
         return collaborationRef.listProfiles()
@@ -233,7 +230,6 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     workspaceGit,
     secrets: collabSecrets,
     sessionProviders,
-    isEnabled: isCollabEnabled,
     experimentalClaudeOpenAiChatEnabled: () =>
       loadNodeAgentSettings(paths.configJson).experimentalClaudeOpenAiChatEnabled,
   })

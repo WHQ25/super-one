@@ -267,7 +267,6 @@ describe('Host Action MCP server', () => {
         }
       },
       collab: {
-        isEnabled: () => true,
         listAgents: (sessionId) => {
           listCalls.push(sessionId)
           return [{ id: 'claude', name: 'claude' }]

@@ -11,8 +11,6 @@ const { mockRemove, mockRegisterTool, mockBuiltInTool, mockSendToolListChanged, 
   const mockIsConnected = vi.fn(() => true)
   return { mockRemove, mockRegisterTool, mockBuiltInTool, mockSendToolListChanged, mockIsConnected }
 })
-const collaborationSettings = vi.hoisted(() => ({ enabled: false }))
-
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({}))
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   McpServer: vi.fn(function(this: Record<string, unknown>) {
@@ -27,7 +25,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../app-settings-service', () => ({
-  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: collaborationSettings.enabled }),
+  readAppSettings: () => ({}),
 }))
 const { mockCreateMiniApp, mockCacheAppEntry } = vi.hoisted(() => ({
   mockCreateMiniApp: vi.fn(),
@@ -126,7 +124,6 @@ function callMiniapp(
 }
 
 beforeEach(() => {
-  collaborationSettings.enabled = false
   vi.clearAllMocks()
   // Clear residual authorizations from any session id used in this file
   for (const sid of [PROJ_A, PROJ_B, 'sess-a', 'sess-b', 'perm-path-session']) {
@@ -142,11 +139,8 @@ beforeEach(() => {
   createSuperoneMcpServer(PROJ_A)
 })
 
-describe('experimental session collaboration tools', () => {
-  it('hides the tools until the experiment is enabled', () => {
-    expect(listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)).not.toContain('session_collab_list_agents')
-
-    collaborationSettings.enabled = true
+describe('session collaboration tools', () => {
+  it('always lists collaboration tools', () => {
     const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
     expect(names).toEqual(expect.arrayContaining([
       'session_collab_list_agents',
@@ -161,7 +155,6 @@ describe('experimental session collaboration tools', () => {
   // description, so it has to be repeated on the Zod surface the in-process Claude
   // server registers — the JSON-Schema half alone would leave Claude without it.
   it('describes launch permissionMode on the Zod surface, not just the stdio descriptors', () => {
-    collaborationSettings.enabled = true
     disposeSuperoneMcpServer(PROJ_A)
     mockRegisterTool.mockClear()
     createSuperoneMcpServer(PROJ_A)

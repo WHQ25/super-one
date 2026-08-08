@@ -59,7 +59,6 @@ function boot() {
     projects,
     workspaceGit,
     secrets,
-    isEnabled: () => true,
   })
   return { sessions, collab, projects, turns, leases, environmentId }
 }

@@ -49,7 +49,7 @@ vi.mock('../mcp/superone-mcp-builtins', () => ({
   executeBuiltInSuperoneTool: vi.fn(),
 }))
 vi.mock('../app-settings-service', () => ({
-  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: false }),
+  readAppSettings: () => ({}),
 }))
 vi.mock('./environment-host', () => ({
   getEnvironmentHost: () => envHost,

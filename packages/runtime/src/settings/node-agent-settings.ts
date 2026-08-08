@@ -30,7 +30,6 @@ export const DEFAULT_NODE_AGENT_SETTINGS: NodeAgentSettings = {
     defaultEffort: '',
     permissionPreset: '',
   },
-  experimentalAgentCollaborationEnabled: false,
   experimentalClaudeOpenAiChatEnabled: false,
 }
 
@@ -91,10 +90,6 @@ export function normalizeNodeAgentSettings(raw: unknown): NodeAgentSettings {
   return {
     claude: normalizeClaude(agent.claude),
     codex: normalizeCodex(agent.codex),
-    experimentalAgentCollaborationEnabled: asBoolean(
-      agent.experimentalAgentCollaborationEnabled,
-      false,
-    ),
     experimentalClaudeOpenAiChatEnabled: asBoolean(
       agent.experimentalClaudeOpenAiChatEnabled,
       false,
@@ -109,7 +104,6 @@ export function mergeNodeAgentSettings(
   const next: NodeAgentSettings = {
     claude: { ...current.claude },
     codex: { ...current.codex },
-    experimentalAgentCollaborationEnabled: current.experimentalAgentCollaborationEnabled,
     experimentalClaudeOpenAiChatEnabled: current.experimentalClaudeOpenAiChatEnabled,
   }
 
@@ -150,9 +144,6 @@ export function mergeNodeAgentSettings(
     }
   }
 
-  if (typeof patch.experimentalAgentCollaborationEnabled === 'boolean') {
-    next.experimentalAgentCollaborationEnabled = patch.experimentalAgentCollaborationEnabled
-  }
   if (typeof patch.experimentalClaudeOpenAiChatEnabled === 'boolean') {
     next.experimentalClaudeOpenAiChatEnabled = patch.experimentalClaudeOpenAiChatEnabled
   }
@@ -181,7 +172,6 @@ export function loadNodeAgentSettings(configPath: string): NodeAgentSettings {
   if (
     file.claude
     || file.codex
-    || typeof file.experimentalAgentCollaborationEnabled === 'boolean'
     || typeof file.experimentalClaudeOpenAiChatEnabled === 'boolean'
   ) {
     return normalizeNodeAgentSettings(file)

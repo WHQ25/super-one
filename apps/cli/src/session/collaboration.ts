@@ -76,8 +76,6 @@ export interface CollaborationDeps {
   secrets: CollaborationSecretCrypto
   /** Session-layer provider profiles (feeds multi-profile listProfiles). */
   sessionProviders?: SessionProviderStore
-  /** When false, session_collab_* tools and service calls fail closed. */
-  isEnabled?: () => boolean
   experimentalClaudeOpenAiChatEnabled?: () => boolean
 }
 
@@ -156,24 +154,8 @@ export function collaborationSessionTitle(name: string, role: string): string {
 export class CollaborationService {
   constructor(private readonly deps: CollaborationDeps) {}
 
-  isEnabled(): boolean {
-    return this.deps.isEnabled?.() ?? true
-  }
-
-  private assertEnabled(): void {
-    if (!this.isEnabled()) {
-      throw Object.assign(
-        new Error(
-          'Agent session collaboration is disabled. Enable experimentalAgentCollaborationEnabled in node settings.',
-        ),
-        { code: 'failed_precondition' },
-      )
-    }
-  }
-
   /** Agent profiles from session_providers (+ ready-harness fallback). */
   listProfiles(): SessionAgentProfile[] {
-    this.assertEnabled()
     const { harnesses, providers, sessions, sessionProviders } = this.deps
     const profiles: SessionAgentProfile[] = []
     const seen = new Set<string>()
@@ -328,7 +310,6 @@ export class CollaborationService {
     | { status: 'cancelled'; message?: string }
     | { status: 'rejected'; feedback?: unknown }
   > {
-    this.assertEnabled()
     const parent = this.deps.sessions.get(input.parentSessionId)
     if (!parent) {
       throw Object.assign(new Error('Parent session is not available'), { code: 'not_found' })
@@ -532,7 +513,6 @@ export class CollaborationService {
     credential: string
     grantId: string
   }> {
-    this.assertEnabled()
     let grant = this.resolveGrant(input.credential, input.grantId)
     if (!grant) {
       throw Object.assign(new Error('Invalid collaboration credential'), { code: 'not_found' })
@@ -703,7 +683,6 @@ export class CollaborationService {
     reused: boolean
     peerSessionId: string
   } {
-    this.assertEnabled()
     const grant = this.grantForCredential(input.credential)
     if (!grant) {
       throw Object.assign(new Error('Invalid collaboration credential'), { code: 'not_found' })
@@ -812,7 +791,6 @@ export class CollaborationService {
     }>
     hint?: string
   } {
-    this.assertEnabled()
     const credentials = [
       ...(typeof input.credential === 'string' && input.credential.trim()
         ? [input.credential.trim()]

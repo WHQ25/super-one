@@ -8,9 +8,7 @@ import {
   MOBILE_SHARE_FILE_DESCRIPTION,
   MOBILE_SHARE_FILE_INPUT_SCHEMA,
   MOBILE_SHARE_FILE_TOOL_NAME,
-  SESSION_COLLABORATION_TOOL_NAMES,
 } from './superone-mcp-builtin-defs'
-import { readAppSettings } from '../app-settings-service'
 import {
   executeBrowserTool,
   getBrowserToolDescriptors,
@@ -76,10 +74,8 @@ const WIDGET_SHOW_DESCRIPTOR: SuperoneMcpToolDescriptor = {
 }
 
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
-  const collaborationEnabled = readAppSettings().experimentalAgentCollaborationEnabled
   const tools = [
-    ...BUILT_IN_SUPERONE_TOOL_DEFS.filter((tool) => collaborationEnabled
-      || !(SESSION_COLLABORATION_TOOL_NAMES as readonly string[]).includes(tool.name)),
+    ...BUILT_IN_SUPERONE_TOOL_DEFS,
     ...getBrowserToolDescriptors(),
     ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
     WIDGET_LIST_TEMPLATES_DESCRIPTOR,
@@ -133,13 +129,6 @@ export async function executeSuperoneMcpTool(
   }
 
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(toolName)) {
-    if ((SESSION_COLLABORATION_TOOL_NAMES as readonly string[]).includes(toolName)
-      && !readAppSettings().experimentalAgentCollaborationEnabled) {
-      return {
-        content: [{ type: 'text' as const, text: '[Error] Agent session collaboration is disabled.' }],
-        isError: true,
-      }
-    }
     return executeBuiltInSuperoneTool(toolName as BuiltInSuperoneToolName, args, {
       notifyDevAppReady,
       sessionId,

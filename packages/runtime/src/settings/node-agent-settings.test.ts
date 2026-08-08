@@ -47,7 +47,6 @@ describe('node-agent-settings', () => {
   it('merges patch without clobbering sibling fields', () => {
     const base = mergeNodeAgentSettings(DEFAULT_NODE_AGENT_SETTINGS, {
       claude: { defaultModel: 'm1', permissionMode: 'plan' },
-      experimentalAgentCollaborationEnabled: true,
       experimentalClaudeOpenAiChatEnabled: true,
     })
     const next = mergeNodeAgentSettings(base, {
@@ -56,7 +55,6 @@ describe('node-agent-settings', () => {
     expect(next.claude.defaultModel).toBe('m1')
     expect(next.claude.permissionMode).toBe('plan')
     expect(next.claude.defaultEffort).toBe('high')
-    expect(next.experimentalAgentCollaborationEnabled).toBe(true)
     expect(next.experimentalClaudeOpenAiChatEnabled).toBe(true)
   })
 

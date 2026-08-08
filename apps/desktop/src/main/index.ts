@@ -548,16 +548,6 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   if (patch?.cdpEnabled === false) {
     detachAllCdp()
   }
-  if (patch?.experimentalAgentCollaborationEnabled !== undefined) {
-    // Collab tools: Claude/OpenCode bake at createSuperoneMcpServer; Codex reloads MCP.
-    const { notifySessionToolsChanged } = await import('./mcp/superone-mcp-server')
-    sessionManager.forEachSession((session) => {
-      if (session.snapshot.harnessId === 'claude' || session.snapshot.harnessId === 'opencode') {
-        session.markNeedsRebuild()
-      }
-      notifySessionToolsChanged(session.id)
-    })
-  }
   if (patch?.experimentalClaudeOpenAiChatEnabled !== undefined) {
     sessionManager.markAllNeedsRebuild('claude')
   }

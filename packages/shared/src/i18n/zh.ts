@@ -561,12 +561,6 @@ export const zh: Messages = {
         enabled: '已开启实验性 Agent',
         disabled: '已关闭实验性 Agent',
       },
-      experimentalAgentCollaboration: {
-        label: 'Agent Session 协作',
-        description: '允许 Agent 在用户确认后创建真实子 Session，并通过持久化 mailbox 通信。此功能仍处于实验阶段。',
-        enabled: '已开启 Agent Session 协作',
-        disabled: '已关闭 Agent Session 协作',
-      },
       experimentalClaudeOpenAiChat: {
         label: 'Claude Chat Completions 协议桥',
         description: '允许 Claude Code 通过 SuperOne 本地协议代理使用仅支持 OpenAI Chat Completions 的服务商。',
@@ -1532,7 +1526,6 @@ export const zh: Messages = {
       capabilityBrowser: 'Super浏览器',
       disabled: '未开启',
       computerUseDisabledHint: '请先在设置中开启「使用电脑」',
-      collabDisabledHint: '请先在设置中开启智能体协作',
       browserDisabledHint: '请先在设置中开启浏览器 CDP',
     },
     linkSafety: {

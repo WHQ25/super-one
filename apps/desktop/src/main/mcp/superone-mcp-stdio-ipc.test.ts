@@ -16,7 +16,7 @@ vi.mock('../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 vi.mock('../app-settings-service', () => ({
-  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: collaborationSettings.enabled }),
+  readAppSettings: () => ({}),
 }))
 vi.mock('../session/session-collaboration', () => ({
   requestSessionAgents: requestSessionAgentsMock,
@@ -165,7 +165,6 @@ function getEndpoint(): string {
 
 describe('superone-mcp-stdio-ipc', () => {
   beforeEach(async () => {
-    collaborationSettings.enabled = false
     requestSessionAgentsMock.mockReset()
     initSuperoneMcpServer(() => null)
     createSuperoneMcpServer(PROJ)
@@ -270,7 +269,6 @@ describe('superone-mcp-stdio-ipc', () => {
   })
 
   it('forwards tool cancellation to an in-flight collaboration request', async () => {
-    collaborationSettings.enabled = true
     setSessionHostProvider(() => ({
       getSession: () => null,
       createSession: vi.fn(),

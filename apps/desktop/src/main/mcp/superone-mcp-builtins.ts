@@ -46,7 +46,6 @@ import {
   type BuiltInSuperoneToolName,
 } from './superone-mcp-builtin-defs'
 import { configApplyHandler, configReadHandler, type ConfigApplyArgs } from './config-tools'
-import { readAppSettings } from '../app-settings-service'
 import type { SessionManager } from '../session/types'
 import type {
   RequestSessionAgentsArgs,
@@ -290,90 +289,88 @@ export async function executeBuiltInSuperoneTool(
 }
 
 export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneToolDeps): void {
-  if (readAppSettings().experimentalAgentCollaborationEnabled) {
-    server.registerTool(
-      'session_collab_list_agents',
-      { description: SESSION_LIST_AGENTS_DESCRIPTION, inputSchema: {} },
-      async () => {
-        const { listSessionAgentProfiles } = await import('../session/session-collaboration')
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ agents: listSessionAgentProfiles() }) }] }
+  server.registerTool(
+    'session_collab_list_agents',
+    { description: SESSION_LIST_AGENTS_DESCRIPTION, inputSchema: {} },
+    async () => {
+      const { listSessionAgentProfiles } = await import('../session/session-collaboration')
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ agents: listSessionAgentProfiles() }) }] }
+    },
+  )
+  server.registerTool(
+    'session_collab_request',
+    {
+      description: SESSION_REQUEST_AGENTS_DESCRIPTION,
+      inputSchema: {
+        launches: z.array(z.object({
+          launchId: z.string().optional(),
+          agentId: z.string(),
+          summary: z.string().trim().min(1).describe(LAUNCH_SUMMARY_DESCRIPTION),
+          task: z.string().min(1).max(100_000).describe(LAUNCH_TASK_DESCRIPTION),
+          name: z.string().trim().min(1).max(64),
+          role: z.string().trim().min(1).max(64),
+          config: z.object({
+            model: z.string().optional(),
+            effort: z.string().optional(),
+            apiProviderId: z.string().nullable().optional(),
+            permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
+              .optional()
+              .describe(LAUNCH_PERMISSION_MODE_DESCRIPTION),
+            sandboxMode: z.enum(['off', 'on', 'auto']).optional(),
+            cwd: z.string().optional().describe(LAUNCH_CWD_DESCRIPTION),
+            worktree: z.object({
+              enabled: z.boolean(),
+              baseBranch: z.string(),
+              mode: z.enum(['branch', 'attach', 'detach']),
+              branchName: z.string().optional().describe(LAUNCH_BRANCH_NAME_DESCRIPTION),
+              carryLocalChanges: z.boolean().optional(),
+            }).optional().describe(LAUNCH_WORKTREE_DESCRIPTION),
+            harnessConfig: z.record(z.string(), z.unknown()).optional(),
+          }).optional(),
+        })).min(1).max(16),
       },
-    )
-    server.registerTool(
-      'session_collab_request',
-      {
-        description: SESSION_REQUEST_AGENTS_DESCRIPTION,
-        inputSchema: {
-          launches: z.array(z.object({
-            launchId: z.string().optional(),
-            agentId: z.string(),
-            summary: z.string().trim().min(1).describe(LAUNCH_SUMMARY_DESCRIPTION),
-            task: z.string().min(1).max(100_000).describe(LAUNCH_TASK_DESCRIPTION),
-            name: z.string().trim().min(1).max(64),
-            role: z.string().trim().min(1).max(64),
-            config: z.object({
-              model: z.string().optional(),
-              effort: z.string().optional(),
-              apiProviderId: z.string().nullable().optional(),
-              permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
-                .optional()
-                .describe(LAUNCH_PERMISSION_MODE_DESCRIPTION),
-              sandboxMode: z.enum(['off', 'on', 'auto']).optional(),
-              cwd: z.string().optional().describe(LAUNCH_CWD_DESCRIPTION),
-              worktree: z.object({
-                enabled: z.boolean(),
-                baseBranch: z.string(),
-                mode: z.enum(['branch', 'attach', 'detach']),
-                branchName: z.string().optional().describe(LAUNCH_BRANCH_NAME_DESCRIPTION),
-                carryLocalChanges: z.boolean().optional(),
-              }).optional().describe(LAUNCH_WORKTREE_DESCRIPTION),
-              harnessConfig: z.record(z.string(), z.unknown()).optional(),
-            }).optional(),
-          })).min(1).max(16),
-        },
+    },
+    async (args, extra) => {
+      const { requestSessionAgents } = await import('../session/session-collaboration')
+      return requestSessionAgents(deps.sessionId, args, collaborationHost(deps), extra.signal)
+    },
+  )
+  server.registerTool(
+    'session_collab_start',
+    { description: SESSION_START_DESCRIPTION, inputSchema: { credential: z.string().min(1) } },
+    async ({ credential }) => {
+      const { startSessionAgent } = await import('../session/session-collaboration')
+      return startSessionAgent(deps.sessionId, credential, collaborationHost(deps))
+    },
+  )
+  server.registerTool(
+    'session_collab_send',
+    {
+      description: SESSION_SEND_DESCRIPTION,
+      inputSchema: {
+        credential: z.string().min(1),
+        content: z.string().min(1).max(100_000).describe(
+          'Mailbox message body in Markdown. Prefer structured Markdown (headings, lists, code fences) for agent-to-agent handoffs; the SuperOne UI renders it as a Markdown preview.',
+        ),
+        clientMessageId: z.string().optional(),
       },
-      async (args, extra) => {
-        const { requestSessionAgents } = await import('../session/session-collaboration')
-        return requestSessionAgents(deps.sessionId, args, collaborationHost(deps), extra.signal)
-      },
-    )
-    server.registerTool(
-      'session_collab_start',
-      { description: SESSION_START_DESCRIPTION, inputSchema: { credential: z.string().min(1) } },
-      async ({ credential }) => {
-        const { startSessionAgent } = await import('../session/session-collaboration')
-        return startSessionAgent(deps.sessionId, credential, collaborationHost(deps))
-      },
-    )
-    server.registerTool(
-      'session_collab_send',
-      {
-        description: SESSION_SEND_DESCRIPTION,
-        inputSchema: {
-          credential: z.string().min(1),
-          content: z.string().min(1).max(100_000).describe(
-            'Mailbox message body in Markdown. Prefer structured Markdown (headings, lists, code fences) for agent-to-agent handoffs; the SuperOne UI renders it as a Markdown preview.',
-          ),
-          clientMessageId: z.string().optional(),
-        },
-      },
-      async (args) => {
-        const { sendSessionMessage } = await import('../session/session-collaboration')
-        return sendSessionMessage(deps.sessionId, args, collaborationHost(deps))
-      },
-    )
-    server.registerTool(
-      'session_collab_retrieve',
-      {
-        description: SESSION_RETRIEVE_DESCRIPTION,
-        inputSchema: { credentials: z.array(z.string().min(1)).min(1).max(32) },
-      },
-      async (args) => {
-        const { retrieveSessionMessages } = await import('../session/session-collaboration')
-        return retrieveSessionMessages(deps.sessionId, args)
-      },
-    )
-  }
+    },
+    async (args) => {
+      const { sendSessionMessage } = await import('../session/session-collaboration')
+      return sendSessionMessage(deps.sessionId, args, collaborationHost(deps))
+    },
+  )
+  server.registerTool(
+    'session_collab_retrieve',
+    {
+      description: SESSION_RETRIEVE_DESCRIPTION,
+      inputSchema: { credentials: z.array(z.string().min(1)).min(1).max(32) },
+    },
+    async (args) => {
+      const { retrieveSessionMessages } = await import('../session/session-collaboration')
+      return retrieveSessionMessages(deps.sessionId, args)
+    },
+  )
 
   registerManualTools(server)
 

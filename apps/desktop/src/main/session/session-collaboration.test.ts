@@ -10,7 +10,6 @@ const TEST_CWD = process.cwd()
 
 const state = vi.hoisted(() => ({
   db: null as Database.Database | null,
-  enabled: true,
   activateWorktree: vi.fn(),
   /** path → main checkout; default: identity (cwd is not a worktree). */
   mainWorktreeByPath: new Map<string, string>(),
@@ -47,7 +46,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../app-settings-service', () => ({
   readAppSettings: () => ({
-    experimentalAgentCollaborationEnabled: state.enabled,
+    // Credential fixture uses openai-chat; Claude needs the bridge flag to list it.
+    experimentalClaudeOpenAiChatEnabled: true,
     agentPreference: state.agentPreference,
   }),
 }))
@@ -264,7 +264,6 @@ beforeEach(() => {
   createSchema(state.db)
   state.db.prepare('INSERT INTO sessions (id, project_path, title, provider_id) VALUES (?, ?, ?, ?)')
     .run('parent', TEST_CWD, 'Parent', 'claude-base')
-  state.enabled = true
   state.activateWorktree.mockReset()
   state.mainWorktreeByPath.clear()
   state.resolveMainWorktreeDir.mockClear()
@@ -617,13 +616,6 @@ describe('session collaboration', () => {
       expect.objectContaining({ credential: grants[0].credential, content: 'first' }),
       expect.objectContaining({ credential: grants[1].credential, content: 'second' }),
     ]))
-  })
-
-  it('rejects collaboration calls while the experiment is disabled', async () => {
-    state.enabled = false
-    const parent = fakeSession('parent')
-    const { host } = fakeHost(parent)
-    await expect(requestSessionAgents('parent', { launches: [] }, host)).rejects.toThrow(/disabled/i)
   })
 
   it('requires non-empty names and roles before requesting approval', async () => {

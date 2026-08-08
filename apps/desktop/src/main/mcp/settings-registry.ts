@@ -76,14 +76,6 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ experimentalAgentsEnabled: v as boolean }),
       },
       {
-        key: 'experimentalAgentCollaborationEnabled',
-        label: 'Enable Agent Session Collaboration',
-        type: 'boolean',
-        note: 'Allow agents to request user-approved child sessions and communicate through a persistent mailbox.',
-        read: (s) => s.experimentalAgentCollaborationEnabled,
-        toPatch: (v) => ({ experimentalAgentCollaborationEnabled: v as boolean }),
-      },
-      {
         key: 'experimentalRemoteNodesEnabled',
         label: 'Enable Remote Nodes',
         type: 'boolean',

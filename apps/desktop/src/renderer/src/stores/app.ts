@@ -154,8 +154,6 @@ interface AppState {
 
   experimentalAgentsEnabled: boolean
   setExperimentalAgentsEnabled: (enabled: boolean) => Promise<void>
-  experimentalAgentCollaborationEnabled: boolean
-  setExperimentalAgentCollaborationEnabled: (enabled: boolean) => Promise<void>
   experimentalClaudeOpenAiChatEnabled: boolean
   setExperimentalClaudeOpenAiChatEnabled: (enabled: boolean) => Promise<void>
   /** Remote execution environments (Other Devices + sidebar host switcher). */
@@ -761,7 +759,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   brandHues: { claude: null, codex: null, acp: null, opencode: null },
   tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {} },
   experimentalAgentsEnabled: false,
-  experimentalAgentCollaborationEnabled: false,
   experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
   terminalLightPalette: null,
@@ -792,7 +789,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           opencode: {},
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
-        experimentalAgentCollaborationEnabled: settings.experimentalAgentCollaborationEnabled,
         experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
         experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
         terminalLightPalette: settings.terminalLightPalette,
@@ -818,17 +814,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ experimentalAgentsEnabled: result.experimentalAgentsEnabled })
     } catch (err) {
       console.error('[experimental-agents] persist enabled failed:', err)
-      throw err
-    }
-  },
-
-  setExperimentalAgentCollaborationEnabled: async (enabled) => {
-    set({ experimentalAgentCollaborationEnabled: enabled })
-    try {
-      const result = await window.app.saveAppSettings({ experimentalAgentCollaborationEnabled: enabled })
-      set({ experimentalAgentCollaborationEnabled: result.experimentalAgentCollaborationEnabled })
-    } catch (err) {
-      console.error('[agent-collaboration] persist enabled failed:', err)
       throw err
     }
   },
@@ -1016,7 +1001,6 @@ if (typeof window !== 'undefined') {
         opencode: {},
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
-      experimentalAgentCollaborationEnabled: settings.experimentalAgentCollaborationEnabled,
       experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
       experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
       terminalLightPalette: settings.terminalLightPalette,

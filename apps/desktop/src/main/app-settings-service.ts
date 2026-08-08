@@ -13,7 +13,6 @@ type AcpPref = AppSettings['agentPreference']['acp']
 const defaults: AppSettings = {
   analyticsEnabled: true,
   experimentalAgentsEnabled: false,
-  experimentalAgentCollaborationEnabled: false,
   experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
   crispText: true,
@@ -299,9 +298,6 @@ export function readAppSettings(): AppSettings {
       experimentalAgentsEnabled: typeof data.experimentalAgentsEnabled === 'boolean'
         ? data.experimentalAgentsEnabled
         : readAcpPreference(data).enabled,
-      experimentalAgentCollaborationEnabled: typeof data.experimentalAgentCollaborationEnabled === 'boolean'
-        ? data.experimentalAgentCollaborationEnabled
-        : defaults.experimentalAgentCollaborationEnabled,
       experimentalClaudeOpenAiChatEnabled: typeof data.experimentalClaudeOpenAiChatEnabled === 'boolean'
         ? data.experimentalClaudeOpenAiChatEnabled
         : defaults.experimentalClaudeOpenAiChatEnabled,
@@ -349,7 +345,6 @@ export function readAppSettings(): AppSettings {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
-      experimentalAgentCollaborationEnabled: defaults.experimentalAgentCollaborationEnabled,
       experimentalClaudeOpenAiChatEnabled: defaults.experimentalClaudeOpenAiChatEnabled,
       experimentalRemoteNodesEnabled: defaults.experimentalRemoteNodesEnabled,
       crispText: defaults.crispText,
@@ -394,8 +389,6 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     experimentalAgentsEnabled: patch.experimentalAgentsEnabled
       ?? patch.agentPreference?.acp?.enabled
       ?? current.experimentalAgentsEnabled,
-    experimentalAgentCollaborationEnabled: patch.experimentalAgentCollaborationEnabled
-      ?? current.experimentalAgentCollaborationEnabled,
     experimentalClaudeOpenAiChatEnabled: patch.experimentalClaudeOpenAiChatEnabled
       ?? current.experimentalClaudeOpenAiChatEnabled,
     experimentalRemoteNodesEnabled: patch.experimentalRemoteNodesEnabled

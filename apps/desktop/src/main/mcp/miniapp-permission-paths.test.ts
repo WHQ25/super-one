@@ -22,7 +22,7 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
 vi.mock('electron', () => ({ BrowserWindow: vi.fn() }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../app-settings-service', () => ({
-  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: false }),
+  readAppSettings: () => ({}),
 }))
 vi.mock('../miniapp/miniapp-service', () => ({
   createMiniApp: vi.fn(),

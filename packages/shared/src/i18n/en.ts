@@ -518,12 +518,6 @@ export type Messages = {
         enabled: string
         disabled: string
       }
-      experimentalAgentCollaboration: {
-        label: string
-        description: string
-        enabled: string
-        disabled: string
-      }
       experimentalClaudeOpenAiChat: {
         label: string
         description: string
@@ -1479,7 +1473,6 @@ export type Messages = {
       capabilityBrowser: string
       disabled: string
       computerUseDisabledHint: string
-      collabDisabledHint: string
       browserDisabledHint: string
     }
     linkSafety: {
@@ -2876,12 +2869,6 @@ export const en: Messages = {
         enabled: 'Experimental agents enabled',
         disabled: 'Experimental agents disabled',
       },
-      experimentalAgentCollaboration: {
-        label: 'Agent Session Collaboration',
-        description: 'Allow agents to request user-approved child sessions and communicate through a persistent mailbox. This feature is experimental.',
-        enabled: 'Agent session collaboration enabled',
-        disabled: 'Agent session collaboration disabled',
-      },
       experimentalClaudeOpenAiChat: {
         label: 'Claude Chat Completions Bridge',
         description: 'Allow Claude Code to use providers that only support OpenAI Chat Completions through SuperOne\'s local protocol proxy.',
@@ -3847,7 +3834,6 @@ export const en: Messages = {
       capabilityBrowser: 'Super Browser',
       disabled: 'Off',
       computerUseDisabledHint: 'Enable Computer Use in Settings first',
-      collabDisabledHint: 'Enable Agent Session Collaboration in Settings first',
       browserDisabledHint: 'Enable Browser CDP in Settings first',
     },
     linkSafety: {

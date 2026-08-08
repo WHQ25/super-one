@@ -55,7 +55,6 @@ describe('app-settings-service', () => {
   const defaultSettings = {
     analyticsEnabled: true,
     experimentalAgentsEnabled: false,
-    experimentalAgentCollaborationEnabled: false,
     experimentalClaudeOpenAiChatEnabled: false,
     experimentalRemoteNodesEnabled: false,
     crispText: true,
@@ -117,7 +116,6 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
         experimentalAgentsEnabled: false,
-        experimentalAgentCollaborationEnabled: false,
         experimentalClaudeOpenAiChatEnabled: false,
         experimentalRemoteNodesEnabled: false,
         crispText: true,
@@ -227,7 +225,6 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
         experimentalAgentsEnabled: false,
-        experimentalAgentCollaborationEnabled: false,
         experimentalClaudeOpenAiChatEnabled: false,
         experimentalRemoteNodesEnabled: false,
         crispText: true,

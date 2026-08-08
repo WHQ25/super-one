@@ -212,9 +212,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
     }, [selectedIndex])
 
-    /** Feature gates for built-in @-capability chips (settings toggles). */
+    /** Feature gates for built-in @-capability chips (settings toggles). Collab is always on. */
     const [capabilityEnabled, setCapabilityEnabled] = useState({
-      collab: false,
+      collab: true,
       computer: false,
       browser: false,
     })
@@ -223,13 +223,12 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     useEffect(() => {
       let cancelled = false
       const apply = (settings: {
-        experimentalAgentCollaborationEnabled?: boolean
         computerUseEnabled?: boolean
         cdpEnabled?: boolean
       } | null | undefined) => {
         if (cancelled || !settings) return
         setCapabilityEnabled({
-          collab: settings.experimentalAgentCollaborationEnabled === true,
+          collab: true,
           computer:
             isComputerUseSupportedPlatform(window.app.platform)
             && settings.computerUseEnabled === true,
@@ -243,13 +242,12 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         })
         .catch(() => {
           if (!cancelled) {
-            setCapabilityEnabled({ collab: false, computer: false, browser: false })
+            setCapabilityEnabled({ collab: true, computer: false, browser: false })
             setCapabilitySettingsReady(true)
           }
         })
       const unsub = window.app?.onAppSettingsChange?.((settings) => {
         apply(settings as {
-          experimentalAgentCollaborationEnabled?: boolean
           computerUseEnabled?: boolean
           cdpEnabled?: boolean
         } | null)
@@ -499,9 +497,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         const disabledHint =
           item.id === 'computer'
             ? t('chat.mentionPopup.computerUseDisabledHint')
-            : item.id === 'collab'
-              ? t('chat.mentionPopup.collabDisabledHint')
-              : t('chat.mentionPopup.browserDisabledHint')
+            : t('chat.mentionPopup.browserDisabledHint')
         return (
           <button
             key={`c-${item.id}`}

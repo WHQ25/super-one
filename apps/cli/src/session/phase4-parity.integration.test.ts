@@ -94,11 +94,6 @@ describe('Phase 4 harness parity + collaboration', () => {
   it('collaboration.request/start/send/retrieve succeed without simulatedHarness and survive restart', async () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'p4-collab-'))
     dirs.push(nodeHome)
-    // Node-local collab is gated by experimentalAgentCollaborationEnabled.
-    writeFileSync(
-      join(nodeHome, 'config.json'),
-      JSON.stringify({ agent: { experimentalAgentCollaborationEnabled: true } }, null, 2),
-    )
     const port = 29500 + Math.floor(Math.random() * 500)
     // Production-like: no simulated harness gate for collab.
     const rt = await startNodeRuntime({

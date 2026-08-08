@@ -35,7 +35,6 @@ export type HostActionRequestFn = (input: {
 
 /** Node-local collab handlers (SessionRuntime CollaborationService). */
 export interface NodeCollabToolHandlers {
-  isEnabled: () => boolean
   listAgents: (sessionId: string) => Promise<unknown> | unknown
   request: (
     sessionId: string,
@@ -153,24 +152,13 @@ function collabDescriptor(name: string): {
 
 /**
  * Register session_collab_* as in-process tools (node SessionRuntime).
- * Each call re-checks experimentalAgentCollaborationEnabled.
+ * Collaboration is always available; user approval still gates child launches.
  */
 export function registerNodeCollabTools(
   server: McpServer,
   superoneSessionId: string,
   collab: NodeCollabToolHandlers,
 ): void {
-  const requireEnabled = () => {
-    if (!collab.isEnabled()) {
-      throw Object.assign(
-        new Error(
-          'Agent session collaboration is disabled. Enable experimentalAgentCollaborationEnabled in node settings.',
-        ),
-        { code: 'failed_precondition' },
-      )
-    }
-  }
-
   const listDesc = collabDescriptor('session_collab_list_agents')
   server.registerTool(
     'session_collab_list_agents',
@@ -180,7 +168,6 @@ export function registerNodeCollabTools(
     },
     async () => {
       try {
-        requireEnabled()
         const agents = await collab.listAgents(superoneSessionId)
         return toolResultJson({ agents })
       } catch (err) {
@@ -198,7 +185,6 @@ export function registerNodeCollabTools(
     },
     async (args, extra) => {
       try {
-        requireEnabled()
         const result = await collab.request(superoneSessionId, args ?? {}, extra?.signal)
         const status =
           result && typeof result === 'object' && 'status' in result
@@ -223,7 +209,6 @@ export function registerNodeCollabTools(
     },
     async (args) => {
       try {
-        requireEnabled()
         const result = await collab.start(superoneSessionId, args ?? {})
         return toolResultJson(result)
       } catch (err) {
@@ -241,7 +226,6 @@ export function registerNodeCollabTools(
     },
     async (args) => {
       try {
-        requireEnabled()
         const result = await collab.send(superoneSessionId, args ?? {})
         return toolResultJson(result)
       } catch (err) {
@@ -259,7 +243,6 @@ export function registerNodeCollabTools(
     },
     async (args) => {
       try {
-        requireEnabled()
         const result = await collab.retrieve(superoneSessionId, args ?? {})
         return toolResultJson(result)
       } catch (err) {

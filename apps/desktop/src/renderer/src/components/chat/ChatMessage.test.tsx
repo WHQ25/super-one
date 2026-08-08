@@ -205,6 +205,17 @@ describe('ChatMessage reasoning grouping', () => {
   })
 })
 
+function createUserMessage(text: string, id = 'msg-user-1'): ChatMessageType {
+  return {
+    id,
+    role: 'user',
+    status: 'complete',
+    content: [{ type: 'text', text }],
+    createdAt: new Date().toISOString(),
+    providerId: 'claude',
+  }
+}
+
 function createCollabTaskMessage(text: string): ChatMessageType {
   return {
     id: 'msg-collab-1',
@@ -219,6 +230,31 @@ function createCollabTaskMessage(text: string): ChatMessageType {
     },
   }
 }
+
+describe('ChatMessage capability mention bubble', () => {
+  it('renders collab chip and following text in one inline user-text wrapper', () => {
+    const body =
+      '派另一个grok去集成resumeDropsTurn和小透传字段，我们继续讨论cross-session'
+    const text =
+      `<superone-capability><name>Agents Collaboration</name><id>collab</id></superone-capability> ${body}`
+    const { container } = render(
+      <ChatMessage message={createUserMessage(text)} sessionStatus="idle" isLastAssistant={false} />,
+    )
+
+    const wrap = container.querySelector('.user-text-with-mentions')
+    expect(wrap).not.toBeNull()
+    // Chip + rest must be siblings under one inline wrapper (not stacked headers).
+    const chip = wrap!.querySelector('[data-mention-kind="collab"]')
+    const rest = wrap!.querySelector('.user-text-rest')
+    expect(chip).not.toBeNull()
+    expect(chip).toHaveTextContent('Agents Collaboration')
+    expect(rest).not.toBeNull()
+    expect(rest).toHaveTextContent(body)
+    // Normal user bubble (right-aligned), not collab mailbox / initial-task chrome.
+    expect(container.querySelector('.justify-end')).not.toBeNull()
+    expect(screen.queryByText('Agent task')).toBeNull()
+  })
+})
 
 /** jsdom reports every element as 0px tall, so the 50vh clamp never trips on its own. */
 function stubBodyHeight(px: number): () => void {

@@ -10,7 +10,7 @@ import type { MentionNodeAttrs } from './mention-node'
 
 /**
  * Shared shell for composer + bubble mention chips.
- * Bubble: parent .user-text-with-mentions is inline-flex items-baseline.
+ * Bubble: parent .user-text-with-mentions is normal inline flow.
  * Composer: .mention-chip uses vertical-align: baseline in the paragraph.
  */
 export function MentionChipContent({

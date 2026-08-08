@@ -432,17 +432,17 @@ body[data-scroll-locked] {
   white-space: nowrap;
 }
 
-/* Bubble: put chip + plain text in one flex line that shares baseline. */
+/* Bubble: chip is display:inline (label owns baseline). Use normal inline
+   flow — NOT inline-flex + flex-wrap. Flex items wrap as whole units, so a
+   long rest segment ("派另一个 grok…") jumps below the collab chip instead of
+   continuing on the same line and wrapping mid-sentence. */
 .user-text-with-mentions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  display: inline;
   max-width: 100%;
   word-break: normal;
   overflow-wrap: anywhere;
 }
 .user-text-with-mentions > .user-text-rest {
-  min-width: 0;
   white-space: pre-wrap;
 }
 

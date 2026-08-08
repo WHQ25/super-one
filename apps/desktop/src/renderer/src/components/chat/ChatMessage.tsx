@@ -470,8 +470,8 @@ export function UserTextBlock({ text, isPaste }: { text: string; isPaste?: boole
   if (isPaste === true) return <LongTextChip text={text} />
   const segments = parseUserMentions(text)
   if (segments.length === 0) return null
-  // inline-flex + items-baseline: chip and "回复一个hi" share one baseline —
-  // vertical-align alone cannot align sibling nodes in a normal inline span.
+  // Normal inline flow (see .user-text-with-mentions). Chip is display:inline
+  // so its label owns the baseline; long rest text wraps beside the chip.
   return (
     <span className="user-text-with-mentions">
       {segments.map((seg, i) =>

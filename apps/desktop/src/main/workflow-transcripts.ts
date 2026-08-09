@@ -38,6 +38,8 @@ export interface WorkflowAgentInfo {
   tokens?: number
   resultText?: string
   result?: unknown
+  phase?: string
+  state?: string
 }
 
 interface JsonlRecord {
@@ -207,6 +209,8 @@ async function listGrokWorkflowAgents(transcriptDir: string): Promise<WorkflowAg
     const tokens = typeof row.tokens_used === 'number' ? row.tokens_used
       : typeof row.tokensUsed === 'number' ? row.tokensUsed
         : undefined
+    const phase = typeof row.phase === 'string' && row.phase.trim() ? row.phase.trim() : undefined
+    const state = typeof row.state === 'string' && row.state.trim() ? row.state.trim() : undefined
 
     let prompt: string | undefined
     let resultText: string | undefined
@@ -256,6 +260,8 @@ async function listGrokWorkflowAgents(transcriptDir: string): Promise<WorkflowAg
       prompt,
       toolCount,
       ...(tokens != null ? { tokens } : {}),
+      ...(phase ? { phase } : {}),
+      ...(state ? { state } : {}),
       ...(resultText != null ? { resultText } : {}),
       ...(journalResult !== undefined ? { result: journalResult } : {}),
     })

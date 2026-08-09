@@ -8,6 +8,8 @@ const hoisted = vi.hoisted(() => ({
   sessionState: {
     subagentTokens: {} as Record<string, { input: number; output: number }>,
     subagentColors: {} as Record<string, number>,
+    cwd: '/Users/me/proj',
+    _providerSessionId: '019f-sess' as string | null,
     taskProgress: {} as Record<string, {
       description: string
       taskId?: string
@@ -24,12 +26,18 @@ const hoisted = vi.hoisted(() => ({
       currentPhase?: string
     }>,
   },
+  storeState: {
+    activeProject: '/Users/me/proj',
+    projectSessions: {
+      '/Users/me/proj': { homedir: '/Users/me' },
+    },
+  },
   navOpen: vi.fn(),
 }))
 
 vi.mock('@/stores/chat', () => ({
   useActiveSession: (selector: (s: typeof hoisted.sessionState) => unknown) => selector(hoisted.sessionState),
-  useChatStore: Object.assign((selector: (s: unknown) => unknown) => selector({}), {
+  useChatStore: Object.assign((selector: (s: typeof hoisted.storeState) => unknown) => selector(hoisted.storeState), {
     setState: vi.fn(),
     getState: () => ({ assignSubagentColor: vi.fn() }),
   }),
@@ -46,6 +54,9 @@ vi.mock('./workflow-navigation-context', () => ({
 vi.mock('./use-workflow-agents', () => ({
   useWorkflowAgents: (transcriptDir: string | undefined) => {
     if (!transcriptDir) return []
+    // Only Claude-style dirs ship agent-*.jsonl fixtures in these tests.
+    // Grok resolved ~/.grok/.../workflows/<run> should fall back to liveAgents.
+    if (transcriptDir.includes('/.grok/')) return []
     return [{
       agentId: 'claude-a1',
       jsonlPath: `${transcriptDir}/agent.jsonl`,
@@ -108,7 +119,15 @@ beforeEach(() => {
   hoisted.sessionState = {
     subagentTokens: {},
     subagentColors: {},
+    cwd: '/Users/me/proj',
+    _providerSessionId: '019f-sess',
     taskProgress: {},
+  }
+  hoisted.storeState = {
+    activeProject: '/Users/me/proj',
+    projectSessions: {
+      '/Users/me/proj': { homedir: '/Users/me' },
+    },
   }
   hoisted.navOpen.mockClear()
 })
@@ -161,8 +180,54 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
     expect(screen.getByText('Explore')).toBeInTheDocument()
     expect(screen.getByText('running')).toBeInTheDocument()
     expect(screen.getByText(/phase: Execute/)).toBeInTheDocument()
-    // No full-view control without transcriptDir
-    expect(screen.queryByTitle('Open full view')).not.toBeInTheDocument()
+    // Grok resolves ~/.grok/sessions/.../workflows/<run_id> → full view available
+    expect(screen.getByTitle('Open full view')).toBeInTheDocument()
+  })
+
+  it('opens full view with resolved Grok workflow dir and script.rhai path', async () => {
+    const { userEvent } = await import('@testing-library/user-event')
+    const user = userEvent.setup()
+    hoisted.sessionState.taskProgress = {
+      tc_wf: {
+        description: 'review-changes',
+        taskId: 'wf_live',
+        summary: 'running',
+        totalTokens: 0,
+        toolUses: 0,
+        durationMs: 1000,
+        completed: false,
+        toolHistory: [],
+        workflowAgents: [{ agentId: 'a1', label: 'Explore', toolCount: 0 }],
+      },
+    }
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool({ name: 'review-changes' })}
+        resultBlock={grokResult()}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    await user.click(screen.getByTitle('Open full view'))
+    expect(hoisted.navOpen).toHaveBeenCalledWith(expect.objectContaining({
+      toolUseId: 'tc_wf',
+      transcriptDir: '/Users/me/.grok/sessions/%2FUsers%2Fme%2Fproj/019f-sess/workflows/wf_live',
+      name: 'review-changes',
+      scriptPath: '/Users/me/.grok/sessions/%2FUsers%2Fme%2Fproj/019f-sess/workflows/wf_live/script.rhai',
+    }))
+  })
+
+  it('stays running (not complete) while streaming even when Grok dir is resolved', () => {
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool({ name: 'review-changes' })}
+        resultBlock={grokResult()}
+        isStreaming
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText('Running…')).toBeInTheDocument()
+    expect(screen.queryByText('Workflow complete')).not.toBeInTheDocument()
   })
 
   it('renders completed with resultText', async () => {

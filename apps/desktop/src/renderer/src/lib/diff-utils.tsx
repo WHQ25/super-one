@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, useCallback, useLayoutEffect, memo, startTransition } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { createHighlighter, type Highlighter, type ThemedToken, type GrammarState, type BundledLanguage, type BundledTheme } from 'shiki'
+import { createHighlighter, type Highlighter, type ThemedToken, type GrammarState, type BundledLanguage, type BundledTheme, type LanguageRegistration } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import { cn } from '@superone/ui/lib/utils'
 import { measureMaxLineWidth, getMonoFont, getMonoCharWidth, MONO_FONT_FAMILY } from '@/lib/pretext-utils'
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
+import { isRhaiLanguage, rhaiLanguageRegistration } from '@/components/chat/rhai-highlight'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { buildHighlightKey, type HighlightCache } from './highlight-cache'
 import { splitContentLines } from './text-lines'
@@ -12,7 +13,7 @@ import { splitContentLines } from './text-lines'
 const EXT_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'tsx', mts: 'typescript', cts: 'typescript',
   js: 'javascript', jsx: 'jsx', mjs: 'javascript', cjs: 'javascript',
-  py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+  py: 'python', rb: 'ruby', rs: 'rust', rhai: 'rhai', go: 'go', java: 'java',
   json: 'json', jsonc: 'jsonc', json5: 'json5', lock: 'json',
   yaml: 'yaml', yml: 'yaml', toml: 'toml', ini: 'ini',
   html: 'html', css: 'css', scss: 'scss', less: 'less', sass: 'sass',
@@ -61,6 +62,11 @@ function langsToLoad(lang: string): string[] {
   return [lang, ...companions]
 }
 
+function langRegistration(lang: string): BundledLanguage | LanguageRegistration {
+  if (lang === 'rhai') return rhaiLanguageRegistration
+  return lang as BundledLanguage
+}
+
 const fileHLEngine = createJavaScriptRegexEngine({ forgiving: true })
 let fileHLPromise: Promise<Highlighter> | null = null
 let fileHLResolved: Highlighter | null = null
@@ -79,7 +85,11 @@ function getFileHighlighterSync(theme: string, lang: string): Highlighter | null
 async function getFileHighlighter(theme: string, lang: string): Promise<Highlighter> {
   const required = langsToLoad(lang)
   if (!fileHLPromise) {
-    fileHLPromise = createHighlighter({ themes: [theme as BundledTheme], langs: required as BundledLanguage[], engine: fileHLEngine })
+    fileHLPromise = createHighlighter({
+      themes: [theme as BundledTheme],
+      langs: required.map(langRegistration),
+      engine: fileHLEngine,
+    })
     required.forEach((l) => fileHLLangs.add(l))
     fileHLThemes.add(theme)
     fileHLResolved = await fileHLPromise
@@ -90,7 +100,9 @@ async function getFileHighlighter(theme: string, lang: string): Promise<Highligh
   const loads: Promise<void>[] = []
   if (!fileHLThemes.has(theme)) loads.push(hl.loadTheme(theme as BundledTheme).then(() => { fileHLThemes.add(theme) }))
   for (const l of required) {
-    if (!fileHLLangs.has(l)) loads.push(hl.loadLanguage(l as BundledLanguage).then(() => { fileHLLangs.add(l) }))
+    if (!fileHLLangs.has(l)) {
+      loads.push(hl.loadLanguage(langRegistration(l)).then(() => { fileHLLangs.add(l) }))
+    }
   }
   if (loads.length) await Promise.all(loads)
   return hl
@@ -123,6 +135,8 @@ function internStyle(t: HighlightRawToken): React.CSSProperties | undefined {
 }
 
 function resolveHighlightLanguage(plugin: { supportsLanguage(lang: never): boolean }, language: string): string {
+  // Custom TextMate grammar — not in @streamdown/code bundled set.
+  if (isRhaiLanguage(language)) return 'rhai'
   return plugin.supportsLanguage(language as never) ? language : 'md'
 }
 

@@ -9,6 +9,10 @@ export interface WorkflowAgentInfo {
   tokens?: number
   resultText?: string
   result?: unknown
+  /** Live / state.json phase title when known (Grok workflow_updated). */
+  phase?: string
+  /** Live agent state: running | completed | failed | … */
+  state?: string
 }
 
 export function useWorkflowAgents(transcriptDir: string | undefined, enabled: boolean, refreshKey?: unknown): WorkflowAgentInfo[] {

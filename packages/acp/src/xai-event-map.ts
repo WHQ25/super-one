@@ -271,16 +271,21 @@ function mapWorkflowUpdated(u: Record<string, unknown>, state: XaiCorrelationSta
 
 function mapWorkflowPhases(
   raw: unknown[] | undefined,
-): Array<{ title: string; state?: string }> {
+): Array<{ title: string; detail?: string; state?: string }> {
   if (!raw?.length) return []
-  const out: Array<{ title: string; state?: string }> = []
+  const out: Array<{ title: string; detail?: string; state?: string }> = []
   for (const item of raw) {
     const p = asRecord(item)
     if (!p) continue
     const title = strField(p, 'title')
     if (!title) continue
+    const detail = strField(p, 'detail')
     const state = strField(p, 'state')
-    out.push({ title, ...(state ? { state } : {}) })
+    out.push({
+      title,
+      ...(detail ? { detail } : {}),
+      ...(state ? { state } : {}),
+    })
   }
   return out
 }

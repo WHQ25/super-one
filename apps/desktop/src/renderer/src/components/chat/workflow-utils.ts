@@ -16,6 +16,27 @@ export interface WorkflowLaunchInfo {
   taskId?: string
   runId?: string
   scriptPath?: string
+  /** Workflow name from launch JSON (Grok WorkflowToolOutput.name). */
+  name?: string
+}
+
+/** Drop leading `name:` / exact-name summary so chrome doesn't repeat the title. */
+export function stripWorkflowNamePrefix(
+  text: string | undefined | null,
+  name: string | undefined | null,
+): string | undefined {
+  if (text == null) return undefined
+  const trimmed = text.trim()
+  if (!trimmed) return undefined
+  const n = name?.trim()
+  if (!n) return trimmed
+  if (trimmed === n) return undefined
+  const prefix = `${n}:`
+  if (trimmed.startsWith(prefix)) {
+    const rest = trimmed.slice(prefix.length).trim()
+    return rest || undefined
+  }
+  return trimmed
 }
 
 function quotedValue(src: string, key: string): string | undefined {
@@ -71,6 +92,29 @@ export function extractWorkflowScript(input: string): string | undefined {
     return extractJsonStringValue(input, 'script') ?? undefined
   }
   return undefined
+}
+
+/** Absolute/relative path from Workflow tool input (`script_path` / `scriptPath`). */
+export function extractWorkflowScriptPath(input: string): string | undefined {
+  try {
+    const o = JSON.parse(input) as Record<string, unknown>
+    const p = typeof o?.script_path === 'string' ? o.script_path
+      : typeof o?.scriptPath === 'string' ? o.scriptPath
+        : undefined
+    return p?.trim() || undefined
+  } catch {
+    return extractJsonStringValue(input, 'script_path')
+      ?? extractJsonStringValue(input, 'scriptPath')
+      ?? undefined
+  }
+}
+
+/** Join a workflow run dir with a file name (posix-style for Grok/Claude paths). */
+export function workflowArtifactPath(workflowDir: string | undefined, fileName: string): string | undefined {
+  if (!workflowDir) return undefined
+  const base = workflowDir.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!base) return undefined
+  return `${base}/${fileName}`
 }
 
 export function parseWorkflowInput(input: string): WorkflowMeta {
@@ -167,6 +211,30 @@ export function workflowDirFromScriptPath(scriptPath: string | undefined): strin
   return undefined
 }
 
+/**
+ * Grok run layout: ~/.grok/sessions/<urlencode(cwd)>/<providerSessionId>/workflows/<run_id>/
+ * Used when WorkflowToolOutput only carries run_id (no transcriptDir / script under the run).
+ */
+export function resolveGrokWorkflowDir(input: {
+  runId?: string | null
+  cwd?: string | null
+  providerSessionId?: string | null
+  homedir?: string | null
+}): string | undefined {
+  const runId = input.runId?.trim()
+  const cwd = input.cwd?.trim()
+  const providerSessionId = input.providerSessionId?.trim()
+  const homedir = input.homedir?.trim()
+  if (!runId || !cwd || !providerSessionId || !homedir) return undefined
+  // Guard against path traversal via run id / session id.
+  if (runId.includes('/') || runId.includes('\\') || runId.includes('..')) return undefined
+  if (providerSessionId.includes('/') || providerSessionId.includes('\\') || providerSessionId.includes('..')) {
+    return undefined
+  }
+  const base = homedir.replace(/\\/g, '/').replace(/\/+$/, '')
+  return `${base}/.grok/sessions/${encodeURIComponent(cwd)}/${providerSessionId}/workflows/${runId}`
+}
+
 export function parseWorkflowLaunch(summary?: string): WorkflowLaunchInfo {
   if (!summary) return {}
   const trimmed = summary.trim()
@@ -182,6 +250,7 @@ export function parseWorkflowLaunch(summary?: string): WorkflowLaunchInfo {
           taskId: strField(o, 'taskId', 'task_id'),
           runId: strField(o, 'runId', 'run_id'),
           scriptPath,
+          name: strField(o, 'name'),
         }
       }
     } catch {

@@ -1,4 +1,5 @@
 import { parse } from 'acorn'
+import { looksLikeRhaiWorkflow, parseRhaiWorkflowGraph } from './workflow-graph-rhai'
 
 export interface WorkflowAgentSpec {
   label?: string
@@ -234,6 +235,14 @@ function stageItemParam(cb: Node | undefined, stageIndex: number): string | unde
 }
 
 export function parseWorkflowGraph(script: string): WorkflowGraph {
+  // Grok Rhai sources use #{ maps and will fail acorn; use the lightweight scanner.
+  if (looksLikeRhaiWorkflow(script)) {
+    return parseRhaiWorkflowGraph(script)
+  }
+  return parseJsWorkflowGraph(script)
+}
+
+function parseJsWorkflowGraph(script: string): WorkflowGraph {
   const phases: string[] = []
   const blocks: WorkflowBlock[] = []
   const wrapped = `async function __wf__(){\n${script.replace(/\bexport\s+const\b/g, 'const')}\n}`
@@ -242,6 +251,10 @@ export function parseWorkflowGraph(script: string): WorkflowGraph {
     const ast = parse(wrapped, { ecmaVersion: 'latest', sourceType: 'script' }) as unknown as Node
     stmts = (ast.body[0]?.body?.body ?? []) as Node[]
   } catch {
+    // If acorn fails but content still looks orchestration-like, try Rhai as fallback.
+    if (/\bphase\s*\(/.test(script) || /\bagent\s*\(/.test(script)) {
+      return parseRhaiWorkflowGraph(script)
+    }
     return { phases, blocks }
   }
 

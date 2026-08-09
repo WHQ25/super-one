@@ -181,6 +181,8 @@ export interface Dag {
   edges: DagEdge[]
   cols: number
   phases?: string[]
+  /** Populated when buildDag is given runtime agents (Grok label bind / Claude expansion). */
+  nodeAgentIds?: Map<string, string>
 }
 
 function escapeRe(s: string): string {
@@ -246,6 +248,7 @@ function deriveInstanceLabel(value: string | undefined): string | undefined {
 interface Instance {
   label: string
   prompt?: string
+  agentId?: string
   status?: 'done' | 'running' | 'failed'
   toolCount?: number
 }
@@ -256,24 +259,57 @@ export function promptMatchesTemplate(template: string | undefined, actual: stri
   return templateToRegex(template).test(actual)
 }
 
+/**
+ * Match a graph label template to a runtime agent label.
+ * Supports exact match, JS-style `${…}`, and Rhai harvested wildcards (`scan:*`, `scan:`).
+ */
+export function labelMatchesTemplate(template: string | undefined, actual: string | undefined): boolean {
+  if (!template || !actual) return false
+  if (template === actual) return true
+  if (template.includes('${')) return templateToRegex(template).test(actual)
+  if (template.endsWith('*')) return actual.startsWith(template.slice(0, -1))
+  if (template.endsWith(':')) return actual.startsWith(template)
+  return false
+}
+
+function isDynamicLabelTemplate(label: string | undefined): boolean {
+  if (!label) return false
+  return label.includes('${') || label.endsWith('*') || label.endsWith(':')
+}
+
 export function assignAgentsToNodes(
-  nodes: { id: string; prompt?: string }[],
-  agents: { agentId: string; prompt?: string }[],
+  nodes: { id: string; prompt?: string; label?: string }[],
+  agents: { agentId: string; prompt?: string; label?: string }[],
 ): Map<string, string> {
   const map = new Map<string, string>()
   const used = new Set<string>()
-  const candidates = nodes.filter((n) => n.prompt)
   const assign = (node: { id: string }, agentId: string): void => {
     map.set(node.id, agentId)
     used.add(agentId)
   }
-  for (const node of candidates) {
+
+  // 1) Exact prompt (Claude static + expanded fan-out)
+  for (const node of nodes) {
+    if (!node.prompt) continue
     const hit = agents.find((a) => !used.has(a.agentId) && a.prompt !== undefined && a.prompt === node.prompt)
     if (hit) assign(node, hit.agentId)
   }
-  for (const node of candidates) {
-    if (map.has(node.id)) continue
+  // 2) Template prompt
+  for (const node of nodes) {
+    if (map.has(node.id) || !node.prompt) continue
     const hit = agents.find((a) => !used.has(a.agentId) && promptMatchesTemplate(node.prompt, a.prompt))
+    if (hit) assign(node, hit.agentId)
+  }
+  // 3) Exact label (Grok serial agents — Rhai rarely embeds prompt literals)
+  for (const node of nodes) {
+    if (map.has(node.id) || !node.label) continue
+    const hit = agents.find((a) => !used.has(a.agentId) && a.label !== undefined && a.label === node.label)
+    if (hit) assign(node, hit.agentId)
+  }
+  // 4) Dynamic / wildcard labels (catalog:* ↔ catalog:tools)
+  for (const node of nodes) {
+    if (map.has(node.id) || !node.label) continue
+    const hit = agents.find((a) => !used.has(a.agentId) && labelMatchesTemplate(node.label, a.label))
     if (hit) assign(node, hit.agentId)
   }
   return map
@@ -308,7 +344,14 @@ function expandParallel(
         const label = substituteTemplate(spec.label ?? 'agent', mapParams ?? [], [item, idx])
         const prompt = spec.prompt ? substituteTemplate(spec.prompt, mapParams ?? [], [item, idx]) : undefined
         const rt = hasRuntime ? takeOneRuntime(runtime!, consumed, prompt, label) : undefined
-        out.push({ label, prompt, status: rt?.status, toolCount: rt?.toolCount })
+        // Keep AST/substituted labels for stable display; decorate with runtime stats.
+        out.push({
+          label,
+          prompt: rt?.prompt ?? prompt,
+          agentId: rt?.agentId,
+          status: rt?.status,
+          toolCount: rt?.toolCount,
+        })
       })
     }
     return out
@@ -321,13 +364,21 @@ function expandParallel(
   for (const spec of agents) {
     const labelTpl = spec.label
     const promptTpl = spec.prompt
-    if (dynamic && labelTpl && labelTpl.includes('${')) {
-      const re = templateToRegex(labelTpl)
-      const matched = takeMatching(runtime, consumed, (r) => re.test(r.label))
+    // Dynamic fan-out: JS `${…}` templates or Rhai harvested wildcards (scan:*, scan:).
+    if (dynamic && isDynamicLabelTemplate(labelTpl)) {
+      const matched = takeMatching(runtime, consumed, (r) => labelMatchesTemplate(labelTpl, r.label))
       if (matched.length > 0) {
-        for (const m of matched) out.push({ label: m.label, prompt: m.prompt ?? promptTpl, status: m.status, toolCount: m.toolCount })
+        for (const m of matched) {
+          out.push({
+            label: m.label,
+            prompt: m.prompt ?? promptTpl,
+            agentId: m.agentId,
+            status: m.status,
+            toolCount: m.toolCount,
+          })
+        }
       } else {
-        out.push({ label: labelTpl, prompt: promptTpl })
+        out.push({ label: labelTpl!, prompt: promptTpl })
       }
     } else if (dynamic && promptTpl && promptTpl.includes('${')) {
       const { re, groups } = templateToCapturingRegex(promptTpl)
@@ -342,19 +393,38 @@ function expandParallel(
         for (const h of hits) {
           consumed.add(h.index)
           const derived = labelIdx >= 0 ? deriveInstanceLabel(h.caps[labelIdx]) : undefined
-          out.push({ label: derived ?? labelTpl ?? 'agent', prompt: h.agent.prompt, status: h.agent.status, toolCount: h.agent.toolCount })
+          out.push({
+            label: derived ?? labelTpl ?? 'agent',
+            prompt: h.agent.prompt,
+            agentId: h.agent.agentId,
+            status: h.agent.status,
+            toolCount: h.agent.toolCount,
+          })
         }
       } else {
         out.push({ label: labelTpl ?? 'agent', prompt: promptTpl })
       }
     } else {
       const label = labelTpl ?? 'agent'
-      const idx = runtime.findIndex((r, i) => !consumed.has(i) && r.label === label)
+      // Prefer exact label; fall back to wildcard-style match for a single node.
+      let idx = runtime.findIndex((r, i) => !consumed.has(i) && r.label === label)
+      if (idx < 0 && isDynamicLabelTemplate(label)) {
+        idx = runtime.findIndex((r, i) => !consumed.has(i) && labelMatchesTemplate(label, r.label))
+      }
       const exact = idx >= 0 ? runtime[idx] : undefined
       if (idx >= 0) consumed.add(idx)
-      out.push({ label, prompt: promptTpl, status: exact?.status, toolCount: exact?.toolCount })
+      out.push({
+        label: exact?.label ?? label,
+        prompt: exact?.prompt ?? promptTpl,
+        agentId: exact?.agentId,
+        status: exact?.status,
+        toolCount: exact?.toolCount,
+      })
     }
   }
+  // Catch remaining runtime agents in this parallel phase that share no template —
+  // only when the block was dynamic and produced at least one matched instance already
+  // (avoids inventing nodes when the graph has no label pattern).
   return out
 }
 
@@ -387,6 +457,9 @@ function takeOneRuntime(
     }
   }
   if (idx < 0) idx = runtime.findIndex((r, i) => !consumed.has(i) && r.label === label)
+  if (idx < 0 && isDynamicLabelTemplate(label)) {
+    idx = runtime.findIndex((r, i) => !consumed.has(i) && labelMatchesTemplate(label, r.label))
+  }
   if (idx < 0) return undefined
   consumed.add(idx)
   return runtime[idx]
@@ -398,6 +471,9 @@ function matchAgentRuntime(
   consumed: Set<number>,
 ): DagRuntimeAgent | undefined {
   let idx = spec.label ? runtime.findIndex((r, i) => !consumed.has(i) && r.label === spec.label) : -1
+  if (idx < 0 && spec.label && isDynamicLabelTemplate(spec.label)) {
+    idx = runtime.findIndex((r, i) => !consumed.has(i) && labelMatchesTemplate(spec.label, r.label))
+  }
   if (idx < 0 && spec.prompt) {
     const re = spec.prompt.includes('${') ? templateToCapturingRegex(spec.prompt).re : undefined
     idx = runtime.findIndex((r, i) =>
@@ -407,6 +483,35 @@ function matchAgentRuntime(
   if (idx < 0) return undefined
   consumed.add(idx)
   return runtime[idx]
+}
+
+/** Map Grok/live agent state strings onto DAG status chips. */
+export function runtimeStatusFromAgentState(state: string | undefined): DagRuntimeAgent['status'] {
+  if (!state) return undefined
+  const s = state.toLowerCase()
+  if (s === 'running' || s === 'active' || s === 'in_progress' || s === 'pending') return 'running'
+  if (s === 'failed' || s === 'error' || s === 'cancelled' || s === 'canceled') return 'failed'
+  if (s === 'done' || s === 'completed' || s === 'complete' || s === 'success') return 'done'
+  return undefined
+}
+
+/**
+ * After buildDag(…, runtime), prefer agentIds carried through expansion when present;
+ * fill remaining nodes via prompt/label assignment.
+ */
+export function bindAgentsToDag(
+  dag: Dag,
+  agents: Array<{ agentId: string; prompt?: string; label?: string }>,
+  prebound?: Map<string, string>,
+): Map<string, string> {
+  const map = new Map(prebound ?? [])
+  const used = new Set(map.values())
+  const remainingNodes = dag.nodes.filter((n) => !map.has(n.id))
+  const remainingAgents = agents.filter((a) => !used.has(a.agentId))
+  for (const [nodeId, agentId] of assignAgentsToNodes(remainingNodes, remainingAgents)) {
+    map.set(nodeId, agentId)
+  }
+  return map
 }
 
 function collectPromptCandidates(graph: WorkflowGraph, out: { tpl: string; phase?: string }[]): void {
@@ -431,6 +536,45 @@ export function agentPhaseByPrompt(graph: WorkflowGraph, prompt: string | undefi
   return undefined
 }
 
+function collectLabelCandidates(graph: WorkflowGraph, out: { label: string; phase?: string }[]): void {
+  for (const block of graph.blocks) {
+    if (block.kind === 'agent') {
+      if (block.agent.label) out.push({ label: block.agent.label, phase: block.phase })
+    } else if (block.kind === 'parallel' || block.kind === 'pipeline') {
+      for (const a of block.agents) {
+        if (a.label) out.push({ label: a.label, phase: block.phase })
+      }
+    } else if (block.kind === 'workflow' && block.child) {
+      collectLabelCandidates(block.child, out)
+    }
+  }
+}
+
+/** Match runtime agent label to a script graph phase (Grok often has labels without prompt templates). */
+export function agentPhaseByLabel(graph: WorkflowGraph, label: string | undefined): string | undefined {
+  if (!label) return undefined
+  const candidates: { label: string; phase?: string }[] = []
+  collectLabelCandidates(graph, candidates)
+  const exact = candidates.find((c) => c.label === label)
+  if (exact) return exact.phase
+  // Dynamic labels like "scan:ui-sidebar" vs graph "scan:*" / "scan:"
+  for (const c of candidates) {
+    if (c.label.endsWith('*') && label.startsWith(c.label.slice(0, -1))) return c.phase
+    if (c.label.endsWith(':') && label.startsWith(c.label)) return c.phase
+  }
+  return undefined
+}
+
+/** Prefer live phase, then prompt match, then label match. */
+export function resolveAgentPhase(
+  graph: WorkflowGraph | null | undefined,
+  agent: { phase?: string; prompt?: string; label?: string },
+): string | undefined {
+  if (agent.phase) return agent.phase
+  if (!graph) return undefined
+  return agentPhaseByPrompt(graph, agent.prompt) ?? agentPhaseByLabel(graph, agent.label)
+}
+
 export function buildDag(graph: WorkflowGraph, runtime?: DagRuntimeAgent[]): Dag {
   const nodes: DagNode[] = []
   const edges: DagEdge[] = []
@@ -452,11 +596,27 @@ export function buildDag(graph: WorkflowGraph, runtime?: DagRuntimeAgent[]): Dag
     }
   }
 
+  /** nodeId → agentId collected while expanding with runtime (Grok / Claude). */
+  const boundAgentIds = new Map<string, string>()
+
   const processBlock = (block: WorkflowBlock, subworkflow?: string): void => {
     if (block.kind === 'agent') {
       const id = `n${col}`
       const rt = hasRuntime ? matchAgentRuntime(block.agent, runtime!, consumed) : undefined
-      nodes.push({ id, label: block.agent.label ?? 'agent', prompt: block.agent.prompt, phase: block.phase, group: 'serial', col, row: 0, rows: 1, status: rt?.status, toolCount: rt?.toolCount, subworkflow })
+      nodes.push({
+        id,
+        label: block.agent.label ?? rt?.label ?? 'agent',
+        prompt: block.agent.prompt ?? rt?.prompt,
+        phase: block.phase,
+        group: 'serial',
+        col,
+        row: 0,
+        rows: 1,
+        status: rt?.status,
+        toolCount: rt?.toolCount,
+        subworkflow,
+      })
+      if (rt?.agentId) boundAgentIds.set(id, rt.agentId)
       connect([id]); prevExit = [id]; col++
     } else if (block.kind === 'workflow') {
       if (block.child && block.child.blocks.length > 0) {
@@ -471,7 +631,21 @@ export function buildDag(graph: WorkflowGraph, runtime?: DagRuntimeAgent[]): Dag
       const staticExpanded = !!block.items && block.items.length > 0
       const ids = instances.map((_, i) => `n${col}-${i}`)
       instances.forEach((inst, i) => {
-        nodes.push({ id: ids[i], label: inst.label, prompt: inst.prompt, phase: block.phase, group: 'parallel', col, row: i, rows: instances.length, dynamic: block.dynamic && !hasRuntime && !staticExpanded, status: inst.status, toolCount: inst.toolCount, subworkflow })
+        nodes.push({
+          id: ids[i],
+          label: inst.label,
+          prompt: inst.prompt,
+          phase: block.phase,
+          group: 'parallel',
+          col,
+          row: i,
+          rows: instances.length,
+          dynamic: block.dynamic && !hasRuntime && !staticExpanded,
+          status: inst.status,
+          toolCount: inst.toolCount,
+          subworkflow,
+        })
+        if (inst.agentId) boundAgentIds.set(ids[i], inst.agentId)
       })
       connect(ids); prevExit = ids; col++
     } else if (block.kind === 'pipeline') {
@@ -514,5 +688,11 @@ export function buildDag(graph: WorkflowGraph, runtime?: DagRuntimeAgent[]): Dag
 
   for (const block of graph.blocks) processBlock(block)
 
-  return { nodes, edges, cols: col, phases: graph.phases }
+  return {
+    nodes,
+    edges,
+    cols: col,
+    phases: graph.phases,
+    ...(boundAgentIds.size > 0 ? { nodeAgentIds: boundAgentIds } : {}),
+  }
 }

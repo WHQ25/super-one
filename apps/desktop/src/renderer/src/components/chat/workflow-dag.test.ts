@@ -174,9 +174,66 @@ describe('assignAgentsToNodes — 1:1 node↔agent (no whole-column collision)',
     expect(map.get('loose')).toBe('sea')
   })
 
-  it('skips nodes without a prompt', () => {
-    const map = assignAgentsToNodes([{ id: 'wf', prompt: undefined }], [{ agentId: 'a', prompt: 'x' }])
+  it('skips nodes with neither prompt nor matching label', () => {
+    const map = assignAgentsToNodes(
+      [{ id: 'wf', prompt: undefined, label: 'workflow' }],
+      [{ agentId: 'a', prompt: 'x', label: 'other' }],
+    )
     expect(map.size).toBe(0)
+  })
+
+  it('binds Grok agents by exact label when prompts are missing', () => {
+    const map = assignAgentsToNodes(
+      [
+        { id: 'n0', label: 'ensure-source' },
+        { id: 'n1', label: 'gap-plan-writer' },
+      ],
+      [
+        { agentId: 'a1', label: 'ensure-source' },
+        { agentId: 'a2', label: 'gap-plan-writer' },
+      ],
+    )
+    expect(map.get('n0')).toBe('a1')
+    expect(map.get('n1')).toBe('a2')
+  })
+
+  it('binds dynamic Rhai wildcards (catalog:* → catalog:tools)', () => {
+    const map = assignAgentsToNodes(
+      [{ id: 'p0', label: 'catalog:*' }],
+      [
+        { agentId: 'c1', label: 'catalog:tools' },
+        { agentId: 'c2', label: 'catalog:hooks' },
+      ],
+    )
+    // Single wildcard node takes the first unused matching agent; expansion is buildDag's job.
+    expect(map.get('p0')).toBe('c1')
+  })
+})
+
+describe('buildDag + runtime — expand Grok parallel by label', () => {
+  it('expands catalog:* into one node per matching runtime agent and binds agentIds', async () => {
+    const { parseWorkflowGraph } = await import('./workflow-graph')
+    const { buildDag, bindAgentsToDag } = await import('./workflow-dag')
+    const graph = parseWorkflowGraph(`
+let meta = #{ name: "x" };
+phase("Source");
+let source_r = agent(p, #{ label: "ensure-source" });
+phase("Catalog");
+jobs.push(#{ label: "catalog:" + d.id });
+let catalog_results = parallel(jobs);
+`)
+    const runtime = [
+      { label: 'ensure-source', agentId: 'a-src', status: 'done' as const },
+      { label: 'catalog:tools', agentId: 'a-tools', status: 'done' as const },
+      { label: 'catalog:hooks', agentId: 'a-hooks', status: 'running' as const },
+    ]
+    const dag = buildDag(graph, runtime)
+    const catalogNodes = dag.nodes.filter((n) => n.phase === 'Catalog')
+    expect(catalogNodes.map((n) => n.label).sort()).toEqual(['catalog:hooks', 'catalog:tools'])
+    const map = bindAgentsToDag(dag, runtime.map((r) => ({ agentId: r.agentId!, label: r.label })), dag.nodeAgentIds)
+    expect(map.get(catalogNodes.find((n) => n.label === 'catalog:tools')!.id)).toBe('a-tools')
+    expect(map.get(catalogNodes.find((n) => n.label === 'catalog:hooks')!.id)).toBe('a-hooks')
+    expect(map.get(dag.nodes.find((n) => n.label === 'ensure-source')!.id)).toBe('a-src')
   })
 })
 
@@ -279,6 +336,32 @@ describe('buildDag — pipeline static grid from items × stages', () => {
   it('fans out from the upstream agent into every item row at the first stage', () => {
     const fanout = dag.edges.filter((e) => e.kind === 'fanout' && e.from === byLabel('seed').id)
     expect(fanout.map((e) => e.to).sort()).toEqual([byLabel('gen:太阳').id, byLabel('gen:海洋').id].sort())
+  })
+})
+
+describe('agentPhaseByLabel — match Grok labels to script phase', () => {
+  it('matches exact and dynamic label prefixes', async () => {
+    const { agentPhaseByLabel, resolveAgentPhase } = await import('./workflow-dag')
+    const { parseWorkflowGraph } = await import('./workflow-graph')
+    const graph = parseWorkflowGraph(`
+phase("Scan");
+let r = parallel(jobs);
+phase("Report");
+let fin = agent(p, { label: 'write-report' })
+`)
+    // Rhai-style labels harvested as scan:* when dynamic
+    const rhai = parseWorkflowGraph(`
+let meta = #{ name: "x" };
+phase("Scan");
+jobs.push(#{ label: "scan:" + d.id });
+let r = parallel(jobs);
+phase("Report");
+let fin = agent(p, #{ label: "write-report" });
+`)
+    expect(agentPhaseByLabel(rhai, 'scan:ui-sidebar')).toBe('Scan')
+    expect(agentPhaseByLabel(rhai, 'write-report')).toBe('Report')
+    expect(resolveAgentPhase(rhai, { phase: 'Plan', label: 'x' })).toBe('Plan')
+    expect(resolveAgentPhase(graph, { label: 'write-report' })).toBe('Report')
   })
 })
 

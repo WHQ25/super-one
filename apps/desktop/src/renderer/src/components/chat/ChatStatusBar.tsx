@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, Square, SquareTerminal, Bot } from 'lucide-react'
+import { GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, Square, SquareTerminal, Bot, Workflow } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import {
@@ -38,6 +38,8 @@ import {
   parseSubagentIdFromText,
   resolveTaskProgressEntry,
 } from './subagent-utils'
+import { isWorkflowSmokeCheck, parseWorkflowInput, parseWorkflowLaunch, workflowToolTargetLabel } from './workflow-utils'
+import { WorkflowBlock } from './WorkflowBlock'
 import type { ContentBlock, GitInfo } from '@superone/shared/agent-types'
 
 interface WorktreeStateLike {
@@ -72,6 +74,13 @@ export type BackgroundActivityItem =
       childBlocks: ContentBlock[]
       resultBlock?: ContentBlock & { type: 'tool_result' }
     }
+  | {
+      id: string
+      kind: 'workflow'
+      title: string
+      toolBlock: ContentBlock & { type: 'tool_use' }
+      resultBlock?: ContentBlock & { type: 'tool_result' }
+    }
 
 type TaskProgress = Record<string, {
   description: string
@@ -98,10 +107,15 @@ export function collectBackgroundActivities(
   messages: Array<{ content: ContentBlock[] }>,
   taskProgress: TaskProgress,
   isStreaming: boolean = false,
-): { bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[]; agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] } {
+): {
+  bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[]
+  agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[]
+  workflowActivities: Extract<BackgroundActivityItem, { kind: 'workflow' }>[]
+} {
   const results = new Map<string, ContentBlock & { type: 'tool_result' }>()
   const bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[] = []
   const agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] = []
+  const workflowActivities: Extract<BackgroundActivityItem, { kind: 'workflow' }>[] = []
 
   for (const message of messages) {
     for (const block of message.content) {
@@ -170,11 +184,45 @@ export function collectBackgroundActivities(
           childBlocks,
           resultBlock,
         })
+        continue
+      }
+
+      // Workflow launches return early (run_id) and keep running via taskProgress —
+      // same background surface as bash / agents.
+      if (block.toolName === 'Workflow') {
+        if (isWorkflowSmokeCheck(block.input)) continue
+        const resultBlock = results.get(block.toolUseId)
+        const launch = parseWorkflowLaunch(
+          resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined,
+        )
+        const runKey = launch.runId ?? launch.taskId
+        const progress = resolveTaskProgressEntry(taskProgress, block.toolUseId, runKey)
+        // Authoritative while tracked; otherwise only treat as running during the
+        // launch window (streaming / no result yet). Idle + result without progress
+        // is a historical complete (reload).
+        const isRunning = progress
+          ? progress.completed !== true
+          : (!resultBlock && isStreaming) || (isStreaming && !!runKey && !block.taskResultText)
+        if (!isRunning) continue
+        const meta = parseWorkflowInput(block.input)
+        const title =
+          meta.name
+          || block.workflowName
+          || launch.name
+          || workflowToolTargetLabel(block.input)
+          || 'Workflow'
+        workflowActivities.push({
+          id: block.toolUseId,
+          kind: 'workflow',
+          title,
+          toolBlock: block,
+          resultBlock,
+        })
       }
     }
   }
 
-  return { bashActivities, agentActivities }
+  return { bashActivities, agentActivities, workflowActivities }
 }
 
 export function ChatStatusBar() {
@@ -200,6 +248,7 @@ export function ChatStatusBar() {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [bashOpen, setBashOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
+  const [workflowOpen, setWorkflowOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
   const dirty = gitInfo?.dirty
@@ -348,7 +397,7 @@ export function ChatStatusBar() {
     && normalizedTrimmed !== currentBranchLower
     && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
-  const { bashActivities, agentActivities } = useMemo(
+  const { bashActivities, agentActivities, workflowActivities } = useMemo(
     () => collectBackgroundActivities(getActiveSessionView(scope).messages, taskProgress, sessionStatus === 'streaming'),
     // messages is read non-reactively; recompute is driven by the cheap signature + task/status.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -375,8 +424,10 @@ export function ChatStatusBar() {
   ), [handleStopTask])
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
+  const workflowLabel = workflowActivities.length > 1 ? `${workflowActivities.length} Workflows` : 'Workflow'
   const bashPanelTitle = `Background ${bashActivities.length > 1 ? 'Bashes' : 'Bash'}`
   const agentPanelTitle = `Running ${agentActivities.length > 1 ? 'Agents' : 'Agent'}`
+  const workflowPanelTitle = `Running ${workflowActivities.length > 1 ? 'Workflows' : 'Workflow'}`
 
   useEffect(() => {
     if (bashActivities.length === 0) setBashOpen(false)
@@ -385,6 +436,10 @@ export function ChatStatusBar() {
   useEffect(() => {
     if (agentActivities.length === 0) setAgentOpen(false)
   }, [agentActivities.length])
+
+  useEffect(() => {
+    if (workflowActivities.length === 0) setWorkflowOpen(false)
+  }, [workflowActivities.length])
 
   return (
     <>
@@ -451,6 +506,30 @@ export function ChatStatusBar() {
                       </div>
                     )
                   })}
+                </div>
+              </motion.div>
+            )}
+            {workflowOpen && workflowActivities.length > 0 && (
+              <motion.div
+                key="workflow-panel"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-popover shadow-md"
+              >
+                <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-foreground">{workflowPanelTitle}</div>
+                <div className="activity-panel max-h-[50vh] divide-y divide-border overflow-y-auto p-1.5">
+                  {workflowActivities.map((item, i) => (
+                    <div key={item.id}>
+                      <WorkflowBlock
+                        toolBlock={item.toolBlock}
+                        resultBlock={item.resultBlock}
+                        isStreaming={sessionStatus === 'streaming'}
+                        defaultExpanded={i === 0}
+                      />
+                    </div>
+                  ))}
                 </div>
               </motion.div>
             )}
@@ -600,10 +679,25 @@ export function ChatStatusBar() {
           </>
         )}
 
+        {workflowActivities.length > 0 && (
+          <>
+            {(bashActivities.length > 0 || agentActivities.length > 0) && <div className="h-3 w-px bg-border" />}
+            <button
+              onClick={() => setWorkflowOpen((o) => !o)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+              title={workflowLabel}
+            >
+              <Workflow className="size-3 animate-pulse" />
+              {!compactIndicators && <span>{workflowLabel}</span>}
+              {!compactIndicators && <ChevronDown className={`size-3 transition-transform duration-200 ${workflowOpen ? 'rotate-180' : ''}`} />}
+            </button>
+          </>
+        )}
+
         <StatusBarSandbox
           activeProvider={activeProvider}
           compactIndicators={compactIndicators}
-          showDivider={bashActivities.length > 0 || agentActivities.length > 0}
+          showDivider={bashActivities.length > 0 || agentActivities.length > 0 || workflowActivities.length > 0}
         />
       </div>
 

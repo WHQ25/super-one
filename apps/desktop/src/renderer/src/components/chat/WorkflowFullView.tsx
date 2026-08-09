@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Workflow, Network, Code, Bot, Wrench, List, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -11,12 +11,21 @@ import { useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents
 import { useResolvedWorkflowGraph } from './use-workflow-graph'
 import { useWorkflowReplay } from './use-workflow-replay'
 import type { ReplayAgentRecord } from './workflow-replay'
-import { buildDag, agentPhaseByPrompt, assignAgentsToNodes, type DagNode } from './workflow-dag'
+import {
+  buildDag,
+  resolveAgentPhase,
+  bindAgentsToDag,
+  runtimeStatusFromAgentState,
+  type DagNode,
+  type DagRuntimeAgent,
+} from './workflow-dag'
 import { WorkflowDagCanvas } from './WorkflowDagCanvas'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import { renderJsonlEntry } from './subagent-activity'
 import { NestedToolContext } from './nested-tool-context'
 import { StructuredOutputView } from './StructuredOutputView'
+import { looksLikeRhaiWorkflow } from './workflow-graph-rhai'
+import { workflowArtifactPath } from './workflow-utils'
 import {
   streamdownPlugins,
   streamdownRehypePlugins,
@@ -131,6 +140,13 @@ function WorkflowOutputFooter({ output }: { output: unknown }) {
   )
 }
 
+function scriptLanguage(code: string, path?: string): string {
+  // Official TextMate grammar via rhai-highlight (not a Shiki bundled lang).
+  if (path?.endsWith('.rhai') || looksLikeRhaiWorkflow(code)) return 'rhai'
+  if (path?.endsWith('.js') || path?.endsWith('.ts')) return 'javascript'
+  return 'javascript'
+}
+
 function ScriptSection({ label, path, code }: { label: string; path?: string; code: string }) {
   return (
     <div className="mb-3 last:mb-0">
@@ -138,7 +154,7 @@ function ScriptSection({ label, path, code }: { label: string; path?: string; co
         <span className="shrink-0 text-xs font-medium text-foreground">{label}</span>
         {path && <span className="min-w-0 truncate text-xs text-muted-foreground opacity-70">{path}</span>}
       </div>
-      <HighlightedCodeBlock code={code} language="javascript" codePlugin={codePlugin} />
+      <HighlightedCodeBlock code={code} language={scriptLanguage(code, path)} codePlugin={codePlugin} />
     </div>
   )
 }
@@ -146,10 +162,85 @@ function ScriptSection({ label, path, code }: { label: string; path?: string; co
 export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   const { t } = useTranslation()
   const nav = useWorkflowNavigation()
-  const agents = useWorkflowAgents(view.transcriptDir, true)
+  const diskAgents = useWorkflowAgents(view.transcriptDir, true)
+  const liveRows = useActiveSession((s) => {
+    const byTool = s.taskProgress[view.toolUseId]
+    if (byTool?.workflowAgents?.length) return byTool.workflowAgents
+    // Grok may key progress by run_id after launch correlation.
+    for (const entry of Object.values(s.taskProgress)) {
+      if (entry.workflowAgents?.length && entry.taskId && view.transcriptDir?.includes(entry.taskId)) {
+        return entry.workflowAgents
+      }
+    }
+    return undefined
+  })
+  const agents = useMemo(() => {
+    if (!liveRows?.length) return diskAgents
+    if (diskAgents.length === 0) {
+      return liveRows.map((a, i) => ({
+        agentId: a.agentId ?? `live-${a.label}-${i}`,
+        jsonlPath: '',
+        label: a.label,
+        toolCount: a.toolCount,
+        tokens: a.tokens,
+        phase: a.phase,
+        state: a.state,
+      }))
+    }
+    return diskAgents.map((a) => {
+      const live = liveRows.find(
+        (r) => (r.agentId && r.agentId === a.agentId) || r.label === a.label,
+      )
+      if (!live) return a
+      return {
+        ...a,
+        phase: a.phase ?? live.phase,
+        state: live.state ?? a.state,
+        tokens: a.tokens ?? live.tokens,
+        toolCount: a.toolCount || live.toolCount,
+      }
+    })
+  }, [diskAgents, liveRows])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [loadedScript, setLoadedScript] = useState<string | undefined>(view.script)
+  const [loadedFromPath, setLoadedFromPath] = useState<string | undefined>(undefined)
 
-  const { graph, childScripts } = useResolvedWorkflowGraph(view.script)
+  useEffect(() => {
+    if (view.script) {
+      setLoadedScript(view.script)
+      setLoadedFromPath(undefined)
+      return
+    }
+    let cancelled = false
+    const candidates = [
+      view.scriptPath,
+      workflowArtifactPath(view.transcriptDir, 'script.rhai'),
+      workflowArtifactPath(view.transcriptDir, 'script.js'),
+    ].filter((p): p is string => !!p)
+
+    void (async () => {
+      for (const path of candidates) {
+        const src = await Promise.resolve(window.app.readWorkflowScript?.(path)).catch(() => null)
+        if (cancelled) return
+        if (typeof src === 'string' && src.length > 0) {
+          setLoadedScript(src)
+          setLoadedFromPath(path)
+          return
+        }
+      }
+      if (!cancelled) {
+        setLoadedScript(undefined)
+        setLoadedFromPath(undefined)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [view.script, view.scriptPath, view.transcriptDir])
+
+  const script = loadedScript
+  const { graph, childScripts } = useResolvedWorkflowGraph(script)
   const records = useMemo<ReplayAgentRecord[]>(
     () => agents.map((a) => ({ agentId: a.agentId, prompt: a.prompt, label: a.label, result: a.result, toolCount: a.toolCount })),
     [agents],
@@ -158,14 +249,39 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
     () => new Map(childScripts.map((cs) => [cs.scriptPath, { source: cs.source, name: cs.name }])),
     [childScripts],
   )
-  const replay = useWorkflowReplay(view.script, records, childWorkflowMap)
+  // Runtime rows for graph expansion (Grok labels / Claude fan-out without full JS replay).
+  const runtimeAgents = useMemo<DagRuntimeAgent[]>(
+    () => agents.map((a) => ({
+      label: a.label,
+      prompt: a.prompt,
+      agentId: a.agentId,
+      status: runtimeStatusFromAgentState(a.state),
+      toolCount: a.toolCount,
+    })),
+    [agents],
+  )
+  // JS replay only — Rhai cannot execute; use static graph + runtime label binding.
+  const replay = useWorkflowReplay(
+    script && !looksLikeRhaiWorkflow(script) ? script : undefined,
+    records,
+    childWorkflowMap,
+  )
   const dag = useMemo(
-    () => (replay ? replay.dag : graph && graph.blocks.length > 0 ? buildDag(graph) : null),
-    [replay, graph],
+    () => {
+      if (replay) return replay.dag
+      if (!graph || graph.blocks.length === 0) return null
+      // Pass runtime so parallel(catalog:*) expands to one node per live agent.
+      return buildDag(graph, runtimeAgents.length > 0 ? runtimeAgents : undefined)
+    },
+    [replay, graph, runtimeAgents],
   )
 
   const nodeToAgent = useMemo(
-    () => (replay ? replay.nodeAgentIds : dag ? assignAgentsToNodes(dag.nodes, agents) : new Map<string, string>()),
+    () => {
+      if (replay) return replay.nodeAgentIds
+      if (!dag) return new Map<string, string>()
+      return bindAgentsToDag(dag, agents, dag.nodeAgentIds)
+    },
     [replay, dag, agents],
   )
   const selected = useMemo(() => {
@@ -192,11 +308,11 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   const activeTab: 'graph' | 'script' | 'list' | null =
     tab === 'list' && canList
       ? 'list'
-      : tab === 'script' && view.script
+      : tab === 'script' && script
         ? 'script'
         : dag
           ? 'graph'
-          : view.script
+          : script
             ? 'script'
             : canList
               ? 'list'
@@ -208,7 +324,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   const agentGroups = useMemo(() => {
     const byPhase = new Map<string | undefined, WorkflowAgentInfo[]>()
     for (const a of agents) {
-      const phase = graph ? agentPhaseByPrompt(graph, a.prompt) : undefined
+      const phase = resolveAgentPhase(graph, a)
       const bucket = byPhase.get(phase)
       if (bucket) bucket.push(a)
       else byPhase.set(phase, [a])
@@ -241,7 +357,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
       key={selected.agentId}
       agent={selected}
       colors={colors}
-      phase={graph ? agentPhaseByPrompt(graph, selected.prompt) : undefined}
+      phase={resolveAgentPhase(graph, selected)}
     />
   ) : null
 
@@ -259,7 +375,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
         </button>
         <Workflow className={cn('size-3.5 shrink-0', colors.text)} />
         <span className="min-w-0 truncate font-medium text-foreground">{view.name || t('chat.workflow.title', 'Workflow')}</span>
-        {(dag || view.script || canList) && (
+        {(dag || script || canList) && (
           <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded bg-muted/60 p-0.5">
             {dag && (
               <button
@@ -279,7 +395,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                 <List className="size-3" />{t('chat.workflow.list', 'List')}
               </button>
             )}
-            {view.script && (
+            {script && (
               <button
                 type="button"
                 onClick={() => setTab('script')}
@@ -315,6 +431,9 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                     >
                       <Bot className={cn('size-3 shrink-0', colors.text)} />
                       <span className="min-w-0 truncate">{a.label}</span>
+                      {a.state && (
+                        <span className="shrink-0 text-xs text-muted-foreground/80">{a.state}</span>
+                      )}
                       {a.tokens != null && a.tokens > 0 && (
                         <span className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground">{formatTokens(a.tokens)}</span>
                       )}
@@ -330,7 +449,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                     key={listSelected.agentId}
                     agent={listSelected}
                     colors={colors}
-                    phase={graph ? agentPhaseByPrompt(graph, listSelected.prompt) : undefined}
+                    phase={resolveAgentPhase(graph, listSelected)}
                   />
                 </div>
               ) : (
@@ -340,13 +459,21 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
               )}
             </div>
           </div>
-        ) : activeTab === 'script' && view.script ? (
+        ) : activeTab === 'script' && script ? (
           <div className="h-full overflow-auto bg-muted/10 px-3 py-3 text-xs">
             {childScripts.length === 0 ? (
-              <HighlightedCodeBlock code={view.script} language="javascript" codePlugin={codePlugin} />
+              <HighlightedCodeBlock
+                code={script}
+                language={scriptLanguage(script, loadedFromPath ?? view.scriptPath)}
+                codePlugin={codePlugin}
+              />
             ) : (
               <>
-                <ScriptSection label={view.name || t('chat.workflow.title', 'Workflow')} code={view.script} />
+                <ScriptSection
+                  label={view.name || t('chat.workflow.title', 'Workflow')}
+                  path={loadedFromPath ?? view.scriptPath}
+                  code={script}
+                />
                 {childScripts.map((cs) => (
                   <ScriptSection key={cs.scriptPath} label={`▸ ${cs.name ?? t('chat.workflow.subWorkflow', 'sub-workflow')}`} path={cs.scriptPath} code={cs.source} />
                 ))}

@@ -50,8 +50,13 @@ describe('formatTokens', () => {
     expect(formatTokens(999999)).toBe('1000.0k')
   })
 
-  it('should format 1000000 as 1000.0k', () => {
-    expect(formatTokens(1_000_000)).toBe('1000.0k')
+  it('should format 1000000 as 1.0m (not 1000.0k)', () => {
+    expect(formatTokens(1_000_000)).toBe('1.0m')
+  })
+
+  it('should format multi-million with one decimal m', () => {
+    expect(formatTokens(1_500_000)).toBe('1.5m')
+    expect(formatTokens(12_300_000)).toBe('12.3m')
   })
 
   it('should return negative numbers as plain string below 1000', () => {

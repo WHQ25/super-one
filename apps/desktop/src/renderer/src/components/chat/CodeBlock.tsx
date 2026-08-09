@@ -5,6 +5,7 @@ import { useIsCodeFenceIncomplete } from 'streamdown'
 import { tryCopy } from '@/lib/clipboard'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { codePluginLight } from './code-plugins'
+import { highlightRhai, isRhaiLanguage } from './rhai-highlight'
 
 const DARK_FG = '#e1e4e8'
 const LIGHT_FG = '#24292e'
@@ -66,6 +67,7 @@ export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = 
   const normalizeLanguage = useCallback((raw: string): string => {
     const value = raw.trim().toLowerCase()
     if (value === 'text' || value === 'plaintext' || value === 'txt') return 'md'
+    if (value === 'rhai') return 'rhai'
     return value || 'md'
   }, [])
 
@@ -77,6 +79,19 @@ export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = 
     }
     const themes = activePlugin.getThemes()
     const normalizedLanguage = normalizeLanguage(language)
+
+    // Rhai is not a Shiki bundled language — use official vscode-rhai TextMate grammar.
+    if (isRhaiLanguage(normalizedLanguage)) {
+      const result = highlightRhai(code, themes as [string, string], (res) => applyHighlightResult(res))
+      if (result) applyHighlightResult(result)
+      else {
+        // Keep monochrome until async grammar load finishes (avoid flash of wrong lang).
+        setLines(null)
+        setFg(fallbackFg)
+      }
+      return
+    }
+
     if (!activePlugin.supportsLanguage(normalizedLanguage as never)) {
       setLines(null)
       return

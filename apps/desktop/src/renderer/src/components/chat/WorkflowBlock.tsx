@@ -7,7 +7,15 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { formatTokens } from './chat-shared'
 import { getSubagentColorClasses } from './subagent-colors'
 import { SubagentRetryBadge } from './SubagentRetryBadge'
-import { parseWorkflowInput, parseWorkflowLaunch, extractWorkflowScript } from './workflow-utils'
+import {
+  parseWorkflowInput,
+  parseWorkflowLaunch,
+  extractWorkflowScript,
+  extractWorkflowScriptPath,
+  resolveGrokWorkflowDir,
+  workflowArtifactPath,
+  stripWorkflowNamePrefix,
+} from './workflow-utils'
 import { useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
 import { useWorkflowOutput } from './use-workflow-output'
 import { useWorkflowNavigation } from './workflow-navigation-context'
@@ -112,15 +120,34 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
     return undefined
   })
   const colorIdx = useActiveSession((s) => s.subagentColors[toolBlock.toolUseId])
+  const cwd = useActiveSession((s) => s.cwd)
+  const providerSessionId = useActiveSession((s) => s._providerSessionId)
+  const homedir = useChatStore((s) => {
+    const path = s.activeProject
+    return path ? (s.projectSessions[path]?.homedir || '') : ''
+  })
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
   useEffect(() => {
     useChatStore.getState().assignSubagentColor(toolBlock.toolUseId)
   }, [toolBlock.toolUseId])
   const meta = useMemo(() => parseWorkflowInput(toolBlock.input), [toolBlock.input])
   const script = useMemo(() => extractWorkflowScript(toolBlock.input), [toolBlock.input])
+  const inputScriptPath = useMemo(() => extractWorkflowScriptPath(toolBlock.input), [toolBlock.input])
   const nav = useWorkflowNavigation()
 
-  const hasTranscript = !!launch.transcriptDir
+  // Claude: transcriptDir on launch text. Grok: run artifacts under ~/.grok/sessions/.../workflows/<run_id>.
+  const transcriptDir = useMemo(() => {
+    if (launch.transcriptDir) return launch.transcriptDir
+    return resolveGrokWorkflowDir({
+      runId: launch.runId ?? runKey,
+      cwd,
+      providerSessionId,
+      homedir,
+    })
+  }, [launch.transcriptDir, launch.runId, runKey, cwd, providerSessionId, homedir])
+  const scriptPath = launch.scriptPath ?? inputScriptPath
+    ?? workflowArtifactPath(transcriptDir, 'script.rhai')
+  const hasTranscript = !!transcriptDir
   // Claude: transcriptDir. Grok: run_id/task_id on launch JSON and/or live taskProgress.
   const hasLaunchIdentity = hasTranscript || !!runKey || !!progress?.taskId
   const launched = hasLaunchIdentity || !!progress
@@ -131,15 +158,17 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
   // - No progress (reload/history): Claude transcriptDir, persisted taskResultText, or
   //   Grok launch id after the parent turn is idle → treat as historical complete.
   // - No progress while still streaming: stay running (avoid complete→running flicker).
+  // Historical complete only from explicit launch transcriptDir (Claude), not a
+  // synthesized Grok path — otherwise a live run flips to "complete" before progress.
   const isComplete = progress
     ? progress.completed === true
-    : hasTranscript || !!toolBlock.taskResultText || (!!runKey && !isStreaming)
+    : !!launch.transcriptDir || !!toolBlock.taskResultText || (!!runKey && !isStreaming)
   const isRunning = launched ? !isComplete : isStreaming
   const isSpawning = !launched && !isComplete && !meta.name
   const terminalStatus = progress?.status
 
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
-  const transcriptAgents = useWorkflowAgents(launch.transcriptDir, hasTranscript, isComplete)
+  const transcriptAgents = useWorkflowAgents(transcriptDir, hasTranscript, isComplete)
   const liveAgents: WorkflowAgentInfo[] = useMemo(() => {
     const rows = progress?.workflowAgents ?? toolBlock.workflowAgents
     if (!rows?.length) return []
@@ -149,12 +178,42 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
       label: a.label,
       toolCount: a.toolCount,
       tokens: a.tokens,
+      phase: a.phase,
+      state: a.state,
     }))
   }, [progress?.workflowAgents, toolBlock.workflowAgents])
-  // Prefer filesystem-backed agents (Claude jsonl / Grok subagent output) when present.
-  const agents = transcriptAgents.length > 0 ? transcriptAgents : liveAgents
-  // Full view needs a transcript/workflow dir (Claude agent-*.jsonl or Grok state.json).
-  const canOpenFullView = hasTranscript
+  // Prefer filesystem-backed agents (Claude jsonl / Grok subagent output) when present;
+  // still merge live phase/state so full-view List stays current while running.
+  const agents = useMemo(() => {
+    const base = transcriptAgents.length > 0 ? transcriptAgents : liveAgents
+    const liveRows = progress?.workflowAgents ?? toolBlock.workflowAgents
+    if (!liveRows?.length) return base
+    return base.map((a) => {
+      const live = liveRows.find(
+        (r) => (r.agentId && r.agentId === a.agentId) || r.label === a.label,
+      )
+      if (!live) return a
+      return {
+        ...a,
+        phase: a.phase ?? live.phase,
+        state: live.state ?? a.state,
+        tokens: a.tokens ?? live.tokens,
+        toolCount: a.toolCount || live.toolCount,
+      }
+    })
+  }, [transcriptAgents, liveAgents, progress?.workflowAgents, toolBlock.workflowAgents])
+  // Full view: Claude transcriptDir, resolved Grok run dir, or script we can show.
+  const canOpenFullView = hasTranscript || !!script || !!scriptPath
+
+  const openFullView = () => {
+    nav.open({
+      toolUseId: toolBlock.toolUseId,
+      transcriptDir,
+      name: meta.name || toolBlock.workflowName || launch.name || '',
+      script,
+      scriptPath: script ? undefined : scriptPath,
+    })
+  }
 
   const outputFile = progress?.outputFile ?? (resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined)
   const output = useWorkflowOutput(outputFile, expanded && hasTranscript)
@@ -177,20 +236,28 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
 
   const livePhases = progress?.workflowPhases ?? toolBlock.workflowPhases
   const phases = useMemo(() => {
+    // Prefer live state, but keep script/meta details when Grok omits detail on snapshots.
+    const detailByTitle = new Map(meta.phases.map((p) => [p.title, p.detail] as const))
     if (livePhases?.length) {
       return livePhases.map((p) => ({
         title: p.title,
-        detail: p.detail,
+        detail: p.detail ?? detailByTitle.get(p.title),
         state: p.state,
       }))
     }
     return meta.phases.map((p) => ({ title: p.title, detail: p.detail, state: undefined as string | undefined }))
   }, [livePhases, meta.phases])
 
-  const displayName = meta.name || launch.runId || t('chat.workflow.title', 'Workflow')
-  const displayDescription =
+  // Prefer human name — never surface run_id (wf_…) as the title chip.
+  const nameForStrip = meta.name || toolBlock.workflowName || launch.name || undefined
+  const displayName = nameForStrip || t('chat.workflow.title', 'Workflow')
+  const displayDescription = stripWorkflowNamePrefix(
     meta.description
-    || (progress?.description && !progress.description.startsWith(`${meta.name}:`) ? progress.description : undefined)
+      || toolBlock.workflowDescription
+      || progress?.description
+      || undefined,
+    nameForStrip,
+  )
 
   const stats = (
     <>
@@ -218,7 +285,9 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
       >
         <Workflow className={cn('size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
         <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
-          {meta.name || launch.runId ? `Workflow: ${displayName}` : t('chat.workflow.title', 'Workflow')}
+          {displayName === t('chat.workflow.title', 'Workflow')
+            ? displayName
+            : `Workflow: ${displayName}`}
         </span>
         {displayDescription && (
           <span className="min-w-0 truncate text-left text-muted-foreground">{displayDescription}</span>
@@ -234,8 +303,8 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
             <span
               role="button"
               tabIndex={0}
-              onClick={(e) => { e.stopPropagation(); nav.open({ toolUseId: toolBlock.toolUseId, transcriptDir: launch.transcriptDir, name: meta.name, script }) }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); nav.open({ toolUseId: toolBlock.toolUseId, transcriptDir: launch.transcriptDir, name: meta.name, script }) } }}
+              onClick={(e) => { e.stopPropagation(); openFullView() }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openFullView() } }}
               className="inline-flex items-center rounded p-0.5 hover:bg-muted hover:text-foreground"
               title={t('chat.subagent.openFullView', 'Open full view')}
             >
@@ -288,9 +357,10 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
               </div>
               <div className="max-h-32 space-y-0.5 overflow-y-auto">
                 {agents.map((agent) => {
-                  const liveState = progress?.workflowAgents?.find(
-                    (a) => (a.agentId && a.agentId === agent.agentId) || a.label === agent.label,
-                  )?.state
+                  const liveState = agent.state
+                    ?? progress?.workflowAgents?.find(
+                      (a) => (a.agentId && a.agentId === agent.agentId) || a.label === agent.label,
+                    )?.state
                   const row = (
                     <>
                       <Bot className="size-3 shrink-0 text-muted-foreground" />
@@ -328,7 +398,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
                     <button
                       key={agent.agentId}
                       type="button"
-                      onClick={() => nav.open({ toolUseId: toolBlock.toolUseId, transcriptDir: launch.transcriptDir, name: meta.name, script })}
+                      onClick={() => openFullView()}
                       className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs hover:bg-muted/60"
                     >
                       {row}
@@ -346,9 +416,10 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
               <>
                 <Loader2 className="size-3 animate-spin" />
                 <span>
-                  {progress?.summary
-                    || progress?.description
-                    || toolBlock.taskSummary
+                  {stripWorkflowNamePrefix(
+                    progress?.summary || progress?.description || toolBlock.taskSummary,
+                    nameForStrip,
+                  )
                     || t('chat.workflow.running', 'Running…')}
                 </span>
               </>
@@ -357,7 +428,10 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
                 <X className="size-3 shrink-0 text-destructive" />
                 <span>
                   {t('chat.workflow.failed', 'Workflow failed')}
-                  {progress?.summary ? ` · ${progress.summary}` : ''}
+                  {(() => {
+                    const s = stripWorkflowNamePrefix(progress?.summary, nameForStrip)
+                    return s ? ` · ${s}` : ''
+                  })()}
                   {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
                 </span>
               </>

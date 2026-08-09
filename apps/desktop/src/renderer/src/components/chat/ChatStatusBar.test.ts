@@ -20,6 +20,35 @@ function msg(...blocks: ContentBlock[]) {
 }
 
 describe('collectBackgroundActivities', () => {
+  describe('workflow filtering', () => {
+    it('shows running workflow tracked by taskProgress after launch result', () => {
+      const messages = [msg(
+        toolUse('wf1', 'Workflow', { name: 'review-changes' }, 'complete'),
+        toolResult('wf1', { summary: JSON.stringify({ run_id: 'wf_live', name: 'review-changes' }) }),
+      )]
+      const progress = { wf1: { description: 'review-changes: do stuff', taskId: 'wf_live', completed: false } }
+      const { workflowActivities } = collectBackgroundActivities(messages, progress, false)
+      expect(workflowActivities).toHaveLength(1)
+      expect(workflowActivities[0].title).toBe('review-changes')
+    })
+
+    it('hides completed workflow', () => {
+      const messages = [msg(
+        toolUse('wf1', 'Workflow', { name: 'review-changes' }, 'complete'),
+        toolResult('wf1', { summary: JSON.stringify({ run_id: 'wf_live', name: 'review-changes' }) }),
+      )]
+      const progress = { wf1: { description: 'done', taskId: 'wf_live', completed: true } }
+      const { workflowActivities } = collectBackgroundActivities(messages, progress, false)
+      expect(workflowActivities).toHaveLength(0)
+    })
+
+    it('skips validate_only smoke-checks', () => {
+      const messages = [msg(toolUse('wf1', 'Workflow', { name: 'x', validate_only: true }))]
+      const { workflowActivities } = collectBackgroundActivities(messages, {}, true)
+      expect(workflowActivities).toHaveLength(0)
+    })
+  })
+
   describe('bash filtering', () => {
     it('shows bash with run_in_background while streaming', () => {
       const messages = [msg(toolUse('t1', 'Bash', { command: 'sleep 10', run_in_background: true }))]

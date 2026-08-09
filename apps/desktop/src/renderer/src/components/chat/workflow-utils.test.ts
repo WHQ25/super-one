@@ -5,6 +5,10 @@ import {
   parseWorkflowLaunch,
   isWorkflowSmokeCheck,
   workflowToolTargetLabel,
+  extractWorkflowScriptPath,
+  resolveGrokWorkflowDir,
+  workflowArtifactPath,
+  stripWorkflowNamePrefix,
 } from './workflow-utils'
 
 const REAL_SCRIPT = `export const meta = {
@@ -112,5 +116,49 @@ describe('parseWorkflowLaunch', () => {
 
   it('returns empty for undefined', () => {
     expect(parseWorkflowLaunch(undefined)).toEqual({})
+  })
+})
+
+describe('extractWorkflowScriptPath', () => {
+  it('reads script_path / scriptPath from JSON and partial JSON', () => {
+    expect(extractWorkflowScriptPath(JSON.stringify({ script_path: '/a/b.rhai' }))).toBe('/a/b.rhai')
+    expect(extractWorkflowScriptPath(JSON.stringify({ scriptPath: '/c/d.rhai' }))).toBe('/c/d.rhai')
+    expect(extractWorkflowScriptPath('{"name":"x","script_path":"/p/w.rhai"')).toBe('/p/w.rhai')
+  })
+})
+
+describe('resolveGrokWorkflowDir', () => {
+  it('builds ~/.grok/sessions/<encodeURIComponent(cwd)>/<session>/workflows/<run_id>', () => {
+    expect(resolveGrokWorkflowDir({
+      runId: 'wf_abc',
+      cwd: '/Users/me/proj',
+      providerSessionId: '019f-sess',
+      homedir: '/Users/me',
+    })).toBe('/Users/me/.grok/sessions/%2FUsers%2Fme%2Fproj/019f-sess/workflows/wf_abc')
+  })
+
+  it('rejects missing pieces and path traversal', () => {
+    expect(resolveGrokWorkflowDir({ runId: 'wf_x', cwd: '/p', providerSessionId: 's', homedir: null })).toBeUndefined()
+    expect(resolveGrokWorkflowDir({
+      runId: '../evil',
+      cwd: '/p',
+      providerSessionId: 's',
+      homedir: '/h',
+    })).toBeUndefined()
+  })
+})
+
+describe('workflowArtifactPath', () => {
+  it('joins without double slashes', () => {
+    expect(workflowArtifactPath('/tmp/workflows/wf_1/', 'script.rhai')).toBe('/tmp/workflows/wf_1/script.rhai')
+    expect(workflowArtifactPath(undefined, 'script.rhai')).toBeUndefined()
+  })
+})
+
+describe('stripWorkflowNamePrefix', () => {
+  it('drops name: prefix and exact name', () => {
+    expect(stripWorkflowNamePrefix('review-changes: do the thing', 'review-changes')).toBe('do the thing')
+    expect(stripWorkflowNamePrefix('review-changes', 'review-changes')).toBeUndefined()
+    expect(stripWorkflowNamePrefix('phase: Execute', 'review-changes')).toBe('phase: Execute')
   })
 })

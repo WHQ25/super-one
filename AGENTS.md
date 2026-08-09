@@ -1,3 +1,11 @@
+# Agent instructions
+
+Repo-wide monorepo guidance lives in sibling [`CLAUDE.md`](./CLAUDE.md)
+(layout, commands, cross-package resolution, conventions).
+
+Agents that only load `AGENTS.md` and do **not** expand `@` includes **must read**
+`./CLAUDE.md` before large or cross-cutting work in this repository.
+
 @CLAUDE.md
 
 # Commit Message Guideline

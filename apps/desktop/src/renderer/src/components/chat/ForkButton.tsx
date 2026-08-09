@@ -73,14 +73,14 @@ export function ForkButton({ message, className }: ForkButtonProps) {
           {busy ? <Loader2 className="size-3 animate-spin" /> : <Split className="size-3 rotate-90" />}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-44">
+      <DropdownMenuContent align="start" className="w-48">
         <DropdownMenuItem className="text-xs" onClick={() => handleFork('worktree')}>
           <GitFork className="size-3.5" />
           {t('sidebar.contextMenu.forkToWorktree')}
         </DropdownMenuItem>
         <DropdownMenuItem className="text-xs" onClick={() => handleFork('local')}>
           <GitFork className="size-3.5" />
-          {t('sidebar.contextMenu.forkToLocal')}
+          {t('sidebar.contextMenu.forkToSameWorktree')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

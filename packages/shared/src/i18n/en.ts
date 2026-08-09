@@ -181,7 +181,10 @@ export type Messages = {
       openInMiniWindow: string
       dragToMiniWindow: string
       forkToWorktree: string
+      /** @deprecated Prefer forkToSameWorktree — kept for older UI strings. */
       forkToLocal: string
+      /** Same directory / no new worktree (local + remote). */
+      forkToSameWorktree: string
       forkingToast: string
       forkedToast: string
       forkedLocalToast: string
@@ -2469,10 +2472,11 @@ export const en: Messages = {
       openInMiniWindow: 'Open in Mini Window',
       dragToMiniWindow: 'Release to open as mini window',
       forkToWorktree: 'Fork to New Worktree',
-      forkToLocal: 'Fork to Local',
+      forkToLocal: 'Fork to Same Worktree',
+      forkToSameWorktree: 'Fork to Same Worktree',
       forkingToast: 'Forking session…',
       forkedToast: 'Forked to a new worktree',
-      forkedLocalToast: 'Forked in the current folder',
+      forkedLocalToast: 'Forked in the same worktree',
       sessionIdCopiedToast: 'Session ID Copied',
       sessionIdNotReadyToast: 'Session ID not ready — copied internal id',
       workingDirCopiedToast: 'Working Directory Copied',

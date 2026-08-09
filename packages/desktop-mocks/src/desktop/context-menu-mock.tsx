@@ -172,7 +172,7 @@ export const SESSION_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
   { kind: "item", icon: <FolderOpen className={SIZE} />, label: "Open Folder", labelKey: "sidebar.contextMenu.openFolder" },
   { kind: "separator" },
   { kind: "item", icon: <GitFork className={SIZE} />, label: "Fork to New Worktree", labelKey: "sidebar.contextMenu.forkToWorktree" },
-  { kind: "item", icon: <GitFork className={SIZE} />, label: "Fork to Local", labelKey: "sidebar.contextMenu.forkToLocal" },
+  { kind: "item", icon: <GitFork className={SIZE} />, label: "Fork to Same Worktree", labelKey: "sidebar.contextMenu.forkToSameWorktree" },
   { kind: "separator" },
   { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", labelKey: "sidebar.contextMenu.delete", variant: "destructive" },
 ]

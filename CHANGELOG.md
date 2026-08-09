@@ -4,6 +4,26 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.51.1-alpha] - 2026-08-09
+
+### Added
+
+- Chat: show generating feedback during manual `/recap` and align recap chrome with Summary-style labeling.
+
+### Fixed
+
+- Environment: wait for process exit, free the listen port, and escalate stop signals so remote node restart after CLI upgrade is reliable.
+- Session: preserve remote multi-turn history when switching sessions (prefer longer in-memory timeline; skip idle eviction for remote projects).
+- Session: preserve agent emission order on remote hydrate by rebuilding content from the durable event log.
+- Session: expose harness session id for remote sessions so Copy Session ID can use the provider id, not only the SuperOne UUID.
+- Chat: keep suggestion-menu harness pick when choosing the top-ranked slot; reuse one session id across empty-draft harness switches.
+- Chat: stop dual Grok turn summary rows (metadata path vs orphan system marker).
+
+### Changed
+
+- Sidebar: rename “Fork to Local” to “Fork to Same Worktree” for local and remote.
+- Usage: drop the tokens/cost chart toggle; always plot tokens and show cost in tooltips/details.
+
 ## [0.51.0-alpha] - 2026-08-09
 
 ### Added

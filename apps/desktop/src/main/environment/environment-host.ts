@@ -17,6 +17,7 @@ import {
   DESKTOP_UPGRADE_REQUIRED,
   decideRemoteCliAction,
   desktopUpgradeRequiredMessage,
+  providerSessionIdFromResume,
   selectEndpointWithFailover,
   shouldBlockDesktopForNewerNode,
   shouldOfferNodeUpgrade,
@@ -305,17 +306,7 @@ export class EnvironmentHost {
   /**
    * Map a node session record (or gateway list item) to the sidebar history row shape.
    */
-  private mapRemoteSessionEntry(raw: unknown): {
-    sessionId: string
-    title: string
-    lastActiveAt: string
-    provider?: string
-    messageCount: number
-    isPinned?: boolean
-    isHidden?: boolean
-    worktreePath?: string | null
-    isWorktree?: boolean
-  } {
+  private mapRemoteSessionEntry(raw: unknown): SessionHistoryEntry {
     const s = (raw ?? {}) as {
       sessionId?: string
       title?: string | null
@@ -331,6 +322,10 @@ export class EnvironmentHost {
       isHidden?: boolean
       /** Absolute host cwd when session is bound to a worktree (or explicit root). */
       cwd?: string | null
+      /** Bare harness session/thread id (desktop Copy Session ID). */
+      providerSessionId?: string | null
+      /** Prefixed resume token from node SessionRuntime. */
+      providerResume?: string | null
     }
     const sessionId = String(s.sessionId ?? '')
     const ts = s.updatedAt ?? s.createdAt ?? Date.now()
@@ -341,17 +336,28 @@ export class EnvironmentHost {
         : Array.isArray(s.transcript)
           ? s.transcript.length
           : 0
+    // Prefer explicit bare id; fall back to stripping node providerResume prefix.
+    const providerSessionId =
+      (typeof s.providerSessionId === 'string' && s.providerSessionId.trim()
+        ? s.providerSessionId.trim()
+        : null) ?? providerSessionIdFromResume(s.providerResume)
+    const harness = String(s.harnessId || s.providerId || 'claude')
+    const provider =
+      harness === 'claude' || harness === 'codex' || harness === 'acp' || harness === 'opencode'
+        ? harness
+        : 'claude'
     return {
       sessionId,
       title: (s.title && String(s.title).trim()) || 'New session',
       lastActiveAt: new Date(ts).toISOString(),
-      provider: s.harnessId || s.providerId || 'claude',
+      provider,
       messageCount,
       isPinned: Boolean(s.isPinned),
       isHidden: Boolean(s.isHidden),
       // Node sessions use cwd for worktree isolation; surface as desktop worktree fields.
-      worktreePath: cwd,
+      worktreePath: cwd ?? undefined,
       isWorktree: Boolean(cwd),
+      ...(providerSessionId ? { providerSessionId } : {}),
     }
   }
 

@@ -2,7 +2,9 @@ import { Copy, Eye, EyeOff, FolderOpen, GitFork, Pencil, PictureInPicture2, Pin,
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { providerSessionIdFromResume } from '@superone/shared/environment'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 export interface SessionMenuHandlers {
   onRename: () => void
@@ -10,6 +12,49 @@ export interface SessionMenuHandlers {
   onHide: () => void
   onFork: (mode: SessionForkMode) => void
   onDelete?: () => void
+}
+
+function providerLabelFor(session: SessionHistoryEntry): string {
+  if (session.provider === 'codex') return 'Codex'
+  if (session.provider === 'acp') {
+    return session.acpAgentId?.toLowerCase().includes('grok') ? 'Grok (ACP)' : 'ACP'
+  }
+  if (session.provider === 'opencode') return 'OpenCode'
+  return 'Claude Code'
+}
+
+/**
+ * Resolve the harness session id for clipboard. Local rows carry
+ * `providerSessionId`; remote list may omit it until refreshed — fall back to
+ * session.get `providerResume` / `providerSessionId` on the node.
+ */
+export async function resolveSessionIdForCopy(
+  session: SessionHistoryEntry,
+  folderPath: string,
+): Promise<{ id: string; isHarnessId: boolean }> {
+  if (session.providerSessionId) {
+    return { id: session.providerSessionId, isHarnessId: true }
+  }
+  const remote = parseRemoteProjectKey(folderPath)
+  if (remote && typeof window.environment?.getSession === 'function') {
+    try {
+      const snap = (await window.environment.getSession(
+        remote.connectionId,
+        session.sessionId,
+      )) as {
+        providerSessionId?: string | null
+        providerResume?: string | null
+      } | null
+      const bare =
+        (typeof snap?.providerSessionId === 'string' && snap.providerSessionId.trim()
+          ? snap.providerSessionId.trim()
+          : null) ?? providerSessionIdFromResume(snap?.providerResume)
+      if (bare) return { id: bare, isHarnessId: true }
+    } catch {
+      /* fall through to SuperOne session id */
+    }
+  }
+  return { id: session.sessionId, isHarnessId: false }
 }
 
 export function buildSessionMenuItems(
@@ -44,20 +89,15 @@ export function buildSessionMenuItems(
       label: t('sidebar.contextMenu.copySessionId'),
       icon: Copy,
       onSelect: () => {
-        const providerLabel = session.provider === 'codex'
-          ? 'Codex'
-          : session.provider === 'acp'
-            ? (session.acpAgentId?.toLowerCase().includes('grok') ? 'Grok (ACP)' : 'ACP')
-            : session.provider === 'opencode'
-              ? 'OpenCode'
-              : 'Claude Code'
-        if (session.providerSessionId) {
-          navigator.clipboard.writeText(session.providerSessionId)
-          toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`)
-        } else {
-          navigator.clipboard.writeText(session.sessionId)
-          toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdNotReadyToast')}`)
-        }
+        const providerLabel = providerLabelFor(session)
+        void resolveSessionIdForCopy(session, folderPath).then(({ id, isHarnessId }) => {
+          navigator.clipboard.writeText(id)
+          toast.success(
+            isHarnessId
+              ? `${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`
+              : `${providerLabel} ${t('sidebar.contextMenu.sessionIdNotReadyToast')}`,
+          )
+        })
       },
     },
     {
@@ -84,14 +124,20 @@ export function buildSessionMenuItems(
     })
   }
 
-  // Fork to worktree / local: desktop uses local harness fork; remote uses node
-  // session.fork (remote worktree or same-dir local on the node). Hidden when
-  // the session is already bound to a worktree (same as local sidebar).
+  // Fork to new worktree vs same directory (mode: worktree | local). Label is
+  // shared for local and remote — "Same Worktree" avoids implying the
+  // controlling desktop host on remote projects.
   if (!session.isWorktree) {
     items.push(
       { kind: 'separator' },
       { kind: 'item', id: 'forkWorktree', label: t('sidebar.contextMenu.forkToWorktree'), icon: GitFork, onSelect: () => handlers.onFork('worktree') },
-      { kind: 'item', id: 'forkLocal', label: t('sidebar.contextMenu.forkToLocal'), icon: GitFork, onSelect: () => handlers.onFork('local') },
+      {
+        kind: 'item',
+        id: 'forkLocal',
+        label: t('sidebar.contextMenu.forkToSameWorktree'),
+        icon: GitFork,
+        onSelect: () => handlers.onFork('local'),
+      },
     )
   }
 

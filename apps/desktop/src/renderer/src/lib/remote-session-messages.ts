@@ -41,6 +41,14 @@ export type NodeSessionSnapshot = {
   transcript?: NodeTranscriptBlock[]
   pendingInteraction?: NodePendingInteraction | null
   updatedAt?: number
+  /**
+   * Prefixed harness resume token from SessionRuntime
+   * (`claude-session:…` / `thread:…` / …). Used to surface bare
+   * `providerSessionId` for sidebar Copy Session ID.
+   */
+  providerResume?: string | null
+  /** Bare harness session id when the node already strips the resume prefix. */
+  providerSessionId?: string | null
 }
 
 /** Map node pending permission into desktop PermissionRequest for the prompt UI. */

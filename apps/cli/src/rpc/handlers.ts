@@ -6,6 +6,7 @@ import {
   isNodeHarnessId,
   normalizeSessionHarnessId,
   OPERATION_SCOPES,
+  providerSessionIdFromResume,
   type AuthScope,
   type ExecutionEnvironmentDescriptor,
   type NodeAgentSettingsPatch,
@@ -1977,24 +1978,32 @@ function handleSessionList(payload: unknown, ctx: RpcContext): RpcResult {
   const offset = Math.max(Math.floor(p.offset), 0)
   // Metadata only. Transcript body is NOT returned — count via messageCount;
   // full messages via session.get / session.messages.list.
+  // providerResume + bare providerSessionId let desktop "Copy Session ID" match
+  // local (harness SDK/thread id, not the SuperOne session UUID).
   const rows = ctx.sessions.list(projectId, { limit, offset })
   return {
-    result: rows.map((s) => ({
-      sessionId: s.sessionId,
-      projectId: s.projectId,
-      harnessId: s.harnessId,
-      providerId: s.providerId,
-      title: s.title,
-      status: s.status,
-      messageCount: Array.isArray(s.transcript) ? s.transcript.length : 0,
-      cwd: s.cwd,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
-      isPinned: s.isPinned,
-      isHidden: s.isHidden,
-      isAutomation: s.isAutomation === true,
-      automationId: s.automationId ?? null,
-    })),
+    result: rows.map((s) => {
+      const providerResume = s.providerResume ?? null
+      const providerSessionId = providerSessionIdFromResume(providerResume)
+      return {
+        sessionId: s.sessionId,
+        projectId: s.projectId,
+        harnessId: s.harnessId,
+        providerId: s.providerId,
+        title: s.title,
+        status: s.status,
+        messageCount: Array.isArray(s.transcript) ? s.transcript.length : 0,
+        cwd: s.cwd,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+        isPinned: s.isPinned,
+        isHidden: s.isHidden,
+        isAutomation: s.isAutomation === true,
+        automationId: s.automationId ?? null,
+        providerResume,
+        ...(providerSessionId ? { providerSessionId } : {}),
+      }
+    }),
   }
 }
 

@@ -1,6 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
-import { buildSessionMenuItems } from './session-menu-items'
+/** @vitest-environment jsdom */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { buildSessionMenuItems, resolveSessionIdForCopy } from './session-menu-items'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+
+const getSession = vi.fn()
+
+vi.stubGlobal('window', {
+  environment: {
+    getSession,
+  },
+  app: {
+    openSessionWindow: vi.fn(),
+    showInFolder: vi.fn(),
+  },
+})
 
 const t = ((key: string) => key) as never
 
@@ -38,11 +52,21 @@ describe('buildSessionMenuItems remote vs local', () => {
     expect(ids).toContain('copyId')
     expect(ids).toContain('copyDir')
     expect(ids).toContain('delete')
-    // Remote fork = node worktree / same-dir local
+    // Remote fork = node worktree / same-dir on the node
     expect(ids).toContain('forkWorktree')
     expect(ids).toContain('forkLocal')
     // Local-only actions
     expect(ids).not.toContain('openFolder')
+  })
+
+  it('uses Fork to Same Worktree for both remote and local', () => {
+    for (const path of ['remote:conn-1:/work/app', '/Users/me/app'] as const) {
+      const items = buildSessionMenuItems(base, path, t, handlers)
+      const forkLocal = items.find(
+        (e): e is Extract<typeof e, { kind: 'item' }> => e.kind === 'item' && e.id === 'forkLocal',
+      )
+      expect(forkLocal?.label).toBe('sidebar.contextMenu.forkToSameWorktree')
+    }
   })
 
   it('includes openFolder and fork for local projects', () => {
@@ -51,5 +75,39 @@ describe('buildSessionMenuItems remote vs local', () => {
     expect(ids).toContain('openFolder')
     expect(ids).toContain('forkWorktree')
     expect(ids).toContain('forkLocal')
+  })
+})
+
+describe('resolveSessionIdForCopy', () => {
+  beforeEach(() => {
+    getSession.mockReset()
+  })
+
+  it('uses providerSessionId when already on the history entry', async () => {
+    const result = await resolveSessionIdForCopy(
+      { ...base, providerSessionId: 'sdk-abc' },
+      'remote:conn-1:/work',
+    )
+    expect(result).toEqual({ id: 'sdk-abc', isHarnessId: true })
+    expect(getSession).not.toHaveBeenCalled()
+  })
+
+  it('loads providerResume from remote session.get when list row has no harness id', async () => {
+    getSession.mockResolvedValueOnce({ providerResume: 'claude-session:sdk-from-node' })
+    const result = await resolveSessionIdForCopy(base, 'remote:conn-9:/work/app')
+    expect(getSession).toHaveBeenCalledWith('conn-9', 'sid-1')
+    expect(result).toEqual({ id: 'sdk-from-node', isHarnessId: true })
+  })
+
+  it('falls back to SuperOne session id when harness id is unavailable', async () => {
+    getSession.mockResolvedValueOnce({ providerResume: null })
+    const result = await resolveSessionIdForCopy(base, 'remote:conn-1:/work')
+    expect(result).toEqual({ id: 'sid-1', isHarnessId: false })
+  })
+
+  it('does not call getSession for local sessions without providerSessionId', async () => {
+    const result = await resolveSessionIdForCopy(base, '/Users/me/app')
+    expect(getSession).not.toHaveBeenCalled()
+    expect(result).toEqual({ id: 'sid-1', isHarnessId: false })
   })
 })

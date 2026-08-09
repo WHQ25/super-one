@@ -34,6 +34,7 @@ import {
   reconcileTranscriptWithLocalMessages,
   type NodeSessionSnapshot,
 } from '@/lib/remote-session-messages'
+import { providerSessionIdFromResume } from '@superone/shared/environment'
 
 /**
  * Body of useChatStore.sendMessage extracted as a free-standing helper so
@@ -546,22 +547,40 @@ export async function sendMessageImpl(
         pendingPlanApproval: pendingFields.pendingPlanApproval,
         ...(derivedTitle ? { _title: derivedTitle } : {}),
       }))
-      if (derivedTitle) {
+      // Keep sidebar history in sync: title + harness session id for Copy Session ID.
+      const bareProviderSessionId =
+        (typeof finalSnap?.providerSessionId === 'string' && finalSnap.providerSessionId.trim()
+          ? finalSnap.providerSessionId.trim()
+          : null) ?? providerSessionIdFromResume(finalSnap?.providerResume)
+      if (derivedTitle || bareProviderSessionId) {
         set((s) => {
           const project = s.projectSessions[projectPath]
           let sessions = project?.sessions
           let sessionsChanged = false
           if (project && Array.isArray(sessions)) {
             sessions = sessions.map((entry) => {
-              if (entry.sessionId === sid && entry.title !== derivedTitle) {
-                sessionsChanged = true
-                return { ...entry, title: derivedTitle }
+              if (entry.sessionId !== sid) return entry
+              const nextTitle = derivedTitle && entry.title !== derivedTitle ? derivedTitle : entry.title
+              const nextProviderSessionId =
+                bareProviderSessionId && entry.providerSessionId !== bareProviderSessionId
+                  ? bareProviderSessionId
+                  : entry.providerSessionId
+              if (
+                nextTitle === entry.title &&
+                nextProviderSessionId === entry.providerSessionId
+              ) {
+                return entry
               }
-              return entry
+              sessionsChanged = true
+              return {
+                ...entry,
+                title: nextTitle,
+                ...(nextProviderSessionId ? { providerSessionId: nextProviderSessionId } : {}),
+              }
             })
           }
           return {
-            agentTitles: { ...s.agentTitles, [sid]: derivedTitle },
+            ...(derivedTitle ? { agentTitles: { ...s.agentTitles, [sid]: derivedTitle } } : {}),
             ...(project && sessionsChanged
               ? {
                   projectSessions: {

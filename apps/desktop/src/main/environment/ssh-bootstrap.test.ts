@@ -70,15 +70,25 @@ describe('ssh-bootstrap helpers', () => {
 
     // Order is the whole point: npm swaps the files, but a still-running old
     // process keeps serving until it is taken down.
-    const stopAt = command.indexOf('pkill')
+    const termAt = command.indexOf('kill -TERM')
     const startAt = command.indexOf('nohup')
-    expect(stopAt).toBeGreaterThan(-1)
-    expect(startAt).toBeGreaterThan(stopAt)
+    expect(termAt).toBeGreaterThan(-1)
+    expect(startAt).toBeGreaterThan(termAt)
+    // Wait for process exit, not only health-down (avoids EADDRINUSE / SQLITE_BUSY).
+    expect(command).toContain('alive=0')
+    expect(command).toContain('kill -9')
+    // Do not signal the remote SSH shell whose argv embeds the same pattern.
+    expect(command).toContain('[ "$pid" = "$$" ]')
+    // Free the listen port when argv does not match (stale unit / flags).
+    expect(command).toContain('lsof -tiTCP:7788')
     // Scoped to this node home so a second node on the host survives.
     expect(command).toContain('start --foreground --home /home/u/.superone/node')
     // Both supervision styles this repo produces.
     expect(command).toContain('systemctl --user stop superone.service')
     expect(command).toContain('systemctl --user start superone.service')
+    // Longer cold-start window + diagnostics on failure.
+    expect(command).toContain('while [ "$i" -lt 150 ]')
+    expect(command).toContain('upgrade.log')
     expect(command).toContain('export PATH=')
     expect(command).toContain('SUPERONE_RESTART_OK')
   })

@@ -9,6 +9,9 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
   mkdirSync(dirname(dbPath), { recursive: true })
   const db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
+  // Survive brief lock overlap when an upgrade restarts the node before the
+  // previous process has finished dispose()/db.close() (nohup path).
+  db.pragma('busy_timeout = 5000')
   db.pragma('foreign_keys = ON')
   db.exec(SCHEMA_SQL)
   // Additive session UI flags (pin/hide) — compatible with schema generation 1 handshake.

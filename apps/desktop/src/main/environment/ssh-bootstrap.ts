@@ -257,11 +257,20 @@ export interface RemoteRestartOptions {
  * An in-place upgrade cannot reuse {@link buildBootstrapCommand}: that one only
  * starts a node when health is *already* failing, so after npm swaps the files
  * the previous build would keep serving from memory and the upgrade would look
- * like a no-op. Stop first, wait for the port to go quiet, then start.
+ * like a no-op. Stop first, wait until the process is gone (not just health
+ * down), then start.
+ *
+ * Failure modes this script is written against:
+ * - nohup nodes that drain sessions after SIGTERM still hold SQLite/port for
+ *   several seconds after `/health` goes dark (premature start → EADDRINUSE /
+ *   SQLITE_BUSY → "did not come back").
+ * - `pkill -f` matching the remote SSH shell itself (its argv contains the
+ *   same `start --foreground --home …` pattern) and killing the upgrade mid-flight.
+ * - units whose argv does not match the pattern — free the listen port too.
  *
  * Both supervision styles this repo produces are handled — the systemd user
- * unit (`superone harness`/`install-systemd`) and the plain `nohup` launch used
- * by SSH bootstrap. `systemctl` failing simply means the unit is absent.
+ * unit (`install-systemd`) and the plain `nohup` launch used by SSH bootstrap.
+ * `systemctl` failing simply means the unit is absent.
  */
 export function buildRemoteRestartCommand(input: {
   remoteExec: string
@@ -274,18 +283,40 @@ export function buildRemoteRestartCommand(input: {
     : ''
   const execPath = shellQuote(input.remoteExec)
   const nodeHome = shellQuote(input.remoteNodeHome)
-  const healthUrl = `http://127.0.0.1:${input.remotePort}/health`
-  // Node home is unique per environment, so it keeps pkill off unrelated nodes.
+  const port = input.remotePort
+  const healthUrl = `http://127.0.0.1:${port}/health`
+  // Scoped to this node home so a second node on the host survives. shellQuote
+  // keeps spaces/meta chars safe as a single pgrep/pkill -f argument.
   const startPattern = shellQuote(`start --foreground --home ${input.remoteNodeHome}`)
+  // Never signal the remote SSH shell running this script (its cmdline contains
+  // the same pattern) or its parent — only real superone node PIDs.
+  const killMatching = (sig: string) =>
+    `for pid in $(pgrep -f ${startPattern} 2>/dev/null || true); do if [ "$pid" = "$$" ] || [ "$pid" = "$PPID" ]; then continue; fi; kill -${sig} "$pid" 2>/dev/null || true; done`
+  // Free the listen port even when argv does not match (stale unit, different flags).
+  // Prefer lsof (macOS + Linux); fall back to GNU fuser. Never signal this shell.
+  const freeListenPort = (sig: string) =>
+    `if command -v lsof >/dev/null 2>&1; then for pid in $(lsof -tiTCP:${port} -sTCP:LISTEN 2>/dev/null || true); do if [ "$pid" = "$$" ] || [ "$pid" = "$PPID" ]; then continue; fi; kill -${sig} "$pid" 2>/dev/null || true; done; elif command -v fuser >/dev/null 2>&1; then fuser -k -${sig} ${port}/tcp >/dev/null 2>&1 || true; fi`
+  // True while any non-self process still matches the node start pattern.
+  const anyAlive =
+    `alive=0; for pid in $(pgrep -f ${startPattern} 2>/dev/null || true); do if [ "$pid" = "$$" ] || [ "$pid" = "$PPID" ]; then continue; fi; alive=1; break; done`
   return (
     pathPrefix +
     [
       `mkdir -p ${nodeHome}/logs`,
+      // Blocks until inactive (TimeoutStopSec=30) when the unit exists.
       `systemctl --user stop ${SYSTEMD_USER_UNIT_NAME} >/dev/null 2>&1 || true`,
-      `pkill -f ${startPattern} >/dev/null 2>&1 || true`,
-      `i=0; while [ "$i" -lt 25 ]; do curl -fsS ${healthUrl} >/dev/null 2>&1 || break; i=$((i + 1)); sleep 0.2; done`,
-      `if ! systemctl --user start ${SYSTEMD_USER_UNIT_NAME} >/dev/null 2>&1; then nohup ${execPath} start --foreground --home ${nodeHome} --host 127.0.0.1 --port ${input.remotePort} >>${nodeHome}/logs/upgrade.log 2>&1 & fi`,
-      `healthy=0; i=0; while [ "$i" -lt 50 ]; do if curl -fsS ${healthUrl} >/dev/null 2>&1; then healthy=1; break; fi; i=$((i + 1)); sleep 0.2; done; if [ "$healthy" -ne 1 ]; then echo "remote node did not come back after upgrade" >&2; exit 1; fi`,
+      killMatching('TERM'),
+      freeListenPort('TERM'),
+      // Wait until health is down AND no matching node PID (~15s). Escalate to
+      // SIGKILL after ~6s so a stuck dispose cannot pin the port forever.
+      `i=0; while [ "$i" -lt 75 ]; do down=0; curl -fsS ${healthUrl} >/dev/null 2>&1 || down=1; ${anyAlive}; if [ "$down" -eq 1 ] && [ "$alive" -eq 0 ]; then break; fi; if [ "$i" -eq 30 ]; then ${killMatching('9')}; ${freeListenPort('9')}; fi; i=$((i + 1)); sleep 0.2; done`,
+      killMatching('9'),
+      freeListenPort('9'),
+      // Brief settle so the kernel releases the listen socket / WAL lock.
+      `sleep 0.3`,
+      `if ! systemctl --user start ${SYSTEMD_USER_UNIT_NAME} >/dev/null 2>&1; then nohup ${execPath} start --foreground --home ${nodeHome} --host 127.0.0.1 --port ${port} >>${nodeHome}/logs/upgrade.log 2>&1 & fi`,
+      // ~30s for cold start (managed harness probe can be slow on first boot).
+      `healthy=0; i=0; while [ "$i" -lt 150 ]; do if curl -fsS ${healthUrl} >/dev/null 2>&1; then healthy=1; break; fi; i=$((i + 1)); sleep 0.2; done; if [ "$healthy" -ne 1 ]; then echo "remote node did not come back after upgrade" >&2; tail -n 80 ${nodeHome}/logs/upgrade.log >&2 2>/dev/null || true; tail -n 40 ${nodeHome}/logs/bootstrap.log >&2 2>/dev/null || true; systemctl --user status ${SYSTEMD_USER_UNIT_NAME} --no-pager >&2 2>/dev/null || true; exit 1; fi`,
       `echo SUPERONE_RESTART_OK`,
     ].join('; ')
   )

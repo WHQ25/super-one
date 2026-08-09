@@ -32,6 +32,7 @@ export type { TurnImageAttachment } from './types'
 export { EventLog } from './event-log'
 export {
   buildSessionMessageCatalog,
+  collectContentByAssistantId,
   collectToolsByAssistantId,
   pageSessionMessageCatalog,
 } from './message-catalog'

@@ -7,6 +7,8 @@
  * Live catch-up still uses `session.events` with `afterSequence`.
  */
 
+import type { ContentBlock } from '../agent-types'
+
 /** Tool use + result summary attached to an assistant message block. */
 export interface SessionMessageToolSummary {
   toolUseId: string
@@ -23,6 +25,10 @@ export interface SessionMessageToolSummary {
  * Denser message row for catalog hydrate.
  * Text still comes from the durable transcript; tools/metadata are expanded
  * from the session event log when present.
+ *
+ * When `content` is present it is the event-log reconstruction of the assistant
+ * stream in agent emission order — prefer it over `text` + `tools` so hydrate
+ * matches live UI order (tools may precede or follow text).
  */
 export interface SessionMessageBlock {
   id: string
@@ -32,6 +38,11 @@ export interface SessionMessageBlock {
   createdAt: number
   /** Chronological index in the full catalog (0-based). */
   sortOrder: number
+  /**
+   * Ordered content blocks from the durable event stream (agent emission order).
+   * Prefer over interleaving `text` + `tools` when non-empty.
+   */
+  content?: ContentBlock[]
   tools?: SessionMessageToolSummary[]
   metadata?: Record<string, unknown>
   checkpointId?: string

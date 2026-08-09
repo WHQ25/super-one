@@ -2,6 +2,8 @@
  * Build a denser session message catalog from durable transcript + event log.
  * Electron-free; shared by SessionRuntime.listMessages.
  */
+import type { ContentBlock } from '@superone/shared/agent-types'
+import { applyContentDelta } from '@superone/shared/content-delta'
 import {
   SESSION_DURABLE_EVENT,
   type EnvironmentEventEnvelope,
@@ -9,6 +11,7 @@ import {
   type SessionMessageToolSummary,
   type SessionMessagesListResult,
 } from '@superone/shared/environment'
+import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import type { NodeSessionRecord, TranscriptBlock } from './types'
 
 const DEFAULT_LIMIT = 50
@@ -283,6 +286,91 @@ export function collectToolsByAssistantId(
   return out
 }
 
+/**
+ * Rebuild per-assistant ContentBlock arrays from the durable event log in
+ * agent emission order (same mapper the live remote UI uses).
+ *
+ * Prefer this over `text` + flat `tools` when hydrating so tool calls stay
+ * where the agent emitted them (before/after/interleaved with text).
+ *
+ * When legacy tool events open a sticky assistant id before the transcript
+ * blockId is known, fold that content onto the authoritative assistant_message
+ * blockId so catalog rows match transcript ids.
+ */
+export function collectContentByAssistantId(
+  events: EnvironmentEventEnvelope[],
+  sessionId: string,
+): Map<string, ContentBlock[]> {
+  const contentById = new Map<string, ContentBlock[]>()
+  const mapper = createNodeSessionEventMapper({ sessionId })
+
+  const mergeContent = (fromId: string, toId: string): void => {
+    if (!fromId || !toId || fromId === toId) return
+    const from = contentById.get(fromId)
+    if (!from || from.length === 0) return
+    const to = contentById.get(toId)
+    if (!to || to.length === 0) {
+      contentById.set(toId, from)
+    } else {
+      // Prefer the longer stream; same turn should not legitimately split.
+      contentById.set(toId, from.length >= to.length ? from : to)
+    }
+    contentById.delete(fromId)
+  }
+
+  for (const envelope of events) {
+    if (envelope.aggregateType && envelope.aggregateType !== 'session') continue
+    if (envelope.aggregateId && envelope.aggregateId !== sessionId) continue
+
+    const stickyBefore = mapper.currentAssistantMessageId()
+    const mapped = mapper.map(envelope)
+    for (const ev of mapped) {
+      if (ev.type === 'content_delta' && ev.messageId) {
+        const prev = contentById.get(ev.messageId) ?? []
+        contentById.set(ev.messageId, applyContentDelta(prev, ev.delta))
+        continue
+      }
+      // Append streamed tool input so catalog summaries match live tool_use.input
+      // for harnesses that only emit tool_input_delta (no later full tool_use).
+      if (ev.type === 'tool_input_delta' && ev.messageId && ev.toolUseId && ev.partialJson) {
+        const prev = contentById.get(ev.messageId) ?? []
+        let changed = false
+        const next = prev.map((block) => {
+          if (block.type !== 'tool_use' || block.toolUseId !== ev.toolUseId) return block
+          changed = true
+          return { ...block, input: `${block.input ?? ''}${ev.partialJson}` }
+        })
+        if (changed) contentById.set(ev.messageId, next)
+      }
+    }
+
+    // Fold sticky provisional content onto the durable transcript assistant id.
+    // When tools opened the sticky message first, session.assistant_message
+    // skips re-emitting text (wasOpen) — still append transcript text so the
+    // conclusion is not dropped from ordered content.
+    const payload = asRecord(envelope.payload)
+    if (envelope.eventType === SESSION_DURABLE_EVENT.assistantMessage) {
+      const blockId = asString(payload.blockId)
+      const sticky = stickyBefore ?? mapper.currentAssistantMessageId()
+      if (blockId && sticky) mergeContent(sticky, blockId)
+      const text = asString(payload.text)
+      if (blockId && text) {
+        const prev = contentById.get(blockId) ?? []
+        const hasTopLevelText = prev.some(
+          (b) =>
+            b.type === 'text' &&
+            (b.parentToolUseId == null || b.parentToolUseId === undefined),
+        )
+        if (!hasTopLevelText) {
+          contentById.set(blockId, applyContentDelta(prev, { type: 'text', text }))
+        }
+      }
+    }
+  }
+
+  return contentById
+}
+
 function extractCheckpointMeta(
   events: EnvironmentEventEnvelope[],
   sessionId: string,
@@ -330,12 +418,13 @@ function extractCheckpointMeta(
   return {}
 }
 
-/** Expand transcript (+ event tools) into a full chronological catalog. */
+/** Expand transcript (+ event tools/content) into a full chronological catalog. */
 export function buildSessionMessageCatalog(
   session: Pick<NodeSessionRecord, 'sessionId' | 'transcript' | 'providerResume'>,
   events: EnvironmentEventEnvelope[],
 ): SessionMessageBlock[] {
   const toolsByAssistant = collectToolsByAssistantId(events, session.sessionId)
+  const contentByAssistant = collectContentByAssistantId(events, session.sessionId)
   const transcript = Array.isArray(session.transcript) ? session.transcript : []
   const out: SessionMessageBlock[] = []
 
@@ -346,6 +435,7 @@ export function buildSessionMessageCatalog(
         ? block.role
         : 'system'
     const tools = role === 'assistant' ? toolsByAssistant.get(block.id) : undefined
+    const orderedContent = role === 'assistant' ? contentByAssistant.get(block.id) : undefined
     const extra =
       role === 'assistant'
         ? extractCheckpointMeta(events, session.sessionId, block.id)
@@ -366,6 +456,7 @@ export function buildSessionMessageCatalog(
       text: typeof block.text === 'string' ? block.text : '',
       createdAt: typeof block.createdAt === 'number' ? block.createdAt : Date.now(),
       sortOrder: i,
+      ...(orderedContent && orderedContent.length > 0 ? { content: orderedContent } : {}),
       ...(tools && tools.length > 0 ? { tools } : {}),
       ...(extra.metadata ? { metadata: extra.metadata } : {}),
       ...(extra.checkpointId ? { checkpointId: extra.checkpointId } : {}),

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
 import {
   buildSessionMessageCatalog,
+  collectContentByAssistantId,
   collectToolsByAssistantId,
   pageSessionMessageCatalog,
 } from './message-catalog'
@@ -149,5 +150,150 @@ describe('message catalog', () => {
       toolName: 'Bash',
       outputSummary: 'ok',
     })
+  })
+
+  it('collectContentByAssistantId preserves agent emission order (tools before conclusion)', () => {
+    const sessionId = 's-order'
+    const events: EnvironmentEventEnvelope[] = [
+      envEvent({
+        sequence: '1',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.turnStarted,
+        payload: { status: 'streaming' },
+      }),
+      envEvent({
+        sequence: '2',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.agentEvent,
+        payload: {
+          event: {
+            type: 'content_delta',
+            messageId: 'a1',
+            delta: { type: 'tool_use', toolUseId: 't1', toolName: 'Read', input: '{}', status: 'streaming' },
+          },
+        },
+      }),
+      envEvent({
+        sequence: '3',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.agentEvent,
+        payload: {
+          event: {
+            type: 'content_delta',
+            messageId: 'a1',
+            delta: { type: 'tool_result', toolUseId: 't1', summary: 'file' },
+          },
+        },
+      }),
+      envEvent({
+        sequence: '4',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.agentEvent,
+        payload: {
+          event: {
+            type: 'content_delta',
+            messageId: 'a1',
+            delta: { type: 'text', text: 'conclusion' },
+          },
+        },
+      }),
+      envEvent({
+        sequence: '5',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.assistantMessage,
+        payload: { blockId: 'a1', text: 'conclusion' },
+      }),
+    ]
+
+    const content = collectContentByAssistantId(events, sessionId).get('a1')
+    expect(content?.map((b) => b.type)).toEqual(['tool_use', 'tool_result', 'text'])
+    expect(content?.[2]).toMatchObject({ type: 'text', text: 'conclusion' })
+
+    const catalog = buildSessionMessageCatalog(
+      {
+        sessionId,
+        transcript: [
+          { id: 'u1', role: 'user', text: 'go', createdAt: 1 },
+          { id: 'a1', role: 'assistant', text: 'conclusion', createdAt: 2 },
+        ],
+        providerResume: null,
+      } as Pick<NodeSessionRecord, 'sessionId' | 'transcript' | 'providerResume'>,
+      events,
+    )
+    expect(catalog[1]!.content?.map((b) => b.type)).toEqual(['tool_use', 'tool_result', 'text'])
+  })
+
+  it('collectContentByAssistantId keeps text-before-tools when agent emitted that order', () => {
+    const sessionId = 's-preamble'
+    const events: EnvironmentEventEnvelope[] = [
+      envEvent({
+        sequence: '1',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.agentEvent,
+        payload: {
+          event: {
+            type: 'content_delta',
+            messageId: 'a1',
+            delta: { type: 'text', text: 'preamble' },
+          },
+        },
+      }),
+      envEvent({
+        sequence: '2',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.agentEvent,
+        payload: {
+          event: {
+            type: 'content_delta',
+            messageId: 'a1',
+            delta: { type: 'tool_use', toolUseId: 't1', toolName: 'Bash', input: 'ls', status: 'complete' },
+          },
+        },
+      }),
+      envEvent({
+        sequence: '3',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.agentEvent,
+        payload: {
+          event: {
+            type: 'content_delta',
+            messageId: 'a1',
+            delta: { type: 'tool_result', toolUseId: 't1', summary: 'ok' },
+          },
+        },
+      }),
+    ]
+
+    const content = collectContentByAssistantId(events, sessionId).get('a1')
+    expect(content?.map((b) => b.type)).toEqual(['text', 'tool_use', 'tool_result'])
+    expect(content?.[0]).toMatchObject({ type: 'text', text: 'preamble' })
+  })
+
+  it('collectContentByAssistantId rekeys tool-first sticky id onto assistant_message blockId', () => {
+    const sessionId = 's-sticky'
+    const events: EnvironmentEventEnvelope[] = [
+      envEvent({
+        sequence: '1',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.toolStarted,
+        payload: { toolUseId: 't1', toolName: 'Read', input: '{}' },
+      }),
+      envEvent({
+        sequence: '2',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.toolCompleted,
+        payload: { toolUseId: 't1', toolName: 'Read', output: 'data' },
+      }),
+      envEvent({
+        sequence: '3',
+        aggregateId: sessionId,
+        eventType: SESSION_DURABLE_EVENT.assistantMessage,
+        payload: { blockId: 'a-real', text: 'done' },
+      }),
+    ]
+
+    const content = collectContentByAssistantId(events, sessionId).get('a-real')
+    expect(content?.map((b) => b.type)).toEqual(['tool_use', 'tool_result', 'text'])
+    expect(content?.[2]).toMatchObject({ type: 'text', text: 'done' })
   })
 })

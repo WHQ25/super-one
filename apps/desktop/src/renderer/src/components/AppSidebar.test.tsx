@@ -372,7 +372,7 @@ describe('AppSidebar interactions', () => {
     render(<AppSidebar />)
 
     await waitFor(() => {
-      expect(mockEnvironment.listProjects).toHaveBeenCalledWith('env-current', undefined)
+      expect(mockEnvironment.listProjects).toHaveBeenCalledWith('env-current')
     })
     expect(mockEnvironment.upgradeNode).not.toHaveBeenCalled()
     expect(toastWarning).not.toHaveBeenCalled()

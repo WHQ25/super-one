@@ -27,6 +27,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { shallow } from 'zustand/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
+import { useHostProjects } from '@/hooks/use-host-projects'
 
 import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
@@ -128,14 +129,15 @@ export const AppSidebar = memo(function AppSidebar() {
   const [removeError, setRemoveError] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
   const [hostItems, setHostItems] = useState<EnvironmentListItem[]>([])
-  const [hostProjects, setHostProjects] = useState<RecentFolder[]>([])
-  const [hostProjectsLoading, setHostProjectsLoading] = useState(false)
-  const [hostProjectsError, setHostProjectsError] = useState<string | null>(null)
-  /** Bump to re-run remote project load / auto-connect. */
-  const [hostProjectsRetryNonce, setHostProjectsRetryNonce] = useState(0)
-  const forceHostProjectsRefreshRef = useRef(false)
   /** Connection whose node is being upgraded — its socket is about to bounce. */
   const [upgradingHostId, setUpgradingHostId] = useState<string | null>(null)
+  // Shared with ChatSuggestions / ProjectSelector — never re-implement this fetch.
+  const {
+    projects: hostProjects,
+    loading: hostProjectsLoading,
+    error: hostProjectsError,
+    refresh: refreshHostProjectsRaw,
+  } = useHostProjects({ paused: upgradingHostId === selectedHostConnectionId })
   /**
    * Nodes already handled this app run. An upgrade restarts the node, so
    * retrying on every render would take the host down repeatedly. Failures are
@@ -178,77 +180,10 @@ export const AppSidebar = memo(function AppSidebar() {
     }
   }, [experimentalRemoteNodesEnabled, selectedHostConnectionId, setSelectedHostConnectionId])
 
-  // Load projects for the selected host. Local uses recentFolders; remote auto-connects then project.list.
-  useEffect(() => {
-    let cancelled = false
-    if (selectedHostConnectionId === 'local') {
-      setHostProjects([])
-      setHostProjectsError(null)
-      setHostProjectsLoading(false)
-      return () => {
-        cancelled = true
-      }
-    }
-
-    setHostProjectsLoading(true)
-    setHostProjectsError(null)
-
-    // The node is mid-restart; connecting now just surfaces a transient error.
-    // The upgrade bumps hostProjectsRetryNonce when it settles.
-    if (upgradingHostId === selectedHostConnectionId) {
-      return () => {
-        cancelled = true
-      }
-    }
-
-    void (async () => {
-      try {
-        const refresh = forceHostProjectsRefreshRef.current
-        forceHostProjectsRefreshRef.current = false
-        const host = hostItems.find((h) => h.connectionId === selectedHostConnectionId)
-        const live = host?.state === 'connected' || host?.state === 'synchronizing'
-        // Selecting a remote host always ensures a live connection.
-        if (!live) {
-          await window.environment.connect(selectedHostConnectionId)
-        }
-        if (cancelled) return
-        const projects = await window.environment.listProjects(
-          selectedHostConnectionId,
-          refresh ? { refresh: true } : undefined,
-        )
-        if (cancelled) return
-        setHostProjects(
-          projects.map((p) => ({
-            id: p.projectId,
-            // Host-scoped key so chat-store / expand state never collides with local paths.
-            path: remoteProjectKey(selectedHostConnectionId, p.path),
-            name: p.name,
-            missing: p.missing,
-            addedAt: p.lastActiveAt ? new Date(p.lastActiveAt).toISOString() : new Date(0).toISOString(),
-            lastOpened: p.lastActiveAt
-              ? new Date(p.lastActiveAt).toISOString()
-              : new Date(0).toISOString(),
-          })),
-        )
-      } catch (err) {
-        if (cancelled) return
-        setHostProjects([])
-        setHostProjectsError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (!cancelled) setHostProjectsLoading(false)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedHostConnectionId, hostItems, hostProjectsRetryNonce, upgradingHostId])
-
   const refreshHostProjects = useCallback(() => {
     if (selectedHostConnectionId === 'local' || hostProjectsLoading) return
-    forceHostProjectsRefreshRef.current = true
-    setHostProjectsRetryNonce((nonce) => nonce + 1)
-  }, [selectedHostConnectionId, hostProjectsLoading])
+    refreshHostProjectsRaw({ force: true })
+  }, [selectedHostConnectionId, hostProjectsLoading, refreshHostProjectsRaw])
 
   // Drop selection if the remote host was forgotten.
   useEffect(() => {
@@ -544,7 +479,8 @@ export const AppSidebar = memo(function AppSidebar() {
     prevSortModeRef.current = sortMode
   }, [sortMode])
 
-  const sourceFolders = selectedHostConnectionId === 'local' ? recentFolders : hostProjects
+  // useHostProjects already resolves local → recentFolders, remote → project.list.
+  const sourceFolders = hostProjects
 
   const sortedFolders = useMemo(() => {
     if (sortMode === 'added') {
@@ -629,11 +565,10 @@ export const AppSidebar = memo(function AppSidebar() {
       } finally {
         setUpgradingHostId((current) => (current === connectionId ? null : current))
         // Node restarted underneath us — reload its project list on the new socket.
-        forceHostProjectsRefreshRef.current = true
-        setHostProjectsRetryNonce((nonce) => nonce + 1)
+        refreshHostProjectsRaw({ force: true })
       }
     })()
-  }, [selectedHostConnectionId, remoteHosts, t])
+  }, [selectedHostConnectionId, remoteHosts, t, refreshHostProjectsRaw])
 
   const selectedHostLabel = useMemo(() => {
     if (selectedHostConnectionId === 'local') return localHostLabel
@@ -672,14 +607,9 @@ export const AppSidebar = memo(function AppSidebar() {
           projectId: removeTarget.id,
           path: removeTarget.path,
         })
-        setHostProjects((prev) =>
-          prev.filter(
-            (p) =>
-              p.path !== removeTarget.path &&
-              !(removeTarget.id && p.id === removeTarget.id),
-          ),
-        )
-        // ChatSuggestions uses a separate useHostProjects() instance — force refresh.
+        // EnvironmentHost drops the row from its project cache on removeProject,
+        // so one bus signal repaints every useHostProjects instance (sidebar
+        // included) without an optimistic local copy.
         const { notifyHostProjectsChanged } = await import('@/lib/host-projects-bus')
         notifyHostProjectsChanged()
         // Clear in-memory chat state for this remote project key (always, not only when active).
@@ -999,8 +929,8 @@ export const AppSidebar = memo(function AppSidebar() {
             void fetchRecentFolders()
             void selectProject(project.path)
           } else {
-            // Refresh remote list (sidebar + ChatSuggestions) and select the new project.
-            setHostProjectsRetryNonce((n) => n + 1)
+            // One bus signal refreshes every useHostProjects instance (this
+            // sidebar included), then select the new project.
             void import('@/lib/host-projects-bus').then(({ notifyHostProjectsChanged }) => {
               notifyHostProjectsChanged()
             })

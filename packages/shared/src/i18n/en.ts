@@ -785,6 +785,7 @@ export type Messages = {
       addProject: string
       poweredBy: string
       selectProject: string
+      noProjects: string
       others: string
       acpLabel: string
       selectAgent: string
@@ -3144,6 +3145,7 @@ export const en: Messages = {
       addProject: 'Add Project',
       poweredBy: 'Powered by',
       selectProject: 'Select Project',
+      noProjects: 'No projects on this host',
       others: 'Others',
       acpLabel: 'ACP agents',
       selectAgent: 'Agent',

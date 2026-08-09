@@ -596,7 +596,7 @@ export function ChatSuggestions() {
             <p className="max-w-xs text-center text-sm text-destructive">{error}</p>
             <button
               type="button"
-              onClick={refresh}
+              onClick={() => refresh({ force: true })}
               className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
             >
               {t('common.retry')}

@@ -840,6 +840,7 @@ export const zh: Messages = {
       addProject: '添加项目',
       poweredBy: 'Powered by',
       selectProject: '选择项目',
+      noProjects: '此主机上暂无项目',
       others: 'Others',
       acpLabel: 'ACP agents',
       selectAgent: 'Agent',

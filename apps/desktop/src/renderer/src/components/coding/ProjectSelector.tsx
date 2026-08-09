@@ -3,7 +3,8 @@ import type { RecentFolder } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useHostProjects } from '@/hooks/use-host-projects'
 import { displayHostPath } from '@/lib/remote-project-key'
-import { Check, ChevronDown, Folder, FolderOpen, Plus } from 'lucide-react'
+import { Check, ChevronDown, Folder, FolderOpen, Plus, RotateCw } from 'lucide-react'
+import { cn } from '@superone/ui/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +32,7 @@ export function ProjectSelector({ compact, align = 'start', onOpened, onAddProje
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const selectProject = useAppStore((s) => s.selectProject)
-  const { connectionId, isLocal, projects, loading } = useHostProjects()
+  const { connectionId, isLocal, projects, loading, error, refresh } = useHostProjects()
 
   const projectName =
     (currentFolder ? displayHostPath(currentFolder) : '').split(/[\\/]/).filter(Boolean).pop() ??
@@ -105,16 +106,47 @@ export function ProjectSelector({ compact, align = 'start', onOpened, onAddProje
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-64 overflow-hidden">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{t('chat.suggestions.selectProject')}</DropdownMenuLabel>
+        {/*
+          Never render a silently blank menu: a remote host that failed to list
+          (or has nothing registered) must say so, otherwise the only symptom is
+          an empty dropdown with no way to tell a fetch error from an empty host.
+        */}
+        {error && (
+          <>
+            <div className="px-2 py-1.5 text-xs break-words text-destructive">{error}</div>
+            {/* Manual retry after a failure skips the main-process cache. */}
+            <DropdownMenuItem onClick={() => refresh({ force: true })} className="gap-2 focus-visible:shadow-none">
+              <RotateCw className="size-4 shrink-0" />
+              <span>{t('common.retry')}</span>
+            </DropdownMenuItem>
+          </>
+        )}
+        {!error && projects.length === 0 && (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            {t('chat.suggestions.noProjects')}
+          </div>
+        )}
         <div className="max-h-48 overflow-y-auto">
-          {projects.filter((f) => !f.missing).map((folder) => (
+          {/*
+            Stale entries stay visible but unopenable — same treatment as
+            ProjectSidebarRow, so "every project is missing" reads as a host
+            problem instead of an empty list.
+          */}
+          {projects.map((folder) => (
             <DropdownMenuItem
               key={folder.path}
-              onClick={() => openFolder(folder)}
+              disabled={folder.missing}
+              onClick={() => {
+                if (folder.missing) return
+                openFolder(folder)
+              }}
               className="flex items-center justify-between focus-visible:shadow-none"
             >
               <div className="flex items-center gap-2 truncate">
                 <Folder className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{folder.name}</span>
+                <span className={cn('truncate', folder.missing && 'text-muted-foreground line-through')}>
+                  {folder.name}
+                </span>
               </div>
               {folder.path === currentFolder && (
                 <Check className="size-4 shrink-0 text-primary" />

@@ -35,6 +35,14 @@ vi.mock('./session-collaboration-confirm', () => ({
   rejectSessionAgentsConfirm: () => false,
 }))
 
+const notifySessionRecapForegroundMock = vi.fn()
+const notifySessionRecapSessionRemovedMock = vi.fn()
+vi.mock('../acp/acp-recap-focus', () => ({
+  notifySessionRecapForeground: (...args: unknown[]) => notifySessionRecapForegroundMock(...args),
+  notifySessionRecapSessionRemoved: (...args: unknown[]) => notifySessionRecapSessionRemovedMock(...args),
+  notifySessionRecapReceived: vi.fn(),
+}))
+
 import { Session, type SessionConstructorOptions } from './session'
 
 class FakeBackend implements SessionBackend {
@@ -117,6 +125,11 @@ class FakeBackend implements SessionBackend {
   setSandboxCalls: import('@superone/shared/agent-types').SandboxInfo[] = []
   async setSandbox(info: import('@superone/shared/agent-types').SandboxInfo): Promise<void> {
     this.setSandboxCalls.push(info)
+  }
+  requestSessionRecapCalls: boolean[] = []
+  async requestSessionRecap(auto: boolean): Promise<boolean> {
+    this.requestSessionRecapCalls.push(auto)
+    return true
   }
   setAdditionalDirectoriesCalls: string[][] = []
   setAdditionalDirectoriesResult = true
@@ -688,6 +701,68 @@ describe('Session state machine', () => {
 
       session.setForeground(true)
       expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(false)
+    })
+
+    it('drops empty ACP drafts from recap tracking instead of starting away', () => {
+      const { session: acp } = makeSession({ harnessId: 'acp', providerId: 'acp-base' })
+      notifySessionRecapForegroundMock.mockClear()
+      notifySessionRecapSessionRemovedMock.mockClear()
+      acp.setForeground(true)
+      acp.setForeground(false)
+      expect(notifySessionRecapForegroundMock).not.toHaveBeenCalled()
+      expect(notifySessionRecapSessionRemovedMock).toHaveBeenCalledWith('sess-1')
+    })
+
+    it('notifies away/return recap for ACP sessions that already have messages', () => {
+      const msg: ChatMessage = {
+        id: 'm1',
+        role: 'user',
+        status: 'complete',
+        content: [{ type: 'text', text: 'hi' }],
+        createdAt: new Date().toISOString(),
+        providerId: 'acp',
+      }
+      const { session: acp } = makeSession({
+        harnessId: 'acp',
+        providerId: 'acp-base',
+        initialMessages: [msg],
+      })
+      notifySessionRecapForegroundMock.mockClear()
+      notifySessionRecapSessionRemovedMock.mockClear()
+      acp.setForeground(true)
+      acp.setForeground(false)
+      expect(notifySessionRecapSessionRemovedMock).not.toHaveBeenCalled()
+      expect(notifySessionRecapForegroundMock).toHaveBeenCalledWith('sess-1', false)
+      acp.setForeground(true)
+      expect(notifySessionRecapForegroundMock).toHaveBeenCalledWith('sess-1', true)
+    })
+  })
+
+  describe('requestSessionRecap', () => {
+    it('skips empty ACP sessions even when a runtime is warm', async () => {
+      const { session: acp, backend: b } = makeSession({ harnessId: 'acp', providerId: 'acp-base' })
+      b.activeRuntime = true
+      await expect(acp.requestSessionRecap(true)).resolves.toBe(false)
+      expect(b.requestSessionRecapCalls).toHaveLength(0)
+    })
+
+    it('forwards to the backend when the session has transcript', async () => {
+      const msg: ChatMessage = {
+        id: 'm1',
+        role: 'user',
+        status: 'complete',
+        content: [{ type: 'text', text: 'hi' }],
+        createdAt: new Date().toISOString(),
+        providerId: 'acp',
+      }
+      const { session: acp, backend: b } = makeSession({
+        harnessId: 'acp',
+        providerId: 'acp-base',
+        initialMessages: [msg],
+      })
+      b.activeRuntime = true
+      await expect(acp.requestSessionRecap(true)).resolves.toBe(true)
+      expect(b.requestSessionRecapCalls).toEqual([true])
     })
   })
 

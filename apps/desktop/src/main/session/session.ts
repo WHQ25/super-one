@@ -232,6 +232,14 @@ export class Session implements SessionContract {
     const next = this._foregroundRefCount
     if (prev === next) return
     if (this.harnessId !== 'acp') return
+    // Empty drafts have nothing to summarize — never enter the away-recap poll
+    // (dev harness-switch spam used to fire x.ai/recap for every abandoned draft).
+    if (this._messages.length === 0) {
+      if (prev > 0 && next === 0) {
+        notifySessionRecapSessionRemoved(this.id)
+      }
+      return
+    }
     if (prev > 0 && next === 0) {
       notifySessionRecapForeground(this.id, false)
     } else if (prev === 0 && next > 0) {
@@ -605,6 +613,8 @@ export class Session implements SessionContract {
   async requestSessionRecap(auto: boolean): Promise<boolean> {
     if (this._status === 'disposed') return false
     if (this.harnessId !== 'acp') return false
+    // No transcript → nothing for the agent to recap (skip auto and manual).
+    if (this._messages.length === 0) return false
     const busy =
       this._status === 'streaming'
       || this._status === 'starting'

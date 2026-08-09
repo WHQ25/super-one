@@ -1506,9 +1506,36 @@ export class AgentService {
     const providerId = this.baseProviderIdForHarness(hint?.provider)
     const shouldApplyHint = (existing: import('../session/types').Session): boolean =>
       apiProviderHint !== null && existing.snapshot.apiProviderId !== apiProviderHint
+    const expectedHarness = hint?.provider
+    const prefsFor = (provider: 'claude' | 'codex' | 'acp' | 'opencode' | undefined) =>
+      provider === 'claude' || !provider
+        ? this.readDefaultSessionPrefs()
+        : { permissionMode: undefined as PermissionMode | undefined, sandboxMode: undefined as SandboxMode | undefined }
+
     if (requestedSid) {
       const existing = mgr.getSession(requestedSid)
       if (existing) {
+        // Empty draft may keep one SuperOne sid across harness switches in the
+        // renderer — dispose + recreate so send does not ride the old runtime.
+        if (
+          expectedHarness
+          && existing.snapshot.harnessId !== expectedHarness
+          && existing.snapshot.messages.length === 0
+          && !existing.isStreaming()
+        ) {
+          await mgr.disposeSession(requestedSid)
+          const prefs = prefsFor(expectedHarness)
+          return mgr.createSession({
+            projectPath,
+            cwd,
+            providerId,
+            id: requestedSid,
+            gitBranch,
+            permissionMode: prefs.permissionMode,
+            sandboxMode: prefs.sandboxMode,
+            apiProviderId: apiProviderHint,
+          })
+        }
         mgr.setActiveSession(projectPath, requestedSid)
         if (shouldApplyHint(existing)) existing.setApiProviderId(apiProviderHint)
         await this.applyWorktreeCwdHint(existing, hint)
@@ -1516,13 +1543,30 @@ export class AgentService {
       }
       try {
         const resumed = mgr.resumeSession(requestedSid)
+        if (
+          expectedHarness
+          && resumed.snapshot.harnessId !== expectedHarness
+          && resumed.snapshot.messages.length === 0
+          && !resumed.isStreaming()
+        ) {
+          await mgr.disposeSession(requestedSid)
+          const prefs = prefsFor(expectedHarness)
+          return mgr.createSession({
+            projectPath,
+            cwd,
+            providerId,
+            id: requestedSid,
+            gitBranch,
+            permissionMode: prefs.permissionMode,
+            sandboxMode: prefs.sandboxMode,
+            apiProviderId: apiProviderHint,
+          })
+        }
         if (shouldApplyHint(resumed)) resumed.setApiProviderId(apiProviderHint)
         await this.applyWorktreeCwdHint(resumed, hint)
         return resumed
       } catch {
-        const prefs = hint?.provider === 'claude' || !hint?.provider
-          ? this.readDefaultSessionPrefs()
-          : { permissionMode: undefined, sandboxMode: undefined }
+        const prefs = prefsFor(hint?.provider)
         return mgr.createSession({
           projectPath,
           cwd,
@@ -1541,9 +1585,7 @@ export class AgentService {
       await this.applyWorktreeCwdHint(active, hint)
       return active
     }
-    const prefs = hint?.provider === 'claude' || !hint?.provider
-      ? this.readDefaultSessionPrefs()
-      : { permissionMode: undefined, sandboxMode: undefined }
+    const prefs = prefsFor(hint?.provider)
     return mgr.createSession({
       projectPath,
       cwd,

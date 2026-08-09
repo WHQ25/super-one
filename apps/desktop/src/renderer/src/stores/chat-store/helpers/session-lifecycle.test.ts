@@ -43,6 +43,7 @@ vi.mock('@/stores/miniapp', () => ({
 const mockWindowAgent = {
   prewarm: vi.fn().mockResolvedValue(undefined),
   resetSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
+  setSessionForeground: vi.fn().mockResolvedValue(undefined),
   parkSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   disconnectRemoteSession: vi.fn().mockResolvedValue(undefined),
   setPermissionMode: vi.fn().mockResolvedValue(undefined),
@@ -448,7 +449,7 @@ describe('setPreferredProviderImpl', () => {
     expect(mockSeedFromCurrent).not.toHaveBeenCalled()
   })
 
-  it('switches to codex by rotating to a fresh uuid sid on an empty draft', () => {
+  it('keeps the same session id when switching harness on an empty draft', () => {
     setupProject()
     setCodexResources({
       models: [{ id: 'gpt-5-high', name: 'GPT-5', description: '', isDefault: true } as ModelOption],
@@ -458,11 +459,31 @@ describe('setPreferredProviderImpl', () => {
     useChatStore.getState().setPreferredProvider('codex')
 
     const newSid = activeProjectState()._activeSessionId
-    expect(newSid).not.toBe(oldSid)
-    expect(newSid).toMatch(/^[0-9a-f-]{36}$/)
+    expect(newSid).toBe(oldSid)
     expect(activeSession().sessionProvider).toBe('codex')
     expect(activeSession().preferredProvider).toBe('codex')
-    expect(mockSeedFromCurrent).toHaveBeenCalledWith(newSid)
+    expect(mockSeedFromCurrent).not.toHaveBeenCalled()
+    // Eager dispose of any prior main runtime under the shared sid.
+    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid)
+  })
+
+  it('clears providerSessionId and disposes main when switching empty draft harness', () => {
+    setupProject()
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      _providerSessionId: '019fa-stale',
+      status: 'idle',
+    })
+    const sid = activeProjectState()._activeSessionId
+    mockWindowAgent.resetSession.mockClear()
+
+    useChatStore.getState().setPreferredProvider('claude')
+
+    expect(activeProjectState()._activeSessionId).toBe(sid)
+    expect(activeSession()._providerSessionId).toBeNull()
+    expect(activeSession().sessionProvider).toBe('claude')
+    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(sid)
   })
 
   it('clears ACP selectedModel when switching back to claude', () => {

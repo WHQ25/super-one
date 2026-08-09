@@ -163,10 +163,15 @@ function makeFakeDb() {
             selectedModel?: string | null, selectedEffort?: string | null,
           ) => {
             const prev = sessionsRows.get(id)
+            // Mirror SQL CASE: when provider_id changes, do not COALESCE-keep the
+            // prior harness's provider_session_id.
+            const nextProviderSessionId = prev && prev.provider_id !== providerId
+              ? providerSessionId
+              : (providerSessionId ?? prev?.provider_session_id ?? null)
             sessionsRows.set(id, {
               id, project_id: projectId, provider_id: providerId, provider, title,
               created_at: prev?.created_at ?? createdAt, last_user_message_at: lastUserMsg,
-              provider_session_id: providerSessionId ?? prev?.provider_session_id ?? null,
+              provider_session_id: nextProviderSessionId,
               total_cost_usd: prev?.total_cost_usd ?? 0, context_tokens: prev?.context_tokens ?? 0,
               is_worktree: isWorktree, git_branch: gitBranch, worktree_path: worktreePath,
               is_pinned: prev?.is_pinned ?? 0, is_hidden: prev?.is_hidden ?? 0,
@@ -530,6 +535,61 @@ describe('session-repo', () => {
       expect(getSessionRecord('s-grok-draft')?.providerSessionId).toBe('019fa-prior')
       const loaded = loadSessionStateBySid('s-grok-draft')
       expect(loaded?.record.providerSessionId).toBe('019fa-prior')
+    })
+
+    it('clears providerSessionId when provider_id changes on empty-draft harness switch', () => {
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'acp' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-switch',
+        projectPath: '/tmp/proj',
+        providerId: 'acp-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        providerSessionId: '019fa-old-grok',
+        acpAgentId: 'grok-build',
+      })
+      expect(getSessionRecord('s-switch')?.providerSessionId).toBe('019fa-old-grok')
+
+      // Same SuperOne sid, new harness, no new provider session id yet.
+      saveSessionStateBySid({
+        sid: 's-switch',
+        projectPath: '/tmp/proj',
+        providerId: 'claude-base',
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        providerSessionId: null,
+      })
+      expect(getSessionRecord('s-switch')?.providerId).toBe('claude-base')
+      expect(getSessionRecord('s-switch')?.providerSessionId).toBeNull()
+    })
+
+    it('COALESCE-keeps providerSessionId when provider_id is unchanged and new value is null', () => {
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'acp' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-keep',
+        projectPath: '/tmp/proj',
+        providerId: 'acp-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        providerSessionId: '019fa-keep',
+      })
+      saveSessionStateBySid({
+        sid: 's-keep',
+        projectPath: '/tmp/proj',
+        providerId: 'acp-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        providerSessionId: null,
+      })
+      expect(getSessionRecord('s-keep')?.providerSessionId).toBe('019fa-keep')
     })
 
     it('incremental mode only upserts dirty ids and leaves others untouched', () => {

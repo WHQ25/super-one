@@ -301,7 +301,13 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
     ON CONFLICT(id) DO UPDATE SET
       provider_id = excluded.provider_id,
       provider = excluded.provider,
-      provider_session_id = COALESCE(excluded.provider_session_id, sessions.provider_session_id),
+      -- Same SuperOne sid can switch harness on an empty draft. When provider_id
+      -- changes, do not COALESCE-keep the prior harness's provider session id
+      -- (would resume Claude/Codex thread under Grok or vice versa on cold load).
+      provider_session_id = CASE
+        WHEN excluded.provider_id IS NOT sessions.provider_id THEN excluded.provider_session_id
+        ELSE COALESCE(excluded.provider_session_id, sessions.provider_session_id)
+      END,
       is_worktree = excluded.is_worktree,
       git_branch = excluded.git_branch,
       worktree_path = excluded.worktree_path,

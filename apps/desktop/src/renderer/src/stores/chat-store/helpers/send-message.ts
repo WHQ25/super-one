@@ -782,49 +782,74 @@ export async function sendMessageImpl(
     }))
   }
 
+  // Promote empty drafts to Codex in place (same SuperOne sid). Main dispose+
+  // recreate on send/prewarm handles harness mismatch. Only mint a new sid when
+  // carrying a non-empty non-Codex transcript into a Codex first turn.
   if (effectiveProvider === 'codex' && session.sessionProvider !== 'codex') {
-    const nextSid = createSessionId()
     const previousSid = resolveWriteSid()
-    set((s) => {
-      const proj = getProject(s, projectPath)
-      const currentSid = previousSid
-      const currentSess = currentSid ? proj._sessions[currentSid] : null
-      const shouldCarryState = currentSess != null && currentSess.messages.length === 0
-      const nextSessions = { ...proj._sessions }
-      if (shouldCarryState && currentSid) {
-        delete nextSessions[currentSid]
-        nextSessions[nextSid] = { ...currentSess, sessionProvider: 'codex', preferredProvider: 'codex' }
-      } else {
+    const currentSess = previousSid
+      ? getProject(get(), projectPath)._sessions[previousSid]
+      : null
+    if (currentSess && currentSess.messages.length === 0) {
+      set((s) => {
+        const proj = getProject(s, projectPath)
+        const sid = previousSid
+        if (!sid || !proj._sessions[sid]) return {}
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [projectPath]: {
+              ...proj,
+              _sessions: {
+                ...proj._sessions,
+                [sid]: {
+                  ...proj._sessions[sid],
+                  sessionProvider: 'codex',
+                  preferredProvider: 'codex',
+                  _providerSessionId: null,
+                },
+              },
+            },
+          },
+        }
+      })
+      if (previousSid && typeof window.agent?.resetSession === 'function') {
+        void window.agent.resetSession(previousSid).catch(() => {})
+      }
+    } else {
+      const nextSid = createSessionId()
+      set((s) => {
+        const proj = getProject(s, projectPath)
+        const currentSid = previousSid
+        const nextSessions = { ...proj._sessions }
         nextSessions[nextSid] = {
           ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
           cwd: currentSess?.cwd ?? '',
           sessionProvider: 'codex',
           preferredProvider: 'codex',
         }
-      }
-      const nextActive = currentSid && proj._activeSessionId === currentSid
-        ? nextSid
-        : proj._activeSessionId
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [projectPath]: {
-            ...proj,
-            _activeSessionId: nextActive,
-            _sessions: nextSessions,
+        const nextActive = currentSid && proj._activeSessionId === currentSid
+          ? nextSid
+          : proj._activeSessionId
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [projectPath]: {
+              ...proj,
+              _activeSessionId: nextActive,
+              _sessions: nextSessions,
+            },
           },
-        },
+        }
+      })
+      if (writeTarget && previousSid) {
+        writeTarget = { projectPath, sessionId: nextSid }
+        void import('@/components/mosaic/mosaic-store').then(({ useMosaicStore }) => {
+          useMosaicStore.getState().replaceTileSession(projectPath, previousSid, nextSid)
+        }).catch(() => {})
+      } else if (writeTarget) {
+        writeTarget = { projectPath, sessionId: nextSid }
       }
-    })
-    if (writeTarget && previousSid) {
-      writeTarget = { projectPath, sessionId: nextSid }
-      // Keep mosaic tiles pinned to the live session id when a first-turn codex
-      // switch rotates the draft id under a scoped pane.
-      void import('@/components/mosaic/mosaic-store').then(({ useMosaicStore }) => {
-        useMosaicStore.getState().replaceTileSession(projectPath, previousSid, nextSid)
-      }).catch(() => {})
-    } else if (writeTarget) {
-      writeTarget = { projectPath, sessionId: nextSid }
     }
   }
 

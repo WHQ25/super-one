@@ -58,6 +58,7 @@ const defaults: AppSettings = {
   browserBookmarkGroups: [],
   defaultClonePaths: {},
   suggestionHarness: null,
+  suggestionMenuHarness: null,
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -370,6 +371,7 @@ export function readAppSettings(): AppSettings {
       browserBookmarkGroups: readBookmarkGroups(data.browserBookmarkGroups),
       defaultClonePaths: readDefaultClonePaths(data.defaultClonePaths),
       suggestionHarness: readSuggestionHarness(data.suggestionHarness),
+      suggestionMenuHarness: readSuggestionHarness(data.suggestionMenuHarness),
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -409,6 +411,7 @@ export function readAppSettings(): AppSettings {
       browserBookmarkGroups: [],
       defaultClonePaths: {},
       suggestionHarness: null,
+      suggestionMenuHarness: null,
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -462,6 +465,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     suggestionHarness: patch.suggestionHarness === undefined
       ? current.suggestionHarness
       : readSuggestionHarness(patch.suggestionHarness),
+    suggestionMenuHarness: patch.suggestionMenuHarness === undefined
+      ? current.suggestionMenuHarness
+      : readSuggestionHarness(patch.suggestionMenuHarness),
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

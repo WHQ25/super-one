@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { orderSuggestionHarnesses, suggestionHarnessKey } from './suggestion-harness-order'
+import {
+  orderSuggestionHarnesses,
+  resolveMenuTabOption,
+  suggestionHarnessKey,
+  type SuggestionHarnessOption,
+} from './suggestion-harness-order'
 
 describe('suggestionHarnessKey', () => {
   it('keys top-level harnesses by provider id', () => {
@@ -80,5 +85,46 @@ describe('orderSuggestionHarnesses', () => {
       experimentalAgentsEnabled: false,
     })
     expect(ordered.map((o) => o.key)).toEqual(['claude', 'codex', 'acp:grok-build'])
+  })
+})
+
+describe('resolveMenuTabOption', () => {
+  const menu: SuggestionHarnessOption[] = [
+    { key: 'codex', provider: 'codex', acpAgentId: null, label: 'Codex', sessionCount: 2 },
+    {
+      key: 'acp:grok-build',
+      provider: 'acp',
+      acpAgentId: 'grok-build',
+      label: 'Grok Build',
+      sessionCount: 1,
+    },
+  ]
+
+  it('prefers the currently active menu harness', () => {
+    const option = resolveMenuTabOption({
+      menuHarnesses: menu,
+      activeKey: 'acp:grok-build',
+      rememberedMenu: { provider: 'codex', acpAgentId: null },
+    })
+    expect(option?.key).toBe('acp:grok-build')
+  })
+
+  it('keeps the last menu pick after switching to the fixed slot', () => {
+    // activeKey is the fixed Top1 (claude) — not in the menu list.
+    const option = resolveMenuTabOption({
+      menuHarnesses: menu,
+      activeKey: 'claude',
+      rememberedMenu: { provider: 'acp', acpAgentId: 'grok-build' },
+    })
+    expect(option?.key).toBe('acp:grok-build')
+  })
+
+  it('falls back to rank #2 when there is no remembered menu pick', () => {
+    const option = resolveMenuTabOption({
+      menuHarnesses: menu,
+      activeKey: 'claude',
+      rememberedMenu: null,
+    })
+    expect(option?.key).toBe('codex')
   })
 })

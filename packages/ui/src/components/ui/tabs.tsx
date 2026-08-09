@@ -32,7 +32,11 @@ function TabsList({
   const measure = React.useCallback(() => {
     const list = listRef.current
     if (!list) return
-    const active = list.querySelector<HTMLElement>('[data-state="active"]')
+    // Prefer real tab triggers so nested controls (e.g. DropdownMenuTrigger
+    // data-state open/closed) never pollute the sliding-pill geometry.
+    const active =
+      list.querySelector<HTMLElement>('[data-slot="tabs-trigger"][data-state="active"]')
+      ?? list.querySelector<HTMLElement>(':scope > [data-state="active"]')
     if (active) {
       setIndicator({
         left: active.offsetLeft,
@@ -56,8 +60,14 @@ function TabsList({
       measure()
     })
     ro.observe(list)
+    // Watch the active trigger so label swaps (Codex ↔ Grok Build) reflow
+    // the pill without a tab-value change.
+    const active =
+      list.querySelector<HTMLElement>('[data-slot="tabs-trigger"][data-state="active"]')
+      ?? list.querySelector<HTMLElement>(':scope > [data-state="active"]')
+    if (active) ro.observe(active)
     return () => ro.disconnect()
-  }, [measure])
+  }, [currentValue, measure])
 
   return (
     <TabsPrimitive.List
@@ -77,8 +87,9 @@ function TabsList({
           animate={{
             left: indicator.left,
             width: indicator.width,
+            top: indicator.top,
+            height: indicator.height,
           }}
-          style={{ top: indicator.top, height: indicator.height }}
           transition={shouldAnimate.current
             ? { type: "spring", bounce: 0.15, duration: 0.3 }
             : { duration: 0 }

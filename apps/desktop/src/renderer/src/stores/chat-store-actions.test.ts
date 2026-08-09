@@ -341,14 +341,13 @@ describe('resetSessionForWorktreeSwitch', () => {
 })
 
 describe('setPreferredProvider', () => {
-  it("rotates to a fresh uuid sid when switching claude→codex with no messages yet", () => {
+  it("keeps the same session id when switching claude→codex with no messages yet", () => {
     setupProject()
     setCodexResources({ models: [{ id: 'gpt-5-high', name: 'GPT-5', description: '', isDefault: true } as ModelOption] })
     const oldSid = activeProjectState()._activeSessionId
     useChatStore.getState().setPreferredProvider('codex')
     const newSid = activeProjectState()._activeSessionId
-    expect(newSid).not.toBe(oldSid)
-    expect(newSid).toMatch(/^[0-9a-f-]{36}$/)
+    expect(newSid).toBe(oldSid)
     expect(activeSession().sessionProvider).toBe('codex')
   })
 

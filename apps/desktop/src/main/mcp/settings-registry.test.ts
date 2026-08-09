@@ -42,6 +42,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     browserBookmarkGroups: [],
     defaultClonePaths: {},
     suggestionHarness: null,
+    suggestionMenuHarness: null,
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '', brandHue: null, tokenOverrides: {}, disabledSkills: [], askUserQuestionPreviewFormat: 'markdown' },
       codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '', brandHue: null, tokenOverrides: {} },

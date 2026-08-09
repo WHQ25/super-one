@@ -8,6 +8,7 @@ import { ProviderLabel } from '@/components/ProviderLabel'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import {
   orderSuggestionHarnesses,
+  resolveMenuTabOption,
   suggestionHarnessKey,
   type SuggestionHarnessOption,
 } from '@/lib/suggestion-harness-order'
@@ -45,8 +46,17 @@ const EMPTY_RANKS: HarnessSessionRank[] = []
 const DEFAULT_ACP_AGENT_ID = 'grok-build'
 const HARNESS_RANK_DAYS = 7
 
-const tabsTriggerClass =
-  'relative z-10 inline-flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-2 text-xs font-medium transition-colors text-muted-foreground hover:text-foreground data-[state=active]:text-foreground'
+/**
+ * In-process cache for the dropdown-slot harness (separate from the active
+ * suggestionHarness preference). Survives ProviderSelector remounts and cold
+ * start until app-settings loads, so selecting the fixed slot does not reset
+ * the menu tab label.
+ */
+let rememberedSuggestionMenuHarness: SuggestionHarnessPreference | null | undefined
+
+/** Shared trigger chrome — flex-none so short labels (e.g. Codex) don't stretch. */
+const tabTriggerLayoutClass =
+  'relative z-10 inline-flex flex-none items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium max-w-[9.5rem] transition-colors'
 
 function ProviderIcon({
   provider,
@@ -92,7 +102,13 @@ function ProviderSelector() {
   const [suggestionHarness, setSuggestionHarness] = useState<SuggestionHarnessPreference | null | undefined>(
     undefined,
   )
-  const lastMenuKeyRef = useRef<string | null>(null)
+  // Dropdown-slot memory: separate from active preference so selecting the fixed
+  // (top-ranked) slot does not reset the menu tab label / re-activation target.
+  // Survives ProviderSelector remounts that happen when empty-session harness
+  // switches mint a new session id.
+  const [suggestionMenuHarness, setSuggestionMenuHarness] = useState<
+    SuggestionHarnessPreference | null | undefined
+  >(() => rememberedSuggestionMenuHarness)
 
   useEffect(() => {
     void initializeHarness('acp')
@@ -107,6 +123,14 @@ function ProviderSelector() {
       if (cancelled) return
       setRanks(Array.isArray(nextRanks) ? nextRanks : EMPTY_RANKS)
       setSuggestionHarness(settings?.suggestionHarness ?? null)
+      // Prefer the in-process cache after a remount; fall back to disk on cold start.
+      if (rememberedSuggestionMenuHarness !== undefined) {
+        setSuggestionMenuHarness(rememberedSuggestionMenuHarness)
+      } else {
+        const fromDisk = settings?.suggestionMenuHarness ?? null
+        rememberedSuggestionMenuHarness = fromDisk
+        setSuggestionMenuHarness(fromDisk)
+      }
     })
     return () => {
       cancelled = true
@@ -132,12 +156,32 @@ function ProviderSelector() {
     })
   }, [])
 
-  const selectHarnessOption = useCallback(async (option: SuggestionHarnessOption, manual: boolean) => {
+  const persistSuggestionMenuHarness = useCallback((pref: SuggestionHarnessPreference) => {
+    rememberedSuggestionMenuHarness = pref
+    setSuggestionMenuHarness(pref)
+    void window.app.saveAppSettings({ suggestionMenuHarness: pref }).catch(() => {
+      /* best-effort; menu label still works in-session via module cache */
+    })
+  }, [])
+
+  const selectHarnessOption = useCallback(async (
+    option: SuggestionHarnessOption,
+    manual: boolean,
+    source: 'fixed' | 'menu' = 'fixed',
+  ) => {
     if (manual) {
       persistSuggestionHarness({
         provider: option.provider,
         acpAgentId: option.provider === 'acp' ? option.acpAgentId : null,
       })
+      // Only menu picks update the dropdown-slot memory. Fixed-slot activation
+      // must leave the previous menu choice intact.
+      if (source === 'menu') {
+        persistSuggestionMenuHarness({
+          provider: option.provider,
+          acpAgentId: option.provider === 'acp' ? option.acpAgentId : null,
+        })
+      }
     }
     setAgentMenuOpen(false)
     if (option.provider === 'acp') {
@@ -149,7 +193,14 @@ function ProviderSelector() {
       return
     }
     await selectProvider(option.provider)
-  }, [persistSuggestionHarness, preferredProvider, selectProvider, sessionScope, setAcpAgentId])
+  }, [
+    persistSuggestionHarness,
+    persistSuggestionMenuHarness,
+    preferredProvider,
+    selectProvider,
+    sessionScope,
+    setAcpAgentId,
+  ])
 
   useEffect(() => {
     if (!experimentalAgentsEnabled && isExperimentalAgentProvider(preferredProvider, acpAgentId)) {
@@ -204,16 +255,14 @@ function ProviderSelector() {
     ? suggestionHarnessKey('acp', effectiveAcpAgentId)
     : preferredProvider
   const fixedActive = activeKey === fixedHarness.key
-  const activeMenuOption = menuHarnesses.find((o) => o.key === activeKey) ?? null
-
-  useEffect(() => {
-    if (activeMenuOption) lastMenuKeyRef.current = activeMenuOption.key
-  }, [activeMenuOption])
-
-  const menuTabOption = activeMenuOption
-    ?? menuHarnesses.find((o) => o.key === lastMenuKeyRef.current)
-    ?? menuHarnesses[0]
-    ?? null
+  const menuTabOption = useMemo(
+    () => resolveMenuTabOption({
+      menuHarnesses,
+      activeKey,
+      rememberedMenu: suggestionMenuHarness,
+    }),
+    [menuHarnesses, activeKey, suggestionMenuHarness],
+  )
   const menuTabLabel = menuTabOption ? optionLabel(menuTabOption) : 'Codex'
   const menuTabActive = !fixedActive
 
@@ -230,7 +279,9 @@ function ProviderSelector() {
       )) ?? fixedHarness
 
     if (activeKey === target.key) return
-    void selectHarnessOption(target, false)
+    // Auto path is neither a fixed-tab click nor a menu pick — don't rewrite
+    // dropdown-slot memory.
+    void selectHarnessOption(target, false, 'fixed')
   }, [
     suggestionHarness,
     fixedHarness,
@@ -250,11 +301,11 @@ function ProviderSelector() {
     if (menuTabActive) return
     e.preventDefault()
     e.stopPropagation()
-    if (menuTabOption) void selectHarnessOption(menuTabOption, true)
+    if (menuTabOption) void selectHarnessOption(menuTabOption, true, 'menu')
   }
 
   const onSelectMenuItem = (option: SuggestionHarnessOption) => {
-    void selectHarnessOption(option, true)
+    void selectHarnessOption(option, true, 'menu')
   }
 
   return (
@@ -277,63 +328,86 @@ function ProviderSelector() {
       <Tabs
         value={tabsValue}
         onValueChange={(v) => {
-          if (v === 'fixed') void selectHarnessOption(fixedHarness, true)
+          if (v === 'fixed') void selectHarnessOption(fixedHarness, true, 'fixed')
         }}
       >
         <TabsList>
-          <TabsTrigger value="fixed" className="px-3 py-2 max-w-[9.5rem]">
+          <TabsTrigger
+            value="fixed"
+            className={cn(tabTriggerLayoutClass, 'text-muted-foreground hover:text-foreground data-[state=active]:text-foreground')}
+          >
             <span className="truncate">{optionLabel(fixedHarness)}</span>
           </TabsTrigger>
           {menuHarnesses.length > 0 && (
-            <DropdownMenu
-              open={agentMenuOpen}
-              onOpenChange={(open) => {
-                if (open && !menuTabActive) return
-                setAgentMenuOpen(open)
-              }}
+            /*
+             * Outer shell owns tabs indicator measurement (`data-state=active`).
+             * DropdownMenuTrigger must keep its own data-state open/closed — if
+             * both live on the same node, Slot merge fights TabsList's
+             * `[data-state=active]` query and the sliding pill gets a stale or
+             * wrong box (oversized / clipped after Grok ↔ Codex switches).
+             */
+            <div
+              data-slot="tabs-trigger"
+              data-state={menuTabActive ? 'active' : 'inactive'}
+              className={cn(
+                tabTriggerLayoutClass,
+                'p-0',
+                menuTabActive ? 'text-foreground' : 'text-muted-foreground',
+              )}
             >
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  role="tab"
-                  data-slot="tabs-trigger"
-                  data-state={menuTabActive ? 'active' : 'inactive'}
-                  className={cn(tabsTriggerClass, 'max-w-[9.5rem]')}
-                  onPointerDown={onMenuTabActivate}
-                  onClick={onMenuTabActivate}
-                >
-                  <span className="min-w-0 truncate">{menuTabLabel}</span>
-                  <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', agentMenuOpen && menuTabActive && 'rotate-180')} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="center" className="min-w-48">
-                {menuHarnesses.map((option, index) => {
-                  const prev = index > 0 ? menuHarnesses[index - 1] : null
-                  const showSeparator = !!prev && (prev.provider === 'acp') !== (option.provider === 'acp')
-                  const selected = activeKey === option.key
-                  const agentMeta = option.provider === 'acp'
-                    ? visibleAcpAgents.find((a) => a.id === option.acpAgentId)
-                    : null
-                  return (
-                    <div key={option.key}>
-                      {showSeparator && <DropdownMenuSeparator />}
-                      <DropdownMenuItem
-                        onClick={() => onSelectMenuItem(option)}
-                        className="gap-2 focus-visible:shadow-none"
-                      >
-                        <span className="min-w-0 flex-1 truncate">{optionLabel(option)}</span>
-                        {agentMeta && !agentMeta.installed && (
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {t('chat.suggestions.agentNotInstalled')}
-                          </span>
-                        )}
-                        {selected && <Check className="size-4 shrink-0 text-primary" />}
-                      </DropdownMenuItem>
-                    </div>
-                  )
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              <DropdownMenu
+                open={agentMenuOpen}
+                onOpenChange={(open) => {
+                  if (open && !menuTabActive) return
+                  setAgentMenuOpen(open)
+                }}
+              >
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={menuTabActive}
+                    className={cn(
+                      'inline-flex min-w-0 max-w-[9.5rem] items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium transition-colors',
+                      'hover:text-foreground',
+                      menuTabActive ? 'text-foreground' : 'text-muted-foreground',
+                    )}
+                    onPointerDown={onMenuTabActivate}
+                    onClick={onMenuTabActivate}
+                  >
+                    <span className="min-w-0 truncate">{menuTabLabel}</span>
+                    <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', agentMenuOpen && menuTabActive && 'rotate-180')} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center" className="min-w-48">
+                  {menuHarnesses.map((option, index) => {
+                    const prev = index > 0 ? menuHarnesses[index - 1] : null
+                    const showSeparator = !!prev && (prev.provider === 'acp') !== (option.provider === 'acp')
+                    const selected = activeKey === option.key
+                    const agentMeta = option.provider === 'acp'
+                      ? visibleAcpAgents.find((a) => a.id === option.acpAgentId)
+                      : null
+                    return (
+                      <div key={option.key}>
+                        {showSeparator && <DropdownMenuSeparator />}
+                        <DropdownMenuItem
+                          onClick={() => onSelectMenuItem(option)}
+                          className="gap-2 focus-visible:shadow-none"
+                        >
+                          <span className="min-w-0 flex-1 truncate">{optionLabel(option)}</span>
+                          {agentMeta && !agentMeta.installed && (
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {t('chat.suggestions.agentNotInstalled')}
+                            </span>
+                          )}
+                          {selected && <Check className="size-4 shrink-0 text-primary" />}
+                        </DropdownMenuItem>
+                      </div>
+                    )
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
         </TabsList>
       </Tabs>

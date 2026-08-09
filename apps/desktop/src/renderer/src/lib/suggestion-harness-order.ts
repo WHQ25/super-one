@@ -1,4 +1,8 @@
-import type { HarnessId, HarnessSessionRank } from '@superone/shared/agent-types'
+import type {
+  HarnessId,
+  HarnessSessionRank,
+  SuggestionHarnessPreference,
+} from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 
 export interface SuggestionHarnessOption {
@@ -86,4 +90,33 @@ export function orderSuggestionHarnesses(input: {
     if (di !== 0) return di
     return a.key.localeCompare(b.key)
   })
+}
+
+function matchesPreference(
+  option: SuggestionHarnessOption,
+  pref: SuggestionHarnessPreference,
+): boolean {
+  if (option.provider !== pref.provider) return false
+  if (option.provider !== 'acp') return true
+  return option.acpAgentId === (pref.acpAgentId ?? null)
+}
+
+/**
+ * Resolve which harness the dropdown slot should show:
+ * 1. Currently active menu harness
+ * 2. User's last menu pick (even after switching to the fixed slot)
+ * 3. Rank #2 fallback
+ */
+export function resolveMenuTabOption(input: {
+  menuHarnesses: SuggestionHarnessOption[]
+  activeKey: string
+  rememberedMenu: SuggestionHarnessPreference | null | undefined
+}): SuggestionHarnessOption | null {
+  const active = input.menuHarnesses.find((o) => o.key === input.activeKey)
+  if (active) return active
+  if (input.rememberedMenu != null) {
+    const remembered = input.menuHarnesses.find((o) => matchesPreference(o, input.rememberedMenu!))
+    if (remembered) return remembered
+  }
+  return input.menuHarnesses[0] ?? null
 }

@@ -3210,6 +3210,12 @@ export interface AppSettings {
    * harness by last-7-day session count.
    */
   suggestionHarness: SuggestionHarnessPreference | null
+  /**
+   * Last harness chosen from the ChatSuggestions dropdown slot. Survives
+   * switching back to the fixed (top-ranked) slot so the menu tab label and
+   * re-activation keep the user's pick instead of resetting to rank #2.
+   */
+  suggestionMenuHarness: SuggestionHarnessPreference | null
   agentPreference: {
     claude: {
       defaultModel: string
@@ -3291,6 +3297,8 @@ export interface AppSettingsPatch {
   defaultClonePaths?: Record<string, string>
   /** Pass `null` to clear and return to auto top-by-usage selection. */
   suggestionHarness?: SuggestionHarnessPreference | null
+  /** Pass `null` to clear the remembered dropdown-slot harness. */
+  suggestionMenuHarness?: SuggestionHarnessPreference | null
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

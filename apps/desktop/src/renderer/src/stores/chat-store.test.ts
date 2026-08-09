@@ -378,7 +378,7 @@ describe('ensureSession', () => {
 
     const project = useChatStore.getState().projectSessions['/prewarm-codex']
     const afterSid = project._activeSessionId
-    expect(afterSid).not.toBe(beforeSid)
+    expect(afterSid).toBe(beforeSid)
     expect(project._sessions[afterSid!].sessionProvider).toBe('codex')
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })

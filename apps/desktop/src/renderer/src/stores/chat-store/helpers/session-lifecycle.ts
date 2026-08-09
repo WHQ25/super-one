@@ -1,5 +1,4 @@
 import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
-import { useActivityViewStateStore } from '../../activity-view-state'
 import { useAppStore } from '../../app'
 import { applyDefaultModel, resolveDefaultClaudeEffort, resolveDefaultClaudeModel } from './agent-defaults'
 import { buildSlashCommands } from './chat-helpers'
@@ -634,11 +633,9 @@ export function setPreferredProviderImpl(
   if (session.sessionProvider === provider || (provider === 'claude' && !session.sessionProvider && session.preferredProvider === 'claude')) {
     return
   }
-  const proj0 = getProject(get(), activeProject)
-  const currentSid0 = proj0._activeSessionId
-  const currentSess0 = currentSid0 ? proj0._sessions[currentSid0] : null
-  const willReplaceSid = !!currentSess0 && currentSess0.messages.length === 0
-  const nextSid = willReplaceSid ? createSessionId() : null
+  // Empty drafts keep the same SuperOne session id across harness switches.
+  // Main-process runtime for a prior harness is disposed eagerly below so stale
+  // events cannot land on the shared sid before the next prewarm/send.
 
   // ACP model ids (e.g. grok-4.5 / opencode/…) must not stick on Claude/Codex selectors.
   const acpModeReset = {
@@ -648,6 +645,13 @@ export function setPreferredProviderImpl(
     acpModesStatus: 'idle' as const,
     acpSlashCommands: [] as import('@superone/shared/agent-types').SlashCommandInfo[],
     acpSlashCommandsStatus: 'idle' as const,
+  }
+  /** Shared resets when leaving any harness on an empty draft. */
+  const emptyDraftHarnessReset = {
+    _providerSessionId: null as string | null,
+    status: 'idle' as const,
+    awaitingAssistantReply: false,
+    slashCommandOutput: null,
   }
   const modelReset = (() => {
     if (provider === 'claude') {
@@ -706,39 +710,29 @@ export function setPreferredProviderImpl(
     }
   })()
 
-  set((s) => {
-    const proj = getProject(s, activeProject)
-    const currentSid = proj._activeSessionId
-    const currentSess = currentSid ? proj._sessions[currentSid] : null
-    if (currentSess && nextSid) {
-      const nextSessions = { ...proj._sessions }
-      if (currentSid) delete nextSessions[currentSid]
-      nextSessions[nextSid] = {
-        ...currentSess,
-        ...modelReset,
-        preferredProvider: provider,
-        sessionProvider: provider,
-        slashCommandOutput: null,
-      }
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [activeProject]: {
-            ...proj,
-            _activeSessionId: nextSid,
-            _sessions: nextSessions,
-          },
-        },
-      }
-    }
-    return updateActivePerSession(s, () => ({
-      ...modelReset,
-      preferredProvider: provider,
-      sessionProvider: provider,
-      slashCommandOutput: null,
-    }))
-  })
-  if (nextSid) useActivityViewStateStore.getState().seedFromCurrent(nextSid)
+  const draftSid = getProject(get(), activeProject)._activeSessionId
+
+  set((s) => updateActivePerSession(s, () => ({
+    ...modelReset,
+    ...emptyDraftHarnessReset,
+    preferredProvider: provider,
+    sessionProvider: provider,
+  })))
+
+  // Drop any in-memory main session for this sid (wrong harness / prewarmed prior).
+  // Awaited before ACP/OpenCode prewarm so recreate cannot race the dispose.
+  // resetSession without newSessionId only disposes.
+  const disposePriorMain: Promise<unknown> =
+    draftSid && typeof window.agent?.resetSession === 'function'
+      ? window.agent.resetSession(draftSid).catch(() => null)
+      : Promise.resolve(null)
+
+  const reassertForeground = (): void => {
+    if (!draftSid) return
+    if (getProject(get(), activeProject)._activeSessionId !== draftSid) return
+    void window.agent.setSessionForeground?.(draftSid, true)
+  }
+
   if (provider === 'codex') {
     const project = getProject(get(), activeProject)
     const sess = getActivePerSession(get())
@@ -759,6 +753,7 @@ export function setPreferredProviderImpl(
     if (project._codexSkills.length === 0 && !project._codexSkillsLoading) {
       void get().refreshCodexSkills(activeProject)
     }
+    void disposePriorMain
   }
   if (provider === 'acp') {
     // Prefer agent id already set by setAcpAgentId (UI selects agent before harness).
@@ -768,7 +763,10 @@ export function setPreferredProviderImpl(
       if (catalog) {
         set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(catalog)))
       }
-      triggerPrewarm(get())
+      void disposePriorMain.then(() => {
+        triggerPrewarm(get())
+        reassertForeground()
+      })
     } else {
       void (async () => {
         try {
@@ -789,12 +787,14 @@ export function setPreferredProviderImpl(
         if (catalog) {
           set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(catalog)))
         }
+        await disposePriorMain
         triggerPrewarm(get())
+        reassertForeground()
       })()
     }
   }
   if (provider === 'opencode') {
-    void get().initializeHarness('opencode').then(() => {
+    void get().initializeHarness('opencode').then(async () => {
       const session = getActivePerSession(get())
       // User may have switched harness before OpenCode resources finished loading.
       if ((session.sessionProvider ?? session.preferredProvider) !== 'opencode') return
@@ -809,10 +809,13 @@ export function setPreferredProviderImpl(
       if (model && (model.id !== session.selectedModel || effort !== session.selectedEffort)) {
         set((state) => updateActivePerSession(state, () => ({ selectedModel: model.id, selectedEffort: effort })))
       }
+      await disposePriorMain
       triggerPrewarm(get())
+      reassertForeground()
     })
   }
   if (provider === 'claude') {
+    void disposePriorMain
     const isRemote = !!parseRemoteProjectKey(activeProject)
     if (!isRemote) {
       set((s) => {
@@ -855,6 +858,7 @@ export function setPreferredProviderImpl(
       void get().initializeHarness('claude').then(afterModels)
     }
   } else {
+    // Codex dispose already started above; ACP/OpenCode chain dispose→prewarm.
     void get().initializeHarness(provider)
   }
 }

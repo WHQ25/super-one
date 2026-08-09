@@ -734,26 +734,17 @@ export const zh: Messages = {
         sessions: '会话数',
         messages: '消息数',
       },
-      metric: {
-        tokens: 'Token',
-        cost: '费用',
-      },
       daily: {
         titleByHarness: '每日用量（按引擎）',
         titleByTokenType: '每日用量（按 Token 类型）',
         titleToday: '今日用量（按模型）',
         titleHeatmap: '活跃度热力图',
-        titleByHarnessCost: '每日估算费用（按引擎）',
-        titleByTokenTypeCost: '每日估算费用（按 Token 类型）',
-        titleTodayCost: '今日估算费用（按模型）',
-        titleHeatmapCost: '费用热力图',
         empty: '所选区间内暂无数据',
       },
       heatmap: {
         less: '少',
         more: '多',
         tokens: 'Token',
-        cost: '估算费用',
         noActivity: '无活动',
       },
       tokenTypes: {

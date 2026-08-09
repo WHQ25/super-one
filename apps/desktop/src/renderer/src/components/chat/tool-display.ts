@@ -76,13 +76,19 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
  * groupContent (emits no segment, so surrounding thinking blocks stay adjacent). */
 const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 
+/** SuperOne MCP tools that are agent-internal discovery/meta — never useful as chat UI. */
+const HIDDEN_SUPERONE_MCP_TOOLS = new Set([
+  'session_rename',
+  'session_collab_list_agents',
+  'session_list_agents',
+  // Fixed mini-app catalog: discovery only; miniapp_call rows keep the per-app feel.
+  'miniapp_list',
+])
+
 export function isAlwaysHiddenToolBlock(toolName: string): boolean {
   if (HIDDEN_TASK_TOOLS.has(toolName)) return true
   const mcp = parseMcpToolName(toolName)
-  return mcp?.serverName === 'superone'
-    && (mcp.mcpToolName === 'session_rename'
-      || mcp.mcpToolName === 'session_collab_list_agents'
-      || mcp.mcpToolName === 'session_list_agents')
+  return mcp?.serverName === 'superone' && HIDDEN_SUPERONE_MCP_TOOLS.has(mcp.mcpToolName)
 }
 
 export function isHiddenToolBlock(toolName: string, result?: string): boolean {

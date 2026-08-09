@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { getToolDisplay, getToolLabel, parseMcpToolName, parseToolInput, shortenPath } from './tool-display'
+import {
+  getToolDisplay,
+  getToolLabel,
+  isAlwaysHiddenToolBlock,
+  parseMcpToolName,
+  parseToolInput,
+  shortenPath,
+} from './tool-display'
 
 describe('shortenPath', () => {
   it('shortens paths relative to cwd and homedir', () => {
@@ -27,6 +34,16 @@ describe('parseMcpToolName', () => {
 
   it('returns null for invalid MCP tool names', () => {
     expect(parseMcpToolName('Read')).toBeNull()
+  })
+})
+
+describe('isAlwaysHiddenToolBlock', () => {
+  it('hides miniapp_list (agent discovery, not human-facing)', () => {
+    expect(isAlwaysHiddenToolBlock('mcp__superone__miniapp_list')).toBe(true)
+  })
+
+  it('does not hide miniapp_call (actual app tool surface)', () => {
+    expect(isAlwaysHiddenToolBlock('mcp__superone__miniapp_call')).toBe(false)
   })
 })
 

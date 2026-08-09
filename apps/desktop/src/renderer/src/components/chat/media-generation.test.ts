@@ -69,6 +69,7 @@ describe('suppressing the raw generate-image tool block', () => {
   it('keeps hiding other suppressed tools regardless of result', () => {
     expect(isHiddenToolBlock('mcp__superone__session_rename', ERROR_RESULT)).toBe(true)
     expect(isHiddenToolBlock('mcp__superone__session_list_agents', ERROR_RESULT)).toBe(true)
+    expect(isHiddenToolBlock('mcp__superone__miniapp_list', ERROR_RESULT)).toBe(true)
     expect(isHiddenToolBlock('TodoWrite', ERROR_RESULT)).toBe(true)
   })
 

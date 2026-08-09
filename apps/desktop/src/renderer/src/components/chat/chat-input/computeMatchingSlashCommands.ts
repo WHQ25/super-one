@@ -1,6 +1,7 @@
 import type { SlashCommandInfo } from '@superone/shared/agent-types'
 import type { ChatProvider } from '@/stores/chat'
 import { fuzzyMatch } from '../../../lib/fuzzy-match'
+import { isWorkflowSlashArgsMode } from '../workflow-slash-suggest'
 
 const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
 
@@ -51,8 +52,9 @@ export function computeMatchingSlashCommands(
   const firstLine = text.split('\n', 1)[0]
   if (activeProvider !== 'codex') {
     if (/^\/add-dir(\s|$)/.test(firstLine)) return []
-    // `/workflow` owns a dedicated args popup (catalog names + manage ops).
-    if (/^\/workflow(\s|$)/i.test(firstLine)) return []
+    // Only after `/workflow ` (space) — bare `/workflow` stays in the slash list
+    // so `/workflows` remains visible/selectable.
+    if (isWorkflowSlashArgsMode(firstLine)) return []
     if (firstLine.includes(' ')) return []
   }
 

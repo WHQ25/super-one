@@ -38,6 +38,7 @@ import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { WorkflowSlashPopup, type WorkflowSlashPopupHandle, type WorkflowApplyPayload } from './WorkflowSlashPopup'
+import { parseWorkflowSlashLine } from './workflow-slash-suggest'
 // import { ProviderSlashPopup } from './ProviderSlashPopup' // /provider popup retired — kept for reference
 import { McpSlashPopup } from './McpSlashPopup'
 import { WorkflowsSlashPopup } from './WorkflowsSlashPopup'
@@ -484,15 +485,13 @@ export function ChatInput() {
     const addDirActive = addDirParse.active
     const addDirArgsText = addDirParse.argsText
 
-    // Grok/ACP (and Claude if typed): dedicated `/workflow` name + op picker.
+    // Grok/ACP (and Claude if typed): dedicated `/workflow` picker after commit
+    // (`/workflow ` via space or Tab/Enter selection) — not bare `/workflow`.
     const workflowSlashParse = useMemo(() => {
       if (activeProviderForResources !== 'acp' && activeProviderForResources !== 'claude') {
         return { active: false, argsText: '' }
       }
-      const firstLine = text.split('\n', 1)[0]
-      const m = firstLine.match(/^\/workflow(?:\s(.*))?$/i)
-      if (!m) return { active: false, argsText: '' }
-      return { active: true, argsText: m[1] ?? '' }
+      return parseWorkflowSlashLine(text)
     }, [text, activeProviderForResources])
     const workflowSlashActive = workflowSlashParse.active
     const workflowSlashArgsText = workflowSlashParse.argsText

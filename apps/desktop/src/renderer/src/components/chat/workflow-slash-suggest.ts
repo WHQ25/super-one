@@ -77,6 +77,24 @@ export function isWorkflowManageOp(s: string): s is WorkflowManageOp {
 }
 
 /**
+ * Dedicated `/workflow` args popup is active only after the command is *committed*:
+ * trailing space (typed, or Tab/Enter selection which inserts `/workflow `).
+ * Bare `/workflow` keeps the normal slash list so `/workflows` stays discoverable.
+ */
+export function parseWorkflowSlashLine(text: string): { active: boolean; argsText: string } {
+  const firstLine = text.split('\n', 1)[0] ?? ''
+  // Require whitespace after the command name — not bare `/workflow` or `/workflows`.
+  const m = firstLine.match(/^\/workflow\s(.*)$/i)
+  if (!m) return { active: false, argsText: '' }
+  return { active: true, argsText: m[1] ?? '' }
+}
+
+/** True when slash matching should yield to the `/workflow` args popup. */
+export function isWorkflowSlashArgsMode(text: string): boolean {
+  return parseWorkflowSlashLine(text).active
+}
+
+/**
  * Parse `/workflow` args for autocomplete.
  * - first token: ops + catalog names
  * - after a completed op: session run names

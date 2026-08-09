@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import type { ContentBlock, SlashCommandInfo } from '@superone/shared/agent-types'
 import {
   parseWorkflowSlashPhase,
+  parseWorkflowSlashLine,
+  isWorkflowSlashArgsMode,
   catalogWorkflows,
   sessionRunNames,
   buildWorkflowSuggestItems,
@@ -9,6 +11,24 @@ import {
   resolveWorkflowArgsTip,
   groupWorkflowSuggestItems,
 } from './workflow-slash-suggest'
+
+describe('parseWorkflowSlashLine', () => {
+  it('stays inactive for bare /workflow so slash list can show /workflows', () => {
+    expect(parseWorkflowSlashLine('/workflow')).toEqual({ active: false, argsText: '' })
+    expect(isWorkflowSlashArgsMode('/workflow')).toBe(false)
+    expect(parseWorkflowSlashLine('/workflows')).toEqual({ active: false, argsText: '' })
+  })
+
+  it('activates after space (typed or Tab/Enter selection)', () => {
+    expect(parseWorkflowSlashLine('/workflow ')).toEqual({ active: true, argsText: '' })
+    expect(parseWorkflowSlashLine('/workflow pause')).toEqual({ active: true, argsText: 'pause' })
+    expect(parseWorkflowSlashLine('/workflow review-changes ')).toEqual({
+      active: true,
+      argsText: 'review-changes ',
+    })
+    expect(isWorkflowSlashArgsMode('/workflow ')).toBe(true)
+  })
+})
 
 describe('parseWorkflowSlashPhase', () => {
   it('empty args → first token mode', () => {

@@ -57,9 +57,14 @@ describe('slash command match ranking', () => {
     expect(result).toEqual([])
   })
 
-  it('defers to the /workflow args popup once the command name is complete', () => {
+  it('defers to the /workflow args popup only after a trailing space', () => {
     const commands = [cmd('workflow', false), cmd('workflows', false)]
-    expect(computeMatchingSlashCommands('/workflow', commands, 'acp')).toEqual([])
+    // Bare /workflow keeps the slash list so /workflows stays discoverable.
+    const bare = computeMatchingSlashCommands('/workflow', commands, 'acp').map((c) => c.name)
+    expect(bare).toContain('workflow')
+    expect(bare).toContain('workflows')
+    // Tab/Enter selection inserts `/workflow `; typed space does the same.
+    expect(computeMatchingSlashCommands('/workflow ', commands, 'acp')).toEqual([])
     expect(computeMatchingSlashCommands('/workflow pause', commands, 'acp')).toEqual([])
     // Still fuzzy-match while the user is typing the command name.
     expect(computeMatchingSlashCommands('/workf', commands, 'acp').map((c) => c.name)).toContain('workflow')

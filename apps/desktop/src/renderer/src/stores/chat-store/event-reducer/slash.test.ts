@@ -97,14 +97,16 @@ describe('reduceSlash: turn_summary / session_recap', () => {
     expect(reduceSlash(session, { type: 'turn_summary', summary: '  ' } as never)).toEqual({})
   })
 
-  it('appends a session_recap system marker', () => {
+  it('appends a session_recap system marker and clears isRecapping', () => {
     const session = createDefaultPerSessionState()
     session.messages = [makeMessage('a1', { role: 'assistant' })]
+    session.isRecapping = true
     const patch = reduceSlash(session, {
       type: 'session_recap',
       summary: 'You fixed the parser.',
       auto: true,
     } as never)
+    expect(patch.isRecapping).toBe(false)
     const meta = patch.messages!.at(-1)!
     expect(meta.providerId).toBe('system')
     const text = (meta.content[0] as { text: string }).text
@@ -112,6 +114,14 @@ describe('reduceSlash: turn_summary / session_recap', () => {
       kind: 'recap',
       text: 'You fixed the parser.',
       auto: true,
+    })
+  })
+
+  it('clears isRecapping on session_recap_unavailable', () => {
+    const session = createDefaultPerSessionState()
+    session.isRecapping = true
+    expect(reduceSlash(session, { type: 'session_recap_unavailable' } as never)).toEqual({
+      isRecapping: false,
     })
   })
 })

@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox, History } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -579,19 +579,12 @@ export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
   if (meta.kind === 'recap') {
     return (
       <div
-        className="my-0.5 flex items-center gap-1.5 text-xs leading-snug text-muted-foreground italic"
+        className="mt-0.5 mb-2.5 text-xs leading-snug text-muted-foreground"
         data-turn-meta="recap"
         role="note"
       >
-        <History className="size-3 shrink-0 not-italic text-muted-foreground/80" aria-hidden />
-        <span className="min-w-0">
-          {!meta.auto && (
-            <span className="mr-1.5 not-italic font-medium text-muted-foreground/80">
-              {t('chat.turnMeta.recapLabel')}
-            </span>
-          )}
-          {meta.text}
-        </span>
+        <span className="mr-1.5 font-medium text-muted-foreground/80">{t('chat.turnMeta.recapLabel')}</span>
+        {meta.text}
       </div>
     )
   }
@@ -604,6 +597,22 @@ export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
     >
       <span className="mr-1.5 font-medium text-muted-foreground/80">{t('chat.turnMeta.summaryLabel')}</span>
       {meta.text}
+    </div>
+  )
+}
+
+/** Shown while a manual Grok `/recap` RPC is in flight. */
+export function RecappingIndicator() {
+  const { t } = useTranslation()
+  return (
+    <div
+      className="mt-0.5 mb-2.5 flex items-center gap-1.5 text-xs leading-snug text-muted-foreground"
+      data-turn-meta="recap-pending"
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground/80" aria-hidden />
+      <span className="font-medium text-muted-foreground/80">{t('chat.turnMeta.generatingRecap')}</span>
     </div>
   )
 }

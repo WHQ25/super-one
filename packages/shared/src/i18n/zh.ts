@@ -914,7 +914,8 @@ export const zh: Messages = {
     },
     turnMeta: {
       summaryLabel: '小结：',
-      recapLabel: '回顾',
+      recapLabel: '回顾：',
+      generatingRecap: '正在生成回顾…',
     },
     pasteChip: {
       title_one: '已粘贴文本 · {{count}} 行',

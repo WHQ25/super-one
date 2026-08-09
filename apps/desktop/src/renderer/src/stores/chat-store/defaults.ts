@@ -87,6 +87,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     _todosUserDismissed: false,
     _nextTodoId: 1,
     isCompacting: false,
+    isRecapping: false,
     compactError: null,
     rateLimitInfo: null,
     _gitBranch: null,

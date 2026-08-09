@@ -7,7 +7,7 @@ import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, TurnMetaIndicator } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -120,12 +120,13 @@ function ChatTranscript({
 }: ChatTranscriptProps) {
   const scope = useSessionScope()
   const {
-    messages, isCompacting, compactError, apiRetry, modelFallback,
+    messages, isCompacting, isRecapping, compactError, apiRetry, modelFallback,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
+    isRecapping: s.isRecapping,
     compactError: s.compactError,
     apiRetry: s.apiRetry,
     modelFallback: s.modelFallback,
@@ -324,6 +325,7 @@ function ChatTranscript({
             ))}
             {isCompacting && <CompactingIndicator />}
             {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
+            {isRecapping && <RecappingIndicator />}
             {apiRetry && <ApiRetryIndicator info={apiRetry} />}
             {modelFallback && <ModelFallbackIndicator info={modelFallback} />}
           </SelectionContextMenuZone>

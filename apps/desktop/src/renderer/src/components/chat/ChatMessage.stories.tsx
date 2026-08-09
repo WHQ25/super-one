@@ -94,7 +94,7 @@ const meta: Meta = {
     docs: {
       description: {
         component:
-          'Grok turn summary sits above the assistant turn footer; session recap stays a standalone system line with a History icon.',
+          'Grok turn summary sits above the assistant turn footer; session recap stays a standalone system line with a “Recap:” prefix (same chrome as Summary).',
       },
     },
   },
@@ -131,7 +131,7 @@ export const TurnSummaryAboveFooter: Story = {
   ),
 }
 
-/** Auto return-from-away recap — italic body + History icon, no “Recap” label. */
+/** Auto return-from-away recap — same “Recap:” prefix chrome as manual. */
 export const AutoSessionRecap: Story = {
   name: 'Session recap (auto)',
   render: () => (
@@ -161,7 +161,7 @@ export const AutoSessionRecap: Story = {
   ),
 }
 
-/** Manual `/recap` — History icon + “Recap” label. */
+/** Manual `/recap` — “Recap:” label + body (no icon). */
 export const ManualSessionRecap: Story = {
   name: 'Session recap (manual)',
   render: () => (
@@ -197,7 +197,7 @@ export const FullTurnStack: Story = {
         <TurnMetaIndicator
           meta={{
             kind: 'recap',
-            text: '回来了：上次在调 turn summary 位置，recap 保留在消息流底部并加了 History icon。',
+            text: '回来了：上次在调 turn summary 位置，recap 保留在消息流底部。',
             auto: true,
           }}
         />

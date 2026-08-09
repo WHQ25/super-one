@@ -192,6 +192,8 @@ export interface PerSessionState {
   _todosUserDismissed: boolean
   _nextTodoId: number
   isCompacting: boolean
+  /** Manual Grok `/recap` in flight — show generating indicator until result/unavailable. */
+  isRecapping: boolean
   compactError: string | null
   rateLimitInfo: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; errorCode?: 'credits_required'; canUserPurchaseCredits?: boolean; hasChargeableSavedPaymentMethod?: boolean } | null
   _gitBranch: string | null

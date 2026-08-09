@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 interface FakeSessionState {
   messages: unknown[]
   isCompacting: boolean
+  isRecapping: boolean
   rateLimitInfo: null
   apiRetry: null
   pendingPlanApproval: null
@@ -23,6 +24,7 @@ const hoisted = vi.hoisted(() => {
   const sessionState: FakeSessionState = {
     messages: [],
     isCompacting: false,
+    isRecapping: false,
     rateLimitInfo: null,
     apiRetry: null,
     pendingPlanApproval: null,

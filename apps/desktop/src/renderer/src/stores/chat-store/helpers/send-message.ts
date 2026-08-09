@@ -111,14 +111,17 @@ export async function sendMessageImpl(
         const sess = getScopedPerSession(get(), writeTarget)
         if (sess.sessionProvider === 'acp' || sess.preferredProvider === 'acp') {
           if (isGrokAcpAgent(sess.acpAgentId)) {
-            patchSession(() => ({ _pendingSlashCommand: '' }))
+            patchSession(() => ({ _pendingSlashCommand: '', isRecapping: true }))
             const sid = resolveWriteSid()
             if (sid) {
               try {
-                await window.agent.requestSessionRecap(sid)
+                const ok = await window.agent.requestSessionRecap(sid)
+                if (!ok) patchSession(() => ({ isRecapping: false }))
               } catch {
-                /* fail closed — no spinner / error bubble */
+                patchSession(() => ({ isRecapping: false }))
               }
+            } else {
+              patchSession(() => ({ isRecapping: false }))
             }
             return
           }
@@ -903,14 +906,17 @@ export async function sendMessageImpl(
   // Grok ACP: intercept `/recap` → x.ai/recap (auto=false), not a prompt turn.
   if (effectiveProvider === 'acp' && isGrokAcpAgent(session.acpAgentId)) {
     if (/^\/recap$/.test(rawContent)) {
-      patchSession(() => ({ _pendingSlashCommand: '' }))
+      patchSession(() => ({ _pendingSlashCommand: '', isRecapping: true }))
       const sid = resolveWriteSid()
       if (sid) {
         try {
-          await window.agent.requestSessionRecap(sid)
+          const ok = await window.agent.requestSessionRecap(sid)
+          if (!ok) patchSession(() => ({ isRecapping: false }))
         } catch {
-          /* fail closed — result/unavailable arrives as session_recap* events */
+          patchSession(() => ({ isRecapping: false }))
         }
+      } else {
+        patchSession(() => ({ isRecapping: false }))
       }
       return
     }

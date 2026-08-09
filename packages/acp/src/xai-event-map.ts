@@ -99,8 +99,7 @@ export function mapXaiSessionUpdate(
     case 'session_recap':
       return mapSessionRecap(update)
     case 'session_recap_unavailable':
-      // Manual /recap spinner clear only — SuperOne has no spinner for this.
-      return []
+      return [{ type: 'session_recap_unavailable' }]
     case 'unknown':
       return []
     default:

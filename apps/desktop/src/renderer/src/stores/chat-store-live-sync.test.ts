@@ -598,6 +598,7 @@ function createEmptySession() {
     _todosUserDismissed: false,
     _nextTodoId: 1,
     isCompacting: false,
+    isRecapping: false,
     rateLimitInfo: null,
     _gitBranch: null,
     _worktreePath: null,

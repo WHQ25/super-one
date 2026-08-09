@@ -275,7 +275,7 @@ describe('mapXaiSessionUpdate — session meta', () => {
     }])
     expect(mapXaiSessionUpdate({
       sessionUpdate: 'session_recap_unavailable',
-    }, state)).toEqual([])
+    }, state)).toEqual([{ type: 'session_recap_unavailable' }])
   })
 
   it('maps auto-compact lifecycle', () => {

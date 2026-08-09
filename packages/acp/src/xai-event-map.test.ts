@@ -481,7 +481,7 @@ describe('ACP xAI AgentEvent mapping', () => {
     }])
     expect(mapXaiSessionUpdate({
       sessionUpdate: 'session_recap_unavailable',
-    }, state)).toEqual([])
+    }, state)).toEqual([{ type: 'session_recap_unavailable' }])
   })
 
   it('deduplicates non-workflow notifications by event sequence', () => {

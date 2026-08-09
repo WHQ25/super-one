@@ -103,6 +103,7 @@ type SlashEvent = Extract<AgentEvent, {
     | 'checkpoint_captured'
     | 'turn_summary'
     | 'session_recap'
+    | 'session_recap_unavailable'
 }>
 
 export function reduceSlash(session: PerSessionState, event: SlashEvent): Partial<PerSessionState> {
@@ -118,13 +119,19 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
 
     case 'session_recap': {
       const summary = event.summary.trim()
-      if (!summary) return {}
-      return appendSystemTurnMeta(session, {
-        kind: 'recap',
-        text: summary,
-        ...(event.auto != null ? { auto: event.auto } : {}),
-      }, 'session_recap')
+      if (!summary) return { isRecapping: false }
+      return {
+        ...appendSystemTurnMeta(session, {
+          kind: 'recap',
+          text: summary,
+          ...(event.auto != null ? { auto: event.auto } : {}),
+        }, 'session_recap'),
+        isRecapping: false,
+      }
     }
+
+    case 'session_recap_unavailable':
+      return { isRecapping: false }
 
     case 'compact_boundary': {
       const compactUserId = session._pendingCompactUserId

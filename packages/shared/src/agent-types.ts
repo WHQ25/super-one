@@ -1216,6 +1216,8 @@ export type AgentEventBase =
    * Display-only meta — not part of the agent reply.
    */
   | { type: 'session_recap'; summary: string; auto?: boolean }
+  /** Grok could not produce a recap (manual `/recap` spinner clear). */
+  | { type: 'session_recap_unavailable' }
   | { type: 'shared_file'; shareId: string; file: ShareFilePayload; sentAt: number }
   | { type: 'shared_file_progress'; path: string; loaded: number; total: number }
   /** ACP session/new or set_config_option model catalog for the active session. */

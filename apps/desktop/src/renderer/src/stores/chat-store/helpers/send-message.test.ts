@@ -425,6 +425,21 @@ describe('sendMessageImpl: intercepted commands', () => {
     expect(mockRequestSessionRecap).toHaveBeenCalledWith('sid-grok')
     expect(mockSendMessage).not.toHaveBeenCalled()
     expect(getActiveSession('/proj').messages).toEqual([])
+    // RPC resolved true — stay in generating state until session_recap arrives.
+    expect(getActiveSession('/proj').isRecapping).toBe(true)
+  })
+
+  it('clears isRecapping when requestSessionRecap returns false', async () => {
+    mockRequestSessionRecap.mockClear().mockResolvedValue(false)
+    seedProject('/proj', 'sid-grok', {
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+    })
+
+    await useChatStore.getState().sendMessage('/recap')
+
+    expect(getActiveSession('/proj').isRecapping).toBe(false)
   })
 
   it('does not intercept /recap for non-Grok ACP agents', async () => {

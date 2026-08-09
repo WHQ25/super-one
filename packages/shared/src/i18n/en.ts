@@ -860,6 +860,7 @@ export type Messages = {
     turnMeta: {
       summaryLabel: string
       recapLabel: string
+      generatingRecap: string
     }
     pasteChip: {
       title_one: string
@@ -3214,7 +3215,8 @@ export const en: Messages = {
     },
     turnMeta: {
       summaryLabel: 'Summary:',
-      recapLabel: 'Recap',
+      recapLabel: 'Recap:',
+      generatingRecap: 'Generating recap…',
     },
     pasteChip: {
       title_one: 'Pasted text · {{count}} line',

@@ -171,6 +171,42 @@ describe('mounted session eviction protection', () => {
     useChatStore.getState().handleAgentEvent({ type: 'status_change', projectPath: '/p', sessionId: 'sid-mounted', status: 'idle' } as AgentEvent)
     expect(useChatStore.getState().projectSessions['/p']._sessions['sid-mounted']).toBeUndefined()
   })
+
+  it('does NOT evict a remote node project session (no desktop SQLite backup)', () => {
+    // remote:<connectionId>:<hostPath> sessions only live in renderer memory + node.
+    // Idle eviction forced cold rehydrate and occasionally dropped stream-only
+    // assistant turns (interrupted / catalog lag).
+    const projectKey = 'remote:env-1:/work/app'
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid-active'
+    proj._sessions = {
+      'sid-active': { ...createDefaultPerSessionState(), _historyHydrated: true },
+      'sid-bg': {
+        ...createDefaultPerSessionState(),
+        _historyHydrated: true,
+        status: 'streaming',
+        messages: [makeMessage('asst-keep', 'assistant')],
+      },
+    }
+    useChatStore.setState({
+      projectSessions: { [projectKey]: proj },
+      activeProject: projectKey,
+      mountedSessions: {},
+      remoteSessions: {},
+    })
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'status_change',
+      projectPath: projectKey,
+      sessionId: 'sid-bg',
+      status: 'idle',
+    } as AgentEvent)
+
+    const bg = useChatStore.getState().projectSessions[projectKey]!._sessions['sid-bg']
+    expect(bg).toBeDefined()
+    expect(bg.status).toBe('idle')
+    expect(bg.messages.map((m) => m.id)).toEqual(['asst-keep'])
+  })
 })
 
 describe('shared_file_progress', () => {

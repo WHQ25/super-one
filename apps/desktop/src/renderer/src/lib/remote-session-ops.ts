@@ -21,6 +21,8 @@ import {
 } from '@/lib/remote-session-messages'
 import { mapEnvironmentSessionRow } from '@/lib/session-list-ops'
 import { createDefaultPerSessionState } from '@/stores/chat-store/defaults'
+import { preferCatalogMessages } from '@/stores/chat-store/helpers/remote-message-catalog'
+import { _isLiveSession } from '@/stores/chat-store/helpers/lifecycle'
 import type { ChatProvider, PerSessionState } from '@/stores/chat-store/types'
 
 /** @deprecated Prefer mapEnvironmentSessionRow from session-list-ops. */
@@ -102,6 +104,55 @@ export async function hydrateRemotePerSession(
     pendingPermissions: pendingFields.pendingPermissions,
     pendingQuestion: pendingFields.pendingQuestion,
     pendingPlanApproval: pendingFields.pendingPlanApproval,
+    _historyHydrated: true,
+  }
+}
+
+/**
+ * Apply a remote hydrate result without clobbering messages/interaction state
+ * that landed via handleAgentEvent while getSession / messages.list were in flight.
+ *
+ * switchSession snapshots `previous` before those awaits; unconditionally
+ * `set(hydrated)` dropped concurrent stream deltas (and can re-open a turn that
+ * already settled in memory).
+ */
+export function mergeRemoteHydrateWithCurrent(
+  current: PerSessionState | null | undefined,
+  hydrated: PerSessionState,
+): PerSessionState {
+  if (!current) return hydrated
+
+  const messages = preferCatalogMessages(current.messages, hydrated.messages)
+  const currentLive = _isLiveSession(current)
+  const hydratedLive = _isLiveSession(hydrated)
+  // Prefer in-memory interaction when:
+  // - still live (stream advanced during await), or
+  // - already settled while the node snapshot still looked live (stale snap).
+  const preferCurrentInteraction =
+    currentLive || (!currentLive && current.messages.length > 0 && hydratedLive)
+
+  return {
+    ...hydrated,
+    messages,
+    // Composer / queue are renderer-only — never take the pre-await snapshot.
+    draftText: current.draftText,
+    draftJson: current.draftJson,
+    attachments: current.attachments,
+    mentions: current.mentions,
+    browserAnnotations: current.browserAnnotations,
+    queuedMessages: current.queuedMessages,
+    promptSuggestion: current.promptSuggestion,
+    ...(preferCurrentInteraction
+      ? {
+          status: current.status,
+          awaitingAssistantReply: current.awaitingAssistantReply,
+          pendingPermissions: current.pendingPermissions,
+          pendingQuestion: current.pendingQuestion,
+          pendingPlanApproval: current.pendingPlanApproval,
+          lastAssistantMessageId:
+            current.lastAssistantMessageId ?? hydrated.lastAssistantMessageId,
+        }
+      : {}),
     _historyHydrated: true,
   }
 }

@@ -27,6 +27,18 @@ vi.mock('@/stores/chat-store/defaults', () => ({
     sessionProvider: null,
     preferredProvider: 'codex',
     _historyHydrated: true,
+    awaitingAssistantReply: false,
+    pendingPermissions: [],
+    pendingQuestion: null,
+    pendingPlanApproval: null,
+    draftText: '',
+    draftJson: null,
+    attachments: [],
+    mentions: [],
+    browserAnnotations: [],
+    queuedMessages: [],
+    promptSuggestion: null,
+    lastAssistantMessageId: null,
   }),
 }))
 
@@ -36,6 +48,7 @@ const {
   createRemoteSessionEventMapper,
   pollRemoteSessionAgentEvents,
   mapNodeSessionEvents,
+  mergeRemoteHydrateWithCurrent,
 } = await import('./remote-session-ops')
 
 describe('resolveNodeSessionId', () => {
@@ -213,5 +226,79 @@ describe('remote session.events → AgentEvent', () => {
     expect(events).toEqual([
       expect.objectContaining({ type: 'status_change', status: 'idle', sessionId: 's' }),
     ])
+  })
+})
+
+describe('mergeRemoteHydrateWithCurrent', () => {
+  const msg = (
+    id: string,
+    role: 'user' | 'assistant',
+    text: string,
+    status: 'streaming' | 'complete' = 'complete',
+  ) => ({
+    id,
+    role,
+    status,
+    content: [{ type: 'text' as const, text }],
+    createdAt: new Date().toISOString(),
+    providerId: 'claude',
+  })
+
+  const baseSession = (overrides: Record<string, unknown> = {}) => ({
+    messages: [] as ReturnType<typeof msg>[],
+    status: 'idle' as const,
+    sessionProvider: 'claude' as const,
+    preferredProvider: 'claude' as const,
+    _historyHydrated: true,
+    awaitingAssistantReply: false,
+    pendingPermissions: [] as unknown[],
+    pendingQuestion: null,
+    pendingPlanApproval: null,
+    draftText: '',
+    draftJson: null,
+    attachments: [] as unknown[],
+    mentions: [] as unknown[],
+    browserAnnotations: [] as unknown[],
+    queuedMessages: [] as unknown[],
+    promptSuggestion: null,
+    lastAssistantMessageId: null as string | null,
+    ...overrides,
+  })
+
+  it('is exported for switchSession apply path', () => {
+    expect(typeof mergeRemoteHydrateWithCurrent).toBe('function')
+  })
+
+  it('keeps concurrent local stream content when hydrated snapshot is stale', () => {
+    const current = baseSession({
+      messages: [msg('u1', 'user', 'hi'), msg('a1', 'assistant', 'Hello world', 'complete')],
+      status: 'idle',
+      awaitingAssistantReply: false,
+      lastAssistantMessageId: 'a1',
+      draftText: 'typed while away',
+    })
+    const hydrated = baseSession({
+      messages: [msg('u1', 'user', 'hi'), msg('a1', 'assistant', 'Hello', 'streaming')],
+      status: 'streaming',
+      awaitingAssistantReply: true,
+      lastAssistantMessageId: 'a1',
+      draftText: '',
+    })
+
+    const merged = mergeRemoteHydrateWithCurrent(current as never, hydrated as never)
+
+    const asst = merged.messages.find((m) => m.id === 'a1')
+    expect(asst?.content).toEqual([{ type: 'text', text: 'Hello world' }])
+    expect(merged.status).toBe('idle')
+    expect(merged.awaitingAssistantReply).toBe(false)
+    expect(merged.draftText).toBe('typed while away')
+  })
+
+  it('returns hydrated as-is when there is no current session', () => {
+    const hydrated = baseSession({
+      messages: [msg('a1', 'assistant', 'from node')],
+      status: 'idle',
+    })
+    expect(mergeRemoteHydrateWithCurrent(null, hydrated as never)).toBe(hydrated)
   })
 })

@@ -431,7 +431,17 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
 
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
         if (!_isLiveSession(updatedSession)) {
-          const isProtected = isRemoteSession(s, projectPath, targetSid) || isMountedSession(s, projectPath, targetSid)
+          // Protect:
+          // - mobile remote-control subscriptions (isRemoteSession)
+          // - mosaic/mounted tiles
+          // - remote *node* project sessions — no desktop SQLite; idle eviction
+          //   would force cold rehydrate and drop stream-only assistant turns
+          //   (interrupted / error / mid-catalog lag).
+          const isRemoteNodeProject = projectPath.startsWith('remote:')
+          const isProtected =
+            isRemoteSession(s, projectPath, targetSid) ||
+            isMountedSession(s, projectPath, targetSid) ||
+            isRemoteNodeProject
           if (!isProtected && effectiveSid) {
             updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
             if (updatedSession.sessionProvider === 'codex') {

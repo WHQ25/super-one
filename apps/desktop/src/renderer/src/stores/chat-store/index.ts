@@ -643,9 +643,11 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
     const remoteKey = parseRemoteProjectKey(activeProject)
     if (remoteKey) {
-      const { hydrateRemotePerSession, resumeRemoteSessionIfLive } = await import(
-        '@/lib/remote-session-ops'
-      )
+      const {
+        hydrateRemotePerSession,
+        resumeRemoteSessionIfLive,
+        mergeRemoteHydrateWithCurrent,
+      } = await import('@/lib/remote-session-ops')
       const prev = project._sessions[sessionId] ?? null
       let hydrated = await hydrateRemotePerSession(activeProject, sessionId, prev)
       // Prefer denser catalog when host exposes listSessionMessages (session.messages.list).
@@ -679,21 +681,26 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       } catch (err) {
         console.warn('[chat] session.messages.list hydrate failed:', err)
       }
+      // Re-merge with whatever landed in _sessions during the awaits above.
+      // Unconditional set(hydrated) dropped concurrent stream deltas (race).
+      let applied = hydrated
       set((s) => {
         const proj = getProject(s, activeProject)
+        const current = proj._sessions[sessionId]
+        applied = mergeRemoteHydrateWithCurrent(current, hydrated)
         return {
           projectSessions: {
             ...s.projectSessions,
             [activeProject]: {
               ...proj,
               _activeSessionId: sessionId,
-              _sessions: { ...proj._sessions, [sessionId]: hydrated },
+              _sessions: { ...proj._sessions, [sessionId]: applied },
             },
           },
         }
       })
       // Local parity: open a live session → keep agent:event flowing (Session resume).
-      resumeRemoteSessionIfLive(activeProject, sessionId, hydrated)
+      resumeRemoteSessionIfLive(activeProject, sessionId, applied)
       return
     }
 

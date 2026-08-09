@@ -4,6 +4,7 @@ import {
   parseGitStatusOutput,
   parseGitStatusFiles,
   resolveEntryStatusPair,
+  GIT_TREE_STATUS_ARGS,
 } from './status-utils'
 
 describe('parseGitStatusLine', () => {
@@ -311,5 +312,22 @@ describe('resolveEntryStatusPair — file tree coloring', () => {
     const parsed = parseGitStatusOutput('!! build/\n?? build/leak.ts')
     // ignored ancestor takes precedence for descendants
     expect(resolveEntryStatusPair('build/leak.ts', false, parsed).worktree).toBe('!')
+  })
+})
+
+describe('file-tree status args', () => {
+  it('asks git for matching ignores so it never walks inside ignored dirs', () => {
+    // `--ignored` (traditional) forces a full working-tree walk; on a repo with
+    // node_modules that is ~700ms per folder expansion vs ~30ms for matching.
+    expect(GIT_TREE_STATUS_ARGS).toEqual(['status', '--porcelain=v1', '--ignored=matching'])
+  })
+
+  it('still reports ignored directories, which is what tree coloring inherits from', () => {
+    // `matching` collapses a pattern-matched directory to one `!! dir/` line,
+    // so ancestor inheritance keeps working without the deep walk.
+    const parsed = parseGitStatusOutput('!! node_modules/\n M src/a.ts')
+    expect(resolveEntryStatusPair('node_modules', true, parsed).worktree).toBe('!')
+    expect(resolveEntryStatusPair('node_modules/pkg/index.js', false, parsed).worktree).toBe('!')
+    expect(resolveEntryStatusPair('src/a.ts', false, parsed)).toEqual({ index: null, worktree: 'M' })
   })
 })

@@ -118,6 +118,7 @@ import {
   parseGitStatusOutput,
   parseGitStatusFiles,
   resolveEntryStatusPair,
+  GIT_TREE_STATUS_ARGS,
   type GitStatusPair,
   type ParsedGitStatus,
 } from './git-status-utils'
@@ -2577,7 +2578,7 @@ function registerIpcHandlers(): void {
     try {
       let parsed: ParsedGitStatus = EMPTY_PARSED_STATUS
       try {
-        const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
+        const raw = await gitRun(folderPath, GIT_TREE_STATUS_ARGS)
         if (raw) parsed = parseGitStatusOutput(raw)
       } catch { /* not a git repo or no commits */ }
 
@@ -2625,14 +2626,15 @@ function registerIpcHandlers(): void {
   })
 
   // Read once per directory listing, so a short TTL is what keeps a deep tree
-  // expansion from re-running `git status --ignored` for every folder.
+  // expansion from re-running the status read for every folder. The file
+  // watcher also invalidates this on any change (see FILE_WATCH_START).
   const GIT_STATUS_CACHE_TTL_MS = 1500
   const gitStatusSnapshot = new AsyncCoalescer<ParsedGitStatus>(GIT_STATUS_CACHE_TTL_MS)
 
   function getGitStatusMap(folderPath: string) {
     return gitStatusSnapshot.get(folderPath, async () => {
       try {
-        const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'], undefined, GIT_READ_OPTS)
+        const raw = await gitRun(folderPath, GIT_TREE_STATUS_ARGS, undefined, GIT_READ_OPTS)
         if (raw) return parseGitStatusOutput(raw)
       } catch (err) {
         logGitFailure('GIT_STATUS_MAP', folderPath, err, existsSync(join(folderPath, '.git')))

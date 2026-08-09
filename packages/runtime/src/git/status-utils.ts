@@ -14,6 +14,27 @@ export interface ParsedGitStatusLine {
   isDirEntry: boolean
 }
 
+/**
+ * The status read behind file-tree coloring.
+ *
+ * `--ignored` alone means `--ignored=traditional`, which makes git walk the
+ * *entire* working tree — descending into every ignored directory — just to
+ * decide whether an untracked directory can be collapsed into a single
+ * `!! dir/` line. On a repo with node_modules that is ~700ms versus ~30ms for
+ * `matching`, and the file tree pays it on every folder expansion whose status
+ * snapshot has aged out, so it reads as "expanding a folder is slow".
+ *
+ * `matching` reports everything that matches an ignore pattern, directories
+ * included and not descended into — which is exactly what
+ * {@link resolveEntryStatusPair}'s ancestor inheritance consumes. The one
+ * behavior it drops is greying an *untracked* directory whose contents happen
+ * to be entirely ignored without the directory itself matching a pattern; its
+ * ignored children still grey correctly.
+ *
+ * `apps/cli`'s workspace git-service avoids `--ignored` for the same reason.
+ */
+export const GIT_TREE_STATUS_ARGS: string[] = ['status', '--porcelain=v1', '--ignored=matching']
+
 export const IGNORED_PAIR: GitStatusPair = { index: null, worktree: '!' }
 export const UNTRACKED_PAIR: GitStatusPair = { index: null, worktree: '?' }
 export const EMPTY_PAIR: GitStatusPair = { index: null, worktree: null }

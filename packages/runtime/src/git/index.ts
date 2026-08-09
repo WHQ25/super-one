@@ -32,6 +32,7 @@ export {
   UNTRACKED_PAIR,
   EMPTY_PAIR,
   GIT_STATUS_PRIORITY,
+  GIT_TREE_STATUS_ARGS,
   type GitStatusPair,
   type ParsedGitStatusLine,
   type ParsedGitStatus,

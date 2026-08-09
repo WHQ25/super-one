@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.51.2-alpha] - 2026-08-10
+
+### Added
+
+- Chat: host `/workflows` and `/workflow` CLI popup for Grok (and shared session workflows UI for Claude/ACP); discover `.rhai` scripts, suggest manage ops, and rewrite key=value args to JSON on send.
+- Chat: Grok workflow full view and status UI — open full view from resolved run dirs, highlight Rhai sources, map graph nodes to runtime agents by label, compact phase/token chips, and surface running workflows next to bash/agents in the status bar.
+- Settings: pin default and secondary harness preferences for ChatSuggestions (also via config tools); Auto ranks by recent parent sessions only so collaboration children do not inflate usage order.
+
+### Fixed
+
+- Chat: open the `/workflow` args picker only after the command is committed (trailing space / Tab / Enter), so bare `/workflow` no longer hides `/workflows`.
+- Desktop: share one `useHostProjects` source for sidebar, ChatSuggestions, and ProjectSelector so the project menu keeps data across transient gateway errors instead of blanking.
+- Session: centralize HITL confirm lifecycle in `HostConfirmRegistry` so permission prompts dismiss reliably on accept, cancel, and timeout.
+
+### Performance
+
+- Git: use `--ignored=matching` for file-tree status so expanding folders no longer walks entire ignored directory trees.
+
 ## [0.51.1-alpha] - 2026-08-09
 
 ### Added

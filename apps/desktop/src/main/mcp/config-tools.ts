@@ -7,6 +7,7 @@ import {
 } from '@superone/shared/agent-types'
 import log from '../logger'
 import { readAppSettings } from '../app-settings-service'
+import { HostConfirmRegistry } from '../session/host-confirm-registry'
 import {
   buildDomainGuide,
   buildPatchFromValues,
@@ -44,58 +45,43 @@ function toolResult(value: unknown) {
 
 // --- HITL confirmation round-trip (mirrors media-tools' video-confirm flow) ---
 
-const pendingConfigConfirms = new Map<string, {
-  resolve: (value: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }) => void
-  reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
-}>()
+type ConfirmOutcome = { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }
 
-const CONFIG_CONFIRM_TIMEOUT_MS = 120_000
+// Matches the collaboration confirm window — a settings dialog is reviewed by a human, and the
+// shorter window used to fire while the user was still reading it.
+const CONFIG_CONFIRM_TIMEOUT_MS = 10 * 60_000
+
+const configConfirms = new HostConfirmRegistry<ConfirmOutcome>({
+  idPrefix: 'configconfirm',
+  timeoutMs: CONFIG_CONFIRM_TIMEOUT_MS,
+  timeoutError: () => new Error(`Settings confirmation timed out after ${CONFIG_CONFIRM_TIMEOUT_MS}ms`),
+})
 
 export function resolveConfigConfirm(requestId: string, action: string, content?: Record<string, unknown>): boolean {
-  const pending = pendingConfigConfirms.get(requestId)
-  if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingConfigConfirms.delete(requestId)
-  pending.resolve({ action: action as 'accept' | 'decline' | 'cancel', content })
-  return true
+  return configConfirms.settle(requestId, action === 'accept', {
+    action: action as ConfirmOutcome['action'],
+    content,
+  })
 }
 
 export function rejectConfigConfirm(requestId: string, reason: string): boolean {
-  const pending = pendingConfigConfirms.get(requestId)
-  if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingConfigConfirms.delete(requestId)
-  pending.reject(new Error(reason))
-  return true
+  return configConfirms.fail(requestId, new Error(reason))
 }
 
-type ConfirmOutcome = { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }
-
 async function awaitConfigConfirm(session: SessionTitleSetter, message: string, payload: ConfigConfirmPayload): Promise<ConfirmOutcome> {
-  const requestId = `configconfirm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  log.info('[config-tools] opening config confirm requestId=%s', requestId)
-  return new Promise<ConfirmOutcome>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingConfigConfirms.delete(requestId)
-      reject(new Error(`Settings confirmation timed out after ${CONFIG_CONFIRM_TIMEOUT_MS}ms`))
-    }, CONFIG_CONFIRM_TIMEOUT_MS)
-    pendingConfigConfirms.set(requestId, { resolve, reject, timer })
-
-    session.emitHostEvent!({
-      type: 'permission_request',
-      request: {
-        requestId,
-        toolName: 'config_apply',
-        toolUseId: requestId,
-        input: {} as Record<string, unknown>,
-        allowAlwaysAllow: false,
-        requestKind: 'config_confirm' as const,
-        serverName: 'superone',
-        message,
-        configConfirm: payload,
-      },
-    })
+  return configConfirms.open(session, (requestId) => {
+    log.info('[config-tools] opening config confirm requestId=%s', requestId)
+    return {
+      requestId,
+      toolName: 'config_apply',
+      toolUseId: requestId,
+      input: {} as Record<string, unknown>,
+      allowAlwaysAllow: false,
+      requestKind: 'config_confirm' as const,
+      serverName: 'superone',
+      message,
+      configConfirm: payload,
+    }
   })
 }
 

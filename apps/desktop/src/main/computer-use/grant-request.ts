@@ -1,4 +1,5 @@
 import type { AgentEvent, ComputerUseAlwaysAllowApp, ComputerUseGrantPayload } from '@superone/shared/agent-types'
+import { HostConfirmRegistry } from '../session/host-confirm-registry'
 import { resolveAppIconDataUri } from './app-icon-resolver'
 import type { ComputerUseService } from './computer-use-service'
 import { ComputerUseError } from './types'
@@ -18,20 +19,16 @@ type SettingsLike = {
   saveAppSettings(patch: { computerUseAlwaysAllowApps: ComputerUseAlwaysAllowApp[] }): unknown
 }
 
-type PendingGrant = {
-  resolve: (decision: ComputerUseGrantDecision) => void
-  reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
-  sessionId: string
-  bundleId: string
-  app: string
-}
-
-const pendingGrants = new Map<string, PendingGrant>()
 /** Coalesce concurrent prompts for the same session+app. */
 const inflightByKey = new Map<string, Promise<ComputerUseGrantDecision>>()
 
 const GRANT_TIMEOUT_MS = 120_000
+
+const pendingGrants = new HostConfirmRegistry<ComputerUseGrantDecision>({
+  idPrefix: 'cugrant',
+  timeoutMs: GRANT_TIMEOUT_MS,
+  timeoutError: () => new ComputerUseError('NOT_GRANTED', 'Computer Use grant timed out.'),
+})
 
 /** Test-only injection to avoid electron graph in unit tests. */
 let testSessionHost: SessionHostLike | null | undefined
@@ -59,25 +56,12 @@ export function resolveComputerUseGrant(
   allow: boolean,
   alwaysAllow?: boolean,
 ): boolean {
-  const pending = pendingGrants.get(requestId)
-  if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingGrants.delete(requestId)
-  if (!allow) {
-    pending.resolve('deny')
-    return true
-  }
-  pending.resolve(alwaysAllow ? 'always' : 'session')
-  return true
+  if (!allow) return pendingGrants.settle(requestId, false, 'deny')
+  return pendingGrants.settle(requestId, true, alwaysAllow ? 'always' : 'session')
 }
 
 export function rejectComputerUseGrant(requestId: string, _reason: string): boolean {
-  const pending = pendingGrants.get(requestId)
-  if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingGrants.delete(requestId)
-  pending.resolve('cancel')
-  return true
+  return pendingGrants.settle(requestId, false, 'cancel')
 }
 
 function inflightKey(sessionId: string, bundleId: string): string {
@@ -207,7 +191,6 @@ async function requestGrantFromUser(payload: {
     )
   }
 
-  const requestId = `cugrant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   // Best-effort icon for first paint; renderer still resolves via IPC if missing.
   let iconDataUri: string | undefined
   try {
@@ -235,56 +218,38 @@ async function requestGrantFromUser(payload: {
     ...(iconDataUri ? { iconDataUri } : {}),
   }
 
-  return new Promise<ComputerUseGrantDecision>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingGrants.delete(requestId)
-      reject(
+  return pendingGrants.open(
+    session,
+    (requestId) => ({
+      requestId,
+      toolName: payload.toolName,
+      toolUseId: requestId,
+      input: {
+        app: payload.app,
+        bundleId: payload.bundleId,
+      },
+      allowAlwaysAllow: true,
+      supportsAlwaysPersist: true,
+      requestKind: 'computer_use_grant',
+      serverName: 'superone',
+      message: `Allow Computer Use for ${payload.app}?`,
+      subtitle: payload.bundleId,
+      riskLevel: 'medium',
+      computerUseGrant: grantPayload,
+    }),
+    {
+      timeoutError: () =>
         new ComputerUseError(
           'NOT_GRANTED',
           `Computer Use grant timed out for ${payload.app} (${payload.bundleId}).`,
           { bundleId: payload.bundleId },
         ),
-      )
-    }, GRANT_TIMEOUT_MS)
-
-    pendingGrants.set(requestId, {
-      resolve,
-      reject,
-      timer,
-      sessionId: payload.sessionId,
-      bundleId: payload.bundleId,
-      app: payload.app,
-    })
-
-    const event: AgentEvent = {
-      type: 'permission_request',
-      request: {
-        requestId,
-        toolName: payload.toolName,
-        toolUseId: requestId,
-        input: {
-          app: payload.app,
-          bundleId: payload.bundleId,
-        },
-        allowAlwaysAllow: true,
-        supportsAlwaysPersist: true,
-        requestKind: 'computer_use_grant',
-        serverName: 'superone',
-        message: `Allow Computer Use for ${payload.app}?`,
-        subtitle: payload.bundleId,
-        riskLevel: 'medium',
-        computerUseGrant: grantPayload,
-      },
-    }
-    session.emitHostEvent!(event)
-  })
+    },
+  )
 }
 
 /** Test helper — drop parked grants without resolving waiters (avoid unhandled rejections). */
 export function clearPendingComputerUseGrants(): void {
-  for (const pending of pendingGrants.values()) {
-    clearTimeout(pending.timer)
-  }
-  pendingGrants.clear()
+  pendingGrants.clearForTests()
   inflightByKey.clear()
 }

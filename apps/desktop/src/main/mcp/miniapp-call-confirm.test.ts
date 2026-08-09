@@ -31,7 +31,15 @@ describe('miniapp-call-confirm', () => {
       toolInput: { x: 1 },
     })
     expect(outcome).toEqual({ action: 'accept', alwaysAllow: true })
-    expect(emit).toHaveBeenCalledTimes(1)
+    // The prompt is raised and dismissed — without the trailing interaction_resolved the
+    // renderer would keep the confirm card in `pendingPermissions` forever.
+    expect(emit).toHaveBeenCalledTimes(2)
+    expect(emit.mock.calls[1][0]).toEqual({
+      type: 'interaction_resolved',
+      interactionType: 'permission',
+      requestId,
+      approved: true,
+    })
   })
 
   it('resolves decline', async () => {

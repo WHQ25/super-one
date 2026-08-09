@@ -9,6 +9,7 @@
  */
 
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { HostConfirmRegistry } from '../session/host-confirm-registry'
 import { MINIAPP_CALL_QUALIFIED } from './miniapp-call-policy'
 
 const CONFIRM_TIMEOUT_MS = 120_000
@@ -17,11 +18,11 @@ export type MiniappCallConfirmOutcome =
   | { action: 'accept'; alwaysAllow: boolean }
   | { action: 'decline' | 'cancel'; reason?: string }
 
-const pending = new Map<string, {
-  resolve: (outcome: MiniappCallConfirmOutcome) => void
-  reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
-}>()
+const confirms = new HostConfirmRegistry<MiniappCallConfirmOutcome>({
+  idPrefix: 'miniappcall',
+  timeoutMs: CONFIRM_TIMEOUT_MS,
+  timeoutError: () => new Error(`Mini-app tool confirmation timed out after ${CONFIRM_TIMEOUT_MS}ms`),
+})
 
 export function resolveMiniappCallConfirm(
   requestId: string,
@@ -29,22 +30,13 @@ export function resolveMiniappCallConfirm(
   alwaysAllow = false,
   reason?: string,
 ): boolean {
-  const entry = pending.get(requestId)
-  if (!entry) return false
-  clearTimeout(entry.timer)
-  pending.delete(requestId)
-  if (action === 'accept') entry.resolve({ action: 'accept', alwaysAllow })
-  else entry.resolve({ action, reason })
-  return true
+  const outcome: MiniappCallConfirmOutcome =
+    action === 'accept' ? { action: 'accept', alwaysAllow } : { action, reason }
+  return confirms.settle(requestId, action === 'accept', outcome)
 }
 
 export function rejectMiniappCallConfirm(requestId: string, reason: string): boolean {
-  const entry = pending.get(requestId)
-  if (!entry) return false
-  clearTimeout(entry.timer)
-  pending.delete(requestId)
-  entry.reject(new Error(reason))
-  return true
+  return confirms.fail(requestId, new Error(reason))
 }
 
 export async function awaitMiniappCallConfirm(opts: {
@@ -55,34 +47,23 @@ export async function awaitMiniappCallConfirm(opts: {
   appName?: string
   toolDisplayName?: string
 }): Promise<MiniappCallConfirmOutcome> {
-  const requestId = `miniappcall_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const label = opts.toolDisplayName ?? opts.tool
   const appLabel = opts.appName ?? opts.appId
-  return new Promise<MiniappCallConfirmOutcome>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(requestId)
-      reject(new Error(`Mini-app tool confirmation timed out after ${CONFIRM_TIMEOUT_MS}ms`))
-    }, CONFIRM_TIMEOUT_MS)
-    pending.set(requestId, { resolve, reject, timer })
-    opts.emitHostEvent({
-      type: 'permission_request',
-      request: {
-        requestId,
-        toolName: MINIAPP_CALL_QUALIFIED,
-        toolUseId: requestId,
-        input: {
-          appId: opts.appId,
-          tool: opts.tool,
-          input: opts.toolInput,
-        },
-        allowAlwaysAllow: true,
-        // Distinct from video_gen_confirm so Codex elicitation auto-accept cannot
-        // confuse this host event (host events never go through mapApprovalRequest,
-        // but the kind documents intent and keeps PermissionPrompt routing clear).
-        requestKind: undefined,
-        serverName: 'superone',
-        message: `Allow mini-app "${appLabel}" to run tool "${label}"?`,
-      },
-    })
-  })
+  return confirms.open({ emitHostEvent: opts.emitHostEvent }, (requestId) => ({
+    requestId,
+    toolName: MINIAPP_CALL_QUALIFIED,
+    toolUseId: requestId,
+    input: {
+      appId: opts.appId,
+      tool: opts.tool,
+      input: opts.toolInput,
+    },
+    allowAlwaysAllow: true,
+    // Distinct from video_gen_confirm so Codex elicitation auto-accept cannot
+    // confuse this host event (host events never go through mapApprovalRequest,
+    // but the kind documents intent and keeps PermissionPrompt routing clear).
+    requestKind: undefined,
+    serverName: 'superone',
+    message: `Allow mini-app "${appLabel}" to run tool "${label}"?`,
+  }))
 }

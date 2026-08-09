@@ -16,7 +16,7 @@ vi.mock('../logger', () => ({
 vi.mock('electron', () => ({ safeStorage: { isEncryptionAvailable: () => false } }))
 
 import { CONFIG_APPLY_FIELD, type AgentEvent } from '@superone/shared/agent-types'
-import { configApplyHandler, configReadHandler, resolveConfigConfirm } from './config-tools'
+import { configApplyHandler, configReadHandler, rejectConfigConfirm, resolveConfigConfirm } from './config-tools'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 
 function createMockDb() {
@@ -259,6 +259,78 @@ describe('config_apply — ai-provider / custom-platform resources (global, not 
     expect(result.resource).toBe('ai-provider')
     expect(result.records).toEqual([])
     expect(String(result.hint)).toContain('recordId')
+  })
+})
+
+describe('config_apply — confirmation dialog lifecycle', () => {
+  beforeEach(() => {
+    getDbMock.mockReset()
+  })
+
+  function startPendingConfirm(emitHostEvent: ReturnType<typeof vi.fn>) {
+    createMockDb()
+    return configApplyHandler(
+      {
+        resource: {
+          resource: 'ai-provider',
+          operation: 'create',
+          values: { platformId: 'zhipu-cn', planId: 'default', name: 'My Key', secret: 'sk-abcdef123456' },
+        },
+      },
+      makeDepsNoProject(emitHostEvent),
+    )
+  }
+
+  function resolvedEvents(emitHostEvent: ReturnType<typeof vi.fn>): AgentEvent[] {
+    return emitHostEvent.mock.calls
+      .map((call) => call[0] as AgentEvent)
+      .filter((event) => event.type === 'interaction_resolved')
+  }
+
+  it('dismisses the prompt in the UI when the confirmation times out', async () => {
+    vi.useFakeTimers()
+    try {
+      const emitHostEvent = vi.fn()
+      const handlerPromise = startPendingConfirm(emitHostEvent)
+      const requestId = capturedRequestId(emitHostEvent)
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000 + 1)
+
+      expect(resolvedEvents(emitHostEvent)).toEqual([
+        { type: 'interaction_resolved', interactionType: 'permission', requestId, approved: false },
+      ])
+      const result = parseResult(await handlerPromise)
+      expect(result.status).toBe('error')
+      expect(String(result.message)).toContain('timed out')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('dismisses the prompt in the UI when the pending confirmation is cancelled', async () => {
+    const emitHostEvent = vi.fn()
+    const handlerPromise = startPendingConfirm(emitHostEvent)
+    const requestId = capturedRequestId(emitHostEvent)
+
+    expect(rejectConfigConfirm(requestId, 'User cancelled')).toBe(true)
+
+    expect(resolvedEvents(emitHostEvent)).toEqual([
+      { type: 'interaction_resolved', interactionType: 'permission', requestId, approved: false },
+    ])
+    expect(parseResult(await handlerPromise).status).toBe('error')
+  })
+
+  it('dismisses the prompt in the UI when the user answers the confirmation', async () => {
+    const emitHostEvent = vi.fn()
+    const handlerPromise = startPendingConfirm(emitHostEvent)
+    const requestId = capturedRequestId(emitHostEvent)
+
+    resolveConfigConfirm(requestId, 'decline', { feedback: 'no thanks' })
+
+    expect(resolvedEvents(emitHostEvent)).toEqual([
+      { type: 'interaction_resolved', interactionType: 'permission', requestId, approved: false },
+    ])
+    expect(parseResult(await handlerPromise).status).toBe('rejected')
   })
 })
 

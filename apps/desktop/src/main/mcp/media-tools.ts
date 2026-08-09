@@ -20,6 +20,7 @@ import {
 } from '../media-gen/providers'
 import { getMediaProviderStatuses } from '../media-gen/settings-service'
 import { readVideoGeneration, submitVideoGeneration } from '../media-gen/video/history'
+import { HostConfirmRegistry } from '../session/host-confirm-registry'
 import type { VideoFrameInput } from '../media-gen/video/service'
 import {
   GENERATE_IMAGE_DESCRIPTION,
@@ -244,30 +245,25 @@ function applyVideoGenParams(args: GenerateVideoArgs, params: VideoGenParams): v
  * identically on the Claude in-process server and the Codex stdio bridge (which executes
  * the tool back in the main process, with no McpServer instance in hand).
  */
-const pendingVideoConfirms = new Map<string, {
-  resolve: (value: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }) => void
-  reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
-}>()
+type VideoConfirmOutcome = { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }
 
 const VIDEO_CONFIRM_TIMEOUT_MS = 120_000
 
+const videoConfirms = new HostConfirmRegistry<VideoConfirmOutcome>({
+  idPrefix: 'videoconfirm',
+  timeoutMs: VIDEO_CONFIRM_TIMEOUT_MS,
+  timeoutError: () => new Error(`Video confirmation timed out after ${VIDEO_CONFIRM_TIMEOUT_MS}ms`),
+})
+
 export function resolveVideoConfirm(requestId: string, action: string, content?: Record<string, unknown>): boolean {
-  const pending = pendingVideoConfirms.get(requestId)
-  if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingVideoConfirms.delete(requestId)
-  pending.resolve({ action: action as 'accept' | 'decline' | 'cancel', content })
-  return true
+  return videoConfirms.settle(requestId, action === 'accept', {
+    action: action as VideoConfirmOutcome['action'],
+    content,
+  })
 }
 
 export function rejectVideoConfirm(requestId: string, reason: string): boolean {
-  const pending = pendingVideoConfirms.get(requestId)
-  if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingVideoConfirms.delete(requestId)
-  pending.reject(new Error(reason))
-  return true
+  return videoConfirms.fail(requestId, new Error(reason))
 }
 
 async function confirmVideoGeneration(
@@ -282,10 +278,6 @@ async function confirmVideoGeneration(
     referenceImages: buildReferenceImageRefs(args),
   }
 
-  const requestId = `videoconfirm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  log.info('[media-tools] opening video confirm requestId=%s', requestId)
-  trace('media.elicitation', 'video-confirm-open', { requestId })
-
   const session = deps.sessionHost?.getSession(deps.sessionId) ?? null
   if (!session?.emitHostEvent) {
     return {
@@ -295,29 +287,22 @@ async function confirmVideoGeneration(
     }
   }
 
-  let elicitResult: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }
+  let elicitResult: VideoConfirmOutcome
   try {
-    elicitResult = await new Promise<typeof elicitResult>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pendingVideoConfirms.delete(requestId)
-        reject(new Error(`Video confirmation timed out after ${VIDEO_CONFIRM_TIMEOUT_MS}ms`))
-      }, VIDEO_CONFIRM_TIMEOUT_MS)
-      pendingVideoConfirms.set(requestId, { resolve, reject, timer })
-
-      session.emitHostEvent!({
-        type: 'permission_request',
-        request: {
-          requestId,
-          toolName: 'media_generate_video',
-          toolUseId: requestId,
-          input: {} as Record<string, unknown>,
-          allowAlwaysAllow: false,
-          requestKind: 'video_gen_confirm' as const,
-          serverName: 'superone',
-          message: `Confirm video generation: "${args.prompt.slice(0, 120)}"`,
-          videoGenConfirm: payload,
-        },
-      })
+    elicitResult = await videoConfirms.open(session, (requestId) => {
+      log.info('[media-tools] opening video confirm requestId=%s', requestId)
+      trace('media.elicitation', 'video-confirm-open', { requestId })
+      return {
+        requestId,
+        toolName: 'media_generate_video',
+        toolUseId: requestId,
+        input: {} as Record<string, unknown>,
+        allowAlwaysAllow: false,
+        requestKind: 'video_gen_confirm' as const,
+        serverName: 'superone',
+        message: `Confirm video generation: "${args.prompt.slice(0, 120)}"`,
+        videoGenConfirm: payload,
+      }
     })
   } catch (error) {
     return {

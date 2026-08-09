@@ -21,6 +21,11 @@ export function suggestionHarnessKey(provider: HarnessId, acpAgentId?: string | 
   return provider
 }
 
+function preferenceKey(pref: SuggestionHarnessPreference | null | undefined): string | null {
+  if (!pref) return null
+  return suggestionHarnessKey(pref.provider, pref.acpAgentId)
+}
+
 function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'acpAgentId'>): number {
   if (option.provider === 'claude') return 0
   if (option.provider === 'codex') return 1
@@ -37,12 +42,17 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
  * - Always include claude + codex
  * - Include each visible ACP agent as its own entry
  * - Include opencode only when experimental agents are enabled
- * - Sort by last-window sessionCount desc, then stable product default order
+ * - Manual default → secondary pins first, then parent-session count desc,
+ *   then stable product default order
  */
 export function orderSuggestionHarnesses(input: {
   ranks: HarnessSessionRank[]
   acpAgents: Array<{ id: string; name: string }>
   experimentalAgentsEnabled: boolean
+  /** null/undefined = Auto (no pin). */
+  defaultHarness?: SuggestionHarnessPreference | null
+  /** null/undefined = Auto (no pin). Ignored when equal to default. */
+  secondaryHarness?: SuggestionHarnessPreference | null
 }): SuggestionHarnessOption[] {
   const countByKey = new Map(input.ranks.map((r) => [r.key, r.sessionCount] as const))
 
@@ -84,12 +94,34 @@ export function orderSuggestionHarnesses(input: {
     })
   }
 
-  return options.sort((a, b) => {
+  const defaultKey = preferenceKey(input.defaultHarness)
+  const secondaryKey = preferenceKey(input.secondaryHarness)
+  const effectiveSecondaryKey =
+    secondaryKey && secondaryKey !== defaultKey ? secondaryKey : null
+
+  const byUsageThenDefault = (a: SuggestionHarnessOption, b: SuggestionHarnessOption): number => {
     if (b.sessionCount !== a.sessionCount) return b.sessionCount - a.sessionCount
     const di = defaultRankIndex(a) - defaultRankIndex(b)
     if (di !== 0) return di
     return a.key.localeCompare(b.key)
-  })
+  }
+
+  const defaultOpt = defaultKey ? options.find((o) => o.key === defaultKey) ?? null : null
+  const secondaryOpt = effectiveSecondaryKey
+    ? options.find((o) => o.key === effectiveSecondaryKey) ?? null
+    : null
+  const rest = options
+    .filter((o) => o !== defaultOpt && o !== secondaryOpt)
+    .sort(byUsageThenDefault)
+
+  // Manual default → #1; manual secondary → #2 (after auto top when default is Auto).
+  if (defaultOpt && secondaryOpt) return [defaultOpt, secondaryOpt, ...rest]
+  if (defaultOpt) return [defaultOpt, ...rest]
+  if (secondaryOpt) {
+    const [autoTop, ...tail] = rest
+    return autoTop ? [autoTop, secondaryOpt, ...tail] : [secondaryOpt]
+  }
+  return rest
 }
 
 function matchesPreference(
@@ -104,17 +136,20 @@ function matchesPreference(
 /**
  * Resolve which harness the dropdown slot should show:
  * 1. Currently active menu harness
- * 2. User's last menu pick (even after switching to the fixed slot)
- * 3. Rank #2 fallback
+ * 2. Rank #2 when secondary is pinned via settings (skip remembered override)
+ * 3. User's last menu pick (only when secondary is Auto)
+ * 4. Rank #2 fallback
  */
 export function resolveMenuTabOption(input: {
   menuHarnesses: SuggestionHarnessOption[]
   activeKey: string
   rememberedMenu: SuggestionHarnessPreference | null | undefined
+  /** True when secondary harness is manually set — honor ordered #2 over remembered. */
+  secondaryPinned?: boolean
 }): SuggestionHarnessOption | null {
   const active = input.menuHarnesses.find((o) => o.key === input.activeKey)
   if (active) return active
-  if (input.rememberedMenu != null) {
+  if (!input.secondaryPinned && input.rememberedMenu != null) {
     const remembered = input.menuHarnesses.find((o) => matchesPreference(o, input.rememberedMenu!))
     if (remembered) return remembered
   }

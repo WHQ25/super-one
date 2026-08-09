@@ -42,6 +42,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     browserBookmarkGroups: [],
     defaultClonePaths: {},
     suggestionHarness: null,
+    secondaryHarness: null,
     suggestionMenuHarness: null,
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '', brandHue: null, tokenOverrides: {}, disabledSkills: [], askUserQuestionPreviewFormat: 'markdown' },
@@ -66,6 +67,34 @@ describe('settings registry validation', () => {
     )
     expect(valid.map((v) => v.field.key)).toEqual(['liquidGlass'])
     expect(rejected).toEqual([{ key: 'nonexistent', reason: 'unknown settings key' }])
+  })
+
+  it('accepts defaultHarness / secondaryHarness string keys and clears to Auto', () => {
+    const settings = makeSettings({
+      suggestionHarness: { provider: 'claude', acpAgentId: null },
+      secondaryHarness: { provider: 'codex', acpAgentId: null },
+    })
+    const { patch, applied, rejected } = buildPatchFromValues({
+      defaultHarness: 'acp:grok-build',
+      secondaryHarness: null,
+    }, settings)
+    expect(rejected).toEqual([])
+    expect(applied).toEqual([
+      {
+        key: 'defaultHarness',
+        label: 'Default Harness',
+        oldValue: 'claude',
+        newValue: 'acp:grok-build',
+      },
+      {
+        key: 'secondaryHarness',
+        label: 'Secondary Harness',
+        oldValue: 'codex',
+        newValue: null,
+      },
+    ])
+    expect(patch.suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+    expect(patch.secondaryHarness).toBeNull()
   })
 
   it('rejects a non-boolean for a boolean field', () => {
@@ -185,6 +214,8 @@ describe('settings registry — new field groups', () => {
       { key: 'experimentalAgentsEnabled', currentValue: true },
       { key: 'experimentalRemoteNodesEnabled', currentValue: false },
       { key: 'acpSelectedAgentId', currentValue: 'gemini-cli' },
+      { key: 'defaultHarness', currentValue: null },
+      { key: 'secondaryHarness', currentValue: null },
     ])
   })
 })

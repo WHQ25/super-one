@@ -1,4 +1,8 @@
 import type { AppSettings, AppSettingsPatch, ConfigConfirmField } from '@superone/shared/agent-types'
+import {
+  parseSuggestionHarnessKey,
+  serializeSuggestionHarness,
+} from '../app-settings-service'
 
 export type ConfigValue = string | number | boolean | null
 
@@ -91,6 +95,28 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         note: 'Id of the ACP agent to use. Clear to unset.',
         read: (s) => s.agentPreference.acp.selectedAgentId,
         toPatch: (v) => ({ agentPreference: { acp: { selectedAgentId: v as string | null } } }),
+      },
+      {
+        key: 'defaultHarness',
+        label: 'Default Harness',
+        type: 'string',
+        clearTo: null,
+        note:
+          'ChatSuggestions primary harness. Clear / "auto" for Auto (rank by recent parent-session count). '
+          + 'Values: "claude" | "codex" | "opencode" | "acp:<agentId>" (e.g. "acp:grok-build").',
+        read: (s) => serializeSuggestionHarness(s.suggestionHarness),
+        toPatch: (v) => ({ suggestionHarness: parseSuggestionHarnessKey(v) }),
+      },
+      {
+        key: 'secondaryHarness',
+        label: 'Secondary Harness',
+        type: 'string',
+        clearTo: null,
+        note:
+          'ChatSuggestions secondary harness (rank #2 / menu default). Clear / "auto" for Auto. '
+          + 'Same value strings as defaultHarness. Ignored when equal to defaultHarness.',
+        read: (s) => serializeSuggestionHarness(s.secondaryHarness),
+        toPatch: (v) => ({ secondaryHarness: parseSuggestionHarnessKey(v) }),
       },
     ],
   },

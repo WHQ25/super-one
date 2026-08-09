@@ -3217,10 +3217,16 @@ export interface AppSettings {
    */
   defaultClonePaths: Record<string, string>
   /**
-   * Manual ChatSuggestions harness pick. `null` means auto-select the top
-   * harness by last-7-day session count.
+   * Default ChatSuggestions harness (fixed tab / empty-session pick).
+   * `null` means Auto: rank by recent parent-session count.
    */
   suggestionHarness: SuggestionHarnessPreference | null
+  /**
+   * Secondary ChatSuggestions harness (menu-tab default / rank #2).
+   * `null` means Auto: next by recent parent-session count after default.
+   * Ignored when equal to `suggestionHarness`.
+   */
+  secondaryHarness: SuggestionHarnessPreference | null
   /**
    * Last harness chosen from the ChatSuggestions dropdown slot. Survives
    * switching back to the fixed (top-ranked) slot so the menu tab label and
@@ -3306,8 +3312,10 @@ export interface AppSettingsPatch {
    * connection's entry.
    */
   defaultClonePaths?: Record<string, string>
-  /** Pass `null` to clear and return to auto top-by-usage selection. */
+  /** Pass `null` to clear and return to Auto (rank by parent-session count). */
   suggestionHarness?: SuggestionHarnessPreference | null
+  /** Pass `null` to clear and return secondary to Auto. */
+  secondaryHarness?: SuggestionHarnessPreference | null
   /** Pass `null` to clear the remembered dropdown-slot harness. */
   suggestionMenuHarness?: SuggestionHarnessPreference | null
   agentPreference?: {

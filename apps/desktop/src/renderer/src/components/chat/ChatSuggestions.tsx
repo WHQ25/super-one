@@ -102,6 +102,7 @@ function ProviderSelector() {
   const [suggestionHarness, setSuggestionHarness] = useState<SuggestionHarnessPreference | null | undefined>(
     undefined,
   )
+  const [secondaryHarness, setSecondaryHarness] = useState<SuggestionHarnessPreference | null>(null)
   // Dropdown-slot memory: separate from active preference so selecting the fixed
   // (top-ranked) slot does not reset the menu tab label / re-activation target.
   // Survives ProviderSelector remounts that happen when empty-session harness
@@ -116,13 +117,23 @@ function ProviderSelector() {
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([
-      window.app.queryHarnessSessionRanks(HARNESS_RANK_DAYS).catch(() => EMPTY_RANKS),
-      window.app.getAppSettings().catch(() => null),
-    ]).then(([nextRanks, settings]) => {
+
+    const applySettings = (settings: {
+      suggestionHarness?: SuggestionHarnessPreference | null
+      secondaryHarness?: SuggestionHarnessPreference | null
+      suggestionMenuHarness?: SuggestionHarnessPreference | null
+    } | null) => {
       if (cancelled) return
-      setRanks(Array.isArray(nextRanks) ? nextRanks : EMPTY_RANKS)
       setSuggestionHarness(settings?.suggestionHarness ?? null)
+      const nextSecondary = settings?.secondaryHarness ?? null
+      setSecondaryHarness(nextSecondary)
+      // Explicit secondary owns the menu slot — keep in-process memory aligned so
+      // remounts don't resurrect a stale suggestionMenuHarness over settings.
+      if (nextSecondary != null) {
+        rememberedSuggestionMenuHarness = nextSecondary
+        setSuggestionMenuHarness(nextSecondary)
+        return
+      }
       // Prefer the in-process cache after a remount; fall back to disk on cold start.
       if (rememberedSuggestionMenuHarness !== undefined) {
         setSuggestionMenuHarness(rememberedSuggestionMenuHarness)
@@ -131,9 +142,24 @@ function ProviderSelector() {
         rememberedSuggestionMenuHarness = fromDisk
         setSuggestionMenuHarness(fromDisk)
       }
+    }
+
+    void Promise.all([
+      window.app.queryHarnessSessionRanks(HARNESS_RANK_DAYS).catch(() => EMPTY_RANKS),
+      window.app.getAppSettings().catch(() => null),
+    ]).then(([nextRanks, settings]) => {
+      if (cancelled) return
+      setRanks(Array.isArray(nextRanks) ? nextRanks : EMPTY_RANKS)
+      applySettings(settings)
     })
+
+    const unsub = window.app.onAppSettingsChange?.((settings) => {
+      applySettings(settings)
+    })
+
     return () => {
       cancelled = true
+      unsub?.()
     }
   }, [])
 
@@ -149,20 +175,47 @@ function ProviderSelector() {
     }
   }, [sessionScope, setPreferredProvider])
 
-  const persistSuggestionHarness = useCallback((pref: SuggestionHarnessPreference) => {
-    setSuggestionHarness(pref)
-    void window.app.saveAppSettings({ suggestionHarness: pref }).catch(() => {
-      /* best-effort; ranking UI still works without persistence */
-    })
+  const prefsEqual = useCallback((
+    a: SuggestionHarnessPreference | null | undefined,
+    b: SuggestionHarnessPreference | null | undefined,
+  ): boolean => {
+    if (a == null || b == null) return a == null && b == null
+    if (a.provider !== b.provider) return false
+    if (a.provider !== 'acp') return true
+    return (a.acpAgentId ?? null) === (b.acpAgentId ?? null)
   }, [])
 
-  const persistSuggestionMenuHarness = useCallback((pref: SuggestionHarnessPreference) => {
+  const persistDefaultHarness = useCallback((pref: SuggestionHarnessPreference) => {
+    setSuggestionHarness(pref)
+    // Default and secondary must stay distinct — clear secondary on collision.
+    const clearsSecondary = prefsEqual(pref, secondaryHarness)
+    if (clearsSecondary) {
+      setSecondaryHarness(null)
+      rememberedSuggestionMenuHarness = null
+      setSuggestionMenuHarness(null)
+    }
+    void window.app.saveAppSettings({
+      suggestionHarness: pref,
+      ...(clearsSecondary ? { secondaryHarness: null, suggestionMenuHarness: null } : {}),
+    }).catch(() => {
+      /* best-effort; ranking UI still works without persistence */
+    })
+  }, [prefsEqual, secondaryHarness])
+
+  const persistSecondaryHarness = useCallback((pref: SuggestionHarnessPreference) => {
+    // Refuse to pin secondary to the same harness as default.
+    if (prefsEqual(pref, suggestionHarness === undefined ? null : suggestionHarness)) return
+    setSecondaryHarness(pref)
     rememberedSuggestionMenuHarness = pref
     setSuggestionMenuHarness(pref)
-    void window.app.saveAppSettings({ suggestionMenuHarness: pref }).catch(() => {
-      /* best-effort; menu label still works in-session via module cache */
+    // Pin secondary + keep menu-slot memory in sync so the tab label matches order.
+    void window.app.saveAppSettings({
+      secondaryHarness: pref,
+      suggestionMenuHarness: pref,
+    }).catch(() => {
+      /* best-effort; ranking UI still works without persistence */
     })
-  }, [])
+  }, [prefsEqual, suggestionHarness])
 
   const selectHarnessOption = useCallback(async (
     option: SuggestionHarnessOption,
@@ -170,18 +223,15 @@ function ProviderSelector() {
     source: 'fixed' | 'menu' = 'fixed',
   ) => {
     if (manual) {
-      persistSuggestionHarness({
+      const pref: SuggestionHarnessPreference = {
         provider: option.provider,
         acpAgentId: option.provider === 'acp' ? option.acpAgentId : null,
-      })
-      // Only menu picks update the dropdown-slot memory. Fixed-slot activation
-      // must leave the previous menu choice intact.
-      if (source === 'menu') {
-        persistSuggestionMenuHarness({
-          provider: option.provider,
-          acpAgentId: option.provider === 'acp' ? option.acpAgentId : null,
-        })
       }
+      // Fixed tab pins default (#1); menu pins secondary (#2). Never promote a
+      // menu pick to default — that was reordering tabs away from settings.
+      // Activation always proceeds even when pin is a no-op (duplicate / already set).
+      if (source === 'menu') persistSecondaryHarness(pref)
+      else persistDefaultHarness(pref)
     }
     setAgentMenuOpen(false)
     if (option.provider === 'acp') {
@@ -194,8 +244,8 @@ function ProviderSelector() {
     }
     await selectProvider(option.provider)
   }, [
-    persistSuggestionHarness,
-    persistSuggestionMenuHarness,
+    persistDefaultHarness,
+    persistSecondaryHarness,
     preferredProvider,
     selectProvider,
     sessionScope,
@@ -234,8 +284,10 @@ function ProviderSelector() {
       ranks,
       acpAgents: visibleAcpAgents.map((a) => ({ id: a.id, name: a.name })),
       experimentalAgentsEnabled,
+      defaultHarness: suggestionHarness === undefined ? null : suggestionHarness,
+      secondaryHarness,
     }),
-    [ranks, visibleAcpAgents, experimentalAgentsEnabled],
+    [ranks, visibleAcpAgents, experimentalAgentsEnabled, suggestionHarness, secondaryHarness],
   )
 
   const fixedHarness = useMemo<SuggestionHarnessOption>(
@@ -260,13 +312,19 @@ function ProviderSelector() {
       menuHarnesses,
       activeKey,
       rememberedMenu: suggestionMenuHarness,
+      // Explicit secondary setting owns the menu tab; don't let stale
+      // suggestionMenuHarness override ordered #2.
+      secondaryPinned: secondaryHarness != null,
     }),
-    [menuHarnesses, activeKey, suggestionMenuHarness],
+    [menuHarnesses, activeKey, suggestionMenuHarness, secondaryHarness],
   )
   const menuTabLabel = menuTabOption ? optionLabel(menuTabOption) : 'Codex'
   const menuTabActive = !fixedActive
 
-  // Empty-session default: manual pick wins; otherwise auto Top1 by 7-day ranks.
+  // Empty-session: apply default (or auto Top1) only when that *target* changes
+  // (settings / ranks). Do NOT re-force when the user switches to the secondary
+  // tab — that was snapping harness selection back to default immediately.
+  const lastAutoAppliedKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (suggestionHarness === undefined) return
     if (messageCount > 0) return
@@ -278,9 +336,11 @@ function ProviderSelector() {
         && (o.provider !== 'acp' || o.acpAgentId === (suggestionHarness.acpAgentId ?? null))
       )) ?? fixedHarness
 
+    if (lastAutoAppliedKeyRef.current === target.key) return
+    lastAutoAppliedKeyRef.current = target.key
     if (activeKey === target.key) return
     // Auto path is neither a fixed-tab click nor a menu pick — don't rewrite
-    // dropdown-slot memory.
+    // dropdown-slot memory / settings pins.
     void selectHarnessOption(target, false, 'fixed')
   }, [
     suggestionHarness,

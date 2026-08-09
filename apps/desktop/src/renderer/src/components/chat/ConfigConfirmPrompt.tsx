@@ -14,6 +14,11 @@ import {
   MermaidThemePicker,
   mermaidThemeSchemeForKey,
 } from '../settings/MermaidThemePicker'
+import {
+  HarnessPreferencePicker,
+  harnessPreferenceToKey,
+  isHarnessPreferenceFieldKey,
+} from '../settings/HarnessPreferencePicker'
 import { useAppStore } from '@/stores/app'
 import { DEFAULT_TERMINAL_FONT_SIZE } from '@/components/coding/terminal-palettes'
 import { diffConfigFieldValue, formatSettingsFieldDisplay } from '@/lib/config-field-summary'
@@ -66,6 +71,16 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
   const previewFontFamily = values.terminalFontFamily !== undefined
     ? asNullableString(values.terminalFontFamily)
     : storeTerminalFontFamily
+  // Live default harness so secondary exclude works when only secondary is in the batch.
+  const [liveDefaultHarnessKey, setLiveDefaultHarnessKey] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void window.app.getAppSettings().then((settings) => {
+      if (cancelled) return
+      setLiveDefaultHarnessKey(harnessPreferenceToKey(settings.suggestionHarness ?? null))
+    }).catch(() => { /* best-effort exclude */ })
+    return () => { cancelled = true }
+  }, [])
 
   const setValue = (key: string, value: ConfigValue): void => {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -205,6 +220,25 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
                       size="compact"
                       clearable={field.clearable}
                     />
+                  </div>
+                )
+              }
+              if (isHarnessPreferenceFieldKey(field.key)) {
+                const batchDefault = values.defaultHarness !== undefined
+                  ? asNullableString(values.defaultHarness)
+                  : liveDefaultHarnessKey
+                return (
+                  <div key={field.key} className="flex items-center justify-between gap-3 px-2.5 py-2">
+                    {meta}
+                    <div className="flex-none">
+                      <HarnessPreferencePicker
+                        value={asNullableString(values[field.key])}
+                        onChange={(id) => setValue(field.key, id)}
+                        excludeKey={field.key === 'secondaryHarness' ? batchDefault : null}
+                        size="compact"
+                        clearable={field.clearable !== false}
+                      />
+                    </div>
                   </div>
                 )
               }

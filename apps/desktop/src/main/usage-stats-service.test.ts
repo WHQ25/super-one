@@ -35,6 +35,8 @@ interface SessionRow {
   usage_counted_at: string | null
   is_hidden?: number | null
   is_automation?: number | null
+  /** When set, this session is a collab child of the given parent id. */
+  parent_session_id?: string | null
 }
 
 const state = {
@@ -190,6 +192,8 @@ function fakeDb(): {
               if (s.created_at < fromIso) continue
               if (s.is_hidden) continue
               if (s.is_automation) continue
+              // Match SQL: LEFT JOIN collab grants … WHERE g.child_session_id IS NULL
+              if (s.parent_session_id) continue
               const provider = (s.provider || 'claude').trim() || 'claude'
               const acp_agent_id = s.acp_agent_id ?? null
               const key = `${provider}::${acp_agent_id ?? ''}`
@@ -588,6 +592,22 @@ describe('usage-stats-service: queryHarnessSessionRanks', () => {
       { id: 'old', created_at: old, provider: 'codex', usage_counted_at: null },
       { id: 'hidden', created_at: recent, provider: 'codex', usage_counted_at: null, is_hidden: 1 },
       { id: 'auto', created_at: recent, provider: 'claude', usage_counted_at: null, is_automation: 1 },
+      // Collaboration children must not inflate ranks.
+      {
+        id: 'child1',
+        created_at: recent,
+        provider: 'codex',
+        usage_counted_at: null,
+        parent_session_id: 'x1',
+      },
+      {
+        id: 'child2',
+        created_at: recent,
+        provider: 'acp',
+        acp_agent_id: 'grok-build',
+        usage_counted_at: null,
+        parent_session_id: 'g1',
+      },
     )
 
     const { queryHarnessSessionRanks } = await import('./usage-stats-service')

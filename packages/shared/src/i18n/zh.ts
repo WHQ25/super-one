@@ -555,6 +555,25 @@ export const zh: Messages = {
         description: '由哪个服务商生成视频。在「服务商」中添加密钥并启用视频模型。',
         auto: '自动（第一个可用）',
       },
+      harness: 'Agent',
+      defaultHarness: {
+        label: '默认 Harness',
+        description: '新建对话页签上的主 Agent。自动时按近期父 session 数量排序（不含 agent collaboration 子 session）。',
+        auto: '自动',
+        updated: '默认 harness 已更新。',
+      },
+      secondaryHarness: {
+        label: '次选 Harness',
+        description: '新建对话页签上的第二个 Agent。自动时取默认之后的下一名。',
+        auto: '自动',
+        updated: '次选 harness 已更新。',
+        duplicate: '次选 harness 不能与默认相同。',
+      },
+      harnessOptions: {
+        claude: 'Claude Code',
+        codex: 'Codex',
+        opencode: 'OpenCode',
+      },
       experimental: '实验功能',
       experimentalAgents: {
         label: '实验性 Agent',

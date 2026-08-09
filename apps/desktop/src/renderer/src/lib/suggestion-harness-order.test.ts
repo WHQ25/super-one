@@ -58,6 +58,60 @@ describe('orderSuggestionHarnesses', () => {
     expect(ordered[0]?.sessionCount).toBe(12)
   })
 
+  it('pins default then secondary ahead of session counts', () => {
+    const ordered = orderSuggestionHarnesses({
+      ranks: [
+        { key: 'codex', provider: 'codex', acpAgentId: null, sessionCount: 12 },
+        { key: 'claude', provider: 'claude', acpAgentId: null, sessionCount: 3 },
+        { key: 'acp:grok-build', provider: 'acp', acpAgentId: 'grok-build', sessionCount: 8 },
+      ],
+      acpAgents: agents,
+      experimentalAgentsEnabled: false,
+      defaultHarness: { provider: 'claude', acpAgentId: null },
+      secondaryHarness: { provider: 'acp', acpAgentId: 'grok-build' },
+    })
+    expect(ordered.map((o) => o.key)).toEqual([
+      'claude',
+      'acp:grok-build',
+      'codex',
+      'acp:other-agent',
+    ])
+  })
+
+  it('ignores secondary when it matches default', () => {
+    const ordered = orderSuggestionHarnesses({
+      ranks: [
+        { key: 'codex', provider: 'codex', acpAgentId: null, sessionCount: 12 },
+        { key: 'claude', provider: 'claude', acpAgentId: null, sessionCount: 3 },
+      ],
+      acpAgents: [],
+      experimentalAgentsEnabled: false,
+      defaultHarness: { provider: 'claude', acpAgentId: null },
+      secondaryHarness: { provider: 'claude', acpAgentId: null },
+    })
+    expect(ordered.map((o) => o.key)).toEqual(['claude', 'codex'])
+  })
+
+  it('keeps secondary at #2 when default is Auto', () => {
+    const ordered = orderSuggestionHarnesses({
+      ranks: [
+        { key: 'claude', provider: 'claude', acpAgentId: null, sessionCount: 9 },
+        { key: 'codex', provider: 'codex', acpAgentId: null, sessionCount: 2 },
+      ],
+      acpAgents: agents,
+      experimentalAgentsEnabled: false,
+      defaultHarness: null,
+      secondaryHarness: { provider: 'acp', acpAgentId: 'grok-build' },
+    })
+    // Auto top by count (claude), then pinned secondary, then rest by count.
+    expect(ordered.map((o) => o.key)).toEqual([
+      'claude',
+      'acp:grok-build',
+      'codex',
+      'acp:other-agent',
+    ])
+  })
+
   it('includes opencode only when experimental agents are enabled', () => {
     const off = orderSuggestionHarnesses({
       ranks: [{ key: 'opencode', provider: 'opencode', acpAgentId: null, sessionCount: 99 }],
@@ -125,6 +179,17 @@ describe('resolveMenuTabOption', () => {
       activeKey: 'claude',
       rememberedMenu: null,
     })
+    expect(option?.key).toBe('codex')
+  })
+
+  it('ignores remembered menu when secondary is pinned via settings', () => {
+    const option = resolveMenuTabOption({
+      menuHarnesses: menu,
+      activeKey: 'claude',
+      rememberedMenu: { provider: 'acp', acpAgentId: 'grok-build' },
+      secondaryPinned: true,
+    })
+    // Rank #2 is first menu entry (codex), not the remembered Grok pick.
     expect(option?.key).toBe('codex')
   })
 })

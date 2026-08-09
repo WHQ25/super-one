@@ -77,6 +77,7 @@ describe('app-settings-service', () => {
     browserBookmarkGroups: [],
     defaultClonePaths: {},
     suggestionHarness: null,
+    secondaryHarness: null,
     suggestionMenuHarness: null,
     cdpEnabled: false,
     computerUseEnabled: false,
@@ -140,6 +141,7 @@ describe('app-settings-service', () => {
         browserBookmarkGroups: [],
         defaultClonePaths: {},
         suggestionHarness: null,
+        secondaryHarness: null,
         suggestionMenuHarness: null,
         cdpEnabled: false,
     computerUseEnabled: false,
@@ -251,6 +253,7 @@ describe('app-settings-service', () => {
         browserBookmarkGroups: [],
         defaultClonePaths: {},
         suggestionHarness: null,
+        secondaryHarness: null,
         suggestionMenuHarness: null,
         cdpEnabled: false,
     computerUseEnabled: false,
@@ -288,6 +291,37 @@ describe('app-settings-service', () => {
         suggestionHarness: { provider: 'acp' },
       }))
       expect(readAppSettings().suggestionHarness).toBeNull()
+    })
+
+    it('clears secondaryHarness when save would make it equal default', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        suggestionHarness: { provider: 'claude', acpAgentId: null },
+        secondaryHarness: { provider: 'codex', acpAgentId: null },
+      }))
+      const result = saveAppSettings({
+        secondaryHarness: { provider: 'claude', acpAgentId: null },
+      })
+      expect(result.suggestionHarness).toEqual({ provider: 'claude', acpAgentId: null })
+      expect(result.secondaryHarness).toBeNull()
+    })
+
+    it('reads secondaryHarness and string defaultHarness alias keys', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        secondaryHarness: { provider: 'codex', acpAgentId: null },
+      }))
+      expect(readAppSettings().secondaryHarness).toEqual({ provider: 'codex', acpAgentId: null })
+
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        defaultHarness: 'acp:grok-build',
+        secondaryHarness: 'claude',
+      }))
+      expect(readAppSettings().suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+      expect(readAppSettings().secondaryHarness).toEqual({ provider: 'claude', acpAgentId: null })
+
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        secondaryHarness: 'auto',
+      }))
+      expect(readAppSettings().secondaryHarness).toBeNull()
     })
 
     it('reads and clears suggestionMenuHarness preference', () => {

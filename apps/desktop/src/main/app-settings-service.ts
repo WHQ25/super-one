@@ -58,6 +58,7 @@ const defaults: AppSettings = {
   browserBookmarkGroups: [],
   defaultClonePaths: {},
   suggestionHarness: null,
+  secondaryHarness: null,
   suggestionMenuHarness: null,
   agentPreference: {
     claude: {
@@ -101,6 +102,36 @@ function readSuggestionHarness(value: unknown): SuggestionHarnessPreference | nu
     provider: provider as HarnessId,
     acpAgentId: provider === 'acp' ? acpAgentId : null,
   }
+}
+
+/** Serialize a harness preference for config tools / UI keys (`claude`, `acp:grok-build`). */
+export function serializeSuggestionHarness(pref: SuggestionHarnessPreference | null): string | null {
+  if (!pref) return null
+  if (pref.provider === 'acp') {
+    const agent = pref.acpAgentId?.trim()
+    return agent ? `acp:${agent}` : null
+  }
+  return pref.provider
+}
+
+/**
+ * Parse a harness key from settings UI / config tools.
+ * Accepts object form, `"auto"`/`null`/empty for Auto, or `claude`/`codex`/`opencode`/`acp:<id>`.
+ */
+export function parseSuggestionHarnessKey(value: unknown): SuggestionHarnessPreference | null {
+  if (value == null || value === '' || value === 'auto') return null
+  if (typeof value === 'object') return readSuggestionHarness(value)
+  if (typeof value !== 'string') return null
+  const key = value.trim()
+  if (!key || key === 'auto') return null
+  if (key === 'claude' || key === 'codex' || key === 'opencode') {
+    return { provider: key, acpAgentId: null }
+  }
+  if (key.startsWith('acp:')) {
+    const agent = key.slice(4).trim()
+    return agent ? { provider: 'acp', acpAgentId: agent } : null
+  }
+  return null
 }
 
 function readBrandHue(value: unknown): number | null {
@@ -370,7 +401,11 @@ export function readAppSettings(): AppSettings {
       browserBookmarks: readBookmarks(data.browserBookmarks),
       browserBookmarkGroups: readBookmarkGroups(data.browserBookmarkGroups),
       defaultClonePaths: readDefaultClonePaths(data.defaultClonePaths),
-      suggestionHarness: readSuggestionHarness(data.suggestionHarness),
+      // `defaultHarness` is accepted as a legacy/alias key for config-tool clarity.
+      suggestionHarness: readSuggestionHarness(data.suggestionHarness ?? data.defaultHarness)
+        ?? parseSuggestionHarnessKey(data.suggestionHarness ?? data.defaultHarness),
+      secondaryHarness: readSuggestionHarness(data.secondaryHarness)
+        ?? parseSuggestionHarnessKey(data.secondaryHarness),
       suggestionMenuHarness: readSuggestionHarness(data.suggestionMenuHarness),
       agentPreference: {
         claude: readClaudePreference(data),
@@ -411,6 +446,7 @@ export function readAppSettings(): AppSettings {
       browserBookmarkGroups: [],
       defaultClonePaths: {},
       suggestionHarness: null,
+      secondaryHarness: null,
       suggestionMenuHarness: null,
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
@@ -464,7 +500,10 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     defaultClonePaths: mergeDefaultClonePaths(current.defaultClonePaths, patch.defaultClonePaths),
     suggestionHarness: patch.suggestionHarness === undefined
       ? current.suggestionHarness
-      : readSuggestionHarness(patch.suggestionHarness),
+      : (readSuggestionHarness(patch.suggestionHarness) ?? parseSuggestionHarnessKey(patch.suggestionHarness)),
+    secondaryHarness: patch.secondaryHarness === undefined
+      ? current.secondaryHarness
+      : (readSuggestionHarness(patch.secondaryHarness) ?? parseSuggestionHarnessKey(patch.secondaryHarness)),
     suggestionMenuHarness: patch.suggestionMenuHarness === undefined
       ? current.suggestionMenuHarness
       : readSuggestionHarness(patch.suggestionMenuHarness),
@@ -482,6 +521,18 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
         ...patch.agentPreference?.acp,
       },
     },
+  }
+  // Default and secondary must be distinct. Prefer keeping default; drop secondary.
+  if (
+    merged.suggestionHarness
+    && merged.secondaryHarness
+    && merged.suggestionHarness.provider === merged.secondaryHarness.provider
+    && (
+      merged.suggestionHarness.provider !== 'acp'
+      || (merged.suggestionHarness.acpAgentId ?? null) === (merged.secondaryHarness.acpAgentId ?? null)
+    )
+  ) {
+    merged.secondaryHarness = null
   }
   writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2))
   return merged

@@ -261,8 +261,11 @@ export function harnessSessionRankKey(provider: HarnessId, acpAgentId?: string |
 }
 
 /**
- * Count non-hidden, non-automation sessions created in the last `days` days,
- * grouped by top-level harness (claude/codex/opencode) or per ACP agent.
+ * Count non-hidden, non-automation **parent** sessions created in the last
+ * `days` days, grouped by top-level harness (claude/codex/opencode) or per ACP
+ * agent. Agent-collaboration child sessions (rows in
+ * `session_collaboration_grants` as `child_session_id`) are excluded so
+ * fan-out work does not inflate harness ranking.
  */
 export function queryHarnessSessionRanks(days = 7): HarnessSessionRank[] {
   const windowDays = Number.isFinite(days) ? Math.max(1, Math.floor(days)) : 7
@@ -273,13 +276,15 @@ export function queryHarnessSessionRanks(days = 7): HarnessSessionRank[] {
 
   const rows = getDb().prepare(`
     SELECT
-      COALESCE(NULLIF(TRIM(provider), ''), 'claude') AS provider,
-      acp_agent_id AS acp_agent_id,
+      COALESCE(NULLIF(TRIM(s.provider), ''), 'claude') AS provider,
+      s.acp_agent_id AS acp_agent_id,
       COUNT(*) AS session_count
-    FROM sessions
-    WHERE created_at >= ?
-      AND COALESCE(is_hidden, 0) = 0
-      AND COALESCE(is_automation, 0) = 0
+    FROM sessions s
+    LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
+    WHERE s.created_at >= ?
+      AND COALESCE(s.is_hidden, 0) = 0
+      AND COALESCE(s.is_automation, 0) = 0
+      AND g.child_session_id IS NULL
     GROUP BY 1, 2
   `).all(fromIso) as Array<{ provider: string; acp_agent_id: string | null; session_count: number }>
 

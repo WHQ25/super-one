@@ -4,6 +4,10 @@ import { getMermaidThemeOption } from '@/components/chat/mermaid-themes'
 import { mermaidThemeSchemeForKey } from '@/components/settings/MermaidThemePicker'
 import { getTerminalPalette } from '@/components/coding/terminal-palettes'
 import { terminalPaletteSchemeForKey } from '@/components/settings/TerminalPalettePicker'
+import {
+  formatHarnessPreferenceLabel,
+  isHarnessPreferenceFieldKey,
+} from '@/components/settings/HarnessPreferencePicker'
 
 /**
  * Human-readable rendering of config values. Structured provider fields (env maps, model-mapping slots,
@@ -84,6 +88,15 @@ export function formatSettingsFieldDisplay(
   value: unknown,
   emptyLabel: string,
 ): string {
+  // Harness Auto is null — still show a label, not the generic empty string.
+  if (isHarnessPreferenceFieldKey(key)) {
+    return formatHarnessPreferenceLabel(value, 'Auto', {
+      claude: 'Claude Code',
+      codex: 'Codex',
+      opencode: 'OpenCode',
+    })
+  }
+
   if (value === null || value === undefined || value === '') return emptyLabel
 
   const mermaidScheme = mermaidThemeSchemeForKey(key)

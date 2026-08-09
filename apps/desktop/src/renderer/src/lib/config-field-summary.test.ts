@@ -53,4 +53,10 @@ describe('config field summaries', () => {
     expect(formatSettingsFieldDisplay('terminalDarkPalette', 'enum', 'dracula', EMPTY)).toBe('Dracula+')
     expect(formatSettingsFieldDisplay('updateChannel', 'enum', 'beta', EMPTY)).toBe('beta')
   })
+
+  it('maps default/secondary harness keys to readable labels', () => {
+    expect(formatSettingsFieldDisplay('defaultHarness', 'string', null, EMPTY)).toBe('Auto')
+    expect(formatSettingsFieldDisplay('defaultHarness', 'string', 'claude', EMPTY)).toBe('Claude Code')
+    expect(formatSettingsFieldDisplay('secondaryHarness', 'string', 'acp:grok-build', EMPTY)).toMatch(/Grok/i)
+  })
 })

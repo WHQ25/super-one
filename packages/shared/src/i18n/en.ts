@@ -514,6 +514,25 @@ export type Messages = {
         description: string
         auto: string
       }
+      harness: string
+      defaultHarness: {
+        label: string
+        description: string
+        auto: string
+        updated: string
+      }
+      secondaryHarness: {
+        label: string
+        description: string
+        auto: string
+        updated: string
+        duplicate: string
+      }
+      harnessOptions: {
+        claude: string
+        codex: string
+        opencode: string
+      }
       experimental: string
       experimentalAgents: {
         label: string
@@ -2859,6 +2878,25 @@ export const en: Messages = {
         label: 'Video Provider',
         description: 'Which provider generates videos. Add keys and enable video models in Providers.',
         auto: 'Auto (First Usable)',
+      },
+      harness: 'Agents',
+      defaultHarness: {
+        label: 'Default Harness',
+        description: 'Primary agent on the new-chat tabs. Auto ranks by recent parent sessions (collaboration children excluded).',
+        auto: 'Auto',
+        updated: 'Default harness updated.',
+      },
+      secondaryHarness: {
+        label: 'Secondary Harness',
+        description: 'Second agent on the new-chat tabs. Auto uses the next rank after the default.',
+        auto: 'Auto',
+        updated: 'Secondary harness updated.',
+        duplicate: 'Secondary harness must differ from the default.',
+      },
+      harnessOptions: {
+        claude: 'Claude Code',
+        codex: 'Codex',
+        opencode: 'OpenCode',
       },
       experimental: 'Experimental',
       experimentalAgents: {

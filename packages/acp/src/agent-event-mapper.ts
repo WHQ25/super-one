@@ -226,7 +226,7 @@ export function mapSessionUpdate(
           name?: string
           description?: string
           input?: { hint?: string } | null
-          _meta?: { path?: string } | null
+          _meta?: { path?: string; workflowSource?: string; workflowPath?: string } | null
         }
         if (typeof c.name !== 'string' || !c.name.trim()) continue
         const name = c.name.replace(/^\//, '').trim()
@@ -248,11 +248,28 @@ export function mapSessionUpdate(
           c._meta && typeof c._meta === 'object' && typeof c._meta.path === 'string' &&
           /SKILL\.md$/i.test(c._meta.path),
         )
+        const workflowSource =
+          c._meta && typeof c._meta === 'object' && typeof c._meta.workflowSource === 'string'
+            ? c._meta.workflowSource
+            : undefined
+        const workflowPath =
+          c._meta && typeof c._meta === 'object' && typeof c._meta.workflowPath === 'string'
+            ? c._meta.workflowPath
+            : undefined
+        const isWorkflow = Boolean(workflowSource) || Boolean(workflowPath)
+          || (typeof c.description === 'string' && /^Workflow:\s/i.test(c.description))
         commands.push({
           name,
           description: typeof c.description === 'string' ? c.description : '',
           argumentHint: hint,
           isSkill,
+          ...(isWorkflow
+            ? {
+                isWorkflow: true,
+                workflowSource: workflowSource ?? 'workflow',
+                ...(workflowPath ? { workflowPath } : {}),
+              }
+            : {}),
         })
       }
       return [{ type: 'acp_commands', commands }]

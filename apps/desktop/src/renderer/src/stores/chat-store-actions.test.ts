@@ -548,6 +548,13 @@ describe('sendMessage: intercepted Claude slash commands', () => {
     // /clear is wired to resetSession → rotates the active session id
     expect(activeSession().messages).toEqual([])
   })
+
+  it('/workflows opens the workflows popup and does not forward the message', async () => {
+    setupProject()
+    await useChatStore.getState().sendMessage('/workflows')
+    expect(activeSession().slashCommandOutput?.command).toBe('workflows')
+    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+  })
 })
 
 describe('sendMessage: Claude IPC path', () => {

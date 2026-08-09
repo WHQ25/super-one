@@ -113,6 +113,7 @@ import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as 
 import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
 import { closeAllOpenCodeServers, probeOpenCodeResources, reapOrphanOpenCodeServers } from './opencode/opencode-client'
 import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
+import { discoverGrokWorkflows } from './workflow-discovery'
 import { readSubagentTranscript } from './agent/subagent-transcript'
 import {
   parseGitStatusOutput,
@@ -3085,6 +3086,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.READ_WORKFLOW_SCRIPT, async (_event, filePath: string) => {
     if (typeof filePath !== 'string' || !isAbsolute(filePath)) return null
     return readWorkflowScript(filePath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.DISCOVER_GROK_WORKFLOWS, async (_event, projectPath?: string | null) => {
+    const path = typeof projectPath === 'string' && projectPath.trim() ? projectPath.trim() : null
+    return discoverGrokWorkflows(path)
   })
 
   ipcMain.handle(AgentIpcChannels.READ_SUBAGENT_TRANSCRIPT, async (_event, outputFile: string, dir?: string) => {

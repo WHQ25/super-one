@@ -165,6 +165,9 @@ describe('core-slice: slash-command popups (require active project)', () => {
     useChatStore.getState().openMcpPopup()
     expect(activeSession().slashCommandOutput).toEqual({ command: 'mcp', content: '' })
 
+    useChatStore.getState().openWorkflowsPopup()
+    expect(activeSession().slashCommandOutput).toEqual({ command: 'workflows', content: '' })
+
     useChatStore.getState().dismissSlashCommandOutput()
     expect(activeSession().slashCommandOutput).toBeNull()
   })
@@ -172,6 +175,7 @@ describe('core-slice: slash-command popups (require active project)', () => {
   it('is a no-op when no project is active', () => {
     useChatStore.getState().openProviderPopup()
     useChatStore.getState().openMcpPopup()
+    useChatStore.getState().openWorkflowsPopup()
     useChatStore.getState().dismissSlashCommandOutput()
     expect(useChatStore.getState().projectSessions).toEqual({})
   })

@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { SlashCommandInfo } from '@superone/shared/agent-types'
+import { remainingSlashArgumentHint } from './slash-argument-hint'
 
 export interface SlashDecorationOptions {
   slashCommands: SlashCommandInfo[]
@@ -62,9 +63,7 @@ export const SlashDecoration = Extension.create<SlashDecorationOptions, SlashDec
             )
 
             if (exact?.argumentHint) {
-              const hintTokens = exact.argumentHint.match(/<[^>]+>|\[[^\]]+\]/g) ?? []
-
-              let filledCount = 0
+              const filledArgs: string[] = []
               let lastChildIsMention = false
               let lastTextEndsWithSpace = false
               // Multi-line input is a single paragraph split by hardBreak nodes
@@ -85,26 +84,33 @@ export const SlashDecoration = Extension.create<SlashDecorationOptions, SlashDec
                   let textPart = node.text ?? ''
                   if (index === 0) textPart = textPart.slice(cmdPart.length)
                   const trimmed = textPart.trim()
-                  if (trimmed) filledCount += trimmed.split(/\s+/).length
+                  if (trimmed) filledArgs.push(...trimmed.split(/\s+/).filter(Boolean))
                   lastChildIsMention = false
                   lastTextEndsWithSpace = textPart.endsWith(' ')
                 } else if (node.type.name === 'mention') {
-                  filledCount += 1
+                  const label =
+                    (typeof node.attrs?.label === 'string' && node.attrs.label)
+                    || (typeof node.attrs?.id === 'string' && node.attrs.id)
+                    || '@'
+                  filledArgs.push(label)
                   lastChildIsMention = true
                   lastTextEndsWithSpace = false
                 }
               })
 
-              const remainingHints = hintTokens.slice(filledCount)
+              // Trailing space means the last arg is "committed" for matching;
+              // without it, a mid-word partial still counts as the last filled arg
+              // (same as the previous filledCount behavior via split).
+              const remaining = remainingSlashArgumentHint(exact.argumentHint, filledArgs)
 
-              if (remainingHints.length > 0) {
+              if (remaining) {
                 const hintPrefix = lastTextEndsWithSpace || lastChildIsMention ? '' : ' '
                 const endPos = startOffset + firstLineEnd
                 decorations.push(
                   Decoration.widget(endPos, () => {
                     const span = document.createElement('span')
                     span.style.cssText = 'color: var(--muted-foreground); pointer-events: none;'
-                    span.textContent = hintPrefix + remainingHints.join(' ')
+                    span.textContent = hintPrefix + remaining
                     return span
                   }),
                 )

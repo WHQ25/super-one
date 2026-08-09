@@ -352,6 +352,35 @@ describe('mapSessionUpdate', () => {
     }])
   })
 
+  it('marks Grok workflow ads via _meta.workflowSource', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'available_commands_update',
+      availableCommands: [
+        {
+          name: 'review-changes',
+          description: 'Workflow: Review the PR',
+          input: { hint: '<args>' },
+          _meta: { workflowSource: 'project', workflowPath: '.grok/workflows/review-changes.rhai' },
+        },
+      ],
+    } as SessionUpdate
+    const events = mapSessionUpdate(update, ctx)
+    expect(events).toEqual([{
+      type: 'acp_commands',
+      commands: [
+        {
+          name: 'review-changes',
+          description: 'Workflow: Review the PR',
+          argumentHint: '<args>',
+          isSkill: false,
+          isWorkflow: true,
+          workflowSource: 'project',
+          workflowPath: '.grok/workflows/review-changes.rhai',
+        },
+      ],
+    }])
+  })
+
   it('fills argumentHint from skill file when Grok omits input.hint (arguments: key)', async () => {
     const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
     const { join } = await import('node:path')

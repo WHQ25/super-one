@@ -116,6 +116,26 @@ describe('buildSlashCommands', () => {
     expect(clears[0].argumentHint).toBe('')
     expect(clears[0].isSkill).toBe(false)
   })
+
+  it('injects host-only /workflows when not already present', () => {
+    const result = buildSlashCommands([], [], [], [], [])
+    const wf = result.find((c) => c.name === 'workflows')
+    expect(wf).toEqual({
+      name: 'workflows',
+      description: 'Show workflow runs in this session',
+      argumentHint: '',
+      isSkill: false,
+    })
+  })
+
+  it('does not duplicate /workflows when already in the catalog', () => {
+    const global: SlashCommandInfo[] = [
+      { name: 'workflows', description: 'Agent workflows', argumentHint: '', isSkill: false },
+    ]
+    const result = buildSlashCommands(global, [], [], [], [])
+    expect(result.filter((c) => c.name === 'workflows')).toHaveLength(1)
+    expect(result.find((c) => c.name === 'workflows')?.description).toBe('Agent workflows')
+  })
 })
 
 function msg(id: string, role: 'user' | 'assistant', extra?: Partial<ChatMessage>): ChatMessage {

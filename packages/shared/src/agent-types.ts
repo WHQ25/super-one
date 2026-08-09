@@ -866,6 +866,15 @@ export interface SlashCommandInfo {
   description: string
   argumentHint: string
   isSkill: boolean
+  /**
+   * Grok advertises registered workflows as available_commands with
+   * `_meta.workflowSource` (builtin | project | user). Used by `/workflow` name
+   * autocomplete in the host.
+   */
+  isWorkflow?: boolean
+  workflowSource?: string
+  /** Absolute or project-relative path to the `.rhai` source when known. */
+  workflowPath?: string
 }
 
 // --- @ mention: agents & directory listing ---
@@ -2712,6 +2721,8 @@ export const AgentIpcChannels = {
   LIST_WORKFLOW_AGENTS: 'app:list-workflow-agents',
   READ_WORKFLOW_OUTPUT: 'app:read-workflow-output',
   READ_WORKFLOW_SCRIPT: 'app:read-workflow-script',
+  /** Scan project + user `.grok/workflows/*.rhai` with parsed args. */
+  DISCOVER_GROK_WORKFLOWS: 'app:discover-grok-workflows',
   READ_SUBAGENT_TRANSCRIPT: 'app:read-subagent-transcript',
 
   // Remote control

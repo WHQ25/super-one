@@ -401,6 +401,30 @@ describe('sendMessageImpl: intercepted commands', () => {
     expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
+  it('routes Claude /workflows to openWorkflowsPopup and skips IPC send', async () => {
+    seedProject('/proj', 'sid-1')
+
+    await useChatStore.getState().sendMessage('/workflows')
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'workflows', content: '' })
+    expect(getActiveSession('/proj').messages).toEqual([])
+  })
+
+  it('routes ACP /workflows to openWorkflowsPopup and skips IPC send', async () => {
+    seedProject('/proj', 'sid-grok-wf', {
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+    })
+
+    await useChatStore.getState().sendMessage('/workflows')
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'workflows', content: '' })
+    expect(getActiveSession('/proj').messages).toEqual([])
+  })
+
   it('opens the branch review picker without sending an invalid review request', async () => {
     seedProject('/proj', 'sid-1', { sessionProvider: 'codex', preferredProvider: 'codex' })
 

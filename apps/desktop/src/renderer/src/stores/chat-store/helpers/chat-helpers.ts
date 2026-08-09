@@ -45,6 +45,14 @@ export function buildSlashCommands(
   if (!seen.has('mcp')) {
     extra.push({ name: 'mcp', description: 'View MCP servers in this session', argumentHint: '', isSkill: false })
   }
+  if (!seen.has('workflows')) {
+    extra.push({
+      name: 'workflows',
+      description: 'Show workflow runs in this session',
+      argumentHint: '',
+      isSkill: false,
+    })
+  }
   return [...tagged, ...extra]
 }
 

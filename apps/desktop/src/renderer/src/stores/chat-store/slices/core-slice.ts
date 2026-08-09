@@ -17,6 +17,7 @@ export interface CoreSlice {
   dismissCompactError: () => void
   openProviderPopup: () => void
   openMcpPopup: () => void
+  openWorkflowsPopup: () => void
   toggleTodos: () => void
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void
@@ -71,6 +72,14 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
     if (!activeProject) return
     set((s) => updateActivePerSession(s, () => ({
       slashCommandOutput: { command: 'mcp', content: '' },
+    })))
+  },
+
+  openWorkflowsPopup: () => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateActivePerSession(s, () => ({
+      slashCommandOutput: { command: 'workflows', content: '' },
     })))
   },
 

@@ -51,6 +51,8 @@ export function computeMatchingSlashCommands(
   const firstLine = text.split('\n', 1)[0]
   if (activeProvider !== 'codex') {
     if (/^\/add-dir(\s|$)/.test(firstLine)) return []
+    // `/workflow` owns a dedicated args popup (catalog names + manage ops).
+    if (/^\/workflow(\s|$)/i.test(firstLine)) return []
     if (firstLine.includes(' ')) return []
   }
 

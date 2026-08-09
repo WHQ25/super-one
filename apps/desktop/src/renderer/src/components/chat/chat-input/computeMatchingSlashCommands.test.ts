@@ -56,4 +56,12 @@ describe('slash command match ranking', () => {
     const result = computeMatchingSlashCommands('/rev iew\nnext line', commands, 'claude')
     expect(result).toEqual([])
   })
+
+  it('defers to the /workflow args popup once the command name is complete', () => {
+    const commands = [cmd('workflow', false), cmd('workflows', false)]
+    expect(computeMatchingSlashCommands('/workflow', commands, 'acp')).toEqual([])
+    expect(computeMatchingSlashCommands('/workflow pause', commands, 'acp')).toEqual([])
+    // Still fuzzy-match while the user is typing the command name.
+    expect(computeMatchingSlashCommands('/workf', commands, 'acp').map((c) => c.name)).toContain('workflow')
+  })
 })

@@ -1207,6 +1207,16 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.READ_WORKFLOW_OUTPUT, filePath),
   readWorkflowScript: (filePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_WORKFLOW_SCRIPT, filePath),
+  discoverGrokWorkflows: (projectPath?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.DISCOVER_GROK_WORKFLOWS, projectPath) as Promise<Array<{
+      name: string
+      description: string
+      whenToUse?: string
+      source: 'project' | 'user'
+      path: string
+      args: Array<{ name: string; description?: string; required?: boolean }>
+      exampleJson?: string
+    }>>,
   saveFileAs: (sourcePath: string, defaultName: string, defaultDir?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE_AS, sourcePath, defaultName, defaultDir),
   showInFolder: (folderPath: string, relPath: string) =>

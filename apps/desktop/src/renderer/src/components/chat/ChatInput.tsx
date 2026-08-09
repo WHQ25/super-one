@@ -37,8 +37,10 @@ import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
+import { WorkflowSlashPopup, type WorkflowSlashPopupHandle, type WorkflowApplyPayload } from './WorkflowSlashPopup'
 // import { ProviderSlashPopup } from './ProviderSlashPopup' // /provider popup retired — kept for reference
 import { McpSlashPopup } from './McpSlashPopup'
+import { WorkflowsSlashPopup } from './WorkflowsSlashPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { SlashCommandContent } from './SlashCommandContent'
 import { StopButton, harnessUsesSoftCancel } from './StopButton'
@@ -177,6 +179,8 @@ export function ChatInput() {
 
     const [addDirIndex, setAddDirIndex] = useState(0)
     const addDirRef = useRef<AddDirPopupHandle>(null)
+    const [workflowSlashIndex, setWorkflowSlashIndex] = useState(0)
+    const workflowSlashRef = useRef<WorkflowSlashPopupHandle>(null)
 
     const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
     const mentionEmptyByAtRef = useRef<Map<number, string>>(new Map())
@@ -272,6 +276,12 @@ export function ChatInput() {
     const acpSlashCommands = useMemo<SlashCommandInfo[]>(() => {
       const local: SlashCommandInfo[] = [
         { name: 'clear', description: t('chat.acpCommands.clearDesc'), argumentHint: '', isSkill: false },
+        {
+          name: 'workflows',
+          description: t('chat.acpCommands.workflowsDesc', 'Show workflow runs in this session'),
+          argumentHint: '',
+          isSkill: false,
+        },
       ]
       // Host-only Grok `/recap` (x.ai/recap) — not an agent available_command.
       if (isGrokAcpAgent(acpAgentId)) {
@@ -284,6 +294,7 @@ export function ChatInput() {
       }
       const seen = new Set(local.map((c) => c.name))
       const agentCmds = Array.isArray(acpSlashCommandsFromAgent) ? acpSlashCommandsFromAgent : []
+      // Prefer host local entries (e.g. /workflows UI) over same-named agent commands.
       const fromAgent = agentCmds.filter((c) => {
         const name = c.name.replace(/^\//, '').trim()
         if (!name || seen.has(name)) return false
@@ -421,6 +432,15 @@ export function ChatInput() {
           useChatStore.getState().openMcpPopup()
           return
         }
+        if (
+          name === 'workflows'
+          && (activeProviderForResources === 'claude' || activeProviderForResources === 'acp')
+        ) {
+          clearFirstLine()
+          setSlashIndex(-1)
+          useChatStore.getState().openWorkflowsPopup()
+          return
+        }
         if (activeProviderForResources === 'claude' && CLAUDE_INTERCEPTED_COMMAND_NAMES.has(name)) {
           clearFirstLine()
           setSlashIndex(-1)
@@ -463,6 +483,49 @@ export function ChatInput() {
     }, [text, activeProviderForResources])
     const addDirActive = addDirParse.active
     const addDirArgsText = addDirParse.argsText
+
+    // Grok/ACP (and Claude if typed): dedicated `/workflow` name + op picker.
+    const workflowSlashParse = useMemo(() => {
+      if (activeProviderForResources !== 'acp' && activeProviderForResources !== 'claude') {
+        return { active: false, argsText: '' }
+      }
+      const firstLine = text.split('\n', 1)[0]
+      const m = firstLine.match(/^\/workflow(?:\s(.*))?$/i)
+      if (!m) return { active: false, argsText: '' }
+      return { active: true, argsText: m[1] ?? '' }
+    }, [text, activeProviderForResources])
+    const workflowSlashActive = workflowSlashParse.active
+    const workflowSlashArgsText = workflowSlashParse.argsText
+
+    const handleWorkflowSlashApply = useCallback((payload: string | WorkflowApplyPayload) => {
+      const line = typeof payload === 'string' ? payload : payload.line
+      const selectFrom = typeof payload === 'string' ? undefined : payload.selectFrom
+      const selectTo = typeof payload === 'string' ? undefined : payload.selectTo
+      const ed = editorRef.current
+      if (ed && line) {
+        const chain = ed.chain().focus().setContent({
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: line }] }],
+        })
+        if (
+          selectFrom != null
+          && selectTo != null
+          && selectFrom >= 0
+          && selectTo >= selectFrom
+          && selectTo <= line.length
+        ) {
+          // ProseMirror text in a paragraph starts at position 1.
+          chain.setTextSelection({ from: 1 + selectFrom, to: 1 + selectTo }).run()
+        } else {
+          chain.run()
+          ed.commands.focus('end')
+        }
+      } else {
+        replaceEditorTextPreservingTrailingSpace(line)
+      }
+      setText(line)
+      setWorkflowSlashIndex(0)
+    }, [setText, replaceEditorTextPreservingTrailingSpace])
 
     const handleAddDirScopeFill = useCallback((scope: 'project' | 'session') => {
       const next = `/add-dir ${scope} ../`
@@ -685,6 +748,13 @@ export function ChatInput() {
           setAddDirIndex(0)
           return true
         }
+        if (e.key === 'Escape' && workflowSlashActive) {
+          const ed = editorRef.current
+          if (ed) ed.commands.clearContent()
+          setText('')
+          setWorkflowSlashIndex(0)
+          return true
+        }
         if (e.key === 'Escape' && commandPopup) {
           dismissCommandPopup()
           return true
@@ -710,6 +780,32 @@ export function ChatInput() {
           if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
             e.preventDefault()
             addDirRef.current?.confirmEnter()
+            return true
+          }
+        }
+
+        if (workflowSlashActive) {
+          const count = workflowSlashRef.current?.getItemCount() ?? 0
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setWorkflowSlashIndex((i) => (count > 0 ? (i + 1) % count : 0))
+            return true
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setWorkflowSlashIndex((i) => (count > 0 ? (i <= 0 ? count - 1 : i - 1) : 0))
+            return true
+          }
+          // Always handle Tab in /workflow — args mode uses Tab for key=default / next key
+          // even when the key list is empty (jump to next missing param).
+          if (e.key === 'Tab') {
+            e.preventDefault()
+            workflowSlashRef.current?.confirmTab()
+            return true
+          }
+          if (e.key === 'Enter' && !e.shiftKey && !e.altKey && count > 0) {
+            e.preventDefault()
+            workflowSlashRef.current?.confirmEnter()
             return true
           }
         }
@@ -815,7 +911,7 @@ export function ChatInput() {
 
         return false
       },
-      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, setText, showReviewPanel, setShowReviewPanel]
+      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, workflowSlashActive, setText, showReviewPanel, setShowReviewPanel]
     )
 
     handleKeyDownRef.current = handleKeyDownCore
@@ -1377,7 +1473,13 @@ export function ChatInput() {
           </div>
         )}
 
-        {commandPopup && commandPopup.command !== 'provider' && commandPopup.command !== 'mcp' && (
+        {commandPopup && commandPopup.command === 'workflows' && (
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 overflow-hidden rounded-xl border border-border bg-popover">
+            <WorkflowsSlashPopup onClose={dismissCommandPopup} />
+          </div>
+        )}
+
+        {commandPopup && commandPopup.command !== 'provider' && commandPopup.command !== 'mcp' && commandPopup.command !== 'workflows' && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-border bg-popover">
             <div className="flex items-center justify-between px-3 py-1.5">
               <span className="text-xs font-medium text-muted-foreground">/{commandPopup.command}</span>
@@ -1407,9 +1509,19 @@ export function ChatInput() {
             onRemoveDir={handleAddDirRemove}
           />
         )}
+        {workflowSlashActive && (
+          <WorkflowSlashPopup
+            ref={workflowSlashRef}
+            argsText={workflowSlashArgsText}
+            selectedIndex={workflowSlashIndex}
+            onSetSelectedIndex={setWorkflowSlashIndex}
+            onApply={handleWorkflowSlashApply}
+            slashCommands={activeSlashCommands}
+          />
+        )}
         {showReviewPanel && <ReviewPanel />}
 
-        {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && !addDirActive && (
+        {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && !addDirActive && !workflowSlashActive && (
           <MentionPopup
             ref={mentionRef}
             query={mentionInfoRef.current.query}

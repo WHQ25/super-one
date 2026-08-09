@@ -391,6 +391,7 @@ export interface ChatStore {
   setSessionApiProviderId: (apiProviderId: string | null) => Promise<void>
   openProviderPopup: () => void
   openMcpPopup: () => void
+  openWorkflowsPopup: () => void
 
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void

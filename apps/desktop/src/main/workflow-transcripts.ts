@@ -118,7 +118,8 @@ export async function readWorkflowOutput(filePath: string): Promise<WorkflowOutp
 }
 
 export async function readWorkflowScript(filePath: string): Promise<string | null> {
-  if (!filePath.endsWith('.js')) return null
+  // Claude stores compiled JS under workflows/scripts/; Grok uses `.rhai` sources.
+  if (!filePath.endsWith('.js') && !filePath.endsWith('.rhai')) return null
   try {
     return await readFile(filePath, 'utf8')
   } catch {

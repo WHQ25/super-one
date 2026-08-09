@@ -715,6 +715,16 @@ export async function sendMessageImpl(
   let capabilityReminderSuffix = ''
   let desktopAppReminderSuffix = ''
   let agentContent = rawContent
+  // CLI-style `/workflow name key=value` → JSON object for the agent (Grok expects JSON or free text).
+  if (/^\/workflow\s+\S+/i.test(agentContent)) {
+    const { rewriteWorkflowCommandForAgent } = await import(
+      '../../../components/chat/workflow-cli-args'
+    )
+    const { getWorkflowArgSpecs } = await import(
+      '../../../components/chat/workflow-arg-specs-cache'
+    )
+    agentContent = rewriteWorkflowCommandForAgent(agentContent, getWorkflowArgSpecs)
+  }
   const capabilityMentions = mentions.filter(
     (m) => m.kind === 'collab' || m.kind === 'computer' || m.kind === 'browser',
   )
@@ -945,6 +955,13 @@ export async function sendMessageImpl(
       await CLAUDE_INTERCEPTED_COMMANDS[m[1]]()
       return
     }
+  }
+
+  // Host-only `/workflows` for Grok/ACP (same popup as Claude; never a prompt turn).
+  if (effectiveProvider === 'acp' && /^\/workflows$/.test(rawContent)) {
+    patchSession(() => ({ _pendingSlashCommand: '' }))
+    await CLAUDE_INTERCEPTED_COMMANDS.workflows!()
+    return
   }
 
   // Grok ACP: intercept `/recap` → x.ai/recap (auto=false), not a prompt turn.

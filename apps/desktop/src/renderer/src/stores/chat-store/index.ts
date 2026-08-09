@@ -75,6 +75,9 @@ export const CLAUDE_INTERCEPTED_COMMANDS: Record<string, () => Promise<void>> = 
   mcp: async () => {
     useChatStore.getState().openMcpPopup()
   },
+  workflows: async () => {
+    useChatStore.getState().openWorkflowsPopup()
+  },
 }
 
 export const CLAUDE_INTERCEPTED_COMMAND_NAMES: ReadonlySet<string> =

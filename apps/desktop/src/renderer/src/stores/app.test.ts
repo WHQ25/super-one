@@ -144,6 +144,8 @@ function resetStore(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   resetStore()
+  // Default off so host-switch tests must opt in explicitly (see describe below).
+  useAppStore.setState({ experimentalRemoteNodesEnabled: false })
   useChatStore.setState(() => ({ activeProject: null, projectSessions: {} }))
 })
 
@@ -325,6 +327,12 @@ describe('selectProject', () => {
 })
 
 describe('setSelectedHostConnectionId', () => {
+  // Remote host selection is gated on this flag in the store; without it every
+  // setSelectedHostConnectionId('env-*') is forced back to 'local'.
+  beforeEach(() => {
+    useAppStore.setState({ experimentalRemoteNodesEnabled: true })
+  })
+
   it('opens the default project when no project was selected before the host switch', async () => {
     mockEnvironment.listItems.mockResolvedValue([
       { connectionId: 'env-remote', state: 'connected', label: 'lab' },

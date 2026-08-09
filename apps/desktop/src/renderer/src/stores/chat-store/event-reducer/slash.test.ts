@@ -75,20 +75,90 @@ describe('reduceSlash: turn_summary / session_recap', () => {
     expect(patch.messages![1].metadata?.turnSummary).toBeUndefined()
   })
 
-  it('falls back to a system marker when no assistant message exists', () => {
+  it('drops turn_summary when no assistant message exists (no system marker mint)', () => {
     const session = createDefaultPerSessionState()
     session.messages = [makeMessage('u1', { role: 'user' })]
-    const patch = reduceSlash(session, {
+    expect(reduceSlash(session, {
       type: 'turn_summary',
       summary: 'orphan summary',
+    } as never)).toEqual({})
+    // Pre-existing legacy markers are left alone (not promoted without an assistant).
+    session.messages = [
+      makeMessage('u1', { role: 'user' }),
+      makeMessage('turn_summary_old', {
+        role: 'assistant',
+        providerId: 'system',
+        content: [{ type: 'text', text: '__turn_meta__:' + JSON.stringify({ kind: 'summary', text: 'orphan summary' }) }],
+      }),
+    ]
+    expect(reduceSlash(session, {
+      type: 'turn_summary',
+      summary: 'orphan summary',
+    } as never)).toEqual({})
+  })
+
+  it('promotes a legacy system marker onto assistant metadata and drops the marker', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('u1', { role: 'user' }),
+      makeMessage('a1', { role: 'assistant' }),
+      makeMessage('turn_summary_dup', {
+        role: 'assistant',
+        providerId: 'system',
+        content: [{ type: 'text', text: '__turn_meta__:' + JSON.stringify({ kind: 'summary', text: 'parser race fixed' }) }],
+      }),
+    ]
+    const patch = reduceSlash(session, {
+      type: 'turn_summary',
+      summary: 'parser race fixed',
     } as never)
-    const meta = patch.messages!.at(-1)!
-    expect(meta.providerId).toBe('system')
-    const text = (meta.content[0] as { text: string }).text
-    expect(JSON.parse(text.slice('__turn_meta__:'.length))).toEqual({
-      kind: 'summary',
-      text: 'orphan summary',
-    })
+    const msgs = patch.messages!
+    expect(msgs).toHaveLength(2)
+    expect(msgs.map((m) => m.id)).toEqual(['u1', 'a1'])
+    expect(msgs[1].metadata?.turnSummary).toBe('parser race fixed')
+    expect(msgs.some((m) => m.providerId === 'system')).toBe(false)
+  })
+
+  it('strips a redundant system marker when metadata already has the same turnSummary', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('a1', {
+        role: 'assistant',
+        metadata: { turnSummary: 'already attached' },
+      }),
+      makeMessage('turn_summary_dup', {
+        role: 'assistant',
+        providerId: 'system',
+        content: [{ type: 'text', text: '__turn_meta__:' + JSON.stringify({ kind: 'summary', text: 'already attached' }) }],
+      }),
+    ]
+    const patch = reduceSlash(session, {
+      type: 'turn_summary',
+      summary: 'already attached',
+    } as never)
+    expect(patch.messages).toHaveLength(1)
+    expect(patch.messages![0].id).toBe('a1')
+    expect(patch.messages![0].metadata?.turnSummary).toBe('already attached')
+  })
+
+  it('leaves recap system markers untouched when attaching turn_summary', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('a1', { role: 'assistant' }),
+      makeMessage('session_recap_1', {
+        role: 'assistant',
+        providerId: 'system',
+        content: [{ type: 'text', text: '__turn_meta__:' + JSON.stringify({ kind: 'recap', text: 'You fixed the parser.', auto: true }) }],
+      }),
+    ]
+    const patch = reduceSlash(session, {
+      type: 'turn_summary',
+      summary: 'parser race fixed',
+    } as never)
+    const msgs = patch.messages!
+    expect(msgs).toHaveLength(2)
+    expect(msgs[0].metadata?.turnSummary).toBe('parser race fixed')
+    expect(msgs[1].id).toBe('session_recap_1')
   })
 
   it('ignores empty turn_summary', () => {

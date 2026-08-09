@@ -2,7 +2,11 @@ import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { findCheckpointTarget } from '../helpers/chat-helpers'
 import type { PerSessionState } from '../types'
 
-/** System-message marker for turn summary / session recap (not agent reply). */
+/**
+ * System-message marker payload (`providerId: 'system'`).
+ * - `recap` — still minted for session recap rows
+ * - `summary` — legacy only (parsed for cleanup / old history); never minted now
+ */
 export const TURN_META_PREFIX = '__turn_meta__:'
 
 export type TurnMetaPayload =
@@ -56,7 +60,29 @@ function appendSystemTurnMeta(
   return { messages: [...session.messages, msg] }
 }
 
-/** Attach Grok last-turn summary onto the matching assistant message (above footer). */
+/** True when `message` is a legacy system marker for this turn summary text. */
+function isMatchingTurnSummaryMarker(message: ChatMessage, summary: string): boolean {
+  if (message.providerId !== 'system') return false
+  const first = message.content[0]
+  if (!first || first.type !== 'text') return false
+  const parsed = parseTurnMetaText(first.text)
+  return parsed?.kind === 'summary' && parsed.text === summary
+}
+
+/**
+ * Drop legacy `kind:summary` system markers once the summary lives on assistant
+ * metadata — otherwise ChatContent renders both (above footer + below).
+ */
+function dropMatchingTurnSummaryMarkers(messages: ChatMessage[], summary: string): ChatMessage[] {
+  const next = messages.filter((m) => !isMatchingTurnSummaryMarker(m, summary))
+  return next.length === messages.length ? messages : next
+}
+
+/**
+ * Attach Grok last-turn summary onto assistant `metadata.turnSummary` (above footer).
+ * Never mints system markers — matches main runtime; orphan summaries are dropped.
+ * Strips any legacy same-text `kind:summary` markers so dual Summary cannot reappear.
+ */
 function attachTurnSummaryToAssistant(
   session: PerSessionState,
   summary: string,
@@ -78,17 +104,26 @@ function attachTurnSummaryToAssistant(
       }
     }
   }
-  // No assistant turn yet — keep a system marker so the line is not lost.
-  if (idx < 0) {
-    return appendSystemTurnMeta(session, { kind: 'summary', text: summary }, 'turn_summary')
-  }
+  // No assistant bubble to attach to — drop (same as main). Do not mint markers.
+  if (idx < 0) return {}
+
   const target = messages[idx]
-  if (target.metadata?.turnSummary === summary) return {}
-  const next = messages.slice()
-  next[idx] = {
-    ...target,
+  const withoutMarkers = dropMatchingTurnSummaryMarkers(messages, summary)
+  if (target.metadata?.turnSummary === summary) {
+    if (withoutMarkers === messages) return {}
+    return { messages: withoutMarkers }
+  }
+  // Re-find after marker drop — indices shift when markers precede the target.
+  const attachIdx = withoutMarkers.findIndex((m) => m.id === target.id)
+  if (attachIdx < 0) {
+    return withoutMarkers === messages ? {} : { messages: withoutMarkers }
+  }
+  const next = withoutMarkers.slice()
+  const base = next[attachIdx]
+  next[attachIdx] = {
+    ...base,
     metadata: {
-      ...target.metadata,
+      ...base.metadata,
       turnSummary: summary,
     },
   }

@@ -3,7 +3,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
-import { ChatMessage } from './ChatMessage'
+import { ChatMessage, isRedundantTurnSummaryMarker } from './ChatMessage'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 
@@ -334,5 +334,38 @@ describe('ChatMessage collaboration initial task', () => {
     } finally {
       restore()
     }
+  })
+})
+
+describe('isRedundantTurnSummaryMarker', () => {
+  it('is true when an assistant already has the same metadata.turnSummary', () => {
+    expect(isRedundantTurnSummaryMarker(
+      { kind: 'summary', text: 'parser race fixed' },
+      [
+        createClaudeMessage([{ type: 'text', text: 'done' }]),
+        {
+          ...createClaudeMessage([{ type: 'text', text: 'ok' }]),
+          id: 'a2',
+          metadata: { turnSummary: 'parser race fixed' },
+        },
+      ],
+    )).toBe(true)
+  })
+
+  it('is false when no assistant carries that turnSummary', () => {
+    expect(isRedundantTurnSummaryMarker(
+      { kind: 'summary', text: 'orphan only' },
+      [createClaudeMessage([{ type: 'text', text: 'done' }])],
+    )).toBe(false)
+  })
+
+  it('never treats recap markers as redundant', () => {
+    expect(isRedundantTurnSummaryMarker(
+      { kind: 'recap', text: 'You fixed the parser.', auto: true },
+      [{
+        ...createClaudeMessage([{ type: 'text', text: 'ok' }]),
+        metadata: { turnSummary: 'You fixed the parser.' },
+      }],
+    )).toBe(false)
   })
 })

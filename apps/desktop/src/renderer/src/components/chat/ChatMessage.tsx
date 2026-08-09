@@ -573,7 +573,31 @@ export function parseTurnMetaMarker(message: ChatMessageType): TurnMetaMarker | 
   }
 }
 
-/** Standalone system marker (session recap / legacy turn summary). */
+/**
+ * Hide legacy `kind:summary` system rows when the same text already lives on
+ * assistant `metadata.turnSummary` (above the footer) — prevents double Summary.
+ * Recap markers are never redundant with turnSummary.
+ */
+export function isRedundantTurnSummaryMarker(
+  meta: TurnMetaMarker,
+  messages: readonly ChatMessageType[],
+): boolean {
+  if (meta.kind !== 'summary') return false
+  const text = meta.text.trim()
+  if (!text) return false
+  return messages.some(
+    (m) =>
+      m.role === 'assistant'
+      && m.providerId !== 'system'
+      && (m.metadata?.turnSummary?.trim() ?? '') === text,
+  )
+}
+
+/**
+ * Standalone system marker row.
+ * - `recap` — current session recap path
+ * - `summary` — legacy only (no longer minted; new turns use metadata.turnSummary)
+ */
 export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
   const { t } = useTranslation()
   if (meta.kind === 'recap') {
@@ -588,7 +612,7 @@ export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
       </div>
     )
   }
-  // Legacy: older sessions stored turn summary as a system marker (now lives on message.metadata.turnSummary).
+  // Legacy history only — live path never mints kind:summary markers.
   return (
     <div
       className="my-0.5 text-xs leading-snug text-muted-foreground"

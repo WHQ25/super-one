@@ -7,7 +7,7 @@ import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -296,6 +296,8 @@ function ChatTranscript({
               }
               const turnMeta = parseTurnMetaMarker(msg)
               if (turnMeta) {
+                // Metadata path already shows this summary above the footer.
+                if (isRedundantTurnSummaryMarker(turnMeta, messages)) return null
                 return (
                   <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
                     <TurnMetaIndicator meta={turnMeta} />

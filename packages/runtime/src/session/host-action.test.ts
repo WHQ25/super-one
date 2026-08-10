@@ -270,6 +270,59 @@ describe('Host Action store', () => {
     expect(hostActions.get(safe.actionId)!.state).toBe('pending')
     expect(hostActions.get(unsafe.actionId)!.state).toBe('cancelled')
   })
+
+  it('rebindSessionController migrates pending and requeues claimed+safe', () => {
+    const { hostActions } = boot()
+    const pending = hostActions.create({
+      sessionId: 's1',
+      controllerClientSessionId: 'c-old',
+      toolName: 'browser.tabs',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: { a: 1 },
+      replayPolicy: 'safe',
+    })
+    const claimedSafe = hostActions.create({
+      sessionId: 's1',
+      controllerClientSessionId: 'c-old',
+      toolName: 'browser.snapshot',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: { a: 2 },
+      replayPolicy: 'safe',
+    })
+    hostActions.claim({
+      actionId: claimedSafe.actionId,
+      expectedVersion: claimedSafe.version,
+      controllerClientSessionId: 'c-old',
+    })
+    const claimedUnsafe = hostActions.create({
+      sessionId: 's1',
+      controllerClientSessionId: 'c-old',
+      toolName: 'browser.click',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserAct,
+      args: { a: 3 },
+      replayPolicy: 'unsafe',
+    })
+    hostActions.claim({
+      actionId: claimedUnsafe.actionId,
+      expectedVersion: claimedUnsafe.version,
+      controllerClientSessionId: 'c-old',
+    })
+
+    const result = hostActions.rebindSessionController({
+      sessionId: 's1',
+      toControllerClientSessionId: 'c-new',
+    })
+    expect(result.migrated).toHaveLength(2)
+    expect(result.cancelled).toHaveLength(1)
+
+    expect(hostActions.listOutstanding('c-old')).toHaveLength(0)
+    const forNew = hostActions.listOutstanding('c-new')
+    expect(forNew.map((r) => r.actionId).sort()).toEqual(
+      [pending.actionId, claimedSafe.actionId].sort(),
+    )
+    expect(forNew.every((r) => r.state === 'pending')).toBe(true)
+    expect(hostActions.get(claimedUnsafe.actionId)!.state).toBe('cancelled')
+  })
 })
 
 describe('SessionRuntime host actions', () => {
@@ -343,6 +396,108 @@ describe('SessionRuntime host actions', () => {
     const terminal = await wait
     expect(terminal.state).toBe('succeeded')
     release()
+  })
+
+  /**
+   * Regression: after client-session rotation (re-pair), control can move to a new
+   * client while host_actions stay addressed to the revoked controller — desktop
+   * polls empty and every SuperOne MCP times out with deadline_exceeded.
+   * rebindHostActionController must retarget the session + outstanding HA rows.
+   */
+  it('rebinds controller so a new client can poll/claim pending host actions', async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => {
+      release = r
+    })
+    const runner: TurnRunner = async ({ signal }) => {
+      await Promise.race([
+        held,
+        new Promise<void>((_, rej) =>
+          signal.addEventListener('abort', () => rej(new Error('aborted')), { once: true }),
+        ),
+      ])
+      return { finalText: 'done' }
+    }
+    const { runtime, hostActions } = boot(runner)
+    const session = createBoundSession(runtime, 'client-A')
+    await holdTurn(runtime, session.sessionId, { released: held }, 'client-A')
+
+    const wait = runtime.requestHostAction({
+      sessionId: session.sessionId,
+      toolName: 'browser.tabs',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: { after: 'rebind' },
+      deadlineMs: 30_000,
+    })
+    await new Promise((r) => setTimeout(r, 20))
+
+    // Pre-rebind: only A sees the action (bug surface without rebind).
+    expect(
+      (await runtime.pollHostActions({ controllerClientSessionId: 'client-A' })).outstanding,
+    ).toHaveLength(1)
+    expect(
+      (await runtime.pollHostActions({ controllerClientSessionId: 'client-B' })).outstanding ?? [],
+    ).toHaveLength(0)
+
+    const rebound = runtime.rebindHostActionController(session.sessionId, 'client-B')
+    expect(rebound.controllerClientSessionId).toBe('client-B')
+    expect(runtime.get(session.sessionId)?.controllerClientSessionId).toBe('client-B')
+
+    // Outstanding row retargeted; new mint also uses B.
+    expect(hostActions.listOutstanding('client-A')).toHaveLength(0)
+    const forB = hostActions.listOutstanding('client-B')
+    expect(forB).toHaveLength(1)
+    const action = forB[0]!
+
+    const claimed = runtime.claimHostAction({
+      actionId: action.actionId,
+      expectedVersion: action.version,
+      controllerClientSessionId: 'client-B',
+    })
+    expect(claimed.args).toEqual({ after: 'rebind' })
+
+    runtime.respondHostAction({
+      actionId: claimed.actionId,
+      claimToken: claimed.claimToken,
+      controllerClientSessionId: 'client-B',
+      outcome: 'succeeded',
+      result: { ok: true },
+    })
+    await expect(wait).resolves.toMatchObject({ state: 'succeeded' })
+
+    // Fresh request after rebind is addressed to B only.
+    const wait2 = runtime.requestHostAction({
+      sessionId: session.sessionId,
+      toolName: 'browser.tabs',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: { second: true },
+      deadlineMs: 30_000,
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(hostActions.listOutstanding('client-A')).toHaveLength(0)
+    const second = hostActions.listOutstanding('client-B')
+    expect(second).toHaveLength(1)
+    const claimed2 = runtime.claimHostAction({
+      actionId: second[0]!.actionId,
+      expectedVersion: second[0]!.version,
+      controllerClientSessionId: 'client-B',
+    })
+    runtime.respondHostAction({
+      actionId: claimed2.actionId,
+      claimToken: claimed2.claimToken,
+      controllerClientSessionId: 'client-B',
+      outcome: 'succeeded',
+      result: { ok: true },
+    })
+    await expect(wait2).resolves.toMatchObject({ state: 'succeeded' })
+    release()
+  })
+
+  it('rebind is a no-op when controller id is unchanged', () => {
+    const { runtime } = boot()
+    const session = createBoundSession(runtime, 'client-A')
+    const again = runtime.rebindHostActionController(session.sessionId, 'client-A')
+    expect(again.controllerClientSessionId).toBe('client-A')
   })
 
   it('cancels pending host action on interrupt before claim', async () => {

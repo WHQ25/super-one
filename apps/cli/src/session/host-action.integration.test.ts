@@ -410,4 +410,122 @@ describe('Host Action RPC channel', () => {
     release()
     client.close()
   })
+
+  /**
+   * Re-pair / client-session rotation: old controller is gone, new client takes
+   * the control lease. Without rebind on acquireControl, host actions stay
+   * addressed to the revoked id and the new desktop never claims them.
+   */
+  it('acquireControl rebinds HA controller so a new paired client can claim', async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => {
+      release = r
+    })
+    const runner: TurnRunner = async ({ signal }) => {
+      await new Promise<void>((resolve, reject) => {
+        if (signal.aborted) return reject(new Error('aborted'))
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        held.then(() => resolve())
+      })
+      return { finalText: 'done' }
+    }
+    const rt = await boot(runner)
+    const original = await connectAuthedRpc(rt, 'original-desktop')
+    const project = await openProject(original)
+    const session = (await original.rpc('session.create', {
+      projectId: project.projectId,
+      harnessId: 'codex',
+    })) as { sessionId: string; controllerClientSessionId: string }
+    expect(session.controllerClientSessionId).toBe(original.clientSessionId)
+
+    const lease = (await original.rpc('session.acquireControl', {
+      sessionId: session.sessionId,
+      ttlMs: 60_000,
+    })) as { leaseId: string; generation: string }
+    await original.rpc('session.send', {
+      sessionId: session.sessionId,
+      text: 'hi',
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+
+    // Outstanding action minted under the original controller (pre-rotation).
+    const wait = rt.sessions.requestHostAction({
+      sessionId: session.sessionId,
+      toolName: 'browser.tabs',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: { rotated: true },
+      deadlineMs: 30_000,
+    })
+    await new Promise((r) => setTimeout(r, 30))
+
+    // Simulate re-pair: release lease, new client session takes control.
+    await original.rpc('session.releaseControl', {
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    original.close()
+
+    const repaired = await connectAuthedRpc(rt, 'repaired-desktop')
+    expect(repaired.clientSessionId).not.toBe(original.clientSessionId)
+
+    await repaired.rpc('session.acquireControl', {
+      sessionId: session.sessionId,
+      ttlMs: 60_000,
+    })
+
+    const after = (await repaired.rpc('session.get', {
+      sessionId: session.sessionId,
+    })) as { controllerClientSessionId: string | null }
+    expect(after.controllerClientSessionId).toBe(repaired.clientSessionId)
+
+    const poll = (await repaired.rpc('session.hostActionsPoll', {})) as {
+      outstanding: Array<{ actionId: string; version: number; state: string }>
+    }
+    expect(poll.outstanding).toHaveLength(1)
+    const action = poll.outstanding[0]!
+    expect(action.state).toBe('pending')
+
+    const claimed = (await repaired.rpc('session.claimHostAction', {
+      actionId: action.actionId,
+      expectedVersion: action.version,
+    })) as { claimToken: string; args: { rotated: boolean } }
+    expect(claimed.args.rotated).toBe(true)
+
+    await repaired.rpc('session.respondHostAction', {
+      actionId: action.actionId,
+      claimToken: claimed.claimToken,
+      outcome: 'succeeded',
+      result: { ok: true },
+    })
+    await expect(wait).resolves.toMatchObject({ state: 'succeeded' })
+
+    // New mints also go to the repaired controller.
+    const wait2 = rt.sessions.requestHostAction({
+      sessionId: session.sessionId,
+      toolName: 'browser.tabs',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: { afterRebind: true },
+      deadlineMs: 30_000,
+    })
+    await new Promise((r) => setTimeout(r, 30))
+    const poll2 = (await repaired.rpc('session.hostActionsPoll', {})) as {
+      outstanding: Array<{ actionId: string; version: number }>
+    }
+    expect(poll2.outstanding).toHaveLength(1)
+    const claimed2 = (await repaired.rpc('session.claimHostAction', {
+      actionId: poll2.outstanding[0]!.actionId,
+      expectedVersion: poll2.outstanding[0]!.version,
+    })) as { claimToken: string }
+    await repaired.rpc('session.respondHostAction', {
+      actionId: poll2.outstanding[0]!.actionId,
+      claimToken: claimed2.claimToken,
+      outcome: 'succeeded',
+      result: {},
+    })
+    await expect(wait2).resolves.toMatchObject({ state: 'succeeded' })
+
+    release()
+    repaired.close()
+  })
 })

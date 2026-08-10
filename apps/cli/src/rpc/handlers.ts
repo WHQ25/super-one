@@ -1925,7 +1925,8 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
       harnessId,
       providerId,
       title: typeof p.title === 'string' ? p.title : undefined,
-      // Pairing-level identity survives token refresh; control lease is a fence, not identity.
+      // Initial HA controller = creating client. Token refresh keeps the same
+      // clientSessionId; re-pair does not — acquireControl rebinds (see above).
       controllerClientSessionId: ctx.client.clientSessionId,
     })
     // Seed durable settings from create-time options / profile / agent defaults so later
@@ -2021,6 +2022,15 @@ function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResu
       holderClientId: ctx.client.clientSessionId,
       ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
     })
+    // Re-pair / client-session rotation: lease can move to a new clientSessionId while
+    // sessions.controller_client_session_id stays on the revoked controller. Host Action
+    // mint/poll are keyed by that field — rebind so SuperOne MCP tools work again.
+    try {
+      ctx.sessions.rebindHostActionController(sessionId, ctx.client.clientSessionId)
+    } catch (err) {
+      // Lease is valid even if the session row is missing (stale id). Do not fail acquire.
+      if ((err as { code?: string }).code !== 'not_found') throw err
+    }
     return { result: lease }
   } catch (err) {
     return mapThrown(err)

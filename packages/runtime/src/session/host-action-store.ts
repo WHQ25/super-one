@@ -106,6 +106,19 @@ export interface HostActionStore {
     now?: number
   }): HostActionRow[]
   /**
+   * Retarget non-terminal host actions for a session to a new controller client.
+   * Used when the desktop re-pairs / acquires control under a new clientSessionId.
+   *
+   * - pending: rewrite controller id (new desktop can poll/claim)
+   * - claimed + safe: drop claim → pending under new controller (old claimer is gone)
+   * - claimed + unsafe: cancel (no requeue without indeterminate)
+   */
+  rebindSessionController(input: {
+    sessionId: string
+    toControllerClientSessionId: string
+    now?: number
+  }): { migrated: HostActionRow[]; cancelled: HostActionRow[] }
+  /**
    * Requeue expired claimed+safe actions to pending; cancel expired claimed+unsafe.
    * Also cancel any action past its deadline still non-terminal.
    */
@@ -658,6 +671,87 @@ export function createSqliteHostActionStore(db: SqliteDatabase): HostActionStore
         throw err
       }
       return cancelled
+    },
+
+    rebindSessionController(input) {
+      const now = input.now ?? Date.now()
+      const to = input.toControllerClientSessionId.trim()
+      if (!to) {
+        throw Object.assign(new Error('toControllerClientSessionId required'), {
+          code: 'invalid_argument',
+        })
+      }
+      const migrated: HostActionRow[] = []
+      const cancelled: HostActionRow[] = []
+      db.prepare('BEGIN IMMEDIATE').run()
+      try {
+        const raw = db
+          .prepare(
+            `SELECT action_id, session_id, turn_id, controller_client_session_id, tool_name, tool_group,
+                    args_json, replay_policy, state, version, created_at, deadline,
+                    claim_token_hash, claimed_at, claim_expires_at, result_json, error_json,
+                    response_payload_hash, finished_at
+             FROM host_actions
+             WHERE session_id = ? AND state IN ('pending', 'claimed')`,
+          )
+          .all(input.sessionId) as Array<Parameters<typeof mapRow>[0]>
+
+        for (const r of raw) {
+          const row = mapRow(r)
+          if (row.controllerClientSessionId === to) continue
+
+          if (row.state === 'claimed' && row.replayPolicy !== 'safe') {
+            const nextVersion = row.version + 1
+            const errorJson = JSON.stringify({
+              code: 'cancelled',
+              reason: 'controller_rebound_unsafe_claim',
+            })
+            const result = db
+              .prepare(
+                `UPDATE host_actions SET
+                   state = 'cancelled', version = ?, error_json = ?, finished_at = ?,
+                   claim_token_hash = NULL, claim_expires_at = NULL, claimed_at = NULL
+                 WHERE action_id = ? AND version = ? AND state = 'claimed'`,
+              )
+              .run(nextVersion, errorJson, now, row.actionId, row.version)
+            if (result.changes === 1) {
+              const updated = load(row.actionId)!
+              insertChange(updated, now)
+              cancelled.push(updated)
+            }
+            continue
+          }
+
+          // pending, or claimed+safe → pending under new controller.
+          const nextVersion = row.version + 1
+          const result = db
+            .prepare(
+              `UPDATE host_actions SET
+                 controller_client_session_id = ?,
+                 state = 'pending',
+                 version = ?,
+                 claim_token_hash = NULL,
+                 claimed_at = NULL,
+                 claim_expires_at = NULL
+               WHERE action_id = ? AND version = ? AND state IN ('pending', 'claimed')`,
+            )
+            .run(to, nextVersion, row.actionId, row.version)
+          if (result.changes === 1) {
+            const updated = load(row.actionId)!
+            insertChange(updated, now)
+            migrated.push(updated)
+          }
+        }
+        db.prepare('COMMIT').run()
+      } catch (err) {
+        try {
+          db.prepare('ROLLBACK').run()
+        } catch {
+          /* ignore */
+        }
+        throw err
+      }
+      return { migrated, cancelled }
     },
 
     reconcileExpired(nowInput) {

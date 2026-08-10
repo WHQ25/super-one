@@ -355,8 +355,9 @@ export class SessionRuntime {
     providerId?: string
     title?: string
     /**
-     * Pairing-level controller identity. Bound once at create; multi-desktop
-     * handoff is deferred (fail closed).
+     * Pairing-level controller identity for Host Actions. Stamped at create;
+     * re-pointed via {@link rebindHostActionController} when a new client
+     * acquires control (re-pair / handoff).
      */
     controllerClientSessionId?: string | null
     /** Session-scoped host-action tool groups. Defaults to [browser.read] when controller is set. */
@@ -465,6 +466,66 @@ export class SessionRuntime {
     session.cwd = cwd && cwd.trim() ? cwd.trim() : null
     session.updatedAt = Date.now()
     this.persist(session)
+    return this.clone(session)
+  }
+
+  /**
+   * Move Host Action controller identity to the client that just acquired control.
+   *
+   * Session.create stamps controllerClientSessionId once. Normal refresh keeps the
+   * same clientSessionId, but re-pair / revoke+pair issues a new id. Control lease
+   * can follow the new desktop while host_actions stay addressed to the revoked
+   * controller — every SuperOne MCP then times out with deadline_exceeded.
+   *
+   * Call this from session.acquireControl after a successful lease acquire.
+   * Idempotent when the controller is already the new client.
+   */
+  rebindHostActionController(
+    sessionId: string,
+    controllerClientSessionId: string,
+  ): NodeSessionRecord {
+    const session = this.live.get(sessionId)
+    if (!session) {
+      throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    }
+    if (session.closed || session.status === 'ended') {
+      throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
+    }
+    const next =
+      typeof controllerClientSessionId === 'string' ? controllerClientSessionId.trim() : ''
+    if (!next) {
+      throw Object.assign(new Error('controllerClientSessionId required'), {
+        code: 'invalid_argument',
+      })
+    }
+
+    const prev = session.controllerClientSessionId
+    if (prev === next) {
+      return this.clone(session)
+    }
+
+    session.controllerClientSessionId = next
+    // First bind (e.g. automation session later claimed by a desktop) grants HA.
+    if (session.hostActionCapabilityVersion < 1) {
+      session.hostActionCapabilityVersion = HOST_ACTION_CAPABILITY_VERSION
+    }
+    if (!session.hostActionToolGroups.length) {
+      session.hostActionToolGroups = [...DEFAULT_HOST_ACTION_TOOL_GROUPS]
+    }
+    session.updatedAt = Date.now()
+    this.persist(session)
+
+    if (this.hostActions) {
+      const { cancelled } = this.hostActions.rebindSessionController({
+        sessionId: session.sessionId,
+        toControllerClientSessionId: next,
+      })
+      for (const row of cancelled) {
+        this.settleHostActionWaiter(this.hostActions.toTerminal(row))
+      }
+      this.wakeHostActionPollers()
+    }
+
     return this.clone(session)
   }
 

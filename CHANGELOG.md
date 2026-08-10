@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.52.0-alpha] - 2026-08-10
+
+### Added
+
+- Session: host-owned session archive tools (list/search/read/cleanup) with dedicated Tool UI; inject archives via @session mentions or Add to Chat.
+- Session: session_list ordering (activity, created, message_count, size) and HITL confirm dialog for delete cleanup.
+- MCP: scope session archive tools across projects (project_list; projectId/allProjects on list/search; global session ids for read/cleanup).
+
+### Fixed
+
+- Session: rebind host-action controller on acquireControl after re-pair so SuperOne MCP tools no longer time out with deadline_exceeded.
+- ACP: attribute interrupt to the cancelled turn (not the replacement) and queue mid-turn user messages until the live turn settles.
+- OpenCode: queue mid-turn user messages instead of rejecting concurrent sends with "already has an active turn".
+- ACP: keep session archive tool results untruncated so SessionArchiveToolBlock decodes correctly for large list/search payloads.
+- Chat: hide miniapp_list tool blocks from the transcript (agent-only discovery noise).
+
+### Changed
+
+- Chat: use a neutral message icon for @session mentions (match sidebar session list).
+- Chat: remove colored border from the rate-limit tip bubble (status color stays on icon, title, and progress bar).
+
 ## [0.51.2-alpha] - 2026-08-10
 
 ### Added

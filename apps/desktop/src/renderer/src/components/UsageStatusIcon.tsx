@@ -259,10 +259,7 @@ function RateLimitTipBubble({ tip }: { tip: RateLimitTipInfo }) {
       sideOffset={8}
       collisionPadding={8}
       onOpenAutoFocus={(event) => event.preventDefault()}
-      className={cn(
-        'pointer-events-none w-52 rounded-md border bg-background p-2 text-xs shadow-none',
-        isRejected ? 'border-error/40' : 'border-warning/40',
-      )}
+      className="pointer-events-none w-52 rounded-md border-0 bg-background p-2 text-xs shadow-none"
     >
       <div className="flex items-start gap-1.5">
         {isRejected

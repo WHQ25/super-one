@@ -31,8 +31,15 @@ export {
   disableDesktopHarness,
   probeDesktopHarness,
   ensureManagedHarnessReady,
+  setHarnessInstallProgressListener,
 } from './service'
-export type { EnableHarnessInput, HarnessInstallationStatus, NodeHarnessId } from './service'
+export type {
+  EnableHarnessInput,
+  HarnessInstallationStatus,
+  NodeHarnessId,
+  HarnessInstallProgressEvent,
+} from './service'
+export { registerHarnessIpcHandlers } from './ipc'
 export {
   resolveHarnessRuntime,
   tryResolveHarnessRuntime,

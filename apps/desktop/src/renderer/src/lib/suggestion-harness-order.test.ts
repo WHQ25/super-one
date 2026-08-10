@@ -112,18 +112,18 @@ describe('orderSuggestionHarnesses', () => {
     ])
   })
 
-  it('includes opencode only when experimental agents are enabled', () => {
+  it('includes opencode only when includeOpenCode is true', () => {
     const off = orderSuggestionHarnesses({
       ranks: [{ key: 'opencode', provider: 'opencode', acpAgentId: null, sessionCount: 99 }],
       acpAgents: [],
-      experimentalAgentsEnabled: false,
+      includeOpenCode: false,
     })
     expect(off.map((o) => o.key)).toEqual(['claude', 'codex'])
 
     const on = orderSuggestionHarnesses({
       ranks: [{ key: 'opencode', provider: 'opencode', acpAgentId: null, sessionCount: 99 }],
       acpAgents: [],
-      experimentalAgentsEnabled: true,
+      includeOpenCode: true,
     })
     expect(on.map((o) => o.key)).toEqual(['opencode', 'claude', 'codex'])
   })

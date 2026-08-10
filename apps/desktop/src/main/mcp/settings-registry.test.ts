@@ -13,6 +13,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
     analyticsEnabled: true,
     experimentalAgentsEnabled: false,
+    enabledExperimentalAgents: [],
     experimentalClaudeOpenAiChatEnabled: false,
     experimentalRemoteNodesEnabled: false,
     crispText: true,

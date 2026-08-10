@@ -2927,6 +2927,15 @@ export const AgentIpcChannels = {
   ENVIRONMENT_HARNESS_ENABLE: 'environment:harnessEnable',
   ENVIRONMENT_HARNESS_DISABLE: 'environment:harnessDisable',
   ENVIRONMENT_HARNESS_PROBE: 'environment:harnessProbe',
+
+  // Local desktop harness installation catalog (Settings → Harnesses)
+  HARNESS_LIST: 'harness:list',
+  HARNESS_ENABLE: 'harness:enable',
+  HARNESS_DISABLE: 'harness:disable',
+  HARNESS_PROBE: 'harness:probe',
+  HARNESS_ENSURE: 'harness:ensure',
+  /** Main → renderer progress while downloading/extracting a managed runtime. */
+  HARNESS_INSTALL_PROGRESS: 'harness:installProgress',
   /** Remote Skills / MCP via node `skills.*` / `mcp.*` (EnvironmentHost). */
   ENVIRONMENT_LIST_REMOTE_SKILLS: 'environment:listRemoteSkills',
   ENVIRONMENT_GET_REMOTE_SKILL: 'environment:getRemoteSkill',
@@ -3176,7 +3185,19 @@ export interface BrowserOpenTabRequest {
 
 export interface AppSettings {
   analyticsEnabled: boolean
+  /**
+   * Legacy master switch for experimental agents (OpenCode + non-Grok ACP).
+   * Still honored as an OR when set, but the Settings UI no longer exposes it —
+   * prefer per-agent enable via Settings → Harnesses (`enabledExperimentalAgents`
+   * and the harness installation catalog).
+   */
   experimentalAgentsEnabled: boolean
+  /**
+   * Per-agent enable list for experimental ACP agents (agent ids, not including
+   * Grok — Grok uses the `acp-grok` harness catalog entry). OpenCode uses the
+   * `opencode` harness catalog entry.
+   */
+  enabledExperimentalAgents: string[]
   /** Allow Claude Code to use OpenAI Chat Completions through the local protocol proxy. */
   experimentalClaudeOpenAiChatEnabled: boolean
   /**
@@ -3304,6 +3325,7 @@ export interface HarnessSessionRank {
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
   experimentalAgentsEnabled?: boolean
+  enabledExperimentalAgents?: string[]
   experimentalClaudeOpenAiChatEnabled?: boolean
   experimentalRemoteNodesEnabled?: boolean
   crispText?: boolean

@@ -26,9 +26,24 @@ type ClaudePref = AppSettings['agentPreference']['claude']
 type CodexPref = AppSettings['agentPreference']['codex']
 type AcpPref = AppSettings['agentPreference']['acp']
 
+function readEnabledExperimentalAgents(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const id = item.trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
 const defaults: AppSettings = {
   analyticsEnabled: true,
   experimentalAgentsEnabled: false,
+  enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
   crispText: true,
@@ -364,6 +379,7 @@ export function readAppSettings(): AppSettings {
       experimentalAgentsEnabled: typeof data.experimentalAgentsEnabled === 'boolean'
         ? data.experimentalAgentsEnabled
         : readAcpPreference(data).enabled,
+      enabledExperimentalAgents: readEnabledExperimentalAgents(data.enabledExperimentalAgents),
       experimentalClaudeOpenAiChatEnabled: typeof data.experimentalClaudeOpenAiChatEnabled === 'boolean'
         ? data.experimentalClaudeOpenAiChatEnabled
         : defaults.experimentalClaudeOpenAiChatEnabled,
@@ -417,6 +433,7 @@ export function readAppSettings(): AppSettings {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
+      enabledExperimentalAgents: [],
       experimentalClaudeOpenAiChatEnabled: defaults.experimentalClaudeOpenAiChatEnabled,
       experimentalRemoteNodesEnabled: defaults.experimentalRemoteNodesEnabled,
       crispText: defaults.crispText,
@@ -464,6 +481,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     experimentalAgentsEnabled: patch.experimentalAgentsEnabled
       ?? patch.agentPreference?.acp?.enabled
       ?? current.experimentalAgentsEnabled,
+    enabledExperimentalAgents: patch.enabledExperimentalAgents !== undefined
+      ? readEnabledExperimentalAgents(patch.enabledExperimentalAgents)
+      : current.enabledExperimentalAgents,
     experimentalClaudeOpenAiChatEnabled: patch.experimentalClaudeOpenAiChatEnabled
       ?? current.experimentalClaudeOpenAiChatEnabled,
     experimentalRemoteNodesEnabled: patch.experimentalRemoteNodesEnabled

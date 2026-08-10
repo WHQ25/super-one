@@ -96,6 +96,8 @@ function ProviderSelector() {
   const setAcpAgentId = useChatStore((s) => s.setAcpAgentId)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
+  const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
+  const [openCodeOn, setOpenCodeOn] = useState(false)
   const sessionScope = useSessionScope()
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [ranks, setRanks] = useState<HarnessSessionRank[]>(EMPTY_RANKS)
@@ -114,6 +116,23 @@ function ProviderSelector() {
   useEffect(() => {
     void initializeHarness('acp')
   }, [initializeHarness])
+
+  useEffect(() => {
+    let cancelled = false
+    window.app
+      .listHarnesses?.()
+      .then((list) => {
+        if (cancelled) return
+        const row = list?.find((r) => r.id === 'opencode')
+        setOpenCodeOn(Boolean(row?.enabled && row.state !== 'disabled') || experimentalAgentsEnabled)
+      })
+      .catch(() => {
+        if (!cancelled) setOpenCodeOn(experimentalAgentsEnabled)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [experimentalAgentsEnabled])
 
   useEffect(() => {
     let cancelled = false
@@ -252,13 +271,27 @@ function ProviderSelector() {
     setAcpAgentId,
   ])
 
+  const isAgentAllowed = useCallback(
+    (provider: string, agentId?: string | null) => {
+      if (!isExperimentalAgentProvider(provider as 'opencode' | 'acp', agentId)) return true
+      if (provider === 'opencode') return openCodeOn
+      if (provider === 'acp' && agentId) {
+        if (isGrokAcpAgent(agentId)) return true
+        if (experimentalAgentsEnabled) return true
+        return enabledExperimentalAgents.includes(agentId)
+      }
+      return false
+    },
+    [enabledExperimentalAgents, experimentalAgentsEnabled, openCodeOn],
+  )
+
   useEffect(() => {
-    if (!experimentalAgentsEnabled && isExperimentalAgentProvider(preferredProvider, acpAgentId)) {
+    if (!isAgentAllowed(preferredProvider, acpAgentId)) {
       setAgentMenuOpen(false)
       if (preferredProvider === 'acp') setAcpAgentId(DEFAULT_ACP_AGENT_ID)
       else void selectProvider('claude')
     }
-  }, [experimentalAgentsEnabled, preferredProvider, acpAgentId, selectProvider, setAcpAgentId])
+  }, [isAgentAllowed, preferredProvider, acpAgentId, selectProvider, setAcpAgentId])
 
   const selectedAcpAgent = useMemo(() => {
     if (agents.length === 0) return null
@@ -269,8 +302,14 @@ function ProviderSelector() {
   }, [agents, acpAgentId])
 
   const visibleAcpAgents = useMemo(
-    () => agents.filter((agent) => agent.id !== 'opencode' && (experimentalAgentsEnabled || isGrokAcpAgent(agent.id))),
-    [agents, experimentalAgentsEnabled],
+    () =>
+      agents.filter((agent) => {
+        if (agent.id === 'opencode') return false
+        if (isGrokAcpAgent(agent.id)) return true
+        if (experimentalAgentsEnabled) return true
+        return enabledExperimentalAgents.includes(agent.id)
+      }),
+    [agents, enabledExperimentalAgents, experimentalAgentsEnabled],
   )
 
   useEffect(() => {
@@ -283,11 +322,11 @@ function ProviderSelector() {
     () => orderSuggestionHarnesses({
       ranks,
       acpAgents: visibleAcpAgents.map((a) => ({ id: a.id, name: a.name })),
-      experimentalAgentsEnabled,
+      includeOpenCode: openCodeOn,
       defaultHarness: suggestionHarness === undefined ? null : suggestionHarness,
       secondaryHarness,
     }),
-    [ranks, visibleAcpAgents, experimentalAgentsEnabled, suggestionHarness, secondaryHarness],
+    [ranks, visibleAcpAgents, openCodeOn, suggestionHarness, secondaryHarness],
   )
 
   const fixedHarness = useMemo<SuggestionHarnessOption>(

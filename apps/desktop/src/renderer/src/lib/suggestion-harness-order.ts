@@ -40,15 +40,21 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
 /**
  * Build ChatSuggestions harness order:
  * - Always include claude + codex
- * - Include each visible ACP agent as its own entry
- * - Include opencode only when experimental agents are enabled
+ * - Include each visible ACP agent as its own entry (caller filters experimental)
+ * - Include opencode only when `includeOpenCode` (catalog / per-agent enable)
  * - Manual default → secondary pins first, then parent-session count desc,
  *   then stable product default order
  */
 export function orderSuggestionHarnesses(input: {
   ranks: HarnessSessionRank[]
   acpAgents: Array<{ id: string; name: string }>
-  experimentalAgentsEnabled: boolean
+  /** When true, add OpenCode as a suggestion harness. */
+  includeOpenCode?: boolean
+  /**
+   * @deprecated Use `includeOpenCode`. Kept so older call sites compiling
+   * against experimentalAgentsEnabled still typecheck during migration.
+   */
+  experimentalAgentsEnabled?: boolean
   /** null/undefined = Auto (no pin). */
   defaultHarness?: SuggestionHarnessPreference | null
   /** null/undefined = Auto (no pin). Ignored when equal to default. */
@@ -84,7 +90,8 @@ export function orderSuggestionHarnesses(input: {
     })
   }
 
-  if (input.experimentalAgentsEnabled) {
+  const includeOpenCode = input.includeOpenCode ?? input.experimentalAgentsEnabled ?? false
+  if (includeOpenCode) {
     options.push({
       key: 'opencode',
       provider: 'opencode',

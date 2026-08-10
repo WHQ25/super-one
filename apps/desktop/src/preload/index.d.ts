@@ -75,6 +75,34 @@ interface AppAPI {
   closeProject(folderPath: string): Promise<void>
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
+  /** Local harness installation catalog (Settings → Harnesses). */
+  listHarnesses(): Promise<Array<{
+    id: string
+    enabled: boolean
+    state: string
+    runtimeSource: string
+    requiresAuth: boolean
+    runtimeVersion?: string
+    command?: string
+    diagnostic?: { code: string; message: string }
+  }>>
+  enableHarness(input: {
+    harnessId: string
+    artifactPath?: string
+    command?: string
+    serverUrl?: string
+    args?: string[]
+  }): Promise<unknown>
+  disableHarness(harnessId: string): Promise<unknown>
+  probeHarness(harnessId: string): Promise<unknown>
+  ensureHarness(harnessId: 'claude' | 'codex'): Promise<unknown>
+  onHarnessInstallProgress(callback: (event: {
+    harnessId: string
+    received: number
+    total: number
+    phase: 'download' | 'done' | 'error'
+    message?: string
+  }) => void): () => void
   codexRun(sessionId: string, projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, collaborationMode?: CodexCollaborationMode, threadId?: string, messageId?: string, images?: ImageAttachment[], cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null }): Promise<CodexRunResult>
   codexSteer(sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] }): Promise<void>
   codexReview(sessionId: string, projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null }): Promise<CodexRunResult>

@@ -32,11 +32,18 @@ export type { RemoteDeviceConfig }
 type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
-export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'harnesses'
+
+/** Nested config pages opened from Settings → Harnesses (reuse existing page components). */
+export type HarnessConfigSection = 'agents' | 'skills' | 'mcp' | 'hooks' | 'plugins' | 'preferences'
 
 const PROVIDER_SETTINGS_TABS: SettingsTab[] = ['agents', 'skills', 'mcp', 'hooks', 'plugins', 'preferences']
 const FIRST_SETTINGS_SECTION: SettingsTab = 'app-settings'
 const FIRST_PROVIDER_TAB: SettingsTab = 'agents'
+
+function isHarnessConfigSection(tab: string): tab is HarnessConfigSection {
+  return (PROVIDER_SETTINGS_TABS as string[]).includes(tab)
+}
 export type SidebarTab = 'sessions' | 'files'
 
 interface WorktreeState {
@@ -106,7 +113,10 @@ interface AppState {
   settingsProvider: SettingsProvider
   settingsTab: SettingsTab
   settingsProviderTabs: Record<SettingsProvider, SettingsTab>
+  /** When on harnesses tab, optional nested page (preferences / mcp / …). */
+  harnessConfigSection: HarnessConfigSection | null
   setSettingsProvider: (provider: SettingsProvider) => void
+  setHarnessConfigSection: (section: HarnessConfigSection | null) => void
 
   sidebarTab: SidebarTab
   setSidebarTab: (tab: SidebarTab) => void
@@ -154,6 +164,9 @@ interface AppState {
 
   experimentalAgentsEnabled: boolean
   setExperimentalAgentsEnabled: (enabled: boolean) => Promise<void>
+  /** Non-Grok ACP agent ids enabled from Settings → Harnesses. */
+  enabledExperimentalAgents: string[]
+  setEnabledExperimentalAgents: (ids: string[]) => Promise<void>
   experimentalClaudeOpenAiChatEnabled: boolean
   setExperimentalClaudeOpenAiChatEnabled: (enabled: boolean) => Promise<void>
   /** Remote execution environments (Other Devices + sidebar host switcher). */
@@ -403,6 +416,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsProvider: 'claude',
   settingsTab: FIRST_SETTINGS_SECTION,
   settingsProviderTabs: { claude: FIRST_PROVIDER_TAB, codex: FIRST_PROVIDER_TAB },
+  harnessConfigSection: null,
   sidebarTab: 'sessions',
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   showSidebar: true,
@@ -585,19 +599,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setSettingsProvider: (provider) => {
-    const { settingsProvider: prev, settingsTab, settingsProviderTabs } = get()
-    if (provider === prev) return
-    const nextTabs = { ...settingsProviderTabs }
-    if (PROVIDER_SETTINGS_TABS.includes(settingsTab)) nextTabs[prev] = settingsTab
-    set({
-      settingsProvider: provider,
-      settingsTab: nextTabs[provider] ?? FIRST_PROVIDER_TAB,
-      settingsProviderTabs: nextTabs,
-    })
+    // Provider only selects which harness's config pages to show (claude vs codex).
+    // Does not switch the active settings tab — config lives under Harnesses.
+    set({ settingsProvider: provider })
   },
-  setSettingsTab: (tab) =>
+  setHarnessConfigSection: (section) => set({ harnessConfigSection: section }),
+  setSettingsTab: (tab) => {
     // Former standalone Environments tab lives under Remote Control → Other devices.
-    set({ settingsTab: tab === ('environments' as SettingsTab) ? 'remote' : tab }),
+    if ((tab as string) === 'environments') {
+      set({ settingsTab: 'remote', harnessConfigSection: null })
+      return
+    }
+    // Legacy deep links (MCP popup, sandbox settings) open the nested page
+    // inside Harnesses instead of the removed sidebar provider tabs.
+    if (isHarnessConfigSection(tab)) {
+      set({ settingsTab: 'harnesses', harnessConfigSection: tab })
+      return
+    }
+    // Switching any top-level settings section clears nested harness config.
+    set({ settingsTab: tab, harnessConfigSection: null })
+  },
 
   // Worktree management
   setPendingWorktree: (projectPath, baseBranch) => {
@@ -759,6 +780,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   brandHues: { claude: null, codex: null, acp: null, opencode: null },
   tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {} },
   experimentalAgentsEnabled: false,
+  enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
   terminalLightPalette: null,
@@ -789,6 +811,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           opencode: {},
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
+        enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
         experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
         experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
         terminalLightPalette: settings.terminalLightPalette,
@@ -814,6 +837,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ experimentalAgentsEnabled: result.experimentalAgentsEnabled })
     } catch (err) {
       console.error('[experimental-agents] persist enabled failed:', err)
+      throw err
+    }
+  },
+
+  setEnabledExperimentalAgents: async (ids) => {
+    set({ enabledExperimentalAgents: ids })
+    try {
+      const result = await window.app.saveAppSettings({
+        enabledExperimentalAgents: ids,
+        experimentalAgentsEnabled: false,
+      })
+      set({
+        enabledExperimentalAgents: result.enabledExperimentalAgents ?? ids,
+        experimentalAgentsEnabled: result.experimentalAgentsEnabled,
+      })
+    } catch (err) {
+      console.error('[experimental-agents] persist per-agent list failed:', err)
       throw err
     }
   },
@@ -1001,6 +1041,7 @@ if (typeof window !== 'undefined') {
         opencode: {},
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
+      enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
       experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
       experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
       terminalLightPalette: settings.terminalLightPalette,

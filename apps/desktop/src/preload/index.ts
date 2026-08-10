@@ -725,6 +725,48 @@ const appAPI = {
   installClaude: () =>
     ipcRenderer.invoke(AgentIpcChannels.SETUP_INSTALL_CLAUDE),
 
+  // Local harness installation catalog (Settings → Harnesses)
+  listHarnesses: () => ipcRenderer.invoke(AgentIpcChannels.HARNESS_LIST),
+  enableHarness: (input: {
+    harnessId: string
+    artifactPath?: string
+    command?: string
+    serverUrl?: string
+    args?: string[]
+  }) => ipcRenderer.invoke(AgentIpcChannels.HARNESS_ENABLE, input),
+  disableHarness: (harnessId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.HARNESS_DISABLE, harnessId),
+  probeHarness: (harnessId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.HARNESS_PROBE, harnessId),
+  ensureHarness: (harnessId: 'claude' | 'codex') =>
+    ipcRenderer.invoke(AgentIpcChannels.HARNESS_ENSURE, harnessId),
+  onHarnessInstallProgress: (
+    callback: (event: {
+      harnessId: string
+      received: number
+      total: number
+      phase: 'download' | 'done' | 'error'
+      message?: string
+    }) => void,
+  ) => {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      event: {
+        harnessId: string
+        received: number
+        total: number
+        phase: 'download' | 'done' | 'error'
+        message?: string
+      },
+    ): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.HARNESS_INSTALL_PROGRESS, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.HARNESS_INSTALL_PROGRESS, handler)
+    }
+  },
+
   codexRun: (
     sessionId: string,
     projectPath: string,

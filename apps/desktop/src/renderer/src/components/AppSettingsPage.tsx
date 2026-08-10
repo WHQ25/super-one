@@ -60,12 +60,10 @@ export function AppSettingsPage() {
     }
   }
 
-  const setExperimentalAgentsEnabled = useAppStore((s) => s.setExperimentalAgentsEnabled)
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
   const setExperimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.setExperimentalClaudeOpenAiChatEnabled)
   const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const setExperimentalRemoteNodesEnabled = useAppStore((s) => s.setExperimentalRemoteNodesEnabled)
-  const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
 
   useEffect(() => {
     let mounted = true
@@ -134,11 +132,6 @@ export function AppSettingsPage() {
       shutdownAnalytics()
     }
     toast.success(t(result.analyticsEnabled ? 'settings.general.analytics.enabled' : 'settings.general.analytics.disabled'))
-  }
-
-  async function handleExperimentalAgentsToggle(enabled: boolean) {
-    await setExperimentalAgentsEnabled(enabled)
-    toast.success(t(enabled ? 'settings.general.experimentalAgents.enabled' : 'settings.general.experimentalAgents.disabled'))
   }
 
   async function handleClaudeOpenAiChatToggle(enabled: boolean) {
@@ -332,19 +325,6 @@ export function AppSettingsPage() {
             <p className="text-xs font-medium text-muted-foreground">{t('settings.general.experimental')}</p>
           </div>
           <div className="flex items-center justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.experimentalAgents.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.experimentalAgents.description')}
-              </p>
-            </div>
-            <Switch
-              checked={experimentalAgentsEnabled}
-              onCheckedChange={(v) => void handleExperimentalAgentsToggle(v)}
-              disabled={loading}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
             <div className="min-w-0">
               <p className="text-sm font-medium">{t('settings.general.experimentalClaudeOpenAiChat.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDownWideNarrow, Check, ChevronDown } from 'lucide-react'
 import {
@@ -173,12 +173,31 @@ export function HarnessPreferencePicker({
 }: HarnessPreferencePickerProps) {
   const { t } = useTranslation()
   const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
+  const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
   const acpAgents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
+  const [openCodeOn, setOpenCodeOn] = useState(false)
 
   useEffect(() => {
     void initializeHarness('acp')
   }, [initializeHarness])
+
+  useEffect(() => {
+    let cancelled = false
+    window.app
+      .listHarnesses?.()
+      .then((list) => {
+        if (cancelled) return
+        const row = list?.find((r) => r.id === 'opencode')
+        setOpenCodeOn(Boolean(row?.enabled && row.state !== 'disabled') || experimentalAgentsEnabled)
+      })
+      .catch(() => {
+        if (!cancelled) setOpenCodeOn(experimentalAgentsEnabled)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [experimentalAgentsEnabled])
 
   const options = useMemo((): HarnessPreferenceOption[] => {
     const autoLabel = t('settings.general.defaultHarness.auto')
@@ -200,9 +219,12 @@ export function HarnessPreferencePicker({
         label: t('settings.general.harnessOptions.codex'),
       },
     )
-    const visibleAgents = acpAgents.filter(
-      (agent) => agent.id !== 'opencode' && (experimentalAgentsEnabled || isGrokAcpAgent(agent.id)),
-    )
+    const visibleAgents = acpAgents.filter((agent) => {
+      if (agent.id === 'opencode') return false
+      if (isGrokAcpAgent(agent.id)) return true
+      if (experimentalAgentsEnabled) return true
+      return enabledExperimentalAgents.includes(agent.id)
+    })
     for (const agent of visibleAgents) {
       const key = suggestionHarnessKey('acp', agent.id)
       list.push({
@@ -212,7 +234,7 @@ export function HarnessPreferencePicker({
         label: agent.name || acpAgentDisplayName(agent.id),
       })
     }
-    if (experimentalAgentsEnabled) {
+    if (openCodeOn) {
       list.push({
         key: 'opencode',
         value: 'opencode',
@@ -232,7 +254,7 @@ export function HarnessPreferencePicker({
     }
     if (excludeKey == null) return list
     return list.filter((o) => o.value == null || o.value !== excludeKey)
-  }, [acpAgents, clearable, excludeKey, experimentalAgentsEnabled, t, value])
+  }, [acpAgents, clearable, enabledExperimentalAgents, excludeKey, experimentalAgentsEnabled, openCodeOn, t, value])
 
   const selected = options.find((o) => o.value === value)
     ?? (value == null

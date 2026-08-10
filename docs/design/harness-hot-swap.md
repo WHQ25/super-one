@@ -1,6 +1,6 @@
 # Harness Hot-Swap & On-Demand Runtime Delivery
 
-Status: **P0–P3 implemented on `refactor/harness-kernel-runtime`** · P4–P5 pending
+Status: **P0–P4 (partial) on `refactor/harness-kernel-runtime`** · P5 pending
 Last updated: 2026-08-11
 Related: `packages/shared/src/environment/harness-installation.ts`, `packages/runtime/src/harness/`, `apps/cli/src/session/harness-*.ts`, `apps/desktop/src/main/harness/`, `apps/desktop/electron-builder.yml`, `apps/desktop/CLAUDE.md` (Environment API migration)
 
@@ -283,7 +283,7 @@ feature flag and no dual-path period — the alpha channel absorbs it.
 | **P1** | Lift kernel to `packages/runtime/src/harness/`, invert the 6 seams, CLI becomes a thin host, existing CLI tests stay green | ✅ **Done** (see §7.2) — 262 CLI + 286 runtime tests green |
 | **P2** | Desktop host adapter: fetcher, install root, db wiring, `resolveHarnessRuntime` gate | ✅ **Done** (see §7.3) — npm tarball install + spawn smoke for Claude |
 | **P3** | CI workflow + R2 manifest + channel wiring | ✅ **Done** (see §7.4) — R2-first fetch + sha256, publish workflow |
-| **P4** | UI: Setup first-run step, Settings → Harnesses panel, enabled-set drives pickers | — |
+| **P4** | UI: Setup first-run step, Settings → Harnesses panel, enabled-set drives pickers | ✅ **Partial** (see §7.5) — Settings panel + IPC; setup wizard & picker hard-filter deferred to P5 |
 | **P5** | Drop `asarUnpack` entries and the heavy deps from `apps/desktop/package.json` | Measure actual DMG delta |
 
 P1 touches `packages/*`, so it runs on a dedicated branch. Note the worktree
@@ -468,6 +468,21 @@ P3 leaves:
 - **Settings UI / first-run Setup** to P4
 - **Dropping asarUnpack + deps** to P5
 - **Windows/Linux packaged spawn** still open from P0
+
+### 7.5 P4 result — Settings → Harnesses (partial)
+
+| Piece | Status |
+|---|---|
+| IPC `harness:list/enable/disable/probe/ensure` + `harness:installProgress` | ✅ |
+| Main service progress listener + `installing` state | ✅ |
+| Preload `window.app.listHarnesses` / enable / progress | ✅ |
+| Settings tab **Harnesses** (`HarnessesSettingsPage`) | ✅ |
+| i18n en/zh | ✅ |
+| Release skill harness publish step | ✅ (earlier) |
+| First-run Setup wizard step | ⏳ deferred — still use Settings enable; existing `SETUP_*` claude install remains separate |
+| Hard-filter HarnessPreferencePicker to enabled+ready only | ⏳ deferred to **P5** — while platform packages remain bundled, catalog-disabled would incorrectly empty pickers |
+
+Until P5 drops bundles, enable in Settings is the path for on-demand install; pickers still list all harnesses (bundled binaries keep current sessions working).
 
 ---
 

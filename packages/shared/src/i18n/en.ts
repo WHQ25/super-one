@@ -245,6 +245,7 @@ export type Messages = {
         usage: string
         mediaGen: string
         providers: string
+        harnesses: string
         agents: string
         skills: string
         mcp: string
@@ -255,6 +256,54 @@ export type Messages = {
       providers: {
         claude: string
         codex: string
+      }
+    }
+    harnesses: {
+      title: string
+      subtitle: string
+      hint: string
+      loading: string
+      enable: string
+      disable: string
+      enabled: string
+      disabled: string
+      installing: string
+      progress: string
+      needsAuth: string
+      sourceManaged: string
+      sourceExternal: string
+      groupEnabled: string
+      groupDisabled: string
+      selectHint: string
+      experimentalBadge: string
+      experimentalAcpHint: string
+      configSection: string
+      fields: {
+        source: string
+        version: string
+        command: string
+      }
+      desc: {
+        claude: string
+        codex: string
+        opencode: string
+        acpGrok: string
+        experimentalAcp: string
+      }
+      ids: {
+        claude: string
+        codex: string
+        opencode: string
+        'acp-grok': string
+      }
+      states: {
+        disabled: string
+        missing: string
+        installing: string
+        needs_auth: string
+        ready: string
+        incompatible: string
+        error: string
       }
     }
     remote: {
@@ -2663,6 +2712,7 @@ export const en: Messages = {
         usage: 'Usage Stats',
         mediaGen: 'Image Gen',
         providers: 'AI Provider',
+        harnesses: 'Harnesses',
         agents: 'Subagents',
         skills: 'Skills',
         mcp: 'MCP Servers',
@@ -2673,6 +2723,55 @@ export const en: Messages = {
       providers: {
         claude: 'Claude Code',
         codex: 'Codex',
+      },
+    },
+    harnesses: {
+      title: 'Harnesses',
+      subtitle: 'Enable agent runtimes on this Mac. Managed harnesses download on demand.',
+      hint: 'Only enabled and ready harnesses appear in new-session pickers.',
+      loading: 'Loading harness catalog…',
+      enable: 'Enable',
+      disable: 'Disable',
+      enabled: 'Enabled {{id}}',
+      disabled: 'Disabled {{id}}',
+      installing: 'Downloading runtime…',
+      progress: '{{received}} / {{total}} ({{pct}}%)',
+      needsAuth: 'Sign in required before this harness can run turns.',
+      sourceManaged: 'Managed download',
+      sourceExternal: 'External (PATH / config)',
+      groupEnabled: 'Enabled',
+      groupDisabled: 'Disabled',
+      selectHint: 'Select a harness to manage',
+      experimentalBadge: 'Experimental',
+      experimentalAcpHint:
+        'This ACP agent is experimental. Enabling it only shows it in session pickers — install the agent binary separately if needed.',
+      configSection: 'Configuration',
+      fields: {
+        source: 'Source',
+        version: 'Version',
+        command: 'Command',
+      },
+      desc: {
+        claude: 'Claude Code runtime (Agent SDK binary). Downloads on enable when not bundled.',
+        codex: 'OpenAI Codex app-server binary. Downloads on enable when not bundled.',
+        opencode: 'OpenCode CLI / server. External runtime resolved from PATH or config.',
+        acpGrok: 'Grok via the Agent Client Protocol.',
+        experimentalAcp: 'Optional ACP agent detected on this machine.',
+      },
+      ids: {
+        claude: 'Claude Code',
+        codex: 'Codex',
+        opencode: 'OpenCode',
+        'acp-grok': 'Grok (ACP)',
+      },
+      states: {
+        disabled: 'Disabled',
+        missing: 'Missing',
+        installing: 'Installing',
+        needs_auth: 'Needs auth',
+        ready: 'Ready',
+        incompatible: 'Incompatible',
+        error: 'Error',
       },
     },
     remote: {

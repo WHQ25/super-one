@@ -670,53 +670,51 @@ describe('clearPendingWorktree', () => {
   })
 })
 
-describe('settings harness section memory', () => {
+describe('settings harness config navigation', () => {
   function seedSettings(overrides: Record<string, unknown> = {}) {
     resetStore({
       settingsProvider: 'claude',
       settingsTab: 'providers',
       settingsProviderTabs: { claude: 'providers', codex: 'providers' },
+      harnessConfigSection: null,
       ...overrides,
     })
   }
 
-  it('lands codex on the first section instead of skills on first switch', () => {
-    seedSettings({ settingsTab: 'mcp' })
+  it('maps legacy provider config tabs into harnesses nested section', () => {
+    seedSettings()
+
+    useAppStore.getState().setSettingsTab('mcp')
+
+    expect(useAppStore.getState().settingsTab).toBe('harnesses')
+    expect(useAppStore.getState().harnessConfigSection).toBe('mcp')
+  })
+
+  it('setSettingsProvider only changes provider, not the active tab', () => {
+    seedSettings({ settingsTab: 'harnesses', harnessConfigSection: 'preferences' })
 
     useAppStore.getState().setSettingsProvider('codex')
 
     expect(useAppStore.getState().settingsProvider).toBe('codex')
-    expect(useAppStore.getState().settingsTab).toBe('providers')
+    expect(useAppStore.getState().settingsTab).toBe('harnesses')
+    expect(useAppStore.getState().harnessConfigSection).toBe('preferences')
   })
 
-  it('restores each harness to the section it was last left on', () => {
-    seedSettings()
+  it('clears nested harness config when leaving the harnesses tab', () => {
+    seedSettings({ settingsTab: 'harnesses', harnessConfigSection: 'skills' })
 
-    useAppStore.getState().setSettingsTab('mcp')
-    useAppStore.getState().setSettingsProvider('codex')
-    useAppStore.getState().setSettingsTab('plugins')
-    useAppStore.getState().setSettingsProvider('claude')
+    useAppStore.getState().setSettingsTab('usage')
 
-    expect(useAppStore.getState().settingsTab).toBe('mcp')
-
-    useAppStore.getState().setSettingsProvider('codex')
-    expect(useAppStore.getState().settingsTab).toBe('plugins')
+    expect(useAppStore.getState().settingsTab).toBe('usage')
+    expect(useAppStore.getState().harnessConfigSection).toBeNull()
   })
 
-  it('does not record a global tab as a provider section', () => {
-    seedSettings({ settingsTab: 'usage' })
+  it('clears nested config when re-selecting harnesses from the sidebar', () => {
+    seedSettings({ settingsTab: 'harnesses', harnessConfigSection: 'plugins' })
 
-    useAppStore.getState().setSettingsProvider('codex')
+    useAppStore.getState().setSettingsTab('harnesses')
 
-    expect(useAppStore.getState().settingsTab).toBe('providers')
-    expect(useAppStore.getState().settingsProviderTabs.claude).toBe('providers')
-  })
-
-  it('keeps the current tab when re-selecting the active harness', () => {
-    seedSettings({ settingsTab: 'mcp' })
-
-    useAppStore.getState().setSettingsProvider('claude')
-
-    expect(useAppStore.getState().settingsTab).toBe('mcp')
+    expect(useAppStore.getState().settingsTab).toBe('harnesses')
+    expect(useAppStore.getState().harnessConfigSection).toBeNull()
   })
 })

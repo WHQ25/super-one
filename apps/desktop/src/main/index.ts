@@ -1047,6 +1047,12 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
 }
 
 function registerIpcHandlers(): void {
+  // Local harness catalog (Settings → Harnesses). Eager so enable works as soon
+  // as the window is ready; remote env harnesses remain under environment:*.
+  void import('./harness/ipc').then(({ registerHarnessIpcHandlers }) => {
+    registerHarnessIpcHandlers()
+  })
+
   // Environment / remote-node product path (gateway + workspace router).
   // Lazy import keeps main boot light when environments unused.
   // NOTE: full renderer Session/store migration is a follow-up; these channels

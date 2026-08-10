@@ -55,6 +55,7 @@ describe('app-settings-service', () => {
   const defaultSettings = {
     analyticsEnabled: true,
     experimentalAgentsEnabled: false,
+    enabledExperimentalAgents: [],
     experimentalClaudeOpenAiChatEnabled: false,
     experimentalRemoteNodesEnabled: false,
     crispText: true,
@@ -119,6 +120,7 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
         experimentalAgentsEnabled: false,
+        enabledExperimentalAgents: [],
         experimentalClaudeOpenAiChatEnabled: false,
         experimentalRemoteNodesEnabled: false,
         crispText: true,
@@ -188,6 +190,7 @@ describe('app-settings-service', () => {
     it('prefers the experimental agents flag over the legacy ACP flag', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         experimentalAgentsEnabled: false,
+        enabledExperimentalAgents: [],
         agentPreference: { acp: { enabled: true } },
       }))
       expect(readAppSettings().experimentalAgentsEnabled).toBe(false)
@@ -231,6 +234,7 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
         experimentalAgentsEnabled: false,
+        enabledExperimentalAgents: [],
         experimentalClaudeOpenAiChatEnabled: false,
         experimentalRemoteNodesEnabled: false,
         crispText: true,

@@ -726,6 +726,16 @@ function isCollabToolName(toolName: string | undefined): boolean {
 }
 
 /**
+ * session_list / session_search / session_read / session_cleanup — result is
+ * TOON or large markdown the SessionArchiveToolBlock must parse. Do not match
+ * session_list_agents or session_collab_*.
+ */
+function isSessionArchiveToolName(toolName: string | undefined): boolean {
+  if (!toolName) return false
+  return /(?:^|__)session_(?:list|search|read|cleanup)$/.test(toolName)
+}
+
+/**
  * Completion-only ACP updates can be sparse (no title/rawInput to re-derive
  * toolName from), so also recognize the collab envelope by shape — mirrors
  * the same fallback already used below for widget_code.
@@ -735,14 +745,37 @@ function looksLikeCollabResult(obj: Record<string, unknown>): boolean {
     && (Array.isArray(obj.messages) || Array.isArray(obj.peers) || Array.isArray(obj.launches) || typeof obj.sessionId === 'string')
 }
 
+/** Production list/search payloads are TOON tables — mid-string slice makes decode fail → UI "0 sessions". */
+function looksLikeSessionArchiveToon(summary: string): boolean {
+  const t = summary.trim()
+  if (/(?:^|\n)sessions\[\d+\]/.test(t)) return true
+  if (/(?:^|\n)hits\[\d+\]/.test(t)) return true
+  if (t.includes('projectPath:') && (t.includes('sessions[') || t.includes('hits['))) return true
+  return false
+}
+
+function looksLikeSessionArchiveJson(obj: Record<string, unknown>): boolean {
+  return Array.isArray(obj.sessions)
+    || Array.isArray(obj.hits)
+    || (typeof obj.action === 'string'
+      && (Array.isArray(obj.deleted)
+        || Array.isArray(obj.affected)
+        || Array.isArray(obj.candidates)
+        || Array.isArray(obj.failed)))
+}
+
 function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (summary.length <= 4000) return true
   if (isCollabToolName(toolName)) return true
+  if (isSessionArchiveToolName(toolName)) return true
+  if (looksLikeSessionArchiveToon(summary)) return true
   const trimmed = summary.trim()
   if (!trimmed.startsWith('{')) return false
   try {
     const obj = JSON.parse(trimmed) as Record<string, unknown>
-    return (typeof obj.widget_code === 'string' && obj.widget_code.length > 0) || looksLikeCollabResult(obj)
+    return (typeof obj.widget_code === 'string' && obj.widget_code.length > 0)
+      || looksLikeCollabResult(obj)
+      || looksLikeSessionArchiveJson(obj)
   } catch {
     return false
   }

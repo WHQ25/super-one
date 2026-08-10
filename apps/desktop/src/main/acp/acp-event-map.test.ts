@@ -885,6 +885,73 @@ describe('formatAcpRawOutput', () => {
     expect(summary.length).toBeLessThanOrEqual(4001)
     expect(() => JSON.parse(summary)).toThrow()
   })
+
+  it('keeps a large session_list TOON payload untruncated when the update carries the tool name', () => {
+    // Large session_list TOON (paginated beyond the default 20) can exceed the 4k UI cap.
+    // Truncation made SessionArchiveToolBlock decode fail and show "0 sessions"
+    // while the model still saw the full MCP result.
+    const rows = Array.from({ length: 30 }, (_, i) => {
+      const id = `a1b2c3d4-1111-4000-8000-${String(i).padStart(12, 'a')}`
+      return `  ${id},Session title ${i} with enough chars to grow,acp,grok-build,"2026-08-10T15:26:00.000Z","2026-08-10T15:26:00.000Z",${i + 1},false,false,null,null,${i === 0}`
+    }).join('\n')
+    const payload = [
+      'projectPath: /Users/me/projects/super-one',
+      'order: last_active_desc',
+      'offset: 0',
+      'limit: 30',
+      'count: 30',
+      'sessions[30]{id,title,harness,acpAgentId,createdAt,lastActiveAt,messageCount,pinned,hidden,parentId,branch,isSelf}:',
+      rows,
+    ].join('\n')
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-session-list-1',
+      kind: 'other',
+      title: 'superone__session_list',
+      rawInput: {
+        variant: 'UseTool',
+        tool_name: 'superone__session_list',
+        tool_input: { limit: 30 },
+      },
+      status: 'completed',
+      rawOutput: {
+        type: 'MCP',
+        tool_name: 'session_list',
+        server_name: 'superone',
+        output: { OkayOutput: payload },
+      },
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toMatchObject({ delta: { summary: payload, isError: false } })
+    expect((result as { delta: { summary: string } }).delta.summary.length).toBe(payload.length)
+    expect((result as { delta: { summary: string } }).delta.summary).toContain('sessions[30]')
+  })
+
+  it('keeps a large session_list TOON payload untruncated on sparse completion (shape fallback)', () => {
+    const rows = Array.from({ length: 28 }, (_, i) => {
+      const id = `b2c3d4e5-2222-4000-8000-${String(i).padStart(12, 'b')}`
+      return `  ${id},Title ${i},claude,null,"2026-08-01T00:00:00.000Z","2026-08-01T00:00:00.000Z",${i},false,false,null,null,false`
+    }).join('\n')
+    const payload = [
+      'projectPath: /tmp/proj',
+      'count: 28',
+      'sessions[28]{id,title,harness,acpAgentId,createdAt,lastActiveAt,messageCount,pinned,hidden,parentId,branch,isSelf}:',
+      rows,
+    ].join('\n')
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-session-list-2',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: payload } }],
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toMatchObject({ delta: { summary: payload, isError: false } })
+    expect((result as { delta: { summary: string } }).delta.summary).toContain('sessions[28]')
+  })
 })
 
 describe('Grok Build tool meta mapping', () => {

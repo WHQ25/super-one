@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { Bot, Folder, Globe, History, MousePointer2, Users } from 'lucide-react'
+import { Bot, Folder, Globe, MessageSquare, MousePointer2, Users } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -60,7 +60,9 @@ export function mentionChipIcon(
   if (kind === 'directory') return <Folder className="text-blue-600 dark:text-blue-400" />
   if (kind === 'miniapp') return <MiniAppIcon appId={value} />
   if (kind === 'desktop-app') return <DesktopAppIcon bundleId={value} />
-  if (kind === 'session') return <History className="text-amber-600 dark:text-amber-400" />
+  // Neutral, matching the sidebar session list: a session is content, not a capability,
+  // so it takes no identity hue. text-foreground (not muted) keeps it clear of disabled.
+  if (kind === 'session') return <MessageSquare className="text-foreground" />
   if (kind === 'collab' || kind === 'computer' || kind === 'browser') {
     return <CapabilityIcon kind={kind} />
   }

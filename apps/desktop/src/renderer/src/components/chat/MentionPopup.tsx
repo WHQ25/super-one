@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, type UIEvent } from 'react'
-import { Bot, Folder, Folders, Globe, History, MousePointer2, Users } from 'lucide-react'
+import { Bot, Folder, Folders, Globe, MessageSquare, MousePointer2, Users } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -158,10 +158,11 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
   const muted = disabled ? 'text-muted-foreground' : undefined
   if (id === 'session') {
     return (
-      <History
+      <MessageSquare
         className={cn(
           'size-3.5 shrink-0',
-          muted ?? 'text-amber-600 dark:text-amber-400',
+          // Sessions stay neutral; the coloured hues below are capability identities.
+          muted ?? 'text-foreground',
         )}
       />
     )
@@ -869,7 +870,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={rowClass}
           >
-            <History className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <MessageSquare className="size-3.5 shrink-0 text-foreground" />
             <span className="min-w-0 flex-1 truncate font-medium">
               <HighlightedPath path={item.title} indices={item.matchIndices} />
             </span>
@@ -1056,7 +1057,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         >
           {isSessionMode ? (
             <div className="flex min-w-0 items-center gap-1.5 border-b border-border/50 px-2 py-1.5 text-xs">
-              <History className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <MessageSquare className="size-3.5 shrink-0 text-foreground" />
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5 text-muted-foreground">
                 <button
                   type="button"

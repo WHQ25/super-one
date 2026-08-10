@@ -121,7 +121,8 @@ describe('config_apply — ai-provider / custom-platform resources (global, not 
           resource: 'ai-provider',
           operation: 'update',
           recordId: 'cred-1',
-          values: { modelMapping: { sonnet: { id: 'glm-4.6' } } },
+          // zhipu-cn/coding has anthropic + openai endpoints — must name the target.
+          values: { endpointId: 'anthropic', modelMapping: { sonnet: { id: 'glm-4.6' } } },
         },
       },
       deps,
@@ -130,13 +131,15 @@ describe('config_apply — ai-provider / custom-platform resources (global, not 
     const event = emitHostEvent.mock.calls[0][0] as {
       request: { requestId: string; configConfirm: { resource: { context: { endpointId?: string }; fields: Array<{ key: string; type: string; currentValue: unknown }> } } }
     }
-    // The plan has one endpoint, so the override target is resolved without the agent naming it.
     expect(event.request.configConfirm.resource.context.endpointId).toBe('anthropic')
     expect(event.request.configConfirm.resource.fields[0].type).toBe('model-mapping')
     expect(event.request.configConfirm.resource.fields[0].currentValue).toEqual({ opus: { id: 'glm-4.5' } })
 
     resolveConfigConfirm(event.request.requestId, 'accept', {
-      [CONFIG_APPLY_FIELD]: JSON.stringify({ modelMapping: { sonnet: { id: 'glm-4.6' } } }),
+      [CONFIG_APPLY_FIELD]: JSON.stringify({
+        endpointId: 'anthropic',
+        modelMapping: { sonnet: { id: 'glm-4.6' } },
+      }),
     })
 
     const result = parseResult(await handlerPromise)
@@ -300,7 +303,8 @@ describe('config_apply — confirmation dialog lifecycle', () => {
         { type: 'interaction_resolved', interactionType: 'permission', requestId, approved: false },
       ])
       const result = parseResult(await handlerPromise)
-      expect(result.status).toBe('error')
+      // Timeout is a neutral cancel (same as session_cleanup / collab), not a tool error.
+      expect(result.status).toBe('cancelled')
       expect(String(result.message)).toContain('timed out')
     } finally {
       vi.useRealTimers()
@@ -317,7 +321,8 @@ describe('config_apply — confirmation dialog lifecycle', () => {
     expect(resolvedEvents(emitHostEvent)).toEqual([
       { type: 'interaction_resolved', interactionType: 'permission', requestId, approved: false },
     ])
-    expect(parseResult(await handlerPromise).status).toBe('error')
+    // Abort/reject maps to cancelled without isError so the tool card is not "failed".
+    expect(parseResult(await handlerPromise).status).toBe('cancelled')
   })
 
   it('dismisses the prompt in the UI when the user answers the confirmation', async () => {

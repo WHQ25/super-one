@@ -51,6 +51,7 @@ import {
 } from './superone-mcp-builtin-defs'
 import { configApplyHandler, configReadHandler, type ConfigApplyArgs } from './config-tools'
 import {
+  SESSION_LIST_ORDER_ENUM,
   sessionCleanupHandler,
   sessionListHandler,
   sessionReadHandler,
@@ -473,7 +474,12 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         }).optional().describe('A resource create/update/delete to propose. Mutually exclusive with `changes`.'),
       },
     },
-    (args) => configApplyHandler(args, deps),
+    // Claude in-process MCP cancels tool calls via extra.signal — forward so
+    // HostConfirmRegistry dismisses the settings dialog (stdio bridge sets deps.signal).
+    (args, extra) => configApplyHandler(args, {
+      ...deps,
+      signal: extra?.signal ?? deps.signal,
+    }),
   )
 
   server.registerTool(
@@ -500,7 +506,13 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         parentOnly: z.boolean().optional().describe('Exclude collab child sessions. Default false.'),
         olderThan: z.string().optional().describe('ISO timestamp — only sessions last active before this.'),
         newerThan: z.string().optional().describe('ISO timestamp — only sessions last active after this.'),
-        limit: z.number().int().min(1).max(100).optional().describe('Max rows. Default 30, max 100.'),
+        order: z
+          .enum(SESSION_LIST_ORDER_ENUM)
+          .optional()
+          .describe(
+            'Sort order. Default last_active_desc. last_active_asc = oldest first. created_* by createdAt; message_count_* by message count; size_* ranks by approx stored transcript size and includes sizeBytes (character length of message JSON, not disk page-file bytes).',
+          ),
+        limit: z.number().int().min(1).max(50).optional().describe('Max rows. Default 20, max 50.'),
         offset: z.number().int().min(0).optional().describe('Pagination offset. Default 0.'),
       },
     },
@@ -548,17 +560,19 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     {
       description: SESSION_CLEANUP_DESCRIPTION,
       inputSchema: {
-        action: z.enum(['preview', 'hide', 'unhide', 'delete'])
-          .describe('preview | hide | unhide | delete (delete needs confirmToken + user approval).'),
-        sessionIds: z.array(z.string()).max(50).optional().describe('Explicit session ids.'),
-        olderThan: z.string().optional().describe('ISO timestamp selector.'),
-        harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional(),
+        action: z.enum(['hide', 'unhide', 'delete'])
+          .describe('hide/unhide soft-archive (no confirm). delete permanently removes after user approval dialog.'),
+        sessionIds: z.array(z.string()).min(1).max(50).describe('Session ids from session_list to act on.'),
         includePinned: z.boolean().optional().describe('Allow pinned sessions. Default false.'),
         maxDelete: z.number().int().min(1).max(50).optional().describe('Hard cap. Default 50.'),
-        confirmToken: z.string().optional().describe('From action=preview. Required for delete.'),
       },
     },
-    (args) => sessionCleanupHandler(args, deps),
+    // Claude in-process MCP cancels tool calls via extra.signal — forward it so
+    // HostConfirmRegistry dismisses the delete prompt (stdio bridge already sets deps.signal).
+    (args, extra) => sessionCleanupHandler(args, {
+      ...deps,
+      signal: extra?.signal ?? deps.signal,
+    }),
   )
 
   registerMediaTools(server, deps)

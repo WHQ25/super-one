@@ -13,7 +13,7 @@ import {
  * - Streaming: sentence case + …  e.g. "Listing sessions…"
  * - Done primary: Title Case (EN) e.g. "Sessions Listed", "Session Meta", "Cleanup Preview"
  * - Counts / empty in label or muted summary: "Found 2 hits", "4 sessions" (collab-style)
- * - Header never shows UUIDs, projectPath, confirmToken
+ * - Header never shows UUIDs or projectPath
  *
  * Wired into ToolBlock; stories remain the design/regression gallery.
  */
@@ -73,6 +73,8 @@ const SESSIONS = [
     title: 'Fix auth middleware refresh',
     harness: 'claude',
     messageCount: 48,
+    sizeBytes: 128_400,
+    createdAt: '2026-07-20T09:12:00.000Z',
     lastActiveAt: '2026-08-01T10:00:00.000Z',
     pinned: true,
     isSelf: false,
@@ -82,6 +84,7 @@ const SESSIONS = [
     title: 'Codex refactor session list',
     harness: 'codex',
     messageCount: 22,
+    createdAt: '2026-08-01T11:05:00.000Z',
     lastActiveAt: '2026-08-05T14:30:00.000Z',
     pinned: false,
     isSelf: false,
@@ -92,6 +95,7 @@ const SESSIONS = [
     harness: 'acp',
     acpAgentId: 'grok-build',
     messageCount: 15,
+    createdAt: '2026-08-07T16:40:00.000Z',
     lastActiveAt: '2026-08-08T09:00:00.000Z',
     pinned: false,
     isSelf: true,
@@ -101,6 +105,7 @@ const SESSIONS = [
     title: 'Untitled',
     harness: 'claude',
     messageCount: 2,
+    createdAt: '2026-06-15T08:00:00.000Z',
     lastActiveAt: '2026-07-01T00:00:00.000Z',
     pinned: false,
     isSelf: false,
@@ -111,7 +116,7 @@ const SESSIONS = [
 const LIST_RESULT_TOON = toonEncode({
   projectPath: '/Users/me/projects/super-one',
   offset: 0,
-  limit: 30,
+  limit: 20,
   count: SESSIONS.length,
   sessions: SESSIONS,
 })
@@ -119,7 +124,7 @@ const LIST_RESULT_TOON = toonEncode({
 const LIST_FILTERED_TOON = toonEncode({
   projectPath: '/Users/me/projects/super-one',
   offset: 0,
-  limit: 30,
+  limit: 20,
   count: 1,
   sessions: [SESSIONS[0]],
 })
@@ -230,39 +235,25 @@ const READ_TOOL_DETAIL = JSON.stringify({
   },
 })
 
-const CLEANUP_PREVIEW = JSON.stringify({
+const CLEANUP_HIDDEN = JSON.stringify({
   status: 'ok',
-  action: 'preview',
-  candidates: [
-    {
-      id: SESSIONS[3].id,
-      title: 'Untitled',
-      lastActiveAt: '2026-07-01T00:00:00.000Z',
-      messageCount: 2,
-      pinned: false,
-      harness: 'claude',
-    },
-    {
-      id: 'eeeeeeee-5555-4000-8000-eeeeeeeeeeee',
-      title: 'Old experiment',
-      lastActiveAt: '2026-06-15T00:00:00.000Z',
-      messageCount: 9,
-      pinned: false,
-      harness: 'codex',
-    },
+  action: 'hide',
+  affected: [
+    { id: SESSIONS[3].id, title: SESSIONS[3].title },
+    { id: 'eeeeeeee-5555-4000-8000-eeeeeeeeeeee', title: 'Old experiment' },
   ],
   skippedPinned: [{ id: SESSIONS[0].id, title: SESSIONS[0].title }],
   skippedSelf: [],
-  // Present in real payload — must NOT appear in collapsed header
-  confirmToken: 'demo_confirm_token_abc_should_not_show_in_header',
-  warning: 'Preview only. To delete, call action=delete with the same sessionIds and confirmToken.',
 })
 
 const CLEANUP_DELETED = JSON.stringify({
   status: 'ok',
   action: 'delete',
-  deleted: [SESSIONS[3].id, 'eeeeeeee-5555-4000-8000-eeeeeeeeeeee'],
-  skippedPinned: [SESSIONS[0].id],
+  deleted: [
+    { id: SESSIONS[3].id, title: SESSIONS[3].title },
+    { id: 'eeeeeeee-5555-4000-8000-eeeeeeeeeeee', title: 'Old experiment' },
+  ],
+  skippedPinned: [{ id: SESSIONS[0].id, title: SESSIONS[0].title }],
   skippedSelf: [],
 })
 
@@ -280,8 +271,8 @@ export const DesignPrinciples: Story = {
     <StoryShell width={680}>
       <Note>
         Casing like collab: streaming “Listing sessions…”, done “Sessions Listed” / “Session Meta” /
-        “Cleanup Preview”. Summary slot holds counts, query quotes, session titles — not tokens or
-        paths. Expand for detail.
+        “Sessions Hidden”. Summary slot holds counts, query quotes, session titles — not paths.
+        Expand for detail. Cleanup: list first, then hide (no confirm) or delete (user dialog).
       </Note>
       <Section title="Collapsed stories (no expand needed to understand)">
         {block('session_list', { harness: 'claude' }, { status: 'streaming' })}
@@ -290,8 +281,8 @@ export const DesignPrinciples: Story = {
         {block('session_read', { sessionId: SESSIONS[0].id, view: 'user' }, {
           result: READ_USER_RESULT,
         })}
-        {block('session_cleanup', { action: 'preview', olderThan: '2026-07-01T00:00:00.000Z' }, {
-          result: CLEANUP_PREVIEW,
+        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, {
+          result: CLEANUP_HIDDEN,
         })}
       </Section>
     </StoryShell>
@@ -357,30 +348,19 @@ export const Gallery: Story = {
       </Section>
 
       <Section title="session_cleanup">
-        {block('session_cleanup', { action: 'preview', olderThan: '2026-07-01T00:00:00.000Z' }, {
+        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, {
           status: 'streaming',
         })}
-        {block('session_cleanup', { action: 'preview', olderThan: '2026-07-01T00:00:00.000Z' }, {
-          result: CLEANUP_PREVIEW,
-        })}
-        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, {
-          result: JSON.stringify({
-            status: 'ok',
-            action: 'hide',
-            affected: [SESSIONS[3].id],
-            skippedPinned: [],
-            skippedSelf: [],
-          }),
-        })}
         {block('session_cleanup', {
-          action: 'delete',
-          sessionIds: [SESSIONS[3].id],
-          confirmToken: 'demo',
-        }, { status: 'streaming' })}
+          action: 'hide',
+          sessionIds: [SESSIONS[3].id, 'eeeeeeee-5555-4000-8000-eeeeeeeeeeee'],
+        }, { result: CLEANUP_HIDDEN })}
+        {block('session_cleanup', { action: 'delete', sessionIds: [SESSIONS[3].id] }, {
+          status: 'streaming',
+        })}
         {block('session_cleanup', {
           action: 'delete',
           sessionIds: [SESSIONS[3].id, SESSIONS[1].id],
-          confirmToken: 'demo',
         }, { result: CLEANUP_DELETED })}
         {block('session_cleanup', { action: 'delete', sessionIds: [SESSIONS[3].id] }, {
           result: JSON.stringify({
@@ -418,8 +398,11 @@ export const NestedNoExpand: Story = {
         result: READ_USER_RESULT,
         allowExpand: false,
       })}
-      {block('session_cleanup', { action: 'preview', olderThan: '2026-07-01T00:00:00.000Z' }, {
-        result: CLEANUP_PREVIEW,
+      {block('session_cleanup', {
+        action: 'hide',
+        sessionIds: [SESSIONS[3].id],
+      }, {
+        result: CLEANUP_HIDDEN,
         allowExpand: false,
       })}
     </StoryShell>
@@ -431,15 +414,14 @@ export const HeaderMustNotLeak: Story = {
   render: () => (
     <StoryShell>
       <Note>
-        Expand CLEANUP preview and list — confirmToken and projectPath exist in the payload but must
-        not appear in the collapsed summary line.
+        Expand list/cleanup — projectPath may exist in list payload but must not appear in the
+        collapsed summary line.
       </Note>
       {block('session_list', {}, { result: LIST_RESULT_TOON })}
       {block('session_cleanup', {
-        action: 'preview',
-        olderThan: '2026-07-01T00:00:00.000Z',
-        confirmToken: 'should-not-show',
-      }, { result: CLEANUP_PREVIEW })}
+        action: 'hide',
+        sessionIds: [SESSIONS[3].id],
+      }, { result: CLEANUP_HIDDEN })}
     </StoryShell>
   ),
 }
@@ -496,30 +478,22 @@ export const CleanupFlow: Story = {
   name: 'session_cleanup flow',
   render: () => (
     <StoryShell>
-      <Section title="1. Preview">
-        {block('session_cleanup', { action: 'preview', olderThan: '2026-07-01T00:00:00.000Z' }, {
-          result: CLEANUP_PREVIEW,
-        })}
+      <Section title="1. List (discover)">
+        {block('session_list', { order: 'last_active_asc' }, { result: LIST_RESULT_TOON })}
       </Section>
-      <Section title="2. Soft hide">
+      <Section title="2. Soft hide (no confirm)">
         {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, {
-          result: JSON.stringify({
-            status: 'ok',
-            action: 'hide',
-            affected: [SESSIONS[3].id],
-          }),
+          result: CLEANUP_HIDDEN,
         })}
       </Section>
-      <Section title="3. Delete (confirm → done / cancelled)">
+      <Section title="3. Delete (user confirm dialog → done / cancelled)">
         {block('session_cleanup', {
           action: 'delete',
           sessionIds: [SESSIONS[3].id],
-          confirmToken: 'demo',
         }, { status: 'streaming' })}
         {block('session_cleanup', {
           action: 'delete',
           sessionIds: [SESSIONS[3].id],
-          confirmToken: 'demo',
         }, { result: CLEANUP_DELETED })}
         {block('session_cleanup', { action: 'delete', sessionIds: [SESSIONS[3].id] }, {
           result: JSON.stringify({ status: 'cancelled', action: 'delete' }),

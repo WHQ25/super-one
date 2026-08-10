@@ -68,7 +68,12 @@ export function rejectConfigConfirm(requestId: string, reason: string): boolean 
   return configConfirms.fail(requestId, new Error(reason))
 }
 
-async function awaitConfigConfirm(session: SessionTitleSetter, message: string, payload: ConfigConfirmPayload): Promise<ConfirmOutcome> {
+async function awaitConfigConfirm(
+  session: SessionTitleSetter,
+  message: string,
+  payload: ConfigConfirmPayload,
+  signal?: AbortSignal,
+): Promise<ConfirmOutcome> {
   return configConfirms.open(session, (requestId) => {
     log.info('[config-tools] opening config confirm requestId=%s', requestId)
     return {
@@ -82,6 +87,26 @@ async function awaitConfigConfirm(session: SessionTitleSetter, message: string, 
       message,
       configConfirm: payload,
     }
+  }, {
+    signal,
+    abortError: () => new Error('Settings confirmation cancelled'),
+  })
+}
+
+/** Cancel/timeout → neutral `cancelled` (no isError); other failures stay errors. */
+function configConfirmCatchResult(error: unknown, nothingChangedHint: string) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/timed out|cancelled/i.test(message)) {
+    return toolResult({
+      status: 'cancelled',
+      message,
+      hint: 'The confirmation was cancelled or timed out. Do NOT retry on your own — wait for further instructions.',
+    })
+  }
+  return toolResult({
+    status: 'error',
+    message: `Settings confirmation failed: ${message}. Nothing was changed.`,
+    hint: nothingChangedHint,
   })
 }
 
@@ -217,13 +242,14 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
 
   let result: ConfirmOutcome
   try {
-    result = await awaitConfigConfirm(session, `Confirm ${req.operation} ${resourceDef.label}: ${title}`, payload)
+    result = await awaitConfigConfirm(
+      session,
+      `Confirm ${req.operation} ${resourceDef.label}: ${title}`,
+      payload,
+      deps.signal,
+    )
   } catch (error) {
-    return toolResult({
-      status: 'error',
-      message: `Confirmation failed: ${error instanceof Error ? error.message : String(error)}. Nothing was changed.`,
-      hint: 'Do NOT retry config_apply — report the error to the user.',
-    })
+    return configConfirmCatchResult(error, 'Do NOT retry config_apply — report the error to the user.')
   }
 
   if (result.action === 'cancel') {
@@ -382,13 +408,14 @@ export async function configApplyHandler(args: ConfigApplyArgs, deps: BuiltInSup
 
   let result: ConfirmOutcome
   try {
-    result = await awaitConfigConfirm(session, `Confirm ${fieldCount} settings change${fieldCount === 1 ? '' : 's'}`, payload)
+    result = await awaitConfigConfirm(
+      session,
+      `Confirm ${fieldCount} settings change${fieldCount === 1 ? '' : 's'}`,
+      payload,
+      deps.signal,
+    )
   } catch (error) {
-    return toolResult({
-      status: 'error',
-      message: `Settings confirmation failed: ${error instanceof Error ? error.message : String(error)}. Nothing was changed.`,
-      hint: 'Do NOT retry config_apply — report the error to the user.',
-    })
+    return configConfirmCatchResult(error, 'Do NOT retry config_apply — report the error to the user.')
   }
 
   if (result.action === 'cancel') {

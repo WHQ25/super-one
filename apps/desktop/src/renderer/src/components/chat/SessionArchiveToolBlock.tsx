@@ -19,6 +19,7 @@ import {
   Eye,
   History,
   List,
+  MessageSquare,
   Search,
   Trash2,
   FileText,
@@ -28,6 +29,9 @@ import {
 } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { decode as toonDecode } from '@toon-format/toon'
+import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
+import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { useChatStore } from '@/stores/chat'
 
 export type SessionArchiveToolName =
   | 'session_list'
@@ -85,6 +89,59 @@ function shortId(id: string, n = 8): string {
 function relativeish(iso: string): string {
   if (!iso) return ''
   return iso.length >= 10 ? iso.slice(0, 10) : iso
+}
+
+/** Compact size for list rows (character-length ranking metric, not disk bytes). */
+function formatSizeChars(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return ''
+  if (n < 1000) return String(Math.round(n))
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
+  return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}M`
+}
+
+/**
+ * Local calendar display for session list:
+ * - same year → `MM-DD HH:mm`
+ * - other year → date only `YYYY-MM-DD` (no clock time)
+ */
+function formatMinute(iso: string, now = new Date()): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) {
+    // Fallback for non-ISO strings
+    const m = iso.match(/^(\d{4})-(\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/)
+    if (!m) return relativeish(iso)
+    const year = Number(m[1])
+    if (year === now.getFullYear()) {
+      return m[3] ? `${m[2]} ${m[3]}` : m[2]!
+    }
+    return `${m[1]}-${m[2]}`
+  }
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const y = d.getFullYear()
+  const md = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  if (y === now.getFullYear()) {
+    return `${md} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  return `${y}-${md}`
+}
+
+function HarnessGlyph({
+  harness,
+  acpAgentId,
+}: {
+  harness: string
+  acpAgentId?: string | null
+}) {
+  const Icon = resolveSessionIcon(harness || null, acpAgentId)
+  if (!Icon) {
+    return <MessageSquare className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+  }
+  return (
+    <span className="flex size-3 shrink-0 items-center justify-center text-muted-foreground" title={harness || undefined}>
+      <Icon status="default" size={12} renderLevel="compact" />
+    </span>
+  )
 }
 
 function quote(s: string, max = 40): string {
@@ -210,59 +267,153 @@ function StatusIcon({
   fallback: ReactNode
 }) {
   if (tone === 'denied') return <Ban className="size-3 shrink-0 text-error" />
-  if (tone === 'error') return <TriangleAlert className="size-3 shrink-0 text-warning" />
+  if (tone === 'error' || tone === 'warning') {
+    return <TriangleAlert className="size-3 shrink-0 text-warning" />
+  }
   return fallback
 }
 
 // --- Expand bodies ---
+
+/**
+ * Open a listed session the same way the sidebar does: mosaic focus/replace first,
+ * else same-project switchSession. (Archive tools only list the current project.)
+ */
+function openArchiveSession(sessionId: string) {
+  if (!sessionId) return
+  const projectPath = useChatStore.getState().activeProject
+  if (!projectPath) return
+  if (useMosaicStore.getState().focusOrReplaceFocused(projectPath, sessionId)) return
+  void useChatStore.getState().switchSession(sessionId)
+}
+
+function SessionTitleLink({
+  sessionId,
+  title,
+  openLabel,
+  className,
+  children,
+}: {
+  sessionId?: string
+  title: string
+  openLabel: string
+  className?: string
+  children?: ReactNode
+}) {
+  if (!sessionId) {
+    return <span className={className}>{children ?? title}</span>
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        openArchiveSession(sessionId)
+      }}
+      className={cn(
+        'min-w-0 cursor-pointer truncate text-left font-medium text-foreground hover:underline',
+        className,
+      )}
+      title={openLabel}
+    >
+      {children ?? title}
+    </button>
+  )
+}
 
 function ListBody({
   sessions,
   emptyLabel,
   pinnedLabel,
   thisChatLabel,
+  openSessionLabel,
 }: {
   sessions: Array<Record<string, unknown>>
   emptyLabel: string
   pinnedLabel: string
   thisChatLabel: string
+  openSessionLabel: string
 }) {
   if (sessions.length === 0) {
     return <div className="text-muted-foreground">{emptyLabel}</div>
   }
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       {sessions.map((s, i) => {
         const id = String(s.id ?? s.sessionId ?? '')
         const title = String(s.title ?? 'Untitled')
         const harness = String(s.harness ?? '')
+        const acpAgentId =
+          typeof s.acpAgentId === 'string'
+            ? s.acpAgentId
+            : typeof s.acp_agent_id === 'string'
+              ? s.acp_agent_id
+              : null
         const count = typeof s.messageCount === 'number' ? s.messageCount : null
-        const last = typeof s.lastActiveAt === 'string' ? relativeish(s.lastActiveAt) : ''
+        const sizeBytes = typeof s.sizeBytes === 'number' ? s.sizeBytes : null
+        const sizeLabel = sizeBytes != null ? formatSizeChars(sizeBytes) : ''
+        // Prefer createdAt; fall back to lastActiveAt for older payloads
+        const createdRaw =
+          typeof s.createdAt === 'string'
+            ? s.createdAt
+            : typeof s.created_at === 'string'
+              ? s.created_at
+              : typeof s.lastActiveAt === 'string'
+                ? s.lastActiveAt
+                : ''
+        const created = createdRaw ? formatMinute(createdRaw) : ''
         const pinned = s.pinned === true || s.isPinned === true
         const self = s.isSelf === true
         return (
           <div
             key={id || i}
             className={cn(
-              'flex min-w-0 items-baseline gap-2 rounded px-1 py-0.5',
+              'flex min-w-0 items-center gap-2 rounded px-1 py-0.5',
               self && 'bg-primary/5',
             )}
             title={id || undefined}
           >
-            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-              {title}
-              {pinned ? (
-                <span className="ml-1 font-normal text-muted-foreground">· {pinnedLabel}</span>
+            <HarnessGlyph harness={harness} acpAgentId={acpAgentId} />
+            {/* Left cluster: title link (truncates) then msg count; time stays far right */}
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <SessionTitleLink
+                sessionId={id || undefined}
+                title={title}
+                openLabel={openSessionLabel}
+                className="min-w-0 flex-1"
+              >
+                {title}
+                {pinned ? (
+                  <span className="ml-1 font-normal text-muted-foreground no-underline">· {pinnedLabel}</span>
+                ) : null}
+                {self ? (
+                  <span className="ml-1 font-normal text-muted-foreground no-underline">· {thisChatLabel}</span>
+                ) : null}
+              </SessionTitleLink>
+              {count != null ? (
+                <span
+                  className="inline-flex shrink-0 items-center gap-0.5 tabular-nums text-muted-foreground"
+                  title={`${count} messages`}
+                >
+                  <MessageSquare className="size-3 opacity-70" aria-hidden />
+                  {count}
+                </span>
               ) : null}
-              {self ? (
-                <span className="ml-1 font-normal text-muted-foreground">· {thisChatLabel}</span>
+              {sizeLabel ? (
+                <span
+                  className="shrink-0 tabular-nums text-muted-foreground"
+                  title={`Approx transcript size (char length): ${sizeBytes}`}
+                >
+                  {sizeLabel}
+                </span>
               ) : null}
             </span>
-            {harness ? <span className="shrink-0 text-muted-foreground">{harness}</span> : null}
-            {count != null ? (
-              <span className="shrink-0 tabular-nums text-muted-foreground">{count}</span>
+            {created ? (
+              <span className="shrink-0 tabular-nums text-muted-foreground" title={createdRaw}>
+                {created}
+              </span>
             ) : null}
-            {last ? <span className="shrink-0 tabular-nums text-muted-foreground">{last}</span> : null}
           </div>
         )
       })}
@@ -273,9 +424,11 @@ function ListBody({
 function SearchBody({
   hits,
   emptyLabel,
+  openSessionLabel,
 }: {
   hits: Array<Record<string, unknown>>
   emptyLabel: string
+  openSessionLabel: string
 }) {
   if (hits.length === 0) {
     return <div className="text-muted-foreground">{emptyLabel}</div>
@@ -296,7 +449,12 @@ function SearchBody({
             title={sid ? `session ${sid}` : undefined}
           >
             <div className="flex min-w-0 items-baseline gap-2">
-              <span className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</span>
+              <SessionTitleLink
+                sessionId={sid || undefined}
+                title={title}
+                openLabel={openSessionLabel}
+                className="min-w-0 flex-1"
+              />
               {role ? <span className="shrink-0 text-muted-foreground">{role}</span> : null}
               {harness ? <span className="shrink-0 text-muted-foreground">{harness}</span> : null}
             </div>
@@ -310,31 +468,82 @@ function SearchBody({
   )
 }
 
+/** Normalize cleanup session refs: modern `{ id, title }` or legacy bare id strings. */
+function normalizeSessionRefs(value: unknown): Array<{ id: string; title: string }> {
+  return asArray(value).flatMap((item) => {
+    if (typeof item === 'string' && item.length > 0) {
+      return [{ id: item, title: shortId(item, 12) }]
+    }
+    const rec = asRecord(item)
+    if (!rec || typeof rec.id !== 'string' || !rec.id) return []
+    const title =
+      typeof rec.title === 'string' && rec.title.trim()
+        ? rec.title.trim()
+        : shortId(rec.id, 12)
+    return [{ id: rec.id, title }]
+  })
+}
+
 function CleanupBody({
   candidates,
   skippedPinned,
   deleted,
+  failed,
+  affected,
   labels,
 }: {
   candidates?: Array<Record<string, unknown>>
   skippedPinned?: Array<Record<string, unknown>>
-  deleted?: string[]
+  deleted?: Array<{ id: string; title: string }>
+  failed?: Array<{ id: string; title: string }>
+  affected?: Array<{ id: string; title: string }>
   labels: {
     deleted: string
+    failed: string
+    affected: string
     candidates: string
     wereCandidates: string
     skippedPinned: string
   }
 }) {
   const rows = candidates ?? []
+  const actedOn = deleted && deleted.length > 0 ? deleted : affected
+  const actedLabel = deleted && deleted.length > 0 ? labels.deleted : labels.affected
   return (
     <div className="space-y-2">
-      {deleted && deleted.length > 0 ? (
+      {actedOn && actedOn.length > 0 ? (
         <div className="space-y-1">
-          <div className="text-muted-foreground">{labels.deleted}</div>
-          {deleted.map((id) => (
-            <div key={id} className="truncate font-mono text-[11px] text-foreground" title={id}>
-              {shortId(id, 12)}
+          <div className="text-muted-foreground">{actedLabel}</div>
+          {actedOn.map((s) => (
+            <div key={s.id} className="flex min-w-0 items-baseline gap-2">
+              {/* Prefer full title; id yields first when space is tight */}
+              <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={s.title}>
+                {s.title}
+              </span>
+              <span
+                className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-[11px] text-muted-foreground"
+                title={s.id}
+              >
+                {s.id}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {failed && failed.length > 0 ? (
+        <div className="space-y-1">
+          <div className="text-muted-foreground">{labels.failed}</div>
+          {failed.map((s) => (
+            <div key={s.id} className="flex min-w-0 items-baseline gap-2">
+              <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={s.title}>
+                {s.title}
+              </span>
+              <span
+                className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-[11px] text-muted-foreground"
+                title={s.id}
+              >
+                {s.id}
+              </span>
             </div>
           ))}
         </div>
@@ -342,7 +551,7 @@ function CleanupBody({
       {rows.length > 0 ? (
         <div className="space-y-1">
           <div className="text-muted-foreground">
-            {deleted ? labels.wereCandidates : labels.candidates}
+            {actedOn || (failed && failed.length > 0) ? labels.wereCandidates : labels.candidates}
           </div>
           {rows.map((c, i) => (
             <div key={String(c.id ?? i)} className="flex min-w-0 items-baseline gap-2">
@@ -398,11 +607,13 @@ export function SessionArchiveToolBlock({
   }, [result])
 
   const rec = asRecord(parsed)
+  // cancelled = user closed the confirm without deleting — neutral chrome (not warning/error)
+  // partial = some deletes succeeded — warning chrome
   const tone: 'default' | 'error' | 'warning' | 'denied' = isDenied
     ? 'denied'
     : isError || rec?.status === 'error' || rec?.status === 'rejected'
       ? 'error'
-      : rec?.status === 'cancelled'
+      : rec?.status === 'partial'
         ? 'warning'
         : 'default'
 
@@ -456,6 +667,7 @@ export function SessionArchiveToolBlock({
           emptyLabel={t(`${a}.emptySessions`)}
           pinnedLabel={t(`${a}.pinned`)}
           thisChatLabel={t(`${a}.thisChat`)}
+          openSessionLabel={t(`${a}.openSession`)}
         />
       </ArchiveRow>
     )
@@ -499,7 +711,11 @@ export function SessionArchiveToolBlock({
         tone={tone}
         expandable={expandable}
       >
-        <SearchBody hits={hits} emptyLabel={t(`${a}.emptyHits`)} />
+        <SearchBody
+          hits={hits}
+          emptyLabel={t(`${a}.emptyHits`)}
+          openSessionLabel={t(`${a}.openSession`)}
+        />
       </ArchiveRow>
     )
   }
@@ -653,78 +869,90 @@ export function SessionArchiveToolBlock({
   }
 
   // ---------- session_cleanup ----------
+  // Discover via session_list; cleanup only hide/unhide/delete (legacy "preview" may still appear in old transcripts).
   const action =
-    typeof params.action === 'string' ? params.action : String(rec?.action ?? 'preview')
+    typeof params.action === 'string' ? params.action : String(rec?.action ?? 'hide')
   const candidates = asArray(rec?.candidates).map((c) => asRecord(c) ?? {})
   const skippedPinned = asArray(rec?.skippedPinned).map((c) =>
     typeof c === 'string' ? { id: c, title: c } : (asRecord(c) ?? {}),
   )
-  const deleted = asArray(rec?.deleted).filter((id): id is string => typeof id === 'string')
-  const affected = asArray(rec?.affected).filter((id): id is string => typeof id === 'string')
+  const deleted = normalizeSessionRefs(rec?.deleted)
+  const failed = normalizeSessionRefs(rec?.failed)
+  const affected = normalizeSessionRefs(rec?.affected)
   const status = typeof rec?.status === 'string' ? rec.status : ''
-  const olderThan =
-    typeof params.olderThan === 'string' ? relativeish(params.olderThan) : ''
+  const idCount = Array.isArray(params.sessionIds) ? params.sessionIds.length : 0
 
   let Icon: typeof Archive | typeof Trash2 | typeof EyeOff | typeof Eye = Archive
-  let label = t(`${a}.cleanupPreview`)
+  let label = t(`${a}.sessionsHidden`)
   let summary: string | undefined
 
   if (isDenied) {
-    label = t(`${a}.cleanupPreview`)
+    label = t(`${a}.cleanupFailed`)
     summary = deniedLabel
   } else if (isStreaming) {
     if (action === 'delete') {
       Icon = Trash2
       label = t(`${a}.confirmingDelete`)
-      if (Array.isArray(params.sessionIds) && params.sessionIds.length > 0) {
-        summary = t(`${a}.sessionCount`, { count: params.sessionIds.length })
-      }
-    } else if (action === 'hide') {
-      Icon = EyeOff
-      label = t(`${a}.hidingSessions`)
+      if (idCount > 0) summary = t(`${a}.sessionCount`, { count: idCount })
     } else if (action === 'unhide') {
       Icon = Eye
       label = t(`${a}.unhidingSessions`)
-    } else {
+      if (idCount > 0) summary = t(`${a}.sessionCount`, { count: idCount })
+    } else if (action === 'preview') {
+      // Legacy transcripts only
       label = t(`${a}.previewingCleanup`)
-      summary = olderThan ? t(`${a}.beforeDate`, { date: olderThan }) : undefined
+    } else {
+      Icon = EyeOff
+      label = t(`${a}.hidingSessions`)
+      if (idCount > 0) summary = t(`${a}.sessionCount`, { count: idCount })
     }
   } else if (isError || status === 'error') {
     label = t(`${a}.cleanupFailed`)
-    summary = typeof rec?.message === 'string' ? rec.message : undefined
+    summary = typeof rec?.message === 'string'
+      ? rec.message
+      : failed.length > 0
+        ? t(`${a}.sessionCount`, { count: failed.length })
+        : undefined
   } else if (status === 'cancelled') {
     Icon = Trash2
     label = t(`${a}.deleteCancelled`)
   } else if (status === 'rejected') {
     Icon = Trash2
     label = t(`${a}.deleteRejected`)
+  } else if (status === 'partial' && action === 'delete') {
+    Icon = Trash2
+    label = t(`${a}.sessionsDeletedPartial`)
+    summary = t(`${a}.partialDeleteSummary`, {
+      deleted: deleted.length,
+      failed: failed.length,
+    })
   } else if (action === 'preview') {
+    // Legacy transcripts
     Icon = Archive
     label = t(`${a}.cleanupPreview`)
-    summary = [
-      t(`${a}.candidateCount`, { count: candidates.length }),
-      olderThan ? t(`${a}.beforeDate`, { date: olderThan }) : '',
-    ]
-      .filter(Boolean)
-      .join(' · ')
+    summary = t(`${a}.candidateCount`, { count: candidates.length })
   } else if (action === 'hide') {
     Icon = EyeOff
     label = t(`${a}.sessionsHidden`)
-    summary = t(`${a}.sessionCount`, { count: affected.length || candidates.length })
+    summary = t(`${a}.sessionCount`, { count: affected.length || candidates.length || idCount })
   } else if (action === 'unhide') {
     Icon = Eye
     label = t(`${a}.sessionsUnhidden`)
-    summary = t(`${a}.sessionCount`, { count: affected.length || candidates.length })
+    summary = t(`${a}.sessionCount`, { count: affected.length || candidates.length || idCount })
   } else if (action === 'delete') {
     Icon = Trash2
     label = t(`${a}.sessionsDeleted`)
-    summary = t(`${a}.sessionCount`, { count: deleted.length })
+    summary = t(`${a}.sessionCount`, { count: deleted.length || idCount })
   }
 
   const expandable =
     canShowExpand
     && !isError
-    && (candidates.length > 0 || deleted.length > 0 || skippedPinned.length > 0)
+    && (candidates.length > 0
+      || deleted.length > 0
+      || failed.length > 0
+      || skippedPinned.length > 0
+      || affected.length > 0)
 
   return (
     <ArchiveRow
@@ -743,8 +971,12 @@ export function SessionArchiveToolBlock({
         candidates={candidates.length > 0 ? candidates : undefined}
         skippedPinned={skippedPinned.length > 0 ? skippedPinned : undefined}
         deleted={deleted.length > 0 ? deleted : undefined}
+        failed={failed.length > 0 ? failed : undefined}
+        affected={affected.length > 0 ? affected : undefined}
         labels={{
           deleted: t(`${a}.deletedSection`),
+          failed: t(`${a}.failedSection`),
+          affected: t(`${a}.affectedSection`),
           candidates: t(`${a}.candidatesSection`),
           wereCandidates: t(`${a}.wereCandidatesSection`),
           skippedPinned: t(`${a}.skippedPinnedSection`),

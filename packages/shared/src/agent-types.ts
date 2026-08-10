@@ -743,7 +743,13 @@ export interface PermissionRequest {
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
   toolLineDelta?: { added: number; removed: number }
-  requestKind?: 'mcp_elicitation' | 'video_gen_confirm' | 'config_confirm' | 'session_agents_confirm' | 'computer_use_grant'
+  requestKind?:
+    | 'mcp_elicitation'
+    | 'video_gen_confirm'
+    | 'config_confirm'
+    | 'session_agents_confirm'
+    | 'computer_use_grant'
+    | 'session_cleanup_confirm'
   serverName?: string
   message?: string
   subtitle?: string
@@ -758,6 +764,22 @@ export interface PermissionRequest {
   sessionAgentsConfirm?: SessionAgentRequestPayload
   /** Present only when requestKind === 'computer_use_grant'. */
   computerUseGrant?: ComputerUseGrantPayload
+  /** Present only when requestKind === 'session_cleanup_confirm'. */
+  sessionCleanupConfirm?: SessionCleanupConfirmPayload
+}
+
+/** One row in the permanent-delete confirm dialog (mirrors session_list metadata). */
+export interface SessionCleanupConfirmSession {
+  id: string
+  title: string
+  harness?: string
+  acpAgentId?: string | null
+  messageCount?: number
+  createdAt?: string
+}
+
+export interface SessionCleanupConfirmPayload {
+  sessions: SessionCleanupConfirmSession[]
 }
 
 /** HITL payload when Computer Use needs permission to touch a desktop app. */

@@ -1041,6 +1041,10 @@ export type Messages = {
       deny: string
       denyReasonPlaceholder: string
       alwaysAllow: string
+      sessionCleanupTitle: string
+      sessionCleanupEmpty: string
+      sessionCleanupDelete: string
+      sessionCleanupCancel: string
     }
     computerUseGrant: {
       badge: string
@@ -1251,17 +1255,22 @@ export type Messages = {
         sessionsUnhidden: string
         confirmingDelete: string
         sessionsDeleted: string
+        sessionsDeletedPartial: string
         deleteCancelled: string
         deleteRejected: string
         cleanupFailed: string
         sessionCount: string
         candidateCount: string
+        partialDeleteSummary: string
         beforeDate: string
         thisChat: string
         pinned: string
         emptySessions: string
         emptyHits: string
+        openSession: string
         deletedSection: string
+        failedSection: string
+        affectedSection: string
         candidatesSection: string
         wereCandidatesSection: string
         skippedPinnedSection: string
@@ -3496,6 +3505,10 @@ export const en: Messages = {
       deny: 'Deny',
       denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
       alwaysAllow: 'Always Allow',
+      sessionCleanupTitle: 'Permanently delete {{count}} session(s)?',
+      sessionCleanupEmpty: 'No sessions selected.',
+      sessionCleanupDelete: 'Delete',
+      sessionCleanupCancel: 'Cancel',
     },
     computerUseGrant: {
       badge: 'Computer Use',
@@ -3705,17 +3718,22 @@ export const en: Messages = {
         sessionsUnhidden: 'Sessions Unhidden',
         confirmingDelete: 'Confirming delete…',
         sessionsDeleted: 'Sessions Deleted',
+        sessionsDeletedPartial: 'Partially Deleted',
         deleteCancelled: 'Delete Cancelled',
         deleteRejected: 'Delete Rejected',
         cleanupFailed: 'Cleanup Failed',
         sessionCount: '{{count}} sessions',
         candidateCount: '{{count}} candidates',
+        partialDeleteSummary: '{{deleted}} deleted · {{failed}} failed',
         beforeDate: 'before {{date}}',
         thisChat: 'this chat',
         pinned: 'pinned',
         emptySessions: 'No sessions',
         emptyHits: 'No hits',
+        openSession: 'Open session',
         deletedSection: 'Deleted',
+        failedSection: 'Failed',
+        affectedSection: 'Affected',
         candidatesSection: 'Candidates',
         wereCandidatesSection: 'Were candidates',
         skippedPinnedSection: 'Skipped (pinned)',

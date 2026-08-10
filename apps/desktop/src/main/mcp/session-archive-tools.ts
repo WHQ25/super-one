@@ -6,7 +6,6 @@
  * provider_session_id across harnesses. Tool calls are never embedded in text views.
  */
 
-import { createHash, randomBytes } from 'crypto'
 import { encode as toonEncode } from '@toon-format/toon'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { getDb } from '../database'
@@ -34,14 +33,13 @@ import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 
 // --- Limits ---
 
-export const SESSION_LIST_DEFAULT_LIMIT = 30
-export const SESSION_LIST_MAX_LIMIT = 100
+export const SESSION_LIST_DEFAULT_LIMIT = 20
+export const SESSION_LIST_MAX_LIMIT = 50
 export const SESSION_READ_DEFAULT_LIMIT = 20
 export const SESSION_READ_MAX_LIMIT = 50
 export const SESSION_SEARCH_DEFAULT_LIMIT = 20
 export const SESSION_SEARCH_MAX_LIMIT = 50
 export const SESSION_CLEANUP_MAX_DELETE = 50
-const CONFIRM_TOKEN_TTL_MS = 10 * 60_000
 const CLEANUP_CONFIRM_TIMEOUT_MS = 10 * 60_000
 
 // --- Shared helpers ---
@@ -94,9 +92,67 @@ interface ArchiveSessionRow {
   acp_agent_id: string | null
   parent_session_id: string | null
   message_count: number
+  /**
+   * Approximate transcript payload for ranking only (SQLite LENGTH on TEXT =
+   * character length of content_json + metadata_json). Not disk page-file bytes.
+   * Null when not computed (default list order skips the subquery).
+   */
+  size_bytes: number | null
   selected_model: string | null
   total_cost_usd: number | null
   context_tokens: number | null
+}
+
+/**
+ * Approximate transcript payload for ranking: sum of LENGTH(content_json) +
+ * LENGTH(metadata_json) over chat_messages. SQLite LENGTH on TEXT is character
+ * length (not UTF-8 bytes / page-file size). Only used when sorting by size_*.
+ */
+const SESSION_SIZE_BYTES_SQL = `(SELECT COALESCE(SUM(LENGTH(m.content_json) + LENGTH(COALESCE(m.metadata_json, ''))), 0) FROM chat_messages m WHERE m.session_id = s.id)`
+
+/** Sort keys for session_list. Default last_active_desc (newest activity first). */
+export const SESSION_LIST_ORDERS = [
+  'last_active_desc',
+  'last_active_asc',
+  'created_desc',
+  'created_asc',
+  'message_count_desc',
+  'message_count_asc',
+  'size_desc',
+  'size_asc',
+] as const
+
+export type SessionListOrder = (typeof SESSION_LIST_ORDERS)[number]
+export const SESSION_LIST_DEFAULT_ORDER: SessionListOrder = 'last_active_desc'
+
+/** Non-empty tuple form for Zod `z.enum(...)` and JSON-schema `enum` arrays. */
+export const SESSION_LIST_ORDER_ENUM = SESSION_LIST_ORDERS as unknown as [
+  SessionListOrder,
+  ...SessionListOrder[],
+]
+
+const SESSION_LIST_ORDER_SET = new Set<string>(SESSION_LIST_ORDERS)
+
+export function sessionListOrderNeedsSize(order: SessionListOrder): boolean {
+  return order === 'size_desc' || order === 'size_asc'
+}
+
+/** Whitelisted SQL ORDER BY fragments — never interpolate raw user strings. */
+const SESSION_LIST_ORDER_SQL: Record<SessionListOrder, string> = {
+  last_active_desc: 'last_user_msg_at DESC, s.id ASC',
+  last_active_asc: 'last_user_msg_at ASC, s.id ASC',
+  created_desc: 's.created_at DESC, s.id ASC',
+  created_asc: 's.created_at ASC, s.id ASC',
+  message_count_desc: 'message_count DESC, last_user_msg_at DESC, s.id ASC',
+  message_count_asc: 'message_count ASC, last_user_msg_at ASC, s.id ASC',
+  size_desc: 'size_bytes DESC, last_user_msg_at DESC, s.id ASC',
+  size_asc: 'size_bytes ASC, last_user_msg_at ASC, s.id ASC',
+}
+
+export function parseSessionListOrder(raw: unknown): SessionListOrder | null {
+  if (raw == null || raw === '') return SESSION_LIST_DEFAULT_ORDER
+  if (typeof raw !== 'string') return null
+  return SESSION_LIST_ORDER_SET.has(raw) ? (raw as SessionListOrder) : null
 }
 
 function listArchiveSessions(
@@ -109,6 +165,7 @@ function listArchiveSessions(
     query?: string
     olderThan?: string
     newerThan?: string
+    order?: SessionListOrder
     limit: number
     offset: number
   },
@@ -142,6 +199,12 @@ function listArchiveSessions(
   // harness filter applied after map (deriveHarnessId); over-fetch slightly when filtering
   const fetchLimit = opts.harness ? opts.limit + opts.offset + 200 : opts.limit
   const fetchOffset = opts.harness ? 0 : opts.offset
+  const order = opts.order ?? SESSION_LIST_DEFAULT_ORDER
+  const orderBy = SESSION_LIST_ORDER_SQL[order]
+  // Correlated size subquery is relatively expensive — only when sorting by size_*.
+  const sizeSelect = sessionListOrderNeedsSize(order)
+    ? `${SESSION_SIZE_BYTES_SQL} AS size_bytes`
+    : 'NULL AS size_bytes'
 
   const sql = `
     SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
@@ -149,11 +212,12 @@ function listArchiveSessions(
            s.total_cost_usd, s.context_tokens,
            g.parent_session_id,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
-           (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count
+           (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
+           ${sizeSelect}
     FROM sessions s
     LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
     WHERE ${where.join(' AND ')}
-    ORDER BY last_user_msg_at DESC
+    ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
   `
   params.push(fetchLimit, fetchOffset)
@@ -174,8 +238,12 @@ function rowToListEntry(row: ArchiveSessionRow, selfId: string) {
     title: row.title ?? 'Untitled',
     harness: deriveHarnessId(row),
     acpAgentId: row.acp_agent_id ?? null,
+    createdAt: row.created_at,
     lastActiveAt: row.last_user_msg_at,
     messageCount: row.message_count ?? 0,
+    // Only present when order is size_* (see sessionListOrderNeedsSize). Ranking metric:
+    // character length of stored message JSON, not disk page-file bytes.
+    ...(row.size_bytes != null ? { sizeBytes: row.size_bytes } : {}),
     pinned: !!row.is_pinned,
     hidden: !!row.is_hidden,
     parentId: row.parent_session_id ?? null,
@@ -194,6 +262,8 @@ export interface SessionListArgs {
   parentOnly?: boolean
   olderThan?: string
   newerThan?: string
+  /** Sort key. Default last_active_desc. Use last_active_asc for oldest-first cleanup. */
+  order?: SessionListOrder
   limit?: number
   offset?: number
 }
@@ -201,6 +271,14 @@ export interface SessionListArgs {
 export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneToolDeps) {
   const project = requireProject(deps)
   if ('error' in project) return project.error
+
+  const order = parseSessionListOrder(args.order)
+  if (order == null) {
+    return toolResult({
+      status: 'error',
+      message: `Invalid order. Use one of: ${SESSION_LIST_ORDERS.join(', ')}`,
+    }, true)
+  }
 
   const limit = clampLimit(args.limit, SESSION_LIST_DEFAULT_LIMIT, SESSION_LIST_MAX_LIMIT)
   const offset = typeof args.offset === 'number' && Number.isFinite(args.offset)
@@ -215,6 +293,7 @@ export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneT
     query: typeof args.query === 'string' ? args.query : undefined,
     olderThan: typeof args.olderThan === 'string' ? args.olderThan : undefined,
     newerThan: typeof args.newerThan === 'string' ? args.newerThan : undefined,
+    order,
     limit,
     offset,
   })
@@ -222,6 +301,7 @@ export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneT
   const sessions = rows.map((r) => rowToListEntry(r, deps.sessionId))
   return toonResult({
     projectPath: project.projectPath,
+    order,
     offset,
     limit,
     count: sessions.length,
@@ -341,7 +421,12 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     if (hits.length >= limit) break
   }
 
-  return toonResult({ query, count: hits.length, hits })
+  return toonResult({
+    projectPath: project.projectPath,
+    query,
+    count: hits.length,
+    hits,
+  })
 }
 
 // --- session_read ---
@@ -550,39 +635,7 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
 }
 
 // --- session_cleanup ---
-
-interface ConfirmTokenEntry {
-  ids: string[]
-  projectId: string
-  expiresAt: number
-}
-
-const confirmTokens = new Map<string, ConfirmTokenEntry>()
-
-function mintConfirmToken(ids: string[], projectId: string): string {
-  const token = randomBytes(16).toString('hex')
-  confirmTokens.set(token, { ids: [...ids], projectId, expiresAt: Date.now() + CONFIRM_TOKEN_TTL_MS })
-  // Opportunistic prune
-  for (const [k, v] of confirmTokens) {
-    if (v.expiresAt < Date.now()) confirmTokens.delete(k)
-  }
-  return token
-}
-
-function consumeConfirmToken(token: string, projectId: string, ids: string[]): string | null {
-  const entry = confirmTokens.get(token)
-  if (!entry) return 'Invalid or expired confirmToken. Call action=preview first.'
-  if (entry.expiresAt < Date.now()) {
-    confirmTokens.delete(token)
-    return 'confirmToken expired. Call action=preview again.'
-  }
-  if (entry.projectId !== projectId) return 'confirmToken does not match this project.'
-  const expected = entry.ids.slice().sort().join(',')
-  const got = ids.slice().sort().join(',')
-  if (expected !== got) return 'sessionIds do not match the preview confirmToken.'
-  confirmTokens.delete(token)
-  return null
-}
+// Discover with session_list first; then hide/unhide immediately or delete with a host confirm dialog.
 
 type CleanupConfirmOutcome = { action: 'accept' | 'decline' | 'cancel' }
 
@@ -604,56 +657,58 @@ export function rejectSessionCleanupConfirm(requestId: string, reason: string): 
 }
 
 export interface SessionCleanupArgs {
-  action: 'preview' | 'hide' | 'unhide' | 'delete'
-  sessionIds?: string[]
-  olderThan?: string
-  harness?: string
+  action: 'hide' | 'unhide' | 'delete'
+  /** Required. Prefer ids from session_list. */
+  sessionIds: string[]
   includePinned?: boolean
   maxDelete?: number
-  confirmToken?: string
 }
 
 function resolveCleanupCandidates(
   projectId: string,
   args: SessionCleanupArgs,
   selfId: string,
-): { candidates: ArchiveSessionRow[]; skippedPinned: ArchiveSessionRow[]; skippedSelf: string[] } {
+): {
+  candidates: ArchiveSessionRow[]
+  skippedPinned: ArchiveSessionRow[]
+  skippedSelf: string[]
+  /** Eligible ids not acted on because maxDelete cap was hit (caller order). */
+  omittedDueToMaxDelete: string[]
+} {
   const maxDelete = clampLimit(args.maxDelete, SESSION_CLEANUP_MAX_DELETE, SESSION_CLEANUP_MAX_DELETE)
-  let rows: ArchiveSessionRow[]
-
-  if (Array.isArray(args.sessionIds) && args.sessionIds.length > 0) {
-    const ids = args.sessionIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
-    if (ids.length === 0) {
-      return { candidates: [], skippedPinned: [], skippedSelf: [] }
-    }
-    const placeholders = ids.map(() => '?').join(',')
-    const db = getDb()
-    rows = db.prepare(`
-      SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
-             s.is_automation, s.provider_id, s.provider, s.acp_agent_id, s.selected_model,
-             s.total_cost_usd, s.context_tokens,
-             g.parent_session_id,
-             COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
-             (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count
-      FROM sessions s
-      LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
-      WHERE s.project_id = ? AND s.id IN (${placeholders})
-    `).all(projectId, ...ids) as ArchiveSessionRow[]
-  } else {
-    rows = listArchiveSessions(projectId, {
-      includeHidden: true,
-      harness: typeof args.harness === 'string' ? args.harness : undefined,
-      olderThan: typeof args.olderThan === 'string' ? args.olderThan : undefined,
-      limit: maxDelete + 20,
-      offset: 0,
-    })
+  const ids = (Array.isArray(args.sessionIds) ? args.sessionIds : [])
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+  if (ids.length === 0) {
+    return { candidates: [], skippedPinned: [], skippedSelf: [], omittedDueToMaxDelete: [] }
   }
+
+  const placeholders = ids.map(() => '?').join(',')
+  const db = getDb()
+  // No size subquery — cleanup only needs metadata for confirm UI / pin checks.
+  const rows = db.prepare(`
+    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
+           s.is_automation, s.provider_id, s.provider, s.acp_agent_id, s.selected_model,
+           s.total_cost_usd, s.context_tokens,
+           g.parent_session_id,
+           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
+           (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
+           NULL AS size_bytes
+    FROM sessions s
+    LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
+    WHERE s.project_id = ? AND s.id IN (${placeholders})
+  `).all(projectId, ...ids) as ArchiveSessionRow[]
+
+  // Preserve caller order for stable UI / confirm lists
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  const ordered = ids.map((id) => byId.get(id)).filter((r): r is ArchiveSessionRow => !!r)
 
   const skippedPinned: ArchiveSessionRow[] = []
   const skippedSelf: string[] = []
   const candidates: ArchiveSessionRow[] = []
+  const omittedDueToMaxDelete: string[] = []
+  let capped = false
 
-  for (const row of rows) {
+  for (const row of ordered) {
     if (row.id === selfId) {
       skippedSelf.push(row.id)
       continue
@@ -662,11 +717,16 @@ function resolveCleanupCandidates(
       skippedPinned.push(row)
       continue
     }
+    if (capped || candidates.length >= maxDelete) {
+      capped = true
+      omittedDueToMaxDelete.push(row.id)
+      continue
+    }
     candidates.push(row)
-    if (candidates.length >= maxDelete) break
+    if (candidates.length >= maxDelete) capped = true
   }
 
-  return { candidates, skippedPinned, skippedSelf }
+  return { candidates, skippedPinned, skippedSelf, omittedDueToMaxDelete }
 }
 
 function childSessionIds(parentId: string): string[] {
@@ -693,46 +753,30 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
   if ('error' in project) return project.error
 
   const action = args.action
-  if (action !== 'preview' && action !== 'hide' && action !== 'unhide' && action !== 'delete') {
-    return toolResult({ status: 'error', message: 'action must be preview | hide | unhide | delete' }, true)
-  }
-
-  if (action !== 'preview' && !(Array.isArray(args.sessionIds) && args.sessionIds.length > 0) && !args.olderThan) {
+  if (action !== 'hide' && action !== 'unhide' && action !== 'delete') {
     return toolResult({
       status: 'error',
-      message: 'Provide sessionIds and/or olderThan to select sessions.',
+      message: 'action must be hide | unhide | delete. Discover sessions with session_list first.',
     }, true)
   }
 
-  const { candidates, skippedPinned, skippedSelf } = resolveCleanupCandidates(
+  if (!(Array.isArray(args.sessionIds) && args.sessionIds.length > 0)) {
+    return toolResult({
+      status: 'error',
+      message: 'sessionIds is required. Call session_list to find ids, then pass them here.',
+    }, true)
+  }
+
+  const { candidates, skippedPinned, skippedSelf, omittedDueToMaxDelete } = resolveCleanupCandidates(
     project.projectId,
     args,
     deps.sessionId,
   )
 
-  const candidateSummaries = candidates.map((r) => ({
-    id: r.id,
-    title: r.title ?? 'Untitled',
-    lastActiveAt: r.last_user_msg_at,
-    messageCount: r.message_count ?? 0,
-    pinned: !!r.is_pinned,
-    harness: deriveHarnessId(r),
-  }))
-
-  if (action === 'preview') {
-    const ids = candidates.map((c) => c.id)
-    const confirmToken = ids.length > 0 ? mintConfirmToken(ids, project.projectId) : undefined
-    return toolResult({
-      status: 'ok',
-      action: 'preview',
-      candidates: candidateSummaries,
-      skippedPinned: skippedPinned.map((r) => ({ id: r.id, title: r.title ?? 'Untitled' })),
-      skippedSelf,
-      confirmToken: confirmToken ?? null,
-      warning: ids.length > 0
-        ? `Preview only. To delete, call action=delete with the same sessionIds and confirmToken (user must approve).`
-        : 'No matching sessions.',
-    })
+  const skipFields = {
+    skippedPinned: skippedPinned.map((r) => ({ id: r.id, title: r.title ?? 'Untitled' })),
+    skippedSelf,
+    ...(omittedDueToMaxDelete.length > 0 ? { omittedDueToMaxDelete } : {}),
   }
 
   if (candidates.length === 0) {
@@ -740,9 +784,10 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
       status: 'ok',
       action,
       affected: [],
-      skippedPinned: skippedPinned.map((r) => r.id),
-      skippedSelf,
-      message: 'No matching sessions to process.',
+      ...skipFields,
+      message: omittedDueToMaxDelete.length > 0
+        ? 'No sessions processed (maxDelete cap reached before any eligible id).'
+        : 'No matching sessions to process.',
     })
   }
 
@@ -754,27 +799,12 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
     return toolResult({
       status: 'ok',
       action,
-      affected: ids,
-      skippedPinned: skippedPinned.map((r) => r.id),
-      skippedSelf,
+      affected: candidates.map((r) => ({ id: r.id, title: r.title ?? 'Untitled' })),
+      ...skipFields,
     })
   }
 
-  // delete
-  const token = typeof args.confirmToken === 'string' ? args.confirmToken : ''
-  if (!token) {
-    return toolResult({
-      status: 'error',
-      message: 'delete requires confirmToken from a prior action=preview with the same sessionIds.',
-      hint: 'Call session_cleanup({ action: "preview", sessionIds }) first.',
-    }, true)
-  }
-  const tokenErr = consumeConfirmToken(token, project.projectId, ids)
-  if (tokenErr) {
-    return toolResult({ status: 'error', message: tokenErr }, true)
-  }
-
-  // Expand collab children into the delete set (still skip pinned/self)
+  // delete — expand collab children (still skip pinned/self)
   const toDelete = new Set(ids)
   for (const id of ids) {
     for (const child of childSessionIds(id)) {
@@ -783,7 +813,6 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
     }
   }
 
-  // Drop pinned children unless includePinned
   if (!args.includePinned) {
     const db = getDb()
     for (const id of [...toDelete]) {
@@ -797,6 +826,62 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
     return toolResult({ status: 'ok', action: 'delete', deleted: [], message: 'Nothing left to delete after safety filters.' })
   }
 
+  // Build confirm rows before delete (children may not be in candidates)
+  const candidateById = new Map(candidates.map((c) => [c.id, c]))
+  const confirmSessions: Array<{
+    id: string
+    title: string
+    harness?: string
+    acpAgentId?: string | null
+    messageCount?: number
+    createdAt?: string
+  }> = []
+  {
+    const db = getDb()
+    const getMeta = db.prepare(`
+      SELECT s.id, s.title, s.created_at, s.provider_id, s.provider, s.acp_agent_id,
+             (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count
+      FROM sessions s WHERE s.id = ?
+    `)
+    for (const id of finalIds) {
+      const c = candidateById.get(id)
+      if (c) {
+        confirmSessions.push({
+          id: c.id,
+          title: c.title ?? 'Untitled',
+          harness: deriveHarnessId(c),
+          acpAgentId: c.acp_agent_id ?? null,
+          messageCount: c.message_count ?? 0,
+          createdAt: c.created_at,
+        })
+        continue
+      }
+      const row = getMeta.get(id) as {
+        id: string
+        title: string | null
+        created_at: string
+        provider_id: string | null
+        provider: string | null
+        acp_agent_id: string | null
+        message_count: number
+      } | undefined
+      if (!row) {
+        confirmSessions.push({ id, title: 'Untitled' })
+        continue
+      }
+      confirmSessions.push({
+        id: row.id,
+        title: row.title?.trim() ? row.title : 'Untitled',
+        harness: deriveHarnessId(row),
+        acpAgentId: row.acp_agent_id ?? null,
+        messageCount: row.message_count ?? 0,
+        createdAt: row.created_at,
+      })
+    }
+  }
+  const labelFor = (id: string) =>
+    confirmSessions.find((s) => s.id === id)?.title ?? 'Untitled'
+
   const session = deps.sessionHost?.getSession(deps.sessionId)
   if (!session?.emitHostEvent) {
     return toolResult({
@@ -805,11 +890,8 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
     }, true)
   }
 
-  const titles = finalIds.map((id) => {
-    const c = candidates.find((x) => x.id === id)
-    return c ? `${c.title ?? 'Untitled'} (${id.slice(0, 8)})` : id.slice(0, 8)
-  })
-  const message = `Permanently delete ${finalIds.length} session(s)?\n${titles.slice(0, 15).join('\n')}${titles.length > 15 ? `\n…and ${titles.length - 15} more` : ''}`
+  const confirmLines = confirmSessions.map((s) => `${s.title} (${s.id.slice(0, 8)})`)
+  const message = `Permanently delete ${finalIds.length} session(s)?\n${confirmLines.slice(0, 15).join('\n')}${confirmLines.length > 15 ? `\n…and ${confirmLines.length - 15} more` : ''}`
 
   let outcome: CleanupConfirmOutcome
   try {
@@ -821,12 +903,16 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
       allowAlwaysAllow: false,
       serverName: 'superone',
       message,
+      requestKind: 'session_cleanup_confirm',
+      sessionCleanupConfirm: { sessions: confirmSessions },
     }), { signal: deps.signal, abortError: () => new Error('Session cleanup cancelled') })
   } catch (err) {
-    return toolResult({
-      status: 'error',
-      message: err instanceof Error ? err.message : String(err),
-    }, true)
+    // Match session collab: cancel/timeout are neutral outcomes (no isError), not tool failures.
+    const message = err instanceof Error ? err.message : String(err)
+    if (/timed out|cancelled/i.test(message)) {
+      return toolResult({ status: 'cancelled', action: 'delete', message })
+    }
+    return toolResult({ status: 'error', message }, true)
   }
 
   if (outcome.action !== 'accept') {
@@ -837,34 +923,38 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
     })
   }
 
-  const deleted: string[] = []
+  const deleted: Array<{ id: string; title: string }> = []
+  const failed: Array<{ id: string; title: string; error: string }> = []
   for (const id of finalIds) {
     await disposeIfLive(deps, id)
     try {
       deleteSession(id)
-      deleted.push(id)
+      deleted.push({ id, title: labelFor(id) })
     } catch (err) {
-      log.warn('[session_cleanup] delete failed sid=%s: %s', id, err instanceof Error ? err.message : String(err))
+      const error = err instanceof Error ? err.message : String(err)
+      log.warn('[session_cleanup] delete failed sid=%s: %s', id, error)
+      failed.push({ id, title: labelFor(id), error })
     }
   }
 
+  const status =
+    failed.length === 0
+      ? 'ok'
+      : deleted.length === 0
+        ? 'error'
+        : 'partial'
+
   return toolResult({
-    status: 'ok',
+    status,
     action: 'delete',
     deleted,
-    skippedPinned: skippedPinned.map((r) => r.id),
-    skippedSelf,
-  })
+    ...(failed.length > 0 ? { failed } : {}),
+    ...skipFields,
+  }, status === 'error')
 }
 
 // --- Test helpers ---
 
-export function _resetSessionCleanupTokensForTests(): void {
-  confirmTokens.clear()
+export function _resetSessionCleanupConfirmsForTests(): void {
   cleanupConfirms.clearForTests()
-}
-
-/** Stable hash for debugging (unused in prod paths). */
-export function _hashIds(ids: string[]): string {
-  return createHash('sha256').update(ids.slice().sort().join(',')).digest('hex').slice(0, 12)
 }

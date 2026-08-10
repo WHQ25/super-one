@@ -508,7 +508,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
     {
     "name": "session_list",
-    "description": "List SuperOne sessions in the current project (metadata only). Use before session_read/session_search to find ids. Filter by title query, harness, pin/hidden, dates. Paginate with limit/offset. This is content archive lookup — not live collab (session_collab_*) and not harness-native resume.",
+    "description": "List SuperOne sessions in the current project (metadata only). Use before session_read/session_search to find ids. Filter by title query, harness, pin/hidden, dates. Sort with order (default last_active_desc; last_active_asc oldest-first; also created_*, message_count_*, size_*). When order is size_*, rows include sizeBytes (approx character length of stored message JSON for ranking — not disk page-file bytes). Paginate with limit/offset. Not live collab or harness resume.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -546,11 +546,25 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           "type": "string",
           "description": "ISO timestamp — only sessions last active after this."
         },
+        "order": {
+          "type": "string",
+          "enum": [
+            "last_active_desc",
+            "last_active_asc",
+            "created_desc",
+            "created_asc",
+            "message_count_desc",
+            "message_count_asc",
+            "size_desc",
+            "size_asc"
+          ],
+          "description": "Sort order. Default last_active_desc. last_active_asc = oldest first. created_* by createdAt; message_count_* by message count; size_* ranks by approx transcript size and includes sizeBytes (character length of message JSON, not disk page-file bytes)."
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 100,
-          "description": "Max rows. Default 30, max 100."
+          "maximum": 50,
+          "description": "Max rows. Default 20, max 50."
         },
         "offset": {
           "type": "integer",
@@ -674,40 +688,27 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_cleanup",
-    "description": "Manage old SuperOne sessions in the current project. action=preview lists candidates (+ confirmToken). hide/unhide soft-archive without confirm. delete requires confirmToken from preview plus user approval; never deletes the current or pinned sessions by default. Select with sessionIds and/or olderThan.",
+    "description": "Hide, unhide, or delete SuperOne sessions by id (from session_list). hide/unhide need no confirmation. delete always opens a user confirmation dialog. Never deletes the current session; skips pinned unless includePinned. Prefer session_list to choose ids first.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "action": {
           "type": "string",
           "enum": [
-            "preview",
             "hide",
             "unhide",
             "delete"
           ],
-          "description": "preview lists candidates; hide/unhide soft-archive; delete needs confirmToken + user approval."
+          "description": "hide/unhide soft-archive (no confirm). delete permanently removes after user approval dialog."
         },
         "sessionIds": {
           "type": "array",
           "items": {
             "type": "string"
           },
+          "minItems": 1,
           "maxItems": 50,
-          "description": "Explicit session ids to act on."
-        },
-        "olderThan": {
-          "type": "string",
-          "description": "ISO timestamp — select sessions last active before this (with or without sessionIds)."
-        },
-        "harness": {
-          "type": "string",
-          "enum": [
-            "claude",
-            "codex",
-            "acp",
-            "opencode"
-          ]
+          "description": "Session ids from session_list to act on."
         },
         "includePinned": {
           "type": "boolean",
@@ -717,15 +718,12 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           "type": "integer",
           "minimum": 1,
           "maximum": 50,
-          "description": "Hard cap on candidates. Default 50."
-        },
-        "confirmToken": {
-          "type": "string",
-          "description": "From action=preview. Required for delete."
+          "description": "Hard cap on sessions acted on. Default 50."
         }
       },
       "required": [
-        "action"
+        "action",
+        "sessionIds"
       ],
       "additionalProperties": false
     }

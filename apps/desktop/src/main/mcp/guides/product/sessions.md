@@ -29,7 +29,7 @@ Overload control is **view + `limit`/`cursor` (and optional `messageId`/`around`
 
 ```
 session_search({ query: "auth refresh" })
-session_read({ sessionId, view: "user", limit: 30 })
+session_read({ sessionId, view: "user", limit: 20 })
 session_read({ sessionId, view: "assistant", messageId, around: 1 })
 ```
 
@@ -37,10 +37,30 @@ session_read({ sessionId, view: "assistant", messageId, around: 1 })
 
 ```
 session_list({ harness: "codex", limit: 10 })
-session_read({ sessionId, view: "user", limit: 40 })
+session_read({ sessionId, view: "user", limit: 20 })
 session_read({ sessionId, view: "assistant", limit: 10 })
 // continue in the current session — do not resume the other harness thread
 ```
+
+### List order (fewer tool calls)
+
+`order` (default `last_active_desc`):
+
+| value | Use when |
+|-------|----------|
+| `last_active_desc` | Recent work first (default) |
+| `last_active_asc` | Oldest first — cleanup / archive |
+| `created_desc` / `created_asc` | By session creation time |
+| `message_count_desc` / `message_count_asc` | Heaviest or emptiest transcripts |
+| `size_desc` / `size_asc` | By approx stored size; rows include `sizeBytes` |
+
+```
+session_list({ order: "last_active_asc", limit: 50 })
+session_list({ order: "message_count_asc", limit: 20 })  // empty / stub sessions
+session_list({ order: "size_desc", limit: 20 })          // largest transcripts first
+```
+
+`sizeBytes` is only included when `order` is `size_*`. It is a ranking metric (SQLite `LENGTH` on TEXT = character lengths of `content_json` + `metadata_json`), not disk page-file bytes. Default list order skips the size subquery for speed.
 
 ### What files did that turn touch?
 
@@ -52,13 +72,12 @@ session_read({ sessionId, view: "tool_detail", toolUseId: "..." })  // only if n
 ### Cleanup
 
 ```
-session_cleanup({ action: "preview", olderThan: "2026-01-01T00:00:00.000Z" })
-// review candidates + confirmToken
-session_cleanup({ action: "hide", sessionIds: [...] })           // soft
-session_cleanup({ action: "delete", sessionIds: [...], confirmToken })  // user must approve
+session_list({ order: "last_active_asc", limit: 50 })   // discover first
+session_cleanup({ action: "hide", sessionIds: [...] })  // soft, no confirm
+session_cleanup({ action: "delete", sessionIds: [...] }) // host confirmation dialog only
 ```
 
-Safety: never deletes the **current** session; **pinned** sessions are skipped unless `includePinned: true`. Delete requires preview `confirmToken` and a host confirmation dialog.
+Safety: never deletes the **current** session; **pinned** sessions are skipped unless `includePinned: true`. `delete` always requires a user confirmation dialog (no separate preview step).
 
 ## Scope
 

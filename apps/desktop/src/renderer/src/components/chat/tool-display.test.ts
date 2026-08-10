@@ -48,6 +48,7 @@ describe('isAlwaysHiddenToolBlock', () => {
 
   it('does not hide session archive tools (SessionArchiveToolBlock owns the rows)', () => {
     for (const name of [
+      'mcp__superone__project_list',
       'mcp__superone__session_list',
       'mcp__superone__session_search',
       'mcp__superone__session_read',

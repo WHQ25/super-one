@@ -10,10 +10,10 @@ import {
  * SuperOne session archive tool UI — design preview (Storybook only).
  *
  * Label grammar matches agent collab (`chat.toolBlock.collab` / SessionCollabToolBlock):
- * - Streaming: sentence case + …  e.g. "Listing sessions…"
- * - Done primary: Title Case (EN) e.g. "Sessions Listed", "Session Meta", "Cleanup Preview"
+ * - Streaming: sentence case + …  e.g. "Listing projects…", "Listing sessions…"
+ * - Done primary: Title Case (EN) e.g. "Projects Listed", "Sessions Listed", "Session Meta"
  * - Counts / empty in label or muted summary: "Found 2 hits", "4 sessions" (collab-style)
- * - Header never shows UUIDs or projectPath
+ * - Header never shows UUIDs; project path only in project_list expand (discovery tool)
  *
  * Wired into ToolBlock; stories remain the design/regression gallery.
  */
@@ -66,6 +66,45 @@ function block(
 }
 
 // --- Fixtures (shape aligned with session-archive-tools handlers) ---
+
+const PROJECTS = [
+  {
+    id: 'proj-aaaaaaaa-1111-4000-8000-aaaaaaaaaaaa',
+    name: 'super-one',
+    path: '/Users/me/Developer/Projects/super-one',
+    lastActiveAt: '2026-08-10T12:00:00.000Z',
+    isCurrent: true,
+  },
+  {
+    id: 'proj-bbbbbbbb-2222-4000-8000-bbbbbbbbbbbb',
+    name: 'other-app',
+    path: '/Users/me/Developer/Projects/other-app',
+    lastActiveAt: '2026-07-01T09:00:00.000Z',
+  },
+  {
+    id: 'proj-cccccccc-3333-4000-8000-cccccccccccc',
+    name: 'missing-repo',
+    path: '/Volumes/gone/old-project',
+    lastActiveAt: '2025-12-01T00:00:00.000Z',
+    missing: true,
+  },
+]
+
+const PROJECT_LIST_TOON = toonEncode({
+  offset: 0,
+  limit: 50,
+  count: PROJECTS.length,
+  total: PROJECTS.length,
+  projects: PROJECTS,
+})
+
+const PROJECT_LIST_FILTERED_TOON = toonEncode({
+  offset: 0,
+  limit: 50,
+  count: 1,
+  total: 1,
+  projects: [PROJECTS[1]],
+})
 
 const SESSIONS = [
   {
@@ -270,11 +309,13 @@ export const DesignPrinciples: Story = {
   render: () => (
     <StoryShell width={680}>
       <Note>
-        Casing like collab: streaming “Listing sessions…”, done “Sessions Listed” / “Session Meta” /
-        “Sessions Hidden”. Summary slot holds counts, query quotes, session titles — not paths.
+        Casing like collab: streaming “Listing projects…”, done “Projects Listed” / “Sessions Listed”.
+        Summary slot holds counts, query quotes, session titles — not UUIDs.
+        project_list is the place for path/name; session rows only carry projectId.
         Expand for detail. Cleanup: list first, then hide (no confirm) or delete (user dialog).
       </Note>
       <Section title="Collapsed stories (no expand needed to understand)">
+        {block('project_list', {}, { result: PROJECT_LIST_TOON })}
         {block('session_list', { harness: 'claude' }, { status: 'streaming' })}
         {block('session_list', {}, { result: LIST_RESULT_TOON })}
         {block('session_search', { query: 'auth refresh' }, { result: SEARCH_RESULT_TOON })}
@@ -293,6 +334,20 @@ export const Gallery: Story = {
   name: 'Gallery (all tools)',
   render: () => (
     <StoryShell width={680}>
+      <Section title="project_list (TOON)">
+        {block('project_list', {}, { status: 'streaming' })}
+        {block('project_list', { query: 'other' }, { status: 'streaming' })}
+        {block('project_list', {}, { result: PROJECT_LIST_TOON })}
+        {block('project_list', { query: 'other' }, { result: PROJECT_LIST_FILTERED_TOON })}
+        {block('project_list', {}, {
+          isError: true,
+          result: JSON.stringify({
+            status: 'error',
+            message: 'Failed to read the session archive.',
+          }),
+        })}
+      </Section>
+
       <Section title="session_list (TOON)">
         {block('session_list', {}, { status: 'streaming' })}
         {block('session_list', { harness: 'claude' }, { status: 'streaming' })}

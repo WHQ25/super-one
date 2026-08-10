@@ -65,6 +65,7 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'miniapp_dev_pack',
   'miniapp_dev_update_types',
   'session_rename',
+  'project_list',
   'session_list',
   'session_search',
   'session_read',

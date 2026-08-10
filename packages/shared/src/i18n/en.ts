@@ -1045,6 +1045,8 @@ export type Messages = {
       sessionCleanupEmpty: string
       sessionCleanupDelete: string
       sessionCleanupCancel: string
+      /** Group header when a cleanup id's project is no longer in recentFolders. */
+      sessionCleanupUnknownProject: string
     }
     computerUseGrant: {
       badge: string
@@ -1224,8 +1226,16 @@ export type Messages = {
           message: string
         }
       }
-      /** session_list / session_search / session_read / session_cleanup — casing mirrors collab. */
+      /** project_list / session_list / session_search / session_read / session_cleanup — casing mirrors collab. */
       archive: {
+        listingProjects: string
+        projectsListed: string
+        projectListFailed: string
+        projectCount: string
+        emptyProjects: string
+        thisProject: string
+        missingProject: string
+        openProject: string
         listingSessions: string
         sessionsListed: string
         listFailed: string
@@ -3509,6 +3519,7 @@ export const en: Messages = {
       sessionCleanupEmpty: 'No sessions selected.',
       sessionCleanupDelete: 'Delete',
       sessionCleanupCancel: 'Cancel',
+      sessionCleanupUnknownProject: 'Unknown project',
     },
     computerUseGrant: {
       badge: 'Computer Use',
@@ -3689,6 +3700,14 @@ export const en: Messages = {
       // Session archive tools — same casing grammar as collab:
       // streaming = sentence case (+ …); done primary labels = Title Case.
       archive: {
+        listingProjects: 'Listing projects…',
+        projectsListed: 'Projects Listed',
+        projectListFailed: 'List Failed',
+        projectCount: '{{count}} projects',
+        emptyProjects: 'No projects',
+        thisProject: 'current',
+        missingProject: 'missing',
+        openProject: 'Open project',
         listingSessions: 'Listing sessions…',
         sessionsListed: 'Sessions Listed',
         listFailed: 'List Failed',

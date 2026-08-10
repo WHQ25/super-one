@@ -1,9 +1,12 @@
 /**
  * SuperOne MCP session archive tools:
- * session_list / session_search / session_read / session_cleanup
+ * project_list / session_list / session_search / session_read / session_cleanup
  *
  * Reads SuperOne's unified SQLite transcript (harness-agnostic). Does not resume
  * provider_session_id across harnesses. Tool calls are never embedded in text views.
+ *
+ * Agent-facing session rows carry projectId only — resolve path/name via project_list
+ * or host UI helpers (not duplicated on every session row).
  */
 
 import { encode as toonEncode } from '@toon-format/toon'
@@ -13,10 +16,9 @@ import {
   deleteSession,
   hideSession,
   loadSessionState,
-  sessionBelongsToProject,
 } from '../db-sessions'
 import log from '../logger'
-import { getProjectId } from '../recent-folders'
+import { getProjectId, getProjectPathById, getRecentFolders } from '../recent-folders'
 import { HostConfirmRegistry } from '../session/host-confirm-registry'
 import { deriveHarnessId } from '../session/session-repo'
 import {
@@ -39,6 +41,9 @@ export const SESSION_READ_DEFAULT_LIMIT = 20
 export const SESSION_READ_MAX_LIMIT = 50
 export const SESSION_SEARCH_DEFAULT_LIMIT = 20
 export const SESSION_SEARCH_MAX_LIMIT = 50
+/** Recency-ordered SQL prefilter window refined in JS (see sessionSearchHandler). */
+export const SESSION_SEARCH_PREFILTER = 500
+export const SESSION_SEARCH_ALL_PROJECTS_PREFILTER = 2000
 export const SESSION_CLEANUP_MAX_DELETE = 50
 const CLEANUP_CONFIRM_TIMEOUT_MS = 10 * 60_000
 
@@ -76,6 +81,59 @@ function requireProject(deps: BuiltInSuperoneToolDeps): { projectPath: string; p
   return { projectPath, projectId }
 }
 
+/** Optional project scope for list/search. Default = current project. */
+export interface ArchiveProjectScopeArgs {
+  /** SuperOne project id (from projects table / recent folders). Mutually exclusive with allProjects. */
+  projectId?: string
+  /** List/search every project. Mutually exclusive with projectId. */
+  allProjects?: boolean
+}
+
+export type ResolvedArchiveScope =
+  | { mode: 'project'; projectPath: string; projectId: string }
+  | { mode: 'all' }
+
+/**
+ * Resolve list/search project scope.
+ * - default: current session's project
+ * - projectId: that project only
+ * - allProjects: every project in the host SQLite archive
+ */
+export function resolveArchiveScope(
+  deps: BuiltInSuperoneToolDeps,
+  args: ArchiveProjectScopeArgs,
+): ResolvedArchiveScope | { error: ReturnType<typeof toolResult> } {
+  const hasId = typeof args.projectId === 'string' && args.projectId.trim().length > 0
+  const all = args.allProjects === true
+  if (all && hasId) {
+    return {
+      error: toolResult({
+        status: 'error',
+        message: 'Pass either projectId or allProjects, not both.',
+      }, true),
+    }
+  }
+  if (all) return { mode: 'all' }
+  if (hasId) {
+    const projectId = (args.projectId as string).trim()
+    const projectPath = getProjectPathById(projectId)
+    if (!projectPath) {
+      return {
+        error: toolResult({
+          status: 'error',
+          message: `Project not found for id: ${projectId}`,
+        }, true),
+      }
+    }
+    return { mode: 'project', projectPath, projectId }
+  }
+  // Default = current project. Must set mode:'project' — session_search filters with
+  // `scope.mode === 'project'` (missing mode was a silent all-projects search).
+  const current = requireProject(deps)
+  if ('error' in current) return current
+  return { mode: 'project', projectPath: current.projectPath, projectId: current.projectId }
+}
+
 interface ArchiveSessionRow {
   id: string
   title: string | null
@@ -101,6 +159,7 @@ interface ArchiveSessionRow {
   selected_model: string | null
   total_cost_usd: number | null
   context_tokens: number | null
+  project_id: string | null
 }
 
 /**
@@ -156,7 +215,8 @@ export function parseSessionListOrder(raw: unknown): SessionListOrder | null {
 }
 
 function listArchiveSessions(
-  projectId: string,
+  /** null = all projects */
+  projectId: string | null,
   opts: {
     includeHidden?: boolean
     includePinnedOnly?: boolean
@@ -171,8 +231,12 @@ function listArchiveSessions(
   },
 ): ArchiveSessionRow[] {
   const db = getDb()
-  const where: string[] = ['s.project_id = ?']
-  const params: unknown[] = [projectId]
+  const where: string[] = []
+  const params: unknown[] = []
+  if (projectId) {
+    where.push('s.project_id = ?')
+    params.push(projectId)
+  }
 
   if (!opts.includeHidden) {
     where.push('COALESCE(s.is_hidden, 0) = 0')
@@ -205,6 +269,7 @@ function listArchiveSessions(
   const sizeSelect = sessionListOrderNeedsSize(order)
     ? `${SESSION_SIZE_BYTES_SQL} AS size_bytes`
     : 'NULL AS size_bytes'
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
 
   const sql = `
     SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
@@ -213,10 +278,11 @@ function listArchiveSessions(
            g.parent_session_id,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
-           ${sizeSelect}
+           ${sizeSelect},
+           s.project_id
     FROM sessions s
     LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
-    WHERE ${where.join(' AND ')}
+    ${whereSql}
     ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
   `
@@ -238,6 +304,8 @@ function rowToListEntry(row: ArchiveSessionRow, selfId: string) {
     title: row.title ?? 'Untitled',
     harness: deriveHarnessId(row),
     acpAgentId: row.acp_agent_id ?? null,
+    // Agent: id only. Host UI resolves path via projectId → recentFolders / getProjectPathById.
+    projectId: row.project_id ?? null,
     createdAt: row.created_at,
     lastActiveAt: row.last_user_msg_at,
     messageCount: row.message_count ?? 0,
@@ -254,7 +322,7 @@ function rowToListEntry(row: ArchiveSessionRow, selfId: string) {
 
 // --- session_list ---
 
-export interface SessionListArgs {
+export interface SessionListArgs extends ArchiveProjectScopeArgs {
   query?: string
   harness?: string
   includeHidden?: boolean
@@ -269,8 +337,8 @@ export interface SessionListArgs {
 }
 
 export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneToolDeps) {
-  const project = requireProject(deps)
-  if ('error' in project) return project.error
+  const scope = resolveArchiveScope(deps, args)
+  if ('error' in scope) return scope.error
 
   const order = parseSessionListOrder(args.order)
   if (order == null) {
@@ -285,7 +353,7 @@ export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneT
     ? Math.max(0, Math.floor(args.offset))
     : 0
 
-  const rows = listArchiveSessions(project.projectId, {
+  const rows = listArchiveSessions(scope.mode === 'all' ? null : scope.projectId, {
     includeHidden: args.includeHidden === true,
     includePinnedOnly: args.includePinnedOnly === true,
     parentOnly: args.parentOnly === true,
@@ -300,7 +368,9 @@ export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneT
 
   const sessions = rows.map((r) => rowToListEntry(r, deps.sessionId))
   return toonResult({
-    projectPath: project.projectPath,
+    ...(scope.mode === 'all'
+      ? { allProjects: true }
+      : { projectId: scope.projectId, allProjects: false }),
     order,
     offset,
     limit,
@@ -309,9 +379,61 @@ export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneT
   })
 }
 
+// --- project_list ---
+
+export interface ProjectListArgs {
+  /** Case-insensitive substring on name or path. */
+  query?: string
+  limit?: number
+  offset?: number
+}
+
+export const PROJECT_LIST_DEFAULT_LIMIT = 50
+export const PROJECT_LIST_MAX_LIMIT = 100
+
+/**
+ * List SuperOne projects (id + name + path) so agents can resolve projectId
+ * without embedding path on every session_list row.
+ */
+export function projectListHandler(args: ProjectListArgs, deps: BuiltInSuperoneToolDeps) {
+  const query = typeof args.query === 'string' ? args.query.trim().toLowerCase() : ''
+  const limit = clampLimit(args.limit, PROJECT_LIST_DEFAULT_LIMIT, PROJECT_LIST_MAX_LIMIT)
+  const offset = typeof args.offset === 'number' && Number.isFinite(args.offset)
+    ? Math.max(0, Math.floor(args.offset))
+    : 0
+
+  const currentScope = requireProject(deps)
+  const currentProjectId = 'error' in currentScope ? null : currentScope.projectId
+
+  let folders = getRecentFolders()
+  if (query) {
+    folders = folders.filter(
+      (f) => f.name.toLowerCase().includes(query) || f.path.toLowerCase().includes(query),
+    )
+  }
+
+  const slice = folders.slice(offset, offset + limit)
+  const projects = slice.map((f) => ({
+    id: f.id,
+    name: f.name,
+    path: f.path,
+    lastActiveAt: f.lastOpened,
+    ...(f.missing ? { missing: true as const } : {}),
+    ...(currentProjectId && f.id === currentProjectId ? { isCurrent: true as const } : {}),
+  }))
+
+  return toonResult({
+    offset,
+    limit,
+    count: projects.length,
+    total: folders.length,
+    projects,
+  })
+}
+
 // --- session_search ---
 
-export interface SessionSearchArgs {
+export interface SessionSearchArgs extends ArchiveProjectScopeArgs {
   query: string
   harness?: string
   sessionIds?: string[]
@@ -320,8 +442,8 @@ export interface SessionSearchArgs {
 }
 
 export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuperoneToolDeps) {
-  const project = requireProject(deps)
-  if ('error' in project) return project.error
+  const scope = resolveArchiveScope(deps, args)
+  if ('error' in scope) return scope.error
 
   const query = typeof args.query === 'string' ? args.query.trim() : ''
   if (!query) {
@@ -338,18 +460,26 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
 
   const db = getDb()
   // Broad SQL prefilter with first term, then refine in JS for multi-word AND.
+  // The prefilter is ordered by recency, so an all-projects scan would otherwise be
+  // eaten by whichever project is most active — give cross-project searches a wider
+  // window, and report when the window (not the query) bounded the results.
+  const prefilterLimit = scope.mode === 'all'
+    ? SESSION_SEARCH_ALL_PROJECTS_PREFILTER
+    : SESSION_SEARCH_PREFILTER
   const like = `%${terms[0]}%`
+  const projectClause = scope.mode === 'project' ? 's.project_id = ? AND' : ''
+  const sqlParams: unknown[] = scope.mode === 'project' ? [scope.projectId, like, like] : [like, like]
   const rows = db.prepare(`
     SELECT m.id AS message_id, m.session_id, m.role, m.created_at, m.content_json,
-           s.title, s.provider_id, s.provider, s.acp_agent_id
+           s.title, s.provider_id, s.provider, s.acp_agent_id, s.project_id
     FROM chat_messages m
     JOIN sessions s ON s.id = m.session_id
-    WHERE s.project_id = ?
-      AND COALESCE(s.is_hidden, 0) = 0
+    WHERE ${projectClause}
+          COALESCE(s.is_hidden, 0) = 0
       AND (LOWER(COALESCE(s.title, '')) LIKE ? OR LOWER(m.content_json) LIKE ?)
     ORDER BY m.created_at DESC
-    LIMIT 500
-  `).all(project.projectId, like, like) as Array<{
+    LIMIT ${prefilterLimit}
+  `).all(...sqlParams) as Array<{
     message_id: string
     session_id: string
     role: string
@@ -359,12 +489,14 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     provider_id: string | null
     provider: string | null
     acp_agent_id: string | null
+    project_id: string | null
   }>
 
   const hits: Array<{
     sessionId: string
     title: string
     harness: string
+    projectId: string | null
     messageId: string
     role: string
     createdAt: string
@@ -413,6 +545,7 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
       sessionId: row.session_id,
       title: row.title ?? 'Untitled',
       harness,
+      projectId: row.project_id ?? null,
       messageId: row.message_id,
       role: row.role,
       createdAt: row.created_at,
@@ -421,10 +554,21 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     if (hits.length >= limit) break
   }
 
+  // The prefilter window bounded the scan, so matches older than it were never seen.
+  const prefilterTruncated = rows.length >= prefilterLimit && hits.length < limit
+
   return toonResult({
-    projectPath: project.projectPath,
+    ...(scope.mode === 'all'
+      ? { allProjects: true }
+      : { projectId: scope.projectId, allProjects: false }),
     query,
     count: hits.length,
+    ...(prefilterTruncated
+      ? {
+          truncated: true,
+          message: `Only the ${prefilterLimit} most recent messages in scope were scanned — older matches may be missing. Narrow with projectId, sessionIds, or a more specific query.`,
+        }
+      : {}),
     hits,
   })
 }
@@ -447,30 +591,13 @@ function loadMessages(sessionId: string): ChatMessage[] {
   return state?.messages ?? []
 }
 
-function assertReadable(deps: BuiltInSuperoneToolDeps, sessionId: string): { ok: true; projectPath: string } | { ok: false; error: ReturnType<typeof toolResult> } {
-  const project = requireProject(deps)
-  if ('error' in project) return { ok: false, error: project.error }
-  if (!sessionBelongsToProject(project.projectPath, sessionId)) {
-    return {
-      ok: false,
-      error: toolResult({
-        status: 'error',
-        message: 'Session not found in the current project. Cross-project reads are not allowed.',
-      }, true),
-    }
-  }
-  return { ok: true, projectPath: project.projectPath }
-}
-
 export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneToolDeps) {
   const sessionId = typeof args.sessionId === 'string' ? args.sessionId.trim() : ''
   if (!sessionId) {
     return toolResult({ status: 'error', message: 'sessionId is required' }, true)
   }
 
-  const gate = assertReadable(deps, sessionId)
-  if (!gate.ok) return gate.error
-
+  // Any project: session id is global in host SQLite. No current-project gate.
   const view: SessionArchiveView = (['meta', 'user', 'assistant', 'text', 'tools', 'tool_detail'] as const)
     .includes(args.view as SessionArchiveView)
     ? (args.view as SessionArchiveView)
@@ -478,10 +605,12 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
 
   const db = getDb()
   const sessionRow = db.prepare(`
-    SELECT id, title, created_at, last_user_message_at, is_worktree, is_pinned, is_hidden, git_branch, worktree_path,
-           provider_id, provider, acp_agent_id, selected_model, selected_effort, total_cost_usd, context_tokens,
-           api_provider_id
-    FROM sessions WHERE id = ?
+    SELECT s.id, s.title, s.created_at, s.last_user_message_at, s.is_worktree, s.is_pinned, s.is_hidden,
+           s.git_branch, s.worktree_path, s.provider_id, s.provider, s.acp_agent_id, s.selected_model,
+           s.selected_effort, s.total_cost_usd, s.context_tokens, s.api_provider_id,
+           s.project_id
+    FROM sessions s
+    WHERE s.id = ?
   `).get(sessionId) as {
     id: string
     title: string | null
@@ -500,6 +629,7 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     total_cost_usd: number | null
     context_tokens: number | null
     api_provider_id: string | null
+    project_id: string | null
   } | undefined
 
   if (!sessionRow) {
@@ -519,6 +649,7 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     title: sessionRow.title ?? 'Untitled',
     harness: deriveHarnessId(sessionRow),
     acpAgentId: sessionRow.acp_agent_id ?? null,
+    projectId: sessionRow.project_id ?? null,
     model: sessionRow.selected_model ?? null,
     effort: sessionRow.selected_effort ?? null,
     createdAt: sessionRow.created_at,
@@ -665,7 +796,6 @@ export interface SessionCleanupArgs {
 }
 
 function resolveCleanupCandidates(
-  projectId: string,
   args: SessionCleanupArgs,
   selfId: string,
 ): {
@@ -685,6 +815,7 @@ function resolveCleanupCandidates(
   const placeholders = ids.map(() => '?').join(',')
   const db = getDb()
   // No size subquery — cleanup only needs metadata for confirm UI / pin checks.
+  // Ids may span projects (global host archive).
   const rows = db.prepare(`
     SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
            s.is_automation, s.provider_id, s.provider, s.acp_agent_id, s.selected_model,
@@ -692,11 +823,12 @@ function resolveCleanupCandidates(
            g.parent_session_id,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
-           NULL AS size_bytes
+           NULL AS size_bytes,
+           s.project_id
     FROM sessions s
     LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
-    WHERE s.project_id = ? AND s.id IN (${placeholders})
-  `).all(projectId, ...ids) as ArchiveSessionRow[]
+    WHERE s.id IN (${placeholders})
+  `).all(...ids) as ArchiveSessionRow[]
 
   // Preserve caller order for stable UI / confirm lists
   const byId = new Map(rows.map((r) => [r.id, r]))
@@ -749,9 +881,6 @@ async function disposeIfLive(deps: BuiltInSuperoneToolDeps, sessionId: string): 
 }
 
 export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: BuiltInSuperoneToolDeps) {
-  const project = requireProject(deps)
-  if ('error' in project) return project.error
-
   const action = args.action
   if (action !== 'hide' && action !== 'unhide' && action !== 'delete') {
     return toolResult({
@@ -767,8 +896,8 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
     }, true)
   }
 
+  // Ids may come from any project (session_list with allProjects / projectId).
   const { candidates, skippedPinned, skippedSelf, omittedDueToMaxDelete } = resolveCleanupCandidates(
-    project.projectId,
     args,
     deps.sessionId,
   )
@@ -835,13 +964,16 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
     acpAgentId?: string | null
     messageCount?: number
     createdAt?: string
+    projectId?: string
   }> = []
   {
     const db = getDb()
     const getMeta = db.prepare(`
       SELECT s.id, s.title, s.created_at, s.provider_id, s.provider, s.acp_agent_id,
-             (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count
-      FROM sessions s WHERE s.id = ?
+             (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
+             s.project_id
+      FROM sessions s
+      WHERE s.id = ?
     `)
     for (const id of finalIds) {
       const c = candidateById.get(id)
@@ -853,6 +985,7 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
           acpAgentId: c.acp_agent_id ?? null,
           messageCount: c.message_count ?? 0,
           createdAt: c.created_at,
+          projectId: c.project_id ?? undefined,
         })
         continue
       }
@@ -864,6 +997,7 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
         provider: string | null
         acp_agent_id: string | null
         message_count: number
+        project_id: string | null
       } | undefined
       if (!row) {
         confirmSessions.push({ id, title: 'Untitled' })
@@ -876,6 +1010,7 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
         acpAgentId: row.acp_agent_id ?? null,
         messageCount: row.message_count ?? 0,
         createdAt: row.created_at,
+        projectId: row.project_id ?? undefined,
       })
     }
   }

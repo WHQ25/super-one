@@ -3,8 +3,8 @@
  * with the same visual grammar as session_list (harness icon, title, msg count, date).
  * Decision row reuses PermissionPrompt's ApproveRejectBar (allow / deny + optional feedback).
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { MessageSquare, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Folder, MessageSquare, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type {
   PermissionRequest,
@@ -14,17 +14,48 @@ import type {
 import { cn } from '@superone/ui/lib/utils'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { resolveProjectNameFromFolders, resolveProjectPathForOpen } from '@/lib/resolve-project-path'
+import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
-/** Same path as SessionArchiveToolBlock / sidebar — mosaic-aware same-project open. */
-function openSessionFromConfirm(sessionId: string) {
+/** Mosaic-aware open; resolve projectId → path in the host (not in agent payloads). */
+function openSessionFromConfirm(sessionId: string, projectId?: string | null) {
   if (!sessionId) return
-  const projectPath = useChatStore.getState().activeProject
-  if (!projectPath) return
-  if (useMosaicStore.getState().focusOrReplaceFocused(projectPath, sessionId)) return
-  void useChatStore.getState().switchSession(sessionId)
+  void (async () => {
+    const target = await resolveProjectPathForOpen(projectId, useChatStore.getState().activeProject)
+    if (!target) return
+    if (useMosaicStore.getState().focusOrReplaceFocused(target, sessionId)) return
+    await useChatStore.getState().switchToSession(target, sessionId)
+  })()
+}
+
+interface ProjectGroup {
+  projectId: string | null
+  sessions: SessionCleanupConfirmSession[]
+}
+
+/**
+ * session_cleanup ids may span projects, so the confirm list must say which project
+ * each session belongs to — a bare title gives the user no way to tell a foreign
+ * repo's session from their own before approving a permanent delete.
+ * Grouping keeps first-appearance order so the list still mirrors the agent's request.
+ */
+function groupByProject(sessions: SessionCleanupConfirmSession[]): ProjectGroup[] {
+  const groups: ProjectGroup[] = []
+  const byId = new Map<string, ProjectGroup>()
+  for (const s of sessions) {
+    const key = s.projectId ?? ''
+    let group = byId.get(key)
+    if (!group) {
+      group = { projectId: s.projectId ?? null, sessions: [] }
+      byId.set(key, group)
+      groups.push(group)
+    }
+    group.sessions.push(s)
+  }
+  return groups
 }
 
 function formatCreatedAt(iso: string | undefined, now = new Date()): string {
@@ -70,7 +101,7 @@ function SessionRow({ s, openLabel }: { s: SessionCleanupConfirmSession; openLab
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            openSessionFromConfirm(s.id)
+            openSessionFromConfirm(s.id, s.projectId)
           }}
           className="min-w-0 cursor-pointer truncate text-left text-xs font-medium text-foreground hover:underline"
           title={openLabel || t('chat.toolBlock.archive.openSession')}
@@ -91,6 +122,27 @@ function SessionRow({ s, openLabel }: { s: SessionCleanupConfirmSession; openLab
   )
 }
 
+function ProjectGroupHeader({ projectId }: { projectId: string | null }) {
+  const { t } = useTranslation()
+  const recentFolders = useAppStore((s) => s.recentFolders)
+  const currentProjectId = useAppStore((s) => s.currentProjectId)
+  const name = resolveProjectNameFromFolders(projectId, recentFolders)
+  const isCurrent = !!projectId && projectId === currentProjectId
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 px-1 pb-0.5 pt-1 first:pt-0">
+      <Folder className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0 truncate text-[11px] font-medium text-muted-foreground" title={projectId ?? undefined}>
+        {name ?? t('chat.permission.sessionCleanupUnknownProject')}
+      </span>
+      {isCurrent ? (
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          · {t('chat.toolBlock.archive.thisProject')}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 export function SessionCleanupConfirmPrompt({
   payload,
   onConfirm,
@@ -104,6 +156,12 @@ export function SessionCleanupConfirmPrompt({
   const { t } = useTranslation()
   const sessions = payload.sessions ?? []
   const count = sessions.length
+  const currentProjectId = useAppStore((s) => s.currentProjectId)
+  const groups = useMemo(() => groupByProject(sessions), [sessions])
+  // Headers exist to expose foreign projects: skip them only for the plain
+  // everything-is-the-current-project case, where they would be pure noise.
+  const showGroupHeaders = groups.length > 1
+    || (groups.length === 1 && !!groups[0]!.projectId && groups[0]!.projectId !== currentProjectId)
   const chatRootRef = useChatRootRef()
   const approveRef = useRef<HTMLButtonElement>(null)
   const rejectRef = useRef<HTMLButtonElement>(null)
@@ -164,12 +222,17 @@ export function SessionCleanupConfirmPrompt({
               {t('chat.permission.sessionCleanupEmpty')}
             </div>
           ) : (
-            sessions.map((s) => (
-              <SessionRow
-                key={s.id}
-                s={s}
-                openLabel={t('chat.toolBlock.archive.openSession')}
-              />
+            groups.map((group) => (
+              <div key={group.projectId ?? ''} className="space-y-0.5">
+                {showGroupHeaders ? <ProjectGroupHeader projectId={group.projectId} /> : null}
+                {group.sessions.map((s) => (
+                  <SessionRow
+                    key={s.id}
+                    s={s}
+                    openLabel={t('chat.toolBlock.archive.openSession')}
+                  />
+                ))}
+              </div>
             ))
           )}
         </div>

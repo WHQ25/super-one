@@ -506,9 +506,34 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "additionalProperties": false
     }
   },
-    {
+  {
+    "name": "project_list",
+    "description": "List SuperOne projects (id, name, path, lastActiveAt). Call this to discover projectId before session_list/session_search with projectId. Default order is last-active desc. Filter with query (name/path substring). isCurrent marks the project of the calling session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Case-insensitive substring filter on project name or path."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Max rows. Default 50, max 100."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Pagination offset. Default 0."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "session_list",
-    "description": "List SuperOne sessions in the current project (metadata only). Use before session_read/session_search to find ids. Filter by title query, harness, pin/hidden, dates. Sort with order (default last_active_desc; last_active_asc oldest-first; also created_*, message_count_*, size_*). When order is size_*, rows include sizeBytes (approx character length of stored message JSON for ranking — not disk page-file bytes). Paginate with limit/offset. Not live collab or harness resume.",
+    "description": "List SuperOne sessions (metadata only). Default: current project. Pass projectId (from project_list) for another project, or allProjects=true for every project. Rows include projectId only — use project_list for path/name. Use before session_read/session_search to find ids. Filter by title query, harness, pin/hidden, dates. Sort with order (default last_active_desc; last_active_asc oldest-first; also created_*, message_count_*, size_*). When order is size_*, rows include sizeBytes (approx character length of stored message JSON for ranking — not disk page-file bytes). Paginate with limit/offset. Not live collab or harness resume.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -546,6 +571,14 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           "type": "string",
           "description": "ISO timestamp — only sessions last active after this."
         },
+        "projectId": {
+          "type": "string",
+          "description": "List sessions in this SuperOne project id only (from project_list). Mutually exclusive with allProjects. Default: current project."
+        },
+        "allProjects": {
+          "type": "boolean",
+          "description": "List sessions across every SuperOne project. Mutually exclusive with projectId. Default false."
+        },
         "order": {
           "type": "string",
           "enum": [
@@ -577,7 +610,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_search",
-    "description": "Search SuperOne chat transcripts in the current project by text. Returns matching message hits with short snippets for locating. Then call session_read with sessionId/messageId for full content. Snippets are pointers only — not full message bodies.",
+    "description": "Search SuperOne chat transcripts by text. Default: current project; projectId (from project_list) or allProjects for cross-project. Returns matching message hits with short snippets and projectId. Then call session_read with sessionId/messageId for full content. Snippets are pointers only — not full message bodies.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -612,6 +645,14 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           ],
           "description": "Message role filter. Default any."
         },
+        "projectId": {
+          "type": "string",
+          "description": "Search this SuperOne project id only (from project_list). Mutually exclusive with allProjects. Default: current project."
+        },
+        "allProjects": {
+          "type": "boolean",
+          "description": "Search every SuperOne project. Mutually exclusive with projectId. Default false."
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,
@@ -627,14 +668,14 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_read",
-    "description": "Read another SuperOne session's saved transcript (harness-agnostic content; does not resume provider threads). Views: meta | user | assistant | text | tools | tool_detail. user/assistant/text are pure conversation (no tool lines; assistant/text include toolCount). tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools.",
+    "description": "Read any SuperOne session's saved transcript by id (any project; harness-agnostic content; does not resume provider threads). Views: meta | user | assistant | text | tools | tool_detail. user/assistant/text are pure conversation (no tool lines; assistant/text include toolCount). tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools. meta includes projectId (use project_list for path/name).",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
           "type": "string",
           "minLength": 1,
-          "description": "Target SuperOne session id from session_list or session_search."
+          "description": "Target SuperOne session id from session_list or session_search (any project)."
         },
         "view": {
           "type": "string",
@@ -688,7 +729,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_cleanup",
-    "description": "Hide, unhide, or delete SuperOne sessions by id (from session_list). hide/unhide need no confirmation. delete always opens a user confirmation dialog. Never deletes the current session; skips pinned unless includePinned. Prefer session_list to choose ids first.",
+    "description": "Hide, unhide, or delete SuperOne sessions by id (from session_list; ids may be from any project). hide/unhide need no confirmation. delete always opens a user confirmation dialog. Never deletes the current session; skips pinned unless includePinned. Prefer session_list to choose ids first.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -77,7 +77,7 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
 const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 
 /** SuperOne MCP tools that are agent-internal discovery/meta — never useful as chat UI.
- * Session archive (list/search/read/cleanup) is user-visible via SessionArchiveToolBlock —
+ * Session archive (project_list/list/search/read/cleanup) is user-visible via SessionArchiveToolBlock —
  * do not hide those names here. */
 const HIDDEN_SUPERONE_MCP_TOOLS = new Set([
   'session_rename',

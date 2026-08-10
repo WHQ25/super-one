@@ -1,13 +1,13 @@
 /**
  * Chat tool UI for SuperOne session archive MCP tools:
- * session_list / session_search / session_read / session_cleanup
+ * project_list / session_list / session_search / session_read / session_cleanup
  *
  * Label casing mirrors agent collab (`SessionCollabToolBlock` + `chat.toolBlock.collab`):
  * - Streaming: sentence case, often with …
  * - Done primary actions: Title Case (EN) / concise done phrasing (ZH)
  * - Count / empty / secondary summary: sentence-style fragments in muted summary slot
  *
- * Wired from ToolBlock for mcp__superone__session_{list,search,read,cleanup}.
+ * Wired from ToolBlock for mcp__superone__{project_list,session_*}.
  */
 
 import { useMemo, useState, type ReactNode } from 'react'
@@ -17,6 +17,7 @@ import {
   ChevronRight,
   EyeOff,
   Eye,
+  Folder,
   History,
   List,
   MessageSquare,
@@ -31,9 +32,12 @@ import { cn } from '@superone/ui/lib/utils'
 import { decode as toonDecode } from '@toon-format/toon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { resolveProjectPathForOpen } from '@/lib/resolve-project-path'
+import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 
 export type SessionArchiveToolName =
+  | 'project_list'
   | 'session_list'
   | 'session_search'
   | 'session_read'
@@ -275,26 +279,36 @@ function StatusIcon({
 
 // --- Expand bodies ---
 
+/** Open a project folder (project_list row). Path is on the payload — this is the discovery tool. */
+function openArchiveProject(projectPath: string) {
+  if (!projectPath.trim()) return
+  void useAppStore.getState().selectProject(projectPath.trim())
+}
+
 /**
- * Open a listed session the same way the sidebar does: mosaic focus/replace first,
- * else same-project switchSession. (Archive tools only list the current project.)
+ * Open a listed session: resolve projectId → path in the host, then mosaic /
+ * switchToSession. Agent payloads only carry projectId (not path).
  */
-function openArchiveSession(sessionId: string) {
+function openArchiveSession(sessionId: string, projectId?: string | null) {
   if (!sessionId) return
-  const projectPath = useChatStore.getState().activeProject
-  if (!projectPath) return
-  if (useMosaicStore.getState().focusOrReplaceFocused(projectPath, sessionId)) return
-  void useChatStore.getState().switchSession(sessionId)
+  void (async () => {
+    const target = await resolveProjectPathForOpen(projectId, useChatStore.getState().activeProject)
+    if (!target) return
+    if (useMosaicStore.getState().focusOrReplaceFocused(target, sessionId)) return
+    await useChatStore.getState().switchToSession(target, sessionId)
+  })()
 }
 
 function SessionTitleLink({
   sessionId,
+  projectId,
   title,
   openLabel,
   className,
   children,
 }: {
   sessionId?: string
+  projectId?: string | null
   title: string
   openLabel: string
   className?: string
@@ -309,7 +323,7 @@ function SessionTitleLink({
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
-        openArchiveSession(sessionId)
+        openArchiveSession(sessionId, projectId)
       }}
       className={cn(
         'min-w-0 cursor-pointer truncate text-left font-medium text-foreground hover:underline',
@@ -319,6 +333,90 @@ function SessionTitleLink({
     >
       {children ?? title}
     </button>
+  )
+}
+
+function ProjectListBody({
+  projects,
+  emptyLabel,
+  thisProjectLabel,
+  missingLabel,
+  openProjectLabel,
+}: {
+  projects: Array<Record<string, unknown>>
+  emptyLabel: string
+  thisProjectLabel: string
+  missingLabel: string
+  openProjectLabel: string
+}) {
+  if (projects.length === 0) {
+    return <div className="text-muted-foreground">{emptyLabel}</div>
+  }
+  return (
+    <div className="space-y-0.5">
+      {projects.map((p, i) => {
+        const id = String(p.id ?? '')
+        const name = String(p.name ?? 'Untitled')
+        const path = typeof p.path === 'string' ? p.path : ''
+        const isCurrent = p.isCurrent === true
+        const missing = p.missing === true
+        const lastRaw =
+          typeof p.lastActiveAt === 'string'
+            ? p.lastActiveAt
+            : typeof p.last_active_at === 'string'
+              ? p.last_active_at
+              : ''
+        const last = lastRaw ? formatMinute(lastRaw) : ''
+        return (
+          <div
+            key={id || i}
+            className={cn(
+              'flex min-w-0 items-center gap-2 rounded px-1 py-0.5',
+              isCurrent && 'bg-primary/5',
+            )}
+            title={id || undefined}
+          >
+            <Folder className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex min-w-0 items-center gap-1.5">
+                {path ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openArchiveProject(path)
+                    }}
+                    className="min-w-0 cursor-pointer truncate text-left text-xs font-medium text-foreground hover:underline"
+                    title={openProjectLabel}
+                  >
+                    {name}
+                  </button>
+                ) : (
+                  <span className="min-w-0 truncate text-xs font-medium text-foreground">{name}</span>
+                )}
+                {isCurrent ? (
+                  <span className="shrink-0 text-[11px] text-muted-foreground">· {thisProjectLabel}</span>
+                ) : null}
+                {missing ? (
+                  <span className="shrink-0 text-[11px] text-warning">· {missingLabel}</span>
+                ) : null}
+              </span>
+              {path ? (
+                <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground" title={path}>
+                  {path}
+                </span>
+              ) : null}
+            </span>
+            {last ? (
+              <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground" title={lastRaw}>
+                {last}
+              </span>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -365,6 +463,12 @@ function ListBody({
         const created = createdRaw ? formatMinute(createdRaw) : ''
         const pinned = s.pinned === true || s.isPinned === true
         const self = s.isSelf === true
+        const rowProjectId =
+          typeof s.projectId === 'string'
+            ? s.projectId
+            : typeof s.project_id === 'string'
+              ? s.project_id
+              : null
         return (
           <div
             key={id || i}
@@ -379,6 +483,7 @@ function ListBody({
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
               <SessionTitleLink
                 sessionId={id || undefined}
+                projectId={rowProjectId}
                 title={title}
                 openLabel={openSessionLabel}
                 className="min-w-0 flex-1"
@@ -442,6 +547,12 @@ function SearchBody({
         const harness = String(h.harness ?? '')
         const sid = String(h.sessionId ?? '')
         const mid = String(h.messageId ?? '')
+        const hitProjectId =
+          typeof h.projectId === 'string'
+            ? h.projectId
+            : typeof h.project_id === 'string'
+              ? h.project_id
+              : null
         return (
           <div
             key={`${sid}-${mid}-${i}`}
@@ -451,6 +562,7 @@ function SearchBody({
             <div className="flex min-w-0 items-baseline gap-2">
               <SessionTitleLink
                 sessionId={sid || undefined}
+                projectId={hitProjectId}
                 title={title}
                 openLabel={openSessionLabel}
                 className="min-w-0 flex-1"
@@ -619,6 +731,53 @@ export function SessionArchiveToolBlock({
 
   const canShowExpand = allowExpand && !isStreaming && !isDenied
   const deniedLabel = t('chat.toolBlock.denied')
+
+  // ---------- project_list ----------
+  if (toolName === 'project_list') {
+    const projects = asArray(rec?.projects).map((p) => asRecord(p) ?? {})
+    const count = typeof rec?.count === 'number' ? rec.count : projects.length
+    const query = typeof params.query === 'string' ? params.query : ''
+    const filterSummary = query ? quote(query) : ''
+
+    let label = t(`${a}.projectsListed`)
+    if (isStreaming) label = t(`${a}.listingProjects`)
+    else if (isDenied) label = t(`${a}.projectsListed`)
+    else if (isError || rec?.status === 'error') label = t(`${a}.projectListFailed`)
+
+    const errMsg = typeof rec?.message === 'string' ? rec.message : ''
+    const summary = isStreaming
+      ? filterSummary || undefined
+      : isDenied
+        ? deniedLabel
+        : isError || rec?.status === 'error'
+          ? errMsg || filterSummary || undefined
+          : [t(`${a}.projectCount`, { count }), filterSummary].filter(Boolean).join(' · ')
+
+    const expandable = canShowExpand && !isError && projects.length > 0
+
+    return (
+      <ArchiveRow
+        icon={
+          <StatusIcon
+            tone={tone}
+            fallback={<Folder className="size-3 shrink-0 text-muted-foreground" />}
+          />
+        }
+        label={label}
+        summary={summary}
+        tone={tone}
+        expandable={expandable}
+      >
+        <ProjectListBody
+          projects={projects}
+          emptyLabel={t(`${a}.emptyProjects`)}
+          thisProjectLabel={t(`${a}.thisProject`)}
+          missingLabel={t(`${a}.missingProject`)}
+          openProjectLabel={t(`${a}.openProject`)}
+        />
+      </ArchiveRow>
+    )
+  }
 
   // ---------- session_list ----------
   if (toolName === 'session_list') {
@@ -988,7 +1147,8 @@ export function SessionArchiveToolBlock({
 
 export function isSessionArchiveToolName(name: string): name is SessionArchiveToolName {
   return (
-    name === 'session_list'
+    name === 'project_list'
+    || name === 'session_list'
     || name === 'session_search'
     || name === 'session_read'
     || name === 'session_cleanup'

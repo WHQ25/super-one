@@ -776,6 +776,8 @@ export interface SessionCleanupConfirmSession {
   acpAgentId?: string | null
   messageCount?: number
   createdAt?: string
+  /** Host UI resolves path via projectId → recentFolders. */
+  projectId?: string
 }
 
 export interface SessionCleanupConfirmPayload {

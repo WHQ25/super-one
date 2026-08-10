@@ -75,6 +75,7 @@ export const READ_MANUAL_INPUT_SCHEMA = {
 
 
 export const SESSION_ARCHIVE_TOOL_NAMES = [
+  'project_list',
   'session_list',
   'session_search',
   'session_read',
@@ -148,24 +149,33 @@ export const RENAME_SESSION_DESCRIPTION =
   'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
   'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again for this session.'
 
+export const PROJECT_LIST_DESCRIPTION =
+  'List SuperOne projects (id, name, path, lastActiveAt). ' +
+  'Call this to discover projectId before session_list/session_search with projectId. ' +
+  'Default order is last-active desc. Filter with query (name/path substring). ' +
+  'isCurrent marks the project of the calling session.'
+
 export const SESSION_LIST_DESCRIPTION =
-  'List SuperOne sessions in the current project (metadata only). ' +
+  'List SuperOne sessions (metadata only). Default: current project. ' +
+  'Pass projectId (from project_list) for another project, or allProjects=true for every project. ' +
+  'Rows include projectId only — use project_list for path/name. ' +
   'Use before session_read/session_search to find ids. Filter by title query, harness, pin/hidden, dates. ' +
   'Sort with order (default last_active_desc; last_active_asc oldest-first; also created_*, message_count_*, size_*). ' +
   'When order is size_*, rows include sizeBytes (approx character length of stored message JSON for ranking — not disk page-file bytes). ' +
   'Paginate with limit/offset. Not live collab or harness resume.'
 
 export const SESSION_SEARCH_DESCRIPTION =
-  'Search SuperOne chat transcripts in the current project by text. Returns matching message hits with short snippets for locating. ' +
+  'Search SuperOne chat transcripts by text. Default: current project; projectId (from project_list) or allProjects for cross-project. ' +
+  'Returns matching message hits with short snippets and projectId. ' +
   'Then call session_read with sessionId/messageId for full content. Snippets are pointers only — not full message bodies.'
 
 export const SESSION_READ_DESCRIPTION =
-  'Read another SuperOne session\'s saved transcript (harness-agnostic content; does not resume provider threads). ' +
+  'Read any SuperOne session\'s saved transcript by id (any project; harness-agnostic content; does not resume provider threads). ' +
   'Views: meta | user | assistant | text | tools | tool_detail. user/assistant/text are pure conversation (no tool lines; assistant/text include toolCount). ' +
-  'tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools.'
+  'tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools. meta includes projectId (use project_list for path/name).'
 
 export const SESSION_CLEANUP_DESCRIPTION =
-  'Hide, unhide, or delete SuperOne sessions by id (from session_list). ' +
+  'Hide, unhide, or delete SuperOne sessions by id (from session_list; ids may be from any project). ' +
   'hide/unhide need no confirmation. delete always opens a user confirmation dialog. ' +
   'Never deletes the current session; skips pinned unless includePinned. Prefer session_list to choose ids first.'
 
@@ -528,6 +538,19 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
+    name: 'project_list',
+    description: PROJECT_LIST_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Case-insensitive substring filter on project name or path.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Max rows. Default 50, max 100.' },
+        offset: { type: 'integer', minimum: 0, description: 'Pagination offset. Default 0.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_list',
     description: SESSION_LIST_DESCRIPTION,
     inputSchema: {
@@ -540,6 +563,14 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         parentOnly: { type: 'boolean', description: 'Exclude collab child sessions. Default false.' },
         olderThan: { type: 'string', description: 'ISO timestamp — only sessions last active before this.' },
         newerThan: { type: 'string', description: 'ISO timestamp — only sessions last active after this.' },
+        projectId: {
+          type: 'string',
+          description: 'List sessions in this SuperOne project id only (from project_list). Mutually exclusive with allProjects. Default: current project.',
+        },
+        allProjects: {
+          type: 'boolean',
+          description: 'List sessions across every SuperOne project. Mutually exclusive with projectId. Default false.',
+        },
         order: {
           type: 'string',
           enum: [
@@ -576,6 +607,14 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
           description: 'Optional: restrict search to these session ids.',
         },
         role: { type: 'string', enum: ['user', 'assistant', 'any'], description: 'Message role filter. Default any.' },
+        projectId: {
+          type: 'string',
+          description: 'Search this SuperOne project id only (from project_list). Mutually exclusive with allProjects. Default: current project.',
+        },
+        allProjects: {
+          type: 'boolean',
+          description: 'Search every SuperOne project. Mutually exclusive with projectId. Default false.',
+        },
         limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Max hits. Default 20, max 50.' },
       },
       required: ['query'],
@@ -588,7 +627,11 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        sessionId: { type: 'string', minLength: 1, description: 'Target SuperOne session id from session_list or session_search.' },
+        sessionId: {
+          type: 'string',
+          minLength: 1,
+          description: 'Target SuperOne session id from session_list or session_search (any project).',
+        },
         view: {
           type: 'string',
           enum: ['meta', 'user', 'assistant', 'text', 'tools', 'tool_detail'],

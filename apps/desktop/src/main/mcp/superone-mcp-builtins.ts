@@ -32,6 +32,7 @@ import {
   PACK_MINI_APP_DESCRIPTION,
   UPDATE_SUPERONE_TYPES_DESCRIPTION,
   RENAME_SESSION_DESCRIPTION,
+  PROJECT_LIST_DESCRIPTION,
   SESSION_LIST_DESCRIPTION,
   SESSION_SEARCH_DESCRIPTION,
   SESSION_READ_DESCRIPTION,
@@ -52,10 +53,12 @@ import {
 import { configApplyHandler, configReadHandler, type ConfigApplyArgs } from './config-tools'
 import {
   SESSION_LIST_ORDER_ENUM,
+  projectListHandler,
   sessionCleanupHandler,
   sessionListHandler,
   sessionReadHandler,
   sessionSearchHandler,
+  type ProjectListArgs,
   type SessionCleanupArgs,
   type SessionListArgs,
   type SessionReadArgs,
@@ -272,6 +275,8 @@ export async function executeBuiltInSuperoneTool(
       return updateSuperoneTypes(args as { appDir: string })
     case 'session_rename':
       return renameSessionTool(args as { title: string }, deps)
+    case 'project_list':
+      return projectListHandler(args as unknown as ProjectListArgs, deps)
     case 'session_list':
       return sessionListHandler(args as unknown as SessionListArgs, deps)
     case 'session_search':
@@ -495,6 +500,19 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   )
 
   server.registerTool(
+    'project_list',
+    {
+      description: PROJECT_LIST_DESCRIPTION,
+      inputSchema: {
+        query: z.string().optional().describe('Case-insensitive substring filter on project name or path.'),
+        limit: z.number().int().min(1).max(100).optional().describe('Max rows. Default 50, max 100.'),
+        offset: z.number().int().min(0).optional().describe('Pagination offset. Default 0.'),
+      },
+    },
+    (args) => projectListHandler(args, deps),
+  )
+
+  server.registerTool(
     'session_list',
     {
       description: SESSION_LIST_DESCRIPTION,
@@ -506,6 +524,14 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         parentOnly: z.boolean().optional().describe('Exclude collab child sessions. Default false.'),
         olderThan: z.string().optional().describe('ISO timestamp — only sessions last active before this.'),
         newerThan: z.string().optional().describe('ISO timestamp — only sessions last active after this.'),
+        projectId: z
+          .string()
+          .optional()
+          .describe('List sessions in this SuperOne project id only (from project_list). Mutually exclusive with allProjects. Default: current project.'),
+        allProjects: z
+          .boolean()
+          .optional()
+          .describe('List sessions across every SuperOne project. Mutually exclusive with projectId. Default false.'),
         order: z
           .enum(SESSION_LIST_ORDER_ENUM)
           .optional()
@@ -528,6 +554,14 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional(),
         sessionIds: z.array(z.string()).max(32).optional().describe('Optional: restrict search to these session ids.'),
         role: z.enum(['user', 'assistant', 'any']).optional().describe('Message role filter. Default any.'),
+        projectId: z
+          .string()
+          .optional()
+          .describe('Search this SuperOne project id only. Mutually exclusive with allProjects. Default: current project.'),
+        allProjects: z
+          .boolean()
+          .optional()
+          .describe('Search every SuperOne project. Mutually exclusive with projectId. Default false.'),
         limit: z.number().int().min(1).max(50).optional().describe('Max hits. Default 20, max 50.'),
       },
     },
@@ -539,7 +573,10 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     {
       description: SESSION_READ_DESCRIPTION,
       inputSchema: {
-        sessionId: z.string().min(1).describe('Target SuperOne session id from session_list or session_search.'),
+        sessionId: z
+          .string()
+          .min(1)
+          .describe('Target SuperOne session id from session_list or session_search (any project).'),
         view: z.enum(['meta', 'user', 'assistant', 'text', 'tools', 'tool_detail']).optional()
           .describe('meta | user | assistant | text | tools | tool_detail. Default text.'),
         messageId: z.string().optional().describe('Anchor page at this message id.'),

@@ -1,4 +1,4 @@
-# SuperOne session archive (`session_list` / `session_search` / `session_read` / `session_cleanup`)
+# SuperOne session archive (`project_list` / `session_list` / `session_search` / `session_read` / `session_cleanup`)
 
 Read saved SuperOne chat transcripts across harnesses (Claude, Codex, ACP, OpenCode). This is **content-level** access to the host’s SQLite archive — not live collab, not provider-thread resume.
 
@@ -42,6 +42,23 @@ session_read({ sessionId, view: "assistant", limit: 10 })
 // continue in the current session — do not resume the other harness thread
 ```
 
+### Cross-project
+
+```
+project_list()                                 // discover projectId (+ name/path once)
+project_list({ query: "super-one" })
+session_list({ projectId, limit: 20 })         // or allProjects: true
+session_search({ query: "oauth", projectId })
+session_read({ sessionId })                    // any project by session id
+session_cleanup({ action: "hide", sessionIds: [...] })  // ids may span projects
+```
+
+Session rows/hits only include `projectId` (not path/name) — call `project_list` when you need human labels.
+
+`session_search` scans the most recent messages in scope, so a wide `allProjects` search can be
+bounded by that window rather than by your query. When the result carries `truncated: true`, the
+older matches were never scanned — re-run with `projectId`, `sessionIds`, or a more specific query.
+
 ### List order (fewer tool calls)
 
 `order` (default `last_active_desc`):
@@ -81,5 +98,9 @@ Safety: never deletes the **current** session; **pinned** sessions are skipped u
 
 ## Scope
 
-- Default: **current project only**.
+- **Default**: current project.
+- **Discover projects**: `project_list` → `id` / `name` / `path` / `lastActiveAt` (`isCurrent` for the calling session’s project).
+- **Cross-project**:
+  - `session_list` / `session_search`: `projectId` or `allProjects: true` (rows/hits include `projectId` only).
+  - `session_read` / `session_cleanup`: session ids are global — any project. `meta` includes `projectId`.
 - Hidden sessions are omitted from list/search unless you opt in (`includeHidden` on list).

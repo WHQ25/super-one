@@ -75,7 +75,8 @@ export class AcpBackend implements SessionBackend {
   }
 
   async releaseRuntime(_reason: 'idle'): Promise<void> {
-    if (this.activePrompt || this.getPendingInteractions().length > 0) return
+    if (this.activePrompt || this.pendingQueued.length > 0) return
+    if (this.getPendingInteractions().length > 0) return
     await this.teardownRuntime()
   }
 
@@ -85,6 +86,8 @@ export class AcpBackend implements SessionBackend {
   private config: AcpBackendConfig = {}
   private runtime: AcpRuntime | null = null
   private activePrompt: Promise<void> | null = null
+  /** User messages sent mid-turn, replayed in order once the live turn settles. */
+  private pendingQueued: SendMessageRequest[] = []
   private readonly pendingTaskNotifications = new TaskNotificationQueue()
   /** Overridden by Session → Session.send / _sendChain for idle flushes. */
   private taskNotificationSender: (content: string) => Promise<void> = (content) =>
@@ -759,25 +762,64 @@ export class AcpBackend implements SessionBackend {
 
   /**
    * Mid-turn queue only. Idle synthetic turns are owned by Session.send.
-   * ACP has no mid-turn inject / priority queue.
+   * ACP has no mid-turn inject / steer.
    */
   async injectTaskNotification(content: string): Promise<boolean> {
     if (!this.started || this.disposed) return true
     const text = content.trim()
     if (!text) return true
-    if (this.activePrompt) {
+    if (this.isTurnBusy()) {
       this.pendingTaskNotifications.enqueue(text)
       return true
     }
     return false
   }
 
+  /**
+   * Set from the first synchronous line of `send()` until the turn settles, so
+   * a queued message can never slip into the window between `send()` and the
+   * `await ensureRuntime()` that assigns `activePrompt`.
+   */
+  private isTurnBusy(): boolean {
+    return this.currentMessageId !== null || this.activePrompt !== null
+  }
+
   private flushPendingTaskNotifications(): void {
     this.taskNotificationFlush.flush()
   }
 
+  /**
+   * ACP has no steer: a second `session/prompt` while one is in flight makes the
+   * agent end the live turn with `stopReason: cancelled`. So a queued user
+   * message waits here and runs as its own turn once the live one settles.
+   */
+  private flushPendingQueued(): void {
+    if (this.pendingQueued.length === 0) return
+    if (!this.started || this.disposed) {
+      this.pendingQueued = []
+      return
+    }
+    // Re-enters send() with `priority: 'next'` while idle, which is where the
+    // consumed event is emitted.
+    void this.send(this.pendingQueued.shift()!).catch((err) => {
+      log.warn('[AcpBackend] queued send failed:', err)
+    })
+  }
+
   async send(request: SendMessageRequest): Promise<void> {
     if (!this.started || this.disposed) throw new Error('AcpBackend not started')
+    if (request.priority === 'next') {
+      if (this.isTurnBusy()) {
+        this.pendingQueued.push(request)
+        return
+      }
+      // Session holds the user bubble until this lands, so it must be emitted
+      // on every path that actually runs a queued message — including the race
+      // where the turn settled between Session's streaming check and here.
+      if (request.clientMessageId) {
+        this.emit({ type: 'queued_message_consumed', clientMessageId: request.clientMessageId })
+      }
+    }
     const messageId = request.assistantMessageId
       ?? `acp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.interrupted = false
@@ -841,12 +883,16 @@ export class AcpBackend implements SessionBackend {
     } finally {
       this.activePrompt = null
       this.currentMessageId = null
+      // User-typed messages outrank host task notifications; the notification
+      // flush re-queues itself while the queued turn holds the runtime.
+      this.flushPendingQueued()
       this.flushPendingTaskNotifications()
     }
   }
 
   async interrupt(): Promise<void> {
     this.interrupted = true
+    this.pendingQueued = []
     for (const [id, pending] of this.pendingPermissions) {
       pending.resolve({ outcome: { outcome: 'cancelled' } })
       this.pendingPermissions.delete(id)
@@ -1166,8 +1212,11 @@ export class AcpBackend implements SessionBackend {
     return false
   }
 
-  dequeueMessage(_clientMessageId: string): boolean {
-    return false
+  dequeueMessage(clientMessageId: string): boolean {
+    const idx = this.pendingQueued.findIndex((r) => r.clientMessageId === clientMessageId)
+    if (idx === -1) return false
+    this.pendingQueued.splice(idx, 1)
+    return true
   }
 
   getPendingInteractions(): AgentEvent[] {

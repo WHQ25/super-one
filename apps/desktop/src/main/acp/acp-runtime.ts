@@ -673,14 +673,42 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   // available_commands_update (often sent right after create) is not missed.
   // Route to the active prompt callback when one is in flight.
   let promptGen = 0
-  let promptMessageId: string | null = null
-  let promptOnEvent: ((event: AgentEvent) => void) | null = null
   const promptStopWaiters: Array<(stopReason: string) => void> = []
   let pumping = true
-  /** Agent-side messageId → local assistant message id for multi-message turns. */
-  const agentMsgToLocal = new Map<string, string>()
-  let openToolIds = new Set<string>()
-  let primaryPromptMessageId: string | null = null
+  /**
+   * Per-turn streaming state. A newer `session/prompt` must never mutate an
+   * older turn's ids: Grok ends the previous turn with `stopReason: cancelled`
+   * only *after* the replacement prompt is in flight, so a turn that reads
+   * shared module state at settle time would stamp `message_interrupted` onto
+   * the newer bubble (and leave its own tool blocks spinning).
+   */
+  interface AcpTurnScope {
+    /** Agent-side messageId → local assistant message id for multi-message turns. */
+    readonly agentMsgToLocal: Map<string, string>
+    readonly openToolIds: Set<string>
+    /** Local bubble the turn is currently streaming into. */
+    lastMessageId: string | null
+  }
+  interface AcpPromptTurn extends AcpTurnScope {
+    readonly gen: number
+    readonly primaryMessageId: string
+    readonly onEvent: (event: AgentEvent) => void
+  }
+  const newTurnScope = (lastMessageId: string | null = null): AcpTurnScope => ({
+    agentMsgToLocal: new Map<string, string>(),
+    openToolIds: new Set<string>(),
+    lastMessageId,
+  })
+  let currentTurn: AcpPromptTurn | null = null
+  /** Scope for agent-initiated (auto-wake) streaming, which runs only while no prompt is live. */
+  let wakeScope: AcpTurnScope = newTurnScope()
+  /** The scope owning whatever is streaming right now. */
+  const scope = (): AcpTurnScope => currentTurn ?? wakeScope
+  /**
+   * Read `currentTurn` through a call so the update pump (an IIFE, which
+   * inherits outer control-flow narrowing) does not see the `= null` initializer.
+   */
+  const liveTurn = (): AcpPromptTurn | null => currentTurn
   let systemPromptSent = false
   /**
    * Grok auto-wake (WorkflowCompleted / TaskCompleted / NotificationDrain) runs a
@@ -699,7 +727,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         event.commands.length,
       )
     }
-    if (promptOnEvent) promptOnEvent(event)
+    if (currentTurn) currentTurn.onEvent(event)
     else opts.onSessionEvent?.(event)
   }
 
@@ -727,11 +755,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     options: { emitIdle?: boolean } = {},
   ) => {
     const id = agentInitiatedMessageId
-    if (!id || promptOnEvent) return
-    for (const ev of cancelOpenToolEvents(id, openToolIds)) {
+    if (!id || currentTurn) return
+    for (const ev of cancelOpenToolEvents(id, wakeScope.openToolIds)) {
       deliver(ev)
     }
-    openToolIds.clear()
+    wakeScope.openToolIds.clear()
     if (reason === 'interrupted') {
       deliver({ type: 'message_interrupted', messageId: id })
     } else {
@@ -742,25 +770,25 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     }
     agentInitiatedMessageId = null
     // Drop agentMid→local maps so late chunks cannot re-home onto a completed bubble.
-    agentMsgToLocal.clear()
+    wakeScope.agentMsgToLocal.clear()
     log.debug('[acp-runtime] completed agent-initiated turn messageId=%s reason=%s', id, reason)
   }
 
   const ensureAgentInitiatedMessage = (agentMid: string | null): string => {
     if (agentMid) {
-      const existing = agentMsgToLocal.get(agentMid)
+      const existing = wakeScope.agentMsgToLocal.get(agentMid)
       if (existing) {
         agentInitiatedMessageId = existing
         return existing
       }
     }
     if (agentInitiatedMessageId) {
-      if (agentMid) agentMsgToLocal.set(agentMid, agentInitiatedMessageId)
+      if (agentMid) wakeScope.agentMsgToLocal.set(agentMid, agentInitiatedMessageId)
       return agentInitiatedMessageId
     }
     const newId = `acp_wake_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
     agentInitiatedMessageId = newId
-    if (agentMid) agentMsgToLocal.set(agentMid, newId)
+    if (agentMid) wakeScope.agentMsgToLocal.set(agentMid, newId)
     startAssistantMessage(newId)
     log.debug('[acp-runtime] opened agent-initiated turn messageId=%s agentMid=%s', newId, agentMid)
     return newId
@@ -769,8 +797,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   // Wire xAI ExtNotification delivery (handlers registered above close over these).
   // progressive events often arrive after session/prompt returns → onSessionEvent path.
   xaiDeliver = deliver
-  xaiMessageId = () => promptMessageId ?? primaryPromptMessageId ?? agentInitiatedMessageId
-  agentWakeCtl.isPromptActive = () => !!promptOnEvent
+  xaiMessageId = () =>
+    currentTurn?.lastMessageId ?? currentTurn?.primaryMessageId ?? agentInitiatedMessageId
+  agentWakeCtl.isPromptActive = () => !!currentTurn
   agentWakeCtl.hasOpen = () => !!agentInitiatedMessageId
   agentWakeCtl.complete = completeAgentInitiated
 
@@ -806,26 +835,27 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         if (notifMeta) noteContextTokensFromMeta(xaiCorrelation, notifMeta)
         const nextContextTokens = xaiCorrelation.lastUsage?.totalTokens ?? 0
         const contextChanged = nextContextTokens > 0 && nextContextTokens !== prevContextTokens
-        trace('acp.session', update.sessionUpdate, update, promptMessageId ?? activeSession.sessionId)
-        let messageId = promptMessageId
+        const turn = liveTurn()
+        trace('acp.session', update.sessionUpdate, update, turn?.lastMessageId ?? activeSession.sessionId)
+        let messageId = turn?.lastMessageId
           ?? agentInitiatedMessageId
           ?? `acp_session_${activeSession.sessionId}`
         const agentMid = getAgentChunkMessageId(update)
-        if (promptOnEvent) {
+        if (turn) {
           if (agentMid) {
-            const existing = agentMsgToLocal.get(agentMid)
+            const existing = turn.agentMsgToLocal.get(agentMid)
             if (existing) {
               messageId = existing
-              promptMessageId = existing
-            } else if (agentMsgToLocal.size === 0 && primaryPromptMessageId) {
-              agentMsgToLocal.set(agentMid, primaryPromptMessageId)
-              messageId = primaryPromptMessageId
-              promptMessageId = primaryPromptMessageId
+              turn.lastMessageId = existing
+            } else if (turn.agentMsgToLocal.size === 0) {
+              turn.agentMsgToLocal.set(agentMid, turn.primaryMessageId)
+              messageId = turn.primaryMessageId
+              turn.lastMessageId = turn.primaryMessageId
             } else {
               const newId = `acp_msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-              agentMsgToLocal.set(agentMid, newId)
+              turn.agentMsgToLocal.set(agentMid, newId)
               messageId = newId
-              promptMessageId = newId
+              turn.lastMessageId = newId
               // Already streaming under the user prompt — do not re-emit status.
               startAssistantMessage(newId, { emitStatus: false })
             }
@@ -854,7 +884,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             ...(max > 0 ? { contextWindow: max } : {}),
           })
         }
-        trackOpenTools(openToolIds, mapped)
+        trackOpenTools(scope().openToolIds, mapped)
         const migrate = noteToolCorrelationFromAgentEvents(mapped, xaiCorrelation)
         for (const event of mapped) {
           deliver(event)
@@ -1032,7 +1062,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       const fail = (error: string) => {
         if (settled) return
         settled = true
-        for (const ev of cancelOpenToolEvents(promptMessageId ?? messageId, openToolIds)) {
+        for (const ev of cancelOpenToolEvents(turn.lastMessageId ?? messageId, turn.openToolIds)) {
           onEvent(ev)
         }
         onEvent({ type: 'message_error', messageId, error })
@@ -1051,11 +1081,16 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         stopWaiter = resolve
         promptStopWaiters.push(resolve)
       })
-      promptMessageId = messageId
-      primaryPromptMessageId = messageId
-      promptOnEvent = onEvent
-      agentMsgToLocal.clear()
-      openToolIds = new Set()
+      // Own scope per turn: a replacement prompt swaps `currentTurn` without
+      // touching this turn's ids, so a late cancel still settles on its own.
+      const turn: AcpPromptTurn = {
+        ...newTurnScope(messageId),
+        gen,
+        primaryMessageId: messageId,
+        onEvent,
+      }
+      currentTurn = turn
+      wakeScope = newTurnScope()
       xaiCorrelation.lastMessageId = messageId
 
       const promptBlocks = await buildAcpPromptContentAsync(text, {
@@ -1092,9 +1127,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         ])
         settled = true
         const { complete, interrupted } = mapStopReason(stopReason)
-        const localIds = new Set<string>([primaryPromptMessageId ?? messageId, ...agentMsgToLocal.values()])
+        const localIds = new Set<string>([turn.primaryMessageId, ...turn.agentMsgToLocal.values()])
         if (interrupted) {
-          for (const ev of cancelOpenToolEvents(promptMessageId ?? messageId, openToolIds)) {
+          for (const ev of cancelOpenToolEvents(turn.lastMessageId ?? messageId, turn.openToolIds)) {
             onEvent(ev)
           }
           for (const id of localIds) {
@@ -1111,13 +1146,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         fail(describeAcpRequestError(err))
         throw err
       } finally {
-        if (gen === promptGen) {
-          promptMessageId = null
-          primaryPromptMessageId = null
-          promptOnEvent = null
-          agentMsgToLocal.clear()
-          openToolIds.clear()
-        }
+        // Only the newest turn owns `currentTurn`; an older turn settling late
+        // must leave the live one alone.
+        if (gen === promptGen && currentTurn === turn) currentTurn = null
+        turn.agentMsgToLocal.clear()
+        turn.openToolIds.clear()
         if (stopWaiter) {
           const idx = promptStopWaiters.indexOf(stopWaiter)
           if (idx >= 0) promptStopWaiters.splice(idx, 1)
@@ -1125,9 +1158,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     },
     async cancel() {
-      if (promptOnEvent && promptMessageId) {
-        for (const ev of cancelOpenToolEvents(promptMessageId, openToolIds)) {
-          promptOnEvent(ev)
+      const turn = currentTurn
+      if (turn?.lastMessageId) {
+        for (const ev of cancelOpenToolEvents(turn.lastMessageId, turn.openToolIds)) {
+          turn.onEvent(ev)
         }
       }
       const waiter = promptStopWaiters[0] ?? null

@@ -1,6 +1,6 @@
 ---
 name: release
-description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, promote artifacts to draft release, and publish. Trigger with /release [alpha|beta|public] [major|feature|patch]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
+description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, harness R2 mirror (when pins change), promote artifacts to draft release, and publish. Trigger with /release [alpha|beta|public] [major|feature|patch]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
 user_invocable: true
 arguments: "[alpha|beta|public] [major|feature|patch]"
 argument-hint: "[alpha|beta|public] [major|feature|patch]"
@@ -8,14 +8,15 @@ argument-hint: "[alpha|beta|public] [major|feature|patch]"
 
 # Release Skill
 
-Automate the SuperOne release pipeline. The pipeline has **independently retryable** phases — build, **CLI npm publish**, relay deploy, promote, publish, set-latest — orchestrated via GitHub Actions workflow_dispatch:
+Automate the SuperOne release pipeline. The pipeline has **independently retryable** phases — build, **CLI npm publish**, **harness R2 publish** (conditional), relay deploy, promote, publish, set-latest — orchestrated via GitHub Actions workflow_dispatch:
 
 - `build-mac.yml` / `build-win.yml` / `build-linux.yml` — each builds one platform, uploads artifacts to Actions storage (30-day retention). No release side effects.
 - `publish-cli.yml` — packs and publishes **`@super-one/cli`** to the public npm registry at the **same version string** as desktop (lockstep). Desktop **Other Devices → SSH → registry install** pins `@super-one/cli@<app-version>`; if this step is skipped, remote SSH bootstrap cannot install that version from npm. Auth: npm **Trusted Publishing (OIDC)** for this repo (preferred) or optional `NPM_TOKEN` secret. Independent of desktop electron-builder — fires in parallel with builds at Step 3.
+- `publish-harness.yml` — **conditional**. When Claude/Codex managed pin constants (or the pack script) changed since the previous tag, `npm pack`s the pinned platform tarballs, SHA-256s them, and `aws s3 sync`s byte-exact mirrors + `harness/manifest/<channel>.json` to R2 (`https://dl.super-one.dev/harness/...`). Desktop install tries R2 first, npm registry fallback, same digest. Auth: same R2 secrets as promote (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ACCOUNT_ID`). Independent of electron-builder — fires in parallel with builds at Step 3 when Step 1 said yes. **Not every app release** — only when harness pins move (see Invariants).
 - `deploy-relay.yml` — runs `bunx wrangler deploy` against `apps/relay/` to push the Cloudflare Worker (relay) to production. Authenticated by the repo `CLOUDFLARE_API_TOKEN` secret, so this **must** run inside Actions, never from a local terminal (the local shell typically lacks the token, and skill permissions block credential-discovery anyway). Independent of the build/promote chain — triggered in parallel with builds at Step 3.
-- `promote.yml` — **archive only**. Downloads artifacts and (a) uploads them **flat** (binaries + channel ymls) to a **draft** GitHub Release (bridge-mode legacy path — legacy alpha clients embed `UPDATER_TOKEN` and pull from there — **and** the manifest source for set-latest); (b) moves the binaries into a `v${VERSION}/` subdir and `aws s3 sync`s **only the binaries** to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev`. It writes **no** root channel yml — a promoted version is archived but not yet anyone's latest (that's `set-latest`).
+- `promote.yml` — **archive only**. Downloads artifacts and (a) uploads them **flat** (binaries + channel ymls) to a **draft** GitHub Release (bridge-mode legacy path — legacy alpha clients embed `UPDATER_TOKEN` and pull from there — **and** the manifest source for set-latest); (b) moves the binaries into a `v${VERSION}/` subdir and `aws s3 sync`s **only the binaries** to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev`. It writes **no** root channel yml — a promoted version is archived but not yet anyone's latest (that's `set-latest`). Promote does **not** touch `harness/` keys (those are `publish-harness` only).
 - Final `gh release edit --draft=false --prerelease` — flips the draft to published; GitHub then materializes the tag on `target_commitish`.
-- `set-latest.yml` — **manual, decoupled from promote**. Sets a given release as a channel's latest: re-points the channel pointer yml(s) on R2 **with cascade** (setting `stable` also updates `beta`+`alpha`; `beta` also `alpha`; `alpha` only `alpha`, so alpha users still receive beta/stable builds) and refreshes the permanent `https://dl.super-one.dev/{alpha,beta,stable}/latest/<installer>` download links. It reads the version's manifest from its **GitHub Release** (so any historical version works without a rebuild), and `force=true` overrides the semver guard to **roll a channel back** to an older version.
+- `set-latest.yml` — **manual, decoupled from promote**. Sets a given release as a channel's latest: re-points the channel pointer yml(s) on R2 **with cascade** (setting `stable` also updates `beta`+`alpha`; `beta` also `alpha`; `alpha` only `alpha`, so alpha users still receive beta/stable builds) and refreshes the permanent `https://dl.super-one.dev/{alpha,beta,stable}/latest/<installer>` download links. It reads the version's manifest from its **GitHub Release** (so any historical version works without a rebuild), and `force=true` overrides the semver guard to **roll a channel back** to an older version. Does **not** publish harness runtimes.
 
 Tags are created by GitHub at publish time, never pushed from local. A failing build or bad artifact can be re-run without burning a version number or force-pushing a tag.
 
@@ -35,7 +36,7 @@ Tags are created by GitHub at publish time, never pushed from local. A failing b
 
 **Sandbox note**: every `gh workflow run`, `gh run view`, `gh release ...`, verification `curl`, and `npm view` in this skill talks to hosts (`api.github.com`, `dl.super-one.dev`, `registry.npmjs.org`) that are outside the default Bash sandbox's network allowlist. Run these with `dangerouslyDisableSandbox: true` from the start — don't wait for a sandbox-denial error first. This applies to every network-touching command below (Steps 3, 4, 5, 6, 7, 8, 9, and the Recovery Patterns).
 
-### Step 1: Confirm version + CHANGELOG + relay-deploy decision (single turn)
+### Step 1: Confirm version + CHANGELOG + relay / harness decisions (single turn)
 
 This is the **only** human checkpoint in the pipeline. Do all of the following **in one response** and ask for a single combined confirmation:
 
@@ -44,16 +45,28 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
 3. Calculate the new version string.
 4. `git log --oneline --no-decorate v<previous-version>..HEAD` to enumerate commits since the last release tag.
 5. **Decide whether relay deploys this release**: run `git diff --quiet v<previous-version>..HEAD -- apps/relay/`. Non-empty diff → relay will be deployed and `apps/relay/package.json` will jump to the new version (skipping any intermediate versions where it wasn't deployed). Empty diff → relay is left alone.
-6. Draft the CHANGELOG entry:
+6. **Decide whether harness R2 publish runs this release**:
+   ```bash
+   git diff --quiet v<previous-version>..HEAD -- \
+     packages/runtime/src/harness/managed-official.ts \
+     packages/runtime/src/harness/cdn.ts \
+     scripts/publish-harness-artifacts.ts \
+     .github/workflows/publish-harness.yml
+   ```
+   Non-empty → **yes** (pin constants, pack script, or workflow changed). Empty → **no** (existing R2 mirrors + channel manifest stay valid; desktop still has npm fallback).
+   - Map the **app release channel** to the harness manifest channel: `alpha` → `alpha`, `beta` → `beta`, `public`/stable → `stable`.
+   - **Manual override**: if the user asks to refresh harness mirrors even without a pin diff (e.g. first bootstrap, corrupted R2 object), treat harness publish as **yes** for this release and note it in the confirmation block.
+7. Draft the CHANGELOG entry:
    - Drop noise (`chore(release): bump version`, purely internal refactors with no user impact).
    - Group by type — **Added** (feat), **Fixed** (fix), **Changed** (refactor affecting user behavior, dep upgrades with user impact), **Performance** (perf), **Tests** (test), **CI** (ci). Omit empty groups.
    - Concise, human-readable bullets. Combine related commits. No unverified claims ("may fix X") — only statements you can defend.
-7. Show the user **all** of this in one plain markdown message — no tool call, just text in your reply:
+8. Show the user **all** of this in one plain markdown message — no tool call, just text in your reply:
    - `Current: X.Y.Z-alpha → New: A.B.C-alpha`
    - `Relay deploy: yes (apps/relay/package.json: <previous-relay-version> → <new-version>)` **or** `Relay deploy: no (no apps/relay/ diff since v<previous-version>)`
    - `CLI npm: yes (@super-one/cli@A.B.C-alpha, dist-tag alpha)` — default for every release (required for SSH registry install). Only note skip if the user explicitly asks for a desktop-only release.
+   - `Harness R2: yes (channel=<alpha|beta|stable>, pins/script changed since v<previous>)` **or** `Harness R2: no (no managed pin / pack-script diff since v<previous>)` — when yes, note that Claude/Codex tarball mirrors + `harness/manifest/<channel>.json` will be rewritten on R2 (~1.2 GB pack, ~1–3 min CI).
    - The full drafted CHANGELOG entry (as the literal block that will be inserted)
-8. Ask for one combined confirmation / edits, as a plain-language question at the end of the same message (e.g. "Proceed with this?"). **Do NOT use the `AskUserQuestion` tool for this step** — the CHANGELOG draft is multi-line formatted content that AskUserQuestion's option-card UI isn't built to display; it's for discrete choices, not reviewing a text block. A normal markdown reply lets the user read and edit it inline.
+9. Ask for one combined confirmation / edits, as a plain-language question at the end of the same message (e.g. "Proceed with this?"). **Do NOT use the `AskUserQuestion` tool for this step** — the CHANGELOG draft is multi-line formatted content that AskUserQuestion's option-card UI isn't built to display; it's for discrete choices, not reviewing a text block. A normal markdown reply lets the user read and edit it inline.
 
 After this confirmation, **everything below runs without further prompting** unless an actual error occurs. Do not ask the user to confirm before push, before build, before promote, or before publish.
 
@@ -74,9 +87,9 @@ After this confirmation, **everything below runs without further prompting** unl
 6. **Do NOT create a local git tag**. Tag creation is deferred to GitHub at publish time.
 7. `git push origin main` (no `--tags`). No confirmation needed — already covered by Step 1.
 
-### Step 3: Trigger per-platform builds + CLI publish (+ relay deploy if Step 1 said yes)
+### Step 3: Trigger per-platform builds + CLI publish (+ harness / relay if Step 1 said yes)
 
-Always fire the three platform builds **and** `publish-cli.yml` (unless Step 1 marked CLI skip). **If Step 1 decided relay deploys this release** (i.e. you bumped `apps/relay/package.json` in Step 2), also fire `deploy-relay.yml`. All dispatches checkout the same `main` HEAD that contains the just-pushed release commit.
+Always fire the three platform builds **and** `publish-cli.yml` (unless Step 1 marked CLI skip). **If Step 1 decided harness R2 publish**, also fire `publish-harness.yml`. **If Step 1 decided relay deploys this release** (i.e. you bumped `apps/relay/package.json` in Step 2), also fire `deploy-relay.yml`. All dispatches checkout the same `main` HEAD that contains the just-pushed release commit.
 
 Derive the npm dist-tag from `<new-version>`:
 
@@ -85,6 +98,14 @@ Derive the npm dist-tag from `<new-version>`:
 | `*-alpha*` / `*-alpha.*` | `alpha` |
 | `*-beta*` / `*-beta.*` | `beta` |
 | otherwise (stable) | `latest` |
+
+Map harness manifest channel from the **release channel** (not from the npm dist-tag name `latest`):
+
+| Release arg / version | `-f channel=` for `publish-harness` |
+|-----------------------|-------------------------------------|
+| `alpha` / `*-alpha*`  | `alpha` |
+| `beta` / `*-beta*`    | `beta` |
+| `public` / no pre     | `stable` |
 
 ```bash
 gh workflow run build-mac.yml    --ref main
@@ -97,28 +118,35 @@ gh workflow run publish-cli.yml --ref main \
   -f tag=<alpha|beta|latest> \
   -f dry_run=false
 
+# Only if Step 1 said harness R2 publish:
+gh workflow run publish-harness.yml --ref main \
+  -f channel=<alpha|beta|stable> \
+  -f dry_run=false
+
 # Only if Step 1 said relay deploys this release:
 gh workflow run deploy-relay.yml --ref main \
   -f message="v<new-version> (commit $(git rev-parse --short HEAD))"
 ```
 
-Do NOT re-run the relay diff check here — Step 2's release commit always modifies `apps/relay/package.json` when relay deploys, so a fresh `git diff v<previous>..HEAD -- apps/relay/` would always be non-empty after Step 2 and lose the original signal. Carry the boolean from Step 1.
+Do NOT re-run the relay or harness diff checks here — carry the booleans from Step 1. Step 2's release commit only touches version/CHANGELOG (and maybe relay package.json); it does **not** change harness pins, so a post-bump `git diff` for harness paths would still match Step 1.
 
 Record each dispatched run's URL / ID.
 
 - Each build checks out the requested ref (`main` by default), runs `bun run build:<os> -- --publish never` → electron-builder produces `dist/` but uploads nowhere → `actions/upload-artifact@v4` → artifacts `dist-mac` / `dist-win` / `dist-linux` attached to the run (30-day retention).
 - `publish-cli.yml` checks out the same ref, runs CLI unit tests, `pack:npm` (esbuild bundle → `apps/cli/dist/npm`), smoke-installs natives, then `npm publish` with the pinned version + dist-tag. Prefer **Trusted Publishing (OIDC)** (`id-token: write`); workflow upgrades to npm ≥11.5.1 on the runner before publish (Node 22's bundled npm 10 signs provenance then fails PUT with a misleading E404). Optional `NPM_TOKEN` is used only when the secret is non-empty.
+- `publish-harness.yml` checks out the same ref, reads pin constants from `packages/runtime/src/harness/managed-official.ts` (never free-form version inputs), `npm pack`s each platform tarball, writes `harness/manifest/<channel>.json`, and `aws s3 sync`s to `super-one-releases` (same R2 creds as promote). `dry_run=true` stages only (used for CI smoke); releases always pass `dry_run=false`. Pack is ~12 tarballs / ~1.2 GB compressed; typical wall time ~1–3 min on `ubuntu-latest`.
 - `deploy-relay.yml` checks out the same ref, runs `bunx wrangler deploy --message "<message>"` against `apps/relay/`, authenticated via the `CLOUDFLARE_API_TOKEN` repo secret. The `--message` value shows up in the Cloudflare dashboard's Version History so you can map version IDs back to git commits.
 - **Diff scope used in Step 1**: `apps/relay/` is a self-contained Cloudflare Worker — its source does not import from `packages/shared` or any other workspace, so changes elsewhere in the monorepo never require a relay redeploy. If you later add such an import, expand the Step 1 diff path accordingly.
-- **Manual override**: to force a relay deploy even when no source diff exists (e.g. after a rollback at the Cloudflare layer), do it outside this skill via `gh workflow run deploy-relay.yml ...` directly. Do not bump `apps/relay/package.json` for it — that field is reserved for "version actually deployed during a release", not for ad-hoc redeploys.
+- **Manual override**: to force a relay deploy even when no source diff exists (e.g. after a rollback at the Cloudflare layer), do it outside this skill via `gh workflow run deploy-relay.yml ...` directly. Do not bump `apps/relay/package.json` for it — that field is reserved for "version actually deployed during a release", not for ad-hoc redeploys. Same for harness: force with `gh workflow run publish-harness.yml --ref main -f channel=alpha -f dry_run=false` without a pin bump when R2 needs a refresh.
 
-### Step 4: Monitor builds + CLI publish (+ relay deploy if dispatched)
+### Step 4: Monitor builds + CLI publish (+ harness / relay if dispatched)
 
 Poll `gh run view <id> --json status,conclusion` for each dispatched run. Typical durations:
 
 - **macOS build**: longest (~15 min, signing + notarization)
 - **Linux / Windows builds**: 3-6 min
 - **CLI publish** (`publish-cli.yml`): ~2–4 min (tests + pack + npm install smoke + publish)
+- **Harness R2** (`publish-harness.yml`, if dispatched): ~1–3 min (npm pack all platforms + s3 sync)
 - **Relay deploy** (if dispatched): 2-3 min (small Worker, no native deps)
 
 **CLI verification** (once `publish-cli` is green):
@@ -129,11 +157,23 @@ npm view @super-one/cli dist-tags --json
 # expect version listed and dist-tags.<alpha|beta|latest> == <new-version> for this channel
 ```
 
+**Harness verification** (once `publish-harness` is green — only if dispatched):
+
+```bash
+# Manifest reachable and parseable (HEAD first; then a small GET of the JSON)
+curl -sI "https://dl.super-one.dev/harness/manifest/<channel>.json" | head -1   # expect HTTP/.. 200
+curl -s "https://dl.super-one.dev/harness/manifest/<channel>.json" | head -c 500
+# Expect managedHarnesses.claude / .codex with artifacts[].url + digestSha256
+# Optional: one artifact HEAD (pick a url from the manifest)
+# curl -sI "<artifact-url>" | head -1
+```
+
 If any run fails:
 
 - Inspect `gh run view <id> --log-failed | tail -40` to identify the root cause.
-- Fix on `main`, push, and re-trigger ONLY that workflow. The successful run IDs from the other runs remain valid — `promote.yml` will pull each platform's artifact from its own run ID, and a re-deployed relay just supersedes the prior Cloudflare Version. CLI re-publish is safe only if the version was **never** successfully published (npm versions are immutable).
-- Do NOT proceed to promote until all three **builds** are green (CLI publish and relay deploy can complete in any order relative to promote — promote does not download from npm — but **do not report the release complete** until CLI is green unless Step 1 skipped it).
+- Fix on `main`, push, and re-trigger ONLY that workflow. The successful run IDs from the other runs remain valid — `promote.yml` will pull each platform's artifact from its own run ID, and a re-deployed relay just supersedes the prior Cloudflare Version. CLI re-publish is safe only if the version was **never** successfully published (npm versions are immutable). Harness re-publish is always safe (R2 keys are content-addressed by pin version; overwrite is idempotent).
+- Do NOT proceed to promote until all three **builds** are green (CLI publish, harness publish, and relay deploy can complete in any order relative to promote — promote does not depend on them — but **do not report the release complete** until CLI is green unless Step 1 skipped it, and until harness is green if Step 1 required it).
+
 ### Step 5: Trigger promote
 
 Once all three builds are green, collect the run IDs and fire promote:
@@ -209,6 +249,7 @@ Show the user:
 1. The final GitHub Release URL and the tag SHA (`git fetch origin --tags` so local is in sync).
 2. Whether relay was deployed this release.
 3. **CLI npm status**: `@super-one/cli@<new-version>` published (or skipped), dist-tag used, and `npm view` confirmation. Mention that desktop remote install pins this exact version (`npm i -g @super-one/cli@<new-version>` / registry path over SSH).
+4. **Harness R2 status**: published (channel + run URL + `https://dl.super-one.dev/harness/manifest/<channel>.json`) **or** skipped (no pin/script diff). Remind that desktop install is R2-primary / npm-fallback either way.
 
 ## Recovery Patterns
 
@@ -219,6 +260,10 @@ Show the user:
 | `publish-cli.yml` fails with `ENEEDAUTH` / blank auth | Prefer npm Trusted Publishing: package `@super-one/cli` on npmjs.com must list this GitHub repo + workflow filename `publish-cli.yml`, and the job must keep `permissions.id-token: write`. Do **not** export an empty `NPM_TOKEN` (blank `_authToken` in `.npmrc` breaks OIDC). Optional: set a real Automation `NPM_TOKEN` secret |
 | `publish-cli.yml` fails with `E404` after provenance signed | Usually outdated npm CLI on the runner (need ≥11.5.1). Workflow must run `npm install -g npm@^11.5.1` before publish; restore that step if removed. Also confirm Trusted Publisher config matches repo/workflow name exactly |
 | `publish-cli.yml` fails because version already exists on npm | Versions are immutable — do **not** try to overwrite. Ship a new patch version (re-run full release bump) instead |
+| `publish-harness.yml` fails on `npm pack` | Usually registry/network blip or a pin that 404s (wrong platform version for Codex). Confirm `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` resolve on npm for every platform suffix the script packs. Fix pins on main if needed, re-trigger with the same `-f channel=`. Desktop can still install via npm fallback while R2 is stale |
+| `publish-harness.yml` fails on R2 sync | Same R2 secrets as promote (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ACCOUNT_ID`). Do **not** use `aws-actions/configure-aws-credentials` (STS NXDOMAIN on R2). Re-trigger is safe — `aws s3 sync` overwrites the same keys. Builds/promote are independent |
+| `publish-harness.yml` not listed / 404 on dispatch | Workflow file must exist on the **default branch** for `workflow_dispatch`. Ensure `.github/workflows/publish-harness.yml` is on `main` (registration PR) even when the pack script lands via a later merge |
+| Need harness refresh without a release | Outside this skill: `gh workflow run publish-harness.yml --ref main -f channel=alpha -f dry_run=false` (or `dry_run=true` for pack-only smoke) |
 | `deploy-relay.yml` fails | Inspect `gh run view <id> --log-failed`. Most common cause: `CLOUDFLARE_API_TOKEN` repo secret missing, expired, or scoped wrong (needs `Account: Workers Scripts:Edit` + `Account:Read`). Fix the secret in repo Settings → Secrets, then re-run the workflow — wrangler deploys are idempotent so the new run just supersedes the prior partial state. Build/promote/publish are independent and can proceed regardless |
 | Promote workflow fails mid-upload (GitHub side) | Re-trigger promote with the same tag — `--clobber` replaces any partial assets |
 | Promote workflow fails on R2 sync step | The GitHub Release upload happens before the R2 sync step in promote.yml, so the GitHub side can be intact while R2 is empty. Re-trigger promote with the same tag — `aws s3 sync` is idempotent (same key = update); the GitHub upload step uses `--clobber` |
@@ -242,3 +287,4 @@ Show the user:
 - **Relay deploy is conditional on actual diff.** Only dispatch `deploy-relay.yml` when `git diff v<previous>..HEAD -- apps/relay/` is non-empty. No-op deploys just clutter Cloudflare's Version History with duplicate Version IDs and obscure the real protocol-changing deploys you'd want to roll back to.
 - **`apps/relay/package.json` version skips intermediate releases.** It is bumped only on releases where relay actually deploys, and it jumps straight to the current release version. So the relay version may go `0.29.1-alpha → 0.35.0-alpha` if the six intermediate releases between them had no `apps/relay/` diff. This is what keeps `apps/relay/package.json` truthful: its version always matches the version actually running on Cloudflare for this commit lineage. **Never** lockstep-bump it just because the root or desktop version moved.
 - **`@super-one/cli` locksteps with root/desktop version.** Every release dispatches `publish-cli.yml` with `-f version=<new-version>` (same string as `package.json` / app). Never publish pre-releases with npm dist-tag `latest`. Never install bare `@latest` / `@alpha` from desktop remote install — always pin the exact version. Workspace package `@superone/cli` stays private `0.0.0`; public package name is `@super-one/cli` produced by `apps/cli/scripts/pack-npm.ts`.
+- **Harness R2 mirrors do not lockstep with every app version.** Dispatch `publish-harness.yml` only when `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` (or the pack/CDN script/workflow) changed since the previous tag — or when the user explicitly forces a refresh. Pins are read from source constants inside the workflow; **never** pass free-form package versions as workflow inputs (channel + dry_run only). Artifact keys are content-addressed by npm name + version (`harness/artifacts/...`), so re-publish of the same pin is idempotent. Channel manifests live at `harness/manifest/<alpha|beta|stable>.json` and are independent of app auto-update ymls (`alpha-mac.yml` etc.). Desktop install is **R2 primary, npm registry fallback**, one SHA-256 for both. Promote / set-latest **never** write under `harness/`.

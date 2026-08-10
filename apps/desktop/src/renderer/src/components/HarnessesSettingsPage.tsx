@@ -1,32 +1,24 @@
 /**
  * Settings → Harnesses — Provider-style Enabled/Disabled list + detail.
- * Claude/Codex detail exposes nested config entries that render the existing
- * Preferences / Skills / MCP / Hooks / Plugins / Agents pages in-place.
+ * Claude/Codex detail uses tabs for preferences / skills / MCP / … and reuses
+ * the existing settings page components under the active tab.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  ArrowLeft,
-  Blocks,
-  Bot,
-  ChevronRight,
-  Loader2,
-  Palette,
-  Puzzle,
-  RefreshCw,
-  Server,
-  Webhook,
-} from 'lucide-react'
+import { Blocks, Bot, Loader2, Palette, Puzzle, RefreshCw, Server, Webhook } from 'lucide-react'
+import { Codex, Grok, OpenCode } from '@lobehub/icons'
 import { toast } from 'sonner'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
 import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type HarnessConfigSection } from '@/stores/app'
+import { ClaudeCodeTextInline } from '@/components/harness/ClaudeCodeTextInline'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { AgentsPage } from './AgentsPage'
 import { SkillsPage } from './SkillsPage'
@@ -79,20 +71,40 @@ interface ProgressState {
 
 const EMPTY_ACP: AcpAgentDescriptor[] = []
 
-const CLAUDE_CONFIG: Array<{
-  section: HarnessConfigSection
-  labelKey: string
-  icon: ComponentType<{ className?: string }>
-}> = [
-  { section: 'preferences', labelKey: 'settings.layout.tabs.preferences', icon: Palette },
-  { section: 'agents', labelKey: 'settings.layout.tabs.agents', icon: Bot },
-  { section: 'skills', labelKey: 'settings.layout.tabs.skills', icon: Puzzle },
-  { section: 'mcp', labelKey: 'settings.layout.tabs.mcp', icon: Server },
-  { section: 'hooks', labelKey: 'settings.layout.tabs.hooks', icon: Webhook },
-  { section: 'plugins', labelKey: 'settings.layout.tabs.plugins', icon: Blocks },
+const CONFIG_TAB_META: Record<
+  HarnessConfigSection,
+  { labelKey: string; icon: ComponentType<{ className?: string }> }
+> = {
+  preferences: { labelKey: 'settings.layout.tabs.preferences', icon: Palette },
+  agents: { labelKey: 'settings.layout.tabs.agents', icon: Bot },
+  skills: { labelKey: 'settings.layout.tabs.skills', icon: Puzzle },
+  mcp: { labelKey: 'settings.layout.tabs.mcp', icon: Server },
+  hooks: { labelKey: 'settings.layout.tabs.hooks', icon: Webhook },
+  plugins: { labelKey: 'settings.layout.tabs.plugins', icon: Blocks },
+}
+
+const CLAUDE_CONFIG_TABS: HarnessConfigSection[] = [
+  'preferences',
+  'agents',
+  'skills',
+  'mcp',
+  'hooks',
+  'plugins',
 ]
 
-const CODEX_CONFIG = CLAUDE_CONFIG.filter((c) => c.section !== 'agents')
+const CODEX_CONFIG_TABS: HarnessConfigSection[] = [
+  'preferences',
+  'skills',
+  'mcp',
+  'hooks',
+  'plugins',
+]
+
+function configTabsFor(provider: SettingsProvider | undefined): HarnessConfigSection[] | null {
+  if (provider === 'claude') return CLAUDE_CONFIG_TABS
+  if (provider === 'codex') return CODEX_CONFIG_TABS
+  return null
+}
 
 function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0 B'
@@ -104,6 +116,50 @@ function formatBytes(n: number): string {
 function catalogIsOn(row: CatalogRow | undefined): boolean {
   if (!row) return false
   return row.enabled && row.state !== 'disabled'
+}
+
+/**
+ * LobeHub brand Text wordmark for detail header (no icon).
+ * All brands share the same `size` (SVG height). LobeHub Text icons use a
+ * 24-tall viewBox; ClaudeCodeTextInline is normalized to the same canvas.
+ */
+function HarnessBrandTitle({
+  provider,
+  acpAgentId,
+  label,
+  size = 32,
+}: {
+  provider: ListItem['provider']
+  acpAgentId?: string | null
+  label: string
+  size?: number
+}) {
+  const wrap = (node: ReactNode) => (
+    <span className="inline-flex shrink-0 items-center text-foreground leading-none">
+      {node}
+    </span>
+  )
+
+  if (provider === 'claude') {
+    return wrap(<ClaudeCodeTextInline size={size} />)
+  }
+  if (provider === 'codex') {
+    return wrap(<Codex.Text size={size} />)
+  }
+  if (provider === 'opencode') {
+    return wrap(<OpenCode.Text size={size} />)
+  }
+  if (provider === 'acp' && isGrokAcpAgent(acpAgentId)) {
+    return wrap(<Grok.Text size={size} />)
+  }
+  return (
+    <span
+      className="truncate font-semibold leading-none text-foreground"
+      style={{ fontSize: size * 0.75 }}
+    >
+      {label}
+    </span>
+  )
 }
 
 export function HarnessesSettingsPage() {
@@ -309,7 +365,9 @@ export function HarnessesSettingsPage() {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      setError(msg)
+      // Catalog enable/disable already surfaces the message via install progress
+      // + catalog diagnostic in the detail pane — only toast here to avoid triplicates.
+      if (item.kind !== 'catalog') setError(msg)
       toast.error(msg)
       await refreshCatalog()
     } finally {
@@ -317,40 +375,46 @@ export function HarnessesSettingsPage() {
     }
   }
 
-  function openConfig(provider: SettingsProvider, section: HarnessConfigSection): void {
-    setSettingsProvider(provider)
-    setHarnessConfigSection(section)
+  function selectItem(item: ListItem): void {
+    setSelectedKey(item.key)
+    if (item.configProvider) {
+      setSettingsProvider(item.configProvider)
+      const tabs = configTabsFor(item.configProvider) ?? []
+      // Keep current tab when switching Claude ↔ Codex if it exists on both;
+      // otherwise fall back to preferences.
+      const next =
+        harnessConfigSection && tabs.includes(harnessConfigSection)
+          ? harnessConfigSection
+          : (tabs[0] ?? 'preferences')
+      setHarnessConfigSection(next)
+    } else {
+      setHarnessConfigSection(null)
+    }
   }
 
   const renderRow = (item: ListItem) => {
-    const Icon = resolveSessionIcon(
-      item.provider,
-      item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId,
-    )
+    const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
+    const Icon = resolveSessionIcon(item.provider, acpAgentId)
     const isSelected = selectedKey === item.key
     return (
       <button
         key={item.key}
         type="button"
-        onClick={() => {
-          setSelectedKey(item.key)
-          // Switching harness while a nested config is open returns to detail.
-          if (harnessConfigSection) setHarnessConfigSection(null)
-        }}
+        onClick={() => selectItem(item)}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors',
+          'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-3 text-left transition-colors',
           isSelected ? 'bg-primary/10' : 'hover:bg-muted/50',
         )}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 items-center gap-3">
           {Icon ? (
-            <Icon status="default" size={20} renderLevel="compact" />
+            <Icon status="default" size={30} renderLevel="compact" />
           ) : (
-            <span className="size-5 rounded bg-muted" />
+            <span className="shrink-0 rounded bg-muted" style={{ width: 30, height: 30 }} />
           )}
-          <span className="truncate text-sm font-medium">{item.label}</span>
+          <span className="truncate text-lg font-medium">{item.label}</span>
           {item.experimental ? (
-            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[9px] font-normal">
+            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
               {t('settings.harnesses.experimentalBadge')}
             </Badge>
           ) : null}
@@ -403,15 +467,10 @@ export function HarnessesSettingsPage() {
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1 py-1">
-        {error ? <p className="mb-3 shrink-0 text-sm text-destructive break-words">{error}</p> : null}
-        {harnessConfigSection ? (
-          // Nested config occupies the detail pane only — list stays put.
-          <HarnessConfigPane
-            section={harnessConfigSection}
-            provider={settingsProvider}
-            onBack={() => setHarnessConfigSection(null)}
-          />
-        ) : selected ? (
+        {error && selected?.kind !== 'catalog' ? (
+          <p className="mb-3 shrink-0 text-sm text-destructive break-words">{error}</p>
+        ) : null}
+        {selected ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <HarnessDetail
               item={selected}
@@ -421,12 +480,12 @@ export function HarnessesSettingsPage() {
               progress={
                 selected.kind === 'catalog' ? progress[selected.catalogId] : undefined
               }
+              configSection={harnessConfigSection}
               onEnabledChange={(v) => void setEnabled(selected, v)}
-              onOpenConfig={
-                selected.configProvider
-                  ? (section) => openConfig(selected.configProvider!, section)
-                  : undefined
-              }
+              onConfigSectionChange={(section) => {
+                if (selected.configProvider) setSettingsProvider(selected.configProvider)
+                setHarnessConfigSection(section)
+              }}
             />
           </div>
         ) : (
@@ -439,75 +498,27 @@ export function HarnessesSettingsPage() {
   )
 }
 
-function HarnessConfigPane({
-  section,
-  provider,
-  onBack,
-}: {
-  section: HarnessConfigSection
-  provider: SettingsProvider
-  onBack: () => void
-}) {
-  const { t } = useTranslation()
-  const title = t(`settings.layout.tabs.${section}`)
-  const providerLabel =
-    provider === 'codex'
-      ? t('settings.layout.providers.codex')
-      : t('settings.layout.providers.claude')
-
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="flex shrink-0 items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-1.5 px-2"
-          onClick={onBack}
-        >
-          <ArrowLeft className="size-4" />
-          {t('common.back')}
-        </Button>
-        <p className="min-w-0 truncate text-sm font-medium text-foreground">
-          {providerLabel}
-          <span className="mx-1.5 text-muted-foreground">/</span>
-          {title}
-        </p>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {section === 'preferences' && <PreferencesPage />}
-        {section === 'agents' && <AgentsPage />}
-        {section === 'skills' && <SkillsPage />}
-        {section === 'mcp' && <McpPage />}
-        {section === 'hooks' && <HooksPage />}
-        {section === 'plugins' && <PluginsPage />}
-      </div>
-    </div>
-  )
-}
-
 function HarnessDetail({
   item,
   catalog,
   enabled,
   busy,
   progress,
+  configSection,
   onEnabledChange,
-  onOpenConfig,
+  onConfigSectionChange,
 }: {
   item: ListItem
   catalog?: CatalogRow
   enabled: boolean
   busy: boolean
   progress?: ProgressState
+  configSection: HarnessConfigSection | null
   onEnabledChange: (enabled: boolean) => void
-  onOpenConfig?: (section: HarnessConfigSection) => void
+  onConfigSectionChange: (section: HarnessConfigSection) => void
 }) {
   const { t } = useTranslation()
-  const Icon = resolveSessionIcon(
-    item.provider,
-    item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId,
-  )
+  const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
   const installing =
     catalog?.state === 'installing' || progress?.phase === 'download'
   const pct =
@@ -515,33 +526,44 @@ function HarnessDetail({
       ? Math.min(100, Math.round((progress.received / progress.total) * 100))
       : null
 
-  const configEntries =
-    item.configProvider === 'claude'
-      ? CLAUDE_CONFIG
-      : item.configProvider === 'codex'
-        ? CODEX_CONFIG
-        : null
+  const configTabs = configTabsFor(item.configProvider)
+  const activeTab =
+    configTabs && configSection && configTabs.includes(configSection)
+      ? configSection
+      : (configTabs?.[0] ?? 'preferences')
+
+  // SDK harnesses (claude/codex/opencode): runtime path is internal. ACP harnesses
+  // (Grok, experimental agents): show launch command for verify/debug.
+  const showCommand = !!catalog?.command && item.provider === 'acp'
+
+  // Single error surface — progress event and catalog diagnostic often carry the same text.
+  const errorMessage =
+    (progress?.phase === 'error' && progress.message) ||
+    catalog?.diagnostic?.message ||
+    null
+
+  const hasMeta =
+    item.kind === 'catalog' &&
+    !!(catalog?.runtimeVersion || showCommand || (catalog?.requiresAuth && catalog.state === 'needs_auth'))
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          {Icon ? (
-            <Icon status="default" size={36} renderLevel="compact" />
-          ) : (
-            <span className="size-9 rounded-lg bg-muted" />
-          )}
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-base font-semibold text-foreground">{item.label}</h3>
-              {item.experimental ? (
-                <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                  {t('settings.harnesses.experimentalBadge')}
-                </Badge>
-              ) : null}
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <HarnessBrandTitle
+              provider={item.provider}
+              acpAgentId={acpAgentId}
+              label={item.label}
+              size={32}
+            />
+            {item.experimental ? (
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                {t('settings.harnesses.experimentalBadge')}
+              </Badge>
+            ) : null}
           </div>
+          <p className="mt-1.5 text-sm text-muted-foreground">{item.description}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-1">
           {(busy || installing) && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
@@ -553,21 +575,22 @@ function HarnessDetail({
         </div>
       </div>
 
-      {item.kind === 'catalog' && (catalog?.runtimeVersion || catalog?.command || catalog?.diagnostic) ? (
+      {hasMeta ? (
         <div className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
           {catalog?.runtimeVersion ? (
             <DetailRow label={t('settings.harnesses.fields.version')} value={catalog.runtimeVersion} />
           ) : null}
-          {catalog?.command ? (
+          {showCommand && catalog?.command ? (
             <DetailRow label={t('settings.harnesses.fields.command')} value={catalog.command} mono />
-          ) : null}
-          {catalog?.diagnostic?.message ? (
-            <p className="text-xs text-muted-foreground break-words">{catalog.diagnostic.message}</p>
           ) : null}
           {catalog?.requiresAuth && catalog.state === 'needs_auth' ? (
             <p className="text-xs text-muted-foreground">{t('settings.harnesses.needsAuth')}</p>
           ) : null}
         </div>
+      ) : null}
+
+      {errorMessage ? (
+        <p className="text-xs text-destructive break-words">{errorMessage}</p>
       ) : null}
 
       {item.kind === 'experimental-acp' ? (
@@ -594,38 +617,39 @@ function HarnessDetail({
         </div>
       ) : null}
 
-      {progress?.phase === 'error' && progress.message ? (
-        <p className="text-xs text-destructive break-words">{progress.message}</p>
-      ) : null}
-
-      {configEntries && onOpenConfig ? (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <div className="border-b border-border px-3 py-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              {t('settings.harnesses.configSection')}
-            </p>
-          </div>
-          <ul>
-            {configEntries.map((entry, i) => (
-              <li key={entry.section}>
-                <button
-                  type="button"
-                  onClick={() => onOpenConfig(entry.section)}
-                  className={cn(
-                    'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/50',
-                    i > 0 && 'border-t border-border',
-                  )}
+      {configTabs ? (
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => onConfigSectionChange(v as HarnessConfigSection)}
+          className="flex min-h-0 flex-col gap-3"
+        >
+          <TabsList className="h-auto min-h-10 w-full flex-wrap justify-start gap-1 p-1">
+            {configTabs.map((section) => {
+              const meta = CONFIG_TAB_META[section]
+              const TabIcon = meta.icon
+              return (
+                <TabsTrigger
+                  key={section}
+                  value={section}
+                  className="gap-1.5 px-3 py-2 text-xs"
                 >
-                  <entry.icon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 font-medium text-foreground">
-                    {t(entry.labelKey)}
-                  </span>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+                  <TabIcon className="size-3.5 shrink-0" />
+                  {t(meta.labelKey)}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+          {configTabs.map((section) => (
+            <TabsContent key={section} value={section} className="mt-0 min-h-0 outline-none">
+              {section === 'preferences' && <PreferencesPage />}
+              {section === 'agents' && <AgentsPage />}
+              {section === 'skills' && <SkillsPage />}
+              {section === 'mcp' && <McpPage />}
+              {section === 'hooks' && <HooksPage />}
+              {section === 'plugins' && <PluginsPage />}
+            </TabsContent>
+          ))}
+        </Tabs>
       ) : null}
     </div>
   )

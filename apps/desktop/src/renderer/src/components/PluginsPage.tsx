@@ -1865,7 +1865,7 @@ export function PluginsPage() {
     const summary = marketplaceSummaries.find((m) => m.name === selectedMarketplace)
     if (summary) {
       return (
-        <div className="mx-auto max-w-4xl">
+        <div className="w-full">
           <MarketplaceDetailView
             summary={summary}
             plugins={selectedPlugins}
@@ -1894,22 +1894,18 @@ export function PluginsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t('resources.plugins.title')}</h2>
-          <p className="text-sm text-muted-foreground">
-            {isCodex ? t('resources.plugins.subtitleCodex') : t('resources.plugins.subtitleClaude')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ProjectSelector />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {tab === 'marketplace' && canManageMarketplaces && (
             <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
               <Plus className="size-3.5" />
               {t('resources.plugins.addMarketplace')}
             </Button>
           )}
+        </div>
+        <div className="shrink-0">
+          <ProjectSelector />
         </div>
       </div>
 

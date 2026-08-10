@@ -141,13 +141,11 @@ export function CodexPreferencesPage() {
     : t('settings.preferences.defaultModel.emptyNoProject')
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t('settings.preferences.title')}</h2>
-          <p className="text-sm text-muted-foreground">{t('settings.preferences.codexSubtitle')}</p>
+    <div className="w-full">
+      <div className="mb-6 flex items-center justify-end gap-3">
+        <div className="shrink-0">
+          <ProjectSelector />
         </div>
-        <ProjectSelector />
       </div>
 
       <div className="flex flex-col gap-4">

@@ -428,22 +428,18 @@ export function SkillsPage() {
     : t('resources.skills.emptyHintClaude')
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t('resources.skills.title')}</h2>
-          <p className="text-sm text-muted-foreground">
-            {isCodex ? t('resources.skills.subtitleCodex') : t('resources.skills.subtitleClaude')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ProjectSelector />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {!isCodex && (
             <Button size="sm" onClick={handleInstall}>
               <FolderOpen className="size-4" />
               {t('resources.skills.install')}
             </Button>
           )}
+        </div>
+        <div className="shrink-0">
+          <ProjectSelector />
         </div>
       </div>
 

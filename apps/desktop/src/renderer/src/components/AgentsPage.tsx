@@ -124,13 +124,11 @@ export function AgentsPage() {
   const projectAgents = agents.filter((a) => a.scope === 'project')
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t('resources.agents.title')}</h2>
-          <p className="text-sm text-muted-foreground">{t('resources.agents.subtitle')}</p>
+    <div className="w-full">
+      <div className="mb-6 flex items-center justify-end gap-3">
+        <div className="shrink-0">
+          <ProjectSelector />
         </div>
-        <ProjectSelector />
       </div>
 
       {agents.length === 0 ? (

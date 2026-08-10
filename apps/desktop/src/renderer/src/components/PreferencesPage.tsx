@@ -192,13 +192,11 @@ function ClaudePreferencesPage() {
   const pillTriggerClass = 'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60'
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t('settings.preferences.title')}</h2>
-          <p className="text-sm text-muted-foreground">{t('settings.preferences.claudeSubtitle')}</p>
+    <div className="w-full">
+      <div className="mb-6 flex items-center justify-end gap-3">
+        <div className="shrink-0">
+          <ProjectSelector />
         </div>
-        <ProjectSelector />
       </div>
 
       <div className="space-y-4">

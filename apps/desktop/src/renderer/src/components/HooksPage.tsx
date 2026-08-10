@@ -107,18 +107,16 @@ function ClaudeHooksPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t('resources.hooks.title')}</h2>
-          <p className="text-sm text-muted-foreground">{t('resources.hooks.subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ProjectSelector />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button size="sm" onClick={handleAdd}>
             <Plus className="size-4" />
             {t('resources.hooks.add')}
           </Button>
+        </div>
+        <div className="shrink-0">
+          <ProjectSelector />
         </div>
       </div>
 

@@ -1,10 +1,13 @@
 /**
  * Desktop ManagedRuntimeInstaller — HTTPS tarball fetch + extract.
  *
- * P2 path: npm registry only (R2 primary lands in P3). Integrity comes from
- * the registry package metadata (`dist.integrity` = sha512-base64) so a
- * tampered tarball never activates. Extract uses system `tar` so exec bits
- * and nested binaries (codex vendor) survive — proven in P0.
+ * Fetch order (design §4):
+ * 1. R2 CDN (`dl.super-one.dev/harness/...`) via channel manifest pin
+ * 2. npm registry tarball for the same version
+ *
+ * Integrity: channel pin SHA-256 is authoritative when a manifest is available
+ * (validates both R2 and npm bytes). Without a manifest, npm `dist.integrity`
+ * (sha512) is used. Extract uses system `tar` so exec bits survive (P0).
  *
  * Layout matches CLI `managed-npm/<id>/` so resolveOfficialInstallBinary works.
  */
@@ -31,13 +34,21 @@ import {
   OFFICIAL_CODEX_NPM_VERSION,
   OFFICIAL_CODEX_PACKAGE,
   claudePlatformPackageName,
+  currentHostArch,
+  currentHostPlatform,
+  fetchHarnessChannelManifest,
+  isHarnessManifestChannel,
   managedNpmPrefix,
   resolveOfficialInstallBinary,
+  selectHarnessArtifact,
+  type HarnessManifestChannel,
+  type ManagedArtifactPin,
   type ManagedHarnessId,
   type ManagedRuntimeInstaller,
   type InstalledManagedRuntime,
   type HarnessHome,
 } from '@superone/runtime/harness'
+import { channelFromVersion } from '@superone/shared/update-channels'
 import log from '../logger'
 
 const NPM_REGISTRY = 'https://registry.npmjs.org'
@@ -51,7 +62,7 @@ export interface NpmPackMeta {
 }
 
 export interface TarballFetchFns {
-  /** GET JSON (registry metadata). */
+  /** GET JSON (registry metadata / channel manifest). */
   fetchJson: (url: string) => Promise<unknown>
   /** GET binary body as stream-like async iterable or Response-like. */
   fetchBinary: (
@@ -60,6 +71,51 @@ export interface TarballFetchFns {
   ) => Promise<Uint8Array>
   /** Extract .tgz into destDir (must produce a `package/` child). */
   extractTgz: (tgzPath: string, destDir: string) => Promise<void>
+}
+
+export interface DesktopInstallerOptions extends Partial<TarballFetchFns> {
+  /** Override harness manifest channel. Default: env → app version channel. */
+  channel?: HarnessManifestChannel
+  /** CDN base (default https://dl.super-one.dev). */
+  cdnBase?: string
+  /** Skip R2 and go straight to npm (tests / air-gapped without mirror). */
+  npmOnly?: boolean
+  /**
+   * Injectable channel pin. When set, skips the network manifest fetch.
+   * Tests pass a synthetic pin; production leaves this undefined.
+   */
+  artifactPin?: ManagedArtifactPin | null
+}
+
+/** Resolve which harness channel manifest to use. */
+export function resolveHarnessManifestChannel(
+  explicit?: HarnessManifestChannel,
+  appVersion?: string,
+): HarnessManifestChannel {
+  if (explicit) return explicit
+  const fromEnv = process.env.SUPERONE_HARNESS_CHANNEL?.trim()
+  if (fromEnv && isHarnessManifestChannel(fromEnv)) return fromEnv
+  const ver =
+    appVersion?.trim() ||
+    process.env.SUPERONE_CLI_VERSION?.trim() ||
+    process.env.npm_package_version?.trim() ||
+    ''
+  if (ver) {
+    const ch = channelFromVersion(ver)
+    if (isHarnessManifestChannel(ch)) return ch
+  }
+  return 'alpha'
+}
+
+export function sha256Hex(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+export function verifySha256(bytes: Uint8Array, expectedHex: string): void {
+  const actual = sha256Hex(bytes)
+  if (actual !== expectedHex.toLowerCase()) {
+    throw new Error(`tarball sha256 mismatch: expected ${expectedHex}, got ${actual}`)
+  }
 }
 
 function defaultFetchJson(url: string): Promise<unknown> {
@@ -246,10 +302,12 @@ async function writeBytes(path: string, bytes: Uint8Array): Promise<void> {
   await pipeline(Readable.from([bytes]), createWriteStream(path))
 }
 
-export function createDesktopTarballInstaller(fns: Partial<TarballFetchFns> = {}): ManagedRuntimeInstaller {
-  const fetchJson = fns.fetchJson ?? defaultFetchJson
-  const fetchBinary = fns.fetchBinary ?? defaultFetchBinary
-  const extractTgz = fns.extractTgz ?? extractTgzWithSystemTar
+export function createDesktopTarballInstaller(
+  opts: DesktopInstallerOptions = {},
+): ManagedRuntimeInstaller {
+  const fetchJson = opts.fetchJson ?? defaultFetchJson
+  const fetchBinary = opts.fetchBinary ?? defaultFetchBinary
+  const extractTgz = opts.extractTgz ?? extractTgzWithSystemTar
 
   return {
     async install(
@@ -272,13 +330,28 @@ export function createDesktopTarballInstaller(fns: Partial<TarballFetchFns> = {}
       }
 
       const pins = desktopPackagePins(id)
+      const channel = resolveHarnessManifestChannel(opts.channel)
+      const artifactPin = await resolveArtifactPin(id, channel, opts, fetchJson)
+
       let packageSpec = ''
+      let source: 'r2-tarball' | 'npm-tarball' = 'npm-tarball'
+
       for (const pkg of pins.packages) {
-        packageSpec = `${pkg.name}@${pkg.version}`
-        log.info(`[harness] fetching ${packageSpec}`)
-        const meta = await resolveNpmPackMeta(pkg.name, pkg.version, fetchJson)
-        const bytes = await fetchBinary(meta.tarball, onProgress)
-        verifyNpmIntegrity(bytes, meta.integrity)
+        // Prefer npm identity from the channel pin when present (codex platform version).
+        const npmName = artifactPin?.npmName ?? pkg.name
+        const npmVersion = artifactPin?.npmVersion ?? pkg.version
+        packageSpec = `${npmName}@${npmVersion}`
+
+        const { bytes, from } = await fetchTarballBytes({
+          npmName,
+          npmVersion,
+          pin: artifactPin,
+          npmOnly: opts.npmOnly === true,
+          fetchJson,
+          fetchBinary,
+          onProgress,
+        })
+        source = from
 
         const work = mkdtempSync(join(tmpdir(), `superone-harness-${id}-`))
         try {
@@ -290,13 +363,12 @@ export function createDesktopTarballInstaller(fns: Partial<TarballFetchFns> = {}
           if (!existsSync(packageDir) || !statSync(packageDir).isDirectory()) {
             throw new Error(`tarball for ${packageSpec} has no package/ directory`)
           }
-          installPackageDir(packageDir, prefix, pkg.nodeModulesDir)
+          installPackageDir(packageDir, prefix, npmName)
         } finally {
           rmSync(work, { recursive: true, force: true })
         }
       }
 
-      // Write a tiny marker so we can read version without parsing every package.
       writeFileSync(
         join(prefix, 'install-meta.json'),
         JSON.stringify(
@@ -304,7 +376,9 @@ export function createDesktopTarballInstaller(fns: Partial<TarballFetchFns> = {}
             harnessId: id,
             runtimeVersion: pins.runtimeVersion,
             packageSpec,
-            source: 'npm-tarball',
+            source,
+            channel,
+            digestSha256: artifactPin?.digestSha256 ?? null,
             installedAt: Date.now(),
           },
           null,
@@ -318,15 +392,91 @@ export function createDesktopTarballInstaller(fns: Partial<TarballFetchFns> = {}
           `tarball install of ${id} succeeded but binary was not found under ${prefix}`,
         )
       }
-      log.info(`[harness] installed ${id} → ${command}`)
+      log.info(`[harness] installed ${id} from ${source} → ${command}`)
       return {
         command,
         runtimeVersion: pins.runtimeVersion,
-        source: 'npm-tarball',
-        detail: { packageSpec, installPrefix: prefix },
+        source,
+        detail: {
+          packageSpec,
+          installPrefix: prefix,
+          channel,
+          digestSha256: artifactPin?.digestSha256,
+        },
       }
     },
   }
+}
+
+async function resolveArtifactPin(
+  id: ManagedHarnessId,
+  channel: HarnessManifestChannel,
+  opts: DesktopInstallerOptions,
+  fetchJson: (url: string) => Promise<unknown>,
+): Promise<ManagedArtifactPin | null> {
+  if (opts.artifactPin !== undefined) return opts.artifactPin
+  if (opts.npmOnly) return null
+  try {
+    const manifest = await fetchHarnessChannelManifest({
+      channel,
+      baseUrl: opts.cdnBase,
+      fetchJson,
+    })
+    const pin = selectHarnessArtifact(manifest, id, currentHostPlatform(), currentHostArch())
+    if (pin) {
+      log.info(
+        `[harness] channel manifest ${channel}: ${id} ${pin.platform}/${pin.arch} digest=${pin.digestSha256.slice(0, 12)}…`,
+      )
+    }
+    return pin
+  } catch (err) {
+    log.warn(
+      `[harness] channel manifest ${channel} unavailable (${err instanceof Error ? err.message : String(err)}); falling back to npm`,
+    )
+    return null
+  }
+}
+
+async function fetchTarballBytes(opts: {
+  npmName: string
+  npmVersion: string
+  pin: ManagedArtifactPin | null
+  npmOnly: boolean
+  fetchJson: (url: string) => Promise<unknown>
+  fetchBinary: (
+    url: string,
+    onProgress?: (received: number, total: number) => void,
+  ) => Promise<Uint8Array>
+  onProgress?: (received: number, total: number) => void
+}): Promise<{ bytes: Uint8Array; from: 'r2-tarball' | 'npm-tarball' }> {
+  const { npmName, npmVersion, pin, npmOnly, fetchJson, fetchBinary, onProgress } = opts
+  const expectedSha = pin?.digestSha256
+
+  // 1) R2 primary
+  if (!npmOnly && pin?.url) {
+    try {
+      log.info(`[harness] fetching R2 ${pin.url}`)
+      const bytes = await fetchBinary(pin.url, onProgress)
+      if (expectedSha) verifySha256(bytes, expectedSha)
+      return { bytes, from: 'r2-tarball' }
+    } catch (err) {
+      log.warn(
+        `[harness] R2 fetch failed (${err instanceof Error ? err.message : String(err)}); trying npm`,
+      )
+    }
+  }
+
+  // 2) npm registry fallback
+  log.info(`[harness] fetching npm ${npmName}@${npmVersion}`)
+  const meta = await resolveNpmPackMeta(npmName, npmVersion, fetchJson)
+  const bytes = await fetchBinary(meta.tarball, onProgress)
+  if (expectedSha) {
+    // Same bytes as R2 mirror — one digest validates both paths.
+    verifySha256(bytes, expectedSha)
+  } else {
+    verifyNpmIntegrity(bytes, meta.integrity)
+  }
+  return { bytes, from: 'npm-tarball' }
 }
 
 /**

@@ -46,6 +46,7 @@
     "pack:cli": "bun --filter @superone/cli pack:npm",
     "publish:cli": "bun --filter @superone/cli publish:npm",
     "test:runtime": "bun --filter @superone/runtime test",
+    "publish:harness": "bun scripts/publish-harness-artifacts.ts",
     "build": "bun --filter @superone/desktop build",
     "build:app": "bun --filter @superone/desktop build:app",
     "build:mac": "bun --filter @superone/desktop build:mac",

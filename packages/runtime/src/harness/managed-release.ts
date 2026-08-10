@@ -66,6 +66,15 @@ export interface ManagedArtifactPin {
   digestSha256: string
   /** Optional display/original name — never used as a filesystem path segment. */
   fileName?: string
+  /**
+   * CDN URL for the byte-exact npm tarball mirror (R2 / dl.super-one.dev).
+   * When present, hosts try this before the npm registry fallback.
+   */
+  url?: string
+  /** npm package name used for registry fallback (e.g. `@openai/codex`). */
+  npmName?: string
+  /** Exact npm version used for registry fallback (may include platform suffix). */
+  npmVersion?: string
 }
 
 export interface ManagedHarnessPin {
@@ -202,11 +211,38 @@ function parseManagedHarnessPin(id: string, raw: unknown): ManagedHarnessPin {
       }
       fileName = art.fileName.slice(0, 128)
     }
+    let url: string | undefined
+    if (typeof art.url === 'string' && art.url.trim()) {
+      const u = art.url.trim()
+      if (!/^https:\/\//i.test(u)) {
+        throw new Error(`manifest ${id} artifacts[${i}] url must be https`)
+      }
+      if (u.length > 1024) {
+        throw new Error(`manifest ${id} artifacts[${i}] url exceeds 1024 chars`)
+      }
+      url = u
+    }
+    let npmName: string | undefined
+    if (typeof art.npmName === 'string' && art.npmName.trim()) {
+      const n = art.npmName.trim()
+      if (!/^(@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+$/.test(n) || n.length > 214) {
+        throw new Error(`manifest ${id} artifacts[${i}] npmName invalid`)
+      }
+      npmName = n
+    }
+    let npmVersion: string | undefined
+    if (typeof art.npmVersion === 'string' && art.npmVersion.trim()) {
+      // Versions may include platform suffixes (codex: 0.146.1-darwin-arm64).
+      npmVersion = assertSafePathSegment(art.npmVersion, `${id}.artifacts[${i}].npmVersion`)
+    }
     return {
       platform,
       arch,
       digestSha256: digest.toLowerCase(),
       fileName,
+      url,
+      npmName,
+      npmVersion,
     }
   })
   return { runtimeVersion, artifactVersion, artifacts }

@@ -18,7 +18,10 @@ import {
   desktopPackagePins,
   installPackageDir,
   resolveDesktopManagedBinary,
+  resolveHarnessManifestChannel,
+  sha256Hex,
   verifyNpmIntegrity,
+  verifySha256,
 } from './tarball-installer'
 
 vi.mock('../logger', () => ({
@@ -107,6 +110,7 @@ describe('createDesktopTarballInstaller', () => {
       const pkgName = pins.packages[0]!.name
 
       const installer = createDesktopTarballInstaller({
+        npmOnly: true,
         fetchJson: async () => ({
           version: pins.packages[0]!.version,
           dist: { tarball: 'https://example.test/pkg.tgz', integrity },
@@ -125,6 +129,7 @@ describe('createDesktopTarballInstaller', () => {
       // Second install reuses without re-fetch (would throw if fetchJson called again)
       let fetchCount = 0
       const installer2 = createDesktopTarballInstaller({
+        npmOnly: true,
         fetchJson: async () => {
           fetchCount++
           throw new Error('should not fetch on reuse')
@@ -147,6 +152,7 @@ describe('createDesktopTarballInstaller', () => {
 
   it('rejects a tarball whose integrity does not match', async () => {
     const installer = createDesktopTarballInstaller({
+      npmOnly: true,
       fetchJson: async () => ({
         version: '0.0.1',
         dist: { tarball: 'https://example.test/x.tgz', integrity: 'sha512-AAAA' },
@@ -154,6 +160,124 @@ describe('createDesktopTarballInstaller', () => {
       fetchBinary: async () => new TextEncoder().encode('not-matching'),
     })
     await expect(installer.install('claude', { root: home })).rejects.toThrow(/integrity mismatch/)
+  })
+
+  it('prefers R2 when a channel pin provides a url, verifying sha256', async () => {
+    const packWork = mkdtempSync(join(tmpdir(), 'so-pack-r2-'))
+    try {
+      const { bytes } = makeNpmTgz(packWork, {
+        'package.json': JSON.stringify({ name: 'x', version: '0.0.1' }),
+        claude: { body: '#!/bin/sh\necho r2\n', mode: 0o755 },
+      })
+      const digest = sha256Hex(bytes)
+      const urls: string[] = []
+      const installer = createDesktopTarballInstaller({
+        artifactPin: {
+          platform: 'darwin',
+          arch: 'arm64',
+          digestSha256: digest,
+          url: 'https://dl.super-one.dev/harness/artifacts/test/0.tgz',
+          npmName: desktopPackagePins('claude').packages[0]!.name,
+          npmVersion: desktopPackagePins('claude').packages[0]!.version,
+        },
+        fetchJson: async () => {
+          throw new Error('npm should not be consulted when R2 succeeds')
+        },
+        fetchBinary: async (url) => {
+          urls.push(url)
+          return bytes
+        },
+      })
+      const result = await installer.install('claude', { root: home })
+      expect(result.source).toBe('r2-tarball')
+      expect(urls).toEqual(['https://dl.super-one.dev/harness/artifacts/test/0.tgz'])
+      expect(existsSync(result.command)).toBe(true)
+    } finally {
+      rmSync(packWork, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to npm when R2 fails, still enforcing pin sha256', async () => {
+    const packWork = mkdtempSync(join(tmpdir(), 'so-pack-fb-'))
+    try {
+      const { bytes } = makeNpmTgz(packWork, {
+        'package.json': JSON.stringify({ name: 'x', version: '0.0.1' }),
+        claude: { body: '#!/bin/sh\necho npm\n', mode: 0o755 },
+      })
+      const digest = sha256Hex(bytes)
+      const integrity = sha512Integrity(bytes)
+      const urls: string[] = []
+      const installer = createDesktopTarballInstaller({
+        artifactPin: {
+          platform: 'darwin',
+          arch: 'arm64',
+          digestSha256: digest,
+          url: 'https://dl.super-one.dev/harness/artifacts/test/0.tgz',
+          npmName: desktopPackagePins('claude').packages[0]!.name,
+          npmVersion: desktopPackagePins('claude').packages[0]!.version,
+        },
+        fetchJson: async () => ({
+          version: desktopPackagePins('claude').packages[0]!.version,
+          dist: { tarball: 'https://registry.npmjs.org/pkg.tgz', integrity },
+        }),
+        fetchBinary: async (url) => {
+          urls.push(url)
+          if (url.includes('dl.super-one.dev')) throw new Error('R2 down')
+          return bytes
+        },
+      })
+      const result = await installer.install('claude', { root: home })
+      expect(result.source).toBe('npm-tarball')
+      expect(urls[0]).toContain('dl.super-one.dev')
+      expect(urls[1]).toContain('registry.npmjs.org')
+    } finally {
+      rmSync(packWork, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects npm bytes that do not match the pin sha256', async () => {
+    const installer = createDesktopTarballInstaller({
+      artifactPin: {
+        platform: 'darwin',
+        arch: 'arm64',
+        digestSha256: 'a'.repeat(64),
+        url: undefined,
+        npmName: desktopPackagePins('claude').packages[0]!.name,
+        npmVersion: desktopPackagePins('claude').packages[0]!.version,
+      },
+      fetchJson: async () => ({
+        version: '0.0.1',
+        dist: {
+          tarball: 'https://registry.npmjs.org/pkg.tgz',
+          integrity: sha512Integrity(new TextEncoder().encode('x')),
+        },
+      }),
+      fetchBinary: async () => new TextEncoder().encode('x'),
+    })
+    await expect(installer.install('claude', { root: home })).rejects.toThrow(/sha256 mismatch/)
+  })
+})
+
+describe('resolveHarnessManifestChannel', () => {
+  it('prefers explicit, then env, then version', () => {
+    expect(resolveHarnessManifestChannel('beta')).toBe('beta')
+    const prev = process.env.SUPERONE_HARNESS_CHANNEL
+    process.env.SUPERONE_HARNESS_CHANNEL = 'stable'
+    try {
+      expect(resolveHarnessManifestChannel()).toBe('stable')
+    } finally {
+      if (prev === undefined) delete process.env.SUPERONE_HARNESS_CHANNEL
+      else process.env.SUPERONE_HARNESS_CHANNEL = prev
+    }
+    expect(resolveHarnessManifestChannel(undefined, '0.52.0-alpha')).toBe('alpha')
+    expect(resolveHarnessManifestChannel(undefined, '1.0.0')).toBe('stable')
+  })
+})
+
+describe('verifySha256', () => {
+  it('accepts matching hex digest', () => {
+    const bytes = new TextEncoder().encode('hi')
+    verifySha256(bytes, sha256Hex(bytes))
   })
 })
 

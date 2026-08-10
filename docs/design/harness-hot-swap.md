@@ -1,6 +1,6 @@
 # Harness Hot-Swap & On-Demand Runtime Delivery
 
-Status: **P0–P2 implemented on `refactor/harness-kernel-runtime`** · P3–P5 pending
+Status: **P0–P3 implemented on `refactor/harness-kernel-runtime`** · P4–P5 pending
 Last updated: 2026-08-11
 Related: `packages/shared/src/environment/harness-installation.ts`, `packages/runtime/src/harness/`, `apps/cli/src/session/harness-*.ts`, `apps/desktop/src/main/harness/`, `apps/desktop/electron-builder.yml`, `apps/desktop/CLAUDE.md` (Environment API migration)
 
@@ -282,7 +282,7 @@ feature flag and no dual-path period — the alpha channel absorbs it.
 | **P0** | Spike: download a `.tgz`, extract, spawn on macOS / Windows / Linux packaged builds | ✅ **macOS PASS** (see §7.1) · Windows / Linux pending |
 | **P1** | Lift kernel to `packages/runtime/src/harness/`, invert the 6 seams, CLI becomes a thin host, existing CLI tests stay green | ✅ **Done** (see §7.2) — 262 CLI + 286 runtime tests green |
 | **P2** | Desktop host adapter: fetcher, install root, db wiring, `resolveHarnessRuntime` gate | ✅ **Done** (see §7.3) — npm tarball install + spawn smoke for Claude |
-| **P3** | CI workflow + R2 manifest + channel wiring | Manifest digests verify end-to-end |
+| **P3** | CI workflow + R2 manifest + channel wiring | ✅ **Done** (see §7.4) — R2-first fetch + sha256, publish workflow |
 | **P4** | UI: Setup first-run step, Settings → Harnesses panel, enabled-set drives pickers | — |
 | **P5** | Drop `asarUnpack` entries and the heavy deps from `apps/desktop/package.json` | Measure actual DMG delta |
 
@@ -426,6 +426,48 @@ P2 deliberately leaves:
 - **Settings UI / first-run Setup** to P4
 - **Dropping asarUnpack + deps** to P5 (bundled binaries remain as dev/fallback until then)
 - **IPC surface** for enable/progress (main-process API is ready; renderer wiring is P4)
+
+### 7.4 P3 result — R2 mirror + channel manifest
+
+CDN layout under the existing `super-one-releases` bucket / `dl.super-one.dev`:
+
+```
+harness/manifest/<alpha|beta|stable>.json
+harness/artifacts/<npm-name-sanitized>/<version>.tgz
+```
+
+Examples:
+
+- `harness/artifacts/anthropic-ai--claude-agent-sdk-darwin-arm64/0.3.226.tgz`
+- `harness/artifacts/openai--codex/0.146.1-darwin-arm64.tgz`
+
+| Piece | Location |
+|---|---|
+| Path helpers + `fetchHarnessChannelManifest` | `packages/runtime/src/harness/cdn.ts` |
+| Optional pin fields `url` / `npmName` / `npmVersion` | `ManagedArtifactPin` in `managed-release.ts` |
+| Publish script | `scripts/publish-harness-artifacts.ts` (`bun run publish:harness -- --channel alpha`) |
+| CI | `.github/workflows/publish-harness.yml` (workflow_dispatch; dry_run supported) |
+| Desktop fetch order | R2 pin URL → npm registry; pin SHA-256 validates both |
+
+Channel selection on desktop: `SUPERONE_HARNESS_CHANNEL` → `channelFromVersion(app version)` → `alpha`.
+
+Pins always come from `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` in source — the workflow accepts only a channel, never free-form package versions.
+
+Verification:
+
+| Check | Result |
+|---|---|
+| runtime `cdn.test.ts` | **7 tests green** |
+| desktop harness suite (incl. R2-first / npm fallback / sha256) | **15 tests green** |
+| CLI `managed-harness-release` (pin parse compat) | green (optional CDN fields backward-compatible) |
+
+Operational note: first production publish is a manual `workflow_dispatch` on `publish-harness` with `channel=alpha`. Until that runs, desktop continues to install from npm (manifest fetch soft-fails → npm path).
+
+P3 leaves:
+
+- **Settings UI / first-run Setup** to P4
+- **Dropping asarUnpack + deps** to P5
+- **Windows/Linux packaged spawn** still open from P0
 
 ---
 

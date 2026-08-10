@@ -12,6 +12,9 @@ export {
   codexPlatformVersion,
   resolveNpmPackMeta,
   verifyNpmIntegrity,
+  verifySha256,
+  sha256Hex,
+  resolveHarnessManifestChannel,
   extractTgzWithSystemTar,
 } from './tarball-installer'
 export {

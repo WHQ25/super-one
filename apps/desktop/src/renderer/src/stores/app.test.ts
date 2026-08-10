@@ -96,6 +96,8 @@ const mockWindowApp = {
   getRecentFolders: vi.fn().mockResolvedValue([]),
   getProjectId: vi.fn().mockResolvedValue(null),
   getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null, acp: null } }),
+  getAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: 1 }),
+  saveAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: Date.now() }),
   connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }),
   connectCodex: vi.fn().mockResolvedValue({ models: [] }),
 }
@@ -236,8 +238,19 @@ describe('removeRecentFolder', () => {
 })
 
 describe('continueToMain', () => {
-  it('should show startup page when no projects exist', async () => {
+  it('should show onboarding when no projects and onboarding not completed', async () => {
     mockWindowApp.getRecentFolders.mockResolvedValue([])
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: null })
+    resetStore({ recentFolders: [] })
+
+    await useAppStore.getState().continueToMain()
+
+    expect(useAppStore.getState().view).toBe('onboarding')
+  })
+
+  it('should show startup page when no projects but onboarding completed', async () => {
+    mockWindowApp.getRecentFolders.mockResolvedValue([])
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1 })
     resetStore({ recentFolders: [] })
 
     await useAppStore.getState().continueToMain()
@@ -245,8 +258,9 @@ describe('continueToMain', () => {
     expect(useAppStore.getState().view).toBe('startup')
   })
 
-  it('should still initialize claude harness when no projects exist (first install)', async () => {
+  it('should still initialize claude harness when onboarding completed and no projects', async () => {
     mockWindowApp.getRecentFolders.mockResolvedValue([])
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1 })
     resetStore({ recentFolders: [] })
 
     await useAppStore.getState().continueToMain()
@@ -259,6 +273,7 @@ describe('continueToMain', () => {
     const folders = [{ name: 'proj', path: '/proj' }]
     mockWindowApp.openFolder.mockResolvedValue(true)
     mockWindowApp.getRecentFolders.mockResolvedValue(folders)
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: null })
 
     resetStore({ recentFolders: folders })
 

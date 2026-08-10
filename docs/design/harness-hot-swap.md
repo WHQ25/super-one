@@ -498,7 +498,7 @@ P3 leaves:
 | `@anthropic-ai/claude-agent-sdk` / `@openai/codex` JS packages stay (adapter TypeScript) | ✅ — only *platform* packages are excluded |
 | Measure DMG delta on a release build | ⏳ |
 | `prepare:*-optional-deps` may still install platform packages for local multi-arch work | optional cleanup later |
-| First-run Setup wizard | ⏳ still deferred |
+| First-run harness onboarding (Welcome → Discover scan → enable) | ✅ — PATH scan recommends; Claude/Codex always managed download (product C); default-check Claude when nothing detected |
 
 ---
 

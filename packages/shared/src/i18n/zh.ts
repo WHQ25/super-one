@@ -205,6 +205,33 @@ export const zh: Messages = {
       tagline: 'The one, the only!',
       openProject: '打开项目',
     },
+    onboarding: {
+      welcome: {
+        title: '欢迎使用 Super One',
+        tagline: '你的桌面 Coding Agent 主场。',
+      },
+      discover: {
+        title: '启用你的 Agent',
+        subtitle:
+          '我们扫描了本机已安装的 CLI。Claude / Codex 仍会由 SuperOne 下载托管 runtime，以保证版本一致。',
+        scanning: '正在扫描已安装的 CLI…',
+        rescan: '重新扫描',
+        detected: '本机已检测到',
+        notFound: '未找到',
+        willDownload: '启用后将下载 SuperOne runtime',
+        useManaged: '使用 SuperOne 托管 runtime',
+        enableSelected: '启用所选（{{count}}）',
+        skip: '稍后再说',
+        enabling: '正在启用…',
+        enableFailed: '无法启用 {{id}}：{{message}}',
+        ids: {
+          claude: 'Claude Code',
+          codex: 'Codex',
+          opencode: 'OpenCode',
+          'acp-grok': 'Grok',
+        },
+      },
+    },
     setup: {
       required: {
         title: '需要初始化',

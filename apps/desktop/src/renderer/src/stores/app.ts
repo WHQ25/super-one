@@ -29,7 +29,9 @@ export {
 
 export type { RemoteDeviceConfig }
 
-type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
+type AppView = 'loading' | 'onboarding' | 'startup' | 'setup' | 'main' | 'settings'
+
+export type OnboardingStep = 'welcome' | 'discover'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'harnesses'
@@ -100,6 +102,11 @@ interface AppState {
   // Setup
   installStatus: InstallStatus
   installOutput: string
+
+  // First-run harness onboarding
+  onboardingStep: OnboardingStep
+  goToOnboardingStep: (step: OnboardingStep) => void
+  completeOnboarding: () => Promise<void>
 
   // App
   appVersion: string
@@ -400,6 +407,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateProgress: 0,
   installStatus: 'idle',
   installOutput: '',
+  onboardingStep: 'welcome',
+  goToOnboardingStep: (step) => set({ onboardingStep: step }),
+  completeOnboarding: async () => {
+    await window.app.saveAppSettings({ onboardingCompletedAt: Date.now() })
+    set({ onboardingStep: 'welcome' })
+    await get().continueToMain()
+  },
   appVersion: '',
   sandboxCapability: null,
   sandboxProbe: null,
@@ -550,9 +564,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   continueToMain: async () => {
-    const [startupData, folders] = await Promise.all([
+    const [startupData, folders, settings] = await Promise.all([
       window.app.getStartupData(),
       window.app.getRecentFolders(),
+      window.app.getAppSettings(),
     ])
     set({ recentFolders: folders, sandboxCapability: startupData.sandboxCapability ?? null, appVersion: startupData.appVersion })
     console.info(
@@ -561,6 +576,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       startupData.cached.codex ? `${startupData.cached.codex.models?.length ?? 0} models` : 'null',
       startupData.sandboxCapability?.supportLevel ?? 'unknown',
     )
+
+    const forceOnboarding =
+      import.meta.env.DEV && import.meta.env.RENDERER_VITE_FORCE_ONBOARDING === '1'
+    if (
+      forceOnboarding ||
+      (settings.onboardingCompletedAt == null && folders.length === 0 && !get().currentFolder)
+    ) {
+      set({ view: 'onboarding', onboardingStep: 'welcome' })
+      return
+    }
+
     if (startupData.sandboxCapability) {
       const { invalidateDefaultPermissionModeCache } = await import('./chat')
       await invalidateDefaultPermissionModeCache()

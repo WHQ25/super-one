@@ -2936,6 +2936,8 @@ export const AgentIpcChannels = {
   HARNESS_ENSURE: 'harness:ensure',
   /** Main → renderer progress while downloading/extracting a managed runtime. */
   HARNESS_INSTALL_PROGRESS: 'harness:installProgress',
+  /** Onboarding: scan PATH for first-party harness CLIs. */
+  HARNESS_SCAN_CLI: 'harness:scanCli',
   /** Remote Skills / MCP via node `skills.*` / `mcp.*` (EnvironmentHost). */
   ENVIRONMENT_LIST_REMOTE_SKILLS: 'environment:listRemoteSkills',
   ENVIRONMENT_GET_REMOTE_SKILL: 'environment:getRemoteSkill',
@@ -3278,6 +3280,12 @@ export interface AppSettings {
    * re-activation keep the user's pick instead of resetting to rank #2.
    */
   suggestionMenuHarness: SuggestionHarnessPreference | null
+  /**
+   * First-run harness onboarding completion timestamp.
+   * `null` = not completed (show onboarding when no projects).
+   * Missing key on upgrade is migrated to a non-null value so existing installs skip.
+   */
+  onboardingCompletedAt: number | null
   agentPreference: {
     claude: {
       defaultModel: string
@@ -3364,6 +3372,7 @@ export interface AppSettingsPatch {
   secondaryHarness?: SuggestionHarnessPreference | null
   /** Pass `null` to clear the remembered dropdown-slot harness. */
   suggestionMenuHarness?: SuggestionHarnessPreference | null
+  onboardingCompletedAt?: number | null
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

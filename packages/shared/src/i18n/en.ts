@@ -210,6 +210,32 @@ export type Messages = {
       tagline: string
       openProject: string
     }
+    onboarding: {
+      welcome: {
+        title: string
+        tagline: string
+      }
+      discover: {
+        title: string
+        subtitle: string
+        scanning: string
+        rescan: string
+        detected: string
+        notFound: string
+        willDownload: string
+        useManaged: string
+        enableSelected: string
+        skip: string
+        enabling: string
+        enableFailed: string
+        ids: {
+          claude: string
+          codex: string
+          opencode: string
+          'acp-grok': string
+        }
+      }
+    }
     setup: {
       required: { title: string; description: string }
       installing: { title: string; description: string }
@@ -2666,6 +2692,33 @@ export const en: Messages = {
       title: 'Super One',
       tagline: 'The one, the only!',
       openProject: 'Open Project',
+    },
+    onboarding: {
+      welcome: {
+        title: 'Welcome to Super One',
+        tagline: 'The desktop home for your coding agents.',
+      },
+      discover: {
+        title: 'Enable your agents',
+        subtitle:
+          'We scanned your machine for supported CLIs. SuperOne still installs its own managed runtimes for Claude and Codex so versions stay consistent.',
+        scanning: 'Scanning for installed CLIs…',
+        rescan: 'Scan again',
+        detected: 'Detected on this computer',
+        notFound: 'Not found',
+        willDownload: 'Will download SuperOne runtime',
+        useManaged: 'Uses SuperOne managed runtime',
+        enableSelected: 'Enable selected ({{count}})',
+        skip: 'Skip for now',
+        enabling: 'Enabling…',
+        enableFailed: 'Could not enable {{id}}: {{message}}',
+        ids: {
+          claude: 'Claude Code',
+          codex: 'Codex',
+          opencode: 'OpenCode',
+          'acp-grok': 'Grok',
+        },
+      },
     },
     setup: {
       required: {

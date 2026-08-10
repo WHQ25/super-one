@@ -740,6 +740,16 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_PROBE, harnessId),
   ensureHarness: (harnessId: 'claude' | 'codex') =>
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_ENSURE, harnessId),
+  scanHarnessClis: () =>
+    ipcRenderer.invoke(AgentIpcChannels.HARNESS_SCAN_CLI) as Promise<{
+      hits: Array<{
+        harnessId: 'claude' | 'codex' | 'opencode' | 'acp-grok'
+        command: string | null
+        detected: boolean
+        version?: string
+      }>
+      defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'acp-grok'>
+    }>,
   onHarnessInstallProgress: (
     callback: (event: {
       harnessId: string

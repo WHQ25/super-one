@@ -75,6 +75,7 @@ const defaults: AppSettings = {
   suggestionHarness: null,
   secondaryHarness: null,
   suggestionMenuHarness: null,
+  onboardingCompletedAt: null,
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -423,6 +424,15 @@ export function readAppSettings(): AppSettings {
       secondaryHarness: readSuggestionHarness(data.secondaryHarness)
         ?? parseSuggestionHarnessKey(data.secondaryHarness),
       suggestionMenuHarness: readSuggestionHarness(data.suggestionMenuHarness),
+      // Missing key on an existing settings file → treat as completed (upgrade).
+      // Explicit null → first-run onboarding still pending.
+      // No settings file (catch below) → null (new install).
+      onboardingCompletedAt:
+        typeof data.onboardingCompletedAt === 'number'
+          ? data.onboardingCompletedAt
+          : data.onboardingCompletedAt === null
+            ? null
+            : 1,
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -465,6 +475,7 @@ export function readAppSettings(): AppSettings {
       suggestionHarness: null,
       secondaryHarness: null,
       suggestionMenuHarness: null,
+      onboardingCompletedAt: null,
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -527,6 +538,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     suggestionMenuHarness: patch.suggestionMenuHarness === undefined
       ? current.suggestionMenuHarness
       : readSuggestionHarness(patch.suggestionMenuHarness),
+    onboardingCompletedAt: patch.onboardingCompletedAt === undefined
+      ? current.onboardingCompletedAt
+      : patch.onboardingCompletedAt,
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

@@ -96,6 +96,16 @@ interface AppAPI {
   disableHarness(harnessId: string): Promise<unknown>
   probeHarness(harnessId: string): Promise<unknown>
   ensureHarness(harnessId: 'claude' | 'codex'): Promise<unknown>
+  /** Onboarding: scan PATH for first-party harness CLIs. */
+  scanHarnessClis(): Promise<{
+    hits: Array<{
+      harnessId: 'claude' | 'codex' | 'opencode' | 'acp-grok'
+      command: string | null
+      detected: boolean
+      version?: string
+    }>
+    defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'acp-grok'>
+  }>
   onHarnessInstallProgress(callback: (event: {
     harnessId: string
     received: number

@@ -14,6 +14,7 @@ import {
   probeDesktopHarness,
   setHarnessInstallProgressListener,
 } from './service'
+import { defaultOnboardingSelection, scanAllHarnessClis } from './scan-cli'
 import log from '../logger'
 
 function broadcastProgress(event: {
@@ -82,5 +83,13 @@ export function registerHarnessIpcHandlers(): void {
     }
     log.info('[harness-ipc] ensure %s', harnessId)
     return ensureManagedHarnessReady(harnessId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.HARNESS_SCAN_CLI, async () => {
+    const hits = scanAllHarnessClis()
+    return {
+      hits,
+      defaultSelected: defaultOnboardingSelection(hits),
+    }
   })
 }

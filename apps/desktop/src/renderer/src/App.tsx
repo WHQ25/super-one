@@ -17,6 +17,7 @@ import { SidebarFrame } from '@/components/sidebar/SidebarFrame'
 import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
+import { OnboardingPage } from '@/components/onboarding/OnboardingPage'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
@@ -478,6 +479,7 @@ function App(): React.JSX.Element {
               </div>
             </div>
           )}
+          {view === 'onboarding' && <OnboardingPage />}
           {view === 'startup' && <StartupPage />}
           {view === 'setup' && <SetupPage />}
           {view === 'settings' && (

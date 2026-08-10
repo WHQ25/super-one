@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hoisted = vi.hoisted(() => {
   const sessionState = {
+    _activeSessionId: 'session-a' as string | null,
+    session: null as { sessionId: string } | null,
     sessionProvider: 'claude' as string | null,
     preferredProvider: 'claude' as string | null,
     apiProviderId: null as string | null,
@@ -105,6 +107,8 @@ describe('UsageStatusIcon rate-limit tip', () => {
     hoisted.sessionState.sessionProvider = 'claude'
     hoisted.sessionState.preferredProvider = 'claude'
     hoisted.sessionState.acpAgentId = null
+    hoisted.sessionState._activeSessionId = 'session-a'
+    hoisted.sessionState.session = null
     vi.stubGlobal('app', {
       acpGetRateLimits: vi.fn(async () => null),
       claudeGetRateLimits: vi.fn(async () => ({
@@ -188,6 +192,50 @@ describe('UsageStatusIcon rate-limit tip', () => {
     hoisted.sessionState.rateLimitInfo = { ...rejected }
     rerender(<UsageStatusIcon />)
     expect(screen.getByRole('status')).toHaveTextContent('Rate limited')
+  })
+
+  it('does not re-tip the same episode after switching sessions and back', async () => {
+    const warning = {
+      status: 'allowed_warning' as const,
+      utilization: 0.82,
+      resetsAt: Math.floor(Date.now() / 1000) + 3600,
+    }
+    hoisted.sessionState.rateLimitInfo = warning
+    const { rerender } = render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('Approaching rate limit')
+
+    await act(async () => {
+      vi.advanceTimersByTime(6_000)
+    })
+    expect(screen.queryByRole('status')).toBeNull()
+
+    // Switch to another session with no rate-limit state (clears active info).
+    hoisted.sessionState._activeSessionId = 'session-b'
+    hoisted.sessionState.rateLimitInfo = null
+    rerender(<UsageStatusIcon />)
+    expect(screen.queryByRole('status')).toBeNull()
+
+    // Return to the original session — same episode must not reappear.
+    hoisted.sessionState._activeSessionId = 'session-a'
+    hoisted.sessionState.rateLimitInfo = warning
+    rerender(<UsageStatusIcon />)
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('hides tips whose resetsAt has already elapsed', async () => {
+    hoisted.sessionState.rateLimitInfo = {
+      status: 'rejected',
+      resetsAt: Math.floor(Date.now() / 1000) - 60,
+    }
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('renders the Grok credits gauge from acpGetRateLimits', async () => {

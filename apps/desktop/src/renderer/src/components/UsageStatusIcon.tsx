@@ -98,26 +98,52 @@ function rateLimitTipKey(info: RateLimitTipInfo): string {
   return `${info.status}:${info.resetsAt ?? ''}:${info.rateLimitType ?? ''}:${info.utilization != null ? Math.floor(info.utilization * 20) : ''}`
 }
 
-/** Show a rate-limit tip for 6s when session rateLimitInfo changes; auto-dismiss with no residual state. */
-function useRateLimitTip(info: RateLimitTipInfo | null): RateLimitTipInfo | null {
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null)
-  const key = info ? rateLimitTipKey(info) : null
-  const visible = !!info && key !== dismissedKey
+/** Past resetsAt means the window already recovered — do not re-tip stale episodes. */
+function isExpiredRateLimit(info: RateLimitTipInfo): boolean {
+  return info.resetsAt != null && info.resetsAt * 1000 <= Date.now()
+}
+
+/**
+ * Show a rate-limit tip for 6s when session rateLimitInfo changes; auto-dismiss
+ * with no residual highlight.
+ *
+ * Dismissal is keyed per session so switching away (active session has no
+ * rateLimitInfo → null) and back does not re-fire a tip the user already saw.
+ * Clearing rateLimitInfo on a given session ends that session's episode, so a
+ * later hit (e.g. Grok rejected → allowed → rejected) tips again.
+ */
+function useRateLimitTip(sessionId: string | null, info: RateLimitTipInfo | null): RateLimitTipInfo | null {
+  const [dismissedBySession, setDismissedBySession] = useState<Map<string, string>>(() => new Map())
+  const activeInfo = info && !isExpiredRateLimit(info) ? info : null
+  const key = activeInfo ? rateLimitTipKey(activeInfo) : null
+  const dismissedKey = sessionId ? dismissedBySession.get(sessionId) ?? null : null
+  const visible = !!sessionId && !!activeInfo && key != null && key !== dismissedKey
 
   useEffect(() => {
-    if (!visible || !key) return
-    const timer = window.setTimeout(() => setDismissedKey(key), RATE_LIMIT_TIP_MS)
+    if (!visible || !key || !sessionId) return
+    const timer = window.setTimeout(() => {
+      setDismissedBySession((prev) => {
+        if (prev.get(sessionId) === key) return prev
+        const next = new Map(prev)
+        next.set(sessionId, key)
+        return next
+      })
+    }, RATE_LIMIT_TIP_MS)
     return () => window.clearTimeout(timer)
-  }, [visible, key])
+  }, [visible, key, sessionId])
 
-  // Dismissal is scoped to one rate-limit episode. Clearing the info ends the
-  // episode, so hitting the same limit again later tips afresh instead of being
-  // swallowed as a duplicate of the first hit.
+  // Episode ended for this session only — other sessions keep their dismiss keys.
   useEffect(() => {
-    if (!info) setDismissedKey(null)
-  }, [info])
+    if (!sessionId || activeInfo) return
+    setDismissedBySession((prev) => {
+      if (!prev.has(sessionId)) return prev
+      const next = new Map(prev)
+      next.delete(sessionId)
+      return next
+    })
+  }, [sessionId, activeInfo])
 
-  return visible ? info : null
+  return visible ? activeInfo : null
 }
 
 function WindowRow({ label, usedPercent, resetsAt }: { label: string; usedPercent: number; resetsAt: number | null }) {
@@ -596,6 +622,7 @@ function FallbackRateLimitGauge({ highlight }: { highlight: GaugeHighlight }) {
 
 export function UsageStatusIcon() {
   const activeProject = useChatStore((s) => s.activeProject)
+  const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? null)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const apiProviderId = useActiveSession((s) => s.apiProviderId)
@@ -605,7 +632,7 @@ export function UsageStatusIcon() {
   const claudeApiProvider = useChatStore((s) => s.harnessResources.claude?.account?.apiProvider)
   const activeProvider = sessionProvider ?? preferredProvider
 
-  const tip = useRateLimitTip(rateLimitInfo)
+  const tip = useRateLimitTip(sessionId, rateLimitInfo)
   const highlight: GaugeHighlight = tip
     ? (tip.status === 'rejected' ? 'error' : 'warning')
     : null

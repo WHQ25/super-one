@@ -39,6 +39,7 @@ import {
   TaskNotificationQueue,
   taskNotificationRequest,
 } from '../task-notification-queue'
+import { QueuedUserMessageQueue } from '../queued-user-message-queue'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 type OpenCodeRuntimeFactory = (opts: OpenCodeRuntimeOptions) => Promise<OpenCodeRuntime>
@@ -63,6 +64,14 @@ export class OpenCodeBackend implements SessionBackend {
   private interrupted = false
   private currentMessageId: string | null = null
   private activeTurn: { messageId: string; resolve: () => void } | null = null
+  /** OpenCode has no steer — mid-turn user messages run as their own turn afterwards. */
+  private readonly pendingQueued = new QueuedUserMessageQueue({
+    isBusy: () => this.isTurnBusy(),
+    isAlive: () => this.started && !this.disposed,
+    emit: (event) => this.emit(event),
+    send: (request) => this.send(request),
+    warn: (message, err) => log.warn(`[OpenCodeBackend] ${message}:`, err),
+  })
   private readonly pendingTaskNotifications = new TaskNotificationQueue()
   /** Overridden by Session → Session.send / _sendChain for idle flushes. */
   private taskNotificationSender: (content: string) => Promise<void> = (content) =>
@@ -99,7 +108,8 @@ export class OpenCodeBackend implements SessionBackend {
   }
 
   async releaseRuntime(_reason: 'idle'): Promise<void> {
-    if (this.activeTurn || this.getPendingInteractions().length > 0) return
+    if (this.activeTurn || this.pendingQueued.size > 0) return
+    if (this.getPendingInteractions().length > 0) return
     await this.closeRuntime()
   }
 
@@ -197,8 +207,17 @@ export class OpenCodeBackend implements SessionBackend {
     this.taskNotificationFlush.flush()
   }
 
+  /**
+   * Busy from the first synchronous line of `send()`, so a queued message cannot
+   * slip into the window before `await ensureRuntime()` assigns `activeTurn`.
+   */
+  private isTurnBusy(): boolean {
+    return this.currentMessageId !== null || this.activeTurn !== null
+  }
+
   async send(request: SendMessageRequest): Promise<void> {
     if (!this.started || this.disposed) throw new Error('OpenCodeBackend not started')
+    if (this.pendingQueued.intercept(request)) return
     if (this.activeTurn) throw new Error('OpenCodeBackend already has an active turn')
     const messageId = request.assistantMessageId ?? `opencode_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.resetTurnState()
@@ -247,12 +266,15 @@ export class OpenCodeBackend implements SessionBackend {
       if (activeTurn?.messageId === messageId) this.activeTurn = null
       this.currentMessageId = null
       this.resetTurnState()
+      // User-typed messages outrank host task notifications.
+      this.pendingQueued.flush()
       this.flushPendingTaskNotifications()
     }
   }
 
   async interrupt(): Promise<void> {
     this.interrupted = true
+    this.pendingQueued.clear()
     for (const requestId of [...this.pendingPermissions.keys()]) this.respondToPermission(requestId, false)
     for (const requestId of [...this.pendingQuestions.keys()]) this.dismissQuestion(requestId)
     await this.runtime?.cancel().catch((error) => log.debug('[OpenCodeBackend] interrupt failed:', error))
@@ -388,7 +410,9 @@ export class OpenCodeBackend implements SessionBackend {
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> { await (await this.ensureRuntime()).toggleMcpServer(serverName, enabled) }
   async reloadMcpServers(): Promise<void> { await (await this.ensureRuntime()).reloadMcpServers() }
   async reloadPlugins(): Promise<boolean> { return false }
-  dequeueMessage(_clientMessageId: string): boolean { return false }
+  dequeueMessage(clientMessageId: string): boolean {
+    return this.pendingQueued.dequeue(clientMessageId)
+  }
   getPendingInteractions(): AgentEvent[] {
     return [...this.pendingPermissions.values(), ...this.pendingQuestions.values()].map((entry) => entry.event)
   }

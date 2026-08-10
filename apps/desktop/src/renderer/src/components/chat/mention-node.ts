@@ -12,6 +12,7 @@ export interface MentionNodeAttrs {
     | 'computer'
     | 'browser'
     | 'desktop-app'
+    | 'session'
   value: string
   displayName: string
 }

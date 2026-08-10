@@ -55,6 +55,8 @@ export type MentionKind =
   | 'browser'
   /** Installed desktop app — value is reverse-DNS bundleId. */
   | 'desktop-app'
+  /** SuperOne session archive — value is sessions.id (not provider session id). */
+  | 'session'
 export interface Mention {
   kind: MentionKind
   value: string

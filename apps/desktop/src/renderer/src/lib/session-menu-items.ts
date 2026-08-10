@@ -1,4 +1,4 @@
-import { Copy, Eye, EyeOff, FolderOpen, GitFork, Pencil, PictureInPicture2, Pin, Trash2 } from 'lucide-react'
+import { Copy, Eye, EyeOff, FolderOpen, GitFork, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -12,9 +12,11 @@ export interface SessionMenuHandlers {
   onHide: () => void
   onFork: (mode: SessionForkMode) => void
   onDelete?: () => void
+  /** Insert a `@session` mention chip into the active chat composer. */
+  onAddToChat?: () => void
 }
 
-function providerLabelFor(session: SessionHistoryEntry): string {
+export function providerLabelFor(session: SessionHistoryEntry): string {
   if (session.provider === 'codex') return 'Codex'
   if (session.provider === 'acp') {
     return session.acpAgentId?.toLowerCase().includes('grok') ? 'Grok (ACP)' : 'ACP'
@@ -24,16 +26,17 @@ function providerLabelFor(session: SessionHistoryEntry): string {
 }
 
 /**
- * Resolve the harness session id for clipboard. Local rows carry
- * `providerSessionId`; remote list may omit it until refreshed — fall back to
- * session.get `providerResume` / `providerSessionId` on the node.
+ * Resolve the harness-native session id for clipboard (Claude SDK / Codex thread / …).
+ * Local rows carry `providerSessionId`; remote list may omit it until refreshed —
+ * fall back to session.get `providerResume` / `providerSessionId` on the node.
+ * Falls back to SuperOne `sessionId` only when no harness id is available yet.
  */
 export async function resolveSessionIdForCopy(
   session: SessionHistoryEntry,
   folderPath: string,
 ): Promise<{ id: string; isHarnessId: boolean }> {
-  if (session.providerSessionId) {
-    return { id: session.providerSessionId, isHarnessId: true }
+  if (session.providerSessionId?.trim()) {
+    return { id: session.providerSessionId.trim(), isHarnessId: true }
   }
   const remote = parseRemoteProjectKey(folderPath)
   if (remote && typeof window.environment?.getSession === 'function') {
@@ -83,9 +86,23 @@ export function buildSessionMenuItems(
       onSelect: () => window.app.openSessionWindow(folderPath, session.sessionId, session.title),
     },
     { kind: 'separator' },
+  ]
+
+  if (handlers.onAddToChat) {
+    items.push({
+      kind: 'item',
+      id: 'addToChat',
+      label: t('sidebar.contextMenu.addToChat'),
+      icon: MessageSquarePlus,
+      onSelect: handlers.onAddToChat,
+    })
+  }
+
+  items.push(
     {
       kind: 'item',
       id: 'copyId',
+      // Provider / harness session id (Claude SDK, Codex thread, …) — what users paste into CLI tools.
       label: t('sidebar.contextMenu.copySessionId'),
       icon: Copy,
       onSelect: () => {
@@ -111,7 +128,7 @@ export function buildSessionMenuItems(
         toast.success(t('sidebar.contextMenu.workingDirCopiedToast'))
       },
     },
-  ]
+  )
 
   // Local disk only — remote host paths are not this machine's Finder/Explorer.
   if (!isRemoteHost) {

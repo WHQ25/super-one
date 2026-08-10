@@ -30,6 +30,7 @@ import productOverviewMd from './guides/product/overview.md?raw'
 import productContributeMd from './guides/product/contribute.md?raw'
 import productDebugMd from './guides/product/debug.md?raw'
 import productCollaborationMd from './guides/product/collaboration.md?raw'
+import productSessionsMd from './guides/product/sessions.md?raw'
 import {
   MANUAL_DOMAINS,
   MANUAL_READ_DESCRIPTION,
@@ -84,6 +85,7 @@ const PRODUCT_GUIDES = {
   contribute: productContributeMd,
   debug: productDebugMd,
   collaboration: productCollaborationMd,
+  sessions: productSessionsMd,
 } satisfies Record<ProductGuideTopic, string>
 
 const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
@@ -119,7 +121,7 @@ const MEDIA_TOPIC_SUMMARIES: Record<MediaGuideTopic, string> = {
 }
 
 const DOMAIN_SUMMARIES: Record<ManualDomain, string> = {
-  product: 'Product support and contributing: overview, issues/PRs, logs, and collaboration launch location rules.',
+  product: 'Product support and contributing: overview, issues/PRs, logs, collaboration launch rules, and session archive tools.',
   miniapp: 'Mini-app development: scaffold, APIs, packaging, tools.',
   media: 'Image/video generation: provider-specific parameters and silent-failure modes.',
   widget: 'Inline chat widget design guidelines. Saved templates use widget_list_templates.',
@@ -176,10 +178,12 @@ function formatDomainIndex(domain: ManualDomain): string {
       '- contribute — GitHub issues and PRs (bugs, features, improvements); issue first, optional red–green PR',
       '- debug — log paths, userData, monorepo map, this machine’s runtime paths',
       '- collaboration — session_collab_* launches: same-repo worktrees, cross-project cwd, implementers, and reviewers',
+      '- sessions — session_list / session_search / session_read / session_cleanup: archive cite, handoff, cleanup',
       '',
       'Call `read_manual({ domain: "product", topic: "contribute" })` for issues / PRs.',
       'Call `read_manual({ domain: "product", topic: "debug" })` for logs and local diagnosis.',
       'Call `read_manual({ domain: "product", topic: "collaboration" })` before setting config.cwd or config.worktree in session_collab_request.',
+      'Call `read_manual({ domain: "product", topic: "sessions" })` before browsing or cleaning other sessions.',
     ].join('\n')
   }
   if (domain === 'miniapp') {

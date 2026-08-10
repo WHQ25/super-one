@@ -11,6 +11,7 @@ import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import { chatInputAPI } from '@/components/chat/ChatInput'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
 import { getPendingReason } from './session-state-utils'
 import { useSessionDragOut } from './useSessionDragOut'
@@ -161,6 +162,12 @@ export const SessionRow = memo(function SessionRow({
       folderPath,
       provider: (session.provider ?? 'claude') as 'claude' | 'codex',
     }),
+    onAddToChat: () => {
+      // Same chip as @session mention (History icon / blended), not mini-app context inject.
+      const title = (session.title || 'Untitled').trim()
+      chatInputAPI.insertMention?.('session', session.sessionId, title)
+      toast.success(t('sidebar.contextMenu.sessionAddedToChatToast'))
+    },
   })
 
   const rowInner = (

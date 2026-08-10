@@ -15,6 +15,7 @@ import {
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { chatInputAPI } from '@/components/chat/ChatInput'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
 import { showNativeContextMenu, toNativeMenu } from '@/lib/native-context-menu'
 import { RenameSessionDialog, type RenameSessionTarget } from '@/components/sidebar/RenameSessionDialog'
@@ -103,6 +104,12 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
       await afterMutate()
     },
     onFork: handleFork,
+    onAddToChat: () => {
+      // Same chip as @session mention (History icon / blended), not mini-app context inject.
+      const title = (entry.title || 'Untitled').trim()
+      chatInputAPI.insertMention?.('session', entry.sessionId, title)
+      toast.success(t('sidebar.contextMenu.sessionAddedToChatToast'))
+    },
   })
 
   const dialog = (

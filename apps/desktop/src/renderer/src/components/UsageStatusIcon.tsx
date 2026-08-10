@@ -257,7 +257,6 @@ function RateLimitTipBubble({ tip }: { tip: RateLimitTipInfo }) {
       side="top"
       align="end"
       sideOffset={8}
-      collisionPadding={8}
       onOpenAutoFocus={(event) => event.preventDefault()}
       className="pointer-events-none w-52 rounded-md border-0 bg-background p-2 text-xs shadow-none"
     >

@@ -6,6 +6,7 @@ import {
   LAUNCH_CWD_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_WORKTREE_DESCRIPTION,
+  SESSION_ARCHIVE_TOOL_NAMES,
   SESSION_COLLABORATION_TOOL_NAMES,
   SESSION_REQUEST_AGENTS_DESCRIPTION,
 } from './superone-mcp-builtin-defs'
@@ -119,6 +120,17 @@ describe('built-in superone tool registration surfaces', () => {
     for (const name of SESSION_COLLABORATION_TOOL_NAMES) {
       const desktop = BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === name)
       const hostAction = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === name)
+      expect(hostAction?.description, `${name} description`).toBe(desktop?.description)
+      expect(hostAction?.inputSchema, `${name} input schema`).toEqual(desktop?.inputSchema)
+      expect(hostAction?.description.length, `${name} description length`).toBeLessThanOrEqual(700)
+    }
+  })
+
+  it('keeps session archive host-action descriptors aligned with desktop discovery', () => {
+    for (const name of SESSION_ARCHIVE_TOOL_NAMES) {
+      const desktop = BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === name)
+      const hostAction = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === name)
+      expect(desktop, `${name} desktop def`).toBeTruthy()
       expect(hostAction?.description, `${name} description`).toBe(desktop?.description)
       expect(hostAction?.inputSchema, `${name} input schema`).toEqual(desktop?.inputSchema)
       expect(hostAction?.description.length, `${name} description length`).toBeLessThanOrEqual(700)

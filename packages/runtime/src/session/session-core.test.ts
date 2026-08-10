@@ -68,6 +68,12 @@ describe('deriveSessionTitleFromUserText', () => {
     expect(deriveSessionTitleFromUserText('x'.repeat(120))).toBe(`${'x'.repeat(100)}…`)
     expect(deriveSessionTitleFromUserText('   ')).toBeNull()
   })
+
+  it('uses session title label, not raw superone-session markup', () => {
+    const raw =
+      ' <superone-session><title>测试 Seedream 首帧 + S</title><sessionId>uuid-1</sessionId></superone-session> 用这个测'
+    expect(deriveSessionTitleFromUserText(raw)).toBe('@测试 Seedream 首帧 + S 用这个测')
+  })
 })
 
 describe('forkSessionTitle', () => {

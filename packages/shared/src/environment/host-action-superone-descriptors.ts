@@ -506,7 +506,231 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "additionalProperties": false
     }
   },
+    {
+    "name": "session_list",
+    "description": "List SuperOne sessions in the current project (metadata only). Use before session_read/session_search to find ids. Filter by title query, harness, pin/hidden, dates. Paginate with limit/offset. This is content archive lookup — not live collab (session_collab_*) and not harness-native resume.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Case-insensitive title substring filter."
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "acp",
+            "opencode"
+          ],
+          "description": "Filter by harness."
+        },
+        "includeHidden": {
+          "type": "boolean",
+          "description": "Include hidden sessions. Default false."
+        },
+        "includePinnedOnly": {
+          "type": "boolean",
+          "description": "Only pinned sessions. Default false."
+        },
+        "parentOnly": {
+          "type": "boolean",
+          "description": "Exclude collab child sessions. Default false."
+        },
+        "olderThan": {
+          "type": "string",
+          "description": "ISO timestamp — only sessions last active before this."
+        },
+        "newerThan": {
+          "type": "string",
+          "description": "ISO timestamp — only sessions last active after this."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Max rows. Default 30, max 100."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Pagination offset. Default 0."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   {
+    "name": "session_search",
+    "description": "Search SuperOne chat transcripts in the current project by text. Returns matching message hits with short snippets for locating. Then call session_read with sessionId/messageId for full content. Snippets are pointers only — not full message bodies.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Search terms (AND). Matches title and message text."
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "acp",
+            "opencode"
+          ]
+        },
+        "sessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "description": "Optional: restrict search to these session ids."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant",
+            "any"
+          ],
+          "description": "Message role filter. Default any."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Max hits. Default 20, max 50."
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "session_read",
+    "description": "Read another SuperOne session's saved transcript (harness-agnostic content; does not resume provider threads). Views: meta | user | assistant | text | tools | tool_detail. user/assistant/text are pure conversation (no tool lines; assistant/text include toolCount). tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Target SuperOne session id from session_list or session_search."
+        },
+        "view": {
+          "type": "string",
+          "enum": [
+            "meta",
+            "user",
+            "assistant",
+            "text",
+            "tools",
+            "tool_detail"
+          ],
+          "description": "meta=metadata; user=user text only; assistant=assistant text + toolCount; text=both; tools=tool index; tool_detail=one tool (needs toolUseId). Default text."
+        },
+        "messageId": {
+          "type": "string",
+          "description": "Anchor page at this message id (from search or a prior read)."
+        },
+        "around": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50,
+          "description": "With messageId: include this many messages before and after on the global timeline."
+        },
+        "cursor": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Exclusive end index for the next older page (from a prior read). Omit for newest page."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Max messages this page. Default 20, max 50."
+        },
+        "includeThinking": {
+          "type": "boolean",
+          "description": "Include thinking blocks in text views. Default false."
+        },
+        "toolUseId": {
+          "type": "string",
+          "description": "Required for view=tool_detail."
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "session_cleanup",
+    "description": "Manage old SuperOne sessions in the current project. action=preview lists candidates (+ confirmToken). hide/unhide soft-archive without confirm. delete requires confirmToken from preview plus user approval; never deletes the current or pinned sessions by default. Select with sessionIds and/or olderThan.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "preview",
+            "hide",
+            "unhide",
+            "delete"
+          ],
+          "description": "preview lists candidates; hide/unhide soft-archive; delete needs confirmToken + user approval."
+        },
+        "sessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "description": "Explicit session ids to act on."
+        },
+        "olderThan": {
+          "type": "string",
+          "description": "ISO timestamp — select sessions last active before this (with or without sessionIds)."
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "acp",
+            "opencode"
+          ]
+        },
+        "includePinned": {
+          "type": "boolean",
+          "description": "Allow acting on pinned sessions. Default false (pinned are skipped)."
+        },
+        "maxDelete": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Hard cap on candidates. Default 50."
+        },
+        "confirmToken": {
+          "type": "string",
+          "description": "From action=preview. Required for delete."
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+{
     "name": "media_list_providers",
     "description": "List configured media providers that have usable credentials. Filter by image or video. Use a returned provider id with media_generate_image or media_generate_video; use kind to select the matching media manual topic. Honor returned sizing and sizeNote constraints.",
     "inputSchema": {

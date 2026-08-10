@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
 import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
-import { useEffectiveProjectRoot } from '@/stores/app'
+import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ArrowUp, Loader2, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
@@ -18,6 +18,7 @@ import { findMiniAppMentionMarkers } from '@superone/shared/miniapp-mention-mark
 import { useMiniAppStore } from '@/stores/miniapp'
 import { PasteChipNode, PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { SlashDecoration } from './slash-decoration'
+import { SessionMentionDecoration } from './session-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
@@ -52,6 +53,7 @@ import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceh
 import { CodexGoalDialog } from './CodexGoalDialog'
 import { CodexGoalIndicator } from './CodexGoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
+import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
 
 export const chatInputAPI: {
   insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
@@ -62,6 +64,11 @@ export const chatInputAPI: {
 export function ChatInput() {
     const { t } = useTranslation()
     const activeProject = useChatStore((s) => s.activeProject)
+    const recentFolders = useAppStore((s) => s.recentFolders)
+    const sessionProjectOptions = useMemo(
+      () => buildSessionProjectOptions(recentFolders, activeProject),
+      [recentFolders, activeProject],
+    )
     const fileRoot = useEffectiveProjectRoot()
     const storeActions = useChatStore(useShallow((s) => ({
       setDraftText: s.setDraftText,
@@ -608,6 +615,10 @@ export function ChatInput() {
           kind = 'desktop-app'
           mentionValue = value
           displayName = displayNameHint || value
+        } else if (kindHint === 'session') {
+          kind = 'session'
+          mentionValue = value
+          displayName = displayNameHint || value
         } else if (kindHint === 'collab' || kindHint === 'computer' || kindHint === 'browser') {
           kind = kindHint
           mentionValue = kindHint
@@ -670,6 +681,8 @@ export function ChatInput() {
               current += ` <superone-miniapp><appname>${attrs.displayName}</appname><appid>${attrs.value}</appid></superone-miniapp> `
             } else if (attrs.kind === 'desktop-app') {
               current += ` <superone-desktop-app><name>${attrs.displayName}</name><bundleId>${attrs.value}</bundleId></superone-desktop-app> `
+            } else if (attrs.kind === 'session') {
+              current += ` <superone-session><title>${attrs.displayName}</title><sessionId>${attrs.value}</sessionId></superone-session> `
             } else if (attrs.kind === 'collab' || attrs.kind === 'computer' || attrs.kind === 'browser') {
               current += ` <superone-capability><name>${attrs.displayName}</name><id>${attrs.kind}</id></superone-capability> `
             } else {
@@ -1106,6 +1119,7 @@ export function ChatInput() {
         AttachmentNode,
         PasteChipNode,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
+        SessionMentionDecoration.configure({ projects: sessionProjectOptions }),
         PromptSuggestion,
       ],
       content: '',
@@ -1229,23 +1243,33 @@ export function ChatInput() {
         const lastAt = textInParent.lastIndexOf('@')
         if (lastAt !== -1) {
           const afterAt = textInParent.slice(lastAt + 1)
-          if (!afterAt.includes(' ') && !afterAt.includes('\0')) {
+          // Default: single-token @mentions (file/agent) close on space.
+          // Session grammar needs spaces: @session [project|all] [title…]
+          const spaceOk = mentionQueryAllowsSpaces(afterAt)
+          if ((!afterAt.includes(' ') || spaceOk) && !afterAt.includes('\0')) {
             const atPos = $pos.start() + lastAt
             const isComposing = ed.view.composing
-            const firstEmptyQuery = mentionEmptyByAtRef.current.get(atPos)
-            if (firstEmptyQuery !== undefined && !afterAt.startsWith(firstEmptyQuery)) {
-              mentionEmptyByAtRef.current.delete(atPos)
-            }
-            const stillEmpty = mentionEmptyByAtRef.current.get(atPos)
-            if (!isComposing && stillEmpty !== undefined && afterAt.startsWith(stillEmpty)) {
-              setMentionActive(false)
-              mentionInfoRef.current = null
-            } else {
-              if (!mentionActiveRef.current) {
-                setMentionIndex(0)
-              }
+            // During IME composition keep the popup open and skip empty-query lockout.
+            if (isComposing) {
+              if (!mentionActiveRef.current) setMentionIndex(0)
               setMentionActive(true)
               mentionInfoRef.current = { atPos, query: afterAt }
+            } else {
+              const firstEmptyQuery = mentionEmptyByAtRef.current.get(atPos)
+              if (firstEmptyQuery !== undefined && !afterAt.startsWith(firstEmptyQuery)) {
+                mentionEmptyByAtRef.current.delete(atPos)
+              }
+              const stillEmpty = mentionEmptyByAtRef.current.get(atPos)
+              if (stillEmpty !== undefined && afterAt.startsWith(stillEmpty)) {
+                setMentionActive(false)
+                mentionInfoRef.current = null
+              } else {
+                if (!mentionActiveRef.current) {
+                  setMentionIndex(0)
+                }
+                setMentionActive(true)
+                mentionInfoRef.current = { atPos, query: afterAt }
+              }
             }
           } else {
             setMentionActive(false)
@@ -1347,6 +1371,14 @@ export function ChatInput() {
         editor.view.dispatch(editor.state.tr)
       }
     }, [activeSlashCommands, editor])
+
+    useEffect(() => {
+      if (editor && !editor.isDestroyed) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(editor.storage as any).sessionMentionDecoration.projects = sessionProjectOptions
+        editor.view.dispatch(editor.state.tr)
+      }
+    }, [sessionProjectOptions, editor])
 
     useEffect(() => {
       if (editor && !editor.isDestroyed) {

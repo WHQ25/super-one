@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { wrapMiniAppMention, findMiniAppMentionMarkers, MIRROR_MARKER } from './miniapp-mention-marker'
-import { replaceMiniAppTagsWithMention } from './miniapp-prompt-tags'
+import { replaceMiniAppTagsWithMention, stripMiniAppMarkup } from './miniapp-prompt-tags'
 
 describe('miniapp mention markers', () => {
   it('round-trips appId and name through invisible markers', () => {
@@ -73,5 +73,29 @@ describe('replaceMiniAppTagsWithMention', () => {
     const input = '<superone-miniapp><appname>App</appname><appid>app</appid></superone-miniapp>\n\nline two'
     const out = replaceMiniAppTagsWithMention(input)
     expect(out).toContain('\n\nline two')
+  })
+
+  it('replaces session tag with @title and strips session reminder', () => {
+    const input =
+      '<superone-session><title>测试 Seedream 首帧</title><sessionId>a9382a53-7d35</sessionId></superone-session> 看下工具\n\n' +
+      '<superone-session-reminder>\nsessionId: a9382a53-7d35\n</superone-session-reminder>'
+    const out = replaceMiniAppTagsWithMention(input)
+    expect(out).toBe('@测试 Seedream 首帧 看下工具')
+    expect(out).not.toContain('superone-session')
+    expect(out).not.toContain('a9382a53-7d35')
+  })
+
+  it('replaces desktop-app tag with @name', () => {
+    const input =
+      '<superone-desktop-app><name>Safari</name><bundleId>com.apple.Safari</bundleId></superone-desktop-app> open'
+    expect(replaceMiniAppTagsWithMention(input)).toBe('@Safari open')
+  })
+})
+
+describe('stripMiniAppMarkup', () => {
+  it('collapses session tags into @title for session titles', () => {
+    const raw =
+      '<superone-session><title>测试 Seedream 首帧 + S</title><sessionId>uuid-1</sessionId></superone-session>\n\n用这个测'
+    expect(stripMiniAppMarkup(raw)).toBe('@测试 Seedream 首帧 + S 用这个测')
   })
 })

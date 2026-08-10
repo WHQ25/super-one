@@ -47,7 +47,7 @@ export {
 export const MANUAL_DOMAINS = ['product', 'miniapp', 'media', 'widget'] as const
 export type ManualDomain = (typeof MANUAL_DOMAINS)[number]
 
-export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug', 'collaboration'] as const
+export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug', 'collaboration', 'sessions'] as const
 
 export const READ_MANUAL_INPUT_SCHEMA = {
   type: 'object',
@@ -73,6 +73,13 @@ export const READ_MANUAL_INPUT_SCHEMA = {
   additionalProperties: false,
 } as const
 
+
+export const SESSION_ARCHIVE_TOOL_NAMES = [
+  'session_list',
+  'session_search',
+  'session_read',
+  'session_cleanup',
+] as const
 
 export const SESSION_COLLABORATION_TOOL_NAMES = [
   'session_collab_list_agents',
@@ -114,6 +121,7 @@ export const MANUAL_READ_DESCRIPTION =
   'pass domain with topic to read one topic. For widget, pass either topic or modules, never both. ' +
   'Use product/contribute for GitHub issues and PRs (any bug or idea; issue-first, optional red–green PR), product/debug for support and runtime paths, ' +
   'product/collaboration before session_collab_request (worktree vs cwd, parallel implementers/reviewers), ' +
+  'product/sessions for session_list/search/read/cleanup (archive cite/handoff), ' +
   'miniapp/overview before mini-app development, and media/overview before provider-specific options. ' +
   'Use config_read for live settings and widget_list_templates for saved widgets.'
 
@@ -139,6 +147,25 @@ export const RENAME_SESSION_DESCRIPTION =
   'Rename the current chat session to a concise topic label shown in the sidebar.\n\n' +
   'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
   'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again for this session.'
+
+export const SESSION_LIST_DESCRIPTION =
+  'List SuperOne sessions in the current project (metadata only). ' +
+  'Use before session_read/session_search to find ids. Filter by title query, harness, pin/hidden, dates. ' +
+  'Paginate with limit/offset. This is content archive lookup — not live collab (session_collab_*) and not harness-native resume.'
+
+export const SESSION_SEARCH_DESCRIPTION =
+  'Search SuperOne chat transcripts in the current project by text. Returns matching message hits with short snippets for locating. ' +
+  'Then call session_read with sessionId/messageId for full content. Snippets are pointers only — not full message bodies.'
+
+export const SESSION_READ_DESCRIPTION =
+  'Read another SuperOne session\'s saved transcript (harness-agnostic content; does not resume provider threads). ' +
+  'Views: meta | user | assistant | text | tools | tool_detail. user/assistant/text are pure conversation (no tool lines; assistant/text include toolCount). ' +
+  'tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools.'
+
+export const SESSION_CLEANUP_DESCRIPTION =
+  'Manage old SuperOne sessions in the current project. action=preview lists candidates (+ confirmToken). ' +
+  'hide/unhide soft-archive without confirm. delete requires confirmToken from preview plus user approval; never deletes the current or pinned sessions by default. ' +
+  'Select with sessionIds and/or olderThan.'
 
 export const CONFIG_READ_DESCRIPTION =
   'Read live SuperOne settings and their field schema. Always call this before config_apply. ' +
@@ -495,6 +522,105 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         title: { type: 'string', description: 'A concise 4-8 word title describing the current conversation topic.', minLength: 1, maxLength: 80 },
       },
       required: ['title'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_list',
+    description: SESSION_LIST_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Case-insensitive title substring filter.' },
+        harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'], description: 'Filter by harness.' },
+        includeHidden: { type: 'boolean', description: 'Include hidden sessions. Default false.' },
+        includePinnedOnly: { type: 'boolean', description: 'Only pinned sessions. Default false.' },
+        parentOnly: { type: 'boolean', description: 'Exclude collab child sessions. Default false.' },
+        olderThan: { type: 'string', description: 'ISO timestamp — only sessions last active before this.' },
+        newerThan: { type: 'string', description: 'ISO timestamp — only sessions last active after this.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Max rows. Default 30, max 100.' },
+        offset: { type: 'integer', minimum: 0, description: 'Pagination offset. Default 0.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_search',
+    description: SESSION_SEARCH_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', minLength: 1, description: 'Search terms (AND). Matches title and message text.' },
+        harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'] },
+        sessionIds: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: 32,
+          description: 'Optional: restrict search to these session ids.',
+        },
+        role: { type: 'string', enum: ['user', 'assistant', 'any'], description: 'Message role filter. Default any.' },
+        limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Max hits. Default 20, max 50.' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_read',
+    description: SESSION_READ_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', minLength: 1, description: 'Target SuperOne session id from session_list or session_search.' },
+        view: {
+          type: 'string',
+          enum: ['meta', 'user', 'assistant', 'text', 'tools', 'tool_detail'],
+          description:
+            'meta=metadata; user=user text only; assistant=assistant text + toolCount; text=both; tools=tool index; tool_detail=one tool (needs toolUseId). Default text.',
+        },
+        messageId: { type: 'string', description: 'Anchor page at this message id (from search or a prior read).' },
+        around: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 50,
+          description: 'With messageId: include this many messages before and after on the global timeline.',
+        },
+        cursor: {
+          type: ['integer', 'null'],
+          description: 'Exclusive end index for the next older page (from a prior read). Omit for newest page.',
+        },
+        limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Max messages this page. Default 20, max 50.' },
+        includeThinking: { type: 'boolean', description: 'Include thinking blocks in text views. Default false.' },
+        toolUseId: { type: 'string', description: 'Required for view=tool_detail.' },
+      },
+      required: ['sessionId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_cleanup',
+    description: SESSION_CLEANUP_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['preview', 'hide', 'unhide', 'delete'],
+          description: 'preview lists candidates; hide/unhide soft-archive; delete needs confirmToken + user approval.',
+        },
+        sessionIds: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: 50,
+          description: 'Explicit session ids to act on.',
+        },
+        olderThan: { type: 'string', description: 'ISO timestamp — select sessions last active before this (with or without sessionIds).' },
+        harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'] },
+        includePinned: { type: 'boolean', description: 'Allow acting on pinned sessions. Default false (pinned are skipped).' },
+        maxDelete: { type: 'integer', minimum: 1, maximum: 50, description: 'Hard cap on candidates. Default 50.' },
+        confirmToken: { type: 'string', description: 'From action=preview. Required for delete.' },
+      },
+      required: ['action'],
       additionalProperties: false,
     },
   },

@@ -45,6 +45,23 @@ describe('isAlwaysHiddenToolBlock', () => {
   it('does not hide miniapp_call (actual app tool surface)', () => {
     expect(isAlwaysHiddenToolBlock('mcp__superone__miniapp_call')).toBe(false)
   })
+
+  it('does not hide session archive tools (SessionArchiveToolBlock owns the rows)', () => {
+    for (const name of [
+      'mcp__superone__session_list',
+      'mcp__superone__session_search',
+      'mcp__superone__session_read',
+      'mcp__superone__session_cleanup',
+    ]) {
+      expect(isAlwaysHiddenToolBlock(name)).toBe(false)
+    }
+  })
+
+  it('still hides session rename and agent-list meta tools', () => {
+    expect(isAlwaysHiddenToolBlock('mcp__superone__session_rename')).toBe(true)
+    expect(isAlwaysHiddenToolBlock('mcp__superone__session_list_agents')).toBe(true)
+    expect(isAlwaysHiddenToolBlock('mcp__superone__session_collab_list_agents')).toBe(true)
+  })
 })
 
 describe('getToolDisplay', () => {

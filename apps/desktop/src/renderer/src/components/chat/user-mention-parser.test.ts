@@ -69,6 +69,24 @@ describe('parseUserMentions', () => {
     ])
   })
 
+  it('parses superone-session tags', () => {
+    expect(
+      parseUserMentions(
+        'see <superone-session><title>Fix auth</title><sessionId>sid-abc</sessionId></superone-session> please',
+      ),
+    ).toEqual([
+      { type: 'text', text: 'see ' },
+      { type: 'mention', kind: 'session', value: 'sid-abc', displayName: 'Fix auth' },
+      { type: 'text', text: ' please' },
+    ])
+  })
+
+  it('strips superone-session-reminder blocks', () => {
+    const text =
+      'hi\n\n<superone-session-reminder>\nsessionId: x\n</superone-session-reminder>\n'
+    expect(parseUserMentions(text)).toEqual([{ type: 'text', text: 'hi' }])
+  })
+
   it('classifies a root-level directory mention with trailing slash', () => {
     expect(parseUserMentions('@computer-use-comparison/ 看一下这个文件夹')).toEqual([
       { type: 'mention', kind: 'directory', value: 'computer-use-comparison/' },

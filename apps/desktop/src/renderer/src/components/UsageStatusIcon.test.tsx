@@ -149,7 +149,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('uses a collision-aware popover for the tip', async () => {
+  it('anchors the tip above the gauge, end-aligned', async () => {
     hoisted.sessionState.rateLimitInfo = {
       status: 'allowed_warning',
       utilization: 0.82,
@@ -163,7 +163,6 @@ describe('UsageStatusIcon rate-limit tip', () => {
     const tip = screen.getByRole('status')
     expect(tip).toHaveAttribute('data-side', 'top')
     expect(tip).toHaveAttribute('data-align', 'end')
-    expect(tip).toHaveAttribute('data-collision-padding', '8')
   })
 
   it('shows the tip again for a new episode after the limit clears', async () => {

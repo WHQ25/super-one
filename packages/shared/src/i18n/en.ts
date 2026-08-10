@@ -175,6 +175,7 @@ export type Messages = {
       unpin: string
       hide: string
       unhide: string
+      /** Provider / harness session id (Claude SDK, Codex thread, …). */
       copySessionId: string
       copyWorkingDirectory: string
       openFolder: string
@@ -190,6 +191,7 @@ export type Messages = {
       forkedLocalToast: string
       sessionIdCopiedToast: string
       sessionIdNotReadyToast: string
+      sessionAddedToChatToast: string
       workingDirCopiedToast: string
       addToChat: string
       copyPath: string
@@ -1218,6 +1220,66 @@ export type Messages = {
           message: string
         }
       }
+      /** session_list / session_search / session_read / session_cleanup — casing mirrors collab. */
+      archive: {
+        listingSessions: string
+        sessionsListed: string
+        listFailed: string
+        searchingSessions: string
+        sessionSearch: string
+        hitsFound: string
+        noHits: string
+        searchFailed: string
+        readingSessionMeta: string
+        sessionMeta: string
+        readingUserMessages: string
+        userMessages: string
+        readingAssistantMessages: string
+        assistantMessages: string
+        readingConversation: string
+        conversation: string
+        readingToolIndex: string
+        toolIndex: string
+        readingToolDetail: string
+        toolDetail: string
+        readFailed: string
+        previewingCleanup: string
+        cleanupPreview: string
+        hidingSessions: string
+        sessionsHidden: string
+        unhidingSessions: string
+        sessionsUnhidden: string
+        confirmingDelete: string
+        sessionsDeleted: string
+        deleteCancelled: string
+        deleteRejected: string
+        cleanupFailed: string
+        sessionCount: string
+        candidateCount: string
+        beforeDate: string
+        thisChat: string
+        pinned: string
+        emptySessions: string
+        emptyHits: string
+        deletedSection: string
+        candidatesSection: string
+        wereCandidatesSection: string
+        skippedPinnedSection: string
+        pageHint: string
+        fields: {
+          title: string
+          harness: string
+          messages: string
+          active: string
+          model: string
+          branch: string
+          sessionId: string
+          tool: string
+          id: string
+          input: string
+          result: string
+        }
+      }
       dismissed: string
       denied: string
       error: string
@@ -1480,6 +1542,7 @@ export type Messages = {
     }
     mentionPopup: {
       groupCapabilities: string
+      groupSessions: string
       groupDesktopApps: string
       groupAgents: string
       groupMiniApps: string
@@ -1487,6 +1550,22 @@ export type Messages = {
       capabilityCollab: string
       capabilityComputer: string
       capabilityBrowser: string
+      capabilitySession: string
+      groupSessionProjects: string
+      groupRecentSessions: string
+      noSessions: string
+      noRecentSessions: string
+      noProjects: string
+      sessionNeedTitle: string
+      sessionNeedTitleShort: string
+      sessionPickProject: string
+      sessionAllProjects: string
+      sessionAllProjectsHint: string
+      hintSelectSession: string
+      hintCompleteProject: string
+      hintTypeTitle: string
+      loadingSessions: string
+      scrollForMore: string
       disabled: string
       computerUseDisabledHint: string
       browserDisabledHint: string
@@ -2499,6 +2578,7 @@ export const en: Messages = {
       forkedLocalToast: 'Forked in the same worktree',
       sessionIdCopiedToast: 'Session ID Copied',
       sessionIdNotReadyToast: 'Session ID not ready — copied internal id',
+      sessionAddedToChatToast: 'Session added to chat',
       workingDirCopiedToast: 'Working Directory Copied',
       addToChat: 'Add to Chat',
       copyPath: 'Copy Path',
@@ -3593,6 +3673,67 @@ export const en: Messages = {
           message: 'Message',
         },
       },
+      // Session archive tools — same casing grammar as collab:
+      // streaming = sentence case (+ …); done primary labels = Title Case.
+      archive: {
+        listingSessions: 'Listing sessions…',
+        sessionsListed: 'Sessions Listed',
+        listFailed: 'List Failed',
+        searchingSessions: 'Searching sessions…',
+        sessionSearch: 'Session Search',
+        hitsFound: 'Found {{count}} hits',
+        noHits: 'No hits',
+        searchFailed: 'Search Failed',
+        readingSessionMeta: 'Reading session meta…',
+        sessionMeta: 'Session Meta',
+        readingUserMessages: 'Reading user messages…',
+        userMessages: 'User Messages',
+        readingAssistantMessages: 'Reading assistant messages…',
+        assistantMessages: 'Assistant Messages',
+        readingConversation: 'Reading conversation…',
+        conversation: 'Conversation',
+        readingToolIndex: 'Reading tool index…',
+        toolIndex: 'Tool Index',
+        readingToolDetail: 'Reading tool detail…',
+        toolDetail: 'Tool Detail',
+        readFailed: 'Read Failed',
+        previewingCleanup: 'Previewing cleanup…',
+        cleanupPreview: 'Cleanup Preview',
+        hidingSessions: 'Hiding sessions…',
+        sessionsHidden: 'Sessions Hidden',
+        unhidingSessions: 'Unhiding sessions…',
+        sessionsUnhidden: 'Sessions Unhidden',
+        confirmingDelete: 'Confirming delete…',
+        sessionsDeleted: 'Sessions Deleted',
+        deleteCancelled: 'Delete Cancelled',
+        deleteRejected: 'Delete Rejected',
+        cleanupFailed: 'Cleanup Failed',
+        sessionCount: '{{count}} sessions',
+        candidateCount: '{{count}} candidates',
+        beforeDate: 'before {{date}}',
+        thisChat: 'this chat',
+        pinned: 'pinned',
+        emptySessions: 'No sessions',
+        emptyHits: 'No hits',
+        deletedSection: 'Deleted',
+        candidatesSection: 'Candidates',
+        wereCandidatesSection: 'Were candidates',
+        skippedPinnedSection: 'Skipped (pinned)',
+        pageHint: 'Page · {{hint}}',
+        fields: {
+          title: 'Title',
+          harness: 'Harness',
+          messages: 'Messages',
+          active: 'Active',
+          model: 'Model',
+          branch: 'Branch',
+          sessionId: 'Session',
+          tool: 'Tool',
+          id: 'Id',
+          input: 'Input',
+          result: 'Result',
+        },
+      },
       dismissed: 'Dismissed',
       denied: 'Denied',
       error: 'Error',
@@ -3855,6 +3996,7 @@ export const en: Messages = {
     },
     mentionPopup: {
       groupCapabilities: 'Built-in',
+      groupSessions: 'Sessions',
       groupDesktopApps: 'Desktop Apps',
       groupAgents: 'Agents',
       groupMiniApps: 'Mini apps',
@@ -3862,6 +4004,22 @@ export const en: Messages = {
       capabilityCollab: 'Agents Collaboration',
       capabilityComputer: 'Computer Use',
       capabilityBrowser: 'Super Browser',
+      capabilitySession: 'Session',
+      groupSessionProjects: 'Project scope',
+      groupRecentSessions: 'Recent',
+      noSessions: 'No matching sessions',
+      noRecentSessions: 'No recent sessions',
+      noProjects: 'No matching projects',
+      sessionNeedTitle: 'Type a title query to search sessions',
+      sessionNeedTitleShort: 'type title…',
+      sessionPickProject: 'choose project',
+      sessionAllProjects: 'All Projects',
+      sessionAllProjectsHint: 'Type all · search every project',
+      hintSelectSession: 'select session',
+      hintCompleteProject: 'complete project',
+      hintTypeTitle: 'type title to search',
+      loadingSessions: 'Loading…',
+      scrollForMore: 'Scroll for more',
       disabled: 'Off',
       computerUseDisabledHint: 'Enable Computer Use in Settings first',
       browserDisabledHint: 'Enable Browser CDP in Settings first',

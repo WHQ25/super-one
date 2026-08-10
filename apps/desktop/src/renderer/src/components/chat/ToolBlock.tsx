@@ -39,6 +39,10 @@ import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { MarkdownView } from '@/components/MarkdownPreview'
+import {
+  isSessionArchiveToolName,
+  SessionArchiveToolBlock,
+} from './SessionArchiveToolBlock'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -1134,6 +1138,19 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
           params={params}
           result={cleanResult}
           isStreaming={isStreaming}
+        />
+      )
+    }
+    if (isSessionArchiveToolName(mcpInfo.mcpToolName)) {
+      return (
+        <SessionArchiveToolBlock
+          toolName={mcpInfo.mcpToolName}
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          allowExpand={allowExpand}
         />
       )
     }

@@ -1,7 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildSessionMenuItems, resolveSessionIdForCopy } from './session-menu-items'
+import {
+  buildSessionMenuItems,
+  resolveSessionIdForCopy,
+} from './session-menu-items'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 
 const getSession = vi.fn()
@@ -34,6 +37,7 @@ const handlers = {
   onHide: vi.fn(),
   onFork: vi.fn(),
   onDelete: vi.fn(),
+  onAddToChat: vi.fn(),
 }
 
 function itemIds(folderPath: string): string[] {
@@ -50,8 +54,10 @@ describe('buildSessionMenuItems remote vs local', () => {
     expect(ids).toContain('pin')
     expect(ids).toContain('hide')
     expect(ids).toContain('copyId')
+    expect(ids).toContain('addToChat')
     expect(ids).toContain('copyDir')
     expect(ids).toContain('delete')
+    expect(ids).not.toContain('copyHarnessId')
     // Remote fork = node worktree / same-dir on the node
     expect(ids).toContain('forkWorktree')
     expect(ids).toContain('forkLocal')
@@ -75,6 +81,19 @@ describe('buildSessionMenuItems remote vs local', () => {
     expect(ids).toContain('openFolder')
     expect(ids).toContain('forkWorktree')
     expect(ids).toContain('forkLocal')
+  })
+
+  it('omits addToChat when handler is missing', () => {
+    const { onAddToChat: _, ...rest } = handlers
+    const ids = buildSessionMenuItems(base, '/Users/me/app', t, rest)
+      .filter((e): e is Extract<typeof e, { kind: 'item' }> => e.kind === 'item')
+      .map((e) => e.id)
+    expect(ids).not.toContain('addToChat')
+  })
+
+  it('places addToChat above copySessionId', () => {
+    const ids = itemIds('/Users/me/app')
+    expect(ids.indexOf('addToChat')).toBeLessThan(ids.indexOf('copyId'))
   })
 })
 
@@ -111,3 +130,4 @@ describe('resolveSessionIdForCopy', () => {
     expect(result).toEqual({ id: 'sid-1', isHarnessId: false })
   })
 })
+

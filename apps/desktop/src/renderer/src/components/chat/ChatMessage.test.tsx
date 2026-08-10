@@ -277,6 +277,19 @@ describe('ChatMessage capability mention bubble', () => {
     expect(container.querySelector('.justify-end')).not.toBeNull()
     expect(screen.queryByText('Agent task')).toBeNull()
   })
+
+  it('renders session chip with title, not raw sessionId', () => {
+    const sid = 'a9382a53-7d35-4a01-9e13-411bcbc8e850'
+    const text =
+      `<superone-session><title>用这个session测试一下</title><sessionId>${sid}</sessionId></superone-session> 看下工具`
+    const { container } = render(
+      <ChatMessage message={createUserMessage(text)} sessionStatus="idle" isLastAssistant={false} />,
+    )
+    const chip = container.querySelector('[data-mention-kind="session"]')
+    expect(chip).not.toBeNull()
+    expect(chip).toHaveTextContent('用这个session测试一下')
+    expect(chip).not.toHaveTextContent(sid)
+  })
 })
 
 /** jsdom reports every element as 0px tall, so the 50vh clamp never trips on its own. */

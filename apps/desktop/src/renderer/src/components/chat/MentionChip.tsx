@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { Bot, Folder, Globe, MousePointer2, Users } from 'lucide-react'
+import { Bot, Folder, Globe, History, MousePointer2, Users } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -60,6 +60,7 @@ export function mentionChipIcon(
   if (kind === 'directory') return <Folder className="text-blue-600 dark:text-blue-400" />
   if (kind === 'miniapp') return <MiniAppIcon appId={value} />
   if (kind === 'desktop-app') return <DesktopAppIcon bundleId={value} />
+  if (kind === 'session') return <History className="text-indigo-600 dark:text-indigo-400" />
   if (kind === 'collab' || kind === 'computer' || kind === 'browser') {
     return <CapabilityIcon kind={kind} />
   }
@@ -70,10 +71,10 @@ export function mentionChipIcon(
 export function MentionChip({ node }: NodeViewProps) {
   const { kind, value, displayName } = node.attrs as MentionNodeAttrs
   const isCapability = kind === 'collab' || kind === 'computer' || kind === 'browser'
-  const isBlendedChip = isCapability || kind === 'desktop-app'
+  const isBlendedChip = isCapability || kind === 'desktop-app' || kind === 'session'
   const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop() : displayName
   // Only path-like resource names truncate; multi-word capability labels must show fully.
-  const truncateLabel = kind === 'file' || kind === 'directory' || kind === 'miniapp'
+  const truncateLabel = kind === 'file' || kind === 'directory' || kind === 'miniapp' || kind === 'session'
 
   return (
     <NodeViewWrapper

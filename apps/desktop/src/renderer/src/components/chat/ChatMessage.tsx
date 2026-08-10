@@ -435,10 +435,12 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
 
   const isCapability =
     resolvedKind === 'collab' || resolvedKind === 'computer' || resolvedKind === 'browser'
-  const isBlendedChip = isCapability || resolvedKind === 'desktop-app'
+  // Match composer MentionChip: session/desktop-app/capability show displayName, not raw id.
+  const isBlendedChip =
+    isCapability || resolvedKind === 'desktop-app' || resolvedKind === 'session'
   const display =
     resolvedKind === 'miniapp' || isBlendedChip
-      ? (displayName ?? value)
+      ? (displayName || value)
       : (value.replace(/\/$/, '').split('/').pop() || value)
 
   if (resolvedKind === 'agent') {

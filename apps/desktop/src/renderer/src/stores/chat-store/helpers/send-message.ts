@@ -35,6 +35,7 @@ import {
   type NodeSessionSnapshot,
 } from '@/lib/remote-session-messages'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
+import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 
 /**
  * Body of useChatStore.sendMessage extracted as a free-standing helper so
@@ -355,6 +356,24 @@ export async function sendMessageImpl(
       }
     }
 
+    let sessionReminderSuffix = ''
+    const sessionMentions = mentions.filter((m) => m.kind === 'session' && m.value)
+    if (sessionMentions.length > 0) {
+      const lines: string[] = [
+        'User @-mentioned SuperOne session archive(s). Use SuperOne MCP session tools with the SuperOne sessionId (NOT provider/harness session ids):',
+        '- session_read({ sessionId, view: "meta" | "user" | "assistant" | "text" | "tools" })',
+        '- session_search / session_list when you need to locate messages first',
+        'Prefer progressive views; do not dump entire transcripts into context.',
+      ]
+      const seen = new Set<string>()
+      for (const m of sessionMentions) {
+        if (!m.value || seen.has(m.value)) continue
+        seen.add(m.value)
+        lines.push(`- "${m.displayName || m.value}" (sessionId: ${m.value})`)
+      }
+      sessionReminderSuffix = `\n\n<superone-session-reminder>\n${lines.join('\n')}\n</superone-session-reminder>`
+    }
+
     // Desktop-app @ → Computer Use runs on desktop host via host-action; grant here.
     let desktopAppReminderSuffix = ''
     const desktopAppMentions = mentions.filter((m) => m.kind === 'desktop-app' && m.value)
@@ -393,6 +412,7 @@ export async function sendMessageImpl(
       contextSuffix +
       quoteSuffix +
       miniAppReminderSuffix +
+      sessionReminderSuffix +
       capabilityReminderSuffix +
       desktopAppReminderSuffix +
       annotationSuffix
@@ -530,10 +550,15 @@ export async function sendMessageImpl(
         typeof finalSnap?.title === 'string' && finalSnap.title.trim()
           ? finalSnap.title.trim()
           : null
-      const titleSource = rawContent || finalContent
+      // Prefer node snap title; otherwise user-visible plain text (not agent tag markup).
+      const titleSource = stripMiniAppMarkup(rawContent || finalContent).trim().replace(/\s+/g, ' ')
       const derivedTitle =
         snapTitle ||
-        (titleSource.length > 100 ? `${titleSource.slice(0, 100)}…` : titleSource)
+        (titleSource
+          ? titleSource.length > 100
+            ? `${titleSource.slice(0, 100)}…`
+            : titleSource
+          : null)
       patchSession((sess) => ({
         messages: reconcileTranscriptWithLocalMessages(
           sess.messages,
@@ -712,6 +737,23 @@ export async function sendMessageImpl(
     }
     miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
   }
+  let sessionReminderSuffix = ''
+  const sessionMentions = mentions.filter((m) => m.kind === 'session' && m.value)
+  if (sessionMentions.length > 0) {
+    const lines: string[] = [
+      'User @-mentioned SuperOne session archive(s). Use SuperOne MCP session tools with the SuperOne sessionId (NOT provider/harness session ids):',
+      '- session_read({ sessionId, view: "meta" | "user" | "assistant" | "text" | "tools" })',
+      '- session_search / session_list when you need to locate messages first',
+      'Prefer progressive views; do not dump entire transcripts into context.',
+    ]
+    const seen = new Set<string>()
+    for (const m of sessionMentions) {
+      if (!m.value || seen.has(m.value)) continue
+      seen.add(m.value)
+      lines.push(`- "${m.displayName || m.value}" (sessionId: ${m.value})`)
+    }
+    sessionReminderSuffix = `\n\n<superone-session-reminder>\n${lines.join('\n')}\n</superone-session-reminder>`
+  }
   let capabilityReminderSuffix = ''
   let desktopAppReminderSuffix = ''
   let agentContent = rawContent
@@ -788,6 +830,7 @@ export async function sendMessageImpl(
     contextSuffix +
     quoteSuffix +
     miniAppReminderSuffix +
+    sessionReminderSuffix +
     capabilityReminderSuffix +
     annotationSuffix
   const codexCommand = parseCodexCommand(rawContent)

@@ -11,6 +11,7 @@ export type UserMentionKind =
   | 'agent'
   | 'miniapp'
   | 'desktop-app'
+  | 'session'
   | BuiltinCapabilityId
 
 export type UserTextSegment =
@@ -24,6 +25,10 @@ const DESKTOP_APP_TAG_REGEX =
   /<superone-desktop-app>\s*<name>([\s\S]*?)<\/name>\s*<bundleId>([\s\S]*?)<\/bundleId>\s*<\/superone-desktop-app>/g
 const DESKTOP_APP_REMINDER_REGEX =
   /\n*<superone-desktop-app-reminder>[\s\S]*?<\/superone-desktop-app-reminder>\n*/g
+const SESSION_TAG_REGEX =
+  /<superone-session>\s*<title>([\s\S]*?)<\/title>\s*<sessionId>([\s\S]*?)<\/sessionId>\s*<\/superone-session>/g
+const SESSION_REMINDER_REGEX =
+  /\n*<superone-session-reminder>[\s\S]*?<\/superone-session-reminder>\n*/g
 
 function classify(value: string): UserMentionKind {
   if (isBuiltinCapabilityId(value)) return value
@@ -90,6 +95,22 @@ function findDesktopAppTags(text: string): TagMatch[] {
   return out
 }
 
+function findSessionTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
+  const re = new RegExp(SESSION_TAG_REGEX)
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    out.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      kind: 'session',
+      displayName: m[1].trim(),
+      value: m[2].trim(),
+    })
+  }
+  return out
+}
+
 export function parseUserMentions(text: string): UserTextSegment[] {
   if (text.length === 0) return []
 
@@ -98,12 +119,14 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     .replace(MINIAPP_REMINDER_REGEX, '')
     .replace(CAPABILITY_REMINDER_REGEX, '')
     .replace(DESKTOP_APP_REMINDER_REGEX, '')
+    .replace(SESSION_REMINDER_REGEX, '')
 
-  // 2. Extract structured tags (miniapp + capabilities + desktop apps) and interleave with @-mentions.
+  // 2. Extract structured tags (miniapp + capabilities + desktop apps + sessions) and interleave with @-mentions.
   const tagMatches = [
     ...findMiniAppTags(withoutReminder),
     ...findCapabilityTags(withoutReminder),
     ...findDesktopAppTags(withoutReminder),
+    ...findSessionTags(withoutReminder),
   ].sort((a, b) => a.start - b.start)
 
   const segments: UserTextSegment[] = []

@@ -32,6 +32,10 @@ import {
   PACK_MINI_APP_DESCRIPTION,
   UPDATE_SUPERONE_TYPES_DESCRIPTION,
   RENAME_SESSION_DESCRIPTION,
+  SESSION_LIST_DESCRIPTION,
+  SESSION_SEARCH_DESCRIPTION,
+  SESSION_READ_DESCRIPTION,
+  SESSION_CLEANUP_DESCRIPTION,
   LAUNCH_BRANCH_NAME_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_SUMMARY_DESCRIPTION,
@@ -46,6 +50,16 @@ import {
   type BuiltInSuperoneToolName,
 } from './superone-mcp-builtin-defs'
 import { configApplyHandler, configReadHandler, type ConfigApplyArgs } from './config-tools'
+import {
+  sessionCleanupHandler,
+  sessionListHandler,
+  sessionReadHandler,
+  sessionSearchHandler,
+  type SessionCleanupArgs,
+  type SessionListArgs,
+  type SessionReadArgs,
+  type SessionSearchArgs,
+} from './session-archive-tools'
 import type { SessionManager } from '../session/types'
 import type {
   RequestSessionAgentsArgs,
@@ -257,6 +271,14 @@ export async function executeBuiltInSuperoneTool(
       return updateSuperoneTypes(args as { appDir: string })
     case 'session_rename':
       return renameSessionTool(args as { title: string }, deps)
+    case 'session_list':
+      return sessionListHandler(args as unknown as SessionListArgs, deps)
+    case 'session_search':
+      return sessionSearchHandler(args as unknown as SessionSearchArgs, deps)
+    case 'session_read':
+      return sessionReadHandler(args as unknown as SessionReadArgs, deps)
+    case 'session_cleanup':
+      return sessionCleanupHandler(args as unknown as SessionCleanupArgs, deps)
     case 'session_collab_list_agents':
       return import('../session/session-collaboration').then(({ listSessionAgentProfiles }) => ({
         content: [{ type: 'text' as const, text: JSON.stringify({ agents: listSessionAgentProfiles() }) }],
@@ -464,6 +486,79 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       _meta: { 'anthropic/alwaysLoad': true },
     },
     (args) => renameSessionTool(args, deps),
+  )
+
+  server.registerTool(
+    'session_list',
+    {
+      description: SESSION_LIST_DESCRIPTION,
+      inputSchema: {
+        query: z.string().optional().describe('Case-insensitive title substring filter.'),
+        harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional().describe('Filter by harness.'),
+        includeHidden: z.boolean().optional().describe('Include hidden sessions. Default false.'),
+        includePinnedOnly: z.boolean().optional().describe('Only pinned sessions. Default false.'),
+        parentOnly: z.boolean().optional().describe('Exclude collab child sessions. Default false.'),
+        olderThan: z.string().optional().describe('ISO timestamp — only sessions last active before this.'),
+        newerThan: z.string().optional().describe('ISO timestamp — only sessions last active after this.'),
+        limit: z.number().int().min(1).max(100).optional().describe('Max rows. Default 30, max 100.'),
+        offset: z.number().int().min(0).optional().describe('Pagination offset. Default 0.'),
+      },
+    },
+    (args) => sessionListHandler(args, deps),
+  )
+
+  server.registerTool(
+    'session_search',
+    {
+      description: SESSION_SEARCH_DESCRIPTION,
+      inputSchema: {
+        query: z.string().min(1).describe('Search terms (AND). Matches title and message text.'),
+        harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional(),
+        sessionIds: z.array(z.string()).max(32).optional().describe('Optional: restrict search to these session ids.'),
+        role: z.enum(['user', 'assistant', 'any']).optional().describe('Message role filter. Default any.'),
+        limit: z.number().int().min(1).max(50).optional().describe('Max hits. Default 20, max 50.'),
+      },
+    },
+    (args) => sessionSearchHandler(args, deps),
+  )
+
+  server.registerTool(
+    'session_read',
+    {
+      description: SESSION_READ_DESCRIPTION,
+      inputSchema: {
+        sessionId: z.string().min(1).describe('Target SuperOne session id from session_list or session_search.'),
+        view: z.enum(['meta', 'user', 'assistant', 'text', 'tools', 'tool_detail']).optional()
+          .describe('meta | user | assistant | text | tools | tool_detail. Default text.'),
+        messageId: z.string().optional().describe('Anchor page at this message id.'),
+        around: z.number().int().min(0).max(50).optional()
+          .describe('With messageId: messages before/after on the global timeline.'),
+        cursor: z.number().int().nullable().optional()
+          .describe('Exclusive end index for the next older page. Omit for newest page.'),
+        limit: z.number().int().min(1).max(50).optional().describe('Max messages this page. Default 20, max 50.'),
+        includeThinking: z.boolean().optional().describe('Include thinking blocks. Default false.'),
+        toolUseId: z.string().optional().describe('Required for view=tool_detail.'),
+      },
+    },
+    (args) => sessionReadHandler(args, deps),
+  )
+
+  server.registerTool(
+    'session_cleanup',
+    {
+      description: SESSION_CLEANUP_DESCRIPTION,
+      inputSchema: {
+        action: z.enum(['preview', 'hide', 'unhide', 'delete'])
+          .describe('preview | hide | unhide | delete (delete needs confirmToken + user approval).'),
+        sessionIds: z.array(z.string()).max(50).optional().describe('Explicit session ids.'),
+        olderThan: z.string().optional().describe('ISO timestamp selector.'),
+        harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional(),
+        includePinned: z.boolean().optional().describe('Allow pinned sessions. Default false.'),
+        maxDelete: z.number().int().min(1).max(50).optional().describe('Hard cap. Default 50.'),
+        confirmToken: z.string().optional().describe('From action=preview. Required for delete.'),
+      },
+    },
+    (args) => sessionCleanupHandler(args, deps),
   )
 
   registerMediaTools(server, deps)

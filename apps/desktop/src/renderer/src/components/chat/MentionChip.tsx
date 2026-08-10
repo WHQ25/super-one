@@ -60,7 +60,7 @@ export function mentionChipIcon(
   if (kind === 'directory') return <Folder className="text-blue-600 dark:text-blue-400" />
   if (kind === 'miniapp') return <MiniAppIcon appId={value} />
   if (kind === 'desktop-app') return <DesktopAppIcon bundleId={value} />
-  if (kind === 'session') return <History className="text-indigo-600 dark:text-indigo-400" />
+  if (kind === 'session') return <History className="text-amber-600 dark:text-amber-400" />
   if (kind === 'collab' || kind === 'computer' || kind === 'browser') {
     return <CapabilityIcon kind={kind} />
   }

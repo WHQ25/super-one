@@ -161,7 +161,7 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
       <History
         className={cn(
           'size-3.5 shrink-0',
-          muted ?? 'text-indigo-600 dark:text-indigo-400',
+          muted ?? 'text-amber-600 dark:text-amber-400',
         )}
       />
     )
@@ -869,7 +869,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={rowClass}
           >
-            <History className="size-3.5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+            <History className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
             <span className="min-w-0 flex-1 truncate font-medium">
               <HighlightedPath path={item.title} indices={item.matchIndices} />
             </span>
@@ -1056,7 +1056,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         >
           {isSessionMode ? (
             <div className="flex min-w-0 items-center gap-1.5 border-b border-border/50 px-2 py-1.5 text-xs">
-              <History className="size-3.5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+              <History className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5 text-muted-foreground">
                 <button
                   type="button"

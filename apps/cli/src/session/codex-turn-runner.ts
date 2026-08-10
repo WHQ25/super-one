@@ -31,7 +31,7 @@ import {
 } from './claude-turn-runner'
 import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
 import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter } from './harness-runners'
-import type { HarnessManager } from './harness-manager'
+import type { HarnessCatalogReader } from '@superone/runtime/harness'
 import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
 import { prepareTurnPrompt } from './turn-attachments'
@@ -41,7 +41,7 @@ import { openTurnAndStream } from './codex-live-turn'
 export interface NodeCodexRunnerOptions {
   binaryPath?: string | null
   resolveProjectPath: (projectId: string) => string | null
-  harnesses?: HarnessManager
+  harnesses?: HarnessCatalogReader
   env?: NodeJS.ProcessEnv
   spawnFn?: CodexSpawnFn
   allowSimulatedFallback?: boolean
@@ -102,7 +102,7 @@ export function mapCodexReasoningEffort(
 
 export function resolveCodexBinaryPath(opts: {
   binaryPath?: string | null
-  harnesses?: HarnessManager
+  harnesses?: HarnessCatalogReader
 }): string | null {
   if (opts.binaryPath && existsSync(opts.binaryPath)) return opts.binaryPath
   const fromEnv = process.env.SUPERONE_CODEX_BINARY?.trim()

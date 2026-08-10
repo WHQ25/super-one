@@ -12,6 +12,8 @@
     "./fs/*": "./src/fs/*.ts",
     "./git": "./src/git/index.ts",
     "./git/*": "./src/git/*.ts",
+    "./harness": "./src/harness/index.ts",
+    "./harness/*": "./src/harness/*.ts",
     "./lease": "./src/lease/index.ts",
     "./lease/*": "./src/lease/*.ts",
     "./spawn-env": "./src/spawn-env.ts",

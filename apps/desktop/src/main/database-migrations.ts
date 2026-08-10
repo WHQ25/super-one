@@ -179,6 +179,24 @@ export function runDatabaseMigrations(db: Database.Database): void {
     );
   `)
 
+  // Harness installation catalog (shared kernel: @superone/runtime/harness).
+  // Same shape as apps/cli — intent + readiness; secrets by ref only.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS harness_installations (
+      harness_id TEXT PRIMARY KEY NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL DEFAULT 'disabled',
+      runtime_version TEXT,
+      command TEXT,
+      config_json TEXT,
+      secret_ref TEXT,
+      diagnostic_code TEXT,
+      diagnostic_message TEXT,
+      last_probed_at INTEGER,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
   migrateGlobalResourceCacheToHarness(db)
 
   db.exec(`

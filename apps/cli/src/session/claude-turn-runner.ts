@@ -30,7 +30,7 @@ import {
 } from '@superone/claude'
 import type { PermissionMode } from '@superone/shared/agent-types'
 import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
-import type { HarnessManager } from './harness-manager'
+import type { HarnessCatalogReader } from '@superone/runtime/harness'
 import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
 import { prepareTurnPrompt } from './turn-attachments'
@@ -45,7 +45,7 @@ export const CLAUDE_SESSION_RESUME_PREFIX = 'claude-session:'
 export interface NodeClaudeRunnerOptions {
   binaryPath?: string | null
   resolveProjectPath: (projectId: string) => string | null
-  harnesses?: HarnessManager
+  harnesses?: HarnessCatalogReader
   env?: NodeJS.ProcessEnv
   /** Injectable SDK query for tests (no real Claude process). */
   queryFn?: ClaudeQueryFn
@@ -81,7 +81,7 @@ export interface NodeClaudeRunnerOptions {
 
 export function resolveClaudeBinaryPath(opts: {
   binaryPath?: string | null
-  harnesses?: HarnessManager
+  harnesses?: HarnessCatalogReader
   skipSdkBinary?: boolean
 }): string | null {
   if (opts.binaryPath && existsSync(opts.binaryPath)) return opts.binaryPath

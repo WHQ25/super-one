@@ -1,8 +1,12 @@
 import { execFileSync, spawn, type ChildProcess } from 'child_process'
+import { existsSync } from 'fs'
 import { createRequire } from 'module'
 import { dirname, join } from 'path'
 import { createInterface } from 'readline'
+import { managedNpmPrefix } from '@superone/runtime/harness'
 import log from '../logger'
+import { resolveHarnessHomeRoot } from '../harness/home'
+import { resolveDesktopManagedBinary } from '../harness/tarball-installer'
 import { trace } from '../agent/event-trace'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { resolveChatService } from '../providers/resolver'
@@ -283,6 +287,18 @@ export function resolveCodexNativeBinary(packageName: string): CodexNativeBinary
   return resolved
 }
 
+/** Absolute path to a managed Codex native binary under ~/.superone/harness, if any. */
+export function resolveManagedCodexNativePath(): string | null {
+  try {
+    const fromEnv = process.env.SUPERONE_CODEX_BINARY?.trim()
+    if (fromEnv && existsSync(fromEnv)) return fromEnv
+    const prefix = managedNpmPrefix(resolveHarnessHomeRoot(), 'codex')
+    return resolveDesktopManagedBinary('codex', prefix)
+  } catch {
+    return null
+  }
+}
+
 function prependPath(env: NodeJS.ProcessEnv, dir: string): NodeJS.ProcessEnv {
   const sep = process.platform === 'win32' ? ';' : ':'
   const existing = env.PATH ?? process.env.PATH ?? ''
@@ -489,29 +505,39 @@ export async function createAppServerConnection(
   const expectedPackage = resolveCodexPlatformPackage()
   const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
   const bundledBinary = hasBundledPackage && expectedPackage ? resolveCodexNativeBinary(expectedPackage) : null
-  const systemCodexCli = !bundledBinary ? findSystemCodexCli() : null
+  // Managed install under ~/.superone/harness (on-demand download path).
+  const managedBinaryPath = resolveManagedCodexNativePath()
+  const managedBinary = managedBinaryPath
+    ? {
+        binaryPath: managedBinaryPath,
+        pathDir: join(dirname(managedBinaryPath), '..', 'codex-path'),
+      }
+    : null
+  const preferredBinary = managedBinary ?? bundledBinary
+  const systemCodexCli = !preferredBinary ? findSystemCodexCli() : null
   const connectionId = `codex-${process.pid}-${++nextAppServerConnectionId}`
   log.info(
-    '[codex] app-server launch conn=%s platform=%s arch=%s mode=%s expectedPackage=%s bundledBinary=%s systemCodex=%s',
+    '[codex] app-server launch conn=%s platform=%s arch=%s mode=%s expectedPackage=%s managedBinary=%s bundledBinary=%s systemCodex=%s',
     connectionId,
     process.platform,
     process.arch,
     auth.mode,
     expectedPackage ?? 'unknown',
+    managedBinary?.binaryPath ?? 'none',
     bundledBinary?.binaryPath ?? 'none',
     systemCodexCli ?? 'none',
   )
 
-  if (!bundledBinary && !systemCodexCli) {
+  if (!preferredBinary && !systemCodexCli) {
     const hint = process.platform === 'darwin'
-      ? 'Rebuild dependencies with: bun install --frozen-lockfile --os=darwin --cpu=*'
-      : 'Rebuild dependencies for the current target architecture'
+      ? 'Enable the Codex harness (Settings → Harnesses) or rebuild with: bun install --frozen-lockfile --os=darwin --cpu=*'
+      : 'Enable the Codex harness or rebuild dependencies for the current target architecture'
     throw new Error(`Missing Codex runtime package (${expectedPackage ?? 'unknown'}). ${hint}`)
   }
 
   const spawnArgs = [...overrideArgs, 'app-server', '--listen', 'stdio://']
-  const spawnExe = bundledBinary?.binaryPath ?? systemCodexCli!
-  const env = bundledBinary ? prependPath(baseEnv, bundledBinary.pathDir) : baseEnv
+  const spawnExe = preferredBinary?.binaryPath ?? systemCodexCli!
+  const env = preferredBinary ? prependPath(baseEnv, preferredBinary.pathDir) : baseEnv
   const child: ChildProcess = spawn(spawnExe, spawnArgs, {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],

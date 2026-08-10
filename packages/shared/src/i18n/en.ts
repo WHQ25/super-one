@@ -861,6 +861,8 @@ export type Messages = {
       selectAgent: string
       agentNotInstalled: string
       agentInstallHint: string
+      noHarnessEnabled: string
+      enableHarnesses: string
     }
     additionalDirs: {
       label: string
@@ -3387,6 +3389,8 @@ export const en: Messages = {
       selectAgent: 'Agent',
       agentNotInstalled: 'Not installed',
       agentInstallHint: 'Install this CLI on your machine, then restart SuperOne.',
+      noHarnessEnabled: 'No harness enabled yet',
+      enableHarnesses: 'Enable in Settings',
     },
     additionalDirs: {
       label: 'Additional folder',

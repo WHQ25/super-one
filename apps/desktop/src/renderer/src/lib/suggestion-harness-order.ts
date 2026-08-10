@@ -39,15 +39,19 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
 
 /**
  * Build ChatSuggestions harness order:
- * - Always include claude + codex
+ * - Include claude/codex when flags say so (catalog enable; default true)
  * - Include each visible ACP agent as its own entry (caller filters experimental)
- * - Include opencode only when `includeOpenCode` (catalog / per-agent enable)
+ * - Include opencode only when `includeOpenCode` (catalog enable)
  * - Manual default → secondary pins first, then parent-session count desc,
  *   then stable product default order
  */
 export function orderSuggestionHarnesses(input: {
   ranks: HarnessSessionRank[]
   acpAgents: Array<{ id: string; name: string }>
+  /** When false, omit Claude Code. Default true. */
+  includeClaude?: boolean
+  /** When false, omit Codex. Default true. */
+  includeCodex?: boolean
   /** When true, add OpenCode as a suggestion harness. */
   includeOpenCode?: boolean
   /**
@@ -62,22 +66,26 @@ export function orderSuggestionHarnesses(input: {
 }): SuggestionHarnessOption[] {
   const countByKey = new Map(input.ranks.map((r) => [r.key, r.sessionCount] as const))
 
-  const options: SuggestionHarnessOption[] = [
-    {
+  const options: SuggestionHarnessOption[] = []
+
+  if (input.includeClaude !== false) {
+    options.push({
       key: 'claude',
       provider: 'claude',
       acpAgentId: null,
       label: 'Claude Code',
       sessionCount: countByKey.get('claude') ?? 0,
-    },
-    {
+    })
+  }
+  if (input.includeCodex !== false) {
+    options.push({
       key: 'codex',
       provider: 'codex',
       acpAgentId: null,
       label: 'Codex',
       sessionCount: countByKey.get('codex') ?? 0,
-    },
-  ]
+    })
+  }
 
   for (const agent of input.acpAgents) {
     const key = suggestionHarnessKey('acp', agent.id)

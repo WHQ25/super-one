@@ -128,6 +128,17 @@ describe('orderSuggestionHarnesses', () => {
     expect(on.map((o) => o.key)).toEqual(['opencode', 'claude', 'codex'])
   })
 
+  it('omits claude/codex when include flags are false', () => {
+    const ordered = orderSuggestionHarnesses({
+      ranks: [],
+      acpAgents: [{ id: 'grok-build', name: 'Grok' }],
+      includeClaude: false,
+      includeCodex: false,
+      includeOpenCode: false,
+    })
+    expect(ordered.map((o) => o.key)).toEqual(['acp:grok-build'])
+  })
+
   it('breaks ties with product default order', () => {
     const ordered = orderSuggestionHarnesses({
       ranks: [

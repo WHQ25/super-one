@@ -6,6 +6,14 @@ directories:
 files:
   - out/**/*
   - "!node_modules/@img/sharp-*"
+  # P5: do not ship managed harness platform binaries (~500MB+). Runtimes
+  # install on demand via Settings → Harnesses (R2/npm tarball).
+  - "!node_modules/@anthropic-ai/claude-agent-sdk-darwin-*/**"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk-linux-*/**"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk-win32-*/**"
+  - "!node_modules/@openai/codex-darwin-*/**"
+  - "!node_modules/@openai/codex-linux-*/**"
+  - "!node_modules/@openai/codex-win32-*/**"
 
 extraResources:
   - from: build/icon.png
@@ -14,9 +22,8 @@ extraResources:
 afterPack: "./build/afterPack.cjs"
 
 asarUnpack:
+  # Native addons only — harness CLIs are no longer unpacked into the app.
   - "**/*.node"
-  - "node_modules/@anthropic-ai/claude-agent-sdk-*/claude*"
-  - "node_modules/@openai/codex*/**"
 
 publish:
   provider: generic

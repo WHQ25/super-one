@@ -21,6 +21,7 @@ import type { NodeHarnessId } from '@superone/shared/environment'
 import type { ConsumerId } from '@superone/shared/platform-registry'
 import { getBinding, listCredentials, getCredentialDecrypted } from '../providers/credential-store'
 import { resolveSdkClaudeBinary } from '../agent/claude-binary'
+import { allowBundledHarnessPlatformPackages } from './bundled-fallback'
 import { resolveHarnessHomeRoot } from './home'
 import {
   createDesktopTarballInstaller,
@@ -48,6 +49,7 @@ function envBinary(name: string): string | null {
 }
 
 function resolveBundledCodexNative(): string | null {
+  if (!allowBundledHarnessPlatformPackages()) return null
   const pkg = resolveCodexPlatformPackage()
   if (!pkg || !hasCodexPlatformPackage(pkg)) return null
   return resolveCodexNativeBinary(pkg)?.binaryPath ?? null

@@ -49,7 +49,7 @@ export function isHarnessNotReadyError(err: unknown): err is HarnessNotReadyErro
  * 1. env override
  * 2. catalog command (prior enable)
  * 3. managed install under ~/.superone/harness
- * 4. bundled platform package (dev / pre-P5)
+ * 4. local platform package (dev / unpackaged only — never in packaged app)
  * 5. PATH (codex only)
  *
  * Throws HarnessNotReadyError when nothing resolves — callers must not fall

@@ -191,7 +191,7 @@ Bridge mode: alpha clients built before the R2 switch have `provider: github` ba
 Configured via `apps/desktop/electron-builder.yml` (electron-vite natively supports this file):
 
 - Output: `apps/desktop/dist/` directory
-- `asarUnpack: "**/*.node"` — required for `better-sqlite3` native module
+- `asarUnpack: "**/*.node"` — required for `better-sqlite3` native module (Claude/Codex platform binaries are **not** unpacked; P5 installs them on demand under `~/.superone/harness`)
 - `publish.provider: github` — electron-updater reads from GitHub Releases
 - macOS: DMG + ZIP (universal). ZIP target required for auto-update. Code signing env vars commented out for now
 - Windows: NSIS (x64 + arm64)

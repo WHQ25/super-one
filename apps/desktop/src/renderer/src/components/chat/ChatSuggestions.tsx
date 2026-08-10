@@ -40,6 +40,11 @@ import type {
   SuggestionHarnessPreference,
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import {
+  isCatalogHarnessEnabled,
+  isExperimentalAcpAgentEnabled,
+  type HarnessCatalogStatus,
+} from '@/lib/harness-visibility'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
 const EMPTY_RANKS: HarnessSessionRank[] = []
@@ -97,7 +102,7 @@ function ProviderSelector() {
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
   const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
-  const [openCodeOn, setOpenCodeOn] = useState(false)
+  const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(null)
   const sessionScope = useSessionScope()
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [ranks, setRanks] = useState<HarnessSessionRank[]>(EMPTY_RANKS)
@@ -123,16 +128,19 @@ function ProviderSelector() {
       .listHarnesses?.()
       .then((list) => {
         if (cancelled) return
-        const row = list?.find((r) => r.id === 'opencode')
-        setOpenCodeOn(Boolean(row?.enabled && row.state !== 'disabled') || experimentalAgentsEnabled)
+        setHarnessCatalog(
+          Array.isArray(list)
+            ? list.map((r) => ({ id: r.id, enabled: r.enabled, state: r.state }))
+            : null,
+        )
       })
       .catch(() => {
-        if (!cancelled) setOpenCodeOn(experimentalAgentsEnabled)
+        if (!cancelled) setHarnessCatalog(null)
       })
     return () => {
       cancelled = true
     }
-  }, [experimentalAgentsEnabled])
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -271,27 +279,74 @@ function ProviderSelector() {
     setAcpAgentId,
   ])
 
+  const visibleAcpAgents = useMemo(
+    () =>
+      agents.filter((agent) => {
+        if (agent.id === 'opencode') return false
+        if (isGrokAcpAgent(agent.id)) {
+          return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
+        }
+        return isExperimentalAcpAgentEnabled(agent.id, {
+          enabledExperimentalAgents,
+          legacyExperimentalAgentsEnabled: experimentalAgentsEnabled,
+        })
+      }),
+    [agents, enabledExperimentalAgents, experimentalAgentsEnabled, harnessCatalog],
+  )
+
   const isAgentAllowed = useCallback(
     (provider: string, agentId?: string | null) => {
-      if (!isExperimentalAgentProvider(provider as 'opencode' | 'acp', agentId)) return true
-      if (provider === 'opencode') return openCodeOn
-      if (provider === 'acp' && agentId) {
-        if (isGrokAcpAgent(agentId)) return true
-        if (experimentalAgentsEnabled) return true
-        return enabledExperimentalAgents.includes(agentId)
+      if (provider === 'claude') return isCatalogHarnessEnabled(harnessCatalog, 'claude')
+      if (provider === 'codex') return isCatalogHarnessEnabled(harnessCatalog, 'codex')
+      if (provider === 'opencode') {
+        return (
+          isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled
+        )
       }
+      if (provider === 'acp' && agentId) {
+        if (isGrokAcpAgent(agentId)) {
+          return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
+        }
+        return isExperimentalAcpAgentEnabled(agentId, {
+          enabledExperimentalAgents,
+          legacyExperimentalAgentsEnabled: experimentalAgentsEnabled,
+        })
+      }
+      // Non-experimental providers not listed above stay allowed.
+      if (!isExperimentalAgentProvider(provider as 'opencode' | 'acp', agentId)) return true
       return false
     },
-    [enabledExperimentalAgents, experimentalAgentsEnabled, openCodeOn],
+    [enabledExperimentalAgents, experimentalAgentsEnabled, harnessCatalog],
   )
 
   useEffect(() => {
-    if (!isAgentAllowed(preferredProvider, acpAgentId)) {
-      setAgentMenuOpen(false)
-      if (preferredProvider === 'acp') setAcpAgentId(DEFAULT_ACP_AGENT_ID)
-      else void selectProvider('claude')
+    if (isAgentAllowed(preferredProvider, acpAgentId)) return
+    setAgentMenuOpen(false)
+    // Prefer first enabled SDK harness, then any remaining ordered option.
+    if (isCatalogHarnessEnabled(harnessCatalog, 'claude')) {
+      void selectProvider('claude')
+      return
     }
-  }, [isAgentAllowed, preferredProvider, acpAgentId, selectProvider, setAcpAgentId])
+    if (isCatalogHarnessEnabled(harnessCatalog, 'codex')) {
+      void selectProvider('codex')
+      return
+    }
+    if (preferredProvider === 'acp') {
+      const next = visibleAcpAgents[0]
+      if (next) {
+        setAcpAgentId(next.id)
+        return
+      }
+    }
+  }, [
+    isAgentAllowed,
+    preferredProvider,
+    acpAgentId,
+    selectProvider,
+    setAcpAgentId,
+    harnessCatalog,
+    visibleAcpAgents,
+  ])
 
   const selectedAcpAgent = useMemo(() => {
     if (agents.length === 0) return null
@@ -300,17 +355,6 @@ function ProviderSelector() {
       ?? agents[0]
       ?? null
   }, [agents, acpAgentId])
-
-  const visibleAcpAgents = useMemo(
-    () =>
-      agents.filter((agent) => {
-        if (agent.id === 'opencode') return false
-        if (isGrokAcpAgent(agent.id)) return true
-        if (experimentalAgentsEnabled) return true
-        return enabledExperimentalAgents.includes(agent.id)
-      }),
-    [agents, enabledExperimentalAgents, experimentalAgentsEnabled],
-  )
 
   useEffect(() => {
     if (preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {
@@ -322,30 +366,25 @@ function ProviderSelector() {
     () => orderSuggestionHarnesses({
       ranks,
       acpAgents: visibleAcpAgents.map((a) => ({ id: a.id, name: a.name })),
-      includeOpenCode: openCodeOn,
+      includeClaude: isCatalogHarnessEnabled(harnessCatalog, 'claude'),
+      includeCodex: isCatalogHarnessEnabled(harnessCatalog, 'codex'),
+      includeOpenCode:
+        isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled,
       defaultHarness: suggestionHarness === undefined ? null : suggestionHarness,
       secondaryHarness,
     }),
-    [ranks, visibleAcpAgents, openCodeOn, suggestionHarness, secondaryHarness],
+    [ranks, visibleAcpAgents, harnessCatalog, experimentalAgentsEnabled, suggestionHarness, secondaryHarness],
   )
 
-  const fixedHarness = useMemo<SuggestionHarnessOption>(
-    () => orderedHarnesses[0] ?? {
-      key: 'claude',
-      provider: 'claude',
-      acpAgentId: null,
-      label: 'Claude Code',
-      sessionCount: 0,
-    },
-    [orderedHarnesses],
-  )
+  const fixedHarness = orderedHarnesses[0] ?? null
   const menuHarnesses = useMemo(() => orderedHarnesses.slice(1), [orderedHarnesses])
+  const hasEnabledHarness = orderedHarnesses.length > 0
 
   const effectiveAcpAgentId = selectedAcpAgent?.id ?? acpAgentId ?? DEFAULT_ACP_AGENT_ID
   const activeKey = preferredProvider === 'acp'
     ? suggestionHarnessKey('acp', effectiveAcpAgentId)
     : preferredProvider
-  const fixedActive = activeKey === fixedHarness.key
+  const fixedActive = fixedHarness != null && activeKey === fixedHarness.key
   const menuTabOption = useMemo(
     () => resolveMenuTabOption({
       menuHarnesses,
@@ -358,13 +397,14 @@ function ProviderSelector() {
     [menuHarnesses, activeKey, suggestionMenuHarness, secondaryHarness],
   )
   const menuTabLabel = menuTabOption ? optionLabel(menuTabOption) : 'Codex'
-  const menuTabActive = !fixedActive
+  const menuTabActive = hasEnabledHarness && !fixedActive
 
   // Empty-session: apply default (or auto Top1) only when that *target* changes
   // (settings / ranks). Do NOT re-force when the user switches to the secondary
   // tab — that was snapping harness selection back to default immediately.
   const lastAutoAppliedKeyRef = useRef<string | null>(null)
   useEffect(() => {
+    if (!fixedHarness) return
     if (suggestionHarness === undefined) return
     if (messageCount > 0) return
 
@@ -390,7 +430,9 @@ function ProviderSelector() {
     selectHarnessOption,
   ])
 
-  const iconKey = preferredProvider === 'acp' ? `acp:${effectiveAcpAgentId}` : preferredProvider
+  const iconKey = hasEnabledHarness
+    ? (preferredProvider === 'acp' ? `acp:${effectiveAcpAgentId}` : preferredProvider)
+    : 'none'
   const tabsValue = fixedActive ? 'fixed' : 'menu'
   const selectedAcpForHint = preferredProvider === 'acp'
     ? (visibleAcpAgents.find((a) => a.id === effectiveAcpAgentId) ?? selectedAcpAgent)
@@ -407,113 +449,137 @@ function ProviderSelector() {
     void selectHarnessOption(option, true, 'menu')
   }
 
+  const openHarnessSettings = () => {
+    useAppStore.getState().setSettingsTab('harnesses')
+    useAppStore.getState().navigateTo('settings')
+  }
+
   return (
     <div className="flex flex-col items-center gap-3">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={iconKey}
-          initial={{ opacity: 0, y: 12, scale: 0.85 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -12, scale: 0.85 }}
-          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <ProviderIcon
-            provider={preferredProvider}
-            acpAgentId={preferredProvider === 'acp' ? effectiveAcpAgentId : null}
-          />
-        </motion.div>
-      </AnimatePresence>
-      {preferredProvider !== 'acp' && preferredProvider !== 'opencode' && <ActiveProviderHint />}
-      <Tabs
-        value={tabsValue}
-        onValueChange={(v) => {
-          if (v === 'fixed') void selectHarnessOption(fixedHarness, true, 'fixed')
-        }}
-      >
-        <TabsList>
-          <TabsTrigger
-            value="fixed"
-            className={cn(tabTriggerLayoutClass, 'text-muted-foreground hover:text-foreground data-[state=active]:text-foreground')}
-          >
-            <span className="truncate">{optionLabel(fixedHarness)}</span>
-          </TabsTrigger>
-          {menuHarnesses.length > 0 && (
-            /*
-             * Outer shell owns tabs indicator measurement (`data-state=active`).
-             * DropdownMenuTrigger must keep its own data-state open/closed — if
-             * both live on the same node, Slot merge fights TabsList's
-             * `[data-state=active]` query and the sliding pill gets a stale or
-             * wrong box (oversized / clipped after Grok ↔ Codex switches).
-             */
-            <div
-              data-slot="tabs-trigger"
-              data-state={menuTabActive ? 'active' : 'inactive'}
-              className={cn(
-                tabTriggerLayoutClass,
-                'p-0',
-                menuTabActive ? 'text-foreground' : 'text-muted-foreground',
-              )}
+      {hasEnabledHarness ? (
+        <>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={iconKey}
+              initial={{ opacity: 0, y: 12, scale: 0.85 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.85 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             >
-              <DropdownMenu
-                open={agentMenuOpen}
-                onOpenChange={(open) => {
-                  if (open && !menuTabActive) return
-                  setAgentMenuOpen(open)
-                }}
-              >
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={menuTabActive}
+              <ProviderIcon
+                provider={preferredProvider}
+                acpAgentId={preferredProvider === 'acp' ? effectiveAcpAgentId : null}
+              />
+            </motion.div>
+          </AnimatePresence>
+          {preferredProvider !== 'acp' && preferredProvider !== 'opencode' && <ActiveProviderHint />}
+          {fixedHarness ? (
+            <Tabs
+              value={tabsValue}
+              onValueChange={(v) => {
+                if (v === 'fixed' && fixedHarness) {
+                  void selectHarnessOption(fixedHarness, true, 'fixed')
+                }
+              }}
+            >
+              <TabsList>
+                <TabsTrigger
+                  value="fixed"
+                  className={cn(tabTriggerLayoutClass, 'text-muted-foreground hover:text-foreground data-[state=active]:text-foreground')}
+                >
+                  <span className="truncate">{optionLabel(fixedHarness)}</span>
+                </TabsTrigger>
+                {menuHarnesses.length > 0 && (
+                  /*
+                   * Outer shell owns tabs indicator measurement (`data-state=active`).
+                   * DropdownMenuTrigger must keep its own data-state open/closed — if
+                   * both live on the same node, Slot merge fights TabsList's
+                   * `[data-state=active]` query and the sliding pill gets a stale or
+                   * wrong box (oversized / clipped after Grok ↔ Codex switches).
+                   */
+                  <div
+                    data-slot="tabs-trigger"
+                    data-state={menuTabActive ? 'active' : 'inactive'}
                     className={cn(
-                      'inline-flex min-w-0 max-w-[9.5rem] items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium transition-colors',
-                      'hover:text-foreground',
+                      tabTriggerLayoutClass,
+                      'p-0',
                       menuTabActive ? 'text-foreground' : 'text-muted-foreground',
                     )}
-                    onPointerDown={onMenuTabActivate}
-                    onClick={onMenuTabActivate}
                   >
-                    <span className="min-w-0 truncate">{menuTabLabel}</span>
-                    <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', agentMenuOpen && menuTabActive && 'rotate-180')} />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="center" className="min-w-48">
-                  {menuHarnesses.map((option, index) => {
-                    const prev = index > 0 ? menuHarnesses[index - 1] : null
-                    const showSeparator = !!prev && (prev.provider === 'acp') !== (option.provider === 'acp')
-                    const selected = activeKey === option.key
-                    const agentMeta = option.provider === 'acp'
-                      ? visibleAcpAgents.find((a) => a.id === option.acpAgentId)
-                      : null
-                    return (
-                      <div key={option.key}>
-                        {showSeparator && <DropdownMenuSeparator />}
-                        <DropdownMenuItem
-                          onClick={() => onSelectMenuItem(option)}
-                          className="gap-2 focus-visible:shadow-none"
-                        >
-                          <span className="min-w-0 flex-1 truncate">{optionLabel(option)}</span>
-                          {agentMeta && !agentMeta.installed && (
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {t('chat.suggestions.agentNotInstalled')}
-                            </span>
+                    <DropdownMenu
+                      open={agentMenuOpen}
+                      onOpenChange={(open) => {
+                        if (open && !menuTabActive) return
+                        setAgentMenuOpen(open)
+                      }}
+                    >
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={menuTabActive}
+                          className={cn(
+                            'inline-flex min-w-0 max-w-[9.5rem] items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium transition-colors',
+                            'hover:text-foreground',
+                            menuTabActive ? 'text-foreground' : 'text-muted-foreground',
                           )}
-                          {selected && <Check className="size-4 shrink-0 text-primary" />}
-                        </DropdownMenuItem>
-                      </div>
-                    )
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                          onPointerDown={onMenuTabActivate}
+                          onClick={onMenuTabActivate}
+                        >
+                          <span className="min-w-0 truncate">{menuTabLabel}</span>
+                          <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', agentMenuOpen && menuTabActive && 'rotate-180')} />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="center" className="min-w-48">
+                        {menuHarnesses.map((option, index) => {
+                          const prev = index > 0 ? menuHarnesses[index - 1] : null
+                          const showSeparator = !!prev && (prev.provider === 'acp') !== (option.provider === 'acp')
+                          const selected = activeKey === option.key
+                          const agentMeta = option.provider === 'acp'
+                            ? visibleAcpAgents.find((a) => a.id === option.acpAgentId)
+                            : null
+                          return (
+                            <div key={option.key}>
+                              {showSeparator && <DropdownMenuSeparator />}
+                              <DropdownMenuItem
+                                onClick={() => onSelectMenuItem(option)}
+                                className="gap-2 focus-visible:shadow-none"
+                              >
+                                <span className="min-w-0 flex-1 truncate">{optionLabel(option)}</span>
+                                {agentMeta && !agentMeta.installed && (
+                                  <span className="shrink-0 text-xs text-muted-foreground">
+                                    {t('chat.suggestions.agentNotInstalled')}
+                                  </span>
+                                )}
+                                {selected && <Check className="size-4 shrink-0 text-primary" />}
+                              </DropdownMenuItem>
+                            </div>
+                          )
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+              </TabsList>
+            </Tabs>
+          ) : null}
+          {preferredProvider === 'acp' && selectedAcpForHint && !selectedAcpForHint.installed && (
+            <p className="max-w-xs text-center text-xs text-muted-foreground">
+              {t('chat.suggestions.agentInstallHint')}
+            </p>
           )}
-        </TabsList>
-      </Tabs>
-      {preferredProvider === 'acp' && selectedAcpForHint && !selectedAcpForHint.installed && (
-        <p className="max-w-xs text-center text-xs text-muted-foreground">
-          {t('chat.suggestions.agentInstallHint')}
-        </p>
+        </>
+      ) : (
+        <div className="flex flex-col items-center gap-2 px-4">
+          <p className="text-sm text-muted-foreground">{t('chat.suggestions.noHarnessEnabled')}</p>
+          <button
+            type="button"
+            onClick={openHarnessSettings}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            {t('chat.suggestions.enableHarnesses')}
+          </button>
+        </div>
       )}
     </div>
   )

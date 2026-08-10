@@ -15,6 +15,11 @@ import type {
   SuggestionHarnessPreference,
 } from '@superone/shared/agent-types'
 import { suggestionHarnessKey } from '@/lib/suggestion-harness-order'
+import {
+  isCatalogHarnessEnabled,
+  isExperimentalAcpAgentEnabled,
+  type HarnessCatalogStatus,
+} from '@/lib/harness-visibility'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -176,7 +181,7 @@ export function HarnessPreferencePicker({
   const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
   const acpAgents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
-  const [openCodeOn, setOpenCodeOn] = useState(false)
+  const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(null)
 
   useEffect(() => {
     void initializeHarness('acp')
@@ -188,16 +193,19 @@ export function HarnessPreferencePicker({
       .listHarnesses?.()
       .then((list) => {
         if (cancelled) return
-        const row = list?.find((r) => r.id === 'opencode')
-        setOpenCodeOn(Boolean(row?.enabled && row.state !== 'disabled') || experimentalAgentsEnabled)
+        setHarnessCatalog(
+          Array.isArray(list)
+            ? list.map((r) => ({ id: r.id, enabled: r.enabled, state: r.state }))
+            : null,
+        )
       })
       .catch(() => {
-        if (!cancelled) setOpenCodeOn(experimentalAgentsEnabled)
+        if (!cancelled) setHarnessCatalog(null)
       })
     return () => {
       cancelled = true
     }
-  }, [experimentalAgentsEnabled])
+  }, [])
 
   const options = useMemo((): HarnessPreferenceOption[] => {
     const autoLabel = t('settings.general.defaultHarness.auto')
@@ -205,25 +213,31 @@ export function HarnessPreferencePicker({
     if (clearable) {
       list.push({ key: 'auto', value: null, pref: null, label: autoLabel })
     }
-    list.push(
-      {
+    if (isCatalogHarnessEnabled(harnessCatalog, 'claude')) {
+      list.push({
         key: 'claude',
         value: 'claude',
         pref: { provider: 'claude', acpAgentId: null },
         label: t('settings.general.harnessOptions.claude'),
-      },
-      {
+      })
+    }
+    if (isCatalogHarnessEnabled(harnessCatalog, 'codex')) {
+      list.push({
         key: 'codex',
         value: 'codex',
         pref: { provider: 'codex', acpAgentId: null },
         label: t('settings.general.harnessOptions.codex'),
-      },
-    )
+      })
+    }
     const visibleAgents = acpAgents.filter((agent) => {
       if (agent.id === 'opencode') return false
-      if (isGrokAcpAgent(agent.id)) return true
-      if (experimentalAgentsEnabled) return true
-      return enabledExperimentalAgents.includes(agent.id)
+      if (isGrokAcpAgent(agent.id)) {
+        return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
+      }
+      return isExperimentalAcpAgentEnabled(agent.id, {
+        enabledExperimentalAgents,
+        legacyExperimentalAgentsEnabled: experimentalAgentsEnabled,
+      })
     })
     for (const agent of visibleAgents) {
       const key = suggestionHarnessKey('acp', agent.id)
@@ -234,7 +248,10 @@ export function HarnessPreferencePicker({
         label: agent.name || acpAgentDisplayName(agent.id),
       })
     }
-    if (openCodeOn) {
+    if (
+      isCatalogHarnessEnabled(harnessCatalog, 'opencode') ||
+      experimentalAgentsEnabled
+    ) {
       list.push({
         key: 'opencode',
         value: 'opencode',
@@ -254,7 +271,7 @@ export function HarnessPreferencePicker({
     }
     if (excludeKey == null) return list
     return list.filter((o) => o.value == null || o.value !== excludeKey)
-  }, [acpAgents, clearable, enabledExperimentalAgents, excludeKey, experimentalAgentsEnabled, openCodeOn, t, value])
+  }, [acpAgents, clearable, enabledExperimentalAgents, excludeKey, experimentalAgentsEnabled, harnessCatalog, t, value])
 
   const selected = options.find((o) => o.value === value)
     ?? (value == null

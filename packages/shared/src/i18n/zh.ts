@@ -916,6 +916,8 @@ export const zh: Messages = {
       selectAgent: 'Agent',
       agentNotInstalled: '未安装',
       agentInstallHint: '请在本机安装对应 CLI 后重启 SuperOne。',
+      noHarnessEnabled: '尚未启用任何 Harness',
+      enableHarnesses: '前往设置启用',
     },
     additionalDirs: {
       label: '附加目录',

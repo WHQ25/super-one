@@ -4,7 +4,8 @@
  * Order:
  * 1. SUPERONE_CLAUDE_BINARY env override
  * 2. Managed install under ~/.superone/harness (catalog / tarball)
- * 3. Bundled Agent SDK platform package (dev + pre-P5 asarUnpack)
+ * 3. Local Agent SDK platform package — **dev / unpackaged only** (P5:
+ *    packaged apps do not ship the binary)
  *
  * Spawn-time hard gate: use resolveHarnessRuntime('claude') from
  * ../harness/resolve-runtime when a missing runtime must surface as an
@@ -14,12 +15,14 @@
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { managedNpmPrefix } from '@superone/runtime/harness'
+import { allowBundledHarnessPlatformPackages } from '../harness/bundled-fallback'
 import { resolveHarnessHomeRoot } from '../harness/home'
 import { resolveDesktopManagedBinary } from '../harness/tarball-installer'
 
 let cached: string | null | undefined
 
 function resolveBundledSdkBinary(): string | undefined {
+  if (!allowBundledHarnessPlatformPackages()) return undefined
   try {
     const req = createRequire(import.meta.url)
     const ext = process.platform === 'win32' ? '.exe' : ''

@@ -24,7 +24,12 @@ export type BlockReason =
   | 'user'
 
 /** Lifecycle wake that probes or preempts backoff without unblocking auth failures. */
-export type SupervisorWakeReason = 'app-resume' | 'network-online' | 'network-offline'
+export type SupervisorWakeReason =
+  | 'app-resume'
+  | 'network-online'
+  | 'network-offline'
+  /** Self-scheduled liveness check while connected (see healthProbeIntervalMs). */
+  | 'health-probe'
 
 export type RetryNowDisposition = 'started' | 'already_connected' | 'blocked' | 'disposed'
 
@@ -51,6 +56,12 @@ export interface SupervisorCoreOptions {
   invalidateTransport?: (reason: string) => void | Promise<void>
   /** Continuous connected time before attempt/backoff ladder resets. Default 30s. */
   stableAfterMs?: number
+  /**
+   * Period for self-scheduled healthProbe while connected. Default 30s; 0 disables.
+   * Resume/online edges alone leave a socket that dies on an awake, online
+   * machine undetected until the user sends something.
+   */
+  healthProbeIntervalMs?: number
   baseDelayMs?: number
   maxDelayMs?: number
   now?: () => number
@@ -67,6 +78,7 @@ export class ConnectionSupervisorCore {
   private generation = 0
   private timer: ReturnType<typeof setTimeout> | null = null
   private stableTimer: ReturnType<typeof setTimeout> | null = null
+  private probeTimer: ReturnType<typeof setInterval> | null = null
   private disposed = false
   private wakeInFlight: Promise<void> | null = null
   /** Latest wake reason while a wake is in flight (drained after current wake). */
@@ -74,6 +86,7 @@ export class ConnectionSupervisorCore {
   private readonly baseDelayMs: number
   private readonly maxDelayMs: number
   private readonly stableAfterMs: number
+  private readonly healthProbeIntervalMs: number
   private readonly now: () => number
   private readonly random: () => number
 
@@ -81,6 +94,7 @@ export class ConnectionSupervisorCore {
     this.baseDelayMs = opts.baseDelayMs ?? 500
     this.maxDelayMs = opts.maxDelayMs ?? 30_000
     this.stableAfterMs = opts.stableAfterMs ?? 30_000
+    this.healthProbeIntervalMs = opts.healthProbeIntervalMs ?? 30_000
     this.now = opts.now ?? (() => Date.now())
     this.random = opts.random ?? Math.random
   }
@@ -190,6 +204,7 @@ export class ConnectionSupervisorCore {
     this.disposed = true
     this.clearTimer()
     this.clearStableTimer()
+    this.stopHealthProbeTimer()
   }
 
   private async doWake(reason?: SupervisorWakeReason): Promise<void> {
@@ -316,8 +331,37 @@ export class ConnectionSupervisorCore {
   private transition(state: SupervisorState, error?: string): void {
     this.state = state
     if (error !== undefined) this.lastError = error
-    if (state === 'connected') this.lastError = undefined
+    if (state === 'connected') {
+      this.lastError = undefined
+      this.startHealthProbeTimer()
+    } else {
+      this.stopHealthProbeTimer()
+    }
     this.opts.onStateChange?.(this.getSnapshot())
+  }
+
+  /**
+   * Self-scheduled liveness check. Routed through wake() so it shares the
+   * single-flight guard and the connected-branch probe/invalidate/re-dial path.
+   */
+  private startHealthProbeTimer(): void {
+    this.stopHealthProbeTimer()
+    if (this.healthProbeIntervalMs <= 0 || !this.opts.healthProbe) return
+    this.probeTimer = setInterval(() => {
+      if (this.disposed || this.state !== 'connected') return
+      void this.wake('health-probe').catch(() => {
+        /* wake already records lastError */
+      })
+    }, this.healthProbeIntervalMs)
+    // A keepalive must never hold the process open on its own.
+    ;(this.probeTimer as { unref?: () => void }).unref?.()
+  }
+
+  private stopHealthProbeTimer(): void {
+    if (this.probeTimer) {
+      clearInterval(this.probeTimer)
+      this.probeTimer = null
+    }
   }
 
   private clearTimer(): void {

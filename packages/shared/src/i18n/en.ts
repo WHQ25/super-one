@@ -856,6 +856,11 @@ export type Messages = {
       loadingHint: string
     }
     dropToAttach: string
+    /** Composer send failures (local IPC or remote node). */
+    send: {
+      failed: string
+      remoteUnavailable: string
+    }
     permissionModeTitle: string
     sessionModeTitle: string
     sandboxModeTitle: string
@@ -3407,6 +3412,11 @@ export const en: Messages = {
       loadingHint: 'Fetching slash commands from the agent',
     },
     dropToAttach: 'Drop images or PDFs to attach',
+    send: {
+      failed: 'Failed to send message: {{message}}',
+      remoteUnavailable:
+        'Remote host is offline or reconnecting. Try again in a moment.',
+    },
     permissionModeTitle: 'Permission Mode',
     sessionModeTitle: 'Session Mode',
     sandboxModeTitle: 'Sandbox Mode',

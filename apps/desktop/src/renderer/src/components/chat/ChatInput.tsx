@@ -741,7 +741,17 @@ export function ChatInput() {
       const fullText = segments.flatMap((s) => ('attachmentId' in s ? [] : [s.text])).join('\n')
       // Pass the mosaic tile (or mini-window) scope so the turn lands on this pane's
       // session even when project-active still points at a sibling tile mid-switch.
-      sendMessage(fullText, segments, editorMentions, sentAttachments, sessionScope ?? undefined)
+      // Catch so transport/IPC failures are not silent unhandled rejections.
+      // Toast is raised inside sendMessageImpl; here we only prevent process noise.
+      void sendMessage(
+        fullText,
+        segments,
+        editorMentions,
+        sentAttachments,
+        sessionScope ?? undefined,
+      ).catch((err) => {
+        console.error('[ChatInput] sendMessage failed:', err)
+      })
     }, [activeProviderForResources, canSend, sendMessage, serializeAndClear, sessionScope, text])
 
     const handleKeyDownCore = useCallback(

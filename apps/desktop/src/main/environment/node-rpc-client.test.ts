@@ -52,36 +52,45 @@ function generateEd25519Pem(): string {
   return privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
 }
 
+async function connectClient(opts: {
+  supervised?: boolean
+  onUnexpectedDisconnect?: (error: string) => void
+  heartbeatIntervalMs?: number
+}) {
+  const client = new NodeRpcClient({
+    baseUrl: 'http://127.0.0.1:7788',
+    devicePrivateKeyPem: generateEd25519Pem(),
+    getWsTicket: async () => 'ticket.abc',
+    expectedEnvironmentId: 'env-1',
+    supervised: opts.supervised,
+    onUnexpectedDisconnect: opts.onUnexpectedDisconnect,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs,
+  })
+  const connectPromise = client.connect()
+  await new Promise((r) => setTimeout(r, 0))
+  const ws = lastSocket()
+  const sent = ws.send.mock.calls[0]?.[0] as string
+  const hs = JSON.parse(sent) as { requestId: string }
+  ws.emit(
+    'message',
+    Buffer.from(JSON.stringify({ type: 'handshake_ok', requestId: hs.requestId })),
+  )
+  await connectPromise
+  return { client, ws }
+}
+
+/** Frames the client pushed on the socket, excluding the handshake. */
+function sentFrames(ws: ReturnType<typeof lastSocket>): Array<{ type?: string; requestId?: string }> {
+  return ws.send.mock.calls
+    .map((c) => JSON.parse(c[0] as string) as { type?: string; requestId?: string })
+    .filter((m) => m.type !== 'handshake')
+}
+
 describe('NodeRpcClient disconnect signaling', () => {
   afterEach(() => {
     sockets.length = 0
     vi.clearAllMocks()
   })
-
-  async function connectClient(opts: {
-    supervised?: boolean
-    onUnexpectedDisconnect?: (error: string) => void
-  }) {
-    const client = new NodeRpcClient({
-      baseUrl: 'http://127.0.0.1:7788',
-      devicePrivateKeyPem: generateEd25519Pem(),
-      getWsTicket: async () => 'ticket.abc',
-      expectedEnvironmentId: 'env-1',
-      supervised: opts.supervised,
-      onUnexpectedDisconnect: opts.onUnexpectedDisconnect,
-    })
-    const connectPromise = client.connect()
-    await new Promise((r) => setTimeout(r, 0))
-    const ws = lastSocket()
-    const sent = ws.send.mock.calls[0]?.[0] as string
-    const hs = JSON.parse(sent) as { requestId: string }
-    ws.emit(
-      'message',
-      Buffer.from(JSON.stringify({ type: 'handshake_ok', requestId: hs.requestId })),
-    )
-    await connectPromise
-    return { client, ws }
-  }
 
   it('emits onUnexpectedDisconnect once when the promoted socket closes', async () => {
     const onUnexpectedDisconnect = vi.fn()
@@ -148,5 +157,91 @@ describe('NodeRpcClient disconnect signaling', () => {
     ws.emit('close')
     expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
     client.close()
+  })
+})
+
+/**
+ * An SSH-forwarded socket can die without ever emitting 'close' (the tunnel is
+ * gone but readyState stays OPEN). Without these signals the supervisor stays in
+ * `connected` forever and every send silently times out.
+ */
+describe('NodeRpcClient half-open transport detection', () => {
+  afterEach(() => {
+    sockets.length = 0
+    vi.clearAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('reports the transport dead when an rpc times out on the live socket', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const onUnexpectedDisconnect = vi.fn()
+    const { client } = await connectClient({ supervised: true, onUnexpectedDisconnect })
+    expect(client.connected).toBe(true)
+
+    // Server never answers — exactly what a dead tunnel looks like to the client.
+    const pending = client.rpc('environment.health').catch((e: Error) => e)
+    await vi.advanceTimersByTimeAsync(16_000)
+    const err = (await pending) as Error
+
+    expect(err.message).toMatch(/rpc timeout/)
+    expect(onUnexpectedDisconnect).toHaveBeenCalledTimes(1)
+    expect(client.connected).toBe(false)
+  })
+
+  it('does not report dead when a stale socket times out after replacement', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const onUnexpectedDisconnect = vi.fn()
+    const { client } = await connectClient({ supervised: true, onUnexpectedDisconnect })
+    const pending = client.rpc('environment.health').catch((e: Error) => e)
+    // Supervisor swaps the transport before the timeout lands.
+    client.invalidateTransport('replaced')
+    await vi.advanceTimersByTimeAsync(16_000)
+    await pending
+    expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
+  })
+
+  it('sends periodic heartbeats while the socket is idle', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { client, ws } = await connectClient({ supervised: true, heartbeatIntervalMs: 1_000 })
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    const pings = sentFrames(ws).filter((m) => m.type === 'ping')
+    expect(pings).toHaveLength(1)
+
+    // Answering keeps the socket healthy across further ticks.
+    ws.emit('message', Buffer.from(JSON.stringify({ type: 'pong', requestId: pings[0]!.requestId })))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(client.connected).toBe(true)
+    client.close()
+  })
+
+  it('declares the transport dead after consecutive unanswered heartbeats', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const onUnexpectedDisconnect = vi.fn()
+    const { client } = await connectClient({
+      supervised: true,
+      onUnexpectedDisconnect,
+      heartbeatIntervalMs: 1_000,
+    })
+
+    // Tick 1 pings; ticks 2 and 3 find it unanswered — two misses is the ceiling.
+    await vi.advanceTimersByTimeAsync(3_100)
+
+    expect(onUnexpectedDisconnect).toHaveBeenCalledTimes(1)
+    expect(onUnexpectedDisconnect.mock.calls[0]?.[0]).toMatch(/heartbeat/i)
+    expect(client.connected).toBe(false)
+  })
+
+  it('stops heartbeats after close so a disposed client never fires disconnect', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const onUnexpectedDisconnect = vi.fn()
+    const { client } = await connectClient({
+      supervised: true,
+      onUnexpectedDisconnect,
+      heartbeatIntervalMs: 1_000,
+    })
+    client.close()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
   })
 })

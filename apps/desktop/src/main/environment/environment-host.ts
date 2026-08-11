@@ -35,6 +35,7 @@ import { probeEndpointHealth, discoverTailscaleHost } from './endpoint-probes'
 import type { KnownEnvironmentRecord } from './node-connection-manager'
 import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
+import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
 import {
   bootstrapNodeOverSsh,
   restartNodeOverSsh,
@@ -1507,6 +1508,16 @@ export class EnvironmentHost {
       try {
         last = await gateway.sessions.get({ environmentId, sessionId: input.sessionId })
       } catch {
+        // Auth/identity blocked and offline never self-heal via this loop —
+        // spinning forever leaves the chat stuck in streaming with no UI error.
+        const supervisor =
+          this.lastStatus.get(connectionId) ?? this.connections.getSupervisor(connectionId)
+        const decision = shouldAbortRemoteSessionDrain(supervisor, {
+          hasClient: Boolean(this.connections.getClient(connectionId)),
+        })
+        if (decision.abort) {
+          throw Object.assign(new Error(decision.reason), { code: 'failed_precondition' })
+        }
         await new Promise((r) => setTimeout(r, 200))
         continue
       }
@@ -2767,20 +2778,29 @@ export class EnvironmentHost {
 
   private publishStatus(snapshot: SupervisorSnapshot): void {
     this.lastStatus.set(snapshot.connectionId, snapshot)
-    // Structured diagnostics (no secrets).
+    // Structured diagnostics (no secrets) → electron-log file (main.log / dev.log).
+    // Lazy import: a static import of ../logger pulls @electron-toolkit/utils and
+    // breaks unit tests that only partial-mock `electron`. console.info alone never
+    // lands on disk (log.initialize() is not called).
     try {
-      // eslint-disable-next-line no-console
-      console.info(
-        formatConnectionLog({
-          type: 'connect_result',
-          connectionId: snapshot.connectionId,
-          state: snapshot.state,
-          attempt: snapshot.attempt,
-          generation: snapshot.generation,
-          error: snapshot.lastError,
-          blockReason: snapshot.blockReason,
-        }),
-      )
+      const line = formatConnectionLog({
+        type: 'connect_result',
+        connectionId: snapshot.connectionId,
+        state: snapshot.state,
+        attempt: snapshot.attempt,
+        generation: snapshot.generation,
+        error: snapshot.lastError,
+        blockReason: snapshot.blockReason,
+      })
+      void import('../logger')
+        .then((m) => {
+          const log = m.default as { info: (s: string) => void }
+          log.info(line)
+        })
+        .catch(() => {
+          // eslint-disable-next-line no-console
+          console.info(line)
+        })
     } catch {
       /* ignore log failures */
     }

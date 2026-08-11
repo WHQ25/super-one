@@ -19,8 +19,13 @@ export interface NodeRpcClientOptions {
    * promoted socket invokes onUnexpectedDisconnect once.
    */
   supervised?: boolean
-  /** Fired after an unexpected close of the current promoted socket. */
+  /**
+   * Fired after the current promoted socket is lost — either an unexpected
+   * close, an unanswered heartbeat, or an rpc that timed out on it.
+   */
   onUnexpectedDisconnect?: (error: string) => void
+  /** Application-level keepalive period. Default 15s; 0 disables. */
+  heartbeatIntervalMs?: number
 }
 
 type Pending = {
@@ -39,6 +44,13 @@ const LONG_RPC_TIMEOUT_MS = 300_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 /** One reconnect+resend after transport loss within a single rpc() call. */
 const TRANSPORT_RETRY_ATTEMPTS = 2
+/**
+ * Application-level keepalive. A tunneled socket can stay readyState=OPEN long
+ * after the tunnel died, so `close` alone is not a reliable liveness signal.
+ */
+const HEARTBEAT_INTERVAL_MS = 15_000
+/** Consecutive unanswered pings before the socket is declared dead. */
+const HEARTBEAT_MAX_MISSED = 2
 
 function rpcTimeoutMs(method: string): number {
   // Only truly long mutators get 5 minutes — status/branches must not sit on 300s.
@@ -89,9 +101,15 @@ export class NodeRpcClient {
   private connectGeneration = 0
   /** Reject the in-flight connect immediately from `close()`. */
   private connectFail: ((err: Error) => void) | null = null
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  /** requestId of a ping still awaiting its pong, per heartbeat tick. */
+  private pendingPingId: string | null = null
+  private missedPongs = 0
+  private readonly heartbeatIntervalMs: number
 
   constructor(private readonly opts: NodeRpcClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '')
+    this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS
   }
 
   get connected(): boolean {
@@ -258,6 +276,7 @@ export class NodeRpcClient {
               if (wasCurrent) {
                 this.ws = null
                 this.wsSocketId = 0
+                this.stopHeartbeat()
               }
               // Only reject requests sent on THIS socket — never a replacement socket.
               this.rejectPendingForSocket(socketId, transportError('websocket closed'))
@@ -265,6 +284,7 @@ export class NodeRpcClient {
                 this.opts.onUnexpectedDisconnect?.('websocket closed')
               }
             })
+            this.startHeartbeat()
             settled = true
             resolve()
           } catch (err) {
@@ -347,6 +367,7 @@ export class NodeRpcClient {
     const oldId = this.wsSocketId
     this.ws = null
     this.wsSocketId = 0
+    this.stopHeartbeat()
     if (oldId) {
       this.rejectPendingForSocket(oldId, transportError('websocket closed'))
     }
@@ -357,6 +378,65 @@ export class NodeRpcClient {
       } catch {
         /* ignore */
       }
+    }
+  }
+
+  /**
+   * Tear down a socket that is provably dead even though it never emitted
+   * `close` (half-open tunnel), and hand recovery to the supervisor.
+   * No-op when `socketId` is no longer the promoted socket.
+   */
+  private reportTransportDead(reason: string, socketId: number): void {
+    if (this.closed) return
+    if (!socketId || socketId !== this.wsSocketId) return
+    this.dropCurrentSocket()
+    this.opts.onUnexpectedDisconnect?.(reason)
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat()
+    if (this.heartbeatIntervalMs <= 0) return
+    this.pendingPingId = null
+    this.missedPongs = 0
+    this.heartbeatTimer = setInterval(() => this.heartbeatTick(), this.heartbeatIntervalMs)
+    // Never hold the event loop open for a keepalive.
+    this.heartbeatTimer.unref?.()
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+    this.pendingPingId = null
+    this.missedPongs = 0
+  }
+
+  private heartbeatTick(): void {
+    const ws = this.ws
+    const socketId = this.wsSocketId
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+    if (this.pendingPingId) {
+      this.missedPongs += 1
+      if (this.missedPongs >= HEARTBEAT_MAX_MISSED) {
+        this.reportTransportDead(
+          `heartbeat timeout after ${this.missedPongs} missed pongs`,
+          socketId,
+        )
+        return
+      }
+    }
+
+    const requestId = randomUUID()
+    this.pendingPingId = requestId
+    try {
+      ws.send(JSON.stringify({ type: 'ping', requestId }))
+    } catch (err) {
+      this.reportTransportDead(
+        `heartbeat send failed: ${err instanceof Error ? err.message : String(err)}`,
+        socketId,
+      )
     }
   }
 
@@ -385,6 +465,10 @@ export class NodeRpcClient {
       const timer = setTimeout(() => {
         this.pending.delete(requestId)
         reject(transportError(`rpc timeout: ${method}`))
+        // A silent timeout on the live socket means the transport is gone even
+        // though no `close` arrived (dead SSH tunnel). Escalate so the supervisor
+        // reconnects instead of leaving every later send to time out too.
+        this.reportTransportDead(`rpc timeout: ${method}`, socketId)
       }, rpcTimeoutMs(method))
       this.pending.set(requestId, {
         resolve: (v) => resolve(v as T),
@@ -472,6 +556,7 @@ export class NodeRpcClient {
   close(): void {
     this.closed = true
     this.connectGeneration += 1
+    this.stopHeartbeat()
     // Synchronously reject in-flight connect (clears handshake timer via fail()).
     const cancelConnect = this.connectFail
     this.connectFail = null
@@ -512,6 +597,12 @@ export class NodeRpcClient {
     try {
       msg = JSON.parse(raw)
     } catch {
+      return
+    }
+    if (msg.type === 'pong') {
+      // Any pong proves liveness, even a late one from a previous tick.
+      this.pendingPingId = null
+      this.missedPongs = 0
       return
     }
     if (!msg.requestId) return

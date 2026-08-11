@@ -46,8 +46,22 @@ const mockCodexGetAuthStatus = vi.fn().mockResolvedValue({ mode: 'auto', signedI
 const mockEnvGetSession = vi.fn()
 const mockEnvCreateSession = vi.fn()
 const mockEnvSendSessionMessage = vi.fn()
+const mockToastError = vi.fn()
 
 const mockRequestSessionRecap = vi.fn().mockResolvedValue(true)
+
+vi.mock('sonner', () => ({
+  toast: { error: (...args: unknown[]) => mockToastError(...args) },
+}))
+vi.mock('i18next', () => ({
+  default: {
+    t: (key: string, opts?: { message?: string }) => {
+      if (key === 'chat.send.remoteUnavailable') return 'remote-unavailable'
+      if (key === 'chat.send.failed') return `failed:${opts?.message ?? ''}`
+      return key
+    },
+  },
+}))
 
 vi.stubGlobal('window', {
   agent: {
@@ -133,6 +147,7 @@ beforeEach(() => {
       { id: 'a1', role: 'assistant', text: '[codex] done', createdAt: Date.now() },
     ],
   })
+  mockToastError.mockReset()
   mockMiniApps.length = 0
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
@@ -295,7 +310,28 @@ describe('sendMessageImpl: remote node', () => {
       }),
     )
   })
+
+  it('toasts and marks error when remote send fails (no silent swallow)', async () => {
+    seedProject(remotePath, 'node-sid-fail', {
+      preferredProvider: 'claude',
+      sessionProvider: 'claude',
+    })
+    mockEnvGetSession.mockResolvedValueOnce({
+      sessionId: 'node-sid-fail',
+      status: 'idle',
+      transcript: [],
+    })
+    mockEnvSendSessionMessage.mockRejectedValueOnce(new Error('rpc timeout: session.send'))
+
+    await expect(useChatStore.getState().sendMessage('hello')).rejects.toThrow(/rpc timeout/)
+
+    const sess = getActiveSession(remotePath)
+    expect(sess.awaitingAssistantReply).toBe(false)
+    expect(sess.status).toBe('error')
+    expect(mockToastError).toHaveBeenCalledWith('remote-unavailable')
+  })
 })
+
 
 describe('sendMessageImpl: worktree activation', () => {
   it('activates worktree, sets active worktree, and resets session state on success', async () => {

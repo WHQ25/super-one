@@ -391,4 +391,85 @@ describe('ConnectionSupervisor', () => {
     expect(calls).toBe(2)
     supervisor.dispose()
   })
+
+  /**
+   * Without a periodic probe the only liveness checks are OS resume and
+   * network-online edges, so a socket that dies while the machine stays awake
+   * and online is never noticed.
+   */
+  describe('periodic health probing', () => {
+    it('probes on an interval while connected and stays connected when healthy', async () => {
+      let probes = 0
+      const supervisor = new ConnectionSupervisor({
+        environmentId: 'env-1',
+        connectionId: 'c-1',
+        stableAfterMs: 0,
+        healthProbeIntervalMs: 20,
+        connect: async () => {},
+        healthProbe: async () => {
+          probes += 1
+          return true
+        },
+      })
+      await supervisor.start()
+      expect(supervisor.getSnapshot().state).toBe('connected')
+
+      await new Promise((r) => setTimeout(r, 70))
+      expect(probes).toBeGreaterThanOrEqual(2)
+      expect(supervisor.getSnapshot().state).toBe('connected')
+      supervisor.dispose()
+    })
+
+    it('invalidates the transport and re-dials when a periodic probe fails', async () => {
+      let healthy = true
+      let connects = 0
+      const invalidated: string[] = []
+      const supervisor = new ConnectionSupervisor({
+        environmentId: 'env-1',
+        connectionId: 'c-1',
+        stableAfterMs: 0,
+        healthProbeIntervalMs: 20,
+        baseDelayMs: 5,
+        random: () => 0,
+        connect: async () => {
+          connects += 1
+        },
+        healthProbe: async () => healthy,
+        invalidateTransport: (reason) => {
+          invalidated.push(reason)
+        },
+      })
+      await supervisor.start()
+      expect(connects).toBe(1)
+
+      healthy = false
+      await new Promise((r) => setTimeout(r, 70))
+
+      expect(invalidated.length).toBeGreaterThanOrEqual(1)
+      expect(connects).toBeGreaterThanOrEqual(2)
+      expect(supervisor.getSnapshot().state).toBe('connected')
+      supervisor.dispose()
+    })
+
+    it('stops probing once disposed', async () => {
+      let probes = 0
+      const supervisor = new ConnectionSupervisor({
+        environmentId: 'env-1',
+        connectionId: 'c-1',
+        stableAfterMs: 0,
+        healthProbeIntervalMs: 20,
+        connect: async () => {},
+        healthProbe: async () => {
+          probes += 1
+          return true
+        },
+      })
+      await supervisor.start()
+      await new Promise((r) => setTimeout(r, 30))
+      supervisor.dispose()
+      const after = probes
+      await new Promise((r) => setTimeout(r, 60))
+      expect(probes).toBe(after)
+    })
+  })
 })

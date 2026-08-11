@@ -36,6 +36,7 @@ import {
 } from '@/lib/remote-session-messages'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { toastSendFailure } from './send-error-toast'
 
 /**
  * Body of useChatStore.sendMessage extracted as a free-standing helper so
@@ -619,6 +620,9 @@ export async function sendMessageImpl(
       }
     } catch (err) {
       patchSession(() => ({ awaitingAssistantReply: false, status: 'error' }))
+      // ChatInput fire-and-forgets sendMessage; without a toast the bubble appears
+      // and nothing else happens (silent unhandled rejection).
+      toastSendFailure(err)
       throw err
     }
     return
@@ -1189,6 +1193,7 @@ export async function sendMessageImpl(
     if (!isQueuedSend) {
       patchSession(() => ({ awaitingAssistantReply: false }))
     }
+    toastSendFailure(err)
     throw err
   }
 }

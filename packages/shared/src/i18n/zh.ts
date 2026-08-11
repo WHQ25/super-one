@@ -901,6 +901,10 @@ export const zh: Messages = {
       loadingHint: '正在从 agent 获取命令列表',
     },
     dropToAttach: '拖入图片或 PDF 以添加附件',
+    send: {
+      failed: '发送失败：{{message}}',
+      remoteUnavailable: '远程主机已断开或正在重连，请稍后再试。',
+    },
     permissionModeTitle: '权限模式',
     sessionModeTitle: '会话模式',
     sandboxModeTitle: '沙盒模式',

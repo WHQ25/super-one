@@ -40,7 +40,17 @@ type AppView =
 
 export type OnboardingStep = 'welcome' | 'discover'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
-type UpdateStatus = 'idle' | 'checking' | 'available' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
+type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'preparing'
+  | 'downloading'
+  | 'downloading-harness'
+  | 'harness-error'
+  | 'ready'
+  | 'up-to-date'
+  | 'error'
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'harnesses'
 
 /** Nested config pages opened from Settings → Harnesses (reuse existing page components). */
@@ -102,6 +112,10 @@ interface AppState {
   updateStatus: UpdateStatus
   updateVersion: string | null
   updateProgress: number
+  /** Which phase is producing updateProgress (app binary vs harness pre-fetch). */
+  updatePhase: 'app' | 'harness' | null
+  updateHarnessId: string | null
+  updateErrorMessage: string | null
 
   // Per-project worktree state
   _worktrees: Record<string, WorktreeState>
@@ -166,6 +180,8 @@ interface AppState {
   handleUpdateEvent: (event: UpdateEvent) => void
   downloadUpdate: () => void
   installUpdate: () => void
+  /** Retry harness pre-fetch after harness-error (app binary already local). */
+  retryUpdateHarness: () => void
   dismissUpdate: () => void
 
   // Remote control
@@ -479,6 +495,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateStatus: 'idle',
   updateVersion: null,
   updateProgress: 0,
+  updatePhase: null,
+  updateHarnessId: null,
+  updateErrorMessage: null,
   installStatus: 'idle',
   installOutput: '',
   onboardingStep: 'welcome',
@@ -490,8 +509,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       onboardingEpoch: CURRENT_ONBOARDING_EPOCH,
     })
     set({ onboardingStep: 'welcome' })
-    // Align managed pins then enter main (continueToMain skips onboarding).
-    set({ view: 'harness-align' })
+    // First enable may already have installed pins; only block when still misaligned.
+    const needsAlign = await window.app.needsHarnessAlign().catch(() => true)
+    if (needsAlign) {
+      set({ view: 'harness-align' })
+      return
+    }
+    await enterMainAfterGates(get, set)
   },
   finishHarnessAlign: async () => {
     await enterMainAfterGates(get, set)
@@ -547,26 +571,65 @@ export const useAppStore = create<AppState>((set, get) => ({
   handleUpdateEvent: (event: UpdateEvent) => {
     switch (event.type) {
       case 'checking':
-        set({ updateStatus: 'checking' })
+        set({
+          updateStatus: 'checking',
+          updatePhase: null,
+          updateHarnessId: null,
+          updateErrorMessage: null,
+        })
         break
       case 'available':
         // Stay here until the user explicitly clicks Download/Update.
-        set({ updateStatus: 'available', updateVersion: event.version, updateProgress: 0 })
+        set({
+          updateStatus: 'available',
+          updateVersion: event.version,
+          updateProgress: 0,
+          updatePhase: null,
+          updateHarnessId: null,
+          updateErrorMessage: null,
+        })
         break
       case 'not-available':
-        set({ updateStatus: 'up-to-date' })
+        set({ updateStatus: 'up-to-date', updatePhase: null, updateHarnessId: null })
         setTimeout(() => {
           if (get().updateStatus === 'up-to-date') set({ updateStatus: 'idle' })
         }, 3000)
         break
-      case 'download-progress':
-        set({ updateStatus: 'downloading', updateProgress: event.percent })
+      case 'download-progress': {
+        const phase = event.phase ?? 'app'
+        set({
+          updateStatus: phase === 'harness' ? 'downloading-harness' : 'downloading',
+          updateProgress: event.percent,
+          updatePhase: phase,
+          updateHarnessId: event.harnessId ?? null,
+          updateErrorMessage: null,
+        })
         break
+      }
       case 'downloaded':
-        set({ updateStatus: 'ready', updateVersion: event.version })
+        set({
+          updateStatus: 'ready',
+          updateVersion: event.version,
+          updateProgress: 100,
+          updatePhase: null,
+          updateHarnessId: null,
+          updateErrorMessage: null,
+        })
+        break
+      case 'harness-error':
+        set({
+          updateStatus: 'harness-error',
+          updateVersion: event.version,
+          updatePhase: 'harness',
+          updateErrorMessage: event.message,
+        })
         break
       case 'error':
-        set({ updateStatus: 'error' })
+        set({
+          updateStatus: 'error',
+          updateErrorMessage: event.message,
+          updatePhase: null,
+        })
         break
     }
   },
@@ -574,7 +637,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadUpdate: () => {
     // Optimistic feedback before the first download-progress event arrives.
     if (get().updateStatus === 'available') {
-      set({ updateStatus: 'preparing', updateProgress: 0 })
+      set({
+        updateStatus: 'preparing',
+        updateProgress: 0,
+        updatePhase: 'app',
+        updateErrorMessage: null,
+      })
     }
     void window.app.downloadUpdate()
   },
@@ -583,8 +651,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     window.app.installUpdate()
   },
 
+  retryUpdateHarness: () => {
+    if (get().updateStatus !== 'harness-error') return
+    set({
+      updateStatus: 'downloading-harness',
+      updateProgress: 0,
+      updatePhase: 'harness',
+      updateErrorMessage: null,
+    })
+    void window.app.retryUpdateHarness()
+  },
+
   dismissUpdate: () => {
-    set({ updateStatus: 'idle' })
+    set({
+      updateStatus: 'idle',
+      updatePhase: null,
+      updateHarnessId: null,
+      updateErrorMessage: null,
+    })
   },
 
   removeRecentFolder: async (folderPath: string) => {
@@ -685,8 +769,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       return
     }
 
-    // Every launch: pin-align enabled managed harnesses before main UI.
-    set({ view: 'harness-align' })
+    // Fallback only: pin-align when an enabled harness is not at the process pin.
+    // Happy path pre-fetches during app update so this is usually a no-op skip.
+    const needsAlign = await window.app.needsHarnessAlign().catch(() => true)
+    if (needsAlign) {
+      set({ view: 'harness-align' })
+      return
+    }
+    await enterMainAfterGates(get, set)
   },
 
   navigateTo: (view) => {

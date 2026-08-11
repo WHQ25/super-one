@@ -266,10 +266,15 @@ unless handled. **Shipped approach (epoch onboarding + startup pin gate):**
    `onboardingEpoch` + `onboardingCompletedAt`.
 2. Users re-select harnesses (PATH scan pre-checks detected CLIs; Claude default when
    none). Enable installs SuperOne-managed pins for Claude/Codex (`forcePin`).
-3. **Every app launch** after onboarding: `harness:alignEnabled` runs before main UI.
-   For each **enabled** Claude/Codex row, if local managed `runtimeVersion` ≠ app pin,
-   reinstall from R2/npm (blocking `harness-align` view + progress). Failures show retry.
-4. Grok / OpenCode stay external (PATH); align gate does not download them.
+3. **App update (happy path)**: after the app binary downloads, pre-fetch enabled
+   Claude/Codex pins for the *target* app version (`app/harness-pins/<version>.json`
+   on the CDN, falling back to the running process pins). Restart is blocked until
+   pre-fetch succeeds (`harness-error` + retry). `autoInstallOnAppQuit` stays false
+   until the package is fully ready.
+4. **Startup fallback**: if any enabled harness is not pin-aligned (forced restart,
+   wiped install, missing pins file), blocking `harness-align` still runs. When
+   already aligned, the gate is skipped with no flash.
+5. Grok / OpenCode stay external (PATH); align / pre-fetch do not download them.
 
 There is no dual-path period — the alpha channel absorbs a one-time forced onboard.
 
@@ -445,13 +450,14 @@ Examples:
 |---|---|
 | Path helpers + `fetchHarnessChannelManifest` | `packages/runtime/src/harness/cdn.ts` |
 | Optional pin fields `url` / `npmName` / `npmVersion` | `ManagedArtifactPin` in `managed-release.ts` |
-| Publish script | `scripts/publish-harness-artifacts.ts` (`bun run publish:harness -- --channel alpha`) |
-| CI | `.github/workflows/publish-harness.yml` (workflow_dispatch; dry_run supported) |
+| App update pre-fetch pins | `app/harness-pins/<appVersion>.json` via `app-harness-pins.ts` |
+| Publish script | `scripts/publish-harness-artifacts.ts` (`bun run publish:harness -- --channel alpha`) — also writes app pins |
+| CI | `.github/workflows/publish-harness.yml` (workflow_dispatch; optional `app_version`; dry_run supported) |
 | Desktop fetch order | R2 pin URL → npm registry; pin SHA-256 validates both |
 
 Channel selection on desktop: `SUPERONE_HARNESS_CHANNEL` → `channelFromVersion(app version)` → `alpha`.
 
-Pins always come from `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` in source — the workflow accepts only a channel, never free-form package versions.
+Pins always come from `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` in source — the workflow accepts only a channel (and optional app-version key), never free-form package versions. One `publish:harness --upload` publishes both the channel manifest and `app/harness-pins/<version>.json` so desktop clients can pre-fetch target pins before Restart.
 
 Verification:
 

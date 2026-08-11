@@ -1,15 +1,20 @@
 #!/usr/bin/env bun
 /**
  * Pack pinned harness runtime tarballs, compute SHA-256, stage for R2, and
- * write harness/manifest/<channel>.json.
+ * write:
+ *   - harness/manifest/<channel>.json   (R2-first install pins)
+ *   - app/harness-pins/<appVersion>.json (desktop update pre-fetch for target app)
  *
  * Pins are read from @superone/runtime source constants — never free-form CLI
  * version args — so the manifest cannot drift from the code (design §4).
+ * App-version pins use the monorepo root package.json version (same as the
+ * desktop release they ship with) unless --app-version is passed.
  *
  * Usage:
  *   bun scripts/publish-harness-artifacts.ts --channel alpha
  *   bun scripts/publish-harness-artifacts.ts --channel alpha --out staging
  *   bun scripts/publish-harness-artifacts.ts --channel alpha --upload
+ *   bun scripts/publish-harness-artifacts.ts --channel alpha --app-version 0.12.0-alpha.3
  *
  * --upload requires AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / R2_ACCOUNT_ID
  * (same secrets as promote.yml) and aws CLI.
@@ -50,6 +55,11 @@ import {
   isHarnessManifestChannel,
   type HarnessManifestChannel,
 } from '../packages/runtime/src/harness/cdn.ts'
+import {
+  appHarnessPinsObjectKey,
+  appHarnessPinsUrl,
+  currentProcessAppHarnessPins,
+} from '../packages/runtime/src/harness/app-harness-pins.ts'
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 
@@ -137,12 +147,15 @@ function parseArgs(argv: string[]): {
   upload: boolean
   baseUrl: string
   skipPack: boolean
+  /** Override root package.json version for app/harness-pins/<version>.json */
+  appVersion: string | null
 } {
   let channel: HarnessManifestChannel | null = null
   let outDir = join(REPO_ROOT, 'staging-harness')
   let upload = false
   let baseUrl = HARNESS_CDN_BASE
   let skipPack = false
+  let appVersion: string | null = null
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--channel') {
@@ -157,18 +170,24 @@ function parseArgs(argv: string[]): {
       upload = true
     } else if (a === '--base-url') {
       baseUrl = (argv[++i] ?? baseUrl).replace(/\/+$/, '')
+    } else if (a === '--app-version') {
+      const v = argv[++i]?.trim()
+      if (!v) throw new Error('--app-version requires a value')
+      appVersion = v
     } else if (a === '--skip-pack') {
       // Rebuild manifest from already-staged artifacts (dev only).
       skipPack = true
     } else if (a === '--help' || a === '-h') {
-      console.log(`Usage: bun scripts/publish-harness-artifacts.ts --channel <alpha|beta|stable> [--out dir] [--upload]`)
+      console.log(
+        'Usage: bun scripts/publish-harness-artifacts.ts --channel <alpha|beta|stable> [--out dir] [--upload] [--app-version X.Y.Z]',
+      )
       process.exit(0)
     } else {
       throw new Error(`unknown arg: ${a}`)
     }
   }
   if (!channel) throw new Error('--channel is required')
-  return { channel, outDir, upload, baseUrl, skipPack }
+  return { channel, outDir, upload, baseUrl, skipPack, appVersion }
 }
 
 function packHarness(
@@ -297,9 +316,31 @@ async function main(): Promise<void> {
       `artifacts: claude=${claude.files.length} codex=${codex.files.length} total=${claude.files.length + codex.files.length}`,
     )
 
+    // Desktop strict update pre-fetch: same pin constants, keyed by app version.
+    const appVersion = args.appVersion ?? cliVersion
+    const appPins = currentProcessAppHarnessPins(appVersion)
+    // Guard: process pins must match the constants we just packed (single source of truth).
+    if (appPins.pins.claude !== OFFICIAL_CLAUDE_SDK_VERSION) {
+      throw new Error(
+        `app pin claude=${appPins.pins.claude} != OFFICIAL_CLAUDE_SDK_VERSION=${OFFICIAL_CLAUDE_SDK_VERSION}`,
+      )
+    }
+    if (appPins.pins.codex !== OFFICIAL_CODEX_NPM_VERSION) {
+      throw new Error(
+        `app pin codex=${appPins.pins.codex} != OFFICIAL_CODEX_NPM_VERSION=${OFFICIAL_CODEX_NPM_VERSION}`,
+      )
+    }
+    const appPinsKey = appHarnessPinsObjectKey(appVersion)
+    const appPinsPath = join(args.outDir, appPinsKey)
+    mkdirSync(join(appPinsPath, '..'), { recursive: true })
+    writeFileSync(appPinsPath, `${JSON.stringify(appPins, null, 2)}\n`)
+    console.log(`app harness pins → ${appPinsPath}`)
+    console.log(`  public URL: ${appHarnessPinsUrl(appVersion, args.baseUrl)}`)
+
     if (args.upload) {
       uploadToR2(args.outDir)
       console.log(`Published ${args.baseUrl}/${manifestKey}`)
+      console.log(`Published ${appHarnessPinsUrl(appVersion, args.baseUrl)}`)
     } else {
       console.log('\nDry stage only. Pass --upload to sync to R2.')
     }

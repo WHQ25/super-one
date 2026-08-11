@@ -7,6 +7,13 @@ import {
   enableHarness as kernelEnableHarness,
   disableHarness as kernelDisableHarness,
   probeHarnessReadiness,
+  managedHarnessPrefix,
+  managedVersionDir,
+  readCurrentPointer,
+  writeCurrentPointer,
+  resolveManagedTarballBinary,
+  readRuntimeVersionFromRoot,
+  resolveAppHarnessPins,
   type EnableHarnessInput,
   type HarnessKernelDeps,
   type ManagedRuntimeInstaller,
@@ -17,7 +24,12 @@ import type { HarnessInstallationStatus, NodeHarnessId } from '@superone/shared/
 export type { EnableHarnessInput, HarnessInstallationStatus, NodeHarnessId }
 
 import { getDb } from '../database'
+import { resolveHarnessHomeRoot } from './home'
 import { desktopHarnessDeps, desktopHarnessResolver, desktopHarnessAuthProbe } from './host'
+import {
+  desktopPackagePins,
+  isDesktopManagedPinAligned,
+} from './tarball-installer'
 import log from '../logger'
 
 let manager: HarnessManager | null = null
@@ -199,9 +211,24 @@ export async function ensureManagedHarnessReady(
 }
 
 /**
- * Startup gate: for every **enabled** Claude/Codex row, force SuperOne-managed
- * install at the app pin (skip PATH/bundled autoRuntime). Reuses existing
- * install only when `install-meta` runtimeVersion matches the pin.
+ * True when any enabled Claude/Codex row is missing its pin-aligned managed
+ * runtime. Used to skip the blocking harness-align UI on the happy path.
+ */
+export function enabledManagedHarnessesNeedAlign(): boolean {
+  const m = getHarnessManager()
+  const homeRoot = resolveHarnessHomeRoot()
+  for (const id of ['claude', 'codex'] as const) {
+    const row = m.get(id)
+    if (!row.enabled) continue
+    if (!isDesktopManagedPinAligned(id, homeRoot)) return true
+  }
+  return false
+}
+
+/**
+ * Startup gate (fallback only): for every **enabled** Claude/Codex row, force
+ * SuperOne-managed install at the *current process* pin. Happy path is pre-fetch
+ * during app update; this recovers pin mismatch after forced restart / wipe.
  */
 export async function alignEnabledManagedHarnesses(): Promise<{
   aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }>
@@ -226,4 +253,111 @@ export async function alignEnabledManagedHarnesses(): Promise<{
     }
   }
   return { aligned, failed }
+}
+
+const PIN_ENV_KEYS = {
+  claude: 'SUPERONE_CLAUDE_SDK_VERSION',
+  codex: 'SUPERONE_CODEX_NPM_VERSION',
+} as const
+
+/**
+ * Install a managed pin into versions/<pin>/ without moving `current` away from
+ * the runtime the *running* app is using (update pre-fetch for target pins).
+ */
+async function ensureManagedPinPresent(
+  id: 'claude' | 'codex',
+  runtimeVersion: string,
+  onProgress?: (received: number, total: number) => void,
+): Promise<{ runtimeVersion: string; reused: boolean }> {
+  const homeRoot = resolveHarnessHomeRoot()
+  const prefix = managedHarnessPrefix(homeRoot, id)
+  const versionDir = managedVersionDir(prefix, runtimeVersion)
+  const existingBin = resolveManagedTarballBinary(id, versionDir)
+  const existingMeta = readRuntimeVersionFromRoot(id, versionDir)
+  if (existingBin && existingMeta === runtimeVersion) {
+    return { runtimeVersion, reused: true }
+  }
+
+  const prevPointer = readCurrentPointer(prefix)
+  const envKey = PIN_ENV_KEYS[id]
+  const prevEnv = process.env[envKey]
+  process.env[envKey] = runtimeVersion
+
+  try {
+    const installer = depsWithProgress(id).installer
+    await installer.install(id, { root: homeRoot }, onProgress)
+  } finally {
+    if (prevEnv === undefined) delete process.env[envKey]
+    else process.env[envKey] = prevEnv
+
+    // Keep the running app on its previous pin until Restart.
+    if (prevPointer?.runtimeVersion && prevPointer.runtimeVersion !== runtimeVersion) {
+      try {
+        writeCurrentPointer(prefix, prevPointer.runtimeVersion, {
+          installRoot: prevPointer.installRoot,
+        })
+      } catch (err) {
+        log.warn(
+          `[harness] restore current pointer after prefetch ${id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      }
+    }
+  }
+
+  const bin = resolveManagedTarballBinary(id, managedVersionDir(prefix, runtimeVersion))
+  if (!bin) {
+    throw new Error(`prefetch ${id}@${runtimeVersion}: binary missing after install`)
+  }
+  return { runtimeVersion, reused: false }
+}
+
+export type UpdateHarnessPrefetchProgress = {
+  harnessId: 'claude' | 'codex'
+  received: number
+  total: number
+}
+
+/**
+ * After the app binary is downloaded: ensure every *enabled* managed harness
+ * has the target app version's pin on disk (side-by-side). Does not switch
+ * `current` when the pin differs from what this process needs.
+ */
+export async function prefetchEnabledHarnessesForAppUpdate(
+  targetAppVersion: string,
+  onProgress?: (event: UpdateHarnessPrefetchProgress) => void,
+): Promise<{
+  prepared: Array<{ id: 'claude' | 'codex'; runtimeVersion: string; reused: boolean }>
+  failed: Array<{ id: 'claude' | 'codex'; error: string }>
+}> {
+  const m = getHarnessManager()
+  const prepared: Array<{ id: 'claude' | 'codex'; runtimeVersion: string; reused: boolean }> = []
+  const failed: Array<{ id: 'claude' | 'codex'; error: string }> = []
+
+  const resolved = await resolveAppHarnessPins({ appVersion: targetAppVersion })
+  const processPins = {
+    claude: desktopPackagePins('claude').runtimeVersion,
+    codex: desktopPackagePins('codex').runtimeVersion,
+  }
+
+  for (const id of ['claude', 'codex'] as const) {
+    const row = m.get(id)
+    if (!row.enabled) continue
+    const pin = resolved.pins[id] ?? processPins[id]
+    if (!pin) continue
+    log.info(`[harness] update-prefetch ${id}@${pin} (app ${targetAppVersion})`)
+    try {
+      const result = await ensureManagedPinPresent(id, pin, (received, total) => {
+        onProgress?.({ harnessId: id, received, total })
+      })
+      prepared.push({ id, runtimeVersion: result.runtimeVersion, reused: result.reused })
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      log.error(`[harness] update-prefetch ${id} failed: ${error}`)
+      failed.push({ id, error })
+    }
+  }
+
+  return { prepared, failed }
 }

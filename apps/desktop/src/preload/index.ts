@@ -760,6 +760,8 @@ const appAPI = {
       aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }>
       failed: Array<{ id: 'claude' | 'codex'; error: string }>
     }>,
+  needsHarnessAlign: () =>
+    ipcRenderer.invoke(AgentIpcChannels.HARNESS_NEEDS_ALIGN) as Promise<boolean>,
   onHarnessInstallProgress: (
     callback: (event: {
       harnessId: string
@@ -944,6 +946,9 @@ const appAPI = {
 
   downloadUpdate: () =>
     ipcRenderer.invoke(AgentIpcChannels.UPDATER_DOWNLOAD),
+
+  retryUpdateHarness: () =>
+    ipcRenderer.invoke(AgentIpcChannels.UPDATER_RETRY_HARNESS),
 
   simulateUpdate: () =>
     ipcRenderer.invoke(AgentIpcChannels.UPDATER_SIMULATE),

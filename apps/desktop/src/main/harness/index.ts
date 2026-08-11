@@ -58,6 +58,8 @@ export {
   probeDesktopHarness,
   ensureManagedHarnessReady,
   alignEnabledManagedHarnesses,
+  enabledManagedHarnessesNeedAlign,
+  prefetchEnabledHarnessesForAppUpdate,
   setHarnessInstallProgressListener,
 } from './service'
 export type {

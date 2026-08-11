@@ -10,6 +10,7 @@ import {
   alignEnabledManagedHarnesses,
   disableDesktopHarness,
   enableDesktopHarness,
+  enabledManagedHarnessesNeedAlign,
   ensureManagedHarnessReady,
   listHarnessInstallations,
   probeDesktopHarness,
@@ -104,5 +105,9 @@ export function registerHarnessIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.HARNESS_ALIGN_ENABLED, async () => {
     log.info('[harness-ipc] alignEnabled managed harnesses')
     return alignEnabledManagedHarnesses()
+  })
+
+  ipcMain.handle(AgentIpcChannels.HARNESS_NEEDS_ALIGN, async () => {
+    return enabledManagedHarnessesNeedAlign()
   })
 }

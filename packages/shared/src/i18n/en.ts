@@ -259,6 +259,10 @@ export type Messages = {
       upToDate: string
       downloading: string
       downloadingWithProgress: string
+      downloadingHarnessWithProgress: string
+      harnessFailed: string
+      harnessError: string
+      retryHarness: string
       ready: string
       restart: string
     }
@@ -2796,7 +2800,7 @@ export const en: Messages = {
       },
     },
     harnessAlign: {
-      title: 'Preparing harnesses',
+      title: 'Align Harness Version',
       subtitle: 'Installing SuperOne-managed runtimes for your enabled harnesses…',
       checking: 'Checking installed versions…',
       failed: 'Could not align harness runtimes.',
@@ -2829,6 +2833,11 @@ export const en: Messages = {
       upToDate: "You're up to date",
       downloading: 'Downloading {{version}}...',
       downloadingWithProgress: 'Downloading {{version}}... {{progress}}%',
+      downloadingHarnessWithProgress:
+        'Preparing harnesses for {{version}}... {{progress}}% ({{harness}})',
+      harnessFailed: 'Could not download harness runtimes for this update.',
+      harnessError: 'Harness prep failed for {{version}}. Click to retry.\n{{message}}',
+      retryHarness: 'Retry',
       ready: 'v{{version}} is ready',
       restart: 'Restart',
     },

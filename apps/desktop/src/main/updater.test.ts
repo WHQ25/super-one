@@ -23,21 +23,36 @@ vi.mock('electron', () => ({ BrowserWindow: class {} }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 
+vi.mock('./harness/service', () => ({
+  prefetchEnabledHarnessesForAppUpdate: vi.fn(async () => ({ prepared: [], failed: [] })),
+}))
+
 const {
   setUpdateChannel,
   initUpdater,
   checkForUpdates,
   downloadUpdate,
+  installUpdate,
+  retryUpdateHarnessPrefetch,
   getUpdateMenuState,
   getUpdaterState,
 } = await import('./updater')
+
+const { prefetchEnabledHarnessesForAppUpdate } = await import('./harness/service')
 
 describe('update check scheduling', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     autoUpdater.checkForUpdates.mockClear()
     autoUpdater.downloadUpdate.mockClear()
+    autoUpdater.quitAndInstall.mockClear()
     autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+    vi.mocked(prefetchEnabledHarnessesForAppUpdate).mockClear()
+    vi.mocked(prefetchEnabledHarnessesForAppUpdate).mockResolvedValue({
+      prepared: [],
+      failed: [],
+    })
   })
 
   afterEach(() => {
@@ -57,6 +72,11 @@ describe('update check scheduling', () => {
     expect(autoUpdater.autoDownload).toBe(false)
   })
 
+  it('keeps autoInstallOnAppQuit off until harness pre-fetch succeeds', () => {
+    initUpdater({ isDestroyed: () => true } as never)
+    expect(autoUpdater.autoInstallOnAppQuit).toBe(false)
+  })
+
   it('still checks on demand when the user asks manually', () => {
     initUpdater({ isDestroyed: () => true } as never)
     checkForUpdates()
@@ -68,6 +88,80 @@ describe('update check scheduling', () => {
     expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled()
     downloadUpdate()
     expect(autoUpdater.downloadUpdate).toHaveBeenCalledOnce()
+  })
+})
+
+describe('atomic app + harness package', () => {
+  beforeEach(() => {
+    autoUpdater.on.mockClear()
+    autoUpdater.quitAndInstall.mockClear()
+    autoUpdater.downloadUpdate.mockClear()
+    autoUpdater.autoInstallOnAppQuit = false
+    vi.mocked(prefetchEnabledHarnessesForAppUpdate).mockReset()
+    vi.mocked(prefetchEnabledHarnessesForAppUpdate).mockResolvedValue({
+      prepared: [],
+      failed: [],
+    })
+    initUpdater({ isDestroyed: () => true } as never)
+  })
+
+  function handler(event: string): ((info: { version: string }) => void) | undefined {
+    return autoUpdater.on.mock.calls.find(([name]: [string]) => name === event)?.[1] as
+      | ((info: { version: string }) => void)
+      | undefined
+  }
+
+  it('does not mark ready until harness pre-fetch succeeds', async () => {
+    const downloaded = handler('update-downloaded')
+    expect(downloaded).toBeTypeOf('function')
+    downloaded!({ version: '1.2.3' })
+    await vi.waitFor(() => {
+      expect(prefetchEnabledHarnessesForAppUpdate).toHaveBeenCalledWith(
+        '1.2.3',
+        expect.any(Function),
+      )
+    })
+    await vi.waitFor(() => {
+      expect(getUpdaterState()).toBe('downloaded')
+    })
+    expect(autoUpdater.autoInstallOnAppQuit).toBe(true)
+    installUpdate()
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledOnce()
+  })
+
+  it('blocks Restart and exposes harness-error when pre-fetch fails', async () => {
+    vi.mocked(prefetchEnabledHarnessesForAppUpdate).mockResolvedValue({
+      prepared: [],
+      failed: [{ id: 'claude', error: 'network down' }],
+    })
+    handler('update-downloaded')!({ version: '1.2.4' })
+    await vi.waitFor(() => {
+      expect(getUpdaterState()).toBe('harness-error')
+    })
+    expect(autoUpdater.autoInstallOnAppQuit).toBe(false)
+    installUpdate()
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+    expect(getUpdateMenuState()).toEqual({
+      label: 'Retry Harness Download',
+      enabled: true,
+    })
+  })
+
+  it('retries harness pre-fetch without re-downloading the app', async () => {
+    vi.mocked(prefetchEnabledHarnessesForAppUpdate)
+      .mockResolvedValueOnce({
+        prepared: [],
+        failed: [{ id: 'claude', error: 'boom' }],
+      })
+      .mockResolvedValueOnce({ prepared: [{ id: 'claude', runtimeVersion: '1', reused: false }], failed: [] })
+
+    handler('update-downloaded')!({ version: '2.0.0' })
+    await vi.waitFor(() => expect(getUpdaterState()).toBe('harness-error'))
+
+    retryUpdateHarnessPrefetch()
+    await vi.waitFor(() => expect(getUpdaterState()).toBe('downloaded'))
+    expect(prefetchEnabledHarnessesForAppUpdate).toHaveBeenCalledTimes(2)
+    expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled()
   })
 })
 

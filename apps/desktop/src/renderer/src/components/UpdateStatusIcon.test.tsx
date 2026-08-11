@@ -8,8 +8,11 @@ const hoisted = vi.hoisted(() => {
     updateStatus: 'available' as string,
     updateVersion: '1.2.3' as string | null,
     updateProgress: 0,
+    updateHarnessId: null as string | null,
+    updateErrorMessage: null as string | null,
     downloadUpdate: vi.fn(),
     installUpdate: vi.fn(),
+    retryUpdateHarness: vi.fn(),
     dismissUpdate: vi.fn(),
   }
   return { appState }
@@ -25,8 +28,12 @@ vi.mock('react-i18next', () => ({
       if (key === 'shell.update.available') return 'Update'
       if (key === 'shell.update.preparingShort') return 'Preparing'
       if (key === 'shell.update.restart') return 'Restart'
+      if (key === 'shell.update.retryHarness') return 'Retry'
       if (key === 'shell.update.preparing') return `Preparing update ${opts?.version}...`
       if (key === 'shell.update.availableHint') return `Update ${opts?.version} available`
+      if (key === 'shell.update.downloadingHarnessWithProgress') {
+        return `Harness ${opts?.progress}%`
+      }
       return key
     },
   }),
@@ -86,5 +93,24 @@ describe('sidebar update pill', () => {
     const button = screen.getByRole('button')
     expect(button.textContent).toContain('42%')
     expect(button.textContent).not.toContain('Preparing')
+  })
+
+  it('shows harness phase progress with a spinner', () => {
+    hoisted.appState.updateStatus = 'downloading-harness'
+    hoisted.appState.updateProgress = 55
+    hoisted.appState.updateHarnessId = 'claude'
+    render(<UpdateStatusIcon />)
+    const button = screen.getByRole('button')
+    expect(button.textContent).toContain('55%')
+    expect(button).toHaveAttribute('aria-busy', 'true')
+  })
+
+  it('retries harness pre-fetch when harness-error is clicked', () => {
+    hoisted.appState.updateStatus = 'harness-error'
+    hoisted.appState.updateErrorMessage = 'claude: network error'
+    render(<UpdateStatusIcon />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(hoisted.appState.retryUpdateHarness).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button').textContent).toContain('Retry')
   })
 })

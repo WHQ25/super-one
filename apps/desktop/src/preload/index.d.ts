@@ -111,11 +111,13 @@ interface AppAPI {
       { label: string }
     >
   }>
-  /** Startup: force pin-aligned install for every enabled Claude/Codex harness. */
+  /** Startup fallback: force pin-aligned install for every enabled Claude/Codex harness. */
   alignEnabledHarnesses(): Promise<{
     aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }>
     failed: Array<{ id: 'claude' | 'codex'; error: string }>
   }>
+  /** True when any enabled managed harness is not pin-aligned (skip gate UI if false). */
+  needsHarnessAlign(): Promise<boolean>
   onHarnessInstallProgress(callback: (event: {
     harnessId: string
     received: number
@@ -144,6 +146,8 @@ interface AppAPI {
   installUpdate(): Promise<void>
   checkForUpdates(): Promise<void>
   downloadUpdate(): Promise<void>
+  /** Retry harness pre-fetch after harness-error (app binary already downloaded). */
+  retryUpdateHarness(): Promise<void>
   simulateUpdate(): Promise<void>
   onUpdateEvent(callback: (event: UpdateEvent) => void): () => void
   onSetupEvent(callback: (event: SetupEvent) => void): () => void

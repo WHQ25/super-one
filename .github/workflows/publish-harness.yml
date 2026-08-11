@@ -1,10 +1,13 @@
 name: Publish Harness Artifacts
 
 # Pack pinned Claude/Codex npm tarballs, compute SHA-256, upload byte-exact
-# mirrors to R2, and publish harness/manifest/<channel>.json.
+# mirrors to R2, and publish:
+#   - harness/manifest/<channel>.json
+#   - app/harness-pins/<appVersion>.json  (desktop update pre-fetch)
 #
-# Pins are read from @superone/runtime source constants (never free-form input)
-# so the manifest cannot drift from the code (design §4 / P3).
+# Pins are read from @superone/runtime source constants (never free-form package
+# versions) so the manifest cannot drift from the code (design §4 / P3).
+# App-version pins default to root package.json version (the desktop release).
 
 on:
   workflow_dispatch:
@@ -18,6 +21,11 @@ on:
           - beta
           - stable
         default: alpha
+      app_version:
+        description: 'Override app/harness-pins/<version>.json key (default: root package.json version)'
+        required: false
+        type: string
+        default: ''
       dry_run:
         description: 'Stage only — do not upload to R2'
         required: false
@@ -45,7 +53,7 @@ jobs:
       - name: Install (no native rebuild needed for pack)
         run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Pack artifacts + write channel manifest
+      - name: Pack artifacts + write channel manifest + app pins
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -54,14 +62,20 @@ jobs:
         run: |
           set -euo pipefail
           ARGS=(--channel "${{ inputs.channel }}" --out staging-harness)
+          if [ -n "${{ inputs.app_version }}" ]; then
+            ARGS+=(--app-version "${{ inputs.app_version }}")
+          fi
           if [ "${{ inputs.dry_run }}" != "true" ]; then
             ARGS+=(--upload)
           fi
           bun scripts/publish-harness-artifacts.ts "${ARGS[@]}"
           echo "--- staged tree ---"
           find staging-harness -type f | sort
-          echo "--- manifest (truncated) ---"
+          echo "--- channel manifest (truncated) ---"
           head -c 4000 "staging-harness/harness/manifest/${{ inputs.channel }}.json" || true
+          echo
+          echo "--- app harness pins ---"
+          find staging-harness/app/harness-pins -type f -print -exec cat {} \; 2>/dev/null || true
           echo
 
       - name: Upload staged tree (debug artifact)

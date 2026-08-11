@@ -47,6 +47,7 @@
     "publish:cli": "bun --filter @superone/cli publish:npm",
     "test:runtime": "bun --filter @superone/runtime test",
     "publish:harness": "bun scripts/publish-harness-artifacts.ts",
+    "write:app-harness-pins": "bun scripts/write-app-harness-pins.ts",
     "build": "bun --filter @superone/desktop build",
     "build:app": "bun --filter @superone/desktop build:app",
     "build:mac": "bun --filter @superone/desktop build:mac",

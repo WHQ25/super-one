@@ -2327,8 +2327,17 @@ export type UpdateEvent =
   | { type: 'checking' }
   | { type: 'available'; version: string; releaseNotes?: string }
   | { type: 'not-available' }
-  | { type: 'download-progress'; percent: number }
+  /** App binary and/or post-app harness pre-fetch progress. */
+  | {
+      type: 'download-progress'
+      percent: number
+      phase?: 'app' | 'harness'
+      harnessId?: string
+    }
+  /** App + enabled harness pins ready — safe to Restart. */
   | { type: 'downloaded'; version: string }
+  /** App binary ready but harness pre-fetch failed — Restart blocked. */
+  | { type: 'harness-error'; version: string; message: string }
   | { type: 'error'; message: string }
 
 // --- Bash output events ---
@@ -3054,10 +3063,14 @@ export const AgentIpcChannels = {
   /** Onboarding: scan PATH for first-party harness CLIs. */
   HARNESS_SCAN_CLI: 'harness:scanCli',
   /**
-   * Startup: ensure every enabled managed harness matches the app pin
-   * (download/reinstall before the main UI). Progress via HARNESS_INSTALL_PROGRESS.
+   * Startup fallback: ensure every enabled managed harness matches the app pin.
+   * Progress via HARNESS_INSTALL_PROGRESS. Happy path pre-fetches during update.
    */
   HARNESS_ALIGN_ENABLED: 'harness:alignEnabled',
+  /** True when any enabled managed harness is not pin-aligned (skip gate UI if false). */
+  HARNESS_NEEDS_ALIGN: 'harness:needsAlign',
+  /** Retry harness pre-fetch after a failed atomic update package. */
+  UPDATER_RETRY_HARNESS: 'updater:retryHarness',
   /** Remote Skills / MCP via node `skills.*` / `mcp.*` (EnvironmentHost). */
   ENVIRONMENT_LIST_REMOTE_SKILLS: 'environment:listRemoteSkills',
   ENVIRONMENT_GET_REMOTE_SKILL: 'environment:getRemoteSkill',

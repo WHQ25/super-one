@@ -99,6 +99,7 @@ const mockWindowApp = {
   getAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 }),
   saveAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: Date.now(), onboardingEpoch: 1 }),
   alignEnabledHarnesses: vi.fn().mockResolvedValue({ aligned: [], failed: [] }),
+  needsHarnessAlign: vi.fn().mockResolvedValue(true),
   connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }),
   connectCodex: vi.fn().mockResolvedValue({ models: [] }),
 }
@@ -249,9 +250,10 @@ describe('continueToMain', () => {
     expect(useAppStore.getState().view).toBe('onboarding')
   })
 
-  it('should enter harness-align when onboarding epoch is current', async () => {
+  it('should enter harness-align when pins need align (fallback)', async () => {
     mockWindowApp.getRecentFolders.mockResolvedValue([])
     mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })
+    mockWindowApp.needsHarnessAlign.mockResolvedValue(true)
     resetStore({ recentFolders: [] })
 
     await useAppStore.getState().continueToMain()
@@ -259,11 +261,29 @@ describe('continueToMain', () => {
     expect(useAppStore.getState().view).toBe('harness-align')
   })
 
+  it('should skip harness-align when pins already aligned', async () => {
+    mockWindowApp.getRecentFolders.mockResolvedValue([])
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })
+    mockWindowApp.needsHarnessAlign.mockResolvedValue(false)
+    mockWindowApp.getStartupData.mockResolvedValue({
+      appVersion: '0.1.0',
+      sandboxCapability: null,
+      cached: { claude: null, codex: null, acp: null },
+    })
+    resetStore({ recentFolders: [] })
+
+    await useAppStore.getState().continueToMain()
+    await vi.dynamicImportSettled()
+
+    expect(useAppStore.getState().view).toBe('startup')
+  })
+
   it('should open main after finishHarnessAlign when projects exist', async () => {
     const folders = [{ name: 'proj', path: '/proj' }]
     mockWindowApp.openFolder.mockResolvedValue(true)
     mockWindowApp.getRecentFolders.mockResolvedValue(folders)
     mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })
+    mockWindowApp.needsHarnessAlign.mockResolvedValue(true)
     mockWindowApp.getStartupData.mockResolvedValue({
       appVersion: '0.1.0',
       sandboxCapability: null,

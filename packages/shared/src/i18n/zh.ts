@@ -234,7 +234,7 @@ export const zh: Messages = {
       },
     },
     harnessAlign: {
-      title: '正在准备 Harness',
+      title: 'Align Harness Version',
       subtitle: '正在为已启用的 Harness 安装 SuperOne 托管 runtime…',
       checking: '正在检查已安装版本…',
       failed: '无法对齐 Harness runtime。',
@@ -267,6 +267,11 @@ export const zh: Messages = {
       upToDate: '已是最新版本',
       downloading: '正在下载 {{version}}...',
       downloadingWithProgress: '正在下载 {{version}}... {{progress}}%',
+      downloadingHarnessWithProgress:
+        '正在为 {{version}} 准备 Harness... {{progress}}% ({{harness}})',
+      harnessFailed: '无法下载本次更新所需的 Harness runtime。',
+      harnessError: '{{version}} 的 Harness 准备失败，点击重试。\n{{message}}',
+      retryHarness: '重试',
       ready: 'v{{version}} 已就绪',
       restart: '重启',
     },

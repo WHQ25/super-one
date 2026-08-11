@@ -5,12 +5,19 @@ import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { AgentIpcChannels, type UpdateChannel, type UpdateEvent } from '@superone/shared/agent-types'
 import { UPDATE_CHANNEL_TO_YML } from '@superone/shared/update-channels'
+import { prefetchEnabledHarnessesForAppUpdate } from './harness/service'
 
 let win: BrowserWindow | null = null
 let updaterState: UpdateEvent['type'] = 'not-available'
 let menuLabel = 'Check for Updates...'
 let menuEnabled = true
 let onMenuChange: (() => void) | null = null
+
+/** Version of the app package that finished downloading (may await harness phase). */
+let pendingDownloadedVersion: string | null = null
+/** True only when app + enabled harness pre-fetch succeeded — Restart allowed. */
+let updateFullyReady = false
+let harnessPrefetchInflight: Promise<void> | null = null
 
 /** Dev-only: version held at `available` until the user triggers download. */
 let simulatedPendingVersion: string | null = null
@@ -36,8 +43,13 @@ function send(event: UpdateEvent): void {
       menuEnabled = true
       break
     case 'download-progress':
-      menuLabel = 'Downloading Update...'
+      menuLabel =
+        event.phase === 'harness' ? 'Preparing Harnesses...' : 'Downloading Update...'
       menuEnabled = false
+      break
+    case 'harness-error':
+      menuLabel = 'Retry Harness Download'
+      menuEnabled = true
       break
     case 'downloaded':
       menuLabel = 'Restart to Update'
@@ -49,6 +61,65 @@ function send(event: UpdateEvent): void {
       break
   }
   if (menuLabel !== prevLabel || menuEnabled !== prevEnabled) onMenuChange?.()
+}
+
+function setFullyReady(ready: boolean): void {
+  updateFullyReady = ready
+  try {
+    // Only auto-install on quit when the atomic package (app + harness) is ready.
+    autoUpdater.autoInstallOnAppQuit = ready
+  } catch {
+    /* autoUpdater may be unavailable in some test hosts */
+  }
+}
+
+/**
+ * After the app binary is on disk: pre-fetch enabled harness pins for the
+ * target version, then emit `downloaded` (strict) or `harness-error`.
+ */
+async function runHarnessPrefetchPhase(version: string): Promise<void> {
+  pendingDownloadedVersion = version
+  setFullyReady(false)
+  send({ type: 'download-progress', percent: 0, phase: 'harness' })
+
+  try {
+    const result = await prefetchEnabledHarnessesForAppUpdate(version, (event) => {
+      const percent =
+        event.total > 0
+          ? Math.min(100, Math.round((event.received / event.total) * 100))
+          : 0
+      send({
+        type: 'download-progress',
+        percent,
+        phase: 'harness',
+        harnessId: event.harnessId,
+      })
+    })
+    if (result.failed.length > 0) {
+      const message = result.failed.map((f) => `${f.id}: ${f.error}`).join('\n')
+      log.warn(`[updater] harness prefetch failed for ${version}: ${message}`)
+      setFullyReady(false)
+      send({ type: 'harness-error', version, message })
+      return
+    }
+    log.info(
+      `[updater] harness prefetch ok for ${version} (${result.prepared.length} harnesses)`,
+    )
+    setFullyReady(true)
+    send({ type: 'downloaded', version })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.warn(`[updater] harness prefetch error for ${version}: ${message}`)
+    setFullyReady(false)
+    send({ type: 'harness-error', version, message })
+  }
+}
+
+function startHarnessPrefetch(version: string): void {
+  if (harnessPrefetchInflight) return
+  harnessPrefetchInflight = runHarnessPrefetchPhase(version).finally(() => {
+    harnessPrefetchInflight = null
+  })
 }
 
 export function getUpdaterState(): UpdateEvent['type'] {
@@ -70,7 +141,8 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
   autoUpdater.logger = log
   // Check automatically; wait for the user to click Download/Update before fetching the binary.
   autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = true
+  // Strict atomic update: only install-on-quit after harness pre-fetch succeeds.
+  autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.allowDowngrade = false
   if (testUpdater) autoUpdater.forceDevUpdateConfig = true
   if (channelPref) {
@@ -82,7 +154,13 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
   })
 
   autoUpdater.on('update-available', (info) => {
-    send({ type: 'available', version: info.version, releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined })
+    setFullyReady(false)
+    pendingDownloadedVersion = null
+    send({
+      type: 'available',
+      version: info.version,
+      releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
+    })
   })
 
   autoUpdater.on('update-not-available', () => {
@@ -90,14 +168,20 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
   })
 
   autoUpdater.on('download-progress', (progress) => {
-    send({ type: 'download-progress', percent: Math.round(progress.percent) })
+    send({
+      type: 'download-progress',
+      percent: Math.round(progress.percent),
+      phase: 'app',
+    })
   })
 
   autoUpdater.on('update-downloaded', (info) => {
-    send({ type: 'downloaded', version: info.version })
+    // Do not emit `downloaded` yet — harness phase must complete first.
+    startHarnessPrefetch(info.version)
   })
 
   autoUpdater.on('error', (err) => {
+    setFullyReady(false)
     send({ type: 'error', message: err.message })
   })
 
@@ -108,6 +192,10 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
 }
 
 export function installUpdate(): void {
+  if (!updateFullyReady) {
+    log.warn('[updater] installUpdate refused: harness package not ready')
+    return
+  }
   autoUpdater.quitAndInstall()
 }
 
@@ -128,20 +216,58 @@ export function downloadUpdate(): void {
     simulatedPendingVersion = null
     clearSimulateTimers()
     simulateTimers = [
-      setTimeout(() => send({ type: 'download-progress', percent: 0 }), 0),
-      setTimeout(() => send({ type: 'download-progress', percent: 30 }), 500),
-      setTimeout(() => send({ type: 'download-progress', percent: 60 }), 1000),
-      setTimeout(() => send({ type: 'download-progress', percent: 90 }), 1500),
-      setTimeout(() => send({ type: 'download-progress', percent: 100 }), 2000),
-      setTimeout(() => send({ type: 'downloaded', version }), 2500),
+      setTimeout(() => send({ type: 'download-progress', percent: 0, phase: 'app' }), 0),
+      setTimeout(() => send({ type: 'download-progress', percent: 30, phase: 'app' }), 500),
+      setTimeout(() => send({ type: 'download-progress', percent: 60, phase: 'app' }), 1000),
+      setTimeout(() => send({ type: 'download-progress', percent: 90, phase: 'app' }), 1500),
+      setTimeout(() => send({ type: 'download-progress', percent: 100, phase: 'app' }), 2000),
+      // Simulated harness phase (no real download in pure-dev).
+      setTimeout(() => send({ type: 'download-progress', percent: 0, phase: 'harness' }), 2200),
+      setTimeout(
+        () =>
+          send({
+            type: 'download-progress',
+            percent: 50,
+            phase: 'harness',
+            harnessId: 'claude',
+          }),
+        2600,
+      ),
+      setTimeout(
+        () =>
+          send({
+            type: 'download-progress',
+            percent: 100,
+            phase: 'harness',
+            harnessId: 'claude',
+          }),
+        3000,
+      ),
+      setTimeout(() => {
+        setFullyReady(true)
+        pendingDownloadedVersion = version
+        send({ type: 'downloaded', version })
+      }, 3200),
     ]
     return
   }
 
+  setFullyReady(false)
   autoUpdater.downloadUpdate().catch((err) => {
     log.warn('[updater] Download failed:', err.message)
     send({ type: 'error', message: err.message })
   })
+}
+
+/** Retry only the harness pre-fetch after `harness-error` (app binary already local). */
+export function retryUpdateHarnessPrefetch(): void {
+  const version = pendingDownloadedVersion
+  if (!version) {
+    log.warn('[updater] retry harness: no pending downloaded version')
+    return
+  }
+  if (harnessPrefetchInflight) return
+  startHarnessPrefetch(version)
 }
 
 export function setUpdateChannel(channel: UpdateChannel | null): void {
@@ -165,17 +291,17 @@ export function simulateUpdate(): void {
   clearSimulateTimers()
   const version = '99.0.0'
   simulatedPendingVersion = version
+  setFullyReady(false)
+  pendingDownloadedVersion = null
   send({ type: 'checking' })
-  simulateTimers = [
-    setTimeout(() => send({ type: 'available', version }), 1000),
-  ]
+  simulateTimers = [setTimeout(() => send({ type: 'available', version }), 1000)]
 }
 
 export function simulateNotAvailable(): void {
   clearSimulateTimers()
   simulatedPendingVersion = null
+  setFullyReady(false)
+  pendingDownloadedVersion = null
   send({ type: 'checking' })
-  simulateTimers = [
-    setTimeout(() => send({ type: 'not-available' }), 1000),
-  ]
+  simulateTimers = [setTimeout(() => send({ type: 'not-available' }), 1000)]
 }

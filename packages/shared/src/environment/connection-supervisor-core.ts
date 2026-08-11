@@ -33,6 +33,23 @@ export type SupervisorWakeReason =
 
 export type RetryNowDisposition = 'started' | 'already_connected' | 'blocked' | 'disposed'
 
+/**
+ * Whether an explicit user action (the Connect button) may clear a block and
+ * re-dial with the stored credential.
+ *
+ * Recoverable: the blocking condition lives outside the credential and the user
+ * can have fixed it since — an upgraded desktop clears `protocol_incompatible`,
+ * edited endpoints clear `invalid_config`, and `user` is a self-imposed stop.
+ *
+ * Terminal: `auth` / `revoked` need a fresh pairing token (Repair pairing), and
+ * `identity_conflict` is a trust boundary — the node's fingerprint no longer
+ * matches what was pinned, so only a re-pair that re-validates identity may
+ * clear it. Silently re-dialing past either would defeat the check.
+ */
+export function isUserRecoverableBlock(reason: BlockReason | undefined): boolean {
+  return reason === 'protocol_incompatible' || reason === 'invalid_config' || reason === 'user'
+}
+
 export interface SupervisorSnapshot {
   environmentId: string
   connectionId: string
@@ -146,11 +163,17 @@ export class ConnectionSupervisorCore {
 
   /**
    * Explicit user/system retry: resets the transient backoff ladder.
-   * Does not clear a blocked auth/protocol/identity state.
+   * Does not clear a blocked state unless `opts.unblock` is set — that flag
+   * marks a direct user action (Connect), which may clear the blocks listed in
+   * {@link isUserRecoverableBlock}. Auth and identity blocks stay terminal even
+   * then; they are cleared only by a successful re-pair.
    */
-  async retryNow(): Promise<RetryNowDisposition> {
+  async retryNow(opts?: { unblock?: boolean }): Promise<RetryNowDisposition> {
     if (this.disposed) return 'disposed'
-    if (this.state === 'blocked') return 'blocked'
+    if (this.state === 'blocked') {
+      if (!opts?.unblock || !isUserRecoverableBlock(this.blockReason)) return 'blocked'
+      this.unblock()
+    }
     if (this.state === 'connected') return 'already_connected'
     if (this.state === 'connecting' || this.state === 'synchronizing') return 'started'
     this.attempt = 0
@@ -211,7 +234,8 @@ export class ConnectionSupervisorCore {
     if (this.disposed || this.state === 'blocked') return
 
     if (reason === 'network-offline') {
-      if (this.state === 'available' || this.state === 'blocked') return
+      // `blocked` already returned above; only `available` still needs a guard.
+      if (this.state === 'available') return
       // Bump generation so an in-flight runConnect cannot land on connected/backoff.
       this.generation += 1
       this.clearTimer()

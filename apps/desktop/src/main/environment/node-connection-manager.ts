@@ -216,10 +216,13 @@ export class NodeConnectionManager {
     )
   }
 
-  async retryNow(connectionId: string): Promise<RetryNowDisposition> {
+  async retryNow(
+    connectionId: string,
+    opts?: { unblock?: boolean },
+  ): Promise<RetryNowDisposition> {
     const live = this.lives.get(connectionId)
     if (!live) return 'disposed'
-    return live.supervisor.retryNow()
+    return live.supervisor.retryNow(opts)
   }
 
   /**

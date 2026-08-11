@@ -2237,7 +2237,10 @@ export class EnvironmentHost {
     // If a live supervisor already exists (e.g. backoff), prefer retryNow over
     // tearing it down — preserves generation and avoids double refresh races.
     if (this.connections.getClient(connectionId) && !this.connections.isConnected(connectionId)) {
-      const disposition = await this.connections.retryNow(connectionId)
+      // An explicit Connect click is an unambiguous recovery intent, so it may
+      // clear a user-recoverable block (see isUserRecoverableBlock). Auth and
+      // identity blocks stay terminal and still surface below.
+      const disposition = await this.connections.retryNow(connectionId, { unblock: true })
       if (this.connections.isConnected(connectionId)) {
         return this.finalizeConnected(connectionId)
       }

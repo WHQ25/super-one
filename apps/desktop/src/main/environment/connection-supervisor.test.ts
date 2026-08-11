@@ -272,6 +272,83 @@ describe('ConnectionSupervisor', () => {
     supervisor.dispose()
   })
 
+  describe('explicit retry out of blocked', () => {
+    async function blockedOn(code: string, connect?: () => Promise<void>) {
+      let attempts = 0
+      const supervisor = new ConnectionSupervisor({
+        environmentId: 'env-1',
+        connectionId: 'c-1',
+        stableAfterMs: 0,
+        connect: async () => {
+          attempts += 1
+          if (attempts === 1) throw Object.assign(new Error(code), { code })
+          if (connect) await connect()
+        },
+      })
+      await supervisor.start()
+      expect(supervisor.getSnapshot().state).toBe('blocked')
+      return { supervisor, attempts: () => attempts }
+    }
+
+    it('re-dials after a protocol block so an upgraded desktop can recover in place', async () => {
+      const { supervisor, attempts } = await blockedOn('protocol_incompatible')
+
+      const disposition = await supervisor.retryNow({ unblock: true })
+
+      expect(disposition).toBe('started')
+      expect(supervisor.getSnapshot().state).toBe('connected')
+      expect(attempts()).toBe(2)
+      supervisor.dispose()
+    })
+
+    it('keeps an identity conflict blocked even on explicit retry', async () => {
+      const { supervisor, attempts } = await blockedOn('identity_conflict')
+
+      const disposition = await supervisor.retryNow({ unblock: true })
+
+      // Fingerprint mismatch is a trust boundary — only an explicit re-pair
+      // (which re-validates identity) may clear it.
+      expect(disposition).toBe('blocked')
+      expect(supervisor.getSnapshot().state).toBe('blocked')
+      expect(attempts()).toBe(1)
+      supervisor.dispose()
+    })
+
+    it('keeps an auth block terminal so recovery goes through re-pairing', async () => {
+      const { supervisor } = await blockedOn('unauthorized')
+
+      expect(await supervisor.retryNow({ unblock: true })).toBe('blocked')
+      expect(supervisor.getSnapshot().state).toBe('blocked')
+      supervisor.dispose()
+    })
+
+    it('leaves blocked untouched without the explicit unblock opt-in', async () => {
+      const { supervisor, attempts } = await blockedOn('protocol_incompatible')
+
+      expect(await supervisor.retryNow()).toBe('blocked')
+      expect(supervisor.getSnapshot().state).toBe('blocked')
+      expect(attempts()).toBe(1)
+      supervisor.dispose()
+    })
+
+    it('re-blocks when the explicit retry hits the same failure', async () => {
+      const supervisor = new ConnectionSupervisor({
+        environmentId: 'env-1',
+        connectionId: 'c-1',
+        connect: async () => {
+          throw Object.assign(new Error('still old'), { code: 'protocol_incompatible' })
+        },
+      })
+      await supervisor.start()
+
+      await supervisor.retryNow({ unblock: true })
+
+      expect(supervisor.getSnapshot().state).toBe('blocked')
+      expect(supervisor.getSnapshot().blockReason).toBe('protocol_incompatible')
+      supervisor.dispose()
+    })
+  })
+
   it('wake does not unblock auth blocked state', async () => {
     const supervisor = new ConnectionSupervisor({
       environmentId: 'env-1',

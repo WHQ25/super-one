@@ -10,6 +10,7 @@ import { app, net } from 'electron'
 import { existsSync } from 'node:fs'
 import {
   managedHarnessPrefix,
+  readCurrentPointer,
   resolveExternalCommand,
   setHarnessReleaseVersionProvider,
   type HarnessAuthProbe,
@@ -132,7 +133,15 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
   autoRuntime(id): ResolvedAutoRuntime | null {
     if (id === 'claude') {
       const managed = resolveManagedFromHome('claude')
-      if (managed) return { command: managed, source: 'managed-tarball' }
+      if (managed) {
+        const ver = readCurrentPointer(managedHarnessPrefix(resolveHarnessHomeRoot(), 'claude'))
+          ?.runtimeVersion
+        return {
+          command: managed,
+          source: 'managed-tarball',
+          ...(ver ? { runtimeVersion: ver } : {}),
+        }
+      }
       const sdk = resolveSdkClaudeBinary()
       if (sdk) return { command: sdk, source: 'agent-sdk-optional' }
       const fromEnv = envBinary('SUPERONE_CLAUDE_BINARY')
@@ -141,7 +150,15 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     }
     if (id === 'codex') {
       const managed = resolveManagedFromHome('codex')
-      if (managed) return { command: managed, source: 'managed-tarball' }
+      if (managed) {
+        const ver = readCurrentPointer(managedHarnessPrefix(resolveHarnessHomeRoot(), 'codex'))
+          ?.runtimeVersion
+        return {
+          command: managed,
+          source: 'managed-tarball',
+          ...(ver ? { runtimeVersion: ver } : {}),
+        }
+      }
       const bundled = resolveBundledCodexNative()
       if (bundled) return { command: bundled, source: 'bundled-platform-package' }
       const fromEnv = envBinary('SUPERONE_CODEX_BINARY')

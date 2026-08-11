@@ -147,11 +147,15 @@ export async function enableManaged(
   if (!forcePin) {
     const auto = deps.resolver.autoRuntime(id)
     if (auto) {
+      // Do not pass `runtimeVersion: null` when auto has no version — manager
+      // treats null as "clear", which wiped a prior managed install's version
+      // after disable → re-enable (Settings Version row disappeared).
+      // Undefined leaves the existing catalog version intact.
       return manager.update(id, {
         enabled: true,
         state: def.requiresAuth ? 'needs_auth' : 'ready',
         command: auto.command,
-        runtimeVersion: auto.runtimeVersion ?? null,
+        runtimeVersion: auto.runtimeVersion,
         diagnosticCode: def.requiresAuth ? 'needs_auth' : null,
         diagnosticFields: def.requiresAuth
           ? { command: auto.command, runtimeVersion: auto.runtimeVersion }

@@ -34,25 +34,25 @@ export function useAgentEvents(): void {
     }
   }, [handleAgentEvent])
 
-  // Remote reconnect: re-own event drains for any live remote sessions
-  // (local SessionManager keeps push alive across focus; remote needs resume).
+  // Remote reconnect: re-sync from the node, then re-own event drains.
+  // Resuming alone is not enough — drains restart at the current log head, so
+  // anything the node appended while offline would never reach the store.
   useEffect(() => {
     const unsub = window.environment?.onStatusEvent?.((snapshot: {
       connectionId?: string
       state?: string
     }) => {
       if (snapshot?.state !== 'connected' || !snapshot.connectionId) return
+      const connectionId = snapshot.connectionId
       void (async () => {
-        const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-        const { resumeRemoteSessionIfLive } = await import('@/lib/remote-session-ops')
-        const state = useChatStore.getState()
-        for (const [projectPath, project] of Object.entries(state.projectSessions)) {
-          const remote = parseRemoteProjectKey(projectPath)
-          if (!remote || remote.connectionId !== snapshot.connectionId) continue
-          for (const [sessionId, sess] of Object.entries(project._sessions)) {
-            resumeRemoteSessionIfLive(projectPath, sessionId, sess)
-          }
-        }
+        const { rehydrateRemoteSessionsForConnection } = await import(
+          '@/stores/chat-store/helpers/remote-reconnect'
+        )
+        await rehydrateRemoteSessionsForConnection(
+          connectionId,
+          useChatStore.setState,
+          useChatStore.getState,
+        )
       })()
     })
     return () => {

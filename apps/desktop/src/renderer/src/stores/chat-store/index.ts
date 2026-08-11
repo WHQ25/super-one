@@ -647,43 +647,16 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     const remoteKey = parseRemoteProjectKey(activeProject)
     if (remoteKey) {
       const {
-        hydrateRemotePerSession,
+        hydrateRemoteSessionWithCatalog,
         resumeRemoteSessionIfLive,
         mergeRemoteHydrateWithCurrent,
       } = await import('@/lib/remote-session-ops')
       const prev = project._sessions[sessionId] ?? null
-      let hydrated = await hydrateRemotePerSession(activeProject, sessionId, prev)
-      // Prefer denser catalog when host exposes listSessionMessages (session.messages.list).
-      try {
-        const env = window.environment as {
-          listSessionMessages?: (
-            connectionId: string,
-            input: { sessionId: string; limit?: number },
-          ) => Promise<{ messages?: import('@superone/shared/environment').SessionMessageBlock[] }>
-        }
-        if (typeof env.listSessionMessages === 'function') {
-          const listed = await env.listSessionMessages(remoteKey.connectionId, {
-            sessionId,
-            limit: 200,
-          })
-          const {
-            sessionMessageBlocksToChatMessages,
-            preferCatalogMessages,
-          } = await import('./helpers/remote-message-catalog')
-          const providerId =
-            hydrated.sessionProvider || hydrated.preferredProvider || 'claude'
-          const denser = sessionMessageBlocksToChatMessages(listed?.messages, providerId)
-          if (denser.length > 0) {
-            hydrated = {
-              ...hydrated,
-              messages: preferCatalogMessages(hydrated.messages, denser),
-              _historyHydrated: true,
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[chat] session.messages.list hydrate failed:', err)
-      }
+      const { hydrated, snap } = await hydrateRemoteSessionWithCatalog(
+        activeProject,
+        sessionId,
+        prev,
+      )
       // Re-merge with whatever landed in _sessions during the awaits above.
       // Unconditional set(hydrated) dropped concurrent stream deltas (race).
       let applied = hydrated
@@ -703,7 +676,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         }
       })
       // Local parity: open a live session → keep agent:event flowing (Session resume).
-      resumeRemoteSessionIfLive(activeProject, sessionId, applied)
+      // Pass the node snapshot: a turn (or pending permission) that started while
+      // this tab was closed is only visible there, not in the merged state.
+      resumeRemoteSessionIfLive(activeProject, sessionId, applied, snap)
       return
     }
 

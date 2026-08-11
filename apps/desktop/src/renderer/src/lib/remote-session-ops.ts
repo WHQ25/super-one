@@ -3,7 +3,10 @@
  * All host-scoped project keys use `remote:<connectionId>:<hostPath>`.
  */
 import type { AgentEvent, SessionHistoryEntry } from '@superone/shared/agent-types'
-import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
+import type {
+  EnvironmentEventEnvelope,
+  SessionMessageBlock,
+} from '@superone/shared/environment'
 import {
   createNodeSessionEventMapper,
   mapNodeSessionEvents,
@@ -21,7 +24,10 @@ import {
 } from '@/lib/remote-session-messages'
 import { mapEnvironmentSessionRow } from '@/lib/session-list-ops'
 import { createDefaultPerSessionState } from '@/stores/chat-store/defaults'
-import { preferCatalogMessages } from '@/stores/chat-store/helpers/remote-message-catalog'
+import {
+  preferCatalogMessages,
+  sessionMessageBlocksToChatMessages,
+} from '@/stores/chat-store/helpers/remote-message-catalog'
 import { _isLiveSession } from '@/stores/chat-store/helpers/lifecycle'
 import type { ChatProvider, PerSessionState } from '@/stores/chat-store/types'
 
@@ -67,15 +73,20 @@ export async function hydrateRemotePerSession(
   projectKey: string,
   sessionId: string,
   previous?: PerSessionState | null,
+  /** Already-fetched node snapshot — pass to avoid a second `session.get`. */
+  knownSnap?: NodeSessionSnapshot | null,
 ): Promise<PerSessionState> {
   const remote = parseRemoteProjectKey(projectKey)
   if (!remote) {
     return previous ?? createDefaultPerSessionState()
   }
-  const snap = (await window.environment.getSession(
-    remote.connectionId,
-    sessionId,
-  )) as NodeSessionSnapshot | null
+  const snap =
+    knownSnap !== undefined
+      ? knownSnap
+      : ((await window.environment.getSession(
+          remote.connectionId,
+          sessionId,
+        )) as NodeSessionSnapshot | null)
   const providerId = nodeHarnessToProviderId(snap?.harnessId || snap?.providerId)
   const base = previous ?? createDefaultPerSessionState()
   // Prefer locally streamed rich content; transcript only fills stream gaps.
@@ -109,16 +120,80 @@ export async function hydrateRemotePerSession(
 }
 
 /**
+ * Hydrate one remote session from the node: `session.get` snapshot (status /
+ * pending interaction / transcript) plus the denser `session.messages.list`
+ * catalog when the host exposes it.
+ *
+ * Returns the raw snapshot too, so callers can drive `resumeRemoteSessionIfLive`
+ * off node truth instead of the (possibly stale) in-memory session state.
+ */
+export async function hydrateRemoteSessionWithCatalog(
+  projectKey: string,
+  sessionId: string,
+  previous?: PerSessionState | null,
+  opts?: { catalogLimit?: number },
+): Promise<{ hydrated: PerSessionState; snap: NodeSessionSnapshot | null }> {
+  const remote = parseRemoteProjectKey(projectKey)
+  if (!remote) {
+    return { hydrated: previous ?? createDefaultPerSessionState(), snap: null }
+  }
+  const snap = (await window.environment.getSession(
+    remote.connectionId,
+    sessionId,
+  )) as NodeSessionSnapshot | null
+  let hydrated = await hydrateRemotePerSession(projectKey, sessionId, previous, snap)
+
+  // Draft session ids only exist in the renderer until first send — nothing to page.
+  if (!snap?.sessionId) return { hydrated, snap }
+
+  try {
+    const env = window.environment as {
+      listSessionMessages?: (
+        connectionId: string,
+        input: { sessionId: string; limit?: number },
+      ) => Promise<{ messages?: SessionMessageBlock[] }>
+    }
+    if (typeof env.listSessionMessages === 'function') {
+      const listed = await env.listSessionMessages(remote.connectionId, {
+        sessionId,
+        limit: opts?.catalogLimit ?? 200,
+      })
+      const providerId = hydrated.sessionProvider || hydrated.preferredProvider || 'claude'
+      const denser = sessionMessageBlocksToChatMessages(listed?.messages, providerId)
+      if (denser.length > 0) {
+        hydrated = {
+          ...hydrated,
+          messages: preferCatalogMessages(hydrated.messages, denser),
+          _historyHydrated: true,
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[chat] session.messages.list hydrate failed:', err)
+  }
+
+  return { hydrated, snap }
+}
+
+/**
  * Apply a remote hydrate result without clobbering messages/interaction state
  * that landed via handleAgentEvent while getSession / messages.list were in flight.
  *
  * switchSession snapshots `previous` before those awaits; unconditionally
  * `set(hydrated)` dropped concurrent stream deltas (and can re-open a turn that
  * already settled in memory).
+ *
+ * `preferNodeState` inverts that bias for the reconnect path: there the
+ * in-memory status is frozen from the moment the socket dropped (a turn may
+ * have finished, or a permission may have been raised, while offline), so the
+ * node snapshot is authoritative. Composer/queue fields stay renderer-owned
+ * either way. Safe because reconnect rehydrates *before* re-owning the drain,
+ * so no agent event can be racing it.
  */
 export function mergeRemoteHydrateWithCurrent(
   current: PerSessionState | null | undefined,
   hydrated: PerSessionState,
+  opts?: { preferNodeState?: boolean },
 ): PerSessionState {
   if (!current) return hydrated
 
@@ -129,7 +204,8 @@ export function mergeRemoteHydrateWithCurrent(
   // - still live (stream advanced during await), or
   // - already settled while the node snapshot still looked live (stale snap).
   const preferCurrentInteraction =
-    currentLive || (!currentLive && current.messages.length > 0 && hydratedLive)
+    !opts?.preferNodeState &&
+    (currentLive || (!currentLive && current.messages.length > 0 && hydratedLive))
 
   return {
     ...hydrated,

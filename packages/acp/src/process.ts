@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { ndJsonStream, type Stream } from '@agentclientprotocol/sdk'
+import { buildSafeEnv } from '@superone/runtime/spawn-env'
 
 const KILL_ESCALATE_MS = 1500
 
@@ -40,11 +41,20 @@ async function stopProcess(child: ChildProcess, closed: Promise<unknown>): Promi
   await closed.catch(() => undefined)
 }
 
+/**
+ * Env for ACP agent spawns. Uses `buildSafeEnv` so SuperOne MCP HTTP loopback
+ * stays in NO_PROXY when a system HTTP proxy is active.
+ */
+export function buildAcpProcessEnv(extra?: Record<string, string>): Record<string, string> {
+  return buildSafeEnv(extra)
+}
+
 /** Spawn an ACP agent process with NDJSON stdio (electron-free). */
 export function spawnAcpProcess(launch: AcpLaunch): AcpProcessHandle {
   const child = spawn(launch.command, launch.args ?? [], {
     cwd: launch.cwd || process.cwd(),
-    env: { ...process.env, ...launch.env },
+    // buildSafeEnv merges loopback into NO_PROXY (package-level parity with desktop).
+    env: buildAcpProcessEnv(launch.env),
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: process.platform === 'win32',
     windowsHide: true,

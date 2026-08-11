@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { buildSafeEnv } from '@superone/runtime/spawn-env'
 
 /** Exact argv SuperOne uses for serve. */
 export const OPENCODE_SERVE_ARGS = ['serve', '--hostname=127.0.0.1', '--port=0'] as const
@@ -36,6 +37,18 @@ function openCodePath(pathEnv: string | undefined): string {
     ...(pathEnv ?? '').split(delimiter),
   ].filter(Boolean)
   return [...new Set(paths)].join(delimiter)
+}
+
+/**
+ * Env for `opencode serve` spawns. Goes through `buildSafeEnv` so SuperOne MCP
+ * HTTP (127.0.0.1) is always in NO_PROXY under system proxies.
+ */
+export function buildOpenCodeServeEnv(extra?: Record<string, string>): Record<string, string> {
+  return buildSafeEnv({
+    ...extra,
+    PATH: openCodePath(extra?.PATH ?? process.env.PATH),
+    OPENCODE_CONFIG_CONTENT: extra?.OPENCODE_CONFIG_CONTENT ?? '{}',
+  })
 }
 
 function signalChild(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
@@ -128,12 +141,7 @@ export async function startOpenCodeServer(opts: {
 
   const child = spawn(binary, [...OPENCODE_SERVE_ARGS], {
     cwd: opts.cwd,
-    env: {
-      ...process.env,
-      ...opts.env,
-      PATH: openCodePath(opts.env?.PATH ?? process.env.PATH),
-      OPENCODE_CONFIG_CONTENT: opts.env?.OPENCODE_CONFIG_CONTENT ?? '{}',
-    },
+    env: buildOpenCodeServeEnv(opts.env),
     stdio: 'pipe',
   }) as ChildProcessWithoutNullStreams
 

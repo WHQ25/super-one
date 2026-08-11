@@ -13,6 +13,7 @@ export {
 } from './run-turn'
 export {
   spawnAcpProcess,
+  buildAcpProcessEnv,
   type AcpLaunch,
   type AcpProcessHandle,
 } from './process'

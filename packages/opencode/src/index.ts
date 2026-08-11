@@ -13,6 +13,7 @@ export {
 } from './run-turn'
 export {
   startOpenCodeServer,
+  buildOpenCodeServeEnv,
   defaultOpenCodeBinaryPath,
   isOpenCodeBinaryRunnable,
   OPENCODE_SERVE_ARGS,

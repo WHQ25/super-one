@@ -17,27 +17,41 @@ import { currentHostArch, currentHostPlatform } from './managed-harness-release'
 
 const dirs: string[] = []
 const prevHome = process.env.SUPERONE_NODE_HOME
+const prevHarnessHome = process.env.SUPERONE_HARNESS_HOME
 const prevCli = process.env.SUPERONE_CLI_VERSION
 
 afterEach(() => {
   if (prevHome === undefined) delete process.env.SUPERONE_NODE_HOME
   else process.env.SUPERONE_NODE_HOME = prevHome
+  if (prevHarnessHome === undefined) delete process.env.SUPERONE_HARNESS_HOME
+  else process.env.SUPERONE_HARNESS_HOME = prevHarnessHome
   if (prevCli === undefined) delete process.env.SUPERONE_CLI_VERSION
   else process.env.SUPERONE_CLI_VERSION = prevCli
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
+/** Isolate catalog (node) + managed binary root (harness) for CLI tests. */
 function withNodeHome() {
   const dir = mkdtempSync(join(tmpdir(), 'hcli-'))
   dirs.push(dir)
   process.env.SUPERONE_NODE_HOME = dir
+  // Managed install + release-manifest live under harness home, not node home.
+  const harnessHome = join(dir, 'harness')
+  mkdirSync(harnessHome, { recursive: true })
+  process.env.SUPERONE_HARNESS_HOME = harnessHome
   return dir
+}
+
+function harnessHomeOf(nodeHome: string): string {
+  return join(nodeHome, 'harness')
 }
 
 function writeManagedManifest(nodeHome: string, harnessId: 'claude' | 'codex', digest: string) {
   process.env.SUPERONE_CLI_VERSION = '0.49.4-test'
+  const harnessHome = harnessHomeOf(nodeHome)
+  mkdirSync(harnessHome, { recursive: true })
   writeFileSync(
-    join(nodeHome, 'release-manifest.json'),
+    join(harnessHome, 'release-manifest.json'),
     JSON.stringify({
       cliVersion: '0.49.4-test',
       managedHarnesses: {

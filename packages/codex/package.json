@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*"
   },
   "devDependencies": {

@@ -519,6 +519,15 @@ describe('buildAppServerEnv custom Codex provider', () => {
     expect(env.FOO).toBe('bar')
     expect(env.OPENAI_BASE_URL).toBeUndefined()
   })
+
+  it('always includes loopback hosts in NO_PROXY for SuperOne MCP HTTP', () => {
+    const env = buildAppServerEnv({ mode: 'apiKey' } as never)
+    const parts = String(env.NO_PROXY ?? '').split(',')
+    expect(parts).toContain('127.0.0.1')
+    expect(parts).toContain('localhost')
+    expect(parts).toContain('::1')
+    expect(env.no_proxy).toBe(env.NO_PROXY)
+  })
 })
 
 describe('getCodexProviderOverride', () => {

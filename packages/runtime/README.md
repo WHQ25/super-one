@@ -13,7 +13,7 @@ add harness packages only when that harness is enabled.
 | `@superone/runtime/fs` | Path security, listFiles, skill discovery, **fuzzy path match** (`searchMentionsInEntries` / `searchFilesInEntries`) |
 | `@superone/runtime/git` | sanitize ref, shortstat, worktree porcelain/plan, **`gitRun`/`gitRunSync`**, status porcelain parse |
 | `@superone/runtime/lease` | `ControlLeaseService` (SQLite-compatible) |
-| `@superone/runtime/spawn-env` | `buildSafeEnv` / `sanitizeEnv` (child process env safety) |
+| `@superone/runtime/spawn-env` | `buildSafeEnv` / `sanitizeEnv` / `mergeLoopbackNoProxy` (child process env safety + loopback proxy bypass) |
 | `@superone/runtime/crypto` | sha256/hmac/ed25519 helpers |
 | `@superone/runtime/sqlite` | Minimal `SqliteDatabase` type for host DB injection |
 

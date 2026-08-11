@@ -37,12 +37,61 @@ const ESSENTIAL_EXACT = new Set<string>([
   'LC_CTYPE', 'DISPLAY', 'TMPDIR', 'TEMP', 'TMP',
   'DYLD_FRAMEWORK_PATH', 'DYLD_LIBRARY_PATH',
   'DYLD_FALLBACK_FRAMEWORK_PATH', 'DYLD_FALLBACK_LIBRARY_PATH',
+  // Proxy bypass must survive E2BIG trimming — loopback MCP depends on it.
+  'NO_PROXY', 'no_proxy',
 ])
 
 const ESSENTIAL_PREFIXES = [
   'LC_', 'ELECTRON_', 'ANTHROPIC_', 'CODEX_', 'NPM_CONFIG_', 'NODE_',
   'SSH_', 'GIT_',
 ]
+
+/**
+ * Hosts that must never go through a system HTTP(S) proxy.
+ *
+ * SuperOne MCP for Codex/OpenCode/ACP is served at `http://127.0.0.1:<port>/mcp`.
+ * macOS SystemConfiguration proxies (Clash/Mihomo global mode, etc.) and
+ * proxy-aware clients (e.g. reqwest in Codex app-server) honor `NO_PROXY` /
+ * `no_proxy`. User bypass lists often include `localhost` but not `127.0.0.1`,
+ * which breaks every SuperOne MCP tool for that session.
+ */
+export const LOOPBACK_NO_PROXY_HOSTS = ['127.0.0.1', 'localhost', '::1'] as const
+
+/**
+ * Merge loopback hosts into `NO_PROXY` / `no_proxy` without clobbering existing
+ * entries. Both keys are set to the same merged value so clients that only read
+ * one still bypass.
+ */
+export function mergeLoopbackNoProxy(env: Record<string, string>): void {
+  const existingParts: string[] = []
+  for (const key of ['NO_PROXY', 'no_proxy'] as const) {
+    const raw = env[key]
+    if (!raw) continue
+    for (const part of raw.split(/[,\s]+/)) {
+      const trimmed = part.trim()
+      if (trimmed) existingParts.push(trimmed)
+    }
+  }
+
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const part of existingParts) {
+    const key = part.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(part)
+  }
+  for (const host of LOOPBACK_NO_PROXY_HOSTS) {
+    const key = host.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(host)
+  }
+
+  const value = merged.join(',')
+  env.NO_PROXY = value
+  env.no_proxy = value
+}
 
 function isEssentialEnv(key: string): boolean {
   if (ESSENTIAL_EXACT.has(key)) return true
@@ -110,6 +159,8 @@ function serializedSize(env: Record<string, string>): number {
  *  - Merges `base` (defaults to the current `process.env`) with `extra`.
  *  - Drops `undefined` values (they would otherwise crash Node's env serializer).
  *  - Sanitizes PATH (dedupe + drop over-long components) -> avoids ENAMETOOLONG.
+ *  - Ensures `NO_PROXY`/`no_proxy` always include loopback hosts so proxy-aware
+ *    HTTP clients (Codex rmcp, etc.) can reach SuperOne MCP on 127.0.0.1.
  *  - If the combined size still exceeds MAX_ENV_BYTES, trims the longest
  *    non-essential variables first -> avoids E2BIG.
  */
@@ -141,6 +192,10 @@ export function sanitizeEnv(
       console.warn(`[spawn-env] 为规避 spawn ENAMETOOLONG 已丢弃 ${res.dropped} 个超长 PATH 分段（${parts.join('；')}）`)
     }
   }
+
+  // Before size trimming so the merged proxy-bypass value is accounted for and
+  // cannot be dropped (NO_PROXY / no_proxy are essential).
+  mergeLoopbackNoProxy(merged)
 
   let size = serializedSize(merged)
   if (size > MAX_ENV_BYTES) {

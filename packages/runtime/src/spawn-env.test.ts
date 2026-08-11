@@ -3,6 +3,8 @@ import {
   sanitizePathEnv,
   sanitizeEnv,
   buildSafeEnv,
+  mergeLoopbackNoProxy,
+  LOOPBACK_NO_PROXY_HOSTS,
   SPAWN_PATH_MAX,
   SPAWN_NAME_MAX,
   MAX_ENV_BYTES,
@@ -63,6 +65,66 @@ describe('sanitizeEnv', () => {
     const out = sanitizeEnv({ PATH: '/bin', NODE_OPTIONS: huge })
     expect(out.NODE_OPTIONS).toBe(huge)
   })
+
+  it('always injects loopback hosts into NO_PROXY / no_proxy', () => {
+    const out = sanitizeEnv({ PATH: '/bin' })
+    for (const host of LOOPBACK_NO_PROXY_HOSTS) {
+      expect(out.NO_PROXY?.split(',')).toContain(host)
+      expect(out.no_proxy?.split(',')).toContain(host)
+    }
+    expect(out.NO_PROXY).toBe(out.no_proxy)
+  })
+
+  it('preserves existing NO_PROXY entries and does not duplicate loopback', () => {
+    const out = sanitizeEnv({
+      PATH: '/bin',
+      NO_PROXY: 'example.com,localhost,.internal',
+    })
+    const parts = out.NO_PROXY!.split(',')
+    expect(parts).toContain('example.com')
+    expect(parts).toContain('.internal')
+    expect(parts.filter((p) => p.toLowerCase() === 'localhost')).toHaveLength(1)
+    expect(parts).toContain('127.0.0.1')
+    expect(parts).toContain('::1')
+    expect(out.no_proxy).toBe(out.NO_PROXY)
+  })
+
+  it('merges no_proxy when only the lowercase key is set', () => {
+    const out = sanitizeEnv({
+      PATH: '/bin',
+      no_proxy: 'corp.local',
+    })
+    expect(out.NO_PROXY!.split(',')).toContain('corp.local')
+    expect(out.NO_PROXY!.split(',')).toContain('127.0.0.1')
+    expect(out.no_proxy).toBe(out.NO_PROXY)
+  })
+
+  it('union-merges NO_PROXY and no_proxy when both are set', () => {
+    const out = sanitizeEnv({
+      PATH: '/bin',
+      NO_PROXY: 'a.example',
+      no_proxy: 'b.example,localhost',
+    })
+    const parts = out.NO_PROXY!.split(',')
+    expect(parts).toContain('a.example')
+    expect(parts).toContain('b.example')
+    expect(parts.filter((p) => p.toLowerCase() === 'localhost')).toHaveLength(1)
+    expect(parts).toContain('127.0.0.1')
+  })
+})
+
+describe('mergeLoopbackNoProxy', () => {
+  it('mutates env in place and dedupes case-insensitively', () => {
+    const env: Record<string, string> = { NO_PROXY: 'LocalHost,foo' }
+    mergeLoopbackNoProxy(env)
+    expect(env.NO_PROXY).toBe(env.no_proxy)
+    const parts = env.NO_PROXY!.split(',')
+    expect(parts[0]).toBe('LocalHost')
+    expect(parts).toContain('foo')
+    expect(parts).toContain('127.0.0.1')
+    expect(parts).toContain('::1')
+    expect(parts.filter((p) => p.toLowerCase() === 'localhost')).toHaveLength(1)
+  })
 })
 
 describe('buildSafeEnv', () => {
@@ -70,5 +132,12 @@ describe('buildSafeEnv', () => {
     const out = buildSafeEnv({ MY_VAR: 'hi' })
     expect(out.MY_VAR).toBe('hi')
     expect(typeof out.PATH).toBe('string')
+  })
+
+  it('includes loopback NO_PROXY for child process spawns', () => {
+    const out = buildSafeEnv()
+    expect(out.NO_PROXY?.split(',')).toContain('127.0.0.1')
+    expect(out.NO_PROXY?.split(',')).toContain('localhost')
+    expect(out.NO_PROXY?.split(',')).toContain('::1')
   })
 })

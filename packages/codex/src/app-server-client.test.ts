@@ -392,4 +392,37 @@ describe('codex app-server client (Stage 4)', () => {
     await client.close()
     rmSync(dir, { recursive: true, force: true })
   })
+
+  it('spawns app-server with loopback NO_PROXY so system proxies skip SuperOne MCP', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-noproxy-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const child = createFakeChild()
+    const lines = collectLines(child.stdin)
+    const spawnFn: CodexSpawnFn = vi.fn(() => asSpawnChild(child))
+
+    const openPromise = openCodexAppServer({
+      binaryPath: bin,
+      spawnFn,
+      killTimeoutMs: 100,
+      env: { NO_PROXY: 'example.com' },
+    })
+    await pump()
+
+    expect(spawnFn).toHaveBeenCalled()
+    const spawnOpts = vi.mocked(spawnFn).mock.calls[0]![2]
+    const noProxy = String(spawnOpts.env.NO_PROXY ?? '')
+    expect(noProxy.split(',')).toContain('example.com')
+    expect(noProxy.split(',')).toContain('127.0.0.1')
+    expect(noProxy.split(',')).toContain('localhost')
+    expect(noProxy.split(',')).toContain('::1')
+    expect(spawnOpts.env.no_proxy).toBe(noProxy)
+
+    const initReq = JSON.parse(lines.find((l) => l.includes('"initialize"'))!)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: initReq.id, result: {} })}\n`)
+    const client = await openPromise
+    await client.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
 })

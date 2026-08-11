@@ -15,6 +15,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { existsSync } from 'node:fs'
+import { buildSafeEnv } from '@superone/runtime/spawn-env'
 import { redactHarnessDiagnosticText } from '@superone/shared/environment'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import {
@@ -76,7 +77,9 @@ export async function openCodexAppServer(
 
   const spawnFn = opts.spawnFn ?? defaultSpawn
   const args = [...(opts.cliArgs ?? []), 'app-server', '--listen', 'stdio://']
-  const env = { ...process.env, ...(opts.env ?? {}) }
+  // buildSafeEnv merges loopback into NO_PROXY so system HTTP proxies
+  // (Clash/Mihomo, etc.) do not intercept SuperOne MCP at 127.0.0.1.
+  const env = buildSafeEnv(opts.env)
   const child = spawnFn(opts.binaryPath, args, {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],

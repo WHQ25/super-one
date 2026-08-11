@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.0-alpha] - 2026-08-12
+
+### Added
+
+- Settings: Harnesses panel with nested per-harness config, drag-to-order harnesses, and user/project scope switcher for harness resources.
+- Harness: managed install kernel in runtime; R2 artifact mirrors with CDN-first download (npm fallback); pre-fetch pins into atomic app updates; drop packaged platform binaries and filter pickers by enabled harnesses.
+- Onboarding: scan local CLIs and recommend harnesses on first run; force epoch re-onboard and pin-align on startup when needed.
+- Session: link mode for session collaboration.
+- MCP: agent automation list/apply/delete tools.
+
+### Fixed
+
+- Remote: recover half-open node connections; rehydrate node sessions on reconnect; clear recoverable blocks on explicit Connect; automate SSH repair for blocked node recovery.
+- Harness: preserve runtime version on managed re-enable; route OpenCode and ACP package spawns through buildSafeEnv.
+- Codex: bypass system proxy for loopback SuperOne MCP; keep loopback NO_PROXY under envOverride; use Codex 5.6 managed context window.
+- Chat: decode non-ASCII paths in file chips and mentions; stop replaying the rate-limit tip on session switch; tighten status bar vertical padding.
+
+### Changed
+
+- Harness: unify CLI/desktop install root and R2 download path so managed runtimes share one layout.
+
 ## [0.52.0-alpha] - 2026-08-10
 
 ### Added

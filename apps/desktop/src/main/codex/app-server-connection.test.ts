@@ -198,6 +198,38 @@ describe('createAppServerConnection', () => {
     await handle.close()
   })
 
+  it('merges loopback into NO_PROXY even when envOverride skips buildSafeEnv', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+
+    const rawOverride: NodeJS.ProcessEnv = {
+      PATH: '/bin',
+      NO_PROXY: 'example.com',
+      // deliberately no 127.0.0.1 — would break SuperOne MCP under a system proxy
+    }
+    const handlePromise = createAppServerConnection(
+      { mode: 'apiKey', apiKey: 'k' },
+      undefined,
+      rawOverride,
+    )
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+
+    const opts = spawnMock.mock.calls[0][2] as { env: NodeJS.ProcessEnv }
+    const parts = String(opts.env.NO_PROXY ?? '').split(',')
+    expect(parts).toContain('example.com')
+    expect(parts).toContain('127.0.0.1')
+    expect(parts).toContain('localhost')
+    expect(parts).toContain('::1')
+    expect(opts.env.no_proxy).toBe(opts.env.NO_PROXY)
+    // Caller-supplied override object must not be mutated in place.
+    expect(rawOverride.NO_PROXY).toBe('example.com')
+    expect(rawOverride.no_proxy).toBeUndefined()
+
+    await handle.close()
+  })
+
   it('injects cli overrides as -c args before the app-server subcommand', async () => {
     const child = createFakeChild()
     spawnMock.mockReturnValueOnce(child)

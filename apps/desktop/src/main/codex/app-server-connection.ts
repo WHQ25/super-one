@@ -13,7 +13,7 @@ import { resolveChatService } from '../providers/resolver'
 import { resolveCodexChatReasoning, supportsCodexChatReasoning } from '../providers/codex-responses/reasoning'
 import { ensureCodexProxyUrl, getCodexProxyUrl } from '../providers/llm-proxy-manager'
 import { ProcessTitle } from '../process-titles'
-import { buildSafeEnv } from '../spawn-env'
+import { buildSafeEnv, mergeLoopbackNoProxy } from '../spawn-env'
 import {
   CODEX_PERMISSION_PRESETS,
   DEFAULT_CODEX_PERMISSION_PRESET,
@@ -537,7 +537,15 @@ export async function createAppServerConnection(
 
   const spawnArgs = [...overrideArgs, 'app-server', '--listen', 'stdio://']
   const spawnExe = preferredBinary?.binaryPath ?? systemCodexCli!
-  const env = preferredBinary ? prependPath(baseEnv, preferredBinary.pathDir) : baseEnv
+  // Copy so envOverride callers are not mutated; always re-merge loopback so a
+  // raw override that skipped buildSafeEnv still bypasses system proxies for MCP.
+  const env: Record<string, string> = {}
+  const source = preferredBinary ? prependPath(baseEnv, preferredBinary.pathDir) : baseEnv
+  for (const key of Object.keys(source)) {
+    const v = source[key]
+    if (v !== undefined) env[key] = v
+  }
+  mergeLoopbackNoProxy(env)
   const child: ChildProcess = spawn(spawnExe, spawnArgs, {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],

@@ -318,18 +318,24 @@ export function createDesktopTarballInstaller(
       const prefix = managedNpmPrefix(home.root, id)
       mkdirSync(prefix, { recursive: true })
 
-      // Fast path: already installed
+      const pins = desktopPackagePins(id)
+
+      // Fast path: already installed **and** matches the app pin.
       const existing = resolveDesktopManagedBinary(id, prefix)
-      if (existing) {
+      const installedVer = readRuntimeVersion(id, prefix)
+      if (existing && installedVer === pins.runtimeVersion) {
         return {
           command: existing,
-          runtimeVersion: readRuntimeVersion(id, prefix) ?? desktopPackagePins(id).runtimeVersion,
+          runtimeVersion: installedVer,
           source: 'npm-tarball',
           detail: { installPrefix: prefix, reused: '1' },
         }
       }
-
-      const pins = desktopPackagePins(id)
+      if (existing && installedVer && installedVer !== pins.runtimeVersion) {
+        log.info(
+          `[harness] ${id} pin mismatch: installed=${installedVer} pin=${pins.runtimeVersion} — reinstalling`,
+        )
+      }
       const channel = resolveHarnessManifestChannel(opts.channel)
       const artifactPin = await resolveArtifactPin(id, channel, opts, fetchJson)
 
@@ -484,6 +490,18 @@ async function fetchTarballBytes(opts: {
  * Claude: native platform package binary.
  * Codex: prefer vendor native binary (app-server protocol); fall back to npm bin.
  */
+/** True when managed install dir has a runnable binary at the current pin. */
+export function isDesktopManagedPinAligned(
+  id: ManagedHarnessId,
+  homeRoot: string,
+): boolean {
+  const prefix = managedNpmPrefix(homeRoot, id)
+  const pin = desktopPackagePins(id).runtimeVersion
+  const bin = resolveDesktopManagedBinary(id, prefix)
+  const ver = readRuntimeVersion(id, prefix)
+  return Boolean(bin && ver === pin)
+}
+
 export function resolveDesktopManagedBinary(
   id: ManagedHarnessId,
   prefix: string,
@@ -535,7 +553,7 @@ function codexTargetTriple(): string | null {
   return map[key] ?? null
 }
 
-function readRuntimeVersion(id: ManagedHarnessId, prefix: string): string | null {
+export function readRuntimeVersion(id: ManagedHarnessId, prefix: string): string | null {
   try {
     const metaPath = join(prefix, 'install-meta.json')
     if (existsSync(metaPath)) {

@@ -76,6 +76,7 @@ const defaults: AppSettings = {
   secondaryHarness: null,
   suggestionMenuHarness: null,
   onboardingCompletedAt: null,
+  onboardingEpoch: 0,
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -424,15 +425,17 @@ export function readAppSettings(): AppSettings {
       secondaryHarness: readSuggestionHarness(data.secondaryHarness)
         ?? parseSuggestionHarnessKey(data.secondaryHarness),
       suggestionMenuHarness: readSuggestionHarness(data.suggestionMenuHarness),
-      // Missing key on an existing settings file → treat as completed (upgrade).
-      // Explicit null → first-run onboarding still pending.
-      // No settings file (catch below) → null (new install).
       onboardingCompletedAt:
         typeof data.onboardingCompletedAt === 'number'
           ? data.onboardingCompletedAt
           : data.onboardingCompletedAt === null
             ? null
-            : 1,
+            : null,
+      // 0 = never completed current onboarding epoch (force Welcome → Discover).
+      onboardingEpoch:
+        typeof data.onboardingEpoch === 'number' && Number.isFinite(data.onboardingEpoch)
+          ? Math.max(0, Math.floor(data.onboardingEpoch))
+          : 0,
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -476,6 +479,7 @@ export function readAppSettings(): AppSettings {
       secondaryHarness: null,
       suggestionMenuHarness: null,
       onboardingCompletedAt: null,
+      onboardingEpoch: 0,
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -541,6 +545,11 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     onboardingCompletedAt: patch.onboardingCompletedAt === undefined
       ? current.onboardingCompletedAt
       : patch.onboardingCompletedAt,
+    onboardingEpoch: patch.onboardingEpoch === undefined
+      ? current.onboardingEpoch
+      : (typeof patch.onboardingEpoch === 'number' && Number.isFinite(patch.onboardingEpoch)
+          ? Math.max(0, Math.floor(patch.onboardingEpoch))
+          : current.onboardingEpoch),
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

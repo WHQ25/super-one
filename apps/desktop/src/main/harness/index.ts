@@ -31,6 +31,7 @@ export {
   disableDesktopHarness,
   probeDesktopHarness,
   ensureManagedHarnessReady,
+  alignEnabledManagedHarnesses,
   setHarnessInstallProgressListener,
 } from './service'
 export type {

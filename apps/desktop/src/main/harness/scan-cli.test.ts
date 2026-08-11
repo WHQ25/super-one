@@ -2,7 +2,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defaultOnboardingSelection, scanHarnessCli, type HarnessCliScanHit } from './scan-cli'
+import {
+  defaultOnboardingSelection,
+  integrationLabels,
+  normalizeCliVersion,
+  scanHarnessCli,
+  type HarnessCliScanHit,
+} from './scan-cli'
 
 describe('defaultOnboardingSelection', () => {
   it('pre-checks all detected harnesses', () => {
@@ -23,6 +29,25 @@ describe('defaultOnboardingSelection', () => {
       { harnessId: 'acp-grok', command: null, detected: false },
     ]
     expect(defaultOnboardingSelection(hits)).toEqual(['claude'])
+  })
+})
+
+describe('normalizeCliVersion', () => {
+  it('strips product names and git hashes', () => {
+    expect(normalizeCliVersion('2.1.223 (Claude Code)')).toBe('2.1.223')
+    expect(normalizeCliVersion('codex-cli 0.146.1')).toBe('0.146.1')
+    expect(normalizeCliVersion('1.18.15')).toBe('1.18.15')
+    expect(normalizeCliVersion('grok 1.0.0 (3cd0d0cbcebe)')).toBe('1.0.0')
+  })
+})
+
+describe('integrationLabels', () => {
+  it('labels each harness by integration surface (no versions)', () => {
+    const labels = integrationLabels()
+    expect(labels.claude.label).toBe('Claude Agent SDK')
+    expect(labels.codex.label).toBe('Codex App Server')
+    expect(labels.opencode.label).toBe('OpenCode SDK')
+    expect(labels['acp-grok'].label).toBe('Agent Client Protocol')
   })
 })
 

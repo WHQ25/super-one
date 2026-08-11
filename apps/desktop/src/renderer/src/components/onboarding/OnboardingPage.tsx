@@ -1,5 +1,5 @@
 import { ArrowLeft } from 'lucide-react'
-import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppStore } from '@/stores/app'
@@ -36,14 +36,14 @@ export function OnboardingPage(): React.JSX.Element {
   const stepIndex = step === 'welcome' ? 0 : 1
 
   const bodyMotion = {
-    initial: { opacity: 0, x: 40 },
-    animate: { opacity: 1, x: 0 },
-    exit: { opacity: 0, x: -40 },
-    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const },
+    initial: { opacity: 0, y: 12 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -12 },
+    transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] as const },
   }
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden">
+    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
       <AnimatePresence initial={false}>
         {canGoBack ? (
           <motion.button
@@ -62,21 +62,24 @@ export function OnboardingPage(): React.JSX.Element {
         ) : null}
       </AnimatePresence>
 
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-10 px-6 py-6">
-        <LayoutGroup>
-          <motion.img
-            layout="position"
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10">
+        <div className="flex w-full max-w-md flex-col items-center gap-10">
+          <img
             src={logoUrl}
             alt="Super One"
             draggable={false}
-            className="h-12 w-auto select-none"
+            className="h-12 w-auto shrink-0 select-none"
           />
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.div key={step} layout="position" {...bodyMotion} className="w-full">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={step}
+              {...bodyMotion}
+              className="flex w-full flex-col items-center"
+            >
               {step === 'welcome' ? <OnboardingWelcome /> : <OnboardingDiscover />}
             </motion.div>
           </AnimatePresence>
-        </LayoutGroup>
+        </div>
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-8 flex justify-center">

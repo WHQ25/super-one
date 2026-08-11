@@ -259,19 +259,19 @@ which the renderer surfaces as an install prompt rather than a generic failure.
 ## 6. Migration for existing users
 
 Removing bundled binaries makes an in-place update brick every existing session
-unless handled. The upgrade path:
+unless handled. **Shipped approach (epoch onboarding + startup pin gate):**
 
-1. On first launch of the new build, read distinct `harnessId` values from the
-   `sessions` table.
-2. Mark those harnesses `enabled` (preserving user intent implicitly — they were
-   using them) with state `missing`.
-3. Kick off a **background, non-blocking** install with visible progress. The user can
-   browse and read history immediately; sending a turn on a not-yet-ready harness shows
-   the progress state instead of an error.
-4. Fresh installs skip this and go through the Setup step.
+1. **`CURRENT_ONBOARDING_EPOCH`** (`packages/shared/src/onboarding.ts`) — bump to force
+   every install through Welcome → Discover once. Completing onboarding writes
+   `onboardingEpoch` + `onboardingCompletedAt`.
+2. Users re-select harnesses (PATH scan pre-checks detected CLIs; Claude default when
+   none). Enable installs SuperOne-managed pins for Claude/Codex (`forcePin`).
+3. **Every app launch** after onboarding: `harness:alignEnabled` runs before main UI.
+   For each **enabled** Claude/Codex row, if local managed `runtimeVersion` ≠ app pin,
+   reinstall from R2/npm (blocking `harness-align` view + progress). Failures show retry.
+4. Grok / OpenCode stay external (PATH); align gate does not download them.
 
-Per project convention (breaking refactors switch wholesale in alpha), there is no
-feature flag and no dual-path period — the alpha channel absorbs it.
+There is no dual-path period — the alpha channel absorbs a one-time forced onboard.
 
 ---
 

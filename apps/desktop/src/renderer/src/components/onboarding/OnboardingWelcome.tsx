@@ -9,7 +9,10 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { useAppStore } from '@/stores/app'
+import { useTheme } from '@/hooks/useTheme'
+import { ThemeModeCards } from '@/components/settings/ThemeModeCards'
 import { changeLocale } from '@/i18n'
+import { applyCrispText } from '@/lib/font-smoothing'
 import { resolveSystemLocale } from '@superone/shared/i18n'
 import type { Locale } from '@superone/shared/agent-types'
 
@@ -18,8 +21,11 @@ const LOCALE_LABEL: Record<Locale, string> = { en: 'English', zh: '简体中文'
 export function OnboardingWelcome(): React.JSX.Element {
   const { t, i18n } = useTranslation()
   const goToOnboardingStep = useAppStore((s) => s.goToOnboardingStep)
+  const setLiquidGlass = useAppStore((s) => s.setLiquidGlass)
+  const { mode: themeMode, setMode: setThemeMode } = useTheme()
   const [busy, setBusy] = useState(false)
   const currentLocale: Locale = i18n.language === 'zh' ? 'zh' : 'en'
+  const isMac = window.app.platform === 'darwin'
 
   useEffect(() => {
     let cancelled = false
@@ -29,14 +35,30 @@ export function OnboardingWelcome(): React.JSX.Element {
         window.app.getSystemLocale(),
       ])
       if (cancelled) return
-      if (settings.locale) return
-      const detected = resolveSystemLocale(system)
-      if (detected !== i18n.language) await changeLocale(detected)
+
+      // Locale: only auto-detect when unset.
+      if (!settings.locale) {
+        const detected = resolveSystemLocale(system)
+        if (detected !== i18n.language) await changeLocale(detected)
+      }
+
+      // macOS onboarding defaults: liquid glass + crisp text.
+      if (isMac) {
+        if (!settings.liquidGlass) {
+          await setLiquidGlass(true)
+        }
+        if (!settings.crispText) {
+          applyCrispText(true)
+          await window.app.saveAppSettings({ crispText: true })
+        } else {
+          applyCrispText(settings.crispText)
+        }
+      }
     })()
     return () => {
       cancelled = true
     }
-  }, [i18n.language])
+  }, [i18n.language, isMac, setLiquidGlass])
 
   const pickLocale = async (locale: Locale) => {
     if (busy || locale === currentLocale) return
@@ -49,10 +71,17 @@ export function OnboardingWelcome(): React.JSX.Element {
   }
 
   return (
-    <div className="flex flex-col items-center gap-10">
+    <div className="flex w-full flex-col items-center gap-10">
       <div className="max-w-md text-center">
         <h1 className="text-4xl font-bold tracking-tight">{t('shell.onboarding.welcome.title')}</h1>
-        <p className="mt-4 text-base text-muted-foreground">{t('shell.onboarding.welcome.tagline')}</p>
+      </div>
+
+      <div className="w-full max-w-md">
+        <ThemeModeCards
+          value={themeMode}
+          onChange={setThemeMode}
+          labelFor={(mode) => t(`settings.appearance.theme.${mode}`)}
+        />
       </div>
 
       <div className="flex flex-col items-center gap-4">

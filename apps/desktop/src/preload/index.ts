@@ -733,6 +733,7 @@ const appAPI = {
     command?: string
     serverUrl?: string
     args?: string[]
+    forcePin?: boolean
   }) => ipcRenderer.invoke(AgentIpcChannels.HARNESS_ENABLE, input),
   disableHarness: (harnessId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_DISABLE, harnessId),
@@ -749,6 +750,15 @@ const appAPI = {
         version?: string
       }>
       defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'acp-grok'>
+      integrationLabels: Record<
+        'claude' | 'codex' | 'opencode' | 'acp-grok',
+        { label: string }
+      >
+    }>,
+  alignEnabledHarnesses: () =>
+    ipcRenderer.invoke(AgentIpcChannels.HARNESS_ALIGN_ENABLED) as Promise<{
+      aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }>
+      failed: Array<{ id: 'claude' | 'codex'; error: string }>
     }>,
   onHarnessInstallProgress: (
     callback: (event: {

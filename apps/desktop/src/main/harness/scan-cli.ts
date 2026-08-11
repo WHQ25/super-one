@@ -35,6 +35,19 @@ function withWinSuffixes(names: string[]): string[] {
   return out
 }
 
+/**
+ * Normalize noisy CLI `--version` lines to a bare version (like OpenCode's "1.18.15").
+ *  "2.1.223 (Claude Code)" → "2.1.223"
+ *  "codex-cli 0.146.1" → "0.146.1"
+ *  "grok 1.0.0 (3cd0d0cbcebe)" → "1.0.0"
+ */
+export function normalizeCliVersion(raw: string): string | undefined {
+  const line = raw.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
+  if (!line) return undefined
+  const m = line.match(/\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?/)
+  return m?.[0]
+}
+
 function tryVersion(bin: string): string | undefined {
   try {
     const out = execFileSync(bin, ['--version'], {
@@ -42,8 +55,7 @@ function tryVersion(bin: string): string | undefined {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     })
-    const line = out.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
-    return line ? line.slice(0, 80) : undefined
+    return normalizeCliVersion(out)
   } catch {
     return undefined
   }
@@ -66,6 +78,23 @@ export function scanHarnessCli(harnessId: NodeHarnessId): HarnessCliScanHit {
 export function scanAllHarnessClis(): HarnessCliScanHit[] {
   const ids: NodeHarnessId[] = ['claude', 'codex', 'opencode', 'acp-grok']
   return ids.map(scanHarnessCli)
+}
+
+/**
+ * Right-side integration labels for onboarding rows (no version numbers).
+ * Claude/Codex: SuperOne-managed runtimes; Grok: ACP; OpenCode: OpenCode SDK.
+ */
+export type IntegrationLabel = {
+  label: string
+}
+
+export function integrationLabels(): Record<NodeHarnessId, IntegrationLabel> {
+  return {
+    claude: { label: 'Claude Agent SDK' },
+    codex: { label: 'Codex App Server' },
+    opencode: { label: 'OpenCode SDK' },
+    'acp-grok': { label: 'Agent Client Protocol' },
+  }
 }
 
 /**

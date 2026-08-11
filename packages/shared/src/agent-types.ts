@@ -2938,6 +2938,11 @@ export const AgentIpcChannels = {
   HARNESS_INSTALL_PROGRESS: 'harness:installProgress',
   /** Onboarding: scan PATH for first-party harness CLIs. */
   HARNESS_SCAN_CLI: 'harness:scanCli',
+  /**
+   * Startup: ensure every enabled managed harness matches the app pin
+   * (download/reinstall before the main UI). Progress via HARNESS_INSTALL_PROGRESS.
+   */
+  HARNESS_ALIGN_ENABLED: 'harness:alignEnabled',
   /** Remote Skills / MCP via node `skills.*` / `mcp.*` (EnvironmentHost). */
   ENVIRONMENT_LIST_REMOTE_SKILLS: 'environment:listRemoteSkills',
   ENVIRONMENT_GET_REMOTE_SKILL: 'environment:getRemoteSkill',
@@ -3282,10 +3287,14 @@ export interface AppSettings {
   suggestionMenuHarness: SuggestionHarnessPreference | null
   /**
    * First-run harness onboarding completion timestamp.
-   * `null` = not completed (show onboarding when no projects).
-   * Missing key on upgrade is migrated to a non-null value so existing installs skip.
+   * `null` = not completed.
    */
   onboardingCompletedAt: number | null
+  /**
+   * Onboarding schema epoch. When below `CURRENT_ONBOARDING_EPOCH` (desktop),
+   * the app forces Welcome → Discover again so older installs migrate harnesses.
+   */
+  onboardingEpoch: number
   agentPreference: {
     claude: {
       defaultModel: string
@@ -3373,6 +3382,7 @@ export interface AppSettingsPatch {
   /** Pass `null` to clear the remembered dropdown-slot harness. */
   suggestionMenuHarness?: SuggestionHarnessPreference | null
   onboardingCompletedAt?: number | null
+  onboardingEpoch?: number
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

@@ -41,6 +41,11 @@ export interface EnableHarnessInput {
   serverUrl?: string
   /** ACP-Grok argv override (replaces default agent stdio when non-empty). */
   args?: string[]
+  /**
+   * Managed only: skip host autoRuntime (PATH/bundled) and always run the
+   * installer so the pin version is aligned (desktop startup gate).
+   */
+  forcePin?: boolean
 }
 
 export async function enableHarness(
@@ -53,7 +58,9 @@ export async function enableHarness(
 
   let status: HarnessInstallationStatus
   if (id === 'claude' || id === 'codex') {
-    status = await enableManaged(manager, id, input.artifactPath, deps)
+    status = await enableManaged(manager, id, input.artifactPath, deps, 'enable', {
+      forcePin: input.forcePin === true,
+    })
   } else if (id === 'opencode') {
     status = enableOpencode(manager, {
       command: input.command,
@@ -89,9 +96,11 @@ export async function enableManaged(
   artifact: string | undefined,
   deps: HarnessKernelDeps,
   mode: 'enable' | 'repair' = 'enable',
+  opts?: { forcePin?: boolean },
 ): Promise<HarnessInstallationStatus> {
   const nodeHome = deps.home.root
   const def = getNodeHarnessDefinition(id)
+  const forcePin = opts?.forcePin === true
 
   // Offline / desktop-upload path: require release manifest + matching digest.
   if (artifact) {
@@ -133,24 +142,27 @@ export async function enableManaged(
     })
   }
 
-  // 1) Already on host (SDK optional deps / PATH / env).
-  const auto = deps.resolver.autoRuntime(id)
-  if (auto) {
-    return manager.update(id, {
-      enabled: true,
-      state: def.requiresAuth ? 'needs_auth' : 'ready',
-      command: auto.command,
-      runtimeVersion: auto.runtimeVersion ?? null,
-      diagnosticCode: def.requiresAuth ? 'needs_auth' : null,
-      diagnosticFields: def.requiresAuth
-        ? { command: auto.command, runtimeVersion: auto.runtimeVersion }
-        : null,
-      lastProbedAt: Date.now(),
-      configJson: JSON.stringify({
+  // 1) Already on host (SDK optional deps / PATH / env) — skipped when forcePin
+  // so desktop startup can require the SuperOne-managed pin only.
+  if (!forcePin) {
+    const auto = deps.resolver.autoRuntime(id)
+    if (auto) {
+      return manager.update(id, {
+        enabled: true,
+        state: def.requiresAuth ? 'needs_auth' : 'ready',
         command: auto.command,
-        source: auto.source,
-      }),
-    })
+        runtimeVersion: auto.runtimeVersion ?? null,
+        diagnosticCode: def.requiresAuth ? 'needs_auth' : null,
+        diagnosticFields: def.requiresAuth
+          ? { command: auto.command, runtimeVersion: auto.runtimeVersion }
+          : null,
+        lastProbedAt: Date.now(),
+        configJson: JSON.stringify({
+          command: auto.command,
+          source: auto.source,
+        }),
+      })
+    }
   }
 
   // 2) Fetch the pinned runtime (CLI: official npm; desktop: R2/npm tarball).

@@ -92,6 +92,7 @@ interface AppAPI {
     command?: string
     serverUrl?: string
     args?: string[]
+    forcePin?: boolean
   }): Promise<unknown>
   disableHarness(harnessId: string): Promise<unknown>
   probeHarness(harnessId: string): Promise<unknown>
@@ -105,6 +106,15 @@ interface AppAPI {
       version?: string
     }>
     defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'acp-grok'>
+    integrationLabels: Record<
+      'claude' | 'codex' | 'opencode' | 'acp-grok',
+      { label: string }
+    >
+  }>
+  /** Startup: force pin-aligned install for every enabled Claude/Codex harness. */
+  alignEnabledHarnesses(): Promise<{
+    aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }>
+    failed: Array<{ id: 'claude' | 'codex'; error: string }>
   }>
   onHarnessInstallProgress(callback: (event: {
     harnessId: string

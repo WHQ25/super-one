@@ -209,9 +209,10 @@ export const zh: Messages = {
       welcome: {
         title: '欢迎使用 Super One',
         tagline: '你的桌面 Coding Agent 主场。',
+        themeLabel: '外观',
       },
       discover: {
-        title: '启用你的 Agent',
+        title: '启用喜欢的 Harness',
         subtitle:
           '我们扫描了本机已安装的 CLI。Claude / Codex 仍会由 SuperOne 下载托管 runtime，以保证版本一致。',
         scanning: '正在扫描已安装的 CLI…',
@@ -231,6 +232,12 @@ export const zh: Messages = {
           'acp-grok': 'Grok',
         },
       },
+    },
+    harnessAlign: {
+      title: '正在准备 Harness',
+      subtitle: '正在为已启用的 Harness 安装 SuperOne 托管 runtime…',
+      checking: '正在检查已安装版本…',
+      failed: '无法对齐 Harness runtime。',
     },
     setup: {
       required: {

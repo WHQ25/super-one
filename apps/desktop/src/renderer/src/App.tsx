@@ -18,6 +18,7 @@ import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
 import { OnboardingPage } from '@/components/onboarding/OnboardingPage'
+import { HarnessAlignPage } from '@/components/onboarding/HarnessAlignPage'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
@@ -480,6 +481,7 @@ function App(): React.JSX.Element {
             </div>
           )}
           {view === 'onboarding' && <OnboardingPage />}
+          {view === 'harness-align' && <HarnessAlignPage />}
           {view === 'startup' && <StartupPage />}
           {view === 'setup' && <SetupPage />}
           {view === 'settings' && (

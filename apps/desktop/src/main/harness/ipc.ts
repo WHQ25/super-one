@@ -7,6 +7,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { isNodeHarnessId } from '@superone/shared/environment'
 import {
+  alignEnabledManagedHarnesses,
   disableDesktopHarness,
   enableDesktopHarness,
   ensureManagedHarnessReady,
@@ -14,7 +15,11 @@ import {
   probeDesktopHarness,
   setHarnessInstallProgressListener,
 } from './service'
-import { defaultOnboardingSelection, scanAllHarnessClis } from './scan-cli'
+import {
+  defaultOnboardingSelection,
+  integrationLabels,
+  scanAllHarnessClis,
+} from './scan-cli'
 import log from '../logger'
 
 function broadcastProgress(event: {
@@ -50,18 +55,20 @@ export function registerHarnessIpcHandlers(): void {
         command?: string
         serverUrl?: string
         args?: string[]
+        forcePin?: boolean
       },
     ) => {
       if (!input || !isNodeHarnessId(input.harnessId)) {
         throw new Error(`unknown harnessId: ${input?.harnessId}`)
       }
-      log.info('[harness-ipc] enable %s', input.harnessId)
+      log.info('[harness-ipc] enable %s forcePin=%s', input.harnessId, input.forcePin === true)
       return enableDesktopHarness({
         harnessId: input.harnessId,
         artifactPath: input.artifactPath,
         command: input.command,
         serverUrl: input.serverUrl,
         args: input.args,
+        forcePin: input.forcePin === true,
       })
     },
   )
@@ -90,6 +97,12 @@ export function registerHarnessIpcHandlers(): void {
     return {
       hits,
       defaultSelected: defaultOnboardingSelection(hits),
+      integrationLabels: integrationLabels(),
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.HARNESS_ALIGN_ENABLED, async () => {
+    log.info('[harness-ipc] alignEnabled managed harnesses')
+    return alignEnabledManagedHarnesses()
   })
 }

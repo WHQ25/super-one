@@ -29,7 +29,14 @@ export {
 
 export type { RemoteDeviceConfig }
 
-type AppView = 'loading' | 'onboarding' | 'startup' | 'setup' | 'main' | 'settings'
+type AppView =
+  | 'loading'
+  | 'onboarding'
+  | 'harness-align'
+  | 'startup'
+  | 'setup'
+  | 'main'
+  | 'settings'
 
 export type OnboardingStep = 'welcome' | 'discover'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
@@ -107,6 +114,8 @@ interface AppState {
   onboardingStep: OnboardingStep
   goToOnboardingStep: (step: OnboardingStep) => void
   completeOnboarding: () => Promise<void>
+  /** After pin-align gate succeeds, open main/startup. */
+  finishHarnessAlign: () => Promise<void>
 
   // App
   appVersion: string
@@ -221,6 +230,71 @@ interface AppState {
 
 function prefetchFileTree(folderPath: string): void {
   void useFileTreeStore.getState().fetchTree(folderPath)
+}
+
+/** Cached across onboarding → align so we do not re-fetch startup data. */
+let pendingStartup: {
+  startupData: {
+    appVersion?: string
+    sandboxCapability?: SandboxCapability | null
+    cached: {
+      claude: unknown
+      codex: unknown
+    }
+  }
+  folders: RecentFolder[]
+} | null = null
+
+async function enterMainAfterGates(
+  get: () => AppState,
+  set: (partial: Partial<AppState>) => void,
+): Promise<void> {
+  const pending = pendingStartup
+  const startupData =
+    pending?.startupData ??
+    ((await window.app.getStartupData()) as NonNullable<typeof pendingStartup>['startupData'])
+  const folders = pending?.folders ?? (await window.app.getRecentFolders())
+  pendingStartup = null
+
+  set({
+    recentFolders: folders,
+    sandboxCapability: startupData.sandboxCapability ?? get().sandboxCapability,
+    appVersion: startupData.appVersion ?? get().appVersion,
+  })
+
+  if (startupData.sandboxCapability) {
+    const { invalidateDefaultPermissionModeCache } = await import('./chat')
+    await invalidateDefaultPermissionModeCache()
+  }
+  const { useChatStore } = await import('./chat')
+
+  if (startupData.cached?.claude) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    useChatStore.getState().setHarnessResources('claude', startupData.cached.claude as any)
+  }
+  if (startupData.cached?.codex) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    useChatStore.getState().setHarnessResources('codex', startupData.cached.codex as any)
+  }
+
+  void useChatStore.getState().initializeHarness('claude')
+
+  if (!get().currentFolder) {
+    let opened = false
+    for (const folder of folders) {
+      if (await applyProjectSelection(folder.path, set)) {
+        opened = true
+        break
+      }
+    }
+    if (!opened) {
+      set({ view: 'startup' })
+      return
+    }
+    set({ view: 'main' })
+  } else {
+    set({ view: 'main' })
+  }
 }
 
 async function applyProjectSelection(
@@ -410,9 +484,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   onboardingStep: 'welcome',
   goToOnboardingStep: (step) => set({ onboardingStep: step }),
   completeOnboarding: async () => {
-    await window.app.saveAppSettings({ onboardingCompletedAt: Date.now() })
+    const { CURRENT_ONBOARDING_EPOCH } = await import('@superone/shared/onboarding')
+    await window.app.saveAppSettings({
+      onboardingCompletedAt: Date.now(),
+      onboardingEpoch: CURRENT_ONBOARDING_EPOCH,
+    })
     set({ onboardingStep: 'welcome' })
-    await get().continueToMain()
+    // Align managed pins then enter main (continueToMain skips onboarding).
+    set({ view: 'harness-align' })
+  },
+  finishHarnessAlign: async () => {
+    await enterMainAfterGates(get, set)
   },
   appVersion: '',
   sandboxCapability: null,
@@ -569,7 +651,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.app.getRecentFolders(),
       window.app.getAppSettings(),
     ])
-    set({ recentFolders: folders, sandboxCapability: startupData.sandboxCapability ?? null, appVersion: startupData.appVersion })
+    set({
+      recentFolders: folders,
+      sandboxCapability: startupData.sandboxCapability ?? null,
+      appVersion: startupData.appVersion,
+    })
     console.info(
       '[continueToMain] cached: claude=%s codex=%s sandbox=%s',
       startupData.cached.claude ? `${startupData.cached.claude.models?.length ?? 0} models` : 'null',
@@ -577,47 +663,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       startupData.sandboxCapability?.supportLevel ?? 'unknown',
     )
 
+    // Stash startup payload for post-align entry (avoid double getStartupData).
+    pendingStartup = {
+      startupData: {
+        appVersion: startupData.appVersion,
+        sandboxCapability: startupData.sandboxCapability ?? null,
+        cached: {
+          claude: startupData.cached?.claude ?? null,
+          codex: startupData.cached?.codex ?? null,
+        },
+      },
+      folders,
+    }
+
+    const { CURRENT_ONBOARDING_EPOCH } = await import('@superone/shared/onboarding')
+    const epoch = settings.onboardingEpoch ?? 0
     const forceOnboarding =
       import.meta.env.DEV && import.meta.env.RENDERER_VITE_FORCE_ONBOARDING === '1'
-    if (
-      forceOnboarding ||
-      (settings.onboardingCompletedAt == null && folders.length === 0 && !get().currentFolder)
-    ) {
+    if (forceOnboarding || epoch < CURRENT_ONBOARDING_EPOCH) {
       set({ view: 'onboarding', onboardingStep: 'welcome' })
       return
     }
 
-    if (startupData.sandboxCapability) {
-      const { invalidateDefaultPermissionModeCache } = await import('./chat')
-      await invalidateDefaultPermissionModeCache()
-    }
-    const { useChatStore } = await import('./chat')
-
-    if (startupData.cached.claude) {
-      useChatStore.getState().setHarnessResources('claude', startupData.cached.claude)
-    }
-    if (startupData.cached.codex) {
-      useChatStore.getState().setHarnessResources('codex', startupData.cached.codex)
-    }
-
-    void useChatStore.getState().initializeHarness('claude')
-
-    if (!get().currentFolder) {
-      let opened = false
-      for (const folder of folders) {
-        if (await applyProjectSelection(folder.path, set)) {
-          opened = true
-          break
-        }
-      }
-      if (!opened) {
-        set({ view: 'startup' })
-        return
-      }
-      set({ view: 'main' })
-    } else {
-      set({ view: 'main' })
-    }
+    // Every launch: pin-align enabled managed harnesses before main UI.
+    set({ view: 'harness-align' })
   },
 
   navigateTo: (view) => {

@@ -214,6 +214,7 @@ export type Messages = {
       welcome: {
         title: string
         tagline: string
+        themeLabel: string
       }
       discover: {
         title: string
@@ -235,6 +236,12 @@ export type Messages = {
           'acp-grok': string
         }
       }
+    }
+    harnessAlign: {
+      title: string
+      subtitle: string
+      checking: string
+      failed: string
     }
     setup: {
       required: { title: string; description: string }
@@ -2697,9 +2704,10 @@ export const en: Messages = {
       welcome: {
         title: 'Welcome to Super One',
         tagline: 'The desktop home for your coding agents.',
+        themeLabel: 'Appearance',
       },
       discover: {
-        title: 'Enable your agents',
+        title: 'Enable Harnesses You Like',
         subtitle:
           'We scanned your machine for supported CLIs. SuperOne still installs its own managed runtimes for Claude and Codex so versions stay consistent.',
         scanning: 'Scanning for installed CLIs…',
@@ -2719,6 +2727,12 @@ export const en: Messages = {
           'acp-grok': 'Grok',
         },
       },
+    },
+    harnessAlign: {
+      title: 'Preparing harnesses',
+      subtitle: 'Installing SuperOne-managed runtimes for your enabled harnesses…',
+      checking: 'Checking installed versions…',
+      failed: 'Could not align harness runtimes.',
     },
     setup: {
       required: {

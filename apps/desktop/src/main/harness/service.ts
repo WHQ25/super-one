@@ -157,3 +157,33 @@ export async function ensureManagedHarnessReady(
   }
   return enableDesktopHarness({ harnessId: id })
 }
+
+/**
+ * Startup gate: for every **enabled** Claude/Codex row, force SuperOne-managed
+ * install at the app pin (skip PATH/bundled autoRuntime). Reuses existing
+ * install only when `install-meta` runtimeVersion matches the pin.
+ */
+export async function alignEnabledManagedHarnesses(): Promise<{
+  aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }>
+  failed: Array<{ id: 'claude' | 'codex'; error: string }>
+}> {
+  const m = getHarnessManager()
+  const aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }> = []
+  const failed: Array<{ id: 'claude' | 'codex'; error: string }> = []
+
+  for (const id of ['claude', 'codex'] as const) {
+    const row = m.get(id)
+    if (!row.enabled) continue
+    log.info(`[harness] align enabled ${id} (forcePin)`)
+    try {
+      m.update(id, { enabled: true, state: 'installing', diagnosticCode: null })
+      const status = await enableDesktopHarness({ harnessId: id, forcePin: true })
+      aligned.push({ id, runtimeVersion: status.runtimeVersion })
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      log.error(`[harness] align ${id} failed: ${error}`)
+      failed.push({ id, error })
+    }
+  }
+  return { aligned, failed }
+}

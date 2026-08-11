@@ -11,7 +11,6 @@ import { ArrowRight, Check, Loader2, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@superone/ui/components/ui/button'
-import { Badge } from '@superone/ui/components/ui/badge'
 import { cn } from '@superone/ui/lib/utils'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useAppStore } from '@/stores/app'
@@ -54,6 +53,9 @@ export function OnboardingDiscover(): React.JSX.Element {
   const { t } = useTranslation()
   const completeOnboarding = useAppStore((s) => s.completeOnboarding)
   const [hits, setHits] = useState<ScanHit[] | null>(null)
+  const [integrationLabels, setIntegrationLabels] = useState<
+    Partial<Record<CatalogId, { label: string }>>
+  >({})
   const [selected, setSelected] = useState<Set<CatalogId>>(new Set())
   const [scanning, setScanning] = useState(true)
   const [enabling, setEnabling] = useState(false)
@@ -67,6 +69,7 @@ export function OnboardingDiscover(): React.JSX.Element {
     try {
       const result = await window.app.scanHarnessClis()
       setHits(result.hits)
+      setIntegrationLabels(result.integrationLabels ?? {})
       setSelected(new Set(result.defaultSelected))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -76,6 +79,12 @@ export function OnboardingDiscover(): React.JSX.Element {
         { harnessId: 'opencode', command: null, detected: false },
         { harnessId: 'acp-grok', command: null, detected: false },
       ])
+      setIntegrationLabels({
+        claude: { label: 'Claude Agent SDK' },
+        codex: { label: 'Codex App Server' },
+        opencode: { label: 'OpenCode SDK' },
+        'acp-grok': { label: 'Agent Client Protocol' },
+      })
       setSelected(new Set(['claude']))
     } finally {
       setScanning(false)
@@ -109,6 +118,12 @@ export function OnboardingDiscover(): React.JSX.Element {
     return m
   }, [hits])
 
+  /** Only list detected CLIs; if none, offer Claude as managed-download fallback. */
+  const visibleIds = useMemo((): CatalogId[] => {
+    const detected = ORDER.filter((id) => hitById.get(id)?.detected)
+    return detected.length > 0 ? detected : ['claude']
+  }, [hitById])
+
   const toggle = (id: CatalogId) => {
     if (enabling) return
     setSelected((prev) => {
@@ -127,9 +142,12 @@ export function OnboardingDiscover(): React.JSX.Element {
     try {
       for (const id of ids) {
         setActiveId(id)
-        // Product C: Claude/Codex never pass PATH command — always managed download.
-        // External harnesses: let kernel resolve PATH (omit command).
-        await window.app.enableHarness({ harnessId: id })
+        // Product C: Claude/Codex always SuperOne-managed pin (forcePin skips PATH/bundled).
+        // External harnesses: kernel resolves PATH.
+        await window.app.enableHarness({
+          harnessId: id,
+          forcePin: id === 'claude' || id === 'codex',
+        })
       }
       await completeOnboarding()
     } catch (err) {
@@ -153,10 +171,9 @@ export function OnboardingDiscover(): React.JSX.Element {
   }
 
   return (
-    <div className="flex w-full max-w-md flex-col items-center gap-6">
+    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-6">
       <div className="w-full text-center">
         <h1 className="text-2xl font-bold">{t('shell.onboarding.discover.title')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('shell.onboarding.discover.subtitle')}</p>
       </div>
 
       {scanning ? (
@@ -166,15 +183,20 @@ export function OnboardingDiscover(): React.JSX.Element {
         </div>
       ) : (
         <div className="flex w-full flex-col gap-2">
-          {ORDER.map((id) => {
+          {visibleIds.map((id) => {
             const hit = hitById.get(id)
             const checked = selected.has(id)
             const Icon = resolveSessionIcon(providerOf(id), acpAgentOf(id))
             const isManaged = id === 'claude' || id === 'codex'
             const isActive = activeId === id
+            const isDownloadFallback = isManaged && !hit?.detected
+            const integrationLabel = integrationLabels[id]?.label
             const p = progress[id]
             const pct =
               p && p.total > 0 ? Math.min(100, Math.round((p.received / p.total) * 100)) : null
+            const subtitle = isDownloadFallback
+              ? t('shell.onboarding.discover.willDownload')
+              : hit?.version || hit?.command || null
 
             return (
               <button
@@ -209,24 +231,15 @@ export function OnboardingDiscover(): React.JSX.Element {
                       <div className="text-sm font-medium">
                         {t(`shell.onboarding.discover.ids.${id}`)}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {hit?.detected
-                          ? hit.version || hit.command || t('shell.onboarding.discover.detected')
-                          : t('shell.onboarding.discover.notFound')}
-                      </div>
+                      {subtitle ? (
+                        <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
+                      ) : null}
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    {hit?.detected ? (
-                      <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-normal">
-                        {t('shell.onboarding.discover.detected')}
-                      </Badge>
-                    ) : null}
-                    {isManaged ? (
-                      <span className="text-[10px] text-muted-foreground">
-                        {hit?.detected
-                          ? t('shell.onboarding.discover.useManaged')
-                          : t('shell.onboarding.discover.willDownload')}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {integrationLabel ? (
+                      <span className="max-w-[11rem] text-right text-[10px] leading-snug text-muted-foreground">
+                        {integrationLabel}
                       </span>
                     ) : null}
                     {isActive ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : null}

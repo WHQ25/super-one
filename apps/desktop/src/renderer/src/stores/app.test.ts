@@ -96,8 +96,9 @@ const mockWindowApp = {
   getRecentFolders: vi.fn().mockResolvedValue([]),
   getProjectId: vi.fn().mockResolvedValue(null),
   getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null, acp: null } }),
-  getAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: 1 }),
-  saveAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: Date.now() }),
+  getAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 }),
+  saveAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: Date.now(), onboardingEpoch: 1 }),
+  alignEnabledHarnesses: vi.fn().mockResolvedValue({ aligned: [], failed: [] }),
   connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }),
   connectCodex: vi.fn().mockResolvedValue({ models: [] }),
 }
@@ -238,9 +239,9 @@ describe('removeRecentFolder', () => {
 })
 
 describe('continueToMain', () => {
-  it('should show onboarding when no projects and onboarding not completed', async () => {
-    mockWindowApp.getRecentFolders.mockResolvedValue([])
-    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: null })
+  it('should force onboarding when onboardingEpoch is below current', async () => {
+    mockWindowApp.getRecentFolders.mockResolvedValue([{ name: 'proj', path: '/proj' }])
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 0 })
     resetStore({ recentFolders: [] })
 
     await useAppStore.getState().continueToMain()
@@ -248,39 +249,37 @@ describe('continueToMain', () => {
     expect(useAppStore.getState().view).toBe('onboarding')
   })
 
-  it('should show startup page when no projects but onboarding completed', async () => {
+  it('should enter harness-align when onboarding epoch is current', async () => {
     mockWindowApp.getRecentFolders.mockResolvedValue([])
-    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1 })
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })
     resetStore({ recentFolders: [] })
 
     await useAppStore.getState().continueToMain()
 
-    expect(useAppStore.getState().view).toBe('startup')
+    expect(useAppStore.getState().view).toBe('harness-align')
   })
 
-  it('should still initialize claude harness when onboarding completed and no projects', async () => {
-    mockWindowApp.getRecentFolders.mockResolvedValue([])
-    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1 })
-    resetStore({ recentFolders: [] })
-
-    await useAppStore.getState().continueToMain()
-    await vi.dynamicImportSettled()
-
-    expect(mockInitializeHarness).toHaveBeenCalledWith('claude')
-  })
-
-  it('should go to main and open first project when projects exist', async () => {
+  it('should open main after finishHarnessAlign when projects exist', async () => {
     const folders = [{ name: 'proj', path: '/proj' }]
     mockWindowApp.openFolder.mockResolvedValue(true)
     mockWindowApp.getRecentFolders.mockResolvedValue(folders)
-    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: null })
-
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })
+    mockWindowApp.getStartupData.mockResolvedValue({
+      appVersion: '0.1.0',
+      sandboxCapability: null,
+      cached: { claude: null, codex: null, acp: null },
+    })
     resetStore({ recentFolders: folders })
 
     await useAppStore.getState().continueToMain()
+    expect(useAppStore.getState().view).toBe('harness-align')
+
+    await useAppStore.getState().finishHarnessAlign()
+    await vi.dynamicImportSettled()
 
     expect(useAppStore.getState().view).toBe('main')
     expect(useAppStore.getState().currentFolder).toBe('/proj')
+    expect(mockInitializeHarness).toHaveBeenCalledWith('claude')
   })
 })
 

@@ -34,6 +34,7 @@ type ProgressListener = (event: ProgressEvent) => void
 const DEFAULT_SETTINGS = {
   experimentalAgentsEnabled: false,
   enabledExperimentalAgents: [] as string[],
+  harnessOrder: [] as string[],
   agentPreference: {
     claude: {
       defaultModel: '',

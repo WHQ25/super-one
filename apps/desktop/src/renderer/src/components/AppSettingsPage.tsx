@@ -15,16 +15,8 @@ import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
 import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
-import {
-  HarnessPreferencePicker,
-  harnessPreferenceToKey,
-  harnessPreferencesEqual,
-  keyToHarnessPreference,
-  type HarnessPreferenceKey,
-} from '@/components/settings/HarnessPreferencePicker'
 import type {
   Locale,
-  SuggestionHarnessPreference,
   UpdateChannel,
 } from '@superone/shared/agent-types'
 import { AVAILABLE_UPDATE_CHANNELS, channelFromVersion } from '@superone/shared/update-channels'
@@ -36,10 +28,6 @@ export function AppSettingsPage() {
   const [savingLocale, setSavingLocale] = useState(false)
   const [updateChannel, setUpdateChannel] = useState<UpdateChannel | null>(null)
   const [savingChannel, setSavingChannel] = useState(false)
-  const [defaultHarness, setDefaultHarness] = useState<SuggestionHarnessPreference | null>(null)
-  const [secondaryHarness, setSecondaryHarness] = useState<SuggestionHarnessPreference | null>(null)
-  const [savingDefaultHarness, setSavingDefaultHarness] = useState(false)
-  const [savingSecondaryHarness, setSavingSecondaryHarness] = useState(false)
   const appVersion = useAppStore((s) => s.appVersion)
 
   const currentLocale: Locale = i18n.language === 'zh' ? 'zh' : 'en'
@@ -71,57 +59,12 @@ export function AppSettingsPage() {
       if (!mounted) return
       setAnalyticsEnabled(settings.analyticsEnabled)
       setUpdateChannel(settings.updateChannel)
-      setDefaultHarness(settings.suggestionHarness ?? null)
-      setSecondaryHarness(settings.secondaryHarness ?? null)
       setLoading(false)
-    })
-    const unsub = window.app.onAppSettingsChange?.((settings) => {
-      if (!mounted) return
-      setDefaultHarness(settings.suggestionHarness ?? null)
-      setSecondaryHarness(settings.secondaryHarness ?? null)
     })
     return () => {
       mounted = false
-      unsub?.()
     }
   }, [])
-
-  async function handleDefaultHarnessSelect(key: HarnessPreferenceKey) {
-    const pref = keyToHarnessPreference(key)
-    if (savingDefaultHarness || harnessPreferencesEqual(defaultHarness, pref)) return
-    setSavingDefaultHarness(true)
-    try {
-      // Collision: choosing the same harness as secondary clears secondary (Auto).
-      const clearsSecondary = pref != null && harnessPreferencesEqual(pref, secondaryHarness)
-      const result = await window.app.saveAppSettings({
-        suggestionHarness: pref,
-        ...(clearsSecondary ? { secondaryHarness: null } : {}),
-      })
-      setDefaultHarness(result.suggestionHarness ?? null)
-      setSecondaryHarness(result.secondaryHarness ?? null)
-      toast.success(t('settings.general.defaultHarness.updated'))
-    } finally {
-      setSavingDefaultHarness(false)
-    }
-  }
-
-  async function handleSecondaryHarnessSelect(key: HarnessPreferenceKey) {
-    const pref = keyToHarnessPreference(key)
-    if (savingSecondaryHarness || harnessPreferencesEqual(secondaryHarness, pref)) return
-    // Secondary cannot equal default — keep Auto instead of a duplicate pin.
-    if (pref != null && harnessPreferencesEqual(pref, defaultHarness)) {
-      toast.error(t('settings.general.secondaryHarness.duplicate'))
-      return
-    }
-    setSavingSecondaryHarness(true)
-    try {
-      const result = await window.app.saveAppSettings({ secondaryHarness: pref })
-      setSecondaryHarness(result.secondaryHarness ?? null)
-      toast.success(t('settings.general.secondaryHarness.updated'))
-    } finally {
-      setSavingSecondaryHarness(false)
-    }
-  }
 
   async function handleAnalyticsToggle(enabled: boolean) {
     const result = await window.app.saveAppSettings({ analyticsEnabled: enabled })
@@ -266,39 +209,6 @@ export function AppSettingsPage() {
             description={t('settings.general.videoProvider.description')}
             fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.videoProvider.auto')}</span>}
           />
-        </div>
-
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.harness')}</p>
-          </div>
-          <div className="flex items-center justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.defaultHarness.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.defaultHarness.description')}
-              </p>
-            </div>
-            <HarnessPreferencePicker
-              value={harnessPreferenceToKey(defaultHarness)}
-              onChange={(key) => void handleDefaultHarnessSelect(key)}
-              disabled={loading || savingDefaultHarness}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.secondaryHarness.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.secondaryHarness.description')}
-              </p>
-            </div>
-            <HarnessPreferencePicker
-              value={harnessPreferenceToKey(secondaryHarness)}
-              onChange={(key) => void handleSecondaryHarnessSelect(key)}
-              excludeKey={harnessPreferenceToKey(defaultHarness)}
-              disabled={loading || savingSecondaryHarness}
-            />
-          </div>
         </div>
 
         <div className="rounded-lg border border-border">

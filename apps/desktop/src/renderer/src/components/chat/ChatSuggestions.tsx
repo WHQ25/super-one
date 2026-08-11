@@ -110,6 +110,7 @@ function ProviderSelector() {
     undefined,
   )
   const [secondaryHarness, setSecondaryHarness] = useState<SuggestionHarnessPreference | null>(null)
+  const [harnessOrder, setHarnessOrder] = useState<string[]>([])
   // Dropdown-slot memory: separate from active preference so selecting the fixed
   // (top-ranked) slot does not reset the menu tab label / re-activation target.
   // Survives ProviderSelector remounts that happen when empty-session harness
@@ -146,16 +147,18 @@ function ProviderSelector() {
     let cancelled = false
 
     const applySettings = (settings: {
+      harnessOrder?: string[]
       suggestionHarness?: SuggestionHarnessPreference | null
       secondaryHarness?: SuggestionHarnessPreference | null
       suggestionMenuHarness?: SuggestionHarnessPreference | null
     } | null) => {
       if (cancelled) return
+      setHarnessOrder(Array.isArray(settings?.harnessOrder) ? settings.harnessOrder : [])
       setSuggestionHarness(settings?.suggestionHarness ?? null)
       const nextSecondary = settings?.secondaryHarness ?? null
       setSecondaryHarness(nextSecondary)
-      // Explicit secondary owns the menu slot — keep in-process memory aligned so
-      // remounts don't resurrect a stale suggestionMenuHarness over settings.
+      // Explicit secondary (or ordered #2) owns the menu slot — keep in-process
+      // memory aligned so remounts don't resurrect a stale suggestionMenuHarness.
       if (nextSecondary != null) {
         rememberedSuggestionMenuHarness = nextSecondary
         setSuggestionMenuHarness(nextSecondary)
@@ -370,10 +373,19 @@ function ProviderSelector() {
       includeCodex: isCatalogHarnessEnabled(harnessCatalog, 'codex'),
       includeOpenCode:
         isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled,
+      harnessOrder,
       defaultHarness: suggestionHarness === undefined ? null : suggestionHarness,
       secondaryHarness,
     }),
-    [ranks, visibleAcpAgents, harnessCatalog, experimentalAgentsEnabled, suggestionHarness, secondaryHarness],
+    [
+      ranks,
+      visibleAcpAgents,
+      harnessCatalog,
+      experimentalAgentsEnabled,
+      harnessOrder,
+      suggestionHarness,
+      secondaryHarness,
+    ],
   )
 
   const fixedHarness = orderedHarnesses[0] ?? null
@@ -390,11 +402,11 @@ function ProviderSelector() {
       menuHarnesses,
       activeKey,
       rememberedMenu: suggestionMenuHarness,
-      // Explicit secondary setting owns the menu tab; don't let stale
+      // Explicit secondary / ordered list owns the menu tab; don't let stale
       // suggestionMenuHarness override ordered #2.
-      secondaryPinned: secondaryHarness != null,
+      secondaryPinned: secondaryHarness != null || harnessOrder.length >= 2,
     }),
-    [menuHarnesses, activeKey, suggestionMenuHarness, secondaryHarness],
+    [menuHarnesses, activeKey, suggestionMenuHarness, secondaryHarness, harnessOrder.length],
   )
   const menuTabLabel = menuTabOption ? optionLabel(menuTabOption) : 'Codex'
   const menuTabActive = hasEnabledHarness && !fixedActive

@@ -4,11 +4,34 @@
  * the existing settings page components under the active tab.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
-import { Blocks, Bot, Loader2, Palette, Puzzle, RefreshCw, Server, Webhook } from 'lucide-react'
+import { Blocks, Bot, GripVertical, Loader2, Palette, Puzzle, RefreshCw, Server, Webhook } from 'lucide-react'
 import { Codex, Grok, OpenCode } from '@lobehub/icons'
 import { toast } from 'sonner'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Switch } from '@superone/ui/components/ui/switch'
@@ -16,6 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/component
 import { cn } from '@superone/ui/lib/utils'
 import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
+import { suggestionHarnessKey } from '@/lib/suggestion-harness-order'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type HarnessConfigSection } from '@/stores/app'
 import { ClaudeCodeTextInline } from '@/components/harness/ClaudeCodeTextInline'
@@ -118,6 +142,28 @@ function catalogIsOn(row: CatalogRow | undefined): boolean {
   return row.enabled && row.state !== 'disabled'
 }
 
+/** Suggestion-key used for harnessOrder / ChatSuggestions ranking. */
+function orderKeyForItem(item: ListItem): string {
+  if (item.provider === 'acp') {
+    const agentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
+    return suggestionHarnessKey('acp', agentId)
+  }
+  return item.provider
+}
+
+function sortItemsByOrder(items: ListItem[], order: string[]): ListItem[] {
+  if (order.length === 0 || items.length <= 1) return items
+  const index = new Map(order.map((key, i) => [key, i] as const))
+  return [...items].sort((a, b) => {
+    const ai = index.get(orderKeyForItem(a))
+    const bi = index.get(orderKeyForItem(b))
+    if (ai == null && bi == null) return 0
+    if (ai == null) return 1
+    if (bi == null) return -1
+    return ai - bi
+  })
+}
+
 /**
  * LobeHub brand Text wordmark for detail header (no icon).
  * All brands share the same `size` (SVG height). LobeHub Text icons use a
@@ -172,6 +218,8 @@ export function HarnessesSettingsPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>('claude')
   const [enabledExperimentalAgents, setEnabledExperimentalAgents] = useState<string[]>([])
   const [legacyExperimentalAll, setLegacyExperimentalAll] = useState(false)
+  const [harnessOrder, setHarnessOrder] = useState<string[]>([])
+  const [savingOrder, setSavingOrder] = useState(false)
 
   const acpAgents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
@@ -179,6 +227,10 @@ export function HarnessesSettingsPage() {
   const setSettingsProvider = useAppStore((s) => s.setSettingsProvider)
   const harnessConfigSection = useAppStore((s) => s.harnessConfigSection)
   const setHarnessConfigSection = useAppStore((s) => s.setHarnessConfigSection)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  )
 
   useEffect(() => {
     void initializeHarness('acp')
@@ -190,9 +242,17 @@ export function HarnessesSettingsPage() {
       if (!mounted) return
       setEnabledExperimentalAgents(s.enabledExperimentalAgents ?? [])
       setLegacyExperimentalAll(!!s.experimentalAgentsEnabled)
+      setHarnessOrder(Array.isArray(s.harnessOrder) ? s.harnessOrder : [])
+    })
+    const unsub = window.app.onAppSettingsChange?.((s) => {
+      if (!mounted) return
+      setEnabledExperimentalAgents(s.enabledExperimentalAgents ?? [])
+      setLegacyExperimentalAll(!!s.experimentalAgentsEnabled)
+      setHarnessOrder(Array.isArray(s.harnessOrder) ? s.harnessOrder : [])
     })
     return () => {
       mounted = false
+      unsub?.()
     }
   }, [])
 
@@ -324,9 +384,16 @@ export function HarnessesSettingsPage() {
     [catalogById, enabledExperimentalAgents, legacyExperimentalAll],
   )
 
-  const enabledItems = items.filter(isItemEnabled)
-  const disabledItems = items.filter((i) => !isItemEnabled(i))
+  const enabledItems = useMemo(
+    () => sortItemsByOrder(items.filter(isItemEnabled), harnessOrder),
+    [items, isItemEnabled, harnessOrder],
+  )
+  const disabledItems = useMemo(
+    () => items.filter((i) => !isItemEnabled(i)),
+    [items, isItemEnabled],
+  )
   const selected = items.find((i) => i.key === selectedKey) ?? items[0] ?? null
+  const enabledOrderIds = useMemo(() => enabledItems.map((i) => i.key), [enabledItems])
 
   async function setExperimentalAgentEnabled(agentId: string, enabled: boolean): Promise<void> {
     const next = enabled
@@ -363,6 +430,17 @@ export function HarnessesSettingsPage() {
           }),
         )
       }
+      // Keep explicit order: newly enabled keys append; disabled keys stay so
+      // re-enable restores rank. Only when the user has set a manual order.
+      if (harnessOrder.length > 0) {
+        const key = orderKeyForItem(item)
+        if (enabled && !harnessOrder.includes(key)) {
+          const nextOrder = [...harnessOrder, key]
+          setHarnessOrder(nextOrder)
+          const result = await window.app.saveAppSettings({ harnessOrder: nextOrder })
+          setHarnessOrder(Array.isArray(result.harnessOrder) ? result.harnessOrder : nextOrder)
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       // Catalog enable/disable already surfaces the message via install progress
@@ -392,35 +470,42 @@ export function HarnessesSettingsPage() {
     }
   }
 
-  const renderRow = (item: ListItem) => {
-    const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
-    const Icon = resolveSessionIcon(item.provider, acpAgentId)
-    const isSelected = selectedKey === item.key
-    return (
-      <button
-        key={item.key}
-        type="button"
-        onClick={() => selectItem(item)}
-        className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-3 text-left transition-colors',
-          isSelected ? 'bg-primary/10' : 'hover:bg-muted/50',
-        )}
-      >
-        <span className="flex min-w-0 items-center gap-3">
-          {Icon ? (
-            <Icon status="default" size={30} renderLevel="compact" />
-          ) : (
-            <span className="shrink-0 rounded bg-muted" style={{ width: 30, height: 30 }} />
-          )}
-          <span className="truncate text-lg font-medium">{item.label}</span>
-          {item.experimental ? (
-            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
-              {t('settings.harnesses.experimentalBadge')}
-            </Badge>
-          ) : null}
-        </span>
-      </button>
-    )
+  async function persistEnabledOrder(nextEnabled: ListItem[]): Promise<void> {
+    // Persist full order: reordered enabled keys first, then any prior keys
+    // for currently-disabled harnesses so re-enable keeps their relative rank.
+    const enabledKeys = nextEnabled.map(orderKeyForItem)
+    const enabledSet = new Set(enabledKeys)
+    const retained = harnessOrder.filter((k) => !enabledSet.has(k))
+    const nextOrder = [...enabledKeys, ...retained]
+    if (
+      nextOrder.length === harnessOrder.length
+      && nextOrder.every((k, i) => k === harnessOrder[i])
+    ) {
+      return
+    }
+    setHarnessOrder(nextOrder)
+    setSavingOrder(true)
+    try {
+      const result = await window.app.saveAppSettings({ harnessOrder: nextOrder })
+      setHarnessOrder(Array.isArray(result.harnessOrder) ? result.harnessOrder : nextOrder)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+      // Reload from disk on failure.
+      const s = await window.app.getAppSettings().catch(() => null)
+      if (s) setHarnessOrder(Array.isArray(s.harnessOrder) ? s.harnessOrder : [])
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+  function handleEnabledDragEnd(event: DragEndEvent): void {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = enabledItems.findIndex((i) => i.key === active.id)
+    const newIndex = enabledItems.findIndex((i) => i.key === over.id)
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
+    const nextEnabled = arrayMove(enabledItems, oldIndex, newIndex)
+    void persistEnabledOrder(nextEnabled)
   }
 
   return (
@@ -452,7 +537,23 @@ export function HarnessesSettingsPage() {
             <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               {t('settings.harnesses.groupEnabled')}
             </div>
-            {enabledItems.map(renderRow)}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleEnabledDragEnd}
+            >
+              <SortableContext items={enabledOrderIds} strategy={verticalListSortingStrategy}>
+                {enabledItems.map((item) => (
+                  <SortableHarnessRow
+                    key={item.key}
+                    item={item}
+                    selected={selectedKey === item.key}
+                    disabled={savingOrder || busyKey !== null}
+                    onSelect={() => selectItem(item)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           </div>
         )}
 
@@ -461,7 +562,14 @@ export function HarnessesSettingsPage() {
             <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               {t('settings.harnesses.groupDisabled')}
             </div>
-            {disabledItems.map(renderRow)}
+            {disabledItems.map((item) => (
+              <HarnessListRow
+                key={item.key}
+                item={item}
+                selected={selectedKey === item.key}
+                onSelect={() => selectItem(item)}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -496,6 +604,108 @@ export function HarnessesSettingsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+function HarnessListRow({
+  item,
+  selected,
+  onSelect,
+  dragHandle,
+  isDragging,
+  style,
+  setNodeRef,
+  attributes,
+  listeners,
+}: {
+  item: ListItem
+  selected: boolean
+  onSelect: () => void
+  dragHandle?: boolean
+  isDragging?: boolean
+  style?: CSSProperties
+  setNodeRef?: (node: HTMLElement | null) => void
+  attributes?: ReturnType<typeof useSortable>['attributes']
+  listeners?: ReturnType<typeof useSortable>['listeners']
+}) {
+  const { t } = useTranslation()
+  const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
+  const Icon = resolveSessionIcon(item.provider, acpAgentId)
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'flex w-full items-center gap-1 rounded-lg transition-colors',
+        selected ? 'bg-primary/10' : 'hover:bg-muted/50',
+        isDragging && 'z-10 opacity-80 shadow-sm',
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 items-center gap-2.5 py-3 pl-3 text-left"
+      >
+        {Icon ? (
+          <Icon status="default" size={30} renderLevel="compact" />
+        ) : (
+          <span className="shrink-0 rounded bg-muted" style={{ width: 30, height: 30 }} />
+        )}
+        <span className="truncate text-base font-medium">{item.label}</span>
+        {item.experimental ? (
+          <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
+            {t('settings.harnesses.experimentalBadge')}
+          </Badge>
+        ) : null}
+      </button>
+      {dragHandle ? (
+        <button
+          type="button"
+          className="flex shrink-0 cursor-grab items-center px-1.5 py-3 text-muted-foreground active:cursor-grabbing"
+          aria-label={t('settings.harnesses.dragHandle')}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-3.5" />
+        </button>
+      ) : (
+        <span className="w-2 shrink-0" />
+      )}
+    </div>
+  )
+}
+
+function SortableHarnessRow({
+  item,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  item: ListItem
+  selected: boolean
+  disabled: boolean
+  onSelect: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.key,
+    disabled,
+  })
+  const style = {
+    transform: CSS.Transform.toString(transform ? { ...transform, x: 0 } : null),
+    transition,
+  }
+  return (
+    <HarnessListRow
+      item={item}
+      selected={selected}
+      onSelect={onSelect}
+      dragHandle
+      isDragging={isDragging}
+      style={style}
+      setNodeRef={setNodeRef}
+      attributes={attributes}
+      listeners={listeners}
+    />
   )
 }
 

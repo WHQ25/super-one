@@ -78,6 +78,43 @@ describe('orderSuggestionHarnesses', () => {
     ])
   })
 
+  it('uses full harnessOrder over pins and session counts', () => {
+    const ordered = orderSuggestionHarnesses({
+      ranks: [
+        { key: 'codex', provider: 'codex', acpAgentId: null, sessionCount: 12 },
+        { key: 'claude', provider: 'claude', acpAgentId: null, sessionCount: 3 },
+      ],
+      acpAgents: agents,
+      experimentalAgentsEnabled: false,
+      harnessOrder: ['acp:other-agent', 'claude', 'codex', 'acp:grok-build'],
+      defaultHarness: { provider: 'codex', acpAgentId: null },
+      secondaryHarness: { provider: 'claude', acpAgentId: null },
+    })
+    expect(ordered.map((o) => o.key)).toEqual([
+      'acp:other-agent',
+      'claude',
+      'codex',
+      'acp:grok-build',
+    ])
+  })
+
+  it('appends enabled harnesses missing from harnessOrder by usage', () => {
+    const ordered = orderSuggestionHarnesses({
+      ranks: [
+        { key: 'codex', provider: 'codex', acpAgentId: null, sessionCount: 5 },
+      ],
+      acpAgents: agents,
+      experimentalAgentsEnabled: false,
+      harnessOrder: ['claude'],
+    })
+    expect(ordered.map((o) => o.key)).toEqual([
+      'claude',
+      'codex',
+      'acp:grok-build',
+      'acp:other-agent',
+    ])
+  })
+
   it('ignores secondary when it matches default', () => {
     const ordered = orderSuggestionHarnesses({
       ranks: [

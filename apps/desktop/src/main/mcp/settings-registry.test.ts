@@ -42,6 +42,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     browserBookmarks: [],
     browserBookmarkGroups: [],
     defaultClonePaths: {},
+    harnessOrder: [],
     suggestionHarness: null,
     secondaryHarness: null,
     suggestionMenuHarness: null,
@@ -96,6 +97,25 @@ describe('settings registry validation', () => {
     ])
     expect(patch.suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
     expect(patch.secondaryHarness).toBeNull()
+  })
+
+  it('accepts harnessOrder as a comma-separated string', () => {
+    const settings = makeSettings({
+      harnessOrder: ['claude', 'codex'],
+    })
+    const { patch, applied, rejected } = buildPatchFromValues({
+      harnessOrder: 'codex,acp:grok-build,claude',
+    }, settings)
+    expect(rejected).toEqual([])
+    expect(applied).toEqual([
+      {
+        key: 'harnessOrder',
+        label: 'Harness Order',
+        oldValue: 'claude,codex',
+        newValue: 'codex,acp:grok-build,claude',
+      },
+    ])
+    expect(patch.harnessOrder).toEqual(['codex', 'acp:grok-build', 'claude'])
   })
 
   it('rejects a non-boolean for a boolean field', () => {
@@ -215,6 +235,7 @@ describe('settings registry — new field groups', () => {
       { key: 'experimentalAgentsEnabled', currentValue: true },
       { key: 'experimentalRemoteNodesEnabled', currentValue: false },
       { key: 'acpSelectedAgentId', currentValue: 'gemini-cli' },
+      { key: 'harnessOrder', currentValue: null },
       { key: 'defaultHarness', currentValue: null },
       { key: 'secondaryHarness', currentValue: null },
     ])

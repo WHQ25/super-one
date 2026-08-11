@@ -72,6 +72,7 @@ const defaults: AppSettings = {
   browserBookmarks: [],
   browserBookmarkGroups: [],
   defaultClonePaths: {},
+  harnessOrder: [],
   suggestionHarness: null,
   secondaryHarness: null,
   suggestionMenuHarness: null,
@@ -149,6 +150,40 @@ export function parseSuggestionHarnessKey(value: unknown): SuggestionHarnessPref
     return agent ? { provider: 'acp', acpAgentId: agent } : null
   }
   return null
+}
+
+/** Valid order keys: `claude` | `codex` | `opencode` | `acp:<agentId>`. */
+export function isHarnessOrderKey(key: string): boolean {
+  return parseSuggestionHarnessKey(key) != null
+}
+
+export function readHarnessOrder(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const key = item.trim()
+    if (!key || seen.has(key) || !isHarnessOrderKey(key)) continue
+    seen.add(key)
+    out.push(key)
+  }
+  return out
+}
+
+/** Move `key` to `index` (clamped), creating the list if needed. */
+export function moveHarnessOrderKey(order: string[], key: string, index: number): string[] {
+  if (!isHarnessOrderKey(key)) return order
+  const without = order.filter((k) => k !== key)
+  const next = [...without]
+  const at = Math.max(0, Math.min(index, next.length))
+  next.splice(at, 0, key)
+  return next
+}
+
+function preferenceFromOrderKey(key: string | undefined): SuggestionHarnessPreference | null {
+  if (!key) return null
+  return parseSuggestionHarnessKey(key)
 }
 
 function readBrandHue(value: unknown): number | null {
@@ -419,11 +454,20 @@ export function readAppSettings(): AppSettings {
       browserBookmarks: readBookmarks(data.browserBookmarks),
       browserBookmarkGroups: readBookmarkGroups(data.browserBookmarkGroups),
       defaultClonePaths: readDefaultClonePaths(data.defaultClonePaths),
-      // `defaultHarness` is accepted as a legacy/alias key for config-tool clarity.
-      suggestionHarness: readSuggestionHarness(data.suggestionHarness ?? data.defaultHarness)
-        ?? parseSuggestionHarnessKey(data.suggestionHarness ?? data.defaultHarness),
-      secondaryHarness: readSuggestionHarness(data.secondaryHarness)
-        ?? parseSuggestionHarnessKey(data.secondaryHarness),
+      ...(() => {
+        const harnessOrder = readHarnessOrder(data.harnessOrder)
+        // `defaultHarness` is accepted as a legacy/alias key for config-tool clarity.
+        let suggestionHarness = readSuggestionHarness(data.suggestionHarness ?? data.defaultHarness)
+          ?? parseSuggestionHarnessKey(data.suggestionHarness ?? data.defaultHarness)
+        let secondaryHarness = readSuggestionHarness(data.secondaryHarness)
+          ?? parseSuggestionHarnessKey(data.secondaryHarness)
+        // Full manual order owns pins (index 0 / 1).
+        if (harnessOrder.length > 0) {
+          suggestionHarness = preferenceFromOrderKey(harnessOrder[0])
+          secondaryHarness = preferenceFromOrderKey(harnessOrder[1])
+        }
+        return { harnessOrder, suggestionHarness, secondaryHarness }
+      })(),
       suggestionMenuHarness: readSuggestionHarness(data.suggestionMenuHarness),
       onboardingCompletedAt:
         typeof data.onboardingCompletedAt === 'number'
@@ -475,6 +519,7 @@ export function readAppSettings(): AppSettings {
       browserBookmarks: [],
       browserBookmarkGroups: [],
       defaultClonePaths: {},
+      harnessOrder: [],
       suggestionHarness: null,
       secondaryHarness: null,
       suggestionMenuHarness: null,
@@ -491,6 +536,62 @@ export function readAppSettings(): AppSettings {
 
 export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   const current = readAppSettings()
+
+  let suggestionHarness = patch.suggestionHarness === undefined
+    ? current.suggestionHarness
+    : (readSuggestionHarness(patch.suggestionHarness) ?? parseSuggestionHarnessKey(patch.suggestionHarness))
+  let secondaryHarness = patch.secondaryHarness === undefined
+    ? current.secondaryHarness
+    : (readSuggestionHarness(patch.secondaryHarness) ?? parseSuggestionHarnessKey(patch.secondaryHarness))
+
+  let harnessOrder = patch.harnessOrder !== undefined
+    ? readHarnessOrder(patch.harnessOrder)
+    : current.harnessOrder
+
+  // Explicit full order owns default/secondary pins (index 0 / 1).
+  if (patch.harnessOrder !== undefined) {
+    suggestionHarness = preferenceFromOrderKey(harnessOrder[0])
+    secondaryHarness = preferenceFromOrderKey(harnessOrder[1])
+  } else if (harnessOrder.length > 0) {
+    // Pin writes (ChatSuggestions / config tools) keep the ordered list in sync.
+    if (patch.suggestionHarness !== undefined) {
+      const key = serializeSuggestionHarness(suggestionHarness)
+      if (key) harnessOrder = moveHarnessOrderKey(harnessOrder, key, 0)
+    }
+    if (patch.secondaryHarness !== undefined) {
+      const key = serializeSuggestionHarness(secondaryHarness)
+      if (key) {
+        // Prefer #2; if key is already #1 and default was not also patched, leave at #1.
+        const at = harnessOrder.indexOf(key)
+        if (at !== 0 || patch.suggestionHarness !== undefined) {
+          harnessOrder = moveHarnessOrderKey(harnessOrder, key, 1)
+        }
+      }
+    }
+    // Re-derive pins from the resulting order so UI/MCP stay consistent.
+    suggestionHarness = preferenceFromOrderKey(harnessOrder[0]) ?? suggestionHarness
+    secondaryHarness = preferenceFromOrderKey(harnessOrder[1])
+  }
+
+  // Default and secondary must be distinct. Prefer keeping default; drop secondary.
+  if (
+    suggestionHarness
+    && secondaryHarness
+    && suggestionHarness.provider === secondaryHarness.provider
+    && (
+      suggestionHarness.provider !== 'acp'
+      || (suggestionHarness.acpAgentId ?? null) === (secondaryHarness.acpAgentId ?? null)
+    )
+  ) {
+    secondaryHarness = null
+    if (harnessOrder.length > 1) {
+      const dupKey = serializeSuggestionHarness(suggestionHarness)
+      if (dupKey && harnessOrder[1] === dupKey) {
+        harnessOrder = [harnessOrder[0], ...harnessOrder.slice(2)]
+      }
+    }
+  }
+
   const merged: AppSettings = {
     analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
     experimentalAgentsEnabled: patch.experimentalAgentsEnabled
@@ -533,12 +634,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     browserBookmarks: patch.browserBookmarks === undefined ? current.browserBookmarks : readBookmarks(patch.browserBookmarks),
     browserBookmarkGroups: patch.browserBookmarkGroups === undefined ? current.browserBookmarkGroups : readBookmarkGroups(patch.browserBookmarkGroups),
     defaultClonePaths: mergeDefaultClonePaths(current.defaultClonePaths, patch.defaultClonePaths),
-    suggestionHarness: patch.suggestionHarness === undefined
-      ? current.suggestionHarness
-      : (readSuggestionHarness(patch.suggestionHarness) ?? parseSuggestionHarnessKey(patch.suggestionHarness)),
-    secondaryHarness: patch.secondaryHarness === undefined
-      ? current.secondaryHarness
-      : (readSuggestionHarness(patch.secondaryHarness) ?? parseSuggestionHarnessKey(patch.secondaryHarness)),
+    harnessOrder,
+    suggestionHarness,
+    secondaryHarness,
     suggestionMenuHarness: patch.suggestionMenuHarness === undefined
       ? current.suggestionMenuHarness
       : readSuggestionHarness(patch.suggestionMenuHarness),
@@ -564,18 +662,6 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
         ...patch.agentPreference?.acp,
       },
     },
-  }
-  // Default and secondary must be distinct. Prefer keeping default; drop secondary.
-  if (
-    merged.suggestionHarness
-    && merged.secondaryHarness
-    && merged.suggestionHarness.provider === merged.secondaryHarness.provider
-    && (
-      merged.suggestionHarness.provider !== 'acp'
-      || (merged.suggestionHarness.acpAgentId ?? null) === (merged.secondaryHarness.acpAgentId ?? null)
-    )
-  ) {
-    merged.secondaryHarness = null
   }
   writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2))
   return merged

@@ -311,6 +311,7 @@ export type Messages = {
       sourceExternal: string
       groupEnabled: string
       groupDisabled: string
+      dragHandle: string
       selectHint: string
       experimentalBadge: string
       experimentalAcpHint: string
@@ -2894,6 +2895,7 @@ export const en: Messages = {
       sourceExternal: 'External (PATH / config)',
       groupEnabled: 'Enabled',
       groupDisabled: 'Disabled',
+      dragHandle: 'Drag to reorder',
       selectHint: 'Select a harness to manage',
       experimentalBadge: 'Experimental',
       experimentalAcpHint:

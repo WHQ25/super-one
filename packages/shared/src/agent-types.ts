@@ -3434,13 +3434,23 @@ export interface AppSettings {
    */
   defaultClonePaths: Record<string, string>
   /**
+   * Explicit ChatSuggestions / picker harness order (suggestion keys:
+   * `claude` | `codex` | `opencode` | `acp:<agentId>`).
+   * Index 0 = default (fixed tab), 1 = secondary (menu default), then the rest.
+   * Empty = no full manual order; fall back to `suggestionHarness` /
+   * `secondaryHarness` pins + recent parent-session counts.
+   */
+  harnessOrder: string[]
+  /**
    * Default ChatSuggestions harness (fixed tab / empty-session pick).
-   * `null` means Auto: rank by recent parent-session count.
+   * `null` means Auto: rank by recent parent-session count (only when
+   * `harnessOrder` is empty). Kept in sync with `harnessOrder[0]` when order is set.
    */
   suggestionHarness: SuggestionHarnessPreference | null
   /**
    * Secondary ChatSuggestions harness (menu-tab default / rank #2).
-   * `null` means Auto: next by recent parent-session count after default.
+   * `null` means Auto when `harnessOrder` is empty.
+   * Kept in sync with `harnessOrder[1]` when order is set.
    * Ignored when equal to `suggestionHarness`.
    */
   secondaryHarness: SuggestionHarnessPreference | null
@@ -3540,6 +3550,11 @@ export interface AppSettingsPatch {
    * connection's entry.
    */
   defaultClonePaths?: Record<string, string>
+  /**
+   * Full manual harness order. When non-empty, also derives
+   * `suggestionHarness` / `secondaryHarness` from indices 0 and 1.
+   */
+  harnessOrder?: string[]
   /** Pass `null` to clear and return to Auto (rank by parent-session count). */
   suggestionHarness?: SuggestionHarnessPreference | null
   /** Pass `null` to clear and return secondary to Auto. */

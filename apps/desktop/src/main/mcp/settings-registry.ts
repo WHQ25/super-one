@@ -97,13 +97,32 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ agentPreference: { acp: { selectedAgentId: v as string | null } } }),
       },
       {
+        key: 'harnessOrder',
+        label: 'Harness Order',
+        type: 'string',
+        clearTo: null,
+        note:
+          'Comma-separated ChatSuggestions harness order. First = default (fixed tab), second = secondary '
+          + '(menu default), rest follow. Values: "claude" | "codex" | "opencode" | "acp:<agentId>" '
+          + '(e.g. "claude,codex,acp:grok-build"). Clear / empty for Auto (session-count ranking + pins).',
+        read: (s) => (s.harnessOrder.length > 0 ? s.harnessOrder.join(',') : null),
+        toPatch: (v) => {
+          if (v == null || v === '') return { harnessOrder: [] }
+          if (typeof v !== 'string') return { harnessOrder: [] }
+          return {
+            harnessOrder: v.split(',').map((part) => part.trim()).filter(Boolean),
+          }
+        },
+      },
+      {
         key: 'defaultHarness',
         label: 'Default Harness',
         type: 'string',
         clearTo: null,
         note:
-          'ChatSuggestions primary harness. Clear / "auto" for Auto (rank by recent parent-session count). '
-          + 'Values: "claude" | "codex" | "opencode" | "acp:<agentId>" (e.g. "acp:grok-build").',
+          'ChatSuggestions primary harness (rank #1). Prefer reordering via harnessOrder. '
+          + 'When harnessOrder is set, moves that key to index 0. Clear / "auto" only applies when '
+          + 'harnessOrder is empty. Values: "claude" | "codex" | "opencode" | "acp:<agentId>".',
         read: (s) => serializeSuggestionHarness(s.suggestionHarness),
         toPatch: (v) => ({ suggestionHarness: parseSuggestionHarnessKey(v) }),
       },
@@ -113,8 +132,8 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         type: 'string',
         clearTo: null,
         note:
-          'ChatSuggestions secondary harness (rank #2 / menu default). Clear / "auto" for Auto. '
-          + 'Same value strings as defaultHarness. Ignored when equal to defaultHarness.',
+          'ChatSuggestions secondary harness (rank #2 / menu default). Prefer harnessOrder. '
+          + 'When harnessOrder is set, moves that key to index 1. Same value strings as defaultHarness.',
         read: (s) => serializeSuggestionHarness(s.secondaryHarness),
         toPatch: (v) => ({ secondaryHarness: parseSuggestionHarnessKey(v) }),
       },

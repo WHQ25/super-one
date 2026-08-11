@@ -42,7 +42,9 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
  * - Include claude/codex when flags say so (catalog enable; default true)
  * - Include each visible ACP agent as its own entry (caller filters experimental)
  * - Include opencode only when `includeOpenCode` (catalog enable)
- * - Manual default → secondary pins first, then parent-session count desc,
+ * - When `harnessOrder` is non-empty: full manual order (index 0 = default, 1 = secondary, …);
+ *   unknown keys among enabled options append after, sorted by usage then product default
+ * - Else: manual default → secondary pins first, then parent-session count desc,
  *   then stable product default order
  */
 export function orderSuggestionHarnesses(input: {
@@ -59,7 +61,11 @@ export function orderSuggestionHarnesses(input: {
    * against experimentalAgentsEnabled still typecheck during migration.
    */
   experimentalAgentsEnabled?: boolean
-  /** null/undefined = Auto (no pin). */
+  /**
+   * Full manual order (suggestion keys). When non-empty, overrides pin + usage ranking.
+   */
+  harnessOrder?: string[] | null
+  /** null/undefined = Auto (no pin). Used only when harnessOrder is empty. */
   defaultHarness?: SuggestionHarnessPreference | null
   /** null/undefined = Auto (no pin). Ignored when equal to default. */
   secondaryHarness?: SuggestionHarnessPreference | null
@@ -109,17 +115,32 @@ export function orderSuggestionHarnesses(input: {
     })
   }
 
-  const defaultKey = preferenceKey(input.defaultHarness)
-  const secondaryKey = preferenceKey(input.secondaryHarness)
-  const effectiveSecondaryKey =
-    secondaryKey && secondaryKey !== defaultKey ? secondaryKey : null
-
   const byUsageThenDefault = (a: SuggestionHarnessOption, b: SuggestionHarnessOption): number => {
     if (b.sessionCount !== a.sessionCount) return b.sessionCount - a.sessionCount
     const di = defaultRankIndex(a) - defaultRankIndex(b)
     if (di !== 0) return di
     return a.key.localeCompare(b.key)
   }
+
+  const orderKeys = (input.harnessOrder ?? []).filter((k) => typeof k === 'string' && k.length > 0)
+  if (orderKeys.length > 0) {
+    const byKey = new Map(options.map((o) => [o.key, o] as const))
+    const ordered: SuggestionHarnessOption[] = []
+    const used = new Set<string>()
+    for (const key of orderKeys) {
+      const opt = byKey.get(key)
+      if (!opt || used.has(key)) continue
+      ordered.push(opt)
+      used.add(key)
+    }
+    const rest = options.filter((o) => !used.has(o.key)).sort(byUsageThenDefault)
+    return [...ordered, ...rest]
+  }
+
+  const defaultKey = preferenceKey(input.defaultHarness)
+  const secondaryKey = preferenceKey(input.secondaryHarness)
+  const effectiveSecondaryKey =
+    secondaryKey && secondaryKey !== defaultKey ? secondaryKey : null
 
   const defaultOpt = defaultKey ? options.find((o) => o.key === defaultKey) ?? null : null
   const secondaryOpt = effectiveSecondaryKey

@@ -320,6 +320,7 @@ export const zh: Messages = {
       sourceExternal: '外部（PATH / 配置）',
       groupEnabled: '已启用',
       groupDisabled: '未启用',
+      dragHandle: '拖动排序',
       selectHint: '选择一个 harness 进行管理',
       experimentalBadge: '实验性',
       experimentalAcpHint:

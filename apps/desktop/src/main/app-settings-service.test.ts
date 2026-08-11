@@ -77,9 +77,12 @@ describe('app-settings-service', () => {
     browserBookmarks: [],
     browserBookmarkGroups: [],
     defaultClonePaths: {},
+    harnessOrder: [],
     suggestionHarness: null,
     secondaryHarness: null,
     suggestionMenuHarness: null,
+    onboardingCompletedAt: null,
+    onboardingEpoch: 0,
     cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -142,9 +145,12 @@ describe('app-settings-service', () => {
         browserBookmarks: [],
         browserBookmarkGroups: [],
         defaultClonePaths: {},
+        harnessOrder: [],
         suggestionHarness: null,
         secondaryHarness: null,
         suggestionMenuHarness: null,
+        onboardingCompletedAt: null,
+        onboardingEpoch: 0,
         cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -256,9 +262,12 @@ describe('app-settings-service', () => {
         browserBookmarks: [],
         browserBookmarkGroups: [],
         defaultClonePaths: {},
+        harnessOrder: [],
         suggestionHarness: null,
         secondaryHarness: null,
         suggestionMenuHarness: null,
+        onboardingCompletedAt: null,
+        onboardingEpoch: 0,
         cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -326,6 +335,40 @@ describe('app-settings-service', () => {
         secondaryHarness: 'auto',
       }))
       expect(readAppSettings().secondaryHarness).toBeNull()
+    })
+
+    it('derives default/secondary pins from harnessOrder on read and save', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        harnessOrder: ['codex', 'acp:grok-build', 'claude'],
+        suggestionHarness: { provider: 'claude', acpAgentId: null },
+        secondaryHarness: { provider: 'claude', acpAgentId: null },
+      }))
+      const read = readAppSettings()
+      expect(read.harnessOrder).toEqual(['codex', 'acp:grok-build', 'claude'])
+      expect(read.suggestionHarness).toEqual({ provider: 'codex', acpAgentId: null })
+      expect(read.secondaryHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        harnessOrder: ['claude', 'codex'],
+      }))
+      const saved = saveAppSettings({
+        harnessOrder: ['opencode', 'claude', 'codex'],
+      })
+      expect(saved.harnessOrder).toEqual(['opencode', 'claude', 'codex'])
+      expect(saved.suggestionHarness).toEqual({ provider: 'opencode', acpAgentId: null })
+      expect(saved.secondaryHarness).toEqual({ provider: 'claude', acpAgentId: null })
+    })
+
+    it('moves pins within harnessOrder when default/secondary are patched', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        harnessOrder: ['claude', 'codex', 'acp:grok-build'],
+      }))
+      const result = saveAppSettings({
+        suggestionHarness: { provider: 'acp', acpAgentId: 'grok-build' },
+      })
+      expect(result.harnessOrder[0]).toBe('acp:grok-build')
+      expect(result.suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+      expect(result.secondaryHarness).toEqual({ provider: 'claude', acpAgentId: null })
     })
 
     it('reads and clears suggestionMenuHarness preference', () => {

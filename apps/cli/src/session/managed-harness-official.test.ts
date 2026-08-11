@@ -6,9 +6,10 @@ import {
   OFFICIAL_CLAUDE_SDK_VERSION,
   claudePlatformPackageName,
   installManagedFromOfficialNpm,
-  managedNpmPrefix,
+  managedHarnessPrefix,
   officialPackageSpecs,
   resolveOfficialInstallBinary,
+  resolveOfficialInstallBinaryInRoot,
 } from './managed-harness-official'
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -54,30 +55,41 @@ describe('claudePlatformPackageName', () => {
 })
 
 describe('resolveOfficialInstallBinary', () => {
-  it('finds codex under prefix/bin', () => {
-    const prefix = mkdtempSync(join(tmpdir(), 'off-codex-'))
-    mkdirSync(join(prefix, 'bin'), { recursive: true })
-    const bin = join(prefix, 'bin', 'codex')
+  it('finds codex under a concrete install root (InRoot)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'off-codex-'))
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    const bin = join(root, 'bin', 'codex')
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
-    expect(resolveOfficialInstallBinary('codex', prefix)).toBe(bin)
+    expect(resolveOfficialInstallBinaryInRoot('codex', root)).toBe(bin)
   })
 
-  it('finds claude native binary under scoped platform package', () => {
-    const prefix = mkdtempSync(join(tmpdir(), 'off-claude-'))
-    const pkgDir = join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-agent-sdk-darwin-arm64')
+  it('finds claude under a concrete install root (InRoot)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'off-claude-'))
+    const pkgDir = join(root, 'lib', 'node_modules', '@anthropic-ai', 'claude-agent-sdk-darwin-arm64')
     mkdirSync(pkgDir, { recursive: true })
     const bin = join(pkgDir, 'claude')
     writeFileSync(bin, 'x')
     chmodSync(bin, 0o755)
-    // May resolve any claude-agent-sdk-* under @anthropic-ai
+    expect(resolveOfficialInstallBinaryInRoot('claude', root)).toBe(bin)
+  })
+
+  it('follows harness prefix current → versions/<ver>', () => {
+    const prefix = mkdtempSync(join(tmpdir(), 'off-prefix-'))
+    const verDir = join(prefix, 'versions', '1.0.0')
+    const pkgDir = join(verDir, 'lib', 'node_modules', '@anthropic-ai', 'claude-agent-sdk-darwin-arm64')
+    mkdirSync(pkgDir, { recursive: true })
+    const bin = join(pkgDir, 'claude')
+    writeFileSync(bin, 'x')
+    chmodSync(bin, 0o755)
+    writeFileSync(join(prefix, 'current'), JSON.stringify({ runtimeVersion: '1.0.0' }))
     expect(resolveOfficialInstallBinary('claude', prefix)).toBe(bin)
   })
 })
 
-describe('managedNpmPrefix', () => {
-  it('nests under node home', () => {
-    expect(managedNpmPrefix('/tmp/node', 'claude')).toBe(join('/tmp/node', 'managed-npm', 'claude'))
+describe('managedHarnessPrefix', () => {
+  it('places harness id directly under home root', () => {
+    expect(managedHarnessPrefix('/tmp/harness', 'claude')).toBe(join('/tmp/harness', 'claude'))
   })
 })
 
@@ -108,5 +120,9 @@ describe('installManagedFromOfficialNpm', () => {
     expect(result.source).toBe('official-npm')
     expect(result.command).toContain(`${join('bin', 'codex')}`)
     expect(result.runtimeVersion).toBe(OFFICIAL_CODEX_NPM_VERSION)
+    // Shared versioned layout with desktop
+    expect(result.installPrefix).toContain(join('versions', OFFICIAL_CODEX_NPM_VERSION))
+    expect(result.command).toContain(join('versions', OFFICIAL_CODEX_NPM_VERSION))
   })
 })
+

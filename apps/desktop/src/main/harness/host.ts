@@ -1,15 +1,15 @@
 /**
  * Desktop host wiring for the harness kernel (`@superone/runtime/harness`).
  *
- * Supplies install root (~/.superone/harness), app version pin, binary
- * discovery (managed install → bundled SDK → env), tarball installer, and
- * provider-store auth probe.
+ * Supplies install root (prod: shared `~/.superone/harness`; dev: `.dev-data/harness`),
+ * app version pin, binary discovery (managed install → bundled SDK → env),
+ * tarball installer, and provider-store auth probe.
  */
 
-import { app } from 'electron'
+import { app, net } from 'electron'
 import { existsSync } from 'node:fs'
 import {
-  managedNpmPrefix,
+  managedHarnessPrefix,
   resolveExternalCommand,
   setHarnessReleaseVersionProvider,
   type HarnessAuthProbe,
@@ -26,6 +26,7 @@ import { resolveHarnessHomeRoot } from './home'
 import {
   createDesktopTarballInstaller,
   resolveDesktopManagedBinary,
+  type HttpFetch,
 } from './tarball-installer'
 import {
   findSystemCodexCli,
@@ -56,7 +57,7 @@ function resolveBundledCodexNative(): string | null {
 }
 
 function resolveManagedFromHome(id: 'claude' | 'codex'): string | null {
-  const prefix = managedNpmPrefix(resolveHarnessHomeRoot(), id)
+  const prefix = managedHarnessPrefix(resolveHarnessHomeRoot(), id)
   return resolveDesktopManagedBinary(id, prefix)
 }
 
@@ -131,7 +132,7 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
   autoRuntime(id): ResolvedAutoRuntime | null {
     if (id === 'claude') {
       const managed = resolveManagedFromHome('claude')
-      if (managed) return { command: managed, source: 'managed-npm-tarball' }
+      if (managed) return { command: managed, source: 'managed-tarball' }
       const sdk = resolveSdkClaudeBinary()
       if (sdk) return { command: sdk, source: 'agent-sdk-optional' }
       const fromEnv = envBinary('SUPERONE_CLAUDE_BINARY')
@@ -140,7 +141,7 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     }
     if (id === 'codex') {
       const managed = resolveManagedFromHome('codex')
-      if (managed) return { command: managed, source: 'managed-npm-tarball' }
+      if (managed) return { command: managed, source: 'managed-tarball' }
       const bundled = resolveBundledCodexNative()
       if (bundled) return { command: bundled, source: 'bundled-platform-package' }
       const fromEnv = envBinary('SUPERONE_CODEX_BINARY')
@@ -175,6 +176,16 @@ export function desktopHarnessAuthProbe(): HarnessAuthProbe {
   }
 }
 
+/**
+ * Chromium network stack (system HTTP(S) proxy, same path as Chrome).
+ * Node's undici `fetch` ignores macOS system proxy and is much slower for
+ * large harness tarballs when the user relies on a local proxy.
+ */
+function chromiumHttpFetch(): HttpFetch {
+  return (input, init) =>
+    net.fetch(input, init as Parameters<typeof net.fetch>[1]) as Promise<Response>
+}
+
 export function desktopHarnessDeps(): HarnessKernelDeps {
   return {
     home: { root: resolveHarnessHomeRoot() },
@@ -186,7 +197,9 @@ export function desktopHarnessDeps(): HarnessKernelDeps {
       }
     })(),
     resolver: desktopHarnessResolver,
-    installer: createDesktopTarballInstaller(),
+    installer: createDesktopTarballInstaller({
+      httpFetch: chromiumHttpFetch(),
+    }),
     auth: desktopHarnessAuthProbe(),
   }
 }

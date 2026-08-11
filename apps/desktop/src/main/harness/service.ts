@@ -33,6 +33,20 @@ export type HarnessInstallProgressEvent = {
 type ProgressListener = (event: HarnessInstallProgressEvent) => void
 let progressListener: ProgressListener | null = null
 
+/**
+ * Coalesce concurrent enable calls for the same harness (+ forcePin).
+ * Prevents double-download of the same partial when the UI double-fires IPC
+ * (Strict Mode, double-click race, onboarding + align overlap).
+ */
+const enableInflight = new Map<string, Promise<HarnessInstallationStatus>>()
+
+/** Throttle download progress IPC (~200ms) — chunk-level emits flood the renderer. */
+const PROGRESS_THROTTLE_MS = 200
+
+function enableInflightKey(input: EnableHarnessInput): string {
+  return `${input.harnessId}:${input.forcePin === true ? '1' : '0'}`
+}
+
 /** Main registers a push to the renderer; null clears. */
 export function setHarnessInstallProgressListener(fn: ProgressListener | null): void {
   progressListener = fn
@@ -50,6 +64,7 @@ export function getHarnessManager(): HarnessManager {
 export function resetHarnessManagerForTests(): void {
   manager = null
   progressListener = null
+  enableInflight.clear()
 }
 
 export function listHarnessInstallations(): HarnessInstallationStatus[] {
@@ -62,15 +77,21 @@ export function getHarnessInstallation(id: NodeHarnessId): HarnessInstallationSt
 
 function depsWithProgress(harnessId: NodeHarnessId): HarnessKernelDeps {
   const base = desktopHarnessDeps()
+  let lastEmitAt = 0
   const wrapped: ManagedRuntimeInstaller = {
     install(id, home, onProgress) {
       return base.installer.install(id, home, (received, total) => {
-        progressListener?.({
-          harnessId: id,
-          received,
-          total,
-          phase: 'download',
-        })
+        const now = Date.now()
+        const done = total > 0 && received >= total
+        if (done || lastEmitAt === 0 || now - lastEmitAt >= PROGRESS_THROTTLE_MS) {
+          lastEmitAt = now
+          progressListener?.({
+            harnessId: id,
+            received,
+            total,
+            phase: 'download',
+          })
+        }
         onProgress?.(received, total)
       })
     },
@@ -79,6 +100,25 @@ function depsWithProgress(harnessId: NodeHarnessId): HarnessKernelDeps {
 }
 
 export async function enableDesktopHarness(
+  input: EnableHarnessInput,
+): Promise<HarnessInstallationStatus> {
+  const key = enableInflightKey(input)
+  const existing = enableInflight.get(key)
+  if (existing) {
+    log.info(`[harness] enable ${input.harnessId} already in flight — joining`)
+    return existing
+  }
+
+  const run = enableDesktopHarnessOnce(input).finally(() => {
+    if (enableInflight.get(key) === run) {
+      enableInflight.delete(key)
+    }
+  })
+  enableInflight.set(key, run)
+  return run
+}
+
+async function enableDesktopHarnessOnce(
   input: EnableHarnessInput,
 ): Promise<HarnessInstallationStatus> {
   const m = getHarnessManager()

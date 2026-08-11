@@ -7,7 +7,7 @@
  *   1) runtime already on host — `deps.resolver.autoRuntime`
  *      (SDK optionalDeps / PATH / env)
  *   2) fetch the pinned runtime — `deps.installer.install`
- *      (CLI: official npm pull; desktop: R2/npm tarball)
+ *      (CLI + desktop: R2/CDN tarball, npm registry fallback)
  * SuperOne-signed offline artifacts remain supported for air-gapped hosts.
  */
 
@@ -165,7 +165,7 @@ export async function enableManaged(
     }
   }
 
-  // 2) Fetch the pinned runtime (CLI: official npm; desktop: R2/npm tarball).
+  // 2) Fetch the pinned runtime (shared R2 → npm tarball installer).
   try {
     const official = await deps.installer.install(id, deps.home)
     return manager.update(id, {

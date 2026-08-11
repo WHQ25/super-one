@@ -2,15 +2,18 @@
  * CLI host wiring for the harness kernel (`@superone/runtime/harness`).
  *
  * The kernel is host-agnostic; this module supplies the CLI's answers to its
- * injection seams: where the node home is, how the release version resolves,
- * how binaries are discovered, how bytes are fetched (npm), and how provider
- * credentials are checked.
+ * injection seams: harness filesystem root (`~/.superone/harness`, shared with
+ * desktop), release version, binary discovery, R2→npm tarball installer, auth.
+ *
+ * Node identity/state still lives under `~/.superone/node` — only runtime
+ * binaries share the harness root with the desktop app.
  */
 
 import { existsSync } from 'node:fs'
 import {
-  createOfficialNpmInstaller,
+  createManagedTarballInstaller,
   resolveExternalCommand,
+  resolveHarnessHomeRoot,
   setHarnessReleaseVersionProvider,
   type HarnessAuthProbe,
   type HarnessKernelDeps,
@@ -19,7 +22,6 @@ import {
 } from '@superone/runtime/harness'
 import { resolveSdkClaudeBinary } from '@superone/claude'
 import { resolveCliReleaseVersion } from '../cli-release-version'
-import { resolveNodeHome } from '../config'
 import { isClaudeRuntimeRunnable, resolveClaudeBinaryPath } from './claude-turn-runner'
 import { isCodexBinaryOverrideRunnable, resolveCodexBinaryPath } from './codex-turn-runner'
 import { consumerForHarness } from '../provider/resolve-service'
@@ -89,11 +91,20 @@ export function cliHarnessAuthProbe(
 
 /** Assemble the kernel dependency bundle for this node. */
 export function cliHarnessDeps(providers?: ProviderStore | null): HarnessKernelDeps {
+  const releaseVersion = resolveCliReleaseVersion()
   return {
-    home: { root: resolveNodeHome(undefined) },
-    releaseVersion: resolveCliReleaseVersion(),
+    // Shared with desktop: ~/.superone/harness (or SUPERONE_HARNESS_HOME).
+    home: { root: resolveHarnessHomeRoot() },
+    releaseVersion,
     resolver: cliHarnessResolver,
-    installer: createOfficialNpmInstaller(),
+    // Same R2 → npm tarball path as desktop (createManagedTarballInstaller).
+    installer: createManagedTarballInstaller({
+      releaseVersion,
+      log: {
+        info: (m) => process.stderr.write(`${m}\n`),
+        warn: (m) => process.stderr.write(`${m}\n`),
+      },
+    }),
     auth: cliHarnessAuthProbe(providers),
   }
 }

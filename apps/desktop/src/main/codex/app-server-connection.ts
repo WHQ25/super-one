@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { createRequire } from 'module'
 import { dirname, join } from 'path'
 import { createInterface } from 'readline'
-import { managedNpmPrefix } from '@superone/runtime/harness'
+import { managedHarnessPrefix } from '@superone/runtime/harness'
 import log from '../logger'
 import { resolveHarnessHomeRoot } from '../harness/home'
 import { resolveDesktopManagedBinary } from '../harness/tarball-installer'
@@ -292,7 +292,7 @@ export function resolveManagedCodexNativePath(): string | null {
   try {
     const fromEnv = process.env.SUPERONE_CODEX_BINARY?.trim()
     if (fromEnv && existsSync(fromEnv)) return fromEnv
-    const prefix = managedNpmPrefix(resolveHarnessHomeRoot(), 'codex')
+    const prefix = managedHarnessPrefix(resolveHarnessHomeRoot(), 'codex')
     return resolveDesktopManagedBinary('codex', prefix)
   } catch {
     return null

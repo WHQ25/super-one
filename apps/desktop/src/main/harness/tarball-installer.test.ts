@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,14 +16,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   codexPlatformVersion,
   createDesktopTarballInstaller,
+  createThrottledProgress,
   desktopPackagePins,
+  downloadResumableToFile,
+  harnessArtifactDownloadKey,
+  harnessPartialPath,
   installPackageDir,
+  parseContentRange,
+  resetDestPathLocksForTests,
   resolveDesktopManagedBinary,
   resolveHarnessManifestChannel,
   sha256Hex,
+  streamResponseToFile,
   verifyNpmIntegrity,
   verifySha256,
+  type HttpFetch,
 } from './tarball-installer'
+import {
+  managedVersionDir,
+  readCurrentPointer,
+  writeCurrentPointer,
+} from './managed-layout'
 
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -142,9 +156,66 @@ describe('createDesktopTarballInstaller', () => {
       const reused = await installer2.install('claude', { root: home })
       expect(reused.detail?.reused).toBe('1')
       expect(fetchCount).toBe(0)
-      expect(resolveDesktopManagedBinary('claude', join(home, 'managed-npm', 'claude'))).toBe(
-        result.command,
+      const prefix = join(home, 'claude')
+      expect(resolveDesktopManagedBinary('claude', prefix)).toBe(result.command)
+      // Side-by-side layout: versions/<pin>/ + current (shared with CLI)
+      const pin = desktopPackagePins('claude').runtimeVersion
+      expect(readCurrentPointer(prefix)?.runtimeVersion).toBe(pin)
+      expect(result.command).toContain(join('versions', pin))
+      expect(existsSync(join(managedVersionDir(prefix, pin), 'install-meta.json'))).toBe(true)
+      expect(existsSync(join(prefix, 'current'))).toBe(true)
+    } finally {
+      rmSync(packWork, { recursive: true, force: true })
+    }
+  })
+
+  it('installs a new pin side-by-side without deleting the previous version dir', async () => {
+    const packWork = mkdtempSync(join(tmpdir(), 'so-pack-sxs-'))
+    try {
+      const { bytes } = makeNpmTgz(packWork, {
+        'package.json': JSON.stringify({ name: '@anthropic-ai/claude-agent-sdk-test', version: '0.0.1' }),
+        claude: { body: '#!/bin/sh\necho ok\n', mode: 0o755 },
+      })
+      const integrity = sha512Integrity(bytes)
+      const pins = desktopPackagePins('claude')
+      const prefix = join(home, 'claude')
+
+      // Seed a "previous" version dir as if an older pin was installed.
+      const oldVer = '0.0.0-old'
+      const oldDir = managedVersionDir(prefix, oldVer)
+      mkdirSync(join(oldDir, 'lib', 'node_modules', '@anthropic-ai', 'claude-agent-sdk-old'), {
+        recursive: true,
+      })
+      writeFileSync(join(oldDir, 'install-meta.json'), JSON.stringify({ runtimeVersion: oldVer }))
+      const oldBin = join(
+        oldDir,
+        'lib',
+        'node_modules',
+        '@anthropic-ai',
+        'claude-agent-sdk-old',
+        'claude',
       )
+      writeFileSync(oldBin, '#!/bin/sh\necho old\n')
+      chmodSync(oldBin, 0o755)
+      writeCurrentPointer(prefix, oldVer)
+
+      const installer = createDesktopTarballInstaller({
+        npmOnly: true,
+        fetchJson: async () => ({
+          version: pins.packages[0]!.version,
+          dist: { tarball: 'https://example.test/pkg.tgz', integrity },
+        }),
+        fetchBinary: async () => bytes,
+      })
+      const result = await installer.install('claude', { root: home })
+
+      expect(result.runtimeVersion).toBe(pins.runtimeVersion)
+      expect(readCurrentPointer(prefix)?.runtimeVersion).toBe(pins.runtimeVersion)
+      // Previous version dir still on disk until prune (kept as previous).
+      expect(existsSync(oldDir)).toBe(true)
+      expect(existsSync(managedVersionDir(prefix, pins.runtimeVersion))).toBe(true)
+      expect(result.command).toContain(join('versions', pins.runtimeVersion))
+      expect(resolveDesktopManagedBinary('claude', prefix)).toBe(result.command)
     } finally {
       rmSync(packWork, { recursive: true, force: true })
     }
@@ -278,6 +349,305 @@ describe('verifySha256', () => {
   it('accepts matching hex digest', () => {
     const bytes = new TextEncoder().encode('hi')
     verifySha256(bytes, sha256Hex(bytes))
+  })
+})
+
+describe('createThrottledProgress', () => {
+  it('emits first, throttled mid, and final when total reached', () => {
+    const calls: Array<[number, number]> = []
+    const emit = createThrottledProgress((r, t) => calls.push([r, t]), 1_000)!
+    emit(10, 100)
+    emit(20, 100) // within throttle window — dropped
+    emit(100, 100) // done — always emitted
+    expect(calls).toEqual([
+      [10, 100],
+      [100, 100],
+    ])
+  })
+})
+
+describe('streamResponseToFile', () => {
+  it('streams body to disk and returns digests without buffering the caller', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'so-stream-'))
+    try {
+      const body = Buffer.alloc(64 * 1024, 7)
+      const dest = join(root, 'out.bin')
+      const res = new Response(body, {
+        status: 200,
+        headers: { 'content-length': String(body.byteLength) },
+      })
+      const progress: Array<[number, number]> = []
+      const digests = await streamResponseToFile(res, dest, (r, t) => progress.push([r, t]))
+      expect(digests.byteLength).toBe(body.byteLength)
+      expect(digests.sha256Hex).toBe(sha256Hex(body))
+      expect(digests.sha512Base64).toBe(createHash('sha512').update(body).digest('base64'))
+      expect(readFileSync(dest).equals(body)).toBe(true)
+      expect(progress.length).toBeGreaterThan(0)
+      expect(progress[progress.length - 1]).toEqual([body.byteLength, body.byteLength])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('appends and seeds hash when resumeFrom > 0', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'so-append-'))
+    try {
+      const full = Buffer.concat([Buffer.alloc(100, 1), Buffer.alloc(50, 2)])
+      const dest = join(root, 'part.bin')
+      writeFileSync(dest, full.subarray(0, 100))
+      const tail = full.subarray(100)
+      const res = new Response(tail, {
+        status: 206,
+        headers: {
+          'content-length': String(tail.byteLength),
+          'content-range': `bytes 100-149/${full.byteLength}`,
+        },
+      })
+      const digests = await streamResponseToFile(res, dest, undefined, {
+        resumeFrom: 100,
+        append: true,
+        totalBytes: full.byteLength,
+      })
+      expect(readFileSync(dest).equals(full)).toBe(true)
+      expect(digests.byteLength).toBe(full.byteLength)
+      expect(digests.sha256Hex).toBe(sha256Hex(full))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps partial on stream error when keepPartialOnError', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'so-keep-'))
+    try {
+      const dest = join(root, 'x.partial')
+      writeFileSync(dest, Buffer.alloc(20, 9))
+      // A body that errors mid-stream is hard with Response; simulate by
+      // resumeFrom mismatch which throws before overwrite.
+      await expect(
+        streamResponseToFile(
+          new Response(Buffer.alloc(5), { status: 206 }),
+          dest,
+          undefined,
+          { resumeFrom: 99, append: true },
+        ),
+      ).rejects.toThrow(/partial size mismatch/)
+      expect(existsSync(dest)).toBe(true)
+      expect(statSync(dest).size).toBe(20)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('parseContentRange', () => {
+  it('parses start/end/total', () => {
+    expect(parseContentRange('bytes 100-199/1000')).toEqual({
+      start: 100,
+      end: 199,
+      total: 1000,
+    })
+    expect(parseContentRange('bytes 0-99/*')).toEqual({ start: 0, end: 99, total: null })
+    expect(parseContentRange(null)).toBeNull()
+  })
+})
+
+describe('downloadResumableToFile', () => {
+  it('sends Range and appends when a partial exists', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'so-resume-'))
+    try {
+      const full = Buffer.alloc(500, 3)
+      const dest = join(root, 'art.partial')
+      writeFileSync(dest, full.subarray(0, 200))
+
+      let sawRange: string | undefined
+      const httpFetch: HttpFetch = async (_url, init) => {
+        const h = init?.headers as Record<string, string> | undefined
+        sawRange = h?.Range
+        const start = 200
+        const tail = full.subarray(start)
+        return new Response(tail, {
+          status: 206,
+          headers: {
+            'content-length': String(tail.byteLength),
+            'content-range': `bytes ${start}-${full.byteLength - 1}/${full.byteLength}`,
+          },
+        })
+      }
+
+      const digests = await downloadResumableToFile(httpFetch, 'https://example.test/a.tgz', dest)
+      expect(sawRange).toBe('bytes=200-')
+      expect(readFileSync(dest).equals(full)).toBe(true)
+      expect(digests.sha256Hex).toBe(sha256Hex(full))
+      expect(digests.byteLength).toBe(500)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('restarts when server returns 200 ignoring Range', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'so-restart-'))
+    try {
+      const full = Buffer.alloc(300, 5)
+      const dest = join(root, 'art.partial')
+      writeFileSync(dest, Buffer.alloc(100, 1)) // wrong prefix
+
+      const httpFetch: HttpFetch = async (_url, init) => {
+        const h = init?.headers as Record<string, string> | undefined
+        // First call has Range; we ignore and return full 200.
+        expect(h?.Range).toBe('bytes=100-')
+        return new Response(full, {
+          status: 200,
+          headers: { 'content-length': String(full.byteLength) },
+        })
+      }
+
+      const digests = await downloadResumableToFile(httpFetch, 'https://example.test/b.tgz', dest)
+      expect(readFileSync(dest).equals(full)).toBe(true)
+      expect(digests.sha256Hex).toBe(sha256Hex(full))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reuses a complete partial after 416 + HEAD size match', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'so-416-'))
+    try {
+      const full = Buffer.alloc(256, 8)
+      const dest = join(root, 'done.partial')
+      writeFileSync(dest, full)
+
+      let calls = 0
+      const httpFetch: HttpFetch = async (_url, init) => {
+        calls++
+        if (init?.method === 'HEAD') {
+          return new Response(null, {
+            status: 200,
+            headers: { 'content-length': String(full.byteLength) },
+          })
+        }
+        return new Response('nope', { status: 416 })
+      }
+
+      const digests = await downloadResumableToFile(httpFetch, 'https://example.test/c.tgz', dest)
+      expect(calls).toBe(2) // GET Range → 416, then HEAD
+      expect(digests.byteLength).toBe(256)
+      expect(digests.sha256Hex).toBe(sha256Hex(full))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('serializes concurrent downloads to the same destPath', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'so-lock-'))
+    try {
+      resetDestPathLocksForTests()
+      const full = Buffer.alloc(500, 9)
+      const dest = join(root, 'shared.partial')
+      let active = 0
+      let maxActive = 0
+      let calls = 0
+
+      const httpFetch: HttpFetch = async () => {
+        calls++
+        active++
+        maxActive = Math.max(maxActive, active)
+        // Overlapping writers would race on append; hold the first response open briefly.
+        await new Promise((r) => setTimeout(r, 40))
+        active--
+        return new Response(full, {
+          status: 200,
+          headers: { 'content-length': String(full.byteLength) },
+        })
+      }
+
+      const [a, b] = await Promise.all([
+        downloadResumableToFile(httpFetch, 'https://example.test/lock.tgz', dest),
+        downloadResumableToFile(httpFetch, 'https://example.test/lock.tgz', dest),
+      ])
+
+      expect(maxActive).toBe(1)
+      expect(calls).toBe(2)
+      expect(a.sha256Hex).toBe(sha256Hex(full))
+      expect(b.sha256Hex).toBe(sha256Hex(full))
+      expect(readFileSync(dest).equals(full)).toBe(true)
+    } finally {
+      resetDestPathLocksForTests()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps partial after a mid-download failure for a later resume', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'so-fail-keep-'))
+    try {
+      const full = Buffer.alloc(400, 4)
+      const dest = join(root, 'fail.partial')
+
+      let attempt = 0
+      const httpFetch: HttpFetch = async (_url, init) => {
+        attempt++
+        const h = init?.headers as Record<string, string> | undefined
+        if (attempt === 1) {
+          // Deliver a chunk, then fail after the write has a chance to flush.
+          let pulled = false
+          const stream = new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (!pulled) {
+                pulled = true
+                controller.enqueue(full.subarray(0, 150))
+                return
+              }
+              return new Promise((_resolve, reject) => {
+                setTimeout(() => reject(new Error('network reset')), 20)
+              })
+            },
+          })
+          return new Response(stream, {
+            status: 200,
+            headers: { 'content-length': String(full.byteLength) },
+          })
+        }
+        // Second attempt: resume from whatever was written
+        expect(h?.Range).toMatch(/^bytes=\d+-$/)
+        const from = Number(h!.Range!.slice('bytes='.length, -1))
+        expect(from).toBeGreaterThan(0)
+        const tail = full.subarray(from)
+        return new Response(tail, {
+          status: 206,
+          headers: {
+            'content-length': String(tail.byteLength),
+            'content-range': `bytes ${from}-${full.byteLength - 1}/${full.byteLength}`,
+          },
+        })
+      }
+
+      await expect(
+        downloadResumableToFile(httpFetch, 'https://example.test/d.tgz', dest),
+      ).rejects.toThrow(/network reset/)
+      expect(existsSync(dest)).toBe(true)
+      const partialSize = statSync(dest).size
+      expect(partialSize).toBeGreaterThan(0)
+      expect(partialSize).toBeLessThan(full.byteLength)
+
+      const digests = await downloadResumableToFile(httpFetch, 'https://example.test/d.tgz', dest)
+      expect(readFileSync(dest).equals(full)).toBe(true)
+      expect(digests.sha256Hex).toBe(sha256Hex(full))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('harnessArtifactDownloadKey / harnessPartialPath', () => {
+  it('prefers digest prefix and builds a safe path', () => {
+    const key = harnessArtifactDownloadKey({
+      harnessId: 'claude',
+      digestSha256: 'e5bbd2a1f107683125ceb1381e1c5d378969a9287061e910b04c55f68d73b9c1',
+      npmName: '@anthropic-ai/claude-agent-sdk-darwin-arm64',
+      npmVersion: '0.3.226',
+    })
+    expect(key).toBe('claude-e5bbd2a1f107683125ceb138')
+    const p = harnessPartialPath('/tmp/home', key)
+    expect(p).toBe('/tmp/home/.download/claude-e5bbd2a1f107683125ceb138.partial')
   })
 })
 

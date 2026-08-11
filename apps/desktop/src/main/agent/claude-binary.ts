@@ -14,7 +14,7 @@
 
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
-import { managedNpmPrefix } from '@superone/runtime/harness'
+import { managedHarnessPrefix } from '@superone/runtime/harness'
 import { allowBundledHarnessPlatformPackages } from '../harness/bundled-fallback'
 import { resolveHarnessHomeRoot } from '../harness/home'
 import { resolveDesktopManagedBinary } from '../harness/tarball-installer'
@@ -51,7 +51,7 @@ function resolveBundledSdkBinary(): string | undefined {
 
 function resolveManagedClaudeBinary(): string | undefined {
   try {
-    const prefix = managedNpmPrefix(resolveHarnessHomeRoot(), 'claude')
+    const prefix = managedHarnessPrefix(resolveHarnessHomeRoot(), 'claude')
     return resolveDesktopManagedBinary('claude', prefix) ?? undefined
   } catch {
     return undefined

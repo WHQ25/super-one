@@ -192,6 +192,11 @@ export function OnboardingDiscover(): React.JSX.Element {
             const isDownloadFallback = isManaged && !hit?.detected
             const integrationLabel = integrationLabels[id]?.label
             const p = progress[id]
+            // Show progress for any row that is downloading — not only the active
+            // serial enable target (concurrent install / late IPC still visible).
+            const isDownloading = p?.phase === 'download'
+            const isDone = enabling && p?.phase === 'done'
+            const showSpinner = isActive || isDownloading
             const pct =
               p && p.total > 0 ? Math.min(100, Math.round((p.received / p.total) * 100)) : null
             const subtitle = isDownloadFallback
@@ -242,10 +247,14 @@ export function OnboardingDiscover(): React.JSX.Element {
                         {integrationLabel}
                       </span>
                     ) : null}
-                    {isActive ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : null}
+                    {isDone ? (
+                      <Check className="size-3.5 text-primary" />
+                    ) : showSpinner ? (
+                      <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                    ) : null}
                   </div>
                 </div>
-                {isActive && p?.phase === 'download' ? (
+                {isDownloading ? (
                   <div className="space-y-1">
                     <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
                       <div

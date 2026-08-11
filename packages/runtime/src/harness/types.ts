@@ -14,7 +14,17 @@
 import type { HarnessInstallationStatus, NodeHarnessId } from '@superone/shared/environment'
 import type { ManagedHarnessId } from './managed-release'
 
-/** Filesystem root holding `releases/` and `managed-npm/`. */
+/**
+ * Filesystem root for harness runtimes — **one path for CLI + desktop**:
+ * `~/.superone/harness` (see `resolveHarnessHomeRoot` / `SUPERONE_HARNESS_HOME`).
+ *
+ * - Network installs: `<root>/<id>/versions/<runtimeVersion>/` + `current`
+ * - Offline SuperOne artifacts: `<root>/releases/<cliVersion>/harnesses/<id>/…`
+ * - Partial download cache: `<root>/.download/`
+ *
+ * Node identity/state (`state.sqlite`, pairing) stays under `~/.superone/node`
+ * and is not mixed into this tree.
+ */
 export interface HarnessHome {
   root: string
 }
@@ -71,9 +81,9 @@ export interface InstalledManagedRuntime {
 }
 
 /**
- * Fetch + install a pinned managed runtime. The CLI implements this over
- * `npm install`; the desktop implements it over an HTTPS tarball fetch.
- * Implementations MUST verify integrity before returning.
+ * Fetch + install a pinned managed runtime. Both CLI and desktop use
+ * `createManagedTarballInstaller` (R2 → npm tarball). Implementations MUST
+ * verify integrity before returning.
  */
 export interface ManagedRuntimeInstaller {
   install(

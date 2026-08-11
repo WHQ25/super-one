@@ -6,8 +6,21 @@
 
 export { resolveHarnessHomeRoot } from './home'
 export {
+  managedVersionDir,
+  managedVersionsDir,
+  managedCurrentPath,
+  readCurrentPointer,
+  writeCurrentPointer,
+  resolveActiveInstallRoot,
+  pruneManagedVersions,
+  sanitizeRuntimeVersionForPath,
+  MANAGED_VERSION_KEEP,
+  MANAGED_CURRENT_BASENAME,
+} from './managed-layout'
+export {
   createDesktopTarballInstaller,
   resolveDesktopManagedBinary,
+  resolveDesktopManagedBinaryInRoot,
   desktopPackagePins,
   codexPlatformVersion,
   resolveNpmPackMeta,
@@ -16,7 +29,20 @@ export {
   sha256Hex,
   resolveHarnessManifestChannel,
   extractTgzWithSystemTar,
+  createThrottledProgress,
+  createDownloadToFile,
+  downloadResumableToFile,
+  streamResponseToFile,
+  hashExistingFile,
+  parseContentRange,
+  harnessDownloadDir,
+  harnessArtifactDownloadKey,
+  harnessPartialPath,
+  resetDestPathLocksForTests,
+  HARNESS_PROGRESS_THROTTLE_MS,
+  readRuntimeVersion,
 } from './tarball-installer'
+export type { HttpFetch, DownloadToFileResult, StreamToFileOptions } from './tarball-installer'
 export {
   desktopHarnessDeps,
   desktopHarnessResolver,

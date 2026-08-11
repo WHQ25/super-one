@@ -3,7 +3,8 @@
  *
  * - Manifest pins exact artifact versions per CLI release (no upstream "latest").
  * - Offline `--artifact` must match platform/arch + SHA-256 of the pin.
- * - Install is atomic under `$NODE_HOME/releases/<cliVersion>/harnesses/<id>/`.
+ * - Install is atomic under `<harnessHome>/releases/<cliVersion>/harnesses/<id>/`
+ *   (harnessHome = `~/.superone/harness`, shared with desktop).
  * - Network download is still deferred; without --artifact we fail with the
  *   expected digest so operators/desktop upload path can supply the file.
  *

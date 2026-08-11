@@ -4,16 +4,27 @@
  * - Claude: @anthropic-ai/claude-agent-sdk + platform optional package (same family as desktop)
  * - Codex: @openai/codex
  *
- * Install root: `$NODE_HOME/managed-npm/<harnessId>/` (user-local, no sudo).
- * SuperOne-signed offline --artifact remains a separate path in managed-harness-release.ts.
+ * Layout (shared with desktop — root is `~/.superone/harness`, see `home-path.ts`):
+ * ```
+ * <harnessHome>/<id>/versions/<runtimeVersion>/
+ * <harnessHome>/<id>/current
+ * ```
+ * SuperOne-signed offline `--artifact` remains under `releases/…` (`managed-release.ts`).
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { arch as osArch, platform as osPlatform } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import type { ManagedHarnessId } from './managed-release'
 import type { ManagedRuntimeInstaller } from './types'
+import {
+  managedVersionDir,
+  pruneManagedVersions,
+  readCurrentPointer,
+  resolveActiveInstallRoot,
+  writeCurrentPointer,
+} from './managed-layout'
 
 /** Keep lockstep with apps/cli/scripts/pack-npm.ts CLAUDE_SDK_VERSION when possible. */
 export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.226'
@@ -36,8 +47,9 @@ export interface OfficialInstallResult {
   installPrefix: string
 }
 
-export function managedNpmPrefix(nodeHome: string, harnessId: ManagedHarnessId): string {
-  return resolve(nodeHome, 'managed-npm', harnessId)
+/** Per-harness install prefix: `<home>/<id>/` (e.g. `~/.superone/harness/claude`). */
+export function managedHarnessPrefix(nodeHome: string, harnessId: ManagedHarnessId): string {
+  return resolve(nodeHome, harnessId)
 }
 
 /**
@@ -119,27 +131,28 @@ export function officialPackageSpecs(harnessId: ManagedHarnessId): {
 }
 
 /**
- * Resolve binary after an official npm install into `prefix`.
+ * Resolve binary under a concrete install root (`versions/<ver>/`).
+ * Does **not** follow the current pointer — pass an already-resolved root.
  */
-export function resolveOfficialInstallBinary(
+export function resolveOfficialInstallBinaryInRoot(
   harnessId: ManagedHarnessId,
-  prefix: string,
+  installRoot: string,
 ): string | null {
+  if (!installRoot || !existsSync(installRoot)) return null
   if (harnessId === 'codex') {
     const candidates = [
-      join(prefix, 'bin', 'codex'),
-      join(prefix, 'bin', 'codex.cmd'),
-      join(prefix, 'lib', 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+      join(installRoot, 'bin', 'codex'),
+      join(installRoot, 'bin', 'codex.cmd'),
+      join(installRoot, 'lib', 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
     ]
     for (const c of candidates) {
       if (existsSync(c) && (c.endsWith('.js') || isExecutableFile(c))) return c
     }
-    // Node shebang launchers on Windows
     return null
   }
 
   // Claude: native binary inside platform package
-  const nm = join(prefix, 'lib', 'node_modules')
+  const nm = join(installRoot, 'lib', 'node_modules')
   const scoped = join(nm, '@anthropic-ai')
   try {
     if (existsSync(scoped)) {
@@ -153,7 +166,6 @@ export function resolveOfficialInstallBinary(
   } catch {
     /* ignore */
   }
-  // Fallback via package name path
   const direct = join(
     nm,
     ...claudePlatformPackageName().split('/'),
@@ -161,6 +173,19 @@ export function resolveOfficialInstallBinary(
   )
   if (existsSync(direct)) return direct
   return null
+}
+
+/**
+ * Resolve binary for a managed harness prefix (`<home>/<id>`).
+ * Walks `current` → `versions/<ver>/`.
+ */
+export function resolveOfficialInstallBinary(
+  harnessId: ManagedHarnessId,
+  prefix: string,
+): string | null {
+  const root = resolveActiveInstallRoot(prefix)
+  if (!root) return null
+  return resolveOfficialInstallBinaryInRoot(harnessId, root)
 }
 
 function isExecutableFile(path: string): boolean {
@@ -185,52 +210,101 @@ export async function installManagedFromOfficialNpm(opts: {
   runNpm?: (args: string[], cwd: string) => Promise<void>
 }): Promise<OfficialInstallResult> {
   const { specs, runtimeVersion } = officialPackageSpecs(opts.harnessId)
-  const prefix = managedNpmPrefix(opts.nodeHome, opts.harnessId)
+  const prefix = managedHarnessPrefix(opts.nodeHome, opts.harnessId)
   mkdirSync(prefix, { recursive: true })
 
-  // Fast path: already installed
-  const existing = resolveOfficialInstallBinary(opts.harnessId, prefix)
-  if (existing) {
+  const versionDir = managedVersionDir(prefix, runtimeVersion)
+  const previous = readCurrentPointer(prefix)?.runtimeVersion ?? null
+
+  // Fast path: this pin already installed under versions/<pin>
+  const versionBin = resolveOfficialInstallBinaryInRoot(opts.harnessId, versionDir)
+  if (versionBin) {
+    writeCurrentPointer(prefix, runtimeVersion, { installRoot: versionDir })
     return {
       harnessId: opts.harnessId,
-      command: existing,
-      runtimeVersion: readInstalledVersion(prefix, opts.harnessId) ?? runtimeVersion,
+      command: versionBin,
+      runtimeVersion: readInstalledVersion(versionDir, opts.harnessId) ?? runtimeVersion,
       source: 'official-npm',
       packageSpec: specs.join(' '),
-      installPrefix: prefix,
+      installPrefix: versionDir,
     }
   }
 
+  const activeRoot = resolveActiveInstallRoot(prefix)
+  if (activeRoot) {
+    const activeBin = resolveOfficialInstallBinaryInRoot(opts.harnessId, activeRoot)
+    const activeVer = readInstalledVersion(activeRoot, opts.harnessId)
+    if (activeBin && activeVer === runtimeVersion) {
+      writeCurrentPointer(prefix, runtimeVersion, { installRoot: activeRoot })
+      return {
+        harnessId: opts.harnessId,
+        command: activeBin,
+        runtimeVersion,
+        source: 'official-npm',
+        packageSpec: specs.join(' '),
+        installPrefix: activeRoot,
+      }
+    }
+  }
+
+  mkdirSync(versionDir, { recursive: true })
   const runNpm = opts.runNpm ?? defaultRunNpm
   // Prefer --omit=dev; no global -g so we never need root.
   await runNpm(
-    ['install', '--prefix', prefix, '--omit=dev', '--no-fund', '--no-audit', ...specs],
-    prefix,
+    ['install', '--prefix', versionDir, '--omit=dev', '--no-fund', '--no-audit', ...specs],
+    versionDir,
   )
 
-  const command = resolveOfficialInstallBinary(opts.harnessId, prefix)
+  const command = resolveOfficialInstallBinaryInRoot(opts.harnessId, versionDir)
   if (!command) {
     throw new Error(
-      `official npm install of ${specs.join(' ')} succeeded but binary was not found under ${prefix}`,
+      `official npm install of ${specs.join(' ')} succeeded but binary was not found under ${versionDir}`,
     )
   }
+
+  writeFileSync(
+    join(versionDir, 'install-meta.json'),
+    JSON.stringify(
+      {
+        harnessId: opts.harnessId,
+        runtimeVersion,
+        packageSpec: specs.join(' '),
+        source: 'official-npm',
+        installedAt: Date.now(),
+      },
+      null,
+      2,
+    ),
+  )
+  writeCurrentPointer(prefix, runtimeVersion, { installRoot: versionDir })
+  const keep = [runtimeVersion, previous].filter((v): v is string => typeof v === 'string' && v.length > 0)
+  pruneManagedVersions(prefix, keep)
 
   return {
     harnessId: opts.harnessId,
     command,
-    runtimeVersion: readInstalledVersion(prefix, opts.harnessId) ?? runtimeVersion,
+    runtimeVersion: readInstalledVersion(versionDir, opts.harnessId) ?? runtimeVersion,
     source: 'official-npm',
     packageSpec: specs.join(' '),
-    installPrefix: prefix,
+    installPrefix: versionDir,
   }
 }
 
-function readInstalledVersion(prefix: string, harnessId: ManagedHarnessId): string | null {
+function readInstalledVersion(installRoot: string, harnessId: ManagedHarnessId): string | null {
+  try {
+    const metaPath = join(installRoot, 'install-meta.json')
+    if (existsSync(metaPath)) {
+      const raw = JSON.parse(readFileSync(metaPath, 'utf8')) as { runtimeVersion?: string }
+      if (raw.runtimeVersion?.trim()) return raw.runtimeVersion.trim()
+    }
+  } catch {
+    /* fall through */
+  }
   try {
     const pkgPath =
       harnessId === 'claude'
-        ? join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'package.json')
-        : join(prefix, 'lib', 'node_modules', '@openai', 'codex', 'package.json')
+        ? join(installRoot, 'lib', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'package.json')
+        : join(installRoot, 'lib', 'node_modules', '@openai', 'codex', 'package.json')
     if (!existsSync(pkgPath)) return null
     const raw = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string }
     return raw.version?.trim() || null

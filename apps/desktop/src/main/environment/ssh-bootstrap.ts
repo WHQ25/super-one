@@ -31,6 +31,10 @@ export interface SshBootstrapResult {
   expiresAt: number
   unitPreview: string
   warnings: string[]
+  /** Absolute node home actually used for start + pair-create. */
+  remoteNodeHome: string
+  /** Absolute remote CLI path used for start + pair-create. */
+  remoteExec: string
 }
 
 /**
@@ -135,6 +139,8 @@ export async function bootstrapNodeOverSsh(opts: SshBootstrapOptions): Promise<S
     expiresAt: Number(pairJson.expiresAt ?? 0),
     unitPreview,
     warnings,
+    remoteNodeHome: remoteAbsHome,
+    remoteExec: opts.remoteExec,
   }
 }
 

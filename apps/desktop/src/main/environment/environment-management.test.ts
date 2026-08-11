@@ -200,6 +200,72 @@ describe('repairPairing', () => {
     expect(after?.refreshToken).toBe(before?.refreshToken)
     host.dispose()
   })
+
+  it('successful re-pair keeps connectionId and replaces the refresh credential', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'repair-keep-id',
+    })
+    const before = host.credentials.get(connectionId)
+    expect(before).toBeTruthy()
+
+    const descriptor = await host.repairPairing({
+      connectionId,
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+    })
+
+    expect(descriptor.environmentId).toBe(before!.environmentId)
+    const after = host.credentials.get(connectionId)
+    expect(after).toBeTruthy()
+    expect(after!.connectionId).toBe(connectionId)
+    expect(after!.refreshToken).not.toBe(before!.refreshToken)
+    expect(host.connections.isConnected(connectionId)).toBe(true)
+    host.dispose()
+  })
+
+  it('repairPairingOverSsh refuses a non-SSH pairing instead of half-repairing', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'direct-only',
+    })
+
+    await expect(host.repairPairingOverSsh(connectionId)).rejects.toMatchObject({
+      code: 'failed_precondition',
+    })
+    // Credential untouched when automated SSH path cannot run.
+    expect(host.credentials.get(connectionId)?.refreshToken).toBeTruthy()
+    host.dispose()
+  })
+
+  it('single-flights concurrent repairPairingOverSsh for the same connection', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'single-flight',
+    })
+
+    // Both calls reject (no SSH endpoint) but must share one in-flight promise —
+    // a second dial must not race credential replacement on the same connection.
+    const a = host.repairPairingOverSsh(connectionId)
+    const b = host.repairPairingOverSsh(connectionId)
+    const [ra, rb] = await Promise.allSettled([a, b])
+    expect(ra.status).toBe('rejected')
+    expect(rb.status).toBe('rejected')
+    // Same rejection object identity proves single-flight (shared promise).
+    expect(ra.status === 'rejected' && rb.status === 'rejected' && ra.reason === rb.reason).toBe(
+      true,
+    )
+    host.dispose()
+  })
 })
 
 describe('desired auto-connect semantics', () => {

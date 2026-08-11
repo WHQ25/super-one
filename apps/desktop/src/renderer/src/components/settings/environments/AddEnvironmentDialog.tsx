@@ -50,7 +50,17 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
   const [progress, setProgress] = useState<EnvironmentInstallProgress | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  useEffect(() => window.environment.onInstallProgress(setProgress), [])
+  useEffect(
+    () =>
+      window.environment.onInstallProgress((raw) => {
+        const next = raw as EnvironmentInstallProgress
+        // Upgrade/repair tag their operation; ignore them so a closed Add dialog
+        // never shows a stale spinner from another row's SSH work.
+        if (next.operation && next.operation !== 'add') return
+        setProgress(next)
+      }),
+    [],
+  )
 
   const [sshHosts, setSshHosts] = useState<SshConfigHostEntry[]>([])
   const [sshHostsLoading, setSshHostsLoading] = useState(false)

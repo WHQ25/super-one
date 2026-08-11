@@ -31,6 +31,24 @@ export interface EndpointProfile {
     identityFile?: string
     /** Remote node loopback port after install (default 7788). */
     remotePort?: number
+    /**
+     * Absolute node home used at pair time (`--home`). Required for repair /
+     * upgrade to hit the same SQLite store when the user chose a custom home.
+     */
+    remoteNodeHome?: string
+    /**
+     * Absolute path to the SuperOne CLI on the host at pair time. When set,
+     * repair can mint a token without re-discovering the binary (and works when
+     * PATH-based probe would miss a non-standard install).
+     */
+    remoteExec?: string
+    /**
+     * Remote directory containing the Node binary that must be on PATH for
+     * shebang launchers (`#!/usr/bin/env node`) under a non-login SSH shell
+     * (nvm / fnm / asdf). Without this, the repair fast path can skip probe and
+     * fail to exec the stored CLI.
+     */
+    nodeBinDir?: string
   }
   /** Last successful connection timestamp (ms), client-local. */
   lastSuccessAt?: number

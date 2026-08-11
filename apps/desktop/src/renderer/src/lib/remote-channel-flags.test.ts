@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { enabledRemoteChannels, REMOTE_CHANNEL_ENABLED } from './remote-channel-flags'
 import {
+  canRepairOverSsh,
   channelForEnvironment,
   isLoopbackEnvironment,
 } from '../components/settings/environments/EnvironmentsPage'
@@ -34,6 +35,57 @@ describe('remote channel flags', () => {
       tailscale: false,
     })
     expect(enabledRemoteChannels()).toEqual(['ssh'])
+  })
+})
+
+describe('canRepairOverSsh', () => {
+  it('is true when preferred endpoint is ssh-forward with a target', () => {
+    expect(canRepairOverSsh(remote())).toBe(true)
+  })
+
+  it('is false for direct-wss / tailscale pairings with no SSH profile', () => {
+    expect(
+      canRepairOverSsh(
+        remote({
+          preferredEndpointId: 'd',
+          endpointProfiles: [
+            { endpointId: 'd', kind: 'direct-wss', label: 'peer', target: 'wss://peer' },
+          ],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('is false when preferred is direct-wss even if an SSH backup exists', () => {
+    expect(
+      canRepairOverSsh(
+        remote({
+          preferredEndpointId: 'd',
+          endpointProfiles: [
+            { endpointId: 'd', kind: 'direct-wss', label: 'peer', target: 'wss://peer' },
+            {
+              endpointId: 'ssh',
+              kind: 'ssh-forward',
+              label: 'stale',
+              target: 'user@old-host',
+            },
+          ],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('ignores ssh-forward rows that have no destination', () => {
+    expect(
+      canRepairOverSsh(
+        remote({
+          preferredEndpointId: 'ssh',
+          endpointProfiles: [
+            { endpointId: 'ssh', kind: 'ssh-forward', label: 'empty', target: '  ' },
+          ],
+        }),
+      ),
+    ).toBe(false)
   })
 })
 

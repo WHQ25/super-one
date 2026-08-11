@@ -44,6 +44,11 @@ import {
   type SshBootstrapResult,
 } from './ssh-bootstrap'
 import {
+  repairPairingOverSsh as runSshPairingRepair,
+  selectSshRepairProfile,
+} from './ssh-repair'
+import { sshCapture } from './ssh-forward'
+import {
   installNodeFromRegistry,
   installNodeOverSsh,
   preflightBlocker,
@@ -156,6 +161,8 @@ export class EnvironmentHost {
     null
   /** Per-connection connect single-flight (startup / wake / manual Connect). */
   private readonly connectInFlight = new Map<string, Promise<ExecutionEnvironmentDescriptor>>()
+  /** Single-flight automated SSH re-pair per connectionId. */
+  private readonly repairOverSshInFlight = new Map<string, Promise<ExecutionEnvironmentDescriptor>>()
 
   constructor(userDataDir?: string, options: EnvironmentHostOptions = {}) {
     const dataDir = userDataDir || app.getPath('userData')
@@ -2249,9 +2256,18 @@ export class EnvironmentHost {
       if (this.connections.getClient(connectionId)) {
         const snap = this.connections.getSupervisor(connectionId)
         if (disposition === 'blocked' || snap?.state === 'blocked') {
-          throw Object.assign(new Error(snap?.lastError || 'connection blocked'), {
-            code: snap?.blockReason === 'auth' ? 'unauthorized' : 'unavailable',
-          })
+          const reason = snap?.blockReason
+          const code =
+            reason === 'identity_conflict'
+              ? 'identity_conflict'
+              : reason === 'revoked'
+                ? 'revoked'
+                : reason === 'auth'
+                  ? 'unauthorized'
+                  : reason === 'protocol_incompatible'
+                    ? 'protocol_incompatible'
+                    : 'unavailable'
+          throw Object.assign(new Error(snap?.lastError || 'connection blocked'), { code })
         }
         throw Object.assign(new Error(snap?.lastError || 'connection not ready'), {
           code: 'unavailable',
@@ -2425,16 +2441,72 @@ export class EnvironmentHost {
       baseUrl,
       pairingToken: input.pairingToken,
     })
+    return this.finalizeRepairedPairing(input.connectionId, descriptor)
+  }
+
+  /**
+   * Fully automated re-pair for SSH-reachable nodes: the desktop mints the
+   * pairing token on the host itself instead of asking the user to paste one.
+   *
+   * Preserves connectionId (and therefore `remote:<connectionId>:<path>` project
+   * keys), so recovering from an auth block no longer duplicates the host in the
+   * UI the way re-adding it over SSH does.
+   */
+  async repairPairingOverSsh(
+    connectionId: string,
+    onProgress?: (progress: EnvironmentInstallProgress) => void,
+  ): Promise<ExecutionEnvironmentDescriptor> {
+    const inflight = this.repairOverSshInFlight.get(connectionId)
+    if (inflight) return inflight
+
+    const work = this.doRepairPairingOverSsh(connectionId, onProgress).finally(() => {
+      if (this.repairOverSshInFlight.get(connectionId) === work) {
+        this.repairOverSshInFlight.delete(connectionId)
+      }
+    })
+    this.repairOverSshInFlight.set(connectionId, work)
+    return work
+  }
+
+  private async doRepairPairingOverSsh(
+    connectionId: string,
+    onProgress?: (progress: EnvironmentInstallProgress) => void,
+  ): Promise<ExecutionEnvironmentDescriptor> {
+    const known = this.connections.listKnown().find((k) => k.connectionId === connectionId)
+    if (!known) throw new Error(`unknown connection ${connectionId}`)
+
+    const descriptor = await runSshPairingRepair(
+      {
+        connectionId,
+        endpointProfiles: known.endpointProfiles,
+        preferredEndpointId: known.preferredEndpointId,
+      },
+      {
+        probeHost: (target) => this.probeHost(target),
+        sshCapture,
+        ensureTunnel: (spec) => this.tunnels.ensure(connectionId, spec),
+        repairPairing: (input) => this.connections.repairPairing(input),
+      },
+      onProgress,
+    )
+    return this.finalizeRepairedPairing(connectionId, descriptor)
+  }
+
+  /** Shared tail of both repair paths: version gate, then resume host actions. */
+  private finalizeRepairedPairing(
+    connectionId: string,
+    descriptor: ExecutionEnvironmentDescriptor,
+  ): ExecutionEnvironmentDescriptor {
     try {
       this.assertDesktopNotOlderThanNode(descriptor.cliVersion)
     } catch (err) {
-      this.stopHostActionConsumer(input.connectionId, 'disconnect')
-      this.abortConnectionSessionDrains(input.connectionId, 'disconnect')
-      this.connections.disconnect(input.connectionId)
-      this.tunnels.close(input.connectionId)
+      this.stopHostActionConsumer(connectionId, 'disconnect')
+      this.abortConnectionSessionDrains(connectionId, 'disconnect')
+      this.connections.disconnect(connectionId)
+      this.tunnels.close(connectionId)
       throw err
     }
-    this.startHostActionConsumer(input.connectionId)
+    this.startHostActionConsumer(connectionId)
     return descriptor
   }
 
@@ -2574,6 +2646,13 @@ export class EnvironmentHost {
         remotePort,
         port: input.sshPort,
         identityFile: input.identityFile,
+        // Persist the exact home/exec/PATH used at pair time so repair/upgrade
+        // hit the same node store and can exec shebang launchers under a
+        // non-login SSH shell (legacy profiles without these fields re-probe).
+        // Empty nodeBinDir is intentional: "system Node is fine" vs omitted key.
+        remoteNodeHome: boot.remoteNodeHome,
+        remoteExec: boot.remoteExec,
+        nodeBinDir: nodeBinDir?.trim() || '',
       },
       lastSuccessAt: Date.now(),
     }
@@ -2693,10 +2772,9 @@ export class EnvironmentHost {
     const known = this.connections.listKnown().find((k) => k.connectionId === connectionId)
     if (!known) throw new Error(`unknown connection ${connectionId}`)
 
-    const spec = known.endpointProfiles
-      .map((p) => tunnelSpecFromEndpoint(p))
-      .find((s): s is NonNullable<typeof s> => s != null)
-    if (!spec) {
+    const profile = selectSshRepairProfile(known.endpointProfiles, known.preferredEndpointId)
+    const spec = profile ? tunnelSpecFromEndpoint(profile) : null
+    if (!profile || !spec) {
       throw Object.assign(
         new Error(
           'This node was paired without an SSH endpoint, so the desktop cannot run ' +
@@ -2712,6 +2790,7 @@ export class EnvironmentHost {
       destination: spec.destination,
       extraSshArgs: sshArgsForSpec(spec),
     }
+    const storedNodeHome = profile.ssh?.remoteNodeHome?.trim()
 
     onProgress?.({ phase: 'probing' })
     const probe = await this.probeHost(sshTarget)
@@ -2742,9 +2821,8 @@ export class EnvironmentHost {
     await this.restartNode({
       ...sshTarget,
       remoteExec: installed.remoteExec,
-      // Matches the default bootstrapNodeOverSsh derives; a custom node home is
-      // not persisted on the connection, so it is not recoverable here.
-      remoteNodeHome: `${probe.home}/.superone/node`,
+      // Prefer the home captured at pair time; legacy profiles fall back to default.
+      remoteNodeHome: storedNodeHome || `${probe.home}/.superone/node`,
       remotePort: spec.remotePort,
       nodeBinDir: probe.nodeBinDir,
     })

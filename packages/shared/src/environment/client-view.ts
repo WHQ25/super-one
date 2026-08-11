@@ -56,20 +56,31 @@ export interface NodeUpgradeAvailability {
 }
 
 /**
- * Progress pushed while an environment is being added over SSH.
+ * Progress pushed while an environment is being added, upgraded, or repaired
+ * over SSH. Optional correlation fields let the renderer ignore cross-talk
+ * between concurrent operations (e.g. repair must not drive the Add dialog).
+ *
  * `installing` appears when the host has no CLI yet or needs a version upgrade.
  * - `npm` — registry path (`@super-one/cli`)
  * - `upload` / `verify` / `extract` / `activate` — local dist upload path
  */
+export type EnvironmentInstallOperation = 'add' | 'upgrade' | 'repair'
+
+type EnvironmentInstallProgressMeta = {
+  /** Present for upgrade/repair (known connection). Absent during first-time add. */
+  connectionId?: string
+  operation?: EnvironmentInstallOperation
+}
+
 export type EnvironmentInstallProgress =
-  | { phase: 'probing' }
-  | {
+  | ({ phase: 'probing' } & EnvironmentInstallProgressMeta)
+  | ({
       phase: 'installing'
       step: 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
       detail?: string
-    }
-  | { phase: 'starting' }
-  | { phase: 'pairing' }
+    } & EnvironmentInstallProgressMeta)
+  | ({ phase: 'starting' } & EnvironmentInstallProgressMeta)
+  | ({ phase: 'pairing' } & EnvironmentInstallProgressMeta)
 
 /** Connection parameters for rebuilding an SSH local forward after app restart. */
 export interface SshTunnelSpec {
@@ -96,6 +107,46 @@ export function tunnelSpecFromEndpoint(profile: EndpointProfile): SshTunnelSpec 
     sshPort: profile.ssh?.port,
     identityFile: profile.ssh?.identityFile,
   }
+}
+
+/**
+ * Pick which ssh-forward profile may be used for **automated** administrative
+ * repair (mint pairing token on the host).
+ *
+ * Policy (deliberately narrow — a stale SSH backup must not steal recovery):
+ * - Preferred endpoint is ssh-forward with a target → that profile.
+ * - Preferred endpoint is non-SSH (direct-wss / tailscale / …) → null; caller
+ *   must use manual token paste instead of probing an arbitrary backup.
+ * - No preferred id → first usable ssh-forward profile.
+ */
+export function selectSshRepairProfile(
+  profiles: EndpointProfile[],
+  preferredEndpointId?: string,
+): EndpointProfile | null {
+  const sshProfiles = profiles.filter((p) => p.kind === 'ssh-forward' && Boolean(p.target?.trim()))
+  if (sshProfiles.length === 0) return null
+
+  if (preferredEndpointId) {
+    const preferred = profiles.find((p) => p.endpointId === preferredEndpointId)
+    if (preferred?.kind === 'ssh-forward' && preferred.target?.trim()) {
+      return preferred
+    }
+    // Preferred is something else (or missing from the list): do not fall back
+    // to the first SSH row — that backup may be obsolete or a different host.
+    if (preferred && preferred.kind !== 'ssh-forward') {
+      return null
+    }
+  }
+
+  return sshProfiles[0] ?? null
+}
+
+/** True when automated SSH repair may run for this list-item projection. */
+export function canRepairOverSsh(item: {
+  endpointProfiles: EndpointProfile[]
+  preferredEndpointId?: string
+}): boolean {
+  return selectSshRepairProfile(item.endpointProfiles, item.preferredEndpointId) != null
 }
 
 /** Extra `ssh` argv for a tunnel spec — port and identity file only. */

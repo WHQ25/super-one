@@ -151,7 +151,13 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
     } catch (err) {
       const e = err as { code?: string; message?: string }
       const status =
-        e.code === 'unauthorized' ? 401 : e.code === 'forbidden' ? 403 : e.code === 'invalid_argument' ? 400 : 500
+        e.code === 'unauthorized' || e.code === 'revoked'
+          ? 401
+          : e.code === 'forbidden'
+            ? 403
+            : e.code === 'invalid_argument'
+              ? 400
+              : 500
       sendJson(res, status, {
         error: { code: e.code ?? 'internal', message: e.message ?? 'internal error' },
       })
@@ -486,7 +492,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse, opts: NodeS
       sendJson(res, 200, result)
     } catch (err) {
       const e = err as { code?: string; message?: string }
-      sendJson(res, e.code === 'unauthorized' ? 401 : 500, {
+      sendJson(res, e.code === 'unauthorized' || e.code === 'revoked' ? 401 : 500, {
         error: { code: e.code ?? 'internal', message: e.message ?? 'pair failed' },
       })
     }
@@ -518,7 +524,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse, opts: NodeS
       sendJson(res, 200, result)
     } catch (err) {
       const e = err as { code?: string; message?: string }
-      sendJson(res, e.code === 'unauthorized' ? 401 : 500, {
+      sendJson(res, e.code === 'unauthorized' || e.code === 'revoked' ? 401 : 500, {
         error: { code: e.code ?? 'internal', message: e.message ?? 'token refresh failed' },
       })
     }
@@ -540,7 +546,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse, opts: NodeS
       sendJson(res, 200, ticket)
     } catch (err) {
       const e = err as { code?: string; message?: string }
-      sendJson(res, e.code === 'unauthorized' ? 401 : 500, {
+      sendJson(res, e.code === 'unauthorized' || e.code === 'revoked' ? 401 : 500, {
         error: { code: e.code ?? 'internal', message: e.message ?? 'ticket failed' },
       })
     }

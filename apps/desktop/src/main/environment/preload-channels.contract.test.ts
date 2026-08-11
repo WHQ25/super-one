@@ -60,8 +60,19 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_FORGET).toBe('environment:forget')
     expect(AgentIpcChannels.ENVIRONMENT_RETRY_NOW).toBe('environment:retryNow')
     expect(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING).toBe('environment:repairPairing')
+    expect(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING_SSH).toBe(
+      'environment:repairPairingOverSsh',
+    )
     expect(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT).toBe('environment:statusEvent')
     expect(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS).toBe('environment:installProgress')
+    // Correlated progress fields live on the shared type (operation/connectionId).
+    const clientView = readFileSync(
+      join(ROOT, '../../packages/shared/src/environment/client-view.ts'),
+      'utf8',
+    )
+    expect(clientView).toContain('EnvironmentInstallOperation')
+    expect(clientView).toContain('connectionId?:')
+    expect(clientView).toContain("operation?: EnvironmentInstallOperation")
     expect(AgentIpcChannels.ENVIRONMENT_HARNESS_LIST).toBe('environment:harnessList')
     expect(AgentIpcChannels.ENVIRONMENT_HARNESS_ENABLE).toBe('environment:harnessEnable')
     expect(AgentIpcChannels.ENVIRONMENT_HARNESS_DISABLE).toBe('environment:harnessDisable')
@@ -97,6 +108,9 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_CONNECT',
       'ENVIRONMENT_DISCONNECT',
       'ENVIRONMENT_FORGET',
+      'ENVIRONMENT_RETRY_NOW',
+      'ENVIRONMENT_REPAIR_PAIRING',
+      'ENVIRONMENT_REPAIR_PAIRING_SSH',
       'ENVIRONMENT_STATUS_EVENT',
       'ENVIRONMENT_INSTALL_PROGRESS',
       'ENVIRONMENT_HARNESS_LIST',

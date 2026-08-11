@@ -41,13 +41,32 @@ export type RetryNowDisposition = 'started' | 'already_connected' | 'blocked' | 
  * can have fixed it since — an upgraded desktop clears `protocol_incompatible`,
  * edited endpoints clear `invalid_config`, and `user` is a self-imposed stop.
  *
- * Terminal: `auth` / `revoked` need a fresh pairing token (Repair pairing), and
+ * Terminal: `auth` / `revoked` need a fresh pairing token (Repair pairing).
  * `identity_conflict` is a trust boundary — the node's fingerprint no longer
- * matches what was pinned, so only a re-pair that re-validates identity may
- * clear it. Silently re-dialing past either would defeat the check.
+ * matches what was pinned. Existing re-pair refuses a changed fingerprint on
+ * purpose (pin stays authoritative), so the real recovery is Forget + re-add
+ * with a conscious trust decision — never a silent re-dial past the check.
  */
 export function isUserRecoverableBlock(reason: BlockReason | undefined): boolean {
   return reason === 'protocol_incompatible' || reason === 'invalid_config' || reason === 'user'
+}
+
+/**
+ * True when an auth error means the stored credential family is dead and must
+ * be re-paired — not a transient refresh/proof flake that Connect should retry.
+ *
+ * Nodes historically emitted only `code: 'unauthorized'` for both classes; we
+ * accept an explicit `revoked` code and also classify common terminal messages.
+ */
+export function isTerminalCredentialFailure(
+  code: string | undefined,
+  message: string,
+): boolean {
+  if (code === 'revoked') return true
+  if (code !== 'unauthorized') return false
+  return /session revoked|token reuse|refresh token expired|invalid refresh token|pairing token revoked|pairing token expired|pairing token already used/i.test(
+    message,
+  )
 }
 
 export interface SupervisorSnapshot {
@@ -308,8 +327,18 @@ export class ConnectionSupervisorCore {
       if (this.state === 'offline') return
       const message = (err as Error).message || 'connect failed'
       const code = (err as { code?: string }).code
-      if (code === 'unauthorized' || code === 'revoked') {
-        this.block('auth', message)
+      // Dead credential family → terminal block (Repair pairing). Prefer the
+      // explicit `revoked` reason when the node/code says so; otherwise keep
+      // `auth` for message-classified unauthorized so older UIs still match.
+      if (isTerminalCredentialFailure(code, message)) {
+        this.block(code === 'revoked' ? 'revoked' : 'auth', message)
+        return
+      }
+      // Non-terminal unauthorized (proof window, etc.): back off and re-try the
+      // *stored* credential instead of minting another client_sessions row.
+      if (code === 'unauthorized') {
+        this.transition('disconnected', message)
+        await this.scheduleBackoff()
         return
       }
       if (code === 'protocol_incompatible') {

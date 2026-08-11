@@ -128,7 +128,7 @@ export class AuthService {
         | undefined
 
       if (!row) throw Object.assign(new Error('invalid pairing token'), { code: 'unauthorized' })
-      if (row.revoked_at) throw Object.assign(new Error('pairing token revoked'), { code: 'unauthorized' })
+      if (row.revoked_at) throw Object.assign(new Error('pairing token revoked'), { code: 'revoked' })
       if (row.consumed_at) throw Object.assign(new Error('pairing token already used'), { code: 'unauthorized' })
       if (row.expires_at < now) throw Object.assign(new Error('pairing token expired'), { code: 'unauthorized' })
 
@@ -265,14 +265,15 @@ export class AuthService {
           .run(now, reused.client_session_id)
         this.onRevoke?.(reused.client_session_id)
         throw Object.assign(new Error('refresh token reuse detected; session revoked'), {
-          code: 'unauthorized',
+          code: 'revoked',
         })
       }
     }
 
-    if (row.revoked_at) throw Object.assign(new Error('client session revoked'), { code: 'unauthorized' })
+    if (row.revoked_at) throw Object.assign(new Error('client session revoked'), { code: 'revoked' })
     if (row.refresh_expires_at < now) {
-      throw Object.assign(new Error('refresh token expired'), { code: 'unauthorized' })
+      // Family is unusable until re-pair — not a transient proof flake.
+      throw Object.assign(new Error('refresh token expired'), { code: 'revoked' })
     }
 
     if (!input.verifyDeviceProof(row.device_public_key_pem, input.proofPayload, input.proofSignature)) {
@@ -346,7 +347,10 @@ export class AuthService {
   createWsTicket(accessToken: string): WsTicketResult {
     const verified = this.verifyAccessToken(accessToken)
     if (!verified.ok) {
-      throw Object.assign(new Error(verified.reason), { code: 'unauthorized' })
+      // Preserve terminal credential death as `revoked` so desktop supervisors
+      // do not treat session revocation as a transient unauthorized flake.
+      const code = /session revoked/i.test(verified.reason) ? 'revoked' : 'unauthorized'
+      throw Object.assign(new Error(verified.reason), { code })
     }
     const client = verified.client
     const now = Date.now()
@@ -412,7 +416,7 @@ export class AuthService {
       | undefined
 
     if (!row) throw Object.assign(new Error('invalid ws ticket'), { code: 'unauthorized' })
-    if (row.revoked_at) throw Object.assign(new Error('client session revoked'), { code: 'unauthorized' })
+    if (row.revoked_at) throw Object.assign(new Error('client session revoked'), { code: 'revoked' })
     if (row.consumed_at) throw Object.assign(new Error('ws ticket already used'), { code: 'unauthorized' })
     if (row.expires_at < now) throw Object.assign(new Error('ws ticket expired'), { code: 'unauthorized' })
     if (!safeEqualString(row.ticket_hash, ticketHash)) {

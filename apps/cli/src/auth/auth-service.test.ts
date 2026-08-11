@@ -85,6 +85,55 @@ describe('AuthService', () => {
     expect(verified.ok).toBe(false)
   })
 
+  it('createWsTicket after session revoke surfaces code revoked (not unauthorized)', () => {
+    const { auth } = setup()
+    const device = generateEd25519KeyPair()
+    const pairToken = auth.createPairingToken()
+    const paired = auth.exchangePairingToken({
+      pairingToken: pairToken.token,
+      devicePublicKeyPem: device.publicKeyPem,
+    })
+    const proofPayload = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const access = auth.refreshAccess({
+      refreshToken: paired.refreshToken,
+      proofPayload,
+      proofSignature: signPayload(device.privateKeyPem, proofPayload),
+      verifyDeviceProof: verifyPayload,
+    })
+
+    expect(auth.revokeClientSession(paired.clientSessionId)).toBe(true)
+    try {
+      auth.createWsTicket(access.accessToken)
+      expect.fail('expected createWsTicket to throw')
+    } catch (err) {
+      expect(err).toMatchObject({ code: 'revoked' })
+      expect((err as Error).message).toMatch(/session revoked/i)
+    }
+  })
+
+  it('refresh after explicit revoke surfaces code revoked', () => {
+    const { auth } = setup()
+    const device = generateEd25519KeyPair()
+    const pairToken = auth.createPairingToken()
+    const paired = auth.exchangePairingToken({
+      pairingToken: pairToken.token,
+      devicePublicKeyPem: device.publicKeyPem,
+    })
+    expect(auth.revokeClientSession(paired.clientSessionId)).toBe(true)
+    const proof = `refresh:${paired.clientSessionId}:${Date.now()}`
+    try {
+      auth.refreshAccess({
+        refreshToken: paired.refreshToken,
+        proofPayload: proof,
+        proofSignature: signPayload(device.privateKeyPem, proof),
+        verifyDeviceProof: verifyPayload,
+      })
+      expect.fail('expected refreshAccess to throw')
+    } catch (err) {
+      expect(err).toMatchObject({ code: 'revoked' })
+    }
+  })
+
   it('allows immediately-previous refresh within grace instead of revoking', () => {
     const { auth, db } = setup()
     const device = generateEd25519KeyPair()

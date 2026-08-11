@@ -7,7 +7,14 @@ import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@super
 import type { LiveSessionSnapshot } from '@superone/shared/session-types'
 import type { ModelCatalog } from '@superone/shared/model-catalog-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import type { EnvironmentListItem, ProjectSnapshot, SupervisorSnapshot } from '@superone/shared/environment'
+import type {
+  EnvironmentInstallProgress,
+  EnvironmentListItem,
+  ProjectSnapshot,
+  SupervisorSnapshot,
+} from '@superone/shared/environment'
+// Re-export so renderer consumers of the preload types see the correlated shape.
+export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
 
 interface AgentAPI {
@@ -941,6 +948,11 @@ export interface EnvironmentAPI {
     baseUrl: string
     pairingToken: string
   }): Promise<unknown>
+  /**
+   * Re-pair over the stored SSH endpoint. The desktop mints a fresh pairing
+   * token on the host and keeps the same connectionId (no project-key churn).
+   */
+  repairPairingOverSsh(connectionId: string): Promise<unknown>
 
   /**
    * Node harness.resources aggregate (models + skills/commands/agents/prompts).
@@ -976,17 +988,6 @@ export interface EnvironmentAPI {
   onStatusEvent(callback: (snapshot: SupervisorSnapshot) => void): () => void
   onInstallProgress(callback: (progress: EnvironmentInstallProgress) => void): () => void
 }
-
-/** SSH bootstrap progress pushed while an environment is being added. */
-export type EnvironmentInstallProgress =
-  | { phase: 'probing' }
-  | {
-      phase: 'installing'
-      step: 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
-      detail?: string
-    }
-  | { phase: 'starting' }
-  | { phase: 'pairing' }
 
 /** Selectable Host from local ~/.ssh/config (see main environment/ssh-config). */
 export interface SshConfigHostEntry {

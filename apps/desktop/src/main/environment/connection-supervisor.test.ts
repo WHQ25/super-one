@@ -38,17 +38,17 @@ describe('ConnectionSupervisor', () => {
     supervisor.dispose()
   })
 
-  it('blocks on auth failures without retry', async () => {
+  it('blocks on explicit credential-family revocation without retry', async () => {
     const supervisor = new ConnectionSupervisor({
       environmentId: 'env-1',
       connectionId: 'c-1',
       connect: async () => {
-        throw Object.assign(new Error('revoked'), { code: 'unauthorized' })
+        throw Object.assign(new Error('revoked'), { code: 'revoked' })
       },
     })
     await supervisor.start()
     expect(supervisor.getSnapshot().state).toBe('blocked')
-    expect(supervisor.getSnapshot().blockReason).toBe('auth')
+    expect(supervisor.getSnapshot().blockReason).toBe('revoked')
   })
 
   it('blocks on identity conflict', async () => {
@@ -314,12 +314,75 @@ describe('ConnectionSupervisor', () => {
       supervisor.dispose()
     })
 
-    it('keeps an auth block terminal so recovery goes through re-pairing', async () => {
-      const { supervisor } = await blockedOn('unauthorized')
+    it('keeps an explicit revoked block terminal so recovery goes through re-pairing', async () => {
+      const { supervisor } = await blockedOn('revoked')
 
       expect(await supervisor.retryNow({ unblock: true })).toBe('blocked')
       expect(supervisor.getSnapshot().state).toBe('blocked')
+      expect(supervisor.getSnapshot().blockReason).toBe('revoked')
       supervisor.dispose()
+    })
+
+    it('backs off non-terminal unauthorized so Connect can re-try the stored credential', async () => {
+      let calls = 0
+      const supervisor = new ConnectionSupervisor({
+        environmentId: 'env-1',
+        connectionId: 'c-1',
+        baseDelayMs: 10,
+        maxDelayMs: 20,
+        random: () => 0,
+        stableAfterMs: 0,
+        connect: async () => {
+          calls += 1
+          if (calls === 1) {
+            // Clock-skew style proof failure — not a dead credential family.
+            throw Object.assign(new Error('proof timestamp out of window'), {
+              code: 'unauthorized',
+            })
+          }
+        },
+      })
+      await supervisor.start()
+      expect(supervisor.getSnapshot().state).toBe('backoff')
+      expect(supervisor.getSnapshot().blockReason).toBeUndefined()
+
+      // Explicit Connect (retryNow without unblock) re-dials the stored credential.
+      expect(await supervisor.retryNow()).toBe('started')
+      expect(supervisor.getSnapshot().state).toBe('connected')
+      expect(calls).toBe(2)
+      supervisor.dispose()
+    })
+
+    it('classifies legacy unauthorized+revoked messages as terminal auth blocks', async () => {
+      const supervisor = new ConnectionSupervisor({
+        environmentId: 'env-1',
+        connectionId: 'c-1',
+        connect: async () => {
+          throw Object.assign(new Error('client session revoked'), { code: 'unauthorized' })
+        },
+      })
+      await supervisor.start()
+      expect(supervisor.getSnapshot().state).toBe('blocked')
+      expect(supervisor.getSnapshot().blockReason).toBe('auth')
+      expect(await supervisor.retryNow({ unblock: true })).toBe('blocked')
+      supervisor.dispose()
+    })
+
+    it('treats invalid_config and user as recoverable under explicit unblock', async () => {
+      // These reasons are not currently produced by runConnect error codes, but
+      // isUserRecoverableBlock advertises them — exercise the policy directly.
+      for (const reason of ['invalid_config', 'user'] as const) {
+        const supervisor = new ConnectionSupervisor({
+          environmentId: 'env-1',
+          connectionId: 'c-1',
+          stableAfterMs: 0,
+          connect: async () => {},
+        })
+        supervisor.block(reason, reason)
+        expect(await supervisor.retryNow({ unblock: true })).toBe('started')
+        expect(supervisor.getSnapshot().state).toBe('connected')
+        supervisor.dispose()
+      }
     })
 
     it('leaves blocked untouched without the explicit unblock opt-in', async () => {
@@ -349,12 +412,12 @@ describe('ConnectionSupervisor', () => {
     })
   })
 
-  it('wake does not unblock auth blocked state', async () => {
+  it('wake does not unblock revoked blocked state', async () => {
     const supervisor = new ConnectionSupervisor({
       environmentId: 'env-1',
       connectionId: 'c-1',
       connect: async () => {
-        throw Object.assign(new Error('revoked'), { code: 'unauthorized' })
+        throw Object.assign(new Error('revoked'), { code: 'revoked' })
       },
     })
     await supervisor.start()

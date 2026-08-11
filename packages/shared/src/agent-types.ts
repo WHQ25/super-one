@@ -3026,6 +3026,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_RETRY_NOW: 'environment:retryNow',
   /** Re-pair existing connectionId with a new pairing token (identity-safe). */
   ENVIRONMENT_REPAIR_PAIRING: 'environment:repairPairing',
+  /** Re-pair over the stored SSH endpoint; the desktop mints the token itself. */
+  ENVIRONMENT_REPAIR_PAIRING_SSH: 'environment:repairPairingOverSsh',
   /** Main → renderer supervisor state push. */
   ENVIRONMENT_STATUS_EVENT: 'environment:statusEvent',
   /** Main → renderer SSH probe/install progress push. */

@@ -565,6 +565,9 @@ const environmentAPI = {
     >,
   repairPairing: (input: { connectionId: string; baseUrl: string; pairingToken: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING, input),
+  /** Re-pair over the stored SSH endpoint; the desktop mints the token itself. */
+  repairPairingOverSsh: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING_SSH, connectionId),
 
   /**
    * Node harness.resources aggregate (models + skills/commands/agents/prompts).

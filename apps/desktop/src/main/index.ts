@@ -1154,7 +1154,10 @@ function registerIpcHandlers(): void {
       const host = getEnvironmentHost()
       attachEnvironmentStatusBridge(host)
       const result = await host.addRemoteOverSsh(input, (progress) => {
-        safeSend(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, progress)
+        safeSend(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, {
+          ...progress,
+          operation: 'add',
+        })
       })
       // Descriptor is structured-clone safe, but drop it to keep the payload lean.
       return {
@@ -1172,7 +1175,11 @@ function registerIpcHandlers(): void {
       const host = getEnvironmentHost()
       attachEnvironmentStatusBridge(host)
       return host.upgradeRemoteNode(connectionId, (progress) => {
-        safeSend(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, progress)
+        safeSend(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, {
+          ...progress,
+          connectionId,
+          operation: 'upgrade',
+        })
       })
     },
   )
@@ -1581,6 +1588,19 @@ function registerIpcHandlers(): void {
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().repairPairing(input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING_SSH,
+    async (_e, connectionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().repairPairingOverSsh(connectionId, (progress) => {
+        safeSend(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, {
+          ...progress,
+          connectionId,
+          operation: 'repair',
+        })
+      })
     },
   )
 

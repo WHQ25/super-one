@@ -112,7 +112,13 @@ export function createSession(folderPath: string, sessionId: string, title?: str
   return sessionId
 }
 
-export function createAutomationSession(folderPath: string, sessionId: string, title: string, automationId: string, provider: 'claude' | 'codex' = 'claude'): string {
+export function createAutomationSession(
+  folderPath: string,
+  sessionId: string,
+  title: string,
+  automationId: string,
+  provider: 'claude' | 'codex' | 'acp' | 'opencode' = 'claude',
+): string {
   const projectId = getProjectId(folderPath)
   if (!projectId) throw new Error(`Project not found for path: ${folderPath}`)
 

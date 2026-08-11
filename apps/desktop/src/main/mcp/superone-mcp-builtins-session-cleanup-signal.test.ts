@@ -5,12 +5,23 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { sessionCleanupHandlerMock, configApplyHandlerMock } = vi.hoisted(() => ({
+const {
+  sessionCleanupHandlerMock,
+  configApplyHandlerMock,
+  automationDeleteHandlerMock,
+  automationApplyHandlerMock,
+} = vi.hoisted(() => ({
   sessionCleanupHandlerMock: vi.fn(async () => ({
     content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok' }) }],
   })),
   configApplyHandlerMock: vi.fn(async () => ({
     content: [{ type: 'text' as const, text: JSON.stringify({ status: 'applied' }) }],
+  })),
+  automationDeleteHandlerMock: vi.fn(async () => ({
+    content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok' }) }],
+  })),
+  automationApplyHandlerMock: vi.fn(async () => ({
+    content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok' }) }],
   })),
 }))
 
@@ -19,6 +30,15 @@ vi.mock('./session-archive-tools', async (importOriginal) => {
   return {
     ...actual,
     sessionCleanupHandler: sessionCleanupHandlerMock,
+  }
+})
+
+vi.mock('./automation-tools', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./automation-tools')>()
+  return {
+    ...actual,
+    automationDeleteHandler: automationDeleteHandlerMock,
+    automationApplyHandler: automationApplyHandlerMock,
   }
 })
 
@@ -99,6 +119,8 @@ describe('confirm-gated tools Claude MCP extra.signal forwarding', () => {
   beforeEach(() => {
     sessionCleanupHandlerMock.mockClear()
     configApplyHandlerMock.mockClear()
+    automationDeleteHandlerMock.mockClear()
+    automationApplyHandlerMock.mockClear()
   })
 
   it('forwards registerTool extra.signal into session_cleanup deps', async () => {
@@ -154,6 +176,50 @@ describe('confirm-gated tools Claude MCP extra.signal forwarding', () => {
 
     expect(configApplyHandlerMock).toHaveBeenCalledTimes(1)
     const [, calledDeps] = configApplyHandlerMock.mock.calls[0]!
+    expect(calledDeps).toMatchObject({
+      sessionId: 'claude-session',
+      signal: controller.signal,
+    })
+  })
+
+  it('forwards registerTool extra.signal into automation_delete deps', async () => {
+    const { server, handlers } = makeServer()
+    const deps = makeDeps()
+    registerSuperoneTools(server as never, deps)
+
+    const handler = handlers.get('automation_delete')
+    expect(handler, 'automation_delete must be registered on the Claude MCP server').toBeTruthy()
+
+    const controller = new AbortController()
+    await handler!(
+      { ids: ['auto-1'] },
+      { signal: controller.signal },
+    )
+
+    expect(automationDeleteHandlerMock).toHaveBeenCalledTimes(1)
+    const [, calledDeps] = automationDeleteHandlerMock.mock.calls[0]!
+    expect(calledDeps).toMatchObject({
+      sessionId: 'claude-session',
+      signal: controller.signal,
+    })
+  })
+
+  it('forwards registerTool extra.signal into automation_apply deps', async () => {
+    const { server, handlers } = makeServer()
+    const deps = makeDeps()
+    registerSuperoneTools(server as never, deps)
+
+    const handler = handlers.get('automation_apply')
+    expect(handler, 'automation_apply must be registered on the Claude MCP server').toBeTruthy()
+
+    const controller = new AbortController()
+    await handler!(
+      { action: 'create', name: 'X', prompt: 'Y', schedule: { type: 'recurring', cron: '0 9 * * *' } },
+      { signal: controller.signal },
+    )
+
+    expect(automationApplyHandlerMock).toHaveBeenCalledTimes(1)
+    const [, calledDeps] = automationApplyHandlerMock.mock.calls[0]!
     expect(calledDeps).toMatchObject({
       sessionId: 'claude-session',
       signal: controller.signal,

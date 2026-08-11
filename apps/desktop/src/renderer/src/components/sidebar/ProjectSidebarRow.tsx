@@ -255,6 +255,27 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     if (isExpanded) refreshAutomations()
   }, [isExpanded, refreshAutomations])
 
+  // MCP / IPC list mutations + run lifecycle (status dots) while this project is expanded.
+  useEffect(() => {
+    if (!isExpanded || folder.missing) return
+    const unsubChanged = window.app.onAutomationsChanged((event) => {
+      if (event.projectPath && event.projectPath !== folder.path) return
+      refreshAutomations()
+    })
+    const unsubRun = window.app.onAutomationEvent((event) => {
+      // Prefer projectPath when present; otherwise only re-list if we already track this id.
+      if (event.projectPath && event.projectPath !== folder.path) return
+      if (!event.projectPath) {
+        // Legacy events without projectPath: still refresh (cheap).
+      }
+      refreshAutomations()
+    })
+    return () => {
+      unsubChanged()
+      unsubRun()
+    }
+  }, [isExpanded, folder.missing, folder.path, refreshAutomations])
+
   const openCreateDialog = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     setEditingAutomation(null)

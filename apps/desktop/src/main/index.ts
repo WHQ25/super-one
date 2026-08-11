@@ -138,8 +138,8 @@ import { CodexMarketplaceService } from './codex/codex-marketplace-service'
 import { setCodexSkillsWatcherWindow } from './codex/codex-skills-watcher'
 import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
 import { setCodexServiceFactory } from './session/backends/codex-backend'
-import { AutomationService } from './automation-service'
-import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation } from './db-automations'
+import { AutomationService, bindAutomationService, notifyAutomationsListChanged } from './automation-service'
+import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation, getAutomation as dbGetAutomation } from './db-automations'
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
@@ -213,6 +213,7 @@ const codexHooksService = new CodexHooksService(codexService)
 const codexMarketplaceService = new CodexMarketplaceService(codexService)
 setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
+bindAutomationService(automationService)
 // `apiProviderId` carries the session's chosen credential id (dynamic-follow: null follows the global binding).
 function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
@@ -4163,15 +4164,22 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.AUTOMATIONS_CREATE, (_e, projectPath: string, data: CreateAutomationRequest) => {
-    return dbCreateAutomation(projectPath, data)
+    const created = dbCreateAutomation(projectPath, data)
+    notifyAutomationsListChanged(projectPath)
+    return created
   })
 
   ipcMain.handle(AgentIpcChannels.AUTOMATIONS_UPDATE, (_e, id: string, data: UpdateAutomationRequest) => {
-    return dbUpdateAutomation(id, data)
+    const updated = dbUpdateAutomation(id, data)
+    if (updated) notifyAutomationsListChanged(updated.projectPath)
+    return updated
   })
 
   ipcMain.handle(AgentIpcChannels.AUTOMATIONS_DELETE, (_e, id: string) => {
-    return dbDeleteAutomation(id)
+    const existing = dbGetAutomation(id)
+    const ok = dbDeleteAutomation(id)
+    if (ok) notifyAutomationsListChanged(existing?.projectPath)
+    return ok
   })
 
   ipcMain.handle(AgentIpcChannels.AUTOMATIONS_RUN_NOW, async (_e, id: string) => {

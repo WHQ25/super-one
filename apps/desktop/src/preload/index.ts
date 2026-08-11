@@ -1856,11 +1856,19 @@ const appAPI = {
   runAutomationNow: (id: string) =>
     ipcRenderer.invoke(AgentIpcChannels.AUTOMATIONS_RUN_NOW, id) as Promise<void>,
 
-  onAutomationEvent: (callback: (event: { automationId: string; status: string; sessionId?: string; error?: string }) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, event: { automationId: string; status: string; sessionId?: string; error?: string }) => callback(event)
+  onAutomationEvent: (callback: (event: { automationId: string; status: string; sessionId?: string; error?: string; projectPath?: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { automationId: string; status: string; sessionId?: string; error?: string; projectPath?: string }) => callback(event)
     ipcRenderer.on(AgentIpcChannels.AUTOMATIONS_EVENT, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.AUTOMATIONS_EVENT, handler)
+    }
+  },
+
+  onAutomationsChanged: (callback: (event: { projectPath?: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { projectPath?: string }) => callback(event ?? {})
+    ipcRenderer.on(AgentIpcChannels.AUTOMATIONS_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.AUTOMATIONS_CHANGED, handler)
     }
   },
 }

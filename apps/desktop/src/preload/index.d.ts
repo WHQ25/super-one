@@ -554,7 +554,9 @@ interface AppAPI {
   updateAutomation(id: string, data: UpdateAutomationRequest): Promise<Automation | undefined>
   deleteAutomation(id: string): Promise<boolean>
   runAutomationNow(id: string): Promise<void>
-  onAutomationEvent(callback: (event: { automationId: string; status: AutomationRunStatus; sessionId?: string; error?: string }) => void): () => void
+  onAutomationEvent(callback: (event: { automationId: string; status: AutomationRunStatus; sessionId?: string; error?: string; projectPath?: string }) => void): () => void
+  /** List mutation (create/update/delete). projectPath scopes which sidebars should re-list. */
+  onAutomationsChanged(callback: (event: { projectPath?: string }) => void): () => void
 }
 
 interface MiniAppAPI {

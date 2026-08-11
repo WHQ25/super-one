@@ -19,6 +19,7 @@ import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer
 import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
 import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
 import { SessionCleanupConfirmPromptContainer } from './SessionCleanupConfirmPrompt'
+import { AutomationConfirmPromptContainer } from './AutomationConfirmPrompt'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
@@ -139,12 +140,14 @@ export function PermissionPrompt() {
   const isSessionAgentsConfirm = pendingPermission?.requestKind === 'session_agents_confirm'
   const isComputerUseGrant = pendingPermission?.requestKind === 'computer_use_grant'
   const isSessionCleanupConfirm = pendingPermission?.requestKind === 'session_cleanup_confirm'
+  const isAutomationConfirm = pendingPermission?.requestKind === 'automation_confirm'
   const isSelfManagedConfirm =
     isVideoGenConfirm
     || isConfigConfirm
     || isSessionAgentsConfirm
     || isComputerUseGrant
     || isSessionCleanupConfirm
+    || isAutomationConfirm
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
@@ -384,6 +387,10 @@ export function PermissionPrompt() {
 
   if (isSessionCleanupConfirm) {
     return <SessionCleanupConfirmPromptContainer request={pendingPermission} />
+  }
+
+  if (isAutomationConfirm) {
+    return <AutomationConfirmPromptContainer request={pendingPermission} />
   }
 
   if (isComputerUseGrant && pendingPermission) {

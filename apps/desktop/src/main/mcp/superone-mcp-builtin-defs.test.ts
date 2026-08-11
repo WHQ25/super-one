@@ -6,6 +6,7 @@ import {
   LAUNCH_CWD_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_WORKTREE_DESCRIPTION,
+  AUTOMATION_TOOL_NAMES,
   SESSION_ARCHIVE_TOOL_NAMES,
   SESSION_COLLABORATION_TOOL_NAMES,
   SESSION_REQUEST_AGENTS_DESCRIPTION,
@@ -135,6 +136,32 @@ describe('built-in superone tool registration surfaces', () => {
       expect(hostAction?.inputSchema, `${name} input schema`).toEqual(desktop?.inputSchema)
       expect(hostAction?.description.length, `${name} description length`).toBeLessThanOrEqual(700)
     }
+  })
+
+  it('keeps automation host-action descriptors aligned with desktop discovery', () => {
+    for (const name of AUTOMATION_TOOL_NAMES) {
+      const desktop = BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === name)
+      const hostAction = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === name)
+      expect(desktop, `${name} desktop def`).toBeTruthy()
+      expect(hostAction?.description, `${name} description`).toBe(desktop?.description)
+      expect(hostAction?.inputSchema, `${name} input schema`).toEqual(desktop?.inputSchema)
+      expect(hostAction?.description.length, `${name} description length`).toBeLessThanOrEqual(700)
+    }
+  })
+
+  it('points automation tools at each other for discovery and delete', () => {
+    const list = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'automation_list')!
+    const apply = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'automation_apply')!
+    const del = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'automation_delete')!
+    expect(list.description).toMatch(/automation_apply/)
+    expect(list.description).toMatch(/automation_delete/)
+    expect(apply.description).toMatch(/automation_list/)
+    expect(apply.description).toMatch(/automation_delete/)
+    expect(apply.description).toMatch(/confirmation dialog/)
+    expect(del.description).toMatch(/automation_list/)
+    expect(del.description).toMatch(/confirmation dialog/)
+    expect(apply.inputSchema.required).toEqual(['action'])
+    expect(del.inputSchema.required).toEqual(['ids'])
   })
 
   it('marks read_manual as alwaysLoad so Claude Tool Search does not hide it', () => {

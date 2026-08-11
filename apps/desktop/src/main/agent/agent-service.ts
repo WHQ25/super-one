@@ -180,42 +180,105 @@ export class AgentService {
     }
   }
 
+  /**
+   * Spawn an automation-owned session via SessionManager and send the prompt.
+   * Works for every harness (claude / codex / acp / opencode) through providerId `*-base`.
+   */
   async runAutomationSession(projectPath: string, options: {
     content: string
-    model?: string
-    effort?: string
-    permissionMode?: string
+    agentConfig: import('@superone/shared/agent-types').AgentRunConfig
     automationId?: string
     automationName?: string
   }): Promise<{ sessionId: string }> {
     const mgr = this.requireSessionManager()
-    const sessionId = randomUUID()
+    const cfg = options.agentConfig
+    const harnessId = cfg.type
+    const providerId = `${harnessId}-base`
+    const sessionId = harnessId === 'codex' ? `codex-auto-${Date.now()}` : randomUUID()
+    const title = `[Auto] ${options.automationName ?? 'Automation'}`
+
     if (options.automationId) {
-      createAutomationSession(
-        projectPath,
-        sessionId,
-        `[Auto] ${options.automationName ?? 'Automation'}`,
-        options.automationId,
-        'claude',
-      )
+      try {
+        createAutomationSession(projectPath, sessionId, title, options.automationId, harnessId)
+      } catch { /* ignore — session row may already exist on retry */ }
     }
+
+    const model = 'model' in cfg ? cfg.model : undefined
+    const effort = (
+      cfg.type === 'codex'
+        ? (cfg.effort ?? cfg.reasoningEffort)
+        : 'effort' in cfg
+          ? cfg.effort
+          : undefined
+    ) as SendMessageRequest['effort'] | undefined
+
+    let permissionMode: PermissionMode | undefined
+    let sandboxMode: SandboxMode | undefined
+    let permissionPreset: CodexPermissionPreset | undefined
+    let apiProviderId: string | null | undefined
+    let acpAgentId: string | null | undefined
+
+    if (cfg.type === 'claude') {
+      permissionMode = cfg.permissionMode ?? 'bypassPermissions'
+      sandboxMode = cfg.sandboxMode ?? 'off'
+      apiProviderId = cfg.apiProviderId
+    } else if (cfg.type === 'codex') {
+      permissionPreset = cfg.permissionPreset
+        ?? (cfg.permissionMode === 'bypassPermissions' || cfg.permissionMode === 'acceptEdits'
+          ? 'full-access'
+          : cfg.permissionMode
+            ? 'default'
+            : 'full-access')
+      permissionMode = cfg.permissionMode
+        ?? (permissionPreset === 'full-access' ? 'bypassPermissions' : 'default')
+      apiProviderId = cfg.apiProviderId
+    } else if (cfg.type === 'acp') {
+      permissionMode = cfg.permissionMode ?? 'bypassPermissions'
+      acpAgentId = cfg.acpAgentId ?? null
+      apiProviderId = cfg.apiProviderId
+    } else {
+      permissionMode = cfg.permissionMode ?? 'bypassPermissions'
+      apiProviderId = cfg.apiProviderId
+    }
+
     const session = mgr.createSession({
       projectPath,
-      providerId: 'claude-base',
+      providerId,
       id: sessionId,
-      model: options.model,
-      effort: options.effort as SendMessageRequest['effort'] | undefined,
-      permissionMode: options.permissionMode as PermissionMode | undefined,
+      model,
+      effort,
+      permissionMode,
+      sandboxMode,
+      apiProviderId: apiProviderId ?? null,
+      acpAgentId: acpAgentId ?? null,
     })
-    await session.send({
-      content: options.content,
-      model: options.model,
-      effort: options.effort as SendMessageRequest['effort'] | undefined,
-      clientMessageId: `auto_${Date.now()}`,
-    })
+
+    const clientMessageId = `auto_${Date.now()}`
+    if (cfg.type === 'codex') {
+      await session.send({
+        content: options.content,
+        clientMessageId,
+        assistantMessageId: `auto-${Date.now()}`,
+        model,
+        effort,
+        codex: {
+          permissionPreset,
+          reasoningEffort: effort as CodexReasoningEffort | undefined,
+        },
+      })
+    } else {
+      await session.send({
+        content: options.content,
+        model,
+        effort,
+        clientMessageId,
+      })
+    }
+
     return { sessionId }
   }
 
+  /** @deprecated Prefer runAutomationSession with agentConfig — kept for callers mid-migration. */
   async runCodexAutomationSession(projectPath: string, options: {
     content: string
     model?: string
@@ -224,36 +287,18 @@ export class AgentService {
     automationId?: string
     automationName?: string
   }): Promise<{ sessionId: string }> {
-    const sessionId = `codex-auto-${Date.now()}`
-    const userMessageId = `user_${Date.now()}`
-    const assistantMessageId = `auto-${Date.now()}`
-
-    if (options.automationId) {
-      try {
-        createAutomationSession(projectPath, sessionId, `[Auto] ${options.automationName ?? 'Automation'}`, options.automationId, 'codex')
-      } catch { /* ignore */ }
-    }
-
-    const mgr = this.requireSessionManager()
-    const session = mgr.createSession({
-      projectPath,
-      providerId: 'codex-base',
-      id: sessionId,
-    })
-
-    await session.send({
+    return this.runAutomationSession(projectPath, {
       content: options.content,
-      clientMessageId: userMessageId,
-      assistantMessageId,
-      model: options.model,
-      effort: options.reasoningEffort as SendMessageRequest['effort'] | undefined,
-      codex: {
-        permissionPreset: options.permissionPreset as CodexPermissionPreset | undefined,
+      automationId: options.automationId,
+      automationName: options.automationName,
+      agentConfig: {
+        type: 'codex',
+        model: options.model,
+        effort: options.reasoningEffort,
         reasoningEffort: options.reasoningEffort as CodexReasoningEffort | undefined,
+        permissionPreset: options.permissionPreset as CodexPermissionPreset | undefined,
       },
     })
-
-    return { sessionId }
   }
 
   notifyEventSubscribers(event: AgentEvent): void {

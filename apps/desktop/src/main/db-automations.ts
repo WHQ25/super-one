@@ -106,7 +106,9 @@ export function updateAutomation(id: string, data: UpdateAutomationRequest): Aut
   const prompt = data.prompt ?? existing.prompt
   const agentConfig = data.agentConfig ?? existing.agentConfig
   const schedule = data.schedule ?? existing.schedule
-  const enabled = data.enabled ?? (data.schedule ? true : existing.enabled)
+  // Preserve enabled unless the caller sets it explicitly. Schedule edits must not
+  // silently re-arm a paused automation (MCP toggle + UI both rely on that).
+  const enabled = data.enabled ?? existing.enabled
 
   const nextRunAt = data.schedule ? computeNextRunAt(schedule) : existing.nextRunAt
 

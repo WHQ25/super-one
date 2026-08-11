@@ -38,6 +38,7 @@ import { resolveMiniappCallConfirm, rejectMiniappCallConfirm } from '../mcp/mini
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mcp/session-archive-tools'
+import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automation-tools'
 import { nextEventSeq } from './event-seq'
 import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
 import { collectChangedMessageIds } from './message-dirty'
@@ -779,6 +780,7 @@ export class Session implements SessionContract {
       if (rejectConfigConfirm(requestId, 'User cancelled')) return true
       if (rejectVideoConfirm(requestId, 'User cancelled')) return true
       if (rejectSessionCleanupConfirm(requestId, reason ?? 'User cancelled')) return true
+      if (rejectAutomationConfirm(requestId, reason ?? 'User cancelled')) return true
     } else if (resolveSessionAgentsConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveMiniappCallConfirm(
@@ -793,6 +795,8 @@ export class Session implements SessionContract {
     } else if (resolveVideoConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveSessionCleanupConfirm(requestId, allow ? 'accept' : 'decline')) {
+      return true
+    } else if (resolveAutomationConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     }
     return this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)

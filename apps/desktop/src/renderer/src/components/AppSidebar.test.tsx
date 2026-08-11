@@ -51,6 +51,8 @@ const mockWindowApp = {
   deleteSession: vi.fn(async () => {}),
   renameSession: vi.fn(async () => {}),
   listAutomations: vi.fn(async () => []),
+  onAutomationsChanged: vi.fn(() => () => {}),
+  onAutomationEvent: vi.fn(() => () => {}),
   getAppSettings: vi.fn(async () => ({ miniAppOrder: {} })),
 }
 

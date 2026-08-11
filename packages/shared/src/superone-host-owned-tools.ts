@@ -83,6 +83,9 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'widget_show',
   'config_read',
   'config_apply',
+  'automation_list',
+  'automation_apply',
+  'automation_delete',
   ...BROWSER_TOOL_NAMES,
 ] as const
 

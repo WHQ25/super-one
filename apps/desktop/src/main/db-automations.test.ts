@@ -162,7 +162,7 @@ describe('updateAutomation', () => {
     expect(updateAutomation('nonexistent', { name: 'New' })).toBeUndefined()
   })
 
-  it('re-enables when schedule is updated', () => {
+  it('keeps disabled state when only schedule is updated', () => {
     const existing = {
       id: 'a1',
       project_id: PROJECT_ID,
@@ -184,6 +184,34 @@ describe('updateAutomation', () => {
 
     const newSchedule: AutomationSchedule = { type: 'one-time', runAt: '2026-05-01T09:00:00.000Z' }
     updateAutomation('a1', { schedule: newSchedule })
+
+    const updateCall = runMock.mock.calls[0]
+    const enabledArg = updateCall[4]
+    expect(enabledArg).toBe(0)
+  })
+
+  it('re-enables only when enabled is set explicitly with schedule', () => {
+    const existing = {
+      id: 'a1',
+      project_id: PROJECT_ID,
+      project_path: PROJECT_PATH,
+      name: 'Test',
+      prompt: 'Do something',
+      agent_config_json: '{"type":"claude","permissionMode":"bypassPermissions"}',
+      schedule_json: '{"type":"one-time","runAt":"2026-04-20T09:00:00.000Z"}',
+      enabled: 0,
+      last_run_at: '2026-04-15T00:00:00.000Z',
+      last_run_status: 'completed',
+      last_run_session_id: 's1',
+      next_run_at: null,
+      created_at: '2026-04-15T00:00:00.000Z',
+      updated_at: '2026-04-15T00:00:00.000Z',
+    }
+    const { runMock, getMock } = createMockDb()
+    getMock.mockReturnValue(existing)
+
+    const newSchedule: AutomationSchedule = { type: 'one-time', runAt: '2026-05-01T09:00:00.000Z' }
+    updateAutomation('a1', { schedule: newSchedule, enabled: true })
 
     const updateCall = runMock.mock.calls[0]
     const enabledArg = updateCall[4]

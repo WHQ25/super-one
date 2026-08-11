@@ -19,6 +19,26 @@ export interface AutomationRunEvent {
   status: AutomationRunStatus
   sessionId?: string
   error?: string
+  /** Owning project path so sidebars can ignore unrelated runs. */
+  projectPath?: string
+}
+
+/** Payload for AUTOMATIONS_CHANGED — list create/update/delete. */
+export interface AutomationsListChangedEvent {
+  /** When set, only sidebars for this project need to re-list. Omit = refresh all. */
+  projectPath?: string
+}
+
+/** Singleton bound from main so MCP handlers can notify without importing BrowserWindow. */
+let boundService: AutomationService | null = null
+
+export function bindAutomationService(service: AutomationService): void {
+  boundService = service
+}
+
+/** Broadcast list mutation so open sidebars re-fetch (MCP + IPC + one-time disable). */
+export function notifyAutomationsListChanged(projectPath?: string): void {
+  boundService?.notifyListChanged(projectPath)
 }
 
 export class AutomationService {
@@ -33,6 +53,14 @@ export class AutomationService {
 
   setAgentService(agentService: AgentService): void {
     this.agentService = agentService
+  }
+
+  /** Tell renderers the automation list for a project (or all) may have changed. */
+  notifyListChanged(projectPath?: string): void {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      const event: AutomationsListChangedEvent = projectPath ? { projectPath } : {}
+      this.mainWindow.webContents.send(AgentIpcChannels.AUTOMATIONS_CHANGED, event)
+    }
   }
 
   start(): void {
@@ -86,12 +114,13 @@ export class AutomationService {
     }
 
     await this.withLifecycle(automation, async () => {
+      // Unified SessionManager path for all harnesses (claude / codex / acp / opencode).
+      // Codex historically returns after send starts (no turn-complete wait);
+      // other harnesses wait for message_complete / error on the session.
       if (automation.agentConfig.type === 'codex') {
-        const result = await this.agentService!.runCodexAutomationSession(automation.projectPath, {
+        const result = await this.agentService!.runAutomationSession(automation.projectPath, {
           content: automation.prompt,
-          model: automation.agentConfig.model,
-          reasoningEffort: automation.agentConfig.reasoningEffort,
-          permissionPreset: automation.agentConfig.permissionPreset ?? 'full-access',
+          agentConfig: automation.agentConfig,
           automationId: automation.id,
           automationName: automation.name,
         })
@@ -115,9 +144,7 @@ export class AutomationService {
 
         const result = await this.agentService!.runAutomationSession(automation.projectPath, {
           content: automation.prompt,
-          model: automation.agentConfig.model,
-          effort: automation.agentConfig.effort,
-          permissionMode: automation.agentConfig.permissionMode ?? 'bypassPermissions',
+          agentConfig: automation.agentConfig,
           automationId: automation.id,
           automationName: automation.name,
         })
@@ -137,7 +164,11 @@ export class AutomationService {
   ): Promise<void> {
     this.runningAutomations.add(automation.id)
     updateAutomationRunStatus(automation.id, 'running')
-    this.broadcastEvent({ automationId: automation.id, status: 'running' })
+    this.broadcastEvent({
+      automationId: automation.id,
+      status: 'running',
+      projectPath: automation.projectPath,
+    })
 
     let sessionId: string | undefined
     try {
@@ -146,8 +177,15 @@ export class AutomationService {
       updateAutomationRunStatus(automation.id, 'completed', sessionId, nextRunAt ?? null)
       if (automation.schedule.type === 'one-time') {
         dbUpdateAutomation(automation.id, { enabled: false })
+        // enabled flipped — sidebar status dot needs a re-list
+        this.notifyListChanged(automation.projectPath)
       }
-      this.broadcastEvent({ automationId: automation.id, status: 'completed', sessionId })
+      this.broadcastEvent({
+        automationId: automation.id,
+        status: 'completed',
+        sessionId,
+        projectPath: automation.projectPath,
+      })
       this.notifySessionsChanged()
       log.info(`[AutomationService] completed automation: ${automation.name} (session: ${sessionId})`)
     } catch (err) {
@@ -155,7 +193,12 @@ export class AutomationService {
       log.error(`[AutomationService] error in automation ${automation.id}:`, errorMsg)
       const nextRunAt = computeNextRunAt(automation.schedule)
       updateAutomationRunStatus(automation.id, 'error', sessionId, nextRunAt ?? null)
-      this.broadcastEvent({ automationId: automation.id, status: 'error', error: errorMsg })
+      this.broadcastEvent({
+        automationId: automation.id,
+        status: 'error',
+        error: errorMsg,
+        projectPath: automation.projectPath,
+      })
     } finally {
       this.runningAutomations.delete(automation.id)
     }

@@ -82,6 +82,12 @@ export const SESSION_ARCHIVE_TOOL_NAMES = [
   'session_cleanup',
 ] as const
 
+export const AUTOMATION_TOOL_NAMES = [
+  'automation_list',
+  'automation_apply',
+  'automation_delete',
+] as const
+
 export const SESSION_COLLABORATION_TOOL_NAMES = [
   'session_collab_list_agents',
   'session_collab_request',
@@ -275,6 +281,92 @@ export const SESSION_RETRIEVE_DESCRIPTION =
   'Retrieve queued Markdown messages for this session from one or more parent-child mailboxes. ' +
   'Call after a collaboration wake, or once before acting on peer input. This is a non-blocking read: status "empty" is not a retry signal. ' +
   'Do not sleep or poll; end your turn and wait for the next wake.'
+
+export const AUTOMATION_LIST_DESCRIPTION =
+  'List scheduled agent automations for the current project (id, name, enabled, schedule, last/next run). ' +
+  'Pass id for full detail (prompt, agentConfig, schedule). Filter with query (name) or enabled. ' +
+  'Call before automation_apply or automation_delete. Current project only — not session archive tools.'
+
+export const AUTOMATION_APPLY_DESCRIPTION =
+  'Create or update a project automation. action=create needs name, prompt, schedule; agentConfig optional (defaults claude + bypassPermissions). ' +
+  'action=update needs id plus any of name/prompt/enabled/schedule/agentConfig (toggle via enabled). ' +
+  'Always set schedule.summary to a short natural-language phrase for the UI (user language). ' +
+  'Always opens a user confirmation dialog; applies nothing without approval. Call automation_list first for ids. Delete with automation_delete.'
+
+export const AUTOMATION_DELETE_DESCRIPTION =
+  'Permanently delete project automations by id (from automation_list). ' +
+  'Always opens a user confirmation dialog. Current project only. Prefer automation_list to choose ids first.'
+
+/** Shared nested schedule schema for automation_apply (JSON Schema + host-action). */
+export const AUTOMATION_SCHEDULE_INPUT_SCHEMA = {
+  type: 'object',
+  description:
+    'When to run. one-time needs runAt (ISO). recurring needs cron (e.g. "0 9 * * *"). '
+    + 'Always include summary: natural language for the confirm UI in the user\'s language '
+    + '(e.g. "Every weekday at 9:00 AM", "每天上午 9 点"). Machine fields still drive the scheduler.',
+  properties: {
+    type: { type: 'string', enum: ['one-time', 'recurring'] },
+    cron: { type: 'string', description: 'Cron expression for recurring (required when type=recurring).' },
+    runAt: { type: 'string', description: 'ISO timestamp for one-time (required when type=one-time).' },
+    preset: { type: 'string', enum: ['hourly', 'daily', 'weekly', 'custom'] },
+    timeOfDay: { type: 'string', description: 'HH:mm local time hint for daily/weekly presets.' },
+    dayOfWeek: {
+      type: 'array',
+      items: { type: 'integer', minimum: 0, maximum: 6 },
+      description: '0=Sun … 6=Sat for weekly preset.',
+    },
+    minuteOfHour: { type: 'integer', minimum: 0, maximum: 59, description: 'Minute for hourly preset.' },
+    summary: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 200,
+      description:
+        'Natural-language schedule shown in the UI (list + confirm). Use the user\'s language. '
+        + 'Examples: "Every weekday at 9:00 AM", "每天上午 9 点", "Once on May 1 at 3pm". Required for create.',
+    },
+  },
+  required: ['type', 'summary'],
+  additionalProperties: false,
+} as const
+
+export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
+  type: 'object',
+  description:
+    'Harness + model for the automation run. type is required (claude|codex|acp|opencode). ' +
+    'Defaults on create: claude + bypassPermissions + sandbox off. Prefer unified fields: model, effort, permissionMode, sandboxMode, apiProviderId, acpAgentId.',
+  properties: {
+    type: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'] },
+    agentName: { type: 'string', description: 'Claude only: named agent profile.' },
+    model: { type: 'string' },
+    effort: {
+      type: 'string',
+      description: 'Unified effort (Claude levels, Codex reasoning, ACP mode ids).',
+    },
+    permissionMode: {
+      type: 'string',
+      enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'],
+      description: 'Unified permission mode. Prefer bypassPermissions for unattended runs.',
+    },
+    sandboxMode: { type: 'string', enum: ['off', 'on', 'auto'], description: 'Claude sandbox (ignored by other harnesses).' },
+    apiProviderId: {
+      type: ['string', 'null'],
+      description: 'Optional third-party AI provider credential id (claude/codex).',
+    },
+    acpAgentId: { type: 'string', description: 'ACP only: agent id (e.g. grok-build).' },
+    reasoningEffort: {
+      type: 'string',
+      enum: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+      description: 'Codex legacy alias for effort.',
+    },
+    permissionPreset: {
+      type: 'string',
+      enum: ['read-only', 'default', 'full-access'],
+      description: 'Codex legacy alias for permissionMode (full-access ≈ bypassPermissions).',
+    },
+  },
+  required: ['type'],
+  additionalProperties: false,
+} as const
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
@@ -679,6 +771,73 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         maxDelete: { type: 'integer', minimum: 1, maximum: 50, description: 'Hard cap on sessions acted on. Default 50.' },
       },
       required: ['action', 'sessionIds'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'automation_list',
+    description: AUTOMATION_LIST_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'When set, return full detail for this automation (must belong to the current project).',
+        },
+        enabled: { type: 'boolean', description: 'Filter by enabled state. Omit for all.' },
+        query: { type: 'string', description: 'Case-insensitive name substring filter.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Max rows. Default 50, max 100.' },
+        offset: { type: 'integer', minimum: 0, description: 'Pagination offset. Default 0.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'automation_apply',
+    description: AUTOMATION_APPLY_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['create', 'update'],
+          description: 'create a new automation, or update an existing one (including toggle enabled).',
+        },
+        id: {
+          type: 'string',
+          description: 'Required for update. Automation id from automation_list.',
+        },
+        name: { type: 'string', description: 'Display name. Required for create; optional for update.' },
+        prompt: {
+          type: 'string',
+          description: 'Prompt sent to the agent when the automation runs. Required for create; optional for update.',
+        },
+        enabled: {
+          type: 'boolean',
+          description: 'Whether the scheduler will run this automation. Create defaults to true; use false to pause.',
+        },
+        schedule: AUTOMATION_SCHEDULE_INPUT_SCHEMA,
+        agentConfig: AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA,
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'automation_delete',
+    description: AUTOMATION_DELETE_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          maxItems: 20,
+          description: 'Automation ids from automation_list to delete (current project only).',
+        },
+      },
+      required: ['ids'],
       additionalProperties: false,
     },
   },

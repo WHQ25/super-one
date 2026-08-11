@@ -75,6 +75,7 @@ const SUPERONE_READ_NAMES = new Set<string>([
   'media_video_status',
   'widget_list_templates',
   'miniapp_list',
+  'automation_list',
   // session_collab_* are node-local (not HA); list_agents stays "safe" if ever reclassified
   'computer_apps',
   'computer_snapshot',

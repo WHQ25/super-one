@@ -95,14 +95,52 @@ function parseAgentConfig(raw: unknown): AgentRunConfig | null {
       ...(typeof c.effort === 'string' ? { effort: c.effort as never } : {}),
       ...(typeof c.permissionMode === 'string' ? { permissionMode: c.permissionMode as never } : {}),
       ...(typeof c.sandboxMode === 'string' ? { sandboxMode: c.sandboxMode as never } : {}),
+      ...(c.apiProviderId === null || typeof c.apiProviderId === 'string'
+        ? { apiProviderId: c.apiProviderId as string | null }
+        : {}),
     }
   }
   if (c.type === 'codex') {
+    const effort =
+      typeof c.effort === 'string'
+        ? c.effort
+        : typeof c.reasoningEffort === 'string'
+          ? c.reasoningEffort
+          : undefined
     return {
       type: 'codex',
       ...(typeof c.model === 'string' ? { model: c.model } : {}),
-      ...(typeof c.reasoningEffort === 'string' ? { reasoningEffort: c.reasoningEffort as never } : {}),
+      ...(effort
+        ? { effort, reasoningEffort: effort as never }
+        : {}),
+      ...(typeof c.permissionMode === 'string' ? { permissionMode: c.permissionMode as never } : {}),
       ...(typeof c.permissionPreset === 'string' ? { permissionPreset: c.permissionPreset as never } : {}),
+      ...(c.apiProviderId === null || typeof c.apiProviderId === 'string'
+        ? { apiProviderId: c.apiProviderId as string | null }
+        : {}),
+    }
+  }
+  if (c.type === 'acp') {
+    return {
+      type: 'acp',
+      ...(typeof c.acpAgentId === 'string' ? { acpAgentId: c.acpAgentId } : {}),
+      ...(typeof c.model === 'string' ? { model: c.model } : {}),
+      ...(typeof c.effort === 'string' ? { effort: c.effort } : {}),
+      ...(typeof c.permissionMode === 'string' ? { permissionMode: c.permissionMode as never } : {}),
+      ...(c.apiProviderId === null || typeof c.apiProviderId === 'string'
+        ? { apiProviderId: c.apiProviderId as string | null }
+        : {}),
+    }
+  }
+  if (c.type === 'opencode') {
+    return {
+      type: 'opencode',
+      ...(typeof c.model === 'string' ? { model: c.model } : {}),
+      ...(typeof c.effort === 'string' ? { effort: c.effort } : {}),
+      ...(typeof c.permissionMode === 'string' ? { permissionMode: c.permissionMode as never } : {}),
+      ...(c.apiProviderId === null || typeof c.apiProviderId === 'string'
+        ? { apiProviderId: c.apiProviderId as string | null }
+        : {}),
     }
   }
   return null
@@ -112,6 +150,7 @@ function parseSchedule(raw: unknown): AutomationSchedule | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as Record<string, unknown>
   if (s.type !== 'one-time' && s.type !== 'recurring') return null
+  const summary = typeof s.summary === 'string' ? s.summary.trim() : ''
   return {
     type: s.type,
     ...(typeof s.cron === 'string' ? { cron: s.cron } : {}),
@@ -124,6 +163,7 @@ function parseSchedule(raw: unknown): AutomationSchedule | null {
       ? { dayOfWeek: s.dayOfWeek.filter((x): x is number => typeof x === 'number') }
       : {}),
     ...(typeof s.minuteOfHour === 'number' ? { minuteOfHour: s.minuteOfHour } : {}),
+    ...(summary ? { summary } : {}),
   }
 }
 
@@ -169,7 +209,7 @@ export function handleAutomationCreate(payload: unknown, ctx: AutomationRpcConte
   }
   const agentConfig = parseAgentConfig(p.agentConfig)
   if (!agentConfig) {
-    return { error: { code: 'invalid_argument', message: 'agentConfig.type must be claude or codex' } }
+    return { error: { code: 'invalid_argument', message: 'agentConfig.type must be claude, codex, acp, or opencode' } }
   }
   const schedule = parseSchedule(p.schedule)
   if (!schedule) {
@@ -209,7 +249,7 @@ export function handleAutomationUpdate(payload: unknown, ctx: AutomationRpcConte
   if (p.agentConfig !== undefined) {
     const agentConfig = parseAgentConfig(p.agentConfig)
     if (!agentConfig) {
-      return { error: { code: 'invalid_argument', message: 'agentConfig.type must be claude or codex' } }
+      return { error: { code: 'invalid_argument', message: 'agentConfig.type must be claude, codex, acp, or opencode' } }
     }
     patch.agentConfig = agentConfig
   }

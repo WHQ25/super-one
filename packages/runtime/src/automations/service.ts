@@ -30,7 +30,7 @@ export interface AutomationServiceDeps {
 }
 
 function harnessFromConfig(config: AgentRunConfig): string {
-  return config.type === 'codex' ? 'codex' : 'claude'
+  return config.type
 }
 
 function turnOptionsFromConfig(config: AgentRunConfig): {
@@ -38,21 +38,38 @@ function turnOptionsFromConfig(config: AgentRunConfig): {
   effort?: string | null
   permissionMode?: string | null
   sandboxMode?: string | null
+  apiProviderId?: string | null
 } {
   if (config.type === 'codex') {
+    const effort = config.effort ?? config.reasoningEffort ?? null
+    const permissionMode =
+      config.permissionMode
+      ?? config.permissionPreset
+      ?? 'full-access'
     return {
       model: config.model ?? null,
-      effort: config.reasoningEffort ?? null,
-      // Map codex preset to a permissionMode string harness understands.
-      permissionMode: config.permissionPreset ?? 'full-access',
+      effort,
+      permissionMode,
       sandboxMode: null,
+      apiProviderId: config.apiProviderId ?? null,
     }
   }
+  if (config.type === 'claude') {
+    return {
+      model: config.model ?? null,
+      effort: config.effort ?? null,
+      permissionMode: config.permissionMode ?? 'bypassPermissions',
+      sandboxMode: config.sandboxMode ?? 'off',
+      apiProviderId: config.apiProviderId ?? null,
+    }
+  }
+  // acp / opencode
   return {
     model: config.model ?? null,
     effort: config.effort ?? null,
     permissionMode: config.permissionMode ?? 'bypassPermissions',
-    sandboxMode: config.sandboxMode ?? 'off',
+    sandboxMode: null,
+    apiProviderId: config.apiProviderId ?? null,
   }
 }
 
@@ -169,13 +186,14 @@ export class AutomationService {
       const session = this.deps.sessions.create({
         projectId: automation.projectId,
         harnessId,
-        providerId: harnessId,
+        providerId: `${harnessId}-base`,
         title,
         cwd: projectPath,
         model: turnOpts.model,
         effort: turnOpts.effort,
         permissionMode: turnOpts.permissionMode,
         sandboxMode: turnOpts.sandboxMode,
+        apiProviderId: turnOpts.apiProviderId,
         // Node-owned: no paired desktop controller required for scheduled runs.
         controllerClientSessionId: null,
         isAutomation: true,

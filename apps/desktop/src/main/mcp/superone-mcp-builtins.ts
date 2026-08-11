@@ -37,6 +37,11 @@ import {
   SESSION_SEARCH_DESCRIPTION,
   SESSION_READ_DESCRIPTION,
   SESSION_CLEANUP_DESCRIPTION,
+  AUTOMATION_LIST_DESCRIPTION,
+  AUTOMATION_APPLY_DESCRIPTION,
+  AUTOMATION_DELETE_DESCRIPTION,
+  AUTOMATION_SCHEDULE_INPUT_SCHEMA,
+  AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA,
   LAUNCH_BRANCH_NAME_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_SUMMARY_DESCRIPTION,
@@ -64,6 +69,14 @@ import {
   type SessionReadArgs,
   type SessionSearchArgs,
 } from './session-archive-tools'
+import {
+  automationApplyHandler,
+  automationDeleteHandler,
+  automationListHandler,
+  type AutomationApplyArgs,
+  type AutomationDeleteArgs,
+  type AutomationListArgs,
+} from './automation-tools'
 import type { SessionManager } from '../session/types'
 import type {
   RequestSessionAgentsArgs,
@@ -285,6 +298,12 @@ export async function executeBuiltInSuperoneTool(
       return sessionReadHandler(args as unknown as SessionReadArgs, deps)
     case 'session_cleanup':
       return sessionCleanupHandler(args as unknown as SessionCleanupArgs, deps)
+    case 'automation_list':
+      return automationListHandler(args as unknown as AutomationListArgs, deps)
+    case 'automation_apply':
+      return automationApplyHandler(args as unknown as AutomationApplyArgs, deps)
+    case 'automation_delete':
+      return automationDeleteHandler(args as unknown as AutomationDeleteArgs, deps)
     case 'session_collab_list_agents':
       return import('../session/session-collaboration').then(({ listSessionAgentProfiles }) => ({
         content: [{ type: 'text' as const, text: JSON.stringify({ agents: listSessionAgentProfiles() }) }],
@@ -607,6 +626,95 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     // Claude in-process MCP cancels tool calls via extra.signal — forward it so
     // HostConfirmRegistry dismisses the delete prompt (stdio bridge already sets deps.signal).
     (args, extra) => sessionCleanupHandler(args, {
+      ...deps,
+      signal: extra?.signal ?? deps.signal,
+    }),
+  )
+
+  const scheduleSchema = z.object({
+    type: z.enum(['one-time', 'recurring']),
+    cron: z.string().optional().describe('Cron expression for recurring (required when type=recurring).'),
+    runAt: z.string().optional().describe('ISO timestamp for one-time (required when type=one-time).'),
+    preset: z.enum(['hourly', 'daily', 'weekly', 'custom']).optional(),
+    timeOfDay: z.string().optional().describe('HH:mm local time hint for daily/weekly presets.'),
+    dayOfWeek: z.array(z.number().int().min(0).max(6)).optional().describe('0=Sun … 6=Sat for weekly preset.'),
+    minuteOfHour: z.number().int().min(0).max(59).optional().describe('Minute for hourly preset.'),
+    summary: z
+      .string()
+      .min(1)
+      .max(200)
+      .describe(
+        'Natural-language schedule for the UI in the user\'s language '
+        + '(e.g. "Every weekday at 9:00 AM", "每天上午 9 点"). Required.',
+      ),
+  }).describe(AUTOMATION_SCHEDULE_INPUT_SCHEMA.description as string)
+
+  const agentConfigSchema = z.object({
+    type: z.enum(['claude', 'codex', 'acp', 'opencode']),
+    agentName: z.string().optional().describe('Claude only: named agent profile.'),
+    model: z.string().optional(),
+    effort: z.string().optional().describe('Unified effort (Claude / Codex / ACP / OpenCode).'),
+    permissionMode: z
+      .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
+      .optional()
+      .describe('Unified permission mode. Prefer bypassPermissions for unattended runs.'),
+    sandboxMode: z.enum(['off', 'on', 'auto']).optional().describe('Claude sandbox (ignored by other harnesses).'),
+    apiProviderId: z.string().nullable().optional().describe('Optional third-party AI provider credential id.'),
+    acpAgentId: z.string().optional().describe('ACP only: agent id (e.g. grok-build).'),
+    reasoningEffort: z
+      .enum(['minimal', 'low', 'medium', 'high', 'xhigh'])
+      .optional()
+      .describe('Codex legacy alias for effort.'),
+    permissionPreset: z
+      .enum(['read-only', 'default', 'full-access'])
+      .optional()
+      .describe('Codex legacy alias for permissionMode (full-access ≈ bypassPermissions).'),
+  }).describe(AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA.description as string)
+
+  server.registerTool(
+    'automation_list',
+    {
+      description: AUTOMATION_LIST_DESCRIPTION,
+      inputSchema: {
+        id: z.string().optional().describe('When set, return full detail for this automation (must belong to the current project).'),
+        enabled: z.boolean().optional().describe('Filter by enabled state. Omit for all.'),
+        query: z.string().optional().describe('Case-insensitive name substring filter.'),
+        limit: z.number().int().min(1).max(100).optional().describe('Max rows. Default 50, max 100.'),
+        offset: z.number().int().min(0).optional().describe('Pagination offset. Default 0.'),
+      },
+    },
+    (args) => automationListHandler(args, deps),
+  )
+
+  server.registerTool(
+    'automation_apply',
+    {
+      description: AUTOMATION_APPLY_DESCRIPTION,
+      inputSchema: {
+        action: z.enum(['create', 'update']).describe('create a new automation, or update an existing one (including toggle enabled).'),
+        id: z.string().optional().describe('Required for update. Automation id from automation_list.'),
+        name: z.string().optional().describe('Display name. Required for create; optional for update.'),
+        prompt: z.string().optional().describe('Prompt sent to the agent when the automation runs. Required for create; optional for update.'),
+        enabled: z.boolean().optional().describe('Whether the scheduler will run this automation. Create defaults to true; use false to pause.'),
+        schedule: scheduleSchema.optional(),
+        agentConfig: agentConfigSchema.optional(),
+      },
+    },
+    (args, extra) => automationApplyHandler(args as AutomationApplyArgs, {
+      ...deps,
+      signal: extra?.signal ?? deps.signal,
+    }),
+  )
+
+  server.registerTool(
+    'automation_delete',
+    {
+      description: AUTOMATION_DELETE_DESCRIPTION,
+      inputSchema: {
+        ids: z.array(z.string()).min(1).max(20).describe('Automation ids from automation_list to delete (current project only).'),
+      },
+    },
+    (args, extra) => automationDeleteHandler(args, {
       ...deps,
       signal: extra?.signal ?? deps.signal,
     }),

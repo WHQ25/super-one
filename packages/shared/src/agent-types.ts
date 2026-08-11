@@ -750,6 +750,7 @@ export interface PermissionRequest {
     | 'session_agents_confirm'
     | 'computer_use_grant'
     | 'session_cleanup_confirm'
+    | 'automation_confirm'
   serverName?: string
   message?: string
   subtitle?: string
@@ -766,6 +767,66 @@ export interface PermissionRequest {
   computerUseGrant?: ComputerUseGrantPayload
   /** Present only when requestKind === 'session_cleanup_confirm'. */
   sessionCleanupConfirm?: SessionCleanupConfirmPayload
+  /** Present only when requestKind === 'automation_confirm'. */
+  automationConfirm?: AutomationConfirmPayload
+}
+
+/** HITL payload for automation create / update / delete (structured confirm UI). */
+export type AutomationConfirmOperation = 'create' | 'update' | 'delete'
+
+/**
+ * Structured agent snapshot for confirm UI — same vocabulary as collab launch
+ * config (model / effort / permissionMode / sandbox). Renderer uses
+ * GroupedModelEffortSelector + HarnessPermissionPopover + SandboxModePopover.
+ */
+export interface AutomationConfirmAgentView {
+  type: AgentType
+  model?: string
+  effort?: string
+  permissionMode?: PermissionMode
+  sandboxMode?: SandboxMode
+  /** Codex storage alias; UI prefers permissionMode via HarnessPermissionPopover. */
+  permissionPreset?: CodexPermissionPreset
+  apiProviderId?: string | null
+  acpAgentId?: string | null
+}
+
+/** One automation shown in the confirm body (create target, update subject, or delete row). */
+export interface AutomationConfirmItem {
+  id?: string
+  name: string
+  scheduleSummary?: string
+  /** @deprecated Prefer `agent` structured view. */
+  agentType?: string
+  /** @deprecated Prefer `agent` structured view. */
+  agentSummary?: string
+  /** Structured agent config for familiar UI chips (permission mode, model, sandbox). */
+  agent?: AutomationConfirmAgentView
+  enabled?: boolean
+  /**
+   * Short one-line preview (truncated). Prefer `prompt` for Markdown expand UI.
+   * @deprecated Prefer `prompt` when full body is available.
+   */
+  promptPreview?: string
+  /** Full prompt body for Markdown expand in create/update confirm. */
+  prompt?: string
+}
+
+/** Field-level change for update confirms (human-readable from/to). */
+export interface AutomationConfirmChange {
+  field: 'name' | 'enabled' | 'schedule' | 'agent' | 'prompt'
+  from?: string
+  to?: string
+  /** Structured agent sides when field === 'agent' (renderer uses familiar labels). */
+  agentFrom?: AutomationConfirmAgentView
+  agentTo?: AutomationConfirmAgentView
+}
+
+export interface AutomationConfirmPayload {
+  operation: AutomationConfirmOperation
+  items: AutomationConfirmItem[]
+  /** Present for update — what will change if the user approves. */
+  changes?: AutomationConfirmChange[]
 }
 
 /** One row in the permanent-delete confirm dialog (mirrors session_list metadata). */
@@ -1497,7 +1558,12 @@ export type ResourceScope = 'user' | 'project' | 'claudeai'
 
 export type SettingsProvider = 'claude' | 'codex'
 
-// ─── Agent Run Config (unified abstraction for running any agent type) ───
+// ─── Agent Run Config (automation / unattended runs — all harnesses) ───
+//
+// Prefer unified field names shared with collab launch config:
+//   model, effort, permissionMode, sandboxMode, apiProviderId, acpAgentId
+// Codex legacy JSON may still store reasoningEffort / permissionPreset;
+// normalize on read (see toAgentView / turnOptions helpers).
 
 export interface ClaudeRunConfig {
   type: 'claude'
@@ -1506,16 +1572,42 @@ export interface ClaudeRunConfig {
   effort?: EffortLevel
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
+  apiProviderId?: string | null
 }
 
 export interface CodexRunConfig {
   type: 'codex'
   model?: string
+  /** Preferred unified effort field (same as collab). */
+  effort?: string
+  /** @deprecated Prefer `effort` — kept for stored automations. */
   reasoningEffort?: CodexReasoningEffort
+  /** Preferred unified permission (maps from/to permissionPreset in UI). */
+  permissionMode?: PermissionMode
+  /** @deprecated Prefer `permissionMode` — kept for stored automations. */
   permissionPreset?: CodexPermissionPreset
+  apiProviderId?: string | null
 }
 
-export type AgentRunConfig = ClaudeRunConfig | CodexRunConfig
+export interface AcpRunConfig {
+  type: 'acp'
+  /** ACP agent id (e.g. grok-build). When omitted, session provider default is used. */
+  acpAgentId?: string
+  model?: string
+  effort?: string
+  permissionMode?: PermissionMode
+  apiProviderId?: string | null
+}
+
+export interface OpenCodeRunConfig {
+  type: 'opencode'
+  model?: string
+  effort?: string
+  permissionMode?: PermissionMode
+  apiProviderId?: string | null
+}
+
+export type AgentRunConfig = ClaudeRunConfig | CodexRunConfig | AcpRunConfig | OpenCodeRunConfig
 
 // ─── Automation ───
 
@@ -1530,6 +1622,12 @@ export interface AutomationSchedule {
   timeOfDay?: string
   dayOfWeek?: number[]
   minuteOfHour?: number
+  /**
+   * Agent-written natural-language schedule for UI (list + confirm).
+   * Prefer the user's language, e.g. "Every weekday at 9:00 AM" / "每天上午 9 点".
+   * Machine fields (cron/runAt) still drive the scheduler.
+   */
+  summary?: string
 }
 
 export interface Automation {
@@ -1559,7 +1657,7 @@ export interface UpdateAutomationRequest extends Partial<CreateAutomationRequest
   enabled?: boolean
 }
 
-export type AgentType = 'claude' | 'codex'
+export type AgentType = AgentRunConfig['type']
 export type ApiFormat = 'anthropic' | 'openai_chat' | 'openai_responses'
 
 // --- Plugins ---
@@ -2845,7 +2943,10 @@ export const AgentIpcChannels = {
   AUTOMATIONS_UPDATE: 'automations:update',
   AUTOMATIONS_DELETE: 'automations:delete',
   AUTOMATIONS_RUN_NOW: 'automations:run-now',
+  /** Run lifecycle (running/completed/error) for a single automation. */
   AUTOMATIONS_EVENT: 'automations:event',
+  /** List mutation (create/update/delete) — renderer should re-list. Optional projectPath scopes refresh. */
+  AUTOMATIONS_CHANGED: 'automations:changed',
 
   // Terminal
   TERMINAL_CREATE: 'terminal:create',

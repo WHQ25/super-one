@@ -43,6 +43,10 @@ import {
   isSessionArchiveToolName,
   SessionArchiveToolBlock,
 } from './SessionArchiveToolBlock'
+import {
+  isAutomationToolName,
+  AutomationToolBlock,
+} from './AutomationToolBlock'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -1144,6 +1148,19 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
     if (isSessionArchiveToolName(mcpInfo.mcpToolName)) {
       return (
         <SessionArchiveToolBlock
+          toolName={mcpInfo.mcpToolName}
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          allowExpand={allowExpand}
+        />
+      )
+    }
+    if (isAutomationToolName(mcpInfo.mcpToolName)) {
+      return (
+        <AutomationToolBlock
           toolName={mcpInfo.mcpToolName}
           params={params}
           result={cleanResult}

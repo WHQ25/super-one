@@ -1136,6 +1136,19 @@ export type Messages = {
       sessionCleanupCancel: string
       /** Group header when a cleanup id's project is no longer in recentFolders. */
       sessionCleanupUnknownProject: string
+      /** automation_apply / automation_delete HITL */
+      automationCreateTitle: string
+      automationUpdateTitle: string
+      automationDeleteTitle: string
+      automationEmpty: string
+      automationFieldName: string
+      automationFieldSchedule: string
+      automationFieldAgent: string
+      automationFieldEnabled: string
+      automationFieldPrompt: string
+      automationEnabledOn: string
+      automationEnabledOff: string
+      automationChangeFromTo: string
     }
     computerUseGrant: {
       badge: string
@@ -1386,6 +1399,55 @@ export type Messages = {
           id: string
           input: string
           result: string
+        }
+      }
+      /** automation_list / automation_apply / automation_delete — casing mirrors collab. */
+      automation: {
+        listingAutomations: string
+        automationsListed: string
+        readingAutomation: string
+        automationDetail: string
+        listFailed: string
+        empty: string
+        automationCount: string
+        automationCreated: string
+        automationUpdated: string
+        confirmingCreate: string
+        confirmingUpdate: string
+        confirmingEnable: string
+        confirmingDisable: string
+        automationEnabled: string
+        automationDisabled: string
+        createFailed: string
+        updateFailed: string
+        enableFailed: string
+        disableFailed: string
+        createCancelled: string
+        updateCancelled: string
+        enableCancelled: string
+        disableCancelled: string
+        createRejected: string
+        updateRejected: string
+        enableRejected: string
+        disableRejected: string
+        confirmingDelete: string
+        automationsDeleted: string
+        automationsDeletedPartial: string
+        nothingDeleted: string
+        deleteCancelled: string
+        deleteRejected: string
+        deleteFailed: string
+        partialDeleteSummary: string
+        deletedSection: string
+        failedSection: string
+        enabled: string
+        disabled: string
+        fields: {
+          name: string
+          schedule: string
+          status: string
+          prompt: string
+          agent: string
         }
       }
       dismissed: string
@@ -3700,6 +3762,18 @@ export const en: Messages = {
       sessionCleanupDelete: 'Delete',
       sessionCleanupCancel: 'Cancel',
       sessionCleanupUnknownProject: 'Unknown project',
+      automationCreateTitle: 'Create automation?',
+      automationUpdateTitle: 'Update automation?',
+      automationDeleteTitle: 'Permanently delete {{count}} automation(s)?',
+      automationEmpty: 'No automations selected.',
+      automationFieldName: 'Name',
+      automationFieldSchedule: 'Schedule',
+      automationFieldAgent: 'Agent',
+      automationFieldEnabled: 'Enabled',
+      automationFieldPrompt: 'Prompt',
+      automationEnabledOn: 'on',
+      automationEnabledOff: 'off',
+      automationChangeFromTo: '{{from}} → {{to}}',
     },
     computerUseGrant: {
       badge: 'Computer Use',
@@ -3949,6 +4023,55 @@ export const en: Messages = {
           id: 'Id',
           input: 'Input',
           result: 'Result',
+        },
+      },
+      /** automation_list / automation_apply / automation_delete — casing mirrors collab. */
+      automation: {
+        listingAutomations: 'Listing automations…',
+        automationsListed: 'Automations Listed',
+        readingAutomation: 'Reading automation…',
+        automationDetail: 'Automation Detail',
+        listFailed: 'Automation List Failed',
+        empty: 'No automations',
+        automationCount: '{{count}} automations',
+        automationCreated: 'Automation Created',
+        automationUpdated: 'Automation Updated',
+        confirmingCreate: 'Confirming create…',
+        confirmingUpdate: 'Confirming update…',
+        confirmingEnable: 'Confirming enable…',
+        confirmingDisable: 'Confirming disable…',
+        automationEnabled: 'Automation Enabled',
+        automationDisabled: 'Automation Disabled',
+        createFailed: 'Automation Create Failed',
+        updateFailed: 'Automation Update Failed',
+        enableFailed: 'Automation Enable Failed',
+        disableFailed: 'Automation Disable Failed',
+        createCancelled: 'Automation Create Cancelled',
+        updateCancelled: 'Automation Update Cancelled',
+        enableCancelled: 'Automation Enable Cancelled',
+        disableCancelled: 'Automation Disable Cancelled',
+        createRejected: 'Automation Create Rejected',
+        updateRejected: 'Automation Update Rejected',
+        enableRejected: 'Automation Enable Rejected',
+        disableRejected: 'Automation Disable Rejected',
+        confirmingDelete: 'Confirming delete…',
+        automationsDeleted: 'Automations Deleted',
+        automationsDeletedPartial: 'Partially Deleted',
+        nothingDeleted: 'Nothing Deleted',
+        deleteCancelled: 'Automation Delete Cancelled',
+        deleteRejected: 'Automation Delete Rejected',
+        deleteFailed: 'Automation Delete Failed',
+        partialDeleteSummary: '{{deleted}} deleted · {{failed}} failed',
+        deletedSection: 'Deleted',
+        failedSection: 'Failed',
+        enabled: 'on',
+        disabled: 'off',
+        fields: {
+          name: 'Name',
+          schedule: 'Schedule',
+          status: 'Status',
+          prompt: 'Prompt',
+          agent: 'Agent',
         },
       },
       dismissed: 'Dismissed',

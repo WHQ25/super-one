@@ -17,9 +17,20 @@ import { useChatStore, selectClaudeModels, selectCodexModels } from '@/stores/ch
 import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
 import { sandboxModes } from '@/components/chat/SandboxModeSelector'
 import { formatCodexModelName, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
-import type { AgentType, Automation, AgentRunConfig, AutomationSchedule, ClaudeRunConfig, CodexRunConfig, EffortLevel } from '@superone/shared/agent-types'
+import type {
+  AgentType,
+  Automation,
+  AgentRunConfig,
+  AutomationSchedule,
+  ClaudeRunConfig,
+  CodexRunConfig,
+  AcpRunConfig,
+  OpenCodeRunConfig,
+  EffortLevel,
+} from '@superone/shared/agent-types'
 
 const EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
+const AGENT_TYPES: AgentType[] = ['claude', 'codex', 'acp', 'opencode']
 
 const defaultClaudeConfig: ClaudeRunConfig = {
   type: 'claude',
@@ -30,6 +41,17 @@ const defaultClaudeConfig: ClaudeRunConfig = {
 const defaultCodexConfig: CodexRunConfig = {
   type: 'codex',
   permissionPreset: 'full-access',
+  permissionMode: 'bypassPermissions',
+}
+
+const defaultAcpConfig: AcpRunConfig = {
+  type: 'acp',
+  permissionMode: 'bypassPermissions',
+}
+
+const defaultOpenCodeConfig: OpenCodeRunConfig = {
+  type: 'opencode',
+  permissionMode: 'bypassPermissions',
 }
 
 const defaultSchedule: AutomationSchedule = {
@@ -45,8 +67,23 @@ interface FormState {
   agentType: AgentType
   claudeConfig: ClaudeRunConfig
   codexConfig: CodexRunConfig
+  acpConfig: AcpRunConfig
+  opencodeConfig: OpenCodeRunConfig
   schedule: AutomationSchedule
   enabled: boolean
+}
+
+function agentTypeLabel(type: AgentType): string {
+  switch (type) {
+    case 'claude':
+      return 'Claude Code'
+    case 'codex':
+      return 'Codex'
+    case 'acp':
+      return 'ACP'
+    case 'opencode':
+      return 'OpenCode'
+  }
 }
 
 function initForm(automation?: Automation | null): FormState {
@@ -57,6 +94,8 @@ function initForm(automation?: Automation | null): FormState {
       agentType: 'claude',
       claudeConfig: { ...defaultClaudeConfig },
       codexConfig: { ...defaultCodexConfig },
+      acpConfig: { ...defaultAcpConfig },
+      opencodeConfig: { ...defaultOpenCodeConfig },
       schedule: { ...defaultSchedule },
       enabled: true,
     }
@@ -68,9 +107,18 @@ function initForm(automation?: Automation | null): FormState {
     agentType,
     claudeConfig: agentType === 'claude' ? { ...automation.agentConfig } as ClaudeRunConfig : { ...defaultClaudeConfig },
     codexConfig: agentType === 'codex' ? { ...automation.agentConfig } as CodexRunConfig : { ...defaultCodexConfig },
+    acpConfig: agentType === 'acp' ? { ...automation.agentConfig } as AcpRunConfig : { ...defaultAcpConfig },
+    opencodeConfig: agentType === 'opencode' ? { ...automation.agentConfig } as OpenCodeRunConfig : { ...defaultOpenCodeConfig },
     schedule: { ...automation.schedule },
     enabled: automation.enabled,
   }
+}
+
+function formAgentConfig(form: FormState): AgentRunConfig {
+  if (form.agentType === 'claude') return form.claudeConfig
+  if (form.agentType === 'codex') return form.codexConfig
+  if (form.agentType === 'acp') return form.acpConfig
+  return form.opencodeConfig
 }
 
 function PopoverSelect<T extends string>({
@@ -169,7 +217,7 @@ export function AutomationDialog({
   }, [open, editAutomation])
 
   const handleSubmit = async () => {
-    const agentConfig: AgentRunConfig = form.agentType === 'claude' ? form.claudeConfig : form.codexConfig
+    const agentConfig = formAgentConfig(form)
     const data = { name: form.name, prompt: form.prompt, agentConfig, schedule: form.schedule }
     if (editAutomation) {
       await window.app.updateAutomation(editAutomation.id, { ...data, enabled: form.enabled })
@@ -193,6 +241,14 @@ export function AutomationDialog({
 
   const updateCodex = (patch: Partial<CodexRunConfig>) => {
     setForm((f) => ({ ...f, codexConfig: { ...f.codexConfig, ...patch } }))
+  }
+
+  const updateAcp = (patch: Partial<AcpRunConfig>) => {
+    setForm((f) => ({ ...f, acpConfig: { ...f.acpConfig, ...patch } }))
+  }
+
+  const updateOpenCode = (patch: Partial<OpenCodeRunConfig>) => {
+    setForm((f) => ({ ...f, opencodeConfig: { ...f.opencodeConfig, ...patch } }))
   }
 
   const isValid = form.name.trim() && form.prompt.trim()
@@ -251,19 +307,19 @@ export function AutomationDialog({
 
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted-foreground">{t('resources.automation.provider')}</span>
-            <div className="flex gap-1 rounded-lg bg-muted p-1">
-              {(['claude', 'codex'] as AgentType[]).map((t) => (
+            <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
+              {AGENT_TYPES.map((type) => (
                 <button
-                  key={t}
+                  key={type}
                   type="button"
-                  onClick={() => setForm((f) => ({ ...f, agentType: t }))}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    form.agentType === t
+                  onClick={() => setForm((f) => ({ ...f, agentType: type }))}
+                  className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                    form.agentType === type
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {t === 'claude' ? 'Claude Code' : 'Codex'}
+                  {agentTypeLabel(type)}
                 </button>
               ))}
             </div>
@@ -354,15 +410,78 @@ export function AutomationDialog({
                     />
                     <PopoverSelect
                       label={t('resources.automation.reasoning')}
-                      value={(form.codexConfig.reasoningEffort ?? '') as string}
+                      value={(form.codexConfig.effort ?? form.codexConfig.reasoningEffort ?? '') as string}
                       options={codexReasoningOptions as { id: string; label: string }[]}
-                      onChange={(v) => updateCodex({ reasoningEffort: (v || undefined) as CodexRunConfig['reasoningEffort'] })}
+                      onChange={(v) => updateCodex({
+                        effort: v || undefined,
+                        reasoningEffort: (v || undefined) as CodexRunConfig['reasoningEffort'],
+                      })}
                     />
                     <PopoverSelect
                       label={t('resources.automation.permission')}
                       value={form.codexConfig.permissionPreset ?? 'default'}
                       options={codexPermOptions}
-                      onChange={(v) => updateCodex({ permissionPreset: v as CodexRunConfig['permissionPreset'] })}
+                      onChange={(v) => updateCodex({
+                        permissionPreset: v as CodexRunConfig['permissionPreset'],
+                        permissionMode: v === 'full-access' ? 'bypassPermissions' : 'default',
+                      })}
+                    />
+                  </>
+                )}
+
+                {form.agentType === 'acp' && (
+                  <>
+                    <label className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">ACP agent id</span>
+                      <input
+                        className="w-52 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+                        value={form.acpConfig.acpAgentId ?? ''}
+                        onChange={(e) => updateAcp({ acpAgentId: e.target.value || undefined })}
+                        placeholder="grok-build"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">{t('resources.automation.model')}</span>
+                      <input
+                        className="w-52 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+                        value={form.acpConfig.model ?? ''}
+                        onChange={(e) => updateAcp({ model: e.target.value || undefined })}
+                        placeholder={t('resources.automation.defaultValue')}
+                      />
+                    </label>
+                    <PopoverSelect
+                      label={t('resources.automation.permission')}
+                      value={form.acpConfig.permissionMode ?? 'bypassPermissions'}
+                      options={permissionModes.map((m) => ({
+                        ...m,
+                        label: t(`chat.permissionModes.${m.id}.label`),
+                        description: t(`chat.permissionModes.${m.id}.description`),
+                      }))}
+                      onChange={(v) => updateAcp({ permissionMode: v as AcpRunConfig['permissionMode'] })}
+                    />
+                  </>
+                )}
+
+                {form.agentType === 'opencode' && (
+                  <>
+                    <label className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">{t('resources.automation.model')}</span>
+                      <input
+                        className="w-52 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+                        value={form.opencodeConfig.model ?? ''}
+                        onChange={(e) => updateOpenCode({ model: e.target.value || undefined })}
+                        placeholder="provider/model"
+                      />
+                    </label>
+                    <PopoverSelect
+                      label={t('resources.automation.permission')}
+                      value={form.opencodeConfig.permissionMode ?? 'bypassPermissions'}
+                      options={permissionModes.map((m) => ({
+                        ...m,
+                        label: t(`chat.permissionModes.${m.id}.label`),
+                        description: t(`chat.permissionModes.${m.id}.description`),
+                      }))}
+                      onChange={(v) => updateOpenCode({ permissionMode: v as OpenCodeRunConfig['permissionMode'] })}
                     />
                   </>
                 )}

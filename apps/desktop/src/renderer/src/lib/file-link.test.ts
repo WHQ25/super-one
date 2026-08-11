@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeFileLinkTarget, parseFileLinkTarget, resolveProjectFileHref } from './file-link'
+import {
+  normalizeFileLinkTarget,
+  parseFileLinkTarget,
+  resolveProjectFileHref,
+  safeDecodeFilePath,
+} from './file-link'
 
 const PROJECT = '/Users/me/proj'
 
@@ -121,7 +126,7 @@ describe('resolveProjectFileHref', () => {
     })
   })
 
-  it('does not decode percent-encoded path segments (Grok session dirs)', () => {
+  it('does not decode percent-encoded path separators (Grok session dirs)', () => {
     const grokPath =
       '/Users/me/.grok/sessions/%2FUsers%2Fme%2Fproj/019f/workflows/wf_1/scratch/report.md'
     expect(resolveProjectFileHref(grokPath, PROJECT)).toEqual({ filePath: grokPath })
@@ -129,9 +134,77 @@ describe('resolveProjectFileHref', () => {
     expect(resolveProjectFileHref(grokPath, PROJECT)?.filePath).toContain('%2FUsers%2F')
   })
 
+  it('decodes non-ASCII percent-encoded path segments (CJK filenames)', () => {
+    const encoded =
+      `${PROJECT}/docs/S-C-%E8%AF%8A%E6%96%ADSQL-%E6%A3%80%E6%9F%A5.md`
+    const decoded =
+      `${PROJECT}/docs/S-C-诊断SQL-检查.md`
+    expect(resolveProjectFileHref(encoded, PROJECT)).toEqual({ filePath: decoded })
+    expect(resolveProjectFileHref(`${encoded}#L10`, PROJECT)).toEqual({
+      filePath: decoded,
+      lineNumber: 10,
+    })
+  })
+
+  it('decodes CJK segments in project-relative hrefs before joining root', () => {
+    expect(resolveProjectFileHref('docs/%E8%AF%8A%E6%96%AD.md', PROJECT)).toEqual({
+      filePath: `${PROJECT}/docs/诊断.md`,
+    })
+  })
+
+  it('decodes CJK in file: URLs without double-breaking', () => {
+    const encoded = `file://${PROJECT}/docs/%E8%AF%8A%E6%96%AD.md`
+    expect(resolveProjectFileHref(encoded, PROJECT)).toEqual({
+      filePath: `${PROJECT}/docs/诊断.md`,
+    })
+    // Already-decoded file path stays stable.
+    expect(
+      resolveProjectFileHref(`file://${PROJECT}/docs/诊断.md`, PROJECT),
+    ).toEqual({
+      filePath: `${PROJECT}/docs/诊断.md`,
+    })
+  })
+
+  it('keeps already-decoded paths unchanged', () => {
+    const path = `${PROJECT}/docs/诊断SQL.md`
+    expect(resolveProjectFileHref(path, PROJECT)).toEqual({ filePath: path })
+  })
+
+  it('leaves invalid percent sequences unchanged', () => {
+    const bad = `${PROJECT}/docs/file%ZZname.md`
+    expect(resolveProjectFileHref(bad, PROJECT)).toEqual({ filePath: bad })
+  })
+
   it('expands ~/ paths when homeDir is provided', () => {
     expect(resolveProjectFileHref('~/.grok/workflows/demo.rhai', PROJECT, '/Users/me')).toEqual({
       filePath: '/Users/me/.grok/workflows/demo.rhai',
     })
+  })
+})
+
+describe('safeDecodeFilePath', () => {
+  it('decodes CJK percent-encoding', () => {
+    expect(safeDecodeFilePath('/tmp/%E8%AF%8A%E6%96%AD.md')).toBe('/tmp/诊断.md')
+  })
+
+  it('does not decode when encoded separators are present', () => {
+    const grok = '/Users/me/.grok/sessions/%2FUsers%2Fme%2Fproj/report.md'
+    expect(safeDecodeFilePath(grok)).toBe(grok)
+    expect(safeDecodeFilePath('/x/%5CWindows%5Cpath/y')).toBe('/x/%5CWindows%5Cpath/y')
+  })
+
+  it('is a no-op for paths without percent escapes', () => {
+    expect(safeDecodeFilePath('/tmp/诊断.md')).toBe('/tmp/诊断.md')
+    expect(safeDecodeFilePath('/tmp/plain.ts')).toBe('/tmp/plain.ts')
+  })
+
+  it('keeps mixed encodings that do not round-trip', () => {
+    // Space encoded, CJK already decoded — encodeURI would re-encode CJK.
+    const mixed = '/tmp/folder%20name/诊断.md'
+    expect(safeDecodeFilePath(mixed)).toBe(mixed)
+  })
+
+  it('accepts lowercase hex percent-encoding', () => {
+    expect(safeDecodeFilePath('/tmp/%e8%af%8a.md')).toBe('/tmp/诊.md')
   })
 })

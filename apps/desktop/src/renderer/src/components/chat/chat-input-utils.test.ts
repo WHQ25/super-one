@@ -95,4 +95,9 @@ describe('toMentionPath', () => {
   it('should handle trailing slashes on project path', () => {
     expect(toMentionPath('/project/src/file.ts', '/project/')).toBe('src/file.ts')
   })
+
+  it('should not re-encode CJK path segments', () => {
+    expect(toMentionPath('/project/docs/S-C-诊断SQL.md', '/project')).toBe('docs/S-C-诊断SQL.md')
+    expect(toMentionPath('/other/docs/诊断.md', '/project')).toBe('/other/docs/诊断.md')
+  })
 })

@@ -90,4 +90,24 @@ describe('FileLink chip rendering', () => {
     expect(chip).toHaveTextContent('superone-mcp-server.ts')
     expect(screen.queryByRole('link')).toBeNull()
   })
+
+  it('decodes percent-encoded CJK hrefs for chip path and prefers link text as label', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    const encoded = `${PROJECT}/docs/S-C-%E8%AF%8A%E6%96%ADSQL.md`
+    const decoded = `${PROJECT}/docs/S-C-诊断SQL.md`
+    render(<FileLink href={encoded}>S-C-诊断SQL.md</FileLink>)
+    const chip = screen.getByRole('button')
+    expect(chip).toHaveTextContent('S-C-诊断SQL.md')
+    expect(chip).toHaveAttribute('title', decoded)
+    expect(chip.textContent).not.toContain('%E8')
+  })
+
+  it('falls back to decoded basename when link text equals the raw encoded href', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    const encoded = `${PROJECT}/docs/%E8%AF%8A%E6%96%AD.md`
+    render(<FileLink href={encoded}>{encoded}</FileLink>)
+    const chip = screen.getByRole('button')
+    expect(chip).toHaveTextContent('诊断.md')
+    expect(chip).toHaveAttribute('title', `${PROJECT}/docs/诊断.md`)
+  })
 })

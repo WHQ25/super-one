@@ -53,15 +53,52 @@ export function expandHomeInPath(filePath: string, homeDir?: string | null): str
 }
 
 /**
+ * Percent-encoded path separators (any case). Grok session dirs embed these as
+ * literal folder names (`%2FUsers%2F…`); decoding them would invent separators.
+ */
+const ENCODED_PATH_SEPARATOR = /%2[fF]|%5[cC]/
+
+/**
+ * Decode markdown/streamdown percent-encoding in filesystem paths when safe.
+ *
+ * Streamdown / mdast-util-to-hast percent-encodes non-ASCII in link destinations
+ * (e.g. Chinese filenames → `%E8%AF%8A…`). Those must become real filesystem
+ * paths for open / show-in-folder / Add-to-chat.
+ *
+ * Safety rules:
+ * - Never decode when the path contains encoded separators `%2F` / `%5C`
+ *   (Grok-style literal directory names).
+ * - Only accept a decode when `encodeURI(decoded)` round-trips to the input
+ *   (normalized hex case), so partial/mixed encodings are left alone.
+ * - On any decode failure, keep the raw string.
+ */
+export function safeDecodeFilePath(path: string): string {
+  if (!path || !/%[0-9A-Fa-f]{2}/.test(path)) return path
+  if (ENCODED_PATH_SEPARATOR.test(path)) return path
+  try {
+    const decoded = decodeURIComponent(path)
+    if (decoded === path) return path
+    // Round-trip: streamdown uses URI-style percent-encoding of non-ASCII.
+    // Normalize hex case so `%e8` and `%E8` both validate.
+    const reencoded = encodeURI(decoded)
+    const norm = (s: string) => s.replace(/%[0-9A-Fa-f]{2}/g, (m) => m.toUpperCase())
+    if (norm(reencoded) === norm(path)) return decoded
+    return path
+  } catch {
+    return path
+  }
+}
+
+/**
  * Resolve a markdown href into a local filesystem path (+ optional line).
  * - http(s) / mailto / etc. → null (browser links)
  * - absolute paths and file:// → always a file (in- or out-of-project)
  * - ~/ paths → expanded when homeDir is known
  * - relative paths → joined to projectRoot (requires projectRoot)
  *
- * IMPORTANT: Grok session dirs embed URL-encoded segments as literal folder
- * names (`%2FUsers%2F…`). Never decodeURIComponent absolute filesystem paths —
- * that would turn a single directory name into extra path separators.
+ * Non-ASCII segments percent-encoded by the markdown pipeline are decoded via
+ * {@link safeDecodeFilePath}. Grok session dirs that embed literal `%2F…`
+ * segments are left intact so they do not gain extra path separators.
  */
 export function resolveProjectFileHref(
   rawHref: string,
@@ -81,12 +118,9 @@ export function resolveProjectFileHref(
         return null
       }
       if (url.protocol === 'file:' || url.protocol === 'local-file:') {
-        // file:// URLs legitimately percent-encode; decode the pathname only.
-        try {
-          href = decodeURIComponent(url.pathname)
-        } catch {
-          href = url.pathname
-        }
+        // file:// URLs legitimately percent-encode; decode the pathname safely
+        // (same Grok-%2F guard as bare paths — do not invent separators).
+        href = safeDecodeFilePath(url.pathname)
         // Windows file URLs look like file:///C:/Users/... → pathname /C:/Users/...
         if (/^\/[A-Za-z]:\//.test(href)) href = href.slice(1)
       } else {
@@ -99,7 +133,7 @@ export function resolveProjectFileHref(
   }
 
   const { filePath: rawPath, lineNumber } = parseFileLinkTarget(href)
-  const filePath = expandHomeInPath(rawPath, homeDir)
+  const filePath = expandHomeInPath(safeDecodeFilePath(rawPath), homeDir)
 
   // Absolute local paths open in the editor whether or not they sit under the
   // current project (e.g. ~/.grok workflow artifacts, dependency sources).

@@ -1392,8 +1392,10 @@ export interface ModelOption {
 
 export const DEFAULT_CONTEXT_WINDOW = 200_000
 export const EXTENDED_CONTEXT_WINDOW = 1_000_000
+export const CODEX_GPT_5_6_CONTEXT_WINDOW = 272_000
 
 const EXTENDED_CONTEXT_RE = /\[1m\]/i
+const CODEX_GPT_5_6_RE = /^gpt-5\.6(?:$|-)/i
 
 export function modelHasExtendedContext(model: { id?: string | null; resolvedModel?: string | null } | null | undefined): boolean {
   if (!model) return false
@@ -1408,18 +1410,27 @@ function positiveContextWindow(n: number | null | undefined): number | null {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null
 }
 
+function modelUsesCodexGpt56Window(model: { id?: string | null; resolvedModel?: string | null }): boolean {
+  return [model.id, model.resolvedModel].some((id) => {
+    const bareId = id?.split('/').at(-1)
+    return bareId ? CODEX_GPT_5_6_RE.test(bareId) : false
+  })
+}
+
 /**
  * Context ring denominator. Prefer models.dev catalog window over agent/session
  * maxTokens (those are often wrong or include non-window padding).
  *
  * Priority:
- * 1. models.dev `contextWindow` (when `[1m]` is set, at least {@link EXTENDED_CONTEXT_WINDOW})
- * 2. `[1m]` → 1M when catalog missing
- * 3. harness-reported model option window
- * 4. Claude hardcoded 200k/1M fallback (when `claudeFallback`)
- * 5. session / detailed-usage maxTokens as last resorts
+ * 1. Codex GPT-5.6 managed window
+ * 2. models.dev `contextWindow` (when `[1m]` is set, at least {@link EXTENDED_CONTEXT_WINDOW})
+ * 3. `[1m]` → 1M when catalog missing
+ * 4. harness-reported model option window
+ * 5. Claude hardcoded 200k/1M fallback (when `claudeFallback`)
+ * 6. session / detailed-usage maxTokens as last resorts
  */
 export function resolveRingContextWindow(input: {
+  harnessId?: HarnessId | null
   modelId?: string | null
   resolvedModel?: string | null
   catalogContextWindow?: number | null
@@ -1429,6 +1440,9 @@ export function resolveRingContextWindow(input: {
   claudeFallback?: boolean
 }): number | null {
   const model = { id: input.modelId, resolvedModel: input.resolvedModel }
+  if (input.harnessId === 'codex' && modelUsesCodexGpt56Window(model)) {
+    return CODEX_GPT_5_6_CONTEXT_WINDOW
+  }
   const extended = modelHasExtendedContext(model)
   const catalog = positiveContextWindow(input.catalogContextWindow)
   if (catalog != null) {

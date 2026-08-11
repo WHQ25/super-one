@@ -1,11 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CODEX_GPT_5_6_CONTEXT_WINDOW,
   DEFAULT_CONTEXT_WINDOW,
   EXTENDED_CONTEXT_WINDOW,
   resolveRingContextWindow,
 } from './agent-types'
 
 describe('resolveRingContextWindow', () => {
+  it('uses the Codex managed window for GPT-5.6 models', () => {
+    expect(resolveRingContextWindow({
+      harnessId: 'codex',
+      modelId: 'gpt-5.6-sol',
+      catalogContextWindow: 1_050_000,
+      sessionContextWindow: 258_400,
+    })).toBe(CODEX_GPT_5_6_CONTEXT_WINDOW)
+
+    expect(resolveRingContextWindow({
+      harnessId: 'codex',
+      modelId: 'custom-alias',
+      resolvedModel: 'openai/gpt-5.6-terra',
+      catalogContextWindow: 1_050_000,
+    })).toBe(CODEX_GPT_5_6_CONTEXT_WINDOW)
+  })
+
+  it('keeps the catalog window for GPT-5.6 outside Codex', () => {
+    expect(resolveRingContextWindow({
+      harnessId: 'opencode',
+      modelId: 'gpt-5.6-sol',
+      catalogContextWindow: 1_050_000,
+    })).toBe(1_050_000)
+  })
+
   it('prefers models.dev catalog over session and detailed maxTokens', () => {
     expect(resolveRingContextWindow({
       modelId: 'claude-sonnet-4-6',

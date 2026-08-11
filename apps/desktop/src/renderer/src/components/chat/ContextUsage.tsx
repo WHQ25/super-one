@@ -84,8 +84,9 @@ export function ContextUsage() {
     ),
     [selectedModel, currentModel?.resolvedModel, detailedUsage?.model, catalogModels],
   )
-  // Denominator from models.dev first — agent maxTokens/session windows are often padded or stale.
+  // Codex GPT-5.6 uses its managed 272k window; other models prefer models.dev.
   const contextWindow = resolveRingContextWindow({
+    harnessId: activeProvider,
     modelId: selectedModel,
     resolvedModel: currentModel?.resolvedModel,
     catalogContextWindow,

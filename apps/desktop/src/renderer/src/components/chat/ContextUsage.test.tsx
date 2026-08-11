@@ -91,6 +91,22 @@ beforeEach(() => {
 })
 
 describe('ContextUsage', () => {
+  it('uses the 272k managed window for Codex GPT-5.6', () => {
+    modelCatalog = catalogWithModel('gpt-5.6-sol', 1_050_000, 'openai')
+    chatState.availableModels = [{ id: 'gpt-5.6-sol', name: 'GPT5.6 Sol', description: '' }]
+    activeSessionState.contextTokens = 120_000
+    activeSessionState.contextWindow = 258_400
+    activeSessionState.selectedModel = 'gpt-5.6-sol'
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 120.0k / 272.0k (44%)')).toBeTruthy()
+    expect(screen.queryByText(/1050\.0k/)).toBeNull()
+  })
+
   it('uses the session context window for codex', () => {
     chatState.availableModels = [{ id: 'claude-1m', name: 'Claude 1M', description: '' }]
     activeSessionState.contextTokens = 120000

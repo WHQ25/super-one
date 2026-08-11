@@ -207,4 +207,10 @@ describe('safeDecodeFilePath', () => {
   it('accepts lowercase hex percent-encoding', () => {
     expect(safeDecodeFilePath('/tmp/%e8%af%8a.md')).toBe('/tmp/诊.md')
   })
+
+  it('documents the literal-%XX filename boundary (indistinguishable from URI encoding)', () => {
+    // A file actually named `file%20name.md` round-trips through encodeURI and
+    // is decoded to a space — known limitation; not common for CJK workflows.
+    expect(safeDecodeFilePath('/tmp/file%20name.md')).toBe('/tmp/file name.md')
+  })
 })

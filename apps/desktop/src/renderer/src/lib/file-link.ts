@@ -71,6 +71,12 @@ const ENCODED_PATH_SEPARATOR = /%2[fF]|%5[cC]/
  * - Only accept a decode when `encodeURI(decoded)` round-trips to the input
  *   (normalized hex case), so partial/mixed encodings are left alone.
  * - On any decode failure, keep the raw string.
+ *
+ * Known boundary: a *literal* filename that contains a valid percent-escape
+ * (e.g. a file actually named `file%20name.md` on disk) is indistinguishable
+ * from URI encoding and will be decoded to `file name.md`. Real files with
+ * `%XX` in the name are rare; markdown-encoded CJK is the common case.
+ * Encoded separators still protect Grok session dirs.
  */
 export function safeDecodeFilePath(path: string): string {
   if (!path || !/%[0-9A-Fa-f]{2}/.test(path)) return path

@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { useAppStore } from '@/stores/app'
+import { chatInputAPI } from '@/components/chat/ChatInput'
 import { fileLinkComponents } from './chat-markdown-components'
 
 vi.mock('@/components/chat/ChatInput', () => ({
@@ -11,6 +12,12 @@ vi.mock('@/components/chat/ChatInput', () => ({
 
 const PROJECT = '/Users/me/proj'
 const FileLink = fileLinkComponents.a
+
+beforeEach(() => {
+  vi.mocked(chatInputAPI.insertMention!).mockClear()
+  // DOM context menu (not native liquid-glass) so Add to Chat is clickable in jsdom.
+  useAppStore.setState({ liquidGlass: false })
+})
 
 describe('FileLink chip rendering', () => {
   it('shows the file basename, ignoring a redundant line number in the link text', () => {
@@ -109,5 +116,21 @@ describe('FileLink chip rendering', () => {
     const chip = screen.getByRole('button')
     expect(chip).toHaveTextContent('诊断.md')
     expect(chip).toHaveAttribute('title', `${PROJECT}/docs/诊断.md`)
+  })
+
+  it('Add to Chat inserts a decoded project-relative path (not percent-encoded)', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    const encoded = `${PROJECT}/docs/S-C-%E8%AF%8A%E6%96%ADSQL.md`
+    render(<FileLink href={encoded}>S-C-诊断SQL.md</FileLink>)
+    const chip = screen.getByRole('button')
+    fireEvent.contextMenu(chip)
+    fireEvent.click(screen.getByText('Add to Chat'))
+    expect(chatInputAPI.insertMention).toHaveBeenCalledWith(
+      'file',
+      'docs/S-C-诊断SQL.md',
+      'S-C-诊断SQL.md',
+    )
+    const mentionPath = vi.mocked(chatInputAPI.insertMention!).mock.calls[0]![1]
+    expect(mentionPath).not.toContain('%E8')
   })
 })

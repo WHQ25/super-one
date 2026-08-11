@@ -38,6 +38,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import {
+  ResourceScopeToolbar,
+  type ResourceScopeView,
+} from '@/components/settings/ResourceScopeToolbar'
 import { resolveAssetUrls } from '@/lib/path-utils'
 import { scopeBadgeClass } from '@/lib/scope-badge'
 import type {
@@ -1110,11 +1114,13 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
   )
 }
 
-function PluginSection({ title, plugins }: { title: string; plugins: PluginInfo[] }) {
+function PluginSection({ title, plugins }: { title?: string; plugins: PluginInfo[] }) {
   if (plugins.length === 0) return null
   return (
     <div>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
+      {title ? (
+        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
+      ) : null}
       <div className="flex flex-col gap-2">
         {plugins.map((plugin) => (
           <PluginCard key={`${plugin.scope}:${plugin.key}`} plugin={plugin} />
@@ -1785,6 +1791,7 @@ export function PluginsPage() {
   const [tab, setTab] = useState<PluginsTab>('marketplace')
   const [selectedMarketplace, setSelectedMarketplace] = useState<string | null>(null)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [scope, setScope] = useState<ResourceScopeView>('user')
   const isCodex = settingsProvider === 'codex'
   const canManageMarketplaces = true
 
@@ -1832,6 +1839,15 @@ export function PluginsPage() {
     return Array.from(map.values()).sort((a, b) => b.pluginCount - a.pluginCount)
   }, [marketplacePlugins])
 
+  // Official + user marketplaces under User; project marketplaces under Project.
+  const scopedMarketplaceSummaries = useMemo(
+    () =>
+      marketplaceSummaries.filter((mp) =>
+        scope === 'project' ? mp.scope === 'project' : mp.scope !== 'project',
+      ),
+    [marketplaceSummaries, scope],
+  )
+
   const selectedPlugins = useMemo(() => {
     if (!selectedMarketplace) return []
     return marketplacePlugins.filter((p) => p.marketplace === selectedMarketplace)
@@ -1839,7 +1855,8 @@ export function PluginsPage() {
 
   const userPlugins = plugins.filter((p) => p.scope === 'user')
   const projectPlugins = plugins.filter((p) => p.scope === 'project')
-  const updatablePlugins = plugins.filter((p) => p.hasUpdate)
+  const scopedPlugins = scope === 'user' ? userPlugins : projectPlugins
+  const updatablePlugins = scopedPlugins.filter((p) => p.hasUpdate)
   const [updatingAll, setUpdatingAll] = useState(false)
 
   const handleInstall = async (key: string, scope: ResourceScope) => {
@@ -1895,19 +1912,18 @@ export function PluginsPage() {
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {tab === 'marketplace' && canManageMarketplaces && (
+      <ResourceScopeToolbar
+        scope={scope}
+        onScopeChange={setScope}
+        actions={
+          tab === 'marketplace' && canManageMarketplaces ? (
             <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
               <Plus className="size-3.5" />
               {t('resources.plugins.addMarketplace')}
             </Button>
-          )}
-        </div>
-        <div className="shrink-0">
-          <ProjectSelector />
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
 
       {/* Tabs */}
       <div className="mb-4 flex gap-1 rounded-lg bg-muted p-1">
@@ -1935,7 +1951,7 @@ export function PluginsPage() {
         <div>
           {pluginsLoading ? (
             <PluginsLoadingState />
-          ) : marketplaceSummaries.length === 0 ? (
+          ) : scopedMarketplaceSummaries.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyMarketplace')}</p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -1950,7 +1966,7 @@ export function PluginsPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {marketplaceSummaries.map((mp) => (
+              {scopedMarketplaceSummaries.map((mp) => (
                 <MarketplaceListCard
                   key={mp.name}
                   mp={mp}
@@ -1974,7 +1990,7 @@ export function PluginsPage() {
         <div>
           {pluginsLoading ? (
             <PluginsLoadingState />
-          ) : plugins.length === 0 ? (
+          ) : scopedPlugins.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyInstalled')}</p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -2000,8 +2016,7 @@ export function PluginsPage() {
                   </Button>
                 </div>
               )}
-              <PluginSection title={t('resources.sectionUser')} plugins={userPlugins} />
-              <PluginSection title={t('resources.sectionProject')} plugins={projectPlugins} />
+              <PluginSection plugins={scopedPlugins} />
             </div>
           )}
         </div>

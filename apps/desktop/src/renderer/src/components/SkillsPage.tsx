@@ -7,9 +7,12 @@ import { Button } from '@superone/ui/components/ui/button'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
-import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import {
+  ResourceScopeToolbar,
+  type ResourceScopeView,
+} from '@/components/settings/ResourceScopeToolbar'
 import { FileContentView, MarkdownView, inferLanguage } from './MarkdownPreview'
 import type { SkillFileEntry, SkillInfo } from '@superone/shared/agent-types'
 
@@ -350,7 +353,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
   )
 }
 
-function SkillSection({ title, skills, readOnly }: { title: string; skills: SkillInfo[]; readOnly?: boolean }) {
+function SkillSection({ title, skills, readOnly }: { title?: string; skills: SkillInfo[]; readOnly?: boolean }) {
   const skillDetail = useSettingsStore((s) => s.skillDetail)
   if (skills.length === 0) return null
 
@@ -375,8 +378,10 @@ function SkillSection({ title, skills, readOnly }: { title: string; skills: Skil
 
   return (
     <div>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      <LayoutGroup id={`skills-${title}`}>
+      {title ? (
+        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
+      ) : null}
+      <LayoutGroup id={`skills-${title ?? 'scoped'}`}>
         <div className="space-y-3">
           {before.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
@@ -402,6 +407,7 @@ export function SkillsPage() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const { skills, fetchSkills, fetchCodexSkills, installSkill, clearSkillDetail } = useSettingsStore()
+  const [scope, setScope] = useState<ResourceScopeView>('user')
   const isCodex = settingsProvider === 'codex'
 
   useEffect(() => {
@@ -422,6 +428,7 @@ export function SkillsPage() {
 
   const userSkills = skills.filter((s) => s.scope === 'user')
   const projectSkills = skills.filter((s) => s.scope === 'project')
+  const scopedSkills = scope === 'user' ? userSkills : projectSkills
 
   const pathHints = isCodex
     ? t('resources.skills.emptyHintCodex')
@@ -429,30 +436,26 @@ export function SkillsPage() {
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {!isCodex && (
+      <ResourceScopeToolbar
+        scope={scope}
+        onScopeChange={setScope}
+        actions={
+          !isCodex ? (
             <Button size="sm" onClick={handleInstall}>
               <FolderOpen className="size-4" />
               {t('resources.skills.install')}
             </Button>
-          )}
-        </div>
-        <div className="shrink-0">
-          <ProjectSelector />
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
 
-      {skills.length === 0 ? (
+      {scopedSkills.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">{t('resources.skills.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">{pathHints}</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          <SkillSection title={t('resources.sectionUser')} skills={userSkills} />
-          <SkillSection title={t('resources.sectionProject')} skills={projectSkills} />
-        </div>
+        <SkillSection skills={scopedSkills} />
       )}
     </div>
   )

@@ -709,6 +709,8 @@ export type Messages = {
         error: string
       }
       sections: { project: string; user: string }
+      /** Empty state when Codex preferences has no project-scoped fields. */
+      projectEmptyCodex: string
       defaultProvider: { label: string; description: string }
       outputStyle: {
         label: string
@@ -3329,6 +3331,7 @@ export const en: Messages = {
         error: 'Import failed',
       },
       sections: { project: 'Project Settings', user: 'User Settings' },
+      projectEmptyCodex: 'Codex has no project-level preferences. Migration and defaults live under User.',
       defaultProvider: {
         label: 'Default Provider',
         description: 'Which API provider new sessions use by default. Switch per chat via /provider.',

@@ -752,6 +752,7 @@ export const zh: Messages = {
         error: '导入失败',
       },
       sections: { project: '项目设置', user: '用户设置' },
+      projectEmptyCodex: 'Codex 没有项目级偏好设置。迁移与默认项都在「用户」下。',
       defaultProvider: {
         label: '默认服务商',
         description: '新会话默认使用哪个 API 服务商。可在对话内用 /provider 单独切换。',

@@ -3,10 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, Plus, Pencil, Trash2, Webhook, Terminal, MessageSquare, Bot, Globe, Server } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Button } from '@superone/ui/components/ui/button'
-import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import {
+  ResourceScopeToolbar,
+  type ResourceScopeView,
+} from '@/components/settings/ResourceScopeToolbar'
 import { HookEditorDialog } from './HookEditorDialog'
 import { CodexHooksPanel } from './CodexHooksPanel'
 import { cn } from '@superone/ui/lib/utils'
@@ -67,19 +70,29 @@ function ClaudeHooksPage() {
   const [editing, setEditing] = useState<HookConfig | undefined>(undefined)
   const [confirmDelete, setConfirmDelete] = useState<HookConfig | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [scope, setScope] = useState<ResourceScopeView>('user')
 
   useEffect(() => { fetchHooks() }, [currentFolder, fetchHooks])
 
+  // User view includes local hooks (project-local but not shared project scope).
+  const scopedHooks = useMemo(
+    () =>
+      hooks.filter((h) =>
+        scope === 'user' ? h.scope === 'user' || h.scope === 'local' : h.scope === 'project',
+      ),
+    [hooks, scope],
+  )
+
   const grouped = useMemo(() => {
     const map = new Map<HookEventName, HookConfig[]>()
-    for (const h of hooks) {
+    for (const h of scopedHooks) {
       const list = map.get(h.event) ?? []
       list.push(h)
       map.set(h.event, list)
     }
     const sorted = Array.from(map.entries()).sort(([a], [b]) => compareEvents(a, b))
     return sorted
-  }, [hooks])
+  }, [scopedHooks])
 
   const handleAdd = () => {
     setEditing(undefined)
@@ -108,23 +121,22 @@ function ClaudeHooksPage() {
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <ResourceScopeToolbar
+        scope={scope}
+        onScopeChange={setScope}
+        actions={
           <Button size="sm" onClick={handleAdd}>
             <Plus className="size-4" />
             {t('resources.hooks.add')}
           </Button>
-        </div>
-        <div className="shrink-0">
-          <ProjectSelector />
-        </div>
-      </div>
+        }
+      />
 
       <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
         {t('resources.hooks.applyNote')}
       </div>
 
-      {hooks.length === 0 ? (
+      {scopedHooks.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <Webhook className="mx-auto size-8 text-muted-foreground/50" />
           <p className="mt-3 text-sm text-muted-foreground">{t('resources.hooks.empty')}</p>

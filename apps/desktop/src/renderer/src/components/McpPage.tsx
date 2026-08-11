@@ -6,11 +6,14 @@ import { Button } from '@superone/ui/components/ui/button'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
-import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { McpDetailPage } from './McpDetailPage'
 import { AddServerPanel } from './AddServerPanel'
+import {
+  ResourceScopeToolbar,
+  type ResourceScopeView,
+} from '@/components/settings/ResourceScopeToolbar'
 import type { McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta } from '@superone/shared/agent-types'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
 import { cn } from '@superone/ui/lib/utils'
@@ -437,7 +440,7 @@ function ServerSection({
   interactive = true,
   statusMode = 'live',
 }: {
-  title: string
+  title?: string
   configs: McpServerConfig[]
   mcpStatus: McpServerInfo[]
   mcpMeta: Record<string, McpServerMeta>
@@ -448,7 +451,9 @@ function ServerSection({
   if (configs.length === 0) return null
   return (
     <div>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
+      {title ? (
+        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
+      ) : null}
       <div className="grid grid-cols-2 gap-3">
         {configs.map((config) => (
           <ServerCard
@@ -474,6 +479,7 @@ export function McpPage() {
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
   const [refreshing, setRefreshing] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [scope, setScope] = useState<ResourceScopeView>('user')
   const isCodex = settingsProvider === 'codex'
 
   useEffect(() => {
@@ -511,6 +517,7 @@ export function McpPage() {
   const currentConfigs = isCodex ? codexMcpConfigs : mcpConfigs
   const userConfigs = currentConfigs.filter((c) => c.scope === 'user')
   const projectConfigs = currentConfigs.filter((c) => c.scope === 'project')
+  const scopedConfigs = scope === 'user' ? userConfigs : projectConfigs
   const codexCardStatus = currentConfigs.map((config) => ({
     name: config.name,
     scope: config.scope,
@@ -529,7 +536,9 @@ export function McpPage() {
     if (config) return <McpDetailPage config={config} status={status} meta={isCodex ? undefined : mcpMeta[config.name]} />
   }
 
-  const hasAnyServer = currentConfigs.length > 0 || claudeaiServers.length > 0
+  const showClaudeAi = scope === 'user' && !isCodex
+  const hasScopedContent =
+    scopedConfigs.length > 0 || (showClaudeAi && (claudeaiServers.length > 0 || checking))
 
   const bundleProvider = isCodex ? 'codex' : 'claude'
   const bundlesByName: Record<string, McpbInstalledEntry> = {}
@@ -539,35 +548,36 @@ export function McpPage() {
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
-            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-            {t('resources.mcp.refresh')}
-          </Button>
-          {mcpLibrary.length > 0 && (
+      <ResourceScopeToolbar
+        scope={scope}
+        onScopeChange={setScope}
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+              {t('resources.mcp.refresh')}
+            </Button>
+            {mcpLibrary.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}
+              >
+                <Library className="size-4" />
+                {t('resources.mcp.library')}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}
+              onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}
             >
-              <Library className="size-4" />
-              {t('resources.mcp.library')}
+              <Plus className="size-4" />
+              {t('resources.mcp.add')}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}
-          >
-            <Plus className="size-4" />
-            {t('resources.mcp.add')}
-          </Button>
-        </div>
-        <div className="shrink-0">
-          <ProjectSelector />
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {addView === 'form' && (
         <div className="mb-4">
@@ -587,7 +597,7 @@ export function McpPage() {
         </div>
       )}
 
-      {!hasAnyServer ? (
+      {!hasScopedContent ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">{t('resources.mcp.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -596,23 +606,22 @@ export function McpPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {!isCodex && <ClaudeAiSection servers={claudeaiServers} loading={checking} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />}
-          <ServerSection
-            title={t('resources.sectionUser')}
-            configs={userConfigs}
-            mcpStatus={isCodex ? codexCardStatus : mcpStatus}
-            mcpMeta={isCodex ? {} : mcpMeta}
-            bundlesByName={bundlesByName}
-            statusMode={isCodex ? 'managed' : 'live'}
-          />
-          <ServerSection
-            title={t('resources.sectionProject')}
-            configs={projectConfigs}
-            mcpStatus={isCodex ? codexCardStatus : mcpStatus}
-            mcpMeta={isCodex ? {} : mcpMeta}
-            bundlesByName={bundlesByName}
-            statusMode={isCodex ? 'managed' : 'live'}
-          />
+          {showClaudeAi && (
+            <ClaudeAiSection
+              servers={claudeaiServers}
+              loading={checking}
+              onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')}
+            />
+          )}
+          {scopedConfigs.length > 0 && (
+            <ServerSection
+              configs={scopedConfigs}
+              mcpStatus={isCodex ? codexCardStatus : mcpStatus}
+              mcpMeta={isCodex ? {} : mcpMeta}
+              bundlesByName={bundlesByName}
+              statusMode={isCodex ? 'managed' : 'live'}
+            />
+          )}
         </div>
       )}
     </div>

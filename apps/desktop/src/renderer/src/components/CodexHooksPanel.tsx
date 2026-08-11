@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { Bot, ChevronDown, ChevronRight, ExternalLink, MessageSquare, ShieldCheck, ShieldOff, Terminal, Webhook } from 'lucide-react'
-import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { cn } from '@superone/ui/lib/utils'
 import { scopeBadgeClass } from '@/lib/scope-badge'
+import {
+  ResourceScopeToolbar,
+  type ResourceScopeView,
+} from '@/components/settings/ResourceScopeToolbar'
 import type { CodexHookEventName, CodexHookGroup, CodexHookHandlerType, CodexHookInfo, CodexHookSource, CodexHookTrustStatus } from '@superone/shared/agent-types'
 
 const EVENT_ORDER: CodexHookEventName[] = [
@@ -49,6 +52,7 @@ export function CodexHooksPanel() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [scope, setScope] = useState<ResourceScopeView>('user')
 
   const refresh = useCallback(async () => {
     if (!currentFolder) {
@@ -73,16 +77,25 @@ export function CodexHooksPanel() {
   const warnings = useMemo(() => groups.flatMap((g) => g.warnings), [groups])
   const errors = useMemo(() => groups.flatMap((g) => g.errors), [groups])
 
+  // User view keeps non-project sources (managed/plugin/unknown) with user hooks.
+  const scopedHooks = useMemo(
+    () =>
+      hooks.filter((h) =>
+        scope === 'project' ? h.source === 'project' : h.source !== 'project',
+      ),
+    [hooks, scope],
+  )
+
   const grouped = useMemo(() => {
     const map = new Map<CodexHookEventName, CodexHookInfo[]>()
-    for (const h of hooks) {
+    for (const h of scopedHooks) {
       const list = map.get(h.eventName) ?? []
       list.push(h)
       map.set(h.eventName, list)
     }
     for (const list of map.values()) list.sort((a, b) => a.displayOrder - b.displayOrder)
     return Array.from(map.entries()).sort(([a], [b]) => compareEvents(a, b))
-  }, [hooks])
+  }, [scopedHooks])
 
   const toggleCollapse = (event: CodexHookEventName) => {
     setCollapsed((prev) => {
@@ -95,12 +108,10 @@ export function CodexHooksPanel() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t('resources.codexHooks.title')}</h2>
-          <p className="text-sm text-muted-foreground">{t('resources.codexHooks.subtitle')}</p>
-        </div>
-        <ProjectSelector />
+      <ResourceScopeToolbar scope={scope} onScopeChange={setScope} />
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">{t('resources.codexHooks.title')}</h2>
+        <p className="text-sm text-muted-foreground">{t('resources.codexHooks.subtitle')}</p>
       </div>
 
       <div className="mb-4 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
@@ -127,7 +138,7 @@ export function CodexHooksPanel() {
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {error}
         </div>
-      ) : hooks.length === 0 ? (
+      ) : scopedHooks.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <Webhook className="mx-auto size-8 text-muted-foreground/50" />
           <p className="mt-3 text-sm text-muted-foreground">{t('resources.codexHooks.empty')}</p>

@@ -1,10 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Bot } from 'lucide-react'
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react'
 import { useTranslation } from 'react-i18next'
-import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import {
+  ResourceScopeToolbar,
+  type ResourceScopeView,
+} from '@/components/settings/ResourceScopeToolbar'
 import { MarkdownView } from './MarkdownPreview'
 import type { AgentInfo } from '@superone/shared/agent-types'
 
@@ -70,7 +73,7 @@ function AgentCard({ agent, layoutId }: { agent: AgentWithScope; layoutId: strin
   )
 }
 
-function AgentSection({ title, agents }: { title: string; agents: AgentWithScope[] }) {
+function AgentSection({ title, agents }: { title?: string; agents: AgentWithScope[] }) {
   const agentContentName = useSettingsStore((s) => s.agentContentName)
   if (agents.length === 0) return null
 
@@ -88,8 +91,10 @@ function AgentSection({ title, agents }: { title: string; agents: AgentWithScope
 
   return (
     <div>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      <LayoutGroup id={`agents-${title}`}>
+      {title ? (
+        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
+      ) : null}
+      <LayoutGroup id={`agents-${title ?? 'scoped'}`}>
         <div className="space-y-3">
           {before.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
@@ -114,6 +119,7 @@ export function AgentsPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const { agents, fetchAgents, clearAgentDetail } = useSettingsStore()
+  const [scope, setScope] = useState<ResourceScopeView>('user')
 
   useEffect(() => {
     clearAgentDetail()
@@ -122,16 +128,13 @@ export function AgentsPage() {
 
   const userAgents = agents.filter((a) => a.scope === 'user')
   const projectAgents = agents.filter((a) => a.scope === 'project')
+  const scopedAgents = scope === 'user' ? userAgents : projectAgents
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-end gap-3">
-        <div className="shrink-0">
-          <ProjectSelector />
-        </div>
-      </div>
+      <ResourceScopeToolbar scope={scope} onScopeChange={setScope} />
 
-      {agents.length === 0 ? (
+      {scopedAgents.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">{t('resources.agents.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -139,10 +142,7 @@ export function AgentsPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-6">
-          <AgentSection title={t('resources.sectionUser')} agents={userAgents} />
-          <AgentSection title={t('resources.sectionProject')} agents={projectAgents} />
-        </div>
+        <AgentSection agents={scopedAgents} />
       )}
     </div>
   )

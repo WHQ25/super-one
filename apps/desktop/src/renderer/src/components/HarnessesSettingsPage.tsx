@@ -471,7 +471,8 @@ export function HarnessesSettingsPage() {
           <p className="mb-3 shrink-0 text-sm text-destructive break-words">{error}</p>
         ) : null}
         {selected ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          // Stable gutter: User↔Project height changes must not toggle the scrollbar and jank width.
+          <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
             <HarnessDetail
               item={selected}
               catalog={selected.kind === 'catalog' ? catalogById.get(selected.catalogId) : undefined}

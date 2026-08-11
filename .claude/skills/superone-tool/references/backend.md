@@ -348,16 +348,98 @@ Useful members on the session object:
 
 ## Human-in-the-loop confirmation
 
-When a tool must ask the user mid-execution, use `HostConfirmRegistry`
-(`apps/desktop/src/main/session/host-confirm-registry.ts`) — do not hand-roll a pending-promise Map.
+### When it is mandatory
+
+A tool **must** confirm with a human when a call can destroy user data, spend the user's money or
+quota, or spawn autonomous work — `session_cleanup` (delete), `media_generate_video`,
+`session_collab_request` (starts sub-sessions), `miniapp_call` (non-preapproved), `config_apply`.
+
+For that tier the confirmation cannot live in the harness permission layer, because every prompt it
+raises is removable by design: built-in SuperOne tools are auto-approved via
+`BUILT_IN_SUPERONE_TOOL_NAMES` on all four harnesses, `bypassPermissions` mode stops asking entirely,
+`codex-turn.ts` auto-accepts MCP elicitations from any `isBuiltInSuperoneTool` name, and `alwaysAllow`
+silences the rest. A gate the agent can turn off is not a gate.
+
+The unbypassable path is a host `permission_request` raised **inside the executor**:
+
+- **outbound** — `Session.emitHostEvent` → `forwardEvent`, harness-agnostic;
+- **inbound** — `Session.respondToPermission`, which resolves host confirms *before* delegating to
+  `backend.respondToPermission`.
+
+It never touches `canUseTool`, the pre-approve lists, or Codex's `mapApprovalRequest`, so no permission
+mode or allowlist can suppress it. The handler is parked on a promise until a human answers.
+
+### The registry
+
+Use `HostConfirmRegistry` (`apps/desktop/src/main/session/host-confirm-registry.ts`) — do not hand-roll
+a pending-promise Map.
 
 The renderer keeps the dialog in `pendingPermissions` until it sees an `interaction_resolved` with the
 same requestId. So *every* terminal path — answer, external cancel, timeout, turn abort — must emit
 that event, or the tool call finishes while a dead dialog sits on screen. The registry makes settling
 reachable only through `take()`, which clears the timer, drops the entry, and emits in one step.
 
-Existing users: `config_apply`, `media_generate_video`, `miniapp_call`, computer-use grants. Copy the
-closest one.
+```ts
+// <family>-confirm.ts — one module per confirm kind
+const confirms = new HostConfirmRegistry<CleanupConfirmOutcome>({
+  idPrefix: 'sessioncleanup',
+  timeoutMs: 120_000,
+  timeoutError: () => new Error('Session cleanup confirmation timed out'),
+})
+
+export function resolveSessionCleanupConfirm(requestId: string, action: 'accept' | 'decline'): boolean {
+  return confirms.settle(requestId, action === 'accept', { action })
+}
+export function rejectSessionCleanupConfirm(requestId: string, reason: string): boolean {
+  return confirms.fail(requestId, new Error(reason))
+}
+
+// in the handler — after the dry run that produced the preview, before any effect
+const outcome = await confirms.open(session, (requestId) => ({
+  requestId,
+  toolName: 'mcp__superone__session_cleanup',
+  toolUseId: requestId,
+  input: { action: 'delete', sessionIds: finalIds },
+  allowAlwaysAllow: false,          // no permanent opt-out for a destructive tool
+  serverName: 'superone',
+  message: `Permanently delete ${finalIds.length} session(s)?\n…`,
+  requestKind: 'session_cleanup_confirm',
+  sessionCleanupConfirm: { sessions: confirmSessions },   // payload the dialog renders
+}), { signal: deps.signal, abortError: () => new Error('Session cleanup cancelled') })
+```
+
+### Wiring checklist (all four harnesses)
+
+1. `packages/shared/src/agent-types.ts` — add the `requestKind` to the union plus its payload field,
+   documented as present only for that kind.
+2. `apps/desktop/src/main/session/session.ts` → `respondToPermission` — add `resolveX` to the answer
+   chain **and** `rejectX` to the `decision === 'cancel'` chain, both *before* `this.backend.…`.
+   Resolving in `claude-backend` / `codex-turn` instead covers only those two harnesses; on ACP and
+   OpenCode the user clicks Allow and the tool hangs to timeout.
+3. `PermissionPrompt.tsx` — add the kind to `isSelfManagedConfirm` and render a container for its
+   payload (`VideoGenConfirmPromptContainer` / `ConfigConfirmPromptContainer` are the models).
+   Without this the user gets a bare Allow/Deny with no subject.
+4. `sidebar/session-state-utils.ts` — one-line chip so a background session's pending confirm is
+   visible from the sidebar.
+5. Handler — `allowAlwaysAllow: false`, `signal` + `abortError`, effect strictly after the await.
+6. Result — decline / cancel / timeout return a neutral `status: 'rejected' | 'cancelled'` plus a hint
+   (`'Do NOT retry on your own — wait for the user'`), never `isError`, never an automatic retry.
+
+Remote nodes: these built-ins are **host-delegated** (they appear in
+`host-action-superone-descriptors.ts`), so the desktop executor — and therefore this confirm — still
+runs. If you ever add a node-local executor for such a tool, it needs its own waiter in
+`packages/runtime/src/session/session-runtime.ts` (`agentsConfirmWaiters` is the only one today), or
+the node deletes/spends with no human in the loop.
+
+### Test it
+
+The assertion that matters is *the confirm cannot be skipped*: on decline / cancel / abort the handler
+deletes nothing, submits nothing, and returns a neutral status. Templates in
+`session-archive-tools.test.ts`: "session_cleanup hide + delete with user confirm" and "session_cleanup
+delete dismisses host confirm when tool AbortSignal aborts".
+
+Existing users to copy: `session_cleanup` (closest for delete), `session_collab_request`,
+`media_generate_video`, `miniapp_call`, `config_apply`, computer-use grants.
 
 ## The own-descriptor path
 

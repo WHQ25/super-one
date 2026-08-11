@@ -192,21 +192,68 @@ rather than importing app singletons into the handler — that is what keeps the
 
 ## Step 3 — Permission
 
-Three tiers, pick one deliberately:
+Classify by **what one wrong call costs the user**, then pick a tier deliberately:
 
-- **Host-owned / auto-approved** (the default for SuperOne built-ins): add the name to
-  `BUILT_IN_SUPERONE_TOOL_NAMES`. That one list feeds Claude's `canUseTool` short-circuit
-  (`packages/claude/src/run-sdk-turn.ts`), the Codex elicitation rewrite, the ACP pre-approve, and the
-  OpenCode allow-rule generator. Auto-approve is justified because these tools act on SuperOne's own
-  state, not the user's machine.
-- **User confirmation inside the executor** (`config_apply`, `media_generate_video`, `miniapp_call`,
-  computer-use grants): use `HostConfirmRegistry` from
-  `apps/desktop/src/main/session/host-confirm-registry.ts`. Do **not** hand-roll a pending-promise Map
-  — the renderer clears the dialog only on an `interaction_resolved` carrying the same requestId, so
-  every terminal path (answer, cancel, timeout, turn abort) must emit one. The registry makes that
-  unforgettable by routing all settling through `take()`.
-- **Feature-gated** (computer-use): recognized for name-rewrite always, auto-allowed only when the
-  setting is on. See `apps/desktop/src/main/mcp/superone-host-owned-tools.ts`.
+| Tier | When | Mechanism |
+|---|---|---|
+| **Auto-approved** (default for built-ins) | reads and reversible writes to SuperOne's own state | name in `BUILT_IN_SUPERONE_TOOL_NAMES` |
+| **Feature-gated** | capability the user must switch on first (computer-use) | recognized for name-rewrite always, auto-allowed only when the setting is on (`superone-host-owned-tools.ts`) |
+| **Mandatory user confirm** | destroys user data, spends user resources, or spawns autonomous work | host `permission_request` raised **inside the executor** — see below |
+
+`BUILT_IN_SUPERONE_TOOL_NAMES` is the single list feeding Claude's `canUseTool` short-circuit
+(`packages/claude/src/run-sdk-turn.ts`), the Codex elicitation rewrite, the ACP pre-approve, and the
+OpenCode allow-rule generator. Auto-approve is justified there because those tools act on SuperOne's
+own state, not the user's.
+
+### Tier 3 — destructive / resource-consuming tools must ask a human, unbypassably
+
+Apply this tier when a call can:
+
+- **destroy data irreversibly** — `session_cleanup` (delete), any overwrite the user can't undo;
+- **spend the user's money or quota** — `media_generate_video` and any paid generation;
+- **spawn autonomous work** — `session_collab_request` starts sub-sessions that then act and burn
+  tokens on their own (`session_agents_confirm`);
+- **hand control to a third party or reshape the app** — non-preapproved `miniapp_call`, `config_apply`.
+
+For these, **the harness permission layer is not a control you may rely on**. Every prompt it would
+raise is legitimately removable, and mostly *already* removed:
+
+| Bypass | Why the prompt disappears |
+|---|---|
+| Membership in `BUILT_IN_SUPERONE_TOOL_NAMES` | that list *is* an auto-approve short-circuit on all four harnesses |
+| `bypassPermissions` permission mode | the harness stops asking at all |
+| Codex elicitation auto-accept | `codex-turn.ts` auto-accepts elicitations from any `isBuiltInSuperoneTool` name (only rich-confirm payloads are exempted) — so **never model the confirm as an MCP elicitation** |
+| `alwaysAllow` | one earlier click silences every later call |
+
+The unbypassable path is a host `permission_request` emitted from **inside the handler**: outbound via
+`Session.emitHostEvent` → `forwardEvent` (harness-agnostic), inbound via `Session.respondToPermission`.
+It never passes through `canUseTool`, the pre-approve lists, or Codex's `mapApprovalRequest`, so no
+permission mode, allowlist, or auto-accept can suppress it — the handler is simply parked on a promise
+until a human answers.
+
+Non-negotiables when writing one (full walkthrough in `references/backend.md` →
+**Human-in-the-loop confirmation**):
+
+1. **`HostConfirmRegistry`** (`apps/desktop/src/main/session/host-confirm-registry.ts`), never a
+   hand-rolled pending-promise Map. The renderer clears the dialog only on an `interaction_resolved`
+   with the same requestId; the registry makes every terminal path (answer, cancel, timeout, turn
+   abort) emit one by routing all settling through `take()`.
+2. **Resolve in `Session.respondToPermission`, before `backend.respondToPermission`** — the early-return
+   chain in `session.ts`. A backend-layer resolve (the old `video_gen_confirm` shape) only covers
+   Claude and Codex; on ACP/OpenCode the user clicks Allow and the tool hangs to timeout.
+3. **`allowAlwaysAllow: false`** for the delete/spend/spawn cases. "Always allow" re-opens exactly the
+   bypass this tier exists to close. (`miniapp_call` sets it `true` on purpose: the grant is scoped to
+   one app's tool and is the user opting that app in.)
+4. **A distinct `requestKind`**, added to the union in `packages/shared/src/agent-types.ts` and to the
+   `isSelfManagedConfirm` routing in `PermissionPrompt.tsx`, so the dialog shows the real subject
+   (which sessions, which params) instead of a generic Allow/Deny.
+5. **Pass `signal` + `abortError`** from `BuiltInSuperoneToolDeps` so interrupting the turn tears the
+   dialog down instead of leaving it on screen.
+6. **Confirm before effect.** Nothing irreversible or billable happens before the await resolves —
+   build the preview from a dry run (`session_cleanup` resolves ids and titles first, then asks).
+7. **Decline / cancel / timeout are neutral results**, not `isError`: return
+   `status: 'rejected' | 'cancelled'` plus a hint telling the model what to do next — usually *do not
+   retry on your own, wait for the user*. An error tempts a retry loop that re-prompts the human.
 
 Codex has one extra trap: its elicitation carries **no tool arguments** — the tool identity is scraped
 from the prompt text. Never move a tool's identity into args and expect pre-approval to keep working.
@@ -260,6 +307,9 @@ wrong* if they regressed:
 - `required` field sets, and the deliberate *absence* of a cap
 - desktop def ≡ host-action descriptor, if you added the tool to a family list like
   `SESSION_ARCHIVE_TOOL_NAMES`
+- for a Tier-3 tool: the confirm is **unskippable** — with a decline/cancel/abort answer the handler
+  performs no deletion / no submit and returns a neutral status. `session-archive-tools.test.ts`
+  ("delete with user confirm", "dismisses host confirm when tool AbortSignal aborts") is the template
 
 An assertion is worth writing when it encodes a decision someone could plausibly undo by accident.
 
@@ -289,6 +339,12 @@ point of the five-surface discipline is cross-harness parity, and only a real se
 | Always-on essay in tool description | Taxes every turn of every session | ≤700 chars + `read_manual` for depth |
 | `maxLength: 100000` on a text field | Advertises a target the model fills | Cap server-side, omit from schema |
 | Handler `throw`s on user-facing failure | Surfaces as a harness error, not a readable result | `isError: true` + `[Error] …` |
+| Destructive/paid tool relying on the harness permission prompt | Auto-approve list + `bypassPermissions` + Codex elicitation auto-accept each remove it | Executor-side `HostConfirmRegistry` host `permission_request` |
+| Confirm modelled as an MCP elicitation for a built-in tool | Codex auto-accepts elicitations from `isBuiltInSuperoneTool` names | Host `permission_request` via `emitHostEvent` |
+| Confirm resolved only in the backend layer | Claude/Codex work; ACP/OpenCode hang until timeout | Resolve in `Session.respondToPermission` first |
+| `allowAlwaysAllow: true` on a delete/spend confirm | One click permanently disables the gate you just built | `false` — ask every time |
+| Deleting / submitting first, confirming after | User is approving an accomplished fact | Dry-run preview → confirm → effect |
+| Declined confirm returned as `isError` | Reads as a failure the model should retry → re-prompts the human | Neutral `status: 'rejected'` + "do not retry on your own" hint |
 | Registering in `registerSuperoneTools` only | Silently absent in Codex/ACP | Both surfaces + the drift test |
 | Custom ToolBlock covering only the success path | Streaming/denied/error rows render blank | Four states + `allowExpand` fallback |
 | Shipping SuperOne tool with only generic MCP fallback | User sees plumbing, not what the call did | Designed row: summary + base template |
@@ -303,6 +359,7 @@ point of the five-surface discipline is cross-harness parity, and only a real se
 ## Reference files
 
 - `references/backend.md` — agent progressive disclosure, token-saving (TOON, spill-to-file),
-  registration walkthrough, own-descriptor path, manuals.
+  registration walkthrough, human-in-the-loop confirmation (destructive / paid tools),
+  own-descriptor path, manuals.
 - `references/tool-ui.md` — Tool UI philosophy, collab label/casing grammar, summary, base template,
   result-as-UI, routing, hide contract, Storybook/i18n/mobile.

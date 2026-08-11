@@ -1235,6 +1235,12 @@ export type Messages = {
       subtitle: string
       defaultProvider: string
       workingDirectory: string
+      peerSession: string
+      peerProject: string
+      /** Prefix before a clickable peer session title, e.g. "Work with:" */
+      workWith: string
+      /** Tooltip / a11y for opening the peer session from the confirm card. */
+      openPeerSession: string
       expandTask: string
       collapseTask: string
       hintSwitch: string
@@ -3866,6 +3872,10 @@ export const en: Messages = {
       subtitle: '{{count}} requested launch(es)',
       defaultProvider: 'Default AI provider',
       workingDirectory: 'Working directory',
+      peerSession: 'Peer session',
+      peerProject: 'Peer project',
+      workWith: 'Work with:',
+      openPeerSession: 'Open session',
       expandTask: 'Show the full task',
       collapseTask: 'Collapse the task',
       hintSwitch: 'switch agent',

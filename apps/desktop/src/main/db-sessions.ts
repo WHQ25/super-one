@@ -44,7 +44,9 @@ export function listSessionsForProjectId(
              COALESCE(g.parent_session_id, s.id) AS root_session_id,
              COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
       FROM sessions s
-      LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
+      LEFT JOIN session_collaboration_grants g
+        ON g.child_session_id = s.id
+        AND COALESCE(g.kind, 'spawn') = 'spawn'
       WHERE s.project_id = ?
     ), grouped_sessions AS (
       SELECT related_sessions.*,

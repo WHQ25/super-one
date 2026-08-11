@@ -679,6 +679,13 @@ export interface SessionAgentLaunchConfig {
 export const SESSION_AGENT_TASK_MAX = 100_000
 
 /**
+ * Collaboration launch mode:
+ * - `spawn` — create a new child session (system-prompt credential injection)
+ * - `link` — mailbox with an already-existing session (turn/wake injection only)
+ */
+export type SessionCollabLaunchMode = 'spawn' | 'link'
+
+/**
  * Resolve the user-facing summary for a collab launch.
  * Prefer an explicit summary; otherwise take the first line of the task.
  * Soft guidance (not enforced): keep to a short 2–3 sentence task summary.
@@ -691,23 +698,51 @@ export function resolveLaunchSummary(task: string, summary?: string | null): str
 
 export interface SessionAgentLaunchProposal {
   launchId: string
+  /** Defaults to `spawn` when omitted (back-compat). */
+  mode?: SessionCollabLaunchMode
+  /**
+   * Agent profile id for `spawn`. Empty string for `link` (no new agent).
+   */
   agentId: string
+  /**
+   * Existing SuperOne session id to link with (`mode: "link"` only).
+   * Required for link launches; ignored for spawn.
+   */
+  sessionId?: string
+  /** Host-resolved peer title for confirm UI (`link` only). */
+  peerTitle?: string
+  /** Host-resolved peer project path for confirm UI (`link` only). */
+  peerProjectPath?: string
+  /** Host-resolved peer harness id for confirm tab label/icon (`link` only). */
+  peerHarnessId?: string
+  /** Host-resolved peer ACP agent id for brand icon (`link` only). */
+  peerAcpAgentId?: string
+  /** Host-resolved peer harness display name for confirm tabs (`link` only). */
+  peerHarnessName?: string
+  /** Host-resolved peer brand key for confirm tab icon (`link` only). */
+  peerBrandKey?: string
   /**
    * Short task summary shown collapsed in the confirm UI (soft guidance: 2–3 sentences).
    * Full brief belongs in `task`.
    */
   summary: string
   /**
-   * Full task brief (Markdown) delivered to the child on session_collab_start.
+   * Full task brief (Markdown).
+   * `spawn`: delivered to the child on session_collab_start.
+   * `link`: optional opening for the peer (mailbox + turn wake — not system prompt).
    * Shown when the user expands the summary in the confirm UI.
    */
   task: string
   /**
    * Agent-chosen human label (e.g. "Alice", "Diff Reviewer") — not the harness
    * name. Used for session title and tool summaries: `Name - Role`.
+   * For `link`, defaults to the peer session title when omitted.
    */
   name: string
-  /** Temporary role label used for child session title: `Name - Role`. */
+  /**
+   * Temporary role label used for child session title: `Name - Role`.
+   * For `link`, defaults to `"Peer"` when omitted.
+   */
   role: string
   config: SessionAgentLaunchConfig
 }

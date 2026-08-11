@@ -2,15 +2,41 @@
 
 Read this before `session_collab_request`, especially when a child needs an isolated checkout or a different project.
 
+## Two launch modes
+
+| `mode` | Purpose | Required fields | Injection |
+|--------|---------|-----------------|-----------|
+| `spawn` (default) | Create a **new** child session | `agentId`, `name`, `role`, `summary`, `task` | Child gets collaboration **system prompt** with credential |
+| `link` | Mailbox with an **existing** session | `sessionId`, `summary` (`task` = optional opening body; omit for wake-only) | Peer is woken via **turn injection** only — never system prompt. Link peers stay top-level in the sidebar (not nested under the initiator). |
+
+`sessionId` for `link` must be a real SuperOne session id (from `@session` mentions or `session_list` / `session_search`). Never invent ids. Do not use `spawn` when the target already exists.
+
 ## Launch flow
 
 | Step | Action |
 |------|--------|
-| 1 | Call `session_collab_list_agents` and choose an `agentId`. A profile can launch more than one session. |
-| 2 | Call `session_collab_request` with one or more launches. Give every launch an agent-chosen `name`, `role`, a short `summary` (2–3 sentence task summary for the confirm UI), and a full Markdown `task` (delivered on start; user can expand the summary to preview it). |
+| 1 | **Spawn:** call `session_collab_list_agents` and choose an `agentId`. **Link:** take `sessionId` from `@session` / session tools. |
+| 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn: invent `name`/`role`, pass `summary` + full Markdown `task`. Link: pass `sessionId` + `summary` (+ optional `task` opening). |
 | 3 | Wait for user approval. Each approved launch returns a private, one-shot credential. |
-| 4 | Call `session_collab_start` for every credential back-to-back. The host delivers that launch's `task` to the child. Children run asynchronously, so do not wait for one before starting the next. |
+| 4 | Call `session_collab_start` for every credential back-to-back. Spawn: host creates the child and delivers `task`. Link: host binds the peer and wakes it (opening via mailbox + turn wake). |
 | 5 | Exchange durable Markdown handoffs with `session_collab_send` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. |
+
+### Link example
+
+```json
+{
+  "launches": [
+    {
+      "mode": "link",
+      "sessionId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "summary": "Align with the existing review session on API shape",
+      "task": "Please confirm the request/response types for the new endpoint."
+    }
+  ]
+}
+```
+
+A single request may mix spawn and link launches (one confirm card, multiple tabs).
 
 ## Choose `cwd` or `worktree`
 

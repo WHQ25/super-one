@@ -225,16 +225,22 @@ export const SESSION_LIST_AGENTS_DESCRIPTION =
   'You may reuse one agentId for multiple launches.'
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
-  'Request user approval for one or more child sessions. Call session_collab_list_agents first; repeat an agentId to reuse a profile. ' +
-  'Invent a human-friendly name and role for every launch. Pass a short 2–3 sentence summary (confirm UI) and a full Markdown task (delivered on start; expandable in the UI). ' +
-  'Omitted config fields inherit profile defaults. Before setting config.cwd or config.worktree, call read_manual({ domain: "product", topic: "collaboration" }); same-repo isolation belongs in config.worktree. ' +
-  'The user may edit model, effort, provider, permission, and sandbox. Each approved launch returns a one-shot credential for session_collab_start.'
+  'Request user approval for collaboration launches: mode "spawn" (default) creates a child; mode "link" opens a mailbox with an existing sessionId. ' +
+  'Spawn: list_agents; require agentId, name, role, summary, task; for cwd/worktree call read_manual({ domain: "product", topic: "collaboration" }); same-repo isolation belongs in config.worktree. ' +
+  'Link: require sessionId + summary; optional task opening (turn-injected, not system prompt). User must approve; credential for session_collab_start.'
 
 export const LAUNCH_SUMMARY_DESCRIPTION =
   'Short 2–3 sentence task summary shown collapsed in the confirm dialog. Not the full brief — put detail in task.'
 
 export const LAUNCH_TASK_DESCRIPTION =
-  'Full task brief in Markdown. Delivered to the child session on session_collab_start. The user can expand the summary in the confirm UI to preview it.'
+  'Full Markdown brief. Spawn: delivered to the child on session_collab_start. ' +
+  'Link: optional opening for the peer (mailbox + turn wake, never system prompt). Expandable in the confirm UI.'
+
+export const LAUNCH_MODE_DESCRIPTION =
+  '"spawn" (default) creates a new child session. "link" connects to an already-existing SuperOne session (sessionId required).'
+
+export const LAUNCH_SESSION_ID_DESCRIPTION =
+  'Existing SuperOne session id to link with (mode "link" only). Required for link; ignore for spawn. Prefer ids from @session mentions or session_list — never invent ids.'
 
 /**
  * Field-level guidance, not part of the tool description: `session_collab_request`
@@ -267,18 +273,17 @@ export const LAUNCH_BRANCH_NAME_DESCRIPTION =
   'With mode "branch", create this unique branch. Git cannot check out one branch in two worktrees.'
 
 export const SESSION_START_DESCRIPTION =
-  'Start the approved child session for one credential and deliver its task. ' +
-  'The call returns when the child begins replying, not when its first turn finishes. ' +
-  'A credential starts at most one session; retries return the same session id. ' +
-  'Start all approved children back-to-back, then continue other work while they run asynchronously.'
+  'Activate one approved collaboration credential. Spawn: create the child and deliver its task. ' +
+  'Link: bind the existing peer and wake it via turn injection (not system prompt). ' +
+  'Returns when the peer begins (spawn) or is notified (link). Retries are idempotent. Start all credentials back-to-back.'
 
 export const SESSION_SEND_DESCRIPTION =
-  'Send a persistent Markdown message through one parent-child mailbox. ' +
+  'Send a persistent Markdown message through one collaboration mailbox (spawn parent-child or link peers). ' +
   'Use clientMessageId for retry-safe delivery. The host wakes the peer and later wakes you when it replies. ' +
   'After sending, continue other work or end your turn. Never sleep, resend, or poll session_collab_retrieve while waiting.'
 
 export const SESSION_RETRIEVE_DESCRIPTION =
-  'Retrieve queued Markdown messages for this session from one or more parent-child mailboxes. ' +
+  'Retrieve queued Markdown messages for this session from one or more collaboration mailboxes. ' +
   'Call after a collaboration wake, or once before acting on peer input. This is a non-blocking read: status "empty" is not a retry signal. ' +
   'Do not sleep or poll; end your turn and wait for the next wake.'
 
@@ -388,7 +393,20 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
             type: 'object',
             properties: {
               launchId: { type: 'string', description: 'Optional caller correlation id.' },
-              agentId: { type: 'string', description: 'Agent profile id from session_collab_list_agents.' },
+              mode: {
+                type: 'string',
+                enum: ['spawn', 'link'],
+                description: LAUNCH_MODE_DESCRIPTION,
+              },
+              sessionId: {
+                type: 'string',
+                minLength: 1,
+                description: LAUNCH_SESSION_ID_DESCRIPTION,
+              },
+              agentId: {
+                type: 'string',
+                description: 'Agent profile id from session_collab_list_agents. Required for mode "spawn"; omit for "link".',
+              },
               summary: {
                 type: 'string',
                 minLength: 1,
@@ -396,23 +414,23 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
               },
               task: {
                 type: 'string',
-                minLength: 1,
                 description: LAUNCH_TASK_DESCRIPTION,
               },
               name: {
                 type: 'string',
                 minLength: 1,
                 maxLength: 64,
-                description: 'Human-friendly label YOU invent for this child (e.g. "Alice", "DiffBot"). Not the harness name. Used in "Name - Role".',
+                description: 'Spawn: human-friendly child label (e.g. "Alice"). Link: optional; defaults to peer session title.',
               },
               role: {
                 type: 'string',
                 minLength: 1,
                 maxLength: 64,
-                description: 'Temporary role label for the child session title: "Name - Role" (e.g. "Reviewer", "Implementer").',
+                description: 'Spawn: role for title "Name - Role". Link: optional; defaults to "Peer".',
               },
               config: {
                 type: 'object',
+                description: 'Spawn only. Ignored for mode "link".',
                 properties: {
                   model: { type: 'string' },
                   effort: { type: 'string' },
@@ -442,7 +460,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                 additionalProperties: false,
               },
             },
-            required: ['agentId', 'summary', 'task', 'name', 'role'],
+            required: ['summary'],
             additionalProperties: false,
           },
         },

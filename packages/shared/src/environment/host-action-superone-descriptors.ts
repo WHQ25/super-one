@@ -17,9 +17,9 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "additionalProperties": false
     }
   },
-  {
+    {
     "name": "session_collab_request",
-    "description": "Request user approval for one or more child sessions. Call session_collab_list_agents first; repeat an agentId to reuse a profile. Invent a human-friendly name and role for every launch. Pass a short 2–3 sentence summary (confirm UI) and a full Markdown task (delivered on start; expandable in the UI). Omitted config fields inherit profile defaults. Before setting config.cwd or config.worktree, call read_manual({ domain: \"product\", topic: \"collaboration\" }); same-repo isolation belongs in config.worktree. The user may edit model, effort, provider, permission, and sandbox. Each approved launch returns a one-shot credential for session_collab_start.",
+    "description": "Request user approval for collaboration launches: mode \"spawn\" (default) creates a child; mode \"link\" opens a mailbox with an existing sessionId. Spawn: list_agents; require agentId, name, role, summary, task; for cwd/worktree call read_manual({ domain: \"product\", topic: \"collaboration\" }); same-repo isolation belongs in config.worktree. Link: require sessionId + summary; optional task opening (turn-injected, not system prompt). User must approve; credential for session_collab_start.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -34,9 +34,22 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                 "type": "string",
                 "description": "Optional caller correlation id."
               },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "spawn",
+                  "link"
+                ],
+                "description": "\"spawn\" (default) creates a new child session. \"link\" connects to an already-existing SuperOne session (sessionId required)."
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Existing SuperOne session id to link with (mode \"link\" only). Required for link; ignore for spawn. Prefer ids from @session mentions or session_list — never invent ids."
+              },
               "agentId": {
                 "type": "string",
-                "description": "Agent profile id from session_collab_list_agents."
+                "description": "Agent profile id from session_collab_list_agents. Required for mode \"spawn\"; omit for \"link\"."
               },
               "summary": {
                 "type": "string",
@@ -45,23 +58,23 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
               },
               "task": {
                 "type": "string",
-                "minLength": 1,
-                "description": "Full task brief in Markdown. Delivered to the child session on session_collab_start. The user can expand the summary in the confirm UI to preview it."
+                "description": "Full Markdown brief. Spawn: delivered to the child on session_collab_start. Link: optional opening for the peer (mailbox + turn wake, never system prompt). Expandable in the confirm UI."
               },
               "name": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64,
-                "description": "Human-friendly label YOU invent for this child (e.g. \"Alice\", \"DiffBot\"). Not the harness name. Used in \"Name - Role\"."
+                "description": "Spawn: human-friendly child label (e.g. \"Alice\"). Link: optional; defaults to peer session title."
               },
               "role": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64,
-                "description": "Temporary role label for the child session title: \"Name - Role\" (e.g. \"Reviewer\", \"Implementer\")."
+                "description": "Spawn: role for title \"Name - Role\". Link: optional; defaults to \"Peer\"."
               },
               "config": {
                 "type": "object",
+                "description": "Spawn only. Ignored for mode \"link\".",
                 "properties": {
                   "model": {
                     "type": "string"
@@ -85,7 +98,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                       "dontAsk",
                       "auto"
                     ],
-                    "description": "How autonomous the child session is. Prefer the most autonomous mode it can finish the task under \u2014 \"bypassPermissions\" (shown as Bypass on Claude-family harnesses, Full Access on Codex), or \"auto\" for ACP agents. Nobody watches a child session, so a conservative mode strands it on an approval prompt that is never answered. Requesting an autonomous mode is safe by construction: nothing runs until the user approves this very request, and that approval dialog is where they downgrade permission or sandbox per launch. Pick \"plan\" or \"default\" only when stopping for human review is the point of the launch."
+                    "description": "How autonomous the child session is. Prefer the most autonomous mode it can finish the task under — \"bypassPermissions\" (shown as Bypass on Claude-family harnesses, Full Access on Codex), or \"auto\" for ACP agents. Nobody watches a child session, so a conservative mode strands it on an approval prompt that is never answered. Requesting an autonomous mode is safe by construction: nothing runs until the user approves this very request, and that approval dialog is where they downgrade permission or sandbox per launch. Pick \"plan\" or \"default\" only when stopping for human review is the point of the launch."
                   },
                   "sandboxMode": {
                     "type": "string",
@@ -140,11 +153,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
               }
             },
             "required": [
-              "agentId",
-              "summary",
-              "task",
-              "name",
-              "role"
+              "summary"
             ],
             "additionalProperties": false
           }
@@ -156,9 +165,9 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "additionalProperties": false
     }
   },
-  {
+    {
     "name": "session_collab_start",
-    "description": "Start the approved child session for one credential and deliver its task. The call returns when the child begins replying, not when its first turn finishes. A credential starts at most one session; retries return the same session id. Start all approved children back-to-back, then continue other work while they run asynchronously.",
+    "description": "Activate one approved collaboration credential. Spawn: create the child and deliver its task. Link: bind the existing peer and wake it via turn injection (not system prompt). Returns when the peer begins (spawn) or is notified (link). Retries are idempotent. Start all credentials back-to-back.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -172,9 +181,9 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "additionalProperties": false
     }
   },
-  {
+    {
     "name": "session_collab_send",
-    "description": "Send a persistent Markdown message through one parent-child mailbox. Use clientMessageId for retry-safe delivery. The host wakes the peer and later wakes you when it replies. After sending, continue other work or end your turn. Never sleep, resend, or poll session_collab_retrieve while waiting.",
+    "description": "Send a persistent Markdown message through one collaboration mailbox (spawn parent-child or link peers). Use clientMessageId for retry-safe delivery. The host wakes the peer and later wakes you when it replies. After sending, continue other work or end your turn. Never sleep, resend, or poll session_collab_retrieve while waiting.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -197,9 +206,9 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "additionalProperties": false
     }
   },
-  {
+    {
     "name": "session_collab_retrieve",
-    "description": "Retrieve queued Markdown messages for this session from one or more parent-child mailboxes. Call after a collaboration wake, or once before acting on peer input. This is a non-blocking read: status \"empty\" is not a retry signal. Do not sleep or poll; end your turn and wait for the next wake.",
+    "description": "Retrieve queued Markdown messages for this session from one or more collaboration mailboxes. Call after a collaboration wake, or once before acting on peer input. This is a non-blocking read: status \"empty\" is not a retry signal. Do not sleep or poll; end your turn and wait for the next wake.",
     "inputSchema": {
       "type": "object",
       "properties": {

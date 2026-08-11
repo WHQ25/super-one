@@ -280,7 +280,9 @@ export function queryHarnessSessionRanks(days = 7): HarnessSessionRank[] {
       s.acp_agent_id AS acp_agent_id,
       COUNT(*) AS session_count
     FROM sessions s
-    LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
+    LEFT JOIN session_collaboration_grants g
+      ON g.child_session_id = s.id
+      AND COALESCE(g.kind, 'spawn') = 'spawn'
     WHERE s.created_at >= ?
       AND COALESCE(s.is_hidden, 0) = 0
       AND COALESCE(s.is_automation, 0) = 0

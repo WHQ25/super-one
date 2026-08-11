@@ -70,6 +70,7 @@ function launch(
   const { name, role } = opts
   return {
     launchId,
+    mode: 'spawn',
     agentId,
     summary,
     task,
@@ -83,6 +84,44 @@ function launch(
       role,
       ...config,
     },
+  }
+}
+
+/** Link to an already-existing session — no model/permission editors; tab shows peer harness. */
+function linkLaunch(
+  launchId: string,
+  opts: {
+    sessionId: string
+    summary: string
+    task?: string
+    peerTitle: string
+    peerProjectPath?: string
+    peerHarnessId: string
+    peerHarnessName: string
+    peerBrandKey?: string
+    peerAcpAgentId?: string
+    name?: string
+    role?: string
+  },
+): SessionAgentLaunchProposal {
+  const name = opts.name ?? opts.peerTitle
+  const role = opts.role ?? 'Peer'
+  return {
+    launchId,
+    mode: 'link',
+    agentId: '',
+    sessionId: opts.sessionId,
+    peerTitle: opts.peerTitle,
+    peerProjectPath: opts.peerProjectPath ?? PARENT_CWD,
+    peerHarnessId: opts.peerHarnessId,
+    peerHarnessName: opts.peerHarnessName,
+    ...(opts.peerBrandKey ? { peerBrandKey: opts.peerBrandKey } : {}),
+    ...(opts.peerAcpAgentId ? { peerAcpAgentId: opts.peerAcpAgentId } : {}),
+    summary: opts.summary,
+    task: opts.task ?? '',
+    name,
+    role,
+    config: { name, role, summary: opts.summary },
   }
 }
 
@@ -254,6 +293,126 @@ export const ManyAgents: Story = {
           { name: `Agent ${index + 1}`, role: 'Worker' },
         ),
       ),
+    },
+  },
+}
+
+/**
+ * Link mode: work with an existing session. Tab shows peer harness (Claude);
+ * body is `Work with: {title}` (title clickable) — no model/permission editors.
+ */
+export const LinkExistingSession: Story = {
+  args: {
+    value: {
+      profiles,
+      launches: [
+        linkLaunch('link-review', {
+          sessionId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+          peerTitle: 'API review session',
+          summary: 'Align with the existing review session on request/response types',
+          task: [
+            '## Opening',
+            'Please confirm the request body shape for the new endpoint.',
+            '',
+            '- Field names',
+            '- Optional vs required',
+            '- Error envelope',
+          ].join('\n'),
+          peerHarnessId: 'claude',
+          peerHarnessName: 'Claude',
+          peerBrandKey: 'claude',
+        }),
+      ],
+    },
+  },
+}
+
+/** Link with no opening task — wake-only path; summary still shown. */
+export const LinkWakeOnly: Story = {
+  args: {
+    value: {
+      profiles,
+      launches: [
+        linkLaunch('link-wake', {
+          sessionId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          peerTitle: 'Implementer worktree',
+          summary: 'Open a mailbox so we can hand off the final PR checklist',
+          peerProjectPath: '/Users/me/projects/other-app',
+          peerHarnessId: 'codex',
+          peerHarnessName: 'Codex',
+          peerBrandKey: 'codex',
+        }),
+      ],
+    },
+  },
+}
+
+/**
+ * Mixed batch: spawn child + work-with existing. Tabs are both harness labels
+ * (Claude / Grok); only the spawn tab has model/permission editors.
+ */
+export const MixedSpawnAndLink: Story = {
+  args: {
+    value: {
+      profiles,
+      launches: [
+        launch(
+          'spawn-impl',
+          'claude-base',
+          'Implement the API change',
+          'Implement the API change and run focused tests.',
+          {
+            model: 'claude-sonnet',
+            effort: 'high',
+            permissionMode: 'bypassPermissions',
+            worktree: {
+              enabled: true,
+              baseBranch: 'main',
+              mode: 'branch',
+              branchName: 'feat/api-change',
+            },
+          },
+          { name: 'Alice', role: 'Implementer' },
+        ),
+        linkLaunch('link-peer', {
+          sessionId: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+          peerTitle: 'Earlier design thread',
+          summary: 'Sync design decisions with the existing Grok session',
+          task: 'Please restate the agreed API contract before Alice lands the change.',
+          peerHarnessId: 'acp',
+          peerHarnessName: 'Grok',
+          peerBrandKey: 'acp-grok',
+          peerAcpAgentId: 'grok-build',
+        }),
+      ],
+    },
+  },
+}
+
+/** Two link launches — tabs show peer harnesses (Codex / Claude), not peer titles. */
+export const MultipleLinks: Story = {
+  args: {
+    value: {
+      profiles,
+      launches: [
+        linkLaunch('link-a', {
+          sessionId: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+          peerTitle: 'Typecheck cleanup',
+          summary: 'Ask the typecheck session for remaining errors',
+          task: 'List remaining `tsc` errors with file:line.',
+          peerHarnessId: 'codex',
+          peerHarnessName: 'Codex',
+          peerBrandKey: 'codex',
+        }),
+        linkLaunch('link-b', {
+          sessionId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+          peerTitle: 'Docs pass',
+          summary: 'Pull the docs outline from the writing session',
+          peerHarnessId: 'claude',
+          peerHarnessName: 'Claude',
+          peerBrandKey: 'claude',
+        }),
+      ],
     },
   },
 }

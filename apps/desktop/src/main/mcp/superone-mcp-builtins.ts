@@ -43,7 +43,9 @@ import {
   AUTOMATION_SCHEDULE_INPUT_SCHEMA,
   AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA,
   LAUNCH_BRANCH_NAME_DESCRIPTION,
+  LAUNCH_MODE_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
+  LAUNCH_SESSION_ID_DESCRIPTION,
   LAUNCH_SUMMARY_DESCRIPTION,
   LAUNCH_TASK_DESCRIPTION,
   SESSION_LIST_AGENTS_DESCRIPTION,
@@ -351,11 +353,13 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       inputSchema: {
         launches: z.array(z.object({
           launchId: z.string().optional(),
-          agentId: z.string(),
+          mode: z.enum(['spawn', 'link']).optional().describe(LAUNCH_MODE_DESCRIPTION),
+          sessionId: z.string().min(1).optional().describe(LAUNCH_SESSION_ID_DESCRIPTION),
+          agentId: z.string().optional(),
           summary: z.string().trim().min(1).describe(LAUNCH_SUMMARY_DESCRIPTION),
-          task: z.string().min(1).max(100_000).describe(LAUNCH_TASK_DESCRIPTION),
-          name: z.string().trim().min(1).max(64),
-          role: z.string().trim().min(1).max(64),
+          task: z.string().max(100_000).optional().describe(LAUNCH_TASK_DESCRIPTION),
+          name: z.string().trim().min(1).max(64).optional(),
+          role: z.string().trim().min(1).max(64).optional(),
           config: z.object({
             model: z.string().optional(),
             effort: z.string().optional(),

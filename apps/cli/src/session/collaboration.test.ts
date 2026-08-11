@@ -270,4 +270,79 @@ describe('collaboration grants + mailbox', () => {
       }),
     ).toThrow(/does not authorize/)
   })
+
+  it('link mode binds an existing peer without system-prompt injection', async () => {
+    const { collab, sessions, projects, db } = bootCollab()
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-link-'))
+    dirs.push(projectDir)
+    writeFileSync(join(projectDir, 'f'), '1')
+    const project = projects.open(projectDir)
+    const parent = sessions.create({
+      projectId: project.projectId,
+      harnessId: 'claude',
+      title: 'initiator',
+    })
+    const peer = sessions.create({
+      projectId: project.projectId,
+      harnessId: 'claude',
+      title: 'existing peer',
+    })
+
+    const req = await collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [
+        {
+          mode: 'link',
+          sessionId: peer.sessionId,
+          summary: 'Sync with existing peer',
+          task: 'Please confirm the API shape.',
+        },
+      ],
+    })
+    expect(req.status).toBe('approved')
+    if (req.status !== 'approved') throw new Error('expected approved')
+    const grant = req.launches[0]
+    expect(grant.mode).toBe('link')
+    expect(grant.peerSessionId).toBe(peer.sessionId)
+
+    // Peer is already bound at approve; no system prompt yet or after start.
+    expect(sessions.getSystemPromptAppend(peer.sessionId)).toBeUndefined()
+
+    expect(() =>
+      collab.send({
+        credential: grant.credential,
+        sessionId: parent.sessionId,
+        content: 'too early',
+      }),
+    ).toThrow(/not been started/i)
+
+    const linked = await collab.start({ credential: grant.credential })
+    expect(linked.status).toBe('linked')
+    expect(linked.mode).toBe('link')
+    expect(linked.sessionId).toBe(peer.sessionId)
+    expect(sessions.getSystemPromptAppend(peer.sessionId)).toBeUndefined()
+
+    collab.rehydrateSystemPrompts()
+    expect(sessions.getSystemPromptAppend(peer.sessionId)).toBeUndefined()
+
+    const row = db
+      .prepare(`SELECT kind, started_at FROM session_collaboration_grants WHERE credential_hash = ?`)
+      .get(grant.grantId) as { kind: string; started_at: string | null }
+    expect(row.kind).toBe('link')
+    expect(row.started_at).toBeTruthy()
+
+    const sent = collab.send({
+      credential: grant.credential,
+      sessionId: parent.sessionId,
+      content: 'hello peer',
+    })
+    expect(sent.status).toBe('sent')
+
+    const retrieved = collab.retrieve({
+      credential: grant.credential,
+      sessionId: peer.sessionId,
+    })
+    expect(retrieved.status).toBe('messages')
+    expect(retrieved.messages.some((m) => m.content.includes('hello peer') || m.content.includes('API shape'))).toBe(true)
+  })
 })

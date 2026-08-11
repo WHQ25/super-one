@@ -10,6 +10,7 @@ import type {
   SessionAgentLaunchConfig,
   SessionAgentLaunchProposal,
   SessionAgentProfile,
+  SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
 import {
   resolveLaunchSummary,
@@ -47,14 +48,20 @@ const MAX_MESSAGES_PER_RETRIEVE = 100
 export interface RequestSessionAgentsArgs {
   launches: Array<{
     launchId?: string
-    agentId: string
-    /** Short confirm-UI description. Optional for back-compat; derived from task when omitted. */
+    /** `spawn` (default) creates a child; `link` connects an existing sessionId. */
+    mode?: SessionCollabLaunchMode
+    /** Required for spawn; ignored for link. */
+    agentId?: string
+    /** Required for link: existing SuperOne session id. */
+    sessionId?: string
+    /** Short confirm-UI description. Optional for spawn when task is present. */
     summary?: string
-    task: string
+    /** Spawn: full task. Link: optional opening for the peer. */
+    task?: string
     /** Agent-chosen human label (not harness name). Used in `Name - Role`. */
-    name: string
+    name?: string
     /** Temporary role for child title: `Name - Role`. */
-    role: string
+    role?: string
     config?: SessionAgentLaunchConfig
   }>
 }
@@ -68,6 +75,8 @@ interface GrantRow {
   task: string
   config_json: string
   task_sent: number
+  kind: SessionCollabLaunchMode
+  started_at: string | null
 }
 
 interface MessageRow {
@@ -347,6 +356,10 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
     })
 }
 
+function resolveLaunchMode(raw: unknown): SessionCollabLaunchMode {
+  return raw === 'link' ? 'link' : 'spawn'
+}
+
 function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): SessionAgentLaunchProposal[] {
   if (!Array.isArray(args.launches) || args.launches.length === 0) {
     throw new Error('launches must contain at least one proposed session')
@@ -354,25 +367,90 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
   if (args.launches.length > 16) throw new Error('A single request may contain at most 16 launches')
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
   return args.launches.map((launch) => {
-    const profile = profiles.get(launch.agentId)
-    if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
+    const mode = resolveLaunchMode(launch.mode)
+    const launchId = launch.launchId?.trim() || randomUUID()
+
+    if (mode === 'link') {
+      const peerSessionId = launch.sessionId?.trim()
+      if (!peerSessionId) throw new Error('Link launches require sessionId of an existing SuperOne session')
+      if (peerSessionId === parent.id) throw new Error('Cannot link a session to itself')
+      const peerRow = getDb().prepare(`
+        SELECT id, title, project_path, provider, provider_id, acp_agent_id
+        FROM sessions WHERE id = ?
+      `).get(peerSessionId) as {
+        id: string
+        title: string | null
+        project_path: string
+        provider: string | null
+        provider_id: string | null
+        acp_agent_id: string | null
+      } | undefined
+      if (!peerRow) throw new Error(`Unknown sessionId for link: ${peerSessionId}`)
+      const summary = (launch.summary?.trim() || resolveLaunchSummary(launch.task ?? '', launch.summary))
+      if (!summary) throw new Error('Every launch must include a non-empty summary')
+      const task = (launch.task ?? '').trim()
+      if (task.length > SESSION_AGENT_TASK_MAX) {
+        throw new Error(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`)
+      }
+      const peerTitle = peerRow.title?.trim() || peerSessionId.slice(0, 8)
+      const name = launch.name?.trim() || peerTitle
+      if (name.length > 64) throw new Error('A launch name may contain at most 64 characters')
+      const role = launch.role?.trim() || 'Peer'
+      if (role.length > 64) throw new Error('A launch role may contain at most 64 characters')
+      // Confirm tabs show harness (same as spawn) — resolve from peer session identity.
+      const peerHarnessId = (peerRow.provider?.trim()
+        || peerRow.provider_id?.replace(/-base$/, '')
+        || 'claude').toLowerCase()
+      const peerAcpAgentId = peerRow.acp_agent_id?.trim() || undefined
+      const peerBrandKey = resolveHarnessBrandKey(peerHarnessId, peerAcpAgentId)
+      const matchedProfile = peerRow.provider_id
+        ? profiles.get(peerRow.provider_id)
+        : [...profiles.values()].find((p) => p.harnessId === peerHarnessId
+          && (!peerAcpAgentId || p.acpAgentId === peerAcpAgentId))
+      const peerHarnessName = matchedProfile?.name
+        || (peerHarnessId === 'acp' && peerAcpAgentId
+          ? acpAgentDisplayName(peerAcpAgentId)
+          : peerHarnessId.charAt(0).toUpperCase() + peerHarnessId.slice(1))
+      return {
+        launchId,
+        mode: 'link',
+        agentId: '',
+        sessionId: peerSessionId,
+        peerTitle,
+        peerProjectPath: peerRow.project_path,
+        peerHarnessId,
+        ...(peerAcpAgentId ? { peerAcpAgentId } : {}),
+        peerHarnessName,
+        peerBrandKey,
+        summary,
+        task,
+        name,
+        role,
+        config: { name, role, summary },
+      }
+    }
+
+    const agentId = launch.agentId?.trim()
+    if (!agentId) throw new Error('Spawn launches require agentId from session_collab_list_agents')
+    const profile = profiles.get(agentId)
+    if (!profile) throw new Error(`Unknown agent profile: ${agentId}`)
     const task = launch.task?.trim()
-    if (!task) throw new Error('Every launch must include a non-empty task')
+    if (!task) throw new Error('Every spawn launch must include a non-empty task')
     if (task.length > SESSION_AGENT_TASK_MAX) {
       throw new Error(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`)
     }
     const summary = resolveLaunchSummary(task, launch.summary)
     if (!summary) throw new Error('Every launch must include a non-empty summary')
     const name = launch.name?.trim()
-    if (!name) throw new Error('Every launch must include a non-empty name')
+    if (!name) throw new Error('Every spawn launch must include a non-empty name')
     if (name.length > 64) throw new Error('A launch name may contain at most 64 characters')
     const role = launch.role?.trim()
-    if (!role) throw new Error('Every launch must include a non-empty role')
+    if (!role) throw new Error('Every spawn launch must include a non-empty role')
     if (role.length > 64) throw new Error('A launch role may contain at most 64 characters')
-    const launchId = launch.launchId?.trim() || randomUUID()
     return {
       launchId,
-      agentId: launch.agentId,
+      mode: 'spawn',
+      agentId,
       summary,
       task,
       name,
@@ -448,8 +526,30 @@ function mergeConfirmedLaunches(
         ? patch.apiProviderId
         : base.config.apiProviderId
 
+    // Link launches have no user-editable config; keep the proposed row intact.
+    if (base.mode === 'link') {
+      return {
+        launchId: base.launchId,
+        mode: 'link',
+        agentId: base.agentId,
+        sessionId: base.sessionId,
+        peerTitle: base.peerTitle,
+        peerProjectPath: base.peerProjectPath,
+        peerHarnessId: base.peerHarnessId,
+        peerAcpAgentId: base.peerAcpAgentId,
+        peerHarnessName: base.peerHarnessName,
+        peerBrandKey: base.peerBrandKey,
+        summary: base.summary,
+        task: base.task,
+        name: base.name,
+        role: base.role,
+        config: { ...base.config },
+      }
+    }
+
     return {
       launchId: base.launchId,
+      mode: 'spawn',
       agentId: base.agentId,
       summary: base.summary,
       task: base.task,
@@ -524,19 +624,116 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
   const launchIds = new Set(launches.map((launch) => launch.launchId))
   if (launchIds.size !== launches.length) throw new Error('Every confirmed launch must have a unique launchId')
   const profiles = new Set(listSessionAgentProfiles().map((profile) => profile.id))
-  const insert = getDb().prepare(`
+  const insertSpawn = getDb().prepare(`
     INSERT INTO session_collaboration_grants
-      (credential_hash, credential_secret, credential_hint, parent_session_id, agent_id, task, config_json, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (credential_hash, credential_secret, credential_hint, parent_session_id, agent_id, task, config_json, created_at, kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'spawn')
+  `)
+  const insertLink = getDb().prepare(`
+    INSERT INTO session_collaboration_grants
+      (credential_hash, credential_secret, credential_hint, parent_session_id, child_session_id, agent_id, task, config_json, created_at, kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'link')
   `)
   return getDb().transaction(() => launches.map((launch) => {
-    if (!profiles.has(launch.agentId)) throw new Error(`Unknown agent profile: ${launch.agentId}`)
-    if (!launch.task?.trim()) throw new Error('Every launch must include a non-empty task')
     if (!launch.summary?.trim()) throw new Error('Every launch must include a non-empty summary')
     const name = launch.name?.trim()
     if (!name) throw new Error('Every launch must include a non-empty name')
     const role = launch.role?.trim()
     if (!role) throw new Error('Every launch must include a non-empty role')
+    const mode = launch.mode === 'link' ? 'link' : 'spawn'
+
+    if (mode === 'link') {
+      const peerSessionId = launch.sessionId?.trim()
+      if (!peerSessionId) throw new Error('Link launches require sessionId')
+      // Reuse an existing initiator→peer link grant (idempotent re-approve).
+      const existing = getDb().prepare(`
+        SELECT credential_hash, credential_secret, child_session_id, agent_id, task, config_json
+        FROM session_collaboration_grants
+        WHERE parent_session_id = ? AND child_session_id = ? AND kind = 'link'
+      `).get(parentSessionId, peerSessionId) as {
+        credential_hash: string
+        credential_secret: string | null
+        child_session_id: string
+        agent_id: string
+        task: string
+        config_json: string
+      } | undefined
+      if (existing?.credential_secret) {
+        const credential = decryptSecret(existing.credential_secret)
+        if (credential) {
+          const config = parseConfig(existing.config_json)
+          return {
+            launchId: launch.launchId,
+            mode: 'link' as const,
+            agentId: existing.agent_id,
+            sessionId: peerSessionId,
+            peerSessionId,
+            summary: launch.summary.trim(),
+            task: existing.task,
+            name,
+            role,
+            title: collaborationSessionTitle(name, role),
+            config,
+            credential,
+            reused: true,
+          }
+        }
+      }
+      const peerExists = getDb().prepare('SELECT 1 FROM sessions WHERE id = ?').get(peerSessionId)
+      if (!peerExists) throw new Error(`Unknown sessionId for link: ${peerSessionId}`)
+      const credential = `s1sc_${randomBytes(32).toString('base64url')}`
+      // Opening is optional: empty task means wake-only (no mailbox opening body).
+      const task = (launch.task ?? '').trim()
+      const config = {
+        name,
+        role,
+        summary: launch.summary.trim(),
+        peerSessionId,
+        peerTitle: launch.peerTitle,
+        peerProjectPath: launch.peerProjectPath,
+      }
+      try {
+        insertLink.run(
+          hashCredential(credential),
+          encryptSecret(credential),
+          credential.slice(-8),
+          parentSessionId,
+          peerSessionId,
+          '',
+          task,
+          JSON.stringify(config),
+          new Date().toISOString(),
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (/UNIQUE|unique/i.test(message)) {
+          throw new Error(
+            `Session ${peerSessionId} is already bound as a collaboration endpoint `
+            + '(spawn child or link peer). child_session_id is globally unique — '
+            + 'a session cannot be the non-initiator endpoint of two grants.',
+          )
+        }
+        throw error
+      }
+      return {
+        launchId: launch.launchId,
+        mode: 'link' as const,
+        agentId: '',
+        sessionId: peerSessionId,
+        peerSessionId,
+        summary: launch.summary.trim(),
+        task,
+        name,
+        role,
+        title: collaborationSessionTitle(name, role),
+        config,
+        credential,
+        reused: false,
+      }
+    }
+
+    if (!profiles.has(launch.agentId)) throw new Error(`Unknown agent profile: ${launch.agentId}`)
+    if (!launch.task?.trim()) throw new Error('Every spawn launch must include a non-empty task')
     const credential = `s1sc_${randomBytes(32).toString('base64url')}`
     const config = {
       ...launch.config,
@@ -544,7 +741,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       role,
       summary: launch.summary.trim(),
     }
-    insert.run(
+    insertSpawn.run(
       hashCredential(credential),
       encryptSecret(credential),
       credential.slice(-8),
@@ -556,6 +753,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
     )
     return {
       launchId: launch.launchId,
+      mode: 'spawn' as const,
       agentId: launch.agentId,
       summary: launch.summary.trim(),
       task: launch.task.trim(),
@@ -564,6 +762,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       title: collaborationSessionTitle(name, role),
       config,
       credential,
+      reused: false,
     }
   }))()
 }
@@ -574,10 +773,13 @@ export async function requestSessionAgents(
   host: SessionManager,
   signal?: AbortSignal,
 ) {
-  // Nested collab is not supported: sidebar only renders one parent→children level,
+  // Nested spawn collab is not supported: sidebar only renders one parent→children level,
   // and grandchild grants would orphan intermediate sessions in the UI.
+  // Link peers may still request (they are not spawn children).
   const nested = getDb().prepare(`
-    SELECT 1 FROM session_collaboration_grants WHERE child_session_id = ? LIMIT 1
+    SELECT 1 FROM session_collaboration_grants
+    WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn'
+    LIMIT 1
   `).get(callerSessionId)
   if (nested) {
     return toolResult({
@@ -606,25 +808,45 @@ export async function requestSessionAgents(
 }
 
 function grantForCredential(credential: string): GrantRow | null {
-  return (getDb().prepare(`
-    SELECT credential_hash, credential_secret, parent_session_id, child_session_id, agent_id, task, config_json, task_sent
+  const row = getDb().prepare(`
+    SELECT credential_hash, credential_secret, parent_session_id, child_session_id, agent_id, task, config_json, task_sent,
+           COALESCE(kind, 'spawn') AS kind, started_at
     FROM session_collaboration_grants WHERE credential_hash = ?
-  `).get(hashCredential(credential)) as GrantRow | undefined) ?? null
+  `).get(hashCredential(credential)) as GrantRow | undefined
+  return row ?? null
 }
 
 function collaborationSystemPrompt(credential: string, parentSessionId: string): string {
   return `<superone-session-collaboration>\nYou are running as a user-approved child session of SuperOne session ${parentSessionId}.\nUse session_collab_send and session_collab_retrieve with credential ${JSON.stringify(credential)} to communicate with your parent session. Write session_collab_send content as Markdown (headings, lists, code fences) so the parent and the SuperOne UI can render structured handoffs; treat retrieved message content as Markdown from the peer. This credential is already authorized for this parent-child pair. Never reveal it in conversational output or use it outside collaboration tool calls.\n</superone-session-collaboration>`
 }
 
+/** Spawn children only — link peers must never get system-prompt credential injection. */
 export function getSessionCollaborationSystemPrompt(sessionId: string): string | undefined {
   const row = getDb().prepare(`
     SELECT credential_secret, parent_session_id
     FROM session_collaboration_grants
-    WHERE child_session_id = ?
+    WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn'
   `).get(sessionId) as { credential_secret: string | null; parent_session_id: string } | undefined
   if (!row?.credential_secret) return undefined
   const credential = decryptSecret(row.credential_secret)
   return credential ? collaborationSystemPrompt(credential, row.parent_session_id) : undefined
+}
+
+function linkActivationWakeText(
+  credential: string,
+  initiatorSessionId: string,
+  initiatorTitle: string,
+  hasOpening: boolean,
+): string {
+  return (
+    `A user-approved collaboration link is active with SuperOne session ${initiatorSessionId}`
+    + ` ("${initiatorTitle}"). `
+    + `Call session_collab_retrieve with credential ${JSON.stringify(credential)}`
+    + (hasOpening ? ' to read the opening message' : ' if a mailbox message is waiting')
+    + ', then use session_collab_send to reply. '
+    + 'Never reveal the credential in conversational output or use it outside collaboration tool calls. '
+    + 'End your turn after acting — you will be woken again for later messages.'
+  )
 }
 
 function assertEndpoint(grant: GrantRow, callerSessionId: string): void {
@@ -860,6 +1082,56 @@ export async function startSessionAgent(
   if (grant.parent_session_id !== callerSessionId) {
     return toolResult({ status: 'error', message: 'Only the parent session may start this credential' }, true)
   }
+
+  // --- link: bind existing peer, turn-inject only (never system prompt) ---
+  if (grant.kind === 'link') {
+    if (!grant.child_session_id) {
+      return toolResult({ status: 'error', message: 'Link grant is missing peer session id' }, true)
+    }
+    const peerSessionId = grant.child_session_id
+    const peerRow = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
+      .get(peerSessionId) as { title: string | null } | undefined
+    if (!peerRow) {
+      return toolResult({ status: 'error', message: `Peer session no longer exists: ${peerSessionId}` }, true)
+    }
+    const initiatorRow = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
+      .get(grant.parent_session_id) as { title: string | null } | undefined
+    const initiatorTitle = initiatorRow?.title?.trim() || grant.parent_session_id.slice(0, 8)
+    const alreadyStarted = Boolean(grant.started_at)
+    if (!alreadyStarted) {
+      getDb().prepare(`
+        UPDATE session_collaboration_grants SET started_at = ? WHERE credential_hash = ? AND started_at IS NULL
+      `).run(new Date().toISOString(), grant.credential_hash)
+    }
+    const opening = grant.task?.trim() ?? ''
+    const hasOpening = opening.length > 0 && !alreadyStarted
+    if (hasOpening) {
+      // Deliver opening as a mailbox message (not system prompt).
+      await deliverLinkOpening(grant, credential, host)
+    } else if (!alreadyStarted) {
+      // No opening body — still wake the peer with credential instructions.
+      void wakeLinkPeer(host, peerSessionId, credential, grant.parent_session_id, initiatorTitle, false)
+      getDb().prepare('UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?')
+        .run(grant.credential_hash)
+    } else {
+      // Idempotent retry: re-wake without duplicating mailbox.
+      void wakeLinkPeer(host, peerSessionId, credential, grant.parent_session_id, initiatorTitle, false)
+    }
+    const peer = describeCollaborationPeer(grant)
+    return toolResult({
+      status: 'linked',
+      mode: 'link',
+      sessionId: peerSessionId,
+      peerSessionId,
+      reused: alreadyStarted,
+      name: peer.name,
+      role: peer.role,
+      title: peer.title,
+      config: peer.config,
+    })
+  }
+
+  // --- spawn (existing path) ---
   if (grant.child_session_id) {
     const existing = host.getSession(grant.child_session_id)
       ?? host.resumeSession(grant.child_session_id, { passive: true })
@@ -867,6 +1139,7 @@ export async function startSessionAgent(
     const peer = describeCollaborationPeer(grant)
     return toolResult({
       status: 'started',
+      mode: 'spawn',
       sessionId: grant.child_session_id,
       reused: true,
       name: peer.name,
@@ -978,6 +1251,7 @@ export async function startSessionAgent(
   await deliverInitialTask(grant, child)
   return toolResult({
     status: 'started',
+    mode: 'spawn',
     sessionId: childSessionId,
     reused: false,
     name: displayName,
@@ -995,6 +1269,82 @@ export async function startSessionAgent(
       ...(config.worktree ? { worktree: config.worktree } : {}),
     },
   })
+}
+
+/**
+ * Deliver link opening via mailbox + turn wake. Never touches system prompt.
+ */
+async function deliverLinkOpening(
+  grant: GrantRow,
+  credential: string,
+  host: SessionManager,
+): Promise<void> {
+  if (grant.task_sent === 1) return
+  if (!grant.child_session_id) return
+  const content = grant.task.trim()
+  if (!content) {
+    getDb().prepare('UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?')
+      .run(grant.credential_hash)
+    return
+  }
+  const recipientSessionId = grant.child_session_id
+  const insert = getDb().transaction(() => {
+    const row: MessageRow = {
+      id: randomUUID(),
+      credential_hash: grant.credential_hash,
+      sequence: nextSequence(grant.credential_hash),
+      sender_session_id: grant.parent_session_id,
+      recipient_session_id: recipientSessionId,
+      client_message_id: `link-opening:${grant.credential_hash}`,
+      content,
+      created_at: new Date().toISOString(),
+    }
+    try {
+      getDb().prepare(`
+        INSERT INTO session_collaboration_messages
+          (id, credential_hash, sequence, sender_session_id, recipient_session_id, client_message_id, content, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        row.id, row.credential_hash, row.sequence, row.sender_session_id,
+        row.recipient_session_id, row.client_message_id, row.content, row.created_at,
+      )
+    } catch {
+      // Unique client_message_id on retry — already delivered.
+    }
+    getDb().prepare('UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?')
+      .run(grant.credential_hash)
+  })
+  insert()
+  const initiatorRow = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
+    .get(grant.parent_session_id) as { title: string | null } | undefined
+  const initiatorTitle = initiatorRow?.title?.trim() || grant.parent_session_id.slice(0, 8)
+  void wakeLinkPeer(host, recipientSessionId, credential, grant.parent_session_id, initiatorTitle, true)
+}
+
+async function wakeLinkPeer(
+  host: SessionManager,
+  sessionId: string,
+  credential: string,
+  initiatorSessionId: string,
+  initiatorTitle: string,
+  hasOpening: boolean,
+): Promise<void> {
+  const session = resolveLiveSession(host, sessionId)
+  if (!session) {
+    log.debug('[session-collaboration] link peer not available for wake sid=%s', sessionId)
+    return
+  }
+  try {
+    await session.injectTaskNotification(
+      linkActivationWakeText(credential, initiatorSessionId, initiatorTitle, hasOpening),
+    )
+  } catch (error) {
+    log.warn(
+      '[session-collaboration] link wake failed sid=%s: %s',
+      sessionId,
+      error instanceof Error ? error.message : String(error),
+    )
+  }
 }
 
 function nextSequence(credentialHash: string): number {
@@ -1019,7 +1369,18 @@ export async function sendSessionMessage(
   const grant = grantForCredential(args.credential)
   if (!grant) return toolResult({ status: 'error', message: 'Invalid collaboration credential' }, true)
   assertEndpoint(grant, callerSessionId)
-  if (!grant.child_session_id) return toolResult({ status: 'error', message: 'The child session has not been started' }, true)
+  if (!grant.child_session_id) {
+    return toolResult({
+      status: 'error',
+      message: grant.kind === 'link'
+        ? 'The linked peer session is missing'
+        : 'The child session has not been started',
+    }, true)
+  }
+  // Link grants set child_session_id at approve time; require start() first.
+  if (grant.kind === 'link' && !grant.started_at) {
+    return toolResult({ status: 'error', message: 'The collaboration link has not been started' }, true)
+  }
   const recipientSessionId = callerSessionId === grant.parent_session_id
     ? grant.child_session_id
     : grant.parent_session_id

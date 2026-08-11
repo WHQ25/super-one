@@ -212,8 +212,10 @@ CREATE TABLE IF NOT EXISTS session_collaboration_grants (
   config_json TEXT NOT NULL,
   task_sent INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  started_at TEXT
+  started_at TEXT,
+  kind TEXT NOT NULL DEFAULT 'spawn'
 );
+-- kind: 'spawn' (create child) | 'link' (mailbox with existing session)
 CREATE INDEX IF NOT EXISTS idx_session_collaboration_parent
   ON session_collaboration_grants(parent_session_id);
 CREATE INDEX IF NOT EXISTS idx_session_collaboration_child
@@ -242,6 +244,10 @@ CREATE TABLE IF NOT EXISTS session_collaboration_cursors (
   PRIMARY KEY(credential_hash, session_id)
 );
 `)
+  const grantCols = db.prepare(`PRAGMA table_info(session_collaboration_grants)`).all() as Array<{ name: string }>
+  if (!grantCols.some((c) => c.name === 'kind')) {
+    db.exec(`ALTER TABLE session_collaboration_grants ADD COLUMN kind TEXT NOT NULL DEFAULT 'spawn'`)
+  }
 }
 
 /**

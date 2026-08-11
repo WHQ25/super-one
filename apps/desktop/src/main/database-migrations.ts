@@ -500,6 +500,10 @@ export function runDatabaseMigrations(db: Database.Database): void {
   if (!collaborationGrantCols.some((column) => column.name === 'credential_secret')) {
     db.exec('ALTER TABLE session_collaboration_grants ADD COLUMN credential_secret TEXT')
   }
+  if (!collaborationGrantCols.some((column) => column.name === 'kind')) {
+    // spawn = create child (default, back-compat); link = mailbox with existing session
+    db.exec(`ALTER TABLE session_collaboration_grants ADD COLUMN kind TEXT NOT NULL DEFAULT 'spawn'`)
+  }
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

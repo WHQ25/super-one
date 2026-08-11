@@ -139,7 +139,8 @@ function createSchema(db: Database.Database): void {
       config_json TEXT NOT NULL,
       task_sent INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
-      started_at TEXT
+      started_at TEXT,
+      kind TEXT NOT NULL DEFAULT 'spawn'
     );
     CREATE TABLE session_collaboration_messages (
       id TEXT PRIMARY KEY,
@@ -796,6 +797,99 @@ describe('session collaboration', () => {
     }))
     expect(result).toMatchObject({ status: 'error' })
     expect(String(result.message)).toMatch(/invalid/i)
+  })
+
+  it('approves a link launch, activates without system prompt, and exchanges mailbox messages', async () => {
+    state.db!.prepare('INSERT INTO sessions (id, project_path, title, provider_id) VALUES (?, ?, ?, ?)')
+      .run('peer-session', TEST_CWD, 'Peer Review', 'claude-base')
+    const parent = fakeSession('parent')
+    const peer = fakeSession('peer-session')
+    const { host, sessions } = fakeHost(parent)
+    sessions.set(peer.id, peer)
+
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{
+        mode: 'link',
+        sessionId: 'peer-session',
+        summary: 'Sync on API types',
+        task: 'Please confirm the request body shape.',
+      }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    expect(launches[0]).toMatchObject({
+      mode: 'link',
+      sessionId: 'peer-session',
+      peerTitle: 'Peer Review',
+    })
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+    })
+    const approved = resultJson(await promise)
+    expect(approved.status).toBe('approved')
+    const grant = (approved.launches as Array<{ credential: string; mode: string; peerSessionId: string }>)[0]
+    expect(grant.mode).toBe('link')
+    expect(grant.peerSessionId).toBe('peer-session')
+
+    // Link peers must never receive system-prompt injection.
+    expect(getSessionCollaborationSystemPrompt('peer-session')).toBeUndefined()
+
+    const linked = resultJson(await startSessionAgent('parent', grant.credential, host))
+    expect(linked).toMatchObject({ status: 'linked', mode: 'link', sessionId: 'peer-session' })
+    expect(peer.injectTaskNotification).toHaveBeenCalled()
+    // Opening delivered as mailbox, not system prompt.
+    expect(getSessionCollaborationSystemPrompt('peer-session')).toBeUndefined()
+
+    const sent = resultJson(await sendSessionMessage('parent', {
+      credential: grant.credential,
+      content: 'Here is the proposed type.',
+    }, host))
+    expect(sent.status).toBe('sent')
+
+    const retrieved = resultJson(await retrieveSessionMessages('peer-session', {
+      credentials: [grant.credential],
+    }))
+    expect(retrieved.status).toBe('messages')
+    const messages = retrieved.messages as Array<{ content: string }>
+    expect(messages.some((m) => m.content.includes('request body') || m.content.includes('proposed type'))).toBe(true)
+  })
+
+  it('rejects link without sessionId and self-link', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    await expect(requestSessionAgents(parent.id, {
+      launches: [{ mode: 'link', summary: 'no id' }],
+    }, host)).rejects.toThrow(/sessionId/i)
+
+    await expect(requestSessionAgents(parent.id, {
+      launches: [{ mode: 'link', sessionId: 'parent', summary: 'self' }],
+    }, host)).rejects.toThrow(/itself/i)
+  })
+
+  it('requires start before send on link grants', async () => {
+    state.db!.prepare('INSERT INTO sessions (id, project_path, title, provider_id) VALUES (?, ?, ?, ?)')
+      .run('peer-2', TEST_CWD, 'Peer 2', 'claude-base')
+    const parent = fakeSession('parent')
+    const peer = fakeSession('peer-2')
+    const { host, sessions } = fakeHost(parent)
+    sessions.set(peer.id, peer)
+
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{ mode: 'link', sessionId: 'peer-2', summary: 'hi' }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
+    })
+    const grant = (resultJson(await promise).launches as Array<{ credential: string }>)[0]
+    const early = resultJson(await sendSessionMessage('parent', {
+      credential: grant.credential,
+      content: 'too early',
+    }, host))
+    expect(early).toMatchObject({ status: 'error' })
+    expect(String(early.message)).toMatch(/not been started/i)
   })
 })
 

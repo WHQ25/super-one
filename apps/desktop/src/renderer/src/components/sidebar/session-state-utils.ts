@@ -24,6 +24,9 @@ function permissionToolLabel(toolName: string, t: PendingReasonT): string {
 }
 
 function launchChipName(launch: SessionAgentLaunchProposal): string {
+  if (launch.mode === 'link') {
+    return (launch.peerTitle || launch.name || launch.sessionId || 'session').trim()
+  }
   const name = launch.name?.trim()
   if (name) return name
   return launch.agentId

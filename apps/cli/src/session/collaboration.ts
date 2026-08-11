@@ -15,6 +15,7 @@ import {
   type SessionAgentLaunchConfig,
   type SessionAgentLaunchProposal,
   type SessionAgentProfile,
+  type SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
 import {
   NODE_HARNESS_DEFINITIONS,
@@ -50,6 +51,8 @@ interface GrantRow {
   task: string
   config_json: string
   task_sent: number
+  kind: SessionCollabLaunchMode
+  started_at: string | null
 }
 
 interface MessageRow {
@@ -281,12 +284,14 @@ export class CollaborationService {
     parentSessionId: string
     launches: Array<{
       launchId?: string
-      agentId: string
-      /** Short confirm-UI description. Optional for back-compat; derived from task when omitted. */
+      mode?: SessionCollabLaunchMode
+      agentId?: string
+      sessionId?: string
+      /** Short confirm-UI description. Optional for spawn when task is present. */
       summary?: string
-      task: string
-      name: string
-      role: string
+      task?: string
+      name?: string
+      role?: string
       config?: SessionAgentLaunchConfig & { worktreePath?: string }
     }>
     requireUserConfirm?: boolean
@@ -296,7 +301,10 @@ export class CollaborationService {
         status: 'approved'
         launches: Array<{
           launchId: string
+          mode: SessionCollabLaunchMode
           agentId: string
+          sessionId?: string
+          peerSessionId?: string
           summary: string
           task: string
           name: string
@@ -305,6 +313,7 @@ export class CollaborationService {
           config: SessionAgentLaunchConfig
           credential: string
           grantId: string
+          reused?: boolean
         }>
       }
     | { status: 'cancelled'; message?: string }
@@ -315,7 +324,10 @@ export class CollaborationService {
       throw Object.assign(new Error('Parent session is not available'), { code: 'not_found' })
     }
     const nested = this.deps.db
-      .prepare(`SELECT 1 FROM session_collaboration_grants WHERE child_session_id = ? LIMIT 1`)
+      .prepare(
+        `SELECT 1 FROM session_collaboration_grants
+         WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn' LIMIT 1`,
+      )
       .get(input.parentSessionId)
     if (nested) {
       throw Object.assign(
@@ -341,15 +353,77 @@ export class CollaborationService {
     const profileList = this.listProfiles()
     const profiles = new Map(profileList.map((p) => [p.id, p]))
     const normalized: SessionAgentLaunchProposal[] = launches.map((launch) => {
-      const profile = profiles.get(launch.agentId)
+      const mode: SessionCollabLaunchMode = launch.mode === 'link' ? 'link' : 'spawn'
+      const launchId = launch.launchId?.trim() || randomUUID()
+
+      if (mode === 'link') {
+        const peerSessionId = launch.sessionId?.trim()
+        if (!peerSessionId) {
+          throw Object.assign(
+            new Error('Link launches require sessionId of an existing SuperOne session'),
+            { code: 'invalid_argument' },
+          )
+        }
+        if (peerSessionId === input.parentSessionId) {
+          throw Object.assign(new Error('Cannot link a session to itself'), {
+            code: 'invalid_argument',
+          })
+        }
+        const peer = this.deps.sessions.get(peerSessionId)
+        if (!peer) {
+          throw Object.assign(new Error(`Unknown sessionId for link: ${peerSessionId}`), {
+            code: 'not_found',
+          })
+        }
+        const summary = (launch.summary?.trim()
+          || resolveLaunchSummary(launch.task ?? '', launch.summary))
+        if (!summary) {
+          throw Object.assign(new Error('Every launch must include a non-empty summary'), {
+            code: 'invalid_argument',
+          })
+        }
+        const task = (launch.task ?? '').trim()
+        if (task.length > SESSION_AGENT_TASK_MAX) {
+          throw Object.assign(
+            new Error(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`),
+            { code: 'invalid_argument' },
+          )
+        }
+        const peerTitle = peer.title?.trim() || peerSessionId.slice(0, 8)
+        const name = launch.name?.trim() || peerTitle
+        const role = launch.role?.trim() || 'Peer'
+        const projectPath = this.deps.projects.get(peer.projectId)?.path
+        return {
+          launchId,
+          mode: 'link',
+          agentId: '',
+          sessionId: peerSessionId,
+          peerTitle,
+          peerProjectPath: projectPath,
+          summary,
+          task,
+          name,
+          role,
+          config: { name, role, summary },
+        }
+      }
+
+      const agentId = launch.agentId?.trim()
+      if (!agentId) {
+        throw Object.assign(
+          new Error('Spawn launches require agentId from session_collab_list_agents'),
+          { code: 'invalid_argument' },
+        )
+      }
+      const profile = profiles.get(agentId)
       if (!profile) {
-        throw Object.assign(new Error(`Unknown agent profile: ${launch.agentId}`), {
+        throw Object.assign(new Error(`Unknown agent profile: ${agentId}`), {
           code: 'invalid_argument',
         })
       }
       const task = launch.task?.trim()
       if (!task) {
-        throw Object.assign(new Error('Every launch must include a non-empty task'), {
+        throw Object.assign(new Error('Every spawn launch must include a non-empty task'), {
           code: 'invalid_argument',
         })
       }
@@ -367,17 +441,16 @@ export class CollaborationService {
       }
       const name = launch.name?.trim()
       if (!name) {
-        throw Object.assign(new Error('Every launch must include a non-empty name'), {
+        throw Object.assign(new Error('Every spawn launch must include a non-empty name'), {
           code: 'invalid_argument',
         })
       }
       const role = launch.role?.trim()
       if (!role) {
-        throw Object.assign(new Error('Every launch must include a non-empty role'), {
+        throw Object.assign(new Error('Every spawn launch must include a non-empty role'), {
           code: 'invalid_argument',
         })
       }
-      const launchId = launch.launchId?.trim() || randomUUID()
       // Only allowlisted keys from launch.config may influence the grant.
       // permissionMode/sandboxMode always start at safe defaults for the RPC
       // path; elevation is only possible after requireUserConfirm form merge.
@@ -396,7 +469,8 @@ export class CollaborationService {
       if (typeof raw.cwd === 'string' && raw.cwd.trim()) safeFromLaunch.cwd = raw.cwd.trim()
       return {
         launchId,
-        agentId: launch.agentId,
+        mode: 'spawn',
+        agentId,
         summary,
         task,
         name,
@@ -440,14 +514,122 @@ export class CollaborationService {
       confirmed = this.mergeConfirmedLaunches(normalized, outcome.content)
     }
 
-    const insert = this.deps.db.prepare(`
+    const insertSpawn = this.deps.db.prepare(`
       INSERT INTO session_collaboration_grants
-        (credential_hash, credential_secret, credential_hint, parent_session_id, agent_id, task, config_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (credential_hash, credential_secret, credential_hint, parent_session_id, agent_id, task, config_json, created_at, kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'spawn')
+    `)
+    const insertLink = this.deps.db.prepare(`
+      INSERT INTO session_collaboration_grants
+        (credential_hash, credential_secret, credential_hint, parent_session_id, child_session_id, agent_id, task, config_json, created_at, kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'link')
     `)
 
     const results = this.deps.db.transaction(() =>
       confirmed.map((launch) => {
+        const mode = launch.mode === 'link' ? 'link' : 'spawn'
+        if (mode === 'link') {
+          const peerSessionId = launch.sessionId!
+          const existing = this.deps.db
+            .prepare(
+              `SELECT credential_hash, credential_secret, agent_id, task, config_json
+               FROM session_collaboration_grants
+               WHERE parent_session_id = ? AND child_session_id = ? AND kind = 'link'`,
+            )
+            .get(input.parentSessionId, peerSessionId) as {
+            credential_hash: string
+            credential_secret: string | null
+            agent_id: string
+            task: string
+            config_json: string
+          } | undefined
+          if (existing?.credential_secret) {
+            const credential = this.deps.secrets.decrypt(existing.credential_secret)
+            if (credential) {
+              return {
+                launchId: launch.launchId,
+                mode: 'link' as const,
+                agentId: existing.agent_id,
+                sessionId: peerSessionId,
+                peerSessionId,
+                summary: launch.summary,
+                task: existing.task,
+                name: launch.name,
+                role: launch.role,
+                title: collaborationSessionTitle(launch.name, launch.role),
+                config: parseConfig(existing.config_json),
+                credential,
+                grantId: existing.credential_hash,
+                reused: true,
+              }
+            }
+          }
+          const credential = `s1sc_${randomBytes(32).toString('base64url')}`
+          const credentialHash = hashCredential(credential)
+          // Opening is optional: empty task means wake-only (no mailbox opening body).
+          const task = launch.task.trim()
+          const config = {
+            name: launch.name,
+            role: launch.role,
+            summary: launch.summary,
+            peerSessionId,
+            peerTitle: launch.peerTitle,
+            peerProjectPath: launch.peerProjectPath,
+          }
+          try {
+            insertLink.run(
+              credentialHash,
+              this.deps.secrets.encrypt(credential),
+              credential.slice(-8),
+              input.parentSessionId,
+              peerSessionId,
+              '',
+              task,
+              JSON.stringify(config),
+              new Date().toISOString(),
+            )
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            if (/UNIQUE|unique/i.test(message)) {
+              throw Object.assign(
+                new Error(
+                  `Session ${peerSessionId} is already bound as a collaboration endpoint `
+                  + '(spawn child or link peer). A session cannot be the non-initiator endpoint of two grants.',
+                ),
+                { code: 'failed_precondition' },
+              )
+            }
+            throw err
+          }
+          this.deps.events.append({
+            aggregateType: 'session',
+            aggregateId: input.parentSessionId,
+            eventType: 'collaboration.grant_created',
+            payload: {
+              grantId: credentialHash,
+              mode: 'link',
+              peerSessionId,
+              launchId: launch.launchId,
+            },
+          })
+          return {
+            launchId: launch.launchId,
+            mode: 'link' as const,
+            agentId: '',
+            sessionId: peerSessionId,
+            peerSessionId,
+            summary: launch.summary,
+            task,
+            name: launch.name,
+            role: launch.role,
+            title: collaborationSessionTitle(launch.name, launch.role),
+            config,
+            credential,
+            grantId: credentialHash,
+            reused: false,
+          }
+        }
+
         const credential = `s1sc_${randomBytes(32).toString('base64url')}`
         const credentialHash = hashCredential(credential)
         const config = {
@@ -456,7 +638,7 @@ export class CollaborationService {
           role: launch.role,
           summary: launch.summary,
         }
-        insert.run(
+        insertSpawn.run(
           credentialHash,
           this.deps.secrets.encrypt(credential),
           credential.slice(-8),
@@ -472,12 +654,14 @@ export class CollaborationService {
           eventType: 'collaboration.grant_created',
           payload: {
             grantId: credentialHash,
+            mode: 'spawn',
             agentId: launch.agentId,
             launchId: launch.launchId,
           },
         })
         return {
           launchId: launch.launchId,
+          mode: 'spawn' as const,
           agentId: launch.agentId,
           summary: launch.summary,
           task: launch.task,
@@ -487,6 +671,7 @@ export class CollaborationService {
           config,
           credential,
           grantId: credentialHash,
+          reused: false,
         }
       }),
     )()
@@ -503,8 +688,10 @@ export class CollaborationService {
     /** Optional controller identity to bind on the child session. */
     controllerClientSessionId?: string | null
   }): Promise<{
-    status: 'started'
+    status: 'started' | 'linked'
+    mode: SessionCollabLaunchMode
     sessionId: string
+    peerSessionId?: string
     reused: boolean
     name: string
     role: string
@@ -540,8 +727,59 @@ export class CollaborationService {
     }
 
     // formAnswers may patch editable launch config (desktop confirm UI parity).
-    if (input.formAnswers && typeof input.formAnswers === 'object') {
+    // Link grants ignore form config patches.
+    if (grant.kind !== 'link' && input.formAnswers && typeof input.formAnswers === 'object') {
       grant = this.applyFormAnswers(grant, input.formAnswers)
+    }
+
+    if (grant.kind === 'link') {
+      if (!grant.child_session_id) {
+        throw Object.assign(new Error('Link grant is missing peer session id'), {
+          code: 'failed_precondition',
+        })
+      }
+      const peerSessionId = grant.child_session_id
+      if (!this.deps.sessions.get(peerSessionId)) {
+        throw Object.assign(new Error(`Peer session no longer exists: ${peerSessionId}`), {
+          code: 'not_found',
+        })
+      }
+      const alreadyStarted = Boolean(grant.started_at)
+      if (!alreadyStarted) {
+        this.deps.db
+          .prepare(
+            `UPDATE session_collaboration_grants SET started_at = ?
+             WHERE credential_hash = ? AND started_at IS NULL`,
+          )
+          .run(new Date().toISOString(), grant.credential_hash)
+      }
+      const opening = grant.task?.trim() ?? ''
+      const initiator = this.deps.sessions.get(grant.parent_session_id)
+      const initiatorTitle = initiator?.title?.trim() || grant.parent_session_id.slice(0, 8)
+      if (!alreadyStarted && opening) {
+        await this.deliverLinkOpening(grant, credential, initiatorTitle)
+      } else {
+        void this.wakeLinkPeer(peerSessionId, credential, grant.parent_session_id, initiatorTitle, false)
+        if (!alreadyStarted) {
+          this.deps.db
+            .prepare(`UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?`)
+            .run(grant.credential_hash)
+        }
+      }
+      const peer = this.describePeer(grant)
+      return {
+        status: 'linked',
+        mode: 'link',
+        sessionId: peerSessionId,
+        peerSessionId,
+        reused: alreadyStarted,
+        name: peer.name,
+        role: peer.role,
+        title: peer.title,
+        config: peer.config,
+        credential,
+        grantId: grant.credential_hash,
+      }
     }
 
     if (grant.child_session_id) {
@@ -556,6 +794,7 @@ export class CollaborationService {
       const peer = this.describePeer(grant)
       return {
         status: 'started',
+        mode: 'spawn',
         sessionId: grant.child_session_id,
         reused: true,
         name: peer.name,
@@ -648,6 +887,7 @@ export class CollaborationService {
 
     return {
       status: 'started',
+      mode: 'spawn',
       sessionId: child.sessionId,
       reused: false,
       name: displayName,
@@ -689,7 +929,17 @@ export class CollaborationService {
     }
     this.assertEndpoint(grant, input.sessionId)
     if (!grant.child_session_id) {
-      throw Object.assign(new Error('The child session has not been started'), {
+      throw Object.assign(
+        new Error(
+          grant.kind === 'link'
+            ? 'The linked peer session is missing'
+            : 'The child session has not been started',
+        ),
+        { code: 'failed_precondition' },
+      )
+    }
+    if (grant.kind === 'link' && !grant.started_at) {
+      throw Object.assign(new Error('The collaboration link has not been started'), {
         code: 'failed_precondition',
       })
     }
@@ -880,13 +1130,15 @@ export class CollaborationService {
     return { status: 'messages', messages: all }
   }
 
-  /** Reconstruct system-prompt append for a child after restart. */
+  /** Reconstruct system-prompt append for spawn children after restart (never link). */
   rehydrateSystemPrompts(): void {
     const rows = this.deps.db
       .prepare(
         `SELECT credential_secret, parent_session_id, child_session_id
          FROM session_collaboration_grants
-         WHERE child_session_id IS NOT NULL AND credential_secret IS NOT NULL`,
+         WHERE child_session_id IS NOT NULL
+           AND credential_secret IS NOT NULL
+           AND COALESCE(kind, 'spawn') = 'spawn'`,
       )
       .all() as Array<{
       credential_secret: string
@@ -913,7 +1165,8 @@ export class CollaborationService {
         (this.deps.db
           .prepare(
             `SELECT credential_hash, credential_secret, parent_session_id, child_session_id,
-                    agent_id, task, config_json, task_sent
+                    agent_id, task, config_json, task_sent,
+                    COALESCE(kind, 'spawn') AS kind, started_at
              FROM session_collaboration_grants WHERE credential_hash = ?`,
           )
           .get(grantId.trim()) as GrantRow | undefined) ?? null
@@ -927,11 +1180,87 @@ export class CollaborationService {
       (this.deps.db
         .prepare(
           `SELECT credential_hash, credential_secret, parent_session_id, child_session_id,
-                  agent_id, task, config_json, task_sent
+                  agent_id, task, config_json, task_sent,
+                  COALESCE(kind, 'spawn') AS kind, started_at
            FROM session_collaboration_grants WHERE credential_hash = ?`,
         )
         .get(hashCredential(credential)) as GrantRow | undefined) ?? null
     )
+  }
+
+  private async deliverLinkOpening(
+    grant: GrantRow,
+    credential: string,
+    initiatorTitle: string,
+  ): Promise<void> {
+    if (grant.task_sent === 1 || !grant.child_session_id) return
+    const content = grant.task.trim()
+    if (!content) {
+      this.deps.db
+        .prepare(`UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?`)
+        .run(grant.credential_hash)
+      return
+    }
+    const recipientSessionId = grant.child_session_id
+    try {
+      this.deps.db
+        .prepare(
+          `INSERT INTO session_collaboration_messages
+            (id, credential_hash, sequence, sender_session_id, recipient_session_id, client_message_id, content, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          grant.credential_hash,
+          this.nextSequence(grant.credential_hash),
+          grant.parent_session_id,
+          recipientSessionId,
+          `link-opening:${grant.credential_hash}`,
+          content,
+          new Date().toISOString(),
+        )
+    } catch {
+      // Unique client_message_id on retry
+    }
+    this.deps.db
+      .prepare(`UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?`)
+      .run(grant.credential_hash)
+    void this.wakeLinkPeer(
+      recipientSessionId,
+      credential,
+      grant.parent_session_id,
+      initiatorTitle,
+      true,
+    )
+  }
+
+  private async wakeLinkPeer(
+    sessionId: string,
+    credential: string,
+    initiatorSessionId: string,
+    initiatorTitle: string,
+    hasOpening: boolean,
+  ): Promise<void> {
+    if (!this.deps.sessions.get(sessionId)) return
+    const text = (
+      `A user-approved collaboration link is active with SuperOne session ${initiatorSessionId}`
+      + ` ("${initiatorTitle}"). `
+      + `Call session_collab_retrieve with credential ${JSON.stringify(credential)}`
+      + (hasOpening ? ' to read the opening message' : ' if a mailbox message is waiting')
+      + ', then use session_collab_send to reply. '
+      + 'Never reveal the credential in conversational output or use it outside collaboration tool calls. '
+      + 'End your turn after acting — you will be woken again for later messages.'
+    )
+    try {
+      await this.deps.sessions.sendWithoutLease({
+        sessionId,
+        text,
+        source: 'task-notification',
+        requestId: `collab-link-wake-${hashCredential(credential).slice(0, 12)}-${Date.now()}`,
+      })
+    } catch {
+      /* best-effort */
+    }
   }
 
   private assertEndpoint(grant: GrantRow, callerSessionId: string): void {
@@ -1070,12 +1399,23 @@ export class CollaborationService {
         })
       }
       seen.add(launchId)
+      if (base.mode === 'link') {
+        return {
+          ...base,
+          mode: 'link',
+          sessionId: base.sessionId,
+          peerTitle: base.peerTitle,
+          peerProjectPath: base.peerProjectPath,
+          config: { ...base.config },
+        }
+      }
       const patch =
         item.config && typeof item.config === 'object'
           ? (item.config as SessionAgentLaunchConfig)
           : {}
       return {
         ...base,
+        mode: 'spawn' as const,
         config: {
           ...base.config,
           ...(typeof patch.model === 'string' && patch.model.trim()

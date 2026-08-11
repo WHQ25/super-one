@@ -361,10 +361,20 @@ export async function sendMessageImpl(
     const sessionMentions = mentions.filter((m) => m.kind === 'session' && m.value)
     if (sessionMentions.length > 0) {
       const lines: string[] = [
-        'User @-mentioned SuperOne session archive(s). Use SuperOne MCP session tools with the SuperOne sessionId (NOT provider/harness session ids):',
+        'User @-mentioned SuperOne session(s). Use SuperOne sessionId (NOT provider/harness session ids).',
+        '',
+        'Archive (read-only):',
         '- session_read({ sessionId, view: "meta" | "user" | "assistant" | "text" | "tools" })',
         '- session_search / session_list when you need to locate messages first',
         'Prefer progressive views; do not dump entire transcripts into context.',
+        '',
+        'Live collaboration with an existing session (requires user approval):',
+        '- session_collab_request({ launches: [{ mode: "link", sessionId, summary, task? }] })',
+        '- You MUST pass sessionId from the list below; never invent ids.',
+        '- After approval: session_collab_start → session_collab_send / session_collab_retrieve.',
+        '- Do NOT use mode "spawn" for an already-existing session (spawn creates a new child).',
+        '',
+        'Mentioned sessions:',
       ]
       const seen = new Set<string>()
       for (const m of sessionMentions) {

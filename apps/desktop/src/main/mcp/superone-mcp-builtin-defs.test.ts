@@ -182,18 +182,26 @@ describe('built-in superone tool registration surfaces', () => {
     expect(category.enum).toEqual(['image', 'video'])
   })
 
-  it('requires a name, role, summary, and task for every collaboration launch', () => {
+  it('requires summary at schema level; spawn vs link fields validated server-side', () => {
     const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_request')!
     const launches = (def.inputSchema.properties as Record<string, Record<string, unknown>>).launches
     const item = launches.items as Record<string, unknown>
-    expect(item.required).toEqual(['agentId', 'summary', 'task', 'name', 'role'])
+    expect(item.required).toEqual(['summary'])
     const properties = item.properties as Record<string, Record<string, unknown>>
+    expect(properties.mode).toMatchObject({ enum: ['spawn', 'link'] })
+    expect(properties.sessionId).toMatchObject({ minLength: 1 })
     expect(properties.name).toMatchObject({ minLength: 1, maxLength: 64 })
     expect(properties.role).toMatchObject({ minLength: 1, maxLength: 64 })
     expect(properties.summary).toMatchObject({ minLength: 1 })
     expect(properties.summary).not.toHaveProperty('maxLength')
-    expect(properties.task).toMatchObject({ minLength: 1 })
     // Hard caps stay server-side; do not advertise a huge maxLength in the tool schema.
     expect(properties.task).not.toHaveProperty('maxLength')
+    expect(properties.task).not.toHaveProperty('minLength')
+  })
+
+  it('documents link mode and sessionId on session_collab_request', () => {
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/mode "link"/i)
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/sessionId/)
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION.length).toBeLessThanOrEqual(700)
   })
 })

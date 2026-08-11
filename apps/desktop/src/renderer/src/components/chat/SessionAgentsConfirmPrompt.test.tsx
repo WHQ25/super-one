@@ -4,6 +4,8 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import type { SessionAgentRequestPayload } from '@superone/shared/agent-types'
+import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { useChatStore } from '@/stores/chat'
 import { SessionAgentsConfirmPrompt } from './SessionAgentsConfirmPrompt'
 
 /** Shortcuts only fire while focus is inside [data-chat-root]. */
@@ -247,5 +249,54 @@ describe('session agents confirm prompt', () => {
     expect(document.activeElement).not.toBe(input)
     fireEvent.keyDown(window, { key: 'Tab' })   // past the last agent → feedback
     expect(document.activeElement).toBe(input)
+  })
+
+  it('shows Work with + clickable peer title for link launches (no model editors)', () => {
+    const switchToSession = vi.fn().mockResolvedValue(undefined)
+    const focusOrReplaceFocused = vi.fn().mockReturnValue(false)
+    const chatSpy = vi.spyOn(useChatStore, 'getState').mockReturnValue({
+      ...useChatStore.getState(),
+      activeProject: '/Users/me/projects/super-one',
+      switchToSession,
+    } as ReturnType<typeof useChatStore.getState>)
+    const mosaicSpy = vi.spyOn(useMosaicStore, 'getState').mockReturnValue({
+      ...useMosaicStore.getState(),
+      focusOrReplaceFocused,
+    } as ReturnType<typeof useMosaicStore.getState>)
+
+    const linkPayload: SessionAgentRequestPayload = {
+      profiles: payload().profiles,
+      launches: [{
+        launchId: 'link-1',
+        mode: 'link',
+        agentId: '',
+        sessionId: 'peer-session-id',
+        peerTitle: 'API review session',
+        peerProjectPath: '/Users/me/projects/super-one',
+        peerHarnessId: 'claude',
+        peerHarnessName: 'Claude',
+        peerBrandKey: 'claude',
+        summary: 'Sync on API types',
+        task: 'Please confirm the request body.',
+        name: 'API review session',
+        role: 'Peer',
+        config: { name: 'API review session', role: 'Peer', summary: 'Sync on API types' },
+      }],
+    }
+
+    renderInChat(<SessionAgentsConfirmPrompt payload={linkPayload} onConfirm={vi.fn()} onReject={vi.fn()} />)
+
+    expect(screen.getByText('Work with:')).toBeInTheDocument()
+    const titleBtn = screen.getByRole('button', { name: 'API review session' })
+    expect(titleBtn).toBeInTheDocument()
+    // No model / permission editors for link.
+    expect(screen.queryByRole('button', { name: /Claude Sonnet/ })).toBeNull()
+
+    fireEvent.click(titleBtn)
+    expect(focusOrReplaceFocused).toHaveBeenCalledWith('/Users/me/projects/super-one', 'peer-session-id')
+    expect(switchToSession).toHaveBeenCalledWith('/Users/me/projects/super-one', 'peer-session-id')
+
+    chatSpy.mockRestore()
+    mosaicSpy.mockRestore()
   })
 })

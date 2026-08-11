@@ -281,7 +281,9 @@ function listArchiveSessions(
            ${sizeSelect},
            s.project_id
     FROM sessions s
-    LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
+    LEFT JOIN session_collaboration_grants g
+      ON g.child_session_id = s.id
+      AND COALESCE(g.kind, 'spawn') = 'spawn'
     ${whereSql}
     ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
@@ -637,7 +639,9 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
   }
 
   const parent = db.prepare(`
-    SELECT parent_session_id FROM session_collaboration_grants WHERE child_session_id = ? LIMIT 1
+    SELECT parent_session_id FROM session_collaboration_grants
+    WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn'
+    LIMIT 1
   `).get(sessionId) as { parent_session_id: string } | undefined
 
   const messageCount = (db.prepare(`
@@ -826,7 +830,9 @@ function resolveCleanupCandidates(
            NULL AS size_bytes,
            s.project_id
     FROM sessions s
-    LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
+    LEFT JOIN session_collaboration_grants g
+      ON g.child_session_id = s.id
+      AND COALESCE(g.kind, 'spawn') = 'spawn'
     WHERE s.id IN (${placeholders})
   `).all(...ids) as ArchiveSessionRow[]
 
@@ -863,9 +869,12 @@ function resolveCleanupCandidates(
 
 function childSessionIds(parentId: string): string[] {
   const db = getDb()
+  // Spawn children only — link peers are independent sessions, not hierarchy children.
   const rows = db.prepare(`
     SELECT child_session_id AS id FROM session_collaboration_grants
-    WHERE parent_session_id = ? AND child_session_id IS NOT NULL
+    WHERE parent_session_id = ?
+      AND child_session_id IS NOT NULL
+      AND COALESCE(kind, 'spawn') = 'spawn'
   `).all(parentId) as Array<{ id: string }>
   return rows.map((r) => r.id)
 }

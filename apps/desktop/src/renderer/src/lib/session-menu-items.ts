@@ -12,7 +12,7 @@ export interface SessionMenuHandlers {
   onHide: () => void
   onFork: (mode: SessionForkMode) => void
   onDelete?: () => void
-  /** Insert a session (`@chat`) mention chip into the active chat composer. */
+  /** Insert a `@session` mention chip into the active chat composer. */
   onAddToChat?: () => void
 }
 

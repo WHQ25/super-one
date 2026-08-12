@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseUserMentions } from './user-mention-parser'
+import { parseUserMentions, wrapPathRefMention } from './user-mention-parser'
 
 describe('parseUserMentions', () => {
   it('returns empty array for empty input', () => {
@@ -12,60 +12,27 @@ describe('parseUserMentions', () => {
     ])
   })
 
-  it('parses a leading mention', () => {
+  it('keeps bare @tokens as plain text (only popup tags become chips)', () => {
     expect(parseUserMentions('@hello.py')).toEqual([
-      { type: 'mention', kind: 'file', value: 'hello.py' },
+      { type: 'text', text: '@hello.py' },
     ])
-  })
-
-  it('parses leading mention followed by trailing text', () => {
-    expect(parseUserMentions('@hello.py 升级一下版本')).toEqual([
-      { type: 'mention', kind: 'file', value: 'hello.py' },
-      { type: 'text', text: ' 升级一下版本' },
-    ])
-  })
-
-  it('regression: parses a mid-text mention (preceded by text + space)', () => {
     expect(parseUserMentions('看看 @hello_world.py 升级一下版本')).toEqual([
-      { type: 'text', text: '看看 ' },
-      { type: 'mention', kind: 'file', value: 'hello_world.py' },
-      { type: 'text', text: ' 升级一下版本' },
+      { type: 'text', text: '看看 @hello_world.py 升级一下版本' },
     ])
-  })
-
-  it('parses a trailing mention', () => {
-    expect(parseUserMentions('看看 @hello.py')).toEqual([
-      { type: 'text', text: '看看 ' },
-      { type: 'mention', kind: 'file', value: 'hello.py' },
+    expect(parseUserMentions('@browser go')).toEqual([
+      { type: 'text', text: '@browser go' },
     ])
-  })
-
-  it('parses consecutive mentions separated by a space', () => {
-    expect(parseUserMentions('@a.py @b.py x')).toEqual([
-      { type: 'mention', kind: 'file', value: 'a.py' },
-      { type: 'text', text: ' ' },
-      { type: 'mention', kind: 'file', value: 'b.py' },
-      { type: 'text', text: ' x' },
+    expect(parseUserMentions('@collab @computer @session')).toEqual([
+      { type: 'text', text: '@collab @computer @session' },
     ])
-  })
-
-  it('parses a mention that follows a newline', () => {
-    expect(parseUserMentions('看看\n@hello.py 改一下')).toEqual([
-      { type: 'text', text: '看看\n' },
-      { type: 'mention', kind: 'file', value: 'hello.py' },
-      { type: 'text', text: ' 改一下' },
+    expect(parseUserMentions('@coder do it')).toEqual([
+      { type: 'text', text: '@coder do it' },
     ])
   })
 
   it('does not match @ embedded in a word (e.g. email)', () => {
     expect(parseUserMentions('contact user@host.com please')).toEqual([
       { type: 'text', text: 'contact user@host.com please' },
-    ])
-  })
-
-  it('classifies a directory mention (ends with /)', () => {
-    expect(parseUserMentions('@src/')).toEqual([
-      { type: 'mention', kind: 'directory', value: 'src/' },
     ])
   })
 
@@ -87,31 +54,16 @@ describe('parseUserMentions', () => {
     expect(parseUserMentions(text)).toEqual([{ type: 'text', text: 'hi' }])
   })
 
-  it('classifies a root-level directory mention with trailing slash', () => {
-    expect(parseUserMentions('@computer-use-comparison/ 看一下这个文件夹')).toEqual([
-      { type: 'mention', kind: 'directory', value: 'computer-use-comparison/' },
-      { type: 'text', text: ' 看一下这个文件夹' },
-    ])
-  })
-
-  it('classifies extensionless path without slash as agent (not directory)', () => {
-    // Trailing slash is the durable directory marker after plain-text round-trip.
-    expect(parseUserMentions('@computer-use-comparison 看一下')).toEqual([
-      { type: 'mention', kind: 'agent', value: 'computer-use-comparison' },
-      { type: 'text', text: ' 看一下' },
-    ])
-  })
-
-  it('classifies a file mention containing a slash', () => {
-    expect(parseUserMentions('@src/main.ts')).toEqual([
-      { type: 'mention', kind: 'file', value: 'src/main.ts' },
-    ])
-  })
-
-  it('classifies an agent mention (no slash, no dot)', () => {
-    expect(parseUserMentions('@coder do it')).toEqual([
-      { type: 'mention', kind: 'agent', value: 'coder' },
-      { type: 'text', text: ' do it' },
+  it('parses popup-selected path ref tags as chips', () => {
+    const file = wrapPathRefMention('file', 'src/main.ts', 'main.ts')
+    const dir = wrapPathRefMention('directory', 'src/', 'src')
+    const agent = wrapPathRefMention('agent', 'coder', 'coder')
+    expect(parseUserMentions(`${file} ${dir} ${agent}`)).toEqual([
+      { type: 'mention', kind: 'file', value: 'src/main.ts', displayName: 'main.ts' },
+      { type: 'text', text: ' ' },
+      { type: 'mention', kind: 'directory', value: 'src/', displayName: 'src' },
+      { type: 'text', text: ' ' },
+      { type: 'mention', kind: 'agent', value: 'coder', displayName: 'coder' },
     ])
   })
 
@@ -119,9 +71,7 @@ describe('parseUserMentions', () => {
     const longBlob = 'x'.repeat(600)
     const input = `看看 @file.py 改一下\n${longBlob}`
     expect(parseUserMentions(input)).toEqual([
-      { type: 'text', text: '看看 ' },
-      { type: 'mention', kind: 'file', value: 'file.py' },
-      { type: 'text', text: ` 改一下\n${longBlob}` },
+      { type: 'text', text: `看看 @file.py 改一下\n${longBlob}` },
     ])
   })
 
@@ -167,12 +117,11 @@ describe('parseUserMentions', () => {
       ])
     })
 
-    it('coexists with @-mentions', () => {
+    it('keeps bare @file next to miniapp tags as plain text', () => {
       const input = '<superone-miniapp><appname>App</appname><appid>app</appid></superone-miniapp> look at @file.ts'
       expect(parseUserMentions(input)).toEqual([
         { type: 'mention', kind: 'miniapp', value: 'app', displayName: 'App' },
-        { type: 'text', text: ' look at ' },
-        { type: 'mention', kind: 'file', value: 'file.ts' },
+        { type: 'text', text: ' look at @file.ts' },
       ])
     })
 
@@ -214,31 +163,30 @@ describe('parseUserMentions', () => {
       ])
     })
 
-    it('classifies plain @browser / @collab / @computer as capability kinds', () => {
+    it('does not chip plain @browser / @collab / @computer without popup tags', () => {
       expect(parseUserMentions('@browser go')).toEqual([
-        { type: 'mention', kind: 'browser', value: 'browser' },
-        { type: 'text', text: ' go' },
+        { type: 'text', text: '@browser go' },
       ])
       expect(parseUserMentions('@collab help')).toEqual([
-        { type: 'mention', kind: 'collab', value: 'collab' },
-        { type: 'text', text: ' help' },
+        { type: 'text', text: '@collab help' },
       ])
       expect(parseUserMentions('@computer click')).toEqual([
-        { type: 'mention', kind: 'computer', value: 'computer' },
-        { type: 'text', text: ' click' },
+        { type: 'text', text: '@computer click' },
       ])
     })
 
-    it('coexists with miniapp tags and file mentions', () => {
+    it('coexists with miniapp tags and path-ref file mentions', () => {
+      const file = wrapPathRefMention('file', 'file.ts', 'file.ts')
       const input =
         '<superone-capability><name>Super Browser</name><id>browser</id></superone-capability> ' +
-        '<superone-miniapp><appname>App</appname><appid>app</appid></superone-miniapp> see @file.ts'
+        '<superone-miniapp><appname>App</appname><appid>app</appid></superone-miniapp> see ' +
+        file
       expect(parseUserMentions(input)).toEqual([
         { type: 'mention', kind: 'browser', value: 'browser', displayName: 'Super Browser' },
         { type: 'text', text: ' ' },
         { type: 'mention', kind: 'miniapp', value: 'app', displayName: 'App' },
         { type: 'text', text: ' see ' },
-        { type: 'mention', kind: 'file', value: 'file.ts' },
+        { type: 'mention', kind: 'file', value: 'file.ts', displayName: 'file.ts' },
       ])
     })
   })

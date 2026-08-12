@@ -54,6 +54,7 @@ import { CodexGoalDialog } from './CodexGoalDialog'
 import { CodexGoalIndicator } from './CodexGoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
+import { wrapPathRefMention } from './user-mention-parser'
 
 export const chatInputAPI: {
   insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
@@ -689,11 +690,15 @@ export function ChatInput() {
             } else if (attrs.kind === 'collab' || attrs.kind === 'computer' || attrs.kind === 'browser') {
               current += ` <superone-capability><name>${attrs.displayName}</name><id>${attrs.kind}</id></superone-capability> `
             } else {
-              // Directory kind must survive plain-text round-trip via trailing `/`
-              // (parseUserMentions re-classifies solely from the serialized value).
+              // Structured tag so only popup-selected path/agent mentions become
+              // chips on render — bare `@foo` typed as text stays plain text.
               let value = attrs.value
               if (attrs.kind === 'directory' && value && !value.endsWith('/')) value += '/'
-              current += ` @${value} `
+              const kind =
+                attrs.kind === 'directory' || attrs.kind === 'agent' || attrs.kind === 'file'
+                  ? attrs.kind
+                  : 'file'
+              current += ` ${wrapPathRefMention(kind, value, attrs.displayName || value)} `
             }
           } else if (node.type.name === 'attachment') {
             if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
@@ -1261,7 +1266,7 @@ export function ChatInput() {
         if (lastAt !== -1) {
           const afterAt = textInParent.slice(lastAt + 1)
           // Default: single-token @mentions (file/agent) close on space.
-          // Session grammar needs spaces: @chat [project|all] [title…]
+          // Session grammar needs spaces: @session [project|all] [title…]
           const spaceOk = mentionQueryAllowsSpaces(afterAt)
           if ((!afterAt.includes(' ') || spaceOk) && !afterAt.includes('\0')) {
             const atPos = $pos.start() + lastAt

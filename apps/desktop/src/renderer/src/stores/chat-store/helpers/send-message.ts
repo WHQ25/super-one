@@ -35,7 +35,7 @@ import {
   type NodeSessionSnapshot,
 } from '@/lib/remote-session-messages'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
-import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { toastSendFailure } from './send-error-toast'
 
 /**
@@ -292,7 +292,9 @@ export async function sendMessageImpl(
       quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
     }
 
-    let agentContent = rawContent
+    // Expand popup-selected path/agent tags to bare @value for the model; keep
+    // the stored user bubble as structured tags so only those render as chips.
+    let agentContent = expandPathRefTagsForAgent(rawContent)
     let capabilityReminderSuffix = ''
     const capabilityMentions = mentions.filter(
       (m) => m.kind === 'collab' || m.kind === 'computer' || m.kind === 'browser',
@@ -770,7 +772,9 @@ export async function sendMessageImpl(
   }
   let capabilityReminderSuffix = ''
   let desktopAppReminderSuffix = ''
-  let agentContent = rawContent
+  // Expand popup-selected path/agent tags to bare @value for the model; keep
+  // the stored user bubble as structured tags so only those render as chips.
+  let agentContent = expandPathRefTagsForAgent(rawContent)
   // CLI-style `/workflow name key=value` → JSON object for the agent (Grok expects JSON or free text).
   if (/^\/workflow\s+\S+/i.test(agentContent)) {
     const { rewriteWorkflowCommandForAgent } = await import(

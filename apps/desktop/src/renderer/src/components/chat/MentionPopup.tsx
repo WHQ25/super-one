@@ -26,6 +26,11 @@ import {
   type SessionMentionLoadState,
   type SessionMentionRow,
 } from './session-mention-query'
+import {
+  compareBuiltinMentionMatches,
+  matchBuiltinMention,
+  type BuiltinMentionMatchRank,
+} from './mention-capability-match'
 
 export { SESSION_MENTION_NAV_PREFIX }
 
@@ -57,7 +62,12 @@ type FlatItem =
       kind: 'capability'
       id: BuiltinCapabilityId
       displayName: string
+      /** Highlight on display name (empty when only @id matched). */
       matchIndices: number[]
+      /** Highlight on the @keyword suffix. */
+      keywordMatchIndices: number[]
+      /** Sort key: id matches beat display-name matches. */
+      matchRank: BuiltinMentionMatchRank
       disabled?: boolean
     }
   | {
@@ -66,6 +76,8 @@ type FlatItem =
       id: SessionPortalId
       displayName: string
       matchIndices: number[]
+      keywordMatchIndices: number[]
+      matchRank: BuiltinMentionMatchRank
     }
   | {
       /** Project / all scope choice — Tab completes into query. */
@@ -538,37 +550,50 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // Hide when browsing into a subdirectory (`@src/`), but keep on empty `@`.
       if (isSessionMode) return []
       if (isBrowseMode && query) return []
-      const matches: FlatItem[] = []
+      const matches: Array<Extract<FlatItem, { kind: 'capability' | 'session-portal' }>> = []
       for (const cap of BUILTIN_CAPABILITIES) {
         const label = capabilityLabel(cap.id)
-        const idMatch = fuzzyMatchIndices(cap.id, query)
-        const nameMatch = fuzzyMatchIndices(label, query)
-        const enMatch = fuzzyMatchIndices(cap.displayName, query)
-        if (idMatch === null && nameMatch === null && enMatch === null) continue
+        // Keyword (@id) outranks display name so `@se` hits session before "Computer Use".
+        const scored = matchBuiltinMention(cap.id, [label, cap.displayName], query)
+        if (!scored) continue
         matches.push({
           kind: 'capability',
           id: cap.id,
           displayName: label,
-          matchIndices: nameMatch ?? enMatch ?? idMatch ?? [],
+          matchIndices: scored.labelIndices,
+          keywordMatchIndices: scored.keywordIndices,
+          matchRank: scored.rank,
           // Stay visible but not selectable when the matching settings toggle is off.
           disabled: !capabilityEnabled[cap.id],
         })
       }
-      // Built-in chat/session portal — always on; Tab/Enter opens session search page.
+      // Built-in Session portal — always on; Tab/Enter opens session search page.
       {
         const label = sessionPortalLabel()
-        const idMatch = fuzzyMatchIndices(SESSION_MENTION_KEYWORD, query)
-        const nameMatch = fuzzyMatchIndices(label, query)
-        const enMatch = fuzzyMatchIndices('Session', query)
-        const chatEnMatch = fuzzyMatchIndices('Chat', query)
-        if (idMatch !== null || nameMatch !== null || enMatch !== null || chatEnMatch !== null) {
+        const scored = matchBuiltinMention(
+          SESSION_MENTION_KEYWORD,
+          [label, 'Session'],
+          query,
+        )
+        if (scored) {
           matches.push({
             kind: 'session-portal',
             id: SESSION_MENTION_KEYWORD,
             displayName: label,
-            matchIndices: nameMatch ?? enMatch ?? chatEnMatch ?? idMatch ?? [],
+            matchIndices: scored.labelIndices,
+            keywordMatchIndices: scored.keywordIndices,
+            matchRank: scored.rank,
           })
         }
+      }
+      // Only re-rank when the user is filtering — empty `@` keeps catalog order.
+      if (query.trim()) {
+        matches.sort((a, b) =>
+          compareBuiltinMentionMatches(
+            { rank: a.matchRank, keyword: a.id },
+            { rank: b.matchRank, keyword: b.id },
+          ),
+        )
       }
       return matches
     }, [capabilityLabel, sessionPortalLabel, query, isBrowseMode, isSessionMode, capabilityEnabled])
@@ -721,7 +746,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
         // Project / all — Tab or Enter completes scope into the query (trailing space).
         if (item.kind === 'session-project') {
-          onSelect(`session ${item.token} `, 'navigate')
+          onSelect(`${SESSION_MENTION_KEYWORD} ${item.token} `, 'navigate')
           return
         }
         if (item.kind === 'session') {
@@ -822,7 +847,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                 <HighlightedPath path={item.displayName} indices={item.matchIndices} />
               </span>
               <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                @{SESSION_MENTION_KEYWORD}
+                @
+                <HighlightedPath path={SESSION_MENTION_KEYWORD} indices={item.keywordMatchIndices} />
               </span>
             </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -922,7 +948,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                 </span>
               ) : (
                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                  @{item.id}
+                  @
+                  <HighlightedPath path={item.id} indices={item.keywordMatchIndices} />
                 </span>
               )}
             </span>

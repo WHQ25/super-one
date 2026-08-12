@@ -4,6 +4,15 @@ import {
   isBuiltinCapabilityId,
   type BuiltinCapabilityId,
 } from '@superone/shared/capability-prompt-tags'
+import {
+  DESKTOP_APP_REMINDER_REGEX,
+  DESKTOP_APP_TAG_REGEX,
+  MINIAPP_REMINDER_REGEX,
+  MINIAPP_TAG_REGEX,
+  PATH_REF_TAG_REGEX,
+  SESSION_REMINDER_REGEX,
+  SESSION_TAG_REGEX,
+} from '@superone/shared/miniapp-prompt-tags'
 
 export type UserMentionKind =
   | 'file'
@@ -18,24 +27,10 @@ export type UserTextSegment =
   | { type: 'text'; text: string }
   | { type: 'mention'; kind: UserMentionKind; value: string; displayName?: string }
 
-const MENTION_REGEX = /(^|\s)@(\S+)/g
-const MINIAPP_TAG_REGEX = /<superone-miniapp>\s*<appname>([\s\S]*?)<\/appname>\s*<appid>([\s\S]*?)<\/appid>\s*<\/superone-miniapp>/g
-const MINIAPP_REMINDER_REGEX = /\n*<superone-miniapp-reminder>[\s\S]*?<\/superone-miniapp-reminder>\n*/g
-const DESKTOP_APP_TAG_REGEX =
-  /<superone-desktop-app>\s*<name>([\s\S]*?)<\/name>\s*<bundleId>([\s\S]*?)<\/bundleId>\s*<\/superone-desktop-app>/g
-const DESKTOP_APP_REMINDER_REGEX =
-  /\n*<superone-desktop-app-reminder>[\s\S]*?<\/superone-desktop-app-reminder>\n*/g
-const SESSION_TAG_REGEX =
-  /<superone-session>\s*<title>([\s\S]*?)<\/title>\s*<sessionId>([\s\S]*?)<\/sessionId>\s*<\/superone-session>/g
-const SESSION_REMINDER_REGEX =
-  /\n*<superone-session-reminder>[\s\S]*?<\/superone-session-reminder>\n*/g
+// Re-export so ChatInput / callers can import wrap from the parser module.
+export { wrapPathRefMention, expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 
-function classify(value: string): UserMentionKind {
-  if (isBuiltinCapabilityId(value)) return value
-  if (value.endsWith('/')) return 'directory'
-  if (value.includes('/') || value.includes('.')) return 'file'
-  return 'agent'
-}
+const PATH_REF_KINDS = new Set(['file', 'directory', 'agent'])
 
 interface TagMatch {
   start: number
@@ -111,6 +106,31 @@ function findSessionTags(text: string): TagMatch[] {
   return out
 }
 
+function findPathRefTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
+  const re = new RegExp(PATH_REF_TAG_REGEX)
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const kind = m[1].trim()
+    if (!PATH_REF_KINDS.has(kind)) continue
+    out.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      kind: kind as 'file' | 'directory' | 'agent',
+      displayName: m[2].trim(),
+      value: m[3].trim(),
+    })
+  }
+  return out
+}
+
+/**
+ * Parse a stored user-message string into text + chip segments.
+ *
+ * Chips only come from structured tags written when the user picks an item in
+ * the mention popup (Tab / Enter / click). Bare `@token` typed as plain text
+ * stays plain text — never re-classified into a chip.
+ */
 export function parseUserMentions(text: string): UserTextSegment[] {
   if (text.length === 0) return []
 
@@ -121,12 +141,13 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     .replace(DESKTOP_APP_REMINDER_REGEX, '')
     .replace(SESSION_REMINDER_REGEX, '')
 
-  // 2. Extract structured tags (miniapp + capabilities + desktop apps + sessions) and interleave with @-mentions.
+  // 2. Extract structured tags only (popup-selected mentions).
   const tagMatches = [
     ...findMiniAppTags(withoutReminder),
     ...findCapabilityTags(withoutReminder),
     ...findDesktopAppTags(withoutReminder),
     ...findSessionTags(withoutReminder),
+    ...findPathRefTags(withoutReminder),
   ].sort((a, b) => a.start - b.start)
 
   const segments: UserTextSegment[] = []
@@ -134,22 +155,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
 
   const pushText = (slice: string) => {
     if (!slice) return
-    // Re-parse @-mentions inside the text slice.
-    const regex = new RegExp(MENTION_REGEX)
-    let lastIndex = 0
-    let match: RegExpExecArray | null
-    while ((match = regex.exec(slice)) !== null) {
-      const [, prefix, value] = match
-      const atIndex = match.index + prefix.length
-      if (atIndex > lastIndex) {
-        segments.push({ type: 'text', text: slice.slice(lastIndex, atIndex) })
-      }
-      segments.push({ type: 'mention', kind: classify(value), value })
-      lastIndex = atIndex + 1 + value.length
-    }
-    if (lastIndex < slice.length) {
-      segments.push({ type: 'text', text: slice.slice(lastIndex) })
-    }
+    segments.push({ type: 'text', text: slice })
   }
 
   for (const m of tagMatches) {

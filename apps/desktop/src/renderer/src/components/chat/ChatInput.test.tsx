@@ -538,9 +538,9 @@ describe('ChatInput @-mention no-match suppression', () => {
   it('keeps the popup closed after Escape and treats further typing as plain text', () => {
     const { rerender } = render(<ChatInput />)
 
-    typeInEditor('@chat')
+    typeInEditor('@session')
     rerender(<ChatInput />)
-    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'chat')
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'session')
 
     expect(editorState.handleKeyDown).toBeTruthy()
     let handled = false
@@ -553,7 +553,7 @@ describe('ChatInput @-mention no-match suppression', () => {
     expect(screen.queryByTestId('mention-popup')).toBeNull()
 
     // Same @ token — continue typing must not re-open the popup.
-    typeInEditor('@chat more')
+    typeInEditor('@session more')
     rerender(<ChatInput />)
     expect(screen.queryByTestId('mention-popup')).toBeNull()
 

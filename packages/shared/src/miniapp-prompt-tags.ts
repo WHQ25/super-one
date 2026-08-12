@@ -14,6 +14,23 @@ export const DESKTOP_APP_TAG_REGEX =
 export const DESKTOP_APP_REMINDER_REGEX =
   /\n*<superone-desktop-app-reminder>[\s\S]*?<\/superone-desktop-app-reminder>\n*/g
 
+/** Popup-selected file / directory / agent mentions (not bare typed @text). */
+export const PATH_REF_TAG_REGEX =
+  /<superone-ref>\s*<kind>([\s\S]*?)<\/kind>\s*<name>([\s\S]*?)<\/name>\s*<value>([\s\S]*?)<\/value>\s*<\/superone-ref>/g
+
+export function wrapPathRefMention(
+  kind: 'file' | 'directory' | 'agent',
+  value: string,
+  displayName: string,
+): string {
+  return `<superone-ref><kind>${kind}</kind><name>${displayName}</name><value>${value}</value></superone-ref>`
+}
+
+/** Agent-facing: collapse path refs to bare `@value` (historical model convention). */
+export function expandPathRefTagsForAgent(text: string): string {
+  return text.replace(PATH_REF_TAG_REGEX, (_full, _kind, _name, value) => `@${String(value).trim()}`)
+}
+
 /** Replace agent-facing structured tags with user-visible @labels (keeps surrounding whitespace/newlines). */
 export function replaceMiniAppTagsWithMention(text: string): string {
   // Chain every structured @-mention family so copy paths stay user-visible.
@@ -26,7 +43,12 @@ export function replaceMiniAppTagsWithMention(text: string): string {
         wrapMiniAppMention(String(appId).trim(), String(appName).trim()),
       )
       .replace(SESSION_TAG_REGEX, (_, title) => `@${String(title).trim()}`)
-      .replace(DESKTOP_APP_TAG_REGEX, (_, name) => `@${String(name).trim()}`),
+      .replace(DESKTOP_APP_TAG_REGEX, (_, name) => `@${String(name).trim()}`)
+      .replace(PATH_REF_TAG_REGEX, (_full, _kind, name, value) => {
+        const v = String(value).trim()
+        const n = String(name).trim()
+        return `@${v || n}`
+      }),
   )
 }
 
@@ -40,6 +62,11 @@ export function stripMiniAppMarkup(text: string): string {
       .replace(DESKTOP_APP_REMINDER_REGEX, '')
       .replace(MINIAPP_TAG_REGEX, (_, appName) => `@${String(appName).trim()}`)
       .replace(SESSION_TAG_REGEX, (_, title) => `@${String(title).trim()}`)
-      .replace(DESKTOP_APP_TAG_REGEX, (_, name) => `@${String(name).trim()}`),
+      .replace(DESKTOP_APP_TAG_REGEX, (_, name) => `@${String(name).trim()}`)
+      .replace(PATH_REF_TAG_REGEX, (_full, _kind, name, value) => {
+        const n = String(name).trim()
+        const v = String(value).trim()
+        return `@${n || v}`
+      }),
   )
 }

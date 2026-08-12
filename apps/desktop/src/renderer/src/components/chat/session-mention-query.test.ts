@@ -28,24 +28,23 @@ const projects = [
 ]
 
 describe('isSessionMentionQuery', () => {
-  it('matches chat and chat with args', () => {
-    expect(isSessionMentionQuery('chat')).toBe(true)
-    expect(isSessionMentionQuery('chat ')).toBe(true)
-    expect(isSessionMentionQuery('chat all')).toBe(true)
-    expect(isSessionMentionQuery('chat fix auth')).toBe(true)
+  it('matches session and session with args', () => {
+    expect(isSessionMentionQuery('session')).toBe(true)
+    expect(isSessionMentionQuery('session ')).toBe(true)
+    expect(isSessionMentionQuery('session all')).toBe(true)
+    expect(isSessionMentionQuery('session fix auth')).toBe(true)
   })
 
-  it('rejects colon form, old session keyword, and unrelated', () => {
-    expect(isSessionMentionQuery('chat:')).toBe(false)
-    expect(isSessionMentionQuery('chats')).toBe(false)
-    expect(isSessionMentionQuery('session')).toBe(false)
-    expect(isSessionMentionQuery('session all')).toBe(false)
+  it('rejects colon form and unrelated', () => {
+    expect(isSessionMentionQuery('session:')).toBe(false)
+    expect(isSessionMentionQuery('sessions')).toBe(false)
+    expect(isSessionMentionQuery('chat')).toBe(false)
   })
 })
 
 describe('parseSessionMentionQuery phases', () => {
-  it('chat alone → pick-project', () => {
-    const p = parseSessionMentionQuery('chat', {
+  it('session alone → pick-project', () => {
+    const p = parseSessionMentionQuery('session', {
       currentProjectKey: '/Users/me/super-one',
       projects,
     })
@@ -53,8 +52,8 @@ describe('parseSessionMentionQuery phases', () => {
     expect(p?.projectToken).toBe('')
   })
 
-  it('chat partial project → pick-project', () => {
-    const p = parseSessionMentionQuery('chat sup', {
+  it('session partial project → pick-project', () => {
+    const p = parseSessionMentionQuery('session sup', {
       currentProjectKey: '/Users/me/super-one',
       projects,
     })
@@ -62,8 +61,8 @@ describe('parseSessionMentionQuery phases', () => {
     expect(p?.projectToken).toBe('sup')
   })
 
-  it('chat all → need-title (title required)', () => {
-    const p = parseSessionMentionQuery('chat all ', {
+  it('session all → need-title (title required)', () => {
+    const p = parseSessionMentionQuery('session all ', {
       currentProjectKey: '/Users/me/super-one',
       projects,
     })
@@ -72,8 +71,8 @@ describe('parseSessionMentionQuery phases', () => {
     expect(p?.titleQuery).toBe('')
   })
 
-  it('chat all auth → search', () => {
-    const p = parseSessionMentionQuery('chat all auth refresh', {
+  it('session all auth → search', () => {
+    const p = parseSessionMentionQuery('session all auth refresh', {
       currentProjectKey: '/Users/me/super-one',
       projects,
     })
@@ -82,8 +81,8 @@ describe('parseSessionMentionQuery phases', () => {
     expect(p?.titleQuery).toBe('auth refresh')
   })
 
-  it('chat super-one mid → search on project', () => {
-    const p = parseSessionMentionQuery('chat super-one middleware', {
+  it('session super-one mid → search on project', () => {
+    const p = parseSessionMentionQuery('session super-one middleware', {
       currentProjectKey: '/Users/me/other-app',
       projects,
     })
@@ -97,7 +96,7 @@ describe('parseSessionMentionQuery phases', () => {
   })
 
   it('does not treat bare title as current-project search without project token', () => {
-    const p = parseSessionMentionQuery('chat fix login', {
+    const p = parseSessionMentionQuery('session fix login', {
       currentProjectKey: '/Users/me/super-one',
       projects,
     })
@@ -106,8 +105,8 @@ describe('parseSessionMentionQuery phases', () => {
     expect(p?.projectToken).toBe('fix')
   })
 
-  it('nav prefix is chat with trailing space', () => {
-    expect(SESSION_MENTION_NAV_PREFIX).toBe('chat ')
+  it('nav prefix is session with trailing space', () => {
+    expect(SESSION_MENTION_NAV_PREFIX).toBe('session ')
     expect(isSessionMentionQuery(SESSION_MENTION_NAV_PREFIX)).toBe(true)
   })
 })
@@ -129,9 +128,9 @@ describe('listSessionProjectChoices', () => {
 })
 
 describe('mentionQueryAllowsSpaces', () => {
-  it('allows spaces only inside @chat grammar', () => {
-    expect(mentionQueryAllowsSpaces('chat ')).toBe(true)
-    expect(mentionQueryAllowsSpaces('chat all auth')).toBe(true)
+  it('allows spaces only inside @session grammar', () => {
+    expect(mentionQueryAllowsSpaces('session ')).toBe(true)
+    expect(mentionQueryAllowsSpaces('session all auth')).toBe(true)
     expect(mentionQueryAllowsSpaces('file name')).toBe(false)
   })
 })
@@ -140,24 +139,24 @@ describe('remainingSessionArgumentHint', () => {
   const projects = [{ projectKey: '/Users/me/super-one', label: 'super-one' }]
 
   it('shows full grammar while picking project', () => {
-    expect(remainingSessionArgumentHint('chat', projects)).toBe(SESSION_MENTION_ARGUMENT_HINT)
-    expect(remainingSessionArgumentHint('chat ', projects)).toBe(SESSION_MENTION_ARGUMENT_HINT)
-    expect(remainingSessionArgumentHint('chat sup', projects)).toBe(SESSION_MENTION_ARGUMENT_HINT)
+    expect(remainingSessionArgumentHint('session', projects)).toBe(SESSION_MENTION_ARGUMENT_HINT)
+    expect(remainingSessionArgumentHint('session ', projects)).toBe(SESSION_MENTION_ARGUMENT_HINT)
+    expect(remainingSessionArgumentHint('session sup', projects)).toBe(SESSION_MENTION_ARGUMENT_HINT)
   })
 
   it('shows <title> after project/all is committed', () => {
-    expect(remainingSessionArgumentHint('chat all ')).toBe('<title>')
-    expect(remainingSessionArgumentHint('chat all')).toBe(SESSION_MENTION_ARGUMENT_HINT)
-    expect(remainingSessionArgumentHint('chat super-one ', projects)).toBe('<title>')
+    expect(remainingSessionArgumentHint('session all ')).toBe('<title>')
+    expect(remainingSessionArgumentHint('session all')).toBe(SESSION_MENTION_ARGUMENT_HINT)
+    expect(remainingSessionArgumentHint('session super-one ', projects)).toBe('<title>')
   })
 
   it('keeps full grammar when project list is empty (cannot resolve label)', () => {
-    expect(remainingSessionArgumentHint('chat super-one ')).toBe(SESSION_MENTION_ARGUMENT_HINT)
+    expect(remainingSessionArgumentHint('session super-one ')).toBe(SESSION_MENTION_ARGUMENT_HINT)
   })
 
   it('hides once title is being typed', () => {
-    expect(remainingSessionArgumentHint('chat all auth')).toBeNull()
-    expect(remainingSessionArgumentHint('chat super-one auth', projects)).toBeNull()
+    expect(remainingSessionArgumentHint('session all auth')).toBeNull()
+    expect(remainingSessionArgumentHint('session super-one auth', projects)).toBeNull()
   })
 })
 

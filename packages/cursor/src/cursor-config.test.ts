@@ -5,23 +5,26 @@ import {
   mapPermissionToCursorLocal,
   readCursorConfig,
   resolveCursorApiKeyPlain,
+  resolveCursorToolRestrictions,
+  CURSOR_READONLY_TOOLS,
 } from './cursor-config'
 
 describe('cursor-config', () => {
-  it('maps plan and auto-review modes honestly', () => {
+  it('maps Auto / Plan / Full Access honestly (sandbox is separate)', () => {
     expect(mapPermissionToCursorLocal('plan')).toEqual({
       mode: 'plan',
-      sandboxEnabled: true,
       autoReview: false,
     })
     expect(mapPermissionToCursorLocal('auto')).toEqual({
       mode: 'agent',
-      sandboxEnabled: true,
+      autoReview: true,
+    })
+    expect(mapPermissionToCursorLocal('default')).toEqual({
+      mode: 'agent',
       autoReview: true,
     })
     expect(mapPermissionToCursorLocal('bypassPermissions')).toEqual({
       mode: 'agent',
-      sandboxEnabled: true,
       autoReview: false,
     })
   })
@@ -84,5 +87,20 @@ describe('cursor-config', () => {
       autoCreatePR: true,
       workOnCurrentBranch: true,
     })
+  })
+
+  it('expands tool presets for local restrictions', () => {
+    expect(resolveCursorToolRestrictions({})).toEqual({})
+    expect(resolveCursorToolRestrictions({ toolPreset: 'default' })).toEqual({})
+    expect(resolveCursorToolRestrictions({ toolPreset: 'readonly' })).toEqual({
+      tools: [...CURSOR_READONLY_TOOLS],
+    })
+    expect(resolveCursorToolRestrictions({ toolPreset: 'no-shell' })).toEqual({
+      disallowedTools: ['shell'],
+    })
+    expect(resolveCursorToolRestrictions({
+      toolPreset: 'default',
+      disallowedTools: ['shell', 'mcp'],
+    })).toEqual({ disallowedTools: ['shell', 'mcp'] })
   })
 })

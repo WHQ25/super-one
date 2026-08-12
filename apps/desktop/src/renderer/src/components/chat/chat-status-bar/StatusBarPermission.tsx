@@ -2,6 +2,7 @@ import type { ChatProvider } from '@/stores/chat'
 import { AcpModeSelector } from '../AcpModeSelector'
 import { AcpPermissionSelector } from '../AcpPermissionSelector'
 import { CodexPermissionSelector } from '../CodexPermissionSelector'
+import { CursorPermissionSelector } from '../CursorPermissionSelector'
 import { OpenCodePermissionSelector } from '../OpenCodePermissionSelector'
 import { PermissionModeSelector } from '../PermissionModeSelector'
 
@@ -27,6 +28,9 @@ export function StatusBarPermission({
   }
   if (activeProvider === 'opencode') {
     return <OpenCodePermissionSelector compact={compactIndicators} />
+  }
+  if (activeProvider === 'cursor') {
+    return <CursorPermissionSelector compact={compactIndicators} />
   }
   return <PermissionModeSelector compact={compactIndicators} />
 }

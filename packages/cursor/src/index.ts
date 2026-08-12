@@ -14,6 +14,8 @@ export {
   resolveCursorApiKeyPlain,
   mapPermissionToCursorLocal,
   buildCloudOptions,
+  resolveCursorToolRestrictions,
+  CURSOR_READONLY_TOOLS,
   type CursorConfig,
   type CursorCloudRepoConfig,
   type CursorModelParamsByModel,
@@ -33,7 +35,12 @@ export {
 
 export {
   mapInteractionUpdate,
+  mapConversationStep,
   mapSdkMessageLifecycle,
+  extractToolCallParts,
+  toolDisplayName,
+  stableIdField,
+  CursorTurnCallIdBridge,
 } from './cursor-event-map'
 
 export {
@@ -78,17 +85,28 @@ export {
   withResumedAgentArtifacts,
   listCursorArtifacts,
   downloadCursorArtifact,
+  getCursorAgentUsage,
   type CursorCloudListAgentsOptions,
 } from './cursor-cloud'
+
+export {
+  cursorSdkLogin,
+  cursorSdkAuthStatus,
+  cursorSdkLogout,
+  type CursorSdkLoginResult,
+  type CursorSdkAuthStatus,
+} from './cursor-sdk-auth'
 
 export {
   createCursorRuntime,
   setCursorRuntimeFactory,
   getCursorRuntimeFactory,
+  CursorIntegrationError,
   type CursorRuntime,
   type CursorRuntimeOptions,
   type CursorRuntimeFactory,
   type CursorSendOptions,
+  type CursorSendResult,
   type CursorRuntimeLog,
 } from './cursor-runtime'
 

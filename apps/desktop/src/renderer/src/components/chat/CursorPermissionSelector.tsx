@@ -1,0 +1,58 @@
+import { useEffect, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { useActiveSession, useChatStore } from '@/stores/chat'
+import {
+  CURSOR_DEFAULT_PERMISSION_MODE,
+  CURSOR_PERMISSION_MODES,
+} from './cursorPermissionModes'
+import { CursorPermissionModeList, cursorPermissionModeOption } from './CursorPermissionModeList'
+
+/**
+ * Status-bar permission control for Cursor sessions.
+ * Offers Auto / Plan / Full Access only.
+ */
+export function CursorPermissionSelector({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const permissionMode = useActiveSession((state) => state.permissionMode)
+  const setPermissionMode = useChatStore((state) => state.setPermissionMode)
+
+  useEffect(() => {
+    if (!CURSOR_PERMISSION_MODES.includes(permissionMode)) {
+      setPermissionMode(CURSOR_DEFAULT_PERMISSION_MODE)
+    }
+  }, [permissionMode, setPermissionMode])
+
+  const current = cursorPermissionModeOption(
+    CURSOR_PERMISSION_MODES.includes(permissionMode) ? permissionMode : CURSOR_DEFAULT_PERMISSION_MODE,
+  )
+  const currentLabel = t(`chat.cursorPermissionModes.${current.labelKey}.label`)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors ${current.color} ${current.hoverBg}`}
+          title={currentLabel}
+        >
+          {current.icon}
+          {!compact && <span>{currentLabel}</span>}
+          {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-56 border-border bg-popover p-1">
+        <CursorPermissionModeList
+          activeMode={current.id}
+          availableModes={CURSOR_PERMISSION_MODES}
+          onSelect={(mode) => {
+            setPermissionMode(mode)
+            setOpen(false)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}

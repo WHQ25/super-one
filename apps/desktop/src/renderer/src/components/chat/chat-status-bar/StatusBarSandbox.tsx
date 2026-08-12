@@ -2,8 +2,8 @@ import type { ChatProvider } from '@/stores/chat'
 import { harnessSupportsSandbox, SandboxModeSelector } from '../SandboxModeSelector'
 
 /**
- * Sandbox-mode chip. Claude only — Codex covers this via permission presets;
- * ACP has no sandbox protocol surface.
+ * Sandbox-mode chip. Claude + Cursor — Codex covers this via permission presets;
+ * ACP / OpenCode have no sandbox protocol surface.
  */
 export function StatusBarSandbox({
   activeProvider,

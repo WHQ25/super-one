@@ -68,6 +68,9 @@ const cursorConfigSchema = z.object({
   autoCreatePR: z.boolean().optional(),
   skipReviewerRequest: z.boolean().optional(),
   cloudEnvVars: z.record(z.string(), z.string()).optional(),
+  tools: z.array(z.string()).optional(),
+  disallowedTools: z.array(z.string()).optional(),
+  toolPreset: z.enum(['default', 'readonly', 'no-shell', 'custom']).optional(),
 }).passthrough()
 
 const claudeHarness: Harness = {

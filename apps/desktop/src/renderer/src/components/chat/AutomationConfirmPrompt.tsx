@@ -29,7 +29,7 @@ import { useChatStore } from '@/stores/chat'
 import { getCachedAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { modes } from './PermissionModeList'
-import { harnessSupportsSandbox, sandboxModes, SandboxModePopover } from './SandboxModeSelector'
+import { harnessSupportsSandbox, harnessSandboxModes, harnessSandboxSupportLevel, coerceSandboxModeForHarness, sandboxModes, SandboxModePopover } from './SandboxModeSelector'
 import { formatCodexModelName, formatReasoningEffortLabel } from './chat-input-utils'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { HarnessPermissionPopover } from './HarnessPermissionPopover'
@@ -247,16 +247,17 @@ function AgentConfigStrip({
       <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
       <HarnessPermissionPopover
         harnessId={harnessId}
-        value={value.permissionMode ?? 'default'}
+        value={value.permissionMode ?? (harnessId === 'cursor' ? 'auto' : 'default')}
         onChange={(permissionMode: PermissionMode) => onChange({ permissionMode })}
       />
       {harnessSupportsSandbox(harnessId) && (
         <>
           <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
           <SandboxModePopover
-            value={value.sandboxMode ?? 'off'}
+            value={coerceSandboxModeForHarness(harnessId, value.sandboxMode ?? 'off')}
             onValueChange={(sandboxMode: SandboxMode) => onChange({ sandboxMode })}
-            supportLevel={sandboxCapability?.supportLevel ?? 'always'}
+            supportLevel={harnessSandboxSupportLevel(harnessId, sandboxCapability?.supportLevel ?? 'always')}
+            availableModes={harnessSandboxModes(harnessId)}
           />
         </>
       )}

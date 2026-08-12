@@ -88,6 +88,35 @@ interface AppAPI {
   cursorGetRun(runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }): Promise<unknown>
   cursorCancelRun(runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }): Promise<{ ok: true }>
   cursorForceRecover(sessionId: string, message?: string): Promise<{ ok: true }>
+  cursorSdkLogin(): Promise<{ ok: true; email: string | null; apiKeyExpiresAtMs: number }>
+  cursorSdkLogout(): Promise<{ ok: true }>
+  cursorSdkAuthStatus(): Promise<
+    | { status: 'logged-out' }
+    | { status: 'logged-in'; backendUrl: string; email?: string; apiKeyExpiresAtMs?: number }
+  >
+  cursorGetUsage(agentId: string, opts?: { runId?: string }): Promise<{
+    usage: {
+      inputTokens: number
+      outputTokens: number
+      cacheReadTokens: number
+      cacheWriteTokens: number
+      totalTokens: number
+      reasoningTokens?: number
+    }
+    cost?: { rawCostCents: number; chargedCents: number }
+    runs: Array<{
+      runId: string
+      usage: {
+        inputTokens: number
+        outputTokens: number
+        cacheReadTokens: number
+        cacheWriteTokens: number
+        totalTokens: number
+        reasoningTokens?: number
+      }
+      cost?: { rawCostCents: number; chargedCents: number }
+    }>
+  }>
   getStartupData(): Promise<StartupData>
   getAppMetrics(): Promise<AppMetricsSnapshot>
   probeSandbox(): Promise<SandboxProbeResult>

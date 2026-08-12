@@ -6,6 +6,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
 import { ACP_PERMISSION_MODES } from '@/components/chat/acpPermissionModes'
+import { CURSOR_PERMISSION_MODES } from '@/components/chat/cursorPermissionModes'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractModeFromSuggestions } from './chat-helpers'
 import {
@@ -599,28 +600,41 @@ export async function setSandboxModeImpl(
     set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: sandboxModeToInfo(mode) })))
     return
   }
+  const session = getActivePerSession(get())
+  const provider = resolveProvider(session)
   if (mode !== 'off') {
     const capability = useAppStore.getState().sandboxCapability
-    if (capability?.supportLevel === 'unsupported') return
-    if (capability?.supportLevel === 'conditional') {
-      const probe = await useAppStore.getState().probeSandbox()
-      if (!probe.ok) return
+    // Cursor uses its own SDK sandbox helpers — skip Claude's Linux conditional probe.
+    if (provider !== 'cursor') {
+      if (capability?.supportLevel === 'unsupported') return
+      if (capability?.supportLevel === 'conditional') {
+        const probe = await useAppStore.getState().probeSandbox()
+        if (!probe.ok) return
+      }
+    } else if (capability?.supportLevel === 'unsupported') {
+      return
     }
   }
-  const updated = await window.agent.setSandboxMode(activeProject, mode)
-  set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: updated })))
+  try {
+    const updated = await window.agent.setSandboxMode(activeProject, mode)
+    set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: updated })))
+  } catch (err) {
+    console.warn('[chat] setSandboxMode failed:', err)
+  }
 }
 
 export function cyclePermissionModeImpl(get: () => ChatStore): void {
   const session = getActivePerSession(get())
   const provider = resolveProvider(session)
   // ACP/Grok: only modes SuperOne can drive over the wire (see acpPermissionModes).
-  // OpenCode: no auto classifier. Claude: full cycle list (excludes bypass/dontAsk).
+  // OpenCode: no auto classifier. Cursor: Auto / Plan / Full Access. Claude: full cycle (excludes bypass/dontAsk).
   const permissionModes: PermissionMode[] = provider === 'acp'
     ? [...ACP_PERMISSION_MODES]
     : provider === 'opencode'
       ? PERMISSION_MODES.filter((mode) => mode !== 'auto')
-      : PERMISSION_MODES
+      : provider === 'cursor'
+        ? [...CURSOR_PERMISSION_MODES]
+        : PERMISSION_MODES
   const startIdx = permissionModes.indexOf(session.permissionMode)
   const anchor = startIdx === -1 ? 0 : startIdx
   const next = permissionModes[(anchor + 1) % permissionModes.length]
@@ -638,6 +652,11 @@ export function togglePlanModeShortcutImpl(get: () => ChatStore): void {
   // ACP/Grok: plan is session/set_mode — toggle plan vs default (not permission cycle).
   if (provider === 'acp') {
     get().setPermissionMode(session.permissionMode === 'plan' ? 'default' : 'plan')
+    return
+  }
+  // Cursor: toggle Plan vs Auto (Full Access stays reachable via selector / Shift+Tab cycle).
+  if (provider === 'cursor') {
+    get().setPermissionMode(session.permissionMode === 'plan' ? 'auto' : 'plan')
     return
   }
   get().cyclePermissionMode()

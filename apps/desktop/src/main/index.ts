@@ -4126,11 +4126,74 @@ function registerIpcHandlers(): void {
     if (session.snapshot.harnessId !== 'cursor') {
       throw new Error('Force recover is only available for Cursor local sessions')
     }
+    // bc-* provider session ids are cloud agents — local.force is not applied.
+    const providerSessionId = session.snapshot.providerSessionId
+    if (typeof providerSessionId === 'string' && providerSessionId.startsWith('bc-')) {
+      throw new Error(
+        'Force recover is only available for Cursor local agents. Cloud runs use interrupt/cancel instead.',
+      )
+    }
     if (typeof session.forceRecoverRun !== 'function') {
       throw new Error('Force recover is not supported on this session')
     }
     await session.forceRecoverRun(message)
     return { ok: true as const }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_SDK_LOGIN, async () => {
+    const { cursorSdkLogin } = await import('@superone/cursor')
+    const result = await cursorSdkLogin({
+      openBrowser: (url) => { void shell.openExternal(url) },
+      apiKeyName: 'SuperOne',
+    })
+    // Mirror minted key into SuperOne vault (same path as paste-key).
+    const existing = (() => {
+      try {
+        return readCursorConfig(getBaseProvider('cursor').config)
+      } catch {
+        return {}
+      }
+    })()
+    updateBaseProviderConfig('cursor', {
+      ...existing,
+      apiKey: encryptCursorApiKey(result.apiKey),
+    })
+    sessionManager.markAllNeedsRebuild('cursor')
+    try {
+      const { probeDesktopHarness } = await import('./harness/service')
+      probeDesktopHarness('cursor')
+    } catch (error) {
+      log.warn('[CURSOR_SDK_LOGIN] probe failed: %s', error instanceof Error ? error.message : String(error))
+    }
+    return {
+      ok: true as const,
+      email: result.email ?? null,
+      apiKeyExpiresAtMs: result.apiKeyExpiresAtMs,
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_SDK_LOGOUT, async () => {
+    const { cursorSdkLogout } = await import('@superone/cursor')
+    await cursorSdkLogout()
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_SDK_AUTH_STATUS, async () => {
+    const { cursorSdkAuthStatus } = await import('@superone/cursor')
+    return cursorSdkAuthStatus()
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_GET_USAGE, async (_e, agentId: string, opts?: { runId?: string }) => {
+    if (!agentId?.trim()) throw new Error('agentId required')
+    const { getCursorAgentUsage } = await import('./cursor/cursor-cloud')
+    const config = (() => {
+      try {
+        return getBaseProvider('cursor').config
+      } catch {
+        return {}
+      }
+    })()
+    return getCursorAgentUsage(agentId.trim(), { config, runId: opts?.runId })
   })
 
   ipcMain.handle(AgentIpcChannels.WIDGET_IFRAME_READY, (_e, widgetId: string) => {

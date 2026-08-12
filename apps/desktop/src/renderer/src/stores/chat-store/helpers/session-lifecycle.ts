@@ -524,6 +524,7 @@ export function resetSessionForWorktreeSwitchImpl(
       applyDefaultModel(newSession, claudeModels)
     }
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
+    if (nextProvider === 'cursor') newSession.permissionMode = 'auto'
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
@@ -602,6 +603,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+    if (nextProvider === 'cursor') newSession.permissionMode = 'auto'
     return {
       projectSessions: {
         ...s.projectSessions,
@@ -783,6 +785,7 @@ export function setPreferredProviderImpl(
     ...emptyDraftHarnessReset,
     preferredProvider: provider,
     sessionProvider: provider,
+    ...(provider === 'cursor' ? { permissionMode: 'auto' as const } : {}),
   })))
 
   // Drop any in-memory main session for this sid (wrong harness / prewarmed prior).

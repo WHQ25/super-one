@@ -22,5 +22,8 @@ export function resolveChatInputPlaceholder(
   if (options.provider === 'opencode') {
     return t(options.permissionMode === 'plan' ? 'chat.placeholder.openCodePlan' : 'chat.placeholder.openCodeAsk')
   }
+  if (options.provider === 'cursor') {
+    return t(options.permissionMode === 'plan' ? 'chat.placeholder.cursorPlan' : 'chat.placeholder.cursorAsk')
+  }
   return t(options.permissionMode === 'plan' ? 'chat.placeholder.claudePlan' : 'chat.placeholder.claudeAsk')
 }

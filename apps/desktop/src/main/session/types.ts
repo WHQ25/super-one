@@ -126,6 +126,8 @@ export interface BackendStartOptions {
   providerSessionId?: string
   apiProviderId?: string | null
   systemPromptAppend?: string
+  /** Human-readable session title (Cursor agent name, etc.). */
+  agentName?: string
 }
 
 export interface PrewarmHint {

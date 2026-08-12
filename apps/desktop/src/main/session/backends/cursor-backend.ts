@@ -8,7 +8,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
-import { buildCursorModelSelection } from '@superone/cursor'
+import { buildCursorModelSelection, parseCursorContextWindow } from '@superone/cursor'
 import log from '../../logger'
 import { mapPermissionToCursorLocal } from '../../cursor/cursor-auth'
 import {
@@ -51,6 +51,8 @@ export class CursorBackend implements SessionBackend {
   private model: string | undefined
   private effort: string | undefined
   private modelParams: Record<string, string> = {}
+  private lastContextTokens = 0
+  private lastRunId: string | null = null
   private started = false
   private disposed = false
   private interrupted = false
@@ -92,6 +94,25 @@ export class CursorBackend implements SessionBackend {
     void this.ensureRuntime().catch((error) => log.debug('[CursorBackend] prewarm failed:', error))
   }
 
+  hasActiveRuntime(): boolean {
+    return Boolean(this.runtime || this.runtimePromise)
+  }
+
+  async releaseRuntime(_reason: 'idle'): Promise<void> {
+    if (this.activeTurn) return
+    await this.closeRuntime()
+  }
+
+  private resolveContextWindow(): number | null {
+    const fromParams = parseCursorContextWindow(this.modelParams.context)
+    if (fromParams) return fromParams
+    const catalog = getCachedHarnessResources('cursor')
+    const model = catalog?.models.find((m) => m.id === this.model)
+    const contextParam = model?.parameters?.find((p) => p.id === 'context')
+    const defaultValue = contextParam?.values?.[0]?.value
+    return parseCursorContextWindow(defaultValue)
+  }
+
   private async ensureRuntime(): Promise<CursorRuntime> {
     if (this.runtime) return this.runtime
     if (this.runtimePromise) return this.runtimePromise
@@ -110,10 +131,19 @@ export class CursorBackend implements SessionBackend {
       cwd: opts.cwd,
       providerSessionId: opts.providerSessionId,
       permissionMode: this.permissionMode,
+      sandboxEnabled: opts.sandboxInfo?.enabled ?? false,
       model: modelId,
       modelSelection,
+      agentName: opts.agentName,
       config: opts.config,
-      onEvent: (event) => this.emit(event),
+      onEvent: (event) => {
+        if (event.type === 'message_usage') {
+          this.lastContextTokens = event.contextTokens
+            ?? event.inputTokens
+            ?? this.lastContextTokens
+        }
+        this.emit(event)
+      },
       onProviderSessionId: (id) => {
         opts.providerSessionId = id
         for (const cb of this.providerSessionListeners) cb(id)
@@ -180,17 +210,29 @@ export class CursorBackend implements SessionBackend {
         .filter((img) => img.data) ?? []
 
       const force = Boolean(request.force || request.cursor?.force)
-      await runtime.send(messageId, request.content, {
+      const idempotencyKey = request.clientMessageId
+        || request.assistantMessageId
+        || messageId
+      const sendResult = await runtime.send(messageId, request.content, {
         images: images.length ? images : undefined,
         force: force || undefined,
+        idempotencyKey,
       })
+      this.lastRunId = sendResult.runId ?? runtime.lastRunId ?? this.lastRunId
 
       if (this.interrupted) this.complete(messageId, true)
       else this.complete(messageId, false)
       await turnComplete
     } catch (error) {
       if (this.interrupted) this.complete(messageId, true)
-      else this.fail(messageId, error instanceof Error ? error.message : String(error))
+      else {
+        const message = error instanceof Error ? error.message : String(error)
+        // Surface force-recover hint for local busy/wedge failures.
+        const busyHint = /busy|AgentBusy|wedged|active run/i.test(message)
+          ? ' Use Force recover from Cursor harness settings if the agent is stuck.'
+          : ''
+        this.fail(messageId, `${message}${busyHint}`)
+      }
     } finally {
       this.activeTurn = null
       this.currentMessageId = null
@@ -227,19 +269,20 @@ export class CursorBackend implements SessionBackend {
     if (this.opts) this.opts.model = model
     const selection = resolveCursorModelSelection({
       modelId: model,
+      params: this.modelParams,
       effort: this.effort,
-      fast: this.fast,
     })
     if (selection) this.runtime?.setModel(selection)
   }
 
   async setSessionMode(modeId: string): Promise<void> {
     if (modeId === 'plan') await this.setPermissionMode('plan')
-    else if (modeId === 'agent') await this.setPermissionMode('default')
+    else if (modeId === 'agent') await this.setPermissionMode('auto')
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
-    const prev = mapPermissionToCursorLocal(this.permissionMode)
+    const prevMode = this.permissionMode
+    const prev = mapPermissionToCursorLocal(prevMode)
     const next = mapPermissionToCursorLocal(mode)
     this.permissionMode = mode
     if (this.opts) this.opts.permissionMode = mode
@@ -248,14 +291,47 @@ export class CursorBackend implements SessionBackend {
     if (
       this.started
       && this.runtime
-      && (prev.sandboxEnabled !== next.sandboxEnabled || prev.autoReview !== next.autoReview || prev.mode !== next.mode)
+      && (prev.autoReview !== next.autoReview || prev.mode !== next.mode)
       && this.opts
     ) {
-      void this.rebuild(this.opts).catch((error) => log.debug('[CursorBackend] rebuild after permission change failed:', error))
+      try {
+        await this.rebuild(this.opts)
+      } catch (error) {
+        this.permissionMode = prevMode
+        if (this.opts) this.opts.permissionMode = prevMode
+        this.runtime?.setPermissionMode(prevMode)
+        for (const listener of this.permissionModeListeners) listener(prevMode)
+        await this.reviveAfterFailedRebuild()
+        throw error
+      }
     }
   }
 
-  async setSandbox(_sandboxInfo: SandboxInfo): Promise<void> {}
+  async setSandbox(sandboxInfo: SandboxInfo): Promise<void> {
+    const prevInfo = this.opts?.sandboxInfo
+    const prevEnabled = prevInfo?.enabled ?? false
+    if (this.opts) this.opts.sandboxInfo = sandboxInfo
+    // Cloud agents ignore sandboxOptions; skip rebuild to avoid billed resume churn.
+    if (!this.started || !this.opts || this.runtime?.isCloud) return
+    if (prevEnabled === sandboxInfo.enabled) return
+    try {
+      await this.rebuild(this.opts)
+    } catch (error) {
+      if (this.opts) this.opts.sandboxInfo = prevInfo
+      await this.reviveAfterFailedRebuild()
+      throw error
+    }
+  }
+
+  /** After a failed rebuild(), `started` may be false — revive previous opts if possible. */
+  private async reviveAfterFailedRebuild(): Promise<void> {
+    if (this.started || this.disposed || !this.opts) return
+    try {
+      await this.start(this.opts)
+    } catch (error) {
+      log.debug('[CursorBackend] revive after failed rebuild failed:', error)
+    }
+  }
 
   respondToPermission(): boolean {
     return false
@@ -272,7 +348,22 @@ export class CursorBackend implements SessionBackend {
   respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
-    return null
+    const maxTokens = this.resolveContextWindow()
+    if (!maxTokens || maxTokens <= 0) return null
+    const totalTokens = this.lastContextTokens
+    return {
+      categories: [
+        {
+          name: 'tokens',
+          tokens: totalTokens,
+          color: 'var(--muted-foreground)',
+        },
+      ],
+      totalTokens,
+      maxTokens,
+      percentage: Math.min(100, Math.round((totalTokens / maxTokens) * 1000) / 10),
+      model: this.model ?? '',
+    }
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
@@ -317,13 +408,22 @@ export class CursorBackend implements SessionBackend {
 
   /**
    * Expire a wedged local run (AgentBusyError recovery) by sending a no-op
-   * follow-up with LocalSendOptions.force.
+   * follow-up with LocalSendOptions.force. Cloud agents have no force path —
+   * local.force is ignored and would become a normal billed "Continue" send.
    */
   async forceRecover(message = 'Continue.'): Promise<void> {
     if (!this.started || this.disposed) throw new Error('CursorBackend not started')
-    const messageId = `cursor_force_${Date.now()}`
     const runtime = await this.ensureRuntime()
-    await runtime.send(messageId, message, { force: true })
+    if (runtime.isCloud) {
+      throw new Error(
+        'Force recover is only available for Cursor local agents. Cloud runs use interrupt/cancel instead.',
+      )
+    }
+    const messageId = `cursor_force_${Date.now()}`
+    await runtime.send(messageId, message, {
+      force: true,
+      idempotencyKey: `force-${messageId}`,
+    })
   }
 
   dequeueMessage(_clientMessageId: string): boolean {

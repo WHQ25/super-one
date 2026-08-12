@@ -40,12 +40,41 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
 ]
 
 /**
- * Only Claude actually honours a sandbox mode: Codex expresses the same thing through its
- * permission presets, ACP has no sandbox surface, and `OpenCodeBackend.setSandbox` is a no-op.
- * Every sandbox affordance in the UI must agree on this, so it lives in exactly one place.
+ * Claude: off / on / auto (auto-allow bash).
+ * Cursor SDK only has sandbox on/off — no autoAllowBash equivalent.
+ * Codex folds sandbox into permission presets; ACP / OpenCode have no surface.
  */
 export function harnessSupportsSandbox(harnessId: HarnessId): boolean {
-  return harnessId === 'claude'
+  return harnessId === 'claude' || harnessId === 'cursor'
+}
+
+/** Sandbox modes offered for a harness (Cursor omits Claude-only `auto`). */
+export function harnessSandboxModes(harnessId: HarnessId): SandboxMode[] {
+  if (harnessId === 'cursor') return ['off', 'on']
+  return ['off', 'on', 'auto']
+}
+
+/**
+ * Coerce a stored sandbox mode into one the harness can show/apply.
+ * Cursor has no `auto` (autoAllowBash) — map it to plain `on`.
+ */
+export function coerceSandboxModeForHarness(harnessId: HarnessId, mode: SandboxMode): SandboxMode {
+  const available = harnessSandboxModes(harnessId)
+  if (available.includes(mode)) return mode
+  return mode === 'off' ? 'off' : 'on'
+}
+
+/**
+ * Sandbox UI support level for a harness.
+ * Cursor ships its own SDK helpers — Claude's Linux "conditional" probe does not apply.
+ */
+export function harnessSandboxSupportLevel(
+  harnessId: HarnessId,
+  capabilitySupport: 'always' | 'conditional' | 'unsupported' = 'always',
+): 'always' | 'conditional' | 'unsupported' {
+  if (harnessId !== 'cursor') return capabilitySupport
+  if (capabilitySupport === 'unsupported') return 'unsupported'
+  return 'always'
 }
 
 function getSandboxMode(info: { enabled: boolean; autoAllowBash: boolean }): SandboxMode {
@@ -60,6 +89,8 @@ interface SandboxModePopoverProps {
   supportLevel?: 'always' | 'conditional' | 'unsupported'
   showNotReadyHint?: boolean
   onOpenSettings?: () => void
+  /** Restrict offered modes (Cursor: off/on only). */
+  availableModes?: SandboxMode[]
 }
 
 export function SandboxModePopover({
@@ -69,10 +100,14 @@ export function SandboxModePopover({
   supportLevel = 'always',
   showNotReadyHint = false,
   onOpenSettings,
+  availableModes,
 }: SandboxModePopoverProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const current = sandboxModes.find((m) => m.id === value) ?? sandboxModes[1]
+  const visibleModes = availableModes
+    ? sandboxModes.filter((mode) => availableModes.includes(mode.id))
+    : sandboxModes
+  const current = visibleModes.find((m) => m.id === value) ?? visibleModes[0] ?? sandboxModes[1]
   const currentLabel = t(`chat.sandboxModes.${current.id}.label`)
 
   const triggerTitle =
@@ -115,7 +150,7 @@ export function SandboxModePopover({
         className="w-56 border-border bg-popover p-1"
       >
         <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.sandboxModeTitle')}</div>
-        {sandboxModes.map((mode) => {
+        {visibleModes.map((mode) => {
           const isDisabled = optionDisabled(mode.id)
           return (
             <button
@@ -157,20 +192,29 @@ interface SandboxModeSelectorProps {
 
 export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProps) {
   const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
+  const sessionProvider = useActiveSession((s) => s.sessionProvider)
+  const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const setSandboxMode = useChatStore((s) => s.setSandboxMode)
   const sandboxCapability = useAppStore((s) => s.sandboxCapability)
   const sandboxProbe = useAppStore((s) => s.sandboxProbe)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
-  const currentMode = getSandboxMode(sandboxInfo)
+  const activeProvider = (sessionProvider ?? preferredProvider) as HarnessId
+  const availableModes = harnessSandboxModes(activeProvider)
+  const supportLevel = harnessSandboxSupportLevel(
+    activeProvider,
+    sandboxCapability?.supportLevel ?? 'always',
+  )
+  const effectiveMode = coerceSandboxModeForHarness(activeProvider, getSandboxMode(sandboxInfo))
 
   return (
     <SandboxModePopover
       compact={compact}
-      value={currentMode}
+      value={effectiveMode}
+      availableModes={availableModes}
       onValueChange={(mode) => { void setSandboxMode(mode) }}
-      supportLevel={sandboxCapability?.supportLevel ?? 'always'}
-      showNotReadyHint={sandboxCapability?.supportLevel === 'conditional' && sandboxProbe !== null && !sandboxProbe.ok}
+      supportLevel={supportLevel}
+      showNotReadyHint={supportLevel === 'conditional' && sandboxProbe !== null && !sandboxProbe.ok}
       onOpenSettings={() => {
         setSettingsTab('preferences')
         navigateTo('settings')

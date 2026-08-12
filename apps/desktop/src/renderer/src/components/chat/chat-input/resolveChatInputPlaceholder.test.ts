@@ -20,6 +20,21 @@ describe('resolveChatInputPlaceholder', () => {
     })).toBe('chat.placeholder.openCodePlan')
   })
 
+  it('uses Cursor copy for normal and plan modes', () => {
+    expect(resolveChatInputPlaceholder(t, {
+      provider: 'cursor',
+      permissionMode: 'default',
+      codexPlanMode: false,
+      acpAgentName: '',
+    })).toBe('chat.placeholder.cursorAsk')
+    expect(resolveChatInputPlaceholder(t, {
+      provider: 'cursor',
+      permissionMode: 'plan',
+      codexPlanMode: false,
+      acpAgentName: '',
+    })).toBe('chat.placeholder.cursorPlan')
+  })
+
   it('keeps provider-specific Claude, Codex and ACP copy', () => {
     expect(resolveChatInputPlaceholder(t, {
       provider: 'claude',

@@ -15,6 +15,7 @@ import {
   withResumedAgentArtifacts as withArtifacts,
   listCursorArtifacts as listArtifacts,
   downloadCursorArtifact as downloadArtifact,
+  getCursorAgentUsage as getUsage,
   type CursorCloudListAgentsOptions,
 } from '@superone/cursor'
 
@@ -190,4 +191,12 @@ export async function downloadCursorArtifact(
   options: { apiKey?: string; config?: unknown; cwd?: string; model?: string } = {},
 ) {
   return downloadArtifact(agentId, path, withDesktopDefaults(options))
+}
+
+/** Billed usage + optional cost for a Cursor agent (SDK ≥1.0.25). */
+export async function getCursorAgentUsage(
+  agentId: string,
+  options: { apiKey?: string; config?: unknown; runId?: string } = {},
+) {
+  return getUsage(agentId, withDesktopDefaults(options))
 }

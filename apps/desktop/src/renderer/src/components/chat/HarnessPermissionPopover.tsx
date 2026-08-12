@@ -5,6 +5,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components
 import type { CodexPermissionPreset, HarnessId, PermissionMode } from '@superone/shared/agent-types'
 import { AcpPermissionModeList, acpPermissionModeOption } from './AcpPermissionModeList'
 import { CodexPermissionPresetList, codexPermissionPresetOption } from './CodexPermissionPresetList'
+import {
+  CURSOR_DEFAULT_PERMISSION_MODE,
+  CURSOR_PERMISSION_MODES,
+} from './cursorPermissionModes'
+import { CursorPermissionModeList, cursorPermissionModeOption } from './CursorPermissionModeList'
 import { OPENCODE_PERMISSION_MODES } from './opencodePermissionModes'
 import { modes, PermissionModeList } from './PermissionModeList'
 
@@ -77,6 +82,22 @@ export function HarnessPermissionPopover({
       toneClass: `${option.color} ${option.hoverBg}`,
       width: 'w-56',
       content: <AcpPermissionModeList activeMode={option.id} onSelect={select} />,
+    }
+  } else if (harnessId === 'cursor') {
+    const mode = CURSOR_PERMISSION_MODES.includes(value) ? value : CURSOR_DEFAULT_PERMISSION_MODE
+    const option = cursorPermissionModeOption(mode)
+    trigger = {
+      label: t(`chat.cursorPermissionModes.${option.labelKey}.label`),
+      icon: option.icon,
+      toneClass: `${option.color} ${option.hoverBg}`,
+      width: 'w-56',
+      content: (
+        <CursorPermissionModeList
+          activeMode={mode}
+          availableModes={CURSOR_PERMISSION_MODES}
+          onSelect={select}
+        />
+      ),
     }
   } else {
     // Claude offers every mode; OpenCode only the subset its backend implements.

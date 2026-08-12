@@ -2,6 +2,7 @@ import {
   Agent,
   Cursor,
   type AgentMessage,
+  type AgentUsage,
   type ListResult,
   type Run,
   type SDKAgentInfo,
@@ -323,4 +324,25 @@ export async function downloadCursorArtifact(
   },
 ): Promise<Buffer> {
   return withResumedAgentArtifacts(agentId, options, (agent) => agent.downloadArtifact(path)) as Promise<Buffer>
+}
+
+/**
+ * Billed token usage + optional dollar cost for an agent (SDK ≥1.0.25).
+ * Cloud: per-run breakdown. Local: per-turn groups keyed by usage UUID.
+ */
+export async function getCursorAgentUsage(
+  agentId: string,
+  options: {
+    apiKey?: string
+    config?: unknown
+    resolveApiKey?: ResolveApiKey
+    runId?: string
+  } = {},
+): Promise<AgentUsage> {
+  const apiKey = resolveKey(options)
+  if (!apiKey) throw new Error('Cursor API key required for Agent.getUsage')
+  return Agent.getUsage(agentId, {
+    apiKey,
+    ...(options.runId ? { runId: options.runId } : {}),
+  })
 }

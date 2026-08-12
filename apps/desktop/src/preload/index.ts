@@ -758,6 +758,25 @@ const appAPI = {
   cursorForceRecover: (sessionId: string, message?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CURSOR_FORCE_RECOVER, sessionId, message),
 
+  cursorSdkLogin: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_SDK_LOGIN) as Promise<{
+      ok: true
+      email: string | null
+      apiKeyExpiresAtMs: number
+    }>,
+
+  cursorSdkLogout: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_SDK_LOGOUT) as Promise<{ ok: true }>,
+
+  cursorSdkAuthStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_SDK_AUTH_STATUS) as Promise<
+      | { status: 'logged-out' }
+      | { status: 'logged-in'; backendUrl: string; email?: string; apiKeyExpiresAtMs?: number }
+    >,
+
+  cursorGetUsage: (agentId: string, opts?: { runId?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_GET_USAGE, agentId, opts),
+
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 

@@ -7,20 +7,17 @@ import {
 } from './cursor-auth'
 
 describe('cursor-auth', () => {
-  it('maps plan and auto-review modes honestly', () => {
+  it('maps Auto / Plan / Full Access honestly (sandbox is separate)', () => {
     expect(mapPermissionToCursorLocal('plan')).toEqual({
       mode: 'plan',
-      sandboxEnabled: true,
       autoReview: false,
     })
     expect(mapPermissionToCursorLocal('auto')).toEqual({
       mode: 'agent',
-      sandboxEnabled: true,
       autoReview: true,
     })
     expect(mapPermissionToCursorLocal('bypassPermissions')).toEqual({
       mode: 'agent',
-      sandboxEnabled: true,
       autoReview: false,
     })
   })

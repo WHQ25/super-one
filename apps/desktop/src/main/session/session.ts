@@ -680,13 +680,17 @@ export class Session implements SessionContract {
     ) {
       return this.sandboxInfo
     }
+    const prev = this.sandboxInfo
     this.sandboxInfo = next
     this.mergeUiSettings({ sandboxInfo: next })
     if (this.backendStarted) {
       try {
         await this.backend.setSandbox(next)
       } catch (err) {
+        this.sandboxInfo = prev
+        this.mergeUiSettings({ sandboxInfo: prev })
         log.warn('[Session] backend.setSandbox failed:', err)
+        throw err
       }
     }
     this.forwardEvent({ type: 'agent_setting_change', patch: { sandboxInfo: next } } as AgentEvent)
@@ -917,6 +921,7 @@ export class Session implements SessionContract {
       providerSessionId: this._providerSessionId ?? undefined,
       apiProviderId: this._apiProviderId,
       systemPromptAppend: this.systemPromptAppend,
+      agentName: this.computeTitle()?.trim() || undefined,
     }
     if (this._runtimeRelease) {
       void this.waitForRuntimeRelease()
@@ -1312,6 +1317,7 @@ export class Session implements SessionContract {
       providerSessionId: this._providerSessionId ?? undefined,
       apiProviderId: this._apiProviderId,
       systemPromptAppend: this.systemPromptAppend,
+      agentName: this.computeTitle()?.trim() || undefined,
     }
   }
 

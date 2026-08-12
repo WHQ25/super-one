@@ -1,6 +1,7 @@
 import {
   Agent,
   AgentBusyError,
+  Cursor,
   IntegrationNotConnectedError,
   type McpServerConfig,
   type ModelSelection,
@@ -16,11 +17,18 @@ import {
   mapPermissionToCursorLocal,
   readCursorConfig,
   resolveCursorApiKeyPlain,
+  resolveCursorToolRestrictions,
   type CursorConfig,
 } from './cursor-config'
 import { buildCursorCustomTools } from './cursor-custom-tools'
-import { mapInteractionUpdate, mapSdkMessageLifecycle } from './cursor-event-map'
+import {
+  CursorTurnCallIdBridge,
+  mapConversationStep,
+  mapInteractionUpdate,
+  mapSdkMessageLifecycle,
+} from './cursor-event-map'
 import { mcpServersToStatus, stripStdioCwd } from './cursor-mcp-map'
+import { parseCursorContextWindow } from './cursor-model-selection'
 import { getCursorAgentStore } from './cursor-store'
 
 /** Minimal logger interface (desktop injects electron-log). */
@@ -38,10 +46,22 @@ const noopLog: Required<CursorRuntimeLog> = {
   debug: () => undefined,
 }
 
+export class CursorIntegrationError extends Error {
+  readonly provider?: string
+  readonly helpUrl?: string
+  constructor(message: string, opts?: { provider?: string; helpUrl?: string }) {
+    super(message)
+    this.name = 'CursorIntegrationError'
+    this.provider = opts?.provider
+    this.helpUrl = opts?.helpUrl
+  }
+}
+
 function formatCursorError(error: unknown): Error {
   if (error instanceof IntegrationNotConnectedError) {
-    return new Error(
+    return new CursorIntegrationError(
       `${error.message} Connect ${error.provider} at ${error.helpUrl} then retry.`,
+      { provider: error.provider, helpUrl: error.helpUrl },
     )
   }
   if (error instanceof Error) return error
@@ -55,9 +75,16 @@ export interface CursorRuntimeOptions {
   userDataRoot: string
   providerSessionId?: string
   permissionMode: PermissionMode
+  /**
+   * Session sandbox toggle (local only). Wins over `config.sandboxEnabled`.
+   * Cloud agents ignore this — they already run in an isolated VM.
+   */
+  sandboxEnabled?: boolean
   model?: string
   /** Full SDK model selection (id + params). Wins over bare `model`. */
   modelSelection?: ModelSelection
+  /** Human-readable agent title for Agent.list / Agent.get. */
+  agentName?: string
   config: unknown
   onEvent: (event: AgentEvent) => void
   onProviderSessionId?: (id: string) => void
@@ -71,16 +98,25 @@ export interface CursorRuntimeOptions {
 export interface CursorSendOptions {
   images?: Array<{ data: string; mimeType: string }>
   force?: boolean
+  /** Client-generated idempotency key for this send (maps to SendOptions.idempotencyKey). */
+  idempotencyKey?: string
   /** Per-send MCP override (else uses last synced servers). */
   mcpServers?: Record<string, McpServerConfig>
+}
+
+export interface CursorSendResult {
+  runId?: string
+  git?: { branches: Array<{ repoUrl: string; branch?: string; prUrl?: string }> }
+  model?: ModelSelection
+  durationMs?: number
+  result?: string
 }
 
 export interface CursorRuntime {
   readonly agentId: string
   readonly isCloud: boolean
-  send(messageId: string, text: string, options?: CursorSendOptions): Promise<{
-    git?: { branches: Array<{ repoUrl: string; branch?: string; prUrl?: string }> }
-  }>
+  readonly lastRunId: string | null
+  send(messageId: string, text: string, options?: CursorSendOptions): Promise<CursorSendResult>
   cancel(): Promise<void>
   close(): Promise<void>
   /** Update model id and/or params for the next send. */
@@ -107,6 +143,11 @@ export function getCursorRuntimeFactory(): CursorRuntimeFactory {
   return runtimeFactory
 }
 
+function resolveContextWindow(modelSelection: ModelSelection | undefined): number | null {
+  const contextParam = modelSelection?.params?.find((p) => p.id === 'context')
+  return parseCursorContextWindow(contextParam?.value)
+}
+
 /**
  * Create a Cursor SDK agent runtime (local or cloud) without Electron deps.
  */
@@ -128,6 +169,15 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
     )
   }
 
+  // Process-wide network default only (not store). Safe to set once per process.
+  if (config.useHttp1ForAgent != null) {
+    try {
+      Cursor.configure({ local: { useHttp1ForAgent: config.useHttp1ForAgent } })
+    } catch (error) {
+      log.debug('[CursorRuntime] Cursor.configure useHttp1ForAgent failed:', error)
+    }
+  }
+
   const isCloud = config.runtime === 'cloud'
     || (opts.providerSessionId?.startsWith('bc-') ?? false)
 
@@ -139,13 +189,26 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
   const perm = mapPermissionToCursorLocal(opts.permissionMode)
   const model: ModelSelection | undefined = opts.modelSelection
     ?? (modelId ? { id: modelId } : undefined)
-  const settingSources = config.settingSources ?? ['project']
+  // Default: project + user so .cursor/ and ~/.cursor/ rules/hooks/MCP load.
+  // UI can narrow this; never default to "all" (privacy).
+  const settingSources = config.settingSources ?? ['project', 'user']
+  // Session toggle wins; config is a static fallback; default off (SDK default).
+  const sandboxEnabled = opts.sandboxEnabled ?? config.sandboxEnabled ?? false
   const mcpServers = isCloud
     ? stripStdioCwd(buildMcpServers(opts.cwd, opts.sessionId))
     : buildMcpServers(opts.cwd, opts.sessionId)
   const customTools = isCloud
     ? undefined
     : buildCursorCustomTools({ sessionId: opts.sessionId, cwd: opts.cwd })
+  const agentName = opts.agentName?.trim() || undefined
+  // tools / disallowedTools are local-only in SDK 1.0.27 (cloud throws ConfigurationError).
+  const toolRestrictions = isCloud ? {} : resolveCursorToolRestrictions(config)
+  const toolsOpt = !isCloud && toolRestrictions.tools
+    ? { tools: toolRestrictions.tools as import('@cursor/sdk').ToolName[] }
+    : {}
+  const disallowedOpt = !isCloud && toolRestrictions.disallowedTools
+    ? { disallowedTools: toolRestrictions.disallowedTools as import('@cursor/sdk').ToolName[] }
+    : {}
 
   let agent: SDKAgent
   try {
@@ -153,8 +216,11 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       agent = await Agent.resume(opts.providerSessionId, {
         apiKey,
         ...(model ? { model } : {}),
+        ...(agentName ? { name: agentName } : {}),
         mode: perm.mode,
         mcpServers,
+        ...toolsOpt,
+        ...disallowedOpt,
         ...(isCloud
           ? { cloud: buildCloudOptions(config) }
           : {
@@ -162,7 +228,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
                 cwd: opts.cwd,
                 store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
                 settingSources,
-                sandboxOptions: { enabled: config.sandboxEnabled ?? perm.sandboxEnabled },
+                sandboxOptions: { enabled: sandboxEnabled },
                 autoReview: config.autoReview ?? perm.autoReview,
                 enableAgentRetries: config.enableAgentRetries ?? true,
                 ...(customTools ? { customTools } : {}),
@@ -173,6 +239,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       agent = await Agent.create({
         apiKey,
         ...(model ? { model } : {}),
+        ...(agentName ? { name: agentName } : {}),
         mode: perm.mode,
         mcpServers,
         cloud: buildCloudOptions(config),
@@ -181,13 +248,16 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       agent = await Agent.create({
         apiKey,
         model: model!,
+        ...(agentName ? { name: agentName } : {}),
         mode: perm.mode,
         mcpServers,
+        ...toolsOpt,
+        ...disallowedOpt,
         local: {
           cwd: opts.cwd,
           store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
           settingSources,
-          sandboxOptions: { enabled: config.sandboxEnabled ?? perm.sandboxEnabled },
+          sandboxOptions: { enabled: sandboxEnabled },
           autoReview: config.autoReview ?? perm.autoReview,
           enableAgentRetries: config.enableAgentRetries ?? true,
           ...(customTools ? { customTools } : {}),
@@ -202,6 +272,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
   opts.onEvent({ type: 'provider_session_id', providerSessionId: agent.agentId })
 
   let currentRun: Run | null = null
+  let lastRunId: string | null = null
   let modelSelection = model
   let permissionMode = opts.permissionMode
   let disposed = false
@@ -213,6 +284,9 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
     },
     get isCloud() {
       return isCloud || agent.agentId.startsWith('bc-')
+    },
+    get lastRunId() {
+      return lastRunId
     },
 
     setModel(next: string | ModelSelection) {
@@ -261,13 +335,25 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
 
       const servers = sendOpts?.mcpServers ?? lastMcpServers
       lastMcpServers = servers
+      const contextWindow = resolveContextWindow(modelSelection)
+      // Bridge real callIds from onDelta → onStep (SDK ConversationStep.toolCall has no callId).
+      const callIdBridge = new CursorTurnCallIdBridge()
 
       const sendOptions: SendOptions = {
         ...(modelSelection ? { model: modelSelection } : {}),
         mode: permLocal.mode,
         mcpServers: Object.keys(servers).length ? servers : undefined,
+        ...(sendOpts?.idempotencyKey ? { idempotencyKey: sendOpts.idempotencyKey } : {}),
         onDelta: ({ update }) => {
-          for (const event of mapInteractionUpdate(messageId, update)) {
+          callIdBridge.observeDelta(update)
+          for (const event of mapInteractionUpdate(messageId, update, { contextWindow })) {
+            opts.onEvent(event)
+          }
+        },
+        onStep: ({ step }) => {
+          for (const event of mapConversationStep(messageId, step, {
+            resolveCallId: () => callIdBridge.claimNextCallId(),
+          })) {
             opts.onEvent(event)
           }
         },
@@ -301,11 +387,20 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
         }
       }
       currentRun = run
+      lastRunId = run.id
+      log.debug('[CursorRuntime] run started', { runId: run.id, agentId: run.agentId })
 
       void (async () => {
         try {
+          if (!run.supports('stream')) {
+            log.debug('[CursorRuntime] stream unsupported:', run.unsupportedReason('stream'))
+            return
+          }
           for await (const message of run.stream()) {
-            for (const event of mapSdkMessageLifecycle(messageId, message, { includeContent: false })) {
+            for (const event of mapSdkMessageLifecycle(messageId, message, {
+              includeContent: false,
+              contextWindow,
+            })) {
               opts.onEvent(event)
             }
           }
@@ -316,6 +411,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
 
       const result = await run.wait()
       currentRun = null
+      lastRunId = result.id || lastRunId
 
       if (result.usage) {
         opts.onEvent({
@@ -323,18 +419,29 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
           messageId,
           inputTokens: result.usage.inputTokens + result.usage.cacheReadTokens + result.usage.cacheWriteTokens,
           outputTokens: result.usage.outputTokens + (result.usage.reasoningTokens ?? 0),
+          cacheReadTokens: result.usage.cacheReadTokens,
+          model: result.model?.id ?? modelSelection?.id,
+          ...(contextWindow && contextWindow > 0
+            ? {
+                contextWindow,
+                contextTokens: result.usage.inputTokens + result.usage.cacheReadTokens + result.usage.cacheWriteTokens,
+              }
+            : {}),
         })
       }
 
       if (result.git?.branches?.length) {
-        const pr = result.git.branches.find((b) => b.prUrl)
-        if (pr?.prUrl) {
+        for (const branch of result.git.branches) {
+          if (!branch.prUrl) continue
+          const label = branch.branch
+            ? `Pull request · ${branch.branch}`
+            : 'Pull request'
           opts.onEvent({
             type: 'content_delta',
             messageId,
             delta: {
               type: 'text',
-              text: `\n\n[Cursor PR](${pr.prUrl})` + (pr.branch ? ` · \`${pr.branch}\`` : ''),
+              text: `\n\n[${label}](${branch.prUrl})\n`,
             },
           })
         }
@@ -344,14 +451,30 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
         throw new Error(result.error?.message ?? 'Cursor run failed')
       }
       if (result.status === 'cancelled') {
-        return { git: result.git }
+        return {
+          runId: result.id,
+          git: result.git,
+          model: result.model,
+          durationMs: result.durationMs,
+          result: result.result,
+        }
       }
-      return { git: result.git }
+      return {
+        runId: result.id,
+        git: result.git,
+        model: result.model,
+        durationMs: result.durationMs,
+        result: result.result,
+      }
     },
 
     async cancel() {
       try {
-        await currentRun?.cancel()
+        if (currentRun && currentRun.supports('cancel')) {
+          await currentRun.cancel()
+        } else {
+          await currentRun?.cancel()
+        }
       } catch (error) {
         log.debug('[CursorRuntime] cancel failed:', error)
       }
@@ -366,7 +489,13 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       }
       currentRun = null
       try {
-        agent.close()
+        // Prefer asyncDispose when available so analytics flush.
+        const disposable = agent as SDKAgent & { [Symbol.asyncDispose]?: () => Promise<void> }
+        if (typeof disposable[Symbol.asyncDispose] === 'function') {
+          await disposable[Symbol.asyncDispose]()
+        } else {
+          agent.close()
+        }
       } catch (error) {
         log.debug('[CursorRuntime] agent.close failed:', error)
       }

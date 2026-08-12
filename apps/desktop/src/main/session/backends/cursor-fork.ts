@@ -30,7 +30,7 @@ export async function forkCursorTranscript(
 
   const isCloud = config.runtime === 'cloud' || source.providerSessionId.startsWith('bc-')
   const modelId = config.model
-  const perm = mapPermissionToCursorLocal('default')
+  const perm = mapPermissionToCursorLocal('auto')
   const mcpServers = isCloud ? {} : buildCursorMcpServers(targetCwd, `fork-${Date.now()}`)
 
   if (isCloud) {
@@ -61,7 +61,7 @@ export async function forkCursorTranscript(
       cwd: targetCwd,
       store: getCursorAgentStore(app.getPath('userData'), targetCwd),
       settingSources: config.settingSources ?? ['project'],
-      sandboxOptions: { enabled: config.sandboxEnabled ?? perm.sandboxEnabled },
+      sandboxOptions: { enabled: config.sandboxEnabled ?? false },
       autoReview: config.autoReview ?? perm.autoReview,
       enableAgentRetries: config.enableAgentRetries ?? true,
     },

@@ -20,6 +20,10 @@ export interface CursorConfig {
   model?: string
   mode?: 'agent' | 'plan'
   runtime?: 'local' | 'cloud'
+  /**
+   * On-disk Cursor settings layers for local agents.
+   * Default in runtime: `['project', 'user']` when omitted.
+   */
   settingSources?: Array<'project' | 'user' | 'team' | 'mdm' | 'plugins' | 'all'>
   sandboxEnabled?: boolean
   autoReview?: boolean
@@ -36,6 +40,21 @@ export interface CursorConfig {
    * Empty / omitted = all catalog models enabled.
    */
   disabledModelIds?: string[]
+  /**
+   * Local-only built-in tool allowlist (`AgentOptions.tools`, SDK ≥1.0.25).
+   * `undefined` = full default toolset; `[]` = no built-in tools (text only).
+   */
+  tools?: string[]
+  /**
+   * Local-only built-in tool denylist (`AgentOptions.disallowedTools`).
+   * Deny wins when both tools and disallowedTools are set.
+   */
+  disallowedTools?: string[]
+  /**
+   * Convenience preset that expands to tools/disallowedTools when those are omitted.
+   * `custom` means use tools/disallowedTools as stored.
+   */
+  toolPreset?: 'default' | 'readonly' | 'no-shell' | 'custom'
   // cloud
   cloudEnvType?: 'cloud' | 'pool' | 'machine'
   cloudEnvName?: string
@@ -44,6 +63,43 @@ export interface CursorConfig {
   autoCreatePR?: boolean
   skipReviewerRequest?: boolean
   cloudEnvVars?: Record<string, string>
+}
+
+/** Read-only local tool allowlist (no shell / edit / write). */
+export const CURSOR_READONLY_TOOLS = [
+  'read',
+  'grep',
+  'glob',
+  'ls',
+  'semSearch',
+  'webSearch',
+  'webFetch',
+  'readLints',
+  'readTodos',
+] as const
+
+/**
+ * Expand toolPreset + explicit lists into AgentOptions tools fields.
+ * Returns undefined fields when using the full default toolset.
+ */
+export function resolveCursorToolRestrictions(config: Pick<CursorConfig, 'tools' | 'disallowedTools' | 'toolPreset'>): {
+  tools?: string[]
+  disallowedTools?: string[]
+} {
+  const preset = config.toolPreset ?? 'default'
+  if (config.tools != null || config.disallowedTools != null || preset === 'custom') {
+    return {
+      ...(config.tools != null ? { tools: config.tools } : {}),
+      ...(config.disallowedTools != null ? { disallowedTools: config.disallowedTools } : {}),
+    }
+  }
+  if (preset === 'readonly') {
+    return { tools: [...CURSOR_READONLY_TOOLS] }
+  }
+  if (preset === 'no-shell') {
+    return { disallowedTools: ['shell'] }
+  }
+  return {}
 }
 
 const ENC_PREFIX = 'enc:v1:'
@@ -138,6 +194,14 @@ export function readCursorConfig(value: unknown): CursorConfig {
     storeKind: config.storeKind === 'jsonl' || config.storeKind === 'better-sqlite3' ? config.storeKind : undefined,
     modelParamsByModel: readCursorModelParamsByModel(config.modelParamsByModel),
     disabledModelIds: readCursorDisabledModelIds(config.disabledModelIds),
+    tools: readCursorDisabledModelIds(config.tools),
+    disallowedTools: readCursorDisabledModelIds(config.disallowedTools),
+    toolPreset: config.toolPreset === 'readonly'
+      || config.toolPreset === 'no-shell'
+      || config.toolPreset === 'custom'
+      || config.toolPreset === 'default'
+      ? config.toolPreset
+      : undefined,
     cloudEnvType: config.cloudEnvType === 'pool' || config.cloudEnvType === 'machine' || config.cloudEnvType === 'cloud'
       ? config.cloudEnvType
       : undefined,
@@ -150,19 +214,26 @@ export function readCursorConfig(value: unknown): CursorConfig {
   }
 }
 
-/** Map SuperOne permission modes to Cursor local options we can honor (D7). */
+/**
+ * Map SuperOne permission modes to Cursor local options we can honor.
+ * Sandbox is orthogonal (`sandboxOptions.enabled` / session sandbox toggle) — not folded in here.
+ *
+ * Product ladder (Cursor UI): Auto → Plan → Full Access.
+ * - `auto` / legacy `default` / `acceptEdits` → Auto-review classifier
+ * - `plan` → plan mode
+ * - `bypassPermissions` (and other high-automation ids) → unrestricted agent
+ */
 export function mapPermissionToCursorLocal(mode: string): {
   mode: 'agent' | 'plan'
-  sandboxEnabled: boolean
   autoReview: boolean
 } {
   if (mode === 'plan') {
-    return { mode: 'plan', sandboxEnabled: true, autoReview: false }
+    return { mode: 'plan', autoReview: false }
   }
-  if (mode === 'auto' || mode === 'acceptEdits') {
-    return { mode: 'agent', sandboxEnabled: true, autoReview: true }
+  if (mode === 'auto' || mode === 'acceptEdits' || mode === 'default') {
+    return { mode: 'agent', autoReview: true }
   }
-  return { mode: 'agent', sandboxEnabled: true, autoReview: false }
+  return { mode: 'agent', autoReview: false }
 }
 
 /** Build Cursor SDK cloud options from SuperOne config. */

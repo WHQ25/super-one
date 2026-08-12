@@ -24,7 +24,7 @@ import {
   streamdownPlugins,
 } from './chat-shared'
 import { HarnessPermissionPopover } from './HarnessPermissionPopover'
-import { harnessSupportsSandbox, SandboxModePopover } from './SandboxModeSelector'
+import { harnessSupportsSandbox, harnessSandboxModes, harnessSandboxSupportLevel, coerceSandboxModeForHarness, SandboxModePopover } from './SandboxModeSelector'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
 import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
@@ -341,16 +341,17 @@ function LaunchPanel({
             <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
             <HarnessPermissionPopover
               harnessId={harnessId}
-              value={config.permissionMode ?? 'default'}
+              value={config.permissionMode ?? (harnessId === 'cursor' ? 'auto' : 'default')}
               onChange={(permissionMode: PermissionMode) => onChange({ permissionMode })}
             />
             {harnessSupportsSandbox(harnessId) && (
               <>
                 <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
                 <SandboxModePopover
-                  value={config.sandboxMode ?? 'off'}
+                  value={coerceSandboxModeForHarness(harnessId, config.sandboxMode ?? 'off')}
                   onValueChange={(sandboxMode: SandboxMode) => onChange({ sandboxMode })}
-                  supportLevel={sandboxCapability?.supportLevel ?? 'always'}
+                  supportLevel={harnessSandboxSupportLevel(harnessId, sandboxCapability?.supportLevel ?? 'always')}
+                  availableModes={harnessSandboxModes(harnessId)}
                 />
               </>
             )}

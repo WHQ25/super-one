@@ -368,6 +368,39 @@ export type Messages = {
         modelsEmpty: string
         modelsEnableAll: string
         modelsDisableAll: string
+        settingSourcesTitle: string
+        settingSourcesDescription: string
+        settingSourceProject: string
+        settingSourceUser: string
+        settingSourcePlugins: string
+        envVarsTitle: string
+        envVarsDescription: string
+        envVarsPlaceholder: string
+        forceRecoverTitle: string
+        forceRecoverDescription: string
+        forceRecoverAction: string
+        forceRecoverNeedSession: string
+        forceRecoverLocalOnly: string
+        forceRecoverDone: string
+        cloudAgentsTitle: string
+        cloudAgentsEmpty: string
+        cloudAgentsRefresh: string
+        cloudAgentsArchive: string
+        cloudAgentsDelete: string
+        browserLogin: string
+        browserLoginDescription: string
+        browserLoginDone: string
+        browserLogout: string
+        toolPresetTitle: string
+        toolPresetDescription: string
+        toolPresetDefault: string
+        toolPresetReadonly: string
+        toolPresetNoShell: string
+        usageTitle: string
+        usageRefresh: string
+        usageEmpty: string
+        usageTokens: string
+        usageCost: string
       }
       states: {
         disabled: string
@@ -890,6 +923,8 @@ export type Messages = {
       claudeAsk: string
       openCodePlan: string
       openCodeAsk: string
+      cursorPlan: string
+      cursorAsk: string
       acpPlan: string
       acpAsk: string
     }
@@ -934,6 +969,12 @@ export type Messages = {
       plan: { label: string; description: string }
       auto: { label: string; description: string }
       alwaysApprove: { label: string; description: string }
+    }
+    /** Cursor SDK modes — Auto-review / Plan / Full Access (sandbox is separate). */
+    cursorPermissionModes: {
+      auto: { label: string; description: string }
+      plan: { label: string; description: string }
+      fullAccess: { label: string; description: string }
     }
     sandboxModes: {
       off: { label: string; description: string }
@@ -3000,6 +3041,41 @@ export const en: Messages = {
         modelsEmpty: 'No models loaded yet. Save an API key and refresh the harness.',
         modelsEnableAll: 'Enable all',
         modelsDisableAll: 'Disable all',
+        settingSourcesTitle: 'Local settings sources',
+        settingSourcesDescription:
+          'Which on-disk Cursor layers local agents load (.cursor/ rules, hooks, MCP). Cloud always loads project/team/plugins.',
+        settingSourceProject: 'Project (.cursor/)',
+        settingSourceUser: 'User (~/.cursor/)',
+        settingSourcePlugins: 'Plugins',
+        envVarsTitle: 'Cloud env vars',
+        envVarsDescription: 'KEY=value lines injected into cloud agent shells (encrypted at rest by Cursor). Names cannot start with CURSOR_.',
+        envVarsPlaceholder: 'STAGING_API_TOKEN=…',
+        forceRecoverTitle: 'Force recover stuck local run',
+        forceRecoverDescription:
+          'Expires a wedged local Cursor run (AgentBusyError) so the active session can send again. Requires an open Cursor session.',
+        forceRecoverAction: 'Force recover',
+        forceRecoverNeedSession: 'Open a Cursor chat session first.',
+        forceRecoverLocalOnly: 'Force recover is local-only. Turn off Cloud Agents or cancel the cloud run instead.',
+        forceRecoverDone: 'Force recover sent',
+        cloudAgentsTitle: 'Cloud agents',
+        cloudAgentsEmpty: 'No cloud agents yet.',
+        cloudAgentsRefresh: 'Refresh',
+        cloudAgentsArchive: 'Archive',
+        cloudAgentsDelete: 'Delete',
+        browserLogin: 'Log in with browser',
+        browserLoginDescription: 'Mint a User API Key via Cursor browser login (SDK). The key is stored in SuperOne.',
+        browserLoginDone: 'Logged in{{email}}',
+        browserLogout: 'Clear SDK login store',
+        toolPresetTitle: 'Local tool restrictions',
+        toolPresetDescription: 'Limit built-in tools for local agents (SDK tools/disallowedTools). Cloud ignores this.',
+        toolPresetDefault: 'Default (full)',
+        toolPresetReadonly: 'Read-only',
+        toolPresetNoShell: 'No shell',
+        usageTitle: 'Agent usage',
+        usageRefresh: 'Load usage',
+        usageEmpty: 'Enter a Cursor agent id (local or bc-*) to load billed usage.',
+        usageTokens: 'Tokens: in {{input}} · out {{output}} · total {{total}}',
+        usageCost: 'Cost: {{charged}}¢ charged ({{raw}}¢ raw)',
       },
       states: {
         disabled: 'Disabled',
@@ -3568,6 +3644,8 @@ export const en: Messages = {
       claudeAsk: 'Ask Claude anything, @ for files, agents & mini-apps, / for commands and skills',
       openCodePlan: "Let's make a plan! What's in your mind?",
       openCodeAsk: 'Ask OpenCode anything, @ for files & mini-apps, / for commands and skills',
+      cursorPlan: "Let's make a plan! What's in your mind?",
+      cursorAsk: 'Ask Cursor anything, @ for files & mini-apps, / for commands and skills',
       acpPlan: "Let's make a plan with {{agent}}! What's in your mind?",
       acpAsk: 'Ask {{agent}} anything, @ for files & mini-apps, / for slash commands',
     },
@@ -3622,6 +3700,20 @@ export const en: Messages = {
       alwaysApprove: {
         label: 'Always Approve',
         description: 'Skip ordinary prompts; deny rules still apply',
+      },
+    },
+    cursorPermissionModes: {
+      auto: {
+        label: 'Auto',
+        description: 'Auto-review allows or blocks tool calls (no interactive prompts)',
+      },
+      plan: {
+        label: 'Plan',
+        description: 'Planning only, no execution',
+      },
+      fullAccess: {
+        label: 'Full Access',
+        description: 'Run tools without auto-review',
       },
     },
     sandboxModes: {

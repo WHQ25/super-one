@@ -3,6 +3,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import log from '../logger'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
+import { isMainThreadOnlySuperoneTool, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
 import { readAppSettings } from '../app-settings-service'
 import type { ElicitationRequest, ElicitationResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, PermissionMode, QuestionAnnotations } from '@superone/shared/agent-types'
@@ -161,11 +162,12 @@ export function createCanUseTool(
       trackPlanFile(input.file_path)
     }
 
-    if (toolName === 'mcp__superone__session_rename' && context.agentID) {
-      trace('permission.flow', 'session_rename_blocked_subagent', { agentId: context.agentID, toolUseId: context.toolUseID })
+    if (isMainThreadOnlySuperoneTool(toolName) && context.agentID) {
+      const bare = superoneBareToolName(toolName)
+      trace('permission.flow', 'main_thread_tool_blocked_subagent', { toolName: bare, agentId: context.agentID, toolUseId: context.toolUseID })
       return {
         behavior: 'deny' as const,
-        message: 'Denied: session_rename can only be called from the main thread. You are running inside a subagent (Task/Agent worker) and must not rename the user-facing session title. Only the top-level agent owns the title — do not retry this call.',
+        message: `Denied: ${bare} can only be called from the main thread. You are running inside a subagent (Task/Agent worker) and must not retry this call.`,
         toolUseID: context.toolUseID,
       }
     }

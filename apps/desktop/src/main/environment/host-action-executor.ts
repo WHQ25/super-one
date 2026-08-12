@@ -7,9 +7,10 @@
  *   key (tab ownership, app authorization). No desktop SessionManager entry
  *   required — keep going through executeSuperoneMcpTool unchanged.
  * - Session-scoped tools that call `getSessionHost().getSession(sessionId)`
- *   (session_rename today) need a desktop Session when available. On a remote
+ *   (session_rename title) need a desktop Session when available. On a remote
  *   Host Action the claimed.sessionId is a NODE UUID, so local lookup fails.
- *   Route those through EnvironmentHost to the owning node's SessionRuntime.
+ *   Route the title through EnvironmentHost to the owning node's SessionRuntime.
+ *   Tags stay on the host archive (SQLite), not the node store.
  *
  * Dynamic import keeps EnvironmentHost loadable in unit tests that only mock
  * electron partially (tool-surface pulls logger / BrowserWindow).
@@ -241,11 +242,34 @@ async function renameRemoteSession(
   }
 
   const { getEnvironmentHost } = await import('./environment-host')
+  const { applyRenameTags } = await import('../mcp/session-tag-tools')
+  let tagNote = ''
+  if (args.tags !== undefined) {
+    const applied = applyRenameTags(claimed.sessionId, args.tags)
+    if ('error' in applied) {
+      const result = {
+        content: [{ type: 'text' as const, text: `Error: ${applied.error}` }],
+        isError: true,
+      }
+      return { outcome: 'failed', error: result, result }
+    }
+    tagNote = ` Tags: ${JSON.stringify(applied)}.`
+  }
+
   try {
     await getEnvironmentHost().renameSession(connectionId, claimed.sessionId, trimmed, 'agent')
   } catch (err) {
     if (isUserLockedError(err)) {
-      return { outcome: 'failed', error: USER_LOCKED_REPLY, result: USER_LOCKED_REPLY }
+      const locked = tagNote
+        ? {
+            content: [{
+              type: 'text' as const,
+              text: `${USER_LOCKED_REPLY.content[0].text} Tags applied.${tagNote}`,
+            }],
+            isError: true as const,
+          }
+        : USER_LOCKED_REPLY
+      return { outcome: 'failed', error: locked, result: locked }
     }
     throw err
   }
@@ -258,7 +282,7 @@ async function renameRemoteSession(
   }
 
   const result = {
-    content: [{ type: 'text' as const, text: `Session renamed to "${trimmed}".` }],
+    content: [{ type: 'text' as const, text: `Session renamed to "${trimmed}".${tagNote}` }],
   }
   return { outcome: 'succeeded', result }
 }

@@ -1544,6 +1544,9 @@ export const zh: Messages = {
         wereCandidatesSection: '曾为候选项',
         skippedPinnedSection: '已跳过（固定）',
         pageHint: '页 · {{hint}}',
+        taggingSession: '正在打标签…',
+        sessionTagged: '已打标签',
+        tagFailed: '打标失败',
         fields: {
           title: '标题',
           harness: 'Harness',
@@ -1556,6 +1559,8 @@ export const zh: Messages = {
           id: 'Id',
           input: '输入',
           result: '结果',
+          tag: '标签',
+          sessions: 'Session 数',
         },
       },
       automation: {

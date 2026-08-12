@@ -1073,6 +1073,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('session.rename', { sessionId, title, source })
   }
 
+  async setSessionTags(
+    sessionId: string,
+    op: { add?: unknown; remove?: unknown; set?: unknown },
+  ): Promise<unknown> {
+    return this.client.rpc('session.setTags', { sessionId, ...op })
+  }
+
   /** Remove a session from the node registry (sidebar delete). */
   async removeSession(
     sessionId: string,

@@ -1488,6 +1488,9 @@ export type Messages = {
         wereCandidatesSection: string
         skippedPinnedSection: string
         pageHint: string
+        taggingSession: string
+        sessionTagged: string
+        tagFailed: string
         fields: {
           title: string
           harness: string
@@ -1500,6 +1503,8 @@ export type Messages = {
           id: string
           input: string
           result: string
+          tag: string
+          sessions: string
         }
       }
       /** automation_list / automation_apply / automation_delete — casing mirrors collab. */
@@ -4221,6 +4226,9 @@ export const en: Messages = {
         wereCandidatesSection: 'Were candidates',
         skippedPinnedSection: 'Skipped (pinned)',
         pageHint: 'Page · {{hint}}',
+        taggingSession: 'Tagging session…',
+        sessionTagged: 'Session Tagged',
+        tagFailed: 'Tag Failed',
         fields: {
           title: 'Title',
           harness: 'Harness',
@@ -4233,6 +4241,8 @@ export const en: Messages = {
           id: 'Id',
           input: 'Input',
           result: 'Result',
+          tag: 'Tag',
+          sessions: 'Sessions',
         },
       },
       /** automation_list / automation_apply / automation_delete — casing mirrors collab. */

@@ -297,6 +297,10 @@ export class SessionRuntime {
         session.isUserRenamed = false
         changed = true
       }
+      if (!Array.isArray(session.tags)) {
+        session.tags = []
+        changed = true
+      }
       if (session.isAutomation !== true && session.isAutomation !== false) {
         session.isAutomation = false
         changed = true
@@ -411,6 +415,7 @@ export class SessionRuntime {
       isPinned: false,
       isHidden: false,
       isUserRenamed: false,
+      tags: [],
       controllerClientSessionId: controller,
       hostActionCapabilityVersion: controller
         ? (input.hostActionCapabilityVersion ?? HOST_ACTION_CAPABILITY_VERSION)
@@ -647,6 +652,7 @@ export class SessionRuntime {
       isHidden: false,
       // Fork title is derived; start unlocked so agent can rename the fork.
       isUserRenamed: false,
+      tags: [],
       // Fork inherits controller binding (same paired desktop).
       controllerClientSessionId: source.controllerClientSessionId,
       hostActionCapabilityVersion: source.hostActionCapabilityVersion,
@@ -1291,6 +1297,18 @@ export class SessionRuntime {
       eventType: SESSION_DURABLE_EVENT.renamed,
       payload: { title: session.title, source },
     })
+    return this.clone(session)
+  }
+
+  setTags(sessionId: string, tags: string[]): NodeSessionRecord {
+    const session = this.live.get(sessionId)
+    if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (session.closed) {
+      throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
+    }
+    session.tags = [...tags]
+    session.updatedAt = Date.now()
+    this.persist(session)
     return this.clone(session)
   }
 
@@ -2377,6 +2395,7 @@ export class SessionRuntime {
       transcript: s.transcript.map((t) => ({ ...t })),
       pendingInteraction: s.pendingInteraction ? { ...s.pendingInteraction } : null,
       isUserRenamed: s.isUserRenamed === true,
+      tags: [...(s.tags ?? [])],
       controllerClientSessionId: s.controllerClientSessionId ?? null,
       hostActionCapabilityVersion: s.hostActionCapabilityVersion ?? 0,
       hostActionToolGroups: [...(s.hostActionToolGroups ?? [])],

@@ -32,7 +32,8 @@ import {
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { notifySessionRecapReceived } from '../../acp/acp-recap-focus'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
-import { shouldAutoAllowAcpPermission } from '../../acp/acp-permission-preapprove'
+import { decideAcpPermission } from '../../acp/acp-permission-preapprove'
+import { grantParentMainThreadCall } from '../../mcp/main-thread-session-guard'
 import {
   buildAskUserQuestionRequest,
   buildPlanApprovalRequest,
@@ -707,20 +708,34 @@ export class AcpBackend implements SessionBackend {
 
   private handlePermissionRequest(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const { request, options } = mapPermissionRequest(params)
-    // Host built-ins + mini-app preapprovals must not block Grok turns (Claude parity).
-    const pre = shouldAutoAllowAcpPermission(params)
-    if (pre.allow) {
-      // Built-ins: prefer allow_always / allow-always-mcp so Grok stops re-prompting
-      // the same host tool. Mini-app preapprovals stay one-shot (tool-scoped list).
-      const alwaysAllow = pre.reason === 'builtin'
+    const mainSessionId = this.runtime?.sessionId ?? null
+    const decision = decideAcpPermission(params, mainSessionId)
+    if (decision.kind === 'deny') {
       log.info(
-        '[AcpBackend] auto-allow permission tool=%s reason=%s always=%s requestId=%s',
-        pre.toolName,
-        pre.reason,
-        alwaysAllow,
+        '[AcpBackend] deny permission tool=%s reason=%s callerSession=%s mainSession=%s requestId=%s',
+        decision.toolName,
+        decision.reason,
+        params.sessionId,
+        mainSessionId,
         request.requestId,
       )
-      return Promise.resolve(mapPermissionDecision(options, true, alwaysAllow))
+      return Promise.resolve(mapPermissionDecision(options, false))
+    }
+    if (decision.kind === 'auto-allow') {
+      // Built-ins (except main-thread-only): prefer allow_always / allow-always-mcp
+      // so Grok stops re-prompting. session_rename / session_tag stay allow-once
+      // so a parent grant is not inherited by Grok child sessions.
+      if (!decision.alwaysAllow && this.startOpts?.sessionId) {
+        grantParentMainThreadCall(this.startOpts.sessionId)
+      }
+      log.info(
+        '[AcpBackend] auto-allow permission tool=%s reason=%s always=%s requestId=%s',
+        decision.toolName,
+        decision.reason,
+        decision.alwaysAllow,
+        request.requestId,
+      )
+      return Promise.resolve(mapPermissionDecision(options, true, decision.alwaysAllow))
     }
     const event: AgentEvent = { type: 'permission_request', request }
     return new Promise((resolve) => {

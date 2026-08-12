@@ -12,6 +12,7 @@ import {
   type NodeAgentSettingsPatch,
   type RpcErrorCode,
 } from '@superone/shared/environment'
+import { applySessionTagOp, parseSessionTagOp } from '@superone/shared/session-tags'
 import {
   loadNodeAgentSettings,
   patchNodeAgentSettings,
@@ -184,6 +185,7 @@ const MUTATING_METHODS = new Set([
   'session.close',
   'session.remove',
   'session.rename',
+  'session.setTags',
   'session.setUiFlags', // pin/hide
   'terminal.acquireControl',
   'terminal.renewControl',
@@ -471,6 +473,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionRemove(payload, ctx)
     case 'session.rename':
       return handleSessionRename(payload, ctx)
+    case 'session.setTags':
+      return handleSessionSetTags(payload, ctx)
     case 'session.setUiFlags':
       return handleSessionSetUiFlags(payload, ctx)
     case 'collaboration.listProfiles':
@@ -2154,6 +2158,33 @@ function handleSessionRename(payload: unknown, ctx: RpcContext): RpcResult {
   }
   try {
     return { result: ctx.sessions.rename(sessionId, title, source) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionSetTags(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  const op = parseSessionTagOp({ add: p.add, remove: p.remove, set: p.set })
+  if ('error' in op) {
+    return { error: { code: 'invalid_argument', message: op.error } }
+  }
+  try {
+    const session = ctx.sessions.get(sessionId)
+    if (!session) {
+      return { error: { code: 'not_found', message: 'session not found' } }
+    }
+    const next = applySessionTagOp(session.tags ?? [], op)
+    if ('error' in next) {
+      return { error: { code: 'failed_precondition', message: next.error } }
+    }
+    return { result: ctx.sessions.setTags(sessionId, next) }
   } catch (err) {
     return mapThrown(err)
   }

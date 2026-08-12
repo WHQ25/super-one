@@ -331,6 +331,12 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         break
     }
     if (!summary && block.toolName.endsWith('__session_rename')) summary = p.title ? String(p.title) : undefined
+    if (!summary && block.toolName.endsWith('__session_tag')) {
+      const add = Array.isArray(p.add) ? p.add.filter((t): t is string => typeof t === 'string') : []
+      const set = Array.isArray(p.set) ? p.set.filter((t): t is string => typeof t === 'string') : []
+      const bits = add.length ? add : set
+      summary = bits.length ? bits.join(', ') : undefined
+    }
     return { toolSummary: summary, toolFilePath: filePath || undefined, toolLineDelta, toolDiff, toolDiffTokens, toolTodos }
   } catch { return {} }
 }

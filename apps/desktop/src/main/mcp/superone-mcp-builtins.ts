@@ -4,11 +4,10 @@ import { existsSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod'
-import log from '../logger'
 import { createMiniApp, cacheAppEntry, registerDevMiniApp, installDevPointer } from '../miniapp/miniapp-service'
 import { packApp } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
-import { renameSession as dbRenameSession, isSessionUserRenamed } from '../db-sessions'
+
 import {
   registerMediaTools,
   generateImageToolHandler,
@@ -32,6 +31,10 @@ import {
   PACK_MINI_APP_DESCRIPTION,
   UPDATE_SUPERONE_TYPES_DESCRIPTION,
   RENAME_SESSION_DESCRIPTION,
+  SESSION_TAG_DESCRIPTION,
+  SESSION_TAG_LIST_DESCRIPTION,
+  SESSION_TAGS_FILTER_DESCRIPTION,
+  SESSION_TAG_MATCH_DESCRIPTION,
   PROJECT_LIST_DESCRIPTION,
   SESSION_LIST_DESCRIPTION,
   SESSION_SEARCH_DESCRIPTION,
@@ -71,6 +74,13 @@ import {
   type SessionReadArgs,
   type SessionSearchArgs,
 } from './session-archive-tools'
+import {
+  sessionRenameHandler,
+  sessionTagHandler,
+  sessionTagListHandler,
+  type SessionTagArgs,
+  type SessionTagListArgs,
+} from './session-tag-tools'
 import {
   automationApplyHandler,
   automationDeleteHandler,
@@ -225,36 +235,6 @@ async function packMiniApp(args: { appDir: string; outputDir: string }) {
   }
 }
 
-function renameSessionTool(args: { title: string }, deps: BuiltInSuperoneToolDeps) {
-  const sessionId = deps.sessionId
-  if (isSessionUserRenamed(sessionId)) {
-    return {
-      content: [{ type: 'text' as const, text: 'Error: user_locked. The user has manually set this session title. Do not call session_rename again for this session.' }],
-      isError: true,
-    }
-  }
-  const trimmed = args.title.trim().replace(/^["']+|["']+$/g, '').trim()
-  if (!trimmed) {
-    return {
-      content: [{ type: 'text' as const, text: 'Error: empty title.' }],
-      isError: true,
-    }
-  }
-  const session = deps.sessionHost?.getSession(sessionId) ?? null
-  if (session) {
-    session.setTitle(trimmed, 'agent')
-  } else {
-    try {
-      dbRenameSession(sessionId, trimmed, 'agent')
-    } catch (err) {
-      log.warn('[session_rename] dbRenameSession error: %s', err instanceof Error ? err.message : String(err))
-    }
-  }
-  return {
-    content: [{ type: 'text' as const, text: `Session renamed to "${trimmed}".` }],
-  }
-}
-
 async function updateSuperoneTypes(args: { appDir: string }) {
   const srcPath = join(args.appDir, 'src', 'superone.d.ts')
   const rootPath = join(args.appDir, 'superone.d.ts')
@@ -289,7 +269,11 @@ export async function executeBuiltInSuperoneTool(
     case 'miniapp_dev_update_types':
       return updateSuperoneTypes(args as { appDir: string })
     case 'session_rename':
-      return renameSessionTool(args as { title: string }, deps)
+      return sessionRenameHandler(args as { title: string; tags?: string[] }, deps)
+    case 'session_tag':
+      return sessionTagHandler(args as unknown as SessionTagArgs, deps)
+    case 'session_tag_list':
+      return sessionTagListHandler(args as unknown as SessionTagListArgs, deps)
     case 'project_list':
       return projectListHandler(args as unknown as ProjectListArgs, deps)
     case 'session_list':
@@ -516,10 +500,55 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       description: RENAME_SESSION_DESCRIPTION,
       inputSchema: {
         title: z.string().min(1).max(80).describe('A concise 4-8 word title describing the current conversation topic.'),
+        tags: z.array(z.string()).max(8).optional()
+          .describe('Replace this session\'s tags (set). Discover names with session_tag_list. Empty array clears. Applied even when the title is user_locked.'),
       },
       _meta: { 'anthropic/alwaysLoad': true },
     },
-    (args) => renameSessionTool(args, deps),
+    (args) => sessionRenameHandler(args, deps),
+  )
+
+  server.registerTool(
+    'session_tag',
+    {
+      description: SESSION_TAG_DESCRIPTION,
+      inputSchema: {
+        sessionId: z.string().optional()
+          .describe('One session to tag. Default: current. Mutually exclusive with sessionIds.'),
+        sessionIds: z.array(z.string()).max(50).optional()
+          .describe('Bulk target ids (max 50). add required; set/remove not allowed. Mutually exclusive with sessionId.'),
+        add: z.array(z.string()).max(8).optional()
+          .describe('Tags to add (normalized, de-duped). Mutually exclusive with remove/set.'),
+        remove: z.array(z.string()).max(8).optional()
+          .describe('Tags to remove. Mutually exclusive with add/set.'),
+        set: z.array(z.string()).max(8).optional()
+          .describe('Replace all tags. Empty array clears. Mutually exclusive with add/remove.'),
+      },
+      _meta: { 'anthropic/alwaysLoad': true },
+    },
+    (args) => sessionTagHandler(args, deps),
+  )
+
+  server.registerTool(
+    'session_tag_list',
+    {
+      description: SESSION_TAG_LIST_DESCRIPTION,
+      inputSchema: {
+        query: z.string().optional().describe('Case-insensitive substring filter on tag name.'),
+        includeHidden: z.boolean().optional().describe('Count hidden sessions. Default false.'),
+        projectId: z
+          .string()
+          .optional()
+          .describe('List tags in this SuperOne project id only (from project_list). Mutually exclusive with allProjects. Default: current project.'),
+        allProjects: z
+          .boolean()
+          .optional()
+          .describe('List tags across every SuperOne project. Mutually exclusive with projectId. Default false.'),
+        limit: z.number().int().min(1).max(100).optional().describe('Max rows. Default 50, max 100.'),
+        offset: z.number().int().min(0).optional().describe('Pagination offset. Default 0.'),
+      },
+    },
+    (args) => sessionTagListHandler(args, deps),
   )
 
   server.registerTool(
@@ -547,6 +576,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         parentOnly: z.boolean().optional().describe('Exclude collab child sessions. Default false.'),
         olderThan: z.string().optional().describe('ISO timestamp — only sessions last active before this.'),
         newerThan: z.string().optional().describe('ISO timestamp — only sessions last active after this.'),
+        tags: z.array(z.string()).max(8).optional().describe(SESSION_TAGS_FILTER_DESCRIPTION),
+        tagMatch: z.enum(['any', 'all']).optional().describe(SESSION_TAG_MATCH_DESCRIPTION),
         projectId: z
           .string()
           .optional()
@@ -577,6 +608,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional(),
         sessionIds: z.array(z.string()).max(32).optional().describe('Optional: restrict search to these session ids.'),
         role: z.enum(['user', 'assistant', 'any']).optional().describe('Message role filter. Default any.'),
+        tags: z.array(z.string()).max(8).optional().describe(SESSION_TAGS_FILTER_DESCRIPTION),
+        tagMatch: z.enum(['any', 'all']).optional().describe(SESSION_TAG_MATCH_DESCRIPTION),
         projectId: z
           .string()
           .optional()
@@ -599,7 +632,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         sessionId: z
           .string()
           .min(1)
-          .describe('Target SuperOne session id from session_list or session_search (any project).'),
+          .describe('Target SuperOne session id from session_list or session_search (any project). Do not pass the current session.'),
         view: z.enum(['meta', 'user', 'assistant', 'text', 'tools', 'tool_detail']).optional()
           .describe('meta | user | assistant | text | tools | tool_detail. Default text.'),
         messageId: z.string().optional().describe('Anchor page at this message id.'),

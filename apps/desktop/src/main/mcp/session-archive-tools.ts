@@ -11,6 +11,13 @@
 
 import { encode as toonEncode } from '@toon-format/toon'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import {
+  parseSessionTagMatch,
+  parseTagsJson,
+  sessionTagsMatchClause,
+  type SessionTagMatch,
+  normalizeSessionTagList,
+} from '@superone/shared/session-tags'
 import { getDb } from '../database'
 import {
   deleteSession,
@@ -160,6 +167,7 @@ interface ArchiveSessionRow {
   total_cost_usd: number | null
   context_tokens: number | null
   project_id: string | null
+  tags_json: string | null
 }
 
 /**
@@ -225,6 +233,8 @@ function listArchiveSessions(
     query?: string
     olderThan?: string
     newerThan?: string
+    tags?: string[]
+    tagMatch?: SessionTagMatch
     order?: SessionListOrder
     limit: number
     offset: number
@@ -259,6 +269,13 @@ function listArchiveSessions(
     where.push('COALESCE(s.last_user_message_at, s.created_at) > ?')
     params.push(opts.newerThan)
   }
+  if (opts.tags && opts.tags.length > 0) {
+    const clause = sessionTagsMatchClause('s.tags_json', opts.tags, opts.tagMatch ?? 'any')
+    if (clause.sql) {
+      where.push(clause.sql)
+      params.push(...clause.params)
+    }
+  }
 
   // harness filter applied after map (deriveHarnessId); over-fetch slightly when filtering
   const fetchLimit = opts.harness ? opts.limit + opts.offset + 200 : opts.limit
@@ -279,7 +296,8 @@ function listArchiveSessions(
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
            ${sizeSelect},
-           s.project_id
+           s.project_id,
+           s.tags_json
     FROM sessions s
     LEFT JOIN session_collaboration_grants g
       ON g.child_session_id = s.id
@@ -318,6 +336,7 @@ function rowToListEntry(row: ArchiveSessionRow, selfId: string) {
     hidden: !!row.is_hidden,
     parentId: row.parent_session_id ?? null,
     branch: row.git_branch ?? null,
+    tags: parseTagsJson(row.tags_json),
     isSelf: row.id === selfId,
   }
 }
@@ -332,6 +351,8 @@ export interface SessionListArgs extends ArchiveProjectScopeArgs {
   parentOnly?: boolean
   olderThan?: string
   newerThan?: string
+  tags?: string[]
+  tagMatch?: SessionTagMatch
   /** Sort key. Default last_active_desc. Use last_active_asc for oldest-first cleanup. */
   order?: SessionListOrder
   limit?: number
@@ -355,6 +376,17 @@ export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneT
     ? Math.max(0, Math.floor(args.offset))
     : 0
 
+  const tagMatch = parseSessionTagMatch(args.tagMatch)
+  if (tagMatch == null) {
+    return toolResult({ status: 'error', message: 'tagMatch must be "any" or "all".' }, true)
+  }
+  let filterTags: string[] = []
+  if (args.tags !== undefined) {
+    const parsed = normalizeSessionTagList(args.tags)
+    if ('error' in parsed) return toolResult({ status: 'error', message: parsed.error }, true)
+    filterTags = parsed.tags
+  }
+
   const rows = listArchiveSessions(scope.mode === 'all' ? null : scope.projectId, {
     includeHidden: args.includeHidden === true,
     includePinnedOnly: args.includePinnedOnly === true,
@@ -363,6 +395,8 @@ export function sessionListHandler(args: SessionListArgs, deps: BuiltInSuperoneT
     query: typeof args.query === 'string' ? args.query : undefined,
     olderThan: typeof args.olderThan === 'string' ? args.olderThan : undefined,
     newerThan: typeof args.newerThan === 'string' ? args.newerThan : undefined,
+    tags: filterTags,
+    tagMatch,
     order,
     limit,
     offset,
@@ -440,6 +474,8 @@ export interface SessionSearchArgs extends ArchiveProjectScopeArgs {
   harness?: string
   sessionIds?: string[]
   role?: 'user' | 'assistant' | 'any'
+  tags?: string[]
+  tagMatch?: SessionTagMatch
   limit?: number
 }
 
@@ -460,6 +496,17 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     : null
   const harnessFilter = typeof args.harness === 'string' ? args.harness.toLowerCase() : null
 
+  const tagMatch = parseSessionTagMatch(args.tagMatch)
+  if (tagMatch == null) {
+    return toolResult({ status: 'error', message: 'tagMatch must be "any" or "all".' }, true)
+  }
+  let filterTags: string[] = []
+  if (args.tags !== undefined) {
+    const parsed = normalizeSessionTagList(args.tags)
+    if ('error' in parsed) return toolResult({ status: 'error', message: parsed.error }, true)
+    filterTags = parsed.tags
+  }
+
   const db = getDb()
   // Broad SQL prefilter with first term, then refine in JS for multi-word AND.
   // The prefilter is ordered by recency, so an all-projects scan would otherwise be
@@ -470,14 +517,18 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     : SESSION_SEARCH_PREFILTER
   const like = `%${terms[0]}%`
   const projectClause = scope.mode === 'project' ? 's.project_id = ? AND' : ''
-  const sqlParams: unknown[] = scope.mode === 'project' ? [scope.projectId, like, like] : [like, like]
+  const tagClause = sessionTagsMatchClause('s.tags_json', filterTags, tagMatch)
+  const tagSql = tagClause.sql ? `AND ${tagClause.sql}` : ''
+  const sqlParams: unknown[] = scope.mode === 'project' ? [scope.projectId] : []
+  sqlParams.push(...tagClause.params, like, like)
   const rows = db.prepare(`
     SELECT m.id AS message_id, m.session_id, m.role, m.created_at, m.content_json,
-           s.title, s.provider_id, s.provider, s.acp_agent_id, s.project_id
+           s.title, s.provider_id, s.provider, s.acp_agent_id, s.project_id, s.tags_json
     FROM chat_messages m
     JOIN sessions s ON s.id = m.session_id
     WHERE ${projectClause}
           COALESCE(s.is_hidden, 0) = 0
+      ${tagSql}
       AND (LOWER(COALESCE(s.title, '')) LIKE ? OR LOWER(m.content_json) LIKE ?)
     ORDER BY m.created_at DESC
     LIMIT ${prefilterLimit}
@@ -492,6 +543,7 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     provider: string | null
     acp_agent_id: string | null
     project_id: string | null
+    tags_json: string | null
   }>
 
   const hits: Array<{
@@ -503,6 +555,7 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     role: string
     createdAt: string
     snippet: string
+    tags: string[]
   }> = []
 
   for (const row of rows) {
@@ -552,6 +605,7 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
       role: row.role,
       createdAt: row.created_at,
       snippet: snippet.replace(/\s+/g, ' ').trim(),
+      tags: parseTagsJson(row.tags_json),
     })
     if (hits.length >= limit) break
   }
@@ -610,7 +664,7 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     SELECT s.id, s.title, s.created_at, s.last_user_message_at, s.is_worktree, s.is_pinned, s.is_hidden,
            s.git_branch, s.worktree_path, s.provider_id, s.provider, s.acp_agent_id, s.selected_model,
            s.selected_effort, s.total_cost_usd, s.context_tokens, s.api_provider_id,
-           s.project_id
+           s.project_id, s.tags_json
     FROM sessions s
     WHERE s.id = ?
   `).get(sessionId) as {
@@ -632,6 +686,7 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     context_tokens: number | null
     api_provider_id: string | null
     project_id: string | null
+    tags_json: string | null
   } | undefined
 
   if (!sessionRow) {
@@ -666,6 +721,7 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     parentId: parent?.parent_session_id ?? null,
     totalCostUsd: sessionRow.total_cost_usd ?? 0,
     contextTokens: sessionRow.context_tokens ?? 0,
+    tags: parseTagsJson(sessionRow.tags_json),
     isSelf: sessionId === deps.sessionId,
   }
 

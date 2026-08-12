@@ -56,6 +56,8 @@ export interface NodeSessionRecord {
    * desktop parity with sessions.is_user_renamed / session_rename user_locked.
    */
   isUserRenamed: boolean
+  /** Agent-set labels for archive list/search. Empty / omitted when unset. */
+  tags?: string[]
   /** Once set, runTurn finalizers must not overwrite closed/ended state. */
   closed?: boolean
   /**

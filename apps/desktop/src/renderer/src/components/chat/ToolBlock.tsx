@@ -1145,6 +1145,35 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         />
       )
     }
+    if (mcpInfo.mcpToolName === 'session_tag') {
+      const added = Array.isArray(params.add) ? params.add.filter((t): t is string => typeof t === 'string') : []
+      const removed = Array.isArray(params.remove) ? params.remove.filter((t): t is string => typeof t === 'string') : []
+      const set = Array.isArray(params.set) ? params.set.filter((t): t is string => typeof t === 'string') : []
+      const tagBits = added.length
+        ? added.join(', ')
+        : removed.length
+          ? removed.join(', ')
+          : set.length
+            ? set.join(', ')
+            : ''
+      const ids = Array.isArray(params.sessionIds) ? params.sessionIds.length : 0
+      const summary = [
+        tagBits,
+        ids > 1 ? `${ids}` : '',
+      ].filter(Boolean).join(' · ')
+      let label = t('chat.toolBlock.archive.sessionTagged')
+      if (isStreaming) label = t('chat.toolBlock.archive.taggingSession')
+      else if (isDenied) label = t('chat.toolBlock.archive.sessionTagged')
+      else if (isError) label = t('chat.toolBlock.archive.tagFailed')
+      return (
+        <CompactToolRow icon={<ToolIcon icon="clipboard-list" className="size-3 shrink-0 text-muted-foreground" />}>
+          <span className="font-medium text-foreground">
+            {label}
+            {summary && <>: <span className="text-muted-foreground">{isDenied ? t('chat.toolBlock.denied') : summary}</span></>}
+          </span>
+        </CompactToolRow>
+      )
+    }
     if (isSessionArchiveToolName(mcpInfo.mcpToolName)) {
       return (
         <SessionArchiveToolBlock

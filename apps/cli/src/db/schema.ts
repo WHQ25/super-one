@@ -122,7 +122,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   settings_json TEXT,
   -- Automation ownership markers (filterable in session.list metadata)
   is_automation INTEGER NOT NULL DEFAULT 0,
-  automation_id TEXT
+  automation_id TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]'
 );
 
 -- Host Action channel (durable poll/claim/respond). Also ensured at open time.

@@ -245,6 +245,21 @@ describe('session archive tools', () => {
     expect(sql).toMatch(/s\.project_id = \?/)
   })
 
+  it('session_list applies tags any/all in SQL', () => {
+    const prepare = vi.fn(() => ({ all: () => [] }))
+    getDbMock.mockReturnValue({ prepare })
+
+    sessionListHandler({ tags: ['OAuth', 'auth'], tagMatch: 'any' }, makeDeps())
+    const anySql = prepare.mock.calls[0]![0] as string
+    expect(anySql).toMatch(/EXISTS/)
+    expect(anySql).toMatch(/json_each/)
+
+    prepare.mockClear()
+    sessionListHandler({ tags: ['oauth', 'auth'], tagMatch: 'all' }, makeDeps())
+    const allSql = prepare.mock.calls[0]![0] as string
+    expect(allSql).toMatch(/COUNT\(DISTINCT value\)/)
+  })
+
   it('parseSessionListOrder accepts known values and defaults', () => {
     expect(parseSessionListOrder(undefined)).toBe(SESSION_LIST_DEFAULT_ORDER)
     expect(parseSessionListOrder('last_active_asc')).toBe('last_active_asc')
@@ -447,6 +462,19 @@ describe('session archive tools', () => {
     expect(prepare).toHaveBeenCalledTimes(1)
     const sql = prepare.mock.calls[0]![0] as string
     expect(sql).toMatch(/s\.project_id = \?/)
+  })
+
+  it('session_search applies tag filter in SQL before the text prefilter', () => {
+    const all = vi.fn(() => [])
+    const prepare = vi.fn(() => ({ all }))
+    getDbMock.mockReturnValue({ prepare })
+
+    sessionSearchHandler({ query: 'refresh', tags: ['oauth'], tagMatch: 'any' }, makeDeps())
+    const sql = prepare.mock.calls[0]![0] as string
+    expect(sql).toMatch(/json_each/)
+    expect(sql).toMatch(/EXISTS/)
+    expect(all.mock.calls[0]).toContain('oauth')
+    expect(all.mock.calls[0]![0]).toBe('proj-1')
   })
 
   it('session_search allProjects omits project_id filter and widens the prefilter window', () => {

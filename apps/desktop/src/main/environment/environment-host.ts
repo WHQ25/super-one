@@ -1885,6 +1885,15 @@ export class EnvironmentHost {
     return gateway.renameSession(sessionId, title, source)
   }
 
+  async setSessionTags(
+    connectionId: string,
+    sessionId: string,
+    op: { add?: unknown; remove?: unknown; set?: unknown },
+  ): Promise<unknown> {
+    const { gateway } = this.resolveRemote(connectionId)
+    return gateway.setSessionTags(sessionId, op)
+  }
+
   async removeSession(connectionId: string, sessionId: string): Promise<unknown> {
     const { gateway } = this.resolveRemote(connectionId)
     let control: { leaseId?: string; generation?: string } | undefined

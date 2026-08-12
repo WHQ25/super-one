@@ -498,7 +498,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_rename",
-    "description": "Rename the current chat session to a concise topic label shown in the sidebar.\n\nOnly the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it \u2014 you do not own the user-facing session title.\n\nIf the tool returns an error containing \"user_locked\", the user has manually named this session \u2014 do not call session_rename again for this session.",
+    "description": "Rename the current chat session to a concise topic label shown in the sidebar. Optional tags (set) label it for session_list/session_search — discover names with session_tag_list.\n\nOnly the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\nIf the tool returns an error containing \"user_locked\", the user has manually named this session — do not call session_rename again. Tags in the same call were still applied; use session_tag for later tag edits.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -507,11 +507,92 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           "description": "A concise 4-8 word title describing the current conversation topic.",
           "minLength": 1,
           "maxLength": 80
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 8,
+          "description": "Replace this session's tags (set). Discover names with session_tag_list. Empty array clears. Applied even when the title is user_locked."
         }
       },
       "required": [
         "title"
       ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "session_tag",
+    "description": "Tag SuperOne sessions so session_list/session_search can filter by tag. Default: current session. Pass sessionId for one other session, or sessionIds with add to tag many. Use add, remove, or set (exactly one). set: [] clears. Discover existing labels with session_tag_list first — do not invent names. Only the top-level agent may call this; subagents must not. Not session_rename (titles) and not live collab.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "One session to tag. Default: current. Mutually exclusive with sessionIds."
+        },
+        "sessionIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 50,
+          "description": "Bulk target ids (max 50). add required; set/remove not allowed. Mutually exclusive with sessionId."
+        },
+        "add": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 8,
+          "description": "Tags to add (normalized, de-duped). Mutually exclusive with remove/set."
+        },
+        "remove": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 8,
+          "description": "Tags to remove. Mutually exclusive with add/set."
+        },
+        "set": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 8,
+          "description": "Replace all tags. Empty array clears. Mutually exclusive with add/remove."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "session_tag_list",
+    "description": "List tags used on SuperOne sessions (tag + session count). Default: current project; projectId or allProjects for other scope. Filter with query (tag substring). Hidden sessions omitted unless includeHidden. Call this before session_list/session_search with tags. Then filter with tags + tagMatch any (at least one) or all (every tag). Not live collab.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Case-insensitive substring filter on tag name."
+        },
+        "includeHidden": {
+          "type": "boolean",
+          "description": "Count hidden sessions. Default false."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "List tags in this SuperOne project id only (from project_list). Mutually exclusive with allProjects. Default: current project."
+        },
+        "allProjects": {
+          "type": "boolean",
+          "description": "List tags across every SuperOne project. Mutually exclusive with projectId. Default false."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Max rows. Default 50, max 100."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Pagination offset. Default 0."
+        }
+      },
       "additionalProperties": false
     }
   },
@@ -542,7 +623,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_list",
-    "description": "List SuperOne sessions (metadata only). Default: current project. Pass projectId (from project_list) for another project, or allProjects=true for every project. Rows include projectId only — use project_list for path/name. Use before session_read/session_search to find ids. Filter by title query, harness, pin/hidden, dates. Sort with order (default last_active_desc; last_active_asc oldest-first; also created_*, message_count_*, size_*). When order is size_*, rows include sizeBytes (approx character length of stored message JSON for ranking — not disk page-file bytes). Paginate with limit/offset. Not live collab or harness resume.",
+    "description": "List SuperOne sessions (metadata only). Default: current project. Pass projectId (from project_list) or allProjects=true. Rows include projectId only — use project_list for path/name. Use before session_read/session_search. Filter by title query, harness, pin/hidden, dates, or tags + tagMatch (any=at least one, all=every tag; default any). Discover tags with session_tag_list. Sort with order (default last_active_desc; also created_*, message_count_*, size_*). When order is size_*, rows include sizeBytes (character length of message JSON, not disk bytes). Paginate with limit/offset. Not live collab or harness resume.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -579,6 +660,17 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
         "newerThan": {
           "type": "string",
           "description": "ISO timestamp — only sessions last active after this."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 8,
+          "description": "Tags from session_tag_list. Filter sessions that have these labels."
+        },
+        "tagMatch": {
+          "type": "string",
+          "enum": ["any", "all"],
+          "description": "any = at least one listed tag (default). all = every listed tag. Ignored when tags is omitted."
         },
         "projectId": {
           "type": "string",
@@ -619,7 +711,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_search",
-    "description": "Search SuperOne chat transcripts by text. Default: current project; projectId (from project_list) or allProjects for cross-project. Returns matching message hits with short snippets and projectId. Then call session_read with sessionId/messageId for full content. Snippets are pointers only — not full message bodies.",
+    "description": "Search SuperOne chat transcripts by text (title + message body). Default: current project; projectId or allProjects for cross-project. Optional tags + tagMatch (any/all, default any) narrows sessions in SQL before scanning messages. Discover tags with session_tag_list. Returns matching message hits with short snippets and projectId. Then call session_read with sessionId/messageId. Snippets are pointers only — not full bodies.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -654,6 +746,17 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           ],
           "description": "Message role filter. Default any."
         },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 8,
+          "description": "Tags from session_tag_list. Filter sessions that have these labels."
+        },
+        "tagMatch": {
+          "type": "string",
+          "enum": ["any", "all"],
+          "description": "any = at least one listed tag (default). all = every listed tag. Ignored when tags is omitted."
+        },
         "projectId": {
           "type": "string",
           "description": "Search this SuperOne project id only (from project_list). Mutually exclusive with allProjects. Default: current project."
@@ -677,14 +780,14 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "session_read",
-    "description": "Read any SuperOne session's saved transcript by id (any project; harness-agnostic content; does not resume provider threads). Views: meta | user | assistant | text | tools | tool_detail. user/assistant/text are pure conversation (no tool lines; assistant/text include toolCount). tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools. meta includes projectId (use project_list for path/name).",
+    "description": "Read another SuperOne session's saved transcript by id (any project; harness-agnostic; does not resume provider threads). Do not read the current session — it is already in your context. Views: meta | user | assistant | text | tools | tool_detail. user/assistant/text are pure conversation (no tool lines; assistant/text include toolCount). tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools. meta includes projectId and tags.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
           "type": "string",
           "minLength": 1,
-          "description": "Target SuperOne session id from session_list or session_search (any project)."
+          "description": "Target SuperOne session id from session_list or session_search (any project). Do not pass the current session."
         },
         "view": {
           "type": "string",

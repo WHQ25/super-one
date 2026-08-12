@@ -408,6 +408,9 @@ export function runDatabaseMigrations(db: Database.Database): void {
   if (!sessionColsPostRebuild.some((c) => c.name === 'acp_agent_id')) {
     db.exec('ALTER TABLE sessions ADD COLUMN acp_agent_id TEXT')
   }
+  if (!sessionColsPostRebuild.some((c) => c.name === 'tags_json')) {
+    db.exec("ALTER TABLE sessions ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
+  }
   const msgColsPostRebuild = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
   if (!msgColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {
     db.exec('ALTER TABLE chat_messages ADD COLUMN usage_counted_at TEXT')

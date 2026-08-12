@@ -32,6 +32,7 @@ function session(overrides?: Partial<NodeSessionRecord>): NodeSessionRecord {
     isPinned: false,
     isHidden: false,
     isUserRenamed: false,
+    tags: [],
     controllerClientSessionId: null,
     hostActionCapabilityVersion: 0,
     hostActionToolGroups: [],
@@ -293,6 +294,17 @@ describe('SessionRuntime.patchSettings + send fallbacks', () => {
     rt.patchSettings(created.sessionId, { model: 'm1' })
     const cleared = rt.patchSettings(created.sessionId, { model: null })
     expect(cleared.model).toBeNull()
+  })
+})
+
+describe('SessionRuntime.setTags', () => {
+  it('persists tags on the live record', () => {
+    const { store, events, leases } = memoryPorts()
+    const rt = new SessionRuntime(store, events, leases, 'env-1', createSimulatedTurnRunner({ delayMs: 0 }))
+    const created = rt.create({ projectId: 'p1', title: 'Auto' })
+    const out = rt.setTags(created.sessionId, ['oauth', 'auth'])
+    expect(out.tags).toEqual(['oauth', 'auth'])
+    expect(rt.get(created.sessionId)!.tags).toEqual(['oauth', 'auth'])
   })
 })
 

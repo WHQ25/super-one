@@ -27,6 +27,21 @@ const envHost = vi.hoisted(() => ({
   })),
 }))
 
+const mcpSurface = vi.hoisted(() => ({
+  executeSuperoneMcpTool: vi.fn(async (sessionId: string, toolName: string, args: unknown) => {
+    if (toolName.startsWith('browser_')) {
+      return browser.executeBrowserTool(sessionId, toolName, args)
+    }
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', tags: ['oauth'] }) }],
+    }
+  }),
+}))
+
+const renameTags = vi.hoisted(() => ({
+  applyRenameTags: vi.fn(() => ['oauth'] as string[] | { error: string }),
+}))
+
 vi.mock('../mcp/browser-mcp-tools', () => browser)
 vi.mock('../computer-use/tools', () => ({
   executeComputerUseTool: vi.fn(),
@@ -54,6 +69,8 @@ vi.mock('../app-settings-service', () => ({
 vi.mock('./environment-host', () => ({
   getEnvironmentHost: () => envHost,
 }))
+vi.mock('../mcp/superone-mcp-tool-surface', () => mcpSurface)
+vi.mock('../mcp/session-tag-tools', () => renameTags)
 
 import { desktopHostActionExecutor } from './host-action-executor'
 import type { ClaimHostActionResult } from '@superone/shared/environment'
@@ -76,6 +93,9 @@ describe('desktopHostActionExecutor', () => {
   afterEach(() => {
     browser.executeBrowserTool.mockClear()
     envHost.renameSession.mockClear()
+    mcpSurface.executeSuperoneMcpTool.mockClear()
+    renameTags.applyRenameTags.mockClear()
+    renameTags.applyRenameTags.mockImplementation(() => ['oauth'])
   })
 
   it('dispatches browser_snapshot with the node sessionId (tab owner key)', async () => {
@@ -111,6 +131,25 @@ describe('desktopHostActionExecutor', () => {
     expect(envHost.renameSession).not.toHaveBeenCalled()
   })
 
+  it('routes session_tag to the host archive MCP surface, not the node store', async () => {
+    const out = await desktopHostActionExecutor(
+      claimed({
+        toolName: 'session_tag',
+        sessionId: 'node-s',
+        args: { add: ['oauth'] },
+      }),
+      new AbortController().signal,
+      'conn-1',
+    )
+    expect(out.outcome).toBe('succeeded')
+    expect(mcpSurface.executeSuperoneMcpTool).toHaveBeenCalledWith(
+      'node-s',
+      'session_tag',
+      { add: ['oauth'] },
+    )
+    expect(envHost.renameSession).not.toHaveBeenCalled()
+  })
+
   it('routes session_rename to EnvironmentHost.renameSession (node path)', async () => {
     const action = claimed({
       toolName: 'session_rename',
@@ -132,6 +171,47 @@ describe('desktopHostActionExecutor', () => {
     // Reply shape matches local renameSessionTool so the agent sees a consistent result.
     expect(out.result).toEqual({
       content: [{ type: 'text', text: 'Session renamed to "Fix remote rename".' }],
+    })
+  })
+
+  it('rejects empty session_rename title before applying tags', async () => {
+    const out = await desktopHostActionExecutor(
+      claimed({
+        toolName: 'session_rename',
+        args: { title: '   ', tags: ['oauth'] },
+        sessionId: 'node-s',
+      }),
+      new AbortController().signal,
+      'conn-1',
+    )
+    expect(out.outcome).toBe('failed')
+    expect(renameTags.applyRenameTags).not.toHaveBeenCalled()
+    expect(envHost.renameSession).not.toHaveBeenCalled()
+  })
+
+  it('applies host-archive tags when remote rename is user_locked', async () => {
+    envHost.renameSession.mockRejectedValueOnce(
+      Object.assign(new Error('user_locked'), { code: 'user_locked' }),
+    )
+    const out = await desktopHostActionExecutor(
+      claimed({
+        toolName: 'session_rename',
+        args: { title: 'Agent try', tags: ['oauth'] },
+        sessionId: 'node-s',
+      }),
+      new AbortController().signal,
+      'conn-1',
+    )
+    expect(out.outcome).toBe('failed')
+    expect(renameTags.applyRenameTags).toHaveBeenCalledWith('node-s', ['oauth'])
+    expect(out.result).toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Error: user_locked. The user has manually set this session title. Do not call session_rename again for this session. Tags applied. Tags: ["oauth"].',
+        },
+      ],
+      isError: true,
     })
   })
 

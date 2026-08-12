@@ -15,6 +15,7 @@ import { makeClaudeSpawn } from './claude-spawn'
 import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
+import { isMainThreadOnlySuperoneTool, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
 import { persistAttachment, buildAttachmentPathNote } from './attachment-store'
 
 export { isResumeDropsTurnRefusal, RESUME_DROPS_TURN_REFUSAL_PREFIX }
@@ -55,15 +56,16 @@ export interface SessionQueryOptions {
 export const denySubagentSessionRename: HookCallback = async (input) => {
   if (
     input.hook_event_name === 'PreToolUse' &&
-    input.tool_name === 'mcp__superone__session_rename' &&
+    isMainThreadOnlySuperoneTool(input.tool_name) &&
     input.agent_id
   ) {
+    const bare = superoneBareToolName(input.tool_name)
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason:
-          'session_rename is main-thread only. You are running inside a subagent (Task/Agent worker) and must not rename the user-facing session title.',
+          `${bare} is main-thread only. You are running inside a subagent (Task/Agent worker) and must not retry this call.`,
       },
     }
   }

@@ -514,9 +514,61 @@ describe('AcpBackend', () => {
       .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
       .map((d) => d.text)
       .join('')
-    // Built-ins prefer allow-always-mcp so Grok grants session-scoped tool allow.
+    // session_rename is main-thread-only: allow-once so Grok children cannot inherit a grant.
     expect(JSON.parse(text)).toEqual({
-      outcome: { outcome: 'selected', optionId: 'allow-always-mcp' },
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    })
+    await backend.close()
+  })
+
+  it('denies session_tag from a Grok child session without a permission_request UI', async () => {
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const response = await opts.permission.request({
+          sessionId: 'grok-child-sess',
+          toolCall: {
+            toolCallId: 'tc-tag',
+            title: 'use_tool',
+            kind: 'other',
+            rawInput: {
+              tool_name: 'superone__session_tag',
+              tool_input: { add: ['subagent-should-fail'] },
+            },
+            _meta: {
+              'x.ai/tool': { name: 'use_tool', kind: 'use_tool', namespace: 'grok_build' },
+            },
+          },
+          options: [
+            { optionId: 'allow-always-mcp', name: 'Always allow', kind: 'allow_always' },
+            { optionId: 'allow-once', name: 'Allow', kind: 'allow_once' },
+            { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' },
+          ],
+        } as never)
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: JSON.stringify(response) },
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.send({ content: 'tag', assistantMessageId: 'a-tag' })
+
+    expect(events.some((e) => e.type === 'permission_request')).toBe(false)
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(JSON.parse(text)).toEqual({
+      outcome: { outcome: 'selected', optionId: 'reject-once' },
     })
     await backend.close()
   })

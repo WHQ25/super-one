@@ -65,6 +65,8 @@ describe('Host Action MCP server', () => {
     expect(names).toContain('browser_action_list')
     expect(names).toContain('read_manual')
     expect(names).toContain('session_rename')
+    expect(names).toContain('session_tag')
+    expect(names).toContain('session_tag_list')
     expect(names).toContain('widget_show')
     expect(names).toContain('miniapp_list')
     expect(names).toContain('computer_snapshot')

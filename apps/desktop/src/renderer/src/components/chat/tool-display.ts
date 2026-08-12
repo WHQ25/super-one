@@ -78,9 +78,10 @@ const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 
 /** SuperOne MCP tools that are agent-internal discovery/meta — never useful as chat UI.
  * Session archive (project_list/list/search/read/cleanup) is user-visible via SessionArchiveToolBlock —
- * do not hide those names here. */
+ * do not hide those names here. session_tag_list is agent discovery only. */
 const HIDDEN_SUPERONE_MCP_TOOLS = new Set([
   'session_rename',
+  'session_tag_list',
   'session_collab_list_agents',
   'session_list_agents',
   // Fixed mini-app catalog: discovery only; miniapp_call rows keep the per-app feel.

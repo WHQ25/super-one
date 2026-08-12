@@ -1,4 +1,5 @@
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
+import { isMainThreadOnlySuperoneTool } from '@superone/shared/superone-host-owned-tools'
 import { isBuiltInSuperoneTool, isToolPreapproved } from '../mcp/superone-mcp-server'
 import { normalizeAcpTool } from './acp-event-map'
 
@@ -67,6 +68,55 @@ function collectToolInput(params: RequestPermissionRequest): Record<string, unkn
  * Only host built-ins and user-preapproved mini-app tools — never third-party MCP.
  * miniapp_call preapproval is args-aware (appId + tool from tool_input).
  */
+function looksLikeAcpSubagentCall(
+  params: RequestPermissionRequest,
+  mainSessionId: string | null | undefined,
+): boolean {
+  if (mainSessionId && params.sessionId && params.sessionId !== mainSessionId) return true
+  const meta = (params.toolCall as { _meta?: Record<string, unknown> | null })._meta
+  if (meta && typeof meta === 'object') {
+    if (typeof meta.subagent_id === 'string' && meta.subagent_id.trim()) return true
+    const xai = meta['x.ai/tool']
+    if (xai && typeof xai === 'object' && !Array.isArray(xai)) {
+      const rec = xai as Record<string, unknown>
+      if (typeof rec.subagent_id === 'string' && rec.subagent_id.trim()) return true
+      if (typeof rec.agent_id === 'string' && rec.agent_id.trim() && rec.agent_id !== 'main') return true
+    }
+  }
+  return false
+}
+
+export type AcpPermissionDecision =
+  | { kind: 'deny'; toolName: string; reason: 'main_thread_only' }
+  | { kind: 'auto-allow'; toolName: string; reason: AcpPreapproveReason; alwaysAllow: boolean }
+  | { kind: 'prompt' }
+
+/**
+ * Full ACP permission decision for a tool call.
+ * Main-thread-only SuperOne tools (session_rename / session_tag) are denied
+ * when the caller is a Grok/ACP child session. They are auto-allowed from the
+ * parent session with allow-once so Grok cannot persist a server/tool grant
+ * that child sessions would inherit.
+ */
+export function decideAcpPermission(
+  params: RequestPermissionRequest,
+  mainSessionId?: string | null,
+): AcpPermissionDecision {
+  const names = collectCandidateClaudeNames(params)
+  const mainThreadTool = names.find((name) => isMainThreadOnlySuperoneTool(name))
+  if (mainThreadTool && looksLikeAcpSubagentCall(params, mainSessionId)) {
+    return { kind: 'deny', toolName: mainThreadTool, reason: 'main_thread_only' }
+  }
+  const pre = shouldAutoAllowAcpPermission(params)
+  if (!pre.allow) return { kind: 'prompt' }
+  return {
+    kind: 'auto-allow',
+    toolName: pre.toolName,
+    reason: pre.reason,
+    alwaysAllow: pre.reason === 'builtin' && !isMainThreadOnlySuperoneTool(pre.toolName),
+  }
+}
+
 export function shouldAutoAllowAcpPermission(
   params: RequestPermissionRequest,
 ): { allow: true; reason: AcpPreapproveReason; toolName: string } | { allow: false } {

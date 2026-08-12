@@ -59,6 +59,7 @@ import {
   MCP_SUPERONE_TOOL_PREFIX,
   toQualifiedSuperoneToolName,
 } from '../mcp/superone-host-owned-tools'
+import { MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
@@ -67,7 +68,7 @@ import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 
-export const CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS = new Set<string>(['session_rename'])
+export const CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS = new Set<string>([...MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES])
 
 /**
  * Rewrite Codex MCP elicitation messages into Claude-style qualified names so

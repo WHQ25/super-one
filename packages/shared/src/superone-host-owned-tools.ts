@@ -65,6 +65,8 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'miniapp_dev_pack',
   'miniapp_dev_update_types',
   'session_rename',
+  'session_tag',
+  'session_tag_list',
   'project_list',
   'session_list',
   'session_search',
@@ -90,6 +92,19 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
 ] as const
 
 export type BuiltInSuperoneToolName = (typeof BUILT_IN_SUPERONE_TOOL_NAMES)[number]
+
+/** Tools only the top-level (user-facing) agent may call — not Task/subagent workers. */
+export const MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES = ['session_rename', 'session_tag'] as const
+
+export function superoneBareToolName(name: string): string {
+  if (name.startsWith(MCP_SUPERONE_TOOL_PREFIX)) return name.slice(MCP_SUPERONE_TOOL_PREFIX.length)
+  if (name.startsWith('superone__')) return name.slice('superone__'.length)
+  return name
+}
+
+export function isMainThreadOnlySuperoneTool(name: string): boolean {
+  return (MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES as readonly string[]).includes(superoneBareToolName(name))
+}
 
 export const MOBILE_SHARE_FILE_TOOL_NAME = 'mobile_share_file' as const
 

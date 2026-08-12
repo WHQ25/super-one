@@ -56,7 +56,8 @@ function openDb() {
       always_allowed_tools_json TEXT NOT NULL DEFAULT '[]',
       settings_json TEXT,
       is_automation INTEGER NOT NULL DEFAULT 0,
-      automation_id TEXT
+      automation_id TEXT,
+      tags_json TEXT NOT NULL DEFAULT '[]'
     );
     CREATE TABLE environment_events (
       sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +123,16 @@ async function holdTurn(
   }
   throw new Error('turn did not start')
 }
+
+describe('sqlite session tags', () => {
+  it('persists tags_json through SessionRuntime.setTags', () => {
+    const { runtime } = boot()
+    const session = createBoundSession(runtime)
+    const out = runtime.setTags(session.sessionId, ['oauth'])
+    expect(out.tags).toEqual(['oauth'])
+    expect(runtime.get(session.sessionId)?.tags).toEqual(['oauth'])
+  })
+})
 
 describe('Host Action store', () => {
   it('atomically claims — second claim with same version conflicts', () => {

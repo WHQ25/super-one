@@ -28,6 +28,7 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
   ensureCollaborationTables(db)
   // Automations table + session automation ownership columns.
   ensureAutomationsSupport(db)
+  ensureSessionTagsColumn(db)
   // Session-layer provider profiles (collaboration + multi-profile models).
   ensureSessionProvidersSupport(db)
 
@@ -254,6 +255,13 @@ CREATE TABLE IF NOT EXISTS session_collaboration_cursors (
  * Automations table + session is_automation / automation_id columns.
  * Additive — schema generation stays at 1.
  */
+function ensureSessionTagsColumn(db: NodeDatabase): void {
+  const cols = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === 'tags_json')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'`)
+  }
+}
+
 function ensureAutomationsSupport(db: NodeDatabase): void {
   const cols = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>
   const names = new Set(cols.map((c) => c.name))

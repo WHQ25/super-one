@@ -58,8 +58,9 @@ describe('isAlwaysHiddenToolBlock', () => {
     }
   })
 
-  it('still hides session rename and agent-list meta tools', () => {
+  it('still hides session rename, tag-list, and agent-list meta tools', () => {
     expect(isAlwaysHiddenToolBlock('mcp__superone__session_rename')).toBe(true)
+    expect(isAlwaysHiddenToolBlock('mcp__superone__session_tag_list')).toBe(true)
     expect(isAlwaysHiddenToolBlock('mcp__superone__session_list_agents')).toBe(true)
     expect(isAlwaysHiddenToolBlock('mcp__superone__session_collab_list_agents')).toBe(true)
   })

@@ -63,7 +63,8 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
                   COALESCE(always_allowed_tools_json, '[]') AS always_allowed_tools_json,
                   settings_json,
                   COALESCE(is_automation, 0) AS is_automation,
-                  automation_id
+                  automation_id,
+                  COALESCE(tags_json, '[]') AS tags_json
            FROM sessions`,
         )
         .all() as Array<{
@@ -89,6 +90,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
         settings_json: string | null
         is_automation: number
         automation_id: string | null
+        tags_json: string
       }>
       const parseStringArray = (raw: string | null | undefined): string[] => {
         try {
@@ -129,6 +131,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           alwaysAllowedTools: parseStringArray(r.always_allowed_tools_json),
           isAutomation: r.is_automation === 1,
           automationId: r.automation_id ?? null,
+          tags: parseStringArray(r.tags_json),
         }
       })
     },
@@ -140,8 +143,8 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           pending_interaction_json, provider_resume, cwd, created_at, updated_at, is_pinned, is_hidden,
           is_user_renamed,
           controller_client_session_id, host_action_capability_version, host_action_tool_groups_json,
-          always_allowed_tools_json, settings_json, is_automation, automation_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          always_allowed_tools_json, settings_json, is_automation, automation_id, tags_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
            title = excluded.title,
            status = excluded.status,
@@ -159,7 +162,8 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
            always_allowed_tools_json = excluded.always_allowed_tools_json,
            settings_json = excluded.settings_json,
            is_automation = excluded.is_automation,
-           automation_id = excluded.automation_id`,
+           automation_id = excluded.automation_id,
+           tags_json = excluded.tags_json`,
       ).run(
         session.sessionId,
         session.projectId,
@@ -183,6 +187,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
         serializeSettingsJson(session),
         session.isAutomation ? 1 : 0,
         session.automationId ?? null,
+        JSON.stringify(session.tags ?? []),
       )
     },
 

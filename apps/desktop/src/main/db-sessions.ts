@@ -149,6 +149,23 @@ export function isSessionUserRenamed(sessionId: string): boolean {
   return row?.is_user_renamed === 1
 }
 
+export function getSessionTags(sessionId: string): string[] | null {
+  const row = getDb().prepare('SELECT tags_json FROM sessions WHERE id = ?').get(sessionId) as { tags_json: string | null } | undefined
+  if (!row) return null
+  try {
+    const parsed = JSON.parse(row.tags_json || '[]') as unknown
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** Returns false when the session id is unknown. */
+export function setSessionTags(sessionId: string, tags: string[]): boolean {
+  const result = getDb().prepare('UPDATE sessions SET tags_json = ? WHERE id = ?').run(JSON.stringify(tags), sessionId)
+  return result.changes > 0
+}
+
 /** Save full session state to DB: upsert messages into chat_messages, update session metadata */
 export function saveSessionState(
   sessionId: string,

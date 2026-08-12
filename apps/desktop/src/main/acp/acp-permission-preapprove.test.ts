@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtin-defs'
 import {
+  decideAcpPermission,
   grokSessionPermissionMeta,
   grokYoloModeNotificationParams,
   shouldAutoAllowAcpPermission,
@@ -161,6 +162,69 @@ describe('shouldAutoAllowAcpPermission', () => {
         toolName: `mcp__superone__${name}`,
       })
     }
+  })
+})
+
+describe('decideAcpPermission', () => {
+  it('denies session_tag from a Grok child session id', () => {
+    const result = decideAcpPermission(
+      perm({
+        title: 'use_tool',
+        rawInput: { tool_name: 'superone__session_tag', tool_input: { add: ['x'] } },
+        meta: { 'x.ai/tool': { name: 'use_tool', kind: 'use_tool', namespace: 'grok_build' } },
+      }),
+      'acp-main',
+    )
+    // perm() defaults sessionId to s1
+    expect(result).toEqual({
+      kind: 'deny',
+      toolName: 'mcp__superone__session_tag',
+      reason: 'main_thread_only',
+    })
+  })
+
+  it('denies session_rename from a child session id', () => {
+    const result = decideAcpPermission(
+      perm({
+        rawInput: { tool_name: 'superone__session_rename', tool_input: { title: 'x' } },
+      }),
+      'acp-main',
+    )
+    expect(result.kind).toBe('deny')
+  })
+
+  it('auto-allows session_tag from the main session with allow-once', () => {
+    const params = perm({
+      rawInput: { tool_name: 'superone__session_tag', tool_input: { add: ['oauth'] } },
+    })
+    const result = decideAcpPermission({ ...params, sessionId: 'acp-main' }, 'acp-main')
+    expect(result).toEqual({
+      kind: 'auto-allow',
+      toolName: 'mcp__superone__session_tag',
+      reason: 'builtin',
+      alwaysAllow: false,
+    })
+  })
+
+  it('auto-allows session_list from the main session with allow-always', () => {
+    const params = perm({
+      rawInput: { tool_name: 'superone__session_list', tool_input: {} },
+    })
+    const result = decideAcpPermission({ ...params, sessionId: 'acp-main' }, 'acp-main')
+    expect(result).toMatchObject({
+      kind: 'auto-allow',
+      toolName: 'mcp__superone__session_list',
+      alwaysAllow: true,
+    })
+  })
+
+  it('denies session_tag when x.ai meta carries a subagent_id', () => {
+    const params = perm({
+      rawInput: { tool_name: 'superone__session_tag', tool_input: { add: ['x'] } },
+      meta: { 'x.ai/tool': { name: 'use_tool', subagent_id: 'sa-1' } },
+    })
+    const result = decideAcpPermission({ ...params, sessionId: 'acp-main' }, 'acp-main')
+    expect(result.kind).toBe('deny')
   })
 })
 

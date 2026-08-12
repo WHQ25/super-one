@@ -38,6 +38,10 @@ import {
 } from './acp-event-map'
 import { getUnsavedBuffer } from './acp-unsaved-buffer'
 import { resolveAcpClientVersion } from './acp-client-info'
+import {
+  clearMainThreadSessionGuard,
+  noteAcpTaskLifecycle,
+} from '../mcp/main-thread-session-guard'
 import { buildAcpSessionMcpServers } from './acp-mcp'
 import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
@@ -342,6 +346,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         events.length,
       )
       for (const event of events) {
+        if (opts.superoneSessionId) noteAcpTaskLifecycle(opts.superoneSessionId, event)
         xaiDeliver?.(event)
       }
       // Durable turn end for agent-initiated wakes (workflow-completed-*, …).
@@ -886,6 +891,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         }
         trackOpenTools(scope().openToolIds, mapped)
         const migrate = noteToolCorrelationFromAgentEvents(mapped, xaiCorrelation)
+        const superoneSid = opts.superoneSessionId
+        if (superoneSid) {
+          for (const event of mapped) {
+            noteAcpTaskLifecycle(superoneSid, event)
+          }
+        }
         for (const event of mapped) {
           deliver(event)
         }
@@ -1187,6 +1198,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     async close() {
       pumping = false
       closed = true
+      if (opts.superoneSessionId) clearMainThreadSessionGuard(opts.superoneSessionId)
       try { terminalManager.dispose() } catch { /* ignore */ }
       try { activeSession.dispose() } catch { /* ignore */ }
       try { activeConnection.close() } catch { /* ignore */ }

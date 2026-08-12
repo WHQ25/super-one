@@ -127,6 +127,20 @@ describe('built-in superone tool registration surfaces', () => {
     }
   })
 
+  it('points session tag tools at list/search and keeps tagMatch closed', () => {
+    const tag = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_tag')!
+    const list = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_tag_list')!
+    expect(tag.description).toMatch(/session_tag_list/)
+    expect(tag.description).toMatch(/subagent/i)
+    expect(list.description).toMatch(/tagMatch/)
+    expect(list.description).toMatch(/session_list/)
+    const listTags = (BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_list')!
+      .inputSchema.properties as Record<string, { enum?: string[] }>).tagMatch
+    expect(listTags.enum).toEqual(['any', 'all'])
+    expect(SESSION_ARCHIVE_TOOL_NAMES).toContain('session_tag')
+    expect(SESSION_ARCHIVE_TOOL_NAMES).toContain('session_tag_list')
+  })
+
   it('keeps session archive host-action descriptors aligned with desktop discovery', () => {
     for (const name of SESSION_ARCHIVE_TOOL_NAMES) {
       const desktop = BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === name)

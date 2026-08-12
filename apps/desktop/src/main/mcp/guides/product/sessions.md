@@ -1,4 +1,4 @@
-# SuperOne session archive (`project_list` / `session_list` / `session_search` / `session_read` / `session_cleanup`)
+# SuperOne session archive (`project_list` / `session_list` / `session_search` / `session_read` / `session_cleanup` / `session_tag` / `session_tag_list`)
 
 Read saved SuperOne chat transcripts across harnesses (Claude, Codex, ACP, OpenCode). This is **content-level** access to the host’s SQLite archive — not live collab, not provider-thread resume.
 
@@ -24,6 +24,29 @@ Read saved SuperOne chat transcripts across harnesses (Claude, Codex, ACP, OpenC
 Overload control is **view + `limit`/`cursor` (and optional `messageId`/`around`)**, not mid-message truncation.
 
 ## Recipes
+
+### Discover tags, then filter
+
+```
+session_tag_list()
+session_list({ tags: ["oauth", "auth"], tagMatch: "any" })
+session_search({ query: "refresh token", tags: ["oauth"], tagMatch: "any" })
+session_read({ sessionId, view: "user", limit: 20 })
+```
+
+`tagMatch`: `any` = at least one listed tag (default); `all` = every listed tag. Tag filters run in SQL before the text prefilter, so they shrink the scan window. Discover names with `session_tag_list` — do not invent tags. Tag-only lookup is `session_list`, not `session_search` (`query` stays required).
+
+Do not `session_read` the current session — it is already in context.
+
+### Tag while working (main agent only)
+
+```
+session_rename({ title: "Fix OAuth refresh", tags: ["oauth", "auth"] })
+session_tag({ add: ["desktop"] })                 // current session
+session_tag({ sessionIds: ["s1", "s2"], add: ["oauth"] })  // bulk
+```
+
+Subagents must not call `session_rename` or `session_tag`. `session_tag_list` / list / search / read are allowed.
 
 ### Cite / recover a prior decision
 

@@ -31,6 +31,10 @@ vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
+vi.mock('./claude-binary', () => ({
+  resolveSdkClaudeBinary: () => '/mock/claude',
+}))
+
 vi.mock('./event-trace', () => ({
   trace: vi.fn(),
 }))
@@ -110,6 +114,11 @@ describe('session_rename subagent guard (PreToolUse hook)', () => {
   it('allows session_rename from the main thread (no agent_id)', async () => {
     const out = await run({ tool_name: 'mcp__superone__session_rename' })
     expect((out as { hookSpecificOutput?: unknown }).hookSpecificOutput).toBeUndefined()
+  })
+
+  it('denies session_tag when the call originates from a subagent', async () => {
+    const out = await run({ tool_name: 'mcp__superone__session_tag', agent_id: 'agent-task-1' })
+    expect((out as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput?.permissionDecision).toBe('deny')
   })
 
   it('ignores other tools called from a subagent', async () => {

@@ -15,6 +15,7 @@ const BUILT_IN_QUALIFIED = new Set([
   'mcp__superone__miniapp_dev_update_types',
   'mcp__superone__widget_show',
   'mcp__superone__session_rename',
+  'mcp__superone__session_tag',
   'mcp__superone__config_read',
 ])
 vi.mock('../mcp/superone-mcp-server', () => ({
@@ -518,6 +519,24 @@ describe('createCanUseTool', () => {
     const [id] = [...plans.keys()]
     respondToPlanApproval(plans, id, true)
     await promise
+  })
+
+  it('denies mcp__superone__session_tag when invoked from a subagent (agentID present)', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+
+    const result = await canUseTool(
+      'mcp__superone__session_tag',
+      { add: ['oauth'] },
+      makeContext({ agentID: 'agent-task-1' }),
+    )
+
+    expect(result.behavior).toBe('deny')
+    if (result.behavior === 'deny') {
+      expect(result.message).toMatch(/subagent/i)
+      expect(result.message).toMatch(/main thread/i)
+    }
+    expect(events).toHaveLength(0)
+    expect(perms.size).toBe(0)
   })
 
   it('denies mcp__superone__session_rename when invoked from a subagent (agentID present)', async () => {

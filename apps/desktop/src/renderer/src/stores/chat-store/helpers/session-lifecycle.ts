@@ -40,6 +40,7 @@ import {
 } from './store-helpers'
 import { resolveProvider } from './provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool } from '../defaults'
+import { CURSOR_DEFAULT_PERMISSION_MODE } from '@/components/chat/cursorPermissionModes'
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -524,7 +525,7 @@ export function resetSessionForWorktreeSwitchImpl(
       applyDefaultModel(newSession, claudeModels)
     }
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
-    if (nextProvider === 'cursor') newSession.permissionMode = 'auto'
+    if (nextProvider === 'cursor') newSession.permissionMode = CURSOR_DEFAULT_PERMISSION_MODE
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
@@ -603,7 +604,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-    if (nextProvider === 'cursor') newSession.permissionMode = 'auto'
+    if (nextProvider === 'cursor') newSession.permissionMode = CURSOR_DEFAULT_PERMISSION_MODE
     return {
       projectSessions: {
         ...s.projectSessions,
@@ -785,7 +786,7 @@ export function setPreferredProviderImpl(
     ...emptyDraftHarnessReset,
     preferredProvider: provider,
     sessionProvider: provider,
-    ...(provider === 'cursor' ? { permissionMode: 'auto' as const } : {}),
+    ...(provider === 'cursor' ? { permissionMode: CURSOR_DEFAULT_PERMISSION_MODE } : {}),
   })))
 
   // Drop any in-memory main session for this sid (wrong harness / prewarmed prior).

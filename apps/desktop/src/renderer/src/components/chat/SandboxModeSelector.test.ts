@@ -4,7 +4,7 @@ import {
   harnessSandboxModes,
   harnessSandboxSupportLevel,
   harnessSupportsSandbox,
-} from './SandboxModeSelector'
+} from './sandboxHarness'
 
 describe('Cursor sandbox harness helpers', () => {
   it('supports sandbox for Claude and Cursor only', () => {

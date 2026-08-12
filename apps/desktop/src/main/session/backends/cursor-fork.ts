@@ -60,9 +60,9 @@ export async function forkCursorTranscript(
     local: {
       cwd: targetCwd,
       store: getCursorAgentStore(app.getPath('userData'), targetCwd),
-      settingSources: config.settingSources ?? ['project'],
+      settingSources: config.settingSources ?? ['project', 'user'],
       sandboxOptions: { enabled: config.sandboxEnabled ?? false },
-      autoReview: config.autoReview ?? perm.autoReview,
+      autoReview: perm.autoReview,
       enableAgentRetries: config.enableAgentRetries ?? true,
     },
   })

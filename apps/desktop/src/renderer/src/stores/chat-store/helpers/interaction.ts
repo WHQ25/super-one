@@ -6,8 +6,15 @@ import type {
 } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
 import { ACP_PERMISSION_MODES } from '@/components/chat/acpPermissionModes'
-import { CURSOR_PERMISSION_MODES } from '@/components/chat/cursorPermissionModes'
+import {
+  CURSOR_DEFAULT_PERMISSION_MODE,
+  CURSOR_PERMISSION_MODES,
+} from '@/components/chat/cursorPermissionModes'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
+import {
+  coerceSandboxModeForHarness,
+  harnessSandboxSupportLevel,
+} from '@/components/chat/sandboxHarness'
 import { extractModeFromSuggestions } from './chat-helpers'
 import {
   ChatStoreSet,
@@ -602,21 +609,18 @@ export async function setSandboxModeImpl(
   }
   const session = getActivePerSession(get())
   const provider = resolveProvider(session)
-  if (mode !== 'off') {
+  const effectiveMode = coerceSandboxModeForHarness(provider, mode)
+  if (effectiveMode !== 'off') {
     const capability = useAppStore.getState().sandboxCapability
-    // Cursor uses its own SDK sandbox helpers — skip Claude's Linux conditional probe.
-    if (provider !== 'cursor') {
-      if (capability?.supportLevel === 'unsupported') return
-      if (capability?.supportLevel === 'conditional') {
-        const probe = await useAppStore.getState().probeSandbox()
-        if (!probe.ok) return
-      }
-    } else if (capability?.supportLevel === 'unsupported') {
-      return
+    const supportLevel = harnessSandboxSupportLevel(provider, capability?.supportLevel)
+    if (supportLevel === 'unsupported') return
+    if (supportLevel === 'conditional') {
+      const probe = await useAppStore.getState().probeSandbox()
+      if (!probe.ok) return
     }
   }
   try {
-    const updated = await window.agent.setSandboxMode(activeProject, mode)
+    const updated = await window.agent.setSandboxMode(activeProject, effectiveMode)
     set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: updated })))
   } catch (err) {
     console.warn('[chat] setSandboxMode failed:', err)
@@ -656,7 +660,9 @@ export function togglePlanModeShortcutImpl(get: () => ChatStore): void {
   }
   // Cursor: toggle Plan vs Auto (Full Access stays reachable via selector / Shift+Tab cycle).
   if (provider === 'cursor') {
-    get().setPermissionMode(session.permissionMode === 'plan' ? 'auto' : 'plan')
+    get().setPermissionMode(
+      session.permissionMode === 'plan' ? CURSOR_DEFAULT_PERMISSION_MODE : 'plan',
+    )
     return
   }
   get().cyclePermissionMode()

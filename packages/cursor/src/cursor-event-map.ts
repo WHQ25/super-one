@@ -9,23 +9,23 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 /** Map Cursor toolCall.type (and free-form names) to SuperOne tool display names. */
 export function toolDisplayName(name: string): string {
   const n = name.toLowerCase()
-  if (n === 'shell' || n.includes('shell') || n === 'bash') return 'Bash'
-  if (n === 'read' || n.includes('read')) return 'Read'
-  if (n === 'write' || n.includes('write')) return 'Write'
-  if (n === 'edit' || n.includes('edit') || n.includes('replace') || n === 'delete') {
-    return n === 'delete' ? 'Delete' : 'Edit'
-  }
-  if (n === 'grep' || n.includes('grep')) return 'Grep'
-  if (n === 'glob' || n === 'ls' || n.includes('glob')) return n === 'ls' ? 'LS' : 'Glob'
-  if (n === 'updatetodos' || n.includes('todo')) return 'TodoWrite'
-  if (n === 'task' || n === 'agent' || n.includes('task')) return 'Agent'
+  if (n.includes('shell') || n === 'bash') return 'Bash'
+  if (n.includes('read') && !n.includes('lint')) return 'Read'
+  if (n.includes('write')) return 'Write'
+  if (n.includes('edit') || n.includes('replace')) return 'Edit'
+  if (n === 'delete') return 'Delete'
+  if (n.includes('grep')) return 'Grep'
+  if (n === 'ls') return 'LS'
+  if (n.includes('glob')) return 'Glob'
+  if (n.includes('todo')) return 'TodoWrite'
+  if (n === 'agent' || n.includes('task')) return 'Agent'
   if (n === 'mcp') return 'MCP'
-  if (n === 'semsearch' || n.includes('search')) return 'SemanticSearch'
-  if (n === 'readlints' || n.includes('lint')) return 'ReadLints'
-  if (n === 'generateimage' || n.includes('image')) return 'GenerateImage'
-  if (n === 'createplan' || n.includes('plan')) return 'CreatePlan'
-  if (n === 'recordscreen') return 'RecordScreen'
   if (n === 'websearch') return 'WebSearch'
+  if (n.includes('search')) return 'SemanticSearch'
+  if (n.includes('lint')) return 'ReadLints'
+  if (n.includes('image')) return 'GenerateImage'
+  if (n.includes('plan')) return 'CreatePlan'
+  if (n === 'recordscreen') return 'RecordScreen'
   return name
 }
 

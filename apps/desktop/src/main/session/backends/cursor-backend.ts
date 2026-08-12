@@ -52,7 +52,6 @@ export class CursorBackend implements SessionBackend {
   private effort: string | undefined
   private modelParams: Record<string, string> = {}
   private lastContextTokens = 0
-  private lastRunId: string | null = null
   private started = false
   private disposed = false
   private interrupted = false
@@ -213,12 +212,11 @@ export class CursorBackend implements SessionBackend {
       const idempotencyKey = request.clientMessageId
         || request.assistantMessageId
         || messageId
-      const sendResult = await runtime.send(messageId, request.content, {
+      await runtime.send(messageId, request.content, {
         images: images.length ? images : undefined,
         force: force || undefined,
         idempotencyKey,
       })
-      this.lastRunId = sendResult.runId ?? runtime.lastRunId ?? this.lastRunId
 
       if (this.interrupted) this.complete(messageId, true)
       else this.complete(messageId, false)

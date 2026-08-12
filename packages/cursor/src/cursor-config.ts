@@ -124,7 +124,7 @@ export function readCursorModelParamsByModel(value: unknown): CursorModelParamsB
 /**
  * Parse a string id list (drops empties / non-strings).
  */
-export function readCursorDisabledModelIds(value: unknown): string[] | undefined {
+export function readStringIdList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined
   const ids = [...new Set(
     value
@@ -134,6 +134,9 @@ export function readCursorDisabledModelIds(value: unknown): string[] | undefined
   )]
   return ids.length > 0 ? ids : undefined
 }
+
+/** @deprecated Prefer {@link readStringIdList}. */
+export const readCursorDisabledModelIds = readStringIdList
 
 /**
  * Drop models the user disabled in Cursor harness settings.
@@ -193,9 +196,9 @@ export function readCursorConfig(value: unknown): CursorConfig {
     useHttp1ForAgent: typeof config.useHttp1ForAgent === 'boolean' ? config.useHttp1ForAgent : undefined,
     storeKind: config.storeKind === 'jsonl' || config.storeKind === 'better-sqlite3' ? config.storeKind : undefined,
     modelParamsByModel: readCursorModelParamsByModel(config.modelParamsByModel),
-    disabledModelIds: readCursorDisabledModelIds(config.disabledModelIds),
-    tools: readCursorDisabledModelIds(config.tools),
-    disallowedTools: readCursorDisabledModelIds(config.disallowedTools),
+    disabledModelIds: readStringIdList(config.disabledModelIds),
+    tools: readStringIdList(config.tools),
+    disallowedTools: readStringIdList(config.disallowedTools),
     toolPreset: config.toolPreset === 'readonly'
       || config.toolPreset === 'no-shell'
       || config.toolPreset === 'custom'

@@ -202,11 +202,12 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
     : buildCursorCustomTools({ sessionId: opts.sessionId, cwd: opts.cwd })
   const agentName = opts.agentName?.trim() || undefined
   // tools / disallowedTools are local-only in SDK 1.0.27 (cloud throws ConfigurationError).
+  // Cloud rejects tools/disallowedTools — resolve empty for cloud.
   const toolRestrictions = isCloud ? {} : resolveCursorToolRestrictions(config)
-  const toolsOpt = !isCloud && toolRestrictions.tools
+  const toolsOpt = toolRestrictions.tools
     ? { tools: toolRestrictions.tools as import('@cursor/sdk').ToolName[] }
     : {}
-  const disallowedOpt = !isCloud && toolRestrictions.disallowedTools
+  const disallowedOpt = toolRestrictions.disallowedTools
     ? { disallowedTools: toolRestrictions.disallowedTools as import('@cursor/sdk').ToolName[] }
     : {}
 
@@ -229,7 +230,8 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
                 store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
                 settingSources,
                 sandboxOptions: { enabled: sandboxEnabled },
-                autoReview: config.autoReview ?? perm.autoReview,
+                // Session permission UI owns autoReview; static config must not override.
+                autoReview: perm.autoReview,
                 enableAgentRetries: config.enableAgentRetries ?? true,
                 ...(customTools ? { customTools } : {}),
               },
@@ -258,7 +260,8 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
           store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
           settingSources,
           sandboxOptions: { enabled: sandboxEnabled },
-          autoReview: config.autoReview ?? perm.autoReview,
+          // Session permission UI owns autoReview; static config must not override.
+          autoReview: perm.autoReview,
           enableAgentRetries: config.enableAgentRetries ?? true,
           ...(customTools ? { customTools } : {}),
         },
@@ -450,15 +453,6 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       if (result.status === 'error') {
         throw new Error(result.error?.message ?? 'Cursor run failed')
       }
-      if (result.status === 'cancelled') {
-        return {
-          runId: result.id,
-          git: result.git,
-          model: result.model,
-          durationMs: result.durationMs,
-          result: result.result,
-        }
-      }
       return {
         runId: result.id,
         git: result.git,
@@ -470,11 +464,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
 
     async cancel() {
       try {
-        if (currentRun && currentRun.supports('cancel')) {
-          await currentRun.cancel()
-        } else {
-          await currentRun?.cancel()
-        }
+        await currentRun?.cancel()
       } catch (error) {
         log.debug('[CursorRuntime] cancel failed:', error)
       }

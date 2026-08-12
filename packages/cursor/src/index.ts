@@ -9,6 +9,7 @@
 export {
   readCursorConfig,
   readCursorModelParamsByModel,
+  readStringIdList,
   readCursorDisabledModelIds,
   filterEnabledCursorModels,
   resolveCursorApiKeyPlain,

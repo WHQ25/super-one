@@ -2,7 +2,7 @@ import { memo, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronDown, ChevronRight, CornerDownRight, Eye, EyeOff, GitFork, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, CornerDownRight, Eye, EyeOff, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { cn } from '@superone/ui/lib/utils'
@@ -208,14 +208,6 @@ export const SessionRow = memo(function SessionRow({
               : <PlainSessionTitle sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
             }
             <div className="ml-auto flex shrink-0 items-center">
-              {session.isWorktree && (
-                <span
-                  title="Worktree"
-                  className="box-content w-0 overflow-hidden p-0.5 text-sidebar-foreground/70 opacity-0 transition-all group-hover/session:w-3 group-hover/session:opacity-100"
-                >
-                  <GitFork className="size-3" />
-                </span>
-              )}
               {hasChildren && onToggleChildren && (
                 <button
                   onClick={(e) => {

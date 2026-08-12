@@ -13,7 +13,6 @@ import {
   FolderClosed,
   FolderOpen,
   FolderX,
-  GitFork,
   LayoutGrid,
   Loader2,
   Maximize,
@@ -695,11 +694,6 @@ function SessionRow({ session }: { session: MockSession }) {
         </div>
         <span className="min-w-0 truncate text-[13px]">{session.title}</span>
         <div className="ml-auto flex shrink-0 items-center">
-          {session.isWorktree && (
-            <span title="Worktree" className="box-content w-0 overflow-hidden p-0.5 text-sidebar-foreground/70 opacity-0 transition-all group-hover/session:w-3 group-hover/session:opacity-100">
-              <GitFork className="size-3" />
-            </span>
-          )}
           <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100">
             <Pin className="size-3" />
           </button>

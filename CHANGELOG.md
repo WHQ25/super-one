@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.1-alpha] - 2026-08-13
+
+### Added
+
+- Cursor: native `@cursor/sdk` harness end-to-end — standalone package, model enable list and harness-scoped prefs, full model params UI, permission modes, sandbox toggle, MCP/cloud/recovery surface (SDK 1.0.27).
+- Session: persist unsent composers as environment drafts.
+
+### Fixed
+
+- Session: record Grok usage as mid-turn deltas.
+- Chat: rename @session portal to @chat and dismiss on Escape; keep @session keyword and only open the chip picker on explicit picks; drop the add-to-chat toast and hide the @session ghost on Escape.
+
+### Changed
+
+- Sidebar: remove the worktree fork badge from session rows.
+- Chat: skip local effort settings IPC for remote sessions (node-owned drafts).
+
 ## [0.53.0-alpha] - 2026-08-12
 
 ### Added

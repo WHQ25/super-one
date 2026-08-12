@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.2-alpha] - 2026-08-13
+
+### Added
+
+- Session: host-owned tags stored in SQLite with `session_tag` / `session_tag_list` tools; archive list and search can now filter by tag. Grok child sessions inherit the parent MCP client and can still write tags.
+
+### Fixed
+
+- Updater: hand the downloaded zip to Squirrel.Mac once the harness pre-fetch finishes, so Restart no longer waits forever for an update that never installs; skip the running-sessions quit dialog when Restart was already clicked.
+
 ## [0.53.1-alpha] - 2026-08-13
 
 ### Added

@@ -18,7 +18,7 @@ import { findMiniAppMentionMarkers } from '@superone/shared/miniapp-mention-mark
 import { useMiniAppStore } from '@/stores/miniapp'
 import { PasteChipNode, PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { SlashDecoration } from './slash-decoration'
-import { SessionMentionDecoration } from './session-mention-decoration'
+import { SessionMentionDecoration, syncSessionMentionDismissed } from './session-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
@@ -650,6 +650,7 @@ export function ChatInput() {
         mentionInfoRef.current = null
         mentionEmptyByAtRef.current.clear()
         mentionDismissedAtRef.current.clear()
+        syncSessionMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
       },
       [agents, addMention, showAgentMentions]
     )
@@ -870,6 +871,7 @@ export function ChatInput() {
             if (dismissedAt !== undefined) {
               mentionDismissedAtRef.current.add(dismissedAt)
             }
+            syncSessionMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
             setMentionActive(false)
             setMentionIndex(0)
             mentionInfoRef.current = null
@@ -1271,14 +1273,24 @@ export function ChatInput() {
           if ((!afterAt.includes(' ') || spaceOk) && !afterAt.includes('\0')) {
             const atPos = $pos.start() + lastAt
             // Drop dismiss markers for @ tokens that no longer exist (deleted or replaced).
+            let dismissChanged = false
             for (const pos of [...mentionDismissedAtRef.current]) {
-              if (pos !== atPos) mentionDismissedAtRef.current.delete(pos)
+              if (pos !== atPos) {
+                mentionDismissedAtRef.current.delete(pos)
+                dismissChanged = true
+              }
             }
-            // Escape dismissed this @ — keep treating it as plain text.
+            // Escape dismissed this @ — keep treating it as plain text (popup + ghost).
             if (mentionDismissedAtRef.current.has(atPos)) {
+              if (dismissChanged) {
+                syncSessionMentionDismissed(ed, mentionDismissedAtRef.current)
+              }
               setMentionActive(false)
               mentionInfoRef.current = null
             } else {
+              if (dismissChanged) {
+                syncSessionMentionDismissed(ed, mentionDismissedAtRef.current)
+              }
               const isComposing = ed.view.composing
               // During IME composition keep the popup open and skip empty-query lockout.
               if (isComposing) {
@@ -1307,13 +1319,19 @@ export function ChatInput() {
             setMentionActive(false)
             mentionInfoRef.current = null
             mentionEmptyByAtRef.current.clear()
-            mentionDismissedAtRef.current.clear()
+            if (mentionDismissedAtRef.current.size > 0) {
+              mentionDismissedAtRef.current.clear()
+              syncSessionMentionDismissed(ed, mentionDismissedAtRef.current)
+            }
           }
         } else {
           setMentionActive(false)
           mentionInfoRef.current = null
           mentionEmptyByAtRef.current.clear()
-          mentionDismissedAtRef.current.clear()
+          if (mentionDismissedAtRef.current.size > 0) {
+            mentionDismissedAtRef.current.clear()
+            syncSessionMentionDismissed(ed, mentionDismissedAtRef.current)
+          }
         }
       },
     })
@@ -1597,6 +1615,7 @@ export function ChatInput() {
             onClose={() => {
               const dismissedAt = mentionInfoRef.current?.atPos
               if (dismissedAt !== undefined) mentionDismissedAtRef.current.add(dismissedAt)
+              syncSessionMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
               setMentionActive(false)
               setMentionIndex(0)
               mentionInfoRef.current = null

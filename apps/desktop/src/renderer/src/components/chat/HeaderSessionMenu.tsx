@@ -106,9 +106,9 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
     onFork: handleFork,
     onAddToChat: () => {
       // Same chip as @session mention (History icon / blended), not mini-app context inject.
+      // Chip insert is enough feedback — no toast.
       const title = (entry.title || 'Untitled').trim()
       chatInputAPI.insertMention?.('session', entry.sessionId, title)
-      toast.success(t('sidebar.contextMenu.sessionAddedToChatToast'))
     },
   })
 

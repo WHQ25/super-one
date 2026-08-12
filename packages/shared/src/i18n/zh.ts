@@ -186,7 +186,6 @@ export const zh: Messages = {
       forkedLocalToast: '已Fork到同一Worktree',
       sessionIdCopiedToast: '已复制会话 ID',
       sessionIdNotReadyToast: '会话 ID 尚未就绪 — 已复制内部 ID',
-      sessionAddedToChatToast: '已将会话添加到对话',
       workingDirCopiedToast: '已复制工作目录',
       addToChat: '添加到对话',
       copyPath: '复制路径',

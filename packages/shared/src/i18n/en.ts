@@ -191,7 +191,6 @@ export type Messages = {
       forkedLocalToast: string
       sessionIdCopiedToast: string
       sessionIdNotReadyToast: string
-      sessionAddedToChatToast: string
       workingDirCopiedToast: string
       addToChat: string
       copyPath: string
@@ -2761,7 +2760,6 @@ export const en: Messages = {
       forkedLocalToast: 'Forked in the same worktree',
       sessionIdCopiedToast: 'Session ID Copied',
       sessionIdNotReadyToast: 'Session ID not ready — copied internal id',
-      sessionAddedToChatToast: 'Session added to chat',
       workingDirCopiedToast: 'Working Directory Copied',
       addToChat: 'Add to Chat',
       copyPath: 'Copy Path',

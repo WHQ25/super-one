@@ -5,9 +5,13 @@
  * - pick-project → `<project | all> <title>`
  * - need-title   → `<title>`
  * - search       → hide (user typing freeform title)
+ *
+ * When the user dismisses the mention popup with Escape, ChatInput marks that
+ * @ position as dismissed — decorations must hide too so the token reads as
+ * plain text (no highlight, no ghost grammar).
  */
 
-import { Extension } from '@tiptap/core'
+import { Extension, type Editor } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {
@@ -23,6 +27,8 @@ export interface SessionMentionDecorationOptions {
 
 export interface SessionMentionDecorationStorage {
   projects: ProjectOption[]
+  /** Doc positions of `@` tokens the user dismissed (Escape / onClose). */
+  dismissedAtPositions: Set<number>
 }
 
 export const SessionMentionDecoration = Extension.create<
@@ -36,7 +42,10 @@ export const SessionMentionDecoration = Extension.create<
   },
 
   addStorage() {
-    return { projects: this.options.projects }
+    return {
+      projects: this.options.projects,
+      dismissedAtPositions: new Set<number>(),
+    }
   },
 
   addProseMirrorPlugins() {
@@ -62,6 +71,10 @@ export const SessionMentionDecoration = Extension.create<
 
             const blockStart = $pos.start()
             const atPos = blockStart + lastAt
+            if (storage.dismissedAtPositions.has(atPos)) {
+              return DecorationSet.empty
+            }
+
             const sessionWord =
               afterAt.match(new RegExp(`^${SESSION_MENTION_KEYWORD}\\b`, 'i'))?.[0]
               ?? SESSION_MENTION_KEYWORD
@@ -101,3 +114,16 @@ export const SessionMentionDecoration = Extension.create<
     ]
   },
 })
+
+/** Push ChatInput's Escape-dismiss set into decoration storage and redraw. */
+export function syncSessionMentionDismissed(
+  editor: Editor | null | undefined,
+  dismissedAt: Iterable<number>,
+): void {
+  if (!editor || editor.isDestroyed) return
+  const storage = editor.storage.sessionMentionDecoration as SessionMentionDecorationStorage | undefined
+  if (!storage) return
+  storage.dismissedAtPositions = new Set(dismissedAt)
+  // Escape does not change the doc — force decoration recompute.
+  editor.view.dispatch(editor.state.tr)
+}

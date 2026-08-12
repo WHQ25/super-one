@@ -240,7 +240,7 @@ export const LAUNCH_MODE_DESCRIPTION =
   '"spawn" (default) creates a new child session. "link" connects to an already-existing SuperOne session (sessionId required).'
 
 export const LAUNCH_SESSION_ID_DESCRIPTION =
-  'Existing SuperOne session id to link with (mode "link" only). Required for link; ignore for spawn. Prefer ids from @session mentions or session_list — never invent ids.'
+  'Existing SuperOne session id to link with (mode "link" only). Required for link; ignore for spawn. Prefer ids from @chat mentions or session_list — never invent ids.'
 
 /**
  * Field-level guidance, not part of the tool description: `session_collab_request`

@@ -192,6 +192,8 @@ export function ChatInput() {
 
     const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
     const mentionEmptyByAtRef = useRef<Map<number, string>>(new Map())
+    /** @ token positions the user dismissed with Escape — treat as plain text until that `@` is gone. */
+    const mentionDismissedAtRef = useRef<Set<number>>(new Set())
     const mentionActiveRef = useRef(mentionActive)
     mentionActiveRef.current = mentionActive
     const placeholderTextRef = useRef('')
@@ -646,6 +648,7 @@ export function ChatInput() {
         setMentionIndex(0)
         mentionInfoRef.current = null
         mentionEmptyByAtRef.current.clear()
+        mentionDismissedAtRef.current.clear()
       },
       [agents, addMention, showAgentMentions]
     )
@@ -858,10 +861,14 @@ export function ChatInput() {
           }
           if (e.key === 'Escape') {
             e.preventDefault()
+            const dismissedAt = mentionInfoRef.current?.atPos
+            if (dismissedAt !== undefined) {
+              mentionDismissedAtRef.current.add(dismissedAt)
+            }
             setMentionActive(false)
             setMentionIndex(0)
             mentionInfoRef.current = null
-            mentionEmptyByAtRef.current.clear()
+            // Keep empty-suppression map; only this @ is user-dismissed.
             return true
           }
         }
@@ -1254,42 +1261,54 @@ export function ChatInput() {
         if (lastAt !== -1) {
           const afterAt = textInParent.slice(lastAt + 1)
           // Default: single-token @mentions (file/agent) close on space.
-          // Session grammar needs spaces: @session [project|all] [title…]
+          // Session grammar needs spaces: @chat [project|all] [title…]
           const spaceOk = mentionQueryAllowsSpaces(afterAt)
           if ((!afterAt.includes(' ') || spaceOk) && !afterAt.includes('\0')) {
             const atPos = $pos.start() + lastAt
-            const isComposing = ed.view.composing
-            // During IME composition keep the popup open and skip empty-query lockout.
-            if (isComposing) {
-              if (!mentionActiveRef.current) setMentionIndex(0)
-              setMentionActive(true)
-              mentionInfoRef.current = { atPos, query: afterAt }
+            // Drop dismiss markers for @ tokens that no longer exist (deleted or replaced).
+            for (const pos of [...mentionDismissedAtRef.current]) {
+              if (pos !== atPos) mentionDismissedAtRef.current.delete(pos)
+            }
+            // Escape dismissed this @ — keep treating it as plain text.
+            if (mentionDismissedAtRef.current.has(atPos)) {
+              setMentionActive(false)
+              mentionInfoRef.current = null
             } else {
-              const firstEmptyQuery = mentionEmptyByAtRef.current.get(atPos)
-              if (firstEmptyQuery !== undefined && !afterAt.startsWith(firstEmptyQuery)) {
-                mentionEmptyByAtRef.current.delete(atPos)
-              }
-              const stillEmpty = mentionEmptyByAtRef.current.get(atPos)
-              if (stillEmpty !== undefined && afterAt.startsWith(stillEmpty)) {
-                setMentionActive(false)
-                mentionInfoRef.current = null
-              } else {
-                if (!mentionActiveRef.current) {
-                  setMentionIndex(0)
-                }
+              const isComposing = ed.view.composing
+              // During IME composition keep the popup open and skip empty-query lockout.
+              if (isComposing) {
+                if (!mentionActiveRef.current) setMentionIndex(0)
                 setMentionActive(true)
                 mentionInfoRef.current = { atPos, query: afterAt }
+              } else {
+                const firstEmptyQuery = mentionEmptyByAtRef.current.get(atPos)
+                if (firstEmptyQuery !== undefined && !afterAt.startsWith(firstEmptyQuery)) {
+                  mentionEmptyByAtRef.current.delete(atPos)
+                }
+                const stillEmpty = mentionEmptyByAtRef.current.get(atPos)
+                if (stillEmpty !== undefined && afterAt.startsWith(stillEmpty)) {
+                  setMentionActive(false)
+                  mentionInfoRef.current = null
+                } else {
+                  if (!mentionActiveRef.current) {
+                    setMentionIndex(0)
+                  }
+                  setMentionActive(true)
+                  mentionInfoRef.current = { atPos, query: afterAt }
+                }
               }
             }
           } else {
             setMentionActive(false)
             mentionInfoRef.current = null
             mentionEmptyByAtRef.current.clear()
+            mentionDismissedAtRef.current.clear()
           }
         } else {
           setMentionActive(false)
           mentionInfoRef.current = null
           mentionEmptyByAtRef.current.clear()
+          mentionDismissedAtRef.current.clear()
         }
       },
     })
@@ -1570,7 +1589,13 @@ export function ChatInput() {
             onSelect={handleMentionSelect}
             onSetSelectedIndex={setMentionIndex}
             onResultState={handleMentionResultState}
-            onClose={() => { setMentionActive(false); setMentionIndex(0); mentionInfoRef.current = null; mentionEmptyByAtRef.current.clear() }}
+            onClose={() => {
+              const dismissedAt = mentionInfoRef.current?.atPos
+              if (dismissedAt !== undefined) mentionDismissedAtRef.current.add(dismissedAt)
+              setMentionActive(false)
+              setMentionIndex(0)
+              mentionInfoRef.current = null
+            }}
             showAgents={showAgentMentions}
           />
         )}

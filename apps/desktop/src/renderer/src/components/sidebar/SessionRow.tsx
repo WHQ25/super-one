@@ -163,7 +163,7 @@ export const SessionRow = memo(function SessionRow({
       provider: (session.provider ?? 'claude') as 'claude' | 'codex',
     }),
     onAddToChat: () => {
-      // Same chip as @session mention (History icon / blended), not mini-app context inject.
+      // Same chip as @chat session mention (History icon / blended), not mini-app context inject.
       const title = (session.title || 'Untitled').trim()
       chatInputAPI.insertMention?.('session', session.sessionId, title)
       toast.success(t('sidebar.contextMenu.sessionAddedToChatToast'))

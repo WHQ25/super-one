@@ -1,21 +1,27 @@
 /**
- * @session mention query grammar (both project scope and title query required for search):
- *   session
- *   session <partial project|all>
- *   session <project|all> <title query>
+ * @chat mention query grammar (both project scope and title query required for search):
+ *   chat
+ *   chat <partial project|all>
+ *   chat <project|all> <title query>
  *
  * Phases:
  *   pick-project — choose `all` or a project (Tab-completable)
  *   need-title  — scope chosen; show recent sessions until title is typed
  *   search      — scope + title → filter sessions (title fuzzy match)
+ *
+ * Internal mention kind remains `session` (chip + send-message payload).
+ * The user-facing portal keyword is the shorter `chat`.
  */
 
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { listSessionsPage, sessionsPageHasMore } from '@/lib/session-list-ops'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 
-/** Navigate prefix when user opens the Session built-in (trailing space for typing). */
-export const SESSION_MENTION_NAV_PREFIX = 'session '
+/** Navigate prefix when user opens the chat/session built-in (trailing space for typing). */
+export const SESSION_MENTION_NAV_PREFIX = 'chat '
+
+/** Portal keyword after `@` that enters session-archive mention mode. */
+export const SESSION_MENTION_KEYWORD = 'chat'
 
 export const SESSION_MENTION_PAGE_SIZE = 30
 const TITLE_SCAN_PAGE = 50
@@ -34,8 +40,8 @@ export interface ParsedSessionMentionQuery {
   projectToken: string
   titleQuery: string
   /**
-   * Prefix to navigate when completing a project scope, e.g. `session all `
-   * or `session super-one `.
+   * Prefix to navigate when completing a project scope, e.g. `chat all `
+   * or `chat super-one `.
    */
   scopeNavPrefix: string | null
 }
@@ -45,9 +51,9 @@ export interface ProjectOption {
   label: string
 }
 
-/** True when @-query is in session mention mode (`session` or `session …`). */
+/** True when @-query is in session mention mode (`chat` or `chat …`). */
 export function isSessionMentionQuery(query: string): boolean {
-  return /^session(?:\s|$)/i.test(query.trimStart())
+  return new RegExp(`^${SESSION_MENTION_KEYWORD}(?:\\s|$)`, 'i').test(query.trimStart())
 }
 
 /**
@@ -62,7 +68,7 @@ export function mentionQueryAllowsSpaces(queryAfterAt: string): boolean {
 export const SESSION_MENTION_ARGUMENT_HINT = '<project | all> <title>'
 
 /**
- * Remaining ghost argument hint for `@session …` (without leading space).
+ * Remaining ghost argument hint for `@chat …` (without leading space).
  * Returns null when nothing left to show (search phase / fully filled).
  *
  * Pass the same project options used by the popup so an exact project label
@@ -83,7 +89,7 @@ export function remainingSessionArgumentHint(
   return null
 }
 
-/** Build project options for @session scope (recent folders + active project). */
+/** Build project options for @chat scope (recent folders + active project). */
 export function buildSessionProjectOptions(
   recentFolders: Array<{ path: string; name?: string; missing?: boolean }>,
   activeProject: string | null | undefined,
@@ -113,7 +119,9 @@ export function parseSessionMentionQuery(
   const trimmed = query.trimStart()
   if (!isSessionMentionQuery(trimmed)) return null
 
-  const afterTrimStart = trimmed.replace(/^session\b/i, '').trimStart()
+  const afterTrimStart = trimmed
+    .replace(new RegExp(`^${SESSION_MENTION_KEYWORD}\\b`, 'i'), '')
+    .trimStart()
 
   if (!afterTrimStart) {
     return {
@@ -148,7 +156,7 @@ export function parseSessionMentionQuery(
       scope: { kind: 'all' },
       projectToken: 'all',
       titleQuery: rest,
-      scopeNavPrefix: 'session all ',
+      scopeNavPrefix: `${SESSION_MENTION_KEYWORD} all `,
     }
   }
 
@@ -159,7 +167,7 @@ export function parseSessionMentionQuery(
       scope: { kind: 'project', projectKey: exact.projectKey, label: exact.label },
       projectToken: exact.label,
       titleQuery: rest,
-      scopeNavPrefix: `session ${exact.label} `,
+      scopeNavPrefix: `${SESSION_MENTION_KEYWORD} ${exact.label} `,
     }
   }
 
@@ -232,7 +240,7 @@ function matchProjectTokenExact(token: string, projects: ProjectOption[]): Proje
   return projects.find((p) => p.label.toLowerCase() === t) ?? null
 }
 
-/** Title-only match for @session search (fuzzy, same engine as file/agent mentions). */
+/** Title-only match for @chat search (fuzzy, same engine as file/agent mentions). */
 export function titleMatches(title: string, query: string): boolean {
   if (!query.trim()) return true
   return fuzzyMatch(query.trim(), title || '').match

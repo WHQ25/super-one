@@ -1,7 +1,7 @@
 /**
- * Ghost argument-hint for @session mentions (same visual language as SlashDecoration).
+ * Ghost argument-hint for @chat mentions (same visual language as SlashDecoration).
  *
- * Grammar: @session <project | all> <title>
+ * Grammar: @chat <project | all> <title>
  * - pick-project → `<project | all> <title>`
  * - need-title   → `<title>`
  * - search       → hide (user typing freeform title)
@@ -13,6 +13,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {
   isSessionMentionQuery,
   remainingSessionArgumentHint,
+  SESSION_MENTION_KEYWORD,
   type ProjectOption,
 } from './session-mention-query'
 
@@ -61,8 +62,10 @@ export const SessionMentionDecoration = Extension.create<
 
             const blockStart = $pos.start()
             const atPos = blockStart + lastAt
-            const sessionWord = afterAt.match(/^session\b/i)?.[0] ?? 'session'
-            const sessionTokenEnd = atPos + 1 + sessionWord.length
+            const chatWord =
+              afterAt.match(new RegExp(`^${SESSION_MENTION_KEYWORD}\\b`, 'i'))?.[0]
+              ?? SESSION_MENTION_KEYWORD
+            const sessionTokenEnd = atPos + 1 + chatWord.length
 
             const decorations: Decoration[] = [
               Decoration.inline(atPos, Math.min(sessionTokenEnd, from), {

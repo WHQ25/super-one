@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState } = vi.hoisted(() => {
@@ -47,7 +47,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
       activeSessionState.draftText = text
     }),
     setDraftJson: vi.fn(),
-    sendMessage: vi.fn(),
+    sendMessage: vi.fn(async () => undefined),
     editQueuedMessage: vi.fn(),
     interrupt: vi.fn(),
     toggleOpen: vi.fn(),
@@ -91,6 +91,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
   const editorState = {
     text: '',
     onUpdate: null as null | ((payload: { editor: unknown }) => void),
+    handleKeyDown: null as null | ((view: unknown, event: KeyboardEvent) => boolean),
     editor: null as unknown,
     composing: false,
     destroyed: false,
@@ -116,6 +117,7 @@ vi.mock('@tiptap/react', () => {
       storage: {
         slashDecoration: { slashCommands: [] as unknown[] },
         promptSuggestion: { suggestion: null as string | null },
+        sessionMentionDecoration: { projects: [] as unknown[] },
       },
       getText: () => {
         if (editorState.destroyed) throw new Error('Destroyed editor accessed')
@@ -193,8 +195,12 @@ vi.mock('@tiptap/react', () => {
   }
 
   return {
-    useEditor: (config: { onUpdate?: (payload: { editor: unknown }) => void }) => {
+    useEditor: (config: {
+      onUpdate?: (payload: { editor: unknown }) => void
+      editorProps?: { handleKeyDown?: (view: unknown, event: KeyboardEvent) => boolean }
+    }) => {
       editorState.onUpdate = config.onUpdate ?? null
+      editorState.handleKeyDown = config.editorProps?.handleKeyDown ?? null
       editorState.editor = createEditor()
       return editorState.editor
     },
@@ -255,6 +261,8 @@ vi.mock('@/stores/chat', () => ({
 vi.mock('@/stores/app', () => ({
   useEffectiveProjectRoot: () => null,
   selectEffectiveProjectRoot: () => null,
+  useAppStore: (selector: (state: { recentFolders: unknown[] }) => unknown) =>
+    selector({ recentFolders: [] }),
 }))
 
 vi.mock('./ContextUsage', () => ({
@@ -312,6 +320,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   editorState.text = ''
   editorState.onUpdate = null
+  editorState.handleKeyDown = null
   editorState.editor = null
   editorState.composing = false
   editorState.destroyed = false
@@ -524,6 +533,38 @@ describe('ChatInput @-mention no-match suppression', () => {
     rerender(<ChatInput />)
 
     expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'bbb')
+  })
+
+  it('keeps the popup closed after Escape and treats further typing as plain text', () => {
+    const { rerender } = render(<ChatInput />)
+
+    typeInEditor('@chat')
+    rerender(<ChatInput />)
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'chat')
+
+    expect(editorState.handleKeyDown).toBeTruthy()
+    let handled = false
+    act(() => {
+      const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      handled = editorState.handleKeyDown!(null, esc)
+    })
+    expect(handled).toBe(true)
+    rerender(<ChatInput />)
+    expect(screen.queryByTestId('mention-popup')).toBeNull()
+
+    // Same @ token — continue typing must not re-open the popup.
+    typeInEditor('@chat more')
+    rerender(<ChatInput />)
+    expect(screen.queryByTestId('mention-popup')).toBeNull()
+
+    // Removing the @ clears dismissal; a fresh @ re-enables matching.
+    typeInEditor('plain text')
+    rerender(<ChatInput />)
+    expect(screen.queryByTestId('mention-popup')).toBeNull()
+
+    typeInEditor('@file')
+    rerender(<ChatInput />)
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'file')
   })
 })
 

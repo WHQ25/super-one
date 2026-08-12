@@ -45,7 +45,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
               "sessionId": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Existing SuperOne session id to link with (mode \"link\" only). Required for link; ignore for spawn. Prefer ids from @session mentions or session_list — never invent ids."
+                "description": "Existing SuperOne session id to link with (mode \"link\" only). Required for link; ignore for spawn. Prefer ids from @chat mentions or session_list — never invent ids."
               },
               "agentId": {
                 "type": "string",

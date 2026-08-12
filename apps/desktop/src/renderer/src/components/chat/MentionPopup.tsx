@@ -16,6 +16,7 @@ import { BUILTIN_CAPABILITIES, type BuiltinCapabilityId } from '@superone/shared
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import {
   SESSION_MENTION_NAV_PREFIX,
+  SESSION_MENTION_KEYWORD,
   parseSessionMentionQuery,
   listSessionProjectChoices,
   buildSessionProjectOptions,
@@ -45,7 +46,7 @@ interface MentionPopupProps {
 }
 
 /** Built-in entry that opens session search (not a capability-prompt-tags id). */
-type SessionPortalId = 'session'
+type SessionPortalId = typeof SESSION_MENTION_KEYWORD
 
 type FlatItem =
   | { kind: 'file'; path: string; displayPath: string; isDirectory: boolean; matchIndices: number[] }
@@ -156,7 +157,7 @@ function harnessLabel(entry: SessionHistoryEntry): string {
 
 function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: boolean) {
   const muted = disabled ? 'text-muted-foreground' : undefined
-  if (id === 'session') {
+  if (id === SESSION_MENTION_KEYWORD) {
     return (
       <MessageSquare
         className={cn(
@@ -553,18 +554,19 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           disabled: !capabilityEnabled[cap.id],
         })
       }
-      // Built-in Session portal — always on; Tab/Enter opens session search page.
+      // Built-in chat/session portal — always on; Tab/Enter opens session search page.
       {
         const label = sessionPortalLabel()
-        const idMatch = fuzzyMatchIndices('session', query)
+        const idMatch = fuzzyMatchIndices(SESSION_MENTION_KEYWORD, query)
         const nameMatch = fuzzyMatchIndices(label, query)
         const enMatch = fuzzyMatchIndices('Session', query)
-        if (idMatch !== null || nameMatch !== null || enMatch !== null) {
+        const chatEnMatch = fuzzyMatchIndices('Chat', query)
+        if (idMatch !== null || nameMatch !== null || enMatch !== null || chatEnMatch !== null) {
           matches.push({
             kind: 'session-portal',
-            id: 'session',
+            id: SESSION_MENTION_KEYWORD,
             displayName: label,
-            matchIndices: nameMatch ?? enMatch ?? idMatch ?? [],
+            matchIndices: nameMatch ?? enMatch ?? chatEnMatch ?? idMatch ?? [],
           })
         }
       }
@@ -814,13 +816,13 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={rowClass}
           >
-            {capabilityIcon('session')}
+            {capabilityIcon(SESSION_MENTION_KEYWORD)}
             <span className="min-w-0 flex-1 truncate">
               <span className="font-medium">
                 <HighlightedPath path={item.displayName} indices={item.matchIndices} />
               </span>
               <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                @session
+                @{SESSION_MENTION_KEYWORD}
               </span>
             </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -1152,7 +1154,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               </div>
               {sessionPhase === 'need-title' ? (
                 <div className="font-mono text-[11px] text-muted-foreground">
-                  @session {sessionScopeLabel || '<project|all>'} &lt;title&gt;
+                  @{SESSION_MENTION_KEYWORD} {sessionScopeLabel || '<project|all>'} &lt;title&gt;
                 </div>
               ) : null}
             </div>

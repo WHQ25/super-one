@@ -4,7 +4,7 @@
  *
  * Monorepo workspace packages (`@superone/*`) are bundled into one ESM file so
  * the published package has no `workspace:*` dependencies. Native addons and
- * the Claude Agent SDK stay external and are installed by npm on the host.
+ * the Claude / Cursor Agent SDKs stay external and are installed by npm on the host.
  *
  * Output: apps/cli/dist/npm/  (ready for `npm publish`)
  *
@@ -40,6 +40,7 @@ export const PUBLIC_CLI_PACKAGE = '@super-one/cli'
 export const PUBLIC_CLI_BIN = 'superone'
 
 const CLAUDE_SDK_VERSION = '0.3.226'
+const CURSOR_SDK_VERSION = '1.0.27'
 
 const OPTIONAL_CLAUDE_PLATFORMS = [
   `@anthropic-ai/claude-agent-sdk-darwin-arm64`,
@@ -50,6 +51,14 @@ const OPTIONAL_CLAUDE_PLATFORMS = [
   `@anthropic-ai/claude-agent-sdk-linux-arm64-musl`,
   `@anthropic-ai/claude-agent-sdk-win32-x64`,
   `@anthropic-ai/claude-agent-sdk-win32-arm64`,
+] as const
+
+const OPTIONAL_CURSOR_PLATFORMS = [
+  `@cursor/sdk-darwin-arm64`,
+  `@cursor/sdk-darwin-x64`,
+  `@cursor/sdk-linux-arm64`,
+  `@cursor/sdk-linux-x64`,
+  `@cursor/sdk-win32-x64`,
 ] as const
 
 function readRootVersion(): string {
@@ -84,6 +93,9 @@ function buildPublishPackageJson(version: string): Record<string, unknown> {
   for (const name of OPTIONAL_CLAUDE_PLATFORMS) {
     optionalDependencies[name] = CLAUDE_SDK_VERSION
   }
+  for (const name of OPTIONAL_CURSOR_PLATFORMS) {
+    optionalDependencies[name] = CURSOR_SDK_VERSION
+  }
 
   return {
     name: PUBLIC_CLI_PACKAGE,
@@ -107,9 +119,10 @@ function buildPublishPackageJson(version: string): Record<string, unknown> {
       url: 'https://github.com/WHQ25/super-one.git',
       directory: 'apps/cli',
     },
-    // Natives + Agent SDK stay external so npm installs platform binaries.
+    // Natives + Agent SDKs stay external so npm installs platform binaries.
     dependencies: {
       '@anthropic-ai/claude-agent-sdk': CLAUDE_SDK_VERSION,
+      '@cursor/sdk': CURSOR_SDK_VERSION,
       'better-sqlite3': '^13.0.1',
       'node-pty': '^1.0.0',
     },
@@ -140,6 +153,10 @@ export async function packNpm(options: {
     'node-pty',
     '@anthropic-ai/claude-agent-sdk',
     ...OPTIONAL_CLAUDE_PLATFORMS,
+    // Cursor SDK ships platform natives + prebundled chunks that esbuild cannot
+    // rebundle (`.map` loaders, `bun:sqlite`, missing d.ts side files).
+    '@cursor/sdk',
+    ...OPTIONAL_CURSOR_PLATFORMS,
   ]
 
   await build({
@@ -149,7 +166,7 @@ export async function packNpm(options: {
     platform: 'node',
     format: 'esm',
     target: `node${MIN_NODE_MAJOR}`,
-    // Natives + Claude Agent SDK stay external (npm installs platform binaries).
+    // Natives + Claude/Cursor Agent SDKs stay external (npm installs platform binaries).
     external: externalList,
     define: {
       __SUPERONE_CLI_VERSION__: JSON.stringify(version),

@@ -28,11 +28,15 @@ describe('pack-npm', () => {
     expect(pkg.dependencies['better-sqlite3']).toBeTruthy()
     expect(pkg.dependencies['node-pty']).toBeTruthy()
     expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBeTruthy()
+    expect(pkg.dependencies['@cursor/sdk']).toBeTruthy()
     // No monorepo workspace protocol in the publish manifest.
     for (const v of Object.values(pkg.dependencies)) {
       expect(v).not.toMatch(/^workspace:/)
     }
     expect(Object.keys(pkg.optionalDependencies).some((k) => k.includes('claude-agent-sdk-'))).toBe(
+      true,
+    )
+    expect(Object.keys(pkg.optionalDependencies).some((k) => k.startsWith('@cursor/sdk-'))).toBe(
       true,
     )
 
@@ -44,6 +48,8 @@ describe('pack-npm', () => {
     // Bundled CLI should not leave monorepo package names as bare imports.
     expect(bundle.includes('from "@superone/runtime"')).toBe(false)
     expect(bundle.includes('from "@superone/shared"')).toBe(false)
+    // Cursor SDK must stay external (native/platform package, not rebundled).
+    expect(bundle.includes('from "@cursor/sdk"') || bundle.includes("from '@cursor/sdk'")).toBe(true)
     // Version inject for harness release coupling.
     expect(bundle.includes('0.0.0-test')).toBe(true)
 

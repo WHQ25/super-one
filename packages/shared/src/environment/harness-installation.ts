@@ -12,7 +12,7 @@
 import type { HarnessId } from '../session-types'
 
 /** First-party node Harness catalog IDs (target identities). */
-export type NodeHarnessId = 'claude' | 'codex' | 'opencode' | 'acp-grok'
+export type NodeHarnessId = 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
 
 export type HarnessRuntimeSource = 'managed' | 'external'
 
@@ -52,6 +52,8 @@ export const NODE_HARNESS_DEFINITIONS: readonly NodeHarnessDefinition[] = [
   { id: 'claude', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'claude' },
   { id: 'codex', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'codex' },
   { id: 'opencode', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'opencode' },
+  // Managed runtimeSource (SDK) but not on ManagedHarnessId CDN pin chain yet.
+  { id: 'cursor', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'cursor' },
   { id: 'acp-grok', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp' },
 ] as const
 
@@ -61,7 +63,11 @@ const DEFINITION_BY_ID = new Map(NODE_HARNESS_DEFINITIONS.map((d) => [d.id, d]))
 
 export function isNodeHarnessId(value: unknown): value is NodeHarnessId {
   return (
-    value === 'claude' || value === 'codex' || value === 'opencode' || value === 'acp-grok'
+    value === 'claude' ||
+    value === 'codex' ||
+    value === 'opencode' ||
+    value === 'cursor' ||
+    value === 'acp-grok'
   )
 }
 
@@ -77,7 +83,12 @@ export function getNodeHarnessDefinition(id: NodeHarnessId): NodeHarnessDefiniti
  */
 export function sessionHarnessIdToNodeHarnessId(sessionId: string): NodeHarnessId | null {
   if (sessionId === 'acp' || sessionId === 'acp-grok') return 'acp-grok'
-  if (sessionId === 'claude' || sessionId === 'codex' || sessionId === 'opencode') {
+  if (
+    sessionId === 'claude' ||
+    sessionId === 'codex' ||
+    sessionId === 'opencode' ||
+    sessionId === 'cursor'
+  ) {
     return sessionId
   }
   return null

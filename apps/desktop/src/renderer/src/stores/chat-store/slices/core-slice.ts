@@ -18,6 +18,8 @@ export interface CoreSlice {
   openProviderPopup: () => void
   openMcpPopup: () => void
   openWorkflowsPopup: () => void
+  openCursorApiKeyPrompt: () => void
+  closeCursorApiKeyPrompt: () => void
   toggleTodos: () => void
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void
@@ -82,6 +84,9 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
       slashCommandOutput: { command: 'workflows', content: '' },
     })))
   },
+
+  openCursorApiKeyPrompt: () => set({ cursorApiKeyPromptOpen: true }),
+  closeCursorApiKeyPrompt: () => set({ cursorApiKeyPromptOpen: false }),
 
   toggleTodos: () => {
     const { activeProject } = get()

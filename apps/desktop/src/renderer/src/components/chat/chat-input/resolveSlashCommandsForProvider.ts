@@ -21,6 +21,8 @@ export function resolveSlashCommandsForProvider(
       return catalogs.acp
     case 'opencode':
       return catalogs.opencode
+    case 'cursor':
+      return []
     case 'claude':
     default:
       return catalogs.claude

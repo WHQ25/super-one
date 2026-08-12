@@ -72,6 +72,7 @@ interface AppAPI {
   connectOpenCode(): Promise<OpenCodeResources>
   connectCursor(): Promise<import('@superone/shared/agent-types').CursorResources>
   setCursorApiKey(apiKey: string): Promise<{ ok: true; providerId: string }>
+  getCursorAuthStatus(): Promise<{ configured: boolean; apiKeyName: string | null; userEmail: string | null }>
   updateCursorBaseConfig(patch: Record<string, unknown>): Promise<{ ok: true; config: Record<string, unknown> }>
   cursorListAgents(opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string; includeArchived?: boolean }): Promise<unknown>
   cursorListRuns(agentId: string, opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string }): Promise<unknown>
@@ -125,14 +126,14 @@ interface AppAPI {
   /** Onboarding: scan PATH for first-party harness CLIs. */
   scanHarnessClis(): Promise<{
     hits: Array<{
-      harnessId: 'claude' | 'codex' | 'opencode' | 'acp-grok'
+      harnessId: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
       command: string | null
       detected: boolean
       version?: string
     }>
-    defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'acp-grok'>
+    defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'>
     integrationLabels: Record<
-      'claude' | 'codex' | 'opencode' | 'acp-grok',
+      'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok',
       { label: string }
     >
   }>

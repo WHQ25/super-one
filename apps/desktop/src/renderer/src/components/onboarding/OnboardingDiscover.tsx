@@ -15,7 +15,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useAppStore } from '@/stores/app'
 
-type CatalogId = 'claude' | 'codex' | 'opencode' | 'acp-grok'
+type CatalogId = 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
 
 type ScanHit = {
   harnessId: CatalogId
@@ -31,9 +31,9 @@ type ProgressState = {
   message?: string
 }
 
-const ORDER: CatalogId[] = ['claude', 'codex', 'opencode', 'acp-grok']
+const ORDER: CatalogId[] = ['claude', 'codex', 'opencode', 'cursor', 'acp-grok']
 
-function providerOf(id: CatalogId): 'claude' | 'codex' | 'opencode' | 'acp' {
+function providerOf(id: CatalogId): 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp' {
   if (id === 'acp-grok') return 'acp'
   return id
 }

@@ -12,6 +12,8 @@
 import { existsSync } from 'node:fs'
 import {
   createManagedTarballInstaller,
+  isCursorSdkAvailable,
+  resolveCursorApiKeyPlain,
   resolveExternalCommand,
   resolveHarnessHomeRoot,
   setHarnessReleaseVersionProvider,
@@ -39,6 +41,10 @@ export const cliHarnessResolver: HarnessRuntimeResolver = {
   resolveBinary(id, harnesses) {
     if (id === 'claude') return resolveClaudeBinaryPath({ harnesses })
     if (id === 'codex') return resolveCodexBinaryPath({ harnesses })
+    if (id === 'cursor') {
+      // In-process SDK — no host binary path; readiness uses isRunnableWithoutCatalog.
+      return null
+    }
     // External harnesses (acp-grok / opencode) run whatever the catalog stored.
     const command = harnesses.get(id).command
     return command && existsSync(command) ? command : null
@@ -48,6 +54,7 @@ export const cliHarnessResolver: HarnessRuntimeResolver = {
     if (id === 'claude') return isClaudeRuntimeRunnable()
     if (id === 'codex') return isCodexBinaryOverrideRunnable()
     if (id === 'acp-grok') return envBinaryExists('SUPERONE_ACP_BINARY')
+    if (id === 'cursor') return isCursorSdkAvailable()
     return envBinaryExists('SUPERONE_OPENCODE_BINARY')
   },
 
@@ -70,9 +77,23 @@ export const cliHarnessResolver: HarnessRuntimeResolver = {
 export function cliHarnessAuthProbe(
   providers: ProviderStore | null | undefined,
 ): HarnessAuthProbe | null {
-  if (!providers) return null
+  if (!providers) {
+    // Still allow CURSOR_API_KEY without a provider store.
+    return {
+      hasCredentialFor(id) {
+        if (id === 'cursor' && resolveCursorApiKeyPlain()) {
+          return { ok: true, reason: 'CURSOR_API_KEY' }
+        }
+        return null
+      },
+    }
+  }
   return {
     hasCredentialFor(id) {
+      if (id === 'cursor') {
+        if (resolveCursorApiKeyPlain()) return { ok: true, reason: 'CURSOR_API_KEY' }
+        return null
+      }
       const consumer = consumerForHarness(id)
       if (!consumer) return null
       const binding = providers.listBindings().find((b) => b.consumer === consumer)

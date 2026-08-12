@@ -221,8 +221,9 @@ export class SessionManagerImpl implements SessionManagerContract {
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
       getActiveProvider: this.persistence.getActiveProvider,
+      // Re-read provider from DB so credential/config updates after create are visible.
       resolveProviderConfigForApiProvider: resolveProviderConfig
-        ? (id) => resolveProviderConfig(provider, id)
+        ? (id) => resolveProviderConfig(getSessionProvider(provider.id) ?? provider, id)
         : undefined,
       getActiveDefaultApiProviderId: this.persistence.getActiveDefaultApiProviderId,
       onBeforeInterrupt: this.persistence.onBeforeInterrupt
@@ -318,8 +319,9 @@ export class SessionManagerImpl implements SessionManagerContract {
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
       getActiveProvider: this.persistence.getActiveProvider,
+      // Re-read provider from DB so credential/config updates after create are visible.
       resolveProviderConfigForApiProvider: resolveProviderConfig
-        ? (id) => resolveProviderConfig(provider, id)
+        ? (id) => resolveProviderConfig(getSessionProvider(provider.id) ?? provider, id)
         : undefined,
       getActiveDefaultApiProviderId: this.persistence.getActiveDefaultApiProviderId,
       onBeforeInterrupt: this.persistence.onBeforeInterrupt

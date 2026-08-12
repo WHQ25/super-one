@@ -165,6 +165,22 @@ describe('orderSuggestionHarnesses', () => {
     expect(on.map((o) => o.key)).toEqual(['opencode', 'claude', 'codex'])
   })
 
+  it('includes cursor only when includeCursor is true', () => {
+    const off = orderSuggestionHarnesses({
+      ranks: [{ key: 'cursor', provider: 'cursor', acpAgentId: null, sessionCount: 99 }],
+      acpAgents: [],
+      includeCursor: false,
+    })
+    expect(off.map((o) => o.key)).toEqual(['claude', 'codex'])
+
+    const on = orderSuggestionHarnesses({
+      ranks: [{ key: 'cursor', provider: 'cursor', acpAgentId: null, sessionCount: 99 }],
+      acpAgents: [],
+      includeCursor: true,
+    })
+    expect(on.map((o) => o.key)).toEqual(['cursor', 'claude', 'codex'])
+  })
+
   it('omits claude/codex when include flags are false', () => {
     const ordered = orderSuggestionHarnesses({
       ranks: [],

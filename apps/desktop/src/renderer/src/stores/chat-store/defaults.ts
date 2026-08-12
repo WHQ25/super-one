@@ -42,6 +42,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     codexTurnLastUsage: null,
     selectedModel: '',
     selectedEffort: undefined,
+    cursorModelParams: {},
     modelUserChosen: false,
     effortUserChosen: false,
     selectedCodexModel: '',

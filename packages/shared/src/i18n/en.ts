@@ -242,6 +242,7 @@ export type Messages = {
           claude: string
           codex: string
           opencode: string
+          cursor: string
           'acp-grok': string
         }
       }
@@ -334,6 +335,7 @@ export type Messages = {
         claude: string
         codex: string
         opencode: string
+        cursor: string
         acpGrok: string
         experimentalAcp: string
       }
@@ -341,7 +343,26 @@ export type Messages = {
         claude: string
         codex: string
         opencode: string
+        cursor: string
         'acp-grok': string
+      }
+      cursor: {
+        apiKeyTitle: string
+        apiKeyDescription: string
+        apiKeySaved: string
+        apiKeyConfigured: string
+        apiKeyConfiguredAnonymous: string
+        apiKeyMissing: string
+        apiKeyReplacePlaceholder: string
+        saveKey: string
+        replaceKey: string
+        cloudTitle: string
+        cloudDescription: string
+        cloudEnabled: string
+        localEnabled: string
+        autoCreatePr: string
+        workOnCurrentBranch: string
+        saveRuntime: string
       }
       states: {
         disabled: string
@@ -417,6 +438,7 @@ export type Messages = {
           claude: string
           codex: string
           opencode: string
+          cursor: string
           'acp-grok': string
         }
       }
@@ -878,6 +900,15 @@ export type Messages = {
     send: {
       failed: string
       remoteUnavailable: string
+    }
+    cursor: {
+      apiKeyPrompt: {
+        title: string
+        description: string
+        placeholder: string
+        getKey: string
+        save: string
+      }
     }
     permissionModeTitle: string
     sessionModeTitle: string
@@ -2824,6 +2855,7 @@ export const en: Messages = {
           claude: 'Claude Code',
           codex: 'Codex',
           opencode: 'OpenCode',
+          cursor: 'Cursor',
           'acp-grok': 'Grok',
         },
       },
@@ -2930,6 +2962,7 @@ export const en: Messages = {
         claude: 'Claude Code runtime (Agent SDK binary). Downloads on enable when not bundled.',
         codex: 'OpenAI Codex app-server binary. Downloads on enable when not bundled.',
         opencode: 'OpenCode CLI / server. External runtime resolved from PATH or config.',
+        cursor: 'Cursor Agent SDK. Managed in-process runtime; requires a Cursor User API Key.',
         acpGrok: 'Grok via the Agent Client Protocol.',
         experimentalAcp: 'Optional ACP agent detected on this machine.',
       },
@@ -2937,7 +2970,26 @@ export const en: Messages = {
         claude: 'Claude Code',
         codex: 'Codex',
         opencode: 'OpenCode',
+        cursor: 'Cursor',
         'acp-grok': 'Grok (ACP)',
+      },
+      cursor: {
+        apiKeyTitle: 'Cursor User API Key',
+        apiKeyDescription: 'Create a key at the Cursor dashboard. Desktop login alone is not enough for the SDK.',
+        apiKeySaved: 'Cursor API key saved',
+        apiKeyConfigured: 'API key saved ({{name}})',
+        apiKeyConfiguredAnonymous: 'on file',
+        apiKeyMissing: 'No API key saved yet',
+        apiKeyReplacePlaceholder: 'Paste a new key to replace…',
+        saveKey: 'Save',
+        replaceKey: 'Replace',
+        cloudTitle: 'Cursor Cloud Agents',
+        cloudDescription: 'Secondary runtime (bc-*). Local project chat remains the default when off.',
+        cloudEnabled: 'Cursor cloud runtime enabled',
+        localEnabled: 'Cursor local runtime enabled',
+        autoCreatePr: 'Auto-create PR when cloud agent finishes',
+        workOnCurrentBranch: 'Work on current branch',
+        saveRuntime: 'Save Cursor runtime',
       },
       states: {
         disabled: 'Disabled',
@@ -3039,6 +3091,7 @@ export const en: Messages = {
           claude: 'Claude',
           codex: 'Codex',
           opencode: 'OpenCode',
+          cursor: 'Cursor',
           'acp-grok': 'Grok (ACP)',
         },
       },
@@ -3520,6 +3573,15 @@ export const en: Messages = {
       failed: 'Failed to send message: {{message}}',
       remoteUnavailable:
         'Remote host is offline or reconnecting. Try again in a moment.',
+    },
+    cursor: {
+      apiKeyPrompt: {
+        title: 'Cursor API Key required',
+        description: 'Add your Cursor User API Key to continue chatting with Cursor.',
+        placeholder: 'cursor_…',
+        getKey: 'Get API Key',
+        save: 'Save',
+      },
     },
     permissionModeTitle: 'Permission Mode',
     sessionModeTitle: 'Session Mode',

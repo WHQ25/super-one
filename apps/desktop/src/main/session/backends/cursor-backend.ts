@@ -8,6 +8,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
+import { buildCursorModelSelection } from '@superone/cursor'
 import log from '../../logger'
 import { mapPermissionToCursorLocal } from '../../cursor/cursor-auth'
 import {
@@ -15,9 +16,29 @@ import {
   type CursorRuntime,
   setCursorRuntimeFactory,
 } from '../../cursor/cursor-runtime'
+import { getCachedHarnessResources } from '../../database'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 export { setCursorRuntimeFactory }
+
+/** Resolve ModelSelection from cached Cursor catalog + turn options. */
+function resolveCursorModelSelection(input: {
+  modelId?: string
+  params?: Record<string, string> | null
+  effort?: string | null
+  fast?: boolean | null
+}) {
+  if (!input.modelId) return undefined
+  const catalog = getCachedHarnessResources('cursor')
+  const model = catalog?.models.find((m) => m.id === input.modelId) ?? null
+  return buildCursorModelSelection({
+    modelId: input.modelId,
+    model,
+    params: input.params,
+    effort: input.effort,
+    fast: input.fast,
+  })
+}
 
 export class CursorBackend implements SessionBackend {
   readonly kind: HarnessId = 'cursor'
@@ -28,6 +49,8 @@ export class CursorBackend implements SessionBackend {
   private runtimeEpoch = 0
   private permissionMode: PermissionMode = 'default'
   private model: string | undefined
+  private effort: string | undefined
+  private modelParams: Record<string, string> = {}
   private started = false
   private disposed = false
   private interrupted = false
@@ -43,6 +66,7 @@ export class CursorBackend implements SessionBackend {
     this.opts = opts
     this.permissionMode = opts.permissionMode
     this.model = opts.model
+    this.effort = opts.effort
     this.started = true
     try {
       await this.ensureRuntime()
@@ -64,6 +88,7 @@ export class CursorBackend implements SessionBackend {
     this.opts = opts
     this.permissionMode = opts.permissionMode
     this.model = opts.model
+    this.effort = opts.effort
     void this.ensureRuntime().catch((error) => log.debug('[CursorBackend] prewarm failed:', error))
   }
 
@@ -73,13 +98,20 @@ export class CursorBackend implements SessionBackend {
     if (!this.opts) throw new Error('CursorBackend not configured')
     const epoch = this.runtimeEpoch
     const opts = this.opts
+    const modelId = this.model ?? opts.model
+    const modelSelection = resolveCursorModelSelection({
+      modelId,
+      params: this.modelParams,
+      effort: this.effort ?? opts.effort,
+    })
     const factory = getCursorRuntimeFactory()
     const promise = factory({
       sessionId: opts.sessionId,
       cwd: opts.cwd,
       providerSessionId: opts.providerSessionId,
       permissionMode: this.permissionMode,
-      model: this.model ?? opts.model,
+      model: modelId,
+      modelSelection,
       config: opts.config,
       onEvent: (event) => this.emit(event),
       onProviderSessionId: (id) => {
@@ -125,10 +157,20 @@ export class CursorBackend implements SessionBackend {
 
     try {
       const runtime = await this.ensureRuntime()
-      if (request.model) {
-        this.model = request.model
-        runtime.setModel(request.model)
+      if (request.model) this.model = request.model
+      if (request.effort !== undefined) this.effort = request.effort
+      if (request.cursor?.params) this.modelParams = { ...request.cursor.params }
+      else if (request.cursor?.fast !== undefined) {
+        this.modelParams = { ...this.modelParams, fast: request.cursor.fast ? 'true' : 'false' }
       }
+      const selection = resolveCursorModelSelection({
+        modelId: this.model,
+        params: this.modelParams,
+        effort: this.effort,
+        fast: request.cursor?.fast,
+      })
+      if (selection) runtime.setModel(selection)
+
       const turnComplete = new Promise<void>((resolve) => {
         this.activeTurn = { messageId, resolve }
       })
@@ -137,10 +179,7 @@ export class CursorBackend implements SessionBackend {
         ?.map((img) => ({ data: img.base64, mimeType: img.mimeType || 'image/png' }))
         .filter((img) => img.data) ?? []
 
-      const force = Boolean(
-        (request as { force?: boolean }).force
-        || (request as { cursor?: { force?: boolean } }).cursor?.force,
-      )
+      const force = Boolean(request.force || request.cursor?.force)
       await runtime.send(messageId, request.content, {
         images: images.length ? images : undefined,
         force: force || undefined,
@@ -153,7 +192,6 @@ export class CursorBackend implements SessionBackend {
       if (this.interrupted) this.complete(messageId, true)
       else this.fail(messageId, error instanceof Error ? error.message : String(error))
     } finally {
-      // complete/fail already resolve activeTurn
       this.activeTurn = null
       this.currentMessageId = null
     }
@@ -187,11 +225,15 @@ export class CursorBackend implements SessionBackend {
   async setModel(model: string): Promise<void> {
     this.model = model
     if (this.opts) this.opts.model = model
-    this.runtime?.setModel(model)
+    const selection = resolveCursorModelSelection({
+      modelId: model,
+      effort: this.effort,
+      fast: this.fast,
+    })
+    if (selection) this.runtime?.setModel(selection)
   }
 
   async setSessionMode(modeId: string): Promise<void> {
-    // plan | agent via permissionMode mapping
     if (modeId === 'plan') await this.setPermissionMode('plan')
     else if (modeId === 'agent') await this.setPermissionMode('default')
   }
@@ -203,7 +245,6 @@ export class CursorBackend implements SessionBackend {
     if (this.opts) this.opts.permissionMode = mode
     this.runtime?.setPermissionMode(mode)
     for (const listener of this.permissionModeListeners) listener(mode)
-    // Create-time sandbox/autoReview → rebuild when mapping changes (D7)
     if (
       this.started
       && this.runtime
@@ -214,9 +255,7 @@ export class CursorBackend implements SessionBackend {
     }
   }
 
-  async setSandbox(_sandboxInfo: SandboxInfo): Promise<void> {
-    // Honored via permission mapping + rebuild
-  }
+  async setSandbox(_sandboxInfo: SandboxInfo): Promise<void> {}
 
   respondToPermission(): boolean {
     return false
@@ -259,7 +298,6 @@ export class CursorBackend implements SessionBackend {
   }
 
   async toggleMcpServer(_serverName: string, _enabled: boolean): Promise<void> {
-    // SuperOne config files own enable/disable; reload picks up disk state.
     await this.reloadMcpServers()
   }
 
@@ -279,8 +317,7 @@ export class CursorBackend implements SessionBackend {
 
   /**
    * Expire a wedged local run (AgentBusyError recovery) by sending a no-op
-   * follow-up with LocalSendOptions.force. Preferred path is automatic force
-   * retry inside runtime.send; this is an explicit host recovery hook.
+   * follow-up with LocalSendOptions.force.
    */
   async forceRecover(message = 'Continue.'): Promise<void> {
     if (!this.started || this.disposed) throw new Error('CursorBackend not started')
@@ -332,4 +369,3 @@ export class CursorBackend implements SessionBackend {
     if (this.activeTurn?.messageId === messageId) this.activeTurn.resolve()
   }
 }
-

@@ -3,7 +3,6 @@ import { Check, ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
-import { Input } from '@superone/ui/components/ui/input'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import {
@@ -15,156 +14,12 @@ import {
 import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
 import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
-import { useChatStore } from '@/stores/chat'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import type {
   Locale,
   UpdateChannel,
 } from '@superone/shared/agent-types'
 import { AVAILABLE_UPDATE_CHANNELS, channelFromVersion } from '@superone/shared/update-channels'
-
-function CursorApiKeySettingsRow() {
-  const [apiKey, setApiKey] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [cloud, setCloud] = useState(false)
-  const [autoCreatePR, setAutoCreatePR] = useState(false)
-  const [workOnCurrentBranch, setWorkOnCurrentBranch] = useState(false)
-  const [cloudEnvType, setCloudEnvType] = useState<'cloud' | 'pool' | 'machine'>('cloud')
-  const [repoUrl, setRepoUrl] = useState('')
-  const [repos, setRepos] = useState<Array<{ url: string }>>([])
-  const initializeHarness = useChatStore((s) => s.initializeHarness)
-
-  useEffect(() => {
-    void window.app.cursorListRepositories()
-      .then((list) => setRepos(list))
-      .catch(() => setRepos([]))
-  }, [])
-
-  async function saveKey() {
-    if (!apiKey.trim() || saving) return
-    setSaving(true)
-    try {
-      await window.app.setCursorApiKey(apiKey.trim())
-      setApiKey('')
-      toast.success('Cursor API key saved')
-      void initializeHarness('cursor')
-      void window.app.cursorListRepositories()
-        .then((list) => setRepos(list))
-        .catch(() => undefined)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function saveRuntime() {
-    setSaving(true)
-    try {
-      await window.app.updateCursorBaseConfig({
-        runtime: cloud ? 'cloud' : 'local',
-        autoCreatePR: cloud ? autoCreatePR : false,
-        workOnCurrentBranch: cloud ? workOnCurrentBranch : false,
-        cloudEnvType: cloud ? cloudEnvType : 'cloud',
-        ...(cloud && repoUrl.trim()
-          ? { repos: [{ url: repoUrl.trim() }] }
-          : { repos: [] }),
-      })
-      toast.success(cloud ? 'Cursor cloud runtime enabled' : 'Cursor local runtime enabled')
-      void initializeHarness('cursor')
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="space-y-3 border-t border-border p-4">
-      <p className="text-sm font-medium">Cursor User API Key</p>
-      <p className="text-xs text-muted-foreground">
-        Create a key at{' '}
-        <a
-          className="underline underline-offset-2"
-          href="https://cursor.com/dashboard/api"
-          target="_blank"
-          rel="noreferrer"
-        >
-          cursor.com/dashboard/api
-        </a>
-        . Desktop login alone is not enough for the SDK.
-      </p>
-      <div className="flex gap-2">
-        <Input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder="cursor_…"
-          className="font-mono text-xs"
-          autoComplete="off"
-        />
-        <Button type="button" size="sm" disabled={!apiKey.trim() || saving} onClick={() => void saveKey()}>
-          Save
-        </Button>
-      </div>
-      <div className="flex items-center justify-between gap-4 pt-2">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">Cursor Cloud Agents</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Secondary runtime (bc-*). Local project chat remains the default when off.
-          </p>
-        </div>
-        <Switch checked={cloud} onCheckedChange={setCloud} disabled={saving} />
-      </div>
-      {cloud && (
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-1">
-            {(['cloud', 'pool', 'machine'] as const).map((env) => (
-              <button
-                key={env}
-                type="button"
-                disabled={saving}
-                onClick={() => setCloudEnvType(env)}
-                className={
-                  cloudEnvType === env
-                    ? 'rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'
-                    : 'rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted'
-                }
-              >
-                {env}
-              </button>
-            ))}
-          </div>
-          <Input
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="https://github.com/org/repo"
-            className="font-mono text-xs"
-            list="cursor-repo-suggestions"
-          />
-          {repos.length > 0 && (
-            <datalist id="cursor-repo-suggestions">
-              {repos.map((r) => (
-                <option key={r.url} value={r.url} />
-              ))}
-            </datalist>
-          )}
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">Auto-create PR when cloud agent finishes</p>
-            <Switch checked={autoCreatePR} onCheckedChange={setAutoCreatePR} disabled={saving} />
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">Work on current branch</p>
-            <Switch checked={workOnCurrentBranch} onCheckedChange={setWorkOnCurrentBranch} disabled={saving} />
-          </div>
-        </div>
-      )}
-      <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void saveRuntime()}>
-        Save Cursor runtime
-      </Button>
-    </div>
-  )
-}
 
 export function AppSettingsPage() {
   const { t, i18n } = useTranslation()
@@ -405,9 +260,6 @@ export function AppSettingsPage() {
               disabled={loading}
             />
           </div>
-          {experimentalAgentsEnabled && (
-            <CursorApiKeySettingsRow />
-          )}
         </div>
       </div>
     </div>

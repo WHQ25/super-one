@@ -5,6 +5,10 @@ import {
   createOpenCodeTurnRunner,
   createSimulatedOpenCodeTurnRunner,
 } from '@superone/opencode'
+import {
+  createCursorTurnRunner,
+  createSimulatedCursorTurnRunner,
+} from '@superone/cursor'
 
 /**
  * Phase 4 harness runners. Real provider CLIs may be absent in CI; each harness
@@ -12,7 +16,7 @@ import {
  * tests exercise the same Session/event surface.
  *
  * Production multi-dispatch (createProductionTurnRunner) uses real Claude/Codex
- * cores; ACP/OpenCode use @superone/acp|opencode (simulated until real clients).
+ * cores; ACP/OpenCode/Cursor use @superone/* packages (simulated until real clients).
  */
 export function createHarnessRunner(harnessId: HarnessId, opts?: { delayMs?: number }): TurnRunner {
   const delayMs = opts?.delayMs ?? 15
@@ -31,6 +35,8 @@ export function createHarnessRunner(harnessId: HarnessId, opts?: { delayMs?: num
       return createSimulatedAcpTurnRunner({ delayMs })
     case 'opencode':
       return createSimulatedOpenCodeTurnRunner({ delayMs })
+    case 'cursor':
+      return createSimulatedCursorTurnRunner({ delayMs })
     default: {
       const _exhaustive: never = harnessId
       throw new Error(`unsupported harness: ${_exhaustive}`)
@@ -95,4 +101,7 @@ export function createAcpOpenCodeProductionRouter(opts?: {
  * Order matches NODE_HARNESS_DEFINITIONS → sessionHarnessId mapping
  * (acp-grok → acp).
  */
-export const PHASE4_HARNESS_IDS: HarnessId[] = ['claude', 'codex', 'opencode', 'acp']
+export const PHASE4_HARNESS_IDS: HarnessId[] = ['claude', 'codex', 'opencode', 'cursor', 'acp']
+
+// Re-export for production turn runner wiring.
+export { createCursorTurnRunner }

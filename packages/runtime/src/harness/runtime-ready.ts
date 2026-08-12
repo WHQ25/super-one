@@ -9,6 +9,7 @@
 import type { NodeHarnessId } from '@superone/shared/environment'
 import type { HarnessManager } from './manager'
 import type { HarnessAuthProbe, HarnessRuntimeResolver } from './types'
+import { resolveCursorApiKeyPlain } from './cursor-availability'
 
 export type RuntimeReadyResult =
   | { ok: true; reason: string }
@@ -41,6 +42,12 @@ const RUNTIME_SPECS: Record<
     // server-url only configs still need a client binary for the node runner today
     failReason:
       'opencode runtime unavailable: enable with --command or set SUPERONE_OPENCODE_BINARY',
+  },
+  cursor: {
+    catalogId: 'cursor',
+    okReason: 'Cursor Agent SDK available',
+    failReason:
+      'cursor runtime unavailable: install @cursor/sdk and set CURSOR_API_KEY (or enable harness cursor)',
   },
 }
 
@@ -197,17 +204,27 @@ function isAuthSatisfied(
   if (process.env.SUPERONE_HARNESS_MARK_READY === '1') {
     return { ok: true, reason: 'SUPERONE_HARNESS_MARK_READY' }
   }
-  const defRequiresAuth = id === 'claude' || id === 'codex'
+  const defRequiresAuth = id === 'claude' || id === 'codex' || id === 'cursor'
   if (!defRequiresAuth) {
     return { ok: true, reason: 'external harness does not require SuperOne provider auth' }
   }
   // Host $HOME login (Claude/Codex CLI device login) is valid when binary/SDK exists.
-  // Provider credentials are the SuperOne-managed path.
+  // Provider credentials are the SuperOne-managed path. Cursor uses CURSOR_API_KEY.
   const fromProvider = deps.auth?.hasCredentialFor(id)
   if (fromProvider?.ok) return fromProvider
 
   // Bundled SDK / env-pinned binary implies host credentials in $HOME.
   if (deps.resolver.isRunnableWithoutCatalog(id)) {
+    if (id === 'cursor') {
+      // SDK loadable alone is not auth — require key via auth probe or env.
+      if (resolveCursorApiKeyPlain()) {
+        return { ok: true, reason: 'CURSOR_API_KEY' }
+      }
+      return {
+        ok: false,
+        reason: 'needs_auth: set CURSOR_API_KEY or complete Cursor API key setup',
+      }
+    }
     return {
       ok: true,
       reason:

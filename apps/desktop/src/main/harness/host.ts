@@ -12,6 +12,8 @@ import {
   managedHarnessPrefix,
   readCurrentPointer,
   resolveExternalCommand,
+  isCursorSdkAvailable,
+  resolveCursorApiKeyPlain,
   setHarnessReleaseVersionProvider,
   type HarnessAuthProbe,
   type HarnessKernelDeps,
@@ -22,6 +24,8 @@ import type { NodeHarnessId } from '@superone/shared/environment'
 import type { ConsumerId } from '@superone/shared/platform-registry'
 import { getBinding, listCredentials, getCredentialDecrypted } from '../providers/credential-store'
 import { resolveSdkClaudeBinary } from '../agent/claude-binary'
+import { resolveCursorApiKey } from '../cursor/cursor-auth'
+import { getBaseProvider } from '../session/session-provider-repo'
 import { allowBundledHarnessPlatformPackages } from './bundled-fallback'
 import { resolveHarnessHomeRoot } from './home'
 import {
@@ -106,6 +110,10 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     if (id === 'opencode') {
       return envBinary('SUPERONE_OPENCODE_BINARY') ?? harnesses.get(id).command ?? null
     }
+    if (id === 'cursor') {
+      // In-process SDK — no host binary path.
+      return null
+    }
     return null
   },
 
@@ -127,6 +135,7 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     }
     if (id === 'acp-grok') return Boolean(envBinary('SUPERONE_ACP_BINARY'))
     if (id === 'opencode') return Boolean(envBinary('SUPERONE_OPENCODE_BINARY'))
+    if (id === 'cursor') return isCursorSdkAvailable()
     return false
   },
 
@@ -171,10 +180,20 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
   },
 }
 
-/** Auth probe: desktop provider bindings for chat:claude / chat:codex. */
+/** Auth probe: desktop provider bindings for chat:claude / chat:codex; Cursor API key. */
 export function desktopHarnessAuthProbe(): HarnessAuthProbe {
   return {
     hasCredentialFor(id: NodeHarnessId) {
+      if (id === 'cursor') {
+        if (resolveCursorApiKeyPlain()) return { ok: true, reason: 'CURSOR_API_KEY' }
+        try {
+          const config = getBaseProvider('cursor').config
+          if (resolveCursorApiKey(config)) return { ok: true, reason: 'cursor provider apiKey' }
+        } catch {
+          /* no cursor-base provider yet */
+        }
+        return null
+      }
       if (id !== 'claude' && id !== 'codex') return null
       const consumer: ConsumerId = id === 'codex' ? 'chat:codex' : 'chat:claude'
       const binding = getBinding(consumer)

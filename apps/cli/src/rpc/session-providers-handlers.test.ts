@@ -59,6 +59,7 @@ describe('sessionProviders RPC', () => {
       'acp-base',
       'claude-base',
       'codex-base',
+      'cursor-base',
       'opencode-base',
     ])
   })

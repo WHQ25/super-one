@@ -17,11 +17,26 @@ vi.mock('i18next', () => ({
   },
 }))
 
-import { isRemoteTransportSendError, toastSendFailure } from './send-error-toast'
+const { openCursorApiKeyPrompt } = vi.hoisted(() => ({
+  openCursorApiKeyPrompt: vi.fn(),
+}))
+
+vi.mock('../index', () => ({
+  useChatStore: {
+    getState: () => ({ openCursorApiKeyPrompt }),
+  },
+}))
+
+import {
+  isCursorApiKeyMissingError,
+  isRemoteTransportSendError,
+  toastSendFailure,
+} from './send-error-toast'
 
 describe('send-error-toast', () => {
   beforeEach(() => {
     toastError.mockClear()
+    openCursorApiKeyPrompt.mockClear()
   })
 
   it('classifies transport / connectivity messages', () => {
@@ -33,9 +48,28 @@ describe('send-error-toast', () => {
     expect(isRemoteTransportSendError(new Error('disk full'))).toBe(false)
   })
 
+  it('detects Cursor missing API key (including IPC wrapper text)', () => {
+    expect(
+      isCursorApiKeyMissingError(
+        new Error(
+          "Error invoking remote method 'agent:send-message': Error: Cursor User API Key missing. Create one at https://cursor.com/dashboard/api",
+        ),
+      ),
+    ).toBe(true)
+    expect(isCursorApiKeyMissingError(new Error('disk full'))).toBe(false)
+  })
+
   it('toasts the remote-unavailable copy for transport errors', () => {
     toastSendFailure(new Error('websocket closed'))
     expect(toastError).toHaveBeenCalledWith('remote-unavailable')
+  })
+
+  it('opens the API key prompt instead of toasting for missing Cursor key', async () => {
+    toastSendFailure(new Error('Cursor User API Key missing'))
+    expect(toastError).not.toHaveBeenCalled()
+    await vi.waitFor(() => {
+      expect(openCursorApiKeyPrompt).toHaveBeenCalled()
+    })
   })
 
   it('toasts the generic failed copy otherwise', () => {

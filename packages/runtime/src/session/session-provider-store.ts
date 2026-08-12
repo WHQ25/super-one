@@ -28,13 +28,14 @@ interface SessionProviderRow {
   updated_at: string
 }
 
-const VALID_HARNESS_IDS = new Set<string>(['claude', 'codex', 'acp', 'opencode'])
+const VALID_HARNESS_IDS = new Set<string>(['claude', 'codex', 'acp', 'opencode', 'cursor'])
 
 const BASE_SEEDS: Array<{ id: string; harnessId: HarnessId; name: string; config: unknown }> = [
   { id: 'claude-base', harnessId: 'claude', name: 'Claude (Base)', config: {} },
   { id: 'codex-base', harnessId: 'codex', name: 'Codex (Base)', config: {} },
   { id: 'acp-base', harnessId: 'acp', name: 'Others (ACP)', config: { agentId: 'grok-build' } },
   { id: 'opencode-base', harnessId: 'opencode', name: 'OpenCode (Base)', config: {} },
+  { id: 'cursor-base', harnessId: 'cursor', name: 'Cursor (Base)', config: {} },
 ]
 
 function assertHarnessId(raw: string): HarnessId {

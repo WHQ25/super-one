@@ -711,6 +711,13 @@ const appAPI = {
   setCursorApiKey: (apiKey: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_CURSOR_API_KEY, apiKey),
 
+  getCursorAuthStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_CURSOR_AUTH_STATUS) as Promise<{
+      configured: boolean
+      apiKeyName: string | null
+      userEmail: string | null
+    }>,
+
   updateCursorBaseConfig: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.CURSOR_UPDATE_BASE_CONFIG, patch),
 
@@ -809,14 +816,14 @@ const appAPI = {
   scanHarnessClis: () =>
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_SCAN_CLI) as Promise<{
       hits: Array<{
-        harnessId: 'claude' | 'codex' | 'opencode' | 'acp-grok'
+        harnessId: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
         command: string | null
         detected: boolean
         version?: string
       }>
-      defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'acp-grok'>
+      defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'>
       integrationLabels: Record<
-        'claude' | 'codex' | 'opencode' | 'acp-grok',
+        'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok',
         { label: string }
       >
     }>,

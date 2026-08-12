@@ -312,6 +312,7 @@ CREATE INDEX IF NOT EXISTS idx_session_providers_harness ON session_providers(ha
   stmt.run('codex-base', 'codex', 'Codex (Base)', '{}', now, now)
   stmt.run('acp-base', 'acp', 'Others (ACP)', JSON.stringify({ agentId: 'grok-build' }), now, now)
   stmt.run('opencode-base', 'opencode', 'OpenCode (Base)', '{}', now, now)
+  stmt.run('cursor-base', 'cursor', 'Cursor (Base)', '{}', now, now)
 }
 
 export function getMeta(db: NodeDatabase, key: string): string | null {

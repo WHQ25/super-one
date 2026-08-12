@@ -733,7 +733,12 @@ export async function sendMessageImpl(
     quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
   }
   const requestedProvider: ChatProvider =
-    preferredProvider === 'codex' || preferredProvider === 'acp' || preferredProvider === 'opencode' ? preferredProvider : 'claude'
+    preferredProvider === 'codex'
+    || preferredProvider === 'acp'
+    || preferredProvider === 'opencode'
+    || preferredProvider === 'cursor'
+      ? preferredProvider
+      : 'claude'
   const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
   let miniAppReminderSuffix = ''
   const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
@@ -1221,6 +1226,9 @@ export async function sendMessageImpl(
       userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
       provider: effectiveProvider,
       ...(liveSession.apiProviderId ? { apiProviderId: liveSession.apiProviderId } : {}),
+      ...(effectiveProvider === 'cursor'
+        ? { cursor: { params: liveSession.cursorModelParams ?? {} } }
+        : {}),
       ...(isQueuedSend ? { priority: 'next' as const } : {}),
     })
   } catch (err) {

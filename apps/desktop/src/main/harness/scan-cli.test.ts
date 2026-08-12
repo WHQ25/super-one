@@ -47,6 +47,7 @@ describe('integrationLabels', () => {
     expect(labels.claude.label).toBe('Claude Agent SDK')
     expect(labels.codex.label).toBe('Codex App Server')
     expect(labels.opencode.label).toBe('OpenCode SDK')
+    expect(labels.cursor.label).toBe('Cursor Agent SDK')
     expect(labels['acp-grok'].label).toBe('Agent Client Protocol')
   })
 })

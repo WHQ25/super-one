@@ -30,7 +30,7 @@ import {
   type NodeClaudeRunnerOptions,
 } from './claude-turn-runner'
 import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
-import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter } from './harness-runners'
+import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter, createCursorTurnRunner } from './harness-runners'
 import type { HarnessCatalogReader } from '@superone/runtime/harness'
 import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
@@ -401,6 +401,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
  * Production multi-dispatch: real Codex (Stage 4) + real Claude Agent SDK (Stage 5-E).
  * ACP / OpenCode: real process when SUPERONE_ACP_BINARY / SUPERONE_OPENCODE_BINARY
  * (or opts paths) exist; otherwise simulated (unless allowSimulatedFallback is false).
+ * Cursor: `@superone/cursor` turn runner (SDK / simulated per allowSimulatedFallback).
  */
 export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): TurnRunner {
   const codex = createNodeCodexTurnRunner(opts)
@@ -425,6 +426,10 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     getAcpMcpServers: opts.getAcpHostActionMcpServers,
     getOpenCodeSuperoneMcp: opts.getOpenCodeHostActionMcp,
   })
+  const cursor = createCursorTurnRunner({
+    allowSimulatedFallback: opts.allowSimulatedFallback,
+    resolveProjectPath: opts.resolveProjectPath,
+  })
   const simulated = createMultiHarnessRouter('codex')
 
   const runner: TurnRunner = async (input) => {
@@ -432,6 +437,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     if (harnessId === 'codex') return codex(input)
     if (harnessId === 'claude') return claude(input)
     if (harnessId === 'acp' || harnessId === 'opencode') return acpOpenCode(input)
+    if (harnessId === 'cursor') return cursor(input)
     if (opts.allowSimulatedFallback) return simulated(input)
     throw new Error(
       `real node runner for harness ${harnessId} is not implemented yet (Stage 5-E supports codex + claude)`,

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, ChevronDown, ChevronRight, RefreshCw, Search, Settings2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, RefreshCw, Search, Settings2, X, Zap } from 'lucide-react'
 import { Command, CommandInput } from '@superone/ui/components/ui/command'
 import {
   DropdownMenu,
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
 import { ProviderOptionLabel } from '@/components/providers/DefaultProviderRow'
 
@@ -45,6 +46,15 @@ export interface SelectorAgentOption {
   description?: string
 }
 
+/** Non-effort catalog param shown under Options (toggle or multi-choice). */
+export interface SelectorCatalogParam {
+  id: string
+  label: string
+  kind: 'toggle' | 'choice'
+  values: Array<{ value: string; label: string }>
+  selected: string
+}
+
 interface GroupedModelEffortSelectorProps {
   models?: SelectorModelOption[]
   modelGroups?: SelectorModelGroup[]
@@ -69,6 +79,9 @@ interface GroupedModelEffortSelectorProps {
   onManageProviders?: () => void
   onRefreshModels?: () => void
   modelsLoading?: boolean
+  /** Extra catalog params under Options (Cursor thinking / context / fast / …). */
+  optionParams?: SelectorCatalogParam[]
+  onOptionParamChange?: (id: string, value: string) => void
   triggerLabel?: ReactNode
   onCloseAutoFocus?: (event: Event) => void
   className?: string
@@ -267,6 +280,71 @@ function EffortSlider({
   )
 }
 
+/**
+ * Boolean catalog params rendered as a single "Options" group of switch rows.
+ */
+function ToggleParamGroup({
+  params,
+  onChange,
+}: {
+  params: SelectorCatalogParam[]
+  onChange: (id: string, value: string) => void
+}) {
+  if (params.length === 0) return null
+  return (
+    <div className="pb-1 pt-1.5">
+      <div className="px-2 pb-1 text-xs text-muted-foreground">Options</div>
+      {params.map((param) => (
+        <div
+          key={param.id}
+          className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5"
+        >
+          <span className="min-w-0 truncate text-sm font-medium">{param.label}</span>
+          <Switch
+            checked={param.selected === 'true'}
+            onCheckedChange={(enabled) => onChange(param.id, enabled ? 'true' : 'false')}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={param.label}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Multi-value catalog param rendered as its own group of checkable rows.
+ */
+function ChoiceParamGroup({
+  param,
+  onChange,
+}: {
+  param: SelectorCatalogParam
+  onChange: (id: string, value: string) => void
+}) {
+  return (
+    <div className="pb-1 pt-1.5">
+      <div className="px-2 pb-1 text-xs text-muted-foreground">{param.label}</div>
+      {param.values.map((value) => {
+        const selected = value.value === param.selected
+        return (
+          <DropdownMenuItem
+            key={value.value}
+            onSelect={(event) => {
+              event.preventDefault()
+              onChange(param.id, value.value)
+            }}
+            className={cn('items-center gap-2 px-2 py-1.5', ITEM_FOCUS)}
+          >
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">{value.label}</span>
+            {selected && <Check className="size-3.5 shrink-0 text-primary" />}
+          </DropdownMenuItem>
+        )
+      })}
+    </div>
+  )
+}
+
 export function hasSelectableEffort(effortOptions: SelectorEffortOption[]): boolean {
   return effortOptions.length > 1
 }
@@ -299,6 +377,8 @@ export function GroupedModelEffortSelector({
   onManageProviders,
   onRefreshModels,
   modelsLoading,
+  optionParams = [],
+  onOptionParamChange,
   triggerLabel,
   onCloseAutoFocus,
   className,
@@ -330,10 +410,19 @@ export function GroupedModelEffortSelector({
   const modelLabel = selectedModelLabel ?? selectedModel?.name ?? selectedModelId ?? 'Model'
   const effortLabel = selectedEffortLabel ?? selectedEffortOption?.label ?? 'Effort'
   const canSelectEffort = hasSelectableEffort(effortOptions)
+  const showOptionParams = optionParams.length > 0 && Boolean(onOptionParamChange)
+  const toggleParams = optionParams.filter((param) => param.kind === 'toggle')
+  const choiceParams = optionParams.filter((param) => param.kind === 'choice')
+  // Fast is surfaced as a lightning icon; other toggles stay hidden in the trigger.
+  const fastEnabled = optionParams.some((param) => param.id === 'fast' && param.selected === 'true')
+  const optionSummary = optionParams
+    .filter((param) => param.kind === 'choice' && param.id === 'optimize_for' && param.selected !== 'balanced')
+    .map((param) => param.values.find((v) => v.value === param.selected)?.label ?? param.selected)
+  const hasSideOptions = canSelectEffort || showOptionParams
   const hasAgents = agents.length > 0 && Boolean(onSelectAgent)
   const shouldCloseAfterSelect = (modelId: string): boolean =>
-    shouldCloseAfterModelSelect?.(modelId) ?? !canSelectEffort
-  const listOpen = modelsExpanded || !canSelectEffort
+    shouldCloseAfterModelSelect?.(modelId) ?? !hasSideOptions
+  const listOpen = modelsExpanded || !hasSideOptions
   const modelSearchAvailable = listOpen && allModels.length > 10
   const normalizedModelSearch = modelSearch.trim().toLowerCase()
   const filteredModels = useMemo(
@@ -357,7 +446,12 @@ export function GroupedModelEffortSelector({
           title={
             triggerLabel
               ? undefined
-              : [hasAgents ? agentLabel : null, modelLabel, canSelectEffort ? effortLabel : null]
+              : [
+                  hasAgents ? agentLabel : null,
+                  fastEnabled ? `Fast · ${modelLabel}` : modelLabel,
+                  canSelectEffort ? effortLabel : null,
+                  ...optionSummary,
+                ]
                   .filter(Boolean)
                   .join(' · ')
           }
@@ -378,6 +472,7 @@ export function GroupedModelEffortSelector({
                   <span className="shrink-0 text-muted-foreground/70">·</span>
                 </>
               )}
+              {fastEnabled && <Zap className="size-3 shrink-0 fill-current" aria-label="Fast" />}
               <span className="min-w-0 shrink truncate">{modelLabel}</span>
               {canSelectEffort && (
                 <>
@@ -385,6 +480,12 @@ export function GroupedModelEffortSelector({
                   <span className="min-w-0 shrink-[64] truncate">{effortLabel}</span>
                 </>
               )}
+              {optionSummary.slice(0, 2).map((label) => (
+                <span key={label} className="flex min-w-0 items-center gap-1">
+                  <span className="shrink-0 text-muted-foreground/70">·</span>
+                  <span className="min-w-0 shrink-[32] truncate">{label}</span>
+                </span>
+              ))}
             </span>
           )}
           <ChevronDown className="size-3 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-180" />
@@ -564,6 +665,30 @@ export function GroupedModelEffortSelector({
               />
             </motion.div>
           )}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
+          {!modelsExpanded && !agentsExpanded && showOptionParams && toggleParams.length > 0 && (
+            <motion.div key="toggle-options" {...MORPH} className="overflow-hidden">
+              <DropdownMenuSeparator />
+              <ToggleParamGroup
+                params={toggleParams}
+                onChange={(id, value) => onOptionParamChange?.(id, value)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
+          {!modelsExpanded && !agentsExpanded && showOptionParams && choiceParams.map((param) => (
+            <motion.div key={`choice-${param.id}`} {...MORPH} className="overflow-hidden">
+              <DropdownMenuSeparator />
+              <ChoiceParamGroup
+                param={param}
+                onChange={(id, value) => onOptionParamChange?.(id, value)}
+              />
+            </motion.div>
+          ))}
         </AnimatePresence>
 
         <AnimatePresence initial={false}>

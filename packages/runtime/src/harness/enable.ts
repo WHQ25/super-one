@@ -28,6 +28,7 @@ import {
   loadHarnessReleaseManifest,
   type ManagedHarnessId,
 } from './managed-release'
+import { isCursorSdkAvailable, resolveCursorApiKeyPlain } from './cursor-availability'
 import { probeHarnessReadiness } from './runtime-ready'
 import type { HarnessKernelDeps } from './types'
 
@@ -66,6 +67,8 @@ export async function enableHarness(
       command: input.command,
       serverUrl: input.serverUrl,
     })
+  } else if (id === 'cursor') {
+    status = enableCursor(manager)
   } else {
     status = enableAcpGrok(manager, {
       command: input.command,
@@ -235,6 +238,36 @@ export function enableOpencode(
     diagnosticCode: null,
     lastProbedAt: Date.now(),
     configJson: JSON.stringify({ command: resolved }),
+  })
+}
+
+/**
+ * Enable the Cursor Agent SDK harness.
+ * Runtime is the in-process SDK (not a PATH binary / CDN pin). Auth via
+ * `CURSOR_API_KEY` → ready; SDK present without key → needs_auth; else missing.
+ */
+export function enableCursor(manager: HarnessManager): HarnessInstallationStatus {
+  const sdkOk = isCursorSdkAvailable()
+  if (!sdkOk) {
+    return manager.update('cursor', {
+      enabled: true,
+      state: 'missing',
+      command: null,
+      diagnosticCode: 'not_found',
+      lastProbedAt: Date.now(),
+      configJson: JSON.stringify({ source: 'cursor-sdk' }),
+    })
+  }
+  const hasKey = Boolean(resolveCursorApiKeyPlain())
+  const state = hasKey ? 'ready' : 'needs_auth'
+  return manager.update('cursor', {
+    enabled: true,
+    state,
+    // Non-absolute sentinel is not advertised publicly (sanitize drops it).
+    command: null,
+    diagnosticCode: hasKey ? null : 'needs_auth',
+    lastProbedAt: Date.now(),
+    configJson: JSON.stringify({ command: 'cursor-sdk', source: 'cursor-sdk' }),
   })
 }
 

@@ -15,7 +15,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Blocks, Bot, GripVertical, Loader2, Palette, Puzzle, RefreshCw, Server, Webhook } from 'lucide-react'
-import { Codex, Grok, OpenCode } from '@lobehub/icons'
+import { Codex, Cursor, Grok, OpenCode } from '@lobehub/icons'
 import { toast } from 'sonner'
 import {
   DndContext,
@@ -50,6 +50,7 @@ import { McpPage } from './McpPage'
 import { HooksPage } from './HooksPage'
 import { PluginsPage } from './PluginsPage'
 import { PreferencesPage } from './PreferencesPage'
+import { CursorAuthSettings } from './CursorAuthSettings'
 
 interface CatalogRow {
   id: string
@@ -66,9 +67,9 @@ type ListItem =
   | {
       key: string
       kind: 'catalog'
-      catalogId: 'claude' | 'codex' | 'opencode' | 'acp-grok'
+      catalogId: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
       label: string
-      provider: 'claude' | 'codex' | 'opencode' | 'acp'
+      provider: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp'
       acpAgentId: string | null
       experimental: boolean
       description: string
@@ -194,6 +195,9 @@ function HarnessBrandTitle({
   }
   if (provider === 'opencode') {
     return wrap(<OpenCode.Text size={size} />)
+  }
+  if (provider === 'cursor') {
+    return wrap(<Cursor.Text size={size} />)
   }
   if (provider === 'acp' && isGrokAcpAgent(acpAgentId)) {
     return wrap(<Grok.Text size={size} />)
@@ -341,6 +345,16 @@ export function HarnessesSettingsPage() {
         acpAgentId: null,
         experimental: true,
         description: t('settings.harnesses.desc.opencode'),
+      },
+      {
+        key: 'cursor',
+        kind: 'catalog',
+        catalogId: 'cursor',
+        label: t('settings.harnesses.ids.cursor'),
+        provider: 'cursor',
+        acpAgentId: null,
+        experimental: false,
+        description: t('settings.harnesses.desc.cursor'),
       },
     ]
 
@@ -595,6 +609,7 @@ export function HarnessesSettingsPage() {
                 if (selected.configProvider) setSettingsProvider(selected.configProvider)
                 setHarnessConfigSection(section)
               }}
+              onRefresh={() => void refreshCatalog()}
             />
           </div>
         ) : (
@@ -718,6 +733,7 @@ function HarnessDetail({
   configSection,
   onEnabledChange,
   onConfigSectionChange,
+  onRefresh,
 }: {
   item: ListItem
   catalog?: CatalogRow
@@ -727,6 +743,7 @@ function HarnessDetail({
   configSection: HarnessConfigSection | null
   onEnabledChange: (enabled: boolean) => void
   onConfigSectionChange: (section: HarnessConfigSection) => void
+  onRefresh?: () => void
 }) {
   const { t } = useTranslation()
   const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
@@ -798,6 +815,10 @@ function HarnessDetail({
             <p className="text-xs text-muted-foreground">{t('settings.harnesses.needsAuth')}</p>
           ) : null}
         </div>
+      ) : null}
+
+      {item.provider === 'cursor' ? (
+        <CursorAuthSettings onAuthChanged={onRefresh} />
       ) : null}
 
       {errorMessage ? (

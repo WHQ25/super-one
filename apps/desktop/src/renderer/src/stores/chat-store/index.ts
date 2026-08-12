@@ -407,6 +407,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   isOpen: false,
   corner: 'br',
+  cursorApiKeyPromptOpen: false,
   harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
   initializedHarnesses: new Set<HarnessId>(),
   claudeResourcesLoading: false,
@@ -417,8 +418,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     set((s) => handler.apply(s, resources))
   },
 
-  initializeHarness: async (harness) => {
-    if (get().initializedHarnesses.has(harness)) return
+  initializeHarness: async (harness, opts) => {
+    if (!opts?.force && get().initializedHarnesses.has(harness)) return
     set((s) => ({ initializedHarnesses: new Set([...s.initializedHarnesses, harness]) }))
     try {
       const handler = harnessHandlers[harness] as HarnessHandler<typeof harness>

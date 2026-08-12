@@ -16,10 +16,11 @@ import {
 } from './harness-installation'
 
 describe('NodeHarnessId', () => {
-  it('accepts first-party catalog ids including acp-grok', () => {
+  it('accepts first-party catalog ids including cursor and acp-grok', () => {
     expect(isNodeHarnessId('claude')).toBe(true)
     expect(isNodeHarnessId('codex')).toBe(true)
     expect(isNodeHarnessId('opencode')).toBe(true)
+    expect(isNodeHarnessId('cursor')).toBe(true)
     expect(isNodeHarnessId('acp-grok')).toBe(true)
     expect(isNodeHarnessId('acp')).toBe(false)
     expect(isNodeHarnessId('unknown')).toBe(false)
@@ -28,14 +29,17 @@ describe('NodeHarnessId', () => {
   it('maps legacy session acp to acp-grok and back to wire acp', () => {
     expect(sessionHarnessIdToNodeHarnessId('acp')).toBe('acp-grok')
     expect(sessionHarnessIdToNodeHarnessId('acp-grok')).toBe('acp-grok')
+    expect(sessionHarnessIdToNodeHarnessId('cursor')).toBe('cursor')
     expect(nodeHarnessIdToSessionHarnessId('acp-grok')).toBe('acp')
     expect(nodeHarnessIdToSessionHarnessId('codex')).toBe('codex')
+    expect(nodeHarnessIdToSessionHarnessId('cursor')).toBe('cursor')
   })
 
   it('normalizes session wire ids so Grok always persists as acp in Stage 1', () => {
     expect(normalizeSessionHarnessId('acp-grok')).toBe('acp')
     expect(normalizeSessionHarnessId('acp')).toBe('acp')
     expect(normalizeSessionHarnessId('codex')).toBe('codex')
+    expect(normalizeSessionHarnessId('cursor')).toBe('cursor')
     expect(normalizeSessionHarnessId('unknown')).toBeNull()
   })
 })

@@ -36,6 +36,7 @@
     "@superone/acp": "workspace:*",
     "@superone/claude": "workspace:*",
     "@superone/codex": "workspace:*",
+    "@superone/cursor": "workspace:*",
     "@superone/opencode": "workspace:*",
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*",

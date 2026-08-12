@@ -139,6 +139,11 @@ export interface PerSessionState {
   codexTurnLastUsage: CodexUsageInfo | null
   selectedModel: string
   selectedEffort?: EffortLevel
+  /**
+   * Cursor SDK model.params selections (param id → catalog value).
+   * Source of truth for fast / thinking / context / effort / optimize_for / …
+   */
+  cursorModelParams: Record<string, string>
   modelUserChosen: boolean
   effortUserChosen: boolean
   selectedCodexModel: string
@@ -327,6 +332,8 @@ export interface ChatStore {
 
   isOpen: boolean
   corner: Corner
+  /** In-chat dialog asking for a Cursor User API Key when send fails without one. */
+  cursorApiKeyPromptOpen: boolean
 
   harnessResources: {
     claude: ClaudeResources | null
@@ -341,7 +348,7 @@ export interface ChatStore {
   disabledSkills: string[]
 
   setHarnessResources<H extends HarnessId>(harness: H, resources: HarnessResourcesMap[H]): void
-  initializeHarness(harness: HarnessId): Promise<void>
+  initializeHarness(harness: HarnessId, opts?: { force?: boolean }): Promise<void>
   setDisabledSkills: (list: string[]) => void
 
   handleAgentEvent: (event: AgentEvent) => void
@@ -380,6 +387,8 @@ export interface ChatStore {
 
   setSelectedModel: (model: string) => void
   setSelectedEffort: (effort?: EffortLevel) => void
+  setCursorModelParams: (params: Record<string, string>) => void
+  setCursorModelParam: (id: string, value: string) => void
   setFastMode: (enabled: boolean) => void
   refreshClaudeResources: (force?: boolean) => Promise<void>
   loadClaudeModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
@@ -401,6 +410,8 @@ export interface ChatStore {
   openProviderPopup: () => void
   openMcpPopup: () => void
   openWorkflowsPopup: () => void
+  openCursorApiKeyPrompt: () => void
+  closeCursorApiKeyPrompt: () => void
 
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void

@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels } from '@/stores/chat'
 import { resolveRingContextWindow } from '@superone/shared/agent-types'
+import { parseCursorContextWindow } from '@superone/cursor/cursor-model-selection'
 import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { stripOneM } from '@/lib/model-id'
@@ -30,6 +31,7 @@ export function ContextUsage() {
   const contextTokens = useActiveSession((s) => s.contextTokens)
   const contextWindowFromSession = useActiveSession((s) => s.contextWindow)
   const selectedModel = useActiveSession((s) => s.selectedModel)
+  const cursorContextParam = useActiveSession((s) => s.cursorModelParams?.context)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const totalCostUsd = useActiveSession((s) => s.totalCostUsd)
@@ -94,6 +96,10 @@ export function ContextUsage() {
     sessionContextWindow: contextWindowFromSession,
     detailedMaxTokens: detailedUsage?.maxTokens,
     claudeFallback: activeProvider === 'claude',
+    // Cursor lets the user pick the window per turn (300k / 1m).
+    selectedContextWindow: activeProvider === 'cursor'
+      ? parseCursorContextWindow(cursorContextParam)
+      : null,
   })
   const pct = contextWindow ? Math.min(effectiveTokens / contextWindow, 1) : 0
   const exceeded = contextWindow ? effectiveTokens > contextWindow : false

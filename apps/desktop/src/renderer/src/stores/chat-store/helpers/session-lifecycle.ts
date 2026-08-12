@@ -1,10 +1,16 @@
 import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
+import {
+  defaultCursorModelParams,
+  findCursorEffortParam,
+  normalizeEffortValue,
+} from '@superone/cursor/cursor-model-selection'
 import { useAppStore } from '../../app'
 import { applyDefaultModel, resolveDefaultClaudeEffort, resolveDefaultClaudeModel } from './agent-defaults'
 import { buildSlashCommands } from './chat-helpers'
 import { applyCarriedDraft, captureOpenDraft, promoteDraftIfUnsent } from './draft-promote'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
 import { resolveDefaultOpenCodeSelection } from '../harness/opencode-handler'
+import { resolveDefaultCursorSelection } from '../harness/cursor-handler'
 import { resolveDefaultCodexSelection, resolveSessionCodexSelection } from './codex-helpers'
 import {
   ChatStoreSet,
@@ -741,6 +747,20 @@ export function setPreferredProviderImpl(
         ...acpModeReset,
       }
     }
+    if (provider === 'cursor') {
+      const selection = resolveDefaultCursorSelection(get().harnessResources.cursor?.models ?? [])
+      return {
+        selectedModel: selection.modelId,
+        selectedEffort: selection.effort,
+        modelUserChosen: false,
+        effortUserChosen: false,
+        acpModels: [] as import('@superone/shared/agent-types').ModelOption[],
+        acpModelConfigId: null as string | null,
+        acpModelsStatus: 'idle' as const,
+        acpModelsError: null as string | null,
+        ...acpModeReset,
+      }
+    }
     return {
       acpModels: [] as import('@superone/shared/agent-types').ModelOption[],
       acpModelConfigId: null as string | null,
@@ -851,6 +871,57 @@ export function setPreferredProviderImpl(
         : levels.includes('medium') ? 'medium' : levels[0]
       if (model && (model.id !== session.selectedModel || effort !== session.selectedEffort)) {
         set((state) => updateActivePerSession(state, () => ({ selectedModel: model.id, selectedEffort: effort })))
+      }
+      await disposePriorMain
+      triggerPrewarm(get())
+      reassertForeground()
+    })
+  }
+  if (provider === 'cursor') {
+    void get().initializeHarness('cursor', { force: true }).then(async () => {
+      const session = getActivePerSession(get())
+      if ((session.sessionProvider ?? session.preferredProvider) !== 'cursor') return
+      const models = get().harnessResources.cursor?.models ?? []
+      const selected = models.find((model) => model.id === session.selectedModel)
+      const fallback = resolveDefaultCursorSelection(models)
+      const model = selected ?? models.find((item) => item.id === fallback.modelId)
+      if (!model) {
+        await disposePriorMain
+        triggerPrewarm(get())
+        reassertForeground()
+        return
+      }
+      const params = Object.keys(session.cursorModelParams).length > 0
+        ? session.cursorModelParams
+        : defaultCursorModelParams(model)
+      const effortParam = findCursorEffortParam(model.parameters ?? [])
+      const fromParams = effortParam
+        ? normalizeEffortValue(params[effortParam.id] ?? '')
+        : null
+      const levels = model.supportedEffortLevels ?? []
+      const effort = (fromParams && levels.includes(fromParams))
+        ? fromParams
+        : (session.selectedEffort && levels.includes(session.selectedEffort)
+          ? session.selectedEffort
+          : levels.includes('medium') ? 'medium' : levels[0])
+      const nextParams = effortParam && effort
+        ? {
+            ...params,
+            [effortParam.id]: effortParam.values.find((v) =>
+              v.value === effort || normalizeEffortValue(v.value) === effort,
+            )?.value ?? params[effortParam.id],
+          }
+        : params
+      if (
+        model.id !== session.selectedModel
+        || effort !== session.selectedEffort
+        || Object.keys(session.cursorModelParams).length === 0
+      ) {
+        set((state) => updateActivePerSession(state, () => ({
+          selectedModel: model.id,
+          selectedEffort: effort,
+          cursorModelParams: nextParams,
+        })))
       }
       await disposePriorMain
       triggerPrewarm(get())

@@ -15,7 +15,7 @@ import { cliHarnessDeps } from './harness-host'
 import type { ProviderStore } from '../provider/provider-store'
 
 export type { EnableHarnessInput }
-export { disableHarness, enableOpencode, enableAcpGrok } from '@superone/runtime/harness'
+export { disableHarness, enableOpencode, enableAcpGrok, enableCursor } from '@superone/runtime/harness'
 
 export function enableHarness(
   manager: HarnessManager,

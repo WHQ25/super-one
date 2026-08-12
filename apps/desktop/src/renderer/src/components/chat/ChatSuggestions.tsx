@@ -26,7 +26,7 @@ import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
 import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
-import { Grok, OpenCode } from '@lobehub/icons'
+import { Grok, OpenCode, Cursor } from '@lobehub/icons'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import { withDraftCarry } from '@/lib/draft-surface-select'
@@ -82,6 +82,7 @@ function ProviderIcon({
     return <AcpSessionIcon status="default" size={size} />
   }
   if (provider === 'opencode') return <OpenCode size={size} />
+  if (provider === 'cursor') return <Cursor size={size} />
   return <ClaudeSessionIcon status="default" size={size} />
 }
 
@@ -128,6 +129,11 @@ export function ProviderSelector({
   useEffect(() => {
     void initializeHarness('acp')
   }, [initializeHarness])
+
+  useEffect(() => {
+    if (!isCatalogHarnessEnabled(harnessCatalog, 'cursor')) return
+    void initializeHarness('cursor')
+  }, [harnessCatalog, initializeHarness])
 
   useEffect(() => {
     let cancelled = false
@@ -312,6 +318,9 @@ export function ProviderSelector({
           isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled
         )
       }
+      if (provider === 'cursor') {
+        return isCatalogHarnessEnabled(harnessCatalog, 'cursor')
+      }
       if (provider === 'acp' && agentId) {
         if (isGrokAcpAgent(agentId)) {
           return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
@@ -379,6 +388,7 @@ export function ProviderSelector({
       includeCodex: isCatalogHarnessEnabled(harnessCatalog, 'codex'),
       includeOpenCode:
         isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled,
+      includeCursor: isCatalogHarnessEnabled(harnessCatalog, 'cursor'),
       harnessOrder,
       defaultHarness: suggestionHarness === undefined ? null : suggestionHarness,
       secondaryHarness,
@@ -492,7 +502,7 @@ export function ProviderSelector({
               />
             </motion.div>
           </AnimatePresence>
-          {preferredProvider !== 'acp' && preferredProvider !== 'opencode' && <ActiveProviderHint />}
+          {preferredProvider !== 'acp' && preferredProvider !== 'opencode' && preferredProvider !== 'cursor' && <ActiveProviderHint />}
           {fixedHarness ? (
             <Tabs
               value={tabsValue}
@@ -631,7 +641,7 @@ function ActiveProviderHint() {
     void fetchProviderData()
   }, [fetchProviderData, providerScope])
 
-  if (preferredProvider === 'acp' || preferredProvider === 'opencode') return null
+  if (preferredProvider === 'acp' || preferredProvider === 'opencode' || preferredProvider === 'cursor') return null
 
   const effective = resolveEffective(
     platforms,

@@ -3,16 +3,17 @@
  *
  * Detection is advisory only for Claude/Codex (product: always SuperOne managed
  * download on enable). For OpenCode / Grok it still only reports presence —
- * enable resolves command via the harness kernel.
+ * enable resolves command via the harness kernel. Cursor detects `@cursor/sdk`
+ * availability (not a PATH `cursor` binary).
  */
 
 import { execFileSync } from 'node:child_process'
-import { resolveExternalCommand } from '@superone/runtime/harness'
+import { isCursorSdkAvailable, resolveExternalCommand } from '@superone/runtime/harness'
 import type { NodeHarnessId } from '@superone/shared/environment'
 
 export type HarnessCliScanHit = {
   harnessId: NodeHarnessId
-  /** Absolute path when found; null when not on PATH. */
+  /** Absolute path when found; null when not on PATH (or SDK-only). */
   command: string | null
   detected: boolean
   /** Best-effort `--version` first line; omitted when unavailable. */
@@ -23,6 +24,7 @@ const SEARCH_NAMES: Record<NodeHarnessId, string[]> = {
   claude: ['claude'],
   codex: ['codex'],
   opencode: ['opencode'],
+  cursor: [],
   'acp-grok': ['grok'],
 }
 
@@ -62,6 +64,15 @@ function tryVersion(bin: string): string | undefined {
 }
 
 export function scanHarnessCli(harnessId: NodeHarnessId): HarnessCliScanHit {
+  if (harnessId === 'cursor') {
+    const detected = isCursorSdkAvailable()
+    return {
+      harnessId,
+      command: null,
+      detected,
+      ...(detected ? { version: 'sdk' } : {}),
+    }
+  }
   const names = withWinSuffixes(SEARCH_NAMES[harnessId] ?? [harnessId])
   const command = resolveExternalCommand(undefined, names)
   if (!command) {
@@ -76,13 +87,14 @@ export function scanHarnessCli(harnessId: NodeHarnessId): HarnessCliScanHit {
 }
 
 export function scanAllHarnessClis(): HarnessCliScanHit[] {
-  const ids: NodeHarnessId[] = ['claude', 'codex', 'opencode', 'acp-grok']
+  const ids: NodeHarnessId[] = ['claude', 'codex', 'opencode', 'cursor', 'acp-grok']
   return ids.map(scanHarnessCli)
 }
 
 /**
  * Right-side integration labels for onboarding rows (no version numbers).
- * Claude/Codex: SuperOne-managed runtimes; Grok: ACP; OpenCode: OpenCode SDK.
+ * Claude/Codex: SuperOne-managed runtimes; Grok: ACP; OpenCode: OpenCode SDK;
+ * Cursor: Cursor Agent SDK.
  */
 export type IntegrationLabel = {
   label: string
@@ -93,6 +105,7 @@ export function integrationLabels(): Record<NodeHarnessId, IntegrationLabel> {
     claude: { label: 'Claude Agent SDK' },
     codex: { label: 'Codex App Server' },
     opencode: { label: 'OpenCode SDK' },
+    cursor: { label: 'Cursor Agent SDK' },
     'acp-grok': { label: 'Agent Client Protocol' },
   }
 }

@@ -2,7 +2,7 @@
  * Which harnesses / ACP agents are available in pickers and the chat bar.
  *
  * P5: visibility is driven by the installation catalog (Settings → Harnesses).
- * - SDK / product catalog ids (`claude`, `codex`, `opencode`, `acp-grok`): enabled
+ * - SDK / product catalog ids (`claude`, `codex`, `opencode`, `cursor`, `acp-grok`): enabled
  * - Non-Grok ACP agents: `enabledExperimentalAgents` (+ legacy master OR)
  * - If `listHarnesses` has not returned yet (catalog null), nothing is visible
  */
@@ -30,7 +30,7 @@ export function catalogEntryOn(
  */
 export function isCatalogHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
-  id: 'claude' | 'codex' | 'opencode' | 'acp-grok',
+  id: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok',
 ): boolean {
   if (catalog == null) return false
   return catalogEntryOn(catalog, id)
@@ -78,4 +78,11 @@ export function isCodexHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
 ): boolean {
   return isCatalogHarnessEnabled(catalog, 'codex')
+}
+
+/** Whether the Cursor catalog harness may appear in pickers / chat bar. */
+export function isCursorHarnessEnabled(
+  catalog: HarnessCatalogStatus[] | null | undefined,
+): boolean {
+  return isCatalogHarnessEnabled(catalog, 'cursor')
 }

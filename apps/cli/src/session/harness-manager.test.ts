@@ -22,7 +22,7 @@ describe('HarnessManager', () => {
   it('defaults every first-party harness to disabled', () => {
     const { manager, db } = bootManager()
     const list = manager.list()
-    expect(list).toHaveLength(4)
+    expect(list).toHaveLength(5)
     expect(list.every((s) => !s.enabled && s.state === 'disabled')).toBe(true)
     expect(manager.readySessionHarnessIds()).toEqual([])
     expect(manager.isSessionHarnessRunnable('codex')).toBe(false)
@@ -147,7 +147,7 @@ describe('HarnessManager', () => {
       const db = openNodeDatabase(path)
       const manager = new HarnessManager(db)
       manager.enableSimulatedOverlay()
-      expect(manager.readySessionHarnessIds()).toEqual(['claude', 'codex', 'opencode', 'acp'])
+      expect(manager.readySessionHarnessIds()).toEqual(['claude', 'codex', 'opencode', 'cursor', 'acp'])
       db.close()
     }
     {

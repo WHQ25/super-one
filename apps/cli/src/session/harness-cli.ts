@@ -38,6 +38,7 @@ import {
 } from './managed-harness-release'
 import {
   enableAcpGrok,
+  enableCursor,
   enableManaged,
   enableOpencode,
 } from './harness-enable'
@@ -79,6 +80,7 @@ Commands:
   show <HARNESS_ID> [--json]
   enable claude|codex [--artifact <FILE>] [--json]
   enable opencode [--command <ABS_PATH> | --server-url <URL>] [--json]
+  enable cursor [--json]
   enable acp-grok [--command <ABS_PATH>] [--arg <VALUE>|--arg=<VALUE>]... [--json]
   configure opencode [--command <ABS_PATH> | --server-url <URL>] [--json]
   configure acp-grok [--command <ABS_PATH>] [--arg <VALUE>|--arg=<VALUE>]... [--default-args] [--json]
@@ -107,6 +109,7 @@ function subUsage(sub: string): string {
       return `Usage:
   superone harness enable claude|codex [--artifact <FILE>] [--json]
   superone harness enable opencode [--command <ABS_PATH> | --server-url <URL>] [--json]
+  superone harness enable cursor [--json]
   superone harness enable acp-grok [--command <ABS_PATH>] [--arg <VALUE>]... [--json]`
     case 'configure':
       return `Usage:
@@ -254,6 +257,11 @@ async function cmdEnable(
       return okStatus(status, parsed.json, `enabled opencode (state=${status.state})`)
     }
 
+    if (id === 'cursor') {
+      const status = enableCursor(manager)
+      return okStatus(status, parsed.json, `enabled cursor (state=${status.state})`)
+    }
+
     // acp-grok
     const command = parsed.values['--command']
     const harnessArgs = parsed.multiValues['--arg'] ?? []
@@ -294,6 +302,13 @@ function enableSchemaFor(
       positionals: 1,
       flags: new Set(['--json']),
       valueFlags: new Set(['--command', '--server-url']),
+    }
+  }
+  if (id === 'cursor') {
+    return {
+      positionals: 1,
+      flags: new Set(['--json']),
+      valueFlags: new Set(),
     }
   }
   // acp-grok
@@ -562,7 +577,8 @@ function doctorOne(manager: HarnessManager, id: NodeHarnessId) {
     issues.push('needs_auth')
     if (status.command) {
       issues.push(...probeReadableFileIssues(status.command))
-    } else {
+    } else if (id !== 'cursor') {
+      // Cursor is in-process SDK — no managed artifact path.
       issues.push('artifact_missing')
     }
   }

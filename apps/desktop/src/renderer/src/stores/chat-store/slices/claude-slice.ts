@@ -1,5 +1,10 @@
 import type { StateCreator } from 'zustand'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
+import {
+  defaultCursorModelParams,
+  findCursorEffortParam,
+  normalizeEffortValue,
+} from '@superone/cursor/cursor-model-selection'
 import type { ChatStore } from '../types'
 import { getDefaultEffortForModel } from '../defaults'
 import {
@@ -21,6 +26,8 @@ import { codexModelCacheKey } from '../helpers/codex-model-cache'
 export interface ClaudeSlice {
   setSelectedModel: (model: string) => void
   setSelectedEffort: (effort?: EffortLevel) => void
+  setCursorModelParams: (params: Record<string, string>) => void
+  setCursorModelParam: (id: string, value: string) => void
   setFastMode: (enabled: boolean) => void
   setSelectedAcpMode: (modeId: string) => void
   refreshClaudeResources: (force?: boolean) => Promise<void>
@@ -245,13 +252,29 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const session = getActivePerSession(get(), activeProject)
     const provider = session.sessionProvider ?? session.preferredProvider
 
-    if (provider === 'acp' || provider === 'opencode') {
-      set((s) => updateActivePerSession(s, () => ({
+    if (provider === 'acp' || provider === 'opencode' || provider === 'cursor') {
+      const patch: Partial<import('../types').PerSessionState> = {
         selectedModel: model,
         modelUserChosen: true,
         contextWindow: null,
-      })))
-      void window.agent.setSessionSettings(activeProject, { model })
+      }
+      if (provider === 'cursor') {
+        const cursorModels = state.harnessResources.cursor?.models ?? []
+        const cursorModel = cursorModels.find((m) => m.id === model)
+        const params = defaultCursorModelParams(cursorModel)
+        const effortParam = findCursorEffortParam(cursorModel?.parameters ?? [])
+        const nextEffort = effortParam
+          ? (normalizeEffortValue(params[effortParam.id] ?? '') ?? undefined)
+          : undefined
+        patch.cursorModelParams = params
+        patch.selectedEffort = nextEffort
+        patch.effortUserChosen = false
+      }
+      set((s) => updateActivePerSession(s, () => patch))
+      void window.agent.setSessionSettings(activeProject, {
+        model,
+        ...(provider === 'cursor' && patch.selectedEffort ? { effort: patch.selectedEffort } : {}),
+      })
       return
     }
 
@@ -281,13 +304,60 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
   },
 
   setSelectedEffort: (effort) => {
-    const { activeProject } = get()
+    const state = get()
+    const { activeProject } = state
     if (!activeProject) return
-    set((s) => updateActivePerSession(s, () => ({ selectedEffort: effort, effortUserChosen: true })))
+    const session = getActivePerSession(state, activeProject)
+    const provider = session.sessionProvider ?? session.preferredProvider
+    const patch: Partial<import('../types').PerSessionState> = {
+      selectedEffort: effort,
+      effortUserChosen: true,
+    }
+    if (provider === 'cursor' && effort) {
+      const cursorModel = state.harnessResources.cursor?.models.find((m) => m.id === session.selectedModel)
+      const effortParam = findCursorEffortParam(cursorModel?.parameters ?? [])
+      if (effortParam) {
+        const raw = effortParam.values.find((v) =>
+          v.value === effort || normalizeEffortValue(v.value) === effort,
+        )?.value
+        if (raw) {
+          patch.cursorModelParams = { ...session.cursorModelParams, [effortParam.id]: raw }
+        }
+      }
+    }
+    set((s) => updateActivePerSession(s, () => patch))
     if (parseRemoteProjectKey(activeProject)) return
     void window.agent.setSessionSettings(activeProject, { effort: effort ?? null })
     if (getActivePerSession(get(), activeProject).draftText.length > 0) {
       triggerPrewarm(get(), activeProject)
+    }
+  },
+
+  setCursorModelParams: (params) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateActivePerSession(s, () => ({ cursorModelParams: params })))
+  },
+
+  setCursorModelParam: (id, value) => {
+    const state = get()
+    const { activeProject } = state
+    if (!activeProject) return
+    const session = getActivePerSession(state, activeProject)
+    const nextParams = { ...session.cursorModelParams, [id]: value }
+    const patch: Partial<import('../types').PerSessionState> = { cursorModelParams: nextParams }
+    const cursorModel = state.harnessResources.cursor?.models.find((m) => m.id === session.selectedModel)
+    const effortParam = findCursorEffortParam(cursorModel?.parameters ?? [])
+    if (effortParam && effortParam.id === id) {
+      const nextEffort = normalizeEffortValue(value)
+      if (nextEffort) {
+        patch.selectedEffort = nextEffort
+        patch.effortUserChosen = true
+      }
+    }
+    set((s) => updateActivePerSession(s, () => patch))
+    if (patch.selectedEffort && !parseRemoteProjectKey(activeProject)) {
+      void window.agent.setSessionSettings(activeProject, { effort: patch.selectedEffort })
     }
   },
 

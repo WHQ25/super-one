@@ -34,6 +34,7 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
     return isGrokAcpAgent(option.acpAgentId) ? 2 : 3
   }
   if (option.provider === 'opencode') return 4
+  if (option.provider === 'cursor') return 5
   return 50
 }
 
@@ -42,6 +43,7 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
  * - Include claude/codex when flags say so (catalog enable; default true)
  * - Include each visible ACP agent as its own entry (caller filters experimental)
  * - Include opencode only when `includeOpenCode` (catalog enable)
+ * - Include cursor only when `includeCursor` (catalog enable)
  * - When `harnessOrder` is non-empty: full manual order (index 0 = default, 1 = secondary, …);
  *   unknown keys among enabled options append after, sorted by usage then product default
  * - Else: manual default → secondary pins first, then parent-session count desc,
@@ -56,6 +58,8 @@ export function orderSuggestionHarnesses(input: {
   includeCodex?: boolean
   /** When true, add OpenCode as a suggestion harness. */
   includeOpenCode?: boolean
+  /** When true, add Cursor as a suggestion harness. */
+  includeCursor?: boolean
   /**
    * @deprecated Use `includeOpenCode`. Kept so older call sites compiling
    * against experimentalAgentsEnabled still typecheck during migration.
@@ -112,6 +116,16 @@ export function orderSuggestionHarnesses(input: {
       acpAgentId: null,
       label: 'OpenCode',
       sessionCount: countByKey.get('opencode') ?? 0,
+    })
+  }
+
+  if (input.includeCursor) {
+    options.push({
+      key: 'cursor',
+      provider: 'cursor',
+      acpAgentId: null,
+      label: 'Cursor',
+      sessionCount: countByKey.get('cursor') ?? 0,
     })
   }
 

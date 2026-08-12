@@ -175,8 +175,8 @@ describe('Harness catalog (Stage 1)', () => {
     expect(desc.capabilities.harnessIds).toEqual(withRunnableOverrides([]))
 
     const list = (await client.rpc('harness.list')) as HarnessInstallationStatus[]
-    expect(list).toHaveLength(4)
-    expect(list.map((h) => h.id).sort()).toEqual(['acp-grok', 'claude', 'codex', 'opencode'])
+    expect(list).toHaveLength(5)
+    expect(list.map((h) => h.id).sort()).toEqual(['acp-grok', 'claude', 'codex', 'cursor', 'opencode'])
     expect(list.every((h) => h.enabled === false && h.state === 'disabled')).toBe(true)
     expect(JSON.stringify(list)).not.toMatch(/password|token|secret_ref|secretRef/i)
 

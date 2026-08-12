@@ -12,6 +12,7 @@ import { ChatSuggestions } from './ChatSuggestions'
 import { DraftSessionSurface } from './DraftSessionSurface'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
+import { CursorApiKeyDialog } from './CursorApiKeyDialog'
 import { TodoPopup } from './TodoPopup'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { PlanFullscreenContext } from './codex-item-renderer'
@@ -94,6 +95,7 @@ const ChatComposerShell = memo(function ChatComposerShell() {
     <>
       <PermissionPrompt />
       <AskUserQuestionPrompt />
+      <CursorApiKeyDialog />
       <TodoPopup />
       <ChatInput />
       <ChatStatusBar />

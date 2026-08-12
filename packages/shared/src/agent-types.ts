@@ -1448,6 +1448,10 @@ export interface SendMessageRequest {
   /** Cursor-specific send extras. */
   cursor?: {
     force?: boolean
+    /** Full `model.params` selection map (param id → catalog value). */
+    params?: Record<string, string>
+    /** @deprecated Prefer `params.fast`. */
+    fast?: boolean
   }
 }
 
@@ -1490,6 +1494,15 @@ export interface ModelOption {
   supportsAutoMode?: boolean
   supportedReasoningEfforts?: ReasoningEffortOption[]
   defaultReasoningEffort?: CodexReasoningEffort
+  /**
+   * Harness-native parameter catalog (e.g. Cursor SDK `ModelParameterDefinition`).
+   * Used to rebuild provider-specific model selections (fast / effort / optimize_for).
+   */
+  parameters?: Array<{
+    id: string
+    displayName?: string
+    values: Array<{ value: string; displayName?: string }>
+  }>
 }
 
 export const DEFAULT_CONTEXT_WINDOW = 200_000
@@ -1540,7 +1553,14 @@ export function resolveRingContextWindow(input: {
   sessionContextWindow?: number | null
   detailedMaxTokens?: number | null
   claudeFallback?: boolean
+  /**
+   * User-selected window that outranks every catalog lookup
+   * (e.g. Cursor's `context` model parameter: 300k / 1m).
+   */
+  selectedContextWindow?: number | null
 }): number | null {
+  const selected = positiveContextWindow(input.selectedContextWindow)
+  if (selected != null) return selected
   const model = { id: input.modelId, resolvedModel: input.resolvedModel }
   if (input.harnessId === 'codex' && modelUsesCodexGpt56Window(model)) {
     return CODEX_GPT_5_6_CONTEXT_WINDOW
@@ -2544,6 +2564,7 @@ export const AgentIpcChannels = {
   CONNECT_OPENCODE: 'app:connect-opencode',
   CONNECT_CURSOR: 'app:connect-cursor',
   SET_CURSOR_API_KEY: 'app:set-cursor-api-key',
+  GET_CURSOR_AUTH_STATUS: 'app:get-cursor-auth-status',
   CURSOR_LIST_AGENTS: 'app:cursor-list-agents',
   CURSOR_LIST_RUNS: 'app:cursor-list-runs',
   CURSOR_ARCHIVE_AGENT: 'app:cursor-archive-agent',

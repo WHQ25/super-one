@@ -90,7 +90,7 @@ describe('harness CLI (Stage 2)', () => {
     expect(result.ok).toBe(true)
     expect(result.exitCode).toBe(0)
     const list = result.json as HarnessInstallationStatus[]
-    expect(list).toHaveLength(4)
+    expect(list).toHaveLength(5)
     expect(list.every((h) => !h.enabled && h.state === 'disabled')).toBe(true)
   })
 

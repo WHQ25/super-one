@@ -114,7 +114,7 @@ import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as 
 import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
 import { closeAllOpenCodeServers, probeOpenCodeResources, reapOrphanOpenCodeServers } from './opencode/opencode-client'
 import { probeCursorResources } from './cursor/cursor-client'
-import { encryptCursorApiKey, readCursorConfig } from './cursor/cursor-auth'
+import { encryptCursorApiKey, readCursorConfig, resolveCursorApiKey } from './cursor/cursor-auth'
 import {
   archiveCursorAgent,
   cancelCursorRun,
@@ -3735,16 +3735,18 @@ function registerIpcHandlers(): void {
     const codex = getCachedHarnessResources('codex')
     const acp = getCachedHarnessResources('acp')
     const opencode = getCachedHarnessResources('opencode')
+    const cursor = getCachedHarnessResources('cursor')
     const sandboxCapability = getSandboxCapability()
     log.info(
-      '[GET_STARTUP_DATA] cached: claude=%s codex=%s acp=%s opencode=%s sandbox=%s',
+      '[GET_STARTUP_DATA] cached: claude=%s codex=%s acp=%s opencode=%s cursor=%s sandbox=%s',
       claude ? `${claude.models?.length ?? 0} models` : 'null',
       codex ? `${codex.models?.length ?? 0} models` : 'null',
       acp ? `${acp.agents?.length ?? 0} agents` : 'null',
       opencode ? `${opencode.models?.length ?? 0} models` : 'null',
+      cursor ? `${cursor.models?.length ?? 0} models` : 'null',
       sandboxCapability.supportLevel,
     )
-    return { cached: { claude, codex, acp, opencode }, sandboxCapability, appVersion: app.getVersion() }
+    return { cached: { claude, codex, acp, opencode, cursor }, sandboxCapability, appVersion: app.getVersion() }
   })
 
   ipcMain.handle(AgentIpcChannels.SANDBOX_PROBE, async () => {
@@ -3884,7 +3886,11 @@ function registerIpcHandlers(): void {
       } catch {
         // base provider may not exist until migrations run
       }
-      const resources = await probeCursorResources({ config })
+      // Must decrypt vault secrets — plaintext resolve skips enc:v1: blobs and looks "unauthed".
+      const resources = await probeCursorResources({
+        config,
+        resolveApiKey: resolveCursorApiKey,
+      })
       setCachedHarnessResources('cursor', resources)
       log.info('[CONNECT_CURSOR] %d models', resources.models.length)
       return resources
@@ -3892,6 +3898,21 @@ function registerIpcHandlers(): void {
       log.warn('[CONNECT_CURSOR] failed: %s', error instanceof Error ? error.message : String(error))
       if (cached) return { ...cached, probing: false }
       throw error
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GET_CURSOR_AUTH_STATUS, async () => {
+    try {
+      const config = getBaseProvider('cursor').config
+      const configured = Boolean(resolveCursorApiKey(config))
+      const cached = getCachedHarnessResources('cursor')
+      return {
+        configured,
+        apiKeyName: cached?.user?.apiKeyName ?? null,
+        userEmail: cached?.user?.userEmail ?? null,
+      }
+    } catch {
+      return { configured: false, apiKeyName: null, userEmail: null }
     }
   })
 
@@ -3909,6 +3930,15 @@ function registerIpcHandlers(): void {
       ...existing,
       apiKey: encryptCursorApiKey(plain),
     })
+    // Live sessions keep a snapshot of providerConfig from create time; refresh so the
+    // next send picks up the newly saved key instead of the empty pre-auth config.
+    sessionManager.markAllNeedsRebuild('cursor')
+    try {
+      const { probeDesktopHarness } = await import('./harness/service')
+      probeDesktopHarness('cursor')
+    } catch (error) {
+      log.warn('[SET_CURSOR_API_KEY] probe failed: %s', error instanceof Error ? error.message : String(error))
+    }
     return { ok: true as const, providerId: provider.id }
   })
 
@@ -3925,6 +3955,7 @@ function registerIpcHandlers(): void {
       next.apiKey = encryptCursorApiKey(String(patch.apiKey))
     }
     const provider = updateBaseProviderConfig('cursor', next)
+    sessionManager.markAllNeedsRebuild('cursor')
     return { ok: true as const, config: readCursorConfig(provider.config) }
   })
 

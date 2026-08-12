@@ -117,7 +117,7 @@ describe('resolveHarnessRuntime', () => {
   it('manager ensures harness_installations rows exist', () => {
     const m = getHarnessManager()
     const list = m.list()
-    expect(list.map((h) => h.id).sort()).toEqual(['acp-grok', 'claude', 'codex', 'opencode'])
+    expect(list.map((h) => h.id).sort()).toEqual(['acp-grok', 'claude', 'codex', 'cursor', 'opencode'])
     expect(list.every((h) => h.enabled === false && h.state === 'disabled')).toBe(true)
   })
 })

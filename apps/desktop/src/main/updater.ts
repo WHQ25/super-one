@@ -18,6 +18,38 @@ let pendingDownloadedVersion: string | null = null
 /** True only when app + enabled harness pre-fetch succeeded — Restart allowed. */
 let updateFullyReady = false
 let harnessPrefetchInflight: Promise<void> | null = null
+/** True after the user clicks Restart — `before-quit` skips the confirm dialog. */
+let installingUpdate = false
+
+/**
+ * electron-updater MacUpdater fields that are not in the public types.
+ * `autoInstallOnAppQuit` gates Squirrel.Mac's fetch of the local zip at
+ * download time; we keep it false until harness pre-fetch succeeds, so we
+ * have to kick Squirrel ourselves or Restart waits forever.
+ */
+type MacUpdaterInternals = {
+  squirrelDownloadedUpdate?: boolean
+  nativeUpdater?: { checkForUpdates: () => void }
+}
+
+function macUpdater(): MacUpdaterInternals {
+  return autoUpdater as unknown as MacUpdaterInternals
+}
+
+function stageSquirrelMacUpdate(): void {
+  const mac = macUpdater()
+  if (mac.squirrelDownloadedUpdate) return
+  if (typeof mac.nativeUpdater?.checkForUpdates !== 'function') return
+  log.info('[updater] staging update with Squirrel.Mac')
+  try {
+    mac.nativeUpdater.checkForUpdates()
+  } catch (err) {
+    log.warn(
+      '[updater] Squirrel.Mac staging failed:',
+      err instanceof Error ? err.message : String(err),
+    )
+  }
+}
 
 /** Dev-only: version held at `available` until the user triggers download. */
 let simulatedPendingVersion: string | null = null
@@ -106,6 +138,10 @@ async function runHarnessPrefetchPhase(version: string): Promise<void> {
       `[updater] harness prefetch ok for ${version} (${result.prepared.length} harnesses)`,
     )
     setFullyReady(true)
+    // MacUpdater skipped native checkForUpdates() because autoInstallOnAppQuit
+    // was false during download. Stage the zip now so Restart / quit-to-install
+    // do not deadlock waiting for a Squirrel event that never comes.
+    stageSquirrelMacUpdate()
     send({ type: 'downloaded', version })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -136,6 +172,7 @@ export function setOnMenuChange(fn: () => void): void {
 
 export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChannel | null): void {
   win = mainWindow
+  installingUpdate = false
   const testUpdater = process.env.TEST_UPDATER === '1'
   if (is.dev && !testUpdater) return
   autoUpdater.logger = log
@@ -154,6 +191,7 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
   })
 
   autoUpdater.on('update-available', (info) => {
+    installingUpdate = false
     setFullyReady(false)
     pendingDownloadedVersion = null
     send({
@@ -191,11 +229,27 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
   })
 }
 
+export function isInstallingUpdate(): boolean {
+  return installingUpdate
+}
+
 export function installUpdate(): void {
   if (!updateFullyReady) {
     log.warn('[updater] installUpdate refused: harness package not ready')
     return
   }
+  installingUpdate = true
+  const mac = macUpdater()
+  // MacUpdater.quitAndInstall() only calls native checkForUpdates() when
+  // autoInstallOnAppQuit is false. Staging above may still be in flight.
+  if (!mac.squirrelDownloadedUpdate) {
+    try {
+      autoUpdater.autoInstallOnAppQuit = false
+    } catch {
+      /* autoUpdater may be unavailable in some test hosts */
+    }
+  }
+  log.info('[updater] quitAndInstall')
   autoUpdater.quitAndInstall()
 }
 

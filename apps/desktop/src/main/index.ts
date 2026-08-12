@@ -107,7 +107,7 @@ import {
   type FileOpResult,
   type NativeContextMenuItemSpec,
 } from '@superone/shared/agent-types'
-import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, setUpdateChannel } from './updater'
+import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, setUpdateChannel, isInstallingUpdate } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
@@ -4919,7 +4919,9 @@ app.on('before-quit', (e) => {
   if (quitting) return
   e.preventDefault()
 
-  if (!agentService.hasRunningSessions() && !hasActiveWorkers()) {
+  // Restart-to-update already confirmed the quit. Don't block Squirrel.Mac
+  // behind the "running sessions" dialog — that looks like a hung Restart.
+  if (isInstallingUpdate() || (!agentService.hasRunningSessions() && !hasActiveWorkers())) {
     performQuit()
     return
   }

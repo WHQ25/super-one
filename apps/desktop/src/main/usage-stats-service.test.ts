@@ -459,8 +459,8 @@ describe('usage-stats-service: activity counts', () => {
 })
 
 describe('usage-stats-service: backfill', () => {
-  it('reruns backfill after the Grok usage schema revision', async () => {
-    state.meta.set('usage_backfill_done', 'v3')
+  it('reruns backfill after the Grok mid-turn double-count revision', async () => {
+    state.meta.set('usage_backfill_done', 'v4')
     const { getBackfillStatus } = await import('./usage-stats-service')
     expect(getBackfillStatus()).toBe('pending')
   })

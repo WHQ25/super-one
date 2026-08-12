@@ -13,9 +13,13 @@ vi.mock('../../agent/resolve-cli', () => ({
 const { recordGrokFromUsageMock } = vi.hoisted(() => ({
   recordGrokFromUsageMock: vi.fn(),
 }))
-vi.mock('../../usage-stats-service', () => ({
-  recordGrokFromUsage: recordGrokFromUsageMock,
-}))
+vi.mock('../../usage-stats-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../usage-stats-service')>()
+  return {
+    ...actual,
+    recordGrokFromUsage: recordGrokFromUsageMock,
+  }
+})
 
 import { AcpBackend, setAcpRuntimeFactory } from './acp-backend'
 import { acpStartOpts as startOpts, mockAcpRuntime as mockRuntime } from '../../../test/fixtures/acp-backend-fixtures'
@@ -66,7 +70,7 @@ describe('AcpBackend', () => {
     await backend.send({ content: 'hello', assistantMessageId: 'a1' })
 
     expect(recordGrokFromUsageMock).toHaveBeenCalledWith(
-      expect.objectContaining({ inputTokens: 800, outputTokens: 300, cacheReadTokens: 400, model: 'grok-4.6' }),
+      expect.objectContaining({ inputTokens: 800, outputTokens: 300, cacheReadTokens: 400 }),
       'grok-4.6',
       expect.any(Date),
     )
@@ -75,6 +79,64 @@ describe('AcpBackend', () => {
       messageId: 'a1',
       model: 'grok-4.6',
     }))
+    await backend.close()
+  })
+
+  it('records only deltas across cumulative mid-turn Grok message_usage events', async () => {
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getConfigOptions: () => [],
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.5',
+        models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      }),
+      prompt: async (_text, messageId, onEvent) => {
+        // Provisional response_started-style cumulative snapshot
+        onEvent({
+          type: 'message_usage',
+          messageId,
+          inputTokens: 1000,
+          outputTokens: 0,
+          cacheReadTokens: 200,
+        })
+        // First response_completed (same totals + output)
+        onEvent({
+          type: 'message_usage',
+          messageId,
+          inputTokens: 1000,
+          outputTokens: 150,
+          cacheReadTokens: 200,
+        })
+        // Second response_completed (running cumulative)
+        onEvent({
+          type: 'message_usage',
+          messageId,
+          inputTokens: 1800,
+          outputTokens: 200,
+          cacheReadTokens: 300,
+        })
+        // Authoritative turn_completed (same absolute totals)
+        onEvent({
+          type: 'message_usage',
+          messageId,
+          inputTokens: 1800,
+          outputTokens: 200,
+          cacheReadTokens: 300,
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: 'hello', assistantMessageId: 'a1' })
+
+    expect(recordGrokFromUsageMock.mock.calls.map((c) => c[0])).toEqual([
+      { inputTokens: 1000, outputTokens: 0, cacheReadTokens: 200 },
+      { inputTokens: 0, outputTokens: 150, cacheReadTokens: 0 },
+      { inputTokens: 800, outputTokens: 50, cacheReadTokens: 100 },
+      { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    ])
     await backend.close()
   })
 

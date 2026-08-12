@@ -9,9 +9,13 @@ vi.mock('../../agent/resolve-cli', () => ({
   getNodeRuntime: () => ({ executable: '/fake/node', env: {} }),
 }))
 
-vi.mock('../../usage-stats-service', () => ({
-  recordGrokFromUsage: vi.fn(),
-}))
+vi.mock('../../usage-stats-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../usage-stats-service')>()
+  return {
+    ...actual,
+    recordGrokFromUsage: vi.fn(),
+  }
+})
 
 import { AcpBackend, setAcpRuntimeFactory } from './acp-backend'
 import { acpStartOpts, mockAcpRuntime } from '../../../test/fixtures/acp-backend-fixtures'

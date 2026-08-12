@@ -45,7 +45,8 @@ export interface UsageQueryResult {
 }
 
 const BACKFILL_KEY = 'usage_backfill_done'
-const BACKFILL_VERSION = 'v4'
+/** v5: rebuild after Grok mid-turn message_usage was double-counted live. */
+const BACKFILL_VERSION = 'v5'
 
 export function localDay(iso: string | number | Date): string {
   const date = iso instanceof Date ? iso : new Date(iso)

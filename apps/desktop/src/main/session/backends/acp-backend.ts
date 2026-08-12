@@ -11,7 +11,11 @@ import type {
 } from '@superone/shared/agent-types'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
-import { recordGrokFromUsage } from '../../usage-stats-service'
+import {
+  recordGrokFromUsage,
+  subtractDelta,
+  type UsageStepDelta,
+} from '../../usage-stats-service'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import {
   extractModeConfig,
@@ -138,6 +142,12 @@ export class AcpBackend implements SessionBackend {
   private modeConfigId: string | null = null
   /** Last known selected model (needed for Grok set_model / effort without configId). */
   private selectedModelId: string | null = null
+  /**
+   * Last Grok `message_usage` totals recorded into usage_daily per assistant
+   * message. Mid-turn events are cumulative (response_started/completed +
+   * turn_completed); only the delta must be upserted or stats inflate.
+   */
+  private lastGrokUsageRecorded: { messageId: string; usage: UsageStepDelta } | null = null
   /** Last known mode/effort options when configId is null (Grok reasoning effort). */
   private lastModeConfig: AcpModeConfig | null = null
   private ensureRuntimePromise: Promise<AcpRuntime> | null = null
@@ -658,8 +668,27 @@ export class AcpBackend implements SessionBackend {
     ) {
       const model = this.selectedModelId ?? this.startOpts?.model ?? 'grok'
       const usageEvent = { ...event, model }
+      const curr: UsageStepDelta = {
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheReadTokens: event.cacheReadTokens ?? 0,
+        cacheCreationTokens: 0,
+      }
+      const prev = this.lastGrokUsageRecorded?.messageId === event.messageId
+        ? this.lastGrokUsageRecorded.usage
+        : { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
+      const delta = subtractDelta(curr, prev)
+      this.lastGrokUsageRecorded = { messageId: event.messageId, usage: curr }
       try {
-        recordGrokFromUsage(usageEvent, model, new Date())
+        recordGrokFromUsage(
+          {
+            inputTokens: delta.inputTokens,
+            outputTokens: delta.outputTokens,
+            cacheReadTokens: delta.cacheReadTokens,
+          },
+          model,
+          new Date(),
+        )
       } catch (err) {
         log.warn('[AcpBackend] Grok usage stats write failed:', err)
       }

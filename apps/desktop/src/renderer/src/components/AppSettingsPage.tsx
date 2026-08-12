@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
-import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
+import { shutdownAnalytics, startAnalytics } from '@/lib/analytics'
 import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
@@ -70,7 +70,7 @@ export function AppSettingsPage() {
     const result = await window.app.saveAppSettings({ analyticsEnabled: enabled })
     setAnalyticsEnabled(result.analyticsEnabled)
     if (result.analyticsEnabled) {
-      initAnalytics()
+      startAnalytics()
     } else {
       shutdownAnalytics()
     }

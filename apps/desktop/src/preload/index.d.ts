@@ -419,6 +419,7 @@ interface AppAPI {
   setFastMode(enabled: boolean): Promise<void>
   getAppSettings(): Promise<AppSettings>
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
+  getInstallId(): Promise<string>
   /**
    * false — status only.
    * true | 'guided' — two-step onboarding float (first enable).

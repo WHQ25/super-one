@@ -2864,6 +2864,8 @@ export const AgentIpcChannels = {
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SETTINGS_CHANGED: 'app:settings-changed',
+  /** Stable per-installation id used as the analytics distinct id. */
+  APP_INSTALL_ID_GET: 'app:install-id-get',
   /**
    * Read Computer Use TCC status / open permission float.
    * false — status only

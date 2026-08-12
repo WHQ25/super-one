@@ -7,7 +7,74 @@ declare const __POSTHOG_HOST__: string
 const POSTHOG_KEY = __POSTHOG_PROJECT_TOKEN__
 const POSTHOG_HOST = __POSTHOG_HOST__ || 'https://us.i.posthog.com'
 
+/** Local-only accumulation tick. Never hits the network. */
+const TICK_MS = 15_000
+/** How often the accumulated active time is turned into one `app_usage` event. */
+const FLUSH_MS = 60 * 60_000
+/** Windows shorter than this are noise; drop them instead of paying for an event. */
+const MIN_REPORT_MS = 60_000
+const ACTIVE_MS_KEY = 'superone.analytics.active_ms'
+
 let ph: PostHog | null = null
+let activeMs = 0
+let tickTimer: ReturnType<typeof setInterval> | null = null
+let flushTimer: ReturnType<typeof setInterval> | null = null
+
+function baseProps(): Record<string, unknown> {
+  return { app_version: __APP_VERSION__, platform: window.app.platform }
+}
+
+function isActive(): boolean {
+  return document.visibilityState === 'visible' && document.hasFocus()
+}
+
+function captureUsage(ms: number, recovered: boolean) {
+  if (ms < MIN_REPORT_MS) return
+  ph?.capture('app_usage', {
+    active_seconds: Math.round(ms / 1000),
+    recovered,
+    ...baseProps(),
+  })
+}
+
+function tick() {
+  if (!isActive()) return
+  activeMs += TICK_MS
+  // Persist every tick so a crash / force-quit loses at most one tick, which is
+  // what lets FLUSH_MS stay this long without risking a whole hour of data.
+  window.localStorage.setItem(ACTIVE_MS_KEY, String(activeMs))
+}
+
+function flushUsage() {
+  const ms = activeMs
+  activeMs = 0
+  window.localStorage.removeItem(ACTIVE_MS_KEY)
+  captureUsage(ms, false)
+}
+
+/** Report the window a previous run left behind when it died before flushing. */
+function reportRecoveredUsage() {
+  const raw = window.localStorage.getItem(ACTIVE_MS_KEY)
+  window.localStorage.removeItem(ACTIVE_MS_KEY)
+  const ms = raw ? Number(raw) : 0
+  if (!Number.isFinite(ms) || ms <= 0) return
+  captureUsage(ms, true)
+}
+
+function startUsageTracking() {
+  reportRecoveredUsage()
+  tickTimer = setInterval(tick, TICK_MS)
+  flushTimer = setInterval(flushUsage, FLUSH_MS)
+  window.addEventListener('beforeunload', flushUsage)
+}
+
+function stopUsageTracking() {
+  if (tickTimer) clearInterval(tickTimer)
+  if (flushTimer) clearInterval(flushTimer)
+  tickTimer = null
+  flushTimer = null
+  window.removeEventListener('beforeunload', flushUsage)
+}
 
 export async function initAnalytics(distinctId?: string) {
   if (ph || !POSTHOG_KEY) return
@@ -22,16 +89,32 @@ export async function initAnalytics(distinctId?: string) {
     persistence: 'localStorage',
     loaded: (p) => {
       if (distinctId) p.identify(distinctId)
-      p.capture('app_opened', {
-        app_version: __APP_VERSION__,
-        platform: window.app.platform,
-      })
+      const props = baseProps()
+      // `$set` mirrors these onto the person, so a version/platform breakdown
+      // buckets each user once by their current value instead of once per
+      // version they happened to launch during the reporting window.
+      p.capture('app_opened', { ...props, $set: props })
+      startUsageTracking()
     },
   })
 }
 
+/**
+ * Preferred entry point: resolves the persistent install id first so users are
+ * counted per installation rather than per localStorage lifetime. Falls back to
+ * PostHog's anonymous id if the main process cannot supply one.
+ */
+export async function startAnalytics() {
+  const distinctId = await window.app.getInstallId().catch(() => undefined)
+  await initAnalytics(distinctId)
+}
+
 export function shutdownAnalytics() {
   if (!ph) return
+  stopUsageTracking()
+  // Opting out mid-window: discard the pending time rather than sending it.
+  activeMs = 0
+  window.localStorage.removeItem(ACTIVE_MS_KEY)
   ph.opt_out_capturing()
   ph.reset()
   ph = null

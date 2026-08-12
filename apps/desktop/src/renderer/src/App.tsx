@@ -49,7 +49,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
-import { initAnalytics } from '@/lib/analytics'
+import { startAnalytics } from '@/lib/analytics'
 import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
 import { LAYOUT, maxSidebarWidth } from '@/lib/layout-constants'
@@ -144,7 +144,7 @@ function App(): React.JSX.Element {
     window.app.getAppSettings()
       .then((s) => {
         applyCrispText(s.crispText)
-        if (s.analyticsEnabled) initAnalytics()
+        if (s.analyticsEnabled) startAnalytics()
       })
       .catch((err) => console.error('[analytics] failed to load app settings', err))
     requestIdleCallback(() => preloadFileHighlighter())

@@ -359,7 +359,7 @@ import { applyCursorResources } from './harness/cursor-handler'
 
 const harnessHandlers: HarnessHandlerMap = {
   claude: {
-    connect: () => window.app.connectClaude(),
+    connect: (opts) => window.app.connectClaude(opts?.force),
     apply: (s, r) => applyClaudeResources(s, r, applyDefaultModel),
   },
   codex: {
@@ -372,11 +372,11 @@ const harnessHandlers: HarnessHandlerMap = {
     apply: (s, r) => applyAcpResources(s, r),
   },
   opencode: {
-    connect: () => window.app.connectOpenCode(),
+    connect: (opts) => window.app.connectOpenCode(opts?.force),
     apply: (s, r) => applyOpenCodeResources(s, r),
   },
   cursor: {
-    connect: () => window.app.connectCursor(),
+    connect: (opts) => window.app.connectCursor(opts?.force),
     apply: (s, r) => applyCursorResources(s, r),
   },
 }
@@ -423,7 +423,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     set((s) => ({ initializedHarnesses: new Set([...s.initializedHarnesses, harness]) }))
     try {
       const handler = harnessHandlers[harness] as HarnessHandler<typeof harness>
-      const resources = await handler.connect()
+      const resources = await handler.connect({ force: opts?.force })
       get().setHarnessResources(harness, resources)
       // ACP: re-pull once after main's per-launch model probe (cache-first, then refresh).
       if (harness === 'acp') {

@@ -69,11 +69,12 @@ interface AppAPI {
   platform: NodeJS.Platform
   connectClaude(force?: boolean): Promise<ClaudeResources>
   connectCodex(): Promise<CodexResources>
-  connectOpenCode(): Promise<OpenCodeResources>
-  connectCursor(): Promise<import('@superone/shared/agent-types').CursorResources>
+  connectOpenCode(force?: boolean): Promise<OpenCodeResources>
+  connectCursor(force?: boolean): Promise<import('@superone/shared/agent-types').CursorResources>
   setCursorApiKey(apiKey: string): Promise<{ ok: true; providerId: string }>
   getCursorAuthStatus(): Promise<{ configured: boolean; apiKeyName: string | null; userEmail: string | null }>
   updateCursorBaseConfig(patch: Record<string, unknown>): Promise<{ ok: true; config: Record<string, unknown> }>
+  getCursorBaseConfig(): Promise<import('@superone/cursor').CursorConfig>
   cursorListAgents(opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string; includeArchived?: boolean }): Promise<unknown>
   cursorListRuns(agentId: string, opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string }): Promise<unknown>
   cursorArchiveAgent(agentId: string): Promise<{ ok: true }>

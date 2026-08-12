@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCloudOptions,
+  filterEnabledCursorModels,
   mapPermissionToCursorLocal,
   readCursorConfig,
   resolveCursorApiKeyPlain,
@@ -45,6 +46,11 @@ describe('cursor-config', () => {
       runtime: 'cloud',
       autoCreatePR: true,
       repos: [{ url: 'https://github.com/a/b' }],
+      modelParamsByModel: {
+        'composer-2': { thinking: 'true', context: '1m', effort: 'high' },
+        bad: { effort: 1 },
+      },
+      disabledModelIds: ['composer-2', '', 12, 'composer-2'],
     })).toMatchObject({
       model: 'composer-2',
       mode: 'plan',
@@ -52,7 +58,17 @@ describe('cursor-config', () => {
       runtime: 'cloud',
       autoCreatePR: true,
       repos: [{ url: 'https://github.com/a/b' }],
+      modelParamsByModel: {
+        'composer-2': { thinking: 'true', context: '1m', effort: 'high' },
+      },
+      disabledModelIds: ['composer-2'],
     })
+  })
+
+  it('filters disabled catalog models', () => {
+    const models = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+    expect(filterEnabledCursorModels(models, undefined)).toEqual(models)
+    expect(filterEnabledCursorModels(models, { disabledModelIds: ['b'] }).map((m) => m.id)).toEqual(['a', 'c'])
   })
 
   it('builds cloud options from config', () => {

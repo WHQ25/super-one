@@ -13,7 +13,8 @@ import type { ChatStore } from '../types'
  * (`useChatStore`) only dispatches through `harnessHandlers[harness].xxx`.
  */
 export interface HarnessHandler<H extends HarnessId> {
-  connect: () => Promise<HarnessResourcesMap[H]>
+  /** Pull a resource bundle. Pass `force` to bypass disk TTL caches where supported. */
+  connect: (opts?: { force?: boolean }) => Promise<HarnessResourcesMap[H]>
   apply: (state: ChatStore, resources: HarnessResourcesMap[H]) => Partial<ChatStore>
 }
 

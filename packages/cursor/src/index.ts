@@ -8,13 +8,18 @@
 
 export {
   readCursorConfig,
+  readCursorModelParamsByModel,
+  readCursorDisabledModelIds,
+  filterEnabledCursorModels,
   resolveCursorApiKeyPlain,
   mapPermissionToCursorLocal,
   buildCloudOptions,
-  isCursorSdkAvailable,
   type CursorConfig,
   type CursorCloudRepoConfig,
+  type CursorModelParamsByModel,
 } from './cursor-config'
+
+export { isCursorSdkAvailable } from './cursor-sdk-available'
 
 export {
   toCursorMcpConfig,

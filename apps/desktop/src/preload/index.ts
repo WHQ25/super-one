@@ -702,11 +702,11 @@ const appAPI = {
   connectCodex: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CODEX),
 
-  connectOpenCode: () =>
-    ipcRenderer.invoke(AgentIpcChannels.CONNECT_OPENCODE),
+  connectOpenCode: (force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_OPENCODE, force),
 
-  connectCursor: () =>
-    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CURSOR),
+  connectCursor: (force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CURSOR, force),
 
   setCursorApiKey: (apiKey: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_CURSOR_API_KEY, apiKey),
@@ -720,6 +720,9 @@ const appAPI = {
 
   updateCursorBaseConfig: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.CURSOR_UPDATE_BASE_CONFIG, patch),
+
+  getCursorBaseConfig: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_CURSOR_BASE_CONFIG),
 
   cursorListAgents: (opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string; includeArchived?: boolean }) =>
     ipcRenderer.invoke(AgentIpcChannels.CURSOR_LIST_AGENTS, opts),

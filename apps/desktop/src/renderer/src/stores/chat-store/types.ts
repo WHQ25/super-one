@@ -141,7 +141,8 @@ export interface PerSessionState {
   selectedEffort?: EffortLevel
   /**
    * Cursor SDK model.params selections (param id → catalog value).
-   * Source of truth for fast / thinking / context / effort / optimize_for / …
+   * Active snapshot for this session's current model; per-model memory lives in
+   * cursor-base harness config (`modelParamsByModel`).
    */
   cursorModelParams: Record<string, string>
   modelUserChosen: boolean

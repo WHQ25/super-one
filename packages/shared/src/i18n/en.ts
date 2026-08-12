@@ -363,6 +363,11 @@ export type Messages = {
         autoCreatePr: string
         workOnCurrentBranch: string
         saveRuntime: string
+        modelsTitle: string
+        modelsDescription: string
+        modelsEmpty: string
+        modelsEnableAll: string
+        modelsDisableAll: string
       }
       states: {
         disabled: string
@@ -2962,7 +2967,7 @@ export const en: Messages = {
         claude: 'Claude Code runtime (Agent SDK binary). Downloads on enable when not bundled.',
         codex: 'OpenAI Codex app-server binary. Downloads on enable when not bundled.',
         opencode: 'OpenCode CLI / server. External runtime resolved from PATH or config.',
-        cursor: 'Cursor Agent SDK. Managed in-process runtime; requires a Cursor User API Key.',
+        cursor: 'Experimental Cursor Agent SDK harness. Managed in-process runtime; requires a Cursor User API Key.',
         acpGrok: 'Grok via the Agent Client Protocol.',
         experimentalAcp: 'Optional ACP agent detected on this machine.',
       },
@@ -2990,6 +2995,11 @@ export const en: Messages = {
         autoCreatePr: 'Auto-create PR when cloud agent finishes',
         workOnCurrentBranch: 'Work on current branch',
         saveRuntime: 'Save Cursor runtime',
+        modelsTitle: 'Models',
+        modelsDescription: 'Choose which Cursor models appear in the chat model picker.',
+        modelsEmpty: 'No models loaded yet. Save an API key and refresh the harness.',
+        modelsEnableAll: 'Enable all',
+        modelsDisableAll: 'Disable all',
       },
       states: {
         disabled: 'Disabled',

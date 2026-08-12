@@ -1,7 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
 import {
-  defaultCursorModelParams,
   findCursorEffortParam,
   normalizeEffortValue,
 } from '@superone/cursor/cursor-model-selection'
@@ -17,6 +16,11 @@ import {
 } from '../index'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { codexModelCacheKey } from '../helpers/codex-model-cache'
+import {
+  ensureCursorHarnessModelPrefsLoaded,
+  persistCursorHarnessModelParams,
+  resolveCursorHarnessModelParams,
+} from '../helpers/cursor-model-prefs'
 
 /**
  * Claude-harness-specific user setters. None touch Codex state; they
@@ -261,14 +265,40 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       if (provider === 'cursor') {
         const cursorModels = state.harnessResources.cursor?.models ?? []
         const cursorModel = cursorModels.find((m) => m.id === model)
-        const params = defaultCursorModelParams(cursorModel)
-        const effortParam = findCursorEffortParam(cursorModel?.parameters ?? [])
-        const nextEffort = effortParam
-          ? (normalizeEffortValue(params[effortParam.id] ?? '') ?? undefined)
-          : undefined
+        // Persist outgoing session params into harness config before switching.
+        if (
+          session.selectedModel
+          && session.selectedModel !== model
+          && Object.keys(session.cursorModelParams).length > 0
+        ) {
+          persistCursorHarnessModelParams(session.selectedModel, session.cursorModelParams)
+        }
+        const applyResolved = () => {
+          const params = resolveCursorHarnessModelParams(model, cursorModel)
+          const effortParam = findCursorEffortParam(cursorModel?.parameters ?? [])
+          const nextEffort = effortParam
+            ? (normalizeEffortValue(params[effortParam.id] ?? '') ?? undefined)
+            : undefined
+          return { params, nextEffort }
+        }
+        const { params, nextEffort } = applyResolved()
         patch.cursorModelParams = params
         patch.selectedEffort = nextEffort
-        patch.effortUserChosen = false
+        patch.effortUserChosen = true
+        void ensureCursorHarnessModelPrefsLoaded().then(() => {
+          const live = getActivePerSession(get(), activeProject)
+          if ((live.sessionProvider ?? live.preferredProvider) !== 'cursor') return
+          if (live.selectedModel !== model) return
+          const resolved = applyResolved()
+          set((s) => updateActivePerSession(s, () => ({
+            cursorModelParams: resolved.params,
+            selectedEffort: resolved.nextEffort,
+            effortUserChosen: true,
+          })))
+          if (resolved.nextEffort && !parseRemoteProjectKey(activeProject)) {
+            void window.agent.setSessionSettings(activeProject, { effort: resolved.nextEffort })
+          }
+        })
       }
       set((s) => updateActivePerSession(s, () => patch))
       void window.agent.setSessionSettings(activeProject, {
@@ -321,7 +351,11 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
           v.value === effort || normalizeEffortValue(v.value) === effort,
         )?.value
         if (raw) {
-          patch.cursorModelParams = { ...session.cursorModelParams, [effortParam.id]: raw }
+          const nextParams = { ...session.cursorModelParams, [effortParam.id]: raw }
+          patch.cursorModelParams = nextParams
+          if (session.selectedModel) {
+            persistCursorHarnessModelParams(session.selectedModel, nextParams)
+          }
         }
       }
     }
@@ -334,9 +368,14 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
   },
 
   setCursorModelParams: (params) => {
-    const { activeProject } = get()
+    const state = get()
+    const { activeProject } = state
     if (!activeProject) return
+    const session = getActivePerSession(state, activeProject)
     set((s) => updateActivePerSession(s, () => ({ cursorModelParams: params })))
+    if (session.selectedModel) {
+      persistCursorHarnessModelParams(session.selectedModel, params)
+    }
   },
 
   setCursorModelParam: (id, value) => {
@@ -356,6 +395,9 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       }
     }
     set((s) => updateActivePerSession(s, () => patch))
+    if (session.selectedModel) {
+      persistCursorHarnessModelParams(session.selectedModel, nextParams)
+    }
     if (patch.selectedEffort && !parseRemoteProjectKey(activeProject)) {
       void window.agent.setSessionSettings(activeProject, { effort: patch.selectedEffort })
     }

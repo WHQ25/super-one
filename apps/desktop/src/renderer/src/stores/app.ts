@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
+import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, StartupData, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   clampA,
@@ -250,14 +250,7 @@ function prefetchFileTree(folderPath: string): void {
 
 /** Cached across onboarding → align so we do not re-fetch startup data. */
 let pendingStartup: {
-  startupData: {
-    appVersion?: string
-    sandboxCapability?: SandboxCapability | null
-    cached: {
-      claude: unknown
-      codex: unknown
-    }
-  }
+  startupData: StartupData
   folders: RecentFolder[]
 } | null = null
 
@@ -268,7 +261,7 @@ async function enterMainAfterGates(
   const pending = pendingStartup
   const startupData =
     pending?.startupData ??
-    ((await window.app.getStartupData()) as NonNullable<typeof pendingStartup>['startupData'])
+    (await window.app.getStartupData())
   const folders = pending?.folders ?? (await window.app.getRecentFolders())
   pendingStartup = null
 
@@ -285,12 +278,16 @@ async function enterMainAfterGates(
   const { useChatStore } = await import('./chat')
 
   if (startupData.cached?.claude) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    useChatStore.getState().setHarnessResources('claude', startupData.cached.claude as any)
+    useChatStore.getState().setHarnessResources('claude', startupData.cached.claude)
   }
   if (startupData.cached?.codex) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    useChatStore.getState().setHarnessResources('codex', startupData.cached.codex as any)
+    useChatStore.getState().setHarnessResources('codex', startupData.cached.codex)
+  }
+  if (startupData.cached?.opencode) {
+    useChatStore.getState().setHarnessResources('opencode', startupData.cached.opencode)
+  }
+  if (startupData.cached?.cursor) {
+    useChatStore.getState().setHarnessResources('cursor', startupData.cached.cursor)
   }
 
   void useChatStore.getState().initializeHarness('claude')
@@ -747,22 +744,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       appVersion: startupData.appVersion,
     })
     console.info(
-      '[continueToMain] cached: claude=%s codex=%s sandbox=%s',
+      '[continueToMain] cached: claude=%s codex=%s opencode=%s cursor=%s sandbox=%s',
       startupData.cached.claude ? `${startupData.cached.claude.models?.length ?? 0} models` : 'null',
       startupData.cached.codex ? `${startupData.cached.codex.models?.length ?? 0} models` : 'null',
+      startupData.cached.opencode ? `${startupData.cached.opencode.models?.length ?? 0} models` : 'null',
+      startupData.cached.cursor ? `${startupData.cached.cursor.models?.length ?? 0} models` : 'null',
       startupData.sandboxCapability?.supportLevel ?? 'unknown',
     )
 
     // Stash startup payload for post-align entry (avoid double getStartupData).
     pendingStartup = {
-      startupData: {
-        appVersion: startupData.appVersion,
-        sandboxCapability: startupData.sandboxCapability ?? null,
-        cached: {
-          claude: startupData.cached?.claude ?? null,
-          codex: startupData.cached?.codex ?? null,
-        },
-      },
+      startupData,
       folders,
     }
 

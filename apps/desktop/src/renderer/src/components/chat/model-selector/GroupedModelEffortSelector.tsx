@@ -107,7 +107,7 @@ function ModelRow({
       className={cn('items-center gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-medium leading-tight">{model.name}</div>
+        <div className="truncate text-sm font-medium leading-tight">{model.name}</div>
         {model.description && (
           <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">{model.description}</div>
         )}

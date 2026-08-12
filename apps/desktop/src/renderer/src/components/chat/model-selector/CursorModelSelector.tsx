@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
+import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
 import {
   cursorParamLabel,
   cursorParamValueLabel,
@@ -54,8 +55,15 @@ export function CursorModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (
   const setCursorModelParams = useChatStore((state) => state.setCursorModelParams)
   const setCursorModelParam = useChatStore((state) => state.setCursorModelParam)
 
-  const current = resources?.models.find((model) => model.id === selectedModel)
-  const modelLabel = current?.name || current?.id || (resources?.models.length ? 'Cursor' : (selectedModel || 'Cursor'))
+  const enabledModels = useMemo(
+    () => filterEnabledCursorModels(resources?.models ?? [], {
+      disabledModelIds: resources?.disabledModelIds,
+    }),
+    [resources?.models, resources?.disabledModelIds],
+  )
+  const current = enabledModels.find((model) => model.id === selectedModel)
+    ?? resources?.models.find((model) => model.id === selectedModel)
+  const modelLabel = current?.name || current?.id || (enabledModels.length ? 'Cursor' : (selectedModel || 'Cursor'))
 
   // Seed defaults once when the current model has catalog params but session map is empty.
   useEffect(() => {
@@ -65,12 +73,12 @@ export function CursorModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (
   }, [current, cursorModelParams, setCursorModelParams])
 
   const models = useMemo<SelectorModelOption[]>(
-    () => (resources?.models ?? []).map((model) => ({
+    () => enabledModels.map((model) => ({
       id: model.id,
       name: model.name || model.id,
       description: model.description,
     })),
-    [resources?.models],
+    [enabledModels],
   )
 
   const effortOptions = useMemo<SelectorEffortOption[]>(

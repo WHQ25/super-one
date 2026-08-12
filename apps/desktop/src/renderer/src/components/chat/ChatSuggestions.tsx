@@ -503,12 +503,17 @@ export function ProviderSelector({
             </motion.div>
           </AnimatePresence>
           {preferredProvider !== 'acp' && preferredProvider !== 'opencode' && preferredProvider !== 'cursor' && <ActiveProviderHint />}
-          {fixedHarness ? (
+          {fixedHarness && orderedHarnesses.length > 1 ? (
             <Tabs
               value={tabsValue}
               onValueChange={(v) => {
                 if (v === 'fixed' && fixedHarness) {
                   void selectHarnessOption(fixedHarness, true, 'fixed')
+                  return
+                }
+                // Exactly two harnesses: second slot is a plain tab, not a menu.
+                if (v === 'menu' && menuTabOption && menuHarnesses.length === 1) {
+                  void selectHarnessOption(menuTabOption, true, 'menu')
                 }
               }}
             >
@@ -519,7 +524,14 @@ export function ProviderSelector({
                 >
                   <span className="truncate">{optionLabel(fixedHarness)}</span>
                 </TabsTrigger>
-                {menuHarnesses.length > 0 && (
+                {menuHarnesses.length === 1 && menuTabOption ? (
+                  <TabsTrigger
+                    value="menu"
+                    className={cn(tabTriggerLayoutClass, 'text-muted-foreground hover:text-foreground data-[state=active]:text-foreground')}
+                  >
+                    <span className="truncate">{optionLabel(menuTabOption)}</span>
+                  </TabsTrigger>
+                ) : menuHarnesses.length > 1 ? (
                   /*
                    * Outer shell owns tabs indicator measurement (`data-state=active`).
                    * DropdownMenuTrigger must keep its own data-state open/closed — if
@@ -589,7 +601,7 @@ export function ProviderSelector({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                )}
+                ) : null}
               </TabsList>
             </Tabs>
           ) : null}

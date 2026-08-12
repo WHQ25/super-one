@@ -2005,6 +2005,11 @@ export interface CursorResources {
   repositories?: Array<{ url: string }>
   /** True while a background re-probe is in flight. */
   probing?: boolean
+  /**
+   * Model ids hidden from the picker (from cursor-base harness config).
+   * Empty = all catalog models enabled.
+   */
+  disabledModelIds?: string[]
 }
 
 export interface AcpAgentDescriptor {
@@ -2574,6 +2579,7 @@ export const AgentIpcChannels = {
   CURSOR_DOWNLOAD_ARTIFACT: 'app:cursor-download-artifact',
   CURSOR_LIST_REPOSITORIES: 'app:cursor-list-repositories',
   CURSOR_UPDATE_BASE_CONFIG: 'app:cursor-update-base-config',
+  GET_CURSOR_BASE_CONFIG: 'app:get-cursor-base-config',
   CURSOR_GET_AGENT: 'app:cursor-get-agent',
   CURSOR_LIST_MESSAGES: 'app:cursor-list-messages',
   CURSOR_GET_RUN: 'app:cursor-get-run',

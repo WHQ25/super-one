@@ -3,4 +3,8 @@ export { applyClaudeResources } from './claude-handler'
 export { applyCodexResources } from './codex-handler'
 export { applyAcpResources, connectAcpResources } from './acp-handler'
 export { applyOpenCodeResources } from './opencode-handler'
-export { applyCursorResources } from './cursor-handler'
+export {
+  applyCursorResources,
+  enabledCursorModels,
+  resolveDefaultCursorSelection,
+} from './cursor-handler'

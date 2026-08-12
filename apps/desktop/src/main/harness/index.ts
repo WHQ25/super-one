@@ -75,3 +75,9 @@ export {
   HarnessNotReadyError,
   isHarnessNotReadyError,
 } from './resolve-runtime'
+export {
+  HARNESS_RESOURCES_CACHE_TTL_MS,
+  getFreshHarnessResources,
+  connectWithHarnessResourceCache,
+} from './resource-cache'
+export type { FreshHarnessResourcesHit } from './resource-cache'

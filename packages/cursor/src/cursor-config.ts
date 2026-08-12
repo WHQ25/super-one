@@ -1,17 +1,19 @@
 /**
  * Electron-free Cursor config helpers (API key plaintext / env only).
  * Desktop wraps these with OS secret-store decrypt/encrypt.
+ *
+ * Safe for renderer imports — no `node:*` / native resolves here.
+ * SDK availability lives in `./cursor-sdk-available`.
  */
-
-import { createRequire } from 'node:module'
-
-const require = createRequire(import.meta.url)
 
 export interface CursorCloudRepoConfig {
   url: string
   startingRef?: string
   prUrl?: string
 }
+
+/** Global per-model SDK params (model id → param id → catalog value). */
+export type CursorModelParamsByModel = Record<string, Record<string, string>>
 
 export interface CursorConfig {
   apiKey?: string
@@ -24,6 +26,16 @@ export interface CursorConfig {
   enableAgentRetries?: boolean
   useHttp1ForAgent?: boolean
   storeKind?: 'better-sqlite3' | 'jsonl'
+  /**
+   * Harness-scoped remembered model.params selections.
+   * Survives across sessions; not app-settings.
+   */
+  modelParamsByModel?: CursorModelParamsByModel
+  /**
+   * Model ids hidden from the Cursor model picker.
+   * Empty / omitted = all catalog models enabled.
+   */
+  disabledModelIds?: string[]
   // cloud
   cloudEnvType?: 'cloud' | 'pool' | 'machine'
   cloudEnvName?: string
@@ -35,6 +47,50 @@ export interface CursorConfig {
 }
 
 const ENC_PREFIX = 'enc:v1:'
+
+/**
+ * Parse a loose `modelParamsByModel` map into string→string param rows.
+ */
+export function readCursorModelParamsByModel(value: unknown): CursorModelParamsByModel | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const out: CursorModelParamsByModel = {}
+  for (const [modelId, rawParams] of Object.entries(value as Record<string, unknown>)) {
+    if (!modelId.trim() || !rawParams || typeof rawParams !== 'object' || Array.isArray(rawParams)) continue
+    const row: Record<string, string> = {}
+    for (const [paramId, paramValue] of Object.entries(rawParams as Record<string, unknown>)) {
+      if (typeof paramValue === 'string') row[paramId] = paramValue
+    }
+    if (Object.keys(row).length > 0) out[modelId] = row
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * Parse a string id list (drops empties / non-strings).
+ */
+export function readCursorDisabledModelIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const ids = [...new Set(
+    value
+      .filter((id): id is string => typeof id === 'string')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  )]
+  return ids.length > 0 ? ids : undefined
+}
+
+/**
+ * Drop models the user disabled in Cursor harness settings.
+ * Empty / missing `disabledModelIds` keeps the full catalog.
+ */
+export function filterEnabledCursorModels<T extends { id: string }>(
+  models: T[],
+  config: Pick<CursorConfig, 'disabledModelIds'> | null | undefined,
+): T[] {
+  const disabled = new Set(config?.disabledModelIds ?? [])
+  if (disabled.size === 0) return models
+  return models.filter((model) => !disabled.has(model.id))
+}
 
 /**
  * Resolve Cursor User API Key from plaintext config or `CURSOR_API_KEY`.
@@ -80,6 +136,8 @@ export function readCursorConfig(value: unknown): CursorConfig {
     enableAgentRetries: typeof config.enableAgentRetries === 'boolean' ? config.enableAgentRetries : undefined,
     useHttp1ForAgent: typeof config.useHttp1ForAgent === 'boolean' ? config.useHttp1ForAgent : undefined,
     storeKind: config.storeKind === 'jsonl' || config.storeKind === 'better-sqlite3' ? config.storeKind : undefined,
+    modelParamsByModel: readCursorModelParamsByModel(config.modelParamsByModel),
+    disabledModelIds: readCursorDisabledModelIds(config.disabledModelIds),
     cloudEnvType: config.cloudEnvType === 'pool' || config.cloudEnvType === 'machine' || config.cloudEnvType === 'cloud'
       ? config.cloudEnvType
       : undefined,
@@ -119,18 +177,5 @@ export function buildCloudOptions(config: CursorConfig): import('@cursor/sdk').C
     ...(config.autoCreatePR != null ? { autoCreatePR: config.autoCreatePR } : {}),
     ...(config.skipReviewerRequest != null ? { skipReviewerRequest: config.skipReviewerRequest } : {}),
     ...(config.cloudEnvVars ? { envVars: config.cloudEnvVars } : {}),
-  }
-}
-
-/**
- * Whether `@cursor/sdk` can be resolved in this install
- * (optional platform packages may still be missing at runtime).
- */
-export function isCursorSdkAvailable(): boolean {
-  try {
-    require.resolve('@cursor/sdk')
-    return true
-  } catch {
-    return false
   }
 }

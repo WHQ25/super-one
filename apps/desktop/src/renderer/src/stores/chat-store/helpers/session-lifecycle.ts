@@ -1,6 +1,5 @@
 import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
 import {
-  defaultCursorModelParams,
   findCursorEffortParam,
   normalizeEffortValue,
 } from '@superone/cursor/cursor-model-selection'
@@ -10,8 +9,12 @@ import { buildSlashCommands } from './chat-helpers'
 import { applyCarriedDraft, captureOpenDraft, promoteDraftIfUnsent } from './draft-promote'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
 import { resolveDefaultOpenCodeSelection } from '../harness/opencode-handler'
-import { resolveDefaultCursorSelection } from '../harness/cursor-handler'
+import { enabledCursorModels, resolveDefaultCursorSelection } from '../harness/cursor-handler'
 import { resolveDefaultCodexSelection, resolveSessionCodexSelection } from './codex-helpers'
+import {
+  ensureCursorHarnessModelPrefsLoaded,
+  resolveCursorHarnessModelParams,
+} from './cursor-model-prefs'
 import {
   ChatStoreSet,
   _isBusyStatus,
@@ -748,7 +751,7 @@ export function setPreferredProviderImpl(
       }
     }
     if (provider === 'cursor') {
-      const selection = resolveDefaultCursorSelection(get().harnessResources.cursor?.models ?? [])
+      const selection = resolveDefaultCursorSelection(enabledCursorModels(get().harnessResources.cursor))
       return {
         selectedModel: selection.modelId,
         selectedEffort: selection.effort,
@@ -878,10 +881,10 @@ export function setPreferredProviderImpl(
     })
   }
   if (provider === 'cursor') {
-    void get().initializeHarness('cursor', { force: true }).then(async () => {
+    void get().initializeHarness('cursor').then(async () => {
       const session = getActivePerSession(get())
       if ((session.sessionProvider ?? session.preferredProvider) !== 'cursor') return
-      const models = get().harnessResources.cursor?.models ?? []
+      const models = enabledCursorModels(get().harnessResources.cursor)
       const selected = models.find((model) => model.id === session.selectedModel)
       const fallback = resolveDefaultCursorSelection(models)
       const model = selected ?? models.find((item) => item.id === fallback.modelId)
@@ -891,9 +894,14 @@ export function setPreferredProviderImpl(
         reassertForeground()
         return
       }
+      const remembered = await (async () => {
+        await ensureCursorHarnessModelPrefsLoaded()
+        return resolveCursorHarnessModelParams(model.id, model)
+      })()
       const params = Object.keys(session.cursorModelParams).length > 0
+        && session.selectedModel === model.id
         ? session.cursorModelParams
-        : defaultCursorModelParams(model)
+        : remembered
       const effortParam = findCursorEffortParam(model.parameters ?? [])
       const fromParams = effortParam
         ? normalizeEffortValue(params[effortParam.id] ?? '')

@@ -353,7 +353,7 @@ export function HarnessesSettingsPage() {
         label: t('settings.harnesses.ids.cursor'),
         provider: 'cursor',
         acpAgentId: null,
-        experimental: false,
+        experimental: true,
         description: t('settings.harnesses.desc.cursor'),
       },
     ]

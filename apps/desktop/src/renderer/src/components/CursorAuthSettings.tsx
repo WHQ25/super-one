@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Input } from '@superone/ui/components/ui/input'
@@ -31,7 +31,12 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
   const [cloudEnvType, setCloudEnvType] = useState<'cloud' | 'pool' | 'machine'>('cloud')
   const [repoUrl, setRepoUrl] = useState('')
   const [repos, setRepos] = useState<Array<{ url: string }>>([])
+  const [disabledModelIds, setDisabledModelIds] = useState<string[]>([])
+  const [modelsSaving, setModelsSaving] = useState(false)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
+  const setHarnessResources = useChatStore((s) => s.setHarnessResources)
+  const cursorResources = useChatStore((s) => s.harnessResources.cursor)
+  const catalogModels = cursorResources?.models ?? []
 
   const refreshAuthStatus = useCallback(async () => {
     try {
@@ -42,12 +47,50 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
     }
   }, [])
 
+  const loadDisabledModels = useCallback(async () => {
+    try {
+      const config = await window.app.getCursorBaseConfig()
+      setDisabledModelIds(config.disabledModelIds ?? [])
+    } catch {
+      setDisabledModelIds([])
+    }
+  }, [])
+
   useEffect(() => {
     void refreshAuthStatus()
+    void loadDisabledModels()
+    void initializeHarness('cursor')
     void window.app.cursorListRepositories?.()
       .then((list) => setRepos(list))
       .catch(() => setRepos([]))
-  }, [refreshAuthStatus])
+  }, [refreshAuthStatus, loadDisabledModels, initializeHarness])
+
+  useEffect(() => {
+    if (cursorResources?.disabledModelIds) {
+      setDisabledModelIds(cursorResources.disabledModelIds)
+    }
+  }, [cursorResources?.disabledModelIds])
+
+  const disabledSet = useMemo(() => new Set(disabledModelIds), [disabledModelIds])
+
+  /**
+   * Persist the disabled-model blacklist and refresh in-memory Cursor resources.
+   */
+  async function persistDisabledModelIds(nextDisabled: string[]) {
+    setModelsSaving(true)
+    try {
+      await window.app.updateCursorBaseConfig({ disabledModelIds: nextDisabled })
+      setDisabledModelIds(nextDisabled)
+      const current = useChatStore.getState().harnessResources.cursor
+      if (current) {
+        setHarnessResources('cursor', { ...current, disabledModelIds: nextDisabled })
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setModelsSaving(false)
+    }
+  }
 
   async function refreshAuth() {
     try {
@@ -58,6 +101,7 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
     // Force re-probe models — initializeHarness is otherwise once-per-session.
     await initializeHarness('cursor', { force: true })
     await refreshAuthStatus()
+    await loadDisabledModels()
     onAuthChanged?.()
   }
 
@@ -210,6 +254,72 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
       <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void saveRuntime()}>
         {t('settings.harnesses.cursor.saveRuntime')}
       </Button>
+
+      <div className="space-y-2 border-t border-border pt-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{t('settings.harnesses.cursor.modelsTitle')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t('settings.harnesses.cursor.modelsDescription')}
+            </p>
+          </div>
+          {catalogModels.length > 0 ? (
+            <div className="flex shrink-0 gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={modelsSaving || disabledModelIds.length === 0}
+                onClick={() => void persistDisabledModelIds([])}
+              >
+                {t('settings.harnesses.cursor.modelsEnableAll')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={modelsSaving || disabledModelIds.length === catalogModels.length}
+                onClick={() => void persistDisabledModelIds(catalogModels.map((m) => m.id))}
+              >
+                {t('settings.harnesses.cursor.modelsDisableAll')}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+
+        {catalogModels.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t('settings.harnesses.cursor.modelsEmpty')}</p>
+        ) : (
+          <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2">
+            {catalogModels.map((model) => {
+              const enabled = !disabledSet.has(model.id)
+              return (
+                <div
+                  key={model.id}
+                  className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm">{model.name || model.id}</p>
+                    {model.name && model.name !== model.id ? (
+                      <p className="truncate font-mono text-[11px] text-muted-foreground">{model.id}</p>
+                    ) : null}
+                  </div>
+                  <Switch
+                    checked={enabled}
+                    disabled={modelsSaving}
+                    onCheckedChange={(next) => {
+                      const nextDisabled = next
+                        ? disabledModelIds.filter((id) => id !== model.id)
+                        : [...new Set([...disabledModelIds, model.id])]
+                      void persistDisabledModelIds(nextDisabled)
+                    }}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -2,7 +2,8 @@ import {
   createSimulatedTurnRunner,
   type TurnRunner,
 } from '@superone/runtime/session'
-import { isCursorSdkAvailable, resolveCursorApiKeyPlain } from './cursor-config'
+import { isCursorSdkAvailable } from './cursor-sdk-available'
+import { resolveCursorApiKeyPlain } from './cursor-config'
 import { runCursorSdkTurn } from './run-sdk-turn'
 
 /**

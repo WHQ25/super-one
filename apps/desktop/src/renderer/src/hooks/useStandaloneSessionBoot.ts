@@ -27,6 +27,8 @@ export function useStandaloneSessionBoot(projectPath: string, sessionId: string)
         if (cancelled) return
         if (startupData.cached.claude) useChatStore.getState().setHarnessResources('claude', startupData.cached.claude)
         if (startupData.cached.codex) useChatStore.getState().setHarnessResources('codex', startupData.cached.codex)
+        if (startupData.cached.opencode) useChatStore.getState().setHarnessResources('opencode', startupData.cached.opencode)
+        if (startupData.cached.cursor) useChatStore.getState().setHarnessResources('cursor', startupData.cached.cursor)
         void useChatStore.getState().initializeHarness('claude')
         void useChatStore.getState().initializeHarness('codex')
 

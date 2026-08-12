@@ -146,7 +146,8 @@ import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
-import { getDb, closeDb, getCachedHarnessResources, getHarnessResourceCacheAgeMs, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
+import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
+import { connectWithHarnessResourceCache, getFreshHarnessResources } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
@@ -3754,15 +3755,13 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (_e, force?: boolean): Promise<ClaudeResources> => {
-    const CLAUDE_RESOURCES_CACHE_TTL_MS = 24 * 60 * 60 * 1000
-    const cached = getCachedHarnessResources('claude')
-    const cacheAgeMs = getHarnessResourceCacheAgeMs('claude')
     const skills = discoverUserSkills()
     const userCommands = discoverUserCommands()
     const agents = discoverUserAgents()
-    if (!force && cached && cacheAgeMs !== null && cacheAgeMs < CLAUDE_RESOURCES_CACHE_TTL_MS) {
-      log.info('[CONNECT_CLAUDE] cache fresh (ageMs=%d), skipping CLI query', cacheAgeMs)
-      const resources: ClaudeResources = { ...cached, skills, commands: userCommands, agents }
+    const cacheHit = getFreshHarnessResources('claude', { force })
+    if (cacheHit) {
+      log.info('[CONNECT_CLAUDE] cache fresh (ageMs=%d), skipping CLI query', cacheHit.ageMs)
+      const resources: ClaudeResources = { ...cacheHit.resources, skills, commands: userCommands, agents }
       setCachedHarnessResources('claude', resources)
       return resources
     }
@@ -3865,40 +3864,58 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.CONNECT_OPENCODE, async () => {
-    const cached = getCachedHarnessResources('opencode')
+  ipcMain.handle(AgentIpcChannels.CONNECT_OPENCODE, async (_e, force?: boolean) => {
     try {
-      const resources = await probeOpenCodeResources({ cwd: resolveProbeCwd() })
-      setCachedHarnessResources('opencode', resources)
-      return resources
-    } catch (error) {
-      log.warn('[CONNECT_OPENCODE] failed: %s', error instanceof Error ? error.message : String(error))
-      return cached ?? { models: [], agents: [] }
+      return await connectWithHarnessResourceCache('opencode', {
+        force,
+        isUsable: (r) => (r.models?.length ?? 0) > 0 || (r.agents?.length ?? 0) > 0,
+        probe: () => probeOpenCodeResources({ cwd: resolveProbeCwd() }),
+        fallbackToCacheOnError: true,
+        onCacheHit: (hit) => {
+          log.info('[CONNECT_OPENCODE] cache fresh (ageMs=%d), skipping probe', hit.ageMs)
+        },
+        onProbeError: (error) => {
+          log.warn('[CONNECT_OPENCODE] failed: %s', error instanceof Error ? error.message : String(error))
+        },
+      })
+    } catch {
+      return { models: [], agents: [] }
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.CONNECT_CURSOR, async () => {
-    const cached = getCachedHarnessResources('cursor')
+  ipcMain.handle(AgentIpcChannels.CONNECT_CURSOR, async (_e, force?: boolean) => {
+    const resources = await connectWithHarnessResourceCache('cursor', {
+      force,
+      isUsable: (r) => (r.models?.length ?? 0) > 0,
+      probe: async () => {
+        let config: unknown = {}
+        try {
+          config = getBaseProvider('cursor').config
+        } catch {
+          // base provider may not exist until migrations run
+        }
+        // Must decrypt vault secrets — plaintext resolve skips enc:v1: blobs and looks "unauthed".
+        return probeCursorResources({
+          config,
+          resolveApiKey: resolveCursorApiKey,
+        })
+      },
+      fallbackToCacheOnError: true,
+      onCacheHit: (hit) => {
+        log.info('[CONNECT_CURSOR] cache fresh (ageMs=%d), skipping probe', hit.ageMs)
+      },
+      onProbeError: (error) => {
+        log.warn('[CONNECT_CURSOR] failed: %s', error instanceof Error ? error.message : String(error))
+      },
+    })
+    log.info('[CONNECT_CURSOR] %d models', resources.models.length)
+    let disabledModelIds: string[] = []
     try {
-      let config: unknown = {}
-      try {
-        config = getBaseProvider('cursor').config
-      } catch {
-        // base provider may not exist until migrations run
-      }
-      // Must decrypt vault secrets — plaintext resolve skips enc:v1: blobs and looks "unauthed".
-      const resources = await probeCursorResources({
-        config,
-        resolveApiKey: resolveCursorApiKey,
-      })
-      setCachedHarnessResources('cursor', resources)
-      log.info('[CONNECT_CURSOR] %d models', resources.models.length)
-      return resources
-    } catch (error) {
-      log.warn('[CONNECT_CURSOR] failed: %s', error instanceof Error ? error.message : String(error))
-      if (cached) return { ...cached, probing: false }
-      throw error
+      disabledModelIds = readCursorConfig(getBaseProvider('cursor').config).disabledModelIds ?? []
+    } catch {
+      /* base provider may not exist yet */
     }
+    return { ...resources, probing: false, disabledModelIds }
   })
 
   ipcMain.handle(AgentIpcChannels.GET_CURSOR_AUTH_STATUS, async () => {
@@ -3950,13 +3967,34 @@ function registerIpcHandlers(): void {
         return {}
       }
     })()
-    const next = { ...existing, ...patch }
+    const patchParams = readCursorConfig({ modelParamsByModel: patch.modelParamsByModel }).modelParamsByModel
+    const next = {
+      ...existing,
+      ...patch,
+      // Deep-merge per-model params so one model update does not wipe others.
+      modelParamsByModel: {
+        ...(existing.modelParamsByModel ?? {}),
+        ...(patchParams ?? {}),
+      },
+      // Replace (do not union) the disabled-model list when the patch includes it.
+      disabledModelIds: Object.prototype.hasOwnProperty.call(patch, 'disabledModelIds')
+        ? (readCursorConfig({ disabledModelIds: patch.disabledModelIds }).disabledModelIds ?? [])
+        : existing.disabledModelIds,
+    }
     if (typeof patch.apiKey === 'string' && patch.apiKey && !String(patch.apiKey).startsWith('enc:')) {
       next.apiKey = encryptCursorApiKey(String(patch.apiKey))
     }
     const provider = updateBaseProviderConfig('cursor', next)
     sessionManager.markAllNeedsRebuild('cursor')
     return { ok: true as const, config: readCursorConfig(provider.config) }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GET_CURSOR_BASE_CONFIG, async () => {
+    try {
+      return readCursorConfig(getBaseProvider('cursor').config)
+    } catch {
+      return {}
+    }
   })
 
   ipcMain.handle(AgentIpcChannels.CURSOR_LIST_AGENTS, async (_e, opts?: {

@@ -3033,6 +3033,10 @@ export const AgentIpcChannels = {
   ENVIRONMENT_REMOVE_PROJECT: 'environment:removeProject',
   /** List sessions for a remote project (local uses sessions:* DB IPC). */
   ENVIRONMENT_LIST_SESSIONS: 'environment:listSessions',
+  /** Unsent composer drafts, stored in the environment that owns the project. */
+  ENVIRONMENT_LIST_DRAFTS: 'environment:listDrafts',
+  ENVIRONMENT_UPSERT_DRAFT: 'environment:upsertDraft',
+  ENVIRONMENT_DELETE_DRAFT: 'environment:deleteDraft',
   /** Create a session on a remote project (local uses agent:create-session). */
   ENVIRONMENT_CREATE_SESSION: 'environment:createSession',
   ENVIRONMENT_GET_SESSION: 'environment:getSession',

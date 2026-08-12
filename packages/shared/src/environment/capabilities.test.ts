@@ -22,6 +22,7 @@ describe('normalizeCapabilities', () => {
       coldSessionResume: false,
       turnReattach: false,
       hostActionV1: false,
+      drafts: false,
     })
   })
 

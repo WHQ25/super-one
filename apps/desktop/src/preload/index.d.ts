@@ -8,6 +8,8 @@ import type { LiveSessionSnapshot } from '@superone/shared/session-types'
 import type { ModelCatalog } from '@superone/shared/model-catalog-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type {
+  DraftListEntry,
+  DraftUpsertRequest,
   EnvironmentInstallProgress,
   EnvironmentListItem,
   ProjectSnapshot,
@@ -760,6 +762,14 @@ export interface EnvironmentAPI {
     connectionId: string,
     input: { projectId?: string; path?: string },
   ): Promise<{ projectId?: string; path: string; name?: string; lastActiveAt?: number }>
+  /**
+   * Unsent composer drafts owned by this environment. A remote list merges in
+   * anything still queued locally for that node (`pendingSync: true`); an
+   * unreachable node contributes nothing rather than a stale mirror.
+   */
+  listDrafts(connectionId: string, projectPath?: string): Promise<DraftListEntry[]>
+  upsertDraft(connectionId: string, draft: DraftUpsertRequest): Promise<DraftListEntry>
+  deleteDraft(connectionId: string, draftId: string): Promise<void>
   /**
    * List sessions for a project on any environment (local or remote).
    * Local: connectionId `'local'`, projectId = project UUID or absolute folder path.

@@ -26,6 +26,11 @@ vi.mock('@/stores/app', () => ({
   },
 }))
 
+const saveDraft = vi.fn().mockResolvedValue(undefined)
+vi.mock('../../drafts', () => ({
+  useDraftsStore: { getState: () => ({ saveDraft }) },
+}))
+
 const mockSeedFromCurrent = vi.fn()
 const mockClearForSession = vi.fn()
 vi.mock('@/stores/activity-view-state', () => ({
@@ -224,6 +229,32 @@ describe('focusProjectImpl', () => {
 
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith(PATH, sessionId, PATH)
   })
+
+  it('does not carry an unsent composer when focusing another project (sidebar hop)', async () => {
+    setupProject('/from')
+    patchSession({ draftText: 'stay on from', selectedModel: 'sonnet' }, '/from')
+    useChatStore.getState().ensureSession('/to')
+
+    await useChatStore.getState().focusProject('/to')
+
+    expect(useChatStore.getState().projectSessions['/from']._sessions[
+      useChatStore.getState().projectSessions['/from']._activeSessionId!
+    ].draftText).toBe('stay on from')
+    const dest = useChatStore.getState().projectSessions['/to']
+    expect(dest._sessions[dest._activeSessionId!].draftText).toBe('')
+  })
+
+  it('carries the unsent composer when the new-session picker asks it to', async () => {
+    setupProject('/from')
+    patchSession({ draftText: 'come with me', selectedModel: 'opus' }, '/from')
+    useChatStore.getState().ensureSession('/to')
+
+    await useChatStore.getState().focusProject('/to', { carryOpenDraft: true })
+
+    const dest = useChatStore.getState().projectSessions['/to']
+    expect(dest._sessions[dest._activeSessionId!].draftText).toBe('come with me')
+    expect(dest._sessions[dest._activeSessionId!].selectedModel).toBe('opus')
+  })
 })
 
 describe('resetSessionImpl', () => {
@@ -360,6 +391,7 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
 
   it('applies defaultPrefsCache.permissionMode when set', () => {
     setupProject()
+    patchSession({ messages: [userMsg('u1', 'claude')] })
     defaultPrefsCache.permissionMode = 'plan'
 
     useChatStore.getState().resetSessionForWorktreeSwitch(PATH, { wtPath: '/wt2', gitBranch: null })
@@ -367,6 +399,28 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     expect(activeSession().permissionMode).toBe('plan')
     expect(activeSession()._worktreePath).toBe('/wt2')
     expect(activeSession()._gitBranch).toBeNull()
+  })
+
+  it('keeps harness/model on an unsent session and only rebinds the worktree', () => {
+    setupProject()
+    const sid = activeProjectState()._activeSessionId
+    patchSession({
+      sessionProvider: 'claude',
+      preferredProvider: 'claude',
+      selectedModel: 'sonnet',
+      modelUserChosen: true,
+      permissionMode: 'dontAsk',
+    })
+
+    useChatStore.getState().resetSessionForWorktreeSwitch(PATH, { wtPath: '/wt', gitBranch: 'feat' })
+
+    const sess = activeSession()
+    expect(activeProjectState()._activeSessionId).toBe(sid)
+    expect(sess.selectedModel).toBe('sonnet')
+    expect(sess.permissionMode).toBe('dontAsk')
+    expect(sess._worktreePath).toBe('/wt')
+    expect(sess._gitBranch).toBe('feat')
+    expect(sess.cwd).toBe('/wt')
   })
 
   it('inherits the codex provider from the current session instead of defaulting to claude', () => {

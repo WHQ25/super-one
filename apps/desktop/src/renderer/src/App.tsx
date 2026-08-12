@@ -112,6 +112,28 @@ function App(): React.JSX.Element {
     return () => { unsub?.() }
   }, [])
 
+  // Persist unsent composers when the window is backgrounded or closing —
+  // navigate-away promote only covers session switches, not quit-while-focused.
+  useEffect(() => {
+    let flushing = false
+    const flush = () => {
+      if (flushing) return
+      flushing = true
+      void import('@/stores/chat-store/helpers/draft-promote')
+        .then(({ promoteAllUnsentDrafts }) => promoteAllUnsentDrafts(useChatStore.getState()))
+        .finally(() => { flushing = false })
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
   useEffect(() => {
     startProjectMirror(useChatStore)
     useAppStore.getState().loadRemoteConfig()

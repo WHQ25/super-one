@@ -29,6 +29,7 @@ import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIc
 import { Grok, OpenCode } from '@lobehub/icons'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
+import { withDraftCarry } from '@/lib/draft-surface-select'
 import { displayHostPath, remoteProjectKey } from '@/lib/remote-project-key'
 import { useHostProjects } from '@/hooks/use-host-projects'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
@@ -91,7 +92,12 @@ function optionLabel(option: SuggestionHarnessOption): string {
   return option.label
 }
 
-function ProviderSelector() {
+export function ProviderSelector({
+  disableAutoApply = false,
+}: {
+  /** Draft surface: show the tabs, never re-pin the empty-session default harness. */
+  disableAutoApply?: boolean
+} = {}) {
   const { t } = useTranslation()
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
@@ -416,6 +422,7 @@ function ProviderSelector() {
   // tab — that was snapping harness selection back to default immediately.
   const lastAutoAppliedKeyRef = useRef<string | null>(null)
   useEffect(() => {
+    if (disableAutoApply) return
     if (!fixedHarness) return
     if (suggestionHarness === undefined) return
     if (messageCount > 0) return
@@ -434,6 +441,7 @@ function ProviderSelector() {
     // dropdown-slot memory / settings pins.
     void selectHarnessOption(target, false, 'fixed')
   }, [
+    disableAutoApply,
     suggestionHarness,
     fixedHarness,
     orderedHarnesses,
@@ -742,13 +750,13 @@ export function ChatSuggestions() {
       onOpened={(project) => {
         if (isLocal) {
           void fetchRecentFolders()
-          void selectProject(project.path)
+          void selectProject(project.path, withDraftCarry())
         } else {
           refresh()
-          void selectProject(remoteProjectKey(connectionId, project.path), {
-            connectionId,
-            projectId: project.projectId,
-          })
+          void selectProject(
+            remoteProjectKey(connectionId, project.path),
+            withDraftCarry({ connectionId, projectId: project.projectId }),
+          )
         }
       }}
     />
@@ -821,7 +829,17 @@ export function ChatSuggestions() {
       <ProviderSelector />
       <ProjectSelector
         align="center"
-        onOpened={() => void resetSession()}
+        carryOpenDraft
+        onOpened={() => {
+          const store = useChatStore.getState()
+          const path = store.activeProject
+          const sid = path ? store.projectSessions[path]?._activeSessionId : null
+          const sess = path && sid ? store.projectSessions[path]?._sessions[sid] : null
+          // Already composing / restored draft: keep that session. A fresh
+          // empty landing still mints a new session on the chosen project.
+          if (sess?.draftText.trim() || sess?.draftId) return
+          void resetSession()
+        }}
         onAddProject={isLocal ? undefined : () => setAddDialogOpen(true)}
       />
       {addDialog}

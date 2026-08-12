@@ -30,6 +30,11 @@ export interface EnvironmentCapabilities {
    * are stamped on session.create separately.
    */
   hostActionV1: boolean
+  /**
+   * Environment-scoped draft store (draft.list/upsert/delete). Absent on nodes
+   * predating the feature — their sidebar simply shows no drafts group.
+   */
+  drafts: boolean
 }
 
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
@@ -46,6 +51,7 @@ export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
   coldSessionResume: true,
   turnReattach: false,
   hostActionV1: true,
+  drafts: true,
 }
 
 /** Baseline node capabilities; Phase 2 enables workspaceFs/git/worktrees at runtime. */
@@ -63,6 +69,7 @@ export const PHASE1_NODE_CAPABILITIES: EnvironmentCapabilities = {
   coldSessionResume: false,
   turnReattach: false,
   hostActionV1: true,
+  drafts: true,
 }
 
 /**
@@ -88,6 +95,7 @@ export function intersectCapabilities(
     coldSessionResume: a.coldSessionResume && b.coldSessionResume,
     turnReattach: a.turnReattach && b.turnReattach,
     hostActionV1: a.hostActionV1 && b.hostActionV1,
+    drafts: a.drafts && b.drafts,
   }
 }
 
@@ -121,5 +129,6 @@ export function normalizeCapabilities(raw: unknown): EnvironmentCapabilities {
     coldSessionResume: flag('coldSessionResume'),
     turnReattach: flag('turnReattach'),
     hostActionV1: flag('hostActionV1'),
+    drafts: flag('drafts'),
   }
 }

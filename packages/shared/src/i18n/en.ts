@@ -28,6 +28,16 @@ export type Messages = {
       files: string
     }
     pinned: string
+    drafts: {
+      title: string
+      untitled: string
+      justNow: string
+      minutesAgo: string
+      hoursAgo: string
+      daysAgo: string
+      pendingSync: string
+      pendingSyncHint: string
+    }
     projects: string
     thisMac: string
     thisPc: string
@@ -2601,6 +2611,16 @@ export const en: Messages = {
       files: 'Files',
     },
     pinned: 'Pinned',
+    drafts: {
+      title: 'Drafts',
+      untitled: 'Untitled Draft',
+      justNow: 'just now',
+      minutesAgo: '{{count}}m ago',
+      hoursAgo: '{{count}}h ago',
+      daysAgo: '{{count}}d ago',
+      pendingSync: 'Pending Sync',
+      pendingSyncHint: 'Saved on this computer; it will sync when the host reconnects.',
+    },
     projects: 'Projects',
     thisMac: 'This Mac',
     thisPc: 'This PC',

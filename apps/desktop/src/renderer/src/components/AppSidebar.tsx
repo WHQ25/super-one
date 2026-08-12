@@ -35,6 +35,8 @@ import { FileTree } from '@/components/sidebar/FileTree'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { PinnedSessionRow } from '@/components/sidebar/PinnedSessionRow'
+import { DraftsSection } from '@/components/sidebar/DraftsSection'
+import { useDraftsStore } from '@/stores/drafts'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
@@ -76,6 +78,9 @@ export const AppSidebar = memo(function AppSidebar() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
+  const hasDrafts = useDraftsStore(
+    (s) => (s.byConnection[selectedHostConnectionId]?.length ?? 0) > 0,
+  )
   const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
@@ -852,7 +857,7 @@ export const AppSidebar = memo(function AppSidebar() {
         </div>
       </div>
 
-      {/* Project list for the selected host */}
+      {/* Project list + drafts (same level) for the selected host */}
       <div className="min-h-0 flex-1">
         {selectedHostConnectionId !== 'local' && hostProjectsError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-xs text-sidebar-foreground/70">
@@ -870,13 +875,11 @@ export const AppSidebar = memo(function AppSidebar() {
           <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
             {t('common.loading')}
           </div>
-        ) : sortedFolders.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
-            {t('sidebar.empty')}
-          </div>
         ) : (
           <ScrollArea className="h-full">
             <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
+              {/* Drafts are environment-scoped peers of projects — no section header. */}
+              <DraftsSection connectionId={selectedHostConnectionId} />
               {sortedFolders.map((folder) => {
                 return (
                   <ProjectSidebarRow
@@ -896,6 +899,11 @@ export const AppSidebar = memo(function AppSidebar() {
                   />
                 )
               })}
+              {sortedFolders.length === 0 && !hasDrafts && (
+                <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
+                  {t('sidebar.empty')}
+                </div>
+              )}
             </div>
           </ScrollArea>
         )}

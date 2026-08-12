@@ -12,6 +12,7 @@ import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
 import type { EnvironmentHost } from './environment/environment-host'
+import type { DraftUpsertRequest } from '@superone/shared/environment'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
@@ -1263,6 +1264,27 @@ function registerIpcHandlers(): void {
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().listSessions(connectionId, projectId, options)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_LIST_DRAFTS,
+    async (_e, connectionId: string, projectPath?: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listDrafts(connectionId, projectPath)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_UPSERT_DRAFT,
+    async (_e, connectionId: string, draft: DraftUpsertRequest) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().upsertDraft(connectionId, draft)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_DELETE_DRAFT,
+    async (_e, connectionId: string, draftId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      await getEnvironmentHost().deleteDraft(connectionId, draftId)
     },
   )
   ipcMain.handle(

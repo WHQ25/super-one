@@ -3,7 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import type { ProjectSnapshot } from '@superone/shared/environment'
+import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import { forEachAgentEventPayload } from './agent-event-payload'
 
 // Do not try to name this renderer via `process.title` here — it cannot work.
@@ -296,6 +296,25 @@ const environmentAPI = {
       connectionId,
       input,
     ) as Promise<{ projectId?: string; path: string; name?: string; lastActiveAt?: number }>,
+  /** Drafts live in the environment that owns the project — never mirrored. */
+  listDrafts: (connectionId: string, projectPath?: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_LIST_DRAFTS,
+      connectionId,
+      projectPath,
+    ) as Promise<DraftListEntry[]>,
+  upsertDraft: (connectionId: string, draft: DraftUpsertRequest) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_UPSERT_DRAFT,
+      connectionId,
+      draft,
+    ) as Promise<DraftListEntry>,
+  deleteDraft: (connectionId: string, draftId: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_DELETE_DRAFT,
+      connectionId,
+      draftId,
+    ) as Promise<void>,
   listSessions: (
     connectionId: string,
     projectId: string,

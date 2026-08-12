@@ -287,6 +287,7 @@ export { runCodexCommand } from './codex/runner'
 import { runCodexCommand } from './codex/runner'
 import { approveCodexPlanImpl, rejectCodexPlanImpl } from './codex/plan-actions'
 import { sendMessageImpl } from './helpers/send-message'
+import { promoteDraftIfUnsent } from './helpers/draft-promote'
 import {
   clearMessagesImpl,
   disconnectRemoteSessionImpl,
@@ -460,7 +461,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   // handleAgentEvent + syncLiveSnapshots now provided by createEventSlice
 
-  focusProject: async (projectPath) => focusProjectImpl(set, get, projectPath),
+  focusProject: async (projectPath, opts) => focusProjectImpl(set, get, projectPath, opts),
 
   ensureSession: (projectPath) => ensureSessionImpl(set, projectPath, get),
 
@@ -617,6 +618,11 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   switchSession: async (sessionId) => {
     const { activeProject } = get()
     if (!activeProject) return
+    window.app?.trace?.('drafts', 'switchSession_enter', {
+      activeProject,
+      from: getProject(get())._activeSessionId,
+      to: sessionId,
+    }, sessionId)
     const project = getProject(get())
     {
       const activeSession = getActivePerSession(get())
@@ -634,6 +640,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     // Track the outgoing session as "previous" so Ctrl+Tab can bounce back even if it's idle.
     const prevSid = project._activeSessionId
     if (prevSid && prevSid !== sessionId) {
+      // Leaving an unsent composer with text in it: persist as a draft before
+      // the session state stops being reachable from the sidebar.
+      await promoteDraftIfUnsent(get(), activeProject, prevSid)
       set((s) => ({
         ...updateProjectState(s, activeProject, () => ({ _previousSessionId: prevSid })),
         _previousFocusedSession: { projectPath: activeProject, sessionId: prevSid },
@@ -781,13 +790,33 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       })
       useAppStore.getState().setActiveWorktree(activeProject, _getSessionWorktreePath(targetSession))
 
-      const defaultsPatch = applySessionAgentDefaults(
-        targetSession,
-        getProject(get(), activeProject),
-        get().harnessResources.claude?.models ?? [],
-      )
-      if (Object.keys(defaultsPatch).length > 0) {
-        set((s) => updatePerSession(s, activeProject, sessionId, () => defaultsPatch))
+      // Unsent drafts already carry the user's harness/model/effort. Re-applying
+      // catalog defaults here is what made "open draft" look like a fresh session
+      // with only the text restored.
+      const isParkedDraft = targetSession.messages.length === 0 && !!targetSession.draftText.trim()
+      if (!isParkedDraft) {
+        const defaultsPatch = applySessionAgentDefaults(
+          targetSession,
+          getProject(get(), activeProject),
+          get().harnessResources.claude?.models ?? [],
+        )
+        if (Object.keys(defaultsPatch).length > 0) {
+          window.app?.trace?.('drafts', 'switchSession_defaults', {
+            sessionId,
+            sessionProvider: targetSession.sessionProvider,
+            preferredProvider: targetSession.preferredProvider,
+            selectedModel: targetSession.selectedModel,
+            defaultsPatch,
+          }, sessionId)
+          set((s) => updatePerSession(s, activeProject, sessionId, () => defaultsPatch))
+        }
+      } else {
+        window.app?.trace?.('drafts', 'switchSession_skip_defaults', {
+          sessionId,
+          sessionProvider: targetSession.sessionProvider,
+          preferredProvider: targetSession.preferredProvider,
+          selectedModel: targetSession.selectedModel,
+        }, sessionId)
       }
       // Mini-window / multi-window: live sync may leave acpModels empty until catalog hydrate.
       hydrateAcpCatalogForSession(set, get, activeProject, sessionId)

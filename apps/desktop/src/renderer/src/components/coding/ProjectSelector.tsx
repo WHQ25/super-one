@@ -26,9 +26,21 @@ interface ProjectSelectorProps {
    * Required for remote hosts (native picker is local-only).
    */
   onAddProject?: () => void
+  /**
+   * Move the open unsent draft onto the chosen project (new-session / draft
+   * surface). Sidebar project hops must leave this off so the draft keeps its
+   * saved project + worktree.
+   */
+  carryOpenDraft?: boolean
 }
 
-export function ProjectSelector({ compact, align = 'start', onOpened, onAddProject }: ProjectSelectorProps) {
+export function ProjectSelector({
+  compact,
+  align = 'start',
+  onOpened,
+  onAddProject,
+  carryOpenDraft = false,
+}: ProjectSelectorProps) {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const selectProject = useAppStore((s) => s.selectProject)
@@ -42,6 +54,7 @@ export function ProjectSelector({ compact, align = 'start', onOpened, onAddProje
     void selectProject(folder.path, {
       connectionId,
       projectId: folder.id || undefined,
+      carryOpenDraft,
     }).then(() => onOpened?.())
   }
 
@@ -52,7 +65,7 @@ export function ProjectSelector({ compact, align = 'start', onOpened, onAddProje
     }
     // Local-only system picker; remote must pass onAddProject (AddProjectDialog).
     if (!isLocal) return
-    void selectProject().then(() => onOpened?.())
+    void selectProject(undefined, { carryOpenDraft }).then(() => onOpened?.())
   }
 
   // Already bound to a project: always show its name, even while the host list

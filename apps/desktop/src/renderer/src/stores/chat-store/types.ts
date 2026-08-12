@@ -171,6 +171,11 @@ export interface PerSessionState {
   draftText: string
   /** Editor JSON snapshot (Tiptap doc) — preserves chip nodes & their inline positions across session switches, unlike the plain-text draft. */
   draftJson: object | null
+  /**
+   * Environment draft this empty session was restored or carried from.
+   * When set, the pane is a draft surface — not a fresh ChatSuggestions landing.
+   */
+  draftId: string | null
   promptSuggestion: string | null
   attachments: ImageAttachment[]
   browserAnnotations: BrowserAnnotation[]
@@ -340,7 +345,7 @@ export interface ChatStore {
   handleAgentEvent: (event: AgentEvent) => void
   syncLiveSnapshots: () => Promise<void>
 
-  focusProject: (projectPath: string) => Promise<void>
+  focusProject: (projectPath: string, opts?: { carryOpenDraft?: boolean }) => Promise<void>
   ensureSession: (projectPath: string) => void
 
   sendMessage: (content: string, segments?: InputSegment[], explicitMentions?: Mention[], attachments?: ImageAttachment[], target?: SessionWriteTarget) => Promise<void>

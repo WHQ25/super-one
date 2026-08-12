@@ -3,6 +3,9 @@ import type {
   ControlLease,
   CreateSessionInput,
   CreateTerminalInput,
+  DraftGateway,
+  DraftListResult,
+  DraftUpsertResult,
   EnvironmentEventEnvelope,
   EnvironmentGateway,
   EnvironmentSnapshot,
@@ -49,6 +52,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   readonly interactions: InteractionGateway
   readonly terminals: TerminalGateway
   readonly workspace: WorkspaceGateway
+  readonly drafts: DraftGateway
 
   private descriptorCache: ExecutionEnvironmentDescriptor | null = null
   private fixedEnvironmentId: string | null = null
@@ -58,6 +62,28 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     this.interactions = this.createInteractionGateway()
     this.terminals = this.createTerminalGateway()
     this.workspace = this.createWorkspaceGateway()
+    this.drafts = this.createDraftGateway()
+  }
+
+  /**
+   * Drafts for a remote project live on that node — never mirrored here, so a
+   * disconnected node simply has no drafts to show rather than a stale copy.
+   */
+  private createDraftGateway(): DraftGateway {
+    const client = this.client
+    return {
+      async list(input) {
+        const res = await client.rpc<DraftListResult>('draft.list', input ?? {})
+        return res.drafts ?? []
+      },
+      async upsert(input) {
+        const res = await client.rpc<DraftUpsertResult>('draft.upsert', input)
+        return res.draft
+      },
+      async delete(draftId) {
+        await client.rpc('draft.delete', { draftId })
+      },
+    }
   }
 
   private assertEnv(environmentId: string): void {

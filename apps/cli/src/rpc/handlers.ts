@@ -52,6 +52,7 @@ import {
   AUTOMATION_MUTATING_METHODS,
   dispatchAutomationRpc,
 } from './automation-handlers'
+import { dispatchDraftRpc } from './draft-handlers'
 import {
   CODEX_MUTATING_METHODS,
   dispatchCodexRpc,
@@ -63,6 +64,7 @@ import {
 import { dispatchHarnessResourcesRpc } from './harness-resources-handlers'
 import type { AutomationService } from '@superone/runtime/automations'
 import type { AutomationStore } from '@superone/runtime/automations'
+import type { DraftStore } from '@superone/runtime/drafts'
 import {
   settingsFromSessionProviderConfig,
   type SessionProviderStore,
@@ -91,6 +93,13 @@ export interface RpcContext {
   settingsConfigPath: string
   /** Project-scoped automations store (CRUD). */
   automations: AutomationStore
+  /**
+   * Unsent composer drafts stored on this node. Deliberately absent from
+   * MUTATING_METHODS: upsert/delete key off a controller-minted draft id, so
+   * they are idempotent by construction and the controller outbox can retry
+   * a queued write freely without replay receipts.
+   */
+  drafts: DraftStore
   /** Process-lifecycle scheduler + runNow executor. */
   automationService: AutomationService
   /** Session-layer provider profiles (claude-base, custom multi-profile, …). */
@@ -281,6 +290,9 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
     automationService: ctx.automationService,
   })
   if (automation) return await automation
+
+  const draft = dispatchDraftRpc(method, payload, { client: ctx.client, drafts: ctx.drafts })
+  if (draft) return draft
 
   const sessionProviders = dispatchSessionProviderRpc(method, payload, {
     client: ctx.client,

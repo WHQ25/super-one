@@ -166,7 +166,7 @@ interface AppState {
   // `connectionId` defaults to selectedHostConnectionId; remote skips local openFolder.
   selectProject: (
     folderPath?: string,
-    options?: { connectionId?: string; projectId?: string },
+    options?: { connectionId?: string; projectId?: string; carryOpenDraft?: boolean },
   ) => Promise<void>
   openTmpFolder: () => Promise<void>
   removeRecentFolder: (folderPath: string) => Promise<void>
@@ -316,7 +316,7 @@ async function enterMainAfterGates(
 async function applyProjectSelection(
   folderPath: string,
   set: (partial: Partial<AppState>) => void,
-  options?: { connectionId?: string; projectId?: string },
+  options?: { connectionId?: string; projectId?: string; carryOpenDraft?: boolean },
 ): Promise<boolean> {
   const connectionId =
     options?.connectionId ?? useAppStore.getState().selectedHostConnectionId ?? 'local'
@@ -338,8 +338,12 @@ async function applyProjectSelection(
       // auto-switch to the latest node history entry — sidebar history /
       // explicit New session owns that. First send materializes a real node
       // session via resolveNodeSessionId.
+      // focusProject (not bare activeProject set) so an open unsent draft is
+      // carried across projects instead of left behind as a blank session.
       useChatStore.getState().ensureSession(projectKey)
-      useChatStore.setState({ activeProject: projectKey })
+      await useChatStore.getState().focusProject(projectKey, {
+        carryOpenDraft: options?.carryOpenDraft === true,
+      })
       set({
         currentFolder: projectKey,
         currentProjectId: projectId,
@@ -365,7 +369,9 @@ async function applyProjectSelection(
   useSettingsStore.getState().setProviderScope('local')
   useChatStore.getState().ensureSession(folderPath)
   // currentFolder / currentProjectId mirror chat.activeProject — see subscription at file end.
-  await useChatStore.getState().focusProject(folderPath)
+  await useChatStore.getState().focusProject(folderPath, {
+    carryOpenDraft: options?.carryOpenDraft === true,
+  })
   if (useAppStore.getState().view === 'startup') set({ view: 'main' })
   return true
 }

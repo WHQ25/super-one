@@ -9,6 +9,7 @@ import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
+import { DraftSessionSurface } from './DraftSessionSurface'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { TodoPopup } from './TodoPopup'
@@ -123,6 +124,7 @@ function ChatTranscript({
     messages, isCompacting, isRecapping, compactError, apiRetry, modelFallback,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
+    draftId,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
@@ -136,6 +138,7 @@ function ChatTranscript({
     lastAssistantMessageId: s.lastAssistantMessageId,
     queuedMessages: s.queuedMessages,
     awaitingAssistantReply: s.awaitingAssistantReply,
+    draftId: s.draftId,
   })))
 
   const { editQueuedMessage, deleteQueuedMessage, dismissCompactError } = useChatStore(useShallow((s) => ({
@@ -268,7 +271,7 @@ function ChatTranscript({
   return (
     <div className="relative min-w-0 flex-1 overflow-hidden">
       {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
-        <ChatSuggestions />
+        draftId ? <DraftSessionSurface /> : <ChatSuggestions />
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">

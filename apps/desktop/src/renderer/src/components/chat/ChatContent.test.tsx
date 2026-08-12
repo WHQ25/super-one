@@ -18,6 +18,7 @@ interface FakeSessionState {
   queuedMessages: unknown[]
   _historyHydrated: boolean
   awaitingAssistantReply: boolean
+  draftId: string | null
 }
 
 const hoisted = vi.hoisted(() => {
@@ -36,6 +37,7 @@ const hoisted = vi.hoisted(() => {
     queuedMessages: [],
     _historyHydrated: true,
     awaitingAssistantReply: false,
+    draftId: null,
   }
   const scope: { value: { projectPath: string; sessionId: string } | null } = { value: null }
   // Counts distinct scroll-area DOM nodes ever mounted. A key change forces React
@@ -146,6 +148,7 @@ vi.mock('./ForkedThreadView', () => ({
   ForkedThreadView: () => <div data-testid="forked-thread-view" />,
 }))
 vi.mock('./ChatSuggestions', () => ({ ChatSuggestions: () => <div data-testid="chat-suggestions" /> }))
+vi.mock('./DraftSessionSurface', () => ({ DraftSessionSurface: () => <div data-testid="draft-session-surface" /> }))
 vi.mock('./PermissionPrompt', () => ({ PermissionPrompt: () => <div data-testid="permission-prompt" /> }))
 vi.mock('./AskUserQuestionPrompt', () => ({ AskUserQuestionPrompt: () => <div data-testid="ask-user-question" /> }))
 vi.mock('./TodoPopup', () => ({ TodoPopup: () => <div data-testid="todo-popup" /> }))
@@ -226,6 +229,7 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     hoisted.sessionState.pendingPlanApproval = null
     hoisted.sessionState.status = 'idle'
     hoisted.sessionState.awaitingAssistantReply = false
+    hoisted.sessionState.draftId = null
     hoisted.isRemoteLocked.value = false
   }
 
@@ -234,10 +238,24 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     hoisted.sessionState.messages = []
     hoisted.sessionState.session = null
     hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.draftId = null
 
     renderContent()
 
     expect(screen.getByTestId('chat-suggestions')).toBeInTheDocument()
+  })
+
+  it('shows the draft surface instead of ChatSuggestions for a restored draft', () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.draftId = 'draft-1'
+
+    renderContent()
+
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+    expect(screen.getByTestId('draft-session-surface')).toBeInTheDocument()
   })
 
   it('does NOT show ChatSuggestions while an un-hydrated stub is still loading (no flash)', () => {

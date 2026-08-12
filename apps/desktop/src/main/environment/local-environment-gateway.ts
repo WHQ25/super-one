@@ -6,6 +6,7 @@ import {
   PROTOCOL_GENERATION,
   type CreateSessionInput,
   type CreateTerminalInput,
+  type DraftGateway,
   type EnvironmentEventEnvelope,
   type EnvironmentGateway,
   type EnvironmentSnapshot,
@@ -36,6 +37,8 @@ import {
   type WorkspaceWatchInput,
   type WorkspaceWriteInput,
 } from '@superone/shared/environment'
+import type { DraftStore } from '@superone/runtime/drafts'
+import { localDraftStore } from '../db-drafts'
 import { loadOrCreateLocalEnvironmentId } from './local-identity'
 
 /** Minimal session port so local gateway can share harness parity with remote. */
@@ -115,6 +118,11 @@ export interface LocalEnvironmentGatewayOptions {
   sessions?: LocalSessionPort
   /** Optional workspace port for local FS gateway routing. */
   workspace?: LocalWorkspacePort
+  /**
+   * Draft store factory. Defaults to the desktop database-backed store;
+   * injectable so tests can drive the gateway without Electron userData.
+   */
+  draftStore?: () => DraftStore
   clientSessionId?: string
 }
 
@@ -145,6 +153,7 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
   readonly interactions: InteractionGateway
   readonly terminals: TerminalGateway
   readonly workspace: WorkspaceGateway
+  readonly drafts: DraftGateway
 
   private readonly environmentId: string
   private readonly label: string
@@ -154,6 +163,7 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
   private readonly sessionPort: LocalSessionPort | null
   private readonly workspacePort: LocalWorkspacePort | null
   private readonly clientSessionId: string
+  private readonly draftStoreFn: () => DraftStore
 
   constructor(opts: LocalEnvironmentGatewayOptions) {
     this.environmentId = loadOrCreateLocalEnvironmentId(opts.dataDir)
@@ -164,11 +174,13 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
     this.sessionPort = opts.sessions ?? null
     this.workspacePort = opts.workspace ?? null
     this.clientSessionId = opts.clientSessionId ?? 'local-desktop'
+    this.draftStoreFn = opts.draftStore ?? localDraftStore
 
     this.sessions = this.createSessionGateway()
     this.interactions = this.createInteractionGateway()
     this.terminals = this.createTerminalGateway()
     this.workspace = this.createWorkspaceGateway()
+    this.drafts = this.createDraftGateway()
   }
 
   getEnvironmentId(): string {
@@ -218,6 +230,26 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
     // Local event log is not durable yet; consumers should keep using existing
     // SessionManager / renderer transports until Phase 3 projection lands.
     return
+  }
+
+  /**
+   * Local drafts share the runtime store the node uses, so a draft behaves the
+   * same whichever environment owns it. Lazily resolved: the store opens the
+   * desktop database, which is not available at construction time in tests.
+   */
+  private createDraftGateway(): DraftGateway {
+    const resolve = this.draftStoreFn
+    return {
+      async list(input) {
+        return resolve().list(input?.projectPath)
+      },
+      async upsert(input) {
+        return resolve().upsert(input)
+      },
+      async delete(draftId) {
+        resolve().delete(draftId)
+      },
+    }
   }
 
   private createSessionGateway(): SessionGateway {

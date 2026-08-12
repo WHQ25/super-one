@@ -2,6 +2,7 @@ import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
 import { applyDefaultModel, resolveDefaultClaudeEffort, resolveDefaultClaudeModel } from './agent-defaults'
 import { buildSlashCommands } from './chat-helpers'
+import { applyCarriedDraft, captureOpenDraft, promoteDraftIfUnsent } from './draft-promote'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
 import { resolveDefaultOpenCodeSelection } from '../harness/opencode-handler'
 import { resolveDefaultCodexSelection, resolveSessionCodexSelection } from './codex-helpers'
@@ -39,12 +40,29 @@ export async function focusProjectImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
   projectPath: string,
+  opts?: { carryOpenDraft?: boolean },
 ): Promise<void> {
   const currentProject = get().activeProject
+  // Carry is opt-in (ProjectSelector on the new-session / draft surface).
+  // Sidebar / session hops must park the draft so its project + worktree stay
+  // on the draft instead of following the user and being cleared.
+  const allowCarry = opts?.carryOpenDraft === true
+  const carried =
+    allowCarry && currentProject && currentProject !== projectPath
+      ? captureOpenDraft(
+          get(),
+          currentProject,
+          get().projectSessions[currentProject]?._activeSessionId ?? null,
+        )
+      : null
+
   if (currentProject && currentProject !== projectPath) {
     const project = get().projectSessions[currentProject]
     if (project) {
       const outgoingSid = project._activeSessionId
+      if (!carried) {
+        void promoteDraftIfUnsent(get(), currentProject, outgoingSid)
+      }
       const activeSession = outgoingSid ? project._sessions[outgoingSid] : null
       const isRemote = isRemoteSession(get(), currentProject, outgoingSid)
       if ((activeSession && (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply)) && !isRemote) {
@@ -99,11 +117,24 @@ export async function focusProjectImpl(
     }
     return updates
   })
+
+  // After focus lands: put the carried draft into this project's unsent session
+  // (or mint one). Same draft id + full new-session config — not a blank session.
+  if (carried) {
+    const toSid = applyCarriedDraft(set, projectPath, carried)
+    if (toSid) {
+      void import('@/components/mosaic/mosaic-store').then(({ useMosaicStore }) => {
+        useMosaicStore.getState().focusOrReplaceFocused(projectPath, toSid)
+      })
+    }
+  }
   // Keep the renderer's worktree root in sync with the focused session. switchSession
   // owns this for same-project hops, but a cross-project switchToSession can skip
   // switchSession entirely (target is already the destination's active session), so
   // focusProject must mirror activePath itself or the file tree shows the project root.
-  const focusedSession = targetSid ? get().projectSessions[projectPath]?._sessions[targetSid] : null
+  // Read AFTER carry — the pre-focus targetSid is the dest's previous conversation.
+  const focusedSid = get().projectSessions[projectPath]?._activeSessionId
+  const focusedSession = focusedSid ? get().projectSessions[projectPath]?._sessions[focusedSid] : null
   useAppStore.getState().setActiveWorktree(projectPath, _getSessionWorktreePath(focusedSession))
   // Local: SessionManager.resume. Remote: start event drain if turn still live.
   if (targetSid) {
@@ -451,8 +482,20 @@ export function resetSessionForWorktreeSwitchImpl(
   const prevProject = get().projectSessions[projectPath]
   const previousSid = prevProject?._activeSessionId ?? null
   const previousSession = previousSid ? prevProject?._sessions[previousSid] : undefined
+  // Unsent empty session: worktree is a setting, not a new conversation.
+  const unsent = !!previousSession
+    && previousSession.messages.length === 0
+    && !_isLiveSession(previousSession)
+  if (unsent && previousSid) {
+    set((s) => updatePerSession(s, projectPath, previousSid, () => ({
+      cwd: opts?.wtPath ?? projectPath,
+      _worktreePath: opts?.wtPath ?? null,
+      _gitBranch: opts?.gitBranch ?? null,
+    })))
+    return
+  }
   const nextProvider = previousSession?.sessionProvider ?? previousSession?.preferredProvider ?? 'claude'
-  const draftId = createSessionId()
+  const newSid = createSessionId()
   set((s) => {
     const proj = getProject(s, projectPath)
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
@@ -480,8 +523,8 @@ export function resetSessionForWorktreeSwitchImpl(
         ...s.projectSessions,
         [projectPath]: {
           ...proj,
-          _activeSessionId: draftId,
-          _sessions: { ...proj._sessions, [draftId]: newSession },
+          _activeSessionId: newSid,
+          _sessions: { ...proj._sessions, [newSid]: newSession },
         },
       },
     }

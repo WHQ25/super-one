@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 
 let sessionsByFolder: Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; parentSessionId?: string }>> = {}
@@ -86,6 +86,9 @@ const mockEnvironment = {
     const offset = options?.offset ?? 0
     return offset > 0 ? rows.slice(offset) : rows
   }),
+  listDrafts: vi.fn(async () => []),
+  upsertDraft: vi.fn(async (draft: { id: string }) => draft),
+  deleteDraft: vi.fn(async () => {}),
 }
 
 const toastWarning = vi.fn()
@@ -214,6 +217,12 @@ vi.mock('@/components/ui/tabs', () => ({
   TabsList: ({ children }: { children: ReactNode }) => <>{children}</>,
   TabsTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
+
+// Cold-start transform of AppSidebar + its graph is multi-second on this
+// suite; warm once so individual cases stay under the default 5s timeout.
+beforeAll(async () => {
+  await import('./AppSidebar')
+}, 30_000)
 
 beforeEach(() => {
   vi.clearAllMocks()

@@ -66,8 +66,23 @@ import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from '../recent-folders'
 import { listSessionsForProjectId } from '../db-sessions'
-import type { ProjectSnapshot } from '@superone/shared/environment'
+import type {
+  DraftListEntry,
+  DraftRecord,
+  DraftUpsertRequest,
+  ProjectSnapshot,
+} from '@superone/shared/environment'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+import {
+  deletePendingDraft,
+  enqueuePendingDraft,
+  isPendingDraftQueued,
+  listFlushablePendingDrafts,
+  listPendingDrafts,
+  mergePendingIntoDrafts,
+  recordPendingDraftFailure,
+} from '../db-drafts'
+import { flushPendingDraftItem } from '../pending-draft-flush'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 import {
   RemoteHostActionConsumer,
@@ -431,6 +446,101 @@ export class EnvironmentHost {
       .map((r) => this.mapRemoteSessionEntry(r))
       .filter((r) => r.sessionId)
       .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+  }
+
+  // --- Drafts (environment-scoped; remote writes go through the local outbox) ---
+
+  /**
+   * Drafts owned by one environment. Remote lists are merged with anything
+   * still queued for that node, so a draft the user just typed is visible
+   * immediately even though it has not been persisted remotely yet.
+   */
+  async listDrafts(connectionId: string, projectPath?: string): Promise<DraftListEntry[]> {
+    if (connectionId === 'local') {
+      const local = this.registry.getLocal()
+      return (await local.drafts!.list(projectPath ? { projectPath } : undefined)) as DraftListEntry[]
+    }
+    const pending = listPendingDrafts(connectionId).filter(
+      (p) => !projectPath || p.draft.projectPath === projectPath,
+    )
+    let remote: DraftRecord[] = []
+    try {
+      const gateway = this.requireRemoteGateway(connectionId)
+      remote = await gateway.drafts.list(projectPath ? { projectPath } : undefined)
+    } catch {
+      // Node unreachable: its drafts live there and are simply not available
+      // right now. Never fabricate a stale mirror — show only what we hold.
+    }
+    return mergePendingIntoDrafts(remote, pending)
+  }
+
+  /**
+   * Queue-first write. The promote moment is app quit / window close, so a
+   * straight-through remote write has a real chance of being cut off; the
+   * local queue is a synchronous disk write that cannot be.
+   */
+  async upsertDraft(connectionId: string, draft: DraftUpsertRequest): Promise<DraftListEntry> {
+    if (connectionId === 'local') {
+      const local = this.registry.getLocal()
+      return (await local.drafts!.upsert(draft)) as DraftListEntry
+    }
+    enqueuePendingDraft(connectionId, draft)
+    try {
+      const gateway = this.requireRemoteGateway(connectionId)
+      const saved = await gateway.drafts.upsert(draft)
+      deletePendingDraft(draft.id)
+      return saved
+    } catch (err) {
+      recordPendingDraftFailure(draft.id, err instanceof Error ? err.message : String(err))
+      return mergePendingIntoDrafts([], listPendingDrafts(connectionId)).find(
+        (d) => d.id === draft.id,
+      )!
+    }
+  }
+
+  /**
+   * Delete on the owning environment. A draft that never left the outbox is
+   * fully deleted by dropping the queued row; one that already reached the
+   * node needs the node, so an offline delete reports failure instead of
+   * pretending to succeed and resurrecting on the next list.
+   */
+  async deleteDraft(connectionId: string, draftId: string): Promise<void> {
+    if (connectionId === 'local') {
+      const local = this.registry.getLocal()
+      await local.drafts!.delete(draftId)
+      return
+    }
+    const wasQueued = listPendingDrafts(connectionId).some((p) => p.draft.id === draftId)
+    deletePendingDraft(draftId)
+    try {
+      await this.requireRemoteGateway(connectionId).drafts.delete(draftId)
+    } catch (err) {
+      if (!wasQueued) throw err
+    }
+  }
+
+  /**
+   * Drain the outbox for a node that just came back. Called from the
+   * connection lifecycle — never on a self-owned timer.
+   */
+  async flushPendingDrafts(connectionId: string): Promise<{ flushed: number; failed: number }> {
+    const queued = listFlushablePendingDrafts(connectionId)
+    if (queued.length === 0) return { flushed: 0, failed: 0 }
+    let flushed = 0
+    let failed = 0
+    const gateway = this.requireRemoteGateway(connectionId)
+    for (const item of queued) {
+      const result = await flushPendingDraftItem(item.draft, {
+        isStillQueued: isPendingDraftQueued,
+        upsert: (draft) => gateway.drafts.upsert(draft).then(() => undefined),
+        remoteDelete: (draftId) => gateway.drafts.delete(draftId),
+        dequeue: deletePendingDraft,
+        recordFailure: recordPendingDraftFailure,
+      })
+      if (result === 'flushed') flushed += 1
+      else if (result === 'failed') failed += 1
+    }
+    return { flushed, failed }
   }
 
   /**
@@ -2890,6 +3000,9 @@ export class EnvironmentHost {
       // attach Host Action here so remote tools work without a manual Connect.
       this.startHostActionConsumer(snapshot.connectionId)
       void this.loadRemoteProjects(snapshot.connectionId, snapshot.generation).catch(() => {})
+      // Drain drafts queued while this node was unreachable. Upserts are
+      // idempotent by draft id, so a partially-applied earlier flush is safe.
+      void this.flushPendingDrafts(snapshot.connectionId).catch(() => {})
     } else {
       this.remoteProjectCache.delete(snapshot.connectionId)
       this.remoteProjectLoads.delete(snapshot.connectionId)

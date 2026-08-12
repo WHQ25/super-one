@@ -34,6 +34,7 @@ import {
   createAutomationStore,
   type AutomationStore,
 } from '@superone/runtime/automations'
+import { createDraftStore, type DraftStore } from '@superone/runtime/drafts'
 import {
   createSessionProviderStore,
   type SessionProviderStore,
@@ -57,6 +58,7 @@ export interface NodeRuntime {
   collaboration: CollaborationService
   idempotency: IdempotencyService
   providers: ProviderStore
+  drafts: DraftStore
   automations: AutomationStore
   automationService: AutomationService
   sessionProviders: SessionProviderStore
@@ -238,6 +240,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
   const idempotency = new IdempotencyService(db)
   const startedAt = Date.now()
 
+  const drafts = createDraftStore(db)
   const automations = createAutomationStore(db, (projectId) => projects.get(projectId)?.path ?? null)
   const automationService = new AutomationService({
     store: automations,
@@ -266,6 +269,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     idempotency,
     providers,
     settingsConfigPath: paths.configJson,
+    drafts,
     automations,
     automationService,
     sessionProviders,
@@ -311,6 +315,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     collaboration,
     idempotency,
     providers,
+    drafts,
     automations,
     automationService,
     sessionProviders,

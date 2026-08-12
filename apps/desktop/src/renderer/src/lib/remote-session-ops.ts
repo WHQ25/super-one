@@ -213,6 +213,7 @@ export function mergeRemoteHydrateWithCurrent(
     // Composer / queue are renderer-only — never take the pre-await snapshot.
     draftText: current.draftText,
     draftJson: current.draftJson,
+    draftId: current.draftId,
     attachments: current.attachments,
     mentions: current.mentions,
     browserAnnotations: current.browserAnnotations,

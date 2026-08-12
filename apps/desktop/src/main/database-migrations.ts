@@ -14,6 +14,7 @@ import {
   type ServiceEndpoint,
   type WireProtocol,
 } from '@superone/shared/platform-registry'
+import { DRAFTS_TABLE_DDL } from '@superone/runtime/drafts'
 import type Database from 'better-sqlite3'
 import { encryptSecret } from './crypto/secret-store'
 
@@ -226,6 +227,23 @@ export function runDatabaseMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_automations_project ON automations(project_id);
     CREATE INDEX IF NOT EXISTS idx_automations_next_run ON automations(enabled, next_run_at);
+  `)
+
+  // Local-environment drafts (same DDL the node runs — see @superone/runtime/drafts)
+  // plus the outbox for drafts bound for a node we could not reach. Deliberately
+  // no FK to projects: a draft outlives the project being removed and degrades
+  // to "untargeted" instead of being cascade-deleted.
+  db.exec(DRAFTS_TABLE_DDL)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pending_drafts (
+      id TEXT PRIMARY KEY,
+      connection_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      queued_at TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_pending_drafts_connection ON pending_drafts(connection_id);
   `)
 
   if (!cols.some((c) => c.name === 'is_automation')) {

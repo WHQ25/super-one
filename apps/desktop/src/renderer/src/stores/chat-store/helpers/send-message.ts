@@ -498,7 +498,17 @@ export async function sendMessageImpl(
       userSelections: [],
       browserAnnotations: [],
       miniAppContexts: {},
+      draftId: null,
     }))
+    // First send consumes any visibility/leave-promoted draft for this origin.
+    {
+      const consumeSid = resolveWriteSid()
+      if (consumeSid) {
+        void import('./draft-promote').then(({ consumeDraftForSession }) => {
+          void consumeDraftForSession(projectPath, consumeSid)
+        })
+      }
+    }
 
     const permissionModeForTurn = writeSess.permissionMode || undefined
     const projectState = getProject(get(), projectPath)
@@ -1095,6 +1105,7 @@ export async function sendMessageImpl(
       userSelections: [],
       codexPlanRejectHintActive: false,
       additionalDirsDirty: false,
+      draftId: null,
       ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
       ...((effectiveProvider === 'claude' || effectiveProvider === 'acp') && !isQueuedSend
         ? { awaitingAssistantReply: true }
@@ -1102,6 +1113,15 @@ export async function sendMessageImpl(
     })),
     isOpen: true,
   }))
+  // First send consumes any visibility/leave-promoted draft for this origin.
+  {
+    const consumeSid = resolveWriteSid()
+    if (consumeSid) {
+      void import('./draft-promote').then(({ consumeDraftForSession }) => {
+        void consumeDraftForSession(projectPath, consumeSid)
+      })
+    }
+  }
 
   if (activeContexts.length > 0) {
     const consumedAppIds = activeContexts.map((c) => c.appId)

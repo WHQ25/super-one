@@ -7,6 +7,7 @@ import type {
   SubscribeEventsInput,
 } from './events'
 import type { ControlLease, LeaseAcquireInput, LeaseReleaseInput, LeaseRenewInput, MutatingControlContext } from './lease'
+import type { DraftListRequest, DraftRecord, DraftUpsertRequest } from './draft-rpc'
 import type { ProjectRef, SessionRef, TerminalRef } from './refs'
 import type { SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
 
@@ -36,6 +37,8 @@ export interface EnvironmentGateway {
   readonly interactions: InteractionGateway
   readonly terminals: TerminalGateway
   readonly workspace: WorkspaceGateway
+  /** Present when the environment reports `capabilities.drafts`. */
+  readonly drafts?: DraftGateway
 }
 
 export interface CreateSessionInput {
@@ -256,6 +259,17 @@ export interface WorkspaceDeleteInput {
 export interface WorkspaceMkdirInput {
   project: ProjectRef
   relativePath: string
+}
+
+/**
+ * Unsent composer drafts stored inside this environment. Optional: gateways
+ * predating the feature (and older nodes, which report `capabilities.drafts:
+ * false`) simply omit it, and the UI hides the drafts group for that host.
+ */
+export interface DraftGateway {
+  list(input?: DraftListRequest): Promise<DraftRecord[]>
+  upsert(input: DraftUpsertRequest): Promise<DraftRecord>
+  delete(draftId: string): Promise<void>
 }
 
 export interface WorkspaceGateway {

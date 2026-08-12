@@ -23,6 +23,7 @@ import type { WorkspaceTailWatchService } from '../workspace/tail-watch-service'
 import { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import type { AutomationService, AutomationStore } from '@superone/runtime/automations'
+import type { DraftStore } from '@superone/runtime/drafts'
 import { clearWatchBuffersForClient } from '../rpc/handlers'
 
 const MAX_JSON_BYTES = {
@@ -93,6 +94,7 @@ export interface NodeServerOptions {
   providers: ProviderStore
   /** Absolute path to SUPERONE_NODE_HOME/config.json (agent settings). */
   settingsConfigPath: string
+  drafts: DraftStore
   automations: AutomationStore
   automationService: AutomationService
   sessionProviders: import('@superone/runtime/session').SessionProviderStore
@@ -237,6 +239,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       idempotency: opts.idempotency,
       providers: opts.providers,
       settingsConfigPath: opts.settingsConfigPath,
+      drafts: opts.drafts,
       automations: opts.automations,
       automationService: opts.automationService,
       sessionProviders: opts.sessionProviders,

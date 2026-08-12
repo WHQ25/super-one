@@ -2,6 +2,7 @@ import type { CodexAgentMessageItem, PermissionMode, SandboxInfo, UserQuestion }
 import type { ChatStore, PerSessionState, ProjectState } from '../types'
 import { _getSessionCwd } from './persistence'
 import { resolveActiveSessionId, updateActivePerSession } from './store-helpers'
+import { _isBusyStatus, _isLiveSession } from './session-liveness'
 
 export type ChatStoreSet = (
   partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>),
@@ -89,19 +90,10 @@ export function _computeHasPendingInteraction(project: ProjectState): boolean {
   )
 }
 
-export function _isBusyStatus(status: PerSessionState['status']): boolean {
-  return status === 'streaming' || status === 'background'
-}
-
-export function _isLiveSession(session: PerSessionState | undefined): boolean {
-  return !!session && (
-    _isBusyStatus(session.status)
-    || session.pendingPermissions.length > 0
-    || !!session.pendingQuestion
-    || !!session.pendingPlanApproval
-    || !!session.awaitingAssistantReply
-  )
-}
+// Defined in a leaf module so cycle-sensitive importers can take them directly;
+// re-exported here because most call sites already import them from lifecycle.
+// Imported (not `export … from`) because this module calls them itself.
+export { _isBusyStatus, _isLiveSession }
 
 export function _needsForegroundActivation(session: PerSessionState): boolean {
   return _isBusyStatus(session.status)

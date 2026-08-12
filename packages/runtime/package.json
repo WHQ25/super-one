@@ -25,6 +25,8 @@
     "./sandbox/*": "./src/sandbox/*.ts",
     "./automations": "./src/automations/index.ts",
     "./automations/*": "./src/automations/*.ts",
+    "./drafts": "./src/drafts/index.ts",
+    "./drafts/*": "./src/drafts/*.ts",
     "./llm-proxy": "./src/llm-proxy/index.ts",
     "./llm-proxy/*": "./src/llm-proxy/*.ts",
     "./sqlite": "./src/sqlite.ts"

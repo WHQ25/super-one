@@ -360,10 +360,12 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       }
     }
     set((s) => updateActivePerSession(s, () => patch))
-    if (parseRemoteProjectKey(activeProject)) return
-    void window.agent.setSessionSettings(activeProject, { effort: effort ?? null })
-    if (getActivePerSession(get(), activeProject).draftText.length > 0) {
-      triggerPrewarm(get(), activeProject)
+    // Desktop SessionManager does not own remote node drafts — skip local IPC.
+    if (!parseRemoteProjectKey(activeProject)) {
+      void window.agent.setSessionSettings(activeProject, { effort: effort ?? null })
+      if (getActivePerSession(get(), activeProject).draftText.length > 0) {
+        triggerPrewarm(get(), activeProject)
+      }
     }
   },
 

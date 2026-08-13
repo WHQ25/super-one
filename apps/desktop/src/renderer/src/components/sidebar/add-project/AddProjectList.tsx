@@ -1,7 +1,8 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Search, Star, User } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
-import { PopupSectionHeader } from '@/components/chat/popup-groups'
+import { formatStarCount } from '@/lib/format-star-count'
 
 export interface AddProjectListItem {
   key: string
@@ -15,12 +16,54 @@ export interface AddProjectListItem {
    * create-missing-path row which needs the entire absolute path visible).
    */
   wrapLabel?: boolean
+  /** Two-line GitHub repo row: description under owner/repo. */
+  subtitle?: string
+  /** Star count shown on the right of the title row. */
+  stars?: number | null
+  /** Larger leading avatar (repo rows). */
+  largeIcon?: boolean
+  /** Larger icon + label for the source picker. */
+  prominent?: boolean
 }
 
 export interface AddProjectListSection {
   key: string
   label: string
   items: AddProjectListItem[]
+  /** Public-repo group: append the cycling ellipsis to the title. */
+  searching?: boolean
+  /** Leading icon on the section header. */
+  icon?: 'search' | 'user'
+}
+
+function SearchingEllipsis() {
+  const [dots, setDots] = useState(1)
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setDots((n) => (n % 3) + 1)
+    }, 400)
+    return () => window.clearInterval(id)
+  }, [])
+  return <span aria-hidden>{'.'.repeat(dots)}</span>
+}
+
+function AddProjectSectionHeader({ section }: { section: AddProjectListSection }) {
+  const Icon = section.icon === 'search' ? Search : section.icon === 'user' ? User : null
+  return (
+    <div
+      onMouseDown={(e) => e.preventDefault()}
+      className="mb-1.5 flex select-none items-center gap-1.5 px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground"
+    >
+      {Icon ? <Icon className="size-3 shrink-0" aria-hidden /> : null}
+      <span>
+        {section.label}
+        {section.searching ? <SearchingEllipsis /> : null}
+      </span>
+      {section.searching ? null : (
+        <span className="text-muted-foreground/60">· {section.items.length}</span>
+      )}
+    </div>
+  )
 }
 
 interface AddProjectListProps {
@@ -58,7 +101,7 @@ export function AddProjectList({
         offset += section.items.length
         return (
           <div key={section.key}>
-            <PopupSectionHeader label={section.label} count={section.items.length} />
+            <AddProjectSectionHeader section={section} />
             {section.items.map((item, localIndex) => {
               const index = start + localIndex
               return (
@@ -74,7 +117,8 @@ export function AddProjectList({
                   onClick={() => onActivate(index)}
                   onMouseEnter={() => onHover(index)}
                   className={cn(
-                    'flex w-full gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
+                    'flex w-full gap-2 rounded px-2 text-left text-xs transition-colors',
+                    item.prominent ? 'py-2' : 'py-1.5',
                     item.wrapLabel ? 'items-start' : 'items-center',
                     index === selectedIndex
                       ? 'bg-accent text-accent-foreground'
@@ -83,7 +127,8 @@ export function AddProjectList({
                 >
                   <span
                     className={cn(
-                      'flex size-4 shrink-0 items-center justify-center text-muted-foreground',
+                      'flex shrink-0 items-center justify-center text-muted-foreground',
+                      item.largeIcon ? 'size-8' : item.prominent ? 'size-[18px]' : 'size-4',
                       item.wrapLabel && 'mt-0.5',
                     )}
                   >
@@ -99,6 +144,29 @@ export function AddProjectList({
                         <span className="text-[11px] text-muted-foreground">{item.hint}</span>
                       ) : null}
                     </span>
+                  ) : item.subtitle != null || item.stars != null ? (
+                    <span className="min-w-0 flex-1 flex flex-col gap-0.5">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="min-w-0 truncate text-sm font-medium">
+                          {item.matchIndices && item.matchIndices.length > 0 ? (
+                            <HighlightedText text={item.label} indices={item.matchIndices} />
+                          ) : (
+                            item.label
+                          )}
+                        </span>
+                        {item.stars != null ? (
+                          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[11px] text-muted-foreground">
+                            <Star className="size-3 shrink-0" aria-hidden />
+                            {formatStarCount(item.stars)}
+                          </span>
+                        ) : null}
+                      </span>
+                      {item.subtitle ? (
+                        <span className="truncate text-[11px] text-muted-foreground">
+                          {item.subtitle}
+                        </span>
+                      ) : null}
+                    </span>
                   ) : (
                     <>
                       {/*
@@ -106,8 +174,13 @@ export function AddProjectList({
                         is secondary and absorbs overflow so long GitHub blurbs don't
                         crush the name.
                       */}
-                      {/* text-sm (14px): repo/folder names; row stays text-xs for hints. */}
-                      <span className="min-w-0 shrink truncate text-sm font-medium">
+                      {/* text-sm: repo/folder names; source picker is slightly larger. */}
+                      <span
+                        className={cn(
+                          'min-w-0 shrink truncate font-medium',
+                          item.prominent ? 'text-[15px]' : 'text-sm',
+                        )}
+                      >
                         {item.matchIndices && item.matchIndices.length > 0 ? (
                           <HighlightedText text={item.label} indices={item.matchIndices} />
                         ) : (

@@ -226,6 +226,18 @@ interface AppAPI {
       fullName: string
       description: string | null
       private: boolean
+      stars: number | null
+    }>
+  >
+  /** Free-text GitHub repository search for the add-project picker. */
+  queryGithubRepos(query: string): Promise<
+    Array<{
+      owner: string
+      name: string
+      fullName: string
+      description: string | null
+      private: boolean
+      stars: number | null
     }>
   >
   /** Authenticated viewer's repos via `gh` (add-project GitHub default list). */
@@ -239,6 +251,7 @@ interface AppAPI {
       fullName: string
       description: string | null
       private: boolean
+      stars: number | null
     }>
     hasMore: boolean
     unavailable: boolean

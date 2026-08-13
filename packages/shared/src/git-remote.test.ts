@@ -3,6 +3,7 @@ import {
   buildGitHubCloneUrl,
   githubOwnerAvatarUrl,
   parseGitHubOwnerSearchQuery,
+  parseGitHubRepoNameSearchQuery,
   parseGitHubRepoInput,
   repoNameFromGitUrl,
   validateCloneRemoteUrl,
@@ -75,6 +76,16 @@ describe('GitHub repo shorthand parsing', () => {
     })
     expect(parseGitHubOwnerSearchQuery('https://github.com/WHQ25/super-one')).toBeNull()
     expect(parseGitHubOwnerSearchQuery('github.com/WHQ25/super-one')).toBeNull()
+  })
+
+  it('starts a name search for free text without a slash', () => {
+    expect(parseGitHubRepoNameSearchQuery('next')).toBe('next')
+    expect(parseGitHubRepoNameSearchQuery('  next.js  ')).toBe('next.js')
+    expect(parseGitHubRepoNameSearchQuery('n')).toBeNull()
+    expect(parseGitHubRepoNameSearchQuery('WHQ25/')).toBeNull()
+    expect(parseGitHubRepoNameSearchQuery('WHQ25/super')).toBeNull()
+    expect(parseGitHubRepoNameSearchQuery('https://github.com/WHQ25/super-one')).toBeNull()
+    expect(parseGitHubRepoNameSearchQuery('')).toBeNull()
   })
 })
 

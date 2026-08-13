@@ -54,6 +54,13 @@ export function githubOwnerAvatarUrl(owner: string, size = 80): string {
   return `https://github.com/${encodeURIComponent(owner)}.png?size=${size}`
 }
 
+function isGitHubUrlShaped(value: string): boolean {
+  return (
+    /^(?:https?:\/\/|ssh:\/\/|git@|git:\/\/)/i.test(value) ||
+    /^(?:www\.)?github\.com[/:]/i.test(value)
+  )
+}
+
 /**
  * After the user types `owner/`, the GitHub step can search that owner's repos.
  * Returns null until a slash is present (so bare `owner` does not trigger a
@@ -65,12 +72,7 @@ export function parseGitHubOwnerSearchQuery(
   const value = raw.trim()
   if (!value) return null
   // Full clone/browser URLs (with or without scheme) resolve without search.
-  if (
-    /^(?:https?:\/\/|ssh:\/\/|git@|git:\/\/)/i.test(value) ||
-    /^(?:www\.)?github\.com[/:]/i.test(value)
-  ) {
-    return null
-  }
+  if (isGitHubUrlShaped(value)) return null
 
   const slash = value.indexOf('/')
   if (slash <= 0) return null
@@ -81,6 +83,20 @@ export function parseGitHubOwnerSearchQuery(
   // Allow an empty prefix (`owner/`) and a partial repo name; reject junk.
   if (repoPrefix && !/^[A-Za-z0-9._-]*$/.test(repoPrefix)) return null
   return { owner, repoPrefix }
+}
+
+/**
+ * Free-text GitHub search (no slash): "next" → search repositories by name.
+ * Returns null for empty / 1-char input, URLs, and `owner/` queries so those
+ * keep their existing list/resolve paths.
+ */
+export function parseGitHubRepoNameSearchQuery(raw: string): string | null {
+  const value = raw.trim()
+  if (value.length < 2 || value.length > 200) return null
+  if (isGitHubUrlShaped(value)) return null
+  if (value.includes('/')) return null
+  if (/[\u0000-\u001f]/.test(value)) return null
+  return value
 }
 
 /**

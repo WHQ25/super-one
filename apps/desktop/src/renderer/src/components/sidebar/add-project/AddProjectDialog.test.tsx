@@ -7,6 +7,7 @@ const browsePath = vi.fn()
 const openProject = vi.fn()
 const cloneRepository = vi.fn()
 const searchGithubRepos = vi.fn()
+const queryGithubRepos = vi.fn()
 const listMyGithubRepos = vi.fn()
 const getAppSettings = vi.fn()
 const saveAppSettings = vi.fn()
@@ -49,6 +50,7 @@ describe('add-project dialog', () => {
       path: '/Users/dev/Projects/super-one',
       name: 'super-one',
     })
+    queryGithubRepos.mockResolvedValue([])
     searchGithubRepos.mockResolvedValue([
       {
         owner: 'WHQ25',
@@ -56,6 +58,7 @@ describe('add-project dialog', () => {
         fullName: 'WHQ25/super-one',
         description: 'Meta desktop app',
         private: false,
+        stars: 1200,
       },
       {
         owner: 'WHQ25',
@@ -63,6 +66,7 @@ describe('add-project dialog', () => {
         fullName: 'WHQ25/notes',
         description: null,
         private: true,
+        stars: 3,
       },
     ])
     listMyGithubRepos.mockResolvedValue({
@@ -73,6 +77,7 @@ describe('add-project dialog', () => {
           fullName: 'me/alpha',
           description: 'First',
           private: false,
+          stars: 42,
         },
         {
           owner: 'me',
@@ -80,6 +85,7 @@ describe('add-project dialog', () => {
           fullName: 'me/beta',
           description: null,
           private: true,
+          stars: 0,
         },
       ],
       hasMore: false,
@@ -98,6 +104,7 @@ describe('add-project dialog', () => {
     ;(window as unknown as Record<string, unknown>).app = {
       ...((window as unknown as Record<string, unknown>).app as object),
       searchGithubRepos,
+      queryGithubRepos,
       listMyGithubRepos,
       selectFolder,
       getAppSettings,
@@ -131,7 +138,7 @@ describe('add-project dialog', () => {
 
     // "." / "Add this folder" is the default selection once listing settles —
     // Enter commits the current path instead of drilling into a child.
-    await screen.findByRole('button', { name: /Add this folder/ })
+    await screen.findByRole('button', { name: /Add This Folder/ })
     fireEvent.keyDown(input(), { key: 'Enter' })
 
     await waitFor(() =>
@@ -208,9 +215,9 @@ describe('add-project dialog', () => {
     fireEvent.change(input(), { target: { value: '~/Projects/brand-new' } })
     // Missing path appears as its own "Create" list group, not a free-text banner.
     await waitFor(() => expect(screen.getByText('Create')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: /Create directory/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Create Directory/ })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Create directory/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Create Directory/ }))
     await waitFor(() =>
       expect(openProject).toHaveBeenCalledWith('local', '/Users/dev/Projects/brand-new', {
         createIfMissing: true,
@@ -297,7 +304,7 @@ describe('add-project dialog', () => {
     fireEvent.click(screen.getByText('GitHub Repository'))
 
     await waitFor(() => expect(listMyGithubRepos).toHaveBeenCalledWith(1, 20))
-    await screen.findByText('Your repositories')
+    await screen.findByText('Your Repositories')
     expect(screen.getByRole('button', { name: /me\/alpha/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /me\/beta/ })).toBeInTheDocument()
 
@@ -306,6 +313,60 @@ describe('add-project dialog', () => {
     await screen.findByRole('button', { name: /me\/alpha/ })
     expect(screen.queryByRole('button', { name: /me\/beta/ })).not.toBeInTheDocument()
     expect(searchGithubRepos).not.toHaveBeenCalled()
+    await waitFor(() => expect(queryGithubRepos).toHaveBeenCalledWith('alp'), {
+      timeout: 2000,
+    })
+  })
+
+  it('shows GitHub name-search hits under a second section', async () => {
+    queryGithubRepos.mockResolvedValue([
+      {
+        owner: 'me',
+        name: 'alpha',
+        fullName: 'me/alpha',
+        description: 'First',
+        private: false,
+        stars: 42,
+      },
+      {
+        owner: 'acme',
+        name: 'alpha',
+        fullName: 'acme/alpha',
+        description: 'Public alpha',
+        private: false,
+        stars: 8800,
+      },
+    ])
+    renderDialog()
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    await screen.findByText('Your Repositories')
+
+    fireEvent.change(input(), { target: { value: 'alp' } })
+    await screen.findByText(/Searching/)
+    await waitFor(() => expect(queryGithubRepos).toHaveBeenCalledWith('alp'), {
+      timeout: 2000,
+    })
+    await screen.findByText('Search Results')
+    expect(screen.queryByText(/Searching/)).not.toBeInTheDocument()
+    // Own repo stays in "Your Repositories"; search drops the duplicate.
+    expect(screen.getByRole('button', { name: /^me\/alpha/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^acme\/alpha/ })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /alpha/ })).toHaveLength(2)
+    expect(searchGithubRepos).not.toHaveBeenCalled()
+  })
+
+  it('does not name-search when the query is owner/ or a URL', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    await waitFor(() => expect(listMyGithubRepos).toHaveBeenCalled())
+
+    fireEvent.change(input(), { target: { value: 'WHQ25/' } })
+    await waitFor(() => expect(searchGithubRepos).toHaveBeenCalledWith('WHQ25'))
+    expect(queryGithubRepos).not.toHaveBeenCalled()
+
+    fireEvent.change(input(), { target: { value: 'https://github.com/WHQ25/super-one' } })
+    await screen.findByText('WHQ25/super-one')
+    expect(queryGithubRepos).not.toHaveBeenCalled()
   })
 
   it('searches GitHub repos after owner/ and shows the owner avatar', async () => {
@@ -318,8 +379,10 @@ describe('add-project dialog', () => {
     await waitFor(() => expect(searchGithubRepos).toHaveBeenCalledWith('WHQ25'))
     await screen.findByRole('button', { name: /WHQ25\/super-one/ })
     expect(screen.getByRole('button', { name: /WHQ25\/notes/ })).toBeInTheDocument()
-    // Marketplace-style owner avatar on each hit.
-    const avatars = document.querySelectorAll('img[src="https://github.com/WHQ25.png?size=40"]')
+    expect(screen.getByText('Meta desktop app')).toBeInTheDocument()
+    expect(screen.getByText('1.2k')).toBeInTheDocument()
+    // Larger owner avatar on each hit (32px slot, 80px source).
+    const avatars = document.querySelectorAll('img[src="https://github.com/WHQ25.png?size=80"]')
     expect(avatars.length).toBeGreaterThanOrEqual(1)
 
     fireEvent.change(input(), { target: { value: 'WHQ25/super' } })
@@ -394,7 +457,7 @@ describe('add-project dialog', () => {
     // Exact existing leaf: listing settles with a notes hit, never a create row.
     await waitFor(() => expect(screen.getByRole('button', { name: /^notes/i })).toBeInTheDocument())
     expect(screen.queryByText('Create')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Create directory/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Create Directory/ })).not.toBeInTheDocument()
   })
 
   it('does not advance on Enter until the repository input parses', () => {
@@ -463,7 +526,7 @@ describe('add-project dialog', () => {
     await screen.findByText('Repository')
     expect(input().value).toBe('~/Github/')
     // Checkbox is pre-checked when a default was applied.
-    expect(screen.getByText('Save as default clone path')).toBeInTheDocument()
+    expect(screen.getByText('Save as Default Clone Path')).toBeInTheDocument()
     const checkbox = screen.getByRole('checkbox')
     expect(checkbox).toHaveAttribute('data-state', 'checked')
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/Github/'))

@@ -24,22 +24,39 @@ export interface GithubRepoSearchHit {
   fullName: string
   description: string | null
   private: boolean
+  stars: number | null
 }
 
 type GithubRepoJson = {
   name?: string
   full_name?: string
+  fullName?: string
   description?: string | null
   private?: boolean
-  owner?: { login?: string }
+  isPrivate?: boolean
+  stargazers_count?: number
+  stargazersCount?: number
+  owner?: { login?: string } | string
+}
+
+const GITHUB_REPO_LIST_JQ =
+  '[.[] | {name, full_name, description, private, stargazers_count, owner: {login: .owner.login}}]'
+
+function parseStarCount(row: GithubRepoJson): number | null {
+  const n = row.stargazers_count ?? row.stargazersCount
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
 }
 
 function mapGithubRepoHits(rows: GithubRepoJson[]): GithubRepoSearchHit[] {
   const hits: GithubRepoSearchHit[] = []
   for (const row of rows) {
-    const fullName = typeof row.full_name === 'string' ? row.full_name : ''
+    const fullName =
+      (typeof row.full_name === 'string' && row.full_name) ||
+      (typeof row.fullName === 'string' && row.fullName) ||
+      ''
     const [ownerFromFull, nameFromFull] = fullName.split('/')
-    const owner = row.owner?.login || ownerFromFull
+    const ownerLogin = typeof row.owner === 'string' ? row.owner : row.owner?.login
+    const owner = ownerLogin || ownerFromFull
     const name = typeof row.name === 'string' ? row.name : nameFromFull
     if (!owner || !name) continue
     hits.push({
@@ -47,7 +64,8 @@ function mapGithubRepoHits(rows: GithubRepoJson[]): GithubRepoSearchHit[] {
       name,
       fullName: fullName || `${owner}/${name}`,
       description: typeof row.description === 'string' ? row.description : null,
-      private: Boolean(row.private),
+      private: Boolean(row.private ?? row.isPrivate),
+      stars: parseStarCount(row),
     })
   }
   return hits
@@ -103,7 +121,7 @@ export async function listGithubReposForOwner(owner: string): Promise<GithubRepo
         'api',
         `users/${encodeURIComponent(login)}/repos?per_page=50&sort=updated&type=all`,
         '--jq',
-        '[.[] | {name, full_name, description, private, owner: {login: .owner.login}}]',
+        GITHUB_REPO_LIST_JQ,
       ],
       { timeout: 15000 },
       (error, stdout) => {
@@ -138,6 +156,84 @@ export async function listGithubReposForOwner(owner: string): Promise<GithubRepo
   }
 }
 
+const GITHUB_REPO_QUERY_LIMIT = 20
+
+/** Cached `gh auth token` so later Search API calls skip a CLI spawn. */
+let githubAuthToken: string | null | undefined
+
+function primeGithubAuthToken(): void {
+  if (githubAuthToken !== undefined) return
+  execFile('gh', ['auth', 'token'], { timeout: 4000 }, (error, stdout) => {
+    githubAuthToken = error ? null : stdout.trim() || null
+  })
+}
+
+async function searchGithubRepositoriesViaRest(
+  q: string,
+): Promise<GithubRepoSearchHit[] | null> {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' }
+  if (githubAuthToken) headers.Authorization = `Bearer ${githubAuthToken}`
+  try {
+    const res = await fetch(
+      `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&per_page=${GITHUB_REPO_QUERY_LIMIT}`,
+      {
+        headers,
+        signal: AbortSignal.timeout(15000),
+      },
+    )
+    if (!res.ok) return null
+    const data = (await res.json()) as { items?: GithubRepoJson[] }
+    return Array.isArray(data.items) ? mapGithubRepoHits(data.items) : []
+  } catch {
+    return null
+  }
+}
+
+function searchGithubRepositoriesViaGh(q: string): Promise<GithubRepoSearchHit[] | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'gh',
+      [
+        'search',
+        'repos',
+        q,
+        '--limit',
+        String(GITHUB_REPO_QUERY_LIMIT),
+        '--json',
+        'name,fullName,description,isPrivate,owner,stargazersCount',
+      ],
+      { timeout: 15000 },
+      (error, stdout) => {
+        if (error) {
+          resolve(null)
+          return
+        }
+        try {
+          const parsed = JSON.parse(stdout) as GithubRepoJson[]
+          resolve(Array.isArray(parsed) ? mapGithubRepoHits(parsed) : null)
+        } catch {
+          resolve(null)
+        }
+      },
+    )
+  })
+}
+
+/**
+ * Free-text GitHub repository search for the add-project picker.
+ * Hits the Search API first (no `gh` spawn). Falls back to `gh search repos`.
+ */
+export async function searchGithubRepositories(query: string): Promise<GithubRepoSearchHit[]> {
+  const q = query.trim().slice(0, 200)
+  if (q.length < 2 || /[\u0000-\u001f]/.test(q)) return []
+
+  // Warm the token in the background so the next query can be authenticated.
+  primeGithubAuthToken()
+  const viaRest = await searchGithubRepositoriesViaRest(q)
+  if (viaRest) return viaRest
+  return (await searchGithubRepositoriesViaGh(q)) ?? []
+}
+
 export type MyGithubReposPage = {
   repos: GithubRepoSearchHit[]
   hasMore: boolean
@@ -164,7 +260,7 @@ export async function listMyGithubRepos(
         // Authenticated viewer; sort=updated matches "recent activity".
         `user/repos?per_page=${limit}&page=${pageNum}&sort=updated&direction=desc`,
         '--jq',
-        '[.[] | {name, full_name, description, private, owner: {login: .owner.login}}]',
+        GITHUB_REPO_LIST_JQ,
       ],
       { timeout: 20000 },
       (error, stdout) => {

@@ -1098,6 +1098,19 @@ const appAPI = {
         fullName: string
         description: string | null
         private: boolean
+        stars: number | null
+      }>
+    >,
+
+  queryGithubRepos: (query: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_GITHUB_QUERY_REPOS, query) as Promise<
+      Array<{
+        owner: string
+        name: string
+        fullName: string
+        description: string | null
+        private: boolean
+        stars: number | null
       }>
     >,
 
@@ -1109,6 +1122,7 @@ const appAPI = {
         fullName: string
         description: string | null
         private: boolean
+        stars: number | null
       }>
       hasMore: boolean
       unavailable: boolean

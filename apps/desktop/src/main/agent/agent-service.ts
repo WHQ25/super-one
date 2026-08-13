@@ -69,7 +69,7 @@ import { getSharedCodexSkillsService } from '../codex/codex-skills-rpc-singleton
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
-import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner, listMyGithubRepos } from '../plugins-service'
+import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } from '../plugins-service'
 import { cacheRemoteImage } from '../image-cache'
 import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
@@ -2216,6 +2216,10 @@ export class AgentService {
       return listGithubReposForOwner(owner)
     })
 
+    ipcMain.handle(AgentIpcChannels.PLUGINS_GITHUB_QUERY_REPOS, async (_event, query: string) => {
+      return searchGithubRepositories(typeof query === 'string' ? query : '')
+    })
+
     ipcMain.handle(
       AgentIpcChannels.PLUGINS_GITHUB_LIST_MY_REPOS,
       async (_event, page?: number, perPage?: number) => {
@@ -2967,6 +2971,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_GITHUB_STARS)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_GITHUB_SEARCH_REPOS)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_GITHUB_QUERY_REPOS)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_GITHUB_LIST_MY_REPOS)
     ipcMain.removeHandler(AgentIpcChannels.CACHE_IMAGE)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_LIST)

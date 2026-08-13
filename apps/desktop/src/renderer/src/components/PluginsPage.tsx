@@ -36,6 +36,7 @@ import { Button } from '@superone/ui/components/ui/button'
 import { Input } from '@superone/ui/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
+import { formatStarCount } from '@/lib/format-star-count'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import {
@@ -1388,12 +1389,6 @@ const githubStarsCache = new Map<string, number | null>()
 
 function githubRepoSlug(source: string): string {
   return source.split('/').slice(0, 2).join('/')
-}
-
-function formatStarCount(n: number): string {
-  if (n < 1000) return String(n)
-  const k = n / 1000
-  return `${k >= 10 ? Math.round(k) : k.toFixed(1)}k`
 }
 
 function useGithubStars(source: string | undefined): number | null {

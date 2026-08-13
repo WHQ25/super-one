@@ -198,3 +198,48 @@ export function formatAddProjectError(
 
   return message
 }
+
+/** Wait this long after the last keystroke before a name search may fire. */
+export const GITHUB_REPO_NAME_SEARCH_IDLE_MS = 500
+/** Minimum gap between two name-search network requests. */
+export const GITHUB_REPO_NAME_SEARCH_MIN_INTERVAL_MS = 1000
+
+/**
+ * Delay before firing a GitHub name search: 500ms after typing stops, and at
+ * least 1s since the previous request was sent. `lastSentAt <= 0` means never.
+ */
+export function githubRepoNameSearchDelay(now: number, lastSentAt: number): number {
+  const remainingInterval =
+    lastSentAt <= 0
+      ? 0
+      : Math.max(0, lastSentAt + GITHUB_REPO_NAME_SEARCH_MIN_INTERVAL_MS - now)
+  return Math.max(GITHUB_REPO_NAME_SEARCH_IDLE_MS, remainingInterval)
+}
+
+/** Reuse a shorter cached query's hits while a longer query is still in flight. */
+export function filterGithubHitsByPrefix<
+  T extends { name: string; fullName: string },
+>(hits: readonly T[], query: string): T[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return [...hits]
+  return hits.filter(
+    (hit) =>
+      hit.name.toLowerCase().includes(needle) ||
+      hit.fullName.toLowerCase().includes(needle),
+  )
+}
+
+export function longestPrefixCacheHits<T>(
+  cache: Map<string, readonly T[]>,
+  query: string,
+): T[] | null {
+  const q = query.trim().toLowerCase()
+  if (!q) return null
+  let bestKey = ''
+  for (const key of cache.keys()) {
+    if (q.startsWith(key) && key.length > bestKey.length) bestKey = key
+  }
+  if (!bestKey) return null
+  const hits = cache.get(bestKey)
+  return hits ? [...hits] : null
+}

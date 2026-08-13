@@ -4,6 +4,10 @@ import {
   detectAddProjectSource,
   describeDetectedSource,
   formatAddProjectError,
+  GITHUB_REPO_NAME_SEARCH_IDLE_MS,
+  filterGithubHitsByPrefix,
+  githubRepoNameSearchDelay,
+  longestPrefixCacheHits,
   resolveBrowsePath,
   resolveRepoInput,
   submitLabelKey,
@@ -192,5 +196,42 @@ describe('clone error formatting', () => {
         t,
       ),
     ).toBe('repository not found')
+  })
+})
+
+describe('GitHub name-search delay', () => {
+  it('waits 500ms after typing stops when nothing has been sent yet', () => {
+    expect(githubRepoNameSearchDelay(10_000, 0)).toBe(GITHUB_REPO_NAME_SEARCH_IDLE_MS)
+  })
+
+  it('stretches the wait so consecutive requests are at least 1s apart', () => {
+    // Last send at t=1, deciding at t=200 → 801ms left of the 1s gap.
+    expect(githubRepoNameSearchDelay(200, 1)).toBe(801)
+    // Idle 500ms is already longer than the remaining gap.
+    expect(githubRepoNameSearchDelay(900, 1)).toBe(GITHUB_REPO_NAME_SEARCH_IDLE_MS)
+    expect(githubRepoNameSearchDelay(2_000, 1)).toBe(GITHUB_REPO_NAME_SEARCH_IDLE_MS)
+  })
+
+  it('reuses the longest cached prefix while a longer query is in flight', () => {
+    const cache = new Map([
+      [
+        'sup',
+        [
+          { name: 'super-one', fullName: 'WHQ25/super-one' },
+          { name: 'superpowers', fullName: 'obra/superpowers' },
+          { name: 'supabase', fullName: 'supabase/supabase' },
+        ],
+      ],
+    ])
+    const prefix = longestPrefixCacheHits(cache, 'super')
+    expect(prefix).toHaveLength(3)
+    expect(filterGithubHitsByPrefix(prefix ?? [], 'super').map((h) => h.name)).toEqual([
+      'super-one',
+      'superpowers',
+    ])
+    expect(filterGithubHitsByPrefix(prefix ?? [], 'super-o').map((h) => h.name)).toEqual([
+      'super-one',
+    ])
+    expect(longestPrefixCacheHits(cache, 'next')).toBeNull()
   })
 })

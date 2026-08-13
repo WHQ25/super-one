@@ -45,7 +45,7 @@ vi.mock('child_process', () => ({
   execFile: execFileMock,
 }))
 
-import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, readMarketplacePluginContent } from './plugins-service'
+import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, readMarketplacePluginContent, searchGithubRepositories } from './plugins-service'
 
 const PLUGINS_DIR = join('/home/testuser', '.claude', 'plugins')
 const INSTALLED_FILE = join(PLUGINS_DIR, 'installed_plugins.json')
@@ -708,5 +708,97 @@ describe('deletePlugin', () => {
     deletePlugin('unknown@mp', 'user', '/proj')
 
     expect(writeFileSyncMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('searchGithubRepositories', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('returns empty for a too-short query', async () => {
+    await expect(searchGithubRepositories('n')).resolves.toEqual([])
+    expect(execFileMock).not.toHaveBeenCalled()
+  })
+
+  it('uses the Search API first and skips waiting on gh', async () => {
+    execFileMock.mockImplementation((_cmd, _args, _opts, cb) => {
+      cb(null, 'gho_test\n')
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        items: [
+          {
+            name: 'react',
+            full_name: 'facebook/react',
+            description: 'A library',
+            private: false,
+            stargazers_count: 220000,
+            owner: { login: 'facebook' },
+          },
+        ],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(searchGithubRepositories('react')).resolves.toEqual([
+      {
+        owner: 'facebook',
+        name: 'react',
+        fullName: 'facebook/react',
+        description: 'A library',
+        private: false,
+        stars: 220000,
+      },
+    ])
+    expect(fetchMock).toHaveBeenCalled()
+    expect(execFileMock.mock.calls.some((call) => call[1]?.[0] === 'search')).toBe(false)
+  })
+
+  it('falls back to gh search repos when the Search API fails', async () => {
+    execFileMock.mockImplementation((_cmd, args, _opts, cb) => {
+      if (args?.[0] === 'auth') {
+        cb(new Error('ENOENT'), '')
+        return
+      }
+      cb(
+        null,
+        JSON.stringify([
+          {
+            name: 'next.js',
+            fullName: 'vercel/next.js',
+            description: 'The React Framework',
+            isPrivate: false,
+            stargazersCount: 132000,
+            owner: { login: 'vercel' },
+          },
+        ]),
+      )
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+      }),
+    )
+
+    await expect(searchGithubRepositories('next')).resolves.toEqual([
+      {
+        owner: 'vercel',
+        name: 'next.js',
+        fullName: 'vercel/next.js',
+        description: 'The React Framework',
+        private: false,
+        stars: 132000,
+      },
+    ])
+    expect(execFileMock).toHaveBeenCalledWith(
+      'gh',
+      expect.arrayContaining(['search', 'repos', 'next', expect.stringContaining('stargazersCount')]),
+      expect.any(Object),
+      expect.any(Function),
+    )
   })
 })

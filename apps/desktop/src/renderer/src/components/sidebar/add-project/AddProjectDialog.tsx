@@ -47,9 +47,9 @@ interface AddProjectDialogProps {
 }
 
 const SOURCE_ICONS: Record<AddProjectSource, ReactNode> = {
-  local: <FolderPlus className="size-3.5" />,
-  github: <Github className="size-3.5" />,
-  url: <Link2 className="size-3.5" />,
+  local: <FolderPlus className="size-[18px]" />,
+  github: <Github className="size-[18px]" />,
+  url: <Link2 className="size-[18px]" />,
 }
 const PARENT_ICON = <CornerLeftUp className="size-3.5" />
 const DIRECTORY_ICON = <Folder className="size-3.5" />

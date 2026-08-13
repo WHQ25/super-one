@@ -12,6 +12,7 @@ import {
   buildGitHubCloneUrl,
   githubOwnerAvatarUrl,
   parseGitHubOwnerSearchQuery,
+  parseGitHubRepoNameSearchQuery,
   parseGitHubRepoInput,
 } from '@superone/shared/git-remote'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
@@ -34,7 +35,10 @@ import {
   autoAdvanceFromSourceQuery,
   describeDetectedSource,
   detectAddProjectSource,
+  filterGithubHitsByPrefix,
   formatAddProjectError,
+  githubRepoNameSearchDelay,
+  longestPrefixCacheHits,
   resolveBrowsePath,
   resolveRepoInput,
   type AddProjectSource,
@@ -47,6 +51,29 @@ export type GithubRepoHit = {
   fullName: string
   description: string | null
   private: boolean
+  stars: number | null
+}
+
+function githubRepoListItem(
+  repo: GithubRepoHit,
+  matchIndices: number[],
+  privateLabel: string,
+): AddProjectListItem {
+  return {
+    key: repo.fullName,
+    icon: createElement('img', {
+      src: githubOwnerAvatarUrl(repo.owner, 80),
+      alt: '',
+      className: 'size-full rounded-md object-cover',
+      loading: 'lazy',
+      referrerPolicy: 'no-referrer',
+    }),
+    label: repo.fullName,
+    matchIndices,
+    subtitle: repo.description ?? (repo.private ? privateLabel : undefined),
+    stars: repo.stars,
+    largeIcon: true,
+  }
 }
 
 /** Sentinel key for the "go to parent directory" row that leads the path list. */
@@ -96,8 +123,10 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const [busy, setBusy] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [githubRepos, setGithubRepos] = useState<GithubRepoHit[]>([])
+  const [githubQueryHits, setGithubQueryHits] = useState<GithubRepoHit[]>([])
   const [githubSearchOwner, setGithubSearchOwner] = useState('')
   const [githubLoading, setGithubLoading] = useState(false)
+  const [githubQueryLoading, setGithubQueryLoading] = useState(false)
   const [githubLoadingMore, setGithubLoadingMore] = useState(false)
   const [githubHasMore, setGithubHasMore] = useState(false)
   const [githubError, setGithubError] = useState<string | null>(null)
@@ -112,7 +141,10 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const defaultClonePathRef = useRef<string | null>(null)
   const requestIdRef = useRef(0)
   const githubRequestIdRef = useRef(0)
+  const githubQueryRequestIdRef = useRef(0)
   const githubCacheRef = useRef<Map<string, GithubRepoHit[]>>(new Map())
+  const githubQueryCacheRef = useRef<Map<string, GithubRepoHit[]>>(new Map())
+  const githubQueryLastSentAtRef = useRef(0)
   const githubMyPageRef = useRef(0)
   const githubLoadingMoreRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -131,8 +163,10 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     setSubmitError('')
     setBusy(false)
     setGithubRepos([])
+    setGithubQueryHits([])
     setGithubSearchOwner('')
     setGithubLoading(false)
+    setGithubQueryLoading(false)
     setGithubLoadingMore(false)
     setGithubHasMore(false)
     setGithubError(null)
@@ -231,12 +265,20 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const isGithubMyReposMode =
     isGithubRepoStep && !githubSearch && !githubUrlQuery
 
+  /** Free-text name query shown alongside "your repos" (not owner/ or URL). */
+  const githubNameQuery = useMemo(
+    () => (isGithubMyReposMode ? parseGitHubRepoNameSearchQuery(query) : null),
+    [isGithubMyReposMode, query],
+  )
+
   // Owner search: load that owner's repos once `owner/` is typed (cached).
   useEffect(() => {
     if (!open || !isGithubRepoStep) {
       setGithubRepos([])
+      setGithubQueryHits([])
       setGithubSearchOwner('')
       setGithubLoading(false)
+      setGithubQueryLoading(false)
       setGithubLoadingMore(false)
       setGithubHasMore(false)
       setGithubError(null)
@@ -292,8 +334,10 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   useEffect(() => {
     if (!open || !isGithubRepoStep || !githubUrlQuery) return
     setGithubRepos([])
+    setGithubQueryHits([])
     setGithubSearchOwner('')
     setGithubLoading(false)
+    setGithubQueryLoading(false)
     setGithubLoadingMore(false)
     setGithubHasMore(false)
     setGithubError(null)
@@ -334,6 +378,51 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         if (requestId === githubRequestIdRef.current) setGithubLoading(false)
       })
   }, [open, isGithubMyReposMode])
+
+  // Name search: GitHub Search API alongside the local "your repos" filter.
+  useEffect(() => {
+    if (!open || !isGithubMyReposMode || !githubNameQuery) {
+      setGithubQueryHits((prev) => (prev.length === 0 ? prev : []))
+      setGithubQueryLoading(false)
+      return
+    }
+
+    const cacheKey = githubNameQuery.toLowerCase()
+    const cached = githubQueryCacheRef.current.get(cacheKey)
+    if (cached) {
+      setGithubQueryHits(cached)
+      setGithubQueryLoading(false)
+      return
+    }
+
+    const prefixHits = longestPrefixCacheHits(githubQueryCacheRef.current, cacheKey)
+    setGithubQueryHits(prefixHits ? filterGithubHitsByPrefix(prefixHits, cacheKey) : [])
+
+    const requestId = ++githubQueryRequestIdRef.current
+    setGithubQueryLoading(true)
+
+    const delay = githubRepoNameSearchDelay(Date.now(), githubQueryLastSentAtRef.current)
+    const timer = window.setTimeout(() => {
+      githubQueryLastSentAtRef.current = Date.now()
+      void window.app
+        .queryGithubRepos(githubNameQuery)
+        .then((rows) => {
+          if (requestId !== githubQueryRequestIdRef.current) return
+          const hits = rows ?? []
+          githubQueryCacheRef.current.set(cacheKey, hits)
+          setGithubQueryHits(hits)
+        })
+        .catch(() => {
+          if (requestId !== githubQueryRequestIdRef.current) return
+          setGithubQueryHits([])
+        })
+        .finally(() => {
+          if (requestId === githubQueryRequestIdRef.current) setGithubQueryLoading(false)
+        })
+    }, delay)
+
+    return () => window.clearTimeout(timer)
+  }, [open, isGithubMyReposMode, githubNameQuery])
 
   /** Infinite scroll: next page of the authenticated user's repos. */
   const loadMoreGithubRepos = useCallback(() => {
@@ -387,6 +476,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
           icon: input.sourceIcons[entry.source],
           label: entry.label,
           matchIndices: [],
+          prominent: true,
           hint:
             entry.source === detectedSource
               ? (describeDetectedSource(entry.source, query) ?? entry.hint)
@@ -412,6 +502,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         icon: input.sourceIcons[entry.source],
         label: entry.label,
         matchIndices: [],
+        prominent: true,
         hint: entry.hint,
       }))
     }
@@ -425,6 +516,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         icon: input.sourceIcons[entry.source],
         label: entry.label,
         matchIndices: match?.indices ?? [],
+        prominent: true,
         hint: entry.hint,
       }))
   }, [query, detectedSource, t, input.sourceIcons])
@@ -547,6 +639,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     const filter = githubSearch
       ? githubSearch.repoPrefix.toLowerCase()
       : query.trim().toLowerCase()
+    const privateLabel = t('sidebar.addProject.githubPrivate')
 
     return githubRepos
       .map((repo) => {
@@ -560,32 +653,18 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
           ? fuzzyMatch(filter, haystack)
           : { match: true, score: 0, indices: [] as number[] }
         // For my-repos name-only filter, rematch fullName for highlight when needed.
-        const label = repo.fullName
         const labelMatch =
           filter && !githubSearch && !filter.includes('/')
-            ? fuzzyMatch(filter, label)
+            ? fuzzyMatch(filter, repo.fullName)
             : match
         return { repo, match, labelMatch }
       })
       .filter(({ match }) => match.match)
       .sort((a, b) => (b.match.score ?? 0) - (a.match.score ?? 0))
       .slice(0, githubSearch ? 50 : 200)
-      .map(({ repo, labelMatch }) => ({
-        key: repo.fullName,
-        // Same avatar URL marketplace uses for GitHub-hosted sources.
-        icon: createElement('img', {
-          src: githubOwnerAvatarUrl(repo.owner, 40),
-          alt: '',
-          className: 'size-4 rounded-sm object-cover',
-          loading: 'lazy',
-          referrerPolicy: 'no-referrer',
-        }),
-        label: repo.fullName,
-        matchIndices: labelMatch.indices,
-        hint: repo.private
-          ? t('sidebar.addProject.githubPrivate')
-          : (repo.description ?? undefined),
-      }))
+      .map(({ repo, labelMatch }) =>
+        githubRepoListItem(repo, labelMatch.indices, privateLabel),
+      )
   }, [
     isGithubRepoStep,
     githubUrlQuery,
@@ -596,6 +675,20 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     t,
   ])
 
+  /** GitHub Search API hits for a free-text name query; drops repos already in "your repos". */
+  const githubQueryItems: AddProjectListItem[] = useMemo(() => {
+    if (!isGithubMyReposMode || !githubNameQuery) return []
+    const mine = new Set(githubRepos.map((repo) => repo.fullName.toLowerCase()))
+    const privateLabel = t('sidebar.addProject.githubPrivate')
+    const filter = githubNameQuery.toLowerCase()
+    return githubQueryHits
+      .filter((repo) => !mine.has(repo.fullName.toLowerCase()))
+      .map((repo) => {
+        const labelMatch = fuzzyMatch(filter, repo.fullName)
+        return githubRepoListItem(repo, labelMatch.indices, privateLabel)
+      })
+  }, [isGithubMyReposMode, githubNameQuery, githubRepos, githubQueryHits, t])
+
   const listSections: AddProjectListSection[] = useMemo(() => {
     if (step.kind === 'source') {
       return sourceItems.length
@@ -603,18 +696,33 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         : []
     }
     if (isGithubRepoStep) {
-      if (githubItems.length === 0) return []
-      return [
-        {
-          key: 'github',
+      const sections: AddProjectListSection[] = []
+      if (githubItems.length > 0) {
+        sections.push({
+          key: githubSearch ? 'github' : 'github-mine',
           label: t(
             isGithubMyReposMode
               ? 'sidebar.addProject.githubYourRepos'
               : 'sidebar.addProject.githubRepos',
           ),
           items: githubItems,
-        },
-      ]
+          icon: isGithubMyReposMode ? 'user' : undefined,
+        })
+      }
+      if (githubNameQuery) {
+        sections.push({
+          key: 'github-search',
+          label: t(
+            githubQueryLoading
+              ? 'sidebar.addProject.githubSearching'
+              : 'sidebar.addProject.githubSearchResults',
+          ),
+          items: githubQueryItems,
+          searching: githubQueryLoading,
+          icon: 'search',
+        })
+      }
+      return sections
     }
     if (isPathStep) {
       const sections: AddProjectListSection[] = []
@@ -651,7 +759,11 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     sourceItems,
     isGithubRepoStep,
     isGithubMyReposMode,
+    githubSearch,
     githubItems,
+    githubNameQuery,
+    githubQueryItems,
+    githubQueryLoading,
     isPathStep,
     willCreatePath,
     directoryItems,
@@ -676,8 +788,10 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     setSubmitError('')
     if (next.kind !== 'repo' || next.source !== 'github') {
       setGithubRepos([])
+      setGithubQueryHits([])
       setGithubSearchOwner('')
       setGithubLoading(false)
+      setGithubQueryLoading(false)
       setGithubError(null)
     }
   }, [])
@@ -1083,6 +1197,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     browseLoading,
     browseError,
     githubLoading,
+    githubQueryLoading,
     githubLoadingMore,
     githubHasMore,
     githubError,

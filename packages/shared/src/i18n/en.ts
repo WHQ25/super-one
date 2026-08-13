@@ -67,6 +67,8 @@ export type Messages = {
       repoInvalidUrl: string
       githubRepos: string
       githubYourRepos: string
+      githubSearchResults: string
+      githubSearching: string
       githubNoRepos: string
       githubNeedCli: string
       githubPrivate: string
@@ -2724,21 +2726,23 @@ export const en: Messages = {
         local: { label: 'Local Folder', hint: 'Browse a folder that already exists' },
         github: {
           label: 'GitHub Repository',
-          hint: 'Search owner/repo or paste a GitHub URL',
+          hint: 'Search a repo name, owner/repo, or paste a GitHub URL',
         },
         url: { label: 'Git URL', hint: 'Clone from any remote URL' },
       },
       pathPlaceholderLocal: '~/Projects/',
       pathPlaceholderRemote: '/home/superone/',
-      repoPlaceholderGithub: 'Filter repos, owner/repo, or GitHub URL',
+      repoPlaceholderGithub: 'Name, owner/repo, or GitHub URL',
       repoPlaceholderUrl: 'https://github.com/owner/repo.git',
       destinationPlaceholder: 'Where should it be cloned?',
       repository: 'Repository',
       repoInvalidGithub: 'Type owner/ to search, or paste a GitHub URL.',
       repoInvalidUrl: 'Enter an https, ssh or git clone URL.',
       githubRepos: 'Repositories',
-      githubYourRepos: 'Your repositories',
-      githubNoRepos: 'No repositories matched.',
+      githubYourRepos: 'Your Repositories',
+      githubSearchResults: 'Search Results',
+      githubSearching: 'Searching',
+      githubNoRepos: 'No Repositories Matched.',
       githubNeedCli:
         'Install and sign in to GitHub CLI (gh) to list your repos, or type owner/repo.',
       githubPrivate: 'Private',
@@ -2746,15 +2750,15 @@ export const en: Messages = {
       cloning: 'Cloning...',
       willCreateDirectory: 'Will create {{path}}',
       createSection: 'Create',
-      createDirectory: 'Create directory',
-      saveAsDefaultClonePath: 'Save as default clone path',
+      createDirectory: 'Create Directory',
+      saveAsDefaultClonePath: 'Save as Default Clone Path',
       pathRequired: 'Enter a project path.',
       destinationExists:
         '"{{path}}" already exists. Pick another folder, or add that project instead of cloning.',
       browse: 'Browse',
       directories: 'Directories',
       goUp: 'Parent Directory',
-      addThisFolder: 'Add this folder',
+      addThisFolder: 'Add This Folder',
       cloneHere: 'Clone here',
       noDirectories: 'No directories here.',
       actions: {

@@ -4,6 +4,28 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.3-alpha] - 2026-08-14
+
+### Added
+
+- Sidebar: step-by-step add-project flow with per-step titles; Enter opens a folder, Shift+Enter / confirm adds, creates, or clones the typed path.
+- Desktop: search GitHub repos by name in add-project (public name search with star counts), not only owner-scoped lists.
+- Chat: collapsed process summary shows tool-call count, unique files, and +/- lines.
+- Codex: managed runtime 0.147.0 with skills, hooks, and MCP status.
+
+### Fixed
+
+- Environment: keep the host-action consumer across reconnect so resume no longer hangs.
+- Harness: Stop always settles the turn when Claude/Codex/OpenCode/Cursor cancel hangs; renderer returns to idle if the interrupt is acked but no terminal event arrives.
+- Cursor: unblock the first turn, switch SuperOne MCP to HTTP, and fall back when the local sandbox is unavailable.
+- Chat: Cursor context ring uses the selected window; `/` opens the Cursor slash catalog instead of Claude skills.
+- Chat: keep queued messages after the completed turn so they no longer jump above the reply they were waiting on.
+
+### Changed
+
+- UI: remap chat type sizes onto rem tokens so badges scale with chat density.
+- Claude: bump Agent SDK to 0.3.229 (desktop/CLI).
+
 ## [0.53.2-alpha] - 2026-08-13
 
 ### Added

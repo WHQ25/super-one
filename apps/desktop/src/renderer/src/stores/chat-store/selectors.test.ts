@@ -57,6 +57,7 @@ const {
   useIsRemoteLocked,
   useBashOutput,
   selectActiveCodexSkills,
+  selectActiveCursorSlashItems,
   selectClaudeAccount,
   selectClaudeAgents,
   selectClaudeCommands,
@@ -357,6 +358,20 @@ describe('Codex resource selectors', () => {
       },
     }))
     expect(selectActiveCodexSkills(useChatStore.getState())[0]?.name).toBe('codex-skill-1')
+  })
+
+  it('selectActiveCursorSlashItems returns the project-scoped Cursor slash catalog', () => {
+    setupActiveProject()
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: {
+          ...s.projectSessions[PATH],
+          _cursorSlashItems: [{ name: 'review', description: 'Review', argumentHint: '', isSkill: true }],
+        },
+      },
+    }))
+    expect(selectActiveCursorSlashItems(useChatStore.getState())[0]?.name).toBe('review')
   })
 })
 

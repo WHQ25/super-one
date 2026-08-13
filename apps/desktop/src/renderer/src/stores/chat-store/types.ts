@@ -273,6 +273,8 @@ export interface ProjectState {
   claudeModelsLoading: boolean
   _codexSkills: SkillInfo[]
   _codexSkillsLoading: boolean
+  _cursorSlashItems: SlashCommandInfo[]
+  _cursorSlashItemsLoading: boolean
   projectAdditionalDirs: string[]
   userAdditionalDirs: string[]
   projectSharedDirs: string[]
@@ -400,6 +402,7 @@ export interface ChatStore {
   loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
   refreshCodexModels: (force?: boolean) => Promise<void>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
+  refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
   setAcpAgentId: (agentId: string | null) => void
   setOpenCodeAgentId: (agentId: string | null) => void

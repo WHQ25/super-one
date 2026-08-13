@@ -777,6 +777,9 @@ const appAPI = {
   cursorGetUsage: (agentId: string, opts?: { runId?: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.CURSOR_GET_USAGE, agentId, opts),
 
+  cursorListSlashItems: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_LIST_SLASH_ITEMS, projectPath),
+
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 

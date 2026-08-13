@@ -175,6 +175,10 @@ export async function focusProjectImpl(
   if (isCodexActive && switchedProject && switchedProject._codexSkills.length === 0 && !switchedProject._codexSkillsLoading) {
     void get().refreshCodexSkills(projectPath)
   }
+  const isCursorActive = (switchedSession?.sessionProvider ?? switchedSession?.preferredProvider) === 'cursor'
+  if (isCursorActive && switchedProject && !switchedProject._cursorSlashItemsLoading) {
+    void get().refreshCursorSlashItems(projectPath)
+  }
   // Remote: warm node model catalogs once on focus (ensureSession may have already
   // kicked this off — refresh paths no-op when cache is warm / in-flight).
   if (parseRemoteProjectKey(projectPath)) {
@@ -939,6 +943,10 @@ export function setPreferredProviderImpl(
       triggerPrewarm(get())
       reassertForeground()
     })
+    const project = getProject(get(), activeProject)
+    if (!project._cursorSlashItemsLoading) {
+      void get().refreshCursorSlashItems(activeProject)
+    }
   }
   if (provider === 'claude') {
     void disposePriorMain

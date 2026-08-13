@@ -12,6 +12,7 @@ export function resolveSlashCommandsForProvider(
     codex: SlashCommandInfo[]
     acp: SlashCommandInfo[]
     opencode: SlashCommandInfo[]
+    cursor: SlashCommandInfo[]
   },
 ): SlashCommandInfo[] {
   switch (provider) {
@@ -22,7 +23,7 @@ export function resolveSlashCommandsForProvider(
     case 'opencode':
       return catalogs.opencode
     case 'cursor':
-      return []
+      return catalogs.cursor
     case 'claude':
     default:
       return catalogs.claude

@@ -136,6 +136,8 @@ export function createDefaultProjectState(): ProjectState {
     claudeModelsLoading: false,
     _codexSkills: [],
     _codexSkillsLoading: false,
+    _cursorSlashItems: [],
+    _cursorSlashItemsLoading: false,
     projectAdditionalDirs: [],
     userAdditionalDirs: [],
     projectSharedDirs: [],

@@ -117,6 +117,7 @@ interface AppAPI {
       cost?: { rawCostCents: number; chargedCents: number }
     }>
   }>
+  cursorListSlashItems(projectPath: string): Promise<SlashCommandInfo[]>
   getStartupData(): Promise<StartupData>
   getAppMetrics(): Promise<AppMetricsSnapshot>
   probeSandbox(): Promise<SandboxProbeResult>

@@ -85,4 +85,14 @@ describe('resolveRingContextWindow', () => {
   it('returns null when no source has a positive window', () => {
     expect(resolveRingContextWindow({ modelId: 'unknown' })).toBeNull()
   })
+
+  it('prefers selectedContextWindow over catalog and session', () => {
+    expect(resolveRingContextWindow({
+      harnessId: 'cursor',
+      modelId: 'claude-sonnet-4-5',
+      catalogContextWindow: 200_000,
+      sessionContextWindow: 128_000,
+      selectedContextWindow: 300_000,
+    })).toBe(300_000)
+  })
 })

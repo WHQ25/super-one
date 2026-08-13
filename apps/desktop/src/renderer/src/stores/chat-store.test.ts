@@ -76,6 +76,7 @@ const mockWindowApp = {
   codexCompact: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
   codexListModels: vi.fn().mockResolvedValue([]),
   codexListSkills: vi.fn().mockResolvedValue([]),
+  cursorListSlashItems: vi.fn().mockResolvedValue([]),
   codexSteer: vi.fn().mockResolvedValue(undefined),
   codexPlanApproval: vi.fn().mockResolvedValue(undefined),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),

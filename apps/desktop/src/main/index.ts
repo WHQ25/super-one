@@ -3,7 +3,7 @@ import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
 import { cpus, homedir, hostname } from 'os'
-import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
+import { resolveRealPath, isPathWithinAllowed, isPathAtOrWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
 import { gitRun, type GitRunOptions } from './git-run'
 import { logGitFailure, logSlowGit } from './git-diagnostics'
@@ -3997,6 +3997,15 @@ function registerIpcHandlers(): void {
     } catch {
       return {}
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_LIST_SLASH_ITEMS, async (_e, projectPath: string) => {
+    if (typeof projectPath !== 'string' || !projectPath || parseRemoteProjectKey(projectPath)) return []
+    if (!isAbsolute(projectPath)) return []
+    const knownProjects = getRecentFolders().map((f) => f.path)
+    if (knownProjects.length > 0 && !isPathAtOrWithinAllowed(projectPath, knownProjects)) return []
+    const { discoverCursorSkillsAndCommands } = await import('@superone/cursor')
+    return discoverCursorSkillsAndCommands(projectPath)
   })
 
   ipcMain.handle(AgentIpcChannels.CURSOR_LIST_AGENTS, async (_e, opts?: {

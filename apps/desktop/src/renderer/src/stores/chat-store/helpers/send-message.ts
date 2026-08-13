@@ -39,6 +39,16 @@ import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/
 import { toastSendFailure } from './send-error-toast'
 
 /**
+ * Whether a typed `/name` should be handled by SuperOne instead of the agent.
+ * Cursor only owns `/clear` and `/mcp`; other host commands must not steal the turn.
+ */
+function shouldInterceptHostSlash(provider: ChatProvider, name: string): boolean {
+  if (!CLAUDE_INTERCEPTED_COMMANDS[name]) return false
+  if (provider === 'cursor') return name === 'clear' || name === 'mcp'
+  return true
+}
+
+/**
  * Body of useChatStore.sendMessage extracted as a free-standing helper so
  * the store action stays a one-line dispatcher. Drives one full send turn:
  * - worktree activation when a pending base-branch is queued
@@ -104,7 +114,9 @@ export async function sendMessageImpl(
     // SuperOne-local slash intercepts (same as local path) — never forward to node.
     {
       const m = content.trim().match(/^\/(\S+)$/)
-      if (m && CLAUDE_INTERCEPTED_COMMANDS[m[1]!]) {
+      const remoteSess = getScopedPerSession(get(), writeTarget)
+      const remoteProvider: ChatProvider = remoteSess.sessionProvider ?? remoteSess.preferredProvider
+      if (m && shouldInterceptHostSlash(remoteProvider, m[1]!)) {
         patchSession(() => ({ _pendingSlashCommand: '' }))
         await CLAUDE_INTERCEPTED_COMMANDS[m[1]!]!()
         return
@@ -1024,11 +1036,11 @@ export async function sendMessageImpl(
   //   }
   // }
 
-  if (effectiveProvider === 'claude') {
+  if (effectiveProvider === 'claude' || effectiveProvider === 'cursor') {
     const m = rawContent.match(/^\/(\S+)$/)
-    if (m && CLAUDE_INTERCEPTED_COMMANDS[m[1]]) {
+    if (m && shouldInterceptHostSlash(effectiveProvider, m[1]!)) {
       patchSession(() => ({ _pendingSlashCommand: '' }))
-      await CLAUDE_INTERCEPTED_COMMANDS[m[1]]()
+      await CLAUDE_INTERCEPTED_COMMANDS[m[1]!]!()
       return
     }
   }
@@ -1112,8 +1124,12 @@ export async function sendMessageImpl(
       additionalDirsDirty: false,
       draftId: null,
       ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
-      ...((effectiveProvider === 'claude' || effectiveProvider === 'acp') && !isQueuedSend
+      ...((effectiveProvider === 'claude' || effectiveProvider === 'acp'
+        || effectiveProvider === 'cursor' || effectiveProvider === 'opencode') && !isQueuedSend
         ? { awaitingAssistantReply: true }
+        : {}),
+      ...(effectiveProvider === 'cursor' && !isQueuedSend
+        ? { status: 'streaming' as const }
         : {}),
     })),
     isOpen: true,

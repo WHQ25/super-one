@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels } from '@/stores/chat'
 import { resolveRingContextWindow } from '@superone/shared/agent-types'
-import { parseCursorContextWindow } from '@superone/cursor/cursor-model-selection'
+import { resolveCursorSelectedContextWindow } from '@superone/cursor/cursor-model-selection'
 import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { stripOneM } from '@/lib/model-id'
@@ -39,6 +39,7 @@ export function ContextUsage() {
   const detailedUsage = useActiveSession((s) => s.detailedUsage)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
   const availableModels = useChatStore(selectClaudeModels)
+  const cursorModels = useChatStore((s) => s.harnessResources.cursor?.models ?? [])
   const activeProject = useChatStore((s) => s.activeProject)
   const setDetailedUsage = useChatStore((s) => s.setDetailedUsage)
   const { catalog } = useModelCatalog()
@@ -66,8 +67,8 @@ export function ContextUsage() {
     const wasStreaming = prevStatusRef.current === 'streaming'
     prevStatusRef.current = status
     if (!wasStreaming || status !== 'idle' || !activeProject || !activeSessionId) return
-    // Claude / OpenCode / ACP(Grok) expose getContextUsage; Codex uses session snapshot only.
-    if (sessionProvider && sessionProvider !== 'claude' && sessionProvider !== 'opencode' && sessionProvider !== 'acp') return
+    // Claude / OpenCode / ACP(Grok) / Cursor expose getContextUsage; Codex uses session snapshot only.
+    if (sessionProvider && sessionProvider !== 'claude' && sessionProvider !== 'opencode' && sessionProvider !== 'acp' && sessionProvider !== 'cursor') return
     const sid = activeSessionId
     const project = activeProject
     window.agent.getContextUsage(project, sid).then((usage) => {
@@ -77,16 +78,23 @@ export function ContextUsage() {
   }, [status, activeProject, activeSessionId, sessionProvider, setDetailedUsage])
 
   const activeProvider = sessionProvider ?? preferredProvider
-  const currentModel = availableModels.find((m) => m.id === selectedModel)
-  const effectiveTokens = detailedUsage?.totalTokens ?? contextTokens
+  const isCursor = activeProvider === 'cursor'
+  const currentModel = isCursor
+    ? cursorModels.find((m) => m.id === selectedModel)
+    : availableModels.find((m) => m.id === selectedModel)
+  const detailedTokens = detailedUsage?.totalTokens ?? 0
+  const effectiveTokens = detailedTokens > 0 ? detailedTokens : contextTokens
   const catalogContextWindow = useMemo(
-    () => lookupCatalogContextWindow(
-      [selectedModel, currentModel?.resolvedModel, detailedUsage?.model],
-      catalogModels,
-    ),
-    [selectedModel, currentModel?.resolvedModel, detailedUsage?.model, catalogModels],
+    () => isCursor
+      ? null
+      : lookupCatalogContextWindow(
+        [selectedModel, currentModel?.resolvedModel, detailedUsage?.model],
+        catalogModels,
+      ),
+    [isCursor, selectedModel, currentModel?.resolvedModel, detailedUsage?.model, catalogModels],
   )
   // Codex GPT-5.6 uses its managed 272k window; other models prefer models.dev.
+  // Cursor uses the per-turn `context` param (300k / 1m) and never models.dev.
   const contextWindow = resolveRingContextWindow({
     harnessId: activeProvider,
     modelId: selectedModel,
@@ -96,9 +104,8 @@ export function ContextUsage() {
     sessionContextWindow: contextWindowFromSession,
     detailedMaxTokens: detailedUsage?.maxTokens,
     claudeFallback: activeProvider === 'claude',
-    // Cursor lets the user pick the window per turn (300k / 1m).
-    selectedContextWindow: activeProvider === 'cursor'
-      ? parseCursorContextWindow(cursorContextParam)
+    selectedContextWindow: isCursor
+      ? resolveCursorSelectedContextWindow(cursorContextParam, currentModel)
       : null,
   })
   const pct = contextWindow ? Math.min(effectiveTokens / contextWindow, 1) : 0

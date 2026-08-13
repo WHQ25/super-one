@@ -1075,6 +1075,7 @@ export {
   selectCodexModels,
   selectCodexPrompts,
   selectActiveCodexSkills,
+  selectActiveCursorSlashItems,
   selectClaudeAccount,
   selectClaudeSlashCommands,
   selectClaudeSkills,

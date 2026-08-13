@@ -110,6 +110,10 @@ export const selectActiveCodexSkills = (s: ChatStore): SkillInfo[] => {
   if (!s.activeProject) return EMPTY_SKILL_INFOS
   return s.projectSessions[s.activeProject]?._codexSkills ?? EMPTY_SKILL_INFOS
 }
+export const selectActiveCursorSlashItems = (s: ChatStore): SlashCommandInfo[] => {
+  if (!s.activeProject) return EMPTY_SLASH_COMMANDS
+  return s.projectSessions[s.activeProject]?._cursorSlashItems ?? EMPTY_SLASH_COMMANDS
+}
 export const selectClaudeAccount = (s: ChatStore): AccountInfo => s.harnessResources.claude?.account ?? EMPTY_ACCOUNT
 export const selectClaudeSlashCommands = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.slashCommands ?? EMPTY_SLASH_COMMANDS
 export const selectClaudeSkills = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.skills ?? EMPTY_SLASH_COMMANDS

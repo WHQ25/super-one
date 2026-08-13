@@ -68,6 +68,8 @@ export {
   cursorParamValueLabel,
   normalizeEffortValue,
   parseCursorContextWindow,
+  firstParseableCursorContextValue,
+  resolveCursorSelectedContextWindow,
   type BuildCursorModelSelectionInput,
 } from './cursor-model-selection'
 
@@ -110,6 +112,11 @@ export {
   type CursorSendResult,
   type CursorRuntimeLog,
 } from './cursor-runtime'
+
+export {
+  discoverCursorSkillsAndCommands,
+  stripMarkdownFrontmatter,
+} from './cursor-skills-discover'
 
 export {
   runCursorSdkTurn,

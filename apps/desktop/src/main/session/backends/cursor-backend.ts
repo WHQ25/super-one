@@ -8,7 +8,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
-import { buildCursorModelSelection, parseCursorContextWindow } from '@superone/cursor'
+import { buildCursorModelSelection, resolveCursorSelectedContextWindow } from '@superone/cursor'
 import log from '../../logger'
 import { mapPermissionToCursorLocal } from '../../cursor/cursor-auth'
 import {
@@ -103,13 +103,9 @@ export class CursorBackend implements SessionBackend {
   }
 
   private resolveContextWindow(): number | null {
-    const fromParams = parseCursorContextWindow(this.modelParams.context)
-    if (fromParams) return fromParams
     const catalog = getCachedHarnessResources('cursor')
     const model = catalog?.models.find((m) => m.id === this.model)
-    const contextParam = model?.parameters?.find((p) => p.id === 'context')
-    const defaultValue = contextParam?.values?.[0]?.value
-    return parseCursorContextWindow(defaultValue)
+    return resolveCursorSelectedContextWindow(this.modelParams.context, model)
   }
 
   private async ensureRuntime(): Promise<CursorRuntime> {

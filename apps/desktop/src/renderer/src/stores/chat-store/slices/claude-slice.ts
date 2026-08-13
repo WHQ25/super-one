@@ -35,6 +35,7 @@ export interface ClaudeSlice {
   setFastMode: (enabled: boolean) => void
   setSelectedAcpMode: (modeId: string) => void
   refreshClaudeResources: (force?: boolean) => Promise<void>
+  refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   /** Load Claude models for a project (remote → node provider store; local → connectClaude). */
   loadClaudeModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
 }
@@ -407,5 +408,23 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
 
   setFastMode: (enabled) => {
     void window.app.setFastMode(enabled)
+  },
+
+  refreshCursorSlashItems: async (projectPath) => {
+    const target = projectPath ?? get().activeProject
+    if (!target || parseRemoteProjectKey(target)) return
+    const current = get().projectSessions[target]
+    if (current?._cursorSlashItemsLoading) return
+    set((s) => updateProjectState(s, target, () => ({ _cursorSlashItemsLoading: true })))
+    try {
+      const items = await window.app.cursorListSlashItems(target)
+      set((s) => updateProjectState(s, target, () => ({
+        _cursorSlashItems: Array.isArray(items) ? items : [],
+        _cursorSlashItemsLoading: false,
+      })))
+    } catch (error) {
+      console.warn('[refreshCursorSlashItems] Failed:', error)
+      set((s) => updateProjectState(s, target, () => ({ _cursorSlashItemsLoading: false })))
+    }
   },
 })

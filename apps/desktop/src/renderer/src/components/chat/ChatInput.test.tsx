@@ -25,8 +25,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     cwd: '/project' as string,
     homedir: '/home/user' as string,
     slashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
-    preferredProvider: 'claude' as 'claude' | 'codex' | 'acp' | 'opencode',
-    sessionProvider: null as 'claude' | 'codex' | 'acp' | 'opencode' | null,
+    preferredProvider: 'claude' as 'claude' | 'codex' | 'acp' | 'opencode' | 'cursor',
+    sessionProvider: null as 'claude' | 'codex' | 'acp' | 'opencode' | 'cursor' | null,
     acpSlashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
     acpSlashCommandsStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
     acpAgentId: null as string | null,
@@ -76,6 +76,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
       opencode: { models: [], agents: [], commands: [] },
     },
     ensureAcpSlashCommands: vi.fn(),
+    _cursorSlashItems: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean; promptBody?: string }>,
   }
 
   const useChatStore = Object.assign(
@@ -125,10 +126,17 @@ vi.mock('@tiptap/react', () => {
       },
       getJSON: () => ({ type: 'doc', content: [{ type: 'paragraph', content: editorState.text ? [{ type: 'text', text: editorState.text }] : [] }] }),
       chain: () => {
+        const textFromContent = (value: unknown) => {
+          if (typeof value === 'string') return stripHtml(value)
+          if (!value || typeof value !== 'object') return ''
+          const doc = value as { content?: Array<{ content?: Array<{ type: string; text?: string }> }> }
+          const nodes = doc.content?.[0]?.content ?? []
+          return nodes.map((node) => (node.type === 'hardBreak' ? '\n' : node.text ?? '')).join('')
+        }
         const chain = {
           focus: () => chain,
-          setContent: (value: string) => {
-            editorState.text = stripHtml(value)
+          setContent: (value: unknown) => {
+            editorState.text = textFromContent(value)
             return chain
           },
           clearContent: () => {
@@ -163,6 +171,12 @@ vi.mock('@tiptap/react', () => {
       state: {
         selection: { from: editorState.text.length },
         doc: {
+          get firstChild() {
+            return {
+              content: { size: editorState.text.length },
+              forEach: () => {},
+            }
+          },
           descendants: (callback: (node: { isText: boolean; text: string; type: { name: string }; isBlock: boolean }, pos: number) => boolean | void) => {
             if (!editorState.text) return
             callback({ isText: true, text: editorState.text, type: { name: 'text' }, isBlock: false }, 1)
@@ -248,12 +262,15 @@ vi.mock('./prompt-suggestion', () => ({
 
 vi.mock('@/stores/chat', () => ({
   CODEX_REJECT_PLAN_PLACEHOLDER: 'reject-plan',
+  CLAUDE_INTERCEPTED_COMMAND_NAMES: new Set(['clear', 'provider', 'mcp', 'workflows']),
+  runClaudeInterceptedCommand: vi.fn(),
   useChatStore,
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
   useIsRemoteLocked: () => false,
   useSessionScope: () => sessionScope.value,
   selectCodexPrompts: () => [],
   selectActiveCodexSkills: () => [],
+  selectActiveCursorSlashItems: (state: typeof chatActions) => state._cursorSlashItems,
   selectOpenCodeCommands: (state: typeof chatActions) => state.harnessResources.opencode.commands,
   getLatestCodexThreadId: () => goalState.threadId,
 }))
@@ -329,6 +346,7 @@ beforeEach(() => {
   activeSessionState.mentions = []
   activeSessionState.preferredProvider = 'claude'
   activeSessionState.sessionProvider = null
+  chatActions._cursorSlashItems = []
   activeSessionState.showDirManager = false
   activeSessionState.showReviewPanel = false
   activeSessionState._activeSessionId = 'session-1'
@@ -703,5 +721,90 @@ describe('ChatInput slash command grouping', () => {
       .filter(Boolean)
     expect(labels.some((label) => label.startsWith('/recap'))).toBe(false)
     expect(labels.some((label) => label.startsWith('/clear'))).toBe(true)
+  })
+
+  it('shows Cursor host commands and scanned skills, not Claude or workflows', () => {
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+    activeSessionState.slashCommands = [
+      { name: 'compact', description: 'Claude compact', argumentHint: '', isSkill: false },
+      { name: 'tdd', description: 'Claude skill', argumentHint: '', isSkill: true },
+    ]
+    chatActions._cursorSlashItems = [
+      { name: 'review', description: 'Review the diff', argumentHint: '', isSkill: true },
+      { name: 'ship', description: 'Ship it', argumentHint: '', isSkill: false },
+    ]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    const labels = screen
+      .getAllByRole('button')
+      .map((b) => b.querySelector('.font-medium')?.textContent ?? '')
+      .filter(Boolean)
+
+    expect(labels.some((label) => label.startsWith('/clear'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/mcp'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/review'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/ship'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/workflows'))).toBe(false)
+    expect(labels.some((label) => label.startsWith('/compact'))).toBe(false)
+    expect(labels.some((label) => label.startsWith('/tdd'))).toBe(false)
+  })
+
+  it('expands a Cursor command body including newlines into the editor', () => {
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+    chatActions._cursorSlashItems = [
+      {
+        name: 'ship',
+        description: 'Ship it',
+        argumentHint: '',
+        isSkill: false,
+        promptBody: 'Ship the current branch.\nThen tag the release.',
+      },
+    ]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    chatActions.setDraftText.mockClear()
+    fireEvent.mouseDown(screen.getByText('Ship it').closest('button')!)
+
+    expect(chatActions.setDraftText.mock.calls.at(-1)?.[0]).toBe(
+      'Ship the current branch.\nThen tag the release.',
+    )
+  })
+
+  it('lists a Cursor skill and command with the same name and expands only the command', () => {
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+    chatActions._cursorSlashItems = [
+      { name: 'review', description: 'Skill review', argumentHint: '', isSkill: true },
+      {
+        name: 'review',
+        description: 'Command review',
+        argumentHint: '',
+        isSkill: false,
+        promptBody: 'Review the diff.',
+      },
+    ]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    expect(screen.getByText('Skill review')).toBeTruthy()
+    expect(screen.getByText('Command review')).toBeTruthy()
+
+    chatActions.setDraftText.mockClear()
+    fireEvent.mouseDown(screen.getByText('Command review').closest('button')!)
+    expect(chatActions.setDraftText.mock.calls.at(-1)?.[0]).toBe('Review the diff.')
+
+    chatActions.setDraftText.mockClear()
+    fireEvent.mouseDown(screen.getByText('Skill review').closest('button')!)
+    expect(chatActions.setDraftText.mock.calls.at(-1)?.[0]).toBe('/review ')
   })
 })

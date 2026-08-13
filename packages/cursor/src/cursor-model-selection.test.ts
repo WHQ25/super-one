@@ -9,6 +9,7 @@ import {
   mapCursorModel,
   normalizeEffortValue,
   parseCursorContextWindow,
+  resolveCursorSelectedContextWindow,
 } from './cursor-model-selection'
 
 describe('cursor-model-selection', () => {
@@ -173,6 +174,31 @@ describe('cursor-model-selection', () => {
     expect(parseCursorContextWindow('200000')).toBe(200_000)
     expect(parseCursorContextWindow('auto')).toBeNull()
     expect(parseCursorContextWindow(undefined)).toBeNull()
+  })
+
+  it('skips auto when defaulting the context param', () => {
+    const model = mapCursorModel({
+      id: 'claude-opus-5',
+      displayName: 'Opus 5',
+      parameters: [
+        { id: 'context', values: [{ value: 'auto' }, { value: '300k' }, { value: '1m' }] },
+      ],
+    })
+    expect(defaultCursorModelParams(model)).toEqual({ context: '300k' })
+  })
+
+  it('resolves selected context window from param then first parseable catalog value', () => {
+    const model = mapCursorModel({
+      id: 'claude-opus-5',
+      displayName: 'Opus 5',
+      parameters: [
+        { id: 'context', values: [{ value: 'auto' }, { value: '300k' }, { value: '1m' }] },
+      ],
+    })
+    expect(resolveCursorSelectedContextWindow('1m', model)).toBe(1_000_000)
+    expect(resolveCursorSelectedContextWindow('auto', model)).toBe(300_000)
+    expect(resolveCursorSelectedContextWindow(undefined, model)).toBe(300_000)
+    expect(resolveCursorSelectedContextWindow('auto', null)).toBeNull()
   })
 
   it('omits params when catalog has none and no fast flag', () => {

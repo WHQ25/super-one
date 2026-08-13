@@ -995,6 +995,8 @@ export interface SlashCommandInfo {
   workflowSource?: string
   /** Absolute or project-relative path to the `.rhai` source when known. */
   workflowPath?: string
+  /** Host-expanded prompt template (Cursor `.cursor/commands`). */
+  promptBody?: string
 }
 
 // --- @ mention: agents & directory listing ---
@@ -2589,6 +2591,7 @@ export const AgentIpcChannels = {
   CURSOR_SDK_LOGOUT: 'app:cursor-sdk-logout',
   CURSOR_SDK_AUTH_STATUS: 'app:cursor-sdk-auth-status',
   CURSOR_GET_USAGE: 'app:cursor-get-usage',
+  CURSOR_LIST_SLASH_ITEMS: 'app:cursor-list-slash-items',
   GET_STARTUP_DATA: 'app:get-startup-data',
   GET_APP_METRICS: 'app:get-app-metrics',
   SELECT_FOLDER: 'app:select-folder',

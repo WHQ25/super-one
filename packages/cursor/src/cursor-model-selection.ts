@@ -96,6 +96,33 @@ export function parseCursorContextWindow(raw: string | null | undefined): number
   return Math.round(amount * multiplier)
 }
 
+/**
+ * First catalog `context` value that parses to a token count (skips `auto`).
+ */
+export function firstParseableCursorContextValue(
+  values: Array<{ value: string }> | undefined,
+): string | null {
+  for (const item of values ?? []) {
+    if (parseCursorContextWindow(item.value) != null) return item.value
+  }
+  return null
+}
+
+/**
+ * Window for the Context ring: selected param, else first parseable catalog value.
+ */
+export function resolveCursorSelectedContextWindow(
+  selected: string | null | undefined,
+  model: Pick<ModelOption, 'parameters'> | null | undefined,
+): number | null {
+  const parsed = parseCursorContextWindow(selected)
+  if (parsed != null) return parsed
+  const fallback = firstParseableCursorContextValue(
+    model?.parameters?.find((param) => param.id === 'context')?.values,
+  )
+  return parseCursorContextWindow(fallback)
+}
+
 /** Human label for a catalog param id. */
 export function cursorParamLabel(param: Pick<CatalogParam, 'id' | 'displayName'>): string {
   if (param.displayName?.trim()) return param.displayName.trim()
@@ -143,6 +170,10 @@ export function defaultCursorModelParams(
     }
     if (isCursorToggleParam(param)) {
       out[param.id] = param.values.find((v) => v.value === 'false')?.value ?? param.values[0]!.value
+      continue
+    }
+    if (param.id === 'context') {
+      out[param.id] = firstParseableCursorContextValue(param.values) ?? param.values[0]!.value
       continue
     }
     out[param.id] = param.values[0]!.value

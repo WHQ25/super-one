@@ -8,14 +8,26 @@ const chatState = {
   availableModels: [] as Array<{ id: string; name: string; description: string; resolvedModel?: string; contextWindow?: number }>,
   activeProject: '/test',
   setDetailedUsage: vi.fn(),
+  harnessResources: {
+    cursor: {
+      models: [] as Array<{
+        id: string
+        name: string
+        description?: string
+        contextWindow?: number
+        parameters?: Array<{ id: string; values: Array<{ value: string }> }>
+      }>,
+    },
+  },
 }
 
 const activeSessionState = {
   contextTokens: 0,
   contextWindow: null as number | null,
   selectedModel: '',
-  preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode',
-  sessionProvider: null as 'claude' | 'codex' | 'opencode' | null,
+  cursorModelParams: {} as Record<string, string>,
+  preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp',
+  sessionProvider: null as 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp' | null,
   totalCostUsd: 0,
   status: 'idle' as string,
   detailedUsage: null as unknown,
@@ -71,9 +83,11 @@ function catalogWithModel(id: string, contextWindow: number, providerId = 'anthr
 beforeEach(() => {
   chatState.availableModels = []
   chatState.setDetailedUsage = vi.fn()
+  chatState.harnessResources.cursor.models = []
   activeSessionState.contextTokens = 0
   activeSessionState.contextWindow = null
   activeSessionState.selectedModel = ''
+  activeSessionState.cursorModelParams = {}
   activeSessionState.preferredProvider = 'claude'
   activeSessionState.sessionProvider = null
   activeSessionState.totalCostUsd = 0
@@ -303,5 +317,81 @@ describe('ContextUsage', () => {
     fireEvent.click(screen.getByRole('button'))
 
     expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
+  })
+
+  it('uses the selected Cursor context param instead of models.dev', () => {
+    modelCatalog = catalogWithModel('claude-sonnet-4-5', 200_000)
+    chatState.harnessResources.cursor.models = [{
+      id: 'claude-sonnet-4-5',
+      name: 'Sonnet',
+      parameters: [{ id: 'context', values: [{ value: 'auto' }, { value: '300k' }, { value: '1m' }] }],
+    }]
+    activeSessionState.contextTokens = 50_000
+    activeSessionState.selectedModel = 'claude-sonnet-4-5'
+    activeSessionState.cursorModelParams = { context: '300k' }
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 50.0k / 300.0k (17%)')).toBeTruthy()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
+  })
+
+  it('does not use models.dev when Cursor context is auto and catalog has a numeric fallback', () => {
+    modelCatalog = catalogWithModel('claude-sonnet-4-5', 200_000)
+    chatState.harnessResources.cursor.models = [{
+      id: 'claude-sonnet-4-5',
+      name: 'Sonnet',
+      parameters: [{ id: 'context', values: [{ value: 'auto' }, { value: '300k' }, { value: '1m' }] }],
+    }]
+    activeSessionState.contextTokens = 50_000
+    activeSessionState.selectedModel = 'claude-sonnet-4-5'
+    activeSessionState.cursorModelParams = { context: 'auto' }
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 50.0k / 300.0k (17%)')).toBeTruthy()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
+  })
+
+  it('uses the session context window for Cursor when no param is parseable', () => {
+    modelCatalog = catalogWithModel('claude-sonnet-4-5', 200_000)
+    activeSessionState.contextTokens = 50_000
+    activeSessionState.contextWindow = 1_000_000
+    activeSessionState.selectedModel = 'claude-sonnet-4-5'
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 50.0k / 1000.0k (5%)')).toBeTruthy()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
+  })
+
+  it('refreshes detailed context usage after a Cursor turn completes', async () => {
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+    activeSessionState.contextTokens = 12_000
+    activeSessionState.status = 'streaming'
+    getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => ({
+      categories: [{ name: 'tokens', tokens: 12_000, color: 'var(--muted-foreground)' }],
+      totalTokens: 12_000,
+      maxTokens: 300_000,
+      percentage: 4,
+      model: 'claude-sonnet-4-5',
+    }))
+
+    const { rerender } = render(<ContextUsage />)
+    act(() => { activeSessionState.status = 'idle' })
+    rerender(<ContextUsage />)
+
+    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('/test', 'sid-1'))
+    expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-1', expect.objectContaining({ maxTokens: 300_000 }))
   })
 })

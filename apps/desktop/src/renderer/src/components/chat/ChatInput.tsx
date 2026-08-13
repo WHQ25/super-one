@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
-import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
+import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectActiveCursorSlashItems, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ArrowUp, Loader2, Paperclip, X } from 'lucide-react'
@@ -48,6 +48,7 @@ import { SlashCommandContent } from './SlashCommandContent'
 import { StopButton, harnessUsesSoftCancel } from './StopButton'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
+import { plainTextToTiptapDoc, plainTextToTiptapParagraphContent } from './chat-input/plainTextToTiptapDoc'
 import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
 import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
 import { CodexGoalDialog } from './CodexGoalDialog'
@@ -240,6 +241,7 @@ export function ChatInput() {
     const codexPrompts = useChatStore(selectCodexPrompts)
     const codexSkills = useChatStore(selectActiveCodexSkills)
     const openCodeSlashCommands = useChatStore(selectOpenCodeCommands)
+    const cursorFsSlashItems = useChatStore(selectActiveCursorSlashItems)
     const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages))
     const [codexGoal, setCodexGoal] = useState<CodexGoal | null>(null)
     const [goalDialogState, setGoalDialogState] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' })
@@ -320,6 +322,24 @@ export function ChatInput() {
       return [...fromAgent, ...local]
     }, [t, acpSlashCommandsFromAgent, acpAgentId])
 
+    const cursorSlashCommands = useMemo<SlashCommandInfo[]>(() => {
+      const host: SlashCommandInfo[] = [
+        { name: 'clear', description: t('chat.acpCommands.clearDesc'), argumentHint: '', isSkill: false },
+        { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
+      ]
+      const hostNames = new Set(host.map((cmd) => cmd.name))
+      const seenFs = new Set<string>()
+      const fromFs = cursorFsSlashItems.flatMap((item) => {
+        const name = item.name.replace(/^\//, '').trim()
+        if (!name || hostNames.has(name)) return []
+        const key = `${item.isSkill ? 'skill' : 'command'}:${name}`
+        if (seenFs.has(key)) return []
+        seenFs.add(key)
+        return [{ ...item, name }]
+      })
+      return [...host, ...fromFs]
+    }, [t, cursorFsSlashItems])
+
     // Never fall through to project-level Claude slashCommands/skills for ACP.
     const activeSlashCommands = useMemo(
       () => resolveSlashCommandsForProvider(activeProviderForResources, {
@@ -327,8 +347,9 @@ export function ChatInput() {
         codex: codexSlashCommands,
         acp: acpSlashCommands,
         opencode: openCodeSlashCommands,
+        cursor: cursorSlashCommands,
       }),
-      [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands],
+      [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands],
     )
 
     const matchingCommands = useMemo(
@@ -377,10 +398,7 @@ export function ChatInput() {
       }
       ed.chain()
         .focus()
-        .setContent({
-          type: 'doc',
-          content: [{ type: 'paragraph', content: [{ type: 'text', text: value }] }],
-        })
+        .setContent(plainTextToTiptapDoc(value))
         .run()
       ed.commands.focus('end')
     }, [])
@@ -412,7 +430,10 @@ export function ChatInput() {
         setText(prefix)
         return
       }
-      info.ed.chain().focus().insertContentAt({ from: info.from, to: info.to }, prefix).run()
+      info.ed.chain().focus().insertContentAt(
+        { from: info.from, to: info.to },
+        plainTextToTiptapParagraphContent(prefix),
+      ).run()
       setText(info.ed.getText())
     }, [firstLineBoundary, replaceEditorTextPreservingTrailingSpace, setText])
 
@@ -430,7 +451,8 @@ export function ChatInput() {
     }, [firstLineBoundary, setText])
 
     const selectSlashCommand = useCallback(
-      (name: string) => {
+      (cmd: SlashCommandInfo | string) => {
+        const name = typeof cmd === 'string' ? cmd : cmd.name.replace(/^\//, '').trim()
         if (name === 'provider') {
           clearFirstLine()
           setSlashIndex(-1)
@@ -442,6 +464,24 @@ export function ChatInput() {
           setSlashIndex(-1)
           useChatStore.getState().openMcpPopup()
           return
+        }
+        if (name === 'clear' && activeProviderForResources === 'cursor') {
+          clearFirstLine()
+          setSlashIndex(-1)
+          void runClaudeInterceptedCommand('clear')
+          return
+        }
+        if (activeProviderForResources === 'cursor') {
+          const entry = typeof cmd === 'string'
+            ? cursorSlashCommands.find((item) => item.name === name && Boolean(item.promptBody))
+              ?? cursorSlashCommands.find((item) => item.name === name)
+            : cmd
+          if (entry?.promptBody) {
+            replaceEditorTextPreservingTrailingSpace(entry.promptBody)
+            setText(entry.promptBody)
+            setSlashIndex(-1)
+            return
+          }
         }
         if (
           name === 'workflows'
@@ -482,7 +522,7 @@ export function ChatInput() {
         replaceFirstLineWith(`/${name} `)
         setSlashIndex(-1)
       },
-      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith]
+      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands]
     )
 
     const addDirParse = useMemo(() => {
@@ -895,7 +935,7 @@ export function ChatInput() {
             e.preventDefault()
             const idx = slashIndex >= 0 ? Math.min(slashIndex, matchingCommands.length - 1) : 0
             if (matchingCommands[idx]) {
-              selectSlashCommand(matchingCommands[idx].name)
+              selectSlashCommand(matchingCommands[idx])
             }
             return true
           }
@@ -1497,14 +1537,14 @@ export function ChatInput() {
                     const i = group.startIndex + j
                     return (
                       <button
-                        key={cmd.name}
+                        key={`${cmd.isSkill ? 'skill' : 'command'}:${cmd.name}`}
                         ref={(el) => {
                           if (el) slashItemRefs.current.set(i, el)
                           else slashItemRefs.current.delete(i)
                         }}
                         onMouseDown={(e) => {
                           e.preventDefault()
-                          selectSlashCommand(cmd.name)
+                          selectSlashCommand(cmd)
                         }}
                         className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
                           i === slashIndex

@@ -22,7 +22,7 @@ const opencode: SlashCommandInfo[] = [
   { name: 'deploy', description: 'Deploy', argumentHint: 'env', isSkill: true },
 ]
 
-const catalogs = { claude, codex, acp, opencode }
+const catalogs = { claude, codex, acp, opencode, cursor: [] as SlashCommandInfo[] }
 
 describe('resolveSlashCommandsForProvider', () => {
   it('returns Claude project slashCommands for claude', () => {
@@ -45,5 +45,16 @@ describe('resolveSlashCommandsForProvider', () => {
 
   it('returns the OpenCode SDK command catalog', () => {
     expect(resolveSlashCommandsForProvider('opencode', catalogs)).toBe(opencode)
+  })
+
+  it('returns the Cursor catalog and never Claude skills', () => {
+    const cursor: SlashCommandInfo[] = [
+      { name: 'clear', description: 'Clear', argumentHint: '', isSkill: false },
+      { name: 'review', description: 'Review', argumentHint: '', isSkill: true },
+    ]
+    const result = resolveSlashCommandsForProvider('cursor', { ...catalogs, cursor })
+    expect(result).toBe(cursor)
+    expect(result.map((c) => c.name)).not.toContain('tdd')
+    expect(result.map((c) => c.name)).not.toContain('compact')
   })
 })

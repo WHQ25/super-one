@@ -267,6 +267,34 @@ describe('sendMessageImpl: remote node', () => {
     expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
   })
 
+  it('does not intercept Cursor /workflows on remote as a host command', async () => {
+    seedProject(remotePath, 'cursor-wf-sid', {
+      preferredProvider: 'cursor',
+      sessionProvider: 'cursor',
+    })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({
+      sessionId: 'cursor-wf-sid',
+      status: 'idle',
+      harnessId: 'claude',
+      transcript: [],
+    })
+
+    await useChatStore.getState().sendMessage('/workflows')
+
+    expect(mockEnvSendSessionMessage).toHaveBeenCalled()
+  })
+
+  it('intercepts Cursor /clear on remote without session.send', async () => {
+    seedProject(remotePath, 'cursor-clear-sid', {
+      preferredProvider: 'cursor',
+      sessionProvider: 'cursor',
+    })
+
+    await useChatStore.getState().sendMessage('/clear')
+
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
+  })
+
   it('uses codex when the session is on the codex tab', async () => {
     seedProject(remotePath, 'draft-codex', {
       preferredProvider: 'codex',
@@ -459,6 +487,43 @@ describe('sendMessageImpl: intercepted commands', () => {
     expect(mockSendMessage).not.toHaveBeenCalled()
     expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'workflows', content: '' })
     expect(getActiveSession('/proj').messages).toEqual([])
+  })
+
+  it('routes Cursor /clear through host intercept and skips IPC send', async () => {
+    seedProject('/proj', 'sid-cursor', {
+      sessionProvider: 'cursor',
+      preferredProvider: 'cursor',
+    })
+
+    await useChatStore.getState().sendMessage('/clear')
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    const sess = getActiveSession('/proj')
+    expect(sess.messages).toEqual([])
+  })
+
+  it('routes Cursor /mcp through host intercept and skips IPC send', async () => {
+    seedProject('/proj', 'sid-cursor-mcp', {
+      sessionProvider: 'cursor',
+      preferredProvider: 'cursor',
+    })
+
+    await useChatStore.getState().sendMessage('/mcp')
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'mcp', content: '' })
+    expect(getActiveSession('/proj').messages).toEqual([])
+  })
+
+  it('does not intercept Cursor /workflows as a host command', async () => {
+    seedProject('/proj', 'sid-cursor-wf', {
+      sessionProvider: 'cursor',
+      preferredProvider: 'cursor',
+    })
+
+    await useChatStore.getState().sendMessage('/workflows')
+
+    expect(mockSendMessage).toHaveBeenCalled()
   })
 
   it('opens the branch review picker without sending an invalid review request', async () => {
@@ -662,6 +727,20 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
     expect(sess.messages[0].role).toBe('user')
     expect(sess.awaitingAssistantReply).toBe(true)
     expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({ content: 'hello there' }))
+  })
+
+  it('marks Cursor sessions streaming before send IPC returns', async () => {
+    seedProject('/proj', 'sid-1', {
+      sessionProvider: 'cursor',
+      preferredProvider: 'cursor',
+    })
+    mockSendMessage.mockImplementationOnce(async () => {
+      const sess = getActiveSession('/proj')
+      expect(sess.awaitingAssistantReply).toBe(true)
+      expect(sess.status).toBe('streaming')
+    })
+
+    await useChatStore.getState().sendMessage('hello cursor')
   })
 })
 

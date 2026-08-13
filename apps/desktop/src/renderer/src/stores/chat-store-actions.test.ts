@@ -244,6 +244,45 @@ describe('interrupt', () => {
     await useChatStore.getState().interrupt()
     expect(mockWindowAgent.interrupt).not.toHaveBeenCalled()
   })
+
+  // Regression: a successful interrupt used to leave the session streaming
+  // forever whenever the backend never delivered a terminal event, and every
+  // later message then went out as a queued (priority=next) send that the UI
+  // never rendered.
+  it('falls back to idle when an acked interrupt produces no terminal event', async () => {
+    vi.useFakeTimers()
+    try {
+      setupProject()
+      patchSession({ status: 'streaming', pendingPermissions: [{} as never] })
+      mockWindowAgent.interrupt.mockResolvedValueOnce(true)
+
+      await useChatStore.getState().interrupt()
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(activeSession().status).toBe('idle')
+      expect(activeSession().pendingPermissions).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not force idle when a new turn started inside the settle window', async () => {
+    vi.useFakeTimers()
+    try {
+      setupProject()
+      patchSession({ status: 'streaming', messages: [{ id: 'm1' } as never] })
+      mockWindowAgent.interrupt.mockResolvedValueOnce(true)
+
+      await useChatStore.getState().interrupt()
+      // Terminal event lands, user immediately sends again.
+      patchSession({ status: 'streaming', messages: [{ id: 'm1' } as never, { id: 'm2' } as never] })
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(activeSession().status).toBe('streaming')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('clearMessages', () => {

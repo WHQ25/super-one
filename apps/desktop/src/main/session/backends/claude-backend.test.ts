@@ -7,6 +7,8 @@ const hoisted = vi.hoisted(() => {
     onSessionId: ((id: string) => void) | null
     onQueuedTurnStart: ((messageId: string) => void) | null
     onStepBoundary: (() => void) | null
+    getInterrupted: (() => boolean) | null
+    getCurrentMessageId: (() => string) | null
     bridge: unknown
     iterationDone: { resolve: () => void; promise: Promise<void> } | null
     activeBackgroundTasks: Map<string, { toolUseId?: string; description: string }> | null
@@ -30,6 +32,8 @@ const hoisted = vi.hoisted(() => {
     onSessionId: null,
     onQueuedTurnStart: null,
     onStepBoundary: null,
+    getInterrupted: null,
+    getCurrentMessageId: null,
     bridge: null,
     iterationDone: null,
     activeBackgroundTasks: null,
@@ -49,11 +53,13 @@ const hoisted = vi.hoisted(() => {
     mockQueryReloadPlugins: vi.fn(async () => {}),
   }
   captured.createSessionQueryMock.mockImplementation(
-    (bridge: unknown, opts: unknown, emit: (e: AgentEvent) => void, _getMid: () => string, _getTs: () => number, _getInterrupted: () => boolean, onSessionId: (id: string) => void, onQueuedTurnStart: (id: string) => void, onStepBoundary: () => void) => {
+    (bridge: unknown, opts: unknown, emit: (e: AgentEvent) => void, getMid: () => string, _getTs: () => number, getInterrupted: () => boolean, onSessionId: (id: string) => void, onQueuedTurnStart: (id: string) => void, onStepBoundary: () => void) => {
       captured.emit = emit
       captured.onSessionId = onSessionId
       captured.onQueuedTurnStart = onQueuedTurnStart
       captured.onStepBoundary = onStepBoundary
+      captured.getInterrupted = getInterrupted
+      captured.getCurrentMessageId = getMid
       captured.bridge = bridge
       let resolveIter: () => void = () => {}
       const promise = new Promise<void>((resolve) => { resolveIter = resolve })
@@ -156,6 +162,8 @@ describe('ClaudeBackend', () => {
     hoisted.captured.onSessionId = null
     hoisted.captured.onQueuedTurnStart = null
     hoisted.captured.onStepBoundary = null
+    hoisted.captured.getInterrupted = null
+    hoisted.captured.getCurrentMessageId = null
     hoisted.captured.bridge = null
     hoisted.captured.iterationDone = null
     hoisted.captured.createSessionQueryMock.mockClear()
@@ -349,6 +357,91 @@ describe('ClaudeBackend', () => {
       expect(hoisted.captured.mockQueryCancelAsyncMessage).toHaveBeenCalledTimes(2)
       expect(hoisted.captured.mockQueryCancelAsyncMessage).toHaveBeenCalledWith('queued-1')
       expect(hoisted.captured.mockQueryCancelAsyncMessage).toHaveBeenCalledWith('queued-2')
+    })
+  })
+
+  // Regression: a turn interrupted while the CLI is wedged (network stall) never
+  // produces a `result`, so the `interrupted` latch stays set forever and
+  // iterateMessages swallows every later SDK message — the session looks frozen
+  // in the UI while the agent keeps working in the background.
+  describe('interrupt that the CLI never settles', () => {
+    it('does not hang interrupt() when query.interrupt() never resolves, and rebuilds the wedged runtime', async () => {
+      vi.useFakeTimers()
+      try {
+        hoisted.captured.mockQueryInterrupt.mockImplementationOnce(() => new Promise(() => {}))
+        const backend = new ClaudeBackend()
+        await backend.start(makeStartOpts())
+        hoisted.captured.iterationDone?.resolve()
+
+        const interrupted = backend.interrupt()
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        await expect(interrupted).resolves.toBeUndefined()
+        expect(hoisted.captured.mockQueryClose).toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('synthesises message_interrupted and rebuilds when the acked interrupt yields no terminal event', async () => {
+      vi.useFakeTimers()
+      try {
+        const backend = new ClaudeBackend()
+        const events: AgentEvent[] = []
+        backend.onEvent((e) => events.push(e))
+        await backend.start(makeStartOpts())
+        hoisted.captured.iterationDone?.resolve()
+
+        const sendPromise = backend.send({ content: 'hello' })
+        await vi.advanceTimersByTimeAsync(0)
+        const startEvt = events.find((e) => e.type === 'message_start') as Extract<AgentEvent, { type: 'message_start' }>
+
+        await backend.interrupt()
+        // CLI acked the interrupt but never emits `result`.
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        const terminal = events.find(
+          (e) => e.type === 'message_interrupted' && e.messageId === startEvt.message.id,
+        )
+        expect(terminal).toBeDefined()
+        expect(hoisted.captured.mockQueryClose).toHaveBeenCalled()
+        await expect(sendPromise).resolves.toBeUndefined()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps the interrupted latch off once the turn ends normally', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+
+      const sendPromise = backend.send({ content: 'hello' })
+      await new Promise((r) => setTimeout(r, 0))
+      const startEvt = events.find((e) => e.type === 'message_start') as Extract<AgentEvent, { type: 'message_start' }>
+
+      await backend.interrupt()
+      expect(hoisted.captured.getInterrupted?.()).toBe(true)
+
+      hoisted.captured.emit?.({ type: 'message_interrupted', messageId: startEvt.message.id, metadata: {} })
+      await sendPromise
+
+      expect(hoisted.captured.getInterrupted?.()).toBe(false)
+    })
+
+    it('clears the interrupted latch when a queued send starts a new turn', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+
+      await backend.interrupt()
+      expect(hoisted.captured.getInterrupted?.()).toBe(true)
+
+      // The renderer still believes the session is streaming, so the next user
+      // message arrives as priority=next. It must not inherit the stale latch.
+      await backend.send({ content: 'next turn', priority: 'next', clientMessageId: 'cm-1' })
+
+      expect(hoisted.captured.getInterrupted?.()).toBe(false)
     })
   })
 

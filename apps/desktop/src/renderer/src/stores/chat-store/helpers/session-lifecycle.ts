@@ -46,6 +46,14 @@ import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { stopBashOutputLive } from './bash-output-live'
 
+/**
+ * How long to wait for the terminal event of an acked interrupt before
+ * reconciling the session to idle. Longer than the backend's own interrupt
+ * watchdog so its recovery (synthetic terminal event + runtime rebuild) gets
+ * the first shot.
+ */
+const INTERRUPT_SETTLE_TIMEOUT_MS = 12_000
+
 export async function focusProjectImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
@@ -407,7 +415,41 @@ export async function interruptImpl(set: ChatStoreSet, get: () => ChatStore): Pr
       pendingQuestion: null,
       pendingPlanApproval: null,
     })))
+    return
   }
+  // An acked interrupt normally lands as message_interrupted. A backend that
+  // never delivers one would strand the session in `streaming` — and a
+  // streaming session turns every later message into a queued (priority=next)
+  // send that renders nowhere. Reconcile instead of trusting the event.
+  // Detached: Stop must return as soon as the IPC does.
+  if (sid) armInterruptSettleWatchdog(set, get, activeProject, sid)
+}
+
+function armInterruptSettleWatchdog(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+  projectPath: string,
+  sessionId: string,
+): void {
+  const sessionAt = (): PerSessionState | undefined =>
+    get().projectSessions[projectPath]?._sessions[sessionId]
+  const messages = sessionAt()?.messages ?? []
+  // A new turn appends a new assistant message, so a changed tail means the
+  // interrupted turn is behind us and this watchdog must stand down.
+  const turnTailId = messages[messages.length - 1]?.id ?? null
+
+  setTimeout(() => {
+    const session = sessionAt()
+    if (session?.status !== 'streaming') return
+    if ((session.messages[session.messages.length - 1]?.id ?? null) !== turnTailId) return
+    console.warn('[interrupt] no terminal event after interrupt; forcing idle', { projectPath, sessionId })
+    set((s) => updatePerSession(s, projectPath, sessionId, () => ({
+      status: 'idle',
+      pendingPermissions: [],
+      pendingQuestion: null,
+      pendingPlanApproval: null,
+    })))
+  }, INTERRUPT_SETTLE_TIMEOUT_MS)
 }
 
 export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void {

@@ -32,6 +32,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
+import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { trace } from '../../agent/event-trace'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 import { readAppSettings } from '../../app-settings-service'
@@ -48,6 +49,20 @@ interface ClaudeConfig {
   proxy?: ProxyUpstream
 }
 
+/**
+ * SDK control requests carry no built-in timeout — `query.interrupt()` awaits a
+ * `control_response` forever if the CLI process is wedged. Stop must always be
+ * able to fall through to the rebuild escape hatch.
+ */
+const INTERRUPT_ACK_TIMEOUT_MS = INTERRUPT_CANCEL_TIMEOUT_MS
+/**
+ * After the CLI acks an interrupt it must close the turn with a `result`, which
+ * is the only thing that produces a terminal event. A CLI stuck mid-request can
+ * ack and then never emit one, which used to leave `interrupted` latched — the
+ * SDK loop then swallowed every later message while the agent kept working.
+ */
+const INTERRUPT_SETTLE_TIMEOUT_MS = 10_000
+
 export class ClaudeBackend implements SessionBackend {
   readonly kind: HarnessId = 'claude'
 
@@ -59,6 +74,7 @@ export class ClaudeBackend implements SessionBackend {
   private currentMessageId = ''
   private currentStartTime = 0
   private interrupted = false
+  private interruptSettleTimer: ReturnType<typeof setTimeout> | null = null
   private turnResolves = new Map<string, () => void>()
   private providerSessionId: string | null = null
   private pendingQueued: Array<{ msg: SDKUserMessage; clientMessageId: string }> = []
@@ -227,6 +243,7 @@ export class ClaudeBackend implements SessionBackend {
       priority: 'next',
     }
     const tag = `task-notify-${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.beginTurn()
     // Always handled in-process (queue or push) — never starts a Session-level turn.
     if (this.turnResolves.size > 0) {
       this.pendingQueued.push({ msg: userMsg, clientMessageId: tag })
@@ -242,6 +259,7 @@ export class ClaudeBackend implements SessionBackend {
 
     const isQueued = request.priority === 'next'
     if (isQueued) {
+      this.beginTurn()
       const userMsg = buildUserMessage(request, this.providerSessionId ?? '')
       const tag = request.clientMessageId
       if (!tag) {
@@ -260,7 +278,7 @@ export class ClaudeBackend implements SessionBackend {
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.currentMessageId = messageId
     this.currentStartTime = Date.now()
-    this.interrupted = false
+    this.beginTurn()
 
     this.emit({
       type: 'message_start',
@@ -293,10 +311,55 @@ export class ClaudeBackend implements SessionBackend {
 
   private flushPendingQueued(): void {
     if (!this.bridge || this.pendingQueued.length === 0) return
+    this.beginTurn()
     for (const item of this.pendingQueued) {
       this.bridge.push(item.msg, item.clientMessageId)
     }
     this.pendingQueued = []
+  }
+
+  /**
+   * A newly started turn always outranks a stale interrupt latch. Without this
+   * a queued (priority=next) send inherited `interrupted` from the previous
+   * turn, and `iterateMessages` silently dropped everything the new turn
+   * produced — the agent ran on while the UI stayed frozen mid-stream.
+   */
+  private beginTurn(): void {
+    this.interrupted = false
+    this.clearInterruptWatchdog()
+  }
+
+  private clearInterruptWatchdog(): void {
+    if (!this.interruptSettleTimer) return
+    clearTimeout(this.interruptSettleTimer)
+    this.interruptSettleTimer = null
+  }
+
+  /**
+   * Guarantee a terminal event for an acked-but-unsettled interrupt: emit
+   * `message_interrupted` locally and replace the wedged CLI process, so the
+   * renderer can always leave the streaming state.
+   */
+  private armInterruptWatchdog(): void {
+    this.clearInterruptWatchdog()
+    const messageId = this.currentMessageId
+    if (!messageId) return
+    this.interruptSettleTimer = setTimeout(() => {
+      this.interruptSettleTimer = null
+      if (!this.interrupted || this.currentMessageId !== messageId) return
+      log.warn(
+        '[ClaudeBackend] interrupt acked but turn never settled within %dms (messageId=%s); forcing terminal event and rebuilding runtime',
+        INTERRUPT_SETTLE_TIMEOUT_MS,
+        messageId,
+      )
+      this.emit({
+        type: 'message_interrupted',
+        messageId,
+        metadata: { durationMs: this.currentStartTime ? Date.now() - this.currentStartTime : undefined },
+      })
+      void this.releaseRuntime('rebuild')
+    }, INTERRUPT_SETTLE_TIMEOUT_MS)
+    this.interruptSettleTimer.unref?.()
   }
 
   async interrupt(): Promise<void> {
@@ -308,7 +371,12 @@ export class ClaudeBackend implements SessionBackend {
         const query = this.query as Query & {
           cancelAsyncMessage?: (uuid: string) => Promise<boolean>
         }
-        const receipt = await query.interrupt()
+        const receipt = await withDeadline(query.interrupt(), INTERRUPT_ACK_TIMEOUT_MS)
+        if (receipt === DEADLINE_EXCEEDED) {
+          log.warn('[ClaudeBackend] interrupt was not acked within %dms; rebuilding runtime to guarantee stop', INTERRUPT_ACK_TIMEOUT_MS)
+          await this.releaseRuntime('rebuild')
+          return
+        }
         if (!receipt) {
           log.warn('[ClaudeBackend] interrupt receipt unavailable; rebuilding runtime to guarantee stop')
           await this.releaseRuntime('rebuild')
@@ -319,14 +387,16 @@ export class ClaudeBackend implements SessionBackend {
           if (!query.cancelAsyncMessage) {
             log.warn('[ClaudeBackend] interrupt left %d queued message(s), but SDK cancellation is unavailable', queued.length)
             await this.releaseRuntime('rebuild')
-          } else {
-            const cancelled = await Promise.allSettled(queued.map((uuid) => query.cancelAsyncMessage!(uuid)))
-            if (cancelled.some((result) => result.status === 'rejected' || result.value !== true)) {
-              log.warn('[ClaudeBackend] interrupt could not cancel every queued message; rebuilding runtime')
-              await this.releaseRuntime('rebuild')
-            }
+            return
+          }
+          const cancelled = await Promise.allSettled(queued.map((uuid) => query.cancelAsyncMessage!(uuid)))
+          if (cancelled.some((result) => result.status === 'rejected' || result.value !== true)) {
+            log.warn('[ClaudeBackend] interrupt could not cancel every queued message; rebuilding runtime')
+            await this.releaseRuntime('rebuild')
+            return
           }
         }
+        this.armInterruptWatchdog()
       } catch (err) {
         log.debug('[ClaudeBackend] interrupt error:', err)
         await this.releaseRuntime('rebuild')
@@ -352,6 +422,8 @@ export class ClaudeBackend implements SessionBackend {
       || this.pendingQueued.length > 0
       || this.hasActiveBackgroundTasks()
     )) return
+    // A replaced runtime carries no in-flight turn: never let the latch outlive it.
+    this.beginTurn()
     const liveTasks = this.activeBackgroundTasks
     this.activeBackgroundTasks = null
     if (reason !== 'close' && liveTasks && liveTasks.size > 0) {
@@ -669,6 +741,9 @@ export class ClaudeBackend implements SessionBackend {
       event.type === 'message_error'
     ) {
       const mid = (event as { messageId?: string }).messageId ?? this.currentMessageId
+      // The turn is over: the latch has served its purpose and must not leak
+      // into the next one (see beginTurn).
+      this.beginTurn()
       const resolve = this.turnResolves.get(mid)
       if (resolve) {
         resolve()

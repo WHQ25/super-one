@@ -13,6 +13,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
+import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import { dispatchOpenCodeRequest } from '../../opencode/opencode-command'
 import {
@@ -277,7 +278,17 @@ export class OpenCodeBackend implements SessionBackend {
     this.pendingQueued.clear()
     for (const requestId of [...this.pendingPermissions.keys()]) this.respondToPermission(requestId, false)
     for (const requestId of [...this.pendingQuestions.keys()]) this.dismissQuestion(requestId)
-    await this.runtime?.cancel().catch((error) => log.debug('[OpenCodeBackend] interrupt failed:', error))
+    // The terminal event below is what releases the UI, so the provider cancel
+    // must never be able to hold it hostage.
+    const cancelled = this.runtime
+      ? await withDeadline(
+        this.runtime.cancel().catch((error) => log.debug('[OpenCodeBackend] interrupt failed:', error)),
+        INTERRUPT_CANCEL_TIMEOUT_MS,
+      )
+      : undefined
+    if (cancelled === DEADLINE_EXCEEDED) {
+      log.warn('[OpenCodeBackend] runtime.cancel() did not answer within %dms; settling the turn locally', INTERRUPT_CANCEL_TIMEOUT_MS)
+    }
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
   }
 

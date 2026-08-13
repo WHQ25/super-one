@@ -1,4 +1,5 @@
 import log from '../logger'
+import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../promise-deadline'
 import { trace } from '../agent/event-trace'
 import { ensureCodexProxyUrl } from '../providers/llm-proxy-manager'
 import {
@@ -1718,9 +1719,22 @@ export async function streamTurnEvents(
     connectionId: runtime?.connectionId ?? session.connectionHandle?.id ?? null,
     inbox: mainInbox ? 'dispatcher' : 'connection',
   }, activeTurnId ?? session.superoneSessionId)
-  const nextNotification = mainInbox
+  const readNextNotification = mainInbox
     ? () => mainInbox.next()
     : () => connection.nextNotification()
+
+  // The pump parks on the app-server with no deadline. Unless the wait races
+  // the abort signal, `controller.abort()` is inert and Stop depends entirely
+  // on the app-server volunteering a turn/completed — a wedged one never does.
+  // One listener for the whole stream: this races on every notification.
+  const aborted = new Promise<never>((_resolve, reject) => {
+    const onAbort = () => reject(new Error('Codex run interrupted'))
+    if (controller.signal.aborted) onAbort()
+    else controller.signal.addEventListener('abort', onAbort, { once: true })
+  })
+  aborted.catch(() => undefined) // no unhandled rejection once the loop is gone
+  const nextNotification = (): ReturnType<typeof readNextNotification> =>
+    Promise.race([readNextNotification(), aborted])
 
   while (!turnCompleted) {
     const notification = await nextNotification()
@@ -2437,8 +2451,18 @@ export function interruptCodex(session: CodexSession): boolean {
   const controller = session.runningController
   const interruptFn = session.interruptFn
   if (interruptFn) {
-    void interruptFn().catch((err) => {
-      log.warn('[codex] turn/interrupt request failed: %s', err instanceof Error ? err.message : String(err))
+    // An app-server that accepts turn/interrupt and then goes quiet never
+    // rejects, so the local abort has to be on a deadline rather than only on
+    // the rejection path — otherwise Stop is spent and the turn streams on.
+    void withDeadline(
+      interruptFn().catch((err) => {
+        log.warn('[codex] turn/interrupt request failed: %s', err instanceof Error ? err.message : String(err))
+        controller.abort()
+      }),
+      INTERRUPT_CANCEL_TIMEOUT_MS,
+    ).then((outcome) => {
+      if (outcome !== DEADLINE_EXCEEDED) return
+      log.warn('[codex] turn/interrupt did not answer within %dms; aborting the run locally', INTERRUPT_CANCEL_TIMEOUT_MS)
       controller.abort()
     })
     return true

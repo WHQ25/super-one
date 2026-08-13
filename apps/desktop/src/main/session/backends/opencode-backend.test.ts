@@ -637,4 +637,29 @@ describe('OpenCodeBackend', () => {
     expect(revert).toHaveBeenCalledWith('user-message')
     await backend.close()
   })
+
+  // Regression: the terminal event is emitted after `runtime.cancel()`, so a
+  // provider that stops answering used to strand Stop — the IPC never resolved
+  // and the session never left `streaming`.
+  it('still settles the turn when runtime.cancel() never answers', async () => {
+    vi.useFakeTimers()
+    try {
+      runtime.cancel = vi.fn(() => new Promise<void>(() => {}))
+      const backend = new OpenCodeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((event) => events.push(event))
+      await backend.start(startOptions())
+
+      void backend.send({ content: 'hello', assistantMessageId: 'assistant-local' })
+      await vi.advanceTimersByTimeAsync(0)
+
+      const interrupted = backend.interrupt()
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      await expect(interrupted).resolves.toBeUndefined()
+      expect(events.some((e) => e.type === 'message_interrupted' && e.messageId === 'assistant-local')).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

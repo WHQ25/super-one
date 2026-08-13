@@ -10,6 +10,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { buildCursorModelSelection, resolveCursorSelectedContextWindow } from '@superone/cursor'
 import log from '../../logger'
+import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { mapPermissionToCursorLocal } from '../../cursor/cursor-auth'
 import {
   getCursorRuntimeFactory,
@@ -235,7 +236,17 @@ export class CursorBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     this.interrupted = true
-    await this.runtime?.cancel().catch((error) => log.debug('[CursorBackend] interrupt failed:', error))
+    // The terminal event below is what releases the UI, so the provider cancel
+    // must never be able to hold it hostage.
+    const cancelled = this.runtime
+      ? await withDeadline(
+        this.runtime.cancel().catch((error) => log.debug('[CursorBackend] interrupt failed:', error)),
+        INTERRUPT_CANCEL_TIMEOUT_MS,
+      )
+      : undefined
+    if (cancelled === DEADLINE_EXCEEDED) {
+      log.warn('[CursorBackend] runtime.cancel() did not answer within %dms; settling the turn locally', INTERRUPT_CANCEL_TIMEOUT_MS)
+    }
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
   }
 

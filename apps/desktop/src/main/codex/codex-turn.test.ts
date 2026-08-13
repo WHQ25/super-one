@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// The harness install-root module (reached via the codex binary resolver) pulls
+// in electron, which has no ESM named exports under vitest.
+vi.mock('electron', () => ({ app: { getPath: () => '/tmp/superone-test' } }))
+vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
+
 vi.mock('../providers/resolver', () => ({ resolveChatService: vi.fn(() => null) }))
 
 vi.mock('../providers/llm-proxy-manager', () => ({
@@ -2335,5 +2340,45 @@ describe('interruptCodex during a running turn', () => {
 
     await expect(runPromise).rejects.toThrow(/interrupt/i)
     expect(handle.close).not.toHaveBeenCalled()
+  })
+
+  // Regression: the local abort fallback only ran when turn/interrupt REJECTED.
+  // An app-server that accepts the request and then goes quiet left the run
+  // streaming forever with Stop already spent.
+  it('falls back to the local abort when turn/interrupt never answers', async () => {
+    const { handle } = makeInterruptibleConnection('thread-quiet', 'turn-quiet')
+    const connection = handle.connection as unknown as {
+      request: (method: string, params?: unknown) => Promise<unknown>
+    }
+    const answering = connection.request
+    connection.request = vi.fn(async (method: string, params?: unknown) => {
+      if (method === 'turn/interrupt') return new Promise(() => {})
+      return answering(method, params)
+    }) as never
+
+    const session = { ...makeSession({ model: 'gpt-5.4' }) }
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+
+    const runPromise = runCodexTurn(session, { mode: 'auto' }, '/project', {
+      prompt: 'a long running task',
+      model: 'gpt-5.4',
+      permissionPreset: 'default',
+    })
+    const settled = runPromise.then(() => 'resolved' as const, () => 'rejected' as const)
+
+    await vi.waitFor(() => {
+      expect(session.activeTurnId).toBe('turn-quiet')
+    })
+
+    vi.useFakeTimers()
+    try {
+      expect(interruptCodex(session)).toBe(true)
+      await vi.advanceTimersByTimeAsync(30_000)
+    } finally {
+      vi.useRealTimers()
+    }
+
+    await expect(settled).resolves.toBe('rejected')
   })
 })

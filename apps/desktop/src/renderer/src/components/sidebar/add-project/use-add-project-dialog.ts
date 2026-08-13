@@ -28,10 +28,8 @@ import {
   ensureBrowseDirectoryPath,
   getBrowseDirectoryPath,
   getBrowseLeafPathSegment,
-  getBrowseParentPath,
   getPathInlineGhost,
   hasTrailingPathSeparator,
-  isBareHomePath,
   isBrowseablePathQuery,
   joinBrowsePath,
   normalizeHomePrefixInput,
@@ -40,6 +38,7 @@ import type { AddProjectListItem, AddProjectListSection } from './AddProjectList
 import {
   ADD_PROJECT_SOURCES,
   autoAdvanceFromSourceQuery,
+  CREATE_ROW_KEY,
   describeDetectedSource,
   detectAddProjectSource,
   filterGithubHitsByPrefix,
@@ -51,6 +50,8 @@ import {
   type AddProjectSource,
   type AddProjectStep,
 } from './add-project-flow'
+
+export { CREATE_ROW_KEY }
 
 export type GithubRepoHit = {
   owner: string
@@ -83,13 +84,6 @@ function githubRepoListItem(
   }
 }
 
-/** Sentinel key for the "go to parent directory" row that leads the path list. */
-export const PARENT_ROW_KEY = '..'
-/** Sentinel key for "use the current directory" (commit without drilling in). */
-export const CURRENT_ROW_KEY = '.'
-/** Sentinel key for the "create this missing directory" candidate row. */
-export const CREATE_ROW_KEY = '__create__'
-
 type DirEntry = { name: string; path: string; type: 'directory' }
 
 interface UseAddProjectDialogInput {
@@ -99,7 +93,6 @@ interface UseAddProjectDialogInput {
   onOpened: (project: { projectId: string; path: string; name: string }) => void
   /** Per-source row icons, supplied by the view so this stays JSX-free. */
   sourceIcons: Record<AddProjectSource, ReactNode>
-  parentIcon: ReactNode
   directoryIcon: ReactNode
   /** Icon for the "create missing directory" path candidate. */
   createDirectoryIcon: ReactNode
@@ -474,21 +467,32 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       hint: t(`sidebar.addProject.sources.${source}.hint`),
     }))
 
+    const toItem = (
+      entry: (typeof rows)[number],
+      matchIndices: number[] = [],
+      subtitle = entry.hint,
+    ): AddProjectListItem => ({
+      key: entry.source,
+      icon: input.sourceIcons[entry.source],
+      label: entry.label,
+      matchIndices,
+      prominent: true,
+      subtitle,
+    })
+
     // Recognised path content: put Local first with the others still reachable.
     if (detectedSource) {
       return rows
         .sort((a, b) => Number(b.source === detectedSource) - Number(a.source === detectedSource))
-        .map((entry) => ({
-          key: entry.source,
-          icon: input.sourceIcons[entry.source],
-          label: entry.label,
-          matchIndices: [],
-          prominent: true,
-          hint:
+        .map((entry) =>
+          toItem(
+            entry,
+            [],
             entry.source === detectedSource
               ? (describeDetectedSource(entry.source, query) ?? entry.hint)
               : entry.hint,
-        }))
+          ),
+        )
     }
 
     const filter = query.trim().toLowerCase()
@@ -504,28 +508,14 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       filter.startsWith('.')
 
     if (looksLikeContent) {
-      return rows.map((entry) => ({
-        key: entry.source,
-        icon: input.sourceIcons[entry.source],
-        label: entry.label,
-        matchIndices: [],
-        prominent: true,
-        hint: entry.hint,
-      }))
+      return rows.map((entry) => toItem(entry))
     }
 
     return rows
       .map((entry) => ({ entry, match: fuzzyMatch(filter, entry.label) }))
       .filter(({ match }) => match.match)
       .sort((a, b) => (b.match?.score ?? 0) - (a.match?.score ?? 0))
-      .map(({ entry, match }) => ({
-        key: entry.source,
-        icon: input.sourceIcons[entry.source],
-        label: entry.label,
-        matchIndices: match?.indices ?? [],
-        prominent: true,
-        hint: entry.hint,
-      }))
+      .map(({ entry, match }) => toItem(entry, match?.indices ?? []))
   }, [query, detectedSource, t, input.sourceIcons])
 
   const pathCandidates = useMemo(() => {
@@ -540,18 +530,6 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       .sort((a, b) => b.score - a.score)
       .map(({ entry, matchIndices }) => ({ entry, matchIndices }))
   }, [isPathStep, entries, leafPartial])
-
-  /**
-   * Parent row only makes sense once a listing succeeded and a parent exists.
-   *
-   * Derived from what the user typed so `~/Dev/x/` goes up to `~/Dev/`; only
-   * when the typed prefix has no segment left to drop (`~/`, `./`) does it fall
-   * back to the absolute path the host reported, which can always go up.
-   */
-  const parentPath = useMemo(() => {
-    if (!isPathStep || !listedPath) return null
-    return getBrowseParentPath(getBrowseDirectoryPath(query)) ?? getBrowseParentPath(listedPath)
-  }, [isPathStep, listedPath, query])
 
   const resolved = useMemo(
     () => resolveBrowsePath({ query, listedPath, entries }),
@@ -573,45 +551,10 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const clonePreviewPath =
     step.kind === 'destination' && resolved.path ? joinBrowsePath(resolved.path, step.repoName) : ''
 
-  /**
-   * True when the typed path is a complete existing directory (trailing slash /
-   * bare `~`) so Enter can commit it via the "." row rather than drilling in.
-   */
-  const canUseCurrentDirectory =
-    isPathStep &&
-    !browseLoading &&
-    !leafPartial &&
-    Boolean(listedPath) &&
-    resolved.exists &&
-    resolved.path.length > 0 &&
-    (hasTrailingPathSeparator(query.trim()) || isBareHomePath(query.trim()))
-
-  /** Directory rows only (current / parent / children) — create is separate. */
+  /** Child directory rows — create is a separate section; confirm is ⇧↵. */
   const directoryItems: AddProjectListItem[] = useMemo(() => {
     if (!isPathStep) return []
     const rows: AddProjectListItem[] = []
-    // Lead with "use this folder" so default selection + Enter commits the
-    // current path instead of navigating into the first child.
-    if (canUseCurrentDirectory) {
-      rows.push({
-        key: CURRENT_ROW_KEY,
-        icon: input.directoryIcon,
-        label: '.',
-        hint: t(
-          step.kind === 'destination'
-            ? 'sidebar.addProject.cloneHere'
-            : 'sidebar.addProject.addThisFolder',
-        ),
-      })
-    }
-    if (parentPath !== null && !leafPartial) {
-      rows.push({
-        key: PARENT_ROW_KEY,
-        icon: input.parentIcon,
-        label: '..',
-        hint: t('sidebar.addProject.goUp'),
-      })
-    }
     for (const candidate of pathCandidates) {
       // Keyed by name, not by absolute path: navigation appends this segment to
       // whatever prefix the user typed. Names are unique within one directory.
@@ -625,13 +568,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     return rows
   }, [
     isPathStep,
-    canUseCurrentDirectory,
-    step.kind,
-    parentPath,
-    leafPartial,
     pathCandidates,
-    t,
-    input.parentIcon,
     input.directoryIcon,
   ])
 
@@ -741,15 +678,13 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     }
     if (isPathStep) {
       const sections: AddProjectListSection[] = []
-      // Directories first so Tab-complete / default selection still hit folder
-      // rows; create is a separate trailing group when the typed path is missing.
-      if (directoryItems.length > 0) {
-        sections.push({
-          key: 'directories',
-          label: t('sidebar.addProject.directories'),
-          items: directoryItems,
-        })
-      }
+      // Always show the directories group so the native-browse control has a
+      // header even when this folder has no children.
+      sections.push({
+        key: 'directories',
+        label: t('sidebar.addProject.directories'),
+        items: directoryItems,
+      })
       if (willCreatePath) {
         sections.push({
           key: 'create',
@@ -882,13 +817,6 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     [goToStep, initialPath],
   )
 
-  /** Jump to a known directory path (parent row, native picker). */
-  const navigateTo = useCallback((dirPath: string) => {
-    setQuery(ensureBrowseDirectoryPath(dirPath))
-    setSelectedIndex(0)
-    setSubmitError('')
-  }, [])
-
   /**
    * Enter a directory: the same Tab-completion behaviour as MentionPopup.
    *
@@ -1005,20 +933,15 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         )
         return
       }
-      if (item.key === CURRENT_ROW_KEY || item.key === CREATE_ROW_KEY) {
-        // Commit the typed path: create row forces mkdir; current row never does.
+      if (item.key === CREATE_ROW_KEY) {
         if (step.kind === 'browse') {
-          void addProject(resolved.path, item.key === CREATE_ROW_KEY)
+          void addProject(resolved.path, true)
           return
         }
         if (step.kind === 'destination') {
           void cloneProject()
           return
         }
-        return
-      }
-      if (item.key === PARENT_ROW_KEY) {
-        if (parentPath) navigateTo(parentPath)
         return
       }
       navigateIntoSegment(item.key)
@@ -1034,11 +957,20 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       addProject,
       resolved.path,
       cloneProject,
-      parentPath,
-      navigateTo,
       navigateIntoSegment,
     ],
   )
+
+  /** ⇧↵ / confirm button: add or clone the typed path, not the highlighted child. */
+  const commitCurrentPath = useCallback(() => {
+    if (step.kind === 'browse') {
+      if (resolved.path) void addProject(resolved.path, !resolved.exists)
+      return
+    }
+    if (step.kind === 'destination') {
+      void cloneProject()
+    }
+  }, [step.kind, resolved.path, resolved.exists, addProject, cloneProject])
 
   const submit = useCallback(() => {
     switch (step.kind) {
@@ -1056,80 +988,41 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         return
       }
       case 'browse':
-      case 'destination':
-        // Path steps: Enter always follows the highlighted list row (navigate,
-        // create, or use current). Fall back to committing the typed path only
-        // when the list is empty.
-        if (itemCount > 0) {
+      case 'destination': {
+        // Enter only opens a child folder. Create / add / clone is ⇧↵.
+        const item = items[safeSelectedIndex]
+        if (item && item.key !== CREATE_ROW_KEY) {
           activateItem(safeSelectedIndex)
-          return
         }
-        if (step.kind === 'browse') {
-          if (resolved.path) void addProject(resolved.path, !resolved.exists)
-          return
-        }
-        void cloneProject()
         return
+      }
     }
   }, [
     step,
     activateItem,
     safeSelectedIndex,
-    itemCount,
+    items,
     repoResolved,
     query,
     continueWithRepo,
-    addProject,
-    resolved,
-    cloneProject,
   ])
 
-  /**
-   * Inline ghost for the highlighted directory row:
-   * - prefix: `~/Deve` + dim `loper`
-   * - fuzzy: rebuild leaf from candidate with matched chars solid, rest dim
-   */
+  /** Inline ghost for a prefix match on the highlighted directory (`~/Deve` + dim `loper`). */
   const pathInlineGhost = useMemo(() => {
     if (!isPathStep) return null
     const item = items[safeSelectedIndex]
-    if (!item) return null
-    if (
-      item.key === CREATE_ROW_KEY ||
-      item.key === CURRENT_ROW_KEY ||
-      item.key === PARENT_ROW_KEY
-    ) {
-      return null
-    }
-    const leaf = getBrowseLeafPathSegment(query)
-    const isPrefix =
-      !leaf || item.key.toLowerCase().startsWith(leaf.toLowerCase())
-    const fuzzy = !isPrefix && leaf ? fuzzyMatch(leaf, item.key) : null
-    return getPathInlineGhost(
-      query,
-      item.key,
-      fuzzy?.match ? fuzzy.indices : null,
-    )
+    if (!item || item.key === CREATE_ROW_KEY) return null
+    return getPathInlineGhost(query, item.key)
   }, [isPathStep, items, safeSelectedIndex, query])
 
   /** Tab commits the ghost / selected directory into the input (never submits). */
   const completePath = useCallback(() => {
     const selected = items[safeSelectedIndex]
     const item =
-      selected &&
-      selected.key !== CREATE_ROW_KEY &&
-      selected.key !== CURRENT_ROW_KEY
+      selected && selected.key !== CREATE_ROW_KEY
         ? selected
-        : items.find(
-            (row) =>
-              row.key !== CREATE_ROW_KEY &&
-              row.key !== CURRENT_ROW_KEY &&
-              row.key !== PARENT_ROW_KEY,
-          )
+        : items.find((row) => row.key !== CREATE_ROW_KEY)
     if (!item) return
-    if (item.key === PARENT_ROW_KEY) {
-      if (parentPath) navigateTo(parentPath)
-      return
-    }
     // Exact leaf already typed: only add the trailing separator.
     const leaf = getBrowseLeafPathSegment(query)
     if (
@@ -1143,7 +1036,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       return
     }
     navigateIntoSegment(item.key)
-  }, [items, safeSelectedIndex, parentPath, navigateTo, navigateIntoSegment, query])
+  }, [items, safeSelectedIndex, navigateIntoSegment, query])
 
   /**
    * System folder picker: open at the directory the user is already browsing,
@@ -1235,6 +1128,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     completePath,
     goBack,
     submit,
+    commitCurrentPath,
     pickNativeFolder,
   }
 }

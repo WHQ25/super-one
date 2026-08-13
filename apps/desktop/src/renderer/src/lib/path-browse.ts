@@ -106,41 +106,23 @@ export function isBrowseablePathQuery(value: string): boolean {
 /**
  * Inline path autocomplete for the add-project input.
  *
- * - `suffix`: typed query stays solid; muted text is painted after it
- *   (prefix match, e.g. `~/Deve` + ghost `loper`).
- * - `fuzzy`: input is drawn transparent; the overlay rebuilds `dir + name`
- *   with matched characters solid and the rest muted (e.g. leaf `Dvl` →
- *   solid D/v/l inside `Developer`, other letters ghost).
+ * Prefix match only: typed query stays solid; muted text is painted after it
+ * (e.g. `~/Deve` + ghost `loper`). Fuzzy hits stay in the list, not the input.
  */
-export type PathInlineGhost =
-  | { kind: 'suffix'; text: string }
-  | {
-      kind: 'fuzzy'
-      dir: string
-      name: string
-      /** Indices into `name` covered by the typed leaf (from fuzzyMatch). */
-      matchIndices: number[]
-      sep: string
-    }
+export type PathInlineGhost = { kind: 'suffix'; text: string }
 
 /**
  * Build the inline ghost for the highlighted directory candidate.
- * Returns null when nothing should be painted.
+ * Returns null when the leaf is not a prefix of the candidate.
  */
 export function getPathInlineGhost(
   query: string,
   selectedDirectoryName: string | null | undefined,
-  /**
-   * Optional precomputed fuzzy indices into `selectedDirectoryName` for the
-   * current leaf. When omitted, a prefix-only ghost is produced (suffix mode).
-   */
-  fuzzyMatchIndices?: number[] | null,
 ): PathInlineGhost | null {
   if (!selectedDirectoryName) return null
 
   const leaf = getBrowseLeafPathSegment(query)
   const sep = preferredPathSeparator(query || '/')
-  const dir = getBrowseDirectoryPath(query)
 
   if (!leaf) {
     // At a directory boundary (`~/`, `./foo/`) ghost the selected child + sep.
@@ -153,26 +135,11 @@ export function getPathInlineGhost(
   const nameLower = selectedDirectoryName.toLowerCase()
   const leafLower = leaf.toLowerCase()
 
-  // Prefix match → classic suffix ghost (typed text stays in the real input).
-  if (nameLower.startsWith(leafLower)) {
-    if (selectedDirectoryName.length === leaf.length) {
-      return { kind: 'suffix', text: sep }
-    }
-    return { kind: 'suffix', text: selectedDirectoryName.slice(leaf.length) }
+  if (!nameLower.startsWith(leafLower)) return null
+  if (selectedDirectoryName.length === leaf.length) {
+    return { kind: 'suffix', text: sep }
   }
-
-  // Fuzzy match → rebuild the leaf from the candidate with match/ghost runs.
-  if (fuzzyMatchIndices && fuzzyMatchIndices.length > 0) {
-    return {
-      kind: 'fuzzy',
-      dir,
-      name: selectedDirectoryName,
-      matchIndices: fuzzyMatchIndices,
-      sep,
-    }
-  }
-
-  return null
+  return { kind: 'suffix', text: selectedDirectoryName.slice(leaf.length) }
 }
 
 /** @deprecated Prefer getPathInlineGhost — kept for callers that only need suffix text. */
@@ -180,6 +147,6 @@ export function getPathInlineGhostSuffix(
   query: string,
   selectedDirectoryName: string | null | undefined,
 ): string {
-  const ghost = getPathInlineGhost(query, selectedDirectoryName, null)
+  const ghost = getPathInlineGhost(query, selectedDirectoryName)
   return ghost?.kind === 'suffix' ? ghost.text : ''
 }

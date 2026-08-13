@@ -16,7 +16,7 @@ export interface AddProjectListItem {
    * create-missing-path row which needs the entire absolute path visible).
    */
   wrapLabel?: boolean
-  /** Two-line GitHub repo row: description under owner/repo. */
+  /** Two-line row: description under the title (source picker, GitHub repos). */
   subtitle?: string
   /** Star count shown on the right of the title row. */
   stars?: number | null
@@ -34,6 +34,8 @@ export interface AddProjectListSection {
   searching?: boolean
   /** Leading icon on the section header. */
   icon?: 'search' | 'user'
+  /** Trailing control on the section header (e.g. native folder browse). */
+  headerAction?: ReactNode
 }
 
 function SearchingEllipsis() {
@@ -62,6 +64,7 @@ function AddProjectSectionHeader({ section }: { section: AddProjectListSection }
       {section.searching ? null : (
         <span className="text-muted-foreground/60">· {section.items.length}</span>
       )}
+      {section.headerAction ? <span className="ml-auto">{section.headerAction}</span> : null}
     </div>
   )
 }
@@ -174,13 +177,7 @@ export function AddProjectList({
                         is secondary and absorbs overflow so long GitHub blurbs don't
                         crush the name.
                       */}
-                      {/* text-sm: repo/folder names; source picker is slightly larger. */}
-                      <span
-                        className={cn(
-                          'min-w-0 shrink truncate font-medium',
-                          item.prominent ? 'text-[15px]' : 'text-sm',
-                        )}
-                      >
+                      <span className="min-w-0 shrink truncate text-sm font-medium">
                         {item.matchIndices && item.matchIndices.length > 0 ? (
                           <HighlightedText text={item.label} indices={item.matchIndices} />
                         ) : (

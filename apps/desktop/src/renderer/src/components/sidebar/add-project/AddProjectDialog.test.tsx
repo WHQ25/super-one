@@ -37,6 +37,8 @@ const input = () => screen.getByRole('textbox') as HTMLInputElement
 const rowTexts = () => screen.getAllByRole('button').map((b) => b.textContent ?? '')
 const highlightedText = (row: HTMLElement) =>
   [...row.querySelectorAll('.text-highlighted')].map((el) => el.textContent ?? '').join('')
+const footerText = () =>
+  document.querySelector('.shrink-0.border-t.border-border.px-2')?.textContent ?? ''
 
 describe('add-project dialog', () => {
   beforeEach(() => {
@@ -107,6 +109,7 @@ describe('add-project dialog', () => {
     }
     ;(window as unknown as Record<string, unknown>).app = {
       ...((window as unknown as Record<string, unknown>).app as object),
+      platform: 'darwin',
       searchGithubRepos,
       queryGithubRepos,
       listMyGithubRepos,
@@ -124,9 +127,44 @@ describe('add-project dialog', () => {
 
   it('opens on the source picker with local, GitHub and Git URL', () => {
     renderDialog()
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
     expect(screen.getByText('Local Folder')).toBeInTheDocument()
+    expect(screen.getByText('Open or create a folder on this machine.')).toBeInTheDocument()
     expect(screen.getByText('GitHub Repository')).toBeInTheDocument()
+    expect(screen.getByText('Search by name, owner/repo, or paste a GitHub URL.')).toBeInTheDocument()
     expect(screen.getByText('Git URL')).toBeInTheDocument()
+    expect(screen.getByText('Clone from any git remote.')).toBeInTheDocument()
+  })
+
+  it('changes the heading to match the current step', async () => {
+    renderDialog()
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Local Folder'))
+    expect(screen.getByRole('heading', { name: 'Open or Create a Folder' })).toBeInTheDocument()
+
+    fireEvent.change(input(), { target: { value: '' } })
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument(),
+    )
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    expect(screen.getByRole('heading', { name: 'Search GitHub' })).toBeInTheDocument()
+    fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
+    await screen.findByRole('button', { name: /WHQ25\/super-one/ })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    expect(screen.getByRole('heading', { name: 'Choose Clone Location' })).toBeInTheDocument()
+
+    fireEvent.change(input(), { target: { value: '' } })
+    fireEvent.keyDown(input(), { key: 'Backspace' })
+    expect(screen.getByRole('heading', { name: 'Search GitHub' })).toBeInTheDocument()
+    fireEvent.change(input(), { target: { value: '' } })
+    fireEvent.keyDown(input(), { key: 'Backspace' })
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Git URL'))
+    expect(screen.getByRole('heading', { name: 'Enter a Git URL' })).toBeInTheDocument()
   })
 
   it('adds an existing folder picked from the local browser', async () => {
@@ -141,10 +179,8 @@ describe('add-project dialog', () => {
     fireEvent.click(screen.getByText('notes'))
     expect(input().value).toBe('~/notes/')
 
-    // "." / "Add this folder" is the default selection once listing settles —
-    // Enter commits the current path instead of drilling into a child.
-    await screen.findByRole('button', { name: /Add This Folder/ })
-    fireEvent.keyDown(input(), { key: 'Enter' })
+    // Shift+Enter / confirm commits the current path instead of entering a child.
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
 
     await waitFor(() =>
       expect(openProject).toHaveBeenCalledWith('local', '/Users/dev/Projects', {
@@ -152,6 +188,37 @@ describe('add-project dialog', () => {
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
+  })
+
+  it('labels Enter as enter and Shift+Enter confirms the current path', async () => {
+    const { onOpened } = renderDialog()
+    fireEvent.click(screen.getByText('Local Folder'))
+    await screen.findByText('notes')
+    expect(screen.queryByText('Add This Folder')).not.toBeInTheDocument()
+    expect(footerText()).toMatch(/↵\s+open/)
+    expect(footerText()).toMatch(/⇧↵\s+add/)
+    expect(screen.getByRole('button', { name: /add/i })).toBeInTheDocument()
+
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
+    await waitFor(() =>
+      expect(openProject).toHaveBeenCalledWith('local', '/Users/dev/Projects', {
+        createIfMissing: false,
+      }),
+    )
+    await waitFor(() => expect(onOpened).toHaveBeenCalled())
+  })
+
+  it('Enter still navigates into the highlighted folder', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByText('Local Folder'))
+    await screen.findByText('notes')
+    fireEvent.change(input(), { target: { value: '~/no' } })
+    await screen.findByRole('button', { name: /notes/ })
+    expect(footerText()).toMatch(/↵\s+open/)
+
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    expect(input().value).toBe('~/notes/')
+    expect(openProject).not.toHaveBeenCalled()
   })
 
   it('native Browse opens at the listed path and adds the selection immediately', async () => {
@@ -162,7 +229,7 @@ describe('add-project dialog', () => {
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/'))
     await screen.findByText('notes')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Browse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Browse with Finder' }))
     await waitFor(() =>
       expect(selectFolder).toHaveBeenCalledWith('/Users/dev/Projects'),
     )
@@ -189,12 +256,6 @@ describe('add-project dialog', () => {
     fireEvent.keyDown(input(), { key: 'Tab' })
     expect(input().value).toBe('~/Dev/notes/')
 
-    // Going up stays relative too, as long as a segment can be dropped.
-    fireEvent.keyDown(input(), { key: 'ArrowUp' })
-    await screen.findByText('..')
-    fireEvent.click(screen.getByText('..'))
-    expect(input().value).toBe('~/Dev/')
-
     // An absolute path the user typed keeps its absolute form.
     fireEvent.change(input(), { target: { value: '/srv/apps/' } })
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '/srv/apps/'))
@@ -202,14 +263,12 @@ describe('add-project dialog', () => {
     expect(input().value).toBe('/srv/apps/notes/')
   })
 
-  it('falls back to the absolute parent when the typed prefix has no segment left', async () => {
+  it('does not show a parent-directory row in the path list', async () => {
     renderDialog()
     fireEvent.click(screen.getByText('Local Folder'))
-    await screen.findByText('..')
-
-    // `~/` cannot express its own parent, so the listed absolute path takes over.
-    fireEvent.click(screen.getByText('..'))
-    expect(input().value).toBe('/Users/dev/')
+    await screen.findByText('notes')
+    expect(screen.queryByText('..')).not.toBeInTheDocument()
+    expect(screen.queryByText('Parent Directory')).not.toBeInTheDocument()
   })
 
   it('offers to create a folder that does not exist yet', async () => {
@@ -221,8 +280,13 @@ describe('add-project dialog', () => {
     // Missing path appears as its own "Create" list group, not a free-text banner.
     await waitFor(() => expect(screen.getByText('Create')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: /Create Directory/ })).toBeInTheDocument()
+    expect(footerText()).toMatch(/⇧↵\s+create/)
+    expect(footerText()).not.toMatch(/[^⇧]↵\s+create/)
 
-    fireEvent.click(screen.getByRole('button', { name: /Create Directory/ }))
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    expect(openProject).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await waitFor(() =>
       expect(openProject).toHaveBeenCalledWith('local', '/Users/dev/Projects/brand-new', {
         createIfMissing: true,
@@ -246,7 +310,7 @@ describe('add-project dialog', () => {
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/'))
     await screen.findByText(/Clones into/)
 
-    fireEvent.keyDown(input(), { key: 'Enter' })
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await waitFor(() =>
       expect(cloneRepository).toHaveBeenCalledWith('local', {
         remoteUrl: 'https://github.com/WHQ25/super-one.git',
@@ -511,7 +575,7 @@ describe('add-project dialog', () => {
     expect(screen.getByText('WHQ25/super-one')).toBeInTheDocument()
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/'))
 
-    fireEvent.keyDown(input(), { key: 'Enter' })
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await waitFor(() =>
       expect(cloneRepository).toHaveBeenCalledWith('local', {
         remoteUrl: 'https://github.com/WHQ25/super-one.git',
@@ -568,7 +632,7 @@ describe('add-project dialog', () => {
     fireEvent.click(screen.getByRole('checkbox'))
     expect(screen.getByRole('checkbox')).toHaveAttribute('data-state', 'checked')
 
-    fireEvent.keyDown(input(), { key: 'Enter' })
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await waitFor(() => expect(cloneRepository).toHaveBeenCalled())
     await waitFor(() =>
       expect(saveAppSettings).toHaveBeenCalledWith({
@@ -609,7 +673,7 @@ describe('add-project dialog', () => {
     await screen.findByText('Repository')
     await waitFor(() => expect(browsePath).toHaveBeenCalled())
 
-    fireEvent.keyDown(input(), { key: 'Enter' })
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await screen.findByText('repository not found')
     expect(onOpenChange).not.toHaveBeenCalledWith(false)
   })
@@ -628,7 +692,7 @@ describe('add-project dialog', () => {
     await screen.findByText('Repository')
     await waitFor(() => expect(browsePath).toHaveBeenCalled())
 
-    fireEvent.keyDown(input(), { key: 'Enter' })
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await screen.findByText(
       '"/Users/dev/Github/super-one" already exists. Pick another folder, or add that project instead of cloning.',
     )

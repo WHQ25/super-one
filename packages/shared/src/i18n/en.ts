@@ -50,6 +50,13 @@ export type Messages = {
     addProject: {
       title: string
       description: string
+      stepTitle: {
+        source: string
+        browse: string
+        github: string
+        url: string
+        destination: string
+      }
       sources: {
         title: string
         searchPlaceholder: string
@@ -86,18 +93,19 @@ export type Messages = {
       /** Clone failed because `<parent>/<repo>` is already on disk. */
       destinationExists: string
       browse: string
+      /** Prefix for the native folder-picker control: "Browse with" + OS icon. */
+      browseWith: string
+      browseWithFinder: string
+      browseWithExplorer: string
       directories: string
-      goUp: string
-      /** Path-list "." row: commit the current directory on browse. */
-      addThisFolder: string
-      /** Path-list "." row: commit the current directory on destination. */
-      cloneHere: string
       noDirectories: string
       actions: {
         select: string
         continue: string
         add: string
         clone: string
+        open: string
+        create: string
       }
       hintTab: string
       hintNav: string
@@ -2722,15 +2730,22 @@ export const en: Messages = {
     addProject: {
       title: 'Add Project',
       description: 'on {{host}}',
+      stepTitle: {
+        source: 'Add Project',
+        browse: 'Open or Create a Folder',
+        github: 'Search GitHub',
+        url: 'Enter a Git URL',
+        destination: 'Choose Clone Location',
+      },
       sources: {
         title: 'Sources',
         searchPlaceholder: 'Type a path, or pick a source...',
-        local: { label: 'Local Folder', hint: 'Browse a folder that already exists' },
+        local: { label: 'Local Folder', hint: 'Open or create a folder on this machine.' },
         github: {
           label: 'GitHub Repository',
-          hint: 'Search a repo name, owner/repo, or paste a GitHub URL',
+          hint: 'Search by name, owner/repo, or paste a GitHub URL.',
         },
-        url: { label: 'Git URL', hint: 'Clone from any remote URL' },
+        url: { label: 'Git URL', hint: 'Clone from any git remote.' },
       },
       pathPlaceholderLocal: '~/Projects/',
       pathPlaceholderRemote: '/home/superone/',
@@ -2758,10 +2773,10 @@ export const en: Messages = {
       destinationExists:
         '"{{path}}" already exists. Pick another folder, or add that project instead of cloning.',
       browse: 'Browse',
+      browseWith: 'Browse with',
+      browseWithFinder: 'Browse with Finder',
+      browseWithExplorer: 'Browse with File Explorer',
       directories: 'Directories',
-      goUp: 'Parent Directory',
-      addThisFolder: 'Add This Folder',
-      cloneHere: 'Clone here',
       noDirectories: 'No directories here.',
       actions: {
         // Lowercase: also used as the footer ↵ shortcut label.
@@ -2769,6 +2784,8 @@ export const en: Messages = {
         continue: 'continue',
         add: 'add',
         clone: 'clone',
+        open: 'open',
+        create: 'create',
       },
       hintTab: 'autocomplete',
       hintNav: 'navigate',

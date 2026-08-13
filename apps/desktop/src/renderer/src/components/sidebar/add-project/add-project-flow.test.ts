@@ -9,7 +9,11 @@ import {
   githubRepoNameSearchDelay,
   longestPrefixCacheHits,
   resolveBrowsePath,
+  CREATE_ROW_KEY,
+  confirmActionKey,
+  enterLabelKey,
   resolveRepoInput,
+  stepTitleKey,
   submitLabelKey,
   unwrapIpcInvokeError,
 } from './add-project-flow'
@@ -159,6 +163,50 @@ describe('primary action labelling', () => {
       repoName: 'b',
     } as const
     expect(submitLabelKey(step)).toBe('sidebar.addProject.actions.clone')
+  })
+
+  it('labels Enter as open for a child folder, never as confirm', () => {
+    expect(enterLabelKey({ kind: 'browse' }, undefined)).toBeNull()
+    expect(enterLabelKey({ kind: 'browse' }, 'notes')).toBe('sidebar.addProject.actions.open')
+    expect(enterLabelKey({ kind: 'browse' }, CREATE_ROW_KEY)).toBeNull()
+    expect(enterLabelKey({ kind: 'source' }, 'local')).toBe('sidebar.addProject.actions.select')
+  })
+
+  it('labels Shift+Enter from the confirm action (add / create / clone)', () => {
+    expect(confirmActionKey({ kind: 'browse' }, false)).toBe('sidebar.addProject.actions.add')
+    expect(confirmActionKey({ kind: 'browse' }, true)).toBe('sidebar.addProject.actions.create')
+    expect(confirmActionKey({ kind: 'source' }, false)).toBeNull()
+    const dest = {
+      kind: 'destination',
+      source: 'github',
+      repoInput: 'a/b',
+      remoteUrl: 'https://github.com/a/b.git',
+      repoName: 'b',
+    } as const
+    expect(confirmActionKey(dest, false)).toBe('sidebar.addProject.actions.clone')
+    expect(confirmActionKey(dest, true)).toBe('sidebar.addProject.actions.create')
+    expect(enterLabelKey(dest, undefined)).toBeNull()
+    expect(enterLabelKey(dest, 'notes')).toBe('sidebar.addProject.actions.open')
+  })
+})
+
+describe('step titles', () => {
+  it('names each step so the heading tells the user what to do', () => {
+    expect(stepTitleKey({ kind: 'source' })).toBe('sidebar.addProject.stepTitle.source')
+    expect(stepTitleKey({ kind: 'browse' })).toBe('sidebar.addProject.stepTitle.browse')
+    expect(stepTitleKey({ kind: 'repo', source: 'github' })).toBe(
+      'sidebar.addProject.stepTitle.github',
+    )
+    expect(stepTitleKey({ kind: 'repo', source: 'url' })).toBe('sidebar.addProject.stepTitle.url')
+    expect(
+      stepTitleKey({
+        kind: 'destination',
+        source: 'github',
+        repoInput: 'a/b',
+        remoteUrl: 'https://github.com/a/b.git',
+        repoName: 'b',
+      }),
+    ).toBe('sidebar.addProject.stepTitle.destination')
   })
 })
 

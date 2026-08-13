@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import { fuzzyMatch } from './fuzzy-match'
 import {
   ensureBrowseDirectoryPath,
   getBrowseDirectoryPath,
@@ -87,21 +86,12 @@ describe('getPathInlineGhost', () => {
     })
   })
 
-  it('uses fuzzy mode when the leaf is a non-prefix fuzzy match', () => {
-    const { indices, match } = fuzzyMatch('Dvl', 'Developer')
-    expect(match).toBe(true)
-    expect(getPathInlineGhost('~/Dvl', 'Developer', indices)).toEqual({
-      kind: 'fuzzy',
-      dir: '~/',
-      name: 'Developer',
-      matchIndices: indices,
-      sep: '/',
-    })
+  it('does not ghost a non-prefix fuzzy match', () => {
+    expect(getPathInlineGhost('~/Dvl', 'Developer')).toBeNull()
   })
 
-  it('returns null without a prefix or fuzzy match', () => {
+  it('returns null without a prefix match', () => {
     expect(getPathInlineGhost('~/xyz', 'Developer')).toBeNull()
-    expect(getPathInlineGhost('~/xyz', 'Developer', [])).toBeNull()
     expect(getPathInlineGhost('~/Deve', null)).toBeNull()
     expect(getPathInlineGhost('~/Deve', '')).toBeNull()
   })

@@ -43,6 +43,9 @@ export type AddProjectStep =
 
 export const ADD_PROJECT_SOURCES: readonly AddProjectSource[] = ['local', 'github', 'url']
 
+/** Sentinel key for the "create this missing directory" candidate row. */
+export const CREATE_ROW_KEY = '__create__'
+
 export interface ResolvedRepoInput {
   remoteUrl: string
   repoName: string
@@ -164,6 +167,53 @@ export function submitLabelKey(step: AddProjectStep): string {
       return 'sidebar.addProject.actions.add'
     case 'destination':
       return 'sidebar.addProject.actions.clone'
+  }
+}
+
+/**
+ * Footer ↵ label. Path steps only open a child folder; confirming
+ * (add / create / clone) is always ⇧↵.
+ */
+export function enterLabelKey(
+  step: AddProjectStep,
+  selectedKey: string | undefined,
+): string | null {
+  if (step.kind === 'browse' || step.kind === 'destination') {
+    if (selectedKey && selectedKey !== CREATE_ROW_KEY) {
+      return 'sidebar.addProject.actions.open'
+    }
+    return null
+  }
+  return submitLabelKey(step)
+}
+
+/** ⇧↵ / confirm button: add, create, or clone the typed path. */
+export function confirmActionKey(
+  step: AddProjectStep,
+  willCreate: boolean,
+): string | null {
+  if (step.kind === 'browse') {
+    return willCreate ? 'sidebar.addProject.actions.create' : 'sidebar.addProject.actions.add'
+  }
+  if (step.kind === 'destination') {
+    return willCreate ? 'sidebar.addProject.actions.create' : 'sidebar.addProject.actions.clone'
+  }
+  return null
+}
+
+/** Dialog heading for the current step — tells the user what to do next. */
+export function stepTitleKey(step: AddProjectStep): string {
+  switch (step.kind) {
+    case 'source':
+      return 'sidebar.addProject.stepTitle.source'
+    case 'browse':
+      return 'sidebar.addProject.stepTitle.browse'
+    case 'repo':
+      return step.source === 'github'
+        ? 'sidebar.addProject.stepTitle.github'
+        : 'sidebar.addProject.stepTitle.url'
+    case 'destination':
+      return 'sidebar.addProject.stepTitle.destination'
   }
 }
 

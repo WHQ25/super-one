@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft,
-  CornerLeftUp,
   Folder,
   FolderPlus,
   Github,
@@ -23,7 +22,12 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
 import { AddProjectList } from './AddProjectList'
-import { submitLabelKey, type AddProjectSource } from './add-project-flow'
+import {
+  confirmActionKey,
+  enterLabelKey,
+  stepTitleKey,
+  type AddProjectSource,
+} from './add-project-flow'
 import { useAddProjectDialog } from './use-add-project-dialog'
 
 function GithubOwnerAvatar({ owner, className }: { owner: string; className?: string }) {
@@ -51,9 +55,68 @@ const SOURCE_ICONS: Record<AddProjectSource, ReactNode> = {
   github: <Github className="size-[18px]" />,
   url: <Link2 className="size-[18px]" />,
 }
-const PARENT_ICON = <CornerLeftUp className="size-3.5" />
 const DIRECTORY_ICON = <Folder className="size-3.5" />
 const CREATE_DIRECTORY_ICON = <FolderPlus className="size-3.5" />
+
+/** Compact Finder-style face for "Browse with". */
+function FinderGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden>
+      <rect width="16" height="16" rx="3.5" fill="#5AC8FA" />
+      <path d="M8 0v16" stroke="#fff" strokeOpacity="0.35" />
+      <circle cx="5.2" cy="6.2" r="1" fill="#1d1d1f" />
+      <circle cx="10.8" cy="6.2" r="1" fill="#1d1d1f" />
+      <path
+        d="M5.2 10.4c.8 1.2 4.8 1.2 5.6 0"
+        fill="none"
+        stroke="#1d1d1f"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+/** Compact File Explorer-style mark for "Browse with". */
+function FileExplorerGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden>
+      <rect width="16" height="16" rx="3" fill="#0078D4" />
+      <rect x="2" y="4.2" width="5.2" height="3.6" rx="0.6" fill="#FDE047" />
+      <rect x="8.6" y="4.2" width="5.4" height="7.6" rx="0.6" fill="#FACC15" />
+      <rect x="2" y="8.4" width="5.2" height="3.4" rx="0.6" fill="#FDE68A" />
+    </svg>
+  )
+}
+
+function NativeBrowseControl({
+  label,
+  ariaLabel,
+  disabled,
+  onClick,
+}: {
+  label: string
+  ariaLabel: string
+  disabled: boolean
+  onClick: () => void
+}) {
+  const isWindows = window.app?.platform === 'win32'
+  const Glyph = isWindows ? FileExplorerGlyph : FinderGlyph
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+    >
+      {label}
+      <Glyph className="size-3.5" />
+    </button>
+  )
+}
 
 /**
  * Multi-step add-project dialog: pick a source, then either browse the host
@@ -76,7 +139,6 @@ export function AddProjectDialog({
     onOpenChange,
     onOpened,
     sourceIcons: SOURCE_ICONS,
-    parentIcon: PARENT_ICON,
     directoryIcon: DIRECTORY_ICON,
     createDirectoryIcon: CREATE_DIRECTORY_ICON,
   })
@@ -133,11 +195,39 @@ export function AddProjectDialog({
     }
   }, [step, flow.isLocal, t])
 
-  // Footer ↵ hint mirrors the step's primary action (select / continue / add / clone).
+  const selectedKey = flow.items[flow.selectedIndex]?.key
+  const enterHintKey = enterLabelKey(step, selectedKey)
   const enterHint =
     flow.busy && step.kind === 'destination'
       ? t('sidebar.addProject.cloning')
-      : t(submitLabelKey(step))
+      : enterHintKey
+        ? t(enterHintKey)
+        : null
+  const confirmHintKey = confirmActionKey(step, Boolean(flow.willCreatePath))
+  const confirmLabel = confirmHintKey ? t(confirmHintKey) : ''
+  const listSections = useMemo(() => {
+    if (!flow.isPathStep || !flow.isLocal) return flow.listSections
+    const browseWith = t('sidebar.addProject.browseWith')
+    const browseAria =
+      window.app?.platform === 'win32'
+        ? t('sidebar.addProject.browseWithExplorer')
+        : t('sidebar.addProject.browseWithFinder')
+    return flow.listSections.map((section) =>
+      section.key === 'directories'
+        ? {
+            ...section,
+            headerAction: (
+              <NativeBrowseControl
+                label={browseWith}
+                ariaLabel={browseAria}
+                disabled={flow.busy}
+                onClick={() => void flow.pickNativeFolder()}
+              />
+            ),
+          }
+        : section,
+    )
+  }, [flow.isPathStep, flow.isLocal, flow.listSections, flow.busy, flow.pickNativeFolder, t])
 
   return (
     <Dialog open={open} onOpenChange={(next) => !flow.busy && onOpenChange(next)}>
@@ -159,7 +249,7 @@ export function AddProjectDialog({
             <span className="flex size-4 shrink-0 items-center justify-center">
               <FolderPlus className="size-4 text-muted-foreground" aria-hidden />
             </span>
-            {t('sidebar.addProject.title')}
+            {t(stepTitleKey(step))}
           </DialogTitle>
           {/* Host context stays for assistive tech only — the sidebar already
               shows which environment is selected. */}
@@ -185,9 +275,8 @@ export function AddProjectDialog({
             </IconButton>
           )}
           {/*
-            Path steps use inline ghost completion. When a ghost is shown the
-            native caret is hidden and we paint a caret after the last user-owned
-            character (end of typed query for prefix; last fuzzy match for fuzzy)
+            Path steps use prefix ghost completion. When a ghost is shown the
+            native caret is hidden and we paint a caret after the typed query
             so it never sits in the middle of the ghost tail.
           */}
           <div className="relative min-w-0 flex-1 overflow-hidden">
@@ -200,68 +289,12 @@ export function AddProjectDialog({
                 )}
                 style={{ transform: `translateX(-${inputScrollLeft}px)` }}
               >
-                {flow.pathInlineGhost.kind === 'suffix' ? (
-                  <>
-                    <span className="whitespace-pre text-foreground">{flow.query}</span>
-                    {/* Caret at end of typed input — always before the ghost tail. */}
-                    <span className="h-4 w-px shrink-0 self-center bg-foreground" />
-                    <span className="whitespace-pre text-muted-foreground/40">
-                      {flow.pathInlineGhost.text}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="whitespace-pre text-foreground">
-                      {flow.pathInlineGhost.dir}
-                    </span>
-                    {(() => {
-                      const ghost = flow.pathInlineGhost
-                      if (ghost.kind !== 'fuzzy') return null
-                      const matchSet = new Set(ghost.matchIndices)
-                      const lastMatch =
-                        ghost.matchIndices.length > 0
-                          ? Math.max(...ghost.matchIndices)
-                          : -1
-                      const nodes: ReactNode[] = []
-                      ghost.name.split('').forEach((ch, i) => {
-                        if (i === lastMatch + 1) {
-                          nodes.push(
-                            <span
-                              key="caret"
-                              className="h-4 w-px shrink-0 self-center bg-foreground"
-                            />,
-                          )
-                        }
-                        nodes.push(
-                          <span
-                            key={`${i}-${ch}`}
-                            className={cn(
-                              'whitespace-pre',
-                              matchSet.has(i)
-                                ? 'text-foreground'
-                                : 'text-muted-foreground/40',
-                            )}
-                          >
-                            {ch}
-                          </span>,
-                        )
-                      })
-                      // Typed leaf covers the whole name — caret sits before the trailing sep.
-                      if (lastMatch === ghost.name.length - 1) {
-                        nodes.push(
-                          <span
-                            key="caret-end"
-                            className="h-4 w-px shrink-0 self-center bg-foreground"
-                          />,
-                        )
-                      }
-                      return nodes
-                    })()}
-                    <span className="whitespace-pre text-muted-foreground/40">
-                      {flow.pathInlineGhost.sep}
-                    </span>
-                  </>
-                )}
+                <span className="whitespace-pre text-foreground">{flow.query}</span>
+                {/* Caret at end of typed input — always before the ghost tail. */}
+                <span className="h-4 w-px shrink-0 self-center bg-foreground" />
+                <span className="whitespace-pre text-muted-foreground/40">
+                  {flow.pathInlineGhost.text}
+                </span>
               </div>
             ) : null}
             <input
@@ -341,6 +374,10 @@ export function AddProjectDialog({
                 }
                 if (e.key === 'Enter') {
                   e.preventDefault()
+                  if (e.shiftKey && flow.isPathStep) {
+                    if (!flow.busy) flow.commitCurrentPath()
+                    return
+                  }
                   if (flow.canSubmit) flow.submit()
                   return
                 }
@@ -351,22 +388,29 @@ export function AddProjectDialog({
               }}
             />
           </div>
-          {flow.isLocal && flow.isPathStep && (
+          {flow.isPathStep && (
             <Button
               type="button"
-              variant="outline"
               size="sm"
-              className="h-7 shrink-0 px-2 text-xs"
+              className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
               tabIndex={-1}
-              disabled={flow.busy}
+              disabled={flow.busy || !flow.canSubmit}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => void flow.pickNativeFolder()}
+              onClick={() => flow.commitCurrentPath()}
             >
-              {t('sidebar.addProject.browse')}
+              {flow.busy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <>
+                  <span className="capitalize">{confirmLabel}</span>
+                  <span className="rounded bg-primary-foreground/20 px-1 py-px text-[10px] font-medium leading-none">
+                    ⇧↵
+                  </span>
+                </>
+              )}
             </Button>
           )}
-          {/* Primary submit is Enter (see footer hint); a solid button was too loud. */}
-          {flow.busy ? (
+          {!flow.isPathStep && flow.busy ? (
             <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
           ) : null}
         </div>
@@ -468,10 +512,10 @@ export function AddProjectDialog({
                   )
                 })()}
               </div>
-            ) : flow.listSections.length > 0 ? (
+            ) : listSections.length > 0 ? (
               <>
                 <AddProjectList
-                  sections={flow.listSections}
+                  sections={listSections}
                   selectedIndex={flow.selectedIndex}
                   onActivate={flow.activateItem}
                   onHover={flow.setSelectedIndex}
@@ -530,9 +574,9 @@ export function AddProjectDialog({
               <Loader2 className="size-3.5 animate-spin" />
               {t('common.loading')}
             </div>
-          ) : flow.listSections.length > 0 ? (
+          ) : listSections.length > 0 ? (
             <AddProjectList
-              sections={flow.listSections}
+              sections={listSections}
               selectedIndex={flow.selectedIndex}
               onActivate={flow.activateItem}
               onHover={flow.setSelectedIndex}
@@ -561,13 +605,17 @@ export function AddProjectDialog({
           {flow.isPathStep && (
             <>
               <Kbd>tab</Kbd> {t('sidebar.addProject.hintTab')}
-              <span className="mx-1.5">&middot;</span>
             </>
           )}
-          <Kbd>↵</Kbd> {enterHint}
+          {enterHint ? (
+            <>
+              {flow.isPathStep ? <span className="mx-1.5">&middot;</span> : null}
+              <Kbd>↵</Kbd> {enterHint}
+            </>
+          ) : null}
           {flow.itemCount > 0 && (
             <>
-              <span className="mx-1.5">&middot;</span>
+              {(flow.isPathStep || enterHint) ? <span className="mx-1.5">&middot;</span> : null}
               <Kbd>↑↓</Kbd> {t('sidebar.addProject.hintNav')}
             </>
           )}
@@ -577,6 +625,12 @@ export function AddProjectDialog({
               <Kbd>⌫</Kbd> {t('sidebar.addProject.hintBack')}
             </>
           )}
+          {confirmHintKey ? (
+            <>
+              <span className="mx-1.5">&middot;</span>
+              <Kbd>⇧↵</Kbd> {t(confirmHintKey)}
+            </>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

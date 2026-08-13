@@ -114,6 +114,11 @@ export class RemoteHostActionConsumer {
     return this.connectionId
   }
 
+  /** True when this loop is already attached to the live RPC client. */
+  isBoundTo(client: NodeRpcClient): boolean {
+    return this.client === client
+  }
+
   /** Start the poll loop (idempotent). Always begins with an outstanding snapshot. */
   start(): void {
     if (this.running) return

@@ -3108,9 +3108,14 @@ export class EnvironmentHost {
   }
 
   private startHostActionConsumer(connectionId: string): void {
-    this.stopHostActionConsumer(connectionId, 'restart')
     const client = this.connections.getClient(connectionId)
     if (!client) return
+    const existing = this.hostActionConsumers.get(connectionId)
+    // connectExisting publishes `connected` (starts the consumer) and doConnect
+    // starts it again. A restart aborts in-flight claims and leaves the row
+    // stuck in `claimed` until TTL — reconnect resume then hangs.
+    if (existing?.isRunning && existing.isBoundTo(client)) return
+    this.stopHostActionConsumer(connectionId, 'restart')
     const consumer = new RemoteHostActionConsumer({
       connectionId,
       client,

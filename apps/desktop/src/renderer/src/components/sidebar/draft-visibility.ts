@@ -18,21 +18,33 @@ export interface DraftVisibilityContext {
   resumingDraftId: string | null
 }
 
+/** A slot held open by a draft that has left but not yet been replaced. */
+export const DRAFT_SLOT_HOLE = ''
+
 /**
- * How many row slots the group should reserve.
+ * Which slot each row occupies. Row `n` sits at `n * DRAFT_ROW_HEIGHT`, and the
+ * group reserves `slots.length` rows, so this decides both what moves and how
+ * much space is held.
  *
- * Normally just the visible count. While a resume is in flight the count is not
- * trustworthy: the clicked draft leaves the list on click, but the composer the
- * user is leaving only surfaces once the awaited project switch commits — so it
- * dips before it recovers. Latching across that window keeps the project list
- * below perfectly still through a draft→draft hop.
+ * A resume reaches the sidebar as two separate commits: the clicked draft drops
+ * out on click, and the composer being left behind only appears once the awaited
+ * project switch lands. Re-deriving slots from each of those commits makes rows
+ * shuffle to fill the gap and then shuffle back — so hold every surviving row
+ * exactly where it is until the arriving draft tells us the final layout, then
+ * move to it once. Rows whose slot is unchanged by that move never animate.
  */
-export function nextDraftGroupRows(
-  currentRows: number,
-  visibleCount: number,
-  resumingDraftId: string | null,
-): number {
-  return resumingDraftId ? currentRows : visibleCount
+export function nextDraftSlots(
+  prev: string[],
+  visibleIds: string[],
+  resuming: boolean,
+): string[] {
+  if (!resuming) return visibleIds
+  const known = new Set(prev)
+  // Something arrived — the end state is known, so commit to it in one move.
+  if (!visibleIds.every((id) => known.has(id))) return visibleIds
+  // Removals only: freeze, leaving the vacated slot empty for whatever lands.
+  const visible = new Set(visibleIds)
+  return prev.map((id) => (visible.has(id) ? id : DRAFT_SLOT_HOLE))
 }
 
 export function selectVisibleDrafts(

@@ -50,6 +50,63 @@ describe('DraftsSection', () => {
     expect(resumeDraft).toHaveBeenCalledWith('local', one)
   })
 
+  it('positions every row by slot rather than by flow', () => {
+    // Slot-based means removing a row animates the ones below to a new offset
+    // instead of letting the browser snap them up, which is what happened while
+    // the flying copy was still mid-flight out of the vacated slot.
+    useDraftsStore.setState({
+      byConnection: { local: [draft('d1', 'first draft'), draft('d2', 'second draft')] },
+    })
+
+    const { container } = render(<DraftsSection connectionId="local" />)
+
+    const wrappers = container.querySelectorAll('.absolute')
+    expect(wrappers).toHaveLength(2)
+    expect((wrappers[0] as HTMLElement).style.transform).not.toContain('36')
+    expect((wrappers[1] as HTMLElement).style.transform).toContain('36')
+  })
+
+  it('keeps rows slot-positioned across a middle draft being resumed', () => {
+    // Five drafts listed, third row clicked, then the promoted composer arrives.
+    // Rows stay absolutely positioned by slot throughout — a regression to flow
+    // layout would let the browser reflow them the instant d3 leaves the list.
+    // Which slot each row settles in is asserted against nextDraftSlots in
+    // draft-visibility.test.ts; jsdom does not run motion, so the settled
+    // transforms are not observable here.
+    const listed = [1, 2, 3, 4, 5].map((n) => draft(`d${n}`, `draft ${n}`))
+    useDraftsStore.setState({ byConnection: { local: listed } })
+
+    const { container } = render(<DraftsSection connectionId="local" />)
+    const slotOf = (title: string) => {
+      const row = screen.getByText(title).closest('.absolute') as HTMLElement
+      return row.style.transform
+    }
+    const before = { d4: slotOf('draft 4'), d5: slotOf('draft 5') }
+
+    fireEvent.click(screen.getByText('draft 3'))
+    act(() => {
+      useDraftsStore.setState({ resumingDraftId: 'd3' })
+    })
+
+    // Mid-resume: d3 is gone from the list, and the rows below still carry the
+    // slot transform they were rendered with rather than having reflowed.
+    expect(slotOf('draft 4')).toBe(before.d4)
+    expect(slotOf('draft 5')).toBe(before.d5)
+    // d3 is out of the list — the only copy left is the one flying out.
+    expect(screen.getByText('draft 3').closest('.pointer-events-none')).not.toBeNull()
+
+    // Switch lands: the promoted composer surfaces at the head of the list.
+    act(() => {
+      useDraftsStore.setState({
+        byConnection: { local: [draft('d-composer', 'composer'), ...listed] },
+      })
+    })
+
+    expect(slotOf('draft 4')).toBe(before.d4)
+    expect(slotOf('draft 5')).toBe(before.d5)
+    expect(screen.getByText('composer')).toBeInTheDocument()
+  })
+
   it('leaves a copy of the clicked row behind to fly out after it drops from the list', () => {
     const one = draft('d1', 'first draft')
     useDraftsStore.setState({ byConnection: { local: [one] } })

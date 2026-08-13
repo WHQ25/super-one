@@ -8,7 +8,7 @@ import { resumeDraft } from '@/lib/draft-resume'
 import { useDraftsStore } from '@/stores/drafts'
 import { useChatStore } from '@/stores/chat-store'
 import { getDraftIdForSession } from '@/stores/chat-store/helpers/draft-promote'
-import { nextDraftGroupRows, selectVisibleDrafts } from './draft-visibility'
+import { nextDraftSlots, selectVisibleDrafts } from './draft-visibility'
 
 interface DraftsSectionProps {
   /** Environment whose drafts are shown — drafts follow the sidebar's host. */
@@ -16,10 +16,9 @@ interface DraftsSectionProps {
 }
 
 /**
- * Row height, and the sole source of truth for the group's animated height.
- * Rows are uniform, so the container's target is `count * DRAFT_ROW_HEIGHT` —
- * no measurement, and a swap (one draft out, one in) keeps the same target so
- * nothing below moves at all.
+ * Row height, and the sole source of truth for the group's geometry. Rows are
+ * uniform, so slot `n` sits at `n * DRAFT_ROW_HEIGHT` and the group is
+ * `slots.length * DRAFT_ROW_HEIGHT` tall — no measurement anywhere.
  */
 const DRAFT_ROW_HEIGHT = 36
 
@@ -29,28 +28,38 @@ const GROUP_HEIGHT_TRANSITION = { duration: 0.18, ease: [0.32, 0.72, 0, 1] } as 
 const SLIDE_IN_TRANSITION = { duration: 0.22, delay: 0.06, ease: [0.22, 1, 0.36, 1] } as const
 /** Leaving for the composer — accelerating out, so it reads as departing. */
 const SLIDE_OUT_TRANSITION = { duration: 0.2, ease: [0.55, 0, 1, 0.45] } as const
+/**
+ * `x` carries the fly in/out, `y` carries the slot. Both are transform channels
+ * motion composes into one transform, so sliding between slots never fights the
+ * horizontal flight the way a flow-based layout animation would.
+ */
+const ROW_TRANSITION = {
+  x: SLIDE_IN_TRANSITION,
+  opacity: SLIDE_IN_TRANSITION,
+  y: GROUP_HEIGHT_TRANSITION,
+} as const
 
 const DraftRow = memo(function DraftRow({
   draft,
   connectionId,
+  slotY,
   onResume,
 }: {
   draft: DraftListEntry
   connectionId: string
-  /** Resume this draft, handing back where the row sits so it can fly out. */
-  onResume?: (draft: DraftListEntry, top: number) => void
+  /** Where this row sits, so a resume can leave a copy flying out of that slot. */
+  slotY?: number
+  onResume?: (draft: DraftListEntry, slotY: number) => void
 }) {
   const { t } = useTranslation()
   const removeDraft = useDraftsStore((s) => s.removeDraft)
-  const rowRef = useRef<HTMLDivElement>(null)
 
   const resume = () => {
-    onResume?.(draft, rowRef.current?.offsetTop ?? 0)
+    onResume?.(draft, slotY ?? 0)
   }
 
   return (
     <div
-      ref={rowRef}
       role="button"
       tabIndex={0}
       onClick={resume}
@@ -115,12 +124,12 @@ export const DraftsSection = memo(function DraftsSection({
   })
 
   // The clicked row leaves the list immediately (its content is heading for the
-  // composer), so keep a copy pinned at the slot it occupied and fly that out.
-  // Absolute, so it never adds to the flow the group's height is derived from.
-  const [flyOut, setFlyOut] = useState<{ draft: DraftListEntry; top: number } | null>(null)
+  // composer), so keep a copy pinned at the slot it occupied and fly that out
+  // while the rows below slide up into the gap.
+  const [flyOut, setFlyOut] = useState<{ draft: DraftListEntry; slotY: number } | null>(null)
   const handleResume = useCallback(
-    (draft: DraftListEntry, top: number) => {
-      setFlyOut({ draft, top })
+    (draft: DraftListEntry, slotY: number) => {
+      setFlyOut({ draft, slotY })
       void resumeDraft(connectionId, draft)
     },
     [connectionId],
@@ -151,39 +160,49 @@ export const DraftsSection = memo(function DraftsSection({
     [drafts, activeSessionId, activeDraftId, activeProject, resumingDraftId],
   )
 
-  // Height lives on the group, not on each row, so it only moves when the row
-  // count moves — and it is latched across a resume (see nextDraftGroupRows).
-  // Adjusting state during render is the supported way to derive from a prior
-  // value; React re-runs the render before committing.
-  const [heightRows, setHeightRows] = useState(visibleDrafts.length)
-  const nextRows = nextDraftGroupRows(heightRows, visibleDrafts.length, resumingDraftId)
-  if (nextRows !== heightRows) setHeightRows(nextRows)
+  // Slots drive both what moves and how much space the group holds. Adjusting
+  // state during render is the supported way to derive from a prior value;
+  // React re-runs the render before committing.
+  const visibleIds = useMemo(() => visibleDrafts.map((d) => d.id), [visibleDrafts])
+  const [slots, setSlots] = useState(visibleIds)
+  const nextSlots = nextDraftSlots(slots, visibleIds, !!resumingDraftId)
+  if (nextSlots.length !== slots.length || nextSlots.some((id, i) => id !== slots[i])) {
+    setSlots(nextSlots)
+  }
 
   // `initial={false}` keeps drafts already present at mount from animating open.
   return (
     <motion.div
       className="relative overflow-hidden"
       initial={false}
-      animate={{ height: heightRows * DRAFT_ROW_HEIGHT }}
+      animate={{ height: slots.length * DRAFT_ROW_HEIGHT }}
       transition={GROUP_HEIGHT_TRANSITION}
     >
-      {visibleDrafts.map((draft) => (
-        <motion.div
-          key={draft.id}
-          initial={mountedRef.current ? { x: '105%', opacity: 0 } : false}
-          animate={{ x: 0, opacity: 1 }}
-          transition={SLIDE_IN_TRANSITION}
-        >
-          <DraftRow draft={draft} connectionId={connectionId} onResume={handleResume} />
-        </motion.div>
-      ))}
+      {visibleDrafts.map((draft) => {
+        const slotY = Math.max(0, slots.indexOf(draft.id)) * DRAFT_ROW_HEIGHT
+        return (
+          <motion.div
+            key={draft.id}
+            className="absolute inset-x-0 top-0"
+            initial={mountedRef.current ? { x: '105%', y: slotY, opacity: 0 } : false}
+            animate={{ x: 0, y: slotY, opacity: 1 }}
+            transition={ROW_TRANSITION}
+          >
+            <DraftRow
+              draft={draft}
+              connectionId={connectionId}
+              slotY={slotY}
+              onResume={handleResume}
+            />
+          </motion.div>
+        )
+      })}
       {flyOut && (
         <motion.div
           key={flyOut.draft.id}
-          className="pointer-events-none absolute inset-x-0"
-          style={{ top: flyOut.top }}
-          initial={{ x: 0, opacity: 1 }}
-          animate={{ x: '105%', opacity: 0 }}
+          className="pointer-events-none absolute inset-x-0 top-0"
+          initial={{ x: 0, y: flyOut.slotY, opacity: 1 }}
+          animate={{ x: '105%', y: flyOut.slotY, opacity: 0 }}
           transition={SLIDE_OUT_TRANSITION}
           onAnimationComplete={() => setFlyOut(null)}
         >

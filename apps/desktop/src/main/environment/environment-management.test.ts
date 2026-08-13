@@ -6,7 +6,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 
 const electron = vi.hoisted(() => {
   const store = new Map<string, string>()
@@ -53,17 +53,25 @@ import type { SshForwardHandle } from './ssh-forward'
 import type { RemoteRestartOptions } from './ssh-bootstrap'
 
 const dirs: string[] = []
-const runtimes: NodeRuntime[] = []
+let sharedRuntime: NodeRuntime | null = null
+let sharedNodeHome: string | null = null
 
-afterEach(async () => {
+afterEach(() => {
   resetEnvironmentHostForTests()
-  while (runtimes.length) {
-    const rt = runtimes.pop()
-    if (rt) await rt.stop().catch(() => {})
-  }
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   electron.store.clear()
   electron.available = true
+})
+
+afterAll(async () => {
+  if (sharedRuntime) {
+    await sharedRuntime.stop().catch(() => {})
+    sharedRuntime = null
+  }
+  if (sharedNodeHome) {
+    rmSync(sharedNodeHome, { recursive: true, force: true })
+    sharedNodeHome = null
+  }
 })
 
 function temp(prefix: string): string {
@@ -73,14 +81,15 @@ function temp(prefix: string): string {
 }
 
 async function bootNode(): Promise<NodeRuntime> {
-  const rt = await startNodeRuntime({
-    nodeHome: temp('env-mgmt-node-'),
+  if (sharedRuntime) return sharedRuntime
+  sharedNodeHome = mkdtempSync(join(tmpdir(), 'env-mgmt-node-'))
+  sharedRuntime = await startNodeRuntime({
+    nodeHome: sharedNodeHome,
     bindHost: '127.0.0.1',
     bindPort: 36000 + Math.floor(Math.random() * 2000),
     simulatedHarness: true,
   })
-  runtimes.push(rt)
-  return rt
+  return sharedRuntime
 }
 
 function newHost(): EnvironmentHost {

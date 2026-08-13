@@ -68,13 +68,14 @@ function makeFakeDb() {
     prepare: (rawSql: string) => {
       const sql = rawSql.replace(/\s+/g, ' ').trim()
 
-      if (/^INSERT INTO sessions \(\s*id, project_id, provider_id, provider, title, created_at, last_user_message_at,\s*is_worktree, git_branch, worktree_path, api_provider_id/.test(sql)) {
+      if (/INSERT INTO sessions/.test(sql) && /provider_session_id/.test(sql) && /api_provider_id/.test(sql)) {
         return {
           run: (
             id: string,
             projectId: string,
             providerId: string,
             provider: string,
+            providerSessionId: string | null,
             title: string | null,
             createdAt: string,
             lastUserMsg: string,
@@ -85,6 +86,11 @@ function makeFakeDb() {
           ) => {
             const existing = sessions.get(id)
             if (existing) {
+              existing.provider_id = providerId
+              existing.provider = provider
+              existing.provider_session_id = existing.provider_id !== providerId
+                ? providerSessionId
+                : (providerSessionId ?? existing.provider_session_id)
               existing.is_worktree = isWorktree
               existing.git_branch = gitBranch
               existing.worktree_path = worktreePath
@@ -94,7 +100,7 @@ function makeFakeDb() {
             sessions.set(id, {
               id, project_id: projectId,
               provider_id: providerId, provider,
-              provider_session_id: null,
+              provider_session_id: providerSessionId,
               title,
               created_at: createdAt,
               last_user_message_at: lastUserMsg,

@@ -347,18 +347,14 @@ describe('claude-slice: setSelectedModel', () => {
     expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
   })
 
-  it('schedules a debounced prewarm when there is unsent draft text', () => {
-    vi.useFakeTimers()
+  it('prewarms immediately when there is unsent draft text', () => {
     setupProject()
     setClaudeResources({ models: [opus], account: { subscriptionType: 'Claude Max' } as AccountInfo })
     patchSession({ draftText: 'hello' })
 
     useChatStore.getState().setSelectedModel('opus-4-8')
-    expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(10_000)
     expect(mockWindowAgent.prewarm).toHaveBeenCalledTimes(1)
     expect(mockWindowAgent.prewarm.mock.calls[0]?.[0]).toBe(PATH)
-    vi.useRealTimers()
   })
 
   it('is a no-op when no project is active', () => {
@@ -383,15 +379,11 @@ describe('claude-slice: setSelectedEffort', () => {
     expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: null })
   })
 
-  it('schedules a debounced prewarm when there is unsent draft text', () => {
-    vi.useFakeTimers()
+  it('prewarms immediately when there is unsent draft text', () => {
     setupProject()
     patchSession({ draftText: 'draft' })
     useChatStore.getState().setSelectedEffort('medium')
-    expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(10_000)
     expect(mockWindowAgent.prewarm).toHaveBeenCalledTimes(1)
-    vi.useRealTimers()
   })
 
   it('is a no-op when no project is active', () => {

@@ -1,5 +1,24 @@
+import { vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import i18n from 'i18next'
+
+// Default stubs so files that import electron / @electron-toolkit/utils
+// (via harness/home.ts) can load under vitest. Per-file vi.mock() still wins.
+vi.mock('electron', () => ({
+  app: {
+    getPath: (name: string) => (name === 'userData' ? '/tmp/superone-test-userData' : '/tmp'),
+    getVersion: () => '0.0.0-test',
+  },
+  BrowserWindow: class BrowserWindow {},
+  ipcMain: { handle: () => undefined, on: () => undefined, removeHandler: () => undefined },
+  session: { defaultSession: {} },
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: (s: string) => Buffer.from(s),
+    decryptString: (buf: Buffer) => buf.toString(),
+  },
+}))
+vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
 import { initReactI18next } from 'react-i18next'
 import { resources } from '@superone/shared/i18n'
 

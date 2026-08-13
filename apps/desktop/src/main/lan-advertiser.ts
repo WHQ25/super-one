@@ -17,17 +17,21 @@ export interface LanAdvertisement {
   txt: Record<string, string>
 }
 
-interface AdvertiserStrategy {
+export interface AdvertiserStrategy {
   publish(ad: LanAdvertisement): Promise<void>
   unpublish(): Promise<void>
   isPublishing(): boolean
 }
 
 export class LanAdvertiser {
-  private strategy: AdvertiserStrategy = process.platform === 'darwin'
-    ? new DnsSdStrategy()
-    : new MulticastDnsStrategy()
+  private strategy: AdvertiserStrategy
   private currentAd: LanAdvertisement | null = null
+
+  constructor(strategy?: AdvertiserStrategy) {
+    this.strategy = strategy ?? (process.platform === 'darwin'
+      ? new DnsSdStrategy()
+      : new MulticastDnsStrategy())
+  }
 
   async publish(ad: LanAdvertisement): Promise<void> {
     if (this.currentAd && advertisementEqual(this.currentAd, ad) && this.strategy.isPublishing()) {
@@ -248,7 +252,7 @@ class MulticastDnsStrategy implements AdvertiserStrategy {
   }
 }
 
-function buildRecords(ad: LanAdvertisement): MdnsAnswer[] {
+export function buildRecords(ad: LanAdvertisement): MdnsAnswer[] {
   const instance = `${ad.name}.${LAN_SERVICE_DOMAIN}`
   const target = preferredHostname()
   return [

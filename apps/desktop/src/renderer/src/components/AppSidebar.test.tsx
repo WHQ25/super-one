@@ -218,11 +218,44 @@ vi.mock('@/components/ui/tabs', () => ({
   TabsTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 
+vi.mock('@/components/sidebar/add-project/AddProjectDialog', () => ({
+  AddProjectDialog: () => null,
+}))
+vi.mock('@/components/sidebar/AppDrawer', () => ({
+  AppDrawer: () => null,
+}))
+vi.mock('@/components/sidebar/DraftsSection', () => ({
+  DraftsSection: () => null,
+}))
+vi.mock('@/components/sidebar/MiniAppWorkerGroup', () => ({
+  MiniAppWorkerGroup: () => null,
+}))
+vi.mock('@/components/sidebar/ProjectHistoryList', () => ({
+  ProjectHistoryList: () => null,
+}))
+vi.mock('@/components/AutomationDialog', () => ({
+  AutomationDialog: () => null,
+}))
+vi.mock('@/components/UsageStatusIcon', () => ({
+  UsageStatusIcon: () => null,
+}))
+vi.mock('@/components/UpdateStatusIcon', () => ({
+  UpdateStatusIcon: () => null,
+}))
+vi.mock('@/components/coding/LayoutToggle', () => ({
+  LayoutToggle: () => null,
+}))
+vi.mock('@/components/mosaic/mosaic-store', () => ({
+  useMosaicStore: Object.assign(() => ({ mode: 'single' }), {
+    getState: () => ({ focusOrReplaceFocused: () => false }),
+  }),
+}))
+
 // Cold-start transform of AppSidebar + its graph is multi-second on this
 // suite; warm once so individual cases stay under the default 5s timeout.
 beforeAll(async () => {
   await import('./AppSidebar')
-}, 30_000)
+}, 15_000)
 
 beforeEach(() => {
   vi.clearAllMocks()

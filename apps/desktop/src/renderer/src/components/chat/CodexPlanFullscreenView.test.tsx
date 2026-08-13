@@ -76,13 +76,16 @@ describe('CodexPlanFullscreenView', () => {
     const onRejectPlan = vi.fn()
 
     const view = render(
-      <CodexPlanFullscreenView
-        text="## Plan"
-        onClose={onClose}
-        onApprovePlan={onApprovePlan}
-        onRejectPlan={onRejectPlan}
-      />,
+      <div data-chat-root="" tabIndex={-1}>
+        <CodexPlanFullscreenView
+          text="## Plan"
+          onClose={onClose}
+          onApprovePlan={onApprovePlan}
+          onRejectPlan={onRejectPlan}
+        />
+      </div>,
     )
+    ;(view.container.querySelector('[data-chat-root]') as HTMLElement).focus()
 
     const feedback = screen.getByPlaceholderText('Reject feedback (optional, Enter to submit)') as HTMLInputElement
     const rejectButton = screen.getByRole('button', { name: /Reject/i })
@@ -100,14 +103,17 @@ describe('CodexPlanFullscreenView', () => {
     view.unmount()
     onClose.mockReset()
     onRejectPlan.mockReset()
-    render(
-      <CodexPlanFullscreenView
-        text="## Plan"
-        onClose={onClose}
-        onApprovePlan={onApprovePlan}
-        onRejectPlan={onRejectPlan}
-      />,
+    const again = render(
+      <div data-chat-root="" tabIndex={-1}>
+        <CodexPlanFullscreenView
+          text="## Plan"
+          onClose={onClose}
+          onApprovePlan={onApprovePlan}
+          onRejectPlan={onRejectPlan}
+        />
+      </div>,
     )
+    ;(again.container.querySelector('[data-chat-root]') as HTMLElement).focus()
 
     fireEvent.keyDown(window, { key: 'Enter' })
     expect(onApprovePlan).toHaveBeenCalled()

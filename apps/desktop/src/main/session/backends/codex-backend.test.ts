@@ -947,15 +947,15 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
 
     expect(request).toHaveBeenCalledWith('mcpServerStatus/list', { threadId: 'th-9', detail: 'full' })
     expect(status).toEqual([
-      { name: 'superone', status: 'connected', toolCount: 2, tools: [
+      { name: 'superone', status: 'connected', authStatus: 'unknown', fetchedAt: expect.any(Number), toolCount: 2, tools: [
         { name: 'widget_show', description: 'Render a widget' },
         { name: 'session_rename' },
       ] },
-      { name: 'github', status: 'needs-auth', toolCount: 0, tools: [] },
-      { name: 'linear', status: 'failed', toolCount: 0, tools: [] },
-      { name: 'sentry', status: 'failed', toolCount: 0, tools: [] },
-      { name: 'broken', status: 'failed', toolCount: 0, tools: [] },
-      { name: 'notion', status: 'needs-auth', toolCount: 0, tools: [] },
+      { name: 'github', status: 'needs-auth', authStatus: 'needs-auth', fetchedAt: expect.any(Number), toolCount: 0, tools: [] },
+      { name: 'linear', status: 'failed', authStatus: 'authenticated', fetchedAt: expect.any(Number), toolCount: 0, tools: [] },
+      { name: 'sentry', status: 'failed', authStatus: 'authenticated', fetchedAt: expect.any(Number), toolCount: 0, tools: [] },
+      { name: 'broken', status: 'failed', authStatus: 'unknown', fetchedAt: expect.any(Number), toolCount: 0, tools: [] },
+      { name: 'notion', status: 'needs-auth', authStatus: 'needs-auth', fetchedAt: expect.any(Number), toolCount: 0, tools: [] },
     ])
   })
 

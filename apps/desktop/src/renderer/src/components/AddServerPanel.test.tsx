@@ -90,7 +90,7 @@ describe('AddServerPanel — bundle tab', () => {
         onError={() => {}}
       />
     )
-    expect(screen.getByText('Install from .mcpb bundle')).toBeInTheDocument()
+    expect(screen.getByText('Install from .mcpb Bundle')).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('my-server')).not.toBeInTheDocument()
   })
 
@@ -107,7 +107,7 @@ describe('AddServerPanel — bundle tab', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
-    const dropZone = screen.getByText('Install from .mcpb bundle').closest('button')!
+    const dropZone = screen.getByText('Install from .mcpb Bundle').closest('button')!
     dropMcpbFile(dropZone, '/tmp/demo.mcpb')
 
     expect(await screen.findByText('Demo Server')).toBeInTheDocument()
@@ -132,7 +132,7 @@ describe('AddServerPanel — bundle tab', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
-    const dropZone = screen.getByText('Install from .mcpb bundle').closest('button')!
+    const dropZone = screen.getByText('Install from .mcpb Bundle').closest('button')!
     dropMcpbFile(dropZone, '/tmp/demo.mcpb')
 
     await screen.findByText('Demo Server')
@@ -170,7 +170,7 @@ describe('AddServerPanel — bundle tab', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
-    const dropZone = screen.getByText('Install from .mcpb bundle').closest('button')!
+    const dropZone = screen.getByText('Install from .mcpb Bundle').closest('button')!
     dropMcpbFile(dropZone, '/tmp/bad.mcpb')
 
     expect(await screen.findByText('Cannot read bundle')).toBeInTheDocument()
@@ -191,7 +191,7 @@ describe('AddServerPanel — bundle tab', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
-    const dropZone = screen.getByText('Install from .mcpb bundle').closest('button')!
+    const dropZone = screen.getByText('Install from .mcpb Bundle').closest('button')!
     dropMcpbFile(dropZone, '/tmp/demo.mcpb')
     await screen.findByText('Demo Server')
 

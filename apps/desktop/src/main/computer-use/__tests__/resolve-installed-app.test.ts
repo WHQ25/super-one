@@ -4,7 +4,23 @@ import {
   clearInstalledAppCacheForTests,
   listInstalledApps,
   resolveInstalledApp,
+  setInstalledAppsCatalogForTests,
+  setInstalledAppsScanForTests,
 } from '../resolve-installed-app'
+
+const TEXT_EDIT = {
+  app: 'TextEdit',
+  bundleId: 'com.apple.TextEdit',
+  path: '/System/Applications/TextEdit.app',
+  aliases: ['TextEdit', 'com.apple.TextEdit'],
+}
+
+const DOUBAO = {
+  app: '豆包',
+  bundleId: 'com.bot.pc.doubao',
+  path: '/Applications/Doubao.app',
+  aliases: ['豆包', 'Doubao', 'com.bot.pc.doubao'],
+}
 
 describe('matchRunningApp', () => {
   const running = [
@@ -24,41 +40,50 @@ describe('matchRunningApp', () => {
   })
 })
 
-describe('resolveInstalledApp (macOS filesystem)', () => {
+describe('resolveInstalledApp (injected catalog)', () => {
   it('resolves TextEdit by English name and bundle id', async () => {
-    if (process.platform !== 'darwin') return
     clearInstalledAppCacheForTests()
+    setInstalledAppsCatalogForTests([TEXT_EDIT])
     const byName = await resolveInstalledApp('TextEdit')
     expect(byName?.bundleId).toBe('com.apple.TextEdit')
     const byId = await resolveInstalledApp('com.apple.TextEdit')
-    expect(byId?.path).toMatch(/TextEdit\.app$/)
+    expect(byId?.path).toBe('/System/Applications/TextEdit.app')
   })
 
-  it('resolves Doubao from Chinese localized display name 豆包 when installed', async () => {
-    if (process.platform !== 'darwin') return
+  it('resolves Doubao from Chinese localized display name 豆包', async () => {
     clearInstalledAppCacheForTests()
+    setInstalledAppsCatalogForTests([DOUBAO])
     const byEn = await resolveInstalledApp('Doubao')
-    if (!byEn) {
-      // App not installed on this machine — skip without failing CI.
-      return
-    }
-    expect(byEn.bundleId).toBe('com.bot.pc.doubao')
+    expect(byEn?.bundleId).toBe('com.bot.pc.doubao')
     const byZh = await resolveInstalledApp('豆包')
     expect(byZh?.bundleId).toBe('com.bot.pc.doubao')
     expect(byZh?.aliases.some((a) => a.includes('豆包') || a === 'Doubao')).toBe(true)
-  }, 20_000)
+  })
 })
 
 describe('listInstalledApps (async catalog)', () => {
   it('returns apps and coalesces concurrent cold scans onto one result', async () => {
-    if (process.platform !== 'darwin') return
     clearInstalledAppCacheForTests()
-    const [a, b] = await Promise.all([listInstalledApps(), listInstalledApps()])
-    expect(a.length).toBeGreaterThan(0)
-    expect(b).toBe(a)
-    // Cache hit: second call after settle shares the same array reference.
-    const c = await listInstalledApps()
-    expect(c).toBe(a)
-    expect(a.some((app) => app.bundleId === 'com.apple.TextEdit')).toBe(true)
-  }, 20_000)
+    let calls = 0
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    setInstalledAppsScanForTests(async () => {
+      calls += 1
+      await gate
+      return [TEXT_EDIT]
+    })
+
+    const first = listInstalledApps()
+    const second = listInstalledApps()
+    expect(calls).toBe(1)
+    release()
+    const [a, b] = await Promise.all([first, second])
+    expect(a).toBe(b)
+    expect(a).toEqual([TEXT_EDIT])
+    const cached = await listInstalledApps()
+    expect(cached).toBe(a)
+    expect(calls).toBe(1)
+  })
 })

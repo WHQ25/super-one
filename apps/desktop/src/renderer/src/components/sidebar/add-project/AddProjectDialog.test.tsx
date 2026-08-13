@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { AddProjectDialog } from './AddProjectDialog'
+import { setAddProjectHookDelayForTests } from './use-add-project-dialog'
 
 const browsePath = vi.fn()
 const openProject = vi.fn()
@@ -34,9 +35,12 @@ const input = () => screen.getByRole('textbox') as HTMLInputElement
  * spans, which strips the spaces out of the computed accessible name.
  */
 const rowTexts = () => screen.getAllByRole('button').map((b) => b.textContent ?? '')
+const highlightedText = (row: HTMLElement) =>
+  [...row.querySelectorAll('.text-highlighted')].map((el) => el.textContent ?? '').join('')
 
 describe('add-project dialog', () => {
   beforeEach(() => {
+    setAddProjectHookDelayForTests(0)
     browsePath.mockResolvedValue({
       path: '/Users/dev/Projects',
       entries: [
@@ -113,6 +117,7 @@ describe('add-project dialog', () => {
   })
 
   afterEach(() => {
+    setAddProjectHookDelayForTests(null)
     cleanup()
     vi.clearAllMocks()
   })
@@ -392,6 +397,20 @@ describe('add-project dialog', () => {
     fireEvent.keyDown(input(), { key: 'Enter' })
     await screen.findByText('Repository')
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/'))
+  })
+
+  it('highlights the owner and repo prefix on owner/ search hits', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    await waitFor(() => expect(listMyGithubRepos).toHaveBeenCalled())
+
+    fireEvent.change(input(), { target: { value: 'WHQ25/' } })
+    const ownerOnly = await screen.findByRole('button', { name: /WHQ25\/super-one/ })
+    expect(highlightedText(ownerOnly)).toBe('WHQ25')
+
+    fireEvent.change(input(), { target: { value: 'WHQ25/super' } })
+    const ownerAndPrefix = await screen.findByRole('button', { name: /WHQ25\/super-one/ })
+    expect(highlightedText(ownerAndPrefix)).toBe('WHQ25/super')
   })
 
   it('still searches the source labels when the text is not a path or repo', () => {

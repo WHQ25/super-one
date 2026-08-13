@@ -3,6 +3,7 @@ import { ComputerUseService } from '../computer-use-service'
 import { ComputerUsePolicy } from '../policy'
 import {
   clearInstalledAppCacheForTests,
+  setInstalledAppsCatalogForTests,
   setResolveInstalledAppForTests,
 } from '../resolve-installed-app'
 import type { PlatformAdapter, PlatformLook } from '../platform/types'
@@ -48,6 +49,7 @@ describe('P2 service policy + foreground gate', () => {
   let frontmostBundle: string
 
   beforeEach(() => {
+    setInstalledAppsCatalogForTests([])
     setResolveInstalledAppForTests(async (query) => {
       const normalized = query.toLowerCase()
       if (normalized === 'textedit' || normalized === 'com.apple.textedit') {

@@ -887,10 +887,9 @@ describe('sendMessageImpl: miniapp authorize', () => {
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('miniapp authorize failed'), expect.any(Error))
   })
 
-  it('authorizes against the freshly-created codex session id on the first codex turn (not the stale captured id)', async () => {
-    // Fresh codex-preferred session that is not yet a codex session: the first send creates a
-    // new local codex _activeSessionId via set(). Regression: authorize used the stale `project`
-    // snapshot (still 'sid-1'/null), so it targeted the wrong session — or was skipped entirely.
+  it('authorizes the empty draft in place on the first Codex turn (same SuperOne sid)', async () => {
+    // Empty drafts promote to Codex without minting a new sid. Authorize must
+    // still run against that live id — not skip because the snapshot was stale.
     seedProject('/proj', 'sid-1', {
       preferredProvider: 'codex',
       sessionProvider: undefined,
@@ -903,11 +902,8 @@ describe('sendMessageImpl: miniapp authorize', () => {
     const [appIds, proj, sid] = mockMiniAppAuthorize.mock.calls[0]
     expect(appIds).toEqual(['excalidraw'])
     expect(proj).toBe('/proj')
-    // The new codex session id, not the stale captured one (and not skipped entirely).
-    expect(sid).not.toBe('sid-1')
-    expect(typeof sid).toBe('string')
-    expect(sid).toBeTruthy()
-    // The authorized id matches the session the first codex turn actually runs on.
-    expect(useChatStore.getState().projectSessions['/proj']._activeSessionId).toBe(sid)
+    expect(sid).toBe('sid-1')
+    expect(useChatStore.getState().projectSessions['/proj']._activeSessionId).toBe('sid-1')
+    expect(useChatStore.getState().projectSessions['/proj']._sessions['sid-1'].sessionProvider).toBe('codex')
   })
 })

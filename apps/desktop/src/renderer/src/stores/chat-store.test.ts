@@ -3793,7 +3793,7 @@ describe('task_started event', () => {
     expect(progress.toolUses).toBe(2)
   })
 
-  it('preserves completed background task state across late progress updates', () => {
+  it('treats late task_progress as live and clears a sticky completed flag', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent(makeEvent({
       type: 'task_started',
@@ -3823,7 +3823,7 @@ describe('task_started event', () => {
     expect(progress.description).toBe('late progress')
     expect(progress.totalTokens).toBe(100)
     expect(progress.toolUses).toBe(2)
-    expect(progress.completed).toBe(true)
+    expect(progress.completed).toBe(false)
     expect(progress.outputFile).toBe('/tmp/out.log')
   })
 

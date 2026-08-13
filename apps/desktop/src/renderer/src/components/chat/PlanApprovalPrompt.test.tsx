@@ -158,7 +158,7 @@ beforeEach(() => {
 })
 
 describe('PlanApprovalPrompt — integration', () => {
-  it('scenario: user in plan mode approves with Accept Edits toggle → both IPCs fire and store reflects acceptEdits', () => {
+  it('scenario: user in plan mode approves with Auto toggle → both IPCs fire and store reflects auto', () => {
     seedPlanApprovalState('plan')
     renderInChat(<PlanApprovalPrompt />)
 
@@ -168,15 +168,15 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
       expect.any(String), 'plan-req-1', true, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'acceptEdits')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
 
     const session = activeSession()
-    expect(session.permissionMode).toBe('acceptEdits')
+    expect(session.permissionMode).toBe('auto')
     expect(session.pendingPlanApproval).toBeNull()
     expect(session.planApprovalOutcome).toEqual({ approved: true, feedback: undefined })
   })
 
-  it('scenario: Shift+Tab shortcut approves with acceptEdits directly', () => {
+  it('scenario: Shift+Tab shortcut approves with auto directly', () => {
     seedPlanApprovalState('plan')
     renderInChat(<PlanApprovalPrompt />)
 
@@ -185,8 +185,8 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
       expect.any(String), 'plan-req-1', true, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'acceptEdits')
-    expect(activeSession().permissionMode).toBe('acceptEdits')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(activeSession().permissionMode).toBe('auto')
   })
 
   it('scenario: user approves without acceptEdits toggle → setPermissionMode falls back to default', () => {
@@ -227,7 +227,7 @@ describe('PlanApprovalPrompt — integration', () => {
     ;(container.querySelector('[data-chat-root]') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'Enter' })
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'acceptEdits')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
   })
 
   it('scenario: account+model support auto mode → toggle switches post-approval mode to "auto"', () => {

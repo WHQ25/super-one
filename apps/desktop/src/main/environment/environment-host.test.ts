@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 
 const electron = vi.hoisted(() => {
   const store = new Map<string, string>()
@@ -39,17 +39,37 @@ import { ConnectionSupervisor } from './connection-supervisor'
 import { ConnectionSupervisorCore } from '@superone/shared/environment'
 
 const dirs: string[] = []
-const runtimes: NodeRuntime[] = []
+let sharedRuntime: NodeRuntime | null = null
+let sharedNodeHome: string | null = null
 
-afterEach(async () => {
+afterEach(() => {
   resetEnvironmentHostForTests()
-  while (runtimes.length) {
-    const rt = runtimes.pop()
-    if (rt) await rt.stop().catch(() => {})
-  }
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   electron.store.clear()
 })
+
+afterAll(async () => {
+  if (sharedRuntime) {
+    await sharedRuntime.stop().catch(() => {})
+    sharedRuntime = null
+  }
+  if (sharedNodeHome) {
+    rmSync(sharedNodeHome, { recursive: true, force: true })
+    sharedNodeHome = null
+  }
+})
+
+async function bootNode(): Promise<NodeRuntime> {
+  if (sharedRuntime) return sharedRuntime
+  sharedNodeHome = mkdtempSync(join(tmpdir(), 'eh-node-'))
+  sharedRuntime = await startNodeRuntime({
+    nodeHome: sharedNodeHome,
+    bindHost: '127.0.0.1',
+    bindPort: 35000 + Math.floor(Math.random() * 1000),
+    simulatedHarness: true,
+  })
+  return sharedRuntime
+}
 
 describe('EnvironmentHost product path', () => {
   it('constructs WorkspaceRouter and routes remote listDir without local FS', async () => {
@@ -57,14 +77,11 @@ describe('EnvironmentHost product path', () => {
     electron.setUserData(ud)
     dirs.push(ud)
 
-    const nodeHome = mkdtempSync(join(tmpdir(), 'eh-node-'))
     const projectDir = mkdtempSync(join(tmpdir(), 'eh-proj-'))
-    dirs.push(nodeHome, projectDir)
+    dirs.push(projectDir)
     writeFileSync(join(projectDir, 'a.txt'), 'via-host')
 
-    const port = 35000 + Math.floor(Math.random() * 1000)
-    const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: port, simulatedHarness: true })
-    runtimes.push(rt)
+    const rt = await bootNode()
 
     const host = new EnvironmentHost(ud)
     expect(host.workspaceRouter).toBeTruthy()
@@ -136,19 +153,11 @@ describe('EnvironmentHost product path', () => {
     electron.setUserData(ud)
     dirs.push(ud)
 
-    const nodeHome = mkdtempSync(join(tmpdir(), 'eh-cursor-node-'))
     const projectDir = mkdtempSync(join(tmpdir(), 'eh-cursor-proj-'))
-    dirs.push(nodeHome, projectDir)
+    dirs.push(projectDir)
     writeFileSync(join(projectDir, 'a.txt'), 'x')
 
-    const port = 35100 + Math.floor(Math.random() * 1000)
-    const rt = await startNodeRuntime({
-      nodeHome,
-      bindHost: '127.0.0.1',
-      bindPort: port,
-      simulatedHarness: true,
-    })
-    runtimes.push(rt)
+    const rt = await bootNode()
 
     const host = new EnvironmentHost(ud)
     const pair = rt.auth.createPairingToken()

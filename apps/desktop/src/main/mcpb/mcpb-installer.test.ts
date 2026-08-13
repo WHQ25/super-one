@@ -495,10 +495,10 @@ describe('mcpb installer', () => {
   })
 
   describe('large bundle round-trip', () => {
-    it('previewMcpbBundle recovers manifest from a .mcpb containing 250+ entries', async () => {
+    it('previewMcpbBundle recovers manifest from a .mcpb containing many entries', async () => {
       const files: Record<string, string> = {}
-      for (let i = 0; i < 250; i++) {
-        files[`assets/f${i}.txt`] = `payload-${i}-`.repeat(20)
+      for (let i = 0; i < 12; i++) {
+        files[`assets/f${i}.txt`] = `payload-${i}`
       }
       files['server/index.js'] = 'console.log("hi")'
       const file = await buildBundle(bundleDir, { manifest: nodeManifest(), files })

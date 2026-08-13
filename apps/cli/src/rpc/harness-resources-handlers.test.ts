@@ -80,7 +80,8 @@ describe('harness.resources RPC', () => {
 
   it('harness.connect is an alias', async () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'hr-alias-'))
-    dirs.push(projectDir)
+    const homeDir = mkdtempSync(join(tmpdir(), 'hr-alias-home-'))
+    dirs.push(projectDir, homeDir)
     const projects = {
       get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
       touch: () => {},
@@ -98,6 +99,8 @@ describe('harness.resources RPC', () => {
         client: client(['environment:read', 'workspace:read']),
         projects,
         providers,
+        homeDir,
+        probeModels: async () => [],
       },
     )
     expect(res?.error).toBeUndefined()

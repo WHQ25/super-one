@@ -28,12 +28,12 @@ import { openNodeDatabase } from '../../../../../apps/cli/src/db/database'
 import { EventLog } from '../../../../../apps/cli/src/session/event-log'
 import { ControlLeaseService } from '../../../../../apps/cli/src/session/control-lease'
 import { SessionRuntime } from '../../../../../apps/cli/src/session/session-runtime'
-import { createMultiHarnessRouter, PHASE4_HARNESS_IDS } from '../../../../../apps/cli/src/session/harness-runners'
+import { createMultiHarnessRouter } from '../../../../../apps/cli/src/session/harness-runners'
 import { startNodeRuntime, type NodeRuntime } from '../../../../../apps/cli/src/runtime'
 import { LocalEnvironmentGateway } from './local-environment-gateway'
 import { NodeConnectionManager } from './node-connection-manager'
 import { NodeCredentialStore } from './node-credential-store'
-import type { EnvironmentGateway } from '@superone/shared/environment'
+import { LOCAL_ENVIRONMENT_CAPABILITIES, type EnvironmentGateway } from '@superone/shared/environment'
 import type { HarnessId } from '@superone/shared/session-types'
 
 const dirs: string[] = []
@@ -125,13 +125,15 @@ describe('local vs remote gateway harness parity', () => {
 
     const localDesc = await localGw.getDescriptor()
     const remoteDesc = await remoteGw.getDescriptor()
-    // Remote advertises all four; local capabilities include all four
-    for (const id of PHASE4_HARNESS_IDS) {
-      expect(localDesc.capabilities.harnessIds).toContain(id)
+    // Local desktop still hosts the original four. Cursor is on the node
+    // catalog (PHASE4) but not LOCAL_ENVIRONMENT_CAPABILITIES yet.
+    const sharedIds = LOCAL_ENVIRONMENT_CAPABILITIES.harnessIds
+    expect(localDesc.capabilities.harnessIds).toEqual(sharedIds)
+    for (const id of sharedIds) {
       expect(remoteDesc.capabilities.harnessIds).toContain(id)
     }
 
-    for (const harnessId of PHASE4_HARNESS_IDS as HarnessId[]) {
+    for (const harnessId of sharedIds as HarnessId[]) {
       // Local path
       const localCreated = await localGw.sessions.create({
         project: { environmentId: localGw.getEnvironmentId(), projectId: 'local-proj' },

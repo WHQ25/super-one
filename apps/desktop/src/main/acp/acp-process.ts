@@ -6,7 +6,12 @@ import log from '../logger'
 import { buildSafeEnv } from '../spawn-env'
 import type { ResolvedAcpLaunch } from './agent-catalog'
 
-const KILL_ESCALATE_MS = 1500
+let killEscalateMs = 1500
+
+/** Test hook: shorten SIGTERM→SIGKILL grace so unit tests do not sleep 1.5s. */
+export function setAcpKillEscalateMsForTests(ms: number | null): void {
+  killEscalateMs = ms == null ? 1500 : ms
+}
 
 export interface AcpProcessHandle {
   child: ChildProcess
@@ -33,7 +38,7 @@ async function stopProcess(
   signalProcess(child, 'SIGTERM')
   const stopped = await Promise.race([
     closed.then(() => true),
-    new Promise<false>((resolve) => setTimeout(() => resolve(false), KILL_ESCALATE_MS)),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), killEscalateMs)),
   ])
   if (stopped) return
   signalProcess(child, 'SIGKILL')

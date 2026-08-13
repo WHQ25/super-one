@@ -1,67 +1,79 @@
-import { describe, it, expect, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+const spawn = vi.hoisted(() => vi.fn())
+
+vi.mock('child_process', () => ({ spawn }))
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
-import { spawnAcpProcess } from './acp-process'
+import { setAcpKillEscalateMsForTests, spawnAcpProcess } from './acp-process'
 
-/**
- * Use real node child processes so we exercise the SIGTERM→SIGKILL path
- * without mocking stream plumbing that ndJsonStream depends on.
- */
-function nodeLaunch(script: string) {
-  return {
-    agentId: 'test',
-    command: process.execPath,
-    args: ['-e', script],
-    env: {},
-    cwd: process.cwd(),
-  }
+type FakeChild = EventEmitter & {
+  stdin: PassThrough
+  stdout: PassThrough
+  stderr: PassThrough
+  exitCode: number | null
+  signalCode: NodeJS.Signals | null
+  ignoreTerm: boolean
+  kill: (signal?: NodeJS.Signals) => boolean
 }
 
-async function waitForReady(child: { stderr: NodeJS.ReadableStream | null }, token = 'ready'): Promise<void> {
-  const stderr = child.stderr
-  if (!stderr) throw new Error('missing stderr')
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('child never became ready')), 5000)
-    const onData = (chunk: Buffer | string) => {
-      if (String(chunk).includes(token)) {
-        clearTimeout(timer)
-        stderr.off('data', onData)
-        resolve()
-      }
-    }
-    stderr.on('data', onData)
-  })
+function fakeChild(ignoreTerm: boolean): FakeChild {
+  const child = new EventEmitter() as FakeChild
+  child.stdin = new PassThrough()
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  child.exitCode = null
+  child.signalCode = null
+  child.ignoreTerm = ignoreTerm
+  child.kill = (signal?: NodeJS.Signals) => {
+    if (signal === 'SIGTERM' && child.ignoreTerm) return true
+    child.signalCode = signal ?? 'SIGTERM'
+    queueMicrotask(() => child.emit('exit', null, child.signalCode))
+    return true
+  }
+  return child
 }
 
 describe('spawnAcpProcess kill escalation', () => {
-  it('escalates to SIGKILL when the agent ignores SIGTERM', async () => {
-    const handle = spawnAcpProcess(nodeLaunch(`
-      process.on('SIGTERM', () => {});
-      process.stderr.write('ready\\n');
-      setInterval(() => {}, 60_000);
-    `))
+  afterEach(() => {
+    setAcpKillEscalateMsForTests(null)
+    spawn.mockReset()
+  })
 
-    await waitForReady(handle.child)
+  it('escalates to SIGKILL when the agent ignores SIGTERM', async () => {
+    setAcpKillEscalateMsForTests(1)
+    const child = fakeChild(true)
+    spawn.mockReturnValue(child)
+    const handle = spawnAcpProcess({
+      agentId: 'test',
+      command: 'acp',
+      args: [],
+      env: {},
+      cwd: process.cwd(),
+    })
     const closed = handle.closed
     await handle.kill()
     const info = await closed
     expect(info.signal).toBe('SIGKILL')
-  }, 10_000)
+  })
 
   it('stops on SIGTERM when the agent exits cleanly', async () => {
-    const handle = spawnAcpProcess(nodeLaunch(`
-      process.stderr.write('ready\\n');
-      setInterval(() => {}, 60_000);
-    `))
-
-    await waitForReady(handle.child)
+    const child = fakeChild(false)
+    spawn.mockReturnValue(child)
+    const handle = spawnAcpProcess({
+      agentId: 'test',
+      command: 'acp',
+      args: [],
+      env: {},
+      cwd: process.cwd(),
+    })
     const closed = handle.closed
     await handle.kill()
     const info = await closed
-    // Node exits on SIGTERM by default
     expect(info.signal).toBe('SIGTERM')
-  }, 10_000)
+  })
 })

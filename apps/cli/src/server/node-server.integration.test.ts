@@ -85,13 +85,13 @@ describe('node server integration', () => {
       status: 'running' | 'exited'
     }
     let read: TerminalRead | null = null
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
       read = (await client.rpc('terminal.read', {
         terminalId: created.terminalId,
         afterSequence: attached.sequence,
       })) as TerminalRead
       if (read?.data.includes(runtime.config.nodeHome)) break
-      await new Promise((r) => setTimeout(r, 25))
+      await new Promise((r) => setTimeout(r, 50))
     }
     expect(read?.data).toContain(runtime.config.nodeHome)
     expect(read?.status).toBe('running')

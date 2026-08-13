@@ -33,6 +33,9 @@ let inFlightScan: Promise<ResolvedInstalledApp[]> | null = null
 let testOverride:
   | ((query: string) => Promise<ResolvedInstalledApp | null> | ResolvedInstalledApp | null)
   | null = null
+/** Instant catalog for unit tests — skips mdfind + filesystem walk. */
+let testCatalog: ResolvedInstalledApp[] | null = null
+let testScan: (() => Promise<ResolvedInstalledApp[]>) | null = null
 
 export function setResolveInstalledAppForTests(
   fn: typeof testOverride,
@@ -40,11 +43,27 @@ export function setResolveInstalledAppForTests(
   testOverride = fn
 }
 
+export function setInstalledAppsCatalogForTests(apps: ResolvedInstalledApp[] | null): void {
+  testCatalog = apps
+  cache = null
+  inFlightScan = null
+}
+
+export function setInstalledAppsScanForTests(
+  fn: (() => Promise<ResolvedInstalledApp[]>) | null,
+): void {
+  testScan = fn
+  cache = null
+  inFlightScan = null
+}
+
 /** Test helper. */
 export function clearInstalledAppCacheForTests(): void {
   cache = null
   inFlightScan = null
   testOverride = null
+  testCatalog = null
+  testScan = null
 }
 
 /**
@@ -60,7 +79,8 @@ export async function resolveInstalledApp(
   if (testOverride) return testOverride(q)
 
   // Reverse-DNS bundle ids: LaunchServices first, then scan index.
-  if (looksLikeBundleId(q)) {
+  // Tests inject a catalog and must not spawn mdfind.
+  if (looksLikeBundleId(q) && !testCatalog && !testScan) {
     const byId = await resolveByBundleId(q)
     if (byId) return byId
   }
@@ -120,10 +140,11 @@ function synthetic(path: string, bundleId: string): ResolvedInstalledApp {
  * Async so cold scan never blocks the Electron main thread with sync I/O / plutil.
  */
 export async function listInstalledApps(): Promise<ResolvedInstalledApp[]> {
+  if (testCatalog) return testCatalog
   if (cache && Date.now() - cache.at < SCAN_TTL_MS) return cache.apps
   if (inFlightScan) return inFlightScan
 
-  inFlightScan = scanInstalledApps()
+  inFlightScan = (testScan ?? scanInstalledApps)()
     .then((apps) => {
       cache = { at: Date.now(), apps }
       return apps

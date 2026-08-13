@@ -7,6 +7,13 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+
+/** Unit tests set this to 0 so debounce does not pad every case by 100–1000ms. */
+let testDelayMs: number | null = null
+
+export function setAddProjectHookDelayForTests(ms: number | null): void {
+  testDelayMs = ms
+}
 import { useTranslation } from 'react-i18next'
 import {
   buildGitHubCloneUrl,
@@ -237,7 +244,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         .finally(() => {
           if (requestId === requestIdRef.current) setBrowseLoading(false)
         })
-    }, 100)
+    }, testDelayMs ?? 100)
 
     return () => window.clearTimeout(timer)
   }, [open, isPathStep, connectionId, browseDir, query])
@@ -325,7 +332,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         .finally(() => {
           if (requestId === githubRequestIdRef.current) setGithubLoading(false)
         })
-    }, 200)
+    }, testDelayMs ?? 200)
 
     return () => window.clearTimeout(timer)
   }, [open, isGithubRepoStep, githubSearch?.owner])
@@ -401,7 +408,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     const requestId = ++githubQueryRequestIdRef.current
     setGithubQueryLoading(true)
 
-    const delay = githubRepoNameSearchDelay(Date.now(), githubQueryLastSentAtRef.current)
+    const delay = testDelayMs ?? githubRepoNameSearchDelay(Date.now(), githubQueryLastSentAtRef.current)
     const timer = window.setTimeout(() => {
       githubQueryLastSentAtRef.current = Date.now()
       void window.app
@@ -652,11 +659,19 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         const match = filter
           ? fuzzyMatch(filter, haystack)
           : { match: true, score: 0, indices: [] as number[] }
-        // For my-repos name-only filter, rematch fullName for highlight when needed.
-        const labelMatch =
-          filter && !githubSearch && !filter.includes('/')
-            ? fuzzyMatch(filter, repo.fullName)
-            : match
+        // Highlight against fullName: owner search must include the owner
+        // segment (filter is prefix-only), and my-repos name filter rematches
+        // because the haystack was the repo name.
+        const highlightQuery = githubSearch
+          ? githubSearch.repoPrefix
+            ? `${githubSearch.owner}/${githubSearch.repoPrefix}`
+            : githubSearch.owner
+          : filter && !filter.includes('/')
+            ? filter
+            : ''
+        const labelMatch = highlightQuery
+          ? fuzzyMatch(highlightQuery.toLowerCase(), repo.fullName)
+          : match
         return { repo, match, labelMatch }
       })
       .filter(({ match }) => match.match)
@@ -831,7 +846,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
 
     const timer = window.setTimeout(() => {
       goToStep(advance.step, advance.query)
-    }, 120)
+    }, testDelayMs ?? 120)
     return () => window.clearTimeout(timer)
   }, [open, step.kind, query, initialPath, goToStep])
 

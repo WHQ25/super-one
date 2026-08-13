@@ -35,9 +35,9 @@ describe('CodexSkillsRpcService.list', () => {
     })
     const result = await service.list('/p')
     expect(result).toEqual([
-      { name: 'lint', displayName: 'lint', scope: 'user', description: 'Run lint', argumentHint: '', hasConfig: false, sourcePath: '/home/u/.codex/skills/lint' },
-      { name: 'review', displayName: 'PR Review', scope: 'project', description: 'Review repo PRs', argumentHint: '', hasConfig: false, sourcePath: '/p/.codex/skills/review' },
-      { name: 'docs', displayName: 'docs', scope: 'user', description: 'Built-in docs', argumentHint: '', hasConfig: false, sourcePath: '/etc/codex/skills/docs', builtin: true },
+      { name: 'lint', displayName: 'lint', scope: 'user', description: 'Run lint', argumentHint: '', hasConfig: false, sourcePath: '/home/u/.codex/skills/lint', enabled: true },
+      { name: 'review', displayName: 'PR Review', scope: 'project', description: 'Review repo PRs', argumentHint: '', hasConfig: false, sourcePath: '/p/.codex/skills/review', enabled: true },
+      { name: 'docs', displayName: 'docs', scope: 'user', description: 'Built-in docs', argumentHint: '', hasConfig: false, sourcePath: '/etc/codex/skills/docs', enabled: true, builtin: true },
     ])
   })
 

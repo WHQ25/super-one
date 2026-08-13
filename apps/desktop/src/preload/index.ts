@@ -1175,18 +1175,26 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_TOGGLE, name, disabled),
 
   // Codex Skills
-  codexListSkills: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_LIST, projectPath),
+  codexListSkills: (projectPath: string, opts?: { forceReload?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_LIST, projectPath, opts),
   codexReadSkill: (projectPath: string, name: string, sourcePath?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ, projectPath, name, sourcePath),
   codexReadSkillFile: (projectPath: string, skillName: string, relativePath: string, sourcePath?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ_FILE, projectPath, skillName, relativePath, sourcePath),
   codexDeleteSkill: (projectPath: string, sourcePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_DELETE, projectPath, sourcePath),
+  codexToggleSkill: (projectPath: string, selector: { name?: string; path?: string }, enabled: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_TOGGLE, projectPath, selector, enabled),
 
   // Codex Hooks (read-only)
-  codexListHooks: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_HOOKS_LIST, projectPath),
+  codexListHooks: (projectPath: string, opts?: { forceReload?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_HOOKS_LIST, projectPath, opts),
+  codexGetMcpStatus: (projectPath: string, serverName?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_STATUS, projectPath, serverName),
+  codexReadMcpResource: (projectPath: string, serverName: string, uri: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_RESOURCE_READ, projectPath, serverName, uri),
+  codexCallMcpTool: (projectPath: string, threadId: string, serverName: string, toolName: string, toolArguments?: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_TOOL_CALL, projectPath, threadId, serverName, toolName, toolArguments),
 
   // Codex Goal
   codexGetGoal: (sessionId: string, threadId: string) =>

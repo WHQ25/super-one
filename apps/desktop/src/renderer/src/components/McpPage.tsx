@@ -475,7 +475,7 @@ export function McpPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
-  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, mcpbInstalled, codexMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, selectMcp, toggleMcpConfig } = useSettingsStore()
+  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, mcpbInstalled, codexMcpConfigs, codexMcpStatus, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, fetchCodexMcpStatus, selectMcp, toggleMcpConfig } = useSettingsStore()
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
   const [refreshing, setRefreshing] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -489,18 +489,20 @@ export function McpPage() {
     fetchMcpLibrary()
     if (isCodex) {
       fetchCodexMcpConfigs()
+      fetchCodexMcpStatus()
     } else {
       fetchMcpConfigs()
       setChecking(true)
       checkMcpServers().finally(() => setChecking(false))
     }
-  }, [currentFolder, isCodex, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, selectMcp])
+  }, [currentFolder, isCodex, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, fetchCodexMcpStatus, selectMcp])
 
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
       if (isCodex) {
         await fetchCodexMcpConfigs()
+        await fetchCodexMcpStatus()
       } else {
         await checkMcpServers()
       }
@@ -518,13 +520,16 @@ export function McpPage() {
   const userConfigs = currentConfigs.filter((c) => c.scope === 'user')
   const projectConfigs = currentConfigs.filter((c) => c.scope === 'project')
   const scopedConfigs = scope === 'user' ? userConfigs : projectConfigs
-  const codexCardStatus = currentConfigs.map((config) => ({
-    name: config.name,
-    scope: config.scope,
-    status: config.disabled ? 'disabled' : 'connected',
-    toolCount: 0,
-    tools: [],
-  })) as McpServerInfo[]
+  const codexCardStatus = currentConfigs.map((config) =>
+    codexMcpStatus.find((status) => status.name === config.name) ?? {
+      name: config.name,
+      scope: config.scope,
+      status: config.disabled ? 'disabled' : 'pending',
+      toolCount: 0,
+      tools: [],
+      stale: true,
+    },
+  ) as McpServerInfo[]
 
   if (selectedMcpName) {
     if (!isCodex) {

@@ -1959,8 +1959,39 @@ function registerIpcHandlers(): void {
     return codexService.setAuth(projectPath, request)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_HOOKS_LIST, (_event, projectPath: string) => {
-    return codexHooksService.list(projectPath)
+  ipcMain.handle(AgentIpcChannels.CODEX_HOOKS_LIST, (_event, projectPath: string, opts?: { forceReload?: boolean }) => {
+    return codexHooksService.list(projectPath, opts)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_STATUS, async (_event, projectPath: string, serverName?: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      throw new Error('Codex MCP status for remote projects must be provided by the remote node')
+    }
+    const statuses = await codexService.withAppServerRequest(projectPath, async (request) => {
+      const result = await request('mcpServerStatus/list', {
+        detail: 'full',
+      })
+      return Array.isArray(result.data) ? result.data : []
+    })
+    const { mapCodexMcpStatusForIpc } = await import('./codex/codex-mcp-status')
+    const mapped = statuses.map(mapCodexMcpStatusForIpc).filter((entry): entry is import('@superone/shared/agent-types').McpServerInfo => entry !== null)
+    return serverName ? mapped.filter((entry) => entry.name === serverName) : mapped
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_RESOURCE_READ, async (_event, projectPath: string, serverName: string, uri: string) => {
+    if (!serverName.trim() || !uri.trim()) throw new Error('MCP resource requires server and uri')
+    if (parseRemoteProjectKey(projectPath)) throw new Error('Codex MCP resource reads for remote projects are not supported by the local bridge')
+    return codexService.withAppServerRequest(projectPath, async (request) =>
+      request('mcpServer/resource/read', { server: serverName, uri }),
+    )
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_TOOL_CALL, async (_event, projectPath: string, threadId: string, serverName: string, toolName: string, args?: Record<string, unknown>) => {
+    if (!threadId.trim() || !serverName.trim() || !toolName.trim()) throw new Error('MCP tool call requires threadId, server and tool')
+    if (parseRemoteProjectKey(projectPath)) throw new Error('Codex MCP tool calls for remote projects are not supported by the local bridge')
+    return codexService.withAppServerRequest(projectPath, async (request) =>
+      request('mcpServer/tool/call', { threadId, server: serverName, tool: toolName, arguments: args ?? {} }),
+    )
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_GOAL_GET, (_event, sessionId: string, threadId: string) => {

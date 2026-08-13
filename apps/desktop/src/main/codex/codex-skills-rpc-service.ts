@@ -48,6 +48,7 @@ function mapSkill(raw: unknown, fileExists: (path: string) => boolean): SkillInf
     argumentHint: '',
     hasConfig,
     sourcePath: skillDir,
+    ...(readBoolean(rec.enabled) !== null ? { enabled: readBoolean(rec.enabled)! } : {}),
     ...(readOnly ? { builtin: true } : {}),
   }
 }
@@ -66,9 +67,9 @@ export class CodexSkillsRpcService {
     this.fileExists = opts.fileExists ?? existsSync
   }
 
-  async list(projectPath: string): Promise<SkillInfo[]> {
+  async list(projectPath: string, opts: { forceReload?: boolean } = {}): Promise<SkillInfo[]> {
     return this.codexService.withAppServerRequest(projectPath, async (rpc) => {
-      const result = await rpc('skills/list', { cwds: projectPath ? [projectPath] : [] })
+      const result = await rpc('skills/list', { cwds: projectPath ? [projectPath] : [], ...(opts.forceReload ? { forceReload: true } : {}) })
       const data = Array.isArray(result.data) ? result.data : []
       const skills: SkillInfo[] = []
       const seen = new Set<string>()

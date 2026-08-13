@@ -62,7 +62,7 @@ export function CodexHooksPanel() {
     setLoading(true)
     setError(null)
     try {
-      const result = await window.app.codexListHooks(currentFolder)
+      const result = await window.app.codexListHooks(currentFolder, { forceReload: true })
       setGroups(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

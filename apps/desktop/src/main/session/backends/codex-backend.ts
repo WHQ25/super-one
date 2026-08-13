@@ -135,7 +135,7 @@ export function setCodexServiceFactory(factory: (() => CodexServiceDeps) | null)
 
 function mapCodexMcpServerStatus(raw: unknown): McpServerInfo | null {
   if (!raw || typeof raw !== 'object') return null
-  const entry = raw as { name?: unknown; serverInfo?: unknown; tools?: unknown; authStatus?: unknown }
+  const entry = raw as { name?: unknown; serverInfo?: unknown; tools?: unknown; resources?: unknown; authStatus?: unknown }
   const name = typeof entry.name === 'string' ? entry.name : ''
   if (!name) return null
   // Codex authStatus: 'unsupported' (no auth concept — the normal state for plain
@@ -161,7 +161,30 @@ function mapCodexMcpServerStatus(raw: unknown): McpServerInfo | null {
       ...(typeof t.description === 'string' ? { description: t.description } : {}),
     }))
     .filter((t) => t.name)
-  return { name, status, toolCount: tools.length, tools }
+  const resourcesValue = entry.resources
+  const resourcesRecord = Array.isArray(resourcesValue)
+    ? resourcesValue
+    : resourcesValue && typeof resourcesValue === 'object'
+      ? Object.values(resourcesValue as Record<string, { uri?: unknown; name?: unknown; description?: unknown; mimeType?: unknown }>)
+      : []
+  const resources = resourcesRecord
+    .filter((resource): resource is { uri?: unknown; name?: unknown; description?: unknown; mimeType?: unknown } => resource != null && typeof resource === 'object')
+    .map((resource) => ({
+      uri: typeof resource.uri === 'string' ? resource.uri : '',
+      ...(typeof resource.name === 'string' ? { name: resource.name } : {}),
+      ...(typeof resource.description === 'string' ? { description: resource.description } : {}),
+      ...(typeof resource.mimeType === 'string' ? { mimeType: resource.mimeType } : {}),
+    }))
+    .filter((resource) => resource.uri)
+  return {
+    name,
+    status,
+    toolCount: tools.length,
+    tools,
+    ...(resources.length > 0 ? { resources } : {}),
+    authStatus: entry.authStatus === 'notLoggedIn' ? 'needs-auth' : entry.authStatus === 'bearerToken' || entry.authStatus === 'oAuth' ? 'authenticated' : 'unknown',
+    fetchedAt: Date.now(),
+  }
 }
 
 export class CodexBackend implements SessionBackend {

@@ -283,13 +283,17 @@ interface AppAPI {
   toggleSkill(name: string, disabled: boolean): Promise<string[]>
 
   // Codex Skills
-  codexListSkills(projectPath: string): Promise<SkillInfo[]>
+  codexListSkills(projectPath: string, opts?: { forceReload?: boolean }): Promise<SkillInfo[]>
   codexReadSkill(projectPath: string, name: string, sourcePath?: string): Promise<SkillDetail | null>
   codexReadSkillFile(projectPath: string, skillName: string, relativePath: string, sourcePath?: string): Promise<string | null>
   codexDeleteSkill(projectPath: string, sourcePath: string): Promise<void>
+  codexToggleSkill(projectPath: string, selector: { name?: string; path?: string }, enabled: boolean): Promise<void>
 
   // Codex Hooks (read-only)
-  codexListHooks(projectPath: string): Promise<CodexHookGroup[]>
+  codexListHooks(projectPath: string, opts?: { forceReload?: boolean }): Promise<CodexHookGroup[]>
+  codexGetMcpStatus(projectPath: string, serverName?: string): Promise<McpServerInfo[]>
+  codexReadMcpResource(projectPath: string, serverName: string, uri: string): Promise<Record<string, unknown> | null>
+  codexCallMcpTool(projectPath: string, threadId: string, serverName: string, toolName: string, toolArguments?: Record<string, unknown>): Promise<Record<string, unknown>>
 
   // Codex Goal
   codexGetGoal(sessionId: string, threadId: string): Promise<CodexGoal | null>

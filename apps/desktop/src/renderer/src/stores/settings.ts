@@ -69,7 +69,9 @@ interface SettingsState {
 
   // Codex MCP config (separate field — read-only)
   codexMcpConfigs: McpServerConfig[]
+  codexMcpStatus: McpServerInfo[]
   fetchCodexMcpConfigs: () => Promise<void>
+  fetchCodexMcpStatus: (serverName?: string) => Promise<void>
 
   // MCP library
   mcpLibrary: McpLibraryEntry[]
@@ -167,6 +169,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   mcpMeta: {},
   selectedMcpName: null,
   codexMcpConfigs: [],
+  codexMcpStatus: [],
   mcpLibrary: [],
   mcpbInstalled: [],
   platforms: [],
@@ -481,6 +484,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       localListCodexMcp: (path) => window.app.codexListMcpConfigs(path),
     })
     set({ codexMcpConfigs })
+  },
+
+  fetchCodexMcpStatus: async (serverName) => {
+    try {
+      const result = await window.app.codexGetMcpStatus(getProjectPath(), serverName)
+      set({ codexMcpStatus: Array.isArray(result) ? result : [] })
+    } catch {
+      set({ codexMcpStatus: [] })
+    }
   },
 
   fetchMcpLibrary: async () => {

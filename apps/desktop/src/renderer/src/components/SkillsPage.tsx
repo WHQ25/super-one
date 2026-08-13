@@ -146,7 +146,7 @@ function getSkillKind(skill: SkillInfo, readOnly?: boolean): 'builtin' | 'plugin
 
 function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: string; readOnly?: boolean }) {
   const { t } = useTranslation()
-  const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill, disabledSkills, toggleSkill } = useSettingsStore()
+  const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill, disabledSkills, toggleSkill, fetchCodexSkills } = useSettingsStore()
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const isCodex = settingsProvider === 'codex'
   const isExpanded = skillDetail?.sourcePath === skill.sourcePath
@@ -157,8 +157,8 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const canDelete = !readOnly && !skill.name.includes(':') && !skill.builtin
   const skillKind = getSkillKind(skill, readOnly)
-  const isHidden = !isCodex && disabledSkills.includes(skill.name)
-  const canToggle = !isCodex
+  const isHidden = isCodex ? skill.enabled === false : disabledSkills.includes(skill.name)
+  const canToggle = isCodex ? !skill.builtin : true
 
   const doReadSkill = settingsProvider === 'codex' ? readCodexSkill : readSkill
   const doReadSkillFile = settingsProvider === 'codex' ? readCodexSkillFile : readSkillFile
@@ -238,7 +238,13 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
                 <Switch
                   checked={!isHidden}
                   onClick={(e) => e.stopPropagation()}
-                  onCheckedChange={(checked) => { void toggleSkill(skill.name, !checked) }}
+                  onCheckedChange={(checked) => {
+                    if (isCodex) {
+                      void window.app.codexToggleSkill(useAppStore.getState().currentFolder ?? '', { name: skill.name, path: skill.sourcePath }, checked).then(() => fetchCodexSkills())
+                    } else {
+                      void toggleSkill(skill.name, !checked)
+                    }
+                  }}
                   title={isHidden ? t('resources.skills.showToAgent') : t('resources.skills.hideFromAgent')}
                 />
               )}

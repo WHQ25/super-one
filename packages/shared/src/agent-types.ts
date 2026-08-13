@@ -953,6 +953,10 @@ export interface McpServerInfo {
   scope?: string
   toolCount?: number
   tools?: McpToolInfo[]
+  resources?: Array<{ uri: string; name?: string; description?: string; mimeType?: string }>
+  authStatus?: 'authenticated' | 'needs-auth' | 'unknown'
+  stale?: boolean
+  fetchedAt?: number
 }
 
 export interface ContextUsageCategory {
@@ -1862,6 +1866,8 @@ export interface SkillInfo {
   hasConfig: boolean
   builtin?: boolean
   sourcePath: string
+  /** Codex runtime enablement; absent for legacy/Claude discovery. */
+  enabled?: boolean
 }
 
 export interface SkillFileEntry {
@@ -2706,9 +2712,13 @@ export const AgentIpcChannels = {
   CODEX_SKILLS_READ: 'codex:skills-read',
   CODEX_SKILLS_READ_FILE: 'codex:skills-read-file',
   CODEX_SKILLS_DELETE: 'codex:skills-delete',
+  CODEX_SKILLS_TOGGLE: 'codex:skills-toggle',
 
   // Codex hooks (read-only)
   CODEX_HOOKS_LIST: 'codex:hooks-list',
+  CODEX_MCP_STATUS: 'codex:mcp-status',
+  CODEX_MCP_RESOURCE_READ: 'codex:mcp-resource-read',
+  CODEX_MCP_TOOL_CALL: 'codex:mcp-tool-call',
 
   // Codex skills change notification (push to renderer)
   CODEX_SKILLS_CHANGED: 'codex:skills-changed',

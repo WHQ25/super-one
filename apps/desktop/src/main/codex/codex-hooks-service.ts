@@ -106,7 +106,7 @@ function mapGroup(raw: unknown): CodexHookGroup | null {
 export class CodexHooksService {
   constructor(private readonly codexService: CodexExperimentService) {}
 
-  async list(projectPath: string): Promise<CodexHookGroup[]> {
+  async list(projectPath: string, _opts?: { forceReload?: boolean }): Promise<CodexHookGroup[]> {
     return this.codexService.withAppServerRequest(projectPath, async (request) => {
       const result = await request('hooks/list', { cwds: projectPath ? [projectPath] : [] })
       const data = Array.isArray(result.data) ? result.data : []

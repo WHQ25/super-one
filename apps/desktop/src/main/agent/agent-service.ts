@@ -2391,11 +2391,17 @@ export class AgentService {
 
     // --- Codex Skills (read-only) ---
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_LIST, async (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_LIST, async (_event, projectPath: string, opts?: { forceReload?: boolean }) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       // Remote projects: do not scan local ~/.codex/skills for a remote: key.
       if (parseRemoteProjectKey(projectPath)) return []
-      return getSharedCodexSkillsService().list(projectPath)
+      return getSharedCodexSkillsService().list(projectPath, opts)
+    })
+
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_TOGGLE, async (_event, projectPath: string, selector: { name?: string; path?: string }, enabled: boolean) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) throw new Error('Remote Codex skill toggle is not yet supported')
+      return getSharedCodexSkillsService().setEnabled(projectPath, selector, enabled)
     })
 
     ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ, async (_event, projectPath: string, name: string, sourcePath?: string) => {
@@ -2981,6 +2987,11 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_INSTALL)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_TOGGLE)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_HOOKS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_STATUS)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_RESOURCE_READ)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_TOOL_CALL)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_DELETE)

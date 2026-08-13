@@ -110,21 +110,10 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
       }
 
     case 'status_change':
-      if ((event.status === 'idle' || event.status === 'error') && session.queuedMessages.length > 0) {
-        const lastAsstIdx = session.messages.findLastIndex((m) => m.role === 'assistant')
-        const insertAt = lastAsstIdx >= 0 ? lastAsstIdx : session.messages.length
-        return {
-          status: event.status,
-          apiRetry: null,
-          modelFallback: null,
-          messages: [
-            ...session.messages.slice(0, insertAt),
-            ...session.queuedMessages,
-            ...session.messages.slice(insertAt),
-          ],
-          queuedMessages: [],
-        }
-      }
+      // Leave queuedMessages in place. Grok/OpenCode emit idle at the end of
+      // the live turn *before* queued_message_consumed; splicing the queue in
+      // here (especially before the last assistant) jumps the next user prompt
+      // above the reply it is waiting on. Consume is the source of truth.
       return {
         status: event.status,
         ...(event.status === 'idle' ? { apiRetry: null, modelFallback: null } : {}),

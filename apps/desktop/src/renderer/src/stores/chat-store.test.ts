@@ -5892,6 +5892,36 @@ describe('queued_message_consumed', () => {
     expect(session.queuedMessages).toHaveLength(1)
     expect(session.messages.find((m) => m.id === 'user-q1')).toBeUndefined()
   })
+
+  it('idle then consume keeps the queued user after the completed Grok turn', () => {
+    setupProject('/test')
+    const draftId = getActiveDraftId('/test')!
+
+    const user1 = makeMessage('user-1', 'user')
+    const asst1 = makeMessage('asst-1', 'assistant')
+    asst1.status = 'complete'
+    const user2 = makeMessage('user-2', 'user')
+
+    const proj = useChatStore.getState().projectSessions['/test']
+    proj._sessions[draftId].messages = [user1, asst1]
+    proj._sessions[draftId].queuedMessages = [user2]
+    proj._sessions[draftId].status = 'streaming'
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({ type: 'status_change', status: 'idle' }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'queued_message_consumed',
+      clientMessageId: 'user-2',
+    } as never))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: makeMessage('asst-2', 'assistant'),
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
+    expect(session.messages.map((m) => m.id)).toEqual(['user-1', 'asst-1', 'user-2', 'asst-2'])
+    expect(session.queuedMessages).toHaveLength(0)
+  })
 })
 
 describe('edit/delete queued message vs consume race (Bug D)', () => {

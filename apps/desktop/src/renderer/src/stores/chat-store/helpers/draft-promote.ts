@@ -39,6 +39,16 @@ export function isUnsentSession(session: PerSessionState | undefined): boolean {
 }
 
 /**
+ * Composer holds something worth keeping. Single source of truth for "there is
+ * a draft here" — every caller that decides whether to persist one must agree
+ * with the caller that decides whether a session is disposable, or New Session
+ * silently discards the composer.
+ */
+export function hasDraftContent(session: PerSessionState | undefined): boolean {
+  return !!session && (!!session.draftText.trim() || session.attachments.length > 0)
+}
+
+/**
  * Which environment owns this project, and the host-side path to record.
  * A remote project key carries both; a local path is its own project path.
  */
@@ -295,7 +305,7 @@ export function captureOpenDraft(
   if (!sessionId) return null
   const project = store.projectSessions[projectPath]
   const session = project?._sessions[sessionId]
-  if (!isUnsentSession(session) || !session.draftText.trim()) return null
+  if (!isUnsentSession(session) || !hasDraftContent(session)) return null
   const draftId = draftIdBySession.get(sessionId) ?? crypto.randomUUID()
   draftIdBySession.set(sessionId, draftId)
   return {
@@ -482,7 +492,7 @@ export async function promoteDraftIfUnsent(
   }
   const project = store.projectSessions[projectPath]
   const session = project?._sessions[sessionId]
-  if (!isUnsentSession(session) || !session.draftText.trim()) {
+  if (!isUnsentSession(session) || !hasDraftContent(session)) {
     draftTrace('promote_skip', {
       reason: 'not-unsent-with-text',
       projectPath,

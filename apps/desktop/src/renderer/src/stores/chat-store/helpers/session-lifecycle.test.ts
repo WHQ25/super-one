@@ -258,6 +258,36 @@ describe('focusProjectImpl', () => {
 })
 
 describe('resetSessionImpl', () => {
+  it('mints a session and saves the composer as a draft when New Session is hit on unsent text', async () => {
+    setupProject()
+    patchSession({ draftText: 'half-written prompt' })
+    const beforeSid = activeProjectState()._activeSessionId
+
+    await useChatStore.getState().resetSession()
+
+    expect(activeProjectState()._activeSessionId).not.toBe(beforeSid)
+    expect(activeSession().draftText).toBe('')
+    expect(saveDraft).toHaveBeenCalledWith(
+      'local',
+      expect.objectContaining({ text: 'half-written prompt', originSessionId: beforeSid }),
+    )
+  })
+
+  it('mints a session and saves the draft when the composer holds only attachments', async () => {
+    setupProject()
+    patchSession({
+      draftText: '',
+      attachments: [{ name: 'shot.png', mimeType: 'image/png', base64: 'AAAA' }],
+    })
+    const beforeSid = activeProjectState()._activeSessionId
+
+    await useChatStore.getState().resetSession()
+
+    expect(activeProjectState()._activeSessionId).not.toBe(beforeSid)
+    expect(activeSession().attachments).toEqual([])
+    expect(saveDraft).toHaveBeenCalled()
+  })
+
   it('is a no-op on a pristine idle session (no messages, no worktree, not remote)', async () => {
     setupProject()
     const beforeSid = activeProjectState()._activeSessionId

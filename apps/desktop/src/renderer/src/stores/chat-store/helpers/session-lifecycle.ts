@@ -6,7 +6,7 @@ import {
 import { useAppStore } from '../../app'
 import { applyDefaultModel, resolveDefaultClaudeEffort, resolveDefaultClaudeModel } from './agent-defaults'
 import { buildSlashCommands } from './chat-helpers'
-import { applyCarriedDraft, captureOpenDraft, promoteDraftIfUnsent } from './draft-promote'
+import { applyCarriedDraft, captureOpenDraft, hasDraftContent, promoteDraftIfUnsent } from './draft-promote'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
 import { resolveDefaultOpenCodeSelection } from '../harness/opencode-handler'
 import { enabledCursorModels, resolveDefaultCursorSelection } from '../harness/cursor-handler'
@@ -607,8 +607,11 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   // Idempotent: a pristine current session (no messages, idle, not a live node
   // session, no worktree) is already "a fresh session". Creating another one
   // just stacks empty drafts in _sessions (duplicate "New session" in Ctrl+Tab).
+  // A composer with unsent content is NOT pristine — the user wants a clean
+  // session *and* their text kept, so fall through and park it as a draft.
   if (
     activeSession.messages.length === 0 &&
+    !hasDraftContent(activeSession) &&
     !_isLiveSession(activeSession) &&
     !activeSession._worktreePath &&
     !isRemoteSession(get(), activeProject, currentSid)
@@ -616,6 +619,10 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     window.app.trace?.('session.lifecycle', 'resetSession:skip-pristine', { activeProject, currentSid })
     return
   }
+
+  // Persist the composer before it stops being the active session, so it shows
+  // up in the sidebar's draft list instead of being stranded in _sessions.
+  await promoteDraftIfUnsent(get(), activeProject, currentSid)
 
   const newSessionId = createSessionId()
   window.app.trace?.('session.lifecycle', 'resetSession', {

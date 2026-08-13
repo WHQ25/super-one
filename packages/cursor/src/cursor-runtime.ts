@@ -15,11 +15,11 @@ import type { AgentEvent, McpServerInfo, PermissionMode } from '@superone/shared
 import {
   buildCloudOptions,
   mapPermissionToCursorLocal,
-  readCursorConfig,
-  resolveCursorApiKeyPlain,
   resolveCursorToolRestrictions,
   type CursorConfig,
 } from './cursor-config'
+import { resolveCursorLocalSessionPlan } from './cursor-local-options'
+import { withCursorNetworkRetries } from './cursor-network-retry'
 import { buildCursorCustomTools } from './cursor-custom-tools'
 import {
   CursorTurnCallIdBridge,
@@ -27,8 +27,18 @@ import {
   mapInteractionUpdate,
   mapSdkMessageLifecycle,
 } from './cursor-event-map'
-import { mcpServersToStatus, stripStdioCwd } from './cursor-mcp-map'
+import { mcpServersToStatus } from './cursor-mcp-map'
 import { parseCursorContextWindow } from './cursor-model-selection'
+import {
+  isCursorSandboxUnsupportedError,
+  withCursorPlatformLookup,
+} from './cursor-platform-binaries'
+import {
+  createCursorSdkTracer,
+  cursorSdkType,
+  cursorUserSendTracePayload,
+  type CursorSdkTraceFn,
+} from './cursor-sdk-trace'
 import { getCursorAgentStore } from './cursor-store'
 
 /** Minimal logger interface (desktop injects electron-log). */
@@ -93,6 +103,11 @@ export interface CursorRuntimeOptions {
   /** Build MCP servers for this session (desktop wires SuperOne MCP). */
   buildMcpServers?: (cwd: string, sessionId: string) => Record<string, McpServerConfig>
   log?: CursorRuntimeLog
+  /**
+   * Event-trace sink. Desktop injects `trace` from event-trace.ts.
+   * Raw SDK objects use source `agent.sdk` (same as Claude).
+   */
+  onSdkTrace?: CursorSdkTraceFn
 }
 
 export interface CursorSendOptions {
@@ -158,11 +173,9 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
     error: opts.log?.error ?? noopLog.error,
     debug: opts.log?.debug ?? noopLog.debug,
   }
-  const resolveApiKey = opts.resolveApiKey ?? resolveCursorApiKeyPlain
-  const buildMcpServers = opts.buildMcpServers ?? (() => ({}))
-
-  const config = readCursorConfig(opts.config)
-  const apiKey = resolveApiKey(opts.config)
+  const tracer = createCursorSdkTracer(opts.onSdkTrace)
+  const plan = resolveCursorLocalSessionPlan(opts)
+  const apiKey = plan.apiKey
   if (!apiKey) {
     throw new Error(
       'Cursor User API Key missing. Create one at https://cursor.com/dashboard/api, set it on the Cursor provider, or export CURSOR_API_KEY.',
@@ -170,33 +183,34 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
   }
 
   // Process-wide network default only (not store). Safe to set once per process.
-  if (config.useHttp1ForAgent != null) {
+  if (plan.config.useHttp1ForAgent != null) {
     try {
-      Cursor.configure({ local: { useHttp1ForAgent: config.useHttp1ForAgent } })
+      Cursor.configure({ local: { useHttp1ForAgent: plan.config.useHttp1ForAgent } })
     } catch (error) {
       log.debug('[CursorRuntime] Cursor.configure useHttp1ForAgent failed:', error)
     }
   }
 
-  const isCloud = config.runtime === 'cloud'
-    || (opts.providerSessionId?.startsWith('bc-') ?? false)
+  const isCloud = plan.isCloud
 
-  const modelId = opts.modelSelection?.id || opts.model || config.model
+  const modelId = opts.modelSelection?.id || opts.model || plan.config.model
   if (!isCloud && !modelId) {
     throw new Error('Cursor model is required for local agents. Connect Cursor to load models, then select one.')
   }
 
-  const perm = mapPermissionToCursorLocal(opts.permissionMode)
+  const perm = plan.perm
   const model: ModelSelection | undefined = opts.modelSelection
     ?? (modelId ? { id: modelId } : undefined)
-  // Default: project + user so .cursor/ and ~/.cursor/ rules/hooks/MCP load.
-  // UI can narrow this; never default to "all" (privacy).
-  const settingSources = config.settingSources ?? ['project', 'user']
-  // Session toggle wins; config is a static fallback; default off (SDK default).
-  const sandboxEnabled = opts.sandboxEnabled ?? config.sandboxEnabled ?? false
-  const mcpServers = isCloud
-    ? stripStdioCwd(buildMcpServers(opts.cwd, opts.sessionId))
-    : buildMcpServers(opts.cwd, opts.sessionId)
+  const settingSources = plan.settingSources
+  let sandboxEnabled = plan.sandboxEnabled
+  if (plan.sandboxRequested && !sandboxEnabled) {
+    log.warn(
+      '[CursorRuntime] sandbox requested but Cursor local sandbox is unavailable; running unsandboxed',
+    )
+  }
+  const mcpServers = plan.mcpServers
+  const config = plan.config
+  const buildMcpServers = opts.buildMcpServers ?? (() => ({}))
   const customTools = isCloud
     ? undefined
     : buildCursorCustomTools({ sessionId: opts.sessionId, cwd: opts.cwd })
@@ -211,10 +225,27 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
     ? { disallowedTools: toolRestrictions.disallowedTools as import('@cursor/sdk').ToolName[] }
     : {}
 
-  let agent: SDKAgent
-  try {
+  const createStarted = Date.now()
+  log.info('[CursorRuntime] opening agent', {
+    sessionId: opts.sessionId,
+    sandboxEnabled,
+    mcpCount: Object.keys(mcpServers).length,
+    settingSources,
+  })
+  tracer.runtime('create_session', {
+    sessionId: opts.sessionId,
+    cwd: opts.cwd,
+    sandboxEnabled,
+    mcpCount: Object.keys(mcpServers).length,
+    settingSources,
+    resume: opts.providerSessionId ?? null,
+    model: modelId ?? null,
+    isCloud,
+  }, opts.sessionId)
+
+  const openAgent = (sandbox: boolean): Promise<SDKAgent> => withCursorPlatformLookup(async () => {
     if (opts.providerSessionId) {
-      agent = await Agent.resume(opts.providerSessionId, {
+      return Agent.resume(opts.providerSessionId, {
         apiKey,
         ...(model ? { model } : {}),
         ...(agentName ? { name: agentName } : {}),
@@ -229,16 +260,17 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
                 cwd: opts.cwd,
                 store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
                 settingSources,
-                sandboxOptions: { enabled: sandboxEnabled },
+                sandboxOptions: { enabled: sandbox },
                 // Session permission UI owns autoReview; static config must not override.
                 autoReview: perm.autoReview,
-                enableAgentRetries: config.enableAgentRetries ?? true,
+                enableAgentRetries: plan.enableAgentRetries,
                 ...(customTools ? { customTools } : {}),
               },
             }),
       })
-    } else if (isCloud) {
-      agent = await Agent.create({
+    }
+    if (isCloud) {
+      return Agent.create({
         apiKey,
         ...(model ? { model } : {}),
         ...(agentName ? { name: agentName } : {}),
@@ -246,31 +278,81 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
         mcpServers,
         cloud: buildCloudOptions(config),
       })
-    } else {
-      agent = await Agent.create({
-        apiKey,
-        model: model!,
-        ...(agentName ? { name: agentName } : {}),
-        mode: perm.mode,
-        mcpServers,
-        ...toolsOpt,
-        ...disallowedOpt,
-        local: {
-          cwd: opts.cwd,
-          store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
-          settingSources,
-          sandboxOptions: { enabled: sandboxEnabled },
-          // Session permission UI owns autoReview; static config must not override.
-          autoReview: perm.autoReview,
-          enableAgentRetries: config.enableAgentRetries ?? true,
-          ...(customTools ? { customTools } : {}),
-        },
-      })
     }
+    return Agent.create({
+      apiKey,
+      model: model!,
+      ...(agentName ? { name: agentName } : {}),
+      mode: perm.mode,
+      mcpServers,
+      ...toolsOpt,
+      ...disallowedOpt,
+      local: {
+        cwd: opts.cwd,
+        store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
+        settingSources,
+        sandboxOptions: { enabled: sandbox },
+        // Session permission UI owns autoReview; static config must not override.
+        autoReview: perm.autoReview,
+        enableAgentRetries: plan.enableAgentRetries,
+        ...(customTools ? { customTools } : {}),
+      },
+    })
+  })
+
+  const openAgentRetrying = (sandbox: boolean): Promise<SDKAgent> =>
+    withCursorNetworkRetries(() => openAgent(sandbox), {
+      onRetry: ({ attempt, retries, delayMs, error }) => {
+        const message = error instanceof Error ? error.message : String(error)
+        log.warn('[CursorRuntime] retryable network error on Agent.create', {
+          attempt,
+          retries,
+          delayMs,
+          message,
+        })
+        tracer.runtime('create_retry', {
+          attempt,
+          retries,
+          delayMs,
+          message,
+          name: error instanceof Error ? error.name : 'Error',
+        }, opts.sessionId)
+      },
+    })
+
+  let agent: SDKAgent
+  try {
+    agent = await openAgentRetrying(sandboxEnabled)
   } catch (error) {
-    throw formatCursorError(error)
+    if (!isCloud && sandboxEnabled && isCursorSandboxUnsupportedError(error)) {
+      log.warn(
+        '[CursorRuntime] Cursor SDK rejected local sandbox; retrying with sandbox disabled',
+      )
+      tracer.runtime('sandbox_fallback', {
+        sessionId: opts.sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      }, opts.sessionId)
+      sandboxEnabled = false
+      try {
+        agent = await openAgentRetrying(false)
+      } catch (retryError) {
+        throw formatCursorError(retryError)
+      }
+    } else {
+      throw formatCursorError(error)
+    }
   }
 
+  log.info('[CursorRuntime] agent ready', {
+    agentId: agent.agentId,
+    ms: Date.now() - createStarted,
+    sandboxEnabled,
+  })
+  tracer.runtime('agent_ready', {
+    agentId: agent.agentId,
+    ms: Date.now() - createStarted,
+    sandboxEnabled,
+  }, opts.sessionId)
   opts.onProviderSessionId?.(agent.agentId)
   opts.onEvent({ type: 'provider_session_id', providerSessionId: agent.agentId })
 
@@ -342,18 +424,28 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       // Bridge real callIds from onDelta → onStep (SDK ConversationStep.toolCall has no callId).
       const callIdBridge = new CursorTurnCallIdBridge()
 
+      const sendStarted = Date.now()
+      log.info('[CursorRuntime] send start', { messageId })
+      tracer.sdk('user_send', cursorUserSendTracePayload(userMessage), messageId)
+      tracer.runtime('send_start', {
+        messageId,
+        model: modelSelection?.id ?? null,
+        force: Boolean(sendOpts?.force),
+      }, messageId)
       const sendOptions: SendOptions = {
         ...(modelSelection ? { model: modelSelection } : {}),
         mode: permLocal.mode,
         mcpServers: Object.keys(servers).length ? servers : undefined,
         ...(sendOpts?.idempotencyKey ? { idempotencyKey: sendOpts.idempotencyKey } : {}),
         onDelta: ({ update }) => {
+          tracer.sdk(cursorSdkType(update, 'delta'), update, messageId)
           callIdBridge.observeDelta(update)
           for (const event of mapInteractionUpdate(messageId, update, { contextWindow })) {
             opts.onEvent(event)
           }
         },
         onStep: ({ step }) => {
+          tracer.sdk(cursorSdkType(step, 'step'), step, messageId)
           for (const event of mapConversationStep(messageId, step, {
             resolveCallId: () => callIdBridge.claimNextCallId(),
           })) {
@@ -377,29 +469,55 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       } catch (error) {
         if (error instanceof AgentBusyError && !sendOpts?.force && !isCloud) {
           log.warn('[CursorRuntime] AgentBusyError — retrying with local.force')
+          tracer.runtime('agent_busy_retry', {
+            message: error instanceof Error ? error.message : String(error),
+          }, messageId)
           try {
             run = await agent.send(userMessage, {
               ...sendOptions,
               local: { force: true },
             })
           } catch (retryError) {
+            tracer.runtime('send_error', {
+              message: retryError instanceof Error ? retryError.message : String(retryError),
+              name: retryError instanceof Error ? retryError.name : 'Error',
+              afterForce: true,
+            }, messageId)
             throw formatCursorError(retryError)
           }
         } else {
+          tracer.runtime('send_error', {
+            message: error instanceof Error ? error.message : String(error),
+            name: error instanceof Error ? error.name : 'Error',
+            ms: Date.now() - sendStarted,
+          }, messageId)
           throw formatCursorError(error)
         }
       }
       currentRun = run
       lastRunId = run.id
-      log.debug('[CursorRuntime] run started', { runId: run.id, agentId: run.agentId })
+      log.info('[CursorRuntime] run started', {
+        runId: run.id,
+        agentId: run.agentId,
+        ms: Date.now() - sendStarted,
+      })
+      tracer.runtime('run_started', {
+        runId: run.id,
+        agentId: run.agentId,
+        ms: Date.now() - sendStarted,
+      }, messageId)
 
       void (async () => {
         try {
           if (!run.supports('stream')) {
             log.debug('[CursorRuntime] stream unsupported:', run.unsupportedReason('stream'))
+            tracer.runtime('stream_unsupported', {
+              reason: run.unsupportedReason('stream') ?? null,
+            }, messageId)
             return
           }
           for await (const message of run.stream()) {
+            tracer.sdk(cursorSdkType(message, 'stream'), message, messageId)
             for (const event of mapSdkMessageLifecycle(messageId, message, {
               includeContent: false,
               contextWindow,
@@ -409,10 +527,24 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
           }
         } catch (error) {
           log.debug('[CursorRuntime] stream consumer ended:', error)
+          tracer.runtime('stream_error', {
+            message: error instanceof Error ? error.message : String(error),
+            name: error instanceof Error ? error.name : 'Error',
+          }, messageId)
         }
       })()
 
-      const result = await run.wait()
+      let result: Awaited<ReturnType<Run['wait']>>
+      try {
+        result = await run.wait()
+      } catch (error) {
+        tracer.runtime('wait_error', {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : 'Error',
+        }, messageId)
+        throw formatCursorError(error)
+      }
+      tracer.sdk('result', result, messageId)
       currentRun = null
       lastRunId = result.id || lastRunId
 

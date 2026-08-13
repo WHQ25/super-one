@@ -7,14 +7,22 @@ vi.mock('electron', () => ({
   ipcMain: { handle: () => undefined },
 }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: true } }))
+const { httpConfig } = vi.hoisted(() => ({
+  httpConfig: {
+    url: 'http://127.0.0.1:60309/mcp',
+    headers: { Authorization: 'Bearer test', 'X-Superone-Session': 's1' },
+  } as { url: string; headers: Record<string, string> } | null,
+}))
+
 vi.mock('../mcp/superone-mcp-stdio-state', () => ({
   getSuperoneMcpStdioConfig: () => null,
+  getSuperoneMcpHttpConfig: () => httpConfig,
 }))
 vi.mock('../mcp-config-service', () => ({
   listMcpConfigs: () => [],
 }))
 
-import { stripStdioCwd, toCursorMcpConfig } from './cursor-mcp'
+import { buildCursorMcpServers, stripStdioCwd, toCursorMcpConfig } from './cursor-mcp'
 import { buildCursorCustomTools } from './cursor-custom-tools'
 
 describe('toCursorMcpConfig', () => {
@@ -51,6 +59,16 @@ describe('toCursorMcpConfig', () => {
   it('returns null for incomplete configs', () => {
     expect(toCursorMcpConfig({ name: 'x', type: 'stdio', scope: 'user' })).toBeNull()
     expect(toCursorMcpConfig({ name: 'x', type: 'http', scope: 'user' })).toBeNull()
+  })
+})
+
+describe('buildCursorMcpServers', () => {
+  it('injects SuperOne over HTTP so Agent.create is not blocked on stdio IPC bring-up', () => {
+    expect(buildCursorMcpServers('/proj', 's1').superone).toEqual({
+      type: 'http',
+      url: 'http://127.0.0.1:60309/mcp',
+      headers: { Authorization: 'Bearer test', 'X-Superone-Session': 's1' },
+    })
   })
 })
 

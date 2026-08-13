@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BackendStartOptions } from '../types'
 
-const { factoryMock } = vi.hoisted(() => ({
+const { factoryMock, prewarmMock } = vi.hoisted(() => ({
   factoryMock: vi.fn(),
+  prewarmMock: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('../../logger', () => ({
@@ -12,6 +13,7 @@ vi.mock('../../logger', () => ({
 vi.mock('../../cursor/cursor-runtime', () => ({
   getCursorRuntimeFactory: () => factoryMock,
   setCursorRuntimeFactory: vi.fn(),
+  prewarmCursorWorkspace: (...args: unknown[]) => prewarmMock(...args),
 }))
 
 vi.mock('../../cursor/cursor-auth', () => ({
@@ -69,6 +71,7 @@ function makeRuntime(overrides: Record<string, unknown> = {}) {
 describe('CursorBackend setSandbox / setPermissionMode', () => {
   beforeEach(() => {
     factoryMock.mockReset()
+    prewarmMock.mockReset().mockResolvedValue(undefined)
   })
 
   it('awaits rebuild when sandbox flips and rolls back opts on failure', async () => {
@@ -97,6 +100,33 @@ describe('CursorBackend setSandbox / setPermissionMode', () => {
     expect(factoryMock).toHaveBeenCalledWith(
       expect.objectContaining({ sandboxEnabled: true, permissionMode: 'auto' }),
     )
+  })
+
+  it('prewarm uses the official workspace API and does not create an agent', () => {
+    const backend = new CursorBackend()
+    backend.prewarm(makeOpts({ sandboxInfo: { enabled: true, autoAllowBash: false } }))
+    expect(factoryMock).not.toHaveBeenCalled()
+    expect(prewarmMock).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: '/tmp/p',
+      sandboxEnabled: true,
+      permissionMode: 'auto',
+    }))
+  })
+
+  it('emits message_start before Agent.create resolves', async () => {
+    let resolveFactory: ((runtime: ReturnType<typeof makeRuntime>) => void) | undefined
+    factoryMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveFactory = resolve
+    }))
+    const backend = new CursorBackend()
+    const events: string[] = []
+    backend.onEvent((event) => { events.push(event.type) })
+    await backend.start(makeOpts())
+    const sendPromise = backend.send({ content: 'hi' })
+    expect(events).toContain('message_start')
+    expect(events).toContain('status_change')
+    resolveFactory!(makeRuntime())
+    await sendPromise
   })
 
   it('awaits rebuild when permission autoReview changes', async () => {

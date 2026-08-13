@@ -14,6 +14,7 @@ import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '..
 import { mapPermissionToCursorLocal } from '../../cursor/cursor-auth'
 import {
   getCursorRuntimeFactory,
+  prewarmCursorWorkspace,
   type CursorRuntime,
   setCursorRuntimeFactory,
 } from '../../cursor/cursor-runtime'
@@ -70,6 +71,20 @@ export class CursorBackend implements SessionBackend {
     this.model = opts.model
     this.effort = opts.effort
     this.started = true
+    // Do not await Agent.create here — it often takes several seconds (sandbox
+    // policy, Statsig, workspace scan). Session.send waits on start() before
+    // backend.send can emit message_start / status=streaming, so blocking here
+    // leaves the composer looking idle. Kick off create; send() awaits it
+    // after those events. rebuild / revive pass waitForRuntime.
+    const pending = this.ensureRuntime()
+    void pending.catch((error) => log.debug('[CursorBackend] start runtime init failed:', error))
+  }
+
+  async rebuild(opts: BackendStartOptions): Promise<void> {
+    await this.closeRuntime()
+    this.disposed = false
+    this.started = false
+    await this.start(opts)
     try {
       await this.ensureRuntime()
     } catch (error) {
@@ -78,20 +93,24 @@ export class CursorBackend implements SessionBackend {
     }
   }
 
-  async rebuild(opts: BackendStartOptions): Promise<void> {
-    await this.closeRuntime()
-    this.disposed = false
-    this.started = false
-    await this.start(opts)
-  }
-
   prewarm(opts: BackendStartOptions): void {
     if (this.disposed) return
     this.opts = opts
     this.permissionMode = opts.permissionMode
     this.model = opts.model
     this.effort = opts.effort
-    void this.ensureRuntime().catch((error) => log.debug('[CursorBackend] prewarm failed:', error))
+    // Official API: warm the local executor (rules/skills/MCP/ignore), not Agent.create.
+    void prewarmCursorWorkspace({
+      sessionId: opts.sessionId,
+      cwd: opts.cwd,
+      providerSessionId: opts.providerSessionId,
+      permissionMode: this.permissionMode,
+      sandboxEnabled: opts.sandboxInfo?.enabled ?? false,
+      model: this.model ?? opts.model,
+      agentName: opts.agentName,
+      config: opts.config,
+      onEvent: () => undefined,
+    }).catch((error) => log.debug('[CursorBackend] official workspace prewarm failed:', error))
   }
 
   hasActiveRuntime(): boolean {
@@ -333,6 +352,7 @@ export class CursorBackend implements SessionBackend {
     if (this.started || this.disposed || !this.opts) return
     try {
       await this.start(this.opts)
+      await this.ensureRuntime()
     } catch (error) {
       log.debug('[CursorBackend] revive after failed rebuild failed:', error)
     }

@@ -1,6 +1,12 @@
 import { app } from 'electron'
 import { Agent } from '@cursor/sdk'
 import {
+  isCursorSandboxUnsupportedError,
+  resolveCursorSandboxEnabled,
+  withCursorNetworkRetries,
+  withCursorPlatformLookup,
+} from '@superone/cursor'
+import {
   buildCloudOptions,
   mapPermissionToCursorLocal,
   readCursorConfig,
@@ -51,7 +57,8 @@ export async function forkCursorTranscript(
     throw new Error('Cursor model is required on provider config to fork a local agent.')
   }
 
-  const agent = await Agent.create({
+  const sandboxEnabled = resolveCursorSandboxEnabled(config.sandboxEnabled ?? false)
+  const createLocal = (sandbox: boolean) => withCursorPlatformLookup(() => Agent.create({
     apiKey,
     model: { id: modelId },
     mode: perm.mode,
@@ -61,11 +68,22 @@ export async function forkCursorTranscript(
       cwd: targetCwd,
       store: getCursorAgentStore(app.getPath('userData'), targetCwd),
       settingSources: config.settingSources ?? ['project', 'user'],
-      sandboxOptions: { enabled: config.sandboxEnabled ?? false },
+      sandboxOptions: { enabled: sandbox },
       autoReview: perm.autoReview,
       enableAgentRetries: config.enableAgentRetries ?? true,
     },
-  })
+  }))
+
+  let agent
+  try {
+    agent = await withCursorNetworkRetries(() => createLocal(sandboxEnabled))
+  } catch (error) {
+    if (sandboxEnabled && isCursorSandboxUnsupportedError(error)) {
+      agent = await withCursorNetworkRetries(() => createLocal(false))
+    } else {
+      throw error
+    }
+  }
   const id = agent.agentId
   agent.close()
   return id

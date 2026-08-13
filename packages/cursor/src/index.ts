@@ -25,6 +25,18 @@ export {
 export { isCursorSdkAvailable } from './cursor-sdk-available'
 
 export {
+  cursorPlatformPackageName,
+  isCursorLocalSandboxSupported,
+  isCursorSandboxUnsupportedError,
+  resolveCursorPlatformRoot,
+  resolveCursorRipgrepBinary,
+  resolveCursorSandboxBinary,
+  resolveCursorSandboxEnabled,
+  toUnpackedAsarPath,
+  withCursorPlatformLookup,
+} from './cursor-platform-binaries'
+
+export {
   toCursorMcpConfig,
   mcpServersToStatus,
   stripStdioCwd,
@@ -114,9 +126,26 @@ export {
 } from './cursor-runtime'
 
 export {
+  createCursorSdkTracer,
+  type CursorSdkTraceFn,
+  type CursorSdkTracer,
+} from './cursor-sdk-trace'
+
+export {
+  prewarmCursorLocalWorkspace,
+  resetCursorWorkspacePrewarmForTests,
+} from './cursor-workspace-prewarm'
+
+export {
   discoverCursorSkillsAndCommands,
   stripMarkdownFrontmatter,
 } from './cursor-skills-discover'
+
+export {
+  isCursorRetryableNetworkError,
+  withCursorNetworkRetries,
+  CURSOR_NETWORK_RETRY_ATTEMPTS,
+} from './cursor-network-retry'
 
 export {
   runCursorSdkTurn,

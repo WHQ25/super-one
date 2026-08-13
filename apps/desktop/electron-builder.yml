@@ -24,8 +24,8 @@ afterPack: "./build/afterPack.cjs"
 asarUnpack:
   # Native addons only — harness CLIs are no longer unpacked into the app.
   - "**/*.node"
-  # Cursor SDK platform binaries (cursorsandbox, rg) must be real files with +x
-  - "node_modules/@cursor/sdk*/**"
+  # Cursor platform helpers (cursorsandbox, rg, tree-sitter .node). Do not
+  # unpack @cursor/sdk JS — only the optional `@cursor/sdk-<platform>` package.
   - "node_modules/@cursor/sdk-*/**"
 
 publish:

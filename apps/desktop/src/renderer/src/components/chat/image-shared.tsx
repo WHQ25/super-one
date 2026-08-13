@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { toMediaUrl } from '@/lib/path-utils'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
-import { chatInputAPI } from './ChatInput'
+import { chatInputAPI } from './chat-input-api'
 import { useAppStore } from '@/stores/app'
 import type { ImageGenerationItem, MediaProviderStatus } from '@superone/shared/agent-types'
 

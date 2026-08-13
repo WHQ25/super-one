@@ -56,11 +56,9 @@ import { CodexGoalIndicator } from './CodexGoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
 import { wrapPathRefMention } from './user-mention-parser'
+import { chatInputAPI } from './chat-input-api'
 
-export const chatInputAPI: {
-  insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
-  addImageFromPath: ((absPath: string) => void) | null
-} = { insertMention: null, addImageFromPath: null }
+export { chatInputAPI } from './chat-input-api'
 
 
 export function ChatInput() {

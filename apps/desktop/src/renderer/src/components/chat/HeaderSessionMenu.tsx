@@ -15,7 +15,7 @@ import {
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import { chatInputAPI } from '@/components/chat/ChatInput'
+import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
 import { showNativeContextMenu, toNativeMenu } from '@/lib/native-context-menu'
 import { RenameSessionDialog, type RenameSessionTarget } from '@/components/sidebar/RenameSessionDialog'

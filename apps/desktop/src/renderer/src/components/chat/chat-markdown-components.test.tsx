@@ -3,10 +3,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useAppStore } from '@/stores/app'
-import { chatInputAPI } from '@/components/chat/ChatInput'
+import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { fileLinkComponents } from './chat-markdown-components'
 
-vi.mock('@/components/chat/ChatInput', () => ({
+vi.mock('@/components/chat/chat-input-api', () => ({
   chatInputAPI: { insertMention: vi.fn() },
 }))
 

@@ -33,10 +33,40 @@ export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.226'
  * Pinned Codex CLI on npm. Bump deliberately with release notes — never bare `latest`
  * in production enable (reproducible remote nodes).
  */
-export const OFFICIAL_CODEX_NPM_VERSION = '0.146.1'
+export const OFFICIAL_CODEX_NPM_VERSION = '0.147.0'
 
 export const OFFICIAL_CLAUDE_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
 export const OFFICIAL_CODEX_PACKAGE = '@openai/codex'
+
+/** Codex publishes one platform-specific npm package per native runtime. */
+export function codexPlatformPackageVersion(baseVersion = OFFICIAL_CODEX_NPM_VERSION): string {
+  const platform = process.platform
+  const arch = process.arch
+  if (arch !== 'arm64' && arch !== 'x64') {
+    throw new Error(`unsupported arch for Codex: ${arch}`)
+  }
+  const suffix = platform === 'darwin'
+    ? `darwin-${arch}`
+    : platform === 'linux'
+      ? `linux-${arch}`
+      : platform === 'win32'
+        ? `win32-${arch}`
+        : null
+  if (!suffix) throw new Error(`unsupported platform for Codex: ${platform}`)
+  return `${baseVersion}-${suffix}`
+}
+
+function codexTargetTriple(): string | null {
+  const triples: Record<string, string> = {
+    'darwin-arm64': 'aarch64-apple-darwin',
+    'darwin-x64': 'x86_64-apple-darwin',
+    'linux-arm64': 'aarch64-unknown-linux-musl',
+    'linux-x64': 'x86_64-unknown-linux-musl',
+    'win32-arm64': 'aarch64-pc-windows-msvc',
+    'win32-x64': 'x86_64-pc-windows-msvc',
+  }
+  return triples[`${process.platform}-${process.arch}`] ?? null
+}
 
 export interface OfficialInstallResult {
   harnessId: ManagedHarnessId
@@ -126,7 +156,7 @@ export function officialPackageSpecs(harnessId: ManagedHarnessId): {
   const ver = process.env.SUPERONE_CODEX_NPM_VERSION?.trim() || OFFICIAL_CODEX_NPM_VERSION
   return {
     runtimeVersion: ver,
-    specs: [`${OFFICIAL_CODEX_PACKAGE}@${ver}`],
+    specs: [`${OFFICIAL_CODEX_PACKAGE}@${codexPlatformPackageVersion(ver)}`],
   }
 }
 
@@ -140,10 +170,17 @@ export function resolveOfficialInstallBinaryInRoot(
 ): string | null {
   if (!installRoot || !existsSync(installRoot)) return null
   if (harnessId === 'codex') {
+    const triple = codexTargetTriple()
+    const nativeName = process.platform === 'win32' ? 'codex.exe' : 'codex'
     const candidates = [
       join(installRoot, 'bin', 'codex'),
       join(installRoot, 'bin', 'codex.cmd'),
       join(installRoot, 'lib', 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+      join(installRoot, 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+      ...(triple ? [
+        join(installRoot, 'lib', 'node_modules', '@openai', 'codex', 'vendor', triple, 'bin', nativeName),
+        join(installRoot, 'node_modules', '@openai', 'codex', 'vendor', triple, 'bin', nativeName),
+      ] : []),
     ]
     for (const c of candidates) {
       if (existsSync(c) && (c.endsWith('.js') || isExecutableFile(c))) return c
@@ -301,13 +338,18 @@ function readInstalledVersion(installRoot: string, harnessId: ManagedHarnessId):
     /* fall through */
   }
   try {
-    const pkgPath =
+    const pkgCandidates =
       harnessId === 'claude'
-        ? join(installRoot, 'lib', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'package.json')
-        : join(installRoot, 'lib', 'node_modules', '@openai', 'codex', 'package.json')
-    if (!existsSync(pkgPath)) return null
+        ? [join(installRoot, 'lib', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'package.json')]
+        : [
+            join(installRoot, 'lib', 'node_modules', '@openai', 'codex', 'package.json'),
+            join(installRoot, 'node_modules', '@openai', 'codex', 'package.json'),
+          ]
+    const pkgPath = pkgCandidates.find((candidate) => existsSync(candidate))
+    if (!pkgPath) return null
     const raw = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string }
-    return raw.version?.trim() || null
+    const version = raw.version?.trim()
+    return version?.replace(/-(darwin|linux|win32)-(arm64|x64)$/, '') || null
   } catch {
     return null
   }

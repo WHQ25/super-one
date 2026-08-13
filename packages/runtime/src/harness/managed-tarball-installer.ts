@@ -41,6 +41,7 @@ import {
   OFFICIAL_CODEX_NPM_VERSION,
   OFFICIAL_CODEX_PACKAGE,
   claudePlatformPackageName,
+  codexPlatformPackageVersion,
   managedHarnessPrefix,
   resolveOfficialInstallBinaryInRoot,
 } from './managed-official'
@@ -64,15 +65,7 @@ import type { HarnessHome, InstalledManagedRuntime, ManagedRuntimeInstaller } fr
 // ── package pins ────────────────────────────────────────────────────────────
 
 export function codexPlatformVersion(baseVersion = OFFICIAL_CODEX_NPM_VERSION): string {
-  const p = process.platform
-  const a = process.arch
-  if (a !== 'arm64' && a !== 'x64') {
-    throw new Error(`unsupported arch for Codex: ${a}`)
-  }
-  if (p === 'darwin') return `${baseVersion}-darwin-${a}`
-  if (p === 'linux') return `${baseVersion}-linux-${a}`
-  if (p === 'win32') return `${baseVersion}-win32-${a}`
-  throw new Error(`unsupported platform for Codex: ${p}`)
+  return codexPlatformPackageVersion(baseVersion)
 }
 
 /** Which npm packages the tarball installer pulls for a managed harness. */
@@ -94,7 +87,7 @@ export function managedPackagePins(id: ManagedHarnessId): {
     packages: [
       {
         name: OFFICIAL_CODEX_PACKAGE,
-        version: codexPlatformVersion(base),
+        version: codexPlatformPackageVersion(base),
         nodeModulesDir: OFFICIAL_CODEX_PACKAGE,
       },
     ],

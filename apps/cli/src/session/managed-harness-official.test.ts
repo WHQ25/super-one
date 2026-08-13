@@ -5,6 +5,7 @@ import {
   OFFICIAL_CODEX_NPM_VERSION,
   OFFICIAL_CLAUDE_SDK_VERSION,
   claudePlatformPackageName,
+  codexPlatformPackageVersion,
   installManagedFromOfficialNpm,
   managedHarnessPrefix,
   officialPackageSpecs,
@@ -27,7 +28,12 @@ describe('officialPackageSpecs', () => {
   it('pins Codex from @openai/codex', () => {
     const { specs, runtimeVersion } = officialPackageSpecs('codex')
     expect(runtimeVersion).toBe(OFFICIAL_CODEX_NPM_VERSION)
-    expect(specs).toEqual([`${OFFICIAL_CODEX_PACKAGE}@${OFFICIAL_CODEX_NPM_VERSION}`])
+    expect(specs).toEqual([`${OFFICIAL_CODEX_PACKAGE}@${codexPlatformPackageVersion(OFFICIAL_CODEX_NPM_VERSION)}`])
+  })
+
+  it('pins Codex to the current platform package version', () => {
+    const platform = process.platform === 'win32' ? 'win32' : process.platform
+    expect(codexPlatformPackageVersion('1.2.3')).toBe(`1.2.3-${platform}-${process.arch}`)
   })
 
   it('honours version env overrides', () => {
@@ -37,7 +43,7 @@ describe('officialPackageSpecs', () => {
       process.env.SUPERONE_CLAUDE_SDK_VERSION = '9.9.9'
       process.env.SUPERONE_CODEX_NPM_VERSION = '8.8.8'
       expect(officialPackageSpecs('claude').specs[0]).toBe(`${OFFICIAL_CLAUDE_SDK_PACKAGE}@9.9.9`)
-      expect(officialPackageSpecs('codex').specs[0]).toBe(`${OFFICIAL_CODEX_PACKAGE}@8.8.8`)
+      expect(officialPackageSpecs('codex').specs[0]).toBe(`${OFFICIAL_CODEX_PACKAGE}@${codexPlatformPackageVersion('8.8.8')}`)
     } finally {
       if (prevC === undefined) delete process.env.SUPERONE_CLAUDE_SDK_VERSION
       else process.env.SUPERONE_CLAUDE_SDK_VERSION = prevC
@@ -60,6 +66,20 @@ describe('resolveOfficialInstallBinary', () => {
     mkdirSync(join(root, 'bin'), { recursive: true })
     const bin = join(root, 'bin', 'codex')
     writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    expect(resolveOfficialInstallBinaryInRoot('codex', root)).toBe(bin)
+  })
+
+  it('finds the native codex binary installed by npm --prefix', () => {
+    const root = mkdtempSync(join(tmpdir(), 'off-codex-prefix-'))
+    const triple = process.platform === 'darwin'
+      ? (process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin')
+      : process.platform === 'linux'
+        ? (process.arch === 'arm64' ? 'aarch64-unknown-linux-musl' : 'x86_64-unknown-linux-musl')
+        : (process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc')
+    const bin = join(root, 'node_modules', '@openai', 'codex', 'vendor', triple, 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex')
+    mkdirSync(join(bin, '..'), { recursive: true })
+    writeFileSync(bin, 'x')
     chmodSync(bin, 0o755)
     expect(resolveOfficialInstallBinaryInRoot('codex', root)).toBe(bin)
   })
@@ -111,7 +131,7 @@ describe('installManagedFromOfficialNpm', () => {
         mkdirSync(join(prefix, 'lib', 'node_modules', '@openai', 'codex'), { recursive: true })
         writeFileSync(
           join(prefix, 'lib', 'node_modules', '@openai', 'codex', 'package.json'),
-          JSON.stringify({ version: OFFICIAL_CODEX_NPM_VERSION }),
+          JSON.stringify({ version: codexPlatformPackageVersion(OFFICIAL_CODEX_NPM_VERSION) }),
         )
       },
     })
@@ -125,4 +145,3 @@ describe('installManagedFromOfficialNpm', () => {
     expect(result.command).toContain(join('versions', OFFICIAL_CODEX_NPM_VERSION))
   })
 })
-

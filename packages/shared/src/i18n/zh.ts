@@ -962,6 +962,8 @@ export const zh: Messages = {
   chat: {
     compactMode: {
       detail: '详细过程',
+      toolCalls: '{{count}} 次工具调用',
+      filesChanged: '{{count}} 个文件改动',
     },
     placeholder: {
       addInstructions: '补充说明...',

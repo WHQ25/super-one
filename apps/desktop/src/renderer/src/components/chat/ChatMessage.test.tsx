@@ -382,3 +382,42 @@ describe('isRedundantTurnSummaryMarker', () => {
     )).toBe(false)
   })
 })
+
+describe('ChatMessage compact process header', () => {
+  it('shows tool, file, and line stats on the collapsed Detail disclosure', () => {
+    useAppStore.setState({ detailChatMode: false })
+    render(
+      <ChatMessage
+        message={createClaudeMessage([
+          { type: 'thinking', thinking: 'plan the edit' },
+          { type: 'tool_use', toolName: 'Read', toolUseId: 'r1', input: '{"file_path":"a.ts"}' },
+          { type: 'tool_result', toolUseId: 'r1', summary: 'ok' },
+          {
+            type: 'tool_use',
+            toolName: 'Edit',
+            toolUseId: 'e1',
+            input: '{"file_path":"a.ts","old_string":"a\\nb","new_string":"c\\nd\\ne"}',
+          },
+          { type: 'tool_result', toolUseId: 'e1', summary: 'ok' },
+          {
+            type: 'tool_use',
+            toolName: 'Write',
+            toolUseId: 'w1',
+            input: '{"file_path":"b.ts","content":"one\\ntwo"}',
+          },
+          { type: 'tool_result', toolUseId: 'w1', summary: 'ok' },
+          { type: 'text', text: 'All done.' },
+        ])}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByText('Detail')).toBeTruthy()
+    expect(screen.getByTitle('3 tool calls')).toBeTruthy()
+    expect(screen.getByTitle('2 files changed')).toBeTruthy()
+    expect(screen.getByText('+5')).toBeTruthy()
+    expect(screen.getByText('-2')).toBeTruthy()
+    expect(screen.getByText('All done.')).toBeTruthy()
+  })
+})

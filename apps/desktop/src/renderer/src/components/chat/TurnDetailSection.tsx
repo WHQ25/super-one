@@ -1,21 +1,24 @@
 import { useState, useRef, type ReactNode, type TransitionEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronRight, List } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileDiff, List, Wrench } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import type { TurnProcessStats } from './turn-process-stats'
 
 interface TurnDetailSectionProps {
   children: ReactNode
-  /** Number of visible process segments collapsed under Detail (shown next to the chevron). */
-  segmentCount?: number
+  /** Visible tool / file / line stats collapsed under Detail. */
+  stats?: TurnProcessStats
   className?: string
 }
+
+const fmt = (n: number) => n.toLocaleString()
 
 /**
  * Compact-mode process disclosure. Indicator on top; content expands downward
  * with a short height animation. Callers skip this wrapper when process has
  * fewer than MIN_PROCESS_SEGMENTS_TO_COLLAPSE segments.
  */
-export function TurnDetailSection({ children, segmentCount = 0, className }: TurnDetailSectionProps) {
+export function TurnDetailSection({ children, stats, className }: TurnDetailSectionProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   // Keep children mounted through the collapse animation so grid can animate to 0fr.
@@ -53,9 +56,38 @@ export function TurnDetailSection({ children, segmentCount = 0, className }: Tur
       >
         <List className="size-3 shrink-0 opacity-70" />
         <span className="min-w-0 truncate font-normal tracking-wide">{label}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-1 tabular-nums">
-          {segmentCount > 0 && (
-            <span className="opacity-70">{segmentCount}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {stats && (stats.toolCalls > 0 || stats.filesChanged > 0 || stats.added > 0 || stats.removed > 0) && (
+            <span className="flex items-center gap-1.5 text-[10px] leading-none tabular-nums">
+              {stats.toolCalls > 0 && (
+                <span
+                  className="inline-flex items-center gap-0.5 opacity-70"
+                  title={t('chat.compactMode.toolCalls', { count: stats.toolCalls })}
+                >
+                  <Wrench className="size-2.5" />
+                  {fmt(stats.toolCalls)}
+                </span>
+              )}
+              {stats.filesChanged > 0 && (
+                <span
+                  className="inline-flex items-center gap-0.5 opacity-70"
+                  title={t('chat.compactMode.filesChanged', { count: stats.filesChanged })}
+                >
+                  <FileDiff className="size-2.5" />
+                  {fmt(stats.filesChanged)}
+                </span>
+              )}
+              {(stats.added > 0 || stats.removed > 0) && (
+                <span className="inline-flex items-baseline gap-0.5 font-mono">
+                  {stats.added > 0 && (
+                    <span className="text-success/80 transition-colors group-hover:text-success">+{fmt(stats.added)}</span>
+                  )}
+                  {stats.removed > 0 && (
+                    <span className="text-error/80 transition-colors group-hover:text-error">-{fmt(stats.removed)}</span>
+                  )}
+                </span>
+              )}
+            </span>
           )}
           {expanded ? (
             <ChevronDown className="size-3 opacity-60 transition-opacity group-hover:opacity-100" />

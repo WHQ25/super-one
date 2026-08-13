@@ -14,6 +14,7 @@ import {
   MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
   splitTurnForCompactMode,
 } from './compact-chat-mode'
+import { summarizeClaudeProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
 import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, isGrokVideoGenTool, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -1076,10 +1077,13 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
               }
               if (!detailChatMode && !isStreaming) {
                 const { process, conclusion } = splitTurnForCompactMode(segs, isClaudeConclusionSegment)
-                const visibleProcessCount = countVisibleClaudeProcessSegments(process, {
-                  toolResultAt: (id) => grouped!.toolResultMap.get(id),
+                const processOpts = {
+                  toolResultAt: (id: string) => grouped!.toolResultMap.get(id),
                   isHiddenTool: isHiddenToolBlock,
-                })
+                  isErrorTool: (id: string) => grouped!.errorToolIds.has(id),
+                }
+                const visibleProcessCount = countVisibleClaudeProcessSegments(process, processOpts)
+                const processStats = summarizeClaudeProcess(process, processOpts)
                 return (
                   <>
                     {visibleProcessCount === 0
@@ -1091,7 +1095,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                           </div>
                         )
                         : (
-                          <TurnDetailSection segmentCount={visibleProcessCount}>
+                          <TurnDetailSection stats={processStats}>
                             {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
                           </TurnDetailSection>
                         )}

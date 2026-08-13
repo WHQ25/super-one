@@ -20,6 +20,7 @@ import {
   MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
   splitTurnForCompactMode,
 } from './compact-chat-mode'
+import { summarizeCodexProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
 
 function safeStringify(value: unknown): string {
@@ -541,7 +542,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
                 </div>
               )
               : (
-                <TurnDetailSection segmentCount={process.length}>
+                <TurnDetailSection stats={summarizeCodexProcess(process, codex.items)}>
                   {renderSegments(process, true)}
                 </TurnDetailSection>
               )}

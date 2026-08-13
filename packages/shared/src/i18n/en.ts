@@ -915,6 +915,8 @@ export type Messages = {
   chat: {
     compactMode: {
       detail: string
+      toolCalls: string
+      filesChanged: string
     }
     placeholder: {
       addInstructions: string
@@ -3643,6 +3645,8 @@ export const en: Messages = {
   chat: {
     compactMode: {
       detail: 'Detail',
+      toolCalls: '{{count}} tool calls',
+      filesChanged: '{{count}} files changed',
     },
     placeholder: {
       addInstructions: 'Add instructions...',

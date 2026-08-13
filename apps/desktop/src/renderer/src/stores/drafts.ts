@@ -13,6 +13,15 @@ interface DraftsState {
   byConnection: Record<string, DraftListEntry[]>
   /** connectionIds currently loading, so the sidebar can stay quiet on refresh. */
   loading: Record<string, boolean>
+  /**
+   * Draft the user just clicked, hidden from the list for the whole resume.
+   * Resume promotes the outgoing draft *before* it awaits the project switch and
+   * only drops this row at the very end, so without this the list would briefly
+   * hold both and the group would expand then collapse. UI-only — the row is
+   * still on disk until resume actually succeeds.
+   */
+  resumingDraftId: string | null
+  setResumingDraft: (draftId: string | null) => void
   loadDrafts: (connectionId: string) => Promise<void>
   saveDraft: (connectionId: string, draft: DraftUpsertRequest) => Promise<void>
   removeDraft: (connectionId: string, draftId: string) => Promise<void>
@@ -21,6 +30,9 @@ interface DraftsState {
 export const useDraftsStore = create<DraftsState>((set) => ({
   byConnection: {},
   loading: {},
+  resumingDraftId: null,
+
+  setResumingDraft: (draftId) => set({ resumingDraftId: draftId }),
 
   loadDrafts: async (connectionId) => {
     set((s) => ({ loading: { ...s.loading, [connectionId]: true } }))

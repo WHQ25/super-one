@@ -149,6 +149,9 @@ export async function resumeDraft(
       return { ok: true }
     }
     chat.ensureSession(projectKey)
+    // Hide the clicked row for the whole resume — promoting the outgoing draft
+    // below lands its row before the awaited project switch drops this one.
+    useDraftsStore.getState().setResumingDraft(draft.id)
 
     if (useAppStore.getState().selectedHostConnectionId !== connectionId) {
       useAppStore.setState({ selectedHostConnectionId: connectionId })
@@ -262,7 +265,10 @@ export async function resumeDraft(
     }, draft.id)
 
     releaseParkedDraft(draft.id)
-    void useDraftsStore.getState().removeDraft(connectionId, draft.id)
+    // Only stop hiding once the row is really gone, so it cannot flash back in.
+    void useDraftsStore.getState().removeDraft(connectionId, draft.id).finally(() => {
+      useDraftsStore.getState().setResumingDraft(null)
+    })
     queueMicrotask(() => {
       draftTrace('resume_after_microtask', readActiveConfig(targetProject, sid), draft.id)
     })
@@ -271,6 +277,8 @@ export async function resumeDraft(
     }, 300)
     return { ok: true }
   } catch (err) {
+    // Resume died mid-way — put the row back so the draft is not stranded.
+    useDraftsStore.getState().setResumingDraft(null)
     draftTrace('resume_failed', { err: err instanceof Error ? err.message : String(err) }, draft.id)
     return { ok: false, reason: 'failed' }
   }

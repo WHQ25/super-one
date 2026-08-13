@@ -116,7 +116,7 @@ function SessionRow({ s, openLabel }: { s: SessionCleanupConfirmSession; openLab
         ) : null}
       </span>
       {created ? (
-        <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground">{created}</span>
+        <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{created}</span>
       ) : null}
     </div>
   )
@@ -131,11 +131,11 @@ function ProjectGroupHeader({ projectId }: { projectId: string | null }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5 px-1 pb-0.5 pt-1 first:pt-0">
       <Folder className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="min-w-0 truncate text-[11px] font-medium text-muted-foreground" title={projectId ?? undefined}>
+      <span className="min-w-0 truncate text-xs font-medium text-muted-foreground" title={projectId ?? undefined}>
         {name ?? t('chat.permission.sessionCleanupUnknownProject')}
       </span>
       {isCurrent ? (
-        <span className="shrink-0 text-[11px] text-muted-foreground">
+        <span className="shrink-0 text-xs text-muted-foreground">
           · {t('chat.toolBlock.archive.thisProject')}
         </span>
       ) : null}

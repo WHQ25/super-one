@@ -158,7 +158,7 @@ function workDirStateOf(worktree: SessionAgentWorktreeConfig | null): WorkDirSta
 
 function TaskMarkdown({ text }: { text: string }) {
   return (
-    <div className="github-md text-xs leading-snug text-foreground/90 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_pre]:my-1.5 [&_pre]:text-[11px]">
+    <div className="github-md text-xs leading-snug text-foreground/90 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_pre]:my-1.5 [&_pre]:text-xs">
       <Streamdown
         plugins={streamdownPlugins}
         components={streamdownComponents}
@@ -255,7 +255,7 @@ function LaunchPanel({
               type="button"
               onClick={onToggleTask}
               title={t('chat.sessionAgentsConfirm.collapseTask')}
-              className="line-clamp-2 shrink-0 border-b border-border/50 px-2 py-1 text-left text-[11px] leading-snug text-muted-foreground hover:text-foreground"
+              className="line-clamp-2 shrink-0 border-b border-border/50 px-2 py-1 text-left text-xs leading-snug text-muted-foreground hover:text-foreground"
             >
               {summary}
             </button>

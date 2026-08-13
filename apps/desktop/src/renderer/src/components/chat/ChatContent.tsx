@@ -44,6 +44,7 @@ const LOAD_MORE_COUNT = 4
 // zoomed or transformed transcript can force Chromium to repaint a giant layer.
 const CHAT_SCALABLE_REM_TOKENS = {
   '--spacing': 0.25,
+  '--text-2xs': 0.625,
   '--text-xs': 0.75,
   '--text-sm': 0.875,
   '--text-base': 1,

@@ -69,7 +69,7 @@ export function MermaidThemePreview({
       style={{ backgroundColor: PREVIEW_SURFACES[scheme] }}
     >
       {error ? (
-        <p className="px-2 text-center text-[11px] text-destructive">{error}</p>
+        <p className="px-2 text-center text-xs text-destructive">{error}</p>
       ) : svg ? (
         <div
           className="max-h-full w-full max-w-full [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-full [&_svg]:w-full"

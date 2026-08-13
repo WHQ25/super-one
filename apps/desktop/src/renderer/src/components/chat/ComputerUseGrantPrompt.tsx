@@ -60,7 +60,7 @@ function MetaChip({ children, title }: { children: ReactNode; title?: string }) 
   return (
     <span
       title={title}
-      className="inline-flex max-w-full items-center truncate rounded-md border border-border/70 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground"
+      className="inline-flex max-w-full items-center truncate rounded-md border border-border/70 bg-muted/40 px-1.5 py-0.5 font-mono text-2xs leading-none text-muted-foreground"
     >
       {children}
     </span>
@@ -147,7 +147,7 @@ export function ComputerUseGrantPrompt({
               {t('chat.computerUseGrant.collapsed', { app })}
             </div>
             {bundleId ? (
-              <div className="truncate font-mono text-[10px] text-muted-foreground">
+              <div className="truncate font-mono text-2xs text-muted-foreground">
                 {bundleId}
               </div>
             ) : null}
@@ -173,7 +173,7 @@ export function ComputerUseGrantPrompt({
           />
 
           <div className="min-w-0 flex-1 pt-0.5">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+            <div className="text-xs font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
               {t('chat.computerUseGrant.badge')}
             </div>
             <div className="mt-0.5 truncate text-sm font-semibold text-foreground">

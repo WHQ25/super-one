@@ -196,7 +196,7 @@ function ListBody({
         return (
           <li key={typeof r.id === 'string' ? r.id : i} className="rounded bg-muted/30 px-2 py-1.5">
             <div className="font-medium text-foreground">{name}</div>
-            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
               <span>{enabled ? fields.enabled : fields.disabled}</span>
               {schedule ? <span>{fields.schedule}: {schedule}</span> : null}
               {status ? <span>{fields.status}: {status}</span> : null}
@@ -468,7 +468,7 @@ export function AutomationToolBlock({
       <div className="space-y-2">
         {deleted.length > 0 ? (
           <div>
-            <div className="mb-1 text-[11px] font-medium text-muted-foreground">{t(`${a}.deletedSection`)}</div>
+            <div className="mb-1 text-xs font-medium text-muted-foreground">{t(`${a}.deletedSection`)}</div>
             <ul className="space-y-0.5">
               {deleted.map((d, i) => (
                 <li key={typeof d.id === 'string' ? d.id : i} className="text-foreground">
@@ -480,7 +480,7 @@ export function AutomationToolBlock({
         ) : null}
         {failed.length > 0 ? (
           <div>
-            <div className="mb-1 text-[11px] font-medium text-muted-foreground">{t(`${a}.failedSection`)}</div>
+            <div className="mb-1 text-xs font-medium text-muted-foreground">{t(`${a}.failedSection`)}</div>
             <ul className="space-y-0.5">
               {failed.map((d, i) => (
                 <li key={typeof d.id === 'string' ? d.id : i} className="text-warning">

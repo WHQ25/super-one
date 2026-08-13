@@ -365,7 +365,7 @@ export const WorkflowSlashPopup = forwardRef<WorkflowSlashPopupHandle, WorkflowS
                 <Workflow className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="truncate text-xs font-medium text-foreground">{argsTip.name}</span>
                 {argsTip.source && (
-                  <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-2xs uppercase tracking-wide text-muted-foreground">
                     {argsTip.source}
                   </span>
                 )}
@@ -386,7 +386,7 @@ export const WorkflowSlashPopup = forwardRef<WorkflowSlashPopupHandle, WorkflowS
           {/* Args mode: remaining keys to Tab-complete */}
           {inArgsMode && keySuggestions.length > 0 && (
             <div className="p-1">
-              <div className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+              <div className="px-2 py-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground/80">
                 {t('chat.workflowSlash.keys', 'Keys')}
               </div>
               {keySuggestions.map((spec, i) => {
@@ -411,17 +411,17 @@ export const WorkflowSlashPopup = forwardRef<WorkflowSlashPopupHandle, WorkflowS
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-1.5 leading-4">
-                      <code className="shrink-0 rounded bg-muted/70 px-1 py-px font-mono text-[11px]">
+                      <code className="shrink-0 rounded bg-muted/70 px-1 py-px font-mono text-xs">
                         {spec.name}=
                       </code>
-                      <span className="truncate font-mono text-[11px] text-muted-foreground">
+                      <span className="truncate font-mono text-xs text-muted-foreground">
                         {def}
                       </span>
-                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                      <span className="shrink-0 text-2xs uppercase tracking-wide text-muted-foreground/70">
                         {kind}
                       </span>
                       {presentKeys.has(spec.name) && (
-                        <span className="shrink-0 text-[10px] text-primary/80">set</span>
+                        <span className="shrink-0 text-2xs text-primary/80">set</span>
                       )}
                     </span>
                     {spec.description && (
@@ -440,7 +440,7 @@ export const WorkflowSlashPopup = forwardRef<WorkflowSlashPopupHandle, WorkflowS
             <div className="p-1">
               {groups.map((group) => (
                 <div key={group.key} className="mb-0.5">
-                  <div className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                  <div className="px-2 py-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground/80">
                     {group.key === 'op'
                       ? t('chat.workflowSlash.sectionManage', 'Manage')
                       : group.key === 'workflow'
@@ -482,14 +482,14 @@ export const WorkflowSlashPopup = forwardRef<WorkflowSlashPopupHandle, WorkflowS
                           />
                           {/* Manage ops already sit in the Manage section — no redundant badge. */}
                           {item.kind !== 'op' && (
-                            <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] uppercase tracking-wide text-muted-foreground">
+                            <span className="shrink-0 rounded bg-muted px-1 py-px text-2xs uppercase tracking-wide text-muted-foreground">
                               {sourceLabel(item, (k, d) => t(k, d))}
                             </span>
                           )}
                           {status && (
                             <span
                               className={cn(
-                                'shrink-0 rounded px-1 py-px text-[10px] uppercase tracking-wide',
+                                'shrink-0 rounded px-1 py-px text-2xs uppercase tracking-wide',
                                 item.status === 'running'
                                   ? 'bg-primary/15 text-primary'
                                   : 'bg-muted text-muted-foreground',

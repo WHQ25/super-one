@@ -58,7 +58,7 @@ export function TurnDetailSection({ children, stats, className }: TurnDetailSect
         <span className="min-w-0 truncate font-normal tracking-wide">{label}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {stats && (stats.toolCalls > 0 || stats.filesChanged > 0 || stats.added > 0 || stats.removed > 0) && (
-            <span className="flex items-center gap-1.5 text-[10px] leading-none tabular-nums">
+            <span className="flex items-center gap-1.5 text-2xs leading-none tabular-nums">
               {stats.toolCalls > 0 && (
                 <span
                   className="inline-flex items-center gap-0.5 opacity-70"

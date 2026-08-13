@@ -246,7 +246,7 @@ function FieldRow({ label, value, mono }: { label: string; value: string; mono?:
       <span
         className={cn(
           'min-w-0 flex-1 break-words text-foreground',
-          mono && 'font-mono text-[11px]',
+          mono && 'font-mono text-xs',
         )}
       >
         {value}
@@ -257,7 +257,7 @@ function FieldRow({ label, value, mono }: { label: string; value: string; mono?:
 
 function PreBody({ text }: { text: string }) {
   return (
-    <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/30 p-2 font-mono text-[11px] leading-relaxed text-foreground">
+    <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/30 p-2 font-mono text-xs leading-relaxed text-foreground">
       {text}
     </pre>
   )
@@ -396,20 +396,20 @@ function ProjectListBody({
                   <span className="min-w-0 truncate text-xs font-medium text-foreground">{name}</span>
                 )}
                 {isCurrent ? (
-                  <span className="shrink-0 text-[11px] text-muted-foreground">· {thisProjectLabel}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">· {thisProjectLabel}</span>
                 ) : null}
                 {missing ? (
-                  <span className="shrink-0 text-[11px] text-warning">· {missingLabel}</span>
+                  <span className="shrink-0 text-xs text-warning">· {missingLabel}</span>
                 ) : null}
               </span>
               {path ? (
-                <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground" title={path}>
+                <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={path}>
                   {path}
                 </span>
               ) : null}
             </span>
             {last ? (
-              <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground" title={lastRaw}>
+              <span className="shrink-0 tabular-nums text-xs text-muted-foreground" title={lastRaw}>
                 {last}
               </span>
             ) : null}
@@ -633,7 +633,7 @@ function CleanupBody({
                 {s.title}
               </span>
               <span
-                className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-[11px] text-muted-foreground"
+                className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-xs text-muted-foreground"
                 title={s.id}
               >
                 {s.id}
@@ -651,7 +651,7 @@ function CleanupBody({
                 {s.title}
               </span>
               <span
-                className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-[11px] text-muted-foreground"
+                className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-xs text-muted-foreground"
                 title={s.id}
               >
                 {s.id}

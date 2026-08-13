@@ -851,7 +851,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                 <HighlightedPath path={SESSION_MENTION_KEYWORD} indices={item.keywordMatchIndices} />
               </span>
             </span>
-            <span className="shrink-0 text-[10px] text-muted-foreground">
+            <span className="shrink-0 text-2xs text-muted-foreground">
               <Kbd>tab</Kbd>
             </span>
           </button>
@@ -877,11 +877,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               <span className="font-medium">
                 <HighlightedPath path={item.label} indices={item.matchIndices} />
               </span>
-              <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+              <span className="ml-1.5 text-2xs font-normal text-muted-foreground">
                 {item.hint}
               </span>
             </span>
-            <span className="shrink-0 text-[10px] text-muted-foreground">
+            <span className="shrink-0 text-2xs text-muted-foreground">
               <Kbd>tab</Kbd>
             </span>
           </button>
@@ -903,11 +903,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               <HighlightedPath path={item.title} indices={item.matchIndices} />
             </span>
             {item.projectLabel ? (
-              <span className="max-w-20 shrink-0 truncate text-[10px] text-muted-foreground">
+              <span className="max-w-20 shrink-0 truncate text-2xs text-muted-foreground">
                 {item.projectLabel}
               </span>
             ) : null}
-            <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
+            <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-2xs text-muted-foreground">
               {item.harness}
             </span>
           </button>
@@ -943,7 +943,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                 <HighlightedPath path={item.displayName} indices={item.matchIndices} />
               </span>
               {disabled ? (
-                <span className="mt-0.5 block truncate text-[10px] font-normal text-muted-foreground">
+                <span className="mt-0.5 block truncate text-2xs font-normal text-muted-foreground">
                   {disabledHint}
                 </span>
               ) : (
@@ -954,7 +954,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               )}
             </span>
             {disabled && (
-              <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">
+              <span className="shrink-0 rounded bg-muted px-1 py-px text-2xs text-muted-foreground">
                 {t('chat.mentionPopup.disabled')}
               </span>
             )}
@@ -975,7 +975,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             <span className="min-w-0 flex-1 truncate font-medium">
               <HighlightedPath path={item.displayName} indices={item.matchIndices} />
             </span>
-            <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-emerald-500/10 px-1 py-px text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-emerald-500/10 px-1 py-px text-2xs font-medium text-emerald-600 dark:text-emerald-400">
               <MousePointer2 className="size-2.5 shrink-0" />
               {t('chat.mentionPopup.capabilityComputer')}
             </span>
@@ -1180,7 +1180,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                   : t('chat.mentionPopup.noSessions')}
               </div>
               {sessionPhase === 'need-title' ? (
-                <div className="font-mono text-[11px] text-muted-foreground">
+                <div className="font-mono text-xs text-muted-foreground">
                   @{SESSION_MENTION_KEYWORD} {sessionScopeLabel || '<project|all>'} &lt;title&gt;
                 </div>
               ) : null}
@@ -1194,7 +1194,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             ))
           )}
           {isSessionMode && sessionLoading ? (
-            <div className="px-2 py-1.5 text-[10px] text-muted-foreground">
+            <div className="px-2 py-1.5 text-2xs text-muted-foreground">
               {t('chat.mentionPopup.loadingSessions')}
             </div>
           ) : null}
@@ -1203,7 +1203,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             && !sessionLoading
             && sessionLoadState.hasMore
             && orderedItems.length > 0 ? (
-            <div className="px-2 py-1 text-[10px] text-muted-foreground/70">
+            <div className="px-2 py-1 text-2xs text-muted-foreground/70">
               {t('chat.mentionPopup.scrollForMore')}
             </div>
           ) : null}

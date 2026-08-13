@@ -365,7 +365,7 @@ function resolveEditableAgent(
 
 function PromptMarkdown({ text }: { text: string }) {
   return (
-    <div className="github-md text-xs leading-snug text-foreground/90 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_pre]:my-1.5 [&_pre]:text-[11px]">
+    <div className="github-md text-xs leading-snug text-foreground/90 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_pre]:my-1.5 [&_pre]:text-xs">
       <Streamdown
         plugins={streamdownPlugins}
         components={streamdownComponents}
@@ -411,7 +411,7 @@ function ExpandablePrompt({
             type="button"
             onClick={() => setExpanded(false)}
             title={t('chat.sessionAgentsConfirm.collapseTask')}
-            className="line-clamp-2 shrink-0 border-b border-border/50 px-2 py-1 text-left text-[11px] leading-snug text-muted-foreground hover:text-foreground"
+            className="line-clamp-2 shrink-0 border-b border-border/50 px-2 py-1 text-left text-xs leading-snug text-muted-foreground hover:text-foreground"
           >
             {collapsedLabel}
           </button>
@@ -601,7 +601,7 @@ export function AutomationConfirmPrompt({
           <Icon className={cn('size-3.5 shrink-0', iconClass)} />
           <span className="font-medium text-foreground">{title}</span>
           {editableSource ? (
-            <span className="ml-auto truncate text-[11px] text-muted-foreground">
+            <span className="ml-auto truncate text-xs text-muted-foreground">
               {harnessLabel(editableSource.type)}
               {editableSource.type === 'acp' && (agentEdits.acpAgentId ?? editableSource.base?.acpAgentId)
                 ? ` · ${agentEdits.acpAgentId ?? editableSource.base?.acpAgentId}`
@@ -626,7 +626,7 @@ export function AutomationConfirmPrompt({
                   <span className="truncate font-medium text-foreground">{item.name}</span>
                 </span>
                 {item.scheduleSummary ? (
-                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                  <span className="shrink-0 text-xs text-muted-foreground">
                     {item.scheduleSummary}
                   </span>
                 ) : null}
@@ -649,7 +649,7 @@ export function AutomationConfirmPrompt({
 
         {showAgentStrip && editableSource ? (
           <div className="mb-3 space-y-1">
-            <div className="text-[11px] text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               {t('chat.permission.automationFieldAgent')}
             </div>
             <AgentConfigStrip

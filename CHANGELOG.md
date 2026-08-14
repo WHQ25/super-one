@@ -4,6 +4,14 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.5-alpha] - 2026-08-15
+
+### Fixed
+
+- Chat: stop the Cursor model-selector update storm when the catalog has parameters but no values (fresh install / missing API key), which hit React #185 and blanked the window; render errors now show a recovery screen instead of an empty window.
+- Media: play generated videos again when reopening a history session (media-gen output is now readable over both the media server and local-file, and the status card is rebuilt from saved tool results).
+- Media: treat NewAPI model ids that contain `seedance` as Doubao/Ark, so renamed relay models such as HiFlowt `dreamina-seedance-*` submit instead of failing.
+
 ## [0.53.4-alpha] - 2026-08-14
 
 ### Added

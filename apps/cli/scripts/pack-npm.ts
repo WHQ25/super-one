@@ -39,7 +39,7 @@ const MIN_NODE_MAJOR = 20
 export const PUBLIC_CLI_PACKAGE = '@super-one/cli'
 export const PUBLIC_CLI_BIN = 'superone'
 
-const CLAUDE_SDK_VERSION = '0.3.226'
+const CLAUDE_SDK_VERSION = '0.3.232'
 const CURSOR_SDK_VERSION = '1.0.27'
 
 const OPTIONAL_CLAUDE_PLATFORMS = [

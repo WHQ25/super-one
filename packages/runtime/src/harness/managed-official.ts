@@ -27,7 +27,7 @@ import {
 } from './managed-layout'
 
 /** Keep lockstep with apps/cli/scripts/pack-npm.ts CLAUDE_SDK_VERSION when possible. */
-export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.226'
+export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.232'
 
 /**
  * Pinned Codex CLI on npm. Bump deliberately with release notes — never bare `latest`

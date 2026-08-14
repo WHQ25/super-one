@@ -186,7 +186,8 @@ describe('createClaudeAgentEventMapper', () => {
       tools: [],
       mcp_servers: [],
       permissionMode: 'default',
-      slash_commands: [],
+      slash_commands: ['help', 'exit'],
+      terminal_slash_commands: ['exit', 'statusline'],
       skills: [],
       claude_code_version: '1',
       cwd: '/tmp',
@@ -198,6 +199,8 @@ describe('createClaudeAgentEventMapper', () => {
       session: expect.objectContaining({
         fastModeState: 'off',
         fastModeDisabledReason: 'model_not_allowed',
+        slashCommands: ['help', 'exit'],
+        terminalSlashCommands: ['exit', 'statusline'],
       }),
     }))
   })

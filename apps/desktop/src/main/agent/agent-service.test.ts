@@ -202,6 +202,7 @@ const { ipcMain } = await import('electron')
 const dbSessions = await import('../db-sessions')
 const appSettings = await import('../app-settings-service')
 const claudeModels = await import('./claude-models')
+const database = await import('../database')
 type MockSessionExtras = {
   owner: { kind: 'local' } | { kind: 'remote'; deviceId: string }
   subscribers: Set<string>
@@ -2081,6 +2082,42 @@ describe('AgentService.handleRemoteCommand', () => {
 
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
     expect(payload.defaults).toEqual({ model: null, effort: null, permissionMode: null })
+  })
+
+  it('get_system_info hides Claude terminal-bound slash commands from remote clients', async () => {
+    vi.mocked(appSettings.readAppSettings).mockReturnValue({
+      analyticsEnabled: true,
+      locale: '',
+      agentPreference: {
+        claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+        codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
+      },
+    })
+    vi.mocked(claudeModels.fetchModels).mockResolvedValue([])
+    vi.mocked(database.getCachedHarnessResources).mockReturnValue({
+      models: [],
+      account: {},
+      slashCommands: [
+        { name: 'help', description: 'Help', argumentHint: '', isSkill: false },
+        { name: 'exit', description: 'Exit', argumentHint: '', isSkill: false, terminalBound: true },
+      ],
+      skills: [],
+      commands: [],
+      agents: [],
+      outputStyles: [],
+    })
+
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand(
+      { type: 'get_system_info', requestId: 'sys-term', projectPath: '/p', provider: 'claude' } as never,
+      respond,
+    )
+
+    const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
+    expect(payload.userSlashCommands).toEqual([
+      { name: 'help', description: 'Help', argumentHint: '', isSkill: false },
+    ])
   })
 
   it('get_system_info returns codex-flavored defaults for codex provider', async () => {

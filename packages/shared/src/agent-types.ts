@@ -140,6 +140,12 @@ export interface SessionInfo {
   mcpServers: { name: string; status: string }[]
   permissionMode: PermissionMode
   slashCommands: string[]
+  /**
+   * Subset of `slashCommands` whose UX is bound to a local terminal
+   * (`/exit`, `/statusline`, …). Host menus should hide these; the engine
+   * still knows the commands. Absent when the CLI omitted the tag.
+   */
+  terminalSlashCommands?: string[]
   skills: string[]
   claudeCodeVersion: string
   cwd: string
@@ -990,6 +996,11 @@ export interface SlashCommandInfo {
   description: string
   argumentHint: string
   isSkill: boolean
+  /**
+   * Claude SDK `terminal_slash_commands`: the command's UX is bound to a
+   * local terminal. SuperOne (desktop + remote) hides these from `/` menus.
+   */
+  terminalBound?: boolean
   /**
    * Grok advertises registered workflows as available_commands with
    * `_meta.workflowSource` (builtin | project | user). Used by `/workflow` name

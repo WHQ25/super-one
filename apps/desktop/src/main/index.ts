@@ -58,6 +58,10 @@ import {
 } from './computer-use/computer-use-permission-window'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
 import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk'
+import {
+  markTerminalBoundSlashCommands,
+  readTerminalSlashCommandsFromInitMessage,
+} from '@superone/shared/slash-commands'
 import { tryResolveHarnessRuntime } from './harness/resolve-runtime'
 import { disposeGlobalWarmupManager } from './agent/warmup-manager'
 import { resolveProbeCwd } from './agent/probe-cwd'
@@ -3831,8 +3835,11 @@ function registerIpcHandlers(): void {
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
+      let terminalSlashCommands: string[] | undefined
       const drainResult = (async (): Promise<SDKResultMessage | null> => {
         for await (const msg of q) {
+          const tagged = readTerminalSlashCommandsFromInitMessage(msg)
+          if (tagged) terminalSlashCommands = tagged
           if (msg.type === 'result') return msg
         }
         return null
@@ -3873,12 +3880,15 @@ function registerIpcHandlers(): void {
         apiKeySource: accountInfo.apiKeySource,
         apiProvider: accountInfo.apiProvider,
       }
-      const slashCommands = commands.map((c) => ({
-        name: c.name,
-        description: c.description,
-        argumentHint: c.argumentHint,
-        isSkill: false,
-      }))
+      const slashCommands = markTerminalBoundSlashCommands(
+        commands.map((c) => ({
+          name: c.name,
+          description: c.description,
+          argumentHint: c.argumentHint,
+          isSkill: false,
+        })),
+        terminalSlashCommands,
+      )
 
       const outputStyles = initResult.available_output_styles ?? []
 

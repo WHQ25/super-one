@@ -6,6 +6,7 @@
  * state and emits IPC-safe AgentEvents.
  */
 import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
+import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 
 type Raw = Record<string, any>
@@ -263,10 +264,11 @@ export function createClaudeAgentEventMapper(
 
   const applySystem = (system: Raw) => {
     switch (system.subtype) {
-      case 'init':
+      case 'init': {
         if (typeof system.session_id === 'string' && system.session_id) {
           options.onSessionId?.(system.session_id)
         }
+        const terminalSlashCommands = readTerminalSlashCommands(system.terminal_slash_commands)
         emit({
           type: 'session_init',
           session: {
@@ -276,6 +278,7 @@ export function createClaudeAgentEventMapper(
             mcpServers: system.mcp_servers ?? [],
             permissionMode: system.permissionMode ?? 'default',
             slashCommands: system.slash_commands ?? [],
+            ...(terminalSlashCommands ? { terminalSlashCommands } : {}),
             skills: system.skills ?? [],
             claudeCodeVersion: system.claude_code_version ?? '',
             cwd: system.cwd ?? '',
@@ -290,6 +293,7 @@ export function createClaudeAgentEventMapper(
           },
         })
         break
+      }
       case 'hook_started':
         emit({
           type: 'hook_started',

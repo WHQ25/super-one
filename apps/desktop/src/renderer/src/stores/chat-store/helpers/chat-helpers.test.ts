@@ -105,6 +105,30 @@ describe('buildSlashCommands', () => {
     expect(release?.isSkill).toBe(false)
   })
 
+  it('drops Claude terminal-bound commands from the host menu', () => {
+    const global: SlashCommandInfo[] = [
+      cmd('help'),
+      { ...cmd('exit'), terminalBound: true },
+      { ...cmd('statusline'), terminalBound: true },
+    ]
+    const result = buildSlashCommands(global, [], [], [], [])
+
+    expect(result.find((c) => c.name === 'help')).toBeTruthy()
+    expect(result.find((c) => c.name === 'exit')).toBeUndefined()
+    expect(result.find((c) => c.name === 'statusline')).toBeUndefined()
+  })
+
+  it('still surfaces a user skill that shares a terminal-bound command name', () => {
+    const global: SlashCommandInfo[] = [{ ...cmd('exit'), terminalBound: true }]
+    const userSkills = [cmd('exit', 'custom exit skill')]
+    const result = buildSlashCommands(global, userSkills, [], [], [])
+
+    expect(result.find((c) => c.name === 'exit')).toEqual(expect.objectContaining({
+      name: 'exit',
+      description: 'custom exit skill',
+    }))
+  })
+
   it('replaces the SDK built-in /clear (dropping its [name] hint) with a local-only clear', () => {
     const global: SlashCommandInfo[] = [
       { name: 'clear', description: 'Clear conversation history and free up context', argumentHint: '[name]', isSkill: false },

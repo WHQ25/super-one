@@ -1060,7 +1060,7 @@ export class AgentService {
             }), 'claude')
             await respond?.(command.requestId, {
               models,
-              userSlashCommands: cached?.slashCommands ?? [],
+              userSlashCommands: (cached?.slashCommands ?? []).filter((c) => !c.terminalBound),
               account: cached?.account ?? null,
               permissionModes: ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions', 'dontAsk'],
               sandboxModes: ['off', 'on', 'auto'],

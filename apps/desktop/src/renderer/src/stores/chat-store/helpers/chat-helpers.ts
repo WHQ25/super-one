@@ -16,6 +16,9 @@ export function buildSlashCommands(
   // here) and re-add it as a local-only command below.
   const tagged = globalSlashCommands.flatMap((c): SlashCommandInfo[] => {
     if (c.name === 'clear') return []
+    // Claude SDK tags TUI-only commands (`/exit`, `/statusline`, …). SuperOne
+    // is a GUI host — hide them from the `/` menu; the engine still has them.
+    if (c.terminalBound) return []
     const skill = skillMap.get(c.name)
     if (skill) {
       if (disabledSkills.has(c.name)) return []

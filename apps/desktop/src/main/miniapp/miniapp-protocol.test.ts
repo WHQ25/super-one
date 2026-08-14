@@ -14,6 +14,9 @@ vi.mock('../path-security', () => ({
   isPathWithinAllowed: () => true,
   getReadableAssetRoots: () => ['/projects'],
 }))
+vi.mock('../media-readable-roots', () => ({
+  getMediaReadableRoots: () => ['/projects', '/userData/media-gen'],
+}))
 vi.mock('../recent-folders', () => ({ getRecentFolders: () => [], getProjectPathById: () => '/projects/p' }))
 vi.mock('../session/session-repo', () => ({ listWorktreePaths: () => [] }))
 vi.mock('../i18n', () => ({ getCurrentLocale: () => 'en' }))

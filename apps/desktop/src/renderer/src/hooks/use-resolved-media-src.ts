@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { isRemoteMediaUrl, resolveDisplayMediaSrc } from '@/lib/remote-media-url'
-import { toMediaUrl } from '@/lib/path-utils'
+import { mediaUrlFor } from '@/lib/path-utils'
+import { useMediaServerPort } from './use-media-server-port'
 
-function localFileToMediaUrl(src: string | undefined): string | undefined {
+function localFileToMediaUrl(src: string | undefined, port: number): string | undefined {
   if (!src) return src
   if (src.startsWith('local-file:///')) {
     try {
       const filePath = decodeURIComponent(new URL(src).pathname)
-      return toMediaUrl(filePath)
+      return mediaUrlFor(filePath, port)
     } catch {
       return src
     }
@@ -26,6 +27,7 @@ export function useResolvedMediaSrc(src: string | undefined): {
   loading: boolean
   failed: boolean
 } {
+  const port = useMediaServerPort()
   const isRemote = isRemoteMediaUrl(src)
   const [remoteSrc, setRemoteSrc] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(isRemote)
@@ -59,5 +61,5 @@ export function useResolvedMediaSrc(src: string | undefined): {
 
   if (!src) return { displaySrc: undefined, loading: false, failed: false }
   if (isRemote) return { displaySrc: remoteSrc, loading, failed }
-  return { displaySrc: localFileToMediaUrl(src) ?? src, loading: false, failed: false }
+  return { displaySrc: localFileToMediaUrl(src, port) ?? src, loading: false, failed: false }
 }

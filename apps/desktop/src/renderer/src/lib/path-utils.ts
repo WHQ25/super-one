@@ -72,14 +72,68 @@ export function resolveAssetUrls(paths: Array<string | undefined | null>): strin
 }
 
 let _mediaServerPort = 0
+let _portFetch: Promise<number> | null = null
+const _portListeners = new Set<(port: number) => void>()
+
+export function mediaUrlFor(filePath: string, port: number): string {
+  if (port > 0) {
+    const normalized = filePath.replace(/\\/g, '/')
+    return `http://127.0.0.1:${port}${encodeURI(normalized).replace(/#/g, '%23')}`
+  }
+  return toLocalFileUrl(filePath)
+}
+
+function notifyMediaServerPort(port: number): void {
+  if (port <= 0 || port === _mediaServerPort) return
+  _mediaServerPort = port
+  for (const listener of _portListeners) listener(port)
+}
+
+/** Retry until the main-process media server is listening. A one-shot read at
+ * module load often sees port 0 (listen callback has not fired) and would
+ * otherwise pin every later `toMediaUrl` to local-file://. */
+export function ensureMediaServerPort(): Promise<number> {
+  if (_mediaServerPort > 0) return Promise.resolve(_mediaServerPort)
+  if (typeof window === 'undefined' || !window.app?.getMediaServerPort) return Promise.resolve(0)
+  if (!_portFetch) {
+    _portFetch = (async () => {
+      try {
+        for (let attempt = 0; attempt < 40; attempt++) {
+          const port = await window.app.getMediaServerPort()
+          if (port > 0) {
+            notifyMediaServerPort(port)
+            return port
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        return 0
+      } finally {
+        if (_mediaServerPort <= 0) _portFetch = null
+      }
+    })()
+  }
+  return _portFetch
+}
+
+export function getMediaServerPortSync(): number {
+  return _mediaServerPort
+}
+
+export function subscribeMediaServerPort(listener: (port: number) => void): () => void {
+  _portListeners.add(listener)
+  if (_mediaServerPort > 0) {
+    const port = _mediaServerPort
+    queueMicrotask(() => listener(port))
+  } else {
+    void ensureMediaServerPort()
+  }
+  return () => { _portListeners.delete(listener) }
+}
+
 if (typeof window !== 'undefined' && window.app?.getMediaServerPort) {
-  window.app.getMediaServerPort().then((p) => { _mediaServerPort = p })
+  void ensureMediaServerPort()
 }
 
 export function toMediaUrl(filePath: string): string {
-  if (_mediaServerPort) {
-    const normalized = filePath.replace(/\\/g, '/')
-    return `http://127.0.0.1:${_mediaServerPort}${encodeURI(normalized).replace(/#/g, '%23')}`
-  }
-  return toLocalFileUrl(filePath)
+  return mediaUrlFor(filePath, _mediaServerPort)
 }

@@ -9,6 +9,7 @@ import {
   isGrokVideoGenTool,
   collectCodexGeneratedImages,
   collectCodexGeneratedVideos,
+  videoGenStatusesFromMessages,
 } from './media-generation'
 import { isHiddenToolBlock } from './tool-display'
 
@@ -426,6 +427,39 @@ const codexVideoCall = (over: Partial<CodexMcpToolCallItem> = {}): CodexMcpToolC
   result: { content: [{ type: 'text', text: GENERATED }], structuredContent: null },
   status: 'completed',
   ...over,
+})
+
+describe('videoGenStatusesFromMessages', () => {
+  it('rebuilds a completed job from the submit + finishing poll so restore matches live UI', () => {
+    const messages = [{
+      content: [
+        { type: 'tool_use' as const, toolUseId: 's1', toolName: VIDEO_TOOL, input: JSON.stringify({ prompt: 'a puppy', provider: 'ark', model: 'seedance' }) },
+        { type: 'tool_result' as const, toolUseId: 's1', summary: SUBMITTED },
+        { type: 'tool_use' as const, toolUseId: 'p1', toolName: STATUS_TOOL, input: JSON.stringify({ generation_id: 'vid-1' }) },
+        { type: 'tool_result' as const, toolUseId: 'p1', summary: GENERATED },
+      ],
+    }]
+    expect(videoGenStatusesFromMessages(messages)).toEqual({
+      'vid-1': {
+        status: 'generated',
+        generationId: 'vid-1',
+        prompt: 'a puppy',
+        provider: 'ark',
+        model: 'seedance',
+        savedPaths: ['/tmp/out/vid-1-0.mp4'],
+      },
+    })
+  })
+
+  it('keeps a submit-only turn as submitted when the poll has not landed', () => {
+    const messages = [{
+      content: [
+        { type: 'tool_use' as const, toolUseId: 's1', toolName: VIDEO_TOOL, input: JSON.stringify({ prompt: 'x' }) },
+        { type: 'tool_result' as const, toolUseId: 's1', summary: SUBMITTED },
+      ],
+    }]
+    expect(videoGenStatusesFromMessages(messages)['vid-1']?.status).toBe('submitted')
+  })
 })
 
 describe('collecting generated videos from a codex turn', () => {

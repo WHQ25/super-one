@@ -1,10 +1,12 @@
 import type { Protocol } from 'electron'
 import { app } from 'electron'
+import { createReadStream, statSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { dirname } from 'path'
-import { resolveRealPath, isPathWithinAllowed, getReadableAssetRoots } from '../path-security'
-import { getRecentFolders, getProjectPathById } from '../recent-folders'
-import { listWorktreePaths } from '../session/session-repo'
+import { Readable } from 'stream'
+import { resolveRealPath, isPathWithinAllowed } from '../path-security'
+import { getMediaReadableRoots } from '../media-readable-roots'
+import { getProjectPathById } from '../recent-folders'
 import { getCurrentLocale } from '../i18n'
 import { trace } from '../agent/event-trace'
 import log from '../logger'
@@ -25,6 +27,8 @@ const LOCAL_FILE_MIME: Record<string, string> = {
   woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
 }
 
+const STREAMED_LOCAL_EXTS = new Set(['mp4', 'm4v', 'webm', 'ogg', 'mov', 'mp3', 'wav', 'flac', 'aac', 'm4a'])
+
 const MINIAPP_MIME: Record<string, string> = {
   html: 'text/html', htm: 'text/html', css: 'text/css', js: 'text/javascript',
   mjs: 'text/javascript', json: 'application/json', wasm: 'application/wasm',
@@ -43,18 +47,49 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
       const rawPath = decodeURIComponent(new URL(request.url).pathname)
       const filePath = rawPath.replace(/^\/([A-Za-z]:)/, '$1')
       const resolved = resolveRealPath(filePath)
-      const folders = getRecentFolders()
-      const worktrees = listWorktreePaths()
-      const allowedRoots = getReadableAssetRoots([...folders.map((f) => f.path), ...worktrees])
-      if (!isPathWithinAllowed(resolved, allowedRoots)) {
+      if (!isPathWithinAllowed(resolved, getMediaReadableRoots())) {
         log.warn('[local-file] blocked path outside project folders:', resolved)
         return new Response('Forbidden', { status: 403 })
       }
       const ext = resolved.split('.').pop()?.toLowerCase() ?? ''
       const contentType = LOCAL_FILE_MIME[ext] ?? 'application/octet-stream'
+      const range = request.headers.get('Range')
+
+      // Videos/audio must stream. readFile() loads the whole clip on every Range
+      // request and can freeze the main process when a restored session mounts
+      // a <video preload="metadata"> against a tens-of-MB media-gen file.
+      if (STREAMED_LOCAL_EXTS.has(ext)) {
+        let fileSize: number
+        try { fileSize = statSync(resolved).size } catch {
+          return new Response('Not found', { status: 404 })
+        }
+        log.debug(`[local-file] ${resolved} range=${range} size=${fileSize} stream=1`)
+        if (range) {
+          const match = range.match(/bytes=(\d+)-(\d*)/)
+          const start = match ? parseInt(match[1], 10) : 0
+          const end = match?.[2] ? parseInt(match[2], 10) : fileSize - 1
+          const stream = createReadStream(resolved, { start, end })
+          return new Response(Readable.toWeb(stream) as ReadableStream, {
+            status: 206,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+              'Content-Length': String(end - start + 1),
+              'Accept-Ranges': 'bytes',
+            },
+          })
+        }
+        return new Response(Readable.toWeb(createReadStream(resolved)) as ReadableStream, {
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': String(fileSize),
+            'Accept-Ranges': 'bytes',
+          },
+        })
+      }
+
       const data = await readFile(resolved)
       const total = data.byteLength
-      const range = request.headers.get('Range')
       log.debug(`[local-file] ${resolved} range=${range} size=${total}`)
 
       if (range) {

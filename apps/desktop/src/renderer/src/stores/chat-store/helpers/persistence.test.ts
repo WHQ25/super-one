@@ -109,6 +109,30 @@ describe('_mergePersistedSessionState', () => {
     expect(merged._historyHydrated).toBe(true)
   })
 
+  it('rebuilds videoGenStatuses from persisted tool results on cold restore', () => {
+    const sess = createDefaultPerSessionState()
+    const saved = {
+      messages: [{
+        id: 'a1', role: 'assistant' as const, status: 'complete' as const, createdAt: '', providerId: 'claude',
+        content: [
+          { type: 'tool_use' as const, toolUseId: 's1', toolName: 'mcp__superone__media_generate_video', input: JSON.stringify({ prompt: 'wave' }) },
+          { type: 'tool_result' as const, toolUseId: 's1', summary: JSON.stringify({ status: 'submitted', generationId: 'g1' }) },
+          { type: 'tool_use' as const, toolUseId: 'p1', toolName: 'mcp__superone__media_video_status', input: JSON.stringify({ generation_id: 'g1' }) },
+          { type: 'tool_result' as const, toolUseId: 'p1', summary: JSON.stringify({ status: 'generated', generationId: 'g1', savedPaths: ['/tmp/v.mp4'] }) },
+        ],
+      }],
+      totalCostUsd: 0, contextTokens: 0,
+      isWorktree: false, gitBranch: null, worktreePath: null, provider: 'claude',
+    }
+    const merged = _mergePersistedSessionState(sess, saved as never)
+    expect(merged.videoGenStatuses.g1).toMatchObject({
+      status: 'generated',
+      generationId: 'g1',
+      prompt: 'wave',
+      savedPaths: ['/tmp/v.mp4'],
+    })
+  })
+
   it('keeps the live session title/totalCostUsd when it is non-null/greater', () => {
     const sess = { ...createDefaultPerSessionState(), _title: 'live title', totalCostUsd: 1.0 }
     const merged = _mergePersistedSessionState(sess, {

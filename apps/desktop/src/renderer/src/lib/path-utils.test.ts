@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shortenPath, homePath, resolveAssetUrls, toAssetUrl, toLocalFileUrl } from './path-utils'
+import { shortenPath, homePath, resolveAssetUrls, toAssetUrl, toLocalFileUrl, mediaUrlFor } from './path-utils'
 
 describe('shortenPath', () => {
   it('returns relative path when shortest', () => {
@@ -113,6 +113,17 @@ describe('toAssetUrl', () => {
 
   it('drops unresolved relative paths', () => {
     expect(toAssetUrl('./assets/logo.png')).toBeNull()
+  })
+})
+
+describe('mediaUrlFor', () => {
+  it('uses the media server when a port is known so videos can Range-seek', () => {
+    expect(mediaUrlFor('/Users/alice/Library/Application Support/super-one/media-gen/out.mp4', 41234))
+      .toBe('http://127.0.0.1:41234/Users/alice/Library/Application%20Support/super-one/media-gen/out.mp4')
+  })
+
+  it('falls back to local-file when the media server is not listening yet', () => {
+    expect(mediaUrlFor('/Users/alice/out.mp4', 0)).toBe('local-file:///Users/alice/out.mp4')
   })
 })
 

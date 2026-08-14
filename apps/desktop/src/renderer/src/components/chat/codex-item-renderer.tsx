@@ -413,6 +413,7 @@ export function renderCodexItem(
       return <CodexImageGenerationBlock key={`${item.id}-${index}`} item={item} />
 
     case 'todo_list':
+    case 'video_generation':
       return null
 
     case 'error':

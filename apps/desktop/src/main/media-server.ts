@@ -1,10 +1,8 @@
 import { createServer, type Server } from 'http'
 import { createReadStream, statSync } from 'fs'
 import { extname } from 'path'
-import { mediaGenRoot } from './media-gen/paths'
-import { resolveRealPath, isPathWithinAllowed, getReadableAssetRoots } from './path-security'
-import { getRecentFolders } from './recent-folders'
-import { listWorktreePaths } from './session/session-repo'
+import { resolveRealPath, isPathWithinAllowed } from './path-security'
+import { getMediaReadableRoots } from './media-readable-roots'
 import log from './logger'
 
 const MEDIA_MIME: Record<string, string> = {
@@ -18,14 +16,7 @@ let server: Server | null = null
 let port = 0
 
 function getAllowedRoots(): string[] {
-  // Includes ~/.grok/sessions via getReadableAssetRoots (Grok Imagine / video tool output)
-  // plus SuperOne media-gen outputs under userData.
-  return getReadableAssetRoots([
-    ...getRecentFolders().map((f) => f.path),
-    ...listWorktreePaths(),
-    // Generated media lives under userData, outside any project, but the gallery has to stream it.
-    mediaGenRoot(),
-  ])
+  return getMediaReadableRoots()
 }
 
 export function startMediaServer(): Promise<number> {

@@ -1,4 +1,4 @@
-import type { ImageGenerationItem, VideoGenerationItem, CodexThreadItem } from '@superone/shared/agent-types'
+import type { ChatMessage, ImageGenerationItem, VideoGenerationItem, CodexThreadItem } from '@superone/shared/agent-types'
 
 const MEDIA_GENERATE_IMAGE_TOOL = 'mcp__superone__media_generate_image'
 const MEDIA_GENERATE_VIDEO_TOOL = 'mcp__superone__media_generate_video'
@@ -259,4 +259,91 @@ export function collectCodexGeneratedVideos(codexItems: CodexThreadItem[] | unde
     for (const video of toVideoStatusItems(codexMcpResultText(item))) byId.set(video.id, video)
   }
   return [...byId.values()]
+}
+
+export interface VideoGenStatusSnapshot {
+  status: string
+  generationId: string
+  prompt?: string
+  provider?: string
+  model?: string
+  savedPaths?: string[]
+  warnings?: string[]
+  error?: string
+}
+
+/**
+ * Rebuild the live video-status map from persisted tool results.
+ * `videoGenStatuses` is not written to SQLite — without this, a cold restore
+ * shows every submit as "Submitted" even after the completing poll landed.
+ */
+export function videoGenStatusesFromMessages(
+  messages: Array<Pick<ChatMessage, 'content'> & { metadata?: ChatMessage['metadata'] }>,
+): Record<string, VideoGenStatusSnapshot> {
+  const statuses: Record<string, VideoGenStatusSnapshot> = {}
+
+  const applySubmit = (inputRaw: string | undefined, resultRaw: string | undefined) => {
+    try {
+      const result = JSON.parse(resultRaw ?? '{}') as Record<string, unknown>
+      const genId = result.generationId
+      if (typeof genId !== 'string' || !genId) return
+      const input = inputRaw ? JSON.parse(inputRaw) as Record<string, unknown> : {}
+      const prev = statuses[genId]
+      statuses[genId] = {
+        status: result.status === 'error' ? 'error' : (prev?.status ?? 'submitted'),
+        generationId: genId,
+        prompt: typeof input.prompt === 'string' ? input.prompt : prev?.prompt,
+        provider: typeof input.provider === 'string' ? input.provider : prev?.provider,
+        model: typeof input.model === 'string' ? input.model : prev?.model,
+        savedPaths: Array.isArray(result.savedPaths) ? result.savedPaths.filter((p): p is string => typeof p === 'string') : prev?.savedPaths,
+        warnings: Array.isArray(result.warnings) ? result.warnings.map(String) : prev?.warnings,
+        error: result.status === 'error' ? String(result.message ?? '') : prev?.error,
+      }
+    } catch { /* ignore malformed JSON */ }
+  }
+
+  const applyStatus = (inputRaw: string | undefined, resultRaw: string | undefined) => {
+    try {
+      const input = inputRaw ? JSON.parse(inputRaw) as Record<string, unknown> : {}
+      const genId = input.generation_id
+      if (typeof genId !== 'string' || !genId) return
+      const result = JSON.parse(resultRaw ?? '{}') as Record<string, unknown>
+      const prev = statuses[genId]
+      statuses[genId] = {
+        ...(prev ?? { status: 'running', generationId: genId }),
+        status: result.status === 'error' ? 'error' : (result.status === 'generated' ? 'generated' : 'running'),
+        savedPaths: Array.isArray(result.savedPaths) ? result.savedPaths.filter((p): p is string => typeof p === 'string') : prev?.savedPaths,
+        warnings: Array.isArray(result.warnings) ? result.warnings.map(String) : prev?.warnings,
+        error: result.status === 'error' ? String(result.message ?? '') : prev?.error,
+      }
+    } catch { /* ignore malformed JSON */ }
+  }
+
+  for (const msg of messages) {
+    const resultById = new Map<string, string>()
+    const tools: Array<{ id: string; name: string; input: string }> = []
+    for (const block of msg.content ?? []) {
+      if (block.type === 'tool_result' && block.toolUseId && block.summary) {
+        resultById.set(block.toolUseId, block.summary)
+      }
+      if (block.type === 'tool_use' && block.toolUseId && typeof block.input === 'string') {
+        tools.push({ id: block.toolUseId, name: block.toolName, input: block.input })
+      }
+    }
+    for (const tool of tools) {
+      if (isMediaGenerateVideoTool(tool.name)) applySubmit(tool.input, resultById.get(tool.id))
+      if (isMediaVideoStatusTool(tool.name)) applyStatus(tool.input, resultById.get(tool.id))
+    }
+
+    for (const item of msg.metadata?.codex?.items ?? []) {
+      if (item.type !== 'mcp_tool_call') continue
+      const toolName = `mcp__${item.server}__${item.tool}`
+      const input = JSON.stringify(item.arguments ?? {})
+      const result = item.error ? undefined : codexMcpResultText(item)
+      if (isMediaGenerateVideoTool(toolName)) applySubmit(input, result)
+      if (isMediaVideoStatusTool(toolName)) applyStatus(input, result)
+    }
+  }
+
+  return statuses
 }

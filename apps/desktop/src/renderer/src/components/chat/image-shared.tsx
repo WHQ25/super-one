@@ -9,7 +9,8 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/co
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/components/ui/hover-card'
 import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
-import { toMediaUrl } from '@/lib/path-utils'
+import { mediaUrlFor } from '@/lib/path-utils'
+import { useMediaServerPort, useMediaUrl } from '@/hooks/use-media-server-port'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './chat-input-api'
 import { useAppStore } from '@/stores/app'
@@ -79,7 +80,8 @@ export function useImageDataUri(savedPath: string | undefined, isFailed: boolean
  */
 export function useImageMediaSrc(filePath: string | undefined, isFailed: boolean) {
   const [loadError, setLoadError] = useState(false)
-  const src = filePath && !isFailed ? toMediaUrl(filePath) : null
+  const port = useMediaServerPort()
+  const src = filePath && !isFailed ? mediaUrlFor(filePath, port) : null
 
   useEffect(() => {
     setLoadError(false)
@@ -327,7 +329,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
   const item = items[index]
   // Fullscreen always prefers the original; stream via media server so 4K files load.
   const fullPath = item ? imageFullPath(item) : undefined
-  const fullSrc = fullPath && item?.status !== 'failed' ? toMediaUrl(fullPath) : null
+  const fullSrc = useMediaUrl(fullPath && item?.status !== 'failed' ? fullPath : undefined) ?? null
   const [downloading, setDownloading] = useState(false)
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null)
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null)

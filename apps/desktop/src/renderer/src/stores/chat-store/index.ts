@@ -27,6 +27,7 @@ import {
 } from './helpers/provider-routing'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
+import { videoGenStatusesFromMessages } from '@/components/chat/media-generation'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '@superone/shared/agent-types'
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
@@ -899,6 +900,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         : null,
       _title: savedTitle,
       _historyHydrated: true,
+      videoGenStatuses: videoGenStatusesFromMessages(savedMessages),
       permissionMode: defaultPermissionMode,
       ...(savedSelectedModel ? { selectedModel: savedSelectedModel, modelUserChosen: true } : {}),
       ...(savedSelectedEffort ? { selectedEffort: savedSelectedEffort, effortUserChosen: true } : {}),

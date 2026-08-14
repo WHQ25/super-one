@@ -1,4 +1,5 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { videoGenStatusesFromMessages } from '@/components/chat/media-generation'
 import type { ChatStore, PerSessionState, PersistedSessionState, ProjectState } from '../types'
 import { latestCodexTodoListFromMessages } from './codex-todo'
 import { resolveActiveSessionId } from './store-helpers'
@@ -67,6 +68,10 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
       ?? null,
     // Rebuild derived UI field — not persisted; cold restore must not leave todos blank.
     _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),
+    videoGenStatuses: {
+      ...videoGenStatusesFromMessages(mergedMessages),
+      ...session.videoGenStatuses,
+    },
     _historyHydrated: true,
   }
 }
@@ -97,6 +102,10 @@ export function _mergeHydratedSessionState(
     // Always re-derive: null means "cleared / all completed", not "unset".
     // `?? hydrated` would resurrect a finished list after a live clear.
     _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),
+    videoGenStatuses: {
+      ...videoGenStatusesFromMessages(mergedMessages),
+      ...session.videoGenStatuses,
+    },
     _historyHydrated: true,
   }
 }

@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react'
 import { AlertCircle, Loader2, Video as VideoIcon } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { VideoGenerationItem } from '@superone/shared/agent-types'
-import { toMediaUrl } from '@/lib/path-utils'
+import { useMediaUrl } from '@/hooks/use-media-server-port'
 
 const TILE = 'h-40 flex-none overflow-hidden rounded-md border border-border'
 
@@ -10,7 +11,14 @@ const TILE = 'h-40 flex-none overflow-hidden rounded-md border border-border'
  * tens of megabytes, and the server speaks HTTP Range so seeking works without loading it all.
  */
 function VideoThumb({ item }: { item: VideoGenerationItem }) {
-  if (item.status === 'failed') {
+  const src = useMediaUrl(item.savedPath)
+  const [loadError, setLoadError] = useState(false)
+
+  useEffect(() => {
+    setLoadError(false)
+  }, [src])
+
+  if (item.status === 'failed' || loadError) {
     return (
       <div className={cn(TILE, 'flex w-40 items-center justify-center border-destructive/30 bg-destructive/5 text-destructive')}>
         <AlertCircle className="size-4" />
@@ -18,7 +26,7 @@ function VideoThumb({ item }: { item: VideoGenerationItem }) {
     )
   }
 
-  if (!item.savedPath) {
+  if (!item.savedPath || !src) {
     return (
       <div className={cn(TILE, 'flex w-64 items-center justify-center gap-2 bg-muted/30 text-xs text-muted-foreground')}>
         <Loader2 className="size-3.5 animate-spin" />
@@ -29,10 +37,11 @@ function VideoThumb({ item }: { item: VideoGenerationItem }) {
 
   return (
     <video
-      src={toMediaUrl(item.savedPath)}
+      src={src}
       controls
       preload="metadata"
       aria-label={item.prompt ?? 'Generated video'}
+      onError={() => setLoadError(true)}
       className={cn(TILE, 'bg-black')}
     />
   )

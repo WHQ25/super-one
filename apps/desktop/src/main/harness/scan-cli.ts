@@ -1,19 +1,19 @@
 /**
  * Scan PATH for first-party harness CLIs (onboarding discover step).
  *
- * Detection is advisory only for Claude/Codex (product: always SuperOne managed
- * download on enable). For OpenCode / Grok it still only reports presence —
- * enable resolves command via the harness kernel. Cursor detects `@cursor/sdk`
- * availability (not a PATH `cursor` binary).
+ * Claude/Codex are always listed (SuperOne managed download; PATH is advisory).
+ * OpenCode / Cursor / Grok only appear when a CLI is on PATH — enable still
+ * resolves the command via the harness kernel. Cursor is experimental: do not
+ * treat the bundled `@cursor/sdk` as "detected".
  */
 
 import { execFileSync } from 'node:child_process'
-import { isCursorSdkAvailable, resolveExternalCommand } from '@superone/runtime/harness'
+import { resolveExternalCommand } from '@superone/runtime/harness'
 import type { NodeHarnessId } from '@superone/shared/environment'
 
 export type HarnessCliScanHit = {
   harnessId: NodeHarnessId
-  /** Absolute path when found; null when not on PATH (or SDK-only). */
+  /** Absolute path when found; null when not on PATH. */
   command: string | null
   detected: boolean
   /** Best-effort `--version` first line; omitted when unavailable. */
@@ -24,9 +24,19 @@ const SEARCH_NAMES: Record<NodeHarnessId, string[]> = {
   claude: ['claude'],
   codex: ['codex'],
   opencode: ['opencode'],
-  cursor: [],
+  cursor: ['cursor'],
   'acp-grok': ['grok'],
 }
+
+const ONBOARDING_ORDER: readonly NodeHarnessId[] = [
+  'claude',
+  'codex',
+  'opencode',
+  'cursor',
+  'acp-grok',
+]
+
+const ALWAYS_VISIBLE_ONBOARDING: ReadonlySet<NodeHarnessId> = new Set(['claude', 'codex'])
 
 function withWinSuffixes(names: string[]): string[] {
   if (process.platform !== 'win32') return names
@@ -64,15 +74,6 @@ function tryVersion(bin: string): string | undefined {
 }
 
 export function scanHarnessCli(harnessId: NodeHarnessId): HarnessCliScanHit {
-  if (harnessId === 'cursor') {
-    const detected = isCursorSdkAvailable()
-    return {
-      harnessId,
-      command: null,
-      detected,
-      ...(detected ? { version: 'sdk' } : {}),
-    }
-  }
   const names = withWinSuffixes(SEARCH_NAMES[harnessId] ?? [harnessId])
   const command = resolveExternalCommand(undefined, names)
   if (!command) {
@@ -87,8 +88,7 @@ export function scanHarnessCli(harnessId: NodeHarnessId): HarnessCliScanHit {
 }
 
 export function scanAllHarnessClis(): HarnessCliScanHit[] {
-  const ids: NodeHarnessId[] = ['claude', 'codex', 'opencode', 'cursor', 'acp-grok']
-  return ids.map(scanHarnessCli)
+  return ONBOARDING_ORDER.map(scanHarnessCli)
 }
 
 /**
@@ -108,6 +108,17 @@ export function integrationLabels(): Record<NodeHarnessId, IntegrationLabel> {
     cursor: { label: 'Cursor Agent SDK' },
     'acp-grok': { label: 'Agent Client Protocol' },
   }
+}
+
+/**
+ * Onboarding list: Claude/Codex always; experimental harnesses only when a CLI
+ * is on PATH. Order matches the discover row order.
+ */
+export function visibleOnboardingHarnesses(hits: HarnessCliScanHit[]): NodeHarnessId[] {
+  const detected = new Set(hits.filter((h) => h.detected).map((h) => h.harnessId))
+  return ONBOARDING_ORDER.filter(
+    (id) => ALWAYS_VISIBLE_ONBOARDING.has(id) || detected.has(id),
+  )
 }
 
 /**

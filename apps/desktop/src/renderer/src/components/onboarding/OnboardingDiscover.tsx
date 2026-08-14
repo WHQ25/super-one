@@ -1,9 +1,9 @@
 /**
  * Onboarding discover step: scan PATH, multi-select harnesses, enable.
  *
- * Product: Claude/Codex always SuperOne managed download (detection is advisory).
- * OpenCode / Grok enable via PATH resolve. Default selection = all detected, or
- * Claude-only when nothing found.
+ * Product: Claude/Codex always listed (SuperOne managed download; PATH is
+ * advisory). OpenCode / Cursor / Grok only appear when a CLI is on PATH.
+ * Default selection = all detected, or Claude-only when nothing found.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -53,6 +53,7 @@ export function OnboardingDiscover(): React.JSX.Element {
   const { t } = useTranslation()
   const completeOnboarding = useAppStore((s) => s.completeOnboarding)
   const [hits, setHits] = useState<ScanHit[] | null>(null)
+  const [visibleIds, setVisibleIds] = useState<CatalogId[]>(['claude', 'codex'])
   const [integrationLabels, setIntegrationLabels] = useState<
     Partial<Record<CatalogId, { label: string }>>
   >({})
@@ -69,6 +70,7 @@ export function OnboardingDiscover(): React.JSX.Element {
     try {
       const result = await window.app.scanHarnessClis()
       setHits(result.hits)
+      setVisibleIds(result.visibleIds?.length ? result.visibleIds : ['claude', 'codex'])
       setIntegrationLabels(result.integrationLabels ?? {})
       setSelected(new Set(result.defaultSelected))
     } catch (err) {
@@ -77,12 +79,15 @@ export function OnboardingDiscover(): React.JSX.Element {
         { harnessId: 'claude', command: null, detected: false },
         { harnessId: 'codex', command: null, detected: false },
         { harnessId: 'opencode', command: null, detected: false },
+        { harnessId: 'cursor', command: null, detected: false },
         { harnessId: 'acp-grok', command: null, detected: false },
       ])
+      setVisibleIds(['claude', 'codex'])
       setIntegrationLabels({
         claude: { label: 'Claude Agent SDK' },
         codex: { label: 'Codex App Server' },
         opencode: { label: 'OpenCode SDK' },
+        cursor: { label: 'Cursor Agent SDK' },
         'acp-grok': { label: 'Agent Client Protocol' },
       })
       setSelected(new Set(['claude']))
@@ -117,12 +122,6 @@ export function OnboardingDiscover(): React.JSX.Element {
     for (const h of hits ?? []) m.set(h.harnessId, h)
     return m
   }, [hits])
-
-  /** Only list detected CLIs; if none, offer Claude as managed-download fallback. */
-  const visibleIds = useMemo((): CatalogId[] => {
-    const detected = ORDER.filter((id) => hitById.get(id)?.detected)
-    return detected.length > 0 ? detected : ['claude']
-  }, [hitById])
 
   const toggle = (id: CatalogId) => {
     if (enabling) return

@@ -20,6 +20,7 @@ import {
   defaultOnboardingSelection,
   integrationLabels,
   scanAllHarnessClis,
+  visibleOnboardingHarnesses,
 } from './scan-cli'
 import log from '../logger'
 
@@ -98,6 +99,7 @@ export function registerHarnessIpcHandlers(): void {
     return {
       hits,
       defaultSelected: defaultOnboardingSelection(hits),
+      visibleIds: visibleOnboardingHarnesses(hits),
       integrationLabels: integrationLabels(),
     }
   })

@@ -7,6 +7,7 @@ import {
   integrationLabels,
   normalizeCliVersion,
   scanHarnessCli,
+  visibleOnboardingHarnesses,
   type HarnessCliScanHit,
 } from './scan-cli'
 
@@ -29,6 +30,44 @@ describe('defaultOnboardingSelection', () => {
       { harnessId: 'acp-grok', command: null, detected: false },
     ]
     expect(defaultOnboardingSelection(hits)).toEqual(['claude'])
+  })
+})
+
+describe('visibleOnboardingHarnesses', () => {
+  it('always lists Claude and Codex even when no CLI is on PATH', () => {
+    const hits: HarnessCliScanHit[] = [
+      { harnessId: 'claude', command: null, detected: false },
+      { harnessId: 'codex', command: null, detected: false },
+      { harnessId: 'opencode', command: null, detected: false },
+      { harnessId: 'cursor', command: null, detected: false },
+      { harnessId: 'acp-grok', command: null, detected: false },
+    ]
+    expect(visibleOnboardingHarnesses(hits)).toEqual(['claude', 'codex'])
+  })
+
+  it('does not list Cursor just because the SDK is bundled', () => {
+    const hits: HarnessCliScanHit[] = [
+      { harnessId: 'claude', command: null, detected: false },
+      { harnessId: 'codex', command: null, detected: false },
+      { harnessId: 'cursor', command: null, detected: false },
+    ]
+    expect(visibleOnboardingHarnesses(hits)).not.toContain('cursor')
+  })
+
+  it('appends experimental harnesses only when their CLI is detected', () => {
+    const hits: HarnessCliScanHit[] = [
+      { harnessId: 'claude', command: null, detected: false },
+      { harnessId: 'codex', command: null, detected: false },
+      { harnessId: 'opencode', command: '/bin/opencode', detected: true },
+      { harnessId: 'cursor', command: '/bin/cursor', detected: true },
+      { harnessId: 'acp-grok', command: null, detected: false },
+    ]
+    expect(visibleOnboardingHarnesses(hits)).toEqual([
+      'claude',
+      'codex',
+      'opencode',
+      'cursor',
+    ])
   })
 })
 
@@ -81,5 +120,16 @@ describe('scanHarnessCli', () => {
     const hit = scanHarnessCli('opencode')
     expect(hit.detected).toBe(false)
     expect(hit.command).toBeNull()
+  })
+
+  it('detects Cursor via PATH CLI, not the bundled SDK', () => {
+    expect(scanHarnessCli('cursor')).toMatchObject({ detected: false, command: null })
+
+    const bin = join(dir, 'cursor')
+    writeFileSync(bin, '#!/bin/sh\necho cursor 1.0\n', { mode: 0o755 })
+    chmodSync(bin, 0o755)
+    const hit = scanHarnessCli('cursor')
+    expect(hit.detected).toBe(true)
+    expect(hit.command).toBeTruthy()
   })
 })

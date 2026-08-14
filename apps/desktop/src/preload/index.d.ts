@@ -163,6 +163,7 @@ interface AppAPI {
       version?: string
     }>
     defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'>
+    visibleIds: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'>
     integrationLabels: Record<
       'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok',
       { label: string }

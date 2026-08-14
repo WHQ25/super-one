@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { MiniWindowApp } from './components/MiniWindowApp'
 import { DragPreviewApp } from './components/DragPreviewApp'
 import { ComputerUsePermissionFloat } from './components/ComputerUsePermissionFloat'
@@ -32,23 +33,25 @@ if (isDragPreview || isComputerUsePermissions) {
 void initI18n().finally(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      {isDragPreview
-        ? <DragPreviewApp />
-        : isComputerUsePermissions
-          ? <ComputerUsePermissionFloat />
-          : isMiniWindow && miniProject && miniSession
-            ? (
-              <>
-                <MiniWindowApp projectPath={miniProject} sessionId={miniSession} initialTitle={miniTitle ?? undefined} />
-                <Toaster position="bottom-center" />
-              </>
-            )
-            : (
-              <>
-                <App />
-                <Toaster position="bottom-center" />
-              </>
-            )}
+      <ErrorBoundary>
+        {isDragPreview
+          ? <DragPreviewApp />
+          : isComputerUsePermissions
+            ? <ComputerUsePermissionFloat />
+            : isMiniWindow && miniProject && miniSession
+              ? (
+                <>
+                  <MiniWindowApp projectPath={miniProject} sessionId={miniSession} initialTitle={miniTitle ?? undefined} />
+                  <Toaster position="bottom-center" />
+                </>
+              )
+              : (
+                <>
+                  <App />
+                  <Toaster position="bottom-center" />
+                </>
+              )}
+      </ErrorBoundary>
     </StrictMode>
   )
 })

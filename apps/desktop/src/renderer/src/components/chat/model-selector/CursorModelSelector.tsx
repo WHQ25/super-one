@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
 import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
 import {
@@ -65,11 +65,21 @@ export function CursorModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (
     ?? resources?.models.find((model) => model.id === selectedModel)
   const modelLabel = current?.name || current?.id || (enabledModels.length ? 'Cursor' : (selectedModel || 'Cursor'))
 
-  // Seed defaults once when the current model has catalog params but session map is empty.
+  // Seed defaults once per model when it has catalog params but the session map
+  // is empty. The seed is latched on the model id rather than on the written
+  // value: a degraded catalog (params present, values missing) yields an empty
+  // map, which would never satisfy a `params are non-empty` guard and would
+  // re-arm this effect forever — React error #185, blank window.
+  const seededModelRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!current?.parameters?.length) return
+    if (!current?.id) return
+    if (seededModelRef.current === current.id) return
+    if (!current.parameters?.length) return
     if (Object.keys(cursorModelParams).length > 0) return
-    setCursorModelParams(defaultCursorModelParams(current))
+    seededModelRef.current = current.id
+    const defaults = defaultCursorModelParams(current)
+    if (Object.keys(defaults).length === 0) return
+    setCursorModelParams(defaults)
   }, [current, cursorModelParams, setCursorModelParams])
 
   const models = useMemo<SelectorModelOption[]>(

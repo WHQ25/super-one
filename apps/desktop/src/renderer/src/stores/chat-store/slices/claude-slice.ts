@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand'
+import { shallow } from 'zustand/shallow'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
 import {
   findCursorEffortParam,
@@ -375,6 +376,11 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const { activeProject } = state
     if (!activeProject) return
     const session = getActivePerSession(state, activeProject)
+    // An identical map still mints a new object reference, which re-arms any
+    // effect that both depends on cursorModelParams and writes it. With an
+    // empty seed map (degraded Cursor catalog: params present, values missing)
+    // that effect never satisfies its own guard and storms React into #185.
+    if (shallow(session.cursorModelParams, params)) return
     set((s) => updateActivePerSession(s, () => ({ cursorModelParams: params })))
     if (session.selectedModel) {
       persistCursorHarnessModelParams(session.selectedModel, params)

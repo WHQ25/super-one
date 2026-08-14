@@ -14,6 +14,7 @@ import { is } from '@electron-toolkit/utils'
 import type { EnvironmentHost } from './environment/environment-host'
 import type { DraftUpsertRequest } from '@superone/shared/environment'
 import log from './logger'
+import { resolveAndMigrateUserData } from './user-data-path'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
 import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled, type AllowedDir } from './miniapp/miniapp-service'
@@ -213,10 +214,17 @@ app.setName('SuperOne')
 if (is.dev) {
   app.setPath('userData', join(process.cwd(), '.dev-data'))
 } else {
-  const baseUserData = join(app.getPath('appData'), 'super-one')
-  app.setPath('userData', process.env.SUPERONE_INSTANCE
-    ? join(baseUserData, `instance-${process.env.SUPERONE_INSTANCE}`)
-    : baseUserData)
+  const resolved = resolveAndMigrateUserData({
+    appData: app.getPath('appData'),
+    instance: process.env.SUPERONE_INSTANCE,
+  })
+  if (resolved.action !== 'none') {
+    log.info(`[user-data] ${resolved.action} → ${resolved.path}`)
+  }
+  if (resolved.error) {
+    log.warn(`[user-data] ${resolved.error}`)
+  }
+  app.setPath('userData', resolved.path)
 }
 
 /**

@@ -303,7 +303,7 @@ sqlite3 event-trace.db "SELECT ts, type, data FROM events WHERE source='agent.sd
 
 In development mode, `electron-log` writes to `apps/desktop/dev.log` (relative to the dev cwd; configured in `apps/desktop/src/main/logger.ts`). The dev script auto-deletes the previous `dev.log` on each run to keep it small. When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`.
 
-For packaged builds (`build:mac-dev`), logs are written to `~/Library/Logs/SuperOne/main.log` (macOS `electron-log` path from `app.setName('SuperOne')`). Note userData is still `…/super-one/`, separate from the Logs folder name.
+For packaged builds (`build:mac-dev`), logs are written to `~/Library/Logs/SuperOne/main.log` (macOS `electron-log` path from `app.setName('SuperOne')`). Packaged userData is `…/SuperOne/` (Computer Use helper lives in `…/SuperOne/Computer Use/`). A first-launch migration moves the historical `…/super-one/` tree into that folder; if the move fails the app keeps using `super-one` so sessions are not opened against an empty profile.
 
 ## Testing
 

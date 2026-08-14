@@ -56,11 +56,13 @@ Log line format: `[YYYY-MM-DD HH:mm:ss] [level] message`
 
 | OS | userData root |
 |----|----------------|
-| **macOS** | `~/Library/Application Support/super-one/` |
-| **Windows** | `%APPDATA%\super-one\` |
-| **Linux** | `~/.config/super-one/` |
+| **macOS** | `~/Library/Application Support/SuperOne/` |
+| **Windows** | `%APPDATA%\SuperOne\` |
+| **Linux** | `~/.config/SuperOne/` |
 
-Multi-instance: if `SUPERONE_INSTANCE` is set, userData is `…/super-one/instance-<name>/`.
+Multi-instance: if `SUPERONE_INSTANCE` is set, userData is `…/SuperOne/instance-<name>/`.
+
+Older builds used `super-one` in the same parent directory. The first packaged launch after this change moves that tree into `SuperOne` (the Computer Use helper already lives at `SuperOne/Computer Use/`). If the move fails, the app keeps reading `super-one` so sessions are not opened against an empty profile.
 
 ### Useful files under userData
 

@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.4-alpha] - 2026-08-14
+
+### Added
+
+- Sidebar: animate draft rows flying in from the right and out on click; group height only moves when the row count changes.
+- Browser: compact 8-phase MCP tool surface (tabs, snapshot, query, act, wait, evaluate, network, action) as an opt-in; packaged builds keep the original 30-tool list.
+
+### Fixed
+
+- Desktop: migrate packaged userData from `super-one` into `SuperOne` on first launch so sessions keep the existing profile.
+- Harness: stop the white screen / retry storm when the Claude runtime is missing; disabled-harness sessions stay read-only with a Re-enable link.
+- Harness: always list Claude and Codex on onboarding so a wipe/reinstall is not Cursor-only.
+- Session: resolve peer project path via the projects join so link-mode collab no longer fails after the schema move.
+- Chat: keep an unsent composer as a draft when starting a new session, including attachment-only drafts.
+- Sidebar: hold draft-row slots still while one is resumed so rows below the clicked draft do not shuffle.
+- Claude: hide terminal-bound slash commands (`/exit`, `/statusline`) from the `/` menu and remote system info.
+
+### Changed
+
+- Claude: bump Agent SDK to 0.3.232 (desktop/CLI/runtime pin).
+
 ## [0.53.3-alpha] - 2026-08-14
 
 ### Added

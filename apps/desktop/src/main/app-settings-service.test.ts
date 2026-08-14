@@ -90,7 +90,7 @@ describe('app-settings-service', () => {
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
-    browserToolSurface: 'compact',
+    browserToolSurface: 'legacy',
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -159,7 +159,7 @@ describe('app-settings-service', () => {
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
-        browserToolSurface: 'compact',
+        browserToolSurface: 'legacy',
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -277,7 +277,7 @@ describe('app-settings-service', () => {
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
-        browserToolSurface: 'compact',
+        browserToolSurface: 'legacy',
         agentPreference: {
           claude: defaultClaude,
           codex: {

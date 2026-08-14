@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../app-settings-service', () => ({
+  readAppSettings: () => {
+    throw new Error('unavailable')
+  },
+}))
+
 import {
   advertisedBrowserToolNames,
   clearBrowserToolSurfaceLock,
@@ -13,6 +20,10 @@ describe('browser tool surface', () => {
     setBrowserToolSurfaceForTests(null)
     clearBrowserToolSurfaceLocks()
     delete process.env.SUPERONE_BROWSER_TOOLS
+  })
+
+  it('defaults to the legacy 30-tool surface', () => {
+    expect(resolveBrowserToolSurface()).toBe('legacy')
   })
 
   it('parses only the two known surfaces', () => {

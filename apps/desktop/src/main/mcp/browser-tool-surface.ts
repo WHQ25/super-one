@@ -5,7 +5,7 @@
  *   1. test override
  *   2. env SUPERONE_BROWSER_TOOLS=legacy|compact
  *   3. AppSettings.browserToolSurface
- *   4. default compact
+ *   4. default legacy (packaged / official builds stay on the 30-tool surface)
  *
  * The first resolve for a sessionId is sticky so Codex's one-shot tools/list
  * and later execute stay on the same set. Flag flips apply to new sessions.
@@ -50,7 +50,7 @@ function computeSurface(): BrowserToolSurface {
   } catch {
     // settings unavailable (tests, early boot)
   }
-  return 'compact'
+  return 'legacy'
 }
 
 export function resolveBrowserToolSurface(sessionId?: string): BrowserToolSurface {

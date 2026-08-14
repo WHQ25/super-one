@@ -35,7 +35,7 @@ export function BrowserSettingsPage() {
   const [cookiesEnabled, setCookiesEnabled] = useState(false)
   const [mockEnabled, setMockEnabled] = useState(false)
   const [emulateEnabled, setEmulateEnabled] = useState(false)
-  const [compactSurface, setCompactSurface] = useState(true)
+  const [compactSurface, setCompactSurface] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

@@ -64,7 +64,7 @@ const defaults: AppSettings = {
   cdpCookiesEnabled: false,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
-  browserToolSurface: 'compact',
+  browserToolSurface: 'legacy',
   computerUseEnabled: false,
   computerUseAllowAllApps: false,
   computerUseAlwaysAllowApps: [],

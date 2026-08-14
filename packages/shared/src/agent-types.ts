@@ -3518,7 +3518,8 @@ export interface AppSettings {
   cdpEmulateEnabled: boolean
   /**
    * Which browser MCP surface to advertise.
-   * `compact` = 8 phase tools; `legacy` = 30 per-verb tools.
+   * `legacy` = 30 per-verb tools (default, including packaged builds);
+   * `compact` = 8 phase tools (dev opt-in).
    * Env `SUPERONE_BROWSER_TOOLS` overrides this. Locked per session at first use.
    */
   browserToolSurface: 'legacy' | 'compact'

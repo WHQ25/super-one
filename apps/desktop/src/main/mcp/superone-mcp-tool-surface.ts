@@ -76,7 +76,7 @@ const WIDGET_SHOW_DESCRIPTOR: SuperoneMcpToolDescriptor = {
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
   const tools = [
     ...BUILT_IN_SUPERONE_TOOL_DEFS,
-    ...getBrowserToolDescriptors(),
+    ...getBrowserToolDescriptors(sessionId),
     ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
     WIDGET_LIST_TEMPLATES_DESCRIPTOR,
     WIDGET_SHOW_DESCRIPTOR,

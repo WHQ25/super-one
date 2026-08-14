@@ -434,6 +434,12 @@ export class SessionManagerImpl implements SessionManagerContract {
     // unregisterSessionAllApps above emits tools-changed, which re-arms the debounced
     // MCP reload for this (now-disposed) session — cancel it last so it never fires.
     cancelMcpReload(sessionId)
+    try {
+      const { clearBrowserToolSurfaceLock } = await import('../mcp/browser-tool-surface')
+      clearBrowserToolSurfaceLock(sessionId)
+    } catch {
+      // ignore
+    }
     if (this.sessions.size === 0) this.stopRuntimeReaper()
   }
 

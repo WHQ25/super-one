@@ -10,9 +10,9 @@
 
 export const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__' as const
 
-// Single source of truth for the browser tool surface: registerBrowserTools()
-// registers exactly these, and they are spread into the permission-bypass list
-// below. Keeping one list means a new tool cannot silently miss the bypass.
+// Single source of truth for the browser tool surface. Permission / execute
+// accept the union; list/register advertise either the legacy 30-tool surface
+// or the compact 8-tool surface (see resolveBrowserToolSurface).
 export const BROWSER_PRIMITIVE_TOOL_NAMES = [
   'browser_snapshot',
   'browser_query',
@@ -49,9 +49,28 @@ export const BROWSER_ACTION_TOOL_NAMES = [
   'browser_action_do',
 ] as const
 
-export const BROWSER_TOOL_NAMES = [
+export const BROWSER_LEGACY_TOOL_NAMES = [
   ...BROWSER_PRIMITIVE_TOOL_NAMES,
   ...BROWSER_ACTION_TOOL_NAMES,
+] as const
+
+/** 8-tool surface: observe / query / act / wait + tabs / evaluate / network / saved actions. */
+export const BROWSER_COMPACT_TOOL_NAMES = [
+  'browser_tabs',
+  'browser_snapshot',
+  'browser_query',
+  'browser_act',
+  'browser_wait_for',
+  'browser_evaluate',
+  'browser_network',
+  'browser_action',
+] as const
+
+export const BROWSER_TOOL_NAMES = [
+  ...BROWSER_LEGACY_TOOL_NAMES,
+  ...BROWSER_COMPACT_TOOL_NAMES.filter(
+    (name) => !(BROWSER_LEGACY_TOOL_NAMES as readonly string[]).includes(name),
+  ),
 ] as const
 
 /**

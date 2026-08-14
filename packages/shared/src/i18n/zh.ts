@@ -602,6 +602,12 @@ export const zh: Messages = {
     browser: {
       title: '浏览器',
       subtitle: '配置内置浏览器及其自动化工具',
+      surface: {
+        label: '精简工具面',
+        description: '向智能体暴露 8 个阶段工具（tabs / snapshot / query / act / wait / evaluate / network / action），而不是经典的逐动词列表。新会话生效。关闭则恢复经典列表。',
+        compact: '精简（8 个工具）',
+        legacy: '经典（30 个工具）',
+      },
       cdp: {
         label: 'Chrome 开发者工具协议 (CDP)',
         description: '内置浏览器工具将路由到 CDP 实现,并解锁文件上传工具。',

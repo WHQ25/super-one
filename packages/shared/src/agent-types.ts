@@ -3505,6 +3505,12 @@ export interface AppSettings {
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
+  /**
+   * Which browser MCP surface to advertise.
+   * `compact` = 8 phase tools; `legacy` = 30 per-verb tools.
+   * Env `SUPERONE_BROWSER_TOOLS` overrides this. Locked per session at first use.
+   */
+  browserToolSurface: 'legacy' | 'compact'
   /** Opt-in Computer Use (desktop GUI automation). Default off. */
   computerUseEnabled: boolean
   /** Skip the per-app session allowlist and permit capture of all apps. Default off. */
@@ -3629,6 +3635,7 @@ export interface AppSettingsPatch {
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean
+  browserToolSurface?: 'legacy' | 'compact'
   computerUseEnabled?: boolean
   computerUseAllowAllApps?: boolean
   computerUseAlwaysAllowApps?: ComputerUseAlwaysAllowApp[]

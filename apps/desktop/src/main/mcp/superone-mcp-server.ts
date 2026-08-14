@@ -338,6 +338,8 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
 export function disposeSuperoneMcpServer(sessionId: string): void {
   sessionServers.delete(sessionId)
   clearBrowserToolHandlers(sessionId)
+  // Do not clear the browser-tool surface lock here. This function also runs
+  // when Computer Use is toggled (MCP rebuild for a still-live session).
   log.debug('[superone-mcp] disposed all instances for sessionId=%s', sessionId)
 }
 

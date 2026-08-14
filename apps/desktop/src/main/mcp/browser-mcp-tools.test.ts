@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
 vi.mock('../browser/browser-automation-bridge', () => ({
   browserAutomationCall: vi.fn(),
@@ -69,11 +72,14 @@ import { decode as toonDecode } from '@toon-format/toon'
 import {
   registerBrowserTools,
   BROWSER_TOOL_NAMES,
+  BROWSER_COMPACT_TOOL_NAMES,
+  BROWSER_LEGACY_TOOL_NAMES,
   getBrowserToolDescriptors,
   executeBrowserTool,
   isBrowserToolName,
   clearBrowserToolHandlers,
 } from './browser-mcp-tools'
+import { setBrowserToolSurfaceForTests, clearBrowserToolSurfaceLocks } from './browser-tool-surface'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { cdpHover } from '../browser/browser-cdp'
@@ -90,7 +96,7 @@ function buildTools(): Map<string, Handler> {
       return {}
     },
   }
-  registerBrowserTools(server as never, 'sess-1')
+  registerBrowserTools(server as never, 'sess-1', 'legacy')
   return tools
 }
 
@@ -105,18 +111,21 @@ describe('browser tool registration under experimental gates', () => {
     gates.mock = false
     gates.emulate = false
     vi.clearAllMocks()
+    clearBrowserToolSurfaceLocks()
+    setBrowserToolSurfaceForTests('legacy')
   })
 
   it('registers every browser tool even when all CDP settings are off', () => {
     const tools = buildTools()
-    for (const name of BROWSER_TOOL_NAMES) {
+    for (const name of BROWSER_LEGACY_TOOL_NAMES) {
       expect(tools.has(name), name).toBe(true)
     }
   })
 
   it('exports descriptors for every browser tool with object input schemas', () => {
+    setBrowserToolSurfaceForTests('legacy')
     const descriptors = getBrowserToolDescriptors()
-    expect(descriptors.map((d) => d.name).sort()).toEqual([...BROWSER_TOOL_NAMES].sort())
+    expect(descriptors.map((d) => d.name).sort()).toEqual([...BROWSER_LEGACY_TOOL_NAMES].sort())
     for (const d of descriptors) {
       expect(d.description.length).toBeGreaterThan(0)
       expect(d.inputSchema).toMatchObject({ type: 'object' })
@@ -354,5 +363,176 @@ describe('browser_list_downloads', () => {
       count: 1,
       downloads: [{ filename: 'export.csv', state: 'completed' }],
     })
+  })
+})
+
+describe('compact browser surface', () => {
+  beforeEach(() => {
+    gates.cdp = false
+    vi.clearAllMocks()
+    clearBrowserToolHandlers('sess-1')
+    clearBrowserToolHandlers('__descriptor__')
+    clearBrowserToolSurfaceLocks()
+    setBrowserToolSurfaceForTests('compact')
+  })
+
+  function buildCompact(): Map<string, Handler> {
+    const tools = new Map<string, Handler>()
+    const server = {
+      registerTool: (name: string, _cfg: unknown, handler: Handler) => {
+        tools.set(name, handler)
+        return {}
+      },
+    }
+    registerBrowserTools(server as never, 'sess-1', 'compact')
+    return tools
+  }
+
+  it('registers exactly the 8 compact tools', () => {
+    const tools = buildCompact()
+    expect([...tools.keys()].sort()).toEqual([...BROWSER_COMPACT_TOOL_NAMES].sort())
+    for (const legacy of BROWSER_LEGACY_TOOL_NAMES) {
+      if ((BROWSER_COMPACT_TOOL_NAMES as readonly string[]).includes(legacy)) continue
+      expect(tools.has(legacy), legacy).toBe(false)
+    }
+  })
+
+  it('exports compact descriptors within the 700-char budget', () => {
+    const descriptors = getBrowserToolDescriptors()
+    expect(descriptors.map((d) => d.name).sort()).toEqual([...BROWSER_COMPACT_TOOL_NAMES].sort())
+    for (const d of descriptors) {
+      expect(d.description.length, d.name).toBeGreaterThan(0)
+      expect(d.description.length, d.name).toBeLessThanOrEqual(700)
+    }
+  })
+
+  it('still executes legacy primitive aliases', async () => {
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, selector: '#x' })
+    const reply = await executeBrowserTool('sess-1', 'browser_hover', { selector: '#x' })
+    expect(reply.isError).not.toBe(true)
+    expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith(
+      'sess-1',
+      'hover',
+      expect.objectContaining({ selector: '#x' }),
+    )
+  })
+
+  it('treats engine=auto on type as the primitive default, not a schema error', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true })
+    const reply = await tools.get('browser_act')!({
+      actions: [{ type: 'type', selector: '#q', text: 'hi', engine: 'auto' }],
+    })
+    expect(reply.isError).not.toBe(true)
+    expect(JSON.parse(resultText(reply)).ok).toBe(true)
+    expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith(
+      'sess-1',
+      'type',
+      expect.not.objectContaining({ engine: 'auto' }),
+    )
+  })
+
+  it('stops browser_act when a primitive returns ok:false without isError', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall)
+      .mockResolvedValueOnce({ ok: false, error: 'not visible' })
+      .mockResolvedValueOnce({ ok: true })
+    const reply = await tools.get('browser_act')!({
+      actions: [
+        { type: 'click', selector: '#gone' },
+        { type: 'type', selector: '#q', text: 'hi' },
+      ],
+    })
+    expect(reply.isError).toBe(true)
+    const body = JSON.parse(resultText(reply))
+    expect(body.ok).toBe(false)
+    expect(body.failedAt).toBe('click')
+    expect(body.step).toBe(0)
+    expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledTimes(1)
+  })
+
+  it('dispatches browser_act to click then type, fail-fast on the first error', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall)
+      .mockResolvedValueOnce({ ok: true, selector: '#go' })
+      .mockResolvedValueOnce({ ok: true })
+
+    const ok = await tools.get('browser_act')!({
+      description: 'Submit the form',
+      actions: [
+        { type: 'click', selector: '#go' },
+        { type: 'type', selector: '#q', text: 'hi' },
+      ],
+    })
+    expect(ok.isError).toBeUndefined()
+    const body = JSON.parse(resultText(ok))
+    expect(body.ok).toBe(true)
+    expect(body.stepsExecuted).toBe(2)
+
+    const bad = await tools.get('browser_act')!({
+      actions: [{ type: 'hover' }],
+    })
+    expect(bad.isError).toBe(true)
+    expect(resultText(bad)).toMatch(/exactly one|failedAt/)
+  })
+
+  it('maps browser_tabs navigate to the navigate primitive', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall).mockResolvedValue({ ok: true })
+    await tools.get('browser_tabs')!({ action: 'navigate', url: 'https://example.com' })
+    expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith(
+      'sess-1',
+      'navigate',
+      expect.objectContaining({ url: 'https://example.com' }),
+    )
+  })
+
+  it('maps browser_network emulate-with-preset to resize (no CDP)', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall).mockResolvedValue({ ok: true })
+    await tools.get('browser_network')!({ action: 'emulate', preset: 'mobile' })
+    expect(vi.mocked(browserAutomationCall)).toHaveBeenLastCalledWith(
+      'sess-1',
+      'emulateViewport',
+      { tab: undefined, width: 375, height: 812 },
+    )
+  })
+
+  it('keeps the union in BROWSER_TOOL_NAMES so both surfaces auto-approve', () => {
+    expect(BROWSER_TOOL_NAMES).toContain('browser_click')
+    expect(BROWSER_TOOL_NAMES).toContain('browser_act')
+    expect(isBrowserToolName('browser_act')).toBe(true)
+    expect(isBrowserToolName('browser_click')).toBe(true)
+  })
+
+  it('executes an unlisted legacy name through in-process tools/call', async () => {
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, selector: '#x' })
+    const mcp = new McpServer({ name: 'browser-test', version: '0.0.0' })
+    registerBrowserTools(mcp, 'sess-1', 'compact')
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'browser-test-client', version: '0.0.0' })
+    await mcp.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const listed = await client.listTools()
+      const names = listed.tools.map((t) => t.name)
+      expect(names).toContain('browser_act')
+      expect(names).not.toContain('browser_click')
+
+      const result = await client.callTool({ name: 'browser_click', arguments: { selector: '#x' } })
+      expect(result.isError).not.toBe(true)
+      const text = (result.content as Array<{ type: string; text?: string }>)
+        .map((c) => c.text ?? '')
+        .join('')
+      expect(text).toContain('#x')
+      expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith(
+        'sess-1',
+        'click',
+        expect.objectContaining({ selector: '#x' }),
+      )
+    } finally {
+      await client.close()
+      await mcp.close()
+    }
   })
 })

@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z, toJSONSchema, type ZodTypeAny } from 'zod'
 import { browserAutomationCall, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
@@ -19,8 +20,17 @@ import {
   type BrowserToolReply as ToolReply,
 } from './browser-mcp-replies'
 
-import { BROWSER_TOOL_NAMES } from './superone-mcp-builtin-defs'
-export { BROWSER_TOOL_NAMES }
+import {
+  BROWSER_COMPACT_TOOL_NAMES,
+  BROWSER_LEGACY_TOOL_NAMES,
+  BROWSER_TOOL_NAMES,
+} from './superone-mcp-builtin-defs'
+import { registerCompactBrowserTools } from './browser-mcp-compact'
+import {
+  type BrowserToolSurface,
+  resolveBrowserToolSurface,
+} from './browser-tool-surface'
+export { BROWSER_TOOL_NAMES, BROWSER_COMPACT_TOOL_NAMES, BROWSER_LEGACY_TOOL_NAMES }
 
 interface ScreenshotResult {
   mimeType: 'image/png'
@@ -152,7 +162,8 @@ interface CapturingServer {
 }
 
 const browserHandlerCache = new Map<string, Map<string, BrowserToolHandler>>()
-let browserToolDescriptors: SuperoneMcpToolDescriptor[] | null = null
+const primitiveHandlerCache = new Map<string, Map<string, BrowserToolHandler>>()
+const browserToolDescriptors: Partial<Record<BrowserToolSurface, SuperoneMcpToolDescriptor[]>> = {}
 
 function zodShapeToJsonSchema(shape: Record<string, ZodTypeAny> | undefined): Record<string, unknown> {
   const schema = toJSONSchema(z.object(shape ?? {})) as Record<string, unknown>
@@ -160,13 +171,14 @@ function zodShapeToJsonSchema(shape: Record<string, ZodTypeAny> | undefined): Re
   return rest
 }
 
-function captureBrowserTools(sessionId: string): {
+function makeCapturingServer(): {
+  server: CapturingServer
   descriptors: SuperoneMcpToolDescriptor[]
   handlers: Map<string, BrowserToolHandler>
 } {
   const descriptors: SuperoneMcpToolDescriptor[] = []
   const handlers = new Map<string, BrowserToolHandler>()
-  const capturing: CapturingServer = {
+  const server: CapturingServer = {
     registerTool: (name, config, handler) => {
       const shape = config.inputSchema ?? {}
       const schema = z.object(shape)
@@ -186,14 +198,67 @@ function captureBrowserTools(sessionId: string): {
       return { remove: () => {} }
     },
   }
-  registerBrowserTools(capturing as unknown as McpServer, sessionId)
-  return { descriptors, handlers }
+  return { server, descriptors, handlers }
 }
 
-export function getBrowserToolDescriptors(): SuperoneMcpToolDescriptor[] {
-  if (browserToolDescriptors) return browserToolDescriptors
-  browserToolDescriptors = captureBrowserTools('__descriptor__').descriptors
-  return browserToolDescriptors
+function captureLegacyTools(sessionId: string): {
+  descriptors: SuperoneMcpToolDescriptor[]
+  handlers: Map<string, BrowserToolHandler>
+} {
+  const capturing = makeCapturingServer()
+  registerLegacyBrowserTools(capturing.server as unknown as McpServer, sessionId)
+  return { descriptors: capturing.descriptors, handlers: capturing.handlers }
+}
+
+function runPrimitive(
+  sessionId: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolReply> {
+  let primitives = primitiveHandlerCache.get(sessionId)
+  if (!primitives) {
+    primitives = captureLegacyTools(sessionId).handlers
+    primitiveHandlerCache.set(sessionId, primitives)
+  }
+  const handler = primitives.get(name)
+  if (!handler) return Promise.resolve(errorReply(new Error(`Unknown browser primitive: ${name}`)))
+  return handler(args)
+}
+
+function captureCompactTools(sessionId: string): {
+  descriptors: SuperoneMcpToolDescriptor[]
+  handlers: Map<string, BrowserToolHandler>
+} {
+  const capturing = makeCapturingServer()
+  registerCompactBrowserTools(
+    capturing.server as unknown as McpServer,
+    sessionId,
+    (name, args) => runPrimitive(sessionId, name, args),
+  )
+  return { descriptors: capturing.descriptors, handlers: capturing.handlers }
+}
+
+function ensureAllHandlers(sessionId: string): Map<string, BrowserToolHandler> {
+  let handlers = browserHandlerCache.get(sessionId)
+  if (handlers) return handlers
+  const primitives = captureLegacyTools(sessionId).handlers
+  primitiveHandlerCache.set(sessionId, primitives)
+  const compact = captureCompactTools(sessionId).handlers
+  // Compact supersets overwrite snapshot/query/tabs; primitives remain as aliases.
+  handlers = new Map([...primitives, ...compact])
+  browserHandlerCache.set(sessionId, handlers)
+  return handlers
+}
+
+export function getBrowserToolDescriptors(sessionId?: string): SuperoneMcpToolDescriptor[] {
+  const surface = resolveBrowserToolSurface(sessionId)
+  const cached = browserToolDescriptors[surface]
+  if (cached) return cached
+  const captured = surface === 'compact'
+    ? captureCompactTools('__descriptor__')
+    : captureLegacyTools('__descriptor__')
+  browserToolDescriptors[surface] = captured.descriptors
+  return captured.descriptors
 }
 
 export async function executeBrowserTool(
@@ -201,25 +266,66 @@ export async function executeBrowserTool(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<ToolReply> {
-  let handlers = browserHandlerCache.get(sessionId)
-  if (!handlers) {
-    handlers = captureBrowserTools(sessionId).handlers
-    browserHandlerCache.set(sessionId, handlers)
-  }
-  const handler = handlers.get(toolName)
+  const handler = ensureAllHandlers(sessionId).get(toolName)
   if (!handler) throw new Error(`Unknown browser tool: ${toolName}`)
   return handler(args)
 }
 
 export function clearBrowserToolHandlers(sessionId: string): void {
   browserHandlerCache.delete(sessionId)
+  primitiveHandlerCache.delete(sessionId)
 }
 
 export function isBrowserToolName(name: string): boolean {
   return (BROWSER_TOOL_NAMES as readonly string[]).includes(name)
 }
 
-export function registerBrowserTools(server: McpServer, sessionId: string): void {
+export function registerBrowserTools(
+  server: McpServer,
+  sessionId: string,
+  surface?: BrowserToolSurface,
+): void {
+  const resolved = surface ?? resolveBrowserToolSurface(sessionId)
+  if (resolved === 'compact') {
+    registerCompactBrowserTools(server, sessionId, (name, args) => runPrimitive(sessionId, name, args))
+    // List stays compact. Legacy names remain callable (stdio already uses
+    // executeBrowserTool; this fallback covers the in-process Claude SDK server).
+    installBrowserAliasCallFallback(server, sessionId)
+    return
+  }
+  registerLegacyBrowserTools(server, sessionId)
+}
+
+type ProtocolCallHandler = (request: unknown, extra: unknown) => Promise<unknown>
+
+/**
+ * Keep compact tools/list, but if an unlisted legacy browser_* name is called
+ * (old transcript, saved action, host-action), run the union executor.
+ *
+ * Branch *before* the SDK handler: McpServer catches `Tool not found` and
+ * returns `{ isError: true }`, so a try/catch around the original never sees it.
+ */
+function installBrowserAliasCallFallback(server: McpServer, sessionId: string): void {
+  const registered = (server as unknown as { _registeredTools?: Record<string, unknown> })._registeredTools ?? {}
+  const inner = (server as unknown as {
+    server?: {
+      _requestHandlers?: Map<string, ProtocolCallHandler>
+      setRequestHandler: (schema: typeof CallToolRequestSchema, handler: ProtocolCallHandler) => void
+    }
+  }).server
+  const original = inner?._requestHandlers?.get('tools/call')
+  if (!inner || !original) return
+  inner.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const params = (request as { params?: { name?: string; arguments?: Record<string, unknown> } }).params
+    const name = params?.name
+    if (typeof name === 'string' && isBrowserToolName(name) && registered[name] == null) {
+      return executeBrowserTool(sessionId, name, params?.arguments ?? {})
+    }
+    return original(request, extra)
+  })
+}
+
+function registerLegacyBrowserTools(server: McpServer, sessionId: string): void {
   registerBrowserActionTools(server, sessionId, executeBrowserTool)
 
   server.registerTool(

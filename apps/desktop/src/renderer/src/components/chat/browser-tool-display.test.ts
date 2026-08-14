@@ -27,6 +27,18 @@ describe('getBrowserOp', () => {
     expect(getBrowserOp('miniapp_dev_setup')).toBeNull()
     expect(getBrowserOp('browser_teleport')).toBeNull()
   })
+
+  it('resolves compact dispatcher names through action/type args', () => {
+    expect(getBrowserOp('browser_act', { actions: [{ type: 'type', text: 'hi' }] })).toBe('type')
+    expect(getBrowserOp('browser_act', { actions: [{ type: 'upload', files: ['/a'] }] })).toBe('upload_file')
+    expect(getBrowserOp('browser_act', {})).toBe('click')
+    expect(getBrowserOp('browser_network', { action: 'body' })).toBe('network_body')
+    expect(getBrowserOp('browser_network', { action: 'emulate', preset: 'mobile' })).toBe('resize')
+    expect(getBrowserOp('browser_action', { action: 'do' })).toBe('action_do')
+    expect(getBrowserOp('browser_tabs', { action: 'navigate', url: 'https://x.test' })).toBe('navigate')
+    expect(getBrowserOp('browser_query', { op: 'inspect', selector: '#x' })).toBe('inspect')
+    expect(getBrowserOp('browser_snapshot', { include: ['screenshot'] })).toBe('screenshot')
+  })
 })
 
 describe('browserVerbKey', () => {

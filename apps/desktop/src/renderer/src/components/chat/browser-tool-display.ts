@@ -43,11 +43,66 @@ const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'ev
 /** Ops that report success/failure via an `ok` field (or an error). */
 const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do'])
 
-/** Strip the `browser_` prefix; return the op if this is a known browser tool. */
-export function getBrowserOp(mcpToolName: string): BrowserOp | null {
+const NETWORK_ACTION_OP: Record<string, BrowserOp> = {
+  start: 'network_start',
+  stop: 'network_stop',
+  wait: 'network_wait',
+  body: 'network_body',
+  download: 'download',
+  downloads: 'list_downloads',
+  cookies: 'cookies',
+  mock: 'mock',
+  emulate: 'emulate',
+}
+
+const ACTION_CATALOG_OP: Record<string, BrowserOp> = {
+  list: 'action_list',
+  save: 'action_save',
+  do: 'action_do',
+}
+
+const TABS_ACTION_OP: Record<string, BrowserOp> = {
+  list: 'tabs',
+  open: 'open',
+  navigate: 'navigate',
+  back: 'navigate',
+  forward: 'navigate',
+  reload: 'navigate',
+}
+
+/** Strip the `browser_` prefix; compact tools resolve through action/type args. */
+export function getBrowserOp(mcpToolName: string, params?: Record<string, unknown>): BrowserOp | null {
   if (!mcpToolName.startsWith('browser_')) return null
-  const op = mcpToolName.slice('browser_'.length) as BrowserOp
-  return BROWSER_OPS.has(op) ? op : null
+  const rest = mcpToolName.slice('browser_'.length)
+  if (rest === 'act') {
+    const first = Array.isArray(params?.actions) ? (params.actions[0] as { type?: string } | undefined) : undefined
+    const type = first?.type
+    if (type === 'upload') return 'upload_file'
+    return type && BROWSER_OPS.has(type as BrowserOp) ? (type as BrowserOp) : 'click'
+  }
+  if (rest === 'network') {
+    const action = typeof params?.action === 'string' ? params.action : ''
+    if (action === 'emulate' && (params?.preset != null || params?.reset === true || (params?.width != null && params?.height != null))) {
+      const needsFull = ['deviceScaleFactor', 'mobile', 'userAgent', 'colorScheme', 'timezone', 'locale', 'latitude', 'longitude']
+        .some((k) => params?.[k] != null)
+      if (!needsFull) return 'resize'
+    }
+    return NETWORK_ACTION_OP[action] ?? 'network_start'
+  }
+  if (rest === 'action') {
+    const action = typeof params?.action === 'string' ? params.action : 'list'
+    return ACTION_CATALOG_OP[action] ?? 'action_list'
+  }
+  if (rest === 'tabs') {
+    const action = typeof params?.action === 'string' ? params.action : 'list'
+    return TABS_ACTION_OP[action] ?? 'tabs'
+  }
+  if (rest === 'query' && params?.op === 'inspect') return 'inspect'
+  if (rest === 'snapshot') {
+    const include = Array.isArray(params?.include) ? params.include : []
+    if (include.length === 1 && include[0] === 'screenshot') return 'screenshot'
+  }
+  return BROWSER_OPS.has(rest as BrowserOp) ? (rest as BrowserOp) : null
 }
 
 const VERB_BASE: Record<BrowserOp, string> = {

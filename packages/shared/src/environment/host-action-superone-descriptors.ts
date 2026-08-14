@@ -2718,6 +2718,67 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
     }
   },
   {
+    "name": "browser_act",
+    "description": "Submit 1–20 page actions as one call: click, hover, type, press, scroll, drag, select, upload. Prefer a CSS selector from snapshot/query; click/hover also accept text or x/y. engine=auto|cdp|synthetic (default auto). description is shown to the user instead of raw selectors. Do not use this to navigate (browser_tabs), wait (browser_wait_for), or run JS (browser_evaluate). Fail-fast: stops at the first error.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tab": { "type": "string" },
+        "description": { "type": "string" },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["click", "hover", "type", "press", "scroll", "drag", "select", "upload"] }
+            },
+            "required": ["type"],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": ["actions"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "browser_network",
+    "description": "Network, downloads, and page environment. Recording ladder: action=start → do an act/navigate → action=wait or stop (lean manifest) → action=body({requestId}) for one response. action=download fetches a URL through the session; action=downloads lists page-triggered captures. action=cookies|mock|emulate need CDP experimental settings. emulate with only preset/width/height/reset resizes without CDP. Prefer snapshot/query for page content.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["start", "stop", "wait", "body", "download", "downloads", "cookies", "mock", "emulate"]
+        },
+        "tab": { "type": "string" },
+        "description": { "type": "string" },
+        "recordingId": { "type": "string" },
+        "requestId": { "type": "string" },
+        "url": { "type": "string" }
+      },
+      "required": ["action"],
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "browser_action",
+    "description": "Saved semantic browser actions (dynamic catalog — list then do). action=list (optional domain; includeSteps to see the full definition). action=save creates or replaces a named flow (domain+name). action=do runs one saved action with input. This does not record prior browser calls. Use browser_act for one-off clicks/types.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "enum": ["list", "save", "do"] },
+        "domain": { "type": "string" },
+        "name": { "type": "string" },
+        "input": { "type": "object", "additionalProperties": true }
+      },
+      "required": ["action"],
+      "additionalProperties": true
+    }
+  },
+  {
     "name": "miniapp_list",
     "description": "List mini-apps authorized for this session and their tools. Omit appId for a compact catalog (tool names + one-line descriptions). Pass appId to inspect one app; includeSchema defaults true for that app's full tool definitions including inputSchema. Call this before miniapp_call when you do not know the tool names or parameters.",
     "inputSchema": {

@@ -271,6 +271,15 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
     description: 'Built-in browser Chrome DevTools Protocol (CDP) automation toggles.',
     fields: [
       {
+        key: 'browserToolSurface',
+        label: 'Browser Tool Surface',
+        type: 'enum',
+        enumValues: ['compact', 'legacy'],
+        note: 'compact = 8 phase tools; legacy = 30 per-verb tools. Takes effect in new sessions.',
+        read: (s) => s.browserToolSurface,
+        toPatch: (v) => ({ browserToolSurface: v as AppSettings['browserToolSurface'] }),
+      },
+      {
         key: 'cdpEnabled',
         label: 'Enable CDP',
         type: 'boolean',

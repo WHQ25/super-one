@@ -64,6 +64,7 @@ const defaults: AppSettings = {
   cdpCookiesEnabled: false,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
+  browserToolSurface: 'compact',
   computerUseEnabled: false,
   computerUseAllowAllApps: false,
   computerUseAlwaysAllowApps: [],
@@ -446,6 +447,9 @@ export function readAppSettings(): AppSettings {
       cdpCookiesEnabled: typeof data.cdpCookiesEnabled === 'boolean' ? data.cdpCookiesEnabled : defaults.cdpCookiesEnabled,
       cdpMockEnabled: typeof data.cdpMockEnabled === 'boolean' ? data.cdpMockEnabled : defaults.cdpMockEnabled,
       cdpEmulateEnabled: typeof data.cdpEmulateEnabled === 'boolean' ? data.cdpEmulateEnabled : defaults.cdpEmulateEnabled,
+      browserToolSurface: data.browserToolSurface === 'legacy' || data.browserToolSurface === 'compact'
+        ? data.browserToolSurface
+        : defaults.browserToolSurface,
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
       computerUseAllowAllApps: typeof data.computerUseAllowAllApps === 'boolean' ? data.computerUseAllowAllApps : defaults.computerUseAllowAllApps,
       computerUseAlwaysAllowApps: readComputerUseAlwaysAllowApps(data.computerUseAlwaysAllowApps),
@@ -511,6 +515,7 @@ export function readAppSettings(): AppSettings {
       cdpCookiesEnabled: defaults.cdpCookiesEnabled,
       cdpMockEnabled: defaults.cdpMockEnabled,
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
+      browserToolSurface: defaults.browserToolSurface,
       computerUseEnabled: defaults.computerUseEnabled,
       computerUseAllowAllApps: defaults.computerUseAllowAllApps,
       computerUseAlwaysAllowApps: [],
@@ -622,6 +627,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     cdpCookiesEnabled: patch.cdpCookiesEnabled === undefined ? current.cdpCookiesEnabled : patch.cdpCookiesEnabled,
     cdpMockEnabled: patch.cdpMockEnabled === undefined ? current.cdpMockEnabled : patch.cdpMockEnabled,
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,
+    browserToolSurface: patch.browserToolSurface === undefined ? current.browserToolSurface : patch.browserToolSurface,
     computerUseEnabled: patch.computerUseEnabled === undefined ? current.computerUseEnabled : patch.computerUseEnabled,
     computerUseAllowAllApps: patch.computerUseAllowAllApps === undefined ? current.computerUseAllowAllApps : patch.computerUseAllowAllApps,
     computerUseAlwaysAllowApps: patch.computerUseAlwaysAllowApps === undefined

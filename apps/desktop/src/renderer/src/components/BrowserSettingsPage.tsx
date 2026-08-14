@@ -35,6 +35,7 @@ export function BrowserSettingsPage() {
   const [cookiesEnabled, setCookiesEnabled] = useState(false)
   const [mockEnabled, setMockEnabled] = useState(false)
   const [emulateEnabled, setEmulateEnabled] = useState(false)
+  const [compactSurface, setCompactSurface] = useState(true)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function BrowserSettingsPage() {
       setCookiesEnabled(settings.cdpCookiesEnabled)
       setMockEnabled(settings.cdpMockEnabled)
       setEmulateEnabled(settings.cdpEmulateEnabled)
+      setCompactSurface(settings.browserToolSurface !== 'legacy')
       setLoading(false)
     })
     return () => { mounted = false }
@@ -66,6 +68,29 @@ export function BrowserSettingsPage() {
         <h2 className="text-lg font-semibold">{t('settings.browser.title')}</h2>
         <p className="text-sm text-muted-foreground">{t('settings.browser.subtitle')}</p>
       </div>
+
+      {import.meta.env.DEV && (
+      <div className="mb-6 rounded-lg border border-border">
+        <div className="flex items-start justify-between gap-4 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{t('settings.browser.surface.label')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t('settings.browser.surface.description')}
+            </p>
+          </div>
+          <Switch
+            checked={compactSurface}
+            onCheckedChange={async (enabled) => {
+              const result = await window.app.saveAppSettings({
+                browserToolSurface: enabled ? 'compact' : 'legacy',
+              })
+              setCompactSurface(result.browserToolSurface !== 'legacy')
+            }}
+            disabled={loading}
+          />
+        </div>
+      </div>
+      )}
 
       <div className="rounded-lg border border-border">
         <div className="flex items-start justify-between gap-4 p-4">

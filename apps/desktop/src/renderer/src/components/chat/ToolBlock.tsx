@@ -995,7 +995,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       : getToolLabel(toolName)
 
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
-    const browserOp = getBrowserOp(mcpInfo.mcpToolName)
+    const browserOp = getBrowserOp(mcpInfo.mcpToolName, params)
     if (browserOp) {
       return (
         <BrowserToolBlock

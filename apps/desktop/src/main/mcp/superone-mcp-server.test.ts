@@ -505,10 +505,11 @@ describe('stdio SuperOne MCP tool surface', () => {
     expect(names).not.toContain('myapp__a_tool')
     expect(names).not.toContain('other__b_tool')
     expect(names).toContain('browser_snapshot')
-    expect(names).toContain('browser_click')
-    expect(names).toContain('browser_action_list')
-    expect(names).toContain('browser_action_save')
-    expect(names).toContain('browser_action_do')
+    expect(names).toContain('browser_act')
+    expect(names).toContain('browser_network')
+    expect(names).toContain('browser_action')
+    expect(names).not.toContain('browser_click')
+    expect(names).not.toContain('browser_action_list')
   })
 
   it('does not notify stdio clients when mini-app authorization changes', () => {

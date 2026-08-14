@@ -565,6 +565,12 @@ export type Messages = {
     browser: {
       title: string
       subtitle: string
+      surface: {
+        label: string
+        description: string
+        compact: string
+        legacy: string
+      }
       cdp: {
         label: string
         description: string
@@ -3293,6 +3299,12 @@ export const en: Messages = {
     browser: {
       title: 'Browser',
       subtitle: 'Configure the built-in browser and its automation tools',
+      surface: {
+        label: 'Compact tool surface',
+        description: 'Advertise 8 phase tools (tabs / snapshot / query / act / wait / evaluate / network / action) instead of the classic per-verb list. Takes effect in new chat sessions. Turn off to restore the classic list.',
+        compact: 'Compact (8 tools)',
+        legacy: 'Classic (30 tools)',
+      },
       cdp: {
         label: 'Chrome DevTools Protocol (CDP)',
         description: 'Routes the built-in browser tools to their CDP implementation, and unlocks the file-upload tool.',

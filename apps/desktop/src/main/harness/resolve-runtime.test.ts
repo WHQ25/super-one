@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -60,12 +60,18 @@ vi.mock('electron', () => ({
   app: { getVersion: () => '0.52.0-test', getPath: () => tmpdir() },
 }))
 
-const { getHarnessManager, resetHarnessManagerForTests, enableDesktopHarness } = await import(
-  './service'
-)
-const { resolveHarnessRuntime, HarnessNotReadyError, isHarnessNotReadyError } = await import(
-  './resolve-runtime'
-)
+const {
+  getHarnessManager,
+  resetHarnessManagerForTests,
+  enableDesktopHarness,
+  disableDesktopHarness,
+} = await import('./service')
+const {
+  resolveHarnessRuntime,
+  tryResolveHarnessRuntime,
+  HarnessNotReadyError,
+  isHarnessNotReadyError,
+} = await import('./resolve-runtime')
 
 function resetDb(): void {
   testDb?.close()
@@ -112,6 +118,25 @@ describe('resolveHarnessRuntime', () => {
 
     const resolved = resolveHarnessRuntime('claude')
     expect(resolved).toBe(bin)
+  })
+
+  // Disabling a harness keeps its binary on disk so re-enabling stays instant,
+  // but it must stop resolving: sessions on a disabled harness are read-only,
+  // and that has to hold for mobile / automation turns too — not just for the
+  // desktop composer, which is only a UI guard.
+  it('stops resolving once disabled, without deleting the binary', async () => {
+    const bin = join(home, 'fake-claude')
+    writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 })
+    process.env.SUPERONE_CLAUDE_BINARY = bin
+
+    await enableDesktopHarness({ harnessId: 'claude' })
+    expect(resolveHarnessRuntime('claude')).toBe(bin)
+
+    disableDesktopHarness('claude')
+
+    expect(existsSync(bin)).toBe(true)
+    expect(() => resolveHarnessRuntime('claude')).toThrow(HarnessNotReadyError)
+    expect(tryResolveHarnessRuntime('claude')).toBeNull()
   })
 
   it('manager ensures harness_installations rows exist', () => {

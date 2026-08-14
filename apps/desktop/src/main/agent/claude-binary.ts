@@ -19,7 +19,13 @@ import { allowBundledHarnessPlatformPackages } from '../harness/bundled-fallback
 import { resolveHarnessHomeRoot } from '../harness/home'
 import { resolveDesktopManagedBinary } from '../harness/tarball-installer'
 
-let cached: string | null | undefined
+/**
+ * Only a *successful* resolution is cached. A miss must stay uncached: the
+ * managed harness can finish installing later in the same process (upgrade
+ * window), and a sticky negative would keep every caller failing until restart.
+ * Re-resolving is a handful of existsSync calls.
+ */
+let cached: string | undefined
 
 function resolveBundledSdkBinary(): string | undefined {
   if (!allowBundledHarnessPlatformPackages()) return undefined
@@ -59,7 +65,7 @@ function resolveManagedClaudeBinary(): string | undefined {
 }
 
 export function resolveSdkClaudeBinary(): string | undefined {
-  if (cached !== undefined) return cached ?? undefined
+  if (cached) return cached
 
   const fromEnv = process.env.SUPERONE_CLAUDE_BINARY?.trim()
   if (fromEnv && existsSync(fromEnv)) {
@@ -74,8 +80,12 @@ export function resolveSdkClaudeBinary(): string | undefined {
   }
 
   const bundled = resolveBundledSdkBinary()
-  cached = bundled ?? null
-  return bundled
+  if (bundled) {
+    cached = bundled
+    return bundled
+  }
+
+  return undefined
 }
 
 /** Test helper: clear resolution cache after install / fixture changes. */

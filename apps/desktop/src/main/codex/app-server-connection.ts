@@ -6,6 +6,7 @@ import { createInterface } from 'readline'
 import { managedHarnessPrefix } from '@superone/runtime/harness'
 import log from '../logger'
 import { resolveHarnessHomeRoot } from '../harness/home'
+import { resolveHarnessRuntime } from '../harness/resolve-runtime'
 import { resolveDesktopManagedBinary } from '../harness/tarball-installer'
 import { trace } from '../agent/event-trace'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
@@ -495,6 +496,11 @@ export async function createAppServerConnection(
   if (signal?.aborted) {
     throw new Error('Codex run interrupted')
   }
+
+  // Hard gate: disabled harness keeps its binary on disk but must not spawn
+  // (UI is only a banner — mobile / automation hit this path). Throws
+  // HarnessNotReadyError when enabled=false or no runtime is resolvable.
+  resolveHarnessRuntime('codex')
 
   const baseEnv = envOverride ?? buildAppServerEnv(auth, apiProviderId)
   await ensureCodexProxyUrl(apiProviderId)

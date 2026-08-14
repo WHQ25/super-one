@@ -19,6 +19,9 @@ interface FakeSessionState {
   _historyHydrated: boolean
   awaitingAssistantReply: boolean
   draftId: string | null
+  sessionProvider: string | null
+  preferredProvider: string
+  acpAgentId: string | null
 }
 
 const hoisted = vi.hoisted(() => {
@@ -38,6 +41,9 @@ const hoisted = vi.hoisted(() => {
     _historyHydrated: true,
     awaitingAssistantReply: false,
     draftId: null,
+    sessionProvider: 'claude',
+    preferredProvider: 'claude',
+    acpAgentId: null,
   }
   const scope: { value: { projectPath: string; sessionId: string } | null } = { value: null }
   // Counts distinct scroll-area DOM nodes ever mounted. A key change forces React
@@ -185,12 +191,71 @@ window.app = {
 } as never
 
 import { ChatContent } from './ChatContent'
+import { useAppStore } from '@/stores/app'
 import { createRef } from 'react'
 
 function renderContent() {
   const ref = createRef<HTMLDivElement>()
   return render(<ChatContent scrollViewportRef={ref} />)
 }
+
+// Disabling a harness keeps its binary on disk, so sessions on it stay openable.
+// They must be read-only until the user re-enables it — same shape as the
+// worktree-removed banner, since the composer is the thing being withdrawn.
+describe('ChatContent harness-disabled banner', () => {
+  it('names the disabled harness and deep-links Re-enable to its settings row', () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState.sessionProvider = 'claude'
+    hoisted.isRemoteLocked.value = false
+    useAppStore.setState({
+      view: 'main',
+      harnessCatalog: [{ id: 'claude', enabled: false, state: 'disabled' }],
+      harnessListFocusKey: null,
+    })
+
+    renderContent()
+
+    expect(screen.getByText(/is disabled/i)).toBeInTheDocument()
+    expect(screen.getByText(/READ ONLY/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Re-enable Claude Code/i })).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-input')).toBeNull()
+
+    screen.getByRole('button', { name: /Re-enable Claude Code/i }).click()
+
+    const app = useAppStore.getState()
+    expect(app.view).toBe('settings')
+    expect(app.settingsTab).toBe('harnesses')
+    expect(app.harnessListFocusKey).toBe('claude')
+    expect(app.settingsProvider).toBe('claude')
+  })
+
+  it('keeps the composer when the session harness is still enabled', () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState.sessionProvider = 'claude'
+    hoisted.isRemoteLocked.value = false
+    useAppStore.setState({ harnessCatalog: [{ id: 'claude', enabled: true, state: 'ready' }] })
+
+    renderContent()
+
+    expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+  })
+
+  // Catalog arrives over IPC after first paint. Treating "unknown" as disabled
+  // would flash a read-only banner on every launch.
+  it('keeps the composer while the catalog is still unknown', () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState.sessionProvider = 'claude'
+    hoisted.isRemoteLocked.value = false
+    useAppStore.setState({ harnessCatalog: null })
+
+    renderContent()
+
+    expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+  })
+})
 
 describe('ChatContent worktree-removed banner', () => {
   it('renders READ ONLY notice and hides ChatInput when _worktreeRemoved=true', () => {

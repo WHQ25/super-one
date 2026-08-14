@@ -70,11 +70,17 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
   resolveBinary(id, harnesses) {
     // Catalog command from a prior enable (highest priority after explicit env).
     if (id === 'claude') {
+      const status = harnesses.get('claude')
+      // Disabling keeps the binary on disk so re-enabling is instant, but it must
+      // stop resolving — otherwise "disabled" only hides the harness in Settings
+      // while mobile turns, automations and stale sessions keep running it (and
+      // keep running it *unaligned*, since prefetch/align skip disabled rows).
+      // Checked ahead of the env override: disabling is an explicit user intent,
+      // SUPERONE_CLAUDE_BINARY only says *which* binary, not "force enabled".
+      if (!status.enabled) return null
       const fromEnv = envBinary('SUPERONE_CLAUDE_BINARY')
       if (fromEnv) return fromEnv
-      const status = harnesses.get('claude')
       if (
-        status.enabled &&
         (status.state === 'ready' || status.state === 'needs_auth') &&
         status.command &&
         existsSync(status.command)
@@ -85,11 +91,11 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     }
 
     if (id === 'codex') {
+      const status = harnesses.get('codex')
+      if (!status.enabled) return null
       const fromEnv = envBinary('SUPERONE_CODEX_BINARY')
       if (fromEnv) return fromEnv
-      const status = harnesses.get('codex')
       if (
-        status.enabled &&
         (status.state === 'ready' || status.state === 'needs_auth') &&
         status.command &&
         existsSync(status.command)
@@ -104,10 +110,13 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     }
 
     // External harnesses: catalog command or PATH/env.
+    // Same enabled gate as claude/codex — disable must stop resolution, not just hide UI.
     if (id === 'acp-grok') {
+      if (!harnesses.get(id).enabled) return null
       return envBinary('SUPERONE_ACP_BINARY') ?? harnesses.get(id).command ?? null
     }
     if (id === 'opencode') {
+      if (!harnesses.get(id).enabled) return null
       return envBinary('SUPERONE_OPENCODE_BINARY') ?? harnesses.get(id).command ?? null
     }
     if (id === 'cursor') {

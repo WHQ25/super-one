@@ -36,6 +36,38 @@ export function isCatalogHarnessEnabled(
   return catalogEntryOn(catalog, id)
 }
 
+/**
+ * True only when the catalog is known *and* the row is explicitly disabled.
+ * Unknown catalog (`null`) is not disabled — treating it as disabled would
+ * flash a read-only session banner on every launch before listHarnesses returns.
+ */
+export function isCatalogHarnessDisabled(
+  catalog: HarnessCatalogStatus[] | null | undefined,
+  id: string,
+): boolean {
+  if (catalog == null) return false
+  const row = catalog.find((r) => r.id === id)
+  return Boolean(row && !row.enabled)
+}
+
+/**
+ * Map a session's active provider to the Settings → Harnesses catalog id.
+ * Returns null for providers that are not gated by the catalog (e.g. experimental ACP).
+ */
+export function catalogIdForSessionProvider(
+  provider: string,
+  acpAgentId?: string | null,
+): string | null {
+  if (provider === 'claude' || provider === 'codex' || provider === 'opencode' || provider === 'cursor') {
+    return provider
+  }
+  if (provider === 'acp') {
+    if (!acpAgentId || isGrokAcpAgent(acpAgentId)) return 'acp-grok'
+    return null
+  }
+  return null
+}
+
 /** Whether a non-Grok ACP agent id may appear in pickers / suggestions. */
 export function isExperimentalAcpAgentEnabled(
   agentId: string,

@@ -35,6 +35,16 @@ vi.mock('./claude-binary', () => ({
   resolveSdkClaudeBinary: () => '/mock/claude',
 }))
 
+vi.mock('../harness/resolve-runtime', () => ({
+  resolveHarnessRuntime: () => '/mock/claude',
+  tryResolveHarnessRuntime: () => '/mock/claude',
+  HarnessNotReadyError: class HarnessNotReadyError extends Error {
+    code = 'HARNESS_NOT_READY' as const
+  },
+  isHarnessNotReadyError: (err: unknown) =>
+    typeof err === 'object' && err !== null && (err as { code?: string }).code === 'HARNESS_NOT_READY',
+}))
+
 vi.mock('./event-trace', () => ({
   trace: vi.fn(),
 }))
@@ -203,7 +213,8 @@ describe('createSessionQuery', () => {
         tools: [],
         mcp_servers: [],
         permissionMode: 'default',
-        slash_commands: [],
+        slash_commands: ['help', 'exit'],
+        terminal_slash_commands: ['exit'],
         skills: [],
         claude_code_version: '1.0',
         cwd: '/repo',
@@ -356,6 +367,7 @@ describe('createSessionQuery', () => {
     const sessionInit = events.find((e) => e.type === 'session_init') as Record<string, unknown> | undefined
     expect((sessionInit?.session as Record<string, unknown>)?.fastModeState).toBe('off')
     expect((sessionInit?.session as Record<string, unknown>)?.fastModeDisabledReason).toBe('preference')
+    expect((sessionInit?.session as Record<string, unknown>)?.terminalSlashCommands).toEqual(['exit'])
 
     const eventTypes = events.map((e) => e.type)
     expect(eventTypes).toContain('slash_command_output')

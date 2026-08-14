@@ -11,6 +11,8 @@ import {
   type LCHPartial,
   type TokenOverrides,
 } from '@superone/shared/harness-brand'
+import { resolveProvider } from './chat-store/helpers/provider-routing'
+import type { HarnessCatalogStatus } from '@/lib/harness-visibility'
 import { useFileTreeStore } from './file-tree'
 import { useActivityPanelStore } from './activity-panel'
 import { useSourceControlStore } from './source-control'
@@ -199,6 +201,20 @@ interface AppState {
   /** Non-Grok ACP agent ids enabled from Settings → Harnesses. */
   enabledExperimentalAgents: string[]
   setEnabledExperimentalAgents: (ids: string[]) => Promise<void>
+  /**
+   * Installation catalog from `listHarnesses`. `null` until the first successful
+   * fetch — consumers must treat unknown as "not disabled" so session composers
+   * do not flash read-only on launch.
+   */
+  harnessCatalog: HarnessCatalogStatus[] | null
+  refreshHarnessCatalog: () => Promise<void>
+  /**
+   * When set, Settings → Harnesses selects this list key (catalog id or
+   * `acp:…`) on open, then clears. Used by "Re-enable" deep links from chat.
+   */
+  harnessListFocusKey: string | null
+  /** Open Settings → Harnesses with a specific row selected. */
+  openHarnessSettings: (listKey: string) => void
   experimentalClaudeOpenAiChatEnabled: boolean
   setExperimentalClaudeOpenAiChatEnabled: (enabled: boolean) => Promise<void>
   /** Remote execution environments (Other Devices + sidebar host switcher). */
@@ -290,7 +306,9 @@ async function enterMainAfterGates(
     useChatStore.getState().setHarnessResources('cursor', startupData.cached.cursor)
   }
 
-  void useChatStore.getState().initializeHarness('claude')
+  // Catalog drives session read-only when a harness is disabled. Fire-and-forget:
+  // null stays "unknown" (composer stays open) until the first successful fetch.
+  void get().refreshHarnessCatalog()
 
   if (!get().currentFolder) {
     let opened = false
@@ -308,6 +326,35 @@ async function enterMainAfterGates(
   } else {
     set({ view: 'main' })
   }
+
+  await prewarmActiveSessionHarness()
+}
+
+/**
+ * Prewarm the harness the restored session actually uses — and only that one.
+ *
+ * This used to be an unconditional `initializeHarness('claude')` from back when
+ * Claude was the only harness. Under on-demand harness installs that probes a
+ * runtime which users who never enabled Claude do not have on disk, so every
+ * launch paid for a doomed round-trip.
+ *
+ * Runs after project selection because the session (and therefore its provider)
+ * does not exist before it.
+ */
+async function prewarmActiveSessionHarness(): Promise<void> {
+  const { useChatStore } = await import('./chat')
+  const chat = useChatStore.getState()
+  const projectPath = chat.activeProject
+  if (!projectPath) return
+  // Remote projects run their harnesses on the node — nothing local to warm.
+  if (parseRemoteProjectKey(projectPath)) return
+
+  const project = chat.projectSessions[projectPath]
+  const sessionId = project?._activeSessionId
+  const session = sessionId ? project._sessions[sessionId] : undefined
+  if (!session) return
+
+  void chat.initializeHarness(resolveProvider(session))
 }
 
 async function applyProjectSelection(
@@ -962,6 +1009,40 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   brandHues: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
   tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {}, cursor: {} },
+  harnessCatalog: null,
+  refreshHarnessCatalog: async () => {
+    try {
+      const list = await window.app.listHarnesses?.()
+      if (!Array.isArray(list)) {
+        set({ harnessCatalog: null })
+        return
+      }
+      set({
+        harnessCatalog: list.map((row) => ({
+          id: row.id,
+          enabled: Boolean(row.enabled),
+          state: String(row.state ?? ''),
+        })),
+      })
+    } catch {
+      // Keep previous snapshot on transient IPC failure — better a stale catalog
+      // than flashing every open session into read-only.
+    }
+  },
+  harnessListFocusKey: null,
+  openHarnessSettings: (listKey) => {
+    const patch: Partial<AppState> = {
+      harnessListFocusKey: listKey,
+      settingsTab: 'harnesses',
+      harnessConfigSection: null,
+      view: 'settings',
+    }
+    // Claude/Codex config panes key off settingsProvider — keep them aligned.
+    if (listKey === 'claude' || listKey === 'codex') {
+      patch.settingsProvider = listKey
+    }
+    set(patch)
+  },
   experimentalAgentsEnabled: false,
   enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Zap } from 'lucide-react'
 import type { EffortLevel } from '@superone/shared/agent-types'
@@ -50,21 +50,23 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
     void refreshClaudeResources(false)
   }, [isRemoteProject, activeProject, sessionApiProviderId, refreshClaudeResources])
 
-  // Local: fill empty catalog via initializeHarness / refresh.
+  // Local: fill empty catalog via initializeHarness / refresh. Bootstrap runs at
+  // most once per mount — never depend on loading flags, and never re-arm on
+  // failure. When the harness binary is missing (upgrade window before
+  // ~/.superone/harness is populated) connectClaude rejects forever, and a
+  // self-re-arming effect turns that into an IPC storm that kills React with
+  // error #185. Recovery is the user-driven refresh in the dropdown.
+  const bootstrappedRef = useRef(false)
   useEffect(() => {
     if (isRemoteProject) return
-    if (availableModels.length > 0 || claudeResourcesLoading) return
+    if (bootstrappedRef.current) return
+    if (availableModels.length > 0 || useChatStore.getState().claudeResourcesLoading) return
+    bootstrappedRef.current = true
     void initializeHarness('claude').then(() => {
       const models = useChatStore.getState().harnessResources.claude?.models ?? []
       if (models.length === 0) void refreshClaudeResources(true)
     })
-  }, [
-    isRemoteProject,
-    availableModels.length,
-    claudeResourcesLoading,
-    initializeHarness,
-    refreshClaudeResources,
-  ])
+  }, [isRemoteProject, availableModels.length, initializeHarness, refreshClaudeResources])
 
   const activeProvider = sessionProvider ?? preferredProvider
 

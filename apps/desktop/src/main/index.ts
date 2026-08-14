@@ -57,7 +57,7 @@ import {
 } from './computer-use/computer-use-permission-window'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
 import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk'
-import { resolveSdkClaudeBinary } from './agent/claude-binary'
+import { tryResolveHarnessRuntime } from './harness/resolve-runtime'
 import { disposeGlobalWarmupManager } from './agent/warmup-manager'
 import { resolveProbeCwd } from './agent/probe-cwd'
 import { fixPath } from './agent/resolve-cli'
@@ -3799,12 +3799,27 @@ function registerIpcHandlers(): void {
       return resources
     }
 
+    // Harness gate — same resolver the spawn path uses, so "no runtime" means the
+    // same thing everywhere: never enabled, still installing after an upgrade, or
+    // explicitly disabled. Probing without a binary makes the SDK throw
+    // *synchronously* out of query() — which is constructed outside the try
+    // below, so it escapes as a raw IPC rejection. The renderer used to answer
+    // that by retrying forever. An empty catalog is the honest answer:
+    // disk-discovered skills / commands / agents are still valid, there is just
+    // no model list without a runtime.
+    const claudeBinary = tryResolveHarnessRuntime('claude')
+    if (!claudeBinary) {
+      log.info('[CONNECT_CLAUDE] no runtime available — skipping CLI probe (harness not installed or disabled)')
+      // Deliberately not cached: the harness may be installed or re-enabled at any moment.
+      return { models: [], account: {}, slashCommands: [], skills, commands: userCommands, agents, outputStyles: [] }
+    }
+
     const probeCwd = resolveProbeCwd()
     log.info('[CONNECT_CLAUDE] cwd:', probeCwd)
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
       prompt: 'hi',
-      options: { cwd: probeCwd, pathToClaudeCodeExecutable: resolveSdkClaudeBinary(), maxTurns: 0, permissionMode: 'default', persistSession: false },
+      options: { cwd: probeCwd, pathToClaudeCodeExecutable: claudeBinary, maxTurns: 0, permissionMode: 'default', persistSession: false },
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')

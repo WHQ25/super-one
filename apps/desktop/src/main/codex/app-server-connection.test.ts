@@ -32,6 +32,18 @@ vi.mock('../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({ executable: '/mock/node' })),
 }))
 
+// Gate used by createAppServerConnection — keep tests on the spawn path without
+// pulling HarnessManager / electron into this unit suite.
+vi.mock('../harness/resolve-runtime', () => ({
+  resolveHarnessRuntime: vi.fn(() => '/mock/codex-runtime'),
+  tryResolveHarnessRuntime: vi.fn(() => '/mock/codex-runtime'),
+  HarnessNotReadyError: class HarnessNotReadyError extends Error {
+    code = 'HARNESS_NOT_READY' as const
+  },
+  isHarnessNotReadyError: (err: unknown) =>
+    typeof err === 'object' && err !== null && (err as { code?: string }).code === 'HARNESS_NOT_READY',
+}))
+
 type FakeChild = EventEmitter & {
   stdin: PassThrough
   stdout: PassThrough

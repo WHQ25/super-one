@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { HarnessId } from '@superone/shared/agent-types'
 
 const mockSourceControlReset = vi.fn()
 vi.mock('./source-control', () => ({
@@ -72,6 +73,7 @@ vi.mock('./chat', () => {
           }),
           resetSessionForWorktreeSwitch,
           activeProject: state.activeProject,
+          projectSessions: state.projectSessions,
         }),
         setState: (partial: Partial<typeof state> | ((s: typeof state) => Partial<typeof state>)) => {
           const next = typeof partial === 'function' ? partial(state) : partial
@@ -133,6 +135,19 @@ vi.stubGlobal('window', {
 const { useAppStore, startProjectMirror } = await import('./app')
 const { useChatStore } = await import('./chat')
 startProjectMirror(useChatStore)
+
+/** Seed the project + active session that startup prewarm reads its harness from. */
+function seedActiveSession(projectPath: string, provider: HarnessId) {
+  useChatStore.setState(() => ({
+    activeProject: projectPath,
+    projectSessions: {
+      [projectPath]: {
+        _activeSessionId: 'sess-1',
+        _sessions: { 'sess-1': { sessionProvider: null, preferredProvider: provider } },
+      },
+    } as never,
+  }))
+}
 
 function resetStore(overrides: Record<string, unknown> = {}) {
   useAppStore.setState({
@@ -290,6 +305,7 @@ describe('continueToMain', () => {
       cached: { claude: null, codex: null, acp: null },
     })
     resetStore({ recentFolders: folders })
+    seedActiveSession('/proj', 'claude')
 
     await useAppStore.getState().continueToMain()
     expect(useAppStore.getState().view).toBe('harness-align')
@@ -300,6 +316,46 @@ describe('continueToMain', () => {
     expect(useAppStore.getState().view).toBe('main')
     expect(useAppStore.getState().currentFolder).toBe('/proj')
     expect(mockInitializeHarness).toHaveBeenCalledWith('claude')
+  })
+
+  // Prewarm used to be a hardcoded initializeHarness('claude'). With on-demand
+  // harness installs that probes a runtime a codex-only user never downloaded.
+  it('prewarms the restored session harness instead of always claude', async () => {
+    const folders = [{ name: 'proj', path: '/proj' }]
+    mockWindowApp.openFolder.mockResolvedValue(true)
+    mockWindowApp.getRecentFolders.mockResolvedValue(folders)
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })
+    mockWindowApp.needsHarnessAlign.mockResolvedValue(false)
+    mockWindowApp.getStartupData.mockResolvedValue({
+      appVersion: '0.1.0',
+      sandboxCapability: null,
+      cached: { claude: null, codex: null, acp: null },
+    })
+    resetStore({ recentFolders: folders })
+    seedActiveSession('/proj', 'codex')
+
+    await useAppStore.getState().continueToMain()
+    await vi.dynamicImportSettled()
+
+    expect(mockInitializeHarness).toHaveBeenCalledWith('codex')
+    expect(mockInitializeHarness).not.toHaveBeenCalledWith('claude')
+  })
+
+  it('prewarms nothing when no project opened', async () => {
+    mockWindowApp.getRecentFolders.mockResolvedValue([])
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })
+    mockWindowApp.needsHarnessAlign.mockResolvedValue(false)
+    mockWindowApp.getStartupData.mockResolvedValue({
+      appVersion: '0.1.0',
+      sandboxCapability: null,
+      cached: { claude: null, codex: null, acp: null },
+    })
+    resetStore({ recentFolders: [] })
+
+    await useAppStore.getState().continueToMain()
+    await vi.dynamicImportSettled()
+
+    expect(mockInitializeHarness).not.toHaveBeenCalled()
   })
 })
 

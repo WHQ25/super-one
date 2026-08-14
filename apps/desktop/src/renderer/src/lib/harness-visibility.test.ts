@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   catalogEntryOn,
+  catalogIdForSessionProvider,
+  isCatalogHarnessDisabled,
   isCatalogHarnessEnabled,
   isClaudeHarnessEnabled,
   isCodexHarnessEnabled,
@@ -48,5 +50,21 @@ describe('harness-visibility', () => {
 
   it('legacy experimental master still unlocks opencode', () => {
     expect(isOpenCodeEnabled(allOff, true)).toBe(true)
+  })
+
+  it('isCatalogHarnessDisabled only fires when catalog is known and row is off', () => {
+    expect(isCatalogHarnessDisabled(null, 'claude')).toBe(false)
+    expect(isCatalogHarnessDisabled(claudeOn, 'claude')).toBe(false)
+    expect(isCatalogHarnessDisabled(claudeOn, 'codex')).toBe(true)
+    expect(isCatalogHarnessDisabled(allOff, 'claude')).toBe(true)
+    // Missing row is not "disabled" — unknown ids stay out of the read-only path.
+    expect(isCatalogHarnessDisabled(claudeOn, 'cursor')).toBe(false)
+  })
+
+  it('catalogIdForSessionProvider maps product providers, skips experimental ACP', () => {
+    expect(catalogIdForSessionProvider('claude')).toBe('claude')
+    expect(catalogIdForSessionProvider('codex')).toBe('codex')
+    expect(catalogIdForSessionProvider('acp', null)).toBe('acp-grok')
+    expect(catalogIdForSessionProvider('acp', 'some-custom-agent')).toBe(null)
   })
 })

@@ -1,6 +1,7 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import {
   isResumeDropsTurnRefusal,
   RESUME_DROPS_TURN_REFUSAL_PREFIX,
@@ -10,7 +11,7 @@ import log from '../logger'
 import { trace } from './event-trace'
 import { createSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
-import { resolveSdkClaudeBinary } from './claude-binary'
+import { resolveHarnessRuntime } from '../harness/resolve-runtime'
 import { makeClaudeSpawn } from './claude-spawn'
 import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
@@ -73,9 +74,12 @@ export const denySubagentSessionRename: HookCallback = async (input) => {
 }
 
 export function buildClaudeOptions(opts: SessionQueryOptions): Options {
+  // Hard gate: disabled / missing harness must throw HarnessNotReadyError rather
+  // than hand the SDK an undefined path (or a disk binary that catalog disabled).
+  // UI withdraws the composer; this covers mobile / automation / any other sender.
   return {
     cwd: opts.cwd,
-    pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
+    pathToClaudeCodeExecutable: resolveHarnessRuntime('claude'),
     model: opts.model,
     effort: opts.effort,
     thinking: { type: 'adaptive', display: 'summarized' },
@@ -468,6 +472,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             log.info(`[iterateMessages] init mcp_servers=[${mcpNames}] widget_tools=[${widgetTools}]`)
             if (sys.session_id) onSessionId?.(sys.session_id)
             log.info('[session_init] outputStyle=%s availableOutputStyles=%j', sys.output_style, sys.available_output_styles)
+            const terminalSlashCommands = readTerminalSlashCommands(sys.terminal_slash_commands)
             emit({
               type: 'session_init',
               session: {
@@ -477,6 +482,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 mcpServers: sys.mcp_servers ?? [],
                 permissionMode: sys.permissionMode ?? 'default',
                 slashCommands: sys.slash_commands ?? [],
+                ...(terminalSlashCommands ? { terminalSlashCommands } : {}),
                 skills: sys.skills ?? [],
                 claudeCodeVersion: sys.claude_code_version ?? '',
                 cwd: sys.cwd ?? '',

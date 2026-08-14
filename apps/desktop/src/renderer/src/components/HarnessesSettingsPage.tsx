@@ -231,6 +231,7 @@ export function HarnessesSettingsPage() {
   const setSettingsProvider = useAppStore((s) => s.setSettingsProvider)
   const harnessConfigSection = useAppStore((s) => s.harnessConfigSection)
   const setHarnessConfigSection = useAppStore((s) => s.setHarnessConfigSection)
+  const harnessListFocusKey = useAppStore((s) => s.harnessListFocusKey)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -266,6 +267,9 @@ export function HarnessesSettingsPage() {
     try {
       const list = (await window.app.listHarnesses()) as CatalogRow[]
       setCatalog(Array.isArray(list) ? list : [])
+      // Keep the app-wide catalog in sync so open sessions flip to/from
+      // read-only when the user enables or disables a harness here.
+      await useAppStore.getState().refreshHarnessCatalog()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setCatalog(null)
@@ -305,6 +309,13 @@ export function HarnessesSettingsPage() {
     if (settingsProvider === 'codex') setSelectedKey('codex')
     else setSelectedKey('claude')
   }, [harnessConfigSection, settingsProvider])
+
+  // Chat "Re-enable" (and similar) open this page with a specific row focused.
+  useEffect(() => {
+    if (!harnessListFocusKey) return
+    setSelectedKey(harnessListFocusKey)
+    useAppStore.setState({ harnessListFocusKey: null })
+  }, [harnessListFocusKey])
 
   const catalogById = useMemo(() => {
     const m = new Map<string, CatalogRow>()

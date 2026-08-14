@@ -73,6 +73,40 @@ vi.mock('../git/worktree-ops', () => ({
   activateWorktree: state.activateWorktree,
   resolveMainWorktreeDir: (folderPath: string) => state.resolveMainWorktreeDir(folderPath),
 }))
+function ensureProjectId(projectPath: string): string {
+  const existing = state.db!.prepare('SELECT id FROM projects WHERE path = ?').get(projectPath) as
+    | { id: string }
+    | undefined
+  if (existing) return existing.id
+  const id = `proj-${Buffer.from(projectPath).toString('base64url').slice(0, 24)}`
+  state.db!.prepare('INSERT INTO projects (id, path) VALUES (?, ?)').run(id, projectPath)
+  return id
+}
+
+function insertSessionRow(
+  id: string,
+  projectPath: string,
+  title: string | null,
+  extras: {
+    providerId?: string | null
+    isWorktree?: boolean
+    worktreePath?: string | null
+  } = {},
+): void {
+  const projectId = ensureProjectId(projectPath)
+  state.db!.prepare(`
+    INSERT INTO sessions (id, project_id, title, provider_id, is_worktree, worktree_path)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    projectId,
+    title,
+    extras.providerId ?? null,
+    extras.isWorktree ? 1 : 0,
+    extras.worktreePath ?? null,
+  )
+}
+
 vi.mock('../db-sessions', () => ({
   createSession: (
     projectPath: string,
@@ -86,9 +120,10 @@ vi.mock('../db-sessions', () => ({
     if (!state.projects.some((project) => project.path === projectPath)) {
       throw new Error(`Project not found for path: ${projectPath}`)
     }
-    state.db!.prepare(
-      'INSERT INTO sessions (id, project_path, title, is_worktree, worktree_path) VALUES (?, ?, ?, ?, ?)',
-    ).run(sessionId, projectPath, title ?? null, isWorktree ? 1 : 0, worktreePath ?? null)
+    insertSessionRow(sessionId, projectPath, title ?? null, {
+      isWorktree,
+      worktreePath: worktreePath ?? null,
+    })
     return sessionId
   },
 }))
@@ -118,9 +153,13 @@ function resultJson(result: { content: Array<{ text: string }> }) {
 function createSchema(db: Database.Database): void {
   db.exec(`
     PRAGMA foreign_keys = ON;
+    CREATE TABLE projects (
+      id TEXT PRIMARY KEY,
+      path TEXT NOT NULL UNIQUE
+    );
     CREATE TABLE sessions (
       id TEXT PRIMARY KEY,
-      project_path TEXT NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id),
       title TEXT,
       provider_id TEXT,
       provider TEXT,
@@ -263,8 +302,7 @@ beforeEach(() => {
   state.db?.close()
   state.db = new Database(':memory:')
   createSchema(state.db)
-  state.db.prepare('INSERT INTO sessions (id, project_path, title, provider_id) VALUES (?, ?, ?, ?)')
-    .run('parent', TEST_CWD, 'Parent', 'claude-base')
+  insertSessionRow('parent', TEST_CWD, 'Parent', { providerId: 'claude-base' })
   state.activateWorktree.mockReset()
   state.mainWorktreeByPath.clear()
   state.resolveMainWorktreeDir.mockClear()
@@ -800,8 +838,7 @@ describe('session collaboration', () => {
   })
 
   it('approves a link launch, activates without system prompt, and exchanges mailbox messages', async () => {
-    state.db!.prepare('INSERT INTO sessions (id, project_path, title, provider_id) VALUES (?, ?, ?, ?)')
-      .run('peer-session', TEST_CWD, 'Peer Review', 'claude-base')
+    insertSessionRow('peer-session', TEST_CWD, 'Peer Review', { providerId: 'claude-base' })
     const parent = fakeSession('parent')
     const peer = fakeSession('peer-session')
     const { host, sessions } = fakeHost(parent)
@@ -868,8 +905,7 @@ describe('session collaboration', () => {
   })
 
   it('requires start before send on link grants', async () => {
-    state.db!.prepare('INSERT INTO sessions (id, project_path, title, provider_id) VALUES (?, ?, ?, ?)')
-      .run('peer-2', TEST_CWD, 'Peer 2', 'claude-base')
+    insertSessionRow('peer-2', TEST_CWD, 'Peer 2', { providerId: 'claude-base' })
     const parent = fakeSession('parent')
     const peer = fakeSession('peer-2')
     const { host, sessions } = fakeHost(parent)
@@ -927,7 +963,11 @@ describe('child session project attribution', () => {
     await startChild(OTHER_PROJECT, host, parent)
 
     expect(createSession.mock.calls[0][0].projectPath).toBe(OTHER_PROJECT)
-    const row = state.db!.prepare('SELECT project_path FROM sessions WHERE id != ?').get('parent') as { project_path: string }
+    const row = state.db!.prepare(`
+      SELECT p.path AS project_path
+      FROM sessions s JOIN projects p ON p.id = s.project_id
+      WHERE s.id != ?
+    `).get('parent') as { project_path: string }
     expect(row.project_path).toBe(OTHER_PROJECT)
   })
 
@@ -1069,9 +1109,11 @@ describe('child session project attribution', () => {
     expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
     expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
     expect(createSession.mock.calls[0][0].cwd).toBe(TEST_CWD)
-    const row = state.db!.prepare(
-      'SELECT project_path, is_worktree, worktree_path FROM sessions WHERE id != ?',
-    ).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
+    const row = state.db!.prepare(`
+      SELECT p.path AS project_path, s.is_worktree, s.worktree_path
+      FROM sessions s JOIN projects p ON p.id = s.project_id
+      WHERE s.id != ?
+    `).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
     expect(row.project_path).toBe(TEST_CWD)
     // Runtime cwd is project root (no worktree cut) — not a worktree session.
     expect(row.is_worktree).toBe(0)
@@ -1099,9 +1141,11 @@ describe('child session project attribution', () => {
     expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
     expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
     expect(createSession.mock.calls[0][0].cwd).toBe(parentWt)
-    const row = state.db!.prepare(
-      'SELECT project_path, is_worktree, worktree_path FROM sessions WHERE id != ?',
-    ).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
+    const row = state.db!.prepare(`
+      SELECT p.path AS project_path, s.is_worktree, s.worktree_path
+      FROM sessions s JOIN projects p ON p.id = s.project_id
+      WHERE s.id != ?
+    `).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
     expect(row.project_path).toBe(TEST_CWD)
     expect(row.is_worktree).toBe(1)
     expect(row.worktree_path).toBe(parentWt)
@@ -1222,9 +1266,11 @@ describe('child session project attribution', () => {
     expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
     expect(createSession.mock.calls[0][0].cwd).toBe(existingWt)
     // DB row: project = main, is_worktree + worktree_path even without worktree.enabled
-    const row = state.db!.prepare(
-      'SELECT project_path, is_worktree, worktree_path FROM sessions WHERE id != ?',
-    ).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
+    const row = state.db!.prepare(`
+      SELECT p.path AS project_path, s.is_worktree, s.worktree_path
+      FROM sessions s JOIN projects p ON p.id = s.project_id
+      WHERE s.id != ?
+    `).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
     expect(row.project_path).toBe(TEST_CWD)
     expect(row.is_worktree).toBe(1)
     expect(row.worktree_path).toBe(existingWt)

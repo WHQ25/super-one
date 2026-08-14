@@ -374,9 +374,12 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
       const peerSessionId = launch.sessionId?.trim()
       if (!peerSessionId) throw new Error('Link launches require sessionId of an existing SuperOne session')
       if (peerSessionId === parent.id) throw new Error('Cannot link a session to itself')
+      // sessions store project_id; path lives on projects (post project_path migration).
       const peerRow = getDb().prepare(`
-        SELECT id, title, project_path, provider, provider_id, acp_agent_id
-        FROM sessions WHERE id = ?
+        SELECT s.id, s.title, p.path AS project_path, s.provider, s.provider_id, s.acp_agent_id
+        FROM sessions s
+        JOIN projects p ON p.id = s.project_id
+        WHERE s.id = ?
       `).get(peerSessionId) as {
         id: string
         title: string | null

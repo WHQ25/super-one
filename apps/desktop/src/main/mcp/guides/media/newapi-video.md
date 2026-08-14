@@ -2,7 +2,7 @@
 
 This is **not** the same wire as `openai-video` (Sora's own `/videos` shape). New API (`QuantumNous/new-api`, the common self-hosted aggregator behind most "one API key, many models" relays) exposes a **second, separate** video route for models it doesn't proxy 1:1 to a Sora-compatible backend: `POST {baseURL}/video/generations`, taking a normalized body, not Sora's. Verified against the New API Go source (`relay/channel/task/{doubao,kling}/adaptor.go`), not the (stale, inaccurate) third-party doc site — do not trust that site over this file if they disagree.
 
-Hand-written adapter in this repo: `apps/desktop/src/main/media-gen/video/newapi/`. It currently supports exactly two vendors, picked by the `model` id prefix (`doubao-*` / `kling-*`) — any other model id throws rather than silently sending a guessed body shape.
+Hand-written adapter in this repo: `apps/desktop/src/main/media-gen/video/newapi/`. It currently supports exactly two vendors: `kling-*` → Kling, and `doubao-*` or any id containing `seedance` (including relay-renamed ids such as HiFlowt `dreamina-seedance-*`) → Doubao/Ark. Any other model id throws rather than silently sending a guessed body shape.
 
 ## Shared submit shape
 

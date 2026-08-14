@@ -21,9 +21,10 @@ function options(overrides: Partial<VideoModelV4CallOptions> = {}): VideoModelV4
 }
 
 describe('vendorForModel', () => {
-  it('recognises doubao-* and kling-* model ids', () => {
+  it('recognises doubao-*, kling-*, and relay-renamed Seedance model ids', () => {
     expect(vendorForModel('doubao-seedance-1-0-pro-250528')).toBe('doubao')
     expect(vendorForModel('kling-v2-master')).toBe('kling')
+    expect(vendorForModel('dreamina-seedance-2-5-hc')).toBe('doubao')
   })
 
   it('throws for a model id from an unsupported vendor rather than guessing', () => {

@@ -11,10 +11,11 @@ export type NewApiVideoVendor = 'doubao' | 'kling'
  * as much as it does for a direct (non-relayed) integration.
  */
 export function vendorForModel(modelId: string): NewApiVideoVendor {
-  if (modelId.startsWith('doubao-')) return 'doubao'
   if (modelId.startsWith('kling-')) return 'kling'
+  // Relays often rename Seedance (e.g. HiFlowt `dreamina-seedance-*`). The wire is still Doubao/Ark.
+  if (modelId.startsWith('doubao-') || modelId.includes('seedance')) return 'doubao'
   throw new Error(
-    `Unrecognised newapi video model '${modelId}'. Only doubao-* (Seedance, via New API's Doubao relay) and ` +
+    `Unrecognised newapi video model '${modelId}'. Only doubao-* / *seedance* (Seedance, via New API's Doubao relay) and ` +
     `kling-* (via New API's Kling relay) are supported by this adapter right now.`,
   )
 }

@@ -18,7 +18,113 @@ import { DRAFTS_TABLE_DDL } from '@superone/runtime/drafts'
 import type Database from 'better-sqlite3'
 import { encryptSecret } from './crypto/secret-store'
 
-export function runDatabaseMigrations(db: Database.Database): void {
+/**
+ * Schema revision of `superone.db`, mirrored into `PRAGMA user_version` and
+ * `app_meta.schema_version`. Bump it whenever `applyMigrations` changes.
+ *
+ * Its job is *not* to gate the migration body (that stays idempotent and runs
+ * every launch); it decides when a pre-migration snapshot is taken and lets a
+ * build recognise a database written by a newer build.
+ */
+export const SCHEMA_VERSION = 1
+
+/**
+ * The oldest schema revision that can still read this database.
+ *
+ * Migrations are additive-only, so an older build opening a newer database
+ * simply ignores the columns it does not know about — which is what keeps
+ * "reinstall the previous version" working for builds that shipped before any
+ * of this existed. Raise this **only** in a release that genuinely breaks that
+ * property; it is the tripwire that turns silent breakage into a clear prompt.
+ */
+export const MIN_COMPATIBLE_SCHEMA_VERSION = 0
+
+export interface MigrationOptions {
+  /** Recorded in `app_meta.last_app_version` for support diagnostics. */
+  appVersion?: string
+}
+
+export interface MigrationResult {
+  fromVersion: number
+  toVersion: number
+}
+
+/**
+ * Run every migration as a single unit of work.
+ *
+ * SQLite DDL is transactional, so a failure anywhere leaves the database
+ * exactly as it was found rather than stranded half-migrated. Two ordering
+ * constraints are load-bearing:
+ *
+ * - `PRAGMA foreign_keys` is a **silent no-op inside a transaction**, so the
+ *   table rebuilds that need it off are served by toggling it out here. Do not
+ *   move this back inside `applyMigrations`.
+ * - `VACUUM` cannot run inside a transaction. A future migration that needs one
+ *   must be split out and run after the commit.
+ */
+export function runDatabaseMigrations(
+  db: Database.Database,
+  options: MigrationOptions = {},
+): MigrationResult {
+  const fromVersion = (db.pragma('user_version', { simple: true }) as number | undefined) ?? 0
+  const foreignKeysWereOn = db.pragma('foreign_keys', { simple: true }) === 1
+
+  db.pragma('foreign_keys = OFF')
+  try {
+    db.transaction(() => {
+      applyMigrations(db)
+
+      const violations = db.pragma('foreign_key_check') as unknown[]
+      if (violations.length > 0) {
+        throw new Error(
+          `database migration left ${violations.length} foreign key violation(s); rolling back`,
+        )
+      }
+
+      if (fromVersion > SCHEMA_VERSION) {
+        // An older build opening a compatible-newer database. The idempotent
+        // body may still run; the version stamps must not move downward, or a
+        // later, even older build would miss the writer's compatibility floor.
+        writeSchemaMeta(db, options.appVersion, { stampVersions: false })
+        return
+      }
+
+      db.pragma(`user_version = ${SCHEMA_VERSION}`)
+      writeSchemaMeta(db, options.appVersion)
+    }).immediate()
+  } finally {
+    db.pragma(`foreign_keys = ${foreignKeysWereOn ? 'ON' : 'OFF'}`)
+  }
+
+  if (fromVersion < SCHEMA_VERSION) {
+    // Refresh the query planner's statistics after a schema change.
+    db.pragma('optimize')
+  }
+
+  return {
+    fromVersion,
+    toVersion: fromVersion > SCHEMA_VERSION ? fromVersion : SCHEMA_VERSION,
+  }
+}
+
+function writeSchemaMeta(
+  db: Database.Database,
+  appVersion: string | undefined,
+  options: { stampVersions?: boolean } = {},
+): void {
+  const upsert = db.prepare(`
+    INSERT INTO app_meta (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `)
+  if (options.stampVersions !== false) {
+    upsert.run('schema_version', String(SCHEMA_VERSION))
+    upsert.run('min_compatible_schema_version', String(MIN_COMPATIBLE_SCHEMA_VERSION))
+    upsert.run('last_migrated_at', new Date().toISOString())
+  }
+  if (appVersion) upsert.run('last_app_version', appVersion)
+}
+
+function applyMigrations(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -325,11 +431,11 @@ export function runDatabaseMigrations(db: Database.Database): void {
     `)
   }
 
+  // The table rebuilds below need foreign keys off. `runDatabaseMigrations`
+  // turns them off outside the transaction, because `PRAGMA foreign_keys` is a
+  // silent no-op once a transaction is open — toggling it here would look like
+  // a seatbelt while doing nothing.
   const chatMsgColsFinal = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
-  const sessionColsPreDrop = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
-  const needsRebuild = chatMsgColsFinal.some((c) => c.name === 'claude_session_id')
-    || sessionColsPreDrop.some((c) => c.name === 'claude_session_id')
-  if (needsRebuild) db.pragma('foreign_keys = OFF')
   if (chatMsgColsFinal.some((c) => c.name === 'claude_session_id')) {
     db.exec(`
       CREATE TABLE chat_messages_new (
@@ -396,7 +502,6 @@ export function runDatabaseMigrations(db: Database.Database): void {
     db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider ON sessions(provider_id)')
     db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider_session_id ON sessions(provider_session_id)')
   }
-  if (needsRebuild) db.pragma('foreign_keys = ON')
 
   const sessionColsPostRebuild = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
   if (!sessionColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {

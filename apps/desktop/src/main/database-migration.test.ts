@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const dbMock = vi.hoisted(() => {
   const exec = vi.fn()
-  const pragma = vi.fn()
+  const pragma = vi.fn((source: string) => {
+    if (source === 'foreign_key_check') return []
+    if (source === 'foreign_keys') return 1
+    if (source === 'user_version') return 0
+    return undefined
+  })
   const prepare = vi.fn((sql: string) => {
     if (sql === 'PRAGMA table_info(sessions)') {
       return {
@@ -44,14 +49,24 @@ const dbMock = vi.hoisted(() => {
     }
     return { all: () => [], get: () => undefined, run: vi.fn() }
   })
-  return { exec, pragma, prepare }
+  // better-sqlite3's transaction wrapper: calling the returned function runs
+  // `fn` inside a transaction. `.immediate()` is the variant migrations use.
+  const transaction = vi.fn((fn: () => void) => {
+    const run = () => fn()
+    return Object.assign(run, { immediate: run, deferred: run, exclusive: run })
+  })
+  return { exec, pragma, prepare, transaction }
 })
 
 const DatabaseCtor = vi.hoisted(() => vi.fn(function MockDatabase() {
   return dbMock
 }))
 
-vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
+vi.mock('electron', () => ({
+  app: { getPath: () => '/tmp', getVersion: () => '0.0.0-test', isReady: () => true, quit: vi.fn() },
+  dialog: { showErrorBox: vi.fn(), showMessageBoxSync: vi.fn(() => 1) },
+}))
+vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
 vi.mock('better-sqlite3', () => ({ default: DatabaseCtor }))
 
@@ -318,5 +333,141 @@ describe('database migration', () => {
     expect(execSql.some((sql) => /^\s*UPDATE\s+chat_messages\b[\s\S]*claude_session_id/i.test(sql))).toBe(false)
     expect(execSql.some((sql) => sql.includes('CREATE TABLE chat_messages_new'))).toBe(false)
     expect(execSql.some((sql) => sql.includes('CREATE TABLE sessions_new'))).toBe(false)
+  })
+})
+
+describe('migration atomicity and schema stamping', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    dbMock.exec.mockClear()
+    dbMock.pragma.mockClear()
+    dbMock.prepare.mockClear()
+    dbMock.transaction.mockClear()
+    // These tests swap in failing implementations, and mockClear keeps them —
+    // restore the happy path so each scenario starts from a healthy database.
+    dbMock.exec.mockImplementation(() => undefined)
+    dbMock.pragma.mockImplementation((source: string) => {
+      if (source === 'foreign_key_check') return []
+      if (source === 'foreign_keys') return 1
+      if (source === 'user_version') return 0
+      return undefined
+    })
+    dbMock.transaction.mockImplementation((fn: () => void) => {
+      const run = () => fn()
+      return Object.assign(run, { immediate: run, deferred: run, exclusive: run })
+    })
+  })
+
+  it('runs the whole migration in one transaction and stamps the schema version', async () => {
+    const { runDatabaseMigrations, SCHEMA_VERSION } = await import('./database-migrations')
+
+    const result = runDatabaseMigrations(dbMock as never, { appVersion: '9.9.9-test' })
+
+    expect(dbMock.transaction).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ fromVersion: 0, toVersion: SCHEMA_VERSION })
+
+    const pragmas = dbMock.pragma.mock.calls.map((call) => call[0] as string)
+    expect(pragmas).toContain(`user_version = ${SCHEMA_VERSION}`)
+    expect(pragmas).toContain('foreign_key_check')
+
+    const prepared = dbMock.prepare.mock.calls.map((call) => call[0] as string)
+    expect(prepared.some((sql) => sql.includes('INSERT INTO app_meta'))).toBe(true)
+  })
+
+  it('toggles foreign_keys outside the transaction, where the pragma is not a no-op', async () => {
+    const { runDatabaseMigrations } = await import('./database-migrations')
+
+    const order: string[] = []
+    dbMock.pragma.mockImplementation((source: string) => {
+      order.push(`pragma:${source}`)
+      if (source === 'foreign_key_check') return []
+      if (source === 'foreign_keys') return 1
+      if (source === 'user_version') return 0
+      return undefined
+    })
+    dbMock.transaction.mockImplementation((fn: () => void) => {
+      const run = () => {
+        order.push('transaction:begin')
+        fn()
+        order.push('transaction:commit')
+      }
+      return Object.assign(run, { immediate: run, deferred: run, exclusive: run })
+    })
+
+    runDatabaseMigrations(dbMock as never)
+
+    expect(order.indexOf('pragma:foreign_keys = OFF')).toBeLessThan(order.indexOf('transaction:begin'))
+    expect(order.indexOf('pragma:foreign_keys = ON')).toBeGreaterThan(order.indexOf('transaction:commit'))
+  })
+
+  it('propagates the failure and leaves the version stamp untouched when a migration throws', async () => {
+    const { runDatabaseMigrations } = await import('./database-migrations')
+
+    dbMock.exec.mockImplementation((sql: string) => {
+      if (sql.includes('CREATE TABLE IF NOT EXISTS media_generations')) {
+        throw new Error('disk I/O error')
+      }
+    })
+
+    expect(() => runDatabaseMigrations(dbMock as never)).toThrow('disk I/O error')
+
+    const pragmas = dbMock.pragma.mock.calls.map((call) => call[0] as string)
+    expect(pragmas.some((sql) => sql.startsWith('user_version ='))).toBe(false)
+    // Still restored, so the connection is not left with foreign keys disabled.
+    expect(pragmas).toContain('foreign_keys = ON')
+  })
+
+  it('does not apply the version stamp when foreign_key_check reports violations', async () => {
+    const { runDatabaseMigrations } = await import('./database-migrations')
+
+    dbMock.pragma.mockImplementation((source: string) => {
+      if (source === 'foreign_key_check') return [{ table: 'chat_messages', rowid: 1 }]
+      if (source === 'foreign_keys') return 1
+      if (source === 'user_version') return 0
+      return undefined
+    })
+
+    expect(() => runDatabaseMigrations(dbMock as never)).toThrow(/foreign key violation/)
+
+    const pragmas = dbMock.pragma.mock.calls.map((call) => call[0] as string)
+    expect(pragmas.some((sql) => sql.startsWith('user_version ='))).toBe(false)
+  })
+
+  it('does not stamp user_version or min_compatible downward on a newer database', async () => {
+    const { runDatabaseMigrations, SCHEMA_VERSION } = await import('./database-migrations')
+    const newerVersion = SCHEMA_VERSION + 5
+    const metaRun = vi.fn()
+
+    dbMock.pragma.mockImplementation((source: string) => {
+      if (source === 'foreign_key_check') return []
+      if (source === 'foreign_keys') return 1
+      if (source === 'user_version') return newerVersion
+      return undefined
+    })
+    dbMock.prepare.mockImplementation((sql: string) => {
+      if (sql.includes('INSERT INTO app_meta')) return { run: metaRun }
+      if (sql === 'PRAGMA table_info(sessions)') {
+        return { all: () => [{ name: 'id' }, { name: 'project_id' }, { name: 'title' }] }
+      }
+      if (sql === 'PRAGMA table_info(chat_messages)') {
+        return { all: () => [{ name: 'id' }, { name: 'session_id' }, { name: 'sort_order' }] }
+      }
+      if (sql === 'PRAGMA table_info(api_providers)') return { all: () => [] }
+      if (sql === 'PRAGMA table_info(global_resource_cache)') return { all: () => [] }
+      return { all: () => [], get: () => undefined, run: vi.fn() }
+    })
+
+    const result = runDatabaseMigrations(dbMock as never, { appVersion: '0.1.0' })
+
+    expect(result).toEqual({ fromVersion: newerVersion, toVersion: newerVersion })
+    const pragmas = dbMock.pragma.mock.calls.map((call) => call[0] as string)
+    expect(pragmas.some((sql) => sql.startsWith('user_version ='))).toBe(false)
+    expect(metaRun.mock.calls.map((call) => call[0])).toEqual(['last_app_version'])
+    expect(metaRun.mock.calls[0]?.[1]).toBe('0.1.0')
+  })
+
+  it('keeps the compatibility floor at or below the current schema version', async () => {
+    const { SCHEMA_VERSION, MIN_COMPATIBLE_SCHEMA_VERSION } = await import('./database-migrations')
+    expect(MIN_COMPATIBLE_SCHEMA_VERSION).toBeLessThanOrEqual(SCHEMA_VERSION)
   })
 })

@@ -29,7 +29,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "bun run typecheck:node && bun run typecheck:web",
-    "test:migration": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron --experimental-strip-types scripts/test-migration.ts",
+    "test:migration": "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron --import ./scripts/register-electron-stub.mjs --experimental-strip-types scripts/test-migration.ts",
     "test:e2e": "electron-vite build && playwright test",
     "test:e2e:fast": "playwright test",
     "build:app": "electron-vite build && electron-builder --config electron-builder.yml",

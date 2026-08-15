@@ -137,6 +137,19 @@ Tables: `projects`, `sessions`, `chat_messages`. Messages stored as JSON blobs.
 - Background sessions: streaming sessions parked to `_bgSessions` when switching projects, restored on `resumeSession()`
 - `_historySessionId` tracks which DB session is loaded (enables resume from sidebar history)
 
+#### Schema changes (⚠️ read before touching `database-migrations.ts`)
+
+**Migrations are additive-only.** A user can install any build at any time, and builds that already shipped contain no recovery code — they will read a newer database fine *as long as nothing they query was taken away*. That property, not the backup layer, is what makes "reinstall the previous version" work.
+
+- **Never** `DROP TABLE` / `DROP COLUMN` / `RENAME COLUMN` / `RENAME TO` in a new migration. `database-migrations-policy.test.ts` freezes the grandfathered set and fails on anything new.
+- Removing a field is a two-step **expand/contract**: (1) this release adds the replacement, writes both, stops reading the old one; (2) at least two releases later, drop the old one, add it to `GRANDFATHERED`, and raise `MIN_COMPATIBLE_SCHEMA_VERSION`.
+- Bump `SCHEMA_VERSION` whenever `applyMigrations` changes. It gates the pre-migration snapshot and lets a build recognise a database written by a newer one. The migration body itself stays idempotent and runs every launch, so forgetting the bump costs a snapshot, not a column.
+- `MIN_COMPATIBLE_SCHEMA_VERSION` is the tripwire for a genuine compatibility break — raising it is what turns silent breakage on downgrade into a restore prompt. It should almost never move.
+- `PRAGMA foreign_keys` is a **silent no-op inside a transaction**. `runDatabaseMigrations` toggles it outside; do not add a toggle inside `applyMigrations`.
+- `VACUUM` cannot run inside a transaction. A migration needing one must be split out and run after the commit.
+
+Startup flow lives in `db-open.ts` (verify → snapshot → migrate → recover) with the snapshot mechanics in `db-backup.ts`. Snapshots land in `userData/backups/superone-schema<N>-<stamp>.db`, newest one per schema version, three versions deep. Recovery never deletes: a database that is corrupt or from a newer build is renamed aside, never replaced in place.
+
 ### Shared Types
 
 `packages/shared/src/agent-types.ts` — IPC-safe types (no SDK imports):

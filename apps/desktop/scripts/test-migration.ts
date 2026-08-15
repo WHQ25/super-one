@@ -1,11 +1,16 @@
-#!/usr/bin/env bun
+/**
+ * Real-database migration smoke test (`bun run test:migration`).
+ * Must run under Electron: desktop postinstall rebuilds better-sqlite3
+ * against the Electron ABI, which system Node cannot load.
+ */
 import Database from 'better-sqlite3'
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { runDatabaseMigrations } from '../src/main/database-migrations.ts'
+import { runDatabaseMigrations, SCHEMA_VERSION } from '../src/main/database-migrations.ts'
+import { backupDatabase, backupDirFor, listBackups } from '../src/main/db-backup.ts'
 
 const DEFAULT_SOURCE = join(
   homedir(),
@@ -148,6 +153,43 @@ function assertInvariants(db: Database.Database): Check[] {
   return checks
 }
 
+/** Version stamping and snapshot bookkeeping — the disaster-recovery contract. */
+function assertMigrationBookkeeping(
+  db: Database.Database,
+  backupDir: string,
+  backupStatus: string,
+): Array<{ name: string; pass: boolean; detail?: string }> {
+  const checks: Array<{ name: string; pass: boolean; detail?: string }> = []
+
+  const userVersion = db.pragma('user_version', { simple: true }) as number
+  checks.push({
+    name: 'user_version stamped with SCHEMA_VERSION',
+    pass: userVersion === SCHEMA_VERSION,
+    detail: `user_version=${userVersion}, expected ${SCHEMA_VERSION}`,
+  })
+
+  const meta = db.prepare('SELECT key, value FROM app_meta').all() as Array<{ key: string; value: string }>
+  const byKey = new Map(meta.map((row) => [row.key, row.value]))
+  for (const key of ['schema_version', 'min_compatible_schema_version', 'last_migrated_at', 'last_app_version']) {
+    checks.push({ name: `app_meta.${key} written`, pass: byKey.has(key), detail: byKey.get(key) })
+  }
+
+  if (backupStatus === 'created') {
+    const backups = listBackups(backupDir)
+    checks.push({
+      name: 'pre-migration snapshot present and non-empty',
+      pass: backups.length === 1 && backups[0]!.sizeBytes > 0,
+      detail: backups.map((b) => `${b.fileName} (${Math.round(b.sizeBytes / 1048576)}MB)`).join(', '),
+    })
+    checks.push({
+      name: 'no partial .tmp snapshot left behind',
+      pass: !readdirSync(backupDir).some((f) => f.endsWith('.tmp')),
+    })
+  }
+
+  return checks
+}
+
 function fmt(row: Record<string, number>): string {
   return Object.entries(row)
     .map(([k, v]) => `  ${k.padEnd(28)} ${v}`)
@@ -166,7 +208,7 @@ function main(): void {
   })
 
   if (values.help) {
-    console.log(`Usage: bun run scripts/test-migration.ts [--source <path>] [--keep]
+    console.log(`Usage: bun run test:migration [-- --source <path>] [--keep]
 
   --source <path>   Source DB to copy (default: production DB)
   --keep            Do not delete the temp snapshot after the run
@@ -206,14 +248,28 @@ function main(): void {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
 
+  const startingVersion = db.pragma('user_version', { simple: true }) as number
+  console.log(`[i] starting schema version: ${startingVersion} (this build: ${SCHEMA_VERSION})\n`)
+
+  const backupDir = backupDirFor(snapshot)
+  const backupOutcome = backupDatabase({ db, dbPath: snapshot, backupDir, schemaVersion: startingVersion })
+  if (backupOutcome.status === 'created') {
+    console.log(
+      `[i] snapshot: ${Math.round(backupOutcome.sizeBytes / 1048576)}MB in ${backupOutcome.durationMs}ms ` +
+        `→ ${backupOutcome.path}\n`,
+    )
+  } else {
+    console.log(`[i] snapshot skipped: ${backupOutcome.reason}\n`)
+  }
+
   const t0 = Date.now()
-  runDatabaseMigrations(db)
+  const result = runDatabaseMigrations(db, { appVersion: 'migration-smoke-test' })
   const dur = Date.now() - t0
-  console.log(`[i] migration completed in ${dur}ms\n`)
+  console.log(`[i] migration ${result.fromVersion} → ${result.toVersion} completed in ${dur}ms\n`)
 
   const afterSchema = snapshotSchema(db)
   const afterCounts = tableCounts(db, trackedTables)
-  const checks = assertInvariants(db)
+  const checks = [...assertInvariants(db), ...assertMigrationBookkeeping(db, backupDir, backupOutcome.status)]
   db.close()
 
   console.log('[i] after counts:')

@@ -1451,7 +1451,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
                 <>
                   {toolName === 'Edit' && (isStreaming
                     ? <CanvasEditDiff params={params} />
-                    : <EditDiff params={params} />
+                    : (String(params.old_string ?? '') || String(params.new_string ?? '')
+                      ? <EditDiff params={params} />
+                      : <FileChangeDiff params={params} />)
                   )}
                   {toolName === 'Write' && <WriteDiff params={params} isStreaming={isStreaming} />}
                   {toolName === 'FileChange' && <FileChangeDiff params={params} isStreaming={isStreaming} />}

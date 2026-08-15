@@ -34,6 +34,25 @@ describe('normalizeTranscriptTool', () => {
       input: { title: 'x' },
     })
   })
+
+  it('aliases Cursor SDK fields onto Claude-shaped ToolBlock input', () => {
+    expect(normalizeTranscriptTool('read', { path: 'a.ts' })).toEqual({
+      toolName: 'Read',
+      input: { path: 'a.ts', file_path: 'a.ts' },
+    })
+    expect(normalizeTranscriptTool('write', { path: 'a.ts', fileText: 'hi' })).toEqual({
+      toolName: 'Write',
+      input: { path: 'a.ts', fileText: 'hi', file_path: 'a.ts', content: 'hi' },
+    })
+    expect(normalizeTranscriptTool('glob', { globPattern: '**/*.ts', targetDirectory: 'src' })).toEqual({
+      toolName: 'Glob',
+      input: { globPattern: '**/*.ts', targetDirectory: 'src', pattern: '**/*.ts', path: 'src' },
+    })
+    expect(normalizeTranscriptTool('edit', { path: 'a.ts', diffString: '--- a\n+++ b' })).toEqual({
+      toolName: 'Edit',
+      input: { path: 'a.ts', diffString: '--- a\n+++ b', file_path: 'a.ts', diff: '--- a\n+++ b' },
+    })
+  })
 })
 
 describe('formatAgentToolOutput', () => {

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   CursorTurnCallIdBridge,
+  CursorTurnUsage,
   extractToolCallParts,
   mapConversationStep,
   mapInteractionUpdate,
+  mapSdkMessageLifecycle,
 } from './cursor-event-map'
 
 describe('mapInteractionUpdate', () => {
@@ -53,6 +55,9 @@ describe('mapInteractionUpdate', () => {
       type: 'content_delta',
       delta: { type: 'tool_use', toolUseId: 'c1', toolName: 'Read', status: 'complete' },
     })
+    expect(events[0]).toMatchObject({
+      delta: { type: 'tool_use', input: JSON.stringify({ path: 'a.ts', file_path: 'a.ts' }) },
+    })
     expect(events[1]).toMatchObject({
       type: 'content_delta',
       delta: {
@@ -83,36 +88,64 @@ describe('mapInteractionUpdate', () => {
     })
   })
 
-  it('maps token-delta and turn-ended usage', () => {
+  it('maps token-delta as generated-output increment, not billed input or context', () => {
     const tokenEvents = mapInteractionUpdate('m1', {
       type: 'token-delta',
-      tokens: 1200,
+      tokens: 3,
     } as never, { contextWindow: 200_000 })
     expect(tokenEvents[0]).toMatchObject({
       type: 'message_usage',
       messageId: 'm1',
-      inputTokens: 1200,
-      contextTokens: 1200,
-      contextWindow: 200_000,
+      inputTokens: 0,
+      outputTokens: 3,
     })
+    expect(tokenEvents[0]).not.toHaveProperty('contextTokens')
 
     const ended = mapInteractionUpdate('m1', {
       type: 'turn-ended',
       usage: {
         inputTokens: 10,
         outputTokens: 5,
-        cacheReadTokens: 2,
+        cacheReadTokens: 2_000_000,
         cacheWriteTokens: 1,
         reasoningTokens: 3,
       },
     } as never, { contextWindow: 100_000 })
     expect(ended[0]).toMatchObject({
       type: 'message_usage',
-      inputTokens: 13,
-      outputTokens: 8,
+      inputTokens: 11,
+      outputTokens: 5,
+      cacheReadTokens: 2_000_000,
+      contextTokens: 2_000_011,
       contextWindow: 100_000,
     })
     expect(ended[1]).toEqual({ type: 'status_change', status: 'idle' })
+  })
+
+  it('accumulates token-delta output without wiping billed input', () => {
+    const turnUsage = new CursorTurnUsage()
+    mapInteractionUpdate('m1', {
+      type: 'turn-ended',
+      usage: {
+        inputTokens: 80,
+        outputTokens: 4,
+        cacheReadTokens: 5_000_000,
+        cacheWriteTokens: 20,
+      },
+    } as never, { turnUsage })
+
+    const first = mapInteractionUpdate('m1', { type: 'token-delta', tokens: 1 } as never, { turnUsage })
+    const second = mapInteractionUpdate('m1', { type: 'token-delta', tokens: 2 } as never, { turnUsage })
+    expect(first[0]).toMatchObject({
+      type: 'message_usage',
+      inputTokens: 100,
+      outputTokens: 5,
+    })
+    expect(second[0]).toMatchObject({
+      type: 'message_usage',
+      inputTokens: 100,
+      outputTokens: 7,
+    })
   })
 
   it('ignores shell-output-delta entirely (final result comes from tool-call-completed)', () => {
@@ -170,6 +203,195 @@ describe('mapInteractionUpdate', () => {
       description: 'Explore',
     } as never)
     expect(task[0]).toMatchObject({ type: 'task_started', taskId: 't1' })
+  })
+
+  it('unwraps Cursor MCP envelope to mcp__server__tool so SuperOne tool UI can parse it', () => {
+    const started = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c1',
+      toolCall: {
+        type: 'mcp',
+        args: {
+          providerIdentifier: 'superone',
+          toolName: 'session_read',
+          args: { sessionId: 's1', from: 0 },
+        },
+      },
+    } as never)
+    expect(started[0]).toMatchObject({
+      type: 'content_delta',
+      delta: {
+        type: 'tool_use',
+        toolUseId: 'c1',
+        toolName: 'mcp__superone__session_read',
+        status: 'streaming',
+        input: JSON.stringify({ sessionId: 's1', from: 0 }),
+      },
+    })
+
+    const completed = mapInteractionUpdate('m1', {
+      type: 'tool-call-completed',
+      callId: 'c1',
+      toolCall: {
+        type: 'mcp',
+        args: {
+          providerIdentifier: 'superone',
+          toolName: 'session_read',
+          args: { sessionId: 's1' },
+        },
+        result: { status: 'success', value: { messages: [] } },
+      },
+    } as never)
+    expect(completed[0]).toMatchObject({
+      type: 'content_delta',
+      delta: {
+        type: 'tool_use',
+        toolName: 'mcp__superone__session_read',
+        status: 'complete',
+        input: JSON.stringify({ sessionId: 's1' }),
+      },
+    })
+  })
+
+  it('does not remap SuperOne MCP names through native tool aliases', () => {
+    // session_read contains "read"; session_search contains "search".
+    const read = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c1',
+      toolCall: {
+        type: 'mcp',
+        args: { providerIdentifier: 'superone', toolName: 'session_read', args: {} },
+      },
+    } as never)
+    expect(read[0]).toMatchObject({
+      delta: { type: 'tool_use', toolName: 'mcp__superone__session_read' },
+    })
+
+    const search = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c2',
+      toolCall: {
+        type: 'mcp',
+        args: { providerIdentifier: 'superone', toolName: 'session_search', args: { query: 'auth' } },
+      },
+    } as never)
+    expect(search[0]).toMatchObject({
+      delta: { type: 'tool_use', toolName: 'mcp__superone__session_search' },
+    })
+  })
+
+  it('unwraps third-party MCP envelopes the same way', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c1',
+      toolCall: {
+        type: 'mcp',
+        args: {
+          providerIdentifier: 'git',
+          toolName: 'diff',
+          args: { staged: true },
+        },
+      },
+    } as never)
+    expect(events[0]).toMatchObject({
+      delta: {
+        type: 'tool_use',
+        toolName: 'mcp__git__diff',
+        input: JSON.stringify({ staged: true }),
+      },
+    })
+  })
+
+  it('keeps MCP display name when the envelope is incomplete', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c1',
+      toolCall: {
+        type: 'mcp',
+        args: { toolName: 'session_read' },
+      },
+    } as never)
+    expect(events[0]).toMatchObject({
+      delta: { type: 'tool_use', toolName: 'MCP' },
+    })
+  })
+
+  it('normalizes Cursor native args so ToolBlock can show file names', () => {
+    const read = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c1',
+      toolCall: { type: 'read', args: { path: 'src/main.ts' } },
+    } as never)
+    expect(read[0]).toMatchObject({
+      delta: {
+        type: 'tool_use',
+        toolName: 'Read',
+        input: JSON.stringify({ path: 'src/main.ts', file_path: 'src/main.ts' }),
+      },
+    })
+
+    const write = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c2',
+      toolCall: { type: 'write', args: { path: 'a.ts', fileText: 'export {}' } },
+    } as never)
+    expect(write[0]).toMatchObject({
+      delta: {
+        type: 'tool_use',
+        toolName: 'Write',
+        input: JSON.stringify({
+          path: 'a.ts',
+          fileText: 'export {}',
+          file_path: 'a.ts',
+          content: 'export {}',
+        }),
+      },
+    })
+
+    const glob = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c3',
+      toolCall: { type: 'glob', args: { globPattern: '**/*.ts', targetDirectory: 'src' } },
+    } as never)
+    expect(glob[0]).toMatchObject({
+      delta: {
+        type: 'tool_use',
+        toolName: 'Glob',
+        input: JSON.stringify({
+          globPattern: '**/*.ts',
+          targetDirectory: 'src',
+          pattern: '**/*.ts',
+          path: 'src',
+        }),
+      },
+    })
+  })
+
+  it('merges Cursor Edit result.diffString into tool_use input', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-completed',
+      callId: 'c1',
+      toolCall: {
+        type: 'edit',
+        args: { path: 'a.ts' },
+        result: {
+          status: 'success',
+          value: { diffString: '--- a\n+++ b\n', linesAdded: 1, linesRemoved: 1 },
+        },
+      },
+    } as never)
+    expect(events[0]).toMatchObject({
+      delta: {
+        type: 'tool_use',
+        toolName: 'Edit',
+        input: JSON.stringify({
+          path: 'a.ts',
+          diffString: '--- a\n+++ b\n',
+          file_path: 'a.ts',
+          diff: '--- a\n+++ b\n',
+        }),
+      },
+    })
   })
 })
 
@@ -245,6 +467,55 @@ describe('mapConversationStep', () => {
     expect(steps[0]).toMatchObject({
       type: 'content_delta',
       delta: { type: 'tool_use', toolUseId: 'real-call-1', toolName: 'Bash', status: 'complete' },
+    })
+  })
+
+  it('unwraps MCP envelopes on toolCall steps', () => {
+    const steps = mapConversationStep('m1', {
+      type: 'toolCall',
+      callId: 'c9',
+      message: {
+        type: 'mcp',
+        args: {
+          providerIdentifier: 'superone',
+          toolName: 'session_list',
+          args: { limit: 10 },
+        },
+      },
+    } as never)
+    expect(steps[0]).toMatchObject({
+      delta: {
+        type: 'tool_use',
+        toolName: 'mcp__superone__session_list',
+        input: JSON.stringify({ limit: 10 }),
+      },
+    })
+  })
+})
+
+describe('mapSdkMessageLifecycle', () => {
+  it('unwraps MCP envelopes on tool_call replay', () => {
+    const events = mapSdkMessageLifecycle('m1', {
+      type: 'tool_call',
+      agent_id: 'a',
+      run_id: 'r',
+      call_id: 'c1',
+      name: 'mcp',
+      status: 'completed',
+      args: {
+        providerIdentifier: 'superone',
+        toolName: 'session_read',
+        args: { sessionId: 's1' },
+      },
+      result: { messages: [] },
+    } as never, { includeContent: true })
+    expect(events[0]).toMatchObject({
+      delta: {
+        type: 'tool_use',
+        toolName: 'mcp__superone__session_read',
+        toolUseId: 'c1',
+        input: JSON.stringify({ sessionId: 's1' }),
+      },
     })
   })
 })

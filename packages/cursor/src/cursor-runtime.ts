@@ -23,6 +23,7 @@ import { withCursorNetworkRetries } from './cursor-network-retry'
 import { buildCursorCustomTools } from './cursor-custom-tools'
 import {
   CursorTurnCallIdBridge,
+  CursorTurnUsage,
   mapConversationStep,
   mapInteractionUpdate,
   mapSdkMessageLifecycle,
@@ -423,6 +424,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       const contextWindow = resolveContextWindow(modelSelection)
       // Bridge real callIds from onDelta → onStep (SDK ConversationStep.toolCall has no callId).
       const callIdBridge = new CursorTurnCallIdBridge()
+      const turnUsage = new CursorTurnUsage()
 
       const sendStarted = Date.now()
       log.info('[CursorRuntime] send start', { messageId })
@@ -440,7 +442,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
         onDelta: ({ update }) => {
           tracer.sdk(cursorSdkType(update, 'delta'), update, messageId)
           callIdBridge.observeDelta(update)
-          for (const event of mapInteractionUpdate(messageId, update, { contextWindow })) {
+          for (const event of mapInteractionUpdate(messageId, update, { contextWindow, turnUsage })) {
             opts.onEvent(event)
           }
         },
@@ -549,19 +551,16 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       lastRunId = result.id || lastRunId
 
       if (result.usage) {
+        turnUsage.applyRunTotals(result.usage)
         opts.onEvent({
           type: 'message_usage',
           messageId,
-          inputTokens: result.usage.inputTokens + result.usage.cacheReadTokens + result.usage.cacheWriteTokens,
-          outputTokens: result.usage.outputTokens + (result.usage.reasoningTokens ?? 0),
+          inputTokens: turnUsage.input,
+          outputTokens: turnUsage.output,
           cacheReadTokens: result.usage.cacheReadTokens,
           model: result.model?.id ?? modelSelection?.id,
-          ...(contextWindow && contextWindow > 0
-            ? {
-                contextWindow,
-                contextTokens: result.usage.inputTokens + result.usage.cacheReadTokens + result.usage.cacheWriteTokens,
-              }
-            : {}),
+          ...(turnUsage.context > 0 ? { contextTokens: turnUsage.context } : {}),
+          ...(contextWindow && contextWindow > 0 ? { contextWindow } : {}),
         })
       }
 

@@ -50,10 +50,13 @@ export {
   mapInteractionUpdate,
   mapConversationStep,
   mapSdkMessageLifecycle,
+  mapCursorTokenUsage,
   extractToolCallParts,
   toolDisplayName,
+  unwrapCursorMcpTool,
   stableIdField,
   CursorTurnCallIdBridge,
+  CursorTurnUsage,
 } from './cursor-event-map'
 
 export {

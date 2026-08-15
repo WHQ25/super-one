@@ -191,6 +191,8 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     }
     case 'Edit':
       return { icon: 'file-edit', summary: sp(String(input.file_path ?? '')) }
+    case 'Delete':
+      return { icon: 'file-edit', summary: sp(String(input.file_path ?? input.path ?? '')) }
     case 'FileChange': {
       const filePath = sp(String(input.file_path ?? ''))
       const kind = String(input.kind ?? '')
@@ -205,6 +207,8 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'folder-search', summary: `${input.pattern ?? ''}${input.path ? ` in ${sp(String(input.path))}` : ''}` }
     case 'WebSearch':
       return { icon: 'globe', summary: String(input.query ?? '') }
+    case 'SemanticSearch':
+      return { icon: 'search', summary: String(input.query ?? '') }
     case 'WebFetch':
       return { icon: 'globe', summary: String(input.url ?? '') }
     case 'Skill':

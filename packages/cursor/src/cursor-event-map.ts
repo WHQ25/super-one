@@ -5,9 +5,11 @@ import type {
   SDKToolUseMessage,
 } from '@cursor/sdk'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 
 /** Map Cursor toolCall.type (and free-form names) to SuperOne tool display names. */
 export function toolDisplayName(name: string): string {
+  if (name.startsWith('mcp__')) return name
   const n = name.toLowerCase()
   if (n.includes('shell') || n === 'bash') return 'Bash'
   if (n.includes('read') && !n.includes('lint')) return 'Read'
@@ -27,6 +29,25 @@ export function toolDisplayName(name: string): string {
   if (n.includes('plan')) return 'CreatePlan'
   if (n === 'recordscreen') return 'RecordScreen'
   return name
+}
+
+/**
+ * Cursor wraps every MCP call as ToolType `mcp` with
+ * `{ providerIdentifier, toolName, args }`. Rebuild the canonical
+ * `mcp__<server>__<tool>` that `parseMcpToolName` expects — same unwrap
+ * ACP does for Grok's `use_tool` envelope.
+ */
+export function unwrapCursorMcpTool(
+  toolType: string,
+  args: unknown,
+): { toolType: string; args: unknown } {
+  if (toolType.toLowerCase() !== 'mcp') return { toolType, args }
+  const rec = asRecord(args)
+  if (!rec) return { toolType, args }
+  const server = typeof rec.providerIdentifier === 'string' ? rec.providerIdentifier.trim() : ''
+  const name = typeof rec.toolName === 'string' ? rec.toolName.trim() : ''
+  if (!server || !name) return { toolType, args }
+  return { toolType: `mcp__${server}__${name}`, args: rec.args ?? {} }
 }
 
 function strField(obj: unknown, key: string): string {
@@ -134,18 +155,44 @@ function toolUseEvent(
   args: unknown,
   status: 'streaming' | 'complete',
 ): AgentEvent {
+  const unwrapped = unwrapCursorMcpTool(toolType, args)
+  const toolName = toolDisplayName(unwrapped.toolType)
   return {
     type: 'content_delta',
     messageId,
     delta: {
       type: 'tool_use',
-      toolName: toolDisplayName(toolType),
+      toolName,
       toolUseId: callId,
-      input: stringifyPayload(args ?? {}),
+      input: stringifyPayload(normalizeCursorToolInput(toolName, unwrapped.args)),
       status,
       ...(status === 'streaming' ? { startedAt: Date.now() } : {}),
     },
   }
+}
+
+/**
+ * Map Cursor native args (`path`, `fileText`, `globPattern`, …) onto the
+ * Claude-shaped fields ToolBlock reads (`file_path`, `content`, `pattern`).
+ * MCP tools already carry their real input after unwrap.
+ */
+function normalizeCursorToolInput(toolName: string, args: unknown): unknown {
+  if (toolName.startsWith('mcp__')) return args
+  const rec = asRecord(args)
+  if (!rec) return args ?? {}
+  return normalizeTranscriptTool(toolName, rec).input
+}
+
+/** Cursor Edit reports a unified diff on the result, not old/new strings in args. */
+function mergeCursorToolResultArgs(toolType: string, args: unknown, result: unknown): unknown {
+  if (toolType.toLowerCase() === 'mcp') return args
+  const res = asRecord(result)
+  const diff = typeof res?.diffString === 'string' ? res.diffString : undefined
+  if (!diff) return args
+  const rec = asRecord(args)
+  if (!rec) return args
+  if (rec.diffString != null || rec.diff != null) return rec
+  return { ...rec, diffString: diff }
 }
 
 function toolResultEvent(
@@ -166,25 +213,69 @@ function toolResultEvent(
   }
 }
 
-function usageFromTurn(
+type CursorUsageFields = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  reasoningTokens?: number
+}
+
+/** New tokens billed this call — cache reads are not uploaded. */
+function billedInputTokens(usage: CursorUsageFields): number {
+  return usage.inputTokens + usage.cacheWriteTokens
+}
+
+/** Last prompt size for the context ring (includes cache hits). */
+function contextTokensFromUsage(usage: CursorUsageFields): number {
+  return usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+}
+
+/**
+ * Per-send live usage. Cursor `token-delta.tokens` is an increment (often 1),
+ * not a running total and not a context fill — accumulating it as output keeps
+ * the footer moving without wiping billed input. Authoritative turn/run usage
+ * raises the totals; cache reads stay on `contextTokens` only.
+ */
+export class CursorTurnUsage {
+  input = 0
+  output = 0
+  context = 0
+
+  addTokenDelta(tokens: number): void {
+    if (Number.isFinite(tokens) && tokens > 0) this.output += tokens
+  }
+
+  applyInternalTurn(usage: CursorUsageFields): void {
+    this.input += billedInputTokens(usage)
+    if (usage.outputTokens > this.output) this.output = usage.outputTokens
+    this.context = contextTokensFromUsage(usage)
+  }
+
+  applyRunTotals(usage: CursorUsageFields): void {
+    const billed = billedInputTokens(usage)
+    if (billed > this.input) this.input = billed
+    if (usage.outputTokens > this.output) this.output = usage.outputTokens
+  }
+}
+
+export function mapCursorTokenUsage(
   messageId: string,
-  usage: {
-    inputTokens: number
-    outputTokens: number
-    cacheReadTokens: number
-    cacheWriteTokens: number
-    reasoningTokens?: number
-  },
-  extras?: { contextWindow?: number | null },
+  usage: CursorUsageFields,
+  extras?: { contextWindow?: number | null; contextTokens?: number | null },
 ): AgentEvent {
+  const contextTokens = extras?.contextTokens && extras.contextTokens > 0
+    ? extras.contextTokens
+    : contextTokensFromUsage(usage)
   return {
     type: 'message_usage',
     messageId,
-    inputTokens: usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens,
-    outputTokens: usage.outputTokens + (usage.reasoningTokens ?? 0),
+    inputTokens: billedInputTokens(usage),
+    outputTokens: usage.outputTokens,
     cacheReadTokens: usage.cacheReadTokens,
+    contextTokens,
     ...(extras?.contextWindow && extras.contextWindow > 0
-      ? { contextWindow: extras.contextWindow, contextTokens: usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens }
+      ? { contextWindow: extras.contextWindow }
       : {}),
   }
 }
@@ -192,6 +283,8 @@ function usageFromTurn(
 export interface MapInteractionOptions {
   /** Optional context window for turn-ended / token usage events. */
   contextWindow?: number | null
+  /** Per-send accumulator so token-delta does not wipe billed input. */
+  turnUsage?: CursorTurnUsage
 }
 
 /** Live content path (D6): InteractionUpdate → AgentEvent */
@@ -286,7 +379,8 @@ export function mapInteractionUpdate(
     }
     case 'tool-call-completed': {
       const parts = extractToolCallParts(update)
-      events.push(toolUseEvent(messageId, parts.callId, parts.toolType, parts.args, 'complete'))
+      const args = mergeCursorToolResultArgs(parts.toolType, parts.args, parts.result)
+      events.push(toolUseEvent(messageId, parts.callId, parts.toolType, args, 'complete'))
       events.push(toolResultEvent(messageId, parts.callId, parts.result, parts.isError))
       if (parts.toolType === 'updateTodos' || parts.toolType === 'update_todos') {
         const todos = asRecord(parts.args)?.todos ?? asRecord(parts.result)?.todos
@@ -307,31 +401,37 @@ export function mapInteractionUpdate(
     case 'token-delta': {
       const tokens = Number((update as { tokens?: number }).tokens)
       if (Number.isFinite(tokens) && tokens > 0) {
+        const turnUsage = options?.turnUsage
+        if (turnUsage) turnUsage.addTokenDelta(tokens)
         events.push({
           type: 'message_usage',
           messageId,
-          inputTokens: tokens,
-          outputTokens: 0,
-          contextTokens: tokens,
-          ...(options?.contextWindow && options.contextWindow > 0
-            ? { contextWindow: options.contextWindow }
-            : {}),
+          inputTokens: turnUsage?.input ?? 0,
+          outputTokens: turnUsage?.output ?? tokens,
         })
       }
       break
     }
     case 'turn-ended': {
-      const usage = (update as {
-        usage?: {
-          inputTokens: number
-          outputTokens: number
-          cacheReadTokens: number
-          cacheWriteTokens: number
-          reasoningTokens?: number
-        }
-      }).usage
+      const usage = (update as { usage?: CursorUsageFields }).usage
       if (usage) {
-        events.push(usageFromTurn(messageId, usage, { contextWindow: options?.contextWindow }))
+        const turnUsage = options?.turnUsage
+        if (turnUsage) {
+          turnUsage.applyInternalTurn(usage)
+          events.push({
+            type: 'message_usage',
+            messageId,
+            inputTokens: turnUsage.input,
+            outputTokens: turnUsage.output,
+            cacheReadTokens: usage.cacheReadTokens,
+            contextTokens: turnUsage.context,
+            ...(options?.contextWindow && options.contextWindow > 0
+              ? { contextWindow: options.contextWindow }
+              : {}),
+          })
+        } else {
+          events.push(mapCursorTokenUsage(messageId, usage, { contextWindow: options?.contextWindow }))
+        }
       }
       events.push({ type: 'status_change', status: 'idle' })
       break
@@ -443,7 +543,17 @@ export function mapConversationStep(
       ? nested.type
       : (strField(rec, 'name') || 'Tool')
     const args = nested?.args ?? nested?.input ?? {}
-    events.push(toolUseEvent(messageId, callId, toolType, args, 'complete'))
+    const resultRec = asRecord(nested?.result)
+    const resultValue = resultRec?.status === 'success'
+      ? (resultRec.value ?? nested?.result)
+      : nested?.result
+    events.push(toolUseEvent(
+      messageId,
+      callId,
+      toolType,
+      mergeCursorToolResultArgs(toolType, args, resultValue),
+      'complete',
+    ))
     if (toolType === 'updateTodos' || toolType === 'update_todos') {
       const todos = asRecord(args)?.todos
       const todoEvent = mapTodosPayload(todos)
@@ -513,7 +623,7 @@ export function mapSdkMessageLifecycle(
     }
     case 'usage': {
       const u = message.usage
-      events.push(usageFromTurn(messageId, {
+      events.push(mapCursorTokenUsage(messageId, {
         inputTokens: u.inputTokens,
         outputTokens: u.outputTokens,
         cacheReadTokens: u.cacheReadTokens,
@@ -548,17 +658,7 @@ export function mapSdkMessageLifecycle(
               delta: { type: 'text', text: block.text },
             })
           } else if (block.type === 'tool_use') {
-            events.push({
-              type: 'content_delta',
-              messageId,
-              delta: {
-                type: 'tool_use',
-                toolName: toolDisplayName(block.name),
-                toolUseId: block.id,
-                input: JSON.stringify(block.input ?? {}),
-                status: 'streaming',
-              },
-            })
+            events.push(toolUseEvent(messageId, block.id, block.name, block.input, 'streaming'))
           }
         }
       }
@@ -591,30 +691,15 @@ export function mapSdkMessageLifecycle(
 }
 
 function mapToolCallMessage(messageId: string, message: SDKToolUseMessage): AgentEvent[] {
-  const events: AgentEvent[] = [{
-    type: 'content_delta',
-    messageId,
-    delta: {
-      type: 'tool_use',
-      toolName: toolDisplayName(message.name),
-      toolUseId: message.call_id,
-      input: JSON.stringify(message.args ?? {}),
-      status: message.status === 'completed' || message.status === 'error' ? 'complete' : 'streaming',
-    },
-  }]
+  const status = message.status === 'completed' || message.status === 'error' ? 'complete' : 'streaming'
+  const args = status === 'complete'
+    ? mergeCursorToolResultArgs(message.name, message.args, message.result)
+    : message.args
+  const events: AgentEvent[] = [
+    toolUseEvent(messageId, message.call_id, message.name, args, status),
+  ]
   if (message.status === 'completed' || message.status === 'error') {
-    events.push({
-      type: 'content_delta',
-      messageId,
-      delta: {
-        type: 'tool_result',
-        toolUseId: message.call_id,
-        summary: message.result === undefined
-          ? ''
-          : typeof message.result === 'string' ? message.result : JSON.stringify(message.result),
-        isError: message.status === 'error',
-      },
-    })
+    events.push(toolResultEvent(messageId, message.call_id, message.result, message.status === 'error'))
   }
   return events
 }

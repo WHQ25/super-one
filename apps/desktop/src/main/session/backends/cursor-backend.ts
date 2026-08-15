@@ -153,9 +153,9 @@ export class CursorBackend implements SessionBackend {
       config: opts.config,
       onEvent: (event) => {
         if (event.type === 'message_usage') {
-          this.lastContextTokens = event.contextTokens
-            ?? event.inputTokens
-            ?? this.lastContextTokens
+          if (typeof event.contextTokens === 'number' && event.contextTokens > 0) {
+            this.lastContextTokens = event.contextTokens
+          }
         }
         this.emit(event)
       },

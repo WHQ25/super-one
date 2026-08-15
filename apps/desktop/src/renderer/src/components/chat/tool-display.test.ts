@@ -78,6 +78,16 @@ describe('getToolDisplay', () => {
       summary: 'README.md',
     })
 
+    expect(getToolDisplay('Delete', { file_path: '/Users/demo/workspace/gone.ts' }, '/Users/demo/workspace', '/Users/demo')).toEqual({
+      icon: 'file-edit',
+      summary: 'gone.ts',
+    })
+
+    expect(getToolDisplay('SemanticSearch', { query: 'auth flow' })).toEqual({
+      icon: 'search',
+      summary: 'auth flow',
+    })
+
     expect(getToolDisplay('AskUserQuestion', { questions: [{ id: 'q1' }, { id: 'q2' }] })).toEqual({
       icon: 'message-circle',
       summary: '2 questions',

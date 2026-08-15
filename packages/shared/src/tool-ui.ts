@@ -136,10 +136,12 @@ export function normalizeTranscriptTool(
   if (toolName === 'Read') {
     if (input.file_path == null && input.target_file != null) input.file_path = input.target_file
     if (input.file_path == null && input.path != null) input.file_path = input.path
-  } else if (toolName === 'Edit' || toolName === 'Write') {
+  } else if (toolName === 'Edit' || toolName === 'Write' || toolName === 'Delete' || toolName === 'FileChange') {
     if (input.file_path == null && input.target_file != null) input.file_path = input.target_file
     if (input.file_path == null && input.path != null) input.file_path = input.path
     if (toolName === 'Write' && input.content == null && input.contents != null) input.content = input.contents
+    if (toolName === 'Write' && input.content == null && input.fileText != null) input.content = input.fileText
+    if (toolName === 'Edit' && input.diff == null && input.diffString != null) input.diff = input.diffString
   } else if (toolName === 'Bash') {
     if (input.command == null && input.cmd != null) input.command = input.cmd
   } else if (toolName === 'LS') {
@@ -147,9 +149,14 @@ export function normalizeTranscriptTool(
     if (input.path == null && input.directory != null) input.path = input.directory
   } else if (toolName === 'Grep') {
     if (input.pattern == null && input.query != null) input.pattern = input.query
+  } else if (toolName === 'Glob') {
+    if (input.pattern == null && input.globPattern != null) input.pattern = input.globPattern
+    if (input.pattern == null && input.glob_pattern != null) input.pattern = input.glob_pattern
+    if (input.path == null && input.targetDirectory != null) input.path = input.targetDirectory
+    if (input.path == null && input.target_directory != null) input.path = input.target_directory
   } else if (toolName === 'WebFetch') {
     if (input.url == null && input.uri != null) input.url = input.uri
-  } else if (toolName === 'WebSearch' || toolName === 'SearchTools' || toolName === 'ToolSearch') {
+  } else if (toolName === 'WebSearch' || toolName === 'SearchTools' || toolName === 'ToolSearch' || toolName === 'SemanticSearch') {
     if (input.query == null && input.q != null) input.query = input.q
   }
 

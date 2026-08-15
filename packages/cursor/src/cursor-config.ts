@@ -221,8 +221,8 @@ export function readCursorConfig(value: unknown): CursorConfig {
  * Map SuperOne permission modes to Cursor local options we can honor.
  * Sandbox is orthogonal (`sandboxOptions.enabled` / session sandbox toggle) — not folded in here.
  *
- * Product ladder (Cursor UI): Auto → Plan → Full Access.
- * - `auto` / legacy `default` / `acceptEdits` → Auto-review classifier
+ * Product ladder (Cursor UI): Agent → Plan → Full Access.
+ * - `agent` / legacy `auto` / `default` / `acceptEdits` → Agent + Auto-review classifier
  * - `plan` → plan mode
  * - `bypassPermissions` (and other high-automation ids) → unrestricted agent
  */
@@ -233,7 +233,7 @@ export function mapPermissionToCursorLocal(mode: string): {
   if (mode === 'plan') {
     return { mode: 'plan', autoReview: false }
   }
-  if (mode === 'auto' || mode === 'acceptEdits' || mode === 'default') {
+  if (mode === 'agent' || mode === 'auto' || mode === 'acceptEdits' || mode === 'default') {
     return { mode: 'agent', autoReview: true }
   }
   return { mode: 'agent', autoReview: false }

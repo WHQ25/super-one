@@ -5,8 +5,8 @@ import { CURSOR_PERMISSION_MODES } from './cursorPermissionModes'
 
 export interface CursorPermissionModeOption {
   id: PermissionMode
-  labelKey: 'auto' | 'plan' | 'fullAccess'
-  descriptionKey: 'auto' | 'plan' | 'fullAccess'
+  labelKey: 'agent' | 'plan' | 'fullAccess'
+  descriptionKey: 'agent' | 'plan' | 'fullAccess'
   icon: React.ReactNode
   color: string
   hoverBg: string
@@ -15,9 +15,9 @@ export interface CursorPermissionModeOption {
 
 export const cursorPermissionModeOptions: CursorPermissionModeOption[] = [
   {
-    id: 'auto',
-    labelKey: 'auto',
-    descriptionKey: 'auto',
+    id: 'agent',
+    labelKey: 'agent',
+    descriptionKey: 'agent',
     icon: <FastForward className="size-3" />,
     color: 'text-amber-500 dark:text-amber-400',
     hoverBg: 'hover:bg-amber-500/10',
@@ -44,10 +44,11 @@ export const cursorPermissionModeOptions: CursorPermissionModeOption[] = [
 ]
 
 /**
- * Resolve the Cursor permission option for a mode id (falls back to Auto).
+ * Resolve the Cursor permission option for a mode id (falls back to Agent).
  */
 export function cursorPermissionModeOption(mode: PermissionMode): CursorPermissionModeOption {
-  return cursorPermissionModeOptions.find((option) => option.id === mode) ?? cursorPermissionModeOptions[0]
+  const id = mode === 'auto' ? 'agent' : mode
+  return cursorPermissionModeOptions.find((option) => option.id === id) ?? cursorPermissionModeOptions[0]
 }
 
 interface CursorPermissionModeListProps {
@@ -57,7 +58,7 @@ interface CursorPermissionModeListProps {
 }
 
 /**
- * Permission mode list for Cursor: Auto / Plan / Full Access.
+ * Permission mode list for Cursor: Agent / Plan / Full Access.
  */
 export function CursorPermissionModeList({
   activeMode,

@@ -2,7 +2,7 @@
 
 /**
  * New Cursor sessions default to Claude's `default` mode, which is not in
- * CURSOR_PERMISSION_MODES. The coerce effect must write `auto` at most once —
+ * CURSOR_PERMISSION_MODES. The coerce effect must write `agent` at most once —
  * a self-re-arming write is the same class as CursorModelSelector #185.
  */
 
@@ -63,12 +63,20 @@ afterEach(() => {
 })
 
 describe('CursorPermissionSelector coercing a Claude leftover mode', () => {
-  it('writes auto at most once instead of re-arming forever', async () => {
+  it('writes agent at most once instead of re-arming forever', async () => {
     seedCursorSession('default')
     render(<CursorPermissionSelector />)
     await settle()
     expect(modeWrites.length).toBeLessThanOrEqual(1)
-    expect(modeWrites[0]).toBe('auto')
+    expect(modeWrites[0]).toBe('agent')
+  })
+
+  it('migrates a leftover auto session onto agent once', async () => {
+    seedCursorSession('auto')
+    render(<CursorPermissionSelector />)
+    await settle()
+    expect(modeWrites.length).toBeLessThanOrEqual(1)
+    expect(modeWrites[0]).toBe('agent')
   })
 
   it('does not write when the session already carries a Cursor mode', async () => {

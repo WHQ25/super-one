@@ -417,7 +417,7 @@ function parseSchedule(raw: unknown): AutomationSchedule | { error: string } {
 }
 
 const PERMISSION_MODES = new Set([
-  'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto',
+  'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent',
 ])
 const SANDBOX_MODES = new Set(['off', 'on', 'auto'])
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])

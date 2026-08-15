@@ -18,7 +18,7 @@ function makeOpts(overrides: Partial<CursorRuntimeOptions> = {}): CursorRuntimeO
     sessionId: 's1',
     cwd: '/repo',
     userDataRoot: '/tmp/user',
-    permissionMode: 'auto',
+    permissionMode: 'agent',
     sandboxEnabled: false,
     config: { apiKey: 'cursor_test_key' },
     onEvent: () => undefined,
@@ -41,7 +41,7 @@ describe('prewarmCursorLocalWorkspace', () => {
   it('calls official prewarmLocalWorkspace with matching workspace options', async () => {
     await prewarmCursorLocalWorkspace(makeOpts({
       sandboxEnabled: false,
-      permissionMode: 'auto',
+      permissionMode: 'agent',
       buildMcpServers: () => ({
         superone: { type: 'http', url: 'http://127.0.0.1:9/mcp' },
       }),

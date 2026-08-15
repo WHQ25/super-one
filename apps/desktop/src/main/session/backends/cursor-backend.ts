@@ -316,7 +316,7 @@ export class CursorBackend implements SessionBackend {
 
   async setSessionMode(modeId: string): Promise<void> {
     if (modeId === 'plan') await this.setPermissionMode('plan')
-    else if (modeId === 'agent') await this.setPermissionMode('auto')
+    else if (modeId === 'agent' || modeId === 'auto') await this.setPermissionMode('agent')
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

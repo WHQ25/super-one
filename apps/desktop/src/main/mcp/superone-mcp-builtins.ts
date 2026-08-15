@@ -348,7 +348,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
             model: z.string().optional(),
             effort: z.string().optional(),
             apiProviderId: z.string().nullable().optional(),
-            permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
+            permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent'])
               .optional()
               .describe(LAUNCH_PERMISSION_MODE_DESCRIPTION),
             sandboxMode: z.enum(['off', 'on', 'auto']).optional(),
@@ -692,7 +692,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     model: z.string().optional(),
     effort: z.string().optional().describe('Unified effort (Claude / Codex / ACP / OpenCode).'),
     permissionMode: z
-      .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
+      .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent'])
       .optional()
       .describe('Unified permission mode. Prefer bypassPermissions for unattended runs.'),
     sandboxMode: z.enum(['off', 'on', 'auto']).optional().describe('Claude sandbox (ignored by other harnesses).'),

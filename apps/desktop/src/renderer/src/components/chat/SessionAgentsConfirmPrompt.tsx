@@ -341,7 +341,7 @@ function LaunchPanel({
             <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
             <HarnessPermissionPopover
               harnessId={harnessId}
-              value={config.permissionMode ?? (harnessId === 'cursor' ? 'auto' : 'default')}
+              value={config.permissionMode ?? (harnessId === 'cursor' ? 'agent' : 'default')}
               onChange={(permissionMode: PermissionMode) => onChange({ permissionMode })}
             />
             {harnessSupportsSandbox(harnessId) && (

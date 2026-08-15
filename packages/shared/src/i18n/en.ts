@@ -999,9 +999,9 @@ export type Messages = {
       auto: { label: string; description: string }
       alwaysApprove: { label: string; description: string }
     }
-    /** Cursor SDK modes — Auto-review / Plan / Full Access (sandbox is separate). */
+    /** Cursor SDK modes — Agent / Plan / Full Access (sandbox is separate). */
     cursorPermissionModes: {
-      auto: { label: string; description: string }
+      agent: { label: string; description: string }
       plan: { label: string; description: string }
       fullAccess: { label: string; description: string }
     }
@@ -3774,8 +3774,8 @@ export const en: Messages = {
       },
     },
     cursorPermissionModes: {
-      auto: {
-        label: 'Auto',
+      agent: {
+        label: 'Agent',
         description: 'Auto-review allows or blocks tool calls (no interactive prompts)',
       },
       plan: {

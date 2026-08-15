@@ -10,10 +10,14 @@ import {
 } from './cursor-config'
 
 describe('cursor-config', () => {
-  it('maps Auto / Plan / Full Access honestly (sandbox is separate)', () => {
+  it('maps Agent / Plan / Full Access honestly (sandbox is separate)', () => {
     expect(mapPermissionToCursorLocal('plan')).toEqual({
       mode: 'plan',
       autoReview: false,
+    })
+    expect(mapPermissionToCursorLocal('agent')).toEqual({
+      mode: 'agent',
+      autoReview: true,
     })
     expect(mapPermissionToCursorLocal('auto')).toEqual({
       mode: 'agent',

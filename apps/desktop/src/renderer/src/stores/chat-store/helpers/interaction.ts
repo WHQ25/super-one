@@ -631,7 +631,7 @@ export function cyclePermissionModeImpl(get: () => ChatStore): void {
   const session = getActivePerSession(get())
   const provider = resolveProvider(session)
   // ACP/Grok: only modes SuperOne can drive over the wire (see acpPermissionModes).
-  // OpenCode: no auto classifier. Cursor: Auto / Plan / Full Access. Claude: full cycle (excludes bypass/dontAsk).
+  // OpenCode: no auto classifier. Cursor: Agent / Plan / Full Access. Claude: full cycle (excludes bypass/dontAsk).
   const permissionModes: PermissionMode[] = provider === 'acp'
     ? [...ACP_PERMISSION_MODES]
     : provider === 'opencode'

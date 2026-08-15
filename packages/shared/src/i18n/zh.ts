@@ -1058,8 +1058,8 @@ export const zh: Messages = {
       },
     },
     cursorPermissionModes: {
-      auto: {
-        label: 'Auto',
+      agent: {
+        label: 'Agent',
         description: '由 Auto-review 放行或拦截工具调用（无交互审批）',
       },
       plan: {

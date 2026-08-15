@@ -472,7 +472,7 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
 }
 
 const EDITABLE_PERMISSION_MODES = new Set<PermissionMode>([
-  'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto',
+  'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent',
 ])
 const EDITABLE_SANDBOX_MODES = new Set<SandboxMode>(['off', 'on', 'auto'])
 

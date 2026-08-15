@@ -6,8 +6,8 @@ import type { CodexPermissionPreset, HarnessId, PermissionMode } from '@superone
 import { AcpPermissionModeList, acpPermissionModeOption } from './AcpPermissionModeList'
 import { CodexPermissionPresetList, codexPermissionPresetOption } from './CodexPermissionPresetList'
 import {
-  CURSOR_DEFAULT_PERMISSION_MODE,
   CURSOR_PERMISSION_MODES,
+  resolveCursorPermissionMode,
 } from './cursorPermissionModes'
 import { CursorPermissionModeList, cursorPermissionModeOption } from './CursorPermissionModeList'
 import { OPENCODE_PERMISSION_MODES } from './opencodePermissionModes'
@@ -84,7 +84,7 @@ export function HarnessPermissionPopover({
       content: <AcpPermissionModeList activeMode={option.id} onSelect={select} />,
     }
   } else if (harnessId === 'cursor') {
-    const mode = CURSOR_PERMISSION_MODES.includes(value) ? value : CURSOR_DEFAULT_PERMISSION_MODE
+    const mode = resolveCursorPermissionMode(value)
     const option = cursorPermissionModeOption(mode)
     trigger = {
       label: t(`chat.cursorPermissionModes.${option.labelKey}.label`),

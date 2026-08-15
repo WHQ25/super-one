@@ -275,7 +275,7 @@ export const LAUNCH_SESSION_ID_DESCRIPTION =
  * field blurbs short and point there.
  */
 export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
-  'How autonomous the child session is. Prefer the most autonomous mode it can finish the task under — "bypassPermissions" (shown as Bypass on Claude-family harnesses, Full Access on Codex), or "auto" for ACP agents. ' +
+  'How autonomous the child session is. Prefer the most autonomous mode it can finish the task under — "bypassPermissions" (shown as Bypass on Claude-family harnesses, Full Access on Codex/Cursor), "agent" for Cursor, or "auto" for ACP agents. ' +
   'Nobody watches a child session, so a conservative mode strands it on an approval prompt that is never answered. ' +
   'Requesting an autonomous mode is safe by construction: nothing runs until the user approves this very request, and that approval dialog is where they downgrade permission or sandbox per launch. ' +
   'Pick "plan" or "default" only when stopping for human review is the point of the launch.'
@@ -371,7 +371,7 @@ export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
     },
     permissionMode: {
       type: 'string',
-      enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'],
+      enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent'],
       description: 'Unified permission mode. Prefer bypassPermissions for unattended runs.',
     },
     sandboxMode: { type: 'string', enum: ['off', 'on', 'auto'], description: 'Claude sandbox (ignored by other harnesses).' },
@@ -459,7 +459,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                   apiProviderId: { type: ['string', 'null'] },
                   permissionMode: {
                     type: 'string',
-                    enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'],
+                    enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent'],
                     description: LAUNCH_PERMISSION_MODE_DESCRIPTION,
                   },
                   sandboxMode: { type: 'string', enum: ['off', 'on', 'auto'] },

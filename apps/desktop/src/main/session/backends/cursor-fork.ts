@@ -36,7 +36,7 @@ export async function forkCursorTranscript(
 
   const isCloud = config.runtime === 'cloud' || source.providerSessionId.startsWith('bc-')
   const modelId = config.model
-  const perm = mapPermissionToCursorLocal('auto')
+  const perm = mapPermissionToCursorLocal('agent')
   const mcpServers = isCloud ? {} : buildCursorMcpServers(targetCwd, `fork-${Date.now()}`)
 
   if (isCloud) {

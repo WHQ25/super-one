@@ -19,7 +19,7 @@ vi.mock('../../cursor/cursor-runtime', () => ({
 vi.mock('../../cursor/cursor-auth', () => ({
   mapPermissionToCursorLocal: (mode: string) => {
     if (mode === 'plan') return { mode: 'plan', autoReview: false }
-    if (mode === 'auto' || mode === 'default' || mode === 'acceptEdits') {
+    if (mode === 'agent' || mode === 'auto' || mode === 'default' || mode === 'acceptEdits') {
       return { mode: 'agent', autoReview: true }
     }
     return { mode: 'agent', autoReview: false }
@@ -43,7 +43,7 @@ function makeOpts(overrides: Partial<BackendStartOptions> = {}): BackendStartOpt
     projectPath: '/tmp/p',
     cwd: '/tmp/p',
     config: {},
-    permissionMode: 'auto',
+    permissionMode: 'agent',
     sandboxInfo: { enabled: false, autoAllowBash: false },
     abortController: new AbortController(),
     ...overrides,
@@ -98,7 +98,7 @@ describe('CursorBackend setSandbox / setPermissionMode', () => {
     const backend = new CursorBackend()
     await backend.start(makeOpts({ sandboxInfo: { enabled: true, autoAllowBash: false } }))
     expect(factoryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ sandboxEnabled: true, permissionMode: 'auto' }),
+      expect.objectContaining({ sandboxEnabled: true, permissionMode: 'agent' }),
     )
   })
 
@@ -109,7 +109,7 @@ describe('CursorBackend setSandbox / setPermissionMode', () => {
     expect(prewarmMock).toHaveBeenCalledWith(expect.objectContaining({
       cwd: '/tmp/p',
       sandboxEnabled: true,
-      permissionMode: 'auto',
+      permissionMode: 'agent',
     }))
   })
 

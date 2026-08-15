@@ -38,7 +38,7 @@ function makeOpts(overrides: Partial<BackendStartOptions> = {}): BackendStartOpt
     projectPath: '/tmp/p',
     cwd: '/tmp/p',
     config: {},
-    permissionMode: 'auto',
+    permissionMode: 'agent',
     sandboxInfo: { enabled: false, autoAllowBash: false },
     abortController: new AbortController(),
     ...overrides,

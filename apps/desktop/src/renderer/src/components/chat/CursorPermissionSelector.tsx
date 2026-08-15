@@ -6,12 +6,13 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import {
   CURSOR_DEFAULT_PERMISSION_MODE,
   CURSOR_PERMISSION_MODES,
+  resolveCursorPermissionMode,
 } from './cursorPermissionModes'
 import { CursorPermissionModeList, cursorPermissionModeOption } from './CursorPermissionModeList'
 
 /**
  * Status-bar permission control for Cursor sessions.
- * Offers Auto / Plan / Full Access only.
+ * Offers Agent / Plan / Full Access only.
  */
 export function CursorPermissionSelector({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation()
@@ -30,9 +31,7 @@ export function CursorPermissionSelector({ compact = false }: { compact?: boolea
     void setPermissionMode(CURSOR_DEFAULT_PERMISSION_MODE)
   }, [permissionMode, setPermissionMode])
 
-  const current = cursorPermissionModeOption(
-    CURSOR_PERMISSION_MODES.includes(permissionMode) ? permissionMode : CURSOR_DEFAULT_PERMISSION_MODE,
-  )
+  const current = cursorPermissionModeOption(resolveCursorPermissionMode(permissionMode))
   const currentLabel = t(`chat.cursorPermissionModes.${current.labelKey}.label`)
 
   return (

@@ -96,9 +96,10 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                       "bypassPermissions",
                       "plan",
                       "dontAsk",
-                      "auto"
+                      "auto",
+                      "agent"
                     ],
-                    "description": "How autonomous the child session is. Prefer the most autonomous mode it can finish the task under — \"bypassPermissions\" (shown as Bypass on Claude-family harnesses, Full Access on Codex), or \"auto\" for ACP agents. Nobody watches a child session, so a conservative mode strands it on an approval prompt that is never answered. Requesting an autonomous mode is safe by construction: nothing runs until the user approves this very request, and that approval dialog is where they downgrade permission or sandbox per launch. Pick \"plan\" or \"default\" only when stopping for human review is the point of the launch."
+                    "description": "How autonomous the child session is. Prefer the most autonomous mode it can finish the task under — \"bypassPermissions\" (shown as Bypass on Claude-family harnesses, Full Access on Codex/Cursor), \"agent\" for Cursor, or \"auto\" for ACP agents. Nobody watches a child session, so a conservative mode strands it on an approval prompt that is never answered. Requesting an autonomous mode is safe by construction: nothing runs until the user approves this very request, and that approval dialog is where they downgrade permission or sandbox per launch. Pick \"plan\" or \"default\" only when stopping for human review is the point of the launch."
                   },
                   "sandboxMode": {
                     "type": "string",
@@ -3377,7 +3378,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
             },
             "permissionMode": {
               "type": "string",
-              "enum": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"],
+              "enum": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto", "agent"],
               "description": "Unified permission mode. Prefer bypassPermissions for unattended runs."
             },
             "sandboxMode": {

@@ -187,12 +187,28 @@ function normalizeCursorToolInput(toolName: string, args: unknown): unknown {
 function mergeCursorToolResultArgs(toolType: string, args: unknown, result: unknown): unknown {
   if (toolType.toLowerCase() === 'mcp') return args
   const res = asRecord(result)
-  const diff = typeof res?.diffString === 'string' ? res.diffString : undefined
-  if (!diff) return args
+  if (!res) return args
   const rec = asRecord(args)
   if (!rec) return args
-  if (rec.diffString != null || rec.diff != null) return rec
-  return { ...rec, diffString: diff }
+  const diff = typeof res.diffString === 'string' ? res.diffString : undefined
+  const linesAdded = typeof res.linesAdded === 'number' ? res.linesAdded : undefined
+  const linesRemoved = typeof res.linesRemoved === 'number' ? res.linesRemoved : undefined
+  if (!diff && linesAdded == null && linesRemoved == null) return args
+  const next = { ...rec }
+  let changed = false
+  if (diff && rec.diffString == null && rec.diff == null) {
+    next.diffString = diff
+    changed = true
+  }
+  if (linesAdded != null && rec.linesAdded == null) {
+    next.linesAdded = linesAdded
+    changed = true
+  }
+  if (linesRemoved != null && rec.linesRemoved == null) {
+    next.linesRemoved = linesRemoved
+    changed = true
+  }
+  return changed ? next : rec
 }
 
 function toolResultEvent(
@@ -285,6 +301,25 @@ export interface MapInteractionOptions {
   contextWindow?: number | null
   /** Per-send accumulator so token-delta does not wipe billed input. */
   turnUsage?: CursorTurnUsage
+  /**
+   * Nested `tool-call-delta.taskUpdate` ownership. Chat grouping only nests
+   * blocks whose `parentToolUseId` points at the launching Agent/Task tool.
+   */
+  parentToolUseId?: string
+}
+
+/**
+ * Attribute nested content to the launching task tool. Already-stamped
+ * parents win so a second nesting level (task inside task) keeps its own id.
+ */
+function stampParentToolUseId(events: AgentEvent[], parentToolUseId: string | undefined): AgentEvent[] {
+  if (!parentToolUseId) return events
+  return events.map((event) => {
+    if (event.type !== 'content_delta') return event
+    const delta = event.delta
+    if ('parentToolUseId' in delta && delta.parentToolUseId) return event
+    return { ...event, delta: { ...delta, parentToolUseId } }
+  })
 }
 
 /** Live content path (D6): InteractionUpdate → AgentEvent */
@@ -347,6 +382,7 @@ export function mapInteractionUpdate(
         events.push({
           type: 'task_started',
           taskId: parts.callId,
+          toolUseId: parts.callId,
           description,
         })
       }
@@ -361,19 +397,12 @@ export function mapInteractionUpdate(
         if (nestedType === 'shell-output-delta') {
           break
         }
-        if (nestedType === 'text-delta') {
-          // Nested assistant text inside a task tool — surface as thinking-less text.
-          const text = strField(taskUpdate, 'text')
-          if (text) {
-            events.push({
-              type: 'content_delta',
-              messageId,
-              delta: { type: 'text', text },
-            })
-          }
-          break
-        }
-        events.push(...mapInteractionUpdate(messageId, taskUpdate as InteractionUpdate, options))
+        const parentCallId = stableIdField(rec, 'callId', 'toolCallId', 'id', 'call_id')
+          ?? options?.parentToolUseId
+        events.push(...mapInteractionUpdate(messageId, taskUpdate as InteractionUpdate, {
+          ...options,
+          ...(parentCallId ? { parentToolUseId: parentCallId } : {}),
+        }))
       }
       break
     }
@@ -388,12 +417,17 @@ export function mapInteractionUpdate(
         if (todoEvent) events.push(todoEvent)
       }
       if (parts.toolType === 'task') {
+        const transcriptPath = strField(parts.result, 'transcriptPath')
         events.push({
           type: 'task_notification',
           taskId: parts.callId,
+          toolUseId: parts.callId,
           taskStatus: parts.isError ? 'failed' : 'completed',
-          outputFile: '',
-          summary: stringifyPayload(parts.result) || strField(parts.args, 'description') || 'Task',
+          outputFile: transcriptPath,
+          summary: strField(parts.result, 'resultSuffix')
+            || stringifyPayload(parts.result)
+            || strField(parts.args, 'description')
+            || 'Task',
         })
       }
       break
@@ -492,7 +526,7 @@ export function mapInteractionUpdate(
       break
     }
   }
-  return events
+  return stampParentToolUseId(events, options?.parentToolUseId)
 }
 
 export interface MapConversationStepOptions {
@@ -575,6 +609,13 @@ export class CursorTurnCallIdBridge {
   /** Observe a live InteractionUpdate; record callIds from tool-call events. */
   observeDelta(update: InteractionUpdate): void {
     const type = String((update as { type?: string }).type ?? '')
+    if (type === 'tool-call-delta') {
+      const taskUpdate = asRecord(update)?.taskUpdate
+      if (taskUpdate && typeof taskUpdate === 'object') {
+        this.observeDelta(taskUpdate as InteractionUpdate)
+      }
+      return
+    }
     if (
       type !== 'tool-call-started'
       && type !== 'partial-tool-call'

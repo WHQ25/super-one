@@ -367,6 +367,98 @@ describe('mapInteractionUpdate', () => {
     })
   })
 
+  it('stamps parentToolUseId on nested task tool calls so they stay inside the subagent card', () => {
+    const started = mapInteractionUpdate('m1', {
+      type: 'tool-call-delta',
+      callId: 'task-1',
+      taskUpdate: {
+        type: 'tool-call-started',
+        callId: 'grep-1',
+        toolCall: { type: 'grep', args: { pattern: 'ToolBlock' } },
+      },
+    } as never)
+    expect(started[0]).toMatchObject({
+      type: 'content_delta',
+      delta: {
+        type: 'tool_use',
+        toolUseId: 'grep-1',
+        toolName: 'Grep',
+        parentToolUseId: 'task-1',
+      },
+    })
+
+    const completed = mapInteractionUpdate('m1', {
+      type: 'tool-call-delta',
+      callId: 'task-1',
+      taskUpdate: {
+        type: 'tool-call-completed',
+        callId: 'grep-1',
+        toolCall: {
+          type: 'grep',
+          args: { pattern: 'ToolBlock' },
+          result: { status: 'success', value: { matches: 1 } },
+        },
+      },
+    } as never)
+    expect(completed[0]).toMatchObject({
+      delta: { type: 'tool_use', toolUseId: 'grep-1', parentToolUseId: 'task-1' },
+    })
+    expect(completed[1]).toMatchObject({
+      delta: { type: 'tool_result', toolUseId: 'grep-1', parentToolUseId: 'task-1' },
+    })
+  })
+
+  it('stamps parentToolUseId on nested task text so it does not leak into the main transcript', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-delta',
+      callId: 'task-1',
+      taskUpdate: { type: 'text-delta', text: 'looking at the diff' },
+    } as never)
+    expect(events[0]).toMatchObject({
+      type: 'content_delta',
+      delta: { type: 'text', text: 'looking at the diff', parentToolUseId: 'task-1' },
+    })
+  })
+
+  it('does not stamp parentToolUseId on top-level tool calls', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'c1',
+      toolCall: { type: 'grep', args: { pattern: 'x' } },
+    } as never)
+    const delta = (events[0] as { delta: Record<string, unknown> }).delta
+    expect(delta.toolUseId).toBe('c1')
+    expect(delta.parentToolUseId).toBeUndefined()
+  })
+
+  it('emits task_started with toolUseId so the subagent card can track progress', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'task-1',
+      toolCall: {
+        type: 'task',
+        args: { description: 'Cursor edit diff UI', prompt: 'inspect the diff UI' },
+      },
+    } as never)
+    expect(events[0]).toMatchObject({
+      delta: { type: 'tool_use', toolName: 'Agent', toolUseId: 'task-1' },
+    })
+    expect(events[1]).toMatchObject({
+      type: 'task_started',
+      taskId: 'task-1',
+      toolUseId: 'task-1',
+      description: 'Cursor edit diff UI',
+    })
+  })
+
+  it('ignores nested shell-output-delta the same as top-level', () => {
+    expect(mapInteractionUpdate('m1', {
+      type: 'tool-call-delta',
+      callId: 'task-1',
+      taskUpdate: { type: 'shell-output-delta', event: { stdout: 'line\n' } },
+    } as never)).toEqual([])
+  })
+
   it('merges Cursor Edit result.diffString into tool_use input', () => {
     const events = mapInteractionUpdate('m1', {
       type: 'tool-call-completed',
@@ -387,6 +479,8 @@ describe('mapInteractionUpdate', () => {
         input: JSON.stringify({
           path: 'a.ts',
           diffString: '--- a\n+++ b\n',
+          linesAdded: 1,
+          linesRemoved: 1,
           file_path: 'a.ts',
           diff: '--- a\n+++ b\n',
         }),
@@ -468,6 +562,21 @@ describe('mapConversationStep', () => {
       type: 'content_delta',
       delta: { type: 'tool_use', toolUseId: 'real-call-1', toolName: 'Bash', status: 'complete' },
     })
+  })
+
+  it('records nested tool-call-delta callIds so onStep can patch the child row', () => {
+    const bridge = new CursorTurnCallIdBridge()
+    bridge.observeDelta({
+      type: 'tool-call-delta',
+      callId: 'task-1',
+      taskUpdate: {
+        type: 'tool-call-started',
+        callId: 'grep-1',
+        toolCall: { type: 'grep', args: { pattern: 'x' } },
+      },
+    } as never)
+    expect(bridge.claimNextCallId()).toBe('grep-1')
+    expect(bridge.claimNextCallId()).toBeNull()
   })
 
   it('unwraps MCP envelopes on toolCall steps', () => {

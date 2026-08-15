@@ -309,6 +309,9 @@ export type Messages = {
         hooks: string
         plugins: string
         preferences: string
+        account: string
+        cloud: string
+        models: string
       }
       providers: {
         claude: string
@@ -3012,6 +3015,9 @@ export const en: Messages = {
         hooks: 'Hooks',
         plugins: 'Plugins',
         preferences: 'Preferences',
+        account: 'Account',
+        cloud: 'Cloud',
+        models: 'Models',
       },
       providers: {
         claude: 'Claude Code',

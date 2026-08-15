@@ -4,7 +4,10 @@ import { toast } from 'sonner'
 import { Input } from '@superone/ui/components/ui/input'
 import { Button } from '@superone/ui/components/ui/button'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
+import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useActiveSession, useChatStore } from '@/stores/chat'
+import { ProviderModelsList } from './providers/ProviderModelsList'
 
 type CursorAuthStatus = {
   configured: boolean
@@ -36,11 +39,20 @@ type UsageSnapshot = {
   runs: Array<{ runId: string }>
 }
 
+/** Nested Cursor harness tabs — mirrors Claude/Codex config sections. */
+export type CursorSettingsSection = 'account' | 'preferences' | 'models' | 'cloud'
+
 /**
  * Cursor User API Key + local/cloud runtime controls.
- * Shown on Settings → Harnesses when the Cursor catalog harness is selected.
+ * Shown under Settings → Harnesses → Cursor, split by `section` tab.
  */
-export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => void }) {
+export function CursorAuthSettings({
+  onAuthChanged,
+  section = 'account',
+}: {
+  onAuthChanged?: () => void
+  section?: CursorSettingsSection
+}) {
   const { t } = useTranslation()
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
@@ -74,6 +86,11 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
   const providerSessionId = useActiveSession((s) => s._providerSessionId)
   const cursorResources = useChatStore((s) => s.harnessResources.cursor)
   const catalogModels = cursorResources?.models ?? []
+  const { catalog } = useModelCatalog()
+  const catalogModelIndex = useMemo(
+    () => (catalog ? buildCatalogModelIndex(catalog) : null),
+    [catalog],
+  )
 
   const activeCursorSessionId = useMemo(() => {
     if (activeSessionId && sessionProvider === 'cursor') return activeSessionId
@@ -163,6 +180,16 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
   }, [cloud, authStatus.configured, refreshCloudAgents])
 
   const disabledSet = useMemo(() => new Set(disabledModelIds), [disabledModelIds])
+  const modelListItems = useMemo(
+    () =>
+      catalogModels.map((model) => ({
+        id: model.id,
+        name: model.name || model.id,
+        enabled: !disabledSet.has(model.id),
+        catalog: catalogModelIndex?.get(normalizeModelId(model.id)) ?? null,
+      })),
+    [catalogModels, catalogModelIndex, disabledSet],
+  )
 
   function parseEnvVarsText(text: string): Record<string, string> {
     const out: Record<string, string> = {}
@@ -198,6 +225,18 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
       if (current) {
         setHarnessResources('cursor', { ...current, disabledModelIds: nextDisabled })
       }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setModelsSaving(false)
+    }
+  }
+
+  /** Re-probe Cursor models. initializeHarness is otherwise once-per-session. */
+  async function refreshCursorModels() {
+    setModelsSaving(true)
+    try {
+      await initializeHarness('cursor', { force: true })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -355,9 +394,14 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
   const configuredLabel = authStatus.apiKeyName
     || authStatus.userEmail
     || t('settings.harnesses.cursor.apiKeyConfiguredAnonymous')
+  const showAccount = section === 'account'
+  const showPreferences = section === 'preferences'
+  const showModels = section === 'models'
+  const showCloud = section === 'cloud'
 
   return (
     <div className="space-y-3 rounded-lg border border-border p-4">
+      {showAccount ? <>
       <div>
         <p className="text-sm font-medium">{t('settings.harnesses.cursor.apiKeyTitle')}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -422,8 +466,10 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
           </Button>
         </div>
       </div>
+      </> : null}
 
-      <div className="space-y-2 border-t border-border pt-3">
+      {showPreferences ? <>
+      <div className="space-y-2">
         <div>
           <p className="text-sm font-medium">{t('settings.harnesses.cursor.toolPresetTitle')}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -475,8 +521,10 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
           </div>
         ))}
       </div>
+      </> : null}
 
-      <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
+      {showCloud ? <>
+      <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium">{t('settings.harnesses.cursor.cloudTitle')}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -608,7 +656,9 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
       <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void saveRuntime()}>
         {t('settings.harnesses.cursor.saveRuntime')}
       </Button>
+      </> : null}
 
+      {showPreferences ? <>
       <div className="space-y-2 border-t border-border pt-3">
         <div>
           <p className="text-sm font-medium">{t('settings.harnesses.cursor.forceRecoverTitle')}</p>
@@ -626,7 +676,12 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
           {t('settings.harnesses.cursor.forceRecoverAction')}
         </Button>
       </div>
+      <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void saveRuntime()}>
+        {t('settings.harnesses.cursor.saveRuntime')}
+      </Button>
+      </> : null}
 
+      {showAccount ? <>
       <div className="space-y-2 border-t border-border pt-3">
         <div>
           <p className="text-sm font-medium">{t('settings.harnesses.cursor.usageTitle')}</p>
@@ -672,72 +727,28 @@ export function CursorAuthSettings({ onAuthChanged }: { onAuthChanged?: () => vo
           </div>
         ) : null}
       </div>
+      </> : null}
 
-      <div className="space-y-2 border-t border-border pt-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{t('settings.harnesses.cursor.modelsTitle')}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t('settings.harnesses.cursor.modelsDescription')}
-            </p>
-          </div>
-          {catalogModels.length > 0 ? (
-            <div className="flex shrink-0 gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={modelsSaving || disabledModelIds.length === 0}
-                onClick={() => void persistDisabledModelIds([])}
-              >
-                {t('settings.harnesses.cursor.modelsEnableAll')}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={modelsSaving || disabledModelIds.length === catalogModels.length}
-                onClick={() => void persistDisabledModelIds(catalogModels.map((m) => m.id))}
-              >
-                {t('settings.harnesses.cursor.modelsDisableAll')}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-
-        {catalogModels.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{t('settings.harnesses.cursor.modelsEmpty')}</p>
-        ) : (
-          <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2">
-            {catalogModels.map((model) => {
-              const enabled = !disabledSet.has(model.id)
-              return (
-                <div
-                  key={model.id}
-                  className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm">{model.name || model.id}</p>
-                    {model.name && model.name !== model.id ? (
-                      <p className="truncate font-mono text-[11px] text-muted-foreground">{model.id}</p>
-                    ) : null}
-                  </div>
-                  <Switch
-                    checked={enabled}
-                    disabled={modelsSaving}
-                    onCheckedChange={(next) => {
-                      const nextDisabled = next
-                        ? disabledModelIds.filter((id) => id !== model.id)
-                        : [...new Set([...disabledModelIds, model.id])]
-                      void persistDisabledModelIds(nextDisabled)
-                    }}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        )}
+      {showModels ? (
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-muted-foreground">
+          {t('settings.harnesses.cursor.modelsDescription')}
+        </p>
+        <ProviderModelsList
+          items={modelListItems}
+          providerBrand="cursor"
+          emptyMessage={t('settings.harnesses.cursor.modelsEmpty')}
+          refreshing={modelsSaving}
+          onRefresh={() => void refreshCursorModels()}
+          onToggle={(id, enabled) => {
+            const nextDisabled = enabled
+              ? disabledModelIds.filter((existing) => existing !== id)
+              : [...new Set([...disabledModelIds, id])]
+            void persistDisabledModelIds(nextDisabled)
+          }}
+        />
       </div>
+      ) : null}
     </div>
   )
 }

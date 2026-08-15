@@ -1,10 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
-  ArrowRight,
   AudioLines,
-  Brain,
-  Check,
-  FileText,
   Image as ImageIcon,
   LayoutGrid,
   Loader2,
@@ -13,15 +9,12 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Type,
   Video,
-  Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { Switch } from '@superone/ui/components/ui/switch'
 import type { CapabilityTask, DiscoveredOpenAiModel } from '@superone/shared/agent-types'
 import {
   buildCatalogModelIndex,
@@ -38,12 +31,12 @@ import {
   type Platform,
   type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
-import type { CatalogModality, CatalogModel, CatalogProvider } from '@superone/shared/model-catalog-types'
+import type { CatalogModel, CatalogProvider } from '@superone/shared/model-catalog-types'
 import { MODEL_TASK_ORDER, modelTasks } from '@superone/shared/model-tasks'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useSettingsStore } from '@/stores/settings'
 import { stripOneM } from '@/lib/model-id'
-import { ModelGlyph } from './ModelGlyph'
+import { CapBadge, ModelsListGroupHeader, ProviderModelRow } from './ProviderModelsList'
 import {
   AddCustomModelPopover,
   listCustomModels,
@@ -57,51 +50,12 @@ import { useModelDiscovery } from './useModelDiscovery'
 
 type Tab = 'all' | CapabilityTask
 
-const MODALITY_LABEL: Record<CatalogModality, string> = {
-  text: 'Text',
-  image: 'Image',
-  audio: 'Audio',
-  video: 'Video',
-  pdf: 'PDF',
-}
-
-const MODALITY_ICON: Record<CatalogModality, LucideIcon> = {
-  text: Type,
-  image: ImageIcon,
-  audio: AudioLines,
-  video: Video,
-  pdf: FileText,
-}
-
-function ModalityIcons({ mods }: { mods: CatalogModality[] }) {
-  if (mods.length === 0) return <span className="text-muted-foreground/50">—</span>
-  return (
-    <span className="flex items-center gap-0.5">
-      {mods.map((x) => {
-        const Icon = MODALITY_ICON[x]
-        return (
-          <span key={x} title={MODALITY_LABEL[x]} className="flex">
-            <Icon className="size-3.5" />
-          </span>
-        )
-      })}
-    </span>
-  )
-}
-
 const TASK_ICON: Record<CapabilityTask, LucideIcon> = {
   chat: MessageSquare,
   image: ImageIcon,
   video: Video,
   tts: AudioLines,
   asr: Mic,
-}
-
-function formatContext(tokens?: number): string {
-  if (!tokens) return ''
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 === 0 ? 0 : 1)}M`
-  if (tokens >= 1000) return `${Math.round(tokens / 1000)}K`
-  return String(tokens)
 }
 
 const CATALOG_ID_ALIAS: Record<string, string> = {
@@ -144,41 +98,6 @@ function TabButton({ active, onClick, icon: Icon, label, count }: { active: bool
       {label}
       <span className={active ? 'text-primary/70' : 'text-muted-foreground/70'}>({count})</span>
     </button>
-  )
-}
-
-function CapBadge({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
-  return (
-    <span title={title} className="flex size-5 items-center justify-center rounded bg-muted text-muted-foreground">
-      <Icon className="size-3" />
-    </span>
-  )
-}
-
-function ModelIdBadge({ id }: { id: string }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  return (
-    <span className="flex min-w-0 shrink items-center gap-1">
-      <button
-        type="button"
-        title={id}
-        onClick={() => {
-          void window.app.clipboardWrite(id)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        }}
-        className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        {id}
-      </button>
-      {copied && (
-        <span className="flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-green-500">
-          {t('resources.providerDialog.models.copied')}
-          <Check className="size-3" />
-        </span>
-      )}
-    </span>
   )
 }
 
@@ -449,90 +368,51 @@ export function PlatformModelsPanel({
     [annotated, customModels, discovered],
   )
 
-  const subtitle = (m: CatalogModel): string => {
-    const parts: string[] = []
-    if (m.releaseDate) parts.push(t('resources.providerDialog.models.released', { date: m.releaseDate }))
-    if (m.cost) {
-      parts.push(`${t('resources.providerDialog.models.priceIn')} $${m.cost.input}/M`)
-      parts.push(`${t('resources.providerDialog.models.priceOut')} $${m.cost.output}/M`)
-    }
-    return parts.join(' · ')
-  }
-
-  // Modality/tool/reasoning/context badges — shared between catalog-matched rows and custom/
-  // discovered rows that happen to resolve to a catalog entry via `catalogModelIndex`.
-  const catalogExtras = (m: CatalogModel) => (
-    <>
-      <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-1 text-muted-foreground">
-        <ModalityIcons mods={m.inputModalities} />
-        <ArrowRight className="size-3 opacity-50" />
-        <ModalityIcons mods={m.outputModalities} />
-      </span>
-      {m.toolCall && <CapBadge icon={Wrench} title={t('resources.providerDialog.models.tools')} />}
-      {m.reasoning && <CapBadge icon={Brain} title={t('resources.providerDialog.models.reasoning')} />}
-      {m.contextWindow ? <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{formatContext(m.contextWindow)}</span> : null}
-    </>
-  )
-
   const renderRow = ({ m, endpoints, enabled, locked }: ModelRow) => (
-    <div key={m.id} className="flex items-center gap-3 px-3 py-2.5">
-      <div className="flex size-7 shrink-0 items-center justify-center">
-        <ModelGlyph modelId={m.id} providerBrand={platform.brand} size={26} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className={`truncate text-sm font-medium ${selectedCred && !enabled ? 'text-muted-foreground' : ''}`}>{m.name}</span>
-          <ModelIdBadge id={m.id} />
-          {m.status && <span className="shrink-0 rounded bg-amber-500/10 px-1 text-[9px] text-amber-600 dark:text-amber-400">{m.status}</span>}
-        </div>
-        {subtitle(m) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(m)}</div>}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {catalogExtras(m)}
-        {selectedCred && (
-          <span title={locked ? t('resources.providerDialog.models.lockedHint') : undefined} className="flex">
-            <Switch
-              checked={enabled}
-              disabled={locked || endpoints.length === 0}
-              onCheckedChange={(v) => toggle(endpoints, { id: m.id, name: m.name }, v)}
-            />
-          </span>
-        )}
-      </div>
-    </div>
+    <ProviderModelRow
+      key={m.id}
+      id={m.id}
+      name={m.name}
+      enabled={enabled}
+      mutedWhenDisabled={!!selectedCred}
+      locked={locked}
+      lockedHint={t('resources.providerDialog.models.lockedHint')}
+      catalog={m}
+      status={m.status}
+      providerBrand={platform.brand}
+      switchDisabled={endpoints.length === 0}
+      onToggle={selectedCred ? (v) => toggle(endpoints, { id: m.id, name: m.name }, v) : undefined}
+    />
   )
 
   const renderCustomRow = (cm: CustomModel) => {
     const catModel = catalogModelIndex?.get(normalizeModelId(cm.id))
     return (
-      <div key={cm.id} className="flex items-center gap-3 px-3 py-2.5">
-        <div className="flex size-7 shrink-0 items-center justify-center">
-          <ModelGlyph modelId={cm.id} providerBrand={platform.brand} size={26} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-medium">{cm.name || cm.id}</span>
-            <ModelIdBadge id={cm.id} />
-          </div>
-          {catModel && subtitle(catModel) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(catModel)}</div>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {catModel && catalogExtras(catModel)}
-          <span className="flex items-center gap-1">
-            {cm.tasks.map((tk) => (
-              <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />
-            ))}
-          </span>
-          <IconButton
-            size="sm"
-            variant="destructive"
-            tooltip={t('resources.providerDialog.models.deleteCustom')}
-            onClick={() => removeCustom(cm.id)}
-          >
-            <Trash2 />
-          </IconButton>
-        </div>
-      </div>
+      <ProviderModelRow
+        key={cm.id}
+        id={cm.id}
+        name={cm.name || cm.id}
+        mutedWhenDisabled={false}
+        catalog={catModel}
+        providerBrand={platform.brand}
+        trailing={
+          <>
+            <span className="flex items-center gap-1">
+              {cm.tasks.map((tk) => (
+                <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />
+              ))}
+            </span>
+            <IconButton
+              size="sm"
+              variant="destructive"
+              tooltip={t('resources.providerDialog.models.deleteCustom')}
+              onClick={() => removeCustom(cm.id)}
+            >
+              <Trash2 />
+            </IconButton>
+          </>
+        }
+      />
     )
   }
 
@@ -541,38 +421,26 @@ export function PlatformModelsPanel({
     const { enabled, locked } = modelState(endpoints, d.id)
     const catModel = catalogModelIndex?.get(normalizeModelId(d.id))
     return (
-      <div key={d.id} className="flex items-center gap-3 px-3 py-2.5">
-        <div className="flex size-7 shrink-0 items-center justify-center">
-          <ModelGlyph modelId={d.id} providerBrand={platform.brand} size={26} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className={`truncate text-sm font-medium ${!enabled ? 'text-muted-foreground' : ''}`}>{d.name || d.id}</span>
-            <ModelIdBadge id={d.id} />
-          </div>
-          {catModel && subtitle(catModel) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(catModel)}</div>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {catModel && catalogExtras(catModel)}
+      <ProviderModelRow
+        key={d.id}
+        id={d.id}
+        name={d.name || d.id}
+        enabled={enabled}
+        locked={locked}
+        lockedHint={t('resources.providerDialog.models.lockedHint')}
+        catalog={catModel}
+        providerBrand={platform.brand}
+        onToggle={(v) => toggleDiscovered(d, v)}
+        trailing={
           <span className="flex items-center gap-1">
             {d.tasks.map((tk) => (
               <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />
             ))}
           </span>
-          <span title={locked ? t('resources.providerDialog.models.lockedHint') : undefined} className="flex">
-            <Switch checked={enabled} disabled={locked} onCheckedChange={(v) => toggleDiscovered(d, v)} />
-          </span>
-        </div>
-      </div>
+        }
+      />
     )
   }
-
-  const groupHeader = (label: string, count: number) => (
-    <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-background/95 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
-      {label}
-      <span className="text-muted-foreground/70">({count})</span>
-    </div>
-  )
 
   const header = (
     <div className="flex items-center justify-between gap-2">
@@ -653,7 +521,10 @@ export function PlatformModelsPanel({
             )}
             {customRows.length > 0 && (
               <>
-                {groupHeader(t('resources.providerDialog.models.customGroup'), customRows.length)}
+                <ModelsListGroupHeader
+                  label={t('resources.providerDialog.models.customGroup')}
+                  count={customRows.length}
+                />
                 {customRows.map(renderCustomRow)}
               </>
             )}
@@ -677,9 +548,19 @@ export function PlatformModelsPanel({
             )}
             {selectedCred ? (
               <>
-                {enabledRows.length > 0 && groupHeader(t('resources.providerDialog.models.enabledGroup'), enabledRows.length)}
+                {enabledRows.length > 0 ? (
+                  <ModelsListGroupHeader
+                    label={t('resources.providerDialog.models.enabledGroup')}
+                    count={enabledRows.length}
+                  />
+                ) : null}
                 {enabledRows.map(renderRow)}
-                {disabledRows.length > 0 && groupHeader(t('resources.providerDialog.models.disabledGroup'), disabledRows.length)}
+                {disabledRows.length > 0 ? (
+                  <ModelsListGroupHeader
+                    label={t('resources.providerDialog.models.disabledGroup')}
+                    count={disabledRows.length}
+                  />
+                ) : null}
                 {disabledRows.map(renderRow)}
               </>
             ) : (

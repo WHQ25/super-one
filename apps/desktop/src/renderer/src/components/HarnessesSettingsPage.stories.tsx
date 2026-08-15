@@ -86,6 +86,13 @@ function baseCatalog(overrides: Partial<Record<string, Partial<CatalogRow>>> = {
       requiresAuth: false,
     },
     {
+      id: 'cursor',
+      enabled: false,
+      state: 'disabled',
+      runtimeSource: 'none',
+      requiresAuth: true,
+    },
+    {
       id: 'acp-grok',
       enabled: false,
       state: 'disabled',
@@ -107,10 +114,11 @@ type Scenario = {
   /** Delay between seed progress events (ms). */
   seedProgressStepMs?: number
   /**
-   * Align list selection via app-store deep-link fields (claude/codex only —
-   * HarnessesSettingsPage listens to settingsProvider + harnessConfigSection).
+   * Align list selection via app-store deep-link fields
+   * (claude / codex / cursor — HarnessesSettingsPage listens to
+   * settingsProvider + harnessConfigSection).
    */
-  select?: 'claude' | 'codex'
+  select?: 'claude' | 'codex' | 'cursor'
 }
 
 const listeners = new Set<ProgressListener>()
@@ -277,6 +285,19 @@ function installHarnessMocks(scenario: Scenario): void {
   mockIpc('app', 'listMcpConfigs', async () => [])
   mockIpc('app', 'listPlugins', async () => [])
   mockIpc('app', 'listHooks', async () => [])
+
+  mockIpc('app', 'getCursorAuthStatus', async () => ({
+    configured: false,
+    apiKeyName: null,
+    userEmail: null,
+  }))
+  mockIpc('app', 'getCursorBaseConfig', async () => ({
+    disabledModelIds: [],
+    runtime: 'local',
+    settingSources: ['project', 'user'],
+    toolPreset: 'default',
+  }))
+  mockIpc('app', 'cursorListRepositories', async () => [])
 
   useSettingsStore.setState({
     platforms: [],
@@ -531,6 +552,36 @@ export const ReadyManaged: Story = {
               requiresAuth: true,
               runtimeVersion: '0.9.0',
               command: 'grok',
+            },
+          }),
+        }}
+      >
+        <Story />
+      </StoryFrame>
+    ),
+  ],
+}
+
+export const CursorTabs: Story = {
+  name: 'Cursor (account / preferences / models / cloud tabs)',
+  decorators: [
+    (Story) => (
+      <StoryFrame
+        scenario={{
+          select: 'cursor',
+          catalog: baseCatalog({
+            claude: {
+              enabled: true,
+              state: 'ready',
+              runtimeSource: 'managed',
+              runtimeVersion: '2.1.4',
+            },
+            cursor: {
+              enabled: true,
+              state: 'ready',
+              runtimeSource: 'managed',
+              runtimeVersion: 'sdk',
+              requiresAuth: true,
             },
           }),
         }}

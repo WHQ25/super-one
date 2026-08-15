@@ -319,6 +319,9 @@ export const zh: Messages = {
         hooks: 'Hooks',
         plugins: '插件',
         preferences: '偏好',
+        account: '账户',
+        cloud: '云端',
+        models: '模型',
       },
       providers: {
         claude: 'Claude Code',

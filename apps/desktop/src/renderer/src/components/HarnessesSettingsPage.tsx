@@ -1,6 +1,6 @@
 /**
  * Settings → Harnesses — Provider-style Enabled/Disabled list + detail.
- * Claude/Codex detail uses tabs for preferences / skills / MCP / … and reuses
+ * Claude/Codex/Cursor detail uses tabs (preferences / skills / MCP / …) and reuses
  * the existing settings page components under the active tab.
  */
 
@@ -14,7 +14,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Blocks, Bot, GripVertical, Loader2, Palette, Puzzle, RefreshCw, Server, Webhook } from 'lucide-react'
+import { Blocks, Bot, Cloud, Cpu, GripVertical, KeyRound, Loader2, Palette, Puzzle, RefreshCw, Server, Webhook } from 'lucide-react'
 import { Codex, Cursor, Grok, OpenCode } from '@lobehub/icons'
 import { toast } from 'sonner'
 import {
@@ -50,7 +50,7 @@ import { McpPage } from './McpPage'
 import { HooksPage } from './HooksPage'
 import { PluginsPage } from './PluginsPage'
 import { PreferencesPage } from './PreferencesPage'
-import { CursorAuthSettings } from './CursorAuthSettings'
+import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
 
 interface CatalogRow {
   id: string
@@ -73,7 +73,7 @@ type ListItem =
       acpAgentId: string | null
       experimental: boolean
       description: string
-      /** Opens Claude/Codex nested settings when set. */
+      /** Opens nested harness settings when set. */
       configProvider?: SettingsProvider
     }
   | {
@@ -101,11 +101,14 @@ const CONFIG_TAB_META: Record<
   { labelKey: string; icon: ComponentType<{ className?: string }> }
 > = {
   preferences: { labelKey: 'settings.layout.tabs.preferences', icon: Palette },
+  account: { labelKey: 'settings.layout.tabs.account', icon: KeyRound },
   agents: { labelKey: 'settings.layout.tabs.agents', icon: Bot },
   skills: { labelKey: 'settings.layout.tabs.skills', icon: Puzzle },
   mcp: { labelKey: 'settings.layout.tabs.mcp', icon: Server },
   hooks: { labelKey: 'settings.layout.tabs.hooks', icon: Webhook },
   plugins: { labelKey: 'settings.layout.tabs.plugins', icon: Blocks },
+  cloud: { labelKey: 'settings.layout.tabs.cloud', icon: Cloud },
+  models: { labelKey: 'settings.layout.tabs.models', icon: Cpu },
 }
 
 const CLAUDE_CONFIG_TABS: HarnessConfigSection[] = [
@@ -125,10 +128,28 @@ const CODEX_CONFIG_TABS: HarnessConfigSection[] = [
   'plugins',
 ]
 
+const CURSOR_CONFIG_TABS: HarnessConfigSection[] = [
+  'account',
+  'preferences',
+  'models',
+  'cloud',
+]
+
 function configTabsFor(provider: SettingsProvider | undefined): HarnessConfigSection[] | null {
   if (provider === 'claude') return CLAUDE_CONFIG_TABS
   if (provider === 'codex') return CODEX_CONFIG_TABS
+  if (provider === 'cursor') return CURSOR_CONFIG_TABS
   return null
+}
+
+/** True when the nested harness tab is one of Cursor's config pages. */
+function isCursorSettingsSection(section: HarnessConfigSection): section is CursorSettingsSection {
+  return (
+    section === 'account'
+    || section === 'preferences'
+    || section === 'models'
+    || section === 'cloud'
+  )
 }
 
 function formatBytes(n: number): string {
@@ -307,6 +328,7 @@ export function HarnessesSettingsPage() {
   useEffect(() => {
     if (!harnessConfigSection) return
     if (settingsProvider === 'codex') setSelectedKey('codex')
+    else if (settingsProvider === 'cursor') setSelectedKey('cursor')
     else setSelectedKey('claude')
   }, [harnessConfigSection, settingsProvider])
 
@@ -366,6 +388,7 @@ export function HarnessesSettingsPage() {
         acpAgentId: null,
         experimental: true,
         description: t('settings.harnesses.desc.cursor'),
+        configProvider: 'cursor',
       },
     ]
 
@@ -483,8 +506,8 @@ export function HarnessesSettingsPage() {
     if (item.configProvider) {
       setSettingsProvider(item.configProvider)
       const tabs = configTabsFor(item.configProvider) ?? []
-      // Keep current tab when switching Claude ↔ Codex if it exists on both;
-      // otherwise fall back to preferences.
+      // Keep current tab when switching harnesses if it exists on both;
+      // otherwise fall back to the first tab.
       const next =
         harnessConfigSection && tabs.includes(harnessConfigSection)
           ? harnessConfigSection
@@ -828,10 +851,6 @@ function HarnessDetail({
         </div>
       ) : null}
 
-      {item.provider === 'cursor' ? (
-        <CursorAuthSettings onAuthChanged={onRefresh} />
-      ) : null}
-
       {errorMessage ? (
         <p className="text-xs text-destructive break-words">{errorMessage}</p>
       ) : null}
@@ -882,16 +901,23 @@ function HarnessDetail({
               )
             })}
           </TabsList>
-          {configTabs.map((section) => (
-            <TabsContent key={section} value={section} className="mt-0 min-h-0 outline-none">
-              {section === 'preferences' && <PreferencesPage />}
-              {section === 'agents' && <AgentsPage />}
-              {section === 'skills' && <SkillsPage />}
-              {section === 'mcp' && <McpPage />}
-              {section === 'hooks' && <HooksPage />}
-              {section === 'plugins' && <PluginsPage />}
-            </TabsContent>
-          ))}
+          {item.provider === 'cursor' ? (
+            <CursorAuthSettings
+              section={isCursorSettingsSection(activeTab) ? activeTab : 'account'}
+              onAuthChanged={onRefresh}
+            />
+          ) : (
+            configTabs.map((section) => (
+              <TabsContent key={section} value={section} className="mt-0 min-h-0 outline-none">
+                {section === 'preferences' && <PreferencesPage />}
+                {section === 'agents' && <AgentsPage />}
+                {section === 'skills' && <SkillsPage />}
+                {section === 'mcp' && <McpPage />}
+                {section === 'hooks' && <HooksPage />}
+                {section === 'plugins' && <PluginsPage />}
+              </TabsContent>
+            ))
+          )}
         </Tabs>
       ) : null}
     </div>

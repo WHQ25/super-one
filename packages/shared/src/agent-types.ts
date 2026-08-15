@@ -1650,7 +1650,7 @@ export type ResourceScope = 'user' | 'project' | 'claudeai'
 
 // --- Settings provider ---
 
-export type SettingsProvider = 'claude' | 'codex'
+export type SettingsProvider = 'claude' | 'codex' | 'cursor'
 
 // ─── Agent Run Config (automation / unattended runs — all harnesses) ───
 //

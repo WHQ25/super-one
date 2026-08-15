@@ -56,14 +56,28 @@ type UpdateStatus =
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'harnesses'
 
 /** Nested config pages opened from Settings → Harnesses (reuse existing page components). */
-export type HarnessConfigSection = 'agents' | 'skills' | 'mcp' | 'hooks' | 'plugins' | 'preferences'
+export type HarnessConfigSection =
+  | 'agents'
+  | 'skills'
+  | 'mcp'
+  | 'hooks'
+  | 'plugins'
+  | 'preferences'
+  | 'account'
+  | 'cloud'
+  | 'models'
 
 const PROVIDER_SETTINGS_TABS: SettingsTab[] = ['agents', 'skills', 'mcp', 'hooks', 'plugins', 'preferences']
+/** Cursor-only nested sections — not legacy sidebar deep-links. */
+const CURSOR_HARNESS_SECTIONS: HarnessConfigSection[] = ['account', 'cloud', 'models']
 const FIRST_SETTINGS_SECTION: SettingsTab = 'app-settings'
 const FIRST_PROVIDER_TAB: SettingsTab = 'agents'
 
 function isHarnessConfigSection(tab: string): tab is HarnessConfigSection {
-  return (PROVIDER_SETTINGS_TABS as string[]).includes(tab)
+  return (
+    (PROVIDER_SETTINGS_TABS as string[]).includes(tab)
+    || (CURSOR_HARNESS_SECTIONS as string[]).includes(tab)
+  )
 }
 export type SidebarTab = 'sessions' | 'files'
 
@@ -634,7 +648,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   remoteConfig: null,
   settingsProvider: 'claude',
   settingsTab: FIRST_SETTINGS_SECTION,
-  settingsProviderTabs: { claude: FIRST_PROVIDER_TAB, codex: FIRST_PROVIDER_TAB },
+  settingsProviderTabs: {
+    claude: FIRST_PROVIDER_TAB,
+    codex: FIRST_PROVIDER_TAB,
+    cursor: FIRST_PROVIDER_TAB,
+  },
   harnessConfigSection: null,
   sidebarTab: 'sessions',
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
@@ -852,7 +870,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setSettingsProvider: (provider) => {
-    // Provider only selects which harness's config pages to show (claude vs codex).
+    // Provider only selects which harness's config pages to show.
     // Does not switch the active settings tab — config lives under Harnesses.
     set({ settingsProvider: provider })
   },
@@ -1060,8 +1078,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       harnessConfigSection: null,
       view: 'settings',
     }
-    // Claude/Codex config panes key off settingsProvider — keep them aligned.
-    if (listKey === 'claude' || listKey === 'codex') {
+    // Nested config panes key off settingsProvider — keep them aligned.
+    if (listKey === 'claude' || listKey === 'codex' || listKey === 'cursor') {
       patch.settingsProvider = listKey
     }
     set(patch)

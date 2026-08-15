@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Globe } from 'lucide-react'
-import { Anthropic, Claude, OpenRouter, Zhipu, ZAI, Kimi, Moonshot, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI } from '@lobehub/icons'
+import { Anthropic, Claude, Cursor, OpenRouter, Zhipu, ZAI, Kimi, Moonshot, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI } from '@lobehub/icons'
 import type { IconType } from '@lobehub/icons'
 
 interface BrandEntry {
@@ -35,6 +35,7 @@ const BRANDS: Record<string, BrandEntry> = {
   xiaomimimo: { Mono: XiaomiMiMo, Text: XiaomiMiMo.Text },
   openai: { Mono: OpenAI, Text: OpenAI.Text },
   chatgpt: { Mono: OpenAI, Combine: OpenAI.Combine, extraLabel: 'ChatGPT' },
+  cursor: { Mono: Cursor, Text: Cursor.Text },
 }
 
 export function ProviderLabel({ brandKey, fallback, size = 44, iconOnly = false, combine = false, compactFallback = false }: { brandKey?: string | null; fallback?: string; size?: number; iconOnly?: boolean; combine?: boolean; compactFallback?: boolean }): ReactNode {

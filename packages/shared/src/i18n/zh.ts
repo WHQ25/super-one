@@ -1153,6 +1153,12 @@ export const zh: Messages = {
       recapLabel: '回顾：',
       generatingRecap: '正在生成回顾…',
     },
+    taskNotification: {
+      completed: '后台任务已完成',
+      failed: '后台任务失败',
+      stopped: '后台任务已停止',
+      outputFile: '输出日志',
+    },
     pasteChip: {
       title_one: '已粘贴文本 · {{count}} 行',
       title_other: '已粘贴文本 · {{count}} 行',

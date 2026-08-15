@@ -46,6 +46,7 @@ import {
   redactTaskNotificationForDisplay,
   taskNotificationRequest,
 } from './task-notification-queue'
+import { buildOrphanTaskNotificationMessage } from './orphan-task-notification'
 import {
   LOCAL_OWNER,
   SessionClaimConflictError,
@@ -1366,6 +1367,12 @@ export class Session implements SessionContract {
     const sequenced = event.seq === undefined
       ? ({ ...event, ...nextEventSeq() } as AgentEvent)
       : event
+    // Snapshot the pre-reducer transcript: the reducer may attach the result to a
+    // tool block, and only its absence from the current turn *before* that
+    // decides whether to mint a wake row.
+    const orphanNotificationRow = sequenced.type === 'task_notification'
+      ? buildOrphanTaskNotificationMessage(sequenced, this._messages, this._taskProgress)
+      : null
     this.applyReducer(sequenced)
     const outbound = this.enrichOutboundEvent(sequenced)
     const existingProjectPath = (sequenced as { projectPath?: string }).projectPath
@@ -1380,6 +1387,11 @@ export class Session implements SessionContract {
     for (const cb of this.eventListeners) {
       try { cb(tagged) } catch (err) { log.warn('[Session] event listener error:', err) }
     }
+    // Append after the notification itself is out, so the row lands before the
+    // assistant turn the wake triggers. appendTranscriptMessage persists it and
+    // re-emits it as user_message_appended — renderer and mobile both pick it up
+    // without either having to reduce task_notification a second time.
+    if (orphanNotificationRow) this.appendTranscriptMessage(orphanNotificationRow)
     if (tagged.type === 'acp_models') {
       this._cachedAcpModels = tagged
       // Keep Session.model aligned with agent-advertised selection for snapshots.

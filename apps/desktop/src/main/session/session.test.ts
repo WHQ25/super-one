@@ -2589,3 +2589,144 @@ describe('pending interactions survive window reopen', () => {
     }
   })
 })
+
+describe('orphan background task notification', () => {
+  function notification(overrides: Partial<Extract<AgentEvent, { type: 'task_notification' }>> = {}): AgentEvent {
+    return {
+      type: 'task_notification',
+      taskId: 'task-abc',
+      toolUseId: 'toolu_gone',
+      taskStatus: 'stopped',
+      outputFile: '/tmp/watcher.log',
+      summary: 'gh run watch exited',
+      usage: { totalTokens: 120, toolUses: 3, durationMs: 134_000 },
+      ...overrides,
+    } as AgentEvent
+  }
+
+  function appendedRows(events: AgentEvent[]) {
+    return events.filter((e) => e.type === 'user_message_appended')
+  }
+
+  it('appends a transcript row when the notification matches no live task block', () => {
+    const { session, backend } = makeSession()
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    backend.emit(notification())
+
+    const rows = appendedRows(events)
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    if (row.type !== 'user_message_appended') throw new Error('unreachable')
+    expect(row.message.metadata?.taskNotification).toEqual({
+      status: 'stopped',
+      summary: 'gh run watch exited',
+      outputFile: '/tmp/watcher.log',
+      usage: { totalTokens: 120, toolUses: 3, durationMs: 134_000 },
+    })
+    expect(session.snapshot.messages.some((m) => m.id === row.message.id)).toBe(true)
+  })
+
+  it('carries the task_started description when the tool block was compacted away but progress survived', () => {
+    const { session, backend } = makeSession()
+    // Progress entry outlives the tool block (compaction / runtime rebuild), so
+    // the row can still name the task even though nothing is left to patch.
+    backend.emit({ type: 'task_started', taskId: 'task-abc', toolUseId: 'toolu_gone', description: 'gh run watch --exit-status' } as AgentEvent)
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    backend.emit(notification())
+
+    const rows = appendedRows(events)
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    if (row.type !== 'user_message_appended') throw new Error('unreachable')
+    expect(row.message.metadata?.taskNotification?.description).toBe('gh run watch --exit-status')
+    const text = row.message.content.map((b) => b.type === 'text' ? b.text : '').join('')
+    expect(text).toContain('gh run watch --exit-status')
+  })
+
+  it('stays silent when the launching tool block is in the current turn', () => {
+    const { session, backend } = makeSession({
+      initialMessages: [
+        {
+          id: 'u1',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'watch the ci' }],
+          createdAt: new Date().toISOString(),
+          providerId: 'claude-base',
+        },
+        {
+          id: 'a1',
+          role: 'assistant',
+          status: 'complete',
+          content: [{ type: 'tool_use', toolUseId: 'toolu_live', toolName: 'Bash', input: {} }],
+          createdAt: new Date().toISOString(),
+          providerId: 'claude-base',
+        },
+      ],
+    })
+    backend.emit({ type: 'task_started', taskId: 'task-abc', toolUseId: 'toolu_live', description: 'build' } as AgentEvent)
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    backend.emit(notification({ toolUseId: 'toolu_live' }))
+
+    expect(appendedRows(events)).toHaveLength(0)
+  })
+
+  it('appends a row when the launching tool block is only in an earlier turn', () => {
+    const { session, backend } = makeSession({
+      initialMessages: [
+        {
+          id: 'u1',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'watch the ci' }],
+          createdAt: new Date().toISOString(),
+          providerId: 'claude-base',
+        },
+        {
+          id: 'a1',
+          role: 'assistant',
+          status: 'complete',
+          content: [{ type: 'tool_use', toolUseId: 'toolu_live', toolName: 'Bash', input: {} }],
+          createdAt: new Date().toISOString(),
+          providerId: 'claude-base',
+        },
+        {
+          id: 'u2',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'what else?' }],
+          createdAt: new Date().toISOString(),
+          providerId: 'claude-base',
+        },
+      ],
+    })
+    backend.emit({ type: 'task_started', taskId: 'task-abc', toolUseId: 'toolu_live', description: 'build' } as AgentEvent)
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    backend.emit(notification({ toolUseId: 'toolu_live' }))
+
+    const rows = appendedRows(events)
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    if (row.type !== 'user_message_appended') throw new Error('unreachable')
+    expect(row.message.metadata?.taskNotification?.status).toBe('stopped')
+    expect(row.message.metadata?.taskNotification?.description).toBe('build')
+  })
+
+  it('stays silent for host browser_download tasks that already own a transcript bubble', () => {
+    const { session, backend } = makeSession()
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    backend.emit(notification({ taskId: 'bdl_123', toolUseId: undefined }))
+
+    expect(appendedRows(events)).toHaveLength(0)
+  })
+})

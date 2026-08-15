@@ -662,14 +662,14 @@ export function TurnSummaryAboveFooter({ summary }: { summary: string }) {
 }
 
 /** Format token count for compact display. */
-function formatCompactTokens(tokens: number): string {
+export function formatCompactTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
   return String(tokens)
 }
 
 /** Format a millisecond duration as "98s" / "1m 38s". */
-function formatCompactDuration(ms: number): string {
+export function formatCompactDuration(ms: number): string {
   const totalSec = Math.round(ms / 1000)
   if (totalSec < 60) return `${totalSec}s`
   return `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`

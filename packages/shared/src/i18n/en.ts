@@ -1089,6 +1089,13 @@ export type Messages = {
       recapLabel: string
       generatingRecap: string
     }
+    /** Background-task wake whose launching tool block is gone or off-turn. */
+    taskNotification: {
+      completed: string
+      failed: string
+      stopped: string
+      outputFile: string
+    }
     pasteChip: {
       title_one: string
       title_other: string
@@ -3850,6 +3857,12 @@ export const en: Messages = {
       summaryLabel: 'Summary:',
       recapLabel: 'Recap:',
       generatingRecap: 'Generating recap…',
+    },
+    taskNotification: {
+      completed: 'Background task finished',
+      failed: 'Background task failed',
+      stopped: 'Background task stopped',
+      outputFile: 'Output log',
     },
     pasteChip: {
       title_one: 'Pasted text · {{count}} line',

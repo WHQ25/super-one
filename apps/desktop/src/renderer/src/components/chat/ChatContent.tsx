@@ -15,6 +15,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
+import { TaskNotificationRow } from './TaskNotificationRow'
 import { ChatSuggestions } from './ChatSuggestions'
 import { DraftSessionSurface } from './DraftSessionSurface'
 import { PermissionPrompt } from './PermissionPrompt'
@@ -350,6 +351,14 @@ function ChatTranscript({
                       setExpandLevel(isExpanded ? rank : rank + 1)
                     }}
                   />
+                )
+              }
+              const taskNotification = msg.metadata?.taskNotification
+              if (taskNotification) {
+                return (
+                  <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                    <TaskNotificationRow meta={taskNotification} />
+                  </div>
                 )
               }
               const turnMeta = parseTurnMetaMarker(msg)

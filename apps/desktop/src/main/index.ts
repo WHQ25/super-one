@@ -150,7 +150,9 @@ import {
 import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { getProviderRateLimits } from './agent/provider-usage-service'
-import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
+import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
+import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
+import { registerHarnessIpcHandlers } from './harness/ipc'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { connectWithHarnessResourceCache, getFreshHarnessResources } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
@@ -660,6 +662,32 @@ function setThemeMode(mode: ThemeMode): void {
 }
 
 
+function windowsChromeOptions(overlayHeight: number): Electron.BrowserWindowConstructorOptions {
+  const backgroundColor = currentDarkTheme ? '#1c1c1c' : '#ffffff'
+  return {
+    backgroundColor,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: backgroundColor,
+      symbolColor: currentDarkTheme ? '#c8c8c8' : '#555555',
+      height: overlayHeight,
+    },
+  }
+}
+
+function attachRendererDiagnostics(win: BrowserWindow, role: string): void {
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log.error('[window] render-process-gone role=%s reason=%s exitCode=%s', role, details.reason, details.exitCode)
+  })
+  win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (!isMainFrame) return
+    log.error('[window] did-fail-load role=%s code=%s %s url=%s', role, code, desc, url)
+  })
+  win.webContents.on('unresponsive', () => {
+    log.error('[window] unresponsive role=%s', role)
+  })
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -668,7 +696,7 @@ function createWindow(): void {
     minHeight: 700,
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 }, ...glassWindowOptions() }
-      : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', symbolColor: '#888888', height: 40 } }),
+      : windowsChromeOptions(40)),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -727,6 +755,7 @@ function createWindow(): void {
   setBashOutputWindow(mainWindow)
 
   allWindows.add(mainWindow)
+  attachRendererDiagnostics(mainWindow, 'main')
   rendererAgentEventTransport.resetCodexBaselines()
   mainWindow.on('closed', () => {
     if (mainWindow) allWindows.delete(mainWindow)
@@ -774,7 +803,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     title: title ?? 'Session',
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 12 }, ...glassWindowOptions() }
-      : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', symbolColor: '#888888', height: 36 } }),
+      : windowsChromeOptions(36)),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -800,6 +829,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
   })
 
   allWindows.add(win)
+  attachRendererDiagnostics(win, 'mini')
   rendererAgentEventTransport.resetCodexBaselines()
   sessionWindows.set(key, win)
   win.on('closed', () => {
@@ -1081,11 +1111,9 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
 }
 
 function registerIpcHandlers(): void {
-  // Local harness catalog (Settings → Harnesses). Eager so enable works as soon
-  // as the window is ready; remote env harnesses remain under environment:*.
-  void import('./harness/ipc').then(({ registerHarnessIpcHandlers }) => {
-    registerHarnessIpcHandlers()
-  })
+  // Local harness catalog (Settings → Harnesses). Register before createWindow
+  // so continueToMain's needsHarnessAlign invoke cannot race a dynamic import.
+  registerHarnessIpcHandlers()
 
   // Environment / remote-node product path (gateway + workspace router).
   // Lazy import keeps main boot light when environments unused.
@@ -1732,18 +1760,18 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GET_RECENT_FOLDERS, () => {
-    return getRecentFolders()
+    return getRecentFoldersWithPresence()
   })
 
-  ipcMain.handle(AgentIpcChannels.ADD_RECENT_FOLDER, (_event, folderPath: string) => {
-    if (!existsSync(folderPath)) return false
+  ipcMain.handle(AgentIpcChannels.ADD_RECENT_FOLDER, async (_event, folderPath: string) => {
+    if (!(await pathExistsBounded(folderPath, PATH_EXISTS_OPEN_TIMEOUT_MS))) return false
     addRecentFolder(folderPath)
     return true
   })
 
-  ipcMain.handle(AgentIpcChannels.REMOVE_RECENT_FOLDER, (_event, folderPath: string) => {
+  ipcMain.handle(AgentIpcChannels.REMOVE_RECENT_FOLDER, async (_event, folderPath: string) => {
     removeRecentFolder(folderPath)
-    return getRecentFolders()
+    return getRecentFoldersWithPresence()
   })
 
   ipcMain.handle(AgentIpcChannels.GET_PROJECT_ID, (_event, folderPath: string) => {
@@ -1751,7 +1779,7 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.OPEN_FOLDER, async (_event, folderPath: string) => {
-    if (!existsSync(folderPath)) return false
+    if (!(await pathExistsBounded(folderPath, PATH_EXISTS_OPEN_TIMEOUT_MS))) return false
     addRecentFolder(folderPath)
     await agentService.openFolder(folderPath)
     codexService.prewarmAppServerConnection(folderPath)
@@ -4740,7 +4768,14 @@ app.whenReady().then(async () => {
         err instanceof Error ? err.message : String(err),
       )
     })
-  getDb() // Initialize database
+  try {
+    getDb()
+  } catch (err) {
+    log.error(
+      '[startup] database init failed: %s',
+      err instanceof Error ? err.message : String(err),
+    )
+  }
   void (async () => {
     try {
       const prev = readAcpResourcesCache()
@@ -4835,6 +4870,16 @@ app.whenReady().then(async () => {
     if (mediaType === 'audio') return granted('microphone')
     if (mediaType === 'video') return granted('camera')
     return granted('microphone') || granted('camera')
+  })
+
+  app.on('child-process-gone', (_e, details) => {
+    log.error(
+      '[startup] child-process-gone type=%s reason=%s exitCode=%s service=%s',
+      details.type,
+      details.reason,
+      details.exitCode,
+      details.serviceName ?? '',
+    )
   })
 
   createWindow()

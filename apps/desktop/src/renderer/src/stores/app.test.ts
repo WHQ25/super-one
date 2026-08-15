@@ -341,6 +341,31 @@ describe('continueToMain', () => {
     expect(mockInitializeHarness).not.toHaveBeenCalledWith('claude')
   })
 
+  it('skips missing local projects and opens the first path that still exists', async () => {
+    const folders = [
+      { name: 'gone', path: '/gone', missing: true },
+      { name: 'proj', path: '/proj' },
+    ]
+    mockWindowApp.openFolder.mockImplementation(async (path: string) => path === '/proj')
+    mockWindowApp.getRecentFolders.mockResolvedValue(folders)
+    mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })
+    mockWindowApp.needsHarnessAlign.mockResolvedValue(false)
+    mockWindowApp.getStartupData.mockResolvedValue({
+      appVersion: '0.1.0',
+      sandboxCapability: null,
+      cached: { claude: null, codex: null, acp: null },
+    })
+    resetStore({ recentFolders: folders, currentFolder: null })
+
+    await useAppStore.getState().continueToMain()
+    await vi.dynamicImportSettled()
+
+    expect(mockWindowApp.openFolder).not.toHaveBeenCalledWith('/gone')
+    expect(mockWindowApp.openFolder).toHaveBeenCalledWith('/proj')
+    expect(useAppStore.getState().view).toBe('main')
+    expect(useAppStore.getState().currentFolder).toBe('/proj')
+  })
+
   it('prewarms nothing when no project opened', async () => {
     mockWindowApp.getRecentFolders.mockResolvedValue([])
     mockWindowApp.getAppSettings.mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 })

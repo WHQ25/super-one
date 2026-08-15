@@ -1,9 +1,9 @@
 import { basename } from 'path'
 import { randomUUID } from 'crypto'
-import { existsSync } from 'fs'
 import { getDb } from './database'
 import { dropMiniAppOrderBucket } from './app-settings-service'
 import type { RecentFolder } from '@superone/shared/agent-types'
+import { PATH_EXISTS_LIST_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
 
 export function getRecentFolders(): RecentFolder[] {
   const db = getDb()
@@ -22,8 +22,20 @@ export function getRecentFolders(): RecentFolder[] {
     name: r.name,
     addedAt: r.added_at,
     lastOpened: r.last_active,
-    ...(!existsSync(r.path) && { missing: true }),
   }))
+}
+
+/** IPC-facing list: mark missing without a sync existsSync on every path. */
+export async function getRecentFoldersWithPresence(
+  timeoutMs: number = PATH_EXISTS_LIST_TIMEOUT_MS,
+): Promise<RecentFolder[]> {
+  const folders = getRecentFolders()
+  return Promise.all(
+    folders.map(async (folder) => {
+      const exists = await pathExistsBounded(folder.path, timeoutMs)
+      return exists ? folder : { ...folder, missing: true }
+    }),
+  )
 }
 
 export function addRecentFolder(folderPath: string): void {

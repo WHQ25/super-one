@@ -270,6 +270,54 @@ let pendingStartup: {
   folders: RecentFolder[]
 } | null = null
 
+async function runContinueToMain(
+  get: () => AppState,
+  set: (partial: Partial<AppState>) => void,
+): Promise<void> {
+  const [startupData, folders, settings] = await Promise.all([
+    window.app.getStartupData(),
+    window.app.getRecentFolders(),
+    window.app.getAppSettings(),
+  ])
+  set({
+    recentFolders: folders,
+    sandboxCapability: startupData.sandboxCapability ?? null,
+    appVersion: startupData.appVersion,
+  })
+  console.info(
+    '[continueToMain] cached: claude=%s codex=%s opencode=%s cursor=%s sandbox=%s',
+    startupData.cached.claude ? `${startupData.cached.claude.models?.length ?? 0} models` : 'null',
+    startupData.cached.codex ? `${startupData.cached.codex.models?.length ?? 0} models` : 'null',
+    startupData.cached.opencode ? `${startupData.cached.opencode.models?.length ?? 0} models` : 'null',
+    startupData.cached.cursor ? `${startupData.cached.cursor.models?.length ?? 0} models` : 'null',
+    startupData.sandboxCapability?.supportLevel ?? 'unknown',
+  )
+
+  // Stash startup payload for post-align entry (avoid double getStartupData).
+  pendingStartup = {
+    startupData,
+    folders,
+  }
+
+  const { CURRENT_ONBOARDING_EPOCH } = await import('@superone/shared/onboarding')
+  const epoch = settings.onboardingEpoch ?? 0
+  const forceOnboarding =
+    import.meta.env.DEV && import.meta.env.RENDERER_VITE_FORCE_ONBOARDING === '1'
+  if (forceOnboarding || epoch < CURRENT_ONBOARDING_EPOCH) {
+    set({ view: 'onboarding', onboardingStep: 'welcome' })
+    return
+  }
+
+  // Fallback only: pin-align when an enabled harness is not at the process pin.
+  // Happy path pre-fetches during app update so this is usually a no-op skip.
+  const needsAlign = await window.app.needsHarnessAlign().catch(() => true)
+  if (needsAlign) {
+    set({ view: 'harness-align' })
+    return
+  }
+  await enterMainAfterGates(get, set)
+}
+
 async function enterMainAfterGates(
   get: () => AppState,
   set: (partial: Partial<AppState>) => void,
@@ -313,6 +361,7 @@ async function enterMainAfterGates(
   if (!get().currentFolder) {
     let opened = false
     for (const folder of folders) {
+      if (folder.missing) continue
       if (await applyProjectSelection(folder.path, set)) {
         opened = true
         break
@@ -780,48 +829,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   continueToMain: async () => {
-    const [startupData, folders, settings] = await Promise.all([
-      window.app.getStartupData(),
-      window.app.getRecentFolders(),
-      window.app.getAppSettings(),
+    const boot = runContinueToMain(get, set)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timedOut = await Promise.race([
+      boot.then(() => false),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), 15_000)
+      }),
     ])
-    set({
-      recentFolders: folders,
-      sandboxCapability: startupData.sandboxCapability ?? null,
-      appVersion: startupData.appVersion,
-    })
-    console.info(
-      '[continueToMain] cached: claude=%s codex=%s opencode=%s cursor=%s sandbox=%s',
-      startupData.cached.claude ? `${startupData.cached.claude.models?.length ?? 0} models` : 'null',
-      startupData.cached.codex ? `${startupData.cached.codex.models?.length ?? 0} models` : 'null',
-      startupData.cached.opencode ? `${startupData.cached.opencode.models?.length ?? 0} models` : 'null',
-      startupData.cached.cursor ? `${startupData.cached.cursor.models?.length ?? 0} models` : 'null',
-      startupData.sandboxCapability?.supportLevel ?? 'unknown',
-    )
-
-    // Stash startup payload for post-align entry (avoid double getStartupData).
-    pendingStartup = {
-      startupData,
-      folders,
+    if (timer) clearTimeout(timer)
+    if (timedOut) {
+      void boot.catch((err) => console.error('[continueToMain] failed after timeout', err))
+      if (get().view === 'loading') {
+        console.error('[continueToMain] timed out still on loading view')
+        set({ view: 'startup' })
+      }
     }
-
-    const { CURRENT_ONBOARDING_EPOCH } = await import('@superone/shared/onboarding')
-    const epoch = settings.onboardingEpoch ?? 0
-    const forceOnboarding =
-      import.meta.env.DEV && import.meta.env.RENDERER_VITE_FORCE_ONBOARDING === '1'
-    if (forceOnboarding || epoch < CURRENT_ONBOARDING_EPOCH) {
-      set({ view: 'onboarding', onboardingStep: 'welcome' })
-      return
-    }
-
-    // Fallback only: pin-align when an enabled harness is not at the process pin.
-    // Happy path pre-fetches during app update so this is usually a no-op skip.
-    const needsAlign = await window.app.needsHarnessAlign().catch(() => true)
-    if (needsAlign) {
-      set({ view: 'harness-align' })
-      return
-    }
-    await enterMainAfterGates(get, set)
   },
 
   navigateTo: (view) => {

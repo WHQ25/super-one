@@ -1,4 +1,4 @@
-import 'electron-log/renderer'
+import log from 'electron-log/renderer'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
@@ -30,7 +30,21 @@ if (isDragPreview || isComputerUsePermissions) {
   document.documentElement.classList.add('cu-transparent-shell')
 }
 
-void initI18n().finally(() => {
+window.addEventListener('error', (event) => {
+  log.error('[renderer] window.error', event.message, event.filename, event.lineno, event.error?.stack)
+})
+window.addEventListener('unhandledrejection', (event) => {
+  log.error('[renderer] unhandledrejection', event.reason)
+})
+
+const I18N_BOOT_TIMEOUT_MS = 3_000
+
+void Promise.race([
+  initI18n(),
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, I18N_BOOT_TIMEOUT_MS)
+  }),
+]).finally(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary>

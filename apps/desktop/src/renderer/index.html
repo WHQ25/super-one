@@ -7,6 +7,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.addEventListener('error', function (event) {
+        var root = document.getElementById('root')
+        if (!root || root.childElementCount) return
+        root.style.cssText = 'box-sizing:border-box;padding:24px;font:13px/1.45 ui-sans-serif,system-ui,sans-serif;white-space:pre-wrap'
+        root.textContent = (event.message || 'Failed to start') + '\n\n' + (event.filename || '')
+      })
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

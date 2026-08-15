@@ -474,7 +474,12 @@ function App(): React.JSX.Element {
   if (view === 'loading') {
     return (
       <>
-        <div className="h-screen bg-background" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+        <div
+          className="flex h-screen flex-col items-center justify-center bg-background text-muted-foreground"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          <div className="text-sm">{t('common.loading')}</div>
+        </div>
         <MiniAppHostLayer />
         <BrowserHostLayer />
       </>

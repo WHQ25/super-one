@@ -1,6 +1,6 @@
 import logoUrl from '@/assets/logo-text-inline.png'
 
-const isWindows = window.app.platform === 'win32'
+const isWindows = window.app?.platform === 'win32'
 
 export function WindowsTitleBar(): React.JSX.Element | null {
   if (!isWindows) return null

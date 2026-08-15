@@ -73,6 +73,59 @@ describe('formatAgentToolOutput', () => {
     expect(formatAgentToolOutput({ type: 'GrepSearch', stdout: bytes })).toBe('match: line 1\n')
   })
 
+  it('unwraps shell results to stdout instead of dumping exitCode JSON', () => {
+    expect(formatAgentToolOutput({
+      exitCode: 0,
+      signal: '',
+      stdout: 'ok\n',
+      stderr: '',
+      executionTime: 30_000,
+    })).toBe('ok\n')
+    expect(formatAgentToolOutput(JSON.stringify({
+      exitCode: 0,
+      signal: '',
+      stdout: 'ok\n',
+      stderr: '',
+    }))).toBe('ok\n')
+    expect(formatAgentToolOutput({
+      exitCode: 1,
+      stdout: 'out\n',
+      stderr: 'err\n',
+    })).toBe('out\nerr\n')
+  })
+
+  it('unwraps Cursor Grep workspaceResults into match lines', () => {
+    expect(formatAgentToolOutput({
+      workspaceResults: {
+        '/tmp/proj': {
+          type: 'content',
+          output: {
+            matches: [
+              { file: 'docs/a.md', lineNumber: 12, line: 'hello' },
+              { file: 'src/b.ts' },
+            ],
+            totalMatches: 1,
+          },
+        },
+      },
+    })).toBe('docs/a.md:12:hello\nsrc/b.ts')
+    expect(formatAgentToolOutput({
+      workspaceResults: {
+        '/tmp/a': { type: 'files', output: { files: ['one.ts'], count: 1 } },
+        '/tmp/b': { type: 'files', output: { files: ['two.ts'], count: 1 } },
+      },
+    })).toBe('/tmp/a\none.ts\n/tmp/b\ntwo.ts')
+  })
+
+  it('unwraps Cursor Glob files instead of dumping totalFiles JSON', () => {
+    expect(formatAgentToolOutput({
+      files: ['a.ts', 'b.ts'],
+      totalFiles: 2,
+      clientTruncated: false,
+      ripgrepTruncated: false,
+    })).toBe('a.ts\nb.ts')
+  })
+
   it('preserves workflow run_id JSON compactly', () => {
     const raw = { run_id: 'wf_1', message: 'started' }
     expect(JSON.parse(formatAgentToolOutput(raw))).toEqual(raw)

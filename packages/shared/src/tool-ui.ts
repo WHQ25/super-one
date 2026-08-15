@@ -218,6 +218,109 @@ function formatSearchToolPayload(obj: Record<string, unknown>): string | null {
   return lines.join('\n').trim() || null
 }
 
+/** Cursor/Claude-style shell result: `{ stdout, stderr?, exitCode, signal? }`. */
+function isShellCommandResult(obj: Record<string, unknown>): boolean {
+  const hasStream = typeof obj.stdout === 'string' || typeof obj.stderr === 'string'
+  if (!hasStream) return false
+  return typeof obj.exitCode === 'number'
+    || typeof obj.exit_code === 'number'
+    || typeof obj.signal === 'string'
+    || typeof obj.executionTime === 'number'
+}
+
+function formatShellCommandResult(obj: Record<string, unknown>): string {
+  const stdout = typeof obj.stdout === 'string' ? obj.stdout : ''
+  const stderr = typeof obj.stderr === 'string' ? obj.stderr : ''
+  if (stdout && stderr) {
+    return stdout.endsWith('\n') ? `${stdout}${stderr}` : `${stdout}\n${stderr}`
+  }
+  if (stdout || stderr) return stdout || stderr
+  const code = typeof obj.exitCode === 'number' ? obj.exitCode : obj.exit_code
+  if (typeof code === 'number' && code !== 0) return `Exit code ${code}`
+  return ''
+}
+
+/** Cursor Grep success: `{ workspaceResults?: Record<root, GrepUnion>, activeEditorResult? }`. */
+function isCursorGrepResult(obj: Record<string, unknown>): boolean {
+  const workspaces = obj.workspaceResults
+  if (workspaces && typeof workspaces === 'object' && !Array.isArray(workspaces)) return true
+  return obj.activeEditorResult != null && typeof obj.activeEditorResult === 'object'
+}
+
+function formatGrepUnion(result: unknown): string {
+  const rec = result && typeof result === 'object' && !Array.isArray(result)
+    ? result as Record<string, unknown>
+    : null
+  if (!rec) return ''
+  const output = rec.output && typeof rec.output === 'object' && !Array.isArray(rec.output)
+    ? rec.output as Record<string, unknown>
+    : rec
+  const type = typeof rec.type === 'string' ? rec.type : ''
+  if (type === 'files' || Array.isArray(output.files)) {
+    const files = Array.isArray(output.files) ? output.files.filter((f) => typeof f === 'string') : []
+    return files.join('\n')
+  }
+  if (type === 'count' || Array.isArray(output.counts)) {
+    const counts = Array.isArray(output.counts) ? output.counts : []
+    const lines: string[] = []
+    for (const entry of counts) {
+      if (!entry || typeof entry !== 'object') continue
+      const row = entry as Record<string, unknown>
+      const file = typeof row.file === 'string' ? row.file : ''
+      const count = typeof row.count === 'number' ? row.count : ''
+      if (file) lines.push(count === '' ? file : `${file}:${count}`)
+    }
+    return lines.join('\n')
+  }
+  const matches = Array.isArray(output.matches) ? output.matches : []
+  const lines: string[] = []
+  for (const entry of matches) {
+    if (!entry || typeof entry !== 'object') continue
+    const row = entry as Record<string, unknown>
+    const file = typeof row.file === 'string' ? row.file : ''
+    if (!file) continue
+    const lineNo = typeof row.lineNumber === 'number' ? row.lineNumber : null
+    const line = typeof row.line === 'string' ? row.line : ''
+    if (lineNo != null && line) lines.push(`${file}:${lineNo}:${line}`)
+    else if (line) lines.push(`${file}:${line}`)
+    else lines.push(file)
+  }
+  return lines.join('\n')
+}
+
+function formatCursorGrepResult(obj: Record<string, unknown>): string {
+  const chunks: string[] = []
+  const editor = formatGrepUnion(obj.activeEditorResult)
+  if (editor) chunks.push(editor)
+  const workspaces = asPlainRecord(obj.workspaceResults)
+  if (workspaces) {
+    const roots = Object.keys(workspaces)
+    const multi = roots.length > 1
+    for (const root of roots) {
+      const body = formatGrepUnion(workspaces[root])
+      if (!body) continue
+      chunks.push(multi ? `${root}\n${body}` : body)
+    }
+  }
+  return chunks.join('\n')
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+/** Cursor Glob success: `{ files, totalFiles, clientTruncated?, ripgrepTruncated? }`. */
+function isCursorGlobResult(obj: Record<string, unknown>): boolean {
+  return Array.isArray(obj.files)
+    && obj.files.every((f) => typeof f === 'string')
+    && typeof obj.totalFiles === 'number'
+}
+
+function formatCursorGlobResult(obj: Record<string, unknown>): string {
+  return (obj.files as string[]).join('\n')
+}
+
 function isAgentOutputEnvelope(obj: Record<string, unknown>): boolean {
   const t = obj.type
   return (
@@ -233,6 +336,9 @@ function isAgentOutputEnvelope(obj: Record<string, unknown>): boolean {
     || (obj.Content != null && typeof obj.Content === 'object')
     || Array.isArray(obj.results)
     || (obj.action != null && typeof obj.action === 'object')
+    || isShellCommandResult(obj)
+    || isCursorGrepResult(obj)
+    || isCursorGlobResult(obj)
   )
 }
 
@@ -308,6 +414,18 @@ export function formatAgentToolOutput(raw: unknown): string {
   if (obj.type === 'GrepSearch' || obj.type === 'grep' || Array.isArray(obj.stdout)) {
     const text = bytesOrStringToText(obj.stdout ?? obj.content ?? obj.output)
     if (text) return text
+  }
+
+  if (isShellCommandResult(obj)) {
+    return formatShellCommandResult(obj)
+  }
+
+  if (isCursorGrepResult(obj)) {
+    return formatCursorGrepResult(obj)
+  }
+
+  if (isCursorGlobResult(obj)) {
+    return formatCursorGlobResult(obj)
   }
 
   const action = obj.action

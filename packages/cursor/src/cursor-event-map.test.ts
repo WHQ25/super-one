@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'vitest'
+import { applyContentDelta } from '@superone/shared/content-delta'
+import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
 import {
   CursorTurnCallIdBridge,
   CursorTurnUsage,
   extractToolCallParts,
   mapConversationStep,
+  mapCursorContextUsageInfo,
   mapInteractionUpdate,
   mapSdkMessageLifecycle,
 } from './cursor-event-map'
+
+function applyEvents(events: AgentEvent[], content: ContentBlock[] = []): ContentBlock[] {
+  let next = content
+  for (const event of events) {
+    if (event.type === 'content_delta') next = applyContentDelta(next, event.delta)
+  }
+  return next
+}
 
 describe('mapInteractionUpdate', () => {
   it('maps text-delta to content_delta text', () => {
@@ -63,10 +74,83 @@ describe('mapInteractionUpdate', () => {
       delta: {
         type: 'tool_result',
         toolUseId: 'c1',
-        summary: JSON.stringify({ content: 'hello' }),
+        summary: JSON.stringify({ content: 'hello' }, null, 2),
         isError: false,
       },
     })
+  })
+
+  it('formats shell tool_result as stdout, not exitCode JSON', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-completed',
+      callId: 'c1',
+      toolCall: {
+        type: 'shell',
+        args: { command: 'bun run test' },
+        result: {
+          status: 'success',
+          value: {
+            exitCode: 0,
+            signal: '',
+            stdout: 'ok\n',
+            stderr: '',
+            executionTime: 30_000,
+          },
+        },
+      },
+    } as never)
+    expect(events).toHaveLength(2)
+    expect(events[1]).toMatchObject({
+      type: 'content_delta',
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'c1',
+        summary: 'ok\n',
+        isError: false,
+      },
+    })
+  })
+
+  it('formats grep workspaceResults as match lines, not JSON', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-completed',
+      callId: 'g1',
+      toolCall: {
+        type: 'grep',
+        args: { pattern: 'workspaceResults' },
+        result: {
+          status: 'success',
+          value: {
+            workspaceResults: {
+              '/Users/me/proj': {
+                type: 'content',
+                output: {
+                  matches: [{ file: 'docs/design/cursor-sdk-harness.md', lineNumber: 10, line: 'GrepSuccessSchema' }],
+                  totalMatches: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+    } as never)
+    expect(events[0]).toMatchObject({
+      delta: { type: 'tool_use', toolName: 'Grep', toolUseId: 'g1' },
+    })
+    expect(events[1]).toMatchObject({
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'g1',
+        summary: 'docs/design/cursor-sdk-harness.md:10:GrepSuccessSchema',
+      },
+    })
+  })
+
+  it('does not invent a tool id when callId is missing', () => {
+    expect(mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      toolCall: { type: 'shell', args: { command: 'ls' } },
+    } as never)).toEqual([])
   })
 
   it('still accepts flat legacy tool-call-completed', () => {
@@ -113,7 +197,7 @@ describe('mapInteractionUpdate', () => {
     } as never, { contextWindow: 100_000 })
     expect(ended[0]).toMatchObject({
       type: 'message_usage',
-      inputTokens: 11,
+      inputTokens: 10,
       outputTokens: 5,
       cacheReadTokens: 2_000_000,
       contextTokens: 2_000_011,
@@ -122,7 +206,7 @@ describe('mapInteractionUpdate', () => {
     expect(ended[1]).toEqual({ type: 'status_change', status: 'idle' })
   })
 
-  it('accumulates token-delta output without wiping billed input', () => {
+  it('accumulates token-delta output without wiping input', () => {
     const turnUsage = new CursorTurnUsage()
     mapInteractionUpdate('m1', {
       type: 'turn-ended',
@@ -138,12 +222,12 @@ describe('mapInteractionUpdate', () => {
     const second = mapInteractionUpdate('m1', { type: 'token-delta', tokens: 2 } as never, { turnUsage })
     expect(first[0]).toMatchObject({
       type: 'message_usage',
-      inputTokens: 100,
+      inputTokens: 80,
       outputTokens: 5,
     })
     expect(second[0]).toMatchObject({
       type: 'message_usage',
-      inputTokens: 100,
+      inputTokens: 80,
       outputTokens: 7,
     })
   })
@@ -529,6 +613,31 @@ describe('mapConversationStep', () => {
     )).toBe(false)
   })
 
+  it('ignores ConversationStep.id so onStep patches the live callId instead of forking a row', () => {
+    const bridge = new CursorTurnCallIdBridge()
+    bridge.observeDelta({
+      type: 'tool-call-started',
+      callId: 'real-call-1',
+      toolCall: { type: 'shell', args: { command: 'bun run test' } },
+    } as never)
+
+    const steps = mapConversationStep('m1', {
+      type: 'toolCall',
+      id: 'step-uuid',
+      message: {
+        type: 'shell',
+        args: { command: 'bun run test' },
+      },
+    } as never, {
+      resolveCallId: () => bridge.claimNextCallId(),
+    })
+    expect(steps).toHaveLength(1)
+    expect(steps[0]).toMatchObject({
+      type: 'content_delta',
+      delta: { type: 'tool_use', toolUseId: 'real-call-1', toolName: 'Bash' },
+    })
+  })
+
   it('skips SDK-shaped toolCall steps with no callId (does not invent tool_ ids)', () => {
     const steps = mapConversationStep('m1', {
       type: 'toolCall',
@@ -600,6 +709,43 @@ describe('mapConversationStep', () => {
       },
     })
   })
+
+  it('collapses started + completed + onStep(with extra id) into one Bash row showing stdout', () => {
+    const started = {
+      type: 'tool-call-started',
+      callId: 'c1',
+      toolCall: { type: 'shell', args: { command: 'bun run test' } },
+    } as never
+    const completed = {
+      type: 'tool-call-completed',
+      callId: 'c1',
+      toolCall: {
+        type: 'shell',
+        args: { command: 'bun run test' },
+        result: {
+          status: 'success',
+          value: { exitCode: 0, signal: '', stdout: 'ok\n', stderr: '', executionTime: 1 },
+        },
+      },
+    } as never
+    const bridge = new CursorTurnCallIdBridge()
+    bridge.observeDelta(started)
+
+    let content = applyEvents(mapInteractionUpdate('m1', started))
+    content = applyEvents(mapInteractionUpdate('m1', completed), content)
+    content = applyEvents(mapConversationStep('m1', {
+      type: 'toolCall',
+      id: 'step-uuid',
+      message: { type: 'shell', args: { command: 'bun run test' } },
+    } as never, { resolveCallId: () => bridge.claimNextCallId() }), content)
+
+    const uses = content.filter((b) => b.type === 'tool_use')
+    const results = content.filter((b) => b.type === 'tool_result')
+    expect(uses).toHaveLength(1)
+    expect(uses[0]).toMatchObject({ toolUseId: 'c1', toolName: 'Bash' })
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({ toolUseId: 'c1', summary: 'ok\n' })
+  })
 })
 
 describe('mapSdkMessageLifecycle', () => {
@@ -625,6 +771,38 @@ describe('mapSdkMessageLifecycle', () => {
         toolUseId: 'c1',
         input: JSON.stringify({ sessionId: 's1' }),
       },
+    })
+  })
+})
+
+describe('mapCursorContextUsageInfo', () => {
+  const usage = {
+    inputTokens: 80,
+    outputTokens: 20,
+    cacheReadTokens: 1_400_000,
+    cacheWriteTokens: 7_000,
+  }
+
+  it('returns billed categories without inventing a percentage when no window is known', () => {
+    expect(mapCursorContextUsageInfo(usage)).toMatchObject({
+      totalTokens: 1_407_100,
+      maxTokens: 0,
+      percentage: 0,
+      categories: [
+        { name: 'input', tokens: 80 },
+        { name: 'output', tokens: 20 },
+        { name: 'cacheRead', tokens: 1_400_000 },
+        { name: 'cacheWrite', tokens: 7_000 },
+      ],
+    })
+  })
+
+  it('uses prompt occupancy (input + cache) against a known window', () => {
+    expect(mapCursorContextUsageInfo(usage, { maxTokens: 300_000, model: 'opus' })).toMatchObject({
+      totalTokens: 1_407_080,
+      maxTokens: 300_000,
+      percentage: 100,
+      model: 'opus',
     })
   })
 })

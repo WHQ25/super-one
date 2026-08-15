@@ -4,8 +4,8 @@ import type {
   SDKMessage,
   SDKToolUseMessage,
 } from '@cursor/sdk'
-import type { AgentEvent } from '@superone/shared/agent-types'
-import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import type { AgentEvent, ContextUsageCategory, ContextUsageInfo } from '@superone/shared/agent-types'
+import { formatTranscriptToolResult, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 
 /** Map Cursor toolCall.type (and free-form names) to SuperOne tool display names. */
 export function toolDisplayName(name: string): string {
@@ -56,18 +56,35 @@ function strField(obj: unknown, key: string): string {
   return typeof v === 'string' ? v : ''
 }
 
+/** Keys that identify a Cursor tool call — never ConversationStep.`id` (a step uuid). */
+const TOOL_CALL_ID_KEYS = ['callId', 'toolCallId', 'call_id'] as const
+
 /** Real call id only — never invents `tool_<timestamp>` placeholders. */
 export function stableIdField(obj: unknown, ...keys: string[]): string | null {
   if (!obj || typeof obj !== 'object') return null
   const rec = obj as Record<string, unknown>
   for (const key of keys) {
-    if (typeof rec[key] === 'string' && rec[key]) return rec[key] as string
+    const v = rec[key]
+    if (typeof v === 'string' && v) return v
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v)
   }
   return null
 }
 
 function idField(obj: unknown, ...keys: string[]): string {
   return stableIdField(obj, ...keys) ?? `tool_${Date.now()}`
+}
+
+/**
+ * Stable Cursor tool-call id from a delta or ConversationStep.
+ * Skips generic `id` so an onStep uuid cannot fork a second ToolBlock.
+ */
+export function extractCursorCallId(update: unknown): string | null {
+  const rec = asRecord(update)
+  if (!rec) return null
+  const nested = asRecord(rec.toolCall) ?? asRecord(rec.message)
+  return stableIdField(rec, ...TOOL_CALL_ID_KEYS)
+    ?? (nested ? stableIdField(nested, ...TOOL_CALL_ID_KEYS) : null)
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -90,14 +107,14 @@ function stringifyPayload(value: unknown): string {
  * (`toolCall: { type, args, result? }`) or a flat legacy shape (`name`/`args`).
  */
 export function extractToolCallParts(update: unknown): {
-  callId: string
+  callId: string | null
   toolType: string
   args: unknown
   result: unknown
   isError: boolean
 } {
   const rec = asRecord(update) ?? {}
-  const callId = idField(rec, 'callId', 'toolCallId', 'id', 'call_id')
+  const callId = extractCursorCallId(update)
   const nested = asRecord(rec.toolCall)
   if (nested) {
     const toolType = typeof nested.type === 'string' && nested.type ? nested.type : 'Tool'
@@ -223,7 +240,7 @@ function toolResultEvent(
     delta: {
       type: 'tool_result',
       toolUseId: callId,
-      summary: stringifyPayload(result),
+      summary: formatTranscriptToolResult(result) || stringifyPayload(result),
       isError,
     },
   }
@@ -237,11 +254,6 @@ type CursorUsageFields = {
   reasoningTokens?: number
 }
 
-/** New tokens billed this call — cache reads are not uploaded. */
-function billedInputTokens(usage: CursorUsageFields): number {
-  return usage.inputTokens + usage.cacheWriteTokens
-}
-
 /** Last prompt size for the context ring (includes cache hits). */
 function contextTokensFromUsage(usage: CursorUsageFields): number {
   return usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
@@ -250,8 +262,9 @@ function contextTokensFromUsage(usage: CursorUsageFields): number {
 /**
  * Per-send live usage. Cursor `token-delta.tokens` is an increment (often 1),
  * not a running total and not a context fill — accumulating it as output keeps
- * the footer moving without wiping billed input. Authoritative turn/run usage
- * raises the totals; cache reads stay on `contextTokens` only.
+ * the footer moving without wiping input. Footer ↑ is raw `inputTokens` only
+ * (cache write stays on the context ring). Authoritative turn/run usage raises
+ * the totals; cache reads stay on `contextTokens` only.
  */
 export class CursorTurnUsage {
   input = 0
@@ -263,14 +276,13 @@ export class CursorTurnUsage {
   }
 
   applyInternalTurn(usage: CursorUsageFields): void {
-    this.input += billedInputTokens(usage)
+    this.input += usage.inputTokens
     if (usage.outputTokens > this.output) this.output = usage.outputTokens
     this.context = contextTokensFromUsage(usage)
   }
 
   applyRunTotals(usage: CursorUsageFields): void {
-    const billed = billedInputTokens(usage)
-    if (billed > this.input) this.input = billed
+    if (usage.inputTokens > this.input) this.input = usage.inputTokens
     if (usage.outputTokens > this.output) this.output = usage.outputTokens
   }
 }
@@ -286,7 +298,7 @@ export function mapCursorTokenUsage(
   return {
     type: 'message_usage',
     messageId,
-    inputTokens: billedInputTokens(usage),
+    inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cacheReadTokens: usage.cacheReadTokens,
     contextTokens,
@@ -296,10 +308,52 @@ export function mapCursorTokenUsage(
   }
 }
 
+const CURSOR_USAGE_CATEGORY_COLORS = {
+  input: '#22c55e',
+  output: '#f59e0b',
+  cacheRead: '#06b6d4',
+  cacheWrite: '#8b5cf6',
+} as const
+
+/**
+ * SDK TokenUsage has no context-window field. Categories are the billed
+ * breakdown; `maxTokens` is only set when the host already knows a window
+ * (catalog `context` param). Percentage is occupancy of the last prompt
+ * (input + cache), never invented from billed total alone.
+ */
+export function mapCursorContextUsageInfo(
+  usage: CursorUsageFields,
+  extras?: { maxTokens?: number | null; model?: string },
+): ContextUsageInfo {
+  const categories: ContextUsageCategory[] = []
+  if (usage.inputTokens > 0) {
+    categories.push({ name: 'input', tokens: usage.inputTokens, color: CURSOR_USAGE_CATEGORY_COLORS.input })
+  }
+  if (usage.outputTokens > 0) {
+    categories.push({ name: 'output', tokens: usage.outputTokens, color: CURSOR_USAGE_CATEGORY_COLORS.output })
+  }
+  if (usage.cacheReadTokens > 0) {
+    categories.push({ name: 'cacheRead', tokens: usage.cacheReadTokens, color: CURSOR_USAGE_CATEGORY_COLORS.cacheRead })
+  }
+  if (usage.cacheWriteTokens > 0) {
+    categories.push({ name: 'cacheWrite', tokens: usage.cacheWriteTokens, color: CURSOR_USAGE_CATEGORY_COLORS.cacheWrite })
+  }
+  const billed = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+  const prompt = contextTokensFromUsage(usage)
+  const maxTokens = extras?.maxTokens && extras.maxTokens > 0 ? extras.maxTokens : 0
+  return {
+    categories,
+    totalTokens: maxTokens > 0 ? prompt : billed,
+    maxTokens,
+    percentage: maxTokens > 0 ? Math.min(100, Math.round((prompt / maxTokens) * 1000) / 10) : 0,
+    model: extras?.model ?? '',
+  }
+}
+
 export interface MapInteractionOptions {
   /** Optional context window for turn-ended / token usage events. */
   contextWindow?: number | null
-  /** Per-send accumulator so token-delta does not wipe billed input. */
+  /** Per-send accumulator so token-delta does not wipe input. */
   turnUsage?: CursorTurnUsage
   /**
    * Nested `tool-call-delta.taskUpdate` ownership. Chat grouping only nests
@@ -368,6 +422,7 @@ export function mapInteractionUpdate(
     case 'tool-call-started':
     case 'partial-tool-call': {
       const parts = extractToolCallParts(update)
+      if (!parts.callId) break
       events.push(toolUseEvent(messageId, parts.callId, parts.toolType, parts.args, 'streaming'))
       if (parts.toolType === 'updateTodos' || parts.toolType === 'update_todos') {
         const todos = asRecord(parts.args)?.todos
@@ -397,8 +452,7 @@ export function mapInteractionUpdate(
         if (nestedType === 'shell-output-delta') {
           break
         }
-        const parentCallId = stableIdField(rec, 'callId', 'toolCallId', 'id', 'call_id')
-          ?? options?.parentToolUseId
+        const parentCallId = extractCursorCallId(rec) ?? options?.parentToolUseId
         events.push(...mapInteractionUpdate(messageId, taskUpdate as InteractionUpdate, {
           ...options,
           ...(parentCallId ? { parentToolUseId: parentCallId } : {}),
@@ -408,6 +462,7 @@ export function mapInteractionUpdate(
     }
     case 'tool-call-completed': {
       const parts = extractToolCallParts(update)
+      if (!parts.callId) break
       const args = mergeCursorToolResultArgs(parts.toolType, parts.args, parts.result)
       events.push(toolUseEvent(messageId, parts.callId, parts.toolType, args, 'complete'))
       events.push(toolResultEvent(messageId, parts.callId, parts.result, parts.isError))
@@ -566,9 +621,7 @@ export function mapConversationStep(
   if (stepType === 'toolCall') {
     const message = rec.message ?? rec.toolCall ?? rec
     const nested = asRecord(message)
-    const explicitCallId = stableIdField(rec, 'callId', 'toolCallId', 'id', 'call_id')
-      || stableIdField(nested, 'callId', 'toolCallId', 'id', 'call_id')
-    const callId = explicitCallId || options?.resolveCallId?.(step) || null
+    const callId = extractCursorCallId(rec) || options?.resolveCallId?.(step) || null
     if (!callId) {
       // No stable id — onDelta already owns the real tool_use row.
       return events
@@ -623,7 +676,7 @@ export class CursorTurnCallIdBridge {
     ) {
       return
     }
-    const callId = stableIdField(update, 'callId', 'toolCallId', 'id', 'call_id')
+    const callId = extractCursorCallId(update)
     if (!callId || this.seen.has(callId)) return
     this.seen.add(callId)
     this.queue.push(callId)

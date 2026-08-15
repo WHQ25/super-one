@@ -361,6 +361,12 @@ describe('Codex resource selectors', () => {
     expect(selectActiveCodexSkills(useChatStore.getState())[0]?.name).toBe('codex-skill-1')
   })
 
+  it('selectActiveCursorSlashItems returns the same empty-array reference when the catalog is missing', () => {
+    const state = useChatStore.getState()
+    expect(selectActiveCursorSlashItems(state)).toEqual([])
+    expect(selectActiveCursorSlashItems(state)).toBe(selectActiveCursorSlashItems(state))
+  })
+
   it('selectActiveCursorSlashItems returns the project-scoped Cursor slash catalog', () => {
     setupActiveProject()
     useChatStore.setState((s) => ({

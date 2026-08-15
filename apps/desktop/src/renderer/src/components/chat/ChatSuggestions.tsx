@@ -59,6 +59,10 @@ const HARNESS_RANK_DAYS = 7
  * the menu tab label.
  */
 let rememberedSuggestionMenuHarness: SuggestionHarnessPreference | null | undefined
+/** Survives ProviderSelector remounts. connectCursor failure clears
+ *  `initializedHarnesses`, and empty-session harness switches mint a new
+ *  session id — without this latch that pair retries forever. */
+let cursorHarnessBootstrapped = false
 
 /** Shared trigger chrome — flex-none so short labels (e.g. Codex) don't stretch. */
 const tabTriggerLayoutClass =
@@ -132,6 +136,8 @@ export function ProviderSelector({
 
   useEffect(() => {
     if (!isCatalogHarnessEnabled(harnessCatalog, 'cursor')) return
+    if (cursorHarnessBootstrapped) return
+    cursorHarnessBootstrapped = true
     void initializeHarness('cursor')
   }, [harnessCatalog, initializeHarness])
 

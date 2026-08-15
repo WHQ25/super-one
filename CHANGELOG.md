@@ -4,6 +4,14 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.7-alpha] - 2026-08-15
+
+### Fixed
+
+- Cursor: stop remaining boot storms on an empty catalog — permission coerce and harness bootstrap now latch so a failed write cannot re-arm React #185.
+- Cursor: render MCP / Read / Edit tool rows on the shared chat UI instead of raw JSON, and keep the turn token footer from jumping into the millions (cache reads were summed into input tokens).
+- Chat: drop background-task notification summaries that just repeat the task title or a status word; keep a real outcome like `exit 0`.
+
 ## [0.53.6-alpha] - 2026-08-15
 
 ### Added

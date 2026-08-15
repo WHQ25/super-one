@@ -19,11 +19,7 @@ import {
   resolveAgentTurnDefaults,
 } from '@superone/runtime/settings'
 import { probeSandboxRpc } from '@superone/runtime/sandbox'
-import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
-import { isClaudeBinaryOverrideRunnable } from '../session/claude-turn-runner'
-import { assertSessionHarnessRuntimeReady, probeHarnessReadiness } from '../session/harness-runtime-ready'
-import { resolveCliReleaseVersion } from '../cli-release-version'
-import { disableHarness, enableHarness } from '../session/harness-enable'
+import type { RpcHostHooks } from '@superone/runtime/server'
 import { cloneRepository } from '@superone/shared/git-clone'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join as pathJoin, resolve as pathResolve } from 'node:path'
@@ -43,7 +39,6 @@ import type { WorkspaceWatchService } from '../workspace/watch-service'
 import type { WorkspaceTailWatchService } from '../workspace/tail-watch-service'
 import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
-import { listHarnessModels } from '../provider/resolve-service'
 import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
 import {
   dispatchResourceRpc,
@@ -105,6 +100,7 @@ export interface RpcContext {
   automationService: AutomationService
   /** Session-layer provider profiles (claude-base, custom multi-profile, …). */
   sessionProviders: SessionProviderStore
+  hooks: RpcHostHooks
   startedAt: number
   simulatedHarness?: boolean
   requestId?: string
@@ -650,7 +646,7 @@ function handleProviderListModels(payload: unknown, ctx: RpcContext): RpcResult 
   const apiProviderId =
     typeof p.apiProviderId === 'string' && p.apiProviderId.trim() ? p.apiProviderId.trim() : null
   return {
-    result: listHarnessModels(ctx.providers, harness, apiProviderId, {
+    result: ctx.hooks.listHarnessModels(ctx.providers, harness, apiProviderId, {
       experimentalClaudeOpenAiChatEnabled:
         loadNodeAgentSettings(ctx.settingsConfigPath).experimentalClaudeOpenAiChatEnabled,
     }),
@@ -676,15 +672,15 @@ function handleDescriptor(ctx: RpcContext): RpcResult {
   // Advertise enabled + ready catalog entries plus directly runnable bundled/
   // binary overrides. Simulated test mode pre-marks the catalog ready.
   const harnessIds = [...ctx.harnesses.readySessionHarnessIds()]
-  if (isCodexBinaryOverrideRunnable() && !harnessIds.includes('codex')) {
+  if (ctx.hooks.isCodexBinaryOverrideRunnable() && !harnessIds.includes('codex')) {
     harnessIds.push('codex')
   }
-  if (isClaudeBinaryOverrideRunnable() && !harnessIds.includes('claude')) {
+  if (ctx.hooks.isClaudeBinaryOverrideRunnable() && !harnessIds.includes('claude')) {
     harnessIds.push('claude')
   }
   let cliVersion: string | undefined
   try {
-    cliVersion = resolveCliReleaseVersion()
+    cliVersion = ctx.hooks.resolveReleaseVersion()
   } catch {
     cliVersion = process.env.SUPERONE_CLI_VERSION?.trim() || undefined
   }
@@ -754,7 +750,7 @@ function handleHarnessProbe(payload: unknown, ctx: RpcContext): RpcResult {
     return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
   }
   try {
-    const result = probeHarnessReadiness(ctx.harnesses, id, ctx.providers ?? null)
+    const result = ctx.hooks.probeHarnessReadiness(ctx.harnesses, id, ctx.providers ?? null)
     return { result: { ...result, status: ctx.harnesses.get(id) } }
   } catch (err) {
     return mapThrown(err)
@@ -774,7 +770,7 @@ async function handleHarnessEnable(payload: unknown, ctx: RpcContext): Promise<R
     const args = Array.isArray(p.args)
       ? p.args.filter((a): a is string => typeof a === 'string')
       : undefined
-    const status = await enableHarness(
+    const status = await ctx.hooks.enableHarness(
       ctx.harnesses,
       {
         harnessId: id,
@@ -800,7 +796,7 @@ function handleHarnessDisable(payload: unknown, ctx: RpcContext): RpcResult {
     return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
   }
   try {
-    return { result: disableHarness(ctx.harnesses, id) }
+    return { result: ctx.hooks.disableHarness(ctx.harnesses, id) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -1858,9 +1854,9 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
   // Catalog ready OR a bundled/binary runtime that can launch without catalog install.
   const catalogReady = ctx.harnesses.isSessionHarnessRunnable(harnessId)
   const codexOverride =
-    harnessId === 'codex' && isCodexBinaryOverrideRunnable()
+    harnessId === 'codex' && ctx.hooks.isCodexBinaryOverrideRunnable()
   const claudeOverride =
-    harnessId === 'claude' && isClaudeBinaryOverrideRunnable()
+    harnessId === 'claude' && ctx.hooks.isClaudeBinaryOverrideRunnable()
   if (!catalogReady && !codexOverride && !claudeOverride) {
     return {
       error: {
@@ -1877,7 +1873,7 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
   // Fail-closed: catalog ready must still have a real binary/runtime (no silent sim).
   // Lab overrides (claude SDK / SUPERONE_CODEX_BINARY) satisfy assertSessionHarnessRuntimeReady.
   if (!ctx.simulatedHarness) {
-    const runtime = assertSessionHarnessRuntimeReady(harnessId, ctx.harnesses)
+    const runtime = ctx.hooks.assertSessionHarnessRuntimeReady(harnessId, ctx.harnesses)
     if (!runtime.ok) {
       return {
         error: {

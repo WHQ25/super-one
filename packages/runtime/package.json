@@ -29,7 +29,13 @@
     "./drafts/*": "./src/drafts/*.ts",
     "./llm-proxy": "./src/llm-proxy/index.ts",
     "./llm-proxy/*": "./src/llm-proxy/*.ts",
-    "./sqlite": "./src/sqlite.ts"
+    "./sqlite": "./src/sqlite.ts",
+    "./workspace": "./src/workspace/index.ts",
+    "./workspace/*": "./src/workspace/*.ts",
+    "./db": "./src/db/index.ts",
+    "./db/*": "./src/db/*.ts",
+    "./server": "./src/server/index.ts",
+    "./server/*": "./src/server/*.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -37,13 +43,15 @@
   },
   "dependencies": {
     "@superone/shared": "workspace:*",
+    "better-sqlite3": "^13.0.1",
     "croner": "^10.0.1",
     "fzf": "^0.5.2",
-    "smol-toml": "^1.6.0"
+    "smol-toml": "^1.6.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "better-sqlite3": "^13.0.1",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.8.3",
     "vitest": "^4.0.0"
   },

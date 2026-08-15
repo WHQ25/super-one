@@ -5,15 +5,16 @@ import { tmpdir } from 'node:os'
 import { dispatchRpc, type RpcContext } from './handlers'
 import type { AuthenticatedClient } from '../auth/auth-service'
 import type { NodeIdentity } from '../identity'
+import { createCliRpcHostHooks } from './host-hooks'
 import { loadNodeAgentSettings } from '@superone/runtime/settings'
 
 function client(scopes: AuthenticatedClient['scopes']): AuthenticatedClient {
   return {
     clientSessionId: 'c1',
-    deviceId: 'd1',
     scopes,
-    pairedAt: Date.now(),
-  } as AuthenticatedClient
+    devicePublicKeyFingerprint: 'fp',
+    devicePublicKeyPem: 'pem',
+  }
 }
 
 function baseCtx(over: Partial<RpcContext> & { settingsConfigPath: string }): RpcContext {
@@ -102,6 +103,7 @@ function baseCtx(over: Partial<RpcContext> & { settingsConfigPath: string }): Rp
       ) => fn(),
     } as unknown as RpcContext['idempotency'],
     providers: {} as RpcContext['providers'],
+    drafts: {} as RpcContext['drafts'],
     automations: {} as RpcContext['automations'],
     automationService: {} as RpcContext['automationService'],
     sessionProviders: {
@@ -119,6 +121,7 @@ function baseCtx(over: Partial<RpcContext> & { settingsConfigPath: string }): Rp
       },
       delete: () => false,
     },
+    hooks: createCliRpcHostHooks(),
     startedAt: Date.now(),
     simulatedHarness: true,
     idempotencyKey: 'idem-1',

@@ -16,13 +16,16 @@ add harness packages only when that harness is enabled.
 | `@superone/runtime/spawn-env` | `buildSafeEnv` / `sanitizeEnv` / `mergeLoopbackNoProxy` (child process env safety + loopback proxy bypass) |
 | `@superone/runtime/crypto` | sha256/hmac/ed25519 helpers |
 | `@superone/runtime/sqlite` | Minimal `SqliteDatabase` type for host DB injection |
+| `@superone/runtime/workspace` | `ProjectRegistry` (node project catalog) |
+| `@superone/runtime/db` | Node SQLite open + schema (`openNodeDatabase`) |
+| `@superone/runtime/server` | Identity, pairing auth, HTTP/WS transport (`startNodeServer`) |
 
 ## Not in runtime (host / product)
 
-HTTP/WS server, pairing auth product surface, RPC route table, systemd units,
-Electron IPC, full git worktree product ops that log to desktop logger, harness
-backends, desktop-only request coalescing (`AsyncCoalescer`), local disk crawl
-(`fdir` + `.gitignore` in desktop `fuzzy-file-search`).
+RPC route table, systemd units, Electron IPC, full git worktree product ops
+that log to desktop logger, harness backends, desktop-only request coalescing
+(`AsyncCoalescer`), local disk crawl (`fdir` + `.gitignore` in desktop
+`fuzzy-file-search`). Hosts inject `RpcHostHooks` into `startNodeServer`.
 
 Session **state** fork (`SessionRuntime.fork`) lives here; **SDK/thread** fork
 lives in harness packages (`forkClaudeTranscript`, `forkCodexThread`) so desktop

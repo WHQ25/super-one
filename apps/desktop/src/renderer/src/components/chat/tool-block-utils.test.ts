@@ -161,6 +161,29 @@ describe('computeLineDelta', () => {
     expect(computeLineDelta('Edit', { old_string: '', new_string: '' })).toBeNull()
   })
 
+  it('counts Cursor Edit result.diff after the call completes', () => {
+    const diff = [
+      '--- a/a.ts',
+      '+++ b/a.ts',
+      '@@ -1,2 +1,3 @@',
+      ' keep',
+      '-old',
+      '+new1',
+      '+new2',
+    ].join('\n')
+    expect(computeLineDelta('Edit', { path: 'a.ts', diff }))
+      .toEqual({ added: 2, removed: 1 })
+  })
+
+  it('falls back to Cursor linesAdded/linesRemoved when the diff has no hunks', () => {
+    expect(computeLineDelta('Edit', {
+      path: 'a.ts',
+      diffString: '--- a\n+++ b\n',
+      linesAdded: 1,
+      linesRemoved: 1,
+    })).toEqual({ added: 1, removed: 1 })
+  })
+
   it('should handle FileChange with add kind', () => {
     expect(computeLineDelta('FileChange', { kind: 'add', diff: 'line1\nline2' }))
       .toEqual({ added: 2, removed: 0 })

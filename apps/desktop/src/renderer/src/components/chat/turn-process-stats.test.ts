@@ -41,6 +41,24 @@ describe('summarizeClaudeProcess', () => {
     expect(stats).toEqual({ toolCalls: 3, filesChanged: 2, added: 5, removed: 2 })
   })
 
+  it('counts Cursor Edit mutations from result.diff when old/new strings are absent', () => {
+    const stats = summarizeClaudeProcess(
+      [
+        {
+          kind: 'block',
+          block: {
+            type: 'tool_use',
+            toolName: 'Edit',
+            toolUseId: 'e1',
+            input: '{"file_path":"a.ts","diff":"@@ -1,1 +1,2 @@\\n-old\\n+new1\\n+new2"}',
+          },
+        },
+      ],
+      opts,
+    )
+    expect(stats).toEqual({ toolCalls: 1, filesChanged: 1, added: 2, removed: 1 })
+  })
+
   it('ignores hidden tools and denied / error mutations', () => {
     const stats = summarizeClaudeProcess(
       [

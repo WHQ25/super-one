@@ -90,6 +90,21 @@ export function computeStreamingEditDelta(oldStr: string, newStr: string): { add
   return result
 }
 
+/** Count +/− from a unified/prefixed diff, then Cursor result line totals. */
+function countParamsDiffDelta(params: Record<string, unknown>): { added: number; removed: number } | null {
+  const diff = String(params.diff ?? params.diffString ?? '')
+  if (diff) {
+    const counted = countUnifiedDiffDelta(diff) ?? countPrefixedDiffDelta(diff)
+    if (counted) return counted
+  }
+  const added = Number(params.linesAdded)
+  const removed = Number(params.linesRemoved)
+  const hasAdded = Number.isFinite(added) && added > 0
+  const hasRemoved = Number.isFinite(removed) && removed > 0
+  if (!hasAdded && !hasRemoved) return null
+  return { added: hasAdded ? added : 0, removed: hasRemoved ? removed : 0 }
+}
+
 export function computeLineDelta(toolName: string, params: Record<string, unknown>): { added: number; removed: number } | null {
   if (toolName === 'Write') {
     const content = String(params.content ?? '')
@@ -100,9 +115,13 @@ export function computeLineDelta(toolName: string, params: Record<string, unknow
   if (toolName === 'Edit') {
     const oldStr = String(params.old_string ?? '')
     const newStr = String(params.new_string ?? '')
-    if (!oldStr && !newStr) return null
-    const { added, removed } = countEditDelta(oldStr, newStr)
-    return added > 0 || removed > 0 ? { added, removed } : null
+    if (oldStr || newStr) {
+      const { added, removed } = countEditDelta(oldStr, newStr)
+      return added > 0 || removed > 0 ? { added, removed } : null
+    }
+    // Cursor Edit has no old/new strings — the expanded body already renders
+    // result.diffString, so the header uses the same payload after the call ends.
+    return countParamsDiffDelta(params)
   }
   if (toolName === 'FileChange') {
     const kind = String(params.kind ?? '')

@@ -892,8 +892,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
 
   const lineDelta = useMemo(() => {
     if (isDenied || isError) return null
-    if (isStreaming && toolName === 'Edit') {
-      if (!('new_string' in params)) return null
+    if (isStreaming && toolName === 'Edit' && 'new_string' in params) {
       return computeStreamingEditDelta(String(params.old_string ?? ''), String(params.new_string ?? ''))
     }
     return computeLineDelta(toolName, params)

@@ -122,6 +122,12 @@ describe('computeLineDelta', () => {
     expect(computeLineDelta('Edit', { old_string: '', new_string: '' })).toBeNull()
   })
 
+  it('counts Edit header delta from unified diff when old/new strings are absent', () => {
+    const diff = '@@ -1,1 +1,2 @@\n-old\n+new1\n+new2'
+    expect(computeLineDelta('Edit', { file_path: 'a.ts', diff }))
+      .toEqual({ added: 2, removed: 1 })
+  })
+
   it('should handle FileChange add kind', () => {
     expect(computeLineDelta('FileChange', {
       kind: 'add',

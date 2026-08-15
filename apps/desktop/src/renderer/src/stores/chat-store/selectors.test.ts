@@ -68,6 +68,7 @@ const {
   selectClaudeSlashCommands,
   selectCodexModels,
   selectCodexPrompts,
+  selectCursorModels,
   selectCodexResources,
 } = await import('./selectors')
 const { selectOpenCodeAgents, selectOpenCodeCommands } = await import('./opencode-selectors')
@@ -372,6 +373,22 @@ describe('Codex resource selectors', () => {
       },
     }))
     expect(selectActiveCursorSlashItems(useChatStore.getState())[0]?.name).toBe('review')
+  })
+})
+
+describe('Cursor resource selectors', () => {
+  it('returns the same empty-array reference when the Cursor catalog is missing', () => {
+    const state = useChatStore.getState()
+    expect(state.harnessResources.cursor).toBeNull()
+    expect(selectCursorModels(state)).toEqual([])
+    expect(selectCursorModels(state)).toBe(selectCursorModels(state))
+  })
+
+  it('returns the live Cursor catalog once loaded', () => {
+    useChatStore.getState().setHarnessResources('cursor', {
+      models: [{ id: 'claude-sonnet-4-5', name: 'Sonnet', description: '' }],
+    })
+    expect(selectCursorModels(useChatStore.getState()).map((m) => m.id)).toEqual(['claude-sonnet-4-5'])
   })
 })
 

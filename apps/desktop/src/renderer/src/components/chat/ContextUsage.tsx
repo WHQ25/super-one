@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels } from '@/stores/chat'
+import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels, selectCursorModels } from '@/stores/chat'
 import { resolveRingContextWindow } from '@superone/shared/agent-types'
 import { resolveCursorSelectedContextWindow } from '@superone/cursor/cursor-model-selection'
 import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
@@ -39,7 +39,10 @@ export function ContextUsage() {
   const detailedUsage = useActiveSession((s) => s.detailedUsage)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
   const availableModels = useChatStore(selectClaudeModels)
-  const cursorModels = useChatStore((s) => s.harnessResources.cursor?.models ?? [])
+  // Must be a cached snapshot — `?? []` mints a new array when Cursor is
+  // unloaded, so React 19's useSyncExternalStore treats every store tick as a
+  // change and hits #185 (Maximum update depth exceeded).
+  const cursorModels = useChatStore(selectCursorModels)
   const activeProject = useChatStore((s) => s.activeProject)
   const setDetailedUsage = useChatStore((s) => s.setDetailedUsage)
   const { catalog } = useModelCatalog()

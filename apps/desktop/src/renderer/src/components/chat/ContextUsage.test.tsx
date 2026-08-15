@@ -42,6 +42,7 @@ vi.mock('@/stores/chat', () => ({
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
   useSessionScope: () => null,
   selectClaudeModels: () => chatState.availableModels,
+  selectCursorModels: () => chatState.harnessResources.cursor.models,
 }))
 
 vi.mock('@/hooks/useModelCatalog', () => ({

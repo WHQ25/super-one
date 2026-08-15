@@ -1075,6 +1075,7 @@ export {
   selectCodexResources,
   selectClaudeModels,
   selectCodexModels,
+  selectCursorModels,
   selectCodexPrompts,
   selectActiveCodexSkills,
   selectActiveCursorSlashItems,

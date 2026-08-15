@@ -105,6 +105,9 @@ export const selectCodexModels = (s: ChatStore): ModelOption[] => {
   }
   return s.harnessResources.codex?.models ?? EMPTY_MODELS
 }
+/** Cursor catalog lives on the desktop harness cache only. */
+export const selectCursorModels = (s: ChatStore): ModelOption[] =>
+  s.harnessResources.cursor?.models ?? EMPTY_MODELS
 export const selectCodexPrompts = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.codex?.prompts ?? EMPTY_SLASH_COMMANDS
 export const selectActiveCodexSkills = (s: ChatStore): SkillInfo[] => {
   if (!s.activeProject) return EMPTY_SKILL_INFOS

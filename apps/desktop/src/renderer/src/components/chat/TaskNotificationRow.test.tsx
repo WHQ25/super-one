@@ -40,4 +40,30 @@ describe('background task notification row', () => {
     render(<TaskNotificationRow meta={{ status: 'completed' }} />)
     expect(screen.getByText('Background task finished')).toBeInTheDocument()
   })
+
+  it('does not repeat a summary that is the same as the task title', () => {
+    render(
+      <TaskNotificationRow
+        meta={{
+          status: 'completed',
+          description: 'Inspect what the domain currently serves',
+          summary: 'Inspect what the domain currently serves',
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Background task finished')).toBeInTheDocument()
+    expect(screen.getAllByText('Inspect what the domain currently serves')).toHaveLength(1)
+  })
+
+  it('hides a status-word summary the label already covers', () => {
+    render(
+      <TaskNotificationRow
+        meta={{ status: 'completed', description: 'watch domain', summary: 'completed' }}
+      />,
+    )
+
+    expect(screen.getByText('watch domain')).toBeInTheDocument()
+    expect(screen.queryByText(/^completed$/i)).not.toBeInTheDocument()
+  })
 })

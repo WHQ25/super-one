@@ -61,4 +61,27 @@ describe('buildOrphanTaskNotificationMessage', () => {
       buildOrphanTaskNotificationMessage(notification({ taskId: 'bdl_1', toolUseId: undefined }), [], {}),
     ).toBeNull()
   })
+
+  it('omits a summary that restates the task title from meta and export text', () => {
+    const row = buildOrphanTaskNotificationMessage(
+      notification({ summary: 'Inspect what the domain currently serves' }),
+      [],
+      { toolu_1: { description: 'Inspect what the domain currently serves' } },
+    )
+    expect(row?.metadata?.taskNotification?.description).toBe('Inspect what the domain currently serves')
+    expect(row?.metadata?.taskNotification?.summary).toBeUndefined()
+    const text = row?.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
+    expect(text).toBe('Background task completed: Inspect what the domain currently serves')
+  })
+
+  it('keeps a distinct outcome in meta and export text', () => {
+    const row = buildOrphanTaskNotificationMessage(
+      notification({ summary: 'exit 0' }),
+      [],
+      { toolu_1: { description: 'watch domain' } },
+    )
+    expect(row?.metadata?.taskNotification?.summary).toBe('exit 0')
+    const text = row?.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
+    expect(text).toBe('Background task completed: watch domain — exit 0')
+  })
 })

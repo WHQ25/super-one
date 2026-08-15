@@ -1,4 +1,5 @@
 import type { TaskNotificationMeta } from '@superone/shared/agent-types'
+import { usefulTaskNotificationSummary } from '@superone/shared/task-notification'
 import { BellRing } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
@@ -28,6 +29,7 @@ function basename(path: string): string {
 export function TaskNotificationRow({ meta }: { meta: TaskNotificationMeta }) {
   const { t } = useTranslation()
   const label = t(`chat.taskNotification.${meta.status}`)
+  const summary = usefulTaskNotificationSummary(meta.summary, meta.description)
   const usage = meta.usage
 
   return (
@@ -58,9 +60,9 @@ export function TaskNotificationRow({ meta }: { meta: TaskNotificationMeta }) {
             </TooltipProvider>
           )}
         </div>
-        {meta.summary && (
+        {summary && (
           <div className="line-clamp-2 max-w-full text-right leading-snug text-muted-foreground/80">
-            {meta.summary}
+            {summary}
           </div>
         )}
       </div>

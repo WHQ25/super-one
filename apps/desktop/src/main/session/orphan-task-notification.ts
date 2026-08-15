@@ -1,5 +1,6 @@
 import type { AgentEvent, ChatMessage, TaskNotificationMeta } from '@superone/shared/agent-types'
 import { resolveTaskToolUseId } from '@superone/shared/subagent-routing'
+import { usefulTaskNotificationSummary } from '@superone/shared/task-notification'
 
 type TaskNotificationEvent = Extract<AgentEvent, { type: 'task_notification' }>
 
@@ -71,7 +72,7 @@ export function buildOrphanTaskNotificationMessage(
   if (hasVisibleToolBlock(messages, toolUseId)) return null
 
   const description = (toolUseId ? taskProgress[toolUseId]?.description : undefined)?.trim() || undefined
-  const summary = event.summary?.trim() || undefined
+  const summary = usefulTaskNotificationSummary(event.summary, description)
   const meta: TaskNotificationMeta = {
     status: event.taskStatus,
     ...(description ? { description } : {}),

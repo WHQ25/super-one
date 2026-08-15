@@ -957,6 +957,14 @@ export type Messages = {
       loadingHint: string
     }
     dropToAttach: string
+    contextUsage: {
+      usedOfMax: string
+      percent: string
+      tokens: string
+      exceeds: string
+      cost: string
+      free: string
+    }
     /** Composer send failures (local IPC or remote node). */
     send: {
       failed: string
@@ -3712,6 +3720,14 @@ export const en: Messages = {
       loadingHint: 'Fetching slash commands from the agent',
     },
     dropToAttach: 'Drop images or PDFs to attach',
+    contextUsage: {
+      usedOfMax: '{{used}} / {{max}}',
+      percent: '{{percent}}%',
+      tokens: '{{count}} tokens',
+      exceeds: 'Exceeds the current model limit',
+      cost: '${{amount}}',
+      free: 'Free',
+    },
     send: {
       failed: 'Failed to send message: {{message}}',
       remoteUnavailable:

@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { cn } from '@superone/ui/lib/utils'
 import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels, selectCursorModels } from '@/stores/chat'
-import { resolveRingContextWindow } from '@superone/shared/agent-types'
+import { resolveRingContextWindow, type ContextUsageCategory } from '@superone/shared/agent-types'
 import { resolveCursorSelectedContextWindow } from '@superone/cursor/cursor-model-selection'
 import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { stripOneM } from '@/lib/model-id'
-
-function formatTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
-  return String(n)
-}
+import { formatTokens } from './chat-shared'
 
 function lookupCatalogContextWindow(
   modelIds: Array<string | null | undefined>,
@@ -26,7 +23,99 @@ function lookupCatalogContextWindow(
   return null
 }
 
+const RING = { size: 16, cx: 8, cy: 8, r: 6 }
+const RING_CIRC = 2 * Math.PI * RING.r
+
+function occupancyColor(pct: number, exceeded: boolean): string {
+  if (exceeded || pct > 0.7) return '#ef4444'
+  if (pct > 0.4) return '#f59e0b'
+  return '#22c55e'
+}
+
+function UsageRing({
+  hasWindow,
+  occupancyPct,
+  exceeded,
+  segments,
+}: {
+  hasWindow: boolean
+  occupancyPct: number
+  exceeded: boolean
+  segments: Array<{ tokens: number; color: string }>
+}) {
+  if (hasWindow) {
+    const usedArc = RING_CIRC * occupancyPct
+    return (
+      <svg viewBox={`0 0 ${RING.size} ${RING.size}`} className="size-4 shrink-0">
+        <circle
+          cx={RING.cx}
+          cy={RING.cy}
+          r={RING.r}
+          fill="none"
+          className="stroke-muted-foreground/35"
+          strokeWidth="2"
+        />
+        {occupancyPct > 0 && (
+          <circle
+            cx={RING.cx}
+            cy={RING.cy}
+            r={RING.r}
+            fill="none"
+            stroke={occupancyColor(occupancyPct, exceeded)}
+            strokeWidth="2"
+            strokeDasharray={`${usedArc} ${RING_CIRC - usedArc}`}
+            strokeDashoffset={RING_CIRC * 0.25}
+            strokeLinecap="round"
+          />
+        )}
+      </svg>
+    )
+  }
+
+  const total = segments.reduce((sum, s) => sum + s.tokens, 0)
+  let offset = 0
+  return (
+    <svg viewBox={`0 0 ${RING.size} ${RING.size}`} className="size-4 shrink-0">
+      <circle
+        cx={RING.cx}
+        cy={RING.cy}
+        r={RING.r}
+        fill="none"
+        className="stroke-muted-foreground/35"
+        strokeWidth="2"
+      />
+      {total > 0 && segments.map((seg) => {
+        const arc = RING_CIRC * (seg.tokens / total)
+        const dashOffset = RING_CIRC * 0.25 - offset
+        offset += arc
+        return (
+          <circle
+            key={`${seg.color}-${seg.tokens}`}
+            cx={RING.cx}
+            cy={RING.cy}
+            r={RING.r}
+            fill="none"
+            stroke={seg.color}
+            strokeWidth="2"
+            strokeDasharray={`${arc} ${RING_CIRC - arc}`}
+            strokeDashoffset={dashOffset}
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
+function categoryLabel(name: string, t: (key: string) => string): string {
+  if (name === 'input') return t('settings.usage.tokenTypes.input')
+  if (name === 'output') return t('settings.usage.tokenTypes.output')
+  if (name === 'cacheRead') return t('settings.usage.tokenTypes.cacheRead')
+  if (name === 'cacheWrite' || name === 'cacheCreation') return t('settings.usage.tokenTypes.cacheCreation')
+  return name
+}
+
 export function ContextUsage() {
+  const { t } = useTranslation()
   const scope = useSessionScope()
   const contextTokens = useActiveSession((s) => s.contextTokens)
   const contextWindowFromSession = useActiveSession((s) => s.contextWindow)
@@ -52,7 +141,6 @@ export function ContextUsage() {
   )
 
   const [open, setOpen] = useState(false)
-  const [expanded, setExpanded] = useState(false)
   const prevStatusRef = useRef(status)
   const prevSessionRef = useRef<{ sid: string | null; model: string }>({ sid: activeSessionId ?? null, model: selectedModel })
 
@@ -111,24 +199,30 @@ export function ContextUsage() {
       ? resolveCursorSelectedContextWindow(cursorContextParam, currentModel)
       : null,
   })
-  const pct = contextWindow ? Math.min(effectiveTokens / contextWindow, 1) : 0
+  const hasWindow = Boolean(contextWindow)
+  const occupancyPct = contextWindow ? Math.min(effectiveTokens / contextWindow, 1) : 0
+  const occupancyPercent = contextWindow ? Math.round((effectiveTokens / contextWindow) * 100) : 0
   const exceeded = contextWindow ? effectiveTokens > contextWindow : false
-  const radius = 5
-  const circumference = 2 * Math.PI * radius
-  const usedArc = circumference * pct
+  const categories = (detailedUsage?.categories ?? []).filter((c) => c.tokens > 0)
+  const ringSegments: ContextUsageCategory[] = categories.length > 0
+    ? categories
+    : effectiveTokens > 0
+      ? [{ name: 'tokens', tokens: effectiveTokens, color: 'var(--muted-foreground)' }]
+      : []
+  const categorySum = categories.reduce((sum, c) => sum + c.tokens, 0)
+  const barDenom = hasWindow && !exceeded && contextWindow
+    ? contextWindow
+    : Math.max(categorySum, effectiveTokens, 1)
+  const barSegments = (categories.length > 0 ? categories : ringSegments).map((c) => ({
+    ...c,
+    pct: (c.tokens / barDenom) * 100,
+  }))
+  const barRemaining = Math.max(0, 100 - barSegments.reduce((sum, s) => sum + s.pct, 0))
 
   const popoverRef = useRef<HTMLDivElement>(null)
 
   const toggleOpen = useCallback(() => {
-    setOpen((v) => {
-      if (v) setExpanded(false)
-      return !v
-    })
-  }, [])
-
-  const toggleExpanded = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    setExpanded((v) => !v)
+    setOpen((v) => !v)
   }, [])
 
   useEffect(() => {
@@ -136,7 +230,6 @@ export function ContextUsage() {
     function handleClick(e: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         setOpen(false)
-        setExpanded(false)
       }
     }
     document.addEventListener('mousedown', handleClick)
@@ -145,54 +238,80 @@ export function ContextUsage() {
 
   if (effectiveTokens === 0 && totalCostUsd === 0) return null
 
-  const color = exceeded || pct > 0.7 ? '#ef4444' : pct > 0.4 ? '#f59e0b' : '#22c55e'
-  const hasDetails = detailedUsage && detailedUsage.categories.length > 0
+  const usedLabel = formatTokens(effectiveTokens)
+  const maxLabel = contextWindow ? formatTokens(contextWindow) : null
 
   return (
     <div className="relative flex items-center" ref={popoverRef}>
-      <IconButton size="sm" onClick={toggleOpen} className="rounded-sm">
-        <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0">
-          <circle cx="7" cy="7" r={radius} fill="none" className="stroke-border" strokeWidth="2" />
-          {pct > 0 && (
-            <circle
-              cx="7" cy="7" r={radius} fill="none" stroke={color} strokeWidth="2"
-              strokeDasharray={`${usedArc} ${circumference - usedArc}`}
-              strokeDashoffset={circumference * 0.25} strokeLinecap="round"
-            />
-          )}
-        </svg>
+      <IconButton
+        size="sm"
+        variant="ghost"
+        onClick={toggleOpen}
+        className="rounded-full"
+        aria-label={hasWindow
+          ? t('chat.contextUsage.percent', { percent: occupancyPercent })
+          : t('chat.contextUsage.tokens', { count: usedLabel })}
+      >
+        <UsageRing
+          hasWindow={hasWindow}
+          occupancyPct={occupancyPct}
+          exceeded={exceeded}
+          segments={ringSegments}
+        />
       </IconButton>
 
       {open && (
         <div className="absolute bottom-full right-0 z-50 pb-2">
-          <div className="whitespace-nowrap rounded-lg bg-popover px-2.5 py-2 text-xs leading-relaxed text-popover-foreground shadow-lg ring-1 ring-border">
-            <div>
-              Context: {formatTokens(effectiveTokens)}
-              {contextWindow ? ` / ${formatTokens(contextWindow)} (${(pct * 100).toFixed(0)}%)` : ''}
-            </div>
-            {exceeded && <div className="text-red-500">Exceeds current model limit</div>}
-            <div className="mt-0.5 flex items-center gap-2">
-              {totalCostUsd > 0 && (
-                <span className="text-muted-foreground">Cost: ${totalCostUsd.toFixed(4)}</span>
+          <div className="flex w-52 flex-col gap-2 rounded-lg bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-lg ring-1 ring-border">
+            {hasWindow ? (
+              <div className="flex flex-col gap-0.5">
+                <div className={cn('text-base font-medium tabular-nums', exceeded && 'text-destructive')}>
+                  {t('chat.contextUsage.percent', { percent: occupancyPercent })}
+                </div>
+                <div className="tabular-nums text-muted-foreground">
+                  {t('chat.contextUsage.usedOfMax', { used: usedLabel, max: maxLabel })}
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm font-medium tabular-nums">
+                {t('chat.contextUsage.tokens', { count: usedLabel })}
+              </div>
+            )}
+            {exceeded && <div className="text-destructive">{t('chat.contextUsage.exceeds')}</div>}
+            <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              {barSegments.map((s) => (
+                <div
+                  key={s.name}
+                  className="h-full shrink-0"
+                  style={{ width: `${s.pct}%`, backgroundColor: s.color }}
+                />
+              ))}
+              {barRemaining > 0 && (
+                <div className="h-full min-w-0 flex-1" />
               )}
-              {hasDetails && (
-                <button
-                  onClick={toggleExpanded}
-                  className="ml-auto flex items-center gap-0.5 text-muted-foreground hover:text-foreground"
-                >
-                  <span>{expanded ? 'Hide' : 'Details'}</span>
-                  {expanded ? <ChevronDown className="size-2.5" /> : <ChevronUp className="size-2.5" />}
-                </button>
-              )}
             </div>
-            {expanded && hasDetails && (
-              <div className="mt-1 max-h-48 space-y-0.5 overflow-y-auto border-t border-border pt-1">
-                {detailedUsage.categories.filter((c) => c.tokens > 0).map((c) => (
-                  <div key={c.name} className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">{c.name}</span>
-                    <span>{formatTokens(c.tokens)}</span>
+            {categories.length > 0 && (
+              <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+                {categories.map((c) => (
+                  <div key={c.name} className="flex items-center justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                      <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
+                      <span className="truncate">{categoryLabel(c.name, t)}</span>
+                    </span>
+                    <span className="tabular-nums">{formatTokens(c.tokens)}</span>
                   </div>
                 ))}
+                {hasWindow && barRemaining > 0 && (
+                  <div className="flex items-center justify-between gap-3 text-muted-foreground">
+                    <span>{t('chat.contextUsage.free')}</span>
+                    <span className="tabular-nums">{formatTokens(Math.max(0, (contextWindow ?? 0) - effectiveTokens))}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            {totalCostUsd > 0 && (
+              <div className="text-muted-foreground">
+                {t('chat.contextUsage.cost', { amount: totalCostUsd.toFixed(4) })}
               </div>
             )}
           </div>

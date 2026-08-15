@@ -118,8 +118,10 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 120.0k / 272.0k (44%)')).toBeTruthy()
+    expect(screen.getByText('44%')).toBeTruthy()
+    expect(screen.getByText('120.0k / 272.0k')).toBeTruthy()
     expect(screen.queryByText(/1050\.0k/)).toBeNull()
+    expect(screen.queryByText(/1\.1m/)).toBeNull()
   })
 
   it('uses the session context window for codex', () => {
@@ -133,7 +135,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 120.0k / 258.4k (46%)')).toBeTruthy()
+    expect(screen.getByText('46%')).toBeTruthy()
+    expect(screen.getByText('120.0k / 258.4k')).toBeTruthy()
     expect(screen.queryByText(/1000\.0k/)).toBeNull()
   })
 
@@ -147,7 +150,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 120.0k')).toBeTruthy()
+    expect(screen.getByText('120.0k tokens')).toBeTruthy()
+    expect(screen.queryByText(/%/)).toBeNull()
     expect(screen.queryByText(/1000\.0k/)).toBeNull()
   })
 
@@ -161,7 +165,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
+    expect(screen.getByText('12%')).toBeTruthy()
+    expect(screen.getByText('120.0k / 1.0m')).toBeTruthy()
   })
 
   it('uses the 1M window when only resolvedModel carries [1m]', () => {
@@ -174,7 +179,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
+    expect(screen.getByText('12%')).toBeTruthy()
+    expect(screen.getByText('120.0k / 1.0m')).toBeTruthy()
   })
 
   it('falls back to the 200k window for a Claude model without [1m]', () => {
@@ -187,7 +193,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 120.0k / 200.0k (60%)')).toBeTruthy()
+    expect(screen.getByText('60%')).toBeTruthy()
+    expect(screen.getByText('120.0k / 200.0k')).toBeTruthy()
   })
 
   it('does not clear detailedUsage when switching to a different session with the same model', () => {
@@ -279,7 +286,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 50.0k / 500.0k (10%)')).toBeTruthy()
+    expect(screen.getByText('10%')).toBeTruthy()
+    expect(screen.getByText('50.0k / 500.0k')).toBeTruthy()
   })
 
   it('prefers models.dev catalog contextWindow over session and detailed maxTokens', () => {
@@ -301,7 +309,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
+    expect(screen.getByText('12%')).toBeTruthy()
+    expect(screen.getByText('120.0k / 1.0m')).toBeTruthy()
     expect(screen.queryByText(/258\.4k/)).toBeNull()
     expect(screen.queryByText(/200\.0k/)).toBeNull()
   })
@@ -317,7 +326,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
+    expect(screen.getByText('12%')).toBeTruthy()
+    expect(screen.getByText('120.0k / 1.0m')).toBeTruthy()
   })
 
   it('uses the selected Cursor context param instead of models.dev', () => {
@@ -336,7 +346,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 50.0k / 300.0k (17%)')).toBeTruthy()
+    expect(screen.getByText('17%')).toBeTruthy()
+    expect(screen.getByText('50.0k / 300.0k')).toBeTruthy()
     expect(screen.queryByText(/200\.0k/)).toBeNull()
   })
 
@@ -356,7 +367,8 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 50.0k / 300.0k (17%)')).toBeTruthy()
+    expect(screen.getByText('17%')).toBeTruthy()
+    expect(screen.getByText('50.0k / 300.0k')).toBeTruthy()
     expect(screen.queryByText(/200\.0k/)).toBeNull()
   })
 
@@ -371,8 +383,46 @@ describe('ContextUsage', () => {
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))
 
-    expect(screen.getByText('Context: 50.0k / 1000.0k (5%)')).toBeTruthy()
+    expect(screen.getByText('5%')).toBeTruthy()
+    expect(screen.getByText('50.0k / 1.0m')).toBeTruthy()
     expect(screen.queryByText(/200\.0k/)).toBeNull()
+  })
+
+  it('does not invent a Cursor occupancy window for Composer without a context param', () => {
+    chatState.harnessResources.cursor.models = [{
+      id: 'composer-1.5',
+      name: 'Composer',
+      parameters: [{ id: 'fast', values: [{ value: 'true' }, { value: 'false' }] }],
+    }]
+    activeSessionState.contextTokens = 1_427_000
+    activeSessionState.selectedModel = 'composer-1.5'
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+    activeSessionState.detailedUsage = {
+      totalTokens: 1_407_100,
+      maxTokens: 0,
+      percentage: 0,
+      model: 'composer-1.5',
+      categories: [
+        { name: 'input', tokens: 80, color: '#22c55e' },
+        { name: 'output', tokens: 20, color: '#f59e0b' },
+        { name: 'cacheRead', tokens: 1_400_000, color: '#06b6d4' },
+        { name: 'cacheWrite', tokens: 7_000, color: '#8b5cf6' },
+      ],
+    }
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('1.4m tokens')).toBeTruthy()
+    expect(screen.queryByText(/%/)).toBeNull()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
+    expect(screen.getByText('Input')).toBeTruthy()
+    expect(screen.getByText('Output')).toBeTruthy()
+    expect(screen.getByText('Cache Read')).toBeTruthy()
+    expect(screen.getByText('Cache Creation')).toBeTruthy()
+    expect(screen.getByText('80')).toBeTruthy()
+    expect(screen.getByText('7.0k')).toBeTruthy()
   })
 
   it('refreshes detailed context usage after a Cursor turn completes', async () => {

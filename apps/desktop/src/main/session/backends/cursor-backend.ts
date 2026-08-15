@@ -8,7 +8,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
-import { buildCursorModelSelection, resolveCursorSelectedContextWindow } from '@superone/cursor'
+import { buildCursorModelSelection, mapCursorContextUsageInfo, resolveCursorSelectedContextWindow } from '@superone/cursor'
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { mapPermissionToCursorLocal } from '../../cursor/cursor-auth'
@@ -54,6 +54,12 @@ export class CursorBackend implements SessionBackend {
   private effort: string | undefined
   private modelParams: Record<string, string> = {}
   private lastContextTokens = 0
+  private lastUsage: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+  } | null = null
   private started = false
   private disposed = false
   private interrupted = false
@@ -155,6 +161,15 @@ export class CursorBackend implements SessionBackend {
         if (event.type === 'message_usage') {
           if (typeof event.contextTokens === 'number' && event.contextTokens > 0) {
             this.lastContextTokens = event.contextTokens
+            this.lastUsage = {
+              inputTokens: event.inputTokens,
+              outputTokens: event.outputTokens,
+              cacheReadTokens: event.cacheReadTokens ?? 0,
+              cacheWriteTokens: Math.max(
+                0,
+                event.contextTokens - event.inputTokens - (event.cacheReadTokens ?? 0),
+              ),
+            }
           }
         }
         this.emit(event)
@@ -373,22 +388,18 @@ export class CursorBackend implements SessionBackend {
   respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
+    if (!this.lastUsage && this.lastContextTokens <= 0) return null
     const maxTokens = this.resolveContextWindow()
-    if (!maxTokens || maxTokens <= 0) return null
-    const totalTokens = this.lastContextTokens
-    return {
-      categories: [
-        {
-          name: 'tokens',
-          tokens: totalTokens,
-          color: 'var(--muted-foreground)',
-        },
-      ],
-      totalTokens,
-      maxTokens,
-      percentage: Math.min(100, Math.round((totalTokens / maxTokens) * 1000) / 10),
-      model: this.model ?? '',
+    const usage = this.lastUsage ?? {
+      inputTokens: this.lastContextTokens,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
     }
+    return mapCursorContextUsageInfo(usage, {
+      maxTokens,
+      model: this.model,
+    })
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

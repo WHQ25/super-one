@@ -51,6 +51,7 @@ export {
   mapConversationStep,
   mapSdkMessageLifecycle,
   mapCursorTokenUsage,
+  mapCursorContextUsageInfo,
   extractToolCallParts,
   toolDisplayName,
   unwrapCursorMcpTool,

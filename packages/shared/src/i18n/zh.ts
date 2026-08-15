@@ -1005,6 +1005,14 @@ export const zh: Messages = {
       loadingHint: '正在从 agent 获取命令列表',
     },
     dropToAttach: '拖入图片或 PDF 以添加附件',
+    contextUsage: {
+      usedOfMax: '{{used}} / {{max}}',
+      percent: '{{percent}}%',
+      tokens: '{{count}} tokens',
+      exceeds: '已超过当前模型上限',
+      cost: '${{amount}}',
+      free: '剩余',
+    },
     send: {
       failed: '发送失败：{{message}}',
       remoteUnavailable: '远程主机已断开或正在重连，请稍后再试。',

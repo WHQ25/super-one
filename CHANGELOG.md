@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.6-alpha] - 2026-08-15
+
+### Added
+
+- Chat: show a compact notification when a background task wakes outside the current turn, so the reply is no longer invisible if the launching tool block is many turns up.
+
+### Fixed
+
+- Desktop: keep startup moving when a recent project path hangs (disconnected Windows UNC / mapped drive), instead of sitting on an empty loading view.
+- Desktop: make database backup and restore crash-safe — pruning no longer deletes the last restorable file before a replacement is written, and a failed restore no longer leaves an empty database.
+- Chat: stop the ContextUsage update storm on an empty Cursor catalog, which hit React #185 and blanked Claude/Codex windows.
+
 ## [0.53.5-alpha] - 2026-08-15
 
 ### Fixed

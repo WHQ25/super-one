@@ -12,8 +12,11 @@ import {
 describe('capability-prompt-tags', () => {
   it('resolves known ids', () => {
     expect(isBuiltinCapabilityId('browser')).toBe(true)
+    expect(isBuiltinCapabilityId('widget')).toBe(true)
     expect(isBuiltinCapabilityId('file')).toBe(false)
     expect(getBuiltinCapability('collab')?.displayName).toBe('Agents Collaboration')
+    expect(getBuiltinCapability('widget')?.displayName).toBe('Widget')
+    expect(getBuiltinCapability('widget')?.toolPrefix).toBe('widget_')
   })
 
   it('wraps a capability mention tag', () => {
@@ -44,5 +47,8 @@ describe('capability-prompt-tags', () => {
     const browser = getBuiltinCapability('browser')!
     expect(capabilityToolPrefixClaude(browser)).toBe('mcp__superone__browser_')
     expect(capabilityToolPrefixCodex(browser)).toBe('mcp__superone.browser_')
+    const widget = getBuiltinCapability('widget')!
+    expect(capabilityToolPrefixClaude(widget)).toBe('mcp__superone__widget_')
+    expect(capabilityToolPrefixCodex(widget)).toBe('mcp__superone.widget_')
   })
 })

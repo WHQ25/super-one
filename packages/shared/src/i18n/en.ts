@@ -1862,6 +1862,7 @@ export type Messages = {
       capabilityCollab: string
       capabilityComputer: string
       capabilityBrowser: string
+      capabilityWidget: string
       capabilitySession: string
       groupSessionProjects: string
       groupRecentSessions: string
@@ -4636,6 +4637,7 @@ export const en: Messages = {
       capabilityCollab: 'Agents Collaboration',
       capabilityComputer: 'Computer Use',
       capabilityBrowser: 'Super Browser',
+      capabilityWidget: 'Widget',
       capabilitySession: 'Session',
       groupSessionProjects: 'Project scope',
       groupRecentSessions: 'Recent',

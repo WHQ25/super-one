@@ -36,6 +36,7 @@ import {
 } from '@/lib/remote-session-messages'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { toastSendFailure } from './send-error-toast'
 
 /**
@@ -308,9 +309,7 @@ export async function sendMessageImpl(
     // the stored user bubble as structured tags so only those render as chips.
     let agentContent = expandPathRefTagsForAgent(rawContent)
     let capabilityReminderSuffix = ''
-    const capabilityMentions = mentions.filter(
-      (m) => m.kind === 'collab' || m.kind === 'computer' || m.kind === 'browser',
-    )
+    const capabilityMentions = mentions.filter((m) => isBuiltinCapabilityId(m.kind))
     if (capabilityMentions.length > 0) {
       const {
         CAPABILITY_TAG_REGEX,
@@ -812,9 +811,7 @@ export async function sendMessageImpl(
     )
     agentContent = rewriteWorkflowCommandForAgent(agentContent, getWorkflowArgSpecs)
   }
-  const capabilityMentions = mentions.filter(
-    (m) => m.kind === 'collab' || m.kind === 'computer' || m.kind === 'browser',
-  )
+  const capabilityMentions = mentions.filter((m) => isBuiltinCapabilityId(m.kind))
   const desktopAppMentions = mentions.filter((m) => m.kind === 'desktop-app')
   if (capabilityMentions.length > 0) {
     const {

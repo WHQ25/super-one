@@ -7,6 +7,7 @@ import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ArrowUp, Loader2, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
+import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useShallow } from 'zustand/react/shallow'
@@ -660,7 +661,7 @@ export function ChatInput() {
           kind = 'session'
           mentionValue = value
           displayName = displayNameHint || value
-        } else if (kindHint === 'collab' || kindHint === 'computer' || kindHint === 'browser') {
+        } else if (kindHint && isBuiltinCapabilityId(kindHint)) {
           kind = kindHint
           mentionValue = kindHint
           displayName = displayNameHint || kindHint
@@ -726,7 +727,7 @@ export function ChatInput() {
               current += ` <superone-desktop-app><name>${attrs.displayName}</name><bundleId>${attrs.value}</bundleId></superone-desktop-app> `
             } else if (attrs.kind === 'session') {
               current += ` <superone-session><title>${attrs.displayName}</title><sessionId>${attrs.value}</sessionId></superone-session> `
-            } else if (attrs.kind === 'collab' || attrs.kind === 'computer' || attrs.kind === 'browser') {
+            } else if (isBuiltinCapabilityId(attrs.kind)) {
               current += ` <superone-capability><name>${attrs.displayName}</name><id>${attrs.kind}</id></superone-capability> `
             } else {
               // Structured tag so only popup-selected path/agent mentions become

@@ -1917,6 +1917,7 @@ export const zh: Messages = {
       capabilityCollab: '智能体协作',
       capabilityComputer: '使用电脑',
       capabilityBrowser: 'Super浏览器',
+      capabilityWidget: '小组件',
       capabilitySession: '会话',
       groupSessionProjects: '项目范围',
       groupRecentSessions: '最近',

@@ -142,17 +142,20 @@ describe('parseUserMentions', () => {
       ])
     })
 
-    it('parses all three capability kinds', () => {
+    it('parses all built-in capability kinds', () => {
       const input =
         '<superone-capability><name>Agents Collaboration</name><id>collab</id></superone-capability> ' +
         '<superone-capability><name>Computer Use</name><id>computer</id></superone-capability> ' +
-        '<superone-capability><name>Super Browser</name><id>browser</id></superone-capability>'
+        '<superone-capability><name>Super Browser</name><id>browser</id></superone-capability> ' +
+        '<superone-capability><name>Widget</name><id>widget</id></superone-capability>'
       expect(parseUserMentions(input)).toEqual([
         { type: 'mention', kind: 'collab', value: 'collab', displayName: 'Agents Collaboration' },
         { type: 'text', text: ' ' },
         { type: 'mention', kind: 'computer', value: 'computer', displayName: 'Computer Use' },
         { type: 'text', text: ' ' },
         { type: 'mention', kind: 'browser', value: 'browser', displayName: 'Super Browser' },
+        { type: 'text', text: ' ' },
+        { type: 'mention', kind: 'widget', value: 'widget', displayName: 'Widget' },
       ])
     })
 
@@ -163,7 +166,7 @@ describe('parseUserMentions', () => {
       ])
     })
 
-    it('does not chip plain @browser / @collab / @computer without popup tags', () => {
+    it('does not chip plain @browser / @collab / @computer / @widget without popup tags', () => {
       expect(parseUserMentions('@browser go')).toEqual([
         { type: 'text', text: '@browser go' },
       ])
@@ -172,6 +175,9 @@ describe('parseUserMentions', () => {
       ])
       expect(parseUserMentions('@computer click')).toEqual([
         { type: 'text', text: '@computer click' },
+      ])
+      expect(parseUserMentions('@widget chart')).toEqual([
+        { type: 'text', text: '@widget chart' },
       ])
     })
 

@@ -1,5 +1,5 @@
 /**
- * Ranking for built-in @-mentions (collab / computer / browser / session).
+ * Ranking for built-in @-mentions (collab / computer / browser / widget / session).
  *
  * The token after `@` (keyword / id) always outranks display-name text so that
  * typing `@se` prefers `@session` over "Computer Use" (which substring-matches "se").

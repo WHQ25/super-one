@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { Bot, Folder, Globe, MessageSquare, MousePointer2, Users } from 'lucide-react'
+import { Bot, Folder, Globe, LayoutDashboard, MessageSquare, MousePointer2, Users } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
+import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DesktopAppIcon } from './DesktopAppIcon'
 import type { MentionNodeAttrs } from './mention-node'
@@ -48,6 +49,7 @@ function CapabilityIcon({ kind }: { kind: MentionNodeAttrs['kind'] }) {
   // Match Settings / ComputerUseToolBlock branding (pointer, not monitor).
   if (kind === 'computer') return <MousePointer2 className="text-emerald-600 dark:text-emerald-400" />
   if (kind === 'browser') return <Globe className="text-sky-600 dark:text-sky-400" />
+  if (kind === 'widget') return <LayoutDashboard className="text-amber-600 dark:text-amber-400" />
   return null
 }
 
@@ -63,7 +65,7 @@ export function mentionChipIcon(
   // Neutral, matching the sidebar session list: a session is content, not a capability,
   // so it takes no identity hue. text-foreground (not muted) keeps it clear of disabled.
   if (kind === 'session') return <MessageSquare className="text-foreground" />
-  if (kind === 'collab' || kind === 'computer' || kind === 'browser') {
+  if (isBuiltinCapabilityId(kind)) {
     return <CapabilityIcon kind={kind} />
   }
   // width/height attrs are overridden by .mention-chip__icon > svg { 100% }.
@@ -72,7 +74,7 @@ export function mentionChipIcon(
 
 export function MentionChip({ node }: NodeViewProps) {
   const { kind, value, displayName } = node.attrs as MentionNodeAttrs
-  const isCapability = kind === 'collab' || kind === 'computer' || kind === 'browser'
+  const isCapability = isBuiltinCapabilityId(kind)
   const isBlendedChip = isCapability || kind === 'desktop-app' || kind === 'session'
   const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop() : displayName
   // Only path-like resource names truncate; multi-word capability labels must show fully.

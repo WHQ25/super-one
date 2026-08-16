@@ -278,6 +278,17 @@ describe('ChatMessage capability mention bubble', () => {
     expect(screen.queryByText('Agent task')).toBeNull()
   })
 
+  it('renders widget capability chip from a popup tag', () => {
+    const text =
+      '<superone-capability><name>Widget</name><id>widget</id></superone-capability> show a chart'
+    const { container } = render(
+      <ChatMessage message={createUserMessage(text)} sessionStatus="idle" isLastAssistant={false} />,
+    )
+    const chip = container.querySelector('[data-mention-kind="widget"]')
+    expect(chip).not.toBeNull()
+    expect(chip).toHaveTextContent('Widget')
+  })
+
   it('renders session chip with title, not raw sessionId', () => {
     const sid = 'a9382a53-7d35-4a01-9e13-411bcbc8e850'
     const text =

@@ -1,6 +1,6 @@
-/** Built-in @-mention capabilities (collab / computer / browser). */
+/** Built-in @-mention capabilities (collab / computer / browser / widget). */
 
-export type BuiltinCapabilityId = 'collab' | 'computer' | 'browser'
+export type BuiltinCapabilityId = 'collab' | 'computer' | 'browser' | 'widget'
 
 export interface BuiltinCapability {
   id: BuiltinCapabilityId
@@ -34,6 +34,12 @@ export const BUILTIN_CAPABILITIES: readonly BuiltinCapability[] = [
     displayName: 'Super Browser',
     intent: 'automate the built-in browser via browser tools',
     toolPrefix: 'browser_',
+  },
+  {
+    id: 'widget',
+    displayName: 'Widget',
+    intent: 'render SVG, diagrams, charts, or interactive HTML inline in chat via widget tools',
+    toolPrefix: 'widget_',
   },
 ] as const
 

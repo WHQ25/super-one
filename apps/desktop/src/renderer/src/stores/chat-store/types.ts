@@ -36,6 +36,7 @@ import type {
   SubagentRetryInfo,
   TodoItem,
 } from '@superone/shared/agent-types'
+import type { BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import type { BrowserAnnotation } from './helpers/browser-annotation'
 
 export type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
@@ -51,9 +52,7 @@ export type MentionKind =
   | 'directory'
   | 'agent'
   | 'miniapp'
-  | 'collab'
-  | 'computer'
-  | 'browser'
+  | BuiltinCapabilityId
   /** Installed desktop app — value is reverse-DNS bundleId. */
   | 'desktop-app'
   /** SuperOne session archive — value is sessions.id (not provider session id). */

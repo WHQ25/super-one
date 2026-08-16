@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, type UIEvent } from 'react'
-import { Bot, Folder, Folders, Globe, MessageSquare, MousePointer2, Users } from 'lucide-react'
+import { Bot, Folder, Folders, Globe, LayoutDashboard, MessageSquare, MousePointer2, Users } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -196,6 +196,16 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
         className={cn(
           'size-3.5 shrink-0',
           muted ?? 'text-emerald-600 dark:text-emerald-400',
+        )}
+      />
+    )
+  }
+  if (id === 'widget') {
+    return (
+      <LayoutDashboard
+        className={cn(
+          'size-3.5 shrink-0',
+          muted ?? 'text-amber-600 dark:text-amber-400',
         )}
       />
     )
@@ -428,11 +438,12 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       if (isSessionMode) onSetSelectedIndex(0)
     }, [isSessionMode, parsedSessionQuery?.phase, onSetSelectedIndex])
 
-    /** Feature gates for built-in @-capability chips (settings toggles). Collab is always on. */
-    const [capabilityEnabled, setCapabilityEnabled] = useState({
+    /** Feature gates for built-in @-capability chips (settings toggles). Collab and widget are always on. */
+    const [capabilityEnabled, setCapabilityEnabled] = useState<Record<BuiltinCapabilityId, boolean>>({
       collab: true,
       computer: false,
       browser: false,
+      widget: true,
     })
     /** False until the first getAppSettings settle — needed before we know whether to wait on apps. */
     const [capabilitySettingsReady, setCapabilitySettingsReady] = useState(false)
@@ -449,6 +460,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             isComputerUseSupportedPlatform(window.app.platform)
             && settings.computerUseEnabled === true,
           browser: settings.cdpEnabled === true,
+          widget: true,
         })
       }
       void window.app?.getAppSettings?.()
@@ -458,7 +470,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         })
         .catch(() => {
           if (!cancelled) {
-            setCapabilityEnabled({ collab: true, computer: false, browser: false })
+            setCapabilityEnabled({ collab: true, computer: false, browser: false, widget: true })
             setCapabilitySettingsReady(true)
           }
         })
@@ -538,6 +550,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const capabilityLabel = useCallback((id: BuiltinCapabilityId): string => {
       if (id === 'collab') return t('chat.mentionPopup.capabilityCollab')
       if (id === 'computer') return t('chat.mentionPopup.capabilityComputer')
+      if (id === 'widget') return t('chat.mentionPopup.capabilityWidget')
       return t('chat.mentionPopup.capabilityBrowser')
     }, [t])
 

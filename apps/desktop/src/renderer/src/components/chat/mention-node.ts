@@ -1,5 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
+import type { BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { MentionChip } from './MentionChip'
 
 export interface MentionNodeAttrs {
@@ -8,9 +9,7 @@ export interface MentionNodeAttrs {
     | 'directory'
     | 'agent'
     | 'miniapp'
-    | 'collab'
-    | 'computer'
-    | 'browser'
+    | BuiltinCapabilityId
     | 'desktop-app'
     | 'session'
   value: string

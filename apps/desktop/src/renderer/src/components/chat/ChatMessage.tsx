@@ -53,6 +53,7 @@ import { CopyButton, useCopyText } from './chat-message/copy-button'
 import { fileLinkComponents } from './chat-markdown-components'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
+import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { replaceMiniAppTagsWithMention } from '@superone/shared/miniapp-prompt-tags'
 import { deriveColors, ContextPreviewContent } from './ContextChip'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
@@ -434,8 +435,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
     return () => { cancelled = true }
   }, [kind, value])
 
-  const isCapability =
-    resolvedKind === 'collab' || resolvedKind === 'computer' || resolvedKind === 'browser'
+  const isCapability = isBuiltinCapabilityId(resolvedKind)
   // Match composer MentionChip: session/desktop-app/capability show displayName, not raw id.
   const isBlendedChip =
     isCapability || resolvedKind === 'desktop-app' || resolvedKind === 'session'

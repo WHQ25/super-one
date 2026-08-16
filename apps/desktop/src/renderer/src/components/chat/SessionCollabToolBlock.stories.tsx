@@ -104,7 +104,7 @@ const START_RESULT = {
 }
 
 const meta: Meta = {
-  title: 'AgentCollaboration/ToolUI',
+  title: 'SuperOne/MCP Tools/Collab',
   parameters: { layout: 'padded' },
 }
 
@@ -329,7 +329,7 @@ export const ParentTurnFlow: Story = {
           }),
         })}
       </Section>
-      <Section title="4. Retrieve (after wake) — Received N messages">
+      <Section title="4. Retrieve (after wake) — N Messages Retrieved">
         {block('session_collab_retrieve', { credentials: [CRED_A, CRED_B] }, {
           result: JSON.stringify({
             status: 'messages',

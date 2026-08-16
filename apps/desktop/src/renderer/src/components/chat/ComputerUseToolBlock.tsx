@@ -22,6 +22,7 @@ import {
 } from './computer-tool-display'
 import { PrettyJSONCodeBlock } from './tool-result-views'
 import { ToolScreenshotView } from './ToolScreenshotView'
+import { ToolName } from './tool-row'
 
 interface ComputerUseToolBlockProps {
   op: ComputerOp
@@ -242,19 +243,12 @@ export function ComputerUseToolBlock({
           iconDataUri={appIcon}
         />
 
-        <span
-          className={cn(
-            'shrink-0 font-medium',
-            isDenied
-              ? 'text-error'
-              : failed || needsAttention
-                ? 'text-warning'
-                : 'text-foreground',
-            isStreaming && !isDenied && 'animate-shimmer',
-          )}
+        <ToolName
+          streaming={isStreaming && !isDenied}
+          tone={isDenied ? 'denied' : failed || needsAttention ? 'error' : 'default'}
         >
           {isStreaming ? <>{verb}…</> : verb}
-        </span>
+        </ToolName>
 
         {screenshotAsPrimary ? (
           <span className="inline-flex min-w-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground">

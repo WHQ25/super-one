@@ -274,13 +274,16 @@ Read `references/tool-ui.md` before writing a block. Principles and short versio
 - **Summary-first** — this app is built on short summaries (`getToolDisplay`, block-local derivation,
   `toolSummary` from main/ACP, agent fields like collab `summary`). Prefer basename / domain / one
   phrase over dumping parameters.
-- **Base template** — most rows are `icon + label + summary + expand chevron` inside the shared
-  `tool-node` chrome. Copy collab / archive rows; do not invent a new layout.
-- **Label copy (collab grammar)** — EN: streaming = sentence case + `…` (`Requesting collaboration…`);
-  done primary = **Title Case** (`Collaboration Requested`, `Sessions Listed`, `Session Meta`).
-  Muted summary = sentence fragments / counts / titles, not Title Case chrome. ZH: `正在…` / `已…`
-  like collab. Canonical reference: `SessionCollabToolBlock` + `chat.toolBlock.collab`; archive
-  follows the same rules under `chat.toolBlock.archive`. Full table in `references/tool-ui.md`.
+- **Base template** — `icon + label + summary + [Denied\|Error] + chevron` via `tool-row.tsx`
+  (`CompactLabeledToolRow` / `ExpandableToolRow` / `ToolName`). Do not invent a new layout or
+  write `Label: summary`. Running labels shimmer.
+- **Label copy** — three Title Case forms, picked with `toolOutcomeLabel`:
+  - streaming: sentence-case verb-ing + `…` (`Generating image…`)
+  - done: **noun + past participle** (`Image Generated`, `Sessions Listed`, `Session Tagged`)
+  - denied / error: **verb + noun** (`Generate Image`, `List Sessions`, `Tag Session`) —
+    the badge already says Denied / Error, so never bake Failed / Denied into the title
+  ZH: `正在…` / 名词+已+动词 / 动词+名词 — **all Chinese** (`列出会话`, not `列出 Session`).
+  Full table + chrome in `references/tool-ui.md`.
 - **Result-as-UI** — rare case (`widget_show` → `WidgetBlock`): args irrelevant to the user, rendered
   result fully represents the call → **no tool header**, only the content. Not the same as **hidden**
   (gallery owns image rows). Nested subagent still falls back to a Compact header stub.
@@ -291,9 +294,9 @@ Read `references/tool-ui.md` before writing a block. Principles and short versio
   better summary, not with hide.
 - Every block handles four states — `isStreaming`, `isError`, `isDenied`, complete — plus
   `allowExpand === false` when nested under a subagent.
-- Storybook first (diff against `AgentCollaboration/ToolUI` for casing), wire into `ToolBlock`
-  second. i18n both locales under a family namespace. Mobile may strip `input` — preserve a human
-  summary; allowlist only if the phone truly needs full input.
+- Storybook first under `SuperOne/MCP Tools` (include error + denied), wire into `ToolBlock`
+  second. i18n both locales under a family namespace (streaming / action / done trio). Mobile
+  may strip `input` — preserve a human summary; allowlist only if the phone truly needs full input.
 
 ## Step 5 — Guard the invariant with a test
 
@@ -347,10 +350,14 @@ point of the five-surface discipline is cross-harness parity, and only a real se
 | Declined confirm returned as `isError` | Reads as a failure the model should retry → re-prompts the human | Neutral `status: 'rejected'` + "do not retry on your own" hint |
 | Registering in `registerSuperoneTools` only | Silently absent in Codex/ACP | Both surfaces + the drift test |
 | Custom ToolBlock covering only the success path | Streaming/denied/error rows render blank | Four states + `allowExpand` fallback |
-| Shipping SuperOne tool with only generic MCP fallback | User sees plumbing, not what the call did | Designed row: summary + base template |
+| Shipping SuperOne tool with only generic MCP fallback | User sees plumbing, not what the call did | Designed row: summary + `tool-row` primitives |
 | Header dumps raw args / full paths / UUIDs | Collapsed row unreadable; fails progressive disclosure | One human summary; detail on expand |
+| `Label: summary` colon in the header | Breaks name + space + muted summary | `ToolSummary` as a sibling span |
 | Header on a pure content tool (e.g. widget) when result already is the UI | Double narrates; chrome adds no observability | Result-as-UI: content only; Compact stub only when nested |
-| Done labels in sentence case only (`Listed sessions`) | Diverges from collab Title Case chrome | `Sessions Listed` / match `chat.toolBlock.collab` |
+| Success past tense on fail (`Image Generated` + Error) | Claims the work finished | `Generate Image` + Error badge |
+| Failed baked into the title (`Image Generation Failed`) | Duplicates the Error badge | verb + noun title; badge carries outcome |
+| Hand-rolled denied/error colors (`text-destructive`, “Denied” in summary) | Diverges from Bash / Read | `ToolStatusIcon` + `ToolStatusBadge` + `toolRowSurfaceClass` |
+| Running label without shimmer | Looks idle while the tool is in flight | `ToolName` / `animate-shimmer` |
 | Title Case streaming or Title Case muted summary | Looks finished while running / fights the label | Streaming sentence+`…`; summary stays soft fragments |
 | Hardcoded EN strings in a ToolBlock | ZH UI falls back; copy drifts | `t('chat.toolBlock.<family>.*')` both locales |
 | Hiding a tool row "to reduce noise" | Output disappears entirely if nothing else renders it | Better summary / Compact row; hide only when owned elsewhere |
@@ -361,5 +368,6 @@ point of the five-surface discipline is cross-harness parity, and only a real se
 - `references/backend.md` — agent progressive disclosure, token-saving (TOON, spill-to-file),
   registration walkthrough, human-in-the-loop confirmation (destructive / paid tools),
   own-descriptor path, manuals.
-- `references/tool-ui.md` — Tool UI philosophy, collab label/casing grammar, summary, base template,
-  result-as-UI, routing, hide contract, Storybook/i18n/mobile.
+- `references/tool-ui.md` — Tool UI philosophy, label grammar (streaming / done / denied-error),
+  status chrome, shared `tool-row` primitives, summary, base template, result-as-UI, routing,
+  hide contract, Storybook (`SuperOne/MCP Tools`) / i18n / mobile.

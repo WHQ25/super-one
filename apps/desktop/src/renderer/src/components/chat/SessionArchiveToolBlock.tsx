@@ -4,17 +4,16 @@
  *
  * Label casing mirrors agent collab (`SessionCollabToolBlock` + `chat.toolBlock.collab`):
  * - Streaming: sentence case, often with …
- * - Done primary actions: Title Case (EN) / concise done phrasing (ZH)
+ * - Done primary actions: Title Case noun + past participle (EN) / 名词+已+动词 (ZH)
  * - Count / empty / secondary summary: sentence-style fragments in muted summary slot
  *
  * Wired from ToolBlock for mcp__superone__{project_list,session_*}.
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Archive,
-  ChevronRight,
   EyeOff,
   Eye,
   Folder,
@@ -25,10 +24,9 @@ import {
   Trash2,
   FileText,
   Wrench,
-  Ban,
-  TriangleAlert,
 } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { ExpandableToolRow } from './tool-row'
 import { decode as toonDecode } from '@toon-format/toon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
@@ -166,78 +164,7 @@ function extractMarkdownMeta(body: string): { title?: string; pageHint?: string 
 
 // --- Base template (same chrome grammar as collab) ---
 
-function ArchiveRow({
-  icon,
-  label,
-  summary,
-  expandable,
-  children,
-  tone = 'default',
-}: {
-  icon: ReactNode
-  label: string
-  summary?: string
-  expandable?: boolean
-  children?: ReactNode
-  tone?: 'default' | 'error' | 'warning' | 'denied'
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const canExpand = !!expandable && !!children
 
-  return (
-    <div
-      className={cn(
-        'tool-node my-0.5 min-w-0 rounded transition-colors',
-        tone === 'error' && 'errored bg-warning/10',
-        tone === 'warning' && 'bg-warning/10',
-        tone === 'denied' && 'denied bg-error/10',
-        tone === 'default' && 'bg-muted/20',
-        canExpand && 'cursor-pointer',
-        canExpand && tone === 'default' && 'hover:bg-muted/40',
-        canExpand && tone === 'error' && 'hover:bg-warning/20',
-        canExpand && tone === 'denied' && 'hover:bg-error/20',
-      )}
-    >
-      <div
-        className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
-        onClick={canExpand ? () => setExpanded((v) => !v) : undefined}
-      >
-        {icon}
-        <span
-          className={cn(
-            'shrink-0 whitespace-nowrap font-medium',
-            tone === 'denied' ? 'text-error' : tone === 'error' ? 'text-warning' : 'text-foreground',
-          )}
-        >
-          {label}
-        </span>
-        {summary ? (
-          <span className="min-w-0 truncate text-muted-foreground" title={summary}>
-            {summary}
-          </span>
-        ) : null}
-        {canExpand ? (
-          <ChevronRight
-            className={cn(
-              'ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200',
-              expanded && 'rotate-90',
-            )}
-          />
-        ) : null}
-      </div>
-      {canExpand ? (
-        <div
-          className="grid transition-[grid-template-rows] duration-200 ease-out"
-          style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-        >
-          <div className="overflow-hidden">
-            <div className="border-t border-border/40 px-2 py-2 text-xs">{children}</div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  )
-}
 
 function FieldRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -261,20 +188,6 @@ function PreBody({ text }: { text: string }) {
       {text}
     </pre>
   )
-}
-
-function StatusIcon({
-  tone,
-  fallback,
-}: {
-  tone: 'default' | 'error' | 'warning' | 'denied'
-  fallback: ReactNode
-}) {
-  if (tone === 'denied') return <Ban className="size-3 shrink-0 text-error" />
-  if (tone === 'error' || tone === 'warning') {
-    return <TriangleAlert className="size-3 shrink-0 text-warning" />
-  }
-  return fallback
 }
 
 // --- Expand bodies ---
@@ -721,16 +634,15 @@ export function SessionArchiveToolBlock({
   const rec = asRecord(parsed)
   // cancelled = user closed the confirm without deleting — neutral chrome (not warning/error)
   // partial = some deletes succeeded — warning chrome
-  const tone: 'default' | 'error' | 'warning' | 'denied' = isDenied
+  const tone: 'default' | 'error' | 'warning' | 'denied' = isDenied || rec?.status === 'rejected'
     ? 'denied'
-    : isError || rec?.status === 'error' || rec?.status === 'rejected'
+    : isError || rec?.status === 'error'
       ? 'error'
       : rec?.status === 'partial'
         ? 'warning'
         : 'default'
 
   const canShowExpand = allowExpand && !isStreaming && !isDenied
-  const deniedLabel = t('chat.toolBlock.denied')
 
   // ---------- project_list ----------
   if (toolName === 'project_list') {
@@ -741,30 +653,23 @@ export function SessionArchiveToolBlock({
 
     let label = t(`${a}.projectsListed`)
     if (isStreaming) label = t(`${a}.listingProjects`)
-    else if (isDenied) label = t(`${a}.projectsListed`)
-    else if (isError || rec?.status === 'error') label = t(`${a}.projectListFailed`)
+    else if (isDenied || isError || rec?.status === 'error') label = t(`${a}.listProjects`)
 
     const errMsg = typeof rec?.message === 'string' ? rec.message : ''
     const summary = isStreaming
       ? filterSummary || undefined
-      : isDenied
-        ? deniedLabel
-        : isError || rec?.status === 'error'
-          ? errMsg || filterSummary || undefined
-          : [t(`${a}.projectCount`, { count }), filterSummary].filter(Boolean).join(' · ')
+      : isError || rec?.status === 'error'
+        ? errMsg || filterSummary || undefined
+        : [t(`${a}.projectCount`, { count }), filterSummary].filter(Boolean).join(' · ')
 
     const expandable = canShowExpand && !isError && projects.length > 0
 
     return (
-      <ArchiveRow
-        icon={
-          <StatusIcon
-            tone={tone}
-            fallback={<Folder className="size-3 shrink-0 text-muted-foreground" />}
-          />
-        }
+      <ExpandableToolRow
+        icon={<Folder className="size-3 shrink-0 text-muted-foreground" />}
         label={label}
         summary={summary}
+        streaming={isStreaming}
         tone={tone}
         expandable={expandable}
       >
@@ -775,7 +680,7 @@ export function SessionArchiveToolBlock({
           missingLabel={t(`${a}.missingProject`)}
           openProjectLabel={t(`${a}.openProject`)}
         />
-      </ArchiveRow>
+      </ExpandableToolRow>
     )
   }
 
@@ -789,35 +694,28 @@ export function SessionArchiveToolBlock({
 
     let label = t(`${a}.sessionsListed`)
     if (isStreaming) label = t(`${a}.listingSessions`)
-    else if (isDenied) label = t(`${a}.sessionsListed`)
-    else if (isError || rec?.status === 'error') label = t(`${a}.listFailed`)
+    else if (isDenied || isError || rec?.status === 'error') label = t(`${a}.listSessions`)
 
     const errMsg = typeof rec?.message === 'string' ? rec.message : ''
     const summary = isStreaming
       ? filterSummary || undefined
-      : isDenied
-        ? deniedLabel
-        : isError || rec?.status === 'error'
-          ? errMsg || filterSummary || undefined
-          : [
-              t(`${a}.sessionCount`, { count }),
-              filterSummary,
-            ]
-              .filter(Boolean)
-              .join(' · ')
+      : isError || rec?.status === 'error'
+        ? errMsg || filterSummary || undefined
+        : [
+            t(`${a}.sessionCount`, { count }),
+            filterSummary,
+          ]
+            .filter(Boolean)
+            .join(' · ')
 
     const expandable = canShowExpand && !isError && sessions.length > 0
 
     return (
-      <ArchiveRow
-        icon={
-          <StatusIcon
-            tone={tone}
-            fallback={<List className="size-3 shrink-0 text-muted-foreground" />}
-          />
-        }
+      <ExpandableToolRow
+        icon={<List className="size-3 shrink-0 text-muted-foreground" />}
         label={label}
         summary={summary}
+        streaming={isStreaming}
         tone={tone}
         expandable={expandable}
       >
@@ -828,7 +726,7 @@ export function SessionArchiveToolBlock({
           thisChatLabel={t(`${a}.thisChat`)}
           openSessionLabel={t(`${a}.openSession`)}
         />
-      </ArchiveRow>
+      </ExpandableToolRow>
     )
   }
 
@@ -843,30 +741,23 @@ export function SessionArchiveToolBlock({
     let label =
       count === 0 ? t(`${a}.noHits`) : t(`${a}.hitsFound`, { count })
     if (isStreaming) label = t(`${a}.searchingSessions`)
-    else if (isDenied) label = t(`${a}.sessionSearch`)
-    else if (isError || rec?.status === 'error') label = t(`${a}.searchFailed`)
+    else if (isDenied || isError || rec?.status === 'error') label = t(`${a}.searchSessions`)
 
     const errMsg = typeof rec?.message === 'string' ? rec.message : ''
     const summary = isStreaming
       ? q || undefined
-      : isDenied
-        ? [q, deniedLabel].filter(Boolean).join(' · ')
-        : isError || rec?.status === 'error'
-          ? errMsg || q || undefined
-          : q || undefined
+      : isError || rec?.status === 'error'
+        ? errMsg || q || undefined
+        : q || undefined
 
     const expandable = canShowExpand && !isError && hits.length > 0
 
     return (
-      <ArchiveRow
-        icon={
-          <StatusIcon
-            tone={tone}
-            fallback={<Search className="size-3 shrink-0 text-muted-foreground" />}
-          />
-        }
+      <ExpandableToolRow
+        icon={<Search className="size-3 shrink-0 text-muted-foreground" />}
         label={label}
         summary={summary}
+        streaming={isStreaming}
         tone={tone}
         expandable={expandable}
       >
@@ -875,7 +766,7 @@ export function SessionArchiveToolBlock({
           emptyLabel={t(`${a}.emptyHits`)}
           openSessionLabel={t(`${a}.openSession`)}
         />
-      </ArchiveRow>
+      </ExpandableToolRow>
     )
   }
 
@@ -917,20 +808,17 @@ export function SessionArchiveToolBlock({
       Icon = Wrench
       label = isStreaming ? t(`${a}.readingToolDetail`) : t(`${a}.toolDetail`)
     }
-    if (isDenied) {
-      // Keep the done-form noun label; denied is in summary (collab-style).
-      if (view === 'meta') label = t(`${a}.sessionMeta`)
-      else if (view === 'user') label = t(`${a}.userMessages`)
-      else if (view === 'assistant') label = t(`${a}.assistantMessages`)
-      else if (view === 'tools') label = t(`${a}.toolIndex`)
-      else if (view === 'tool_detail') label = t(`${a}.toolDetail`)
-      else label = t(`${a}.conversation`)
+    if (isDenied || isError || rec?.status === 'error') {
+      if (view === 'meta') label = t(`${a}.readSessionMeta`)
+      else if (view === 'user') label = t(`${a}.readUserMessages`)
+      else if (view === 'assistant') label = t(`${a}.readAssistantMessages`)
+      else if (view === 'tools') label = t(`${a}.readToolIndex`)
+      else if (view === 'tool_detail') label = t(`${a}.readToolDetail`)
+      else label = t(`${a}.readConversation`)
     }
-    if (isError || rec?.status === 'error') label = t(`${a}.readFailed`)
 
     const summaryBits: string[] = []
-    if (isDenied) summaryBits.push(deniedLabel)
-    else if (isError || rec?.status === 'error') {
+    if (isError || rec?.status === 'error') {
       if (typeof rec?.message === 'string') summaryBits.push(rec.message)
     } else {
       if (sessionTitle) summaryBits.push(sessionTitle)
@@ -949,15 +837,11 @@ export function SessionArchiveToolBlock({
         || (!!markdownBody && markdownBody.length > 0))
 
     return (
-      <ArchiveRow
-        icon={
-          <StatusIcon
-            tone={tone}
-            fallback={<Icon className="size-3 shrink-0 text-muted-foreground" />}
-          />
-        }
+      <ExpandableToolRow
+        icon={<Icon className="size-3 shrink-0 text-muted-foreground" />}
         label={label}
         summary={summaryBits.filter(Boolean).join(' · ') || undefined}
+        streaming={isStreaming}
         tone={tone}
         expandable={expandable}
       >
@@ -1023,7 +907,7 @@ export function SessionArchiveToolBlock({
             <PreBody text={markdownBody} />
           </div>
         ) : null}
-      </ArchiveRow>
+      </ExpandableToolRow>
     )
   }
 
@@ -1046,8 +930,17 @@ export function SessionArchiveToolBlock({
   let summary: string | undefined
 
   if (isDenied) {
-    label = t(`${a}.cleanupFailed`)
-    summary = deniedLabel
+    if (action === 'delete') {
+      Icon = Trash2
+      label = t(`${a}.deleteSessions`)
+    } else if (action === 'unhide') {
+      Icon = Eye
+      label = t(`${a}.unhideSessions`)
+    } else {
+      Icon = EyeOff
+      label = t(`${a}.hideSessions`)
+    }
+    if (idCount > 0) summary = t(`${a}.sessionCount`, { count: idCount })
   } else if (isStreaming) {
     if (action === 'delete') {
       Icon = Trash2
@@ -1066,18 +959,24 @@ export function SessionArchiveToolBlock({
       if (idCount > 0) summary = t(`${a}.sessionCount`, { count: idCount })
     }
   } else if (isError || status === 'error') {
-    label = t(`${a}.cleanupFailed`)
+    if (action === 'delete') {
+      Icon = Trash2
+      label = t(`${a}.deleteSessions`)
+    } else if (action === 'unhide') {
+      Icon = Eye
+      label = t(`${a}.unhideSessions`)
+    } else {
+      Icon = EyeOff
+      label = t(`${a}.hideSessions`)
+    }
     summary = typeof rec?.message === 'string'
       ? rec.message
       : failed.length > 0
         ? t(`${a}.sessionCount`, { count: failed.length })
         : undefined
-  } else if (status === 'cancelled') {
+  } else if (status === 'cancelled' || status === 'rejected') {
     Icon = Trash2
-    label = t(`${a}.deleteCancelled`)
-  } else if (status === 'rejected') {
-    Icon = Trash2
-    label = t(`${a}.deleteRejected`)
+    label = t(`${a}.deleteSessions`)
   } else if (status === 'partial' && action === 'delete') {
     Icon = Trash2
     label = t(`${a}.sessionsDeletedPartial`)
@@ -1114,15 +1013,11 @@ export function SessionArchiveToolBlock({
       || affected.length > 0)
 
   return (
-    <ArchiveRow
-      icon={
-        <StatusIcon
-          tone={tone}
-          fallback={<Icon className="size-3 shrink-0 text-muted-foreground" />}
-        />
-      }
+    <ExpandableToolRow
+      icon={<Icon className="size-3 shrink-0 text-muted-foreground" />}
       label={label}
       summary={summary}
+      streaming={isStreaming}
       tone={tone}
       expandable={expandable}
     >
@@ -1141,7 +1036,7 @@ export function SessionArchiveToolBlock({
           skippedPinned: t(`${a}.skippedPinnedSection`),
         }}
       />
-    </ArchiveRow>
+    </ExpandableToolRow>
   )
 }
 

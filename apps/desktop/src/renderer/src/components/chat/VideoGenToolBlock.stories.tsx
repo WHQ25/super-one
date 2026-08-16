@@ -69,7 +69,7 @@ function SeedAndRender({ genStatuses, input, result, status }: { genStatuses: Re
   return block(input, { result, status })
 }
 
-const meta: Meta = { title: 'ClaudeCode/VideoGenToolBlock', parameters: { layout: 'padded' } }
+const meta: Meta = { title: 'SuperOne/MCP Tools/Video', parameters: { layout: 'padded' } }
 export default meta
 
 export const Submitted: StoryObj = { render: () => <Shell><SeedAndRender genStatuses={{ 'g1': { status: 'submitted', generationId: 'g1', prompt: PROMPT, provider: 'ark', model: 'seedance-1-pro' } }} input={INPUT} result={JSON.stringify({ status: 'submitted', generationId: 'g1' })} /></Shell> }

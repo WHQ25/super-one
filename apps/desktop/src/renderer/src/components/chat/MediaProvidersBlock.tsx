@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { ToolIcon } from './ToolIcon'
+import { ToolName, ToolSummary, withStreamingEllipsis } from './tool-row'
 
 interface ModelInfo {
   id: string
@@ -40,11 +41,14 @@ export function MediaProvidersBlock({ result, isStreaming }: { result: string | 
         className={cn('flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-xs', canExpand && 'cursor-pointer')}
       >
         <ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 font-medium text-foreground">
-          {isStreaming ? `${t('chat.toolBlock.listingMediaProviders')}…` : t('chat.toolBlock.listedMediaProviders')}
-        </span>
+        <ToolName streaming={isStreaming}>
+          {withStreamingEllipsis(
+            isStreaming ? t('chat.toolBlock.listingMediaProviders') : t('chat.toolBlock.listedMediaProviders'),
+            isStreaming,
+          )}
+        </ToolName>
         {!isStreaming && (
-          <span className="min-w-0 truncate text-muted-foreground">{t('chat.toolBlock.mediaProvidersMatched', { count: providers.length })}</span>
+          <ToolSummary>{t('chat.toolBlock.mediaProvidersMatched', { count: providers.length })}</ToolSummary>
         )}
         {canExpand && (
           <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />

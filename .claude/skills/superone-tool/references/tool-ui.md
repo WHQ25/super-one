@@ -5,7 +5,8 @@
 - [Philosophy](#philosophy)
 - [Decide first: what must the user see?](#decide-first)
 - [The base template](#the-base-template)
-- [Label copy and casing (collab grammar)](#label-copy-and-casing-collab-grammar)
+- [Label copy and casing](#label-copy-and-casing-collab-grammar)
+- [Error and denied chrome](#error-and-denied-chrome)
 - [Result-as-UI (no header)](#result-as-ui-no-header)
 - [Summary is the product](#summary-is-the-product)
 - [Progressive disclosure](#progressive-disclosure)
@@ -57,7 +58,7 @@ Then pick the lightest implementation that delivers that story:
 | Outcome | When | Cost |
 |---|---|---|
 | **Designed row** (required for SuperOne tools) | Default for any user-visible SuperOne tool | Compact header and/or small block |
-| **`CompactToolRow` only** | One line is the whole story: `Read manual: product/debug`, `Packed: my-app-1.0.s1app` | ~15 lines in `ToolBlock.tsx` |
+| **`CompactLabeledToolRow` only** | One line is the whole story: `Manual Read` + `product/debug`, `Mini-app Packed` + `foo.s1app` | a few lines in `ToolBlock.tsx` |
 | **Custom `<Feature>ToolBlock`** (header + expand) | Structured result needs scan/expand (search hits, collab peers, config diff, media progress) | component + stories + i18n |
 | **Result-as-UI (no header)** | Args are irrelevant to the user; the rendered result *is* the tool call — e.g. `widget_show` → `WidgetBlock` | content component; nested fallback row |
 | **Hidden** | Agent-internal meta, *or* another surface owns the output | hide predicates — see contract below |
@@ -74,96 +75,139 @@ Almost every tool row in this app follows the same chrome. Copy it; do not inven
 (Exception: [result-as-UI](#result-as-ui-no-header) tools that intentionally omit the header.)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ [icon]  Tool name / verb    summary (truncated)    [chevron] │  ← collapsed header
-├─────────────────────────────────────────────────────────────┤
-│  optional expanded body (result, fields, diff, pretty JSON) │  ← progressive detail
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ [icon]  Label    summary (truncated)    [Denied|Error]    [chevron] │  ← collapsed header
+├──────────────────────────────────────────────────────────────────────┤
+│  optional expanded body (result, fields, diff, error text, JSON)    │  ← progressive detail
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 | Slot | Role | Rules |
 |---|---|---|
-| **Icon** | Glanceable category | `ToolIcon` closed union, or app/MCP icon when branded. Error/denied swap to status icons. |
-| **Label** | What kind of action | Follow [collab grammar](#label-copy-and-casing-collab-grammar). Streaming vs done are different i18n keys. `font-medium text-foreground`, `shrink-0`. |
-| **Summary** | What *this* call did | Muted fragment: entity, count, query quote — not Title Case chrome. See summary rules below. |
+| **Icon** | Glanceable category | `ToolIcon` closed union, or app/MCP icon when branded. Denied/error swap via `ToolStatusIcon`. |
+| **Label** | What kind of action | Follow [label grammar](#label-copy-and-casing-collab-grammar). Three i18n keys (streaming / action / done). Render with `ToolName` so running text shimmers. |
+| **Summary** | What *this* call did | Separate muted span (`ToolSummary`). Space-separated — **never a colon** after the label. Entity, count, query quote — not Title Case chrome. |
+| **Status badge** | Outcome when interrupted | `ToolStatusBadge`: Denied (red) or Error (warning). Only when denied/error. |
 | **Expand indicator** | Affordance that more exists | `ChevronRight`, `ml-auto`, rotates when open. Only if there is expand body *and* `allowExpand`. |
-| **Chrome** | Shared shell | `tool-node my-0.5 rounded bg-muted/20`, header `flex … gap-1.5 px-2 py-1.5 text-xs`. Expand uses `grid-template-rows` 0fr→1fr transition. |
+| **Chrome** | Shared shell | `toolRowSurfaceClass(tone)` — default `bg-muted/20`; denied `denied bg-error/10`; error `errored bg-warning/10`. Expand uses `grid-template-rows` 0fr→1fr. |
 
-Reference implementations of this template:
+Shared primitives live in `tool-row.tsx` — **use them**, do not re-hand-roll the header:
 
-- **Canonical label grammar:** `SessionCollabToolBlock` in `ToolBlock.tsx` + `chat.toolBlock.collab.*`
-- Same chrome: `AppToolBlock`, `ConfigApplyBlock`, media/browser blocks, session archive
-  (`SessionArchiveToolBlock` + `chat.toolBlock.archive.*`)
-- Default fallback path at the bottom of `ToolBlock.tsx` (icon + displayName + summary + chevron)
+| Primitive | Use |
+|---|---|
+| `ToolName` | Label + `animate-shimmer` while streaming (not when denied) |
+| `ToolSummary` | Muted truncated summary |
+| `CompactLabeledToolRow` | Non-expandable header (icon + label + summary + badge) |
+| `ExpandableToolRow` | Header + chevron + body (archive / automation / failed media) |
+| `toolOutcomeLabel` | Pick streaming / action / done string |
+| `ToolStatusIcon` / `ToolStatusBadge` / `toolRowSurfaceClass` | Denied / error chrome matching Bash / Read / Browser |
 
-`CompactToolRow` is the non-expandable header-only form of the same template (icon + children, no
-chevron). Use it when there is truly nothing to expand.
+Reference rows: `SessionArchiveToolBlock`, `AutomationToolBlock`, SuperOne compact branches in
+`ToolBlock.tsx`, `VideoGenToolBlock`. Collab still owns its peer-title header but uses the same
+`ToolName` + surface + badge. Storybook catalog: `SuperOne/MCP Tools`.
 
-## Label copy and casing (collab grammar)
+## Label copy and casing
 
-**Do not invent a new voice for each tool family.** New SuperOne tool rows copy the agent
-collaboration tools (`session_collab_*` → `SessionCollabToolBlock` / `chat.toolBlock.collab`).
-Session archive (`session_list` / `search` / `read` / `cleanup` → `chat.toolBlock.archive`) was
-aligned to the same grammar — use either family as the reference when reviewing Storybook.
+**Do not invent a new voice for each tool family.** SuperOne rows share one three-way grammar.
+Pick strings with `toolOutcomeLabel({ streaming, interrupted, streamingLabel, actionLabel, doneLabel })`.
+Canonical catalog: Storybook `SuperOne/MCP Tools`.
+
+The badge already says Denied / Error. **Do not also put Failed / Denied / Rejected in the title.**
 
 ### English (EN)
 
-| Slot / state | Casing | Examples (collab) | Examples (archive) |
-|---|---|---|---|
-| **Streaming label** | Sentence case; trailing `…` when in progress | `Requesting collaboration…`, `Starting session`, `Sending message to`, `Retrieving messages` | `Listing sessions…`, `Searching sessions…`, `Reading user messages…`, `Confirming delete…` |
-| **Done primary label** | **Title Case** (each major word capital) | `Collaboration Requested`, `Session Started`, `Message Sent`, `Messages Retrieved` | `Sessions Listed`, `Session Meta`, `User Messages`, `Cleanup Preview`, `Sessions Deleted` |
-| **Count / empty as label** | Sentence-style fragment (not full Title Case slogans) | `Received {{count}} messages`, `No messages` | `Found {{count}} hits`, `No hits` |
-| **Failure / cancel label** | Title Case short outcome | (often shared settings strings) `Settings change rejected` is sentence-ish legacy — prefer Title Case for new: `List Failed`, `Delete Cancelled` | `List Failed`, `Search Failed`, `Read Failed`, `Delete Cancelled`, `Delete Rejected` |
-| **Summary (muted)** | Sentence / lowercase fragments, **not** Title Case chrome | peer title `DiffBot - Reviewer`, `{{count}} agents`, `reused` | `{{count}} sessions`, `“auth refresh”`, session title, `before 2026-07-01` |
-| **Expand field labels** | Title Case short nouns | `Name`, `Model`, `Session`, `From` | `Title`, `Harness`, `Messages`, `Session` |
+| Slot / state | Form | Examples |
+|---|---|---|
+| **Streaming** | Sentence case verb-ing + `…` | `Generating image…`, `Listing sessions…`, `Tagging session…`, `Updating settings…` |
+| **Done (success)** | Title Case **noun + past participle** | `Image Generated`, `Sessions Listed`, `Session Tagged`, `Settings Updated`, `Mini-app Registered` |
+| **Denied / error** | Title Case **verb + noun** (the action) | `Generate Image`, `List Sessions`, `Tag Session`, `Update Settings`, `Register Mini-app` |
+| **Count / empty as label** | Sentence fragment, success-only | `{{count}} Messages Retrieved`, `No messages`, `Found {{count}} hits` |
+| **Summary (muted)** | Sentence / lowercase fragments | prompt, `{{count}} sessions`, `“auth refresh”`, peer title — **space**, never `Label: summary` |
+| **Expand field labels** | Title Case short nouns | `Name`, `Model`, `Session`, `From` |
 
-Put the ellipsis **in the i18n string** for streaming keys (e.g. `Listing sessions…`). Do not
-append a second `…` in React when the string already ends with one (collab only adds a runtime `…`
-when the label does not already end with `.` / `…`).
+| State | Image | Video | Session list | Tag | Config apply |
+|---|---|---|---|---|---|
+| Streaming | Generating image… | Generating video… | Listing sessions… | Tagging session… | Updating settings… |
+| Done | Image Generated | Video Generated | Sessions Listed | Session Tagged | Settings Updated |
+| Denied / error | Generate Image | Generate Video | List Sessions | Tag Session | Update Settings |
+
+Running labels shimmer (`ToolName` + `animate-shimmer`). Denied does **not** shimmer.
+
+Put the ellipsis **in the i18n string** for streaming keys, or use `withStreamingEllipsis`. Do not
+double `…`. Browser / Computer Use / Bash stay action-verb names (`Navigate`, `Click`, `Bash`) —
+they are a different family.
 
 ### Chinese (ZH)
 
-Match collab’s concise progressive / completed pairing, not a literal EN Title Case:
+Write **Chinese**, not English product nouns mixed into the phrase.
 
 | State | Pattern | Examples |
 |---|---|---|
-| Streaming | `正在…` + optional `…` | `正在请求协作…`, `正在列出 Session…` |
-| Done | `已…` or short noun phrase | `已请求协作`, `Session 已启动`, `已列出 Session`, `清理预览` |
+| Streaming | `正在…` + optional `…` | `正在生成图片…`, `正在列出会话…` |
+| Done | 名词 + `已` + 动词 | `图片已生成`, `已列出会话`, `小程序已注册`, `消息已发送` |
+| Denied / error | 动词 + 名词 | `生成图片`, `列出会话`, `打标签`, `更新设置` |
 
-Keep product nouns stable where collab does (`Session`, `Agent`, harness names).
+Do **not** leave `Session` / `Agent` / `Widget` / `Harness` in ZH tool-row copy (`列出 Session` is wrong → `列出会话`). Settings pages may still use those English product names; chat tool rows do not.
 
 ### What the summary slot is for
 
-- **Label** = verb / outcome type (the tool family’s action).
-- **Summary** = *which* instance (title, peer, count, query) — human locators only.
-- Never put in either slot when collab would not: raw `confirmToken`, full absolute `projectPath`,
-  long UUID lists, multi-line task body (task body goes in expand or confirm UI).
+- **Label** = the action (running / done / interrupted form above).
+- **Summary** = *which* instance (title, peer, count, query, prompt) — human locators only.
+- Never: raw `confirmToken`, full absolute `projectPath`, UUID lists, multi-line task body
+  (those go in expand or the confirm UI).
 
 ### i18n key shape
 
-Mirror collab’s streaming/done pair under a family namespace:
+Three primary keys per action, plus summary / field fragments:
 
 ```
-chat.toolBlock.collab.requestingCollaboration   // streaming
-chat.toolBlock.collab.collaborationRequested    // done
-chat.toolBlock.archive.listingSessions          // streaming
-chat.toolBlock.archive.sessionsListed           // done
-chat.toolBlock.archive.sessionCount             // summary fragment "{{count}} sessions"
-chat.toolBlock.archive.fields.title             // expand field label
+chat.toolBlock.generatingImage     // streaming
+chat.toolBlock.generateImage       // denied / error (verb + noun)
+chat.toolBlock.generatedImage      // done (noun + past participle)
+chat.toolBlock.archive.listingSessions
+chat.toolBlock.archive.listSessions
+chat.toolBlock.archive.sessionsListed
+chat.toolBlock.archive.sessionCount   // summary "{{count}} sessions"
+chat.toolBlock.archive.fields.title
 ```
 
-Prefer a nested object per tool family (`collab`, `archive`, `browser`, …) over a flat soup of keys
-when the family has more than a handful of strings. Both `en.ts` and `zh.ts` must define every key.
+Prefer a nested object per family (`collab`, `archive`, `automation`, `browser`) when the set is
+larger than a handful. Both `en.ts` and `zh.ts` must define every key.
 
 ### Anti-patterns (copy)
 
 | Smell | Why | Instead |
 |---|---|---|
-| Sentence-case done labels only (`Listed sessions`, `Read conversation`) | Diverges from collab Title Case done chrome | `Sessions Listed`, `Conversation` |
-| Title Case streaming (`Listing Sessions…`) | Feels static / complete while still running | Sentence case + `…` |
-| Title Case in the muted summary (`4 Sessions · Auth`) | Competes with the label; noisy | `4 sessions`, `“auth”` |
-| Hardcoded English in the component | Breaks ZH UI; drifts from collab | `t('chat.toolBlock…')` only |
-| New family invents its own voice | Transcript looks like mixed products | Diff Storybook against `AgentCollaboration/ToolUI` |
+| Success past tense on a failed/denied row (`Image Generated` + Error) | Claims the work finished | `Generate Image` + Error badge |
+| Failed baked into the title (`Image Generation Failed`, `Video Status Failed`) | Duplicates the Error badge | `Generate Image` / `Check Video Status` + Error |
+| Colon between name and summary (`Read manual: widget/overview`) | Breaks the name + space + muted summary template | `Manual Read` + `widget/overview` |
+| Sentence-case done labels only (`Listed sessions`) | Diverges from Title Case done chrome | `Sessions Listed` |
+| Title Case streaming (`Listing Sessions…`) | Feels complete while running | Sentence case + `…` + shimmer |
+| Title Case in the muted summary (`4 Sessions · Auth`) | Competes with the label | `4 sessions`, `“auth”` |
+| Hardcoded English in the component | Breaks ZH; drifts | `t('chat.toolBlock…')` only |
+| ZH tool-row copy mixed with EN nouns (`列出 Session`) | Looks unfinished | `列出会话`, `智能体`, `组件` |
+| New family invents its own voice | Transcript looks like mixed products | Diff `SuperOne/MCP Tools` |
+
+## Error and denied chrome
+
+Same chrome as Bash / Read / Browser. Do not invent a grey row that writes “Denied” into the
+summary or recolors the label with `text-destructive`.
+
+| State | Icon | Surface | Badge | Title |
+|---|---|---|---|---|
+| Denied / rejected / cancelled | red Ban | `denied bg-error/10` | `Denied` | verb + noun |
+| Error | warning TriangleAlert | `errored bg-warning/10` | `Error` | verb + noun |
+
+`ToolStatusIcon` + `ToolStatusBadge` + `toolRowSurfaceClass(tone)` implement this. Pass
+`tone={toolRowTone(isDenied, isError)}` into `CompactLabeledToolRow` / `ExpandableToolRow`.
+
+Failed **generation** rows (`media_generate_image`, `media_generate_video`) must be **expandable**
+and show the host error string in the body (`mediaToolErrorMessage`). Success image rows stay
+hidden (gallery owns them); a failed image/video row is the only place the user can read why.
+
+`isDenied` is true when the raw result starts with `[denied] `. `ToolBlock` strips that prefix
+into `cleanResult` — read the flag, do not re-parse the string. Confirm decline / cancel is
+`status: 'rejected' | 'cancelled'` → **denied** tone, not error.
 
 ## Result-as-UI (no header)
 
@@ -258,7 +302,7 @@ Supporting pieces:
 | Icon + summary for native (non-MCP) tools | `tool-display.ts` → `getToolDisplay` |
 | Human label, verb, MCP name parsing | `tool-display.ts` → `formatToolLabel` / `getToolLabel`, `getToolVerb`, `parseMcpToolName` |
 | Hidden-block predicates | `tool-display.ts` → `isAlwaysHiddenToolBlock`, `isHiddenToolBlock` |
-| Header-only row primitive | `CompactToolRow`, local to `ToolBlock.tsx` |
+| Header-only / expandable row primitives | `tool-row.tsx` → `CompactLabeledToolRow`, `ExpandableToolRow`, `ToolName` |
 | Icon set | `ToolIcon.tsx` (`ToolIcon` type is a closed union in `tool-display.ts`) |
 | Precomputed summary on the wire | `toolSummary` on tool_use blocks; filled by `computeToolMeta` / ACP mappers |
 
@@ -273,12 +317,22 @@ A simple designed SuperOne row (header only):
 if (mcpInfo.mcpToolName === 'note_pin') {
   const noteId = typeof params.noteId === 'string' ? params.noteId : ''
   return (
-    <CompactToolRow icon={<ToolIcon icon="clipboard-list" className="size-3 shrink-0 text-muted-foreground" />}>
-      <span className="font-medium text-foreground">
-        {isStreaming ? <>{t('chat.toolBlock.pinningNote')}…</> : t('chat.toolBlock.pinnedNote')}
-        {noteId && <>: <span className="text-muted-foreground">{noteId}</span></>}
-      </span>
-    </CompactToolRow>
+    <CompactLabeledToolRow
+      icon={<ToolIcon icon="clipboard-list" className="size-3 shrink-0 text-muted-foreground" />}
+      label={withStreamingEllipsis(
+        toolOutcomeLabel({
+          streaming: isStreaming,
+          interrupted: isDenied || !!isError,
+          streamingLabel: t('chat.toolBlock.pinningNote'),
+          actionLabel: t('chat.toolBlock.pinNote'),
+          doneLabel: t('chat.toolBlock.notePinned'),
+        }),
+        isStreaming,
+      )}
+      streaming={isStreaming}
+      tone={toolRowTone(isDenied, isError)}
+      summary={noteId || undefined}
+    />
   )
 }
 ```
@@ -326,10 +380,10 @@ Every branch and every block handles all four. Skipping one is the most common r
 
 | State | Signal | What the user must see |
 |---|---|---|
-| Streaming | `isStreaming` | collab-grammar streaming label + whatever **summary** fragment has arrived |
-| Complete | else | collab-grammar done label (Title Case EN) + final summary (+ expand if detail exists) |
-| Error | `isError` | failure label + error text in summary or expand — never a blank row |
-| Denied | `isDenied` (result starts with `[denied] `) | stable family label + `Denied` (or feedback) in summary — collab keeps identity, does not invent a new verb |
+| Streaming | `isStreaming` | verb-ing label + shimmer + whatever **summary** fragment has arrived |
+| Complete | else | noun + past participle + final summary (+ expand if detail exists) |
+| Error | `isError` or result `status: 'error'` | verb + noun + Error badge + warning chrome; error text in **expand** (required for generation failures) |
+| Denied | `isDenied` (result starts with `[denied] `) or confirm `rejected` / `cancelled` | verb + noun + Denied badge + red chrome — do not rewrite the title to Denied / Failed |
 
 `ToolBlock` strips the `[denied] ` prefix into `cleanResult` before your branch runs, so read
 `isDenied` rather than sniffing the string again.
@@ -343,10 +397,11 @@ degradation branch:
 ```tsx
 if (!allowExpand) {
   return (
-    <CompactToolRow icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}>
-      <span className="font-medium text-foreground">{t('chat.toolBlock.generatedVideo')}</span>
-      {/* optional short summary still welcome */}
-    </CompactToolRow>
+    <CompactLabeledToolRow
+      icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
+      label={t('chat.toolBlock.generatedVideo')}
+      streaming={false}
+    />
   )
 }
 return <VideoGenToolBlock … />
@@ -384,7 +439,7 @@ key silently falls back to English in the Chinese UI — ships unnoticed.
 Rules:
 
 1. **No hardcoded user-facing English** in the block (Storybook fixtures may still use English data).
-2. **Streaming / done pair** for every primary label — see [collab grammar](#label-copy-and-casing-collab-grammar).
+2. **Streaming / action / done trio** for every primary label — see [label grammar](#label-copy-and-casing-collab-grammar).
 3. **Family namespace** when the tool set is multi-tool: `chat.toolBlock.collab.*`,
    `chat.toolBlock.archive.*`, `chat.toolBlock.browser.*`.
 4. **Summary / count fragments** are separate keys (`agentCount`, `sessionCount`, `hitsFound`) so
@@ -396,15 +451,13 @@ Reference: collab keys in `packages/shared/src/i18n/en.ts` → `toolBlock.collab
 
 ## Storybook first
 
-Write `<Feature>ToolBlock.stories.tsx` (or stories through `ToolBlock` for Compact branches)
-alongside the component with realistic fixtures covering, at minimum: streaming, complete-with-data,
-complete-empty, error, denied, and the `allowExpand: false` variant. Fixtures should be **real
-captured tool output**, not invented JSON — invented fixtures make the parser look more robust than
-it is.
+Write stories under **`SuperOne/MCP Tools`** (catalog in `SuperOneMcpTools.stories.tsx`, detailed
+galleries as `SuperOne/MCP Tools/<Family>`). Cover streaming, complete-with-data, complete-empty,
+error, denied, and `allowExpand: false`. Fixtures should be **real captured tool output**, not
+invented JSON.
 
-For in-progress designs, keep the block unwired from `ToolBlock` until Storybook review (same
-workflow as archive-style blocks). Stories are cheap; a bad block discovered in a live session is
-not.
+For in-progress designs, keep the block unwired from `ToolBlock` until Storybook review. Stories
+are cheap; a bad block discovered in a live session is not.
 
 ```bash
 bun run storybook

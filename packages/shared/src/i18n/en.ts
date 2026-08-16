@@ -1416,12 +1416,34 @@ export type Messages = {
       configDeleted: string
       generatingImage: string
       generatedImage: string
+      generateImage: string
+      generatingVideo: string
+      generatedVideo: string
+      generateVideo: string
       listingMediaProviders: string
       listedMediaProviders: string
+      listMediaProviders: string
       mediaProvidersMatched: string
+      registeringMiniApp: string
+      registeredMiniApp: string
+      registerMiniApp: string
+      updatingMiniAppTypes: string
+      updatedMiniAppTypes: string
+      updateMiniAppTypes: string
+      listingWidgetTemplates: string
+      listedWidgetTemplates: string
+      listWidgetTemplates: string
+      checkingVideoStatus: string
+      checkVideoStatus: string
       settingUpMiniApp: string
       setUpMiniApp: string
+      setupMiniApp: string
       setUpMiniAppFailed: string
+      updateSettings: string
+      createSettings: string
+      deleteSettings: string
+      readSettings: string
+      readManualAction: string
       setupFields: {
         directory: string
         description: string
@@ -1441,7 +1463,7 @@ export type Messages = {
         retrievingMessages: string
         messagesRetrieved: string
         messageReceived: string
-        /** Primary retrieve header: how many messages arrived this call. */
+        /** Primary retrieve header: noun + past participle, with arrival count. */
         receivedMessageCount: string
         noMessages: string
         agentCount: string
@@ -1470,6 +1492,7 @@ export type Messages = {
       archive: {
         listingProjects: string
         projectsListed: string
+        listProjects: string
         projectListFailed: string
         projectCount: string
         emptyProjects: string
@@ -1478,33 +1501,44 @@ export type Messages = {
         openProject: string
         listingSessions: string
         sessionsListed: string
+        listSessions: string
         listFailed: string
         searchingSessions: string
         sessionSearch: string
+        searchSessions: string
         hitsFound: string
         noHits: string
         searchFailed: string
         readingSessionMeta: string
         sessionMeta: string
+        readSessionMeta: string
         readingUserMessages: string
         userMessages: string
+        readUserMessages: string
         readingAssistantMessages: string
         assistantMessages: string
+        readAssistantMessages: string
         readingConversation: string
         conversation: string
+        readConversation: string
         readingToolIndex: string
         toolIndex: string
+        readToolIndex: string
         readingToolDetail: string
         toolDetail: string
+        readToolDetail: string
         readFailed: string
         previewingCleanup: string
         cleanupPreview: string
         hidingSessions: string
         sessionsHidden: string
+        hideSessions: string
         unhidingSessions: string
         sessionsUnhidden: string
+        unhideSessions: string
         confirmingDelete: string
         sessionsDeleted: string
+        deleteSessions: string
         sessionsDeletedPartial: string
         deleteCancelled: string
         deleteRejected: string
@@ -1527,6 +1561,7 @@ export type Messages = {
         pageHint: string
         taggingSession: string
         sessionTagged: string
+        tagSession: string
         tagFailed: string
         fields: {
           title: string
@@ -1548,13 +1583,20 @@ export type Messages = {
       automation: {
         listingAutomations: string
         automationsListed: string
+        listAutomations: string
         readingAutomation: string
         automationDetail: string
+        readAutomation: string
         listFailed: string
         empty: string
         automationCount: string
         automationCreated: string
+        createAutomation: string
         automationUpdated: string
+        updateAutomation: string
+        enableAutomation: string
+        disableAutomation: string
+        deleteAutomations: string
         confirmingCreate: string
         confirmingUpdate: string
         confirmingEnable: string
@@ -4097,7 +4139,7 @@ export const en: Messages = {
       reference: 'Reference {{index}}',
     },
     videoGenToolBlock: {
-      label: 'Video Generation',
+      label: 'Video Generated',
       generating: 'Generating video',
       submitted: 'Submitted',
       rendering: 'Rendering…',
@@ -4173,42 +4215,64 @@ export const en: Messages = {
     toolBlock: {
       enteredPlanMode: 'Entered plan mode',
       readingWidgetGuidelines: 'Reading widget guidelines…',
-      readWidgetGuidelines: 'Read widget guidelines',
+      readWidgetGuidelines: 'Widget Guidelines Read',
       readingMiniAppGuide: 'Reading mini-app guide',
-      readMiniAppGuide: 'Read mini-app guide',
+      readMiniAppGuide: 'Mini-app Guide Read',
       readingMediaGuide: 'Reading media guide',
-      readMediaGuide: 'Read media guide',
+      readMediaGuide: 'Media Guide Read',
       readingConfig: 'Reading settings',
-      readConfig: 'Read settings',
+      readConfig: 'Settings Read',
       readingManual: 'Reading manual',
-      readManual: 'Read manual',
+      readManual: 'Manual Read',
       guideOverview: 'Overview',
       applyingSettings: 'Updating settings',
-      appliedSettings: 'Updated settings',
-      settingsChangeRejected: 'Settings change rejected',
-      settingsChangeCancelled: 'Settings change dismissed',
-      settingsChangeFailed: 'Settings change failed',
+      appliedSettings: 'Settings Updated',
+      updateSettings: 'Update Settings',
+      createSettings: 'Create Settings',
+      deleteSettings: 'Delete Settings',
+      readSettings: 'Read Settings',
+      readManualAction: 'Read Manual',
+      settingsChangeRejected: 'Settings Change Rejected',
+      settingsChangeCancelled: 'Settings Change Dismissed',
+      settingsChangeFailed: 'Settings Change Failed',
       settingsChangeCount: '{{count}} changes',
-      configCreated: 'Created',
-      configUpdated: 'Updated',
-      configDeleted: 'Deleted',
+      configCreated: 'Settings Created',
+      configUpdated: 'Settings Updated',
+      configDeleted: 'Settings Deleted',
       generatingImage: 'Generating image',
-      generatedImage: 'Generated image',
-      listingMediaProviders: 'List providers',
-      listedMediaProviders: 'List providers',
+      generatedImage: 'Image Generated',
+      generateImage: 'Generate Image',
+      generatingVideo: 'Generating video',
+      generatedVideo: 'Video Generated',
+      generateVideo: 'Generate Video',
+      listingMediaProviders: 'Listing providers',
+      listedMediaProviders: 'Providers Listed',
+      listMediaProviders: 'List Providers',
       mediaProvidersMatched: '{{count}} matched',
+      registeringMiniApp: 'Registering mini-app',
+      registeredMiniApp: 'Mini-app Registered',
+      registerMiniApp: 'Register Mini-app',
+      updatingMiniAppTypes: 'Updating types',
+      updatedMiniAppTypes: 'Types Updated',
+      updateMiniAppTypes: 'Update Types',
+      listingWidgetTemplates: 'Listing widget templates',
+      listedWidgetTemplates: 'Widget Templates Listed',
+      listWidgetTemplates: 'List Widget Templates',
+      checkingVideoStatus: 'Checking video status',
+      checkVideoStatus: 'Check Video Status',
       settingUpMiniApp: 'Setting up mini-app',
-      setUpMiniApp: 'Set up mini-app',
-      setUpMiniAppFailed: 'Mini-app setup failed',
+      setUpMiniApp: 'Mini-app Set Up',
+      setupMiniApp: 'Set Up Mini-app',
+      setUpMiniAppFailed: 'Mini-app Setup Failed',
       setupFields: {
         directory: 'Directory',
         description: 'Description',
         appId: 'App ID',
       },
       packing: 'Packing…',
-      miniAppPacked: 'Mini-app packed',
+      miniAppPacked: 'Mini-app Packed',
       generatingWidget: 'Generating widget…',
-      generateWidget: 'Generate widget',
+      generateWidget: 'Widget Generated',
       collab: {
         requestingCollaboration: 'Requesting collaboration…',
         collaborationRequested: 'Collaboration Requested',
@@ -4219,7 +4283,7 @@ export const en: Messages = {
         retrievingMessages: 'Retrieving messages',
         messagesRetrieved: 'Messages Retrieved',
         messageReceived: 'Message Received',
-        receivedMessageCount: 'Received {{count}} messages',
+        receivedMessageCount: '{{count}} Messages Retrieved',
         noMessages: 'No messages',
         agentCount: '{{count}} agents',
         messageCount: '{{count}} messages',
@@ -4247,6 +4311,7 @@ export const en: Messages = {
       archive: {
         listingProjects: 'Listing projects…',
         projectsListed: 'Projects Listed',
+        listProjects: 'List Projects',
         projectListFailed: 'List Failed',
         projectCount: '{{count}} projects',
         emptyProjects: 'No projects',
@@ -4255,33 +4320,44 @@ export const en: Messages = {
         openProject: 'Open project',
         listingSessions: 'Listing sessions…',
         sessionsListed: 'Sessions Listed',
+        listSessions: 'List Sessions',
         listFailed: 'List Failed',
         searchingSessions: 'Searching sessions…',
-        sessionSearch: 'Session Search',
+        sessionSearch: 'Sessions Searched',
+        searchSessions: 'Search Sessions',
         hitsFound: 'Found {{count}} hits',
         noHits: 'No hits',
         searchFailed: 'Search Failed',
         readingSessionMeta: 'Reading session meta…',
-        sessionMeta: 'Session Meta',
+        sessionMeta: 'Session Meta Read',
+        readSessionMeta: 'Read Session Meta',
         readingUserMessages: 'Reading user messages…',
-        userMessages: 'User Messages',
+        userMessages: 'User Messages Read',
+        readUserMessages: 'Read User Messages',
         readingAssistantMessages: 'Reading assistant messages…',
-        assistantMessages: 'Assistant Messages',
+        assistantMessages: 'Assistant Messages Read',
+        readAssistantMessages: 'Read Assistant Messages',
         readingConversation: 'Reading conversation…',
-        conversation: 'Conversation',
+        conversation: 'Conversation Read',
+        readConversation: 'Read Conversation',
         readingToolIndex: 'Reading tool index…',
-        toolIndex: 'Tool Index',
+        toolIndex: 'Tool Index Read',
+        readToolIndex: 'Read Tool Index',
         readingToolDetail: 'Reading tool detail…',
-        toolDetail: 'Tool Detail',
+        toolDetail: 'Tool Detail Read',
+        readToolDetail: 'Read Tool Detail',
         readFailed: 'Read Failed',
         previewingCleanup: 'Previewing cleanup…',
-        cleanupPreview: 'Cleanup Preview',
+        cleanupPreview: 'Cleanup Previewed',
         hidingSessions: 'Hiding sessions…',
         sessionsHidden: 'Sessions Hidden',
+        hideSessions: 'Hide Sessions',
         unhidingSessions: 'Unhiding sessions…',
         sessionsUnhidden: 'Sessions Unhidden',
+        unhideSessions: 'Unhide Sessions',
         confirmingDelete: 'Confirming delete…',
         sessionsDeleted: 'Sessions Deleted',
+        deleteSessions: 'Delete Sessions',
         sessionsDeletedPartial: 'Partially Deleted',
         deleteCancelled: 'Delete Cancelled',
         deleteRejected: 'Delete Rejected',
@@ -4304,6 +4380,7 @@ export const en: Messages = {
         pageHint: 'Page · {{hint}}',
         taggingSession: 'Tagging session…',
         sessionTagged: 'Session Tagged',
+        tagSession: 'Tag Session',
         tagFailed: 'Tag Failed',
         fields: {
           title: 'Title',
@@ -4325,13 +4402,20 @@ export const en: Messages = {
       automation: {
         listingAutomations: 'Listing automations…',
         automationsListed: 'Automations Listed',
+        listAutomations: 'List Automations',
         readingAutomation: 'Reading automation…',
-        automationDetail: 'Automation Detail',
+        automationDetail: 'Automation Read',
+        readAutomation: 'Read Automation',
         listFailed: 'Automation List Failed',
         empty: 'No automations',
         automationCount: '{{count}} automations',
         automationCreated: 'Automation Created',
+        createAutomation: 'Create Automation',
         automationUpdated: 'Automation Updated',
+        updateAutomation: 'Update Automation',
+        enableAutomation: 'Enable Automation',
+        disableAutomation: 'Disable Automation',
+        deleteAutomations: 'Delete Automations',
         confirmingCreate: 'Confirming create…',
         confirmingUpdate: 'Confirming update…',
         confirmingEnable: 'Confirming enable…',

@@ -218,7 +218,7 @@ const ERROR_RESULT = JSON.stringify({
 
 const meta: Meta = {
   // Same tree style as SessionArchive/ToolUI so it sits next to archive/collab galleries.
-  title: 'Automation/ToolUI',
+  title: 'SuperOne/MCP Tools/Automation',
   parameters: {
     layout: 'padded',
   },

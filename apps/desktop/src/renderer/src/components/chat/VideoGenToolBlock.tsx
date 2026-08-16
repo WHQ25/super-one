@@ -1,15 +1,18 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Video as VideoIcon, TriangleAlert, Loader2, Image, FileVideo, FileAudio, AlertCircle } from 'lucide-react'
+import { ChevronRight, Video as VideoIcon, Loader2, Image, FileVideo, FileAudio, AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession } from '@/stores/chat'
 import { FileChip } from './ToolBlock'
 import { useImageDataUri } from './image-shared'
+import { ToolName, ToolStatusBadge, ToolStatusIcon, ToolSummary, toolRowSurfaceClass } from './tool-row'
+import { mediaToolErrorMessage } from './media-generation'
 
 interface VideoGenToolBlockProps {
   params: Record<string, unknown>
   result?: string
   isStreaming: boolean
+  isError?: boolean
 }
 
 function parseResult(resultText: string | undefined): Record<string, unknown> | null {
@@ -74,7 +77,7 @@ function FileRefChip({ path, label, icon: Icon }: { path: string; label: string;
   )
 }
 
-export function VideoGenToolBlock({ params, result, isStreaming }: VideoGenToolBlockProps) {
+export function VideoGenToolBlock({ params, result, isStreaming, isError }: VideoGenToolBlockProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
 
@@ -104,15 +107,16 @@ export function VideoGenToolBlock({ params, result, isStreaming }: VideoGenToolB
   const hasAdvanced = fps !== undefined || seed !== undefined || generateAudio !== undefined || watermark !== undefined || cameraFixed !== undefined
 
   const currentStatus = genStatus?.status ?? (resultParsed?.status === 'error' ? 'error' : (result ? 'submitted' : undefined))
-  const isFailed = currentStatus === 'error'
-  const statusError = genStatus?.error ?? (resultParsed?.status === 'error' ? String(resultParsed.message ?? '') : undefined)
+  const isFailed = currentStatus === 'error' || !!isError
+  const statusError = genStatus?.error
+    ?? (resultParsed?.status === 'error' ? String(resultParsed.message ?? '') : undefined)
+    ?? (mediaToolErrorMessage(result) || undefined)
 
   const badgeLabel = useMemo(() => {
     switch (currentStatus) {
       case 'submitted':
       case 'running': return t('chat.videoGenToolBlock.submitted', 'Submitted')
       case 'generated': return t('chat.videoGenToolBlock.completed', 'Completed')
-      case 'error': return t('chat.videoGenToolBlock.failed', 'Failed')
       default: return ''
     }
   }, [currentStatus, t])
@@ -123,33 +127,28 @@ export function VideoGenToolBlock({ params, result, isStreaming }: VideoGenToolB
   const hasResult = !!result && !isStreaming
 
   return (
-    <div className={cn(
-      'tool-node my-0.5 rounded transition-colors',
-      isFailed ? 'errored bg-warning/10' : 'bg-muted/20',
-      hasResult && 'cursor-pointer',
-      hasResult && (isFailed ? 'hover:bg-warning/20' : 'hover:bg-muted/40'),
-    )}>
+    <div className={toolRowSurfaceClass(isFailed ? 'error' : 'default', hasResult)}>
       <div
         className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={hasResult ? () => setExpanded((e) => !e) : undefined}
       >
-        {isFailed ? (
-          <TriangleAlert className="size-3 shrink-0 text-warning" />
-        ) : (
-          <VideoIcon className="size-3 shrink-0 text-muted-foreground" />
-        )}
-        <span className={cn('shrink-0 font-medium', isFailed ? 'text-warning' : 'text-foreground')}>
-          {isStreaming ? <>{t('chat.videoGenToolBlock.generating')}…</> : t('chat.videoGenToolBlock.label')}
-        </span>
-        {title && <span className="min-w-0 truncate text-muted-foreground">{title}</span>}
-        {badgeLabel && (
-          <span className={cn(
-            'shrink-0 rounded px-1 py-px text-xs',
-            isFailed ? 'bg-warning/20 text-warning' : 'bg-muted text-muted-foreground',
-          )}>
+        <ToolStatusIcon
+          tone={isFailed ? 'error' : 'default'}
+          fallback={<VideoIcon className="size-3 shrink-0 text-muted-foreground" />}
+        />
+        <ToolName streaming={isStreaming} tone={isFailed ? 'error' : 'default'}>
+          {isStreaming
+            ? <>{t('chat.videoGenToolBlock.generating')}…</>
+            : isFailed
+              ? t('chat.toolBlock.generateVideo')
+              : t('chat.videoGenToolBlock.label')}
+        </ToolName>
+        {title ? <ToolSummary>{title}</ToolSummary> : null}
+        {isFailed ? <ToolStatusBadge tone="error" /> : badgeLabel ? (
+          <span className="shrink-0 rounded bg-muted px-1 py-px text-xs text-muted-foreground">
             {badgeLabel}
           </span>
-        )}
+        ) : null}
         {hasResult && (
           <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
         )}
@@ -164,6 +163,9 @@ export function VideoGenToolBlock({ params, result, isStreaming }: VideoGenToolB
             <div className="space-y-2 border-t border-border/40 px-2 py-2 text-xs">
               {expanded && (
                 <>
+                  {isFailed && statusError ? (
+                    <div className="whitespace-pre-wrap break-words text-warning/90">{statusError}</div>
+                  ) : null}
                   {hasRefs && (
                     <div className="space-y-2">
                       <span className="text-xs font-medium text-foreground">{t('chat.videoGenToolBlock.referenceMaterials')}</span>

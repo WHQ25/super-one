@@ -113,7 +113,7 @@ const TOON_COOKIES = `cookies[2]{name,value,domain}:
   theme,dark,.example.com`
 
 const meta: Meta = {
-  title: 'Browser/BrowserToolBlock',
+  title: 'SuperOne/MCP Tools/Browser',
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],
 }

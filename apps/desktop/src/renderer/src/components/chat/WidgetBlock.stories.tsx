@@ -11,7 +11,7 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
 }
 
 const meta: Meta<typeof WidgetBlock> = {
-  title: 'Common/WidgetBlock',
+  title: 'SuperOne/MCP Tools/Widget',
   component: WidgetBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell width={820}><Story /></StoryShell>],

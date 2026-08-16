@@ -53,7 +53,7 @@ function SeedApps({ children }: { children: ReactNode }) {
 }
 
 const meta: Meta<typeof ToolBlock> = {
-  title: 'Common/AppToolBlock',
+  title: 'SuperOne/MCP Tools/Miniapp Call',
   component: ToolBlock,
   parameters: { layout: 'padded' },
   decorators: [

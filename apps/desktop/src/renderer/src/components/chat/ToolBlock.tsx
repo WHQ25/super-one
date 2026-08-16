@@ -21,6 +21,7 @@ import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
+import { isMediaToolErrorResult, mediaToolErrorMessage } from './media-generation'
 import { getBrowserOp } from './browser-tool-display'
 import { getComputerOp } from './computer-tool-display'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
@@ -47,6 +48,19 @@ import {
   isAutomationToolName,
   AutomationToolBlock,
 } from './AutomationToolBlock'
+import {
+  CompactLabeledToolRow,
+  CompactToolRow,
+  ExpandableToolRow,
+  ToolName,
+  ToolStatusBadge,
+  ToolStatusIcon,
+  ToolSummary,
+  toolRowSurfaceClass,
+  toolOutcomeLabel,
+  withStreamingEllipsis,
+  type ToolRowTone,
+} from './tool-row'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -54,15 +68,44 @@ function isCompleteJson(s: string): boolean {
 
 const SUPERONE_SERVER = 'superone'
 
-function CompactToolRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div className="tool-node my-0.5 min-w-0 rounded bg-muted/20">
-      <div className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs">
-        {icon}
-        {children}
-      </div>
-    </div>
-  )
+function toolRowTone(isDenied?: boolean, isError?: boolean): ToolRowTone {
+  if (isDenied) return 'denied'
+  if (isError) return 'error'
+  return 'default'
+}
+
+function collabHeaderLabel(
+  toolName: string,
+  isStreaming: boolean,
+  t: (key: string) => string,
+): string {
+  const isRequest = toolName === 'session_collab_request' || toolName === 'session_request_agents_collab'
+  const isStart = toolName === 'session_collab_start' || toolName === 'session_start'
+  const isSend = toolName === 'session_collab_send' || toolName === 'session_send'
+  const isRetrieve = toolName === 'session_collab_retrieve'
+    || toolName === 'session_collab_wait'
+    || toolName === 'session_wait'
+  if (isRequest) {
+    return isStreaming
+      ? t('chat.toolBlock.collab.requestingCollaboration')
+      : t('chat.toolBlock.collab.collaborationRequested')
+  }
+  if (isStart) {
+    return isStreaming
+      ? t('chat.toolBlock.collab.startingCollaborationSession')
+      : t('chat.toolBlock.collab.collaborationSessionStarted')
+  }
+  if (isSend) {
+    return isStreaming
+      ? t('chat.toolBlock.collab.sendingMessageTo')
+      : t('chat.toolBlock.collab.messageSent')
+  }
+  if (isRetrieve) {
+    return isStreaming
+      ? t('chat.toolBlock.collab.retrievingMessages')
+      : t('chat.toolBlock.collab.messagesRetrieved')
+  }
+  return toolName.replace(/_/g, ' ')
 }
 
 const COLLAB_TOOLS = new Set([
@@ -427,12 +470,17 @@ function SessionCollabToolBlock({
   }
 
   const streamingDots = isStreaming && !/[.…]$/.test(label) ? '…' : ''
+  const collabTone: ToolRowTone =
+    status === 'rejected' || status === 'cancelled' ? 'denied' : 'default'
   const header = (
     <>
-      <Icon className="size-3 shrink-0 text-muted-foreground" />
-      <span className="shrink-0 font-medium text-foreground">
+      <ToolStatusIcon
+        tone={collabTone}
+        fallback={<Icon className="size-3 shrink-0 text-muted-foreground" />}
+      />
+      <ToolName streaming={isStreaming} tone={collabTone}>
         {label}{streamingDots}
-      </span>
+      </ToolName>
       {summaryPeer && (
         <SessionTitleLink
           sessionId={summaryPeer.sessionId ?? headerSessionId}
@@ -447,20 +495,21 @@ function SessionCollabToolBlock({
       {summarySuffix && (
         <span className="min-w-0 truncate text-muted-foreground">{summarySuffix}</span>
       )}
+      <ToolStatusBadge tone={collabTone} />
     </>
   )
 
   const hasExpandBody = expandable && (detailRows.length > 0 || inboxMessages.length > 0)
   if (!hasExpandBody) {
     return (
-      <div className="tool-node my-0.5 rounded bg-muted/20">
+      <div className={toolRowSurfaceClass(collabTone)}>
         <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">{header}</div>
       </div>
     )
   }
 
   return (
-    <div className={cn('tool-node my-0.5 rounded bg-muted/20', 'cursor-pointer hover:bg-muted/40')}>
+    <div className={toolRowSurfaceClass(collabTone, true)}>
       <div
         className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={() => setExpanded((value) => !value)}
@@ -542,8 +591,8 @@ function AppToolHeader({ appName, toolText, isStreaming, summary }: { appName?: 
   return (
     <>
       {appName && <><span className="shrink-0 font-medium text-foreground">{appName}</span><span className="shrink-0 text-muted-foreground">·</span></>}
-      <span className="shrink-0 text-foreground">{isStreaming ? <>{toolText}…</> : toolText}</span>
-      {summary && <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}
+      <ToolName streaming={isStreaming} className="font-normal">{isStreaming ? withStreamingEllipsis(toolText, true) : toolText}</ToolName>
+      {summary ? <ToolSummary>{summary}</ToolSummary> : null}
     </>
   )
 }
@@ -589,20 +638,24 @@ function AppToolBlock({ icon, appName, toolText, summary, isStreaming, expandabl
   )
 }
 
-function SetupMiniAppDevBlock({ appName, isStreaming, params, result }: {
+function SetupMiniAppDevBlock({ appName, isStreaming, params, result, isDenied, isError }: {
   appName: string
   isStreaming: boolean
   params: Record<string, unknown>
   result: Record<string, unknown> | null
+  isDenied?: boolean
+  isError?: boolean
 }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
-  const errored = !!result && result.status === 'error'
-  const headerLabel = errored
-    ? t('chat.toolBlock.setUpMiniAppFailed')
-    : isStreaming
-      ? t('chat.toolBlock.settingUpMiniApp')
-      : t('chat.toolBlock.setUpMiniApp')
+  const errored = !!isError || (!!result && result.status === 'error')
+  const tone = toolRowTone(isDenied, errored)
+  const headerLabel = toolOutcomeLabel({
+    streaming: isStreaming,
+    interrupted: !!isDenied || errored,
+    streamingLabel: t('chat.toolBlock.settingUpMiniApp'),
+    actionLabel: t('chat.toolBlock.setupMiniApp'),
+    doneLabel: t('chat.toolBlock.setUpMiniApp'),
+  })
   const appId = result?.appId ? String(result.appId) : ''
   const directory = params.directory ? String(params.directory) : ''
   const description = params.description ? String(params.description) : ''
@@ -612,40 +665,26 @@ function SetupMiniAppDevBlock({ appName, isStreaming, params, result }: {
   if (directory) rows.push({ key: 'directory', label: t('chat.toolBlock.setupFields.directory'), value: directory, mono: true })
   if (description) rows.push({ key: 'description', label: t('chat.toolBlock.setupFields.description'), value: description })
   return (
-    <div className={cn('tool-node my-0.5 rounded bg-muted/20', 'cursor-pointer hover:bg-muted/40')}>
-      <div
-        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
-        onClick={() => setExpanded((e) => !e)}
-      >
-        <ToolIcon icon="file-plus" className={cn('size-3 shrink-0', errored ? 'text-destructive' : 'text-muted-foreground')} />
-        <span className="shrink-0 font-medium text-foreground">{headerLabel}{isStreaming && '…'}</span>
-        {appName && <>
-          <span className="shrink-0 text-muted-foreground">·</span>
-          <span className="min-w-0 truncate text-foreground">{appName}</span>
-        </>}
-        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-      </div>
-      <div
-        className="grid transition-[grid-template-rows] duration-200 ease-out"
-        style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-      >
-        <div className="overflow-hidden">
-          <div className="space-y-1 border-t border-border/40 px-2 py-2 text-xs">
-            {errorMsg && (
-              <div className="mb-2 rounded bg-destructive/10 px-2 py-1.5 text-destructive">
-                {errorMsg}
-              </div>
-            )}
-            {rows.map(({ key, label, value, mono }) => (
-              <div key={key} className="flex items-baseline gap-2">
-                <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
-                <span className={cn('min-w-0 flex-1 break-all text-foreground', mono && 'font-mono')}>{value}</span>
-              </div>
-            ))}
+    <ExpandableToolRow
+      icon={<ToolIcon icon="file-plus" className="size-3 shrink-0 text-muted-foreground" />}
+      label={withStreamingEllipsis(headerLabel, isStreaming)}
+      summary={appName || undefined}
+      streaming={isStreaming}
+      tone={tone}
+      expandable
+    >
+      <div className="space-y-1">
+        {errorMsg ? (
+          <div className="mb-2 text-xs text-warning/90">{errorMsg}</div>
+        ) : null}
+        {rows.map(({ key, label, value, mono }) => (
+          <div key={key} className="flex items-baseline gap-2">
+            <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
+            <span className={cn('min-w-0 flex-1 break-all text-foreground', mono && 'font-mono')}>{value}</span>
           </div>
-        </div>
+        ))}
       </div>
-    </div>
+    </ExpandableToolRow>
   )
 }
 
@@ -659,7 +698,6 @@ function ConfigApplyBlock({ params, result, isStreaming, isError, isDenied }: {
   isDenied: boolean
 }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
   const emptyLabel = t('chat.configConfirm.emptyValue')
 
   const parsed = useMemo<Record<string, unknown> | null>(() => {
@@ -706,66 +744,66 @@ function ConfigApplyBlock({ params, result, isStreaming, isError, isDenied }: {
   const resourceOp = typeof parsed?.operation === 'string' ? (parsed.operation as string) : resourceReq?.operation
   const resourceTitle = typeof parsed?.title === 'string' ? (parsed.title as string) : undefined
 
-  const failed = isError || isDenied || status === 'error'
-  const rejected = status === 'rejected'
-  const cancelled = status === 'cancelled'
-  const muted = failed || rejected || cancelled
+  const failed = isError || status === 'error'
+  const rejected = isDenied || status === 'rejected' || status === 'cancelled'
+  const tone = toolRowTone(rejected, failed)
 
-  let headerLabel: string
-  if (isStreaming) headerLabel = t('chat.toolBlock.applyingSettings')
-  else if (failed) headerLabel = t('chat.toolBlock.settingsChangeFailed')
-  else if (rejected) headerLabel = t('chat.toolBlock.settingsChangeRejected')
-  else if (cancelled) headerLabel = t('chat.toolBlock.settingsChangeCancelled')
-  else if (resourceOp === 'delete') headerLabel = t('chat.toolBlock.configDeleted')
-  else if (resourceOp === 'create') headerLabel = t('chat.toolBlock.configCreated')
-  else if (resourceOp === 'update') headerLabel = t('chat.toolBlock.configUpdated')
-  else headerLabel = t('chat.toolBlock.appliedSettings')
+  const interrupted = rejected || failed
+  const headerLabel = toolOutcomeLabel({
+    streaming: isStreaming,
+    interrupted,
+    streamingLabel: t('chat.toolBlock.applyingSettings'),
+    actionLabel: resourceOp === 'delete'
+      ? t('chat.toolBlock.deleteSettings')
+      : resourceOp === 'create'
+        ? t('chat.toolBlock.createSettings')
+        : t('chat.toolBlock.updateSettings'),
+    doneLabel: resourceOp === 'delete'
+      ? t('chat.toolBlock.configDeleted')
+      : resourceOp === 'create'
+        ? t('chat.toolBlock.configCreated')
+        : resourceOp === 'update'
+          ? t('chat.toolBlock.configUpdated')
+          : t('chat.toolBlock.appliedSettings'),
+  })
 
   const summary = resourceTitle ?? (rows.length > 0 ? t('chat.toolBlock.settingsChangeCount', { count: rows.length }) : '')
   const errorMsg = failed && typeof parsed?.message === 'string' ? (parsed.message as string) : ''
   const expandable = rows.length > 0 || !!errorMsg
 
   return (
-    <div className={cn('tool-node my-0.5 rounded', muted ? 'bg-muted/10' : 'bg-muted/20', expandable && 'cursor-pointer', expandable && 'hover:bg-muted/40')}>
-      <div
-        className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
-        onClick={expandable ? () => setExpanded((e) => !e) : undefined}
-      >
-        <SlidersHorizontal className={cn('size-3 shrink-0', failed ? 'text-destructive' : 'text-muted-foreground')} />
-        <span className="shrink-0 font-medium text-foreground">{headerLabel}{isStreaming && '…'}</span>
-        {summary && <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}
-        {expandable && <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />}
-      </div>
-      {expandable && (
-        <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}>
-          <div className="overflow-hidden">
-            <div className="space-y-1.5 border-t border-border/40 px-2 py-2 text-xs">
-              {errorMsg && <div className="mb-1 rounded bg-destructive/10 px-2 py-1.5 text-destructive">{errorMsg}</div>}
-              {rows.map((r) => (
-                <div key={r.key} className="flex items-baseline gap-2">
-                  <span className="w-32 shrink-0 truncate text-muted-foreground" title={r.label}>{r.label}</span>
-                  <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-1.5">
-                    {r.diff ? (
-                      <span className="break-all font-medium text-foreground">{r.diff}</span>
-                    ) : (
-                      <>
-                        {r.from !== null && (
-                          <>
-                            <span className="text-muted-foreground/60 line-through">{r.from}</span>
-                            <span className="text-muted-foreground/50">→</span>
-                          </>
-                        )}
-                        <span className="break-all font-medium text-foreground">{r.to}</span>
-                      </>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
+    <ExpandableToolRow
+      icon={<SlidersHorizontal className="size-3 shrink-0 text-muted-foreground" />}
+      label={withStreamingEllipsis(headerLabel, isStreaming)}
+      summary={summary || undefined}
+      streaming={isStreaming}
+      tone={tone}
+      expandable={expandable}
+    >
+      <div className="space-y-1.5">
+        {errorMsg ? <div className="mb-1 text-xs text-warning/90">{errorMsg}</div> : null}
+        {rows.map((r) => (
+          <div key={r.key} className="flex items-baseline gap-2">
+            <span className="w-32 shrink-0 truncate text-muted-foreground" title={r.label}>{r.label}</span>
+            <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-1.5">
+              {r.diff ? (
+                <span className="break-all font-medium text-foreground">{r.diff}</span>
+              ) : (
+                <>
+                  {r.from !== null && (
+                    <>
+                      <span className="text-muted-foreground/60 line-through">{r.from}</span>
+                      <span className="text-muted-foreground/50">→</span>
+                    </>
+                  )}
+                  <span className="break-all font-medium text-foreground">{r.to}</span>
+                </>
+              )}
+            </span>
           </div>
-        </div>
-      )}
-    </div>
+        ))}
+      </div>
+    </ExpandableToolRow>
   )
 }
 
@@ -1026,9 +1064,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         />
       )
     }
-    const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string; summaryField?: string }> = {
-      media_list_providers: { icon: 'image', streaming: t('chat.toolBlock.listingMediaProviders'), done: t('chat.toolBlock.listedMediaProviders') },
-      media_generate_image: { icon: 'image', streaming: t('chat.toolBlock.generatingImage'), done: t('chat.toolBlock.generatedImage'), summaryField: 'prompt' },
+    const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; action: string; done: string; summaryField?: string }> = {
+      media_list_providers: { icon: 'image', streaming: t('chat.toolBlock.listingMediaProviders'), action: t('chat.toolBlock.listMediaProviders'), done: t('chat.toolBlock.listedMediaProviders') },
+      miniapp_dev_register: { icon: 'package', streaming: t('chat.toolBlock.registeringMiniApp'), action: t('chat.toolBlock.registerMiniApp'), done: t('chat.toolBlock.registeredMiniApp'), summaryField: 'name' },
+      miniapp_dev_update_types: { icon: 'wrench', streaming: t('chat.toolBlock.updatingMiniAppTypes'), action: t('chat.toolBlock.updateMiniAppTypes'), done: t('chat.toolBlock.updatedMiniAppTypes') },
+      widget_list_templates: { icon: 'canvas', streaming: t('chat.toolBlock.listingWidgetTemplates'), action: t('chat.toolBlock.listWidgetTemplates'), done: t('chat.toolBlock.listedWidgetTemplates') },
+      media_video_status: { icon: 'image', streaming: t('chat.toolBlock.checkingVideoStatus'), action: t('chat.toolBlock.checkVideoStatus'), done: t('chat.toolBlock.checkVideoStatus') },
     }
     if (mcpInfo.mcpToolName === 'miniapp_dev_pack') {
       const appDir = String(params.appDir ?? '')
@@ -1036,27 +1077,45 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       const packApp = appDir ? miniApps.find((a) => a.distDir === appDir || a.installDir === appDir) : undefined
       const s1appName = packApp ? `${packApp.manifest.appId}-${packApp.manifest.version}.s1app` : null
       return (
-        <CompactToolRow icon={<ToolIcon icon="package" className="size-3 shrink-0 text-muted-foreground" />}>
+        <CompactToolRow
+          icon={<ToolIcon icon="package" className="size-3 shrink-0 text-muted-foreground" />}
+          tone={toolRowTone(isDenied, isError)}
+        >
+          <ToolName streaming={isStreaming} tone={toolRowTone(isDenied, isError)}>
+            {toolOutcomeLabel({
+              streaming: isStreaming,
+              interrupted: isDenied || !!isError,
+              streamingLabel: t('chat.toolBlock.packing'),
+              actionLabel: t('chat.toolBlock.packing'),
+              doneLabel: t('chat.toolBlock.miniAppPacked'),
+            })}
+          </ToolName>
+          {isStreaming && packApp ? <MiniAppIcon appId={packApp.id} className="size-3.5 shrink-0" /> : null}
           {isStreaming ? (
-            <>
-              <span className="font-medium text-foreground">{t('chat.toolBlock.packing')}</span>
-              {packApp && <MiniAppIcon appId={packApp.id} className="size-3.5 shrink-0" />}
-              <span className="text-muted-foreground">{packApp?.manifest.name ?? appDir.split('/').pop()}</span>
-            </>
-          ) : (
-            <>
-              <span className="font-medium text-foreground">{t('chat.toolBlock.miniAppPacked')}</span>
-              {s1appName && <>
-                <span className="text-muted-foreground">:</span>
-                <button className="min-w-0 truncate text-muted-foreground hover:text-foreground hover:underline" onClick={(e) => { e.stopPropagation(); window.app.showInFolder(outputDir, s1appName) }}>{s1appName}</button>
-              </>}
-            </>
-          )}
+            <ToolSummary>{packApp?.manifest.name ?? appDir.split('/').pop()}</ToolSummary>
+          ) : s1appName ? (
+            <button
+              type="button"
+              className="min-w-0 truncate text-muted-foreground hover:text-foreground hover:underline"
+              onClick={(e) => { e.stopPropagation(); window.app.showInFolder(outputDir, s1appName) }}
+            >
+              {s1appName}
+            </button>
+          ) : null}
+          <ToolStatusBadge tone={toolRowTone(isDenied, isError)} />
         </CompactToolRow>
       )
     }
     if (mcpInfo.mcpToolName === 'mobile_share_file') {
-      return <MobileShareFileBlock params={params} result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
+      return (
+        <MobileShareFileBlock
+          params={params}
+          result={!isStreaming ? (result ?? null) : null}
+          isStreaming={isStreaming}
+          isDenied={isDenied}
+          isError={!!isError}
+        />
+      )
     }
     if (mcpInfo.mcpToolName === 'config_apply') {
       return (
@@ -1078,14 +1137,25 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
           if (parsed && typeof parsed === 'object' && typeof parsed.label === 'string') domainLabel = parsed.label
         } catch { /* ignore */ }
       }
-      const summaryValue = domainLabel || (hasDomain ? '' : t('chat.toolBlock.guideOverview'))
+      const summaryValue = domainLabel
+        || (hasDomain ? String(params.domain) : (!isStreaming ? t('chat.toolBlock.guideOverview') : ''))
       return (
-        <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="font-medium text-foreground">
-            {isStreaming ? <>{t('chat.toolBlock.readingConfig')}…</> : t('chat.toolBlock.readConfig')}
-            {summaryValue && <>: <span className="text-muted-foreground">{summaryValue}</span></>}
-          </span>
-        </CompactToolRow>
+        <CompactLabeledToolRow
+          icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}
+          label={withStreamingEllipsis(
+            toolOutcomeLabel({
+              streaming: isStreaming,
+              interrupted: isDenied || !!isError,
+              streamingLabel: t('chat.toolBlock.readingConfig'),
+              actionLabel: t('chat.toolBlock.readSettings'),
+              doneLabel: t('chat.toolBlock.readConfig'),
+            }),
+            isStreaming,
+          )}
+          streaming={isStreaming}
+          tone={toolRowTone(isDenied, isError)}
+          summary={summaryValue || undefined}
+        />
       )
     }
     if (mcpInfo.mcpToolName === 'read_manual') {
@@ -1093,46 +1163,113 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       const topic = typeof params.topic === 'string' ? params.topic : ''
       const summary = [domain, topic].filter(Boolean).join('/')
       return (
-        <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="font-medium text-foreground">
-            {isStreaming ? <>{t('chat.toolBlock.readingManual')}…</> : t('chat.toolBlock.readManual')}
-            {summary && <>: <span className="text-muted-foreground">{summary}</span></>}
-          </span>
-        </CompactToolRow>
+        <CompactLabeledToolRow
+          icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}
+          label={withStreamingEllipsis(
+            toolOutcomeLabel({
+              streaming: isStreaming,
+              interrupted: isDenied || !!isError,
+              streamingLabel: t('chat.toolBlock.readingManual'),
+              actionLabel: t('chat.toolBlock.readManualAction'),
+              doneLabel: t('chat.toolBlock.readManual'),
+            }),
+            isStreaming,
+          )}
+          streaming={isStreaming}
+          tone={toolRowTone(isDenied, isError)}
+          summary={summary || undefined}
+        />
+      )
+    }
+    if (mcpInfo.mcpToolName === 'media_generate_image') {
+      const prompt = String(params.prompt ?? '').replace(/\s+/g, ' ').trim()
+      const failed = !isDenied && isMediaToolErrorResult(cleanResult, isError)
+      const err = mediaToolErrorMessage(cleanResult)
+      const label = toolOutcomeLabel({
+        streaming: isStreaming,
+        interrupted: isDenied || failed,
+        streamingLabel: t('chat.toolBlock.generatingImage'),
+        actionLabel: t('chat.toolBlock.generateImage'),
+        doneLabel: t('chat.toolBlock.generatedImage'),
+      })
+      return (
+        <ExpandableToolRow
+          icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
+          label={withStreamingEllipsis(label, isStreaming)}
+          summary={prompt || undefined}
+          streaming={isStreaming}
+          tone={toolRowTone(isDenied, failed)}
+          expandable={allowExpand && !isStreaming && !!err}
+        >
+          <div className="whitespace-pre-wrap break-words text-warning/90">{err}</div>
+        </ExpandableToolRow>
       )
     }
     if (mcpInfo.mcpToolName === 'media_list_providers') {
-      if (!allowExpand) {
+      if (!allowExpand || isError || isDenied) {
         return (
-          <CompactToolRow icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}>
-            <span className="font-medium text-foreground">
-              {isStreaming ? <>{t('chat.toolBlock.listingMediaProviders')}…</> : t('chat.toolBlock.listedMediaProviders')}
-            </span>
-          </CompactToolRow>
+          <CompactLabeledToolRow
+            icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
+            label={withStreamingEllipsis(
+              toolOutcomeLabel({
+                streaming: isStreaming,
+                interrupted: isDenied || !!isError,
+                streamingLabel: t('chat.toolBlock.listingMediaProviders'),
+                actionLabel: t('chat.toolBlock.listMediaProviders'),
+                doneLabel: t('chat.toolBlock.listedMediaProviders'),
+              }),
+              isStreaming,
+            )}
+            streaming={isStreaming}
+            tone={toolRowTone(isDenied, isError)}
+          />
         )
       }
       return <MediaProvidersBlock result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
     }
     if (mcpInfo.mcpToolName === 'media_generate_video') {
-      if (!allowExpand) {
+      const videoFailed = !isDenied && isMediaToolErrorResult(cleanResult, isError)
+      if (!allowExpand || isDenied) {
         const prompt = typeof params.prompt === 'string' ? params.prompt.replace(/\s+/g, ' ').trim() : ''
         return (
-          <CompactToolRow icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}>
-            <span className="shrink-0 font-medium text-foreground">
-              {isStreaming ? <>{t('chat.toolBlock.generatingVideo', 'Generating video')}…</> : t('chat.toolBlock.generatedVideo', 'Video')}
-            </span>
-            {prompt && <span className="min-w-0 truncate text-muted-foreground">{prompt}</span>}
-          </CompactToolRow>
+          <CompactLabeledToolRow
+            icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
+            label={withStreamingEllipsis(
+              toolOutcomeLabel({
+                streaming: isStreaming,
+                interrupted: isDenied || videoFailed,
+                streamingLabel: t('chat.toolBlock.generatingVideo'),
+                actionLabel: t('chat.toolBlock.generateVideo'),
+                doneLabel: t('chat.toolBlock.generatedVideo'),
+              }),
+              isStreaming,
+            )}
+            streaming={isStreaming}
+            tone={toolRowTone(isDenied, videoFailed)}
+            summary={prompt || undefined}
+          />
         )
       }
-      return <VideoGenToolBlock params={params} result={cleanResult} isStreaming={isStreaming} />
+      return (
+        <VideoGenToolBlock
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+          isError={!!isError || videoFailed}
+        />
+      )
     }
     if (COLLAB_TOOLS.has(mcpInfo.mcpToolName) && !isError && !isDenied) {
       if (!allowExpand) {
         return (
-          <CompactToolRow icon={<ToolIcon icon="bot" className="size-3 shrink-0 text-muted-foreground" />}>
-            <span className="font-medium text-foreground">{mcpInfo.mcpToolName.replace(/_/g, ' ')}</span>
-          </CompactToolRow>
+          <CompactLabeledToolRow
+            icon={<ToolIcon icon="bot" className="size-3 shrink-0 text-muted-foreground" />}
+            label={withStreamingEllipsis(
+              collabHeaderLabel(mcpInfo.mcpToolName, isStreaming, t),
+              isStreaming,
+            )}
+            streaming={isStreaming}
+          />
         )
       }
       return (
@@ -1145,9 +1282,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       )
     }
     if (mcpInfo.mcpToolName === 'session_tag') {
-      const added = Array.isArray(params.add) ? params.add.filter((t): t is string => typeof t === 'string') : []
-      const removed = Array.isArray(params.remove) ? params.remove.filter((t): t is string => typeof t === 'string') : []
-      const set = Array.isArray(params.set) ? params.set.filter((t): t is string => typeof t === 'string') : []
+      const added = Array.isArray(params.add) ? params.add.filter((tag): tag is string => typeof tag === 'string') : []
+      const removed = Array.isArray(params.remove) ? params.remove.filter((tag): tag is string => typeof tag === 'string') : []
+      const set = Array.isArray(params.set) ? params.set.filter((tag): tag is string => typeof tag === 'string') : []
       const tagBits = added.length
         ? added.join(', ')
         : removed.length
@@ -1156,21 +1293,22 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
             ? set.join(', ')
             : ''
       const ids = Array.isArray(params.sessionIds) ? params.sessionIds.length : 0
-      const summary = [
-        tagBits,
-        ids > 1 ? `${ids}` : '',
-      ].filter(Boolean).join(' · ')
-      let label = t('chat.toolBlock.archive.sessionTagged')
-      if (isStreaming) label = t('chat.toolBlock.archive.taggingSession')
-      else if (isDenied) label = t('chat.toolBlock.archive.sessionTagged')
-      else if (isError) label = t('chat.toolBlock.archive.tagFailed')
+      const summary = [tagBits, ids > 1 ? `${ids}` : ''].filter(Boolean).join(' · ')
+      const label = toolOutcomeLabel({
+        streaming: isStreaming,
+        interrupted: isDenied || !!isError,
+        streamingLabel: t('chat.toolBlock.archive.taggingSession'),
+        actionLabel: t('chat.toolBlock.archive.tagSession'),
+        doneLabel: t('chat.toolBlock.archive.sessionTagged'),
+      })
       return (
-        <CompactToolRow icon={<ToolIcon icon="clipboard-list" className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="font-medium text-foreground">
-            {label}
-            {summary && <>: <span className="text-muted-foreground">{isDenied ? t('chat.toolBlock.denied') : summary}</span></>}
-          </span>
-        </CompactToolRow>
+        <CompactLabeledToolRow
+          icon={<ToolIcon icon="clipboard-list" className="size-3 shrink-0 text-muted-foreground" />}
+          label={withStreamingEllipsis(label, isStreaming)}
+          streaming={isStreaming}
+          tone={toolRowTone(isDenied, isError)}
+          summary={summary || undefined}
+        />
       )
     }
     if (isSessionArchiveToolName(mcpInfo.mcpToolName)) {
@@ -1211,24 +1349,36 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
           isStreaming={isStreaming}
           params={params}
           result={parsedResult}
+          isDenied={isDenied}
+          isError={!!isError}
         />
       )
     }
     const d = superoneToolDisplay[mcpInfo.mcpToolName]
     if (d) {
-      const summaryValue = d.summaryField ? String(params[d.summaryField] ?? '').replace(/\s+/g, ' ').trim() : ''
+      const rawSummary = d.summaryField
+        ? String(params[d.summaryField] || params.directory || params.appDir || '').replace(/\s+/g, ' ').trim()
+        : mcpInfo.mcpToolName === 'miniapp_dev_update_types'
+          ? String(params.appDir ?? '').split('/').pop() ?? ''
+          : ''
+      const summaryValue = rawSummary.includes('/') ? rawSummary.split('/').pop() ?? rawSummary : rawSummary
       return (
-        <CompactToolRow icon={<ToolIcon icon={d.icon} className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="shrink-0 whitespace-nowrap font-medium text-foreground">
-            {isStreaming ? <>{d.streaming}…</> : d.done}
-            {summaryValue ? ':' : ''}
-          </span>
-          {summaryValue && (
-            <span className="min-w-0 truncate text-muted-foreground" title={summaryValue}>
-              {summaryValue}
-            </span>
+        <CompactLabeledToolRow
+          icon={<ToolIcon icon={d.icon} className="size-3 shrink-0 text-muted-foreground" />}
+          label={withStreamingEllipsis(
+            toolOutcomeLabel({
+              streaming: isStreaming,
+              interrupted: isDenied || !!isError,
+              streamingLabel: d.streaming,
+              actionLabel: d.action,
+              doneLabel: d.done,
+            }),
+            isStreaming,
           )}
-        </CompactToolRow>
+          streaming={isStreaming}
+          tone={toolRowTone(isDenied, isError)}
+          summary={summaryValue || undefined}
+        />
       )
     }
     // Fixed miniapp_call (appId+tool in args) or legacy slug__tool transcript names.
@@ -1337,21 +1487,21 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         ? (widgetData as { title: string }).title
         : ''
       return (
-        <CompactToolRow icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="font-medium text-foreground">
-            {isStreaming ? <>{t('chat.toolBlock.generatingWidget')}</> : t('chat.toolBlock.generateWidget')}
-          </span>
-          {title && <span className="min-w-0 truncate text-muted-foreground">{title}</span>}
-        </CompactToolRow>
+        <CompactLabeledToolRow
+          icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}
+          label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
+          streaming={isStreaming}
+          summary={title || undefined}
+        />
       )
     }
     if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} />
     return (
-      <CompactToolRow icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}>
-        <span className="font-medium text-foreground">
-          {isStreaming ? <>{t('chat.toolBlock.generatingWidget')}</> : t('chat.toolBlock.generateWidget')}
-        </span>
-      </CompactToolRow>
+      <CompactLabeledToolRow
+        icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}
+        label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
+        streaming={isStreaming}
+      />
     )
   }
 
@@ -1377,9 +1527,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         ) : (
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('shrink-0 whitespace-nowrap font-medium', isDenied && toolName !== 'AskUserQuestion' ? 'text-error' : isError ? 'text-warning' : 'text-foreground')}>
+        <ToolName
+          streaming={isStreaming}
+          tone={isDenied && toolName !== 'AskUserQuestion' ? 'denied' : isError ? 'error' : 'default'}
+        >
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
-        </span>
+        </ToolName>
         {isQuestionDismissed ? (
           <span className="shrink-0 rounded bg-muted px-1 py-px text-xs text-muted-foreground">{t('chat.toolBlock.dismissed')}</span>
         ) : isDenied ? (
@@ -1538,10 +1691,12 @@ interface MobileShareResult {
   expiresAt?: number
 }
 
-function MobileShareFileBlock({ params, result, isStreaming }: {
+function MobileShareFileBlock({ params, result, isStreaming, isDenied, isError }: {
   params: Record<string, unknown>
   result: string | null
   isStreaming: boolean
+  isDenied?: boolean
+  isError?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const path = String(params.path ?? '')
@@ -1554,7 +1709,11 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
   }
   const done = !!parsed?.ok
   const failed = !isStreaming && !done
-  const errorText = failed ? (result ?? '').replace(/^\[Error\]\s*/, '').trim() : ''
+  const denied = !!isDenied || (!!result && result.startsWith('[denied] '))
+  const tone = toolRowTone(denied, failed || isError)
+  const errorText = failed && !denied
+    ? (result ?? '').replace(/^\[Error\]\s*/, '').replace(/^\[denied\]\s*/, '').trim()
+    : ''
 
   const fileChip = <FileChip name={fileName} title={path} filePath={path} className="max-w-45" />
 
@@ -1563,12 +1722,15 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
       className={cn('flex items-center gap-1.5 px-2 py-1.5 text-xs', done && 'cursor-pointer')}
       onClick={done ? () => setExpanded((e) => !e) : undefined}
     >
-      {done
-        ? <Smartphone className="size-3 shrink-0 text-muted-foreground" />
-        : failed
-          ? <Ban className="size-3 shrink-0 text-destructive" />
+      <ToolStatusIcon
+        tone={tone}
+        fallback={done
+          ? <Smartphone className="size-3 shrink-0 text-muted-foreground" />
           : <Upload className="size-3 shrink-0 text-primary" />}
-      <span className={cn('shrink-0', failed ? 'text-destructive' : 'text-foreground')}>{done ? 'Sent' : failed ? 'Failed to send' : 'Sending'}</span>
+      />
+      <ToolName streaming={isStreaming && !failed} tone={tone}>
+        {isStreaming ? 'Sending…' : 'File Sent'}
+      </ToolName>
       {fileChip}
       {done && parsed?.deviceName && (
         <>
@@ -1576,9 +1738,8 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
           <span className="min-w-0 truncate text-foreground">{parsed.deviceName}</span>
         </>
       )}
-      {failed && errorText && (
-        <span className="min-w-0 truncate text-muted-foreground">{errorText}</span>
-      )}
+      {errorText ? <ToolSummary>{errorText}</ToolSummary> : null}
+      <ToolStatusBadge tone={tone} />
       {!done && !failed && progress && (
         <span className="ml-auto shrink-0 tabular-nums text-primary">
           {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
@@ -1591,7 +1752,7 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
   )
 
   if (!done) {
-    return <div className="tool-node my-0.5 rounded bg-muted/20">{header}</div>
+    return <div className={toolRowSurfaceClass(tone)}>{header}</div>
   }
 
   const sentAt = parsed?.sentAt ? new Date(parsed.sentAt) : null
@@ -1607,7 +1768,7 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
   })
 
   return (
-    <div className="tool-node my-0.5 rounded bg-muted/20">
+    <div className={toolRowSurfaceClass(tone, true)}>
       {header}
       <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}>
         <div className="overflow-hidden">
@@ -1809,9 +1970,9 @@ function BashTerminalView({
         ) : (
           <ToolIcon icon="terminal" className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied ? 'text-error' : showError ? 'text-warning' : 'text-foreground', isRunning && !isDenied && 'animate-shimmer')}>
+        <ToolName streaming={isRunning && !isDenied} tone={isDenied ? 'denied' : showError ? 'error' : 'default'}>
           {isRunning && !isDenied ? t('chat.toolBlock.running') : 'Bash'}
-        </span>
+        </ToolName>
         {isRunning && localElapsed >= 1 && <span className="text-muted-foreground tabular-nums">{localElapsed}s</span>}
         {description
           ? <span className="min-w-0 truncate text-muted-foreground">{description}</span>
@@ -2181,9 +2342,9 @@ export function DebugToolBlock({
     <div className="my-0.5 rounded border border-amber-500/30 bg-muted/20">
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
         <span className="size-3 shrink-0 text-center text-warning">&#9881;</span>
-        <span className="font-medium text-warning">
+        <ToolName streaming={isStreaming} className="text-warning">
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName}
-        </span>
+        </ToolName>
         <span className="rounded bg-warning/20 px-1 py-px text-xs text-warning">debug</span>
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
           <span className="ml-auto shrink-0 text-muted-foreground">{Math.round(elapsedSeconds)}s</span>

@@ -7,16 +7,14 @@
  * - Done primary: Title Case (EN)
  */
 
-import { useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Ban,
   CalendarClock,
-  ChevronRight,
-  TriangleAlert,
 } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { decode as toonDecode } from '@toon-format/toon'
+import { ExpandableToolRow } from './tool-row'
 
 /** Product glyph for all automation tool rows (sidebar / confirm parity). */
 function AutomationIcon({ className }: { className?: string }) {
@@ -69,90 +67,7 @@ function parseResult(text: string | null | undefined): Record<string, unknown> |
   return asRecord(tryParseJson(text)) ?? asRecord(tryParseToon(text))
 }
 
-function Row({
-  icon,
-  label,
-  summary,
-  tone = 'default',
-  expandable,
-  children,
-}: {
-  icon: ReactNode
-  label: string
-  summary?: string
-  tone?: 'default' | 'error' | 'warning' | 'denied'
-  expandable?: boolean
-  children?: ReactNode
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const canExpand = !!expandable && !!children
 
-  return (
-    <div
-      className={cn(
-        'tool-node my-0.5 min-w-0 rounded transition-colors',
-        tone === 'error' && 'errored bg-warning/10',
-        tone === 'warning' && 'bg-warning/10',
-        tone === 'denied' && 'denied bg-error/10',
-        tone === 'default' && 'bg-muted/20',
-        canExpand && 'cursor-pointer',
-        canExpand && tone === 'default' && 'hover:bg-muted/40',
-        canExpand && tone === 'error' && 'hover:bg-warning/20',
-        canExpand && tone === 'denied' && 'hover:bg-error/20',
-      )}
-    >
-      <div
-        className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
-        onClick={canExpand ? () => setExpanded((v) => !v) : undefined}
-      >
-        {icon}
-        <span
-          className={cn(
-            'shrink-0 whitespace-nowrap font-medium',
-            tone === 'denied' ? 'text-error' : tone === 'error' ? 'text-warning' : 'text-foreground',
-          )}
-        >
-          {label}
-        </span>
-        {summary ? (
-          <span className="min-w-0 truncate text-muted-foreground" title={summary}>
-            {summary}
-          </span>
-        ) : null}
-        {canExpand ? (
-          <ChevronRight
-            className={cn(
-              'ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200',
-              expanded && 'rotate-90',
-            )}
-          />
-        ) : null}
-      </div>
-      {canExpand ? (
-        <div
-          className="grid transition-[grid-template-rows] duration-200 ease-out"
-          style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-        >
-          <div className="overflow-hidden">
-            <div className="border-t border-border/40 px-2 py-2 text-xs">{children}</div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-/**
- * Default glyph is always CalendarClock (automation brand).
- * Denied / user-rejected / cancelled → Ban; hard errors → TriangleAlert.
- */
-function StatusIcon({ tone }: { tone: 'default' | 'error' | 'warning' | 'denied' }) {
-  if (tone === 'denied') return <Ban className="size-3 shrink-0 text-error" />
-  if (tone === 'error' || tone === 'warning') {
-    return <TriangleAlert className="size-3 shrink-0 text-warning" />
-  }
-  return <AutomationIcon />
-}
 
 function resultTone(
   isDenied: boolean,
@@ -222,7 +137,6 @@ export function AutomationToolBlock({
   const rec = parseResult(result)
   const resultStatus = typeof rec?.status === 'string' ? rec.status : ''
   const tone = resultTone(isDenied, isError, resultStatus)
-  const deniedLabel = t('chat.toolBlock.denied')
   const canShowExpand = allowExpand !== false
 
   const fieldLabels = {
@@ -253,13 +167,13 @@ export function AutomationToolBlock({
     let summary: string | undefined
 
     if (isDenied || resultStatus === 'rejected' || resultStatus === 'cancelled') {
-      label = t(`${a}.listFailed`)
-      summary = deniedLabel
+      label = id ? t(`${a}.readAutomation`) : t(`${a}.listAutomations`)
+      summary = query ? `“${query}”` : undefined
     } else if (isStreaming) {
       label = id ? t(`${a}.readingAutomation`) : t(`${a}.listingAutomations`)
       if (query) summary = `“${query}”`
     } else if (isError || resultStatus === 'error') {
-      label = t(`${a}.listFailed`)
+      label = id ? t(`${a}.readAutomation`) : t(`${a}.listAutomations`)
       summary = typeof rec?.message === 'string' ? rec.message : undefined
     } else if (detail) {
       label = t(`${a}.automationDetail`)
@@ -274,10 +188,11 @@ export function AutomationToolBlock({
     const expandable = canShowExpand && tone === 'default' && rows.length > 0
 
     return (
-      <Row
-        icon={<StatusIcon tone={tone} />}
+      <ExpandableToolRow
+        icon={<AutomationIcon />}
         label={label}
         summary={summary}
+        streaming={isStreaming}
         tone={tone}
         expandable={expandable}
       >
@@ -307,7 +222,7 @@ export function AutomationToolBlock({
         ) : (
           <ListBody rows={rows} fields={fieldLabels} />
         )}
-      </Row>
+      </ExpandableToolRow>
     )
   }
 
@@ -332,31 +247,18 @@ export function AutomationToolBlock({
       : action === 'update'
         ? 'update'
         : 'create'
-    const rejectLabelKey = {
-      create: `${a}.createRejected`,
-      update: `${a}.updateRejected`,
-      enable: `${a}.enableRejected`,
-      disable: `${a}.disableRejected`,
-    }[applyKind]
-    const cancelLabelKey = {
-      create: `${a}.createCancelled`,
-      update: `${a}.updateCancelled`,
-      enable: `${a}.enableCancelled`,
-      disable: `${a}.disableCancelled`,
-    }[applyKind]
-    const failedLabelKey = {
-      create: `${a}.createFailed`,
-      update: `${a}.updateFailed`,
-      enable: `${a}.enableFailed`,
-      disable: `${a}.disableFailed`,
+    const actionLabelKey = {
+      create: `${a}.createAutomation`,
+      update: `${a}.updateAutomation`,
+      enable: `${a}.enableAutomation`,
+      disable: `${a}.disableAutomation`,
     }[applyKind]
 
     let label = action === 'update' ? t(`${a}.automationUpdated`) : t(`${a}.automationCreated`)
     let summary: string | undefined = name || undefined
 
     if (isDenied || resultStatus === 'rejected') {
-      // User denied HITL — name the action, not generic "Apply Rejected".
-      label = t(rejectLabelKey)
+      label = t(actionLabelKey)
       if (name) summary = name
     } else if (isStreaming) {
       // Full tool call includes HITL confirm — streaming = waiting for user or apply.
@@ -367,10 +269,10 @@ export function AutomationToolBlock({
       }
       if (name) summary = name
     } else if (isError || resultStatus === 'error') {
-      label = t(failedLabelKey)
+      label = t(actionLabelKey)
       summary = typeof rec?.message === 'string' ? rec.message : name || undefined
     } else if (resultStatus === 'cancelled') {
-      label = t(cancelLabelKey)
+      label = t(actionLabelKey)
       if (name) summary = name
     } else if (enabledOnly) {
       const on = auto?.enabled === true || params.enabled === true
@@ -384,10 +286,11 @@ export function AutomationToolBlock({
       && (typeof auto.prompt === 'string' || typeof auto.scheduleSummary === 'string')
 
     return (
-      <Row
-        icon={<StatusIcon tone={tone} />}
+      <ExpandableToolRow
+        icon={<AutomationIcon />}
         label={label}
         summary={summary}
+        streaming={isStreaming}
         tone={tone}
         expandable={expandable}
       >
@@ -408,7 +311,7 @@ export function AutomationToolBlock({
             ) : null}
           </div>
         ) : null}
-      </Row>
+      </ExpandableToolRow>
     )
   }
 
@@ -421,22 +324,20 @@ export function AutomationToolBlock({
   let summary: string | undefined
 
   if (isDenied) {
-    label = t(`${a}.deleteRejected`)
-    summary = deniedLabel
+    label = t(`${a}.deleteAutomations`)
+    if (idCount > 0) summary = t(`${a}.automationCount`, { count: idCount })
   } else if (isStreaming) {
     label = t(`${a}.confirmingDelete`)
     if (idCount > 0) summary = t(`${a}.automationCount`, { count: idCount })
   } else if (isError || resultStatus === 'error') {
-    label = t(`${a}.deleteFailed`)
+    label = t(`${a}.deleteAutomations`)
     summary = typeof rec?.message === 'string'
       ? rec.message
       : failed.length > 0
         ? t(`${a}.automationCount`, { count: failed.length })
         : undefined
-  } else if (resultStatus === 'cancelled') {
-    label = t(`${a}.deleteCancelled`)
-  } else if (resultStatus === 'rejected') {
-    label = t(`${a}.deleteRejected`)
+  } else if (resultStatus === 'cancelled' || resultStatus === 'rejected') {
+    label = t(`${a}.deleteAutomations`)
   } else if (resultStatus === 'not_found') {
     label = t(`${a}.nothingDeleted`)
     summary = typeof rec?.message === 'string' ? rec.message : t(`${a}.empty`)
@@ -458,10 +359,11 @@ export function AutomationToolBlock({
     && (deleted.length > 0 || failed.length > 0)
 
   return (
-    <Row
-      icon={<StatusIcon tone={tone} />}
+    <ExpandableToolRow
+      icon={<AutomationIcon />}
       label={label}
       summary={summary}
+      streaming={isStreaming}
       tone={tone}
       expandable={expandable}
     >
@@ -492,7 +394,7 @@ export function AutomationToolBlock({
           </div>
         ) : null}
       </div>
-    </Row>
+    </ExpandableToolRow>
   )
 }
 

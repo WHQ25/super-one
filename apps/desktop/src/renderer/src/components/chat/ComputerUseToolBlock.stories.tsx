@@ -44,7 +44,7 @@ function tool(
 }
 
 const meta: Meta = {
-  title: 'Computer Use/ComputerUseToolBlock',
+  title: 'SuperOne/MCP Tools/Computer',
   parameters: { layout: 'padded' },
   decorators: [
     (Story) => (

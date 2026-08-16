@@ -7,6 +7,8 @@ import {
   isMediaGenerateVideoTool,
   isMediaVideoStatusTool,
   isGrokVideoGenTool,
+  mediaToolErrorMessage,
+  isMediaToolErrorResult,
   collectCodexGeneratedImages,
   collectCodexGeneratedVideos,
   videoGenStatusesFromMessages,
@@ -34,6 +36,19 @@ const RESULT = JSON.stringify({
 })
 
 const ERROR_RESULT = JSON.stringify({ status: 'error', message: 'Ark returned 404 for /images/edits' })
+
+describe('media tool error parsing', () => {
+  it('reads message from a SuperOne error payload', () => {
+    expect(mediaToolErrorMessage(ERROR_RESULT)).toBe('Ark returned 404 for /images/edits')
+    expect(isMediaToolErrorResult(ERROR_RESULT)).toBe(true)
+    expect(isMediaToolErrorResult(RESULT)).toBe(false)
+  })
+
+  it('strips an [Error] prefix from plain text', () => {
+    expect(mediaToolErrorMessage('[Error] provider timeout')).toBe('provider timeout')
+    expect(isMediaToolErrorResult('[Error] provider timeout')).toBe(true)
+  })
+})
 
 describe('media_generate_image tool identification', () => {
   it('matches the superone media tool under any harness tool-name prefix', () => {

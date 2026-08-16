@@ -5,6 +5,7 @@ import { Streamdown } from 'streamdown'
 import { uiToolNameFromId } from '@superone/shared/tool-ui'
 import { getToolDisplay, getToolVerb } from './tool-display'
 import { ToolIcon } from './ToolIcon'
+import { ToolName, ToolSummary } from './tool-row'
 import { ToolBlock } from './ToolBlock'
 import { StructuredOutputBlock } from './StructuredOutputView'
 import type { SubagentColorClasses } from './subagent-colors'
@@ -60,10 +61,10 @@ export function AsyncToolRow({ toolName, description, isActive }: { toolName: st
   return (
     <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs">
       <ToolIcon icon={icon} className="size-3 shrink-0 text-muted-foreground" />
-      <span className="shrink-0 font-medium text-foreground">
+      <ToolName streaming={isActive}>
         {isActive ? <>{getToolVerb(name)}&hellip;</> : name}
-      </span>
-      {description && <span className="min-w-0 truncate text-muted-foreground">{description}</span>}
+      </ToolName>
+      {description ? <ToolSummary>{description}</ToolSummary> : null}
     </div>
   )
 }

@@ -317,6 +317,8 @@ describe('widget_show error and denied states', () => {
     )
     // The widget branch would render this label and nothing else, hiding the reason entirely.
     expect(screen.queryByText('Generate widget')).toBeNull()
+    expect(screen.queryByText('Generated widget')).toBeNull()
+    expect(screen.queryByText('Widget Generated')).toBeNull()
     expect(screen.queryByText('Error')).not.toBeNull()
   })
 
@@ -344,5 +346,112 @@ describe('widget_show error and denied states', () => {
       />,
     )
     expect(screen.queryByText(/needs either/)).toBeNull()
+  })
+})
+
+describe('SuperOne compact tool row grammar', () => {
+  it('keeps the tool name colon-free and puts the topic in the muted summary', () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="mcp__superone__read_manual"
+        input={JSON.stringify({ domain: 'widget', topic: 'overview' })}
+        status="complete"
+        result="Loaded widget guidelines"
+      />,
+    )
+    expect(container.textContent).toContain('Manual Read')
+    expect(container.textContent).toContain('widget/overview')
+    expect(container.textContent).not.toMatch(/Manual Read\s*:/)
+  })
+
+  it('shimmers the running label on a SuperOne compact row', () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="mcp__superone__config_read"
+        input={JSON.stringify({ domain: 'appearance' })}
+        status="streaming"
+        elapsedSeconds={1}
+      />,
+    )
+    expect(container.querySelector('.animate-shimmer')).not.toBeNull()
+    expect(container.textContent).toContain('Reading settings')
+    expect(container.textContent).not.toMatch(/Reading settings\s*:/)
+  })
+
+  it('uses a dedicated done label for tools that used to fall through to superone · raw name', () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="mcp__superone__miniapp_dev_register"
+        input={JSON.stringify({ directory: '/tmp/my-app', name: 'My App' })}
+        status="complete"
+        result={JSON.stringify({ status: 'ok' })}
+      />,
+    )
+    expect(container.textContent).toContain('Mini-app Registered')
+    expect(container.textContent).toContain('My App')
+    expect(container.textContent).not.toMatch(/superone/)
+    expect(container.textContent).not.toMatch(/miniapp dev register/)
+  })
+
+  it('shows session tags as a summary, not as a colon suffix', () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="mcp__superone__session_tag"
+        input={JSON.stringify({ add: ['tool-ui', 'storybook'] })}
+        status="complete"
+        result={JSON.stringify({ status: 'ok' })}
+      />,
+    )
+    expect(container.textContent).toContain('Session Tagged')
+    expect(container.textContent).toContain('tool-ui, storybook')
+    expect(container.textContent).not.toMatch(/Session Tagged\s*:/)
+  })
+
+  it('uses the shared Denied chrome on a rejected SuperOne compact row', () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="mcp__superone__session_tag"
+        input={JSON.stringify({ add: ['tool-ui'] })}
+        status="complete"
+        result="[denied] User denied permission"
+      />,
+    )
+    expect(container.querySelector('.denied')).not.toBeNull()
+    expect(container.textContent).toContain('Tag Session')
+    expect(container.textContent).toContain('Denied')
+    expect(container.textContent).toContain('tool-ui')
+  })
+
+  it('titles a failed image generation as Generate Image and expands the error', async () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="mcp__superone__media_generate_image"
+        input={JSON.stringify({ prompt: 'a red cube on a table' })}
+        status="complete"
+        result={JSON.stringify({ status: 'error', message: 'provider timeout' })}
+        isError
+      />,
+    )
+    expect(container.textContent).toContain('Generate Image')
+    expect(container.textContent).toContain('a red cube on a table')
+    expect(container.querySelector('.errored')).not.toBeNull()
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    await waitFor(() => expect(container.textContent).toContain('provider timeout'))
+  })
+
+  it('uses the shared Error chrome on a failed SuperOne compact row', () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="mcp__superone__miniapp_dev_register"
+        input={JSON.stringify({ directory: '/tmp/my-app', name: 'My App' })}
+        status="complete"
+        result={JSON.stringify({ status: 'error', message: 'manifest missing' })}
+        isError
+      />,
+    )
+    expect(container.querySelector('.errored')).not.toBeNull()
+    expect(container.textContent).toContain('Register Mini-app')
+    expect(container.textContent).toContain('Error')
+    expect(container.textContent).toContain('My App')
   })
 })

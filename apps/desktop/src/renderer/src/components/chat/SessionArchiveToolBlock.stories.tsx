@@ -11,7 +11,7 @@ import {
  *
  * Label grammar matches agent collab (`chat.toolBlock.collab` / SessionCollabToolBlock):
  * - Streaming: sentence case + …  e.g. "Listing projects…", "Listing sessions…"
- * - Done primary: Title Case (EN) e.g. "Projects Listed", "Sessions Listed", "Session Meta"
+ * - Done primary: Title Case noun + past participle (EN) e.g. "Projects Listed", "Conversation Read"
  * - Counts / empty in label or muted summary: "Found 2 hits", "4 sessions" (collab-style)
  * - Header never shows UUIDs; project path only in project_list expand (discovery tool)
  *
@@ -297,7 +297,7 @@ const CLEANUP_DELETED = JSON.stringify({
 })
 
 const meta: Meta = {
-  title: 'SessionArchive/ToolUI',
+  title: 'SuperOne/MCP Tools/Archive',
   parameters: { layout: 'padded' },
 }
 

@@ -11,6 +11,7 @@ import { getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { browserVerbKey, browserInputSummary, parseBrowserResult, isReadBrowserOp, type BrowserOp } from './browser-tool-display'
 import { useChatStore } from '@/stores/chat-store'
 import { ToolScreenshotView } from './ToolScreenshotView'
+import { ToolName } from './tool-row'
 
 interface BrowserToolBlockProps {
   op: BrowserOp
@@ -95,15 +96,12 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
         ) : (
           <ToolIcon icon="globe" className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span
-          className={cn(
-            'shrink-0 font-medium',
-            isDenied ? 'text-error' : failed ? 'text-warning' : 'text-foreground',
-            isStreaming && !isDenied && 'animate-shimmer',
-          )}
+        <ToolName
+          streaming={isStreaming && !isDenied}
+          tone={isDenied ? 'denied' : failed ? 'error' : 'default'}
         >
           {isStreaming ? <>{verb}…</> : verb}
-        </span>
+        </ToolName>
         {hasScreenshot ? (
           <span className="inline-flex min-w-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground">
             <ImageIcon className="size-3 shrink-0 text-muted-foreground" />
@@ -259,15 +257,12 @@ function BrowserDownloadBlock({
         ) : (
           <ToolIcon icon="download" className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span
-          className={cn(
-            'shrink-0 font-medium',
-            isDenied ? 'text-error' : failed ? 'text-warning' : 'text-foreground',
-            inFlight && !isDenied && 'animate-shimmer',
-          )}
+        <ToolName
+          streaming={inFlight && !isDenied}
+          tone={isDenied ? 'denied' : failed ? 'error' : 'default'}
         >
           {inFlight ? <>{verb}…</> : verb}
-        </span>
+        </ToolName>
 
         {completed && path && filename ? (
           <FileChip name={filename} title={path} filePath={path} className="max-w-50" />

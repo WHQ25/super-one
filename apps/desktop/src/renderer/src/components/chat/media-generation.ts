@@ -51,6 +51,30 @@ export function isWidgetShowTool(toolName: string): boolean {
   return toolName === WIDGET_SHOW_TOOL
 }
 
+/** Pull the human error string from a media_generate_* / status JSON (or `[Error]` text). */
+export function mediaToolErrorMessage(result?: string | null): string {
+  if (!result) return ''
+  try {
+    const parsed = JSON.parse(result) as { message?: unknown; error?: unknown }
+    if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.message === 'string' && parsed.message.trim()) return parsed.message.trim()
+      if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim()
+    }
+  } catch { /* not JSON */ }
+  return result.replace(/^\[Error\]\s*/i, '').trim()
+}
+
+export function isMediaToolErrorResult(result?: string | null, isError?: boolean): boolean {
+  if (isError) return true
+  if (!result) return false
+  try {
+    const parsed = JSON.parse(result) as { status?: unknown }
+    return parsed?.status === 'error'
+  } catch {
+    return /^\[Error\]/i.test(result)
+  }
+}
+
 /**
  * `widget_show({ template: '@native/…' })` renders one of SuperOne's own surfaces rather than a
  * frame, so its items belong to the same turn-end gallery a built-in generation feeds.

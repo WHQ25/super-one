@@ -1,8 +1,10 @@
 import type { ChatMessage, ImageGenerationItem, VideoGenerationItem, CodexThreadItem } from '@superone/shared/agent-types'
+import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
 
 const MEDIA_GENERATE_IMAGE_TOOL = 'mcp__superone__media_generate_image'
 const MEDIA_GENERATE_VIDEO_TOOL = 'mcp__superone__media_generate_video'
 const MEDIA_VIDEO_STATUS_TOOL = 'mcp__superone__media_video_status'
+const WIDGET_SHOW_TOOL = 'mcp__superone__widget_show'
 
 /** Grok Build native Imagine tools (ACP title / resolved toolName). */
 const GROK_IMAGE_GEN_TOOLS = new Set(['ImageGen', 'ImageEdit', 'image_gen', 'image_edit'])
@@ -43,6 +45,25 @@ export function isGrokVideoGenTool(toolName: string): boolean {
 
 export function isMediaVideoStatusTool(toolName: string): boolean {
   return toolName === MEDIA_VIDEO_STATUS_TOOL
+}
+
+export function isWidgetShowTool(toolName: string): boolean {
+  return toolName === WIDGET_SHOW_TOOL
+}
+
+/**
+ * `widget_show({ template: '@native/…' })` renders one of SuperOne's own surfaces rather than a
+ * frame, so its items belong to the same turn-end gallery a built-in generation feeds.
+ *
+ * These two readers and `isHiddenToolBlock` all go through `parseNativeWidgetResult`, which is what
+ * keeps the hide contract honest: a row is hidden if and only if one of these returns something.
+ */
+export function nativeWidgetImages(resultText: string | undefined): ImageGenerationItem[] {
+  return parseNativeWidgetResult(resultText)?.images ?? []
+}
+
+export function nativeWidgetVideos(resultText: string | undefined): VideoGenerationItem[] {
+  return parseNativeWidgetResult(resultText)?.videos ?? []
 }
 
 /**
@@ -243,9 +264,13 @@ function codexMcpResultText(item: Extract<CodexThreadItem, { type: 'mcp_tool_cal
 export function collectCodexGeneratedImages(codexItems: CodexThreadItem[] | undefined): ImageGenerationItem[] {
   const items: ImageGenerationItem[] = []
   for (const item of codexItems ?? []) {
-    if (item.type !== 'mcp_tool_call') continue
-    if (!isMediaGenerateImageTool(`mcp__${item.server}__${item.tool}`) || item.error) continue
-    items.push(...toImageGenerationItems(item.id, item.arguments, codexMcpResultText(item)))
+    if (item.type !== 'mcp_tool_call' || item.error) continue
+    const toolName = `mcp__${item.server}__${item.tool}`
+    if (isMediaGenerateImageTool(toolName)) {
+      items.push(...toImageGenerationItems(item.id, item.arguments, codexMcpResultText(item)))
+    } else if (isWidgetShowTool(toolName)) {
+      items.push(...nativeWidgetImages(codexMcpResultText(item)))
+    }
   }
   return items
 }
@@ -254,9 +279,12 @@ export function collectCodexGeneratedImages(codexItems: CodexThreadItem[] | unde
 export function collectCodexGeneratedVideos(codexItems: CodexThreadItem[] | undefined): VideoGenerationItem[] {
   const byId = new Map<string, VideoGenerationItem>()
   for (const item of codexItems ?? []) {
-    if (item.type !== 'mcp_tool_call') continue
-    if (!isMediaVideoStatusTool(`mcp__${item.server}__${item.tool}`) || item.error) continue
-    for (const video of toVideoStatusItems(codexMcpResultText(item))) byId.set(video.id, video)
+    if (item.type !== 'mcp_tool_call' || item.error) continue
+    const toolName = `mcp__${item.server}__${item.tool}`
+    const videos = isMediaVideoStatusTool(toolName)
+      ? toVideoStatusItems(codexMcpResultText(item))
+      : isWidgetShowTool(toolName) ? nativeWidgetVideos(codexMcpResultText(item)) : []
+    for (const video of videos) byId.set(video.id, video)
   }
   return [...byId.values()]
 }

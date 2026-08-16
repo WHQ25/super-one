@@ -5,7 +5,13 @@ Call read_manual again with domain "widget" and the modules parameter to load de
 - `interactive` — interactive explainers with controls
 - `chart` — charts and data analysis (includes Chart.js)
 - `art` — illustration and generative art
+- `native` — **do not author a visual at all**: hand generated images/video to SuperOne's own gallery
 Pick the closest fit. The module includes all relevant design guidance.
+
+**Check `native` first.** If what you are showing is media you produced — images or video from a
+provider, a script, or adapter code you wrote — do not hand-write a gallery. `widget_show({ template:
+'@native/image-gallery', data })` renders the real one, with viewer, download and drag-out that a
+frame cannot provide. The design modules below are for visuals you actually design.
 
 **Complexity budget — hard limits:**
 - Box subtitles: ≤5 words. Detail goes in click-through (`sendPrompt`) or the prose below — not the box.

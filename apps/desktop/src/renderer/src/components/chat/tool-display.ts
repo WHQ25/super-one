@@ -5,6 +5,9 @@ import {
   isMediaGenerateImageTool,
   isMediaVideoStatusTool,
   isSuccessfulGenerationResult,
+  isWidgetShowTool,
+  nativeWidgetImages,
+  nativeWidgetVideos,
   isVideoStatusStillRunning,
 } from './media-generation'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
@@ -96,6 +99,10 @@ export function isAlwaysHiddenToolBlock(toolName: string): boolean {
 
 export function isHiddenToolBlock(toolName: string, result?: string): boolean {
   if (isAlwaysHiddenToolBlock(toolName)) return true
+  // A native-template widget_show *is* the gallery, so its row would only narrate what the user can
+  // already see. A code widget, a still-streaming call, and a failed build all keep their row —
+  // this reads the same parse the gallery collects from, so the two cannot disagree.
+  if (isWidgetShowTool(toolName)) return nativeWidgetImages(result).length > 0 || nativeWidgetVideos(result).length > 0
   if (isMediaGenerateImageTool(toolName)) return !result || isSuccessfulGenerationResult(result)
   // Grok native video is synchronous (path on complete) — hide the tool row when the gallery
   // will render the file, same as ImageGen.

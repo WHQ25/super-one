@@ -40,5 +40,10 @@
     "Color palette",
     "SVG setup",
     "Diagram types"
+  ],
+  "native": [
+    "_preamble",
+    "Modules",
+    "Native UI"
   ]
 }

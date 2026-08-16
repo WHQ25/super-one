@@ -1320,7 +1320,11 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
     }
   }
 
-  if (mcpInfo?.mcpToolName === 'widget_show') {
+  // Result-as-UI only holds while there is a result to *be* the UI. A failed or denied call has
+  // none, so it falls through to the default row, which is the only branch that surfaces the reason
+  // — native templates made this reachable, since a bad path or data shape is an ordinary,
+  // agent-fixable outcome rather than an internal error.
+  if (mcpInfo?.mcpToolName === 'widget_show' && !isError && !isDenied) {
     const widgetData = (result ? parseWidgetResult(result) : null) ?? parsePartialWidgetInput(input)
     const jsonComplete = isCompleteJson(input)
     const inputComplete = !isStreaming || jsonComplete

@@ -1,6 +1,5 @@
 import { mkdirSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import type { GeneratedFile } from 'ai'
 import type { SavedImage } from './types'
 
 const IMAGE_EXT_BY_MEDIA_TYPE: Record<string, string> = {
@@ -52,7 +51,7 @@ function persistFiles(
 }
 
 export function persistImages(
-  images: readonly GeneratedFile[],
+  images: readonly PersistableFile[],
   outputDir: string,
   generationId: string,
 ): SavedImage[] {

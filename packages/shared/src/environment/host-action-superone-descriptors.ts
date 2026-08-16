@@ -251,7 +251,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
         "modules": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 5,
+          "maxItems": 6,
           "uniqueItems": true,
           "items": {
             "type": "string",
@@ -260,7 +260,8 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
               "mockup",
               "interactive",
               "chart",
-              "art"
+              "art",
+              "native"
             ]
           },
           "description": "Widget only: one or more guideline modules. Mutually exclusive with topic."
@@ -3213,7 +3214,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "widget_show",
-    "description": "Render SVG, diagrams, charts, or interactive HTML inline in chat. Pass widget_code for new content, or template + data to reuse a saved template. Before the first new widget in a session, load the relevant design modules with read_manual({ domain: \"widget\", modules: [...] }).",
+    "description": "Render SVG, diagrams, charts, or interactive HTML inline in chat. Pass widget_code for new content, or template + data to reuse a saved template. To show media you produced yourself, pass a @native/* template so it renders in SuperOne's own gallery (viewer, download, drag-out) instead of a lookalike you build in widget_code — call widget_list_templates for the list. Before the first new widget in a session, load the relevant design modules with read_manual({ domain: \"widget\", modules: [...] }).",
     "inputSchema": {
       "type": "object",
       "properties": {

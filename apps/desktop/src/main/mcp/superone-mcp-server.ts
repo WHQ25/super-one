@@ -298,7 +298,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
     sessionHost: getSessionHost(),
     applyAppSettings: getAppSettingsApplier(),
   })
-  registerWidgetTools(server, { projectPath })
+  registerWidgetTools(server, { projectPath, sessionId })
   registerBrowserTools(server, sessionId)
   // Opt-in desktop Computer Use (coordinate/AX fallback tier). Gated by settings.
   registerComputerUseTools(server, sessionId)

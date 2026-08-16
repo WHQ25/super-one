@@ -8,6 +8,7 @@ import diagramTypes from './guidelines/sections/diagram_types.md?raw'
 import uiComponents from './guidelines/sections/ui_components.md?raw'
 import chartsChartJs from './guidelines/sections/charts_chart_js.md?raw'
 import artAndIllustration from './guidelines/sections/art_and_illustration.md?raw'
+import nativeUi from './guidelines/sections/native_ui.md?raw'
 import mapping from './guidelines/sections/mapping.json'
 import { WIDGET_GUIDELINE_MODULES } from './guideline-modules'
 
@@ -22,6 +23,7 @@ const SECTION_MAP: Record<string, string> = {
   'UI components': uiComponents,
   'Charts (Chart.js)': chartsChartJs,
   'Art and illustration': artAndIllustration,
+  'Native UI': nativeUi,
 }
 
 export const AVAILABLE_MODULES = WIDGET_GUIDELINE_MODULES

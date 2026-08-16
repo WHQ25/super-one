@@ -10,6 +10,8 @@ import {
   collectCodexGeneratedImages,
   collectCodexGeneratedVideos,
   videoGenStatusesFromMessages,
+  nativeWidgetImages,
+  nativeWidgetVideos,
 } from './media-generation'
 import { isHiddenToolBlock } from './tool-display'
 
@@ -488,5 +490,98 @@ describe('collecting generated videos from a codex turn', () => {
       codexVideoCall({ id: 'exec-poll-2' }),
     ])
     expect(items).toHaveLength(1)
+  })
+})
+
+const WIDGET_TOOL = 'mcp__superone__widget_show'
+
+const NATIVE_IMAGES = JSON.stringify({
+  kind: 'native',
+  nativeType: 'image-gallery',
+  title: 'seedream',
+  images: [
+    { id: 'gen1-0', type: 'image_generation', status: 'completed', savedPath: '/tmp/a.png', previewPath: '/tmp/a.preview.jpg' },
+  ],
+})
+
+const NATIVE_VIDEOS = JSON.stringify({
+  kind: 'native',
+  nativeType: 'video-gallery',
+  title: 'clip',
+  videos: [{ id: 'gen2-0', type: 'video_generation', status: 'completed', savedPath: '/tmp/a.mp4' }],
+})
+
+const CODE_WIDGET = JSON.stringify({ title: 'chart', widget_code: '<svg/>', width: 800, height: 600, isSVG: true })
+
+describe('widget_show rendering a native gallery instead of a frame', () => {
+  it('collects the prepared images so the turn-end gallery owns them', () => {
+    expect(nativeWidgetImages(NATIVE_IMAGES)).toEqual([
+      { id: 'gen1-0', type: 'image_generation', status: 'completed', savedPath: '/tmp/a.png', previewPath: '/tmp/a.preview.jpg' },
+    ])
+  })
+
+  it('collects prepared videos and keeps the two galleries apart', () => {
+    expect(nativeWidgetVideos(NATIVE_VIDEOS)).toHaveLength(1)
+    expect(nativeWidgetImages(NATIVE_VIDEOS)).toEqual([])
+    expect(nativeWidgetVideos(NATIVE_IMAGES)).toEqual([])
+  })
+
+  it('leaves a code widget alone so WidgetBlock still renders it in a frame', () => {
+    expect(isHiddenToolBlock(WIDGET_TOOL, CODE_WIDGET)).toBe(false)
+    expect(nativeWidgetImages(CODE_WIDGET)).toEqual([])
+  })
+
+  it('keeps the row while streaming, when nothing is known about the result yet', () => {
+    expect(isHiddenToolBlock(WIDGET_TOOL, undefined)).toBe(false)
+  })
+
+  it('keeps the row when the native build failed, so the error stays readable', () => {
+    expect(isHiddenToolBlock(WIDGET_TOOL, '[Error] images[0] needs either `path` or `base64`')).toBe(false)
+  })
+
+  it.each([
+    ['a native image gallery', NATIVE_IMAGES],
+    ['a native video gallery', NATIVE_VIDEOS],
+    ['a code widget', CODE_WIDGET],
+    ['a still-streaming call', undefined],
+    ['a host error', '[Error] boom'],
+    ['an empty json object', '{}'],
+    ['a native payload with no renderable item', JSON.stringify({ kind: 'native', nativeType: 'image-gallery', title: 't', images: [] })],
+  ])('hides the row exactly when a gallery took ownership of %s', (_label, result) => {
+    const galleryOwnsIt = nativeWidgetImages(result).length > 0 || nativeWidgetVideos(result).length > 0
+    expect(isHiddenToolBlock(WIDGET_TOOL, result)).toBe(galleryOwnsIt)
+  })
+
+  it('does not claim a widget_show from some other MCP server', () => {
+    expect(isHiddenToolBlock('mcp__acme__widget_show', NATIVE_IMAGES)).toBe(false)
+  })
+})
+
+describe('native widget galleries on a codex turn', () => {
+  const codexWidgetCall = (text: string, over: Partial<CodexMcpToolCallItem> = {}): CodexMcpToolCallItem => ({
+    id: 'exec-widget',
+    type: 'mcp_tool_call',
+    server: 'superone',
+    tool: 'widget_show',
+    status: 'completed',
+    arguments: { title: 't', template: '@native/image-gallery' },
+    result: { content: [{ type: 'text', text }], structuredContent: null },
+    ...over,
+  } as CodexMcpToolCallItem)
+
+  it('collects images from a native widget_show alongside media_generate_image', () => {
+    expect(collectCodexGeneratedImages([codexWidgetCall(NATIVE_IMAGES)])).toHaveLength(1)
+  })
+
+  it('collects videos from a native widget_show', () => {
+    expect(collectCodexGeneratedVideos([codexWidgetCall(NATIVE_VIDEOS)])).toHaveLength(1)
+  })
+
+  it('ignores a code widget so it keeps rendering in its frame', () => {
+    expect(collectCodexGeneratedImages([codexWidgetCall(CODE_WIDGET)])).toEqual([])
+  })
+
+  it('ignores a failed call so the error block explains instead of an empty card', () => {
+    expect(collectCodexGeneratedImages([codexWidgetCall(NATIVE_IMAGES, { error: { message: 'boom' } })])).toEqual([])
   })
 })

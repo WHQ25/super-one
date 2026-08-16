@@ -56,7 +56,7 @@ const WIDGET_LIST_TEMPLATES_DESCRIPTOR: SuperoneMcpToolDescriptor = {
 const WIDGET_SHOW_DESCRIPTOR: SuperoneMcpToolDescriptor = {
   name: WIDGET_SHOW_NAME,
   description:
-    'Render SVG, diagrams, charts, or interactive HTML inline in chat. Pass widget_code for new content, or template + data to reuse a saved template. Before the first new widget in a session, load the relevant design modules with read_manual({ domain: "widget", modules: [...] }).',
+    'Render SVG, diagrams, charts, or interactive HTML inline in chat. Pass widget_code for new content, or template + data to reuse a saved template. To show media you produced yourself, pass a @native/* template so it renders in SuperOne\'s own gallery (viewer, download, drag-out) instead of a lookalike you build in widget_code — call widget_list_templates for the list. Before the first new widget in a session, load the relevant design modules with read_manual({ domain: "widget", modules: [...] }).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -162,7 +162,7 @@ export async function executeSuperoneMcpTool(
 
   if (toolName === WIDGET_SHOW_NAME) {
     const projectPath = getSessionHost()?.getSession(sessionId)?.projectPath
-    return executeWidgetShowTool(args, { projectPath })
+    return executeWidgetShowTool(args, { projectPath, sessionId })
   }
 
   throw new Error(`Unknown SuperOne MCP tool: ${toolName}`)

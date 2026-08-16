@@ -16,7 +16,7 @@ import {
 } from './compact-chat-mode'
 import { summarizeClaudeProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
-import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, isGrokVideoGenTool, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
+import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, isGrokVideoGenTool, isWidgetShowTool, nativeWidgetImages, nativeWidgetVideos, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
@@ -810,7 +810,14 @@ export function ModelFallbackIndicator({ info }: { info: { trigger: string; from
 function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<string, string>): ImageGenerationItem[] {
   const items: ImageGenerationItem[] = []
   for (const block of content) {
-    if (block.type !== 'tool_use' || !isMediaGenerateImageTool(block.toolName)) continue
+    if (block.type !== 'tool_use') continue
+    // A native-template widget_show hands the gallery items the host already prepared, so an
+    // agent-written provider adapter lands in the same surface as a built-in generation.
+    if (isWidgetShowTool(block.toolName)) {
+      items.push(...nativeWidgetImages(toolResultMap.get(block.toolUseId)))
+      continue
+    }
+    if (!isMediaGenerateImageTool(block.toolName)) continue
     items.push(...toImageGenerationItems(
       block.toolUseId,
       parseToolInput(block.input, block.toolName),
@@ -832,9 +839,14 @@ function collectGeneratedVideos(content: ContentBlock[], toolResultMap: Map<stri
   const byId = new Map<string, VideoGenerationItem>()
   for (const block of content) {
     if (block.type !== 'tool_use') continue
+    const result = toolResultMap.get(block.toolUseId)
+    if (isWidgetShowTool(block.toolName)) {
+      for (const item of nativeWidgetVideos(result)) byId.set(item.id, item)
+      continue
+    }
     // SuperOne async poll, or Grok native video tools that return a finished path.
     if (!isMediaVideoStatusTool(block.toolName) && !isGrokVideoGenTool(block.toolName)) continue
-    for (const item of toVideoStatusItems(toolResultMap.get(block.toolUseId))) byId.set(item.id, item)
+    for (const item of toVideoStatusItems(result)) byId.set(item.id, item)
   }
   return [...byId.values()]
 }

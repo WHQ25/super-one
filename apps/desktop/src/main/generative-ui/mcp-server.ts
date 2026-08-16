@@ -1,13 +1,17 @@
 import { homedir } from 'os'
+import { randomUUID } from 'crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
+import { isNativeTemplateId, nativeTypeFromTemplateId, NATIVE_WIDGET_TYPES } from '@superone/shared/generative-ui/native-widgets'
 import { buildWidgetPayload } from './widget-payload'
 import type { TemplateRoots } from './template-store'
 
 interface WidgetToolsOptions {
   skipWidgetGate?: boolean
   projectPath?: string
+  /** Scopes where agent-supplied media bytes are written, mirroring media_generate_*. */
+  sessionId?: string
 }
 
 function templateRoots(opts?: WidgetToolsOptions): TemplateRoots {
@@ -16,9 +20,45 @@ function templateRoots(opts?: WidgetToolsOptions): TemplateRoots {
 
 export async function listWidgetTemplatesHandler(opts?: WidgetToolsOptions) {
   const { listTemplates, formatTemplateList } = await import('./template-store')
+  const { formatNativeTemplateList } = await import('./native-widget-payload')
   const formatted = formatTemplateList(listTemplates(templateRoots(opts)))
-  const text = formatted || '# Saved widget templates\n\nNo saved templates are available.'
-  return { content: [{ type: 'text' as const, text }] }
+  const saved = formatted || '# Saved widget templates\n\nNo saved templates are available.'
+  // Native templates lead: they are always available and are the right answer whenever the agent
+  // would otherwise hand-write a gallery, so they should be seen before the saved list.
+  return { content: [{ type: 'text' as const, text: `${formatNativeTemplateList()}\n\n${saved}` }] }
+}
+
+/**
+ * Render one of SuperOne's own surfaces instead of a frame.
+ *
+ * Returns the prepared payload as the tool result: the chat row hides itself once this parses and
+ * the turn-end gallery picks the items up, so the call *is* the UI rather than a card describing it.
+ */
+async function executeNativeWidget(
+  template: string,
+  title: string,
+  data: Record<string, unknown> | undefined,
+  opts?: WidgetToolsOptions,
+) {
+  const nativeType = nativeTypeFromTemplateId(template)
+  if (!nativeType) {
+    const known = NATIVE_WIDGET_TYPES.map((t) => `@native/${t}`).join(', ')
+    return {
+      content: [{ type: 'text' as const, text: `[Error] Unknown native template "${template}". Available: ${known}.` }],
+      isError: true as const,
+    }
+  }
+
+  const { mediaGenOutputDir } = await import('../media-gen/paths')
+  const { buildNativeWidgetPayload } = await import('./native-widget-payload')
+  const built = buildNativeWidgetPayload(nativeType, title, data, {
+    outputDir: mediaGenOutputDir(opts?.sessionId),
+    generationId: randomUUID(),
+  })
+  if (!built.payload) {
+    return { content: [{ type: 'text' as const, text: built.error ?? '[Error] widget_show failed.' }], isError: true as const }
+  }
+  return { content: [{ type: 'text' as const, text: JSON.stringify(built.payload) }] }
 }
 
 /** Shared by in-process MCP registration and Host Action / listSuperoneMcpTools. */
@@ -43,6 +83,12 @@ export async function executeWidgetShowTool(
       : undefined
   const width = typeof args.width === 'number' ? args.width : undefined
   const height = typeof args.height === 'number' ? args.height : undefined
+
+  // The `@native/` namespace is unreachable by a saved template id (those match
+  // /^[a-z0-9][a-z0-9_-]*$/), so this branch can never shadow a user's own template.
+  if (template && isNativeTemplateId(template)) {
+    return executeNativeWidget(template, title, data, opts)
+  }
 
   const built = buildWidgetPayload(templateRoots(opts), {
     title,
@@ -84,6 +130,8 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
     'widget_show',
     'Render SVG, diagrams, charts, or interactive HTML inline in chat. ' +
     'Pass widget_code for new content, or template + data to reuse a saved template. ' +
+    'To show media you produced yourself, pass a @native/* template so it renders in SuperOne\'s own gallery ' +
+    '(viewer, download, drag-out) instead of a lookalike you build in widget_code — call widget_list_templates for the list. ' +
     'Before the first new widget in a session, load the relevant design modules with read_manual({ domain: "widget", modules: [...] }).',
     {
       title: z.string().describe('Short snake_case identifier for this widget.'),
@@ -94,10 +142,12 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
       ),
       template: z.string().optional().describe(
         'Id of a saved widget template to render instead of inline code. ' +
-        'Call widget_list_templates to discover ids. Mutually exclusive with widget_code.'
+        'Call widget_list_templates to discover ids. Mutually exclusive with widget_code. ' +
+        'An id starting with @native/ renders a built-in SuperOne surface rather than HTML.'
       ),
       data: z.record(z.string(), z.unknown()).optional().describe(
-        'Values passed to the template, readable inside the widget as window.widget.data.'
+        'Values passed to the template, readable inside the widget as window.widget.data. ' +
+        'For a @native/ template this is the surface\'s own input — see widget_list_templates for its shape.'
       ),
       reusable: z.object({
         id: z.string().describe('Stable kebab-case id to suggest when the user saves this widget.'),

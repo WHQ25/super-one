@@ -187,7 +187,20 @@ describe('built-in superone tool registration surfaces', () => {
     const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'read_manual')!
     const modules = (def.inputSchema.properties as Record<string, Record<string, unknown>>).modules
     expect(modules).toMatchObject({ minItems: 1, uniqueItems: true })
-    expect(modules.items).toMatchObject({ enum: ['diagram', 'mockup', 'interactive', 'chart', 'art'] })
+    // `native` is not a design module — it covers handing data to a built-in SuperOne surface.
+    expect(modules.items).toMatchObject({ enum: ['diagram', 'mockup', 'interactive', 'chart', 'art', 'native'] })
+  })
+
+  it('keeps the hand-maintained remote-node module enum in step with the desktop one', () => {
+    // The desktop def derives from WIDGET_GUIDELINE_MODULES, but the host-action descriptor is a
+    // literal copy — adding a module without updating it makes that module unusable on a remote
+    // node, and nothing else would report it.
+    const desktop = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'read_manual')!
+    const hostAction = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((d) => d.name === 'read_manual')!
+    const modulesOf = (def: typeof desktop | typeof hostAction) =>
+      (def.inputSchema.properties as Record<string, Record<string, unknown>>).modules
+    expect(modulesOf(hostAction).items).toEqual(modulesOf(desktop).items)
+    expect(modulesOf(hostAction).maxItems).toEqual(modulesOf(desktop).maxItems)
   })
 
   it('restricts media provider category to supported values', () => {

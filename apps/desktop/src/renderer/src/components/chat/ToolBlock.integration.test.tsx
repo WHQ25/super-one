@@ -299,3 +299,50 @@ describe('ToolBlock error auto-collapse', () => {
     await waitFor(() => expect(screen.getByText(result)).not.toBeNull())
   })
 })
+
+describe('widget_show error and denied states', () => {
+  const WIDGET = 'mcp__superone__widget_show'
+
+  const NATIVE_ERROR = '[Error] images[0] needs either `path` (a file on disk) or `base64` (raw bytes); neither was set.'
+
+  it('drops the result-as-UI row for a failed native template so the failure is visible', () => {
+    render(
+      <ToolBlock
+        toolName={WIDGET}
+        input={JSON.stringify({ title: 't', template: '@native/image-gallery', data: { images: [{}] } })}
+        status="complete"
+        result={NATIVE_ERROR}
+        isError
+      />,
+    )
+    // The widget branch would render this label and nothing else, hiding the reason entirely.
+    expect(screen.queryByText('Generate widget')).toBeNull()
+    expect(screen.queryByText('Error')).not.toBeNull()
+  })
+
+  it('reveals the host message on expand so the agent-fixable reason is readable', async () => {
+    const { container } = render(
+      <ToolBlock
+        toolName={WIDGET}
+        input={JSON.stringify({ title: 't', template: '@native/image-gallery', data: { images: [{}] } })}
+        status="complete"
+        result={NATIVE_ERROR}
+        isError
+      />,
+    )
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    await waitFor(() => expect(document.body.textContent).toContain('needs either'))
+  })
+
+  it('still renders a code widget normally when the call succeeded', () => {
+    render(
+      <ToolBlock
+        toolName={WIDGET}
+        input={JSON.stringify({ title: 'chart', widget_code: '<svg/>' })}
+        status="complete"
+        result={JSON.stringify({ title: 'chart', widget_code: '<svg/>', width: 800, height: 600, isSVG: true })}
+      />,
+    )
+    expect(screen.queryByText(/needs either/)).toBeNull()
+  })
+})

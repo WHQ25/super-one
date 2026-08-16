@@ -156,14 +156,15 @@ export const UPDATE_SUPERONE_TYPES_DESCRIPTION =
 
 export const RENAME_SESSION_DESCRIPTION =
   'Rename the current chat session to a concise topic label shown in the sidebar. ' +
-  'Optional tags (set) label it for session_list/session_search — discover names with session_tag_list.\n\n' +
+  'Always pass tags (set): 1–4 short kebab-case labels you choose so session_list/session_search can find this chat. ' +
+  'Reuse names from session_tag_list when they fit; invent one when they don\'t.\n\n' +
   'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
   'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again. Tags in the same call were still applied; use session_tag for later tag edits.'
 
 export const SESSION_TAG_DESCRIPTION =
   'Tag SuperOne sessions so session_list/session_search can filter by tag. Default: current session. ' +
   'Pass sessionId for one other session, or sessionIds with add to tag many. Use add, remove, or set (exactly one). set: [] clears. ' +
-  'Discover existing labels with session_tag_list first — do not invent names. ' +
+  'Pick 1–4 short kebab-case labels; reuse names from session_tag_list when they fit, otherwise invent. ' +
   'Only the top-level agent may call this; subagents must not. Not session_rename (titles) and not live collab.'
 
 export const SESSION_TAG_LIST_DESCRIPTION =
@@ -668,7 +669,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
           type: 'array',
           items: { type: 'string' },
           maxItems: 8,
-          description: 'Replace this session\'s tags (set). Discover names with session_tag_list. Empty array clears. Applied even when the title is user_locked.',
+          description: 'Replace this session\'s tags (set). Pass 1–4 short kebab-case labels you choose. Reuse names from session_tag_list when they fit; invent when they don\'t. Empty array clears. Applied even when the title is user_locked.',
         },
       },
       required: ['title'],

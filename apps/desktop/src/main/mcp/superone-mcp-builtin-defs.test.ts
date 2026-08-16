@@ -129,9 +129,14 @@ describe('built-in superone tool registration surfaces', () => {
 
   it('points session tag tools at list/search and keeps tagMatch closed', () => {
     const tag = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_tag')!
+    const rename = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_rename')!
     const list = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_tag_list')!
     expect(tag.description).toMatch(/session_tag_list/)
     expect(tag.description).toMatch(/subagent/i)
+    expect(tag.description).toMatch(/invent/)
+    expect(tag.description).not.toMatch(/do not invent/i)
+    expect(rename.description).toMatch(/Always pass tags/)
+    expect(rename.description).not.toMatch(/Optional tags/)
     expect(list.description).toMatch(/tagMatch/)
     expect(list.description).toMatch(/session_list/)
     const listTags = (BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_list')!

@@ -34,11 +34,13 @@ session_search({ query: "refresh token", tags: ["oauth"], tagMatch: "any" })
 session_read({ sessionId, view: "user", limit: 20 })
 ```
 
-`tagMatch`: `any` = at least one listed tag (default); `all` = every listed tag. Tag filters run in SQL before the text prefilter, so they shrink the scan window. Discover names with `session_tag_list` — do not invent tags. Tag-only lookup is `session_list`, not `session_search` (`query` stays required).
+`tagMatch`: `any` = at least one listed tag (default); `all` = every listed tag. Tag filters run in SQL before the text prefilter, so they shrink the scan window. When filtering, use names from `session_tag_list` — a tag that was never written matches nothing. Tag-only lookup is `session_list`, not `session_search` (`query` stays required).
 
 Do not `session_read` the current session — it is already in context.
 
 ### Tag while working (main agent only)
+
+Always pass `tags` on `session_rename`. Pick 1–4 short kebab-case labels yourself. Reuse names from `session_tag_list` when they fit; invent one when they don't.
 
 ```
 session_rename({ title: "Fix OAuth refresh", tags: ["oauth", "auth"] })

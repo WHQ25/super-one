@@ -501,7 +501,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       inputSchema: {
         title: z.string().min(1).max(80).describe('A concise 4-8 word title describing the current conversation topic.'),
         tags: z.array(z.string()).max(8).optional()
-          .describe('Replace this session\'s tags (set). Discover names with session_tag_list. Empty array clears. Applied even when the title is user_locked.'),
+          .describe('Replace this session\'s tags (set). Pass 1–4 short kebab-case labels you choose. Reuse names from session_tag_list when they fit; invent when they don\'t. Empty array clears. Applied even when the title is user_locked.'),
       },
       _meta: { 'anthropic/alwaysLoad': true },
     },

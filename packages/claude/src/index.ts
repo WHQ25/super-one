@@ -57,6 +57,11 @@ export {
   type ForkClaudeTranscriptInput,
   type SdkForkSessionFn,
 } from './fork-session'
+export {
+  claudeTranscriptPath,
+  inspectClaudeTranscript,
+  type ClaudeTranscriptState,
+} from './transcript-store'
 export type {
   ClaudePermissionDecision,
   ClaudePermissionHandler,

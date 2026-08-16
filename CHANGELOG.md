@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.9-alpha] - 2026-08-16
+
+### Added
+
+- Chat: `@widget` built-in mention to pin widget tools the same way as browser and computer.
+- Chat: `@debug` built-in mention that loads the product debug/contribute manuals. A ghost after the chip asks you to describe the bug. If you have no GitHub account, the agent drafts an issue to copy — it will not invent another report channel.
+
+### Fixed
+
+- Claude: keep a working resume session id when a replacement run dies empty, and drop a leftover sidecar proxy URL after switching back to a direct provider.
+- Desktop: match the Windows caption overlay to the app background.
+- Grok: show usage after reset and prewarm.
+
 ## [0.53.8-alpha] - 2026-08-16
 
 ### Added

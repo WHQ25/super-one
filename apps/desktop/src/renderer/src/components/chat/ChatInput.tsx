@@ -20,6 +20,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { PasteChipNode, PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { SlashDecoration } from './slash-decoration'
 import { SessionMentionDecoration, syncSessionMentionDismissed } from './session-mention-decoration'
+import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
@@ -1183,6 +1184,7 @@ export function ChatInput() {
         PasteChipNode,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
         SessionMentionDecoration.configure({ projects: sessionProjectOptions }),
+        DebugMentionDecoration.configure({ hint: t('chat.placeholder.debugBug') }),
         PromptSuggestion,
       ],
       content: '',
@@ -1486,6 +1488,10 @@ export function ChatInput() {
         editor.view.dispatch(editor.state.tr)
       }
     }, [placeholderText, editor])
+
+    useEffect(() => {
+      syncDebugMentionHint(editor, t('chat.placeholder.debugBug'))
+    }, [editor, t])
 
 
     useEffect(() => {

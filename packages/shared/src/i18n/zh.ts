@@ -985,6 +985,7 @@ export const zh: Messages = {
     },
     placeholder: {
       addInstructions: '补充说明...',
+      debugBug: '描述一下出了什么问题…',
       codexPlan: '一起来做个计划吧！你有什么想法？',
       codexReject: '告诉 Codex 换一种做法',
       codexAsk: '随便问 Codex，@ 提及文件和小程序，/ 查看命令和技能',

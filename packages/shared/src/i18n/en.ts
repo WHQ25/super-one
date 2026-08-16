@@ -937,6 +937,7 @@ export type Messages = {
     }
     placeholder: {
       addInstructions: string
+      debugBug: string
       codexPlan: string
       codexReject: string
       codexAsk: string
@@ -3702,6 +3703,7 @@ export const en: Messages = {
     },
     placeholder: {
       addInstructions: 'Add instructions...',
+      debugBug: 'describe the bug…',
       codexPlan: "Let's make a plan! What's in your mind?",
       codexReject: 'Tell Codex what to do differently',
       codexAsk: 'Ask Codex anything, @ for files & mini-apps, / for commands and skills',

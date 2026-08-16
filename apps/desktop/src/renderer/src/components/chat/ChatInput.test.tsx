@@ -119,6 +119,7 @@ vi.mock('@tiptap/react', () => {
         slashDecoration: { slashCommands: [] as unknown[] },
         promptSuggestion: { suggestion: null as string | null },
         sessionMentionDecoration: { projects: [] as unknown[] },
+        debugMentionDecoration: { hint: '' },
       },
       getText: () => {
         if (editorState.destroyed) throw new Error('Destroyed editor accessed')
@@ -254,6 +255,11 @@ vi.mock('./paste-chip-node', () => ({
 
 vi.mock('./slash-decoration', () => ({
   SlashDecoration: { configure: () => ({}) },
+}))
+
+vi.mock('./debug-mention-decoration', () => ({
+  DebugMentionDecoration: { configure: () => ({}) },
+  syncDebugMentionHint: vi.fn(),
 }))
 
 vi.mock('./prompt-suggestion', () => ({

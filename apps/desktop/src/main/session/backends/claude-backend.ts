@@ -20,6 +20,7 @@ import {
 import { resolveVideoConfirm, rejectVideoConfirm } from '../../mcp/media-tools'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../../mcp/config-tools'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
+import { inspectClaudeTranscript } from '@superone/claude'
 import { buildSafeEnv } from '../../spawn-env'
 import type {
   AgentEvent,
@@ -77,6 +78,8 @@ export class ClaudeBackend implements SessionBackend {
   private interruptSettleTimer: ReturnType<typeof setTimeout> | null = null
   private turnResolves = new Map<string, () => void>()
   private providerSessionId: string | null = null
+  /** Init id of a run that has not produced conversation content yet — see `stageProviderSessionId`. */
+  private stagedProviderSessionId: string | null = null
   private pendingQueued: Array<{ msg: SDKUserMessage; clientMessageId: string }> = []
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
@@ -170,20 +173,81 @@ export class ClaudeBackend implements SessionBackend {
     }
   }
 
+  /**
+   * `init` arrives before the run has written a single conversation row, so its
+   * session id is only a candidate. Adopting it unconditionally lets a run that
+   * dies early (third-party key rejected, sidecar gone, spawn aborted) overwrite
+   * a working resume pointer with an id whose transcript holds nothing but
+   * startup rows — and the CLI resumes such a transcript *silently* with empty
+   * context, so the next turn greets a full chat as a brand new session.
+   *
+   * A first id is adopted immediately (nothing to lose); a *replacement* waits
+   * until the run proves it produced content.
+   */
+  private stageProviderSessionId(id: string): void {
+    if (!id || id === this.providerSessionId) {
+      this.stagedProviderSessionId = null
+      return
+    }
+    if (this.providerSessionId === null) {
+      this.commitProviderSessionId(id)
+      return
+    }
+    this.stagedProviderSessionId = id
+    log.info(
+      '[ClaudeBackend] provider session id staged sid=%s current=%s init=%s (adopted once the run produces content)',
+      this._lastStartOpts?.sessionId,
+      this.providerSessionId,
+      id,
+    )
+  }
+
+  private commitProviderSessionId(id: string): void {
+    this.stagedProviderSessionId = null
+    if (!id || id === this.providerSessionId) return
+    this.providerSessionId = id
+    for (const cb of this.providerSessionIdListeners) {
+      try { cb(id) } catch (err) { log.warn('[ClaudeBackend] providerSessionId listener error:', err) }
+    }
+  }
+
+  /**
+   * Diagnostic only. A resume target that is missing fails loudly in the CLI,
+   * but one that exists without conversation rows resumes as an empty chat with
+   * no error anywhere — this log is the only trace of that context loss.
+   */
+  private warnOnUnusableResumeTarget(opts: BackendStartOptions): void {
+    const resumeId = opts.providerSessionId?.trim()
+    if (!resumeId) return
+    const state = inspectClaudeTranscript(resumeId, opts.cwd)
+    if (state === 'ok' || state === 'unknown') return
+    log.warn(
+      '[ClaudeBackend] resume target %s sid=%s providerSessionId=%s cwd=%s — the agent will not see the stored history',
+      state,
+      opts.sessionId,
+      resumeId,
+      opts.cwd,
+    )
+    trace('backend.lifecycle', 'resume_target_unusable', { state, providerSessionId: resumeId, cwd: opts.cwd })
+  }
+
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.bridge) throw new Error('ClaudeBackend already started')
     this._lastStartOpts = opts
     this._spawnedAdditionalDirs = [...(opts.additionalDirectories ?? [])]
     const config = (opts.config ?? {}) as ClaudeConfig
-    if (config.proxy) {
-      const { url } = await ensureProxy(config.proxy)
-      this._proxyBaseUrl = url
-    }
+    // Must be reassigned on every start, not only when a proxy exists: the same
+    // backend instance is reused across provider switches, so a leftover url
+    // would keep pointing ANTHROPIC_BASE_URL at the sidecar (possibly already
+    // reaped by the idle sweep) after switching back to a direct provider.
+    this._proxyBaseUrl = config.proxy ? (await ensureProxy(config.proxy)).url : null
     this.bridge = new MessageBridge()
     this.bridge.onConsumed = (tag) => {
       this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
     }
     this.providerSessionId = opts.providerSessionId ?? null
+    this.stagedProviderSessionId = null
+    this.warnOnUnusableResumeTarget(opts)
 
     const queryOptions: SessionQueryOptions = {
       ...this.buildQueryOptions(opts),
@@ -197,12 +261,7 @@ export class ClaudeBackend implements SessionBackend {
       () => this.currentMessageId,
       () => this.currentStartTime,
       () => this.interrupted,
-      (id) => {
-        this.providerSessionId = id
-        for (const cb of this.providerSessionIdListeners) {
-          try { cb(id) } catch (err) { log.warn('[ClaudeBackend] providerSessionId listener error:', err) }
-        }
-      },
+      (id) => this.stageProviderSessionId(id),
       (messageId) => {
         const oldId = this.currentMessageId
         const pending = oldId ? this.turnResolves.get(oldId) : undefined
@@ -452,6 +511,7 @@ export class ClaudeBackend implements SessionBackend {
     this.iterationDone = null
     this.spawnAbortController = null
     this._activeRuntimeKey = null
+    this.stagedProviderSessionId = null
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
     this.pendingQueued = []
@@ -729,6 +789,12 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private emit(event: AgentEvent): void {
+    if (
+      this.stagedProviderSessionId
+      && (event.type === 'content_delta' || event.type === 'message_complete' || event.type === 'message_interrupted')
+    ) {
+      this.commitProviderSessionId(this.stagedProviderSessionId)
+    }
     if (event.type === 'permission_request') {
       log.info('[ClaudeBackend.emit] permission_request listeners=%d requestId=%s', this.eventListeners.size, event.request.requestId)
     }

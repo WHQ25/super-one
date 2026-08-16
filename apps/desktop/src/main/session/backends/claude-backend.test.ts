@@ -121,6 +121,14 @@ vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+const proxyHoisted = vi.hoisted(() => ({
+  ensureProxyMock: vi.fn(async () => ({ url: 'http://127.0.0.1:45001', port: 45001 })),
+}))
+
+vi.mock('../../providers/llm-proxy-manager', () => ({
+  ensureProxy: proxyHoisted.ensureProxyMock,
+}))
+
 vi.mock('../../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({})),
   dedupePath: vi.fn((p: string) => p),
@@ -183,6 +191,7 @@ describe('ClaudeBackend', () => {
     permissionHoisted.createCanUseToolMock.mockClear()
     permissionHoisted.createCanUseToolMock.mockImplementation(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() }))
     permissionHoisted.rejectAllPendingMock.mockClear()
+    proxyHoisted.ensureProxyMock.mockClear()
   })
 
   describe('lifecycle', () => {
@@ -271,6 +280,63 @@ describe('ClaudeBackend', () => {
       hoisted.captured.onSessionId?.('sdk-sid-abc')
       expect(ids).toEqual(['sdk-sid-abc'])
       expect(backend.getCurrentProviderSessionId()).toBe('sdk-sid-abc')
+    })
+
+    it('keeps the resumed provider session id while a replacement run has produced no content', async () => {
+      const backend = new ClaudeBackend()
+      const ids: string[] = []
+      backend.onProviderSessionId((id) => ids.push(id))
+      await backend.start({ ...makeStartOpts(), providerSessionId: 'sdk-known-good' })
+
+      hoisted.captured.onSessionId?.('sdk-fresh-empty')
+
+      expect(ids).toEqual([])
+      expect(backend.getCurrentProviderSessionId()).toBe('sdk-known-good')
+    })
+
+    it('adopts the replacement provider session id once the run streams content', async () => {
+      const backend = new ClaudeBackend()
+      const ids: string[] = []
+      backend.onProviderSessionId((id) => ids.push(id))
+      await backend.start({ ...makeStartOpts(), providerSessionId: 'sdk-known-good' })
+      hoisted.captured.onSessionId?.('sdk-fresh-real')
+
+      hoisted.captured.emit?.({
+        type: 'content_delta',
+        messageId: 'msg-1',
+        delta: { type: 'text', text: 'hi' },
+      } as AgentEvent)
+
+      expect(ids).toEqual(['sdk-fresh-real'])
+      expect(backend.getCurrentProviderSessionId()).toBe('sdk-fresh-real')
+    })
+
+    it('drops the staged provider session id when the runtime is released before any content', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start({ ...makeStartOpts(), providerSessionId: 'sdk-known-good' })
+      hoisted.captured.onSessionId?.('sdk-fresh-empty')
+      hoisted.captured.iterationDone?.resolve()
+      await backend.close()
+
+      expect(backend.getCurrentProviderSessionId()).toBe('sdk-known-good')
+    })
+  })
+
+  describe('openai-chat proxy provider', () => {
+    it('stops routing through the sidecar after switching back to a provider without a proxy', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start({
+        ...makeStartOpts(),
+        config: { apiKey: 'sk-superone-proxy', proxy: { name: 'p', api_base_url: 'https://up/chat/completions', api_key: 'k', models: ['m'] } },
+      })
+      hoisted.captured.iterationDone?.resolve()
+      await backend.close()
+
+      await backend.start({ ...makeStartOpts(), config: {} })
+
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
+      const env = (opts as { env?: Record<string, string | undefined> }).env
+      expect(env?.ANTHROPIC_BASE_URL).toBeUndefined()
     })
   })
 

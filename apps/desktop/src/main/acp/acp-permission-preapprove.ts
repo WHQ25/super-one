@@ -132,13 +132,22 @@ export function shouldAutoAllowAcpPermission(
   return { allow: false }
 }
 
+/**
+ * Stamped on initialize + session/new so Grok's `origin_client.product` is
+ * `superone`. Mid-session `x.ai/yolo_mode_changed` filters by that product
+ * when `clientIdentifier` is present — omitting the stamp made every live
+ * permission switch a no-op (auto → always-approve was the visible case).
+ */
+export const GROK_ACP_CLIENT_IDENTIFIER = 'superone'
+
 /** session/new `_meta` keys Grok understands for permission baseline. */
 export function grokSessionPermissionMeta(
   mode: string | undefined | null,
 ): Record<string, unknown> {
-  if (mode === 'bypassPermissions') return { yoloMode: true }
-  if (mode === 'auto') return { autoMode: true }
-  return {}
+  const meta: Record<string, unknown> = { clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER }
+  if (mode === 'bypassPermissions') meta.yoloMode = true
+  if (mode === 'auto') meta.autoMode = true
+  return meta
 }
 
 /** Params for Grok mid-session `x.ai/yolo_mode_changed` notification. */
@@ -151,7 +160,11 @@ export function grokYoloModeNotificationParams(
     yolo_mode: bypass,
     auto_mode: auto,
     permission_mode: bypass ? 'always-approve' : auto ? 'auto' : 'ask',
-    clientIdentifier: 'superone',
+    // Do not send clientIdentifier here. Grok applies the notification only
+    // to sessions whose origin_client.product equals that id; a missing
+    // origin (older session/new, session/load reconnect) silently drops the
+    // update. SuperOne owns a 1:1 stdio process, so every resident session
+    // is the right target.
   }
 }
 

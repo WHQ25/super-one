@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtin-defs'
 import {
+  GROK_ACP_CLIENT_IDENTIFIER,
   decideAcpPermission,
   grokSessionPermissionMeta,
   grokYoloModeNotificationParams,
@@ -229,24 +230,32 @@ describe('decideAcpPermission', () => {
 })
 
 describe('grok permission meta helpers', () => {
-  it('maps bypass to yoloMode on session/new', () => {
-    expect(grokSessionPermissionMeta('bypassPermissions')).toEqual({ yoloMode: true })
-    expect(grokSessionPermissionMeta('auto')).toEqual({ autoMode: true })
-    expect(grokSessionPermissionMeta('default')).toEqual({})
+  it('stamps clientIdentifier on every session/new meta so Grok origin matches', () => {
+    expect(grokSessionPermissionMeta('bypassPermissions')).toEqual({
+      clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+      yoloMode: true,
+    })
+    expect(grokSessionPermissionMeta('auto')).toEqual({
+      clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+      autoMode: true,
+    })
+    expect(grokSessionPermissionMeta('default')).toEqual({
+      clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+    })
   })
 
-  it('maps modes to yolo notification params', () => {
-    expect(grokYoloModeNotificationParams('bypassPermissions')).toMatchObject({
+  it('maps modes to yolo notification params without a clientIdentifier filter', () => {
+    expect(grokYoloModeNotificationParams('bypassPermissions')).toEqual({
       yolo_mode: true,
       auto_mode: false,
       permission_mode: 'always-approve',
     })
-    expect(grokYoloModeNotificationParams('auto')).toMatchObject({
+    expect(grokYoloModeNotificationParams('auto')).toEqual({
       yolo_mode: false,
       auto_mode: true,
       permission_mode: 'auto',
     })
-    expect(grokYoloModeNotificationParams('default')).toMatchObject({
+    expect(grokYoloModeNotificationParams('default')).toEqual({
       yolo_mode: false,
       auto_mode: false,
       permission_mode: 'ask',

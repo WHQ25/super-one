@@ -177,6 +177,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     expect(captured.initialize?._meta).toMatchObject({
       askUserQuestion: true,
       exitPlanMode: true,
+      clientIdentifier: 'superone',
     })
     const clientInfo = captured.initialize?.clientInfo as { name?: string; version?: string }
     expect(clientInfo?.name).toBe('superone')
@@ -239,10 +240,35 @@ describe('createAcpRuntime (in-process agent)', () => {
       streamFactory: async () => makeEchoAgentStream(captured),
     })
     await runtime.close()
-    expect(captured.newSession?._meta).toMatchObject({ yoloMode: true })
+    expect(captured.newSession?._meta).toMatchObject({
+      yoloMode: true,
+      clientIdentifier: 'superone',
+    })
   })
 
-  it('omits permission _meta on session/new for default mode', async () => {
+  it('passes autoMode and clientIdentifier on session/new when permissionMode is auto', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: {
+        agentId: 'grok-build',
+        command: 'unused',
+        defaultCwd: '/tmp/proj',
+      },
+      permissionMode: 'auto',
+      permission: {
+        request: async () => ({ outcome: { outcome: 'cancelled' } }),
+      },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    await runtime.close()
+    expect(captured.newSession?._meta).toMatchObject({
+      autoMode: true,
+      clientIdentifier: 'superone',
+    })
+    expect((captured.newSession?._meta as { yoloMode?: boolean } | undefined)?.yoloMode).toBeUndefined()
+  })
+
+  it('omits yolo/auto flags on session/new for default mode but still stamps clientIdentifier', async () => {
     const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
     const runtime = await createAcpRuntime({
       launch: {
@@ -260,6 +286,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     const meta = captured.newSession?._meta as Record<string, unknown> | null | undefined
     expect(meta?.yoloMode).toBeUndefined()
     expect(meta?.autoMode).toBeUndefined()
+    expect(meta?.clientIdentifier).toBe('superone')
   })
 
   it('setModel sends session/set_model with optional reasoningEffort meta', async () => {
@@ -364,7 +391,6 @@ describe('createAcpRuntime (in-process agent)', () => {
         yolo_mode: true,
         auto_mode: false,
         permission_mode: 'always-approve',
-        clientIdentifier: 'superone',
       },
     })
     await runtime.setPermissionMode('default')
@@ -373,6 +399,35 @@ describe('createAcpRuntime (in-process agent)', () => {
       n.method === XAI_YOLO_MODE_CHANGED_WIRE
       && (n.params as { permission_mode?: string }).permission_mode === 'ask',
     )).toBe(true)
+    await runtime.close()
+  })
+
+  it('setPermissionMode auto → always-approve clears auto and enables yolo without a client filter', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: {
+        agentId: 'grok-build',
+        command: 'unused',
+        defaultCwd: '/tmp/proj',
+      },
+      permissionMode: 'auto',
+      permission: {
+        request: async () => ({ outcome: { outcome: 'cancelled' } }),
+      },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    await runtime.setPermissionMode('bypassPermissions')
+    await new Promise((r) => setTimeout(r, 20))
+    const yoloNotes = captured.notifications.filter((n) => n.method === XAI_YOLO_MODE_CHANGED_WIRE)
+    expect(yoloNotes).toContainEqual({
+      method: XAI_YOLO_MODE_CHANGED_WIRE,
+      params: {
+        yolo_mode: true,
+        auto_mode: false,
+        permission_mode: 'always-approve',
+      },
+    })
+    expect(yoloNotes.some((n) => n.params && typeof n.params === 'object' && 'clientIdentifier' in n.params)).toBe(false)
     await runtime.close()
   })
 

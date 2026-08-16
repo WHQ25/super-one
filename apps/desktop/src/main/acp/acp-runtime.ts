@@ -72,6 +72,7 @@ import {
   type XaiCorrelationState,
 } from './acp-xai-session-notify'
 import {
+  GROK_ACP_CLIENT_IDENTIFIER,
   grokSessionPermissionMeta,
   grokYoloModeNotificationParams,
 } from './acp-permission-preapprove'
@@ -449,6 +450,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         askUserQuestion: true,
         // Advertise plan-approval capability so Grok parks exit_plan_mode on us.
         exitPlanMode: true,
+        // Fallback for origin_client when session/new _meta is sparse.
+        clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
       },
     } as never)
     agentCapabilities = readAgentCapabilities(initResult)

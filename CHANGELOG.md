@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- Grok: switching permission from Auto to Always approve now reaches the agent (the mid-session notify no longer filters on a client id SuperOne never stamped).
 - Sidebar: deleted drafts no longer reappear after a pagehide / visibility flush.
 - Chat: show Cursor billed usage and million-scale counts without inventing a fake 200k window or percent.
 - Cursor: keep one tool row per call (no doubled Bash rows) and unwrap Shell / Grep / Glob to stdout and match lines instead of raw JSON.

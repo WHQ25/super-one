@@ -658,20 +658,41 @@ function setThemeMode(mode: ThemeMode): void {
   syncNativeAppearance()
   currentDarkTheme = nativeTheme.shouldUseDarkColors
   applyLiquidGlass()
+  applyWindowsChrome()
   broadcastTheme()
 }
 
+/** Matches `--background` in theme.css: light oklch(0.97) / dark oklch(0.145). */
+function windowChromeColors(): { backgroundColor: string; symbolColor: string } {
+  return currentDarkTheme
+    ? { backgroundColor: '#0a0a0a', symbolColor: '#c8c8c8' }
+    : { backgroundColor: '#f5f5f5', symbolColor: '#555555' }
+}
 
 function windowsChromeOptions(overlayHeight: number): Electron.BrowserWindowConstructorOptions {
-  const backgroundColor = currentDarkTheme ? '#1c1c1c' : '#ffffff'
+  const { backgroundColor, symbolColor } = windowChromeColors()
   return {
     backgroundColor,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: backgroundColor,
-      symbolColor: currentDarkTheme ? '#c8c8c8' : '#555555',
+      symbolColor,
       height: overlayHeight,
     },
+  }
+}
+
+function applyWindowsChrome(): void {
+  if (process.platform !== 'win32') return
+  const { backgroundColor, symbolColor } = windowChromeColors()
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    win.setBackgroundColor(backgroundColor)
+    try {
+      win.setTitleBarOverlay({ color: backgroundColor, symbolColor })
+    } catch {
+      // Frameless windows (drag preview, permission float) have no overlay.
+    }
   }
 }
 
@@ -4698,6 +4719,7 @@ app.whenReady().then(async () => {
     if (nextDark === currentDarkTheme) return
     currentDarkTheme = nextDark
     applyLiquidGlass()
+    applyWindowsChrome()
     broadcastTheme()
   })
   registerBrowserPopupRedirect()

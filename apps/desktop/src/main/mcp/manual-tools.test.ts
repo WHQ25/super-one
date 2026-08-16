@@ -21,6 +21,7 @@ describe('manualReadHandler', () => {
     expect(text).toMatch(/github\.com\/WHQ25\/super-one/)
     expect(text).toMatch(/main\.log/)
     expect(text).toMatch(/Runtime paths/)
+    expect(text).toMatch(/no GitHub account/)
   })
 
   it('returns product overview with repo link', async () => {
@@ -35,6 +36,7 @@ describe('manualReadHandler', () => {
     expect(text).toMatch(/issue first/i)
     expect(text).toMatch(/Fixes #N/)
     expect(text).toMatch(/red.?green/i)
+    expect(text).toMatch(/no GitHub account/i)
   })
 
   it('returns product collaboration docs for session_collab worktree recipes', async () => {

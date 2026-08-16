@@ -32,7 +32,7 @@ Works for bugs **and** feature / improvement ideas:
 
 1. Load `product/contribute` (and `product/debug` if you need logs or code map for a bug).
 2. Help them gather enough context (for bugs: version, OS, repro, log snippets; for features: motivation and proposal).
-3. **Issue first** — ask whether they want to file a GitHub issue; create/submit only if they agree.
+3. **Issue first** — ask whether they want to file a GitHub issue; create/submit only if they agree. If they have **no GitHub account**, draft the issue for them to copy and stop — do not invent another channel (see contribute).
 4. **Then optional PR** — only after `#N` exists, ask whether they want a PR. Everyone is welcome. Never start a contribution PR without their yes, and never open a PR without an issue. PR **must** reference the issue. Bugfix PRs: strict red–green (details in contribute).
 
 ## When the user hits a bug (local diagnosis)

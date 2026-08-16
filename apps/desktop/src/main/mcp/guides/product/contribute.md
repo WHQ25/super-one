@@ -31,6 +31,18 @@ If they decline the issue: stop (you may still help locally; do not push the PR 
 If they file an issue but decline the PR: stop at the issue.  
 If they want a PR without an issue: explain that **issue first is required**, help file the issue, then re-ask about the PR.
 
+## If they have no GitHub account
+
+GitHub is the **only** upstream tracker: https://github.com/WHQ25/super-one/issues  
+Do **not** invent another channel (email, chat, Discord, in-app ticket).
+
+| Situation | What you do |
+|-----------|-------------|
+| They can create an account | Finish diagnosis. Draft the issue (templates below). Point them to https://github.com/signup, then https://github.com/WHQ25/super-one/issues/new. After they have an account, ask again whether they want you to file it. |
+| They will not create an account now | Finish local diagnosis. Hand them a complete issue draft (title + body) they can paste later. **Stop** — no PR, no “I’ll file it for you later” promise. |
+
+Never file an issue or open a PR under *your* GitHub identity “for” them unless they explicitly ask you to use this session’s authenticated `gh` **and** they understand it will appear under that account.
+
 ## Filing an issue
 
 Create or submit **only** when the user explicitly agrees. Prefer linking monorepo paths (`apps/desktop/...`) when you can map the topic to code.

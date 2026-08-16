@@ -1,6 +1,6 @@
 # SuperOne — debug, logs, and local paths
 
-Use this when the user is stuck, sees a crash, or wrong behavior and you need **logs + source layout** to diagnose. Combine with product/contribute when they want to file an issue or open a fix PR.
+Use this when the user is stuck, sees a crash, or wrong behavior and you need **logs + source layout** to diagnose — including when they @-mentioned Debug. Combine with product/contribute when they want to file an issue or open a fix PR.
 
 For **issues and PRs** (bugs, features, improvements):  
 `read_manual({ domain: "product", topic: "contribute" })`  
@@ -79,3 +79,5 @@ Dev registry (mini-app source pointers): `~/.superone/dev-registry.json`
 ## After you have a diagnosis
 
 If the user may want to report or fix upstream, switch to product/contribute: ask about filing an issue first, then (only with an issue number) ask about a PR. Do not skip contribute and invent a one-off PR process here.
+
+If they have **no GitHub account**, stay on local diagnosis and give them a complete issue draft they can paste later. Do not invent another report channel. Details: contribute → “If they have no GitHub account”.

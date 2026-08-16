@@ -7,16 +7,21 @@ import {
   isBuiltinCapabilityId,
   capabilityToolPrefixClaude,
   capabilityToolPrefixCodex,
+  formatCapabilityReminderLine,
 } from './capability-prompt-tags'
 
 describe('capability-prompt-tags', () => {
   it('resolves known ids', () => {
     expect(isBuiltinCapabilityId('browser')).toBe(true)
     expect(isBuiltinCapabilityId('widget')).toBe(true)
+    expect(isBuiltinCapabilityId('debug')).toBe(true)
     expect(isBuiltinCapabilityId('file')).toBe(false)
     expect(getBuiltinCapability('collab')?.displayName).toBe('Agents Collaboration')
     expect(getBuiltinCapability('widget')?.displayName).toBe('Widget')
     expect(getBuiltinCapability('widget')?.toolPrefix).toBe('widget_')
+    expect(getBuiltinCapability('debug')?.displayName).toBe('Debug')
+    expect(getBuiltinCapability('debug')?.toolPrefix).toBeUndefined()
+    expect(getBuiltinCapability('debug')?.hint).toMatch(/read_manual/)
   })
 
   it('wraps a capability mention tag', () => {
@@ -50,5 +55,15 @@ describe('capability-prompt-tags', () => {
     const widget = getBuiltinCapability('widget')!
     expect(capabilityToolPrefixClaude(widget)).toBe('mcp__superone__widget_')
     expect(capabilityToolPrefixCodex(widget)).toBe('mcp__superone.widget_')
+    expect(capabilityToolPrefixClaude(getBuiltinCapability('debug')!)).toBeUndefined()
+  })
+
+  it('uses hint instead of a tool prefix for debug', () => {
+    const debug = getBuiltinCapability('debug')!
+    const line = formatCapabilityReminderLine(debug, 'claude')
+    expect(line).toContain('"Debug"')
+    expect(line).toContain('read_manual({ domain: "product", topic: "debug" })')
+    expect(line).toContain('no GitHub account')
+    expect(line).not.toContain('tools start with')
   })
 })

@@ -17,11 +17,12 @@ describe('matchBuiltinMention', () => {
     )).toBeLessThan(0)
   })
 
-  it('matches collab / computer / browser / widget by id prefix', () => {
+  it('matches collab / computer / browser / widget / debug by id prefix', () => {
     expect(matchBuiltinMention('collab', ['Agents Collaboration'], 'co')?.rank).toBe(0)
     expect(matchBuiltinMention('computer', ['Computer Use'], 'comp')?.rank).toBe(0)
     expect(matchBuiltinMention('browser', ['Super Browser'], 'br')?.rank).toBe(0)
     expect(matchBuiltinMention('widget', ['Widget'], 'wi')?.rank).toBe(0)
+    expect(matchBuiltinMention('debug', ['Debug'], 'de')?.rank).toBe(0)
   })
 
   it('still allows display-name-only matches when id does not match', () => {

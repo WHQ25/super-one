@@ -315,8 +315,7 @@ export async function sendMessageImpl(
         CAPABILITY_TAG_REGEX,
         getBuiltinCapability,
         wrapCapabilityMention,
-        capabilityToolPrefixClaude,
-        capabilityToolPrefixCodex,
+        formatCapabilityReminderLine,
         isBuiltinCapabilityId,
       } = await import('@superone/shared/capability-prompt-tags')
       agentContent = agentContent.replace(CAPABILITY_TAG_REGEX, (full, _name, id) => {
@@ -333,11 +332,7 @@ export async function sendMessageImpl(
         seen.add(m.kind)
         const cap = getBuiltinCapability(m.kind)
         if (!cap) continue
-        const prefix =
-          preferredHarness === 'codex'
-            ? capabilityToolPrefixCodex(cap)
-            : capabilityToolPrefixClaude(cap)
-        lines.push(`- "${cap.displayName}" (${cap.intent}): tools start with "${prefix}"`)
+        lines.push(formatCapabilityReminderLine(cap, preferredHarness === 'codex' ? 'codex' : 'claude'))
       }
       capabilityReminderSuffix = `\n\n<superone-capability-reminder>\n${lines.join('\n')}\n</superone-capability-reminder>`
     }
@@ -818,8 +813,7 @@ export async function sendMessageImpl(
       CAPABILITY_TAG_REGEX,
       getBuiltinCapability,
       wrapCapabilityMention,
-      capabilityToolPrefixClaude,
-      capabilityToolPrefixCodex,
+      formatCapabilityReminderLine,
       isBuiltinCapabilityId,
     } = await import('@superone/shared/capability-prompt-tags')
     // Agent-facing payload always uses English capability labels, even when the
@@ -839,10 +833,7 @@ export async function sendMessageImpl(
       seen.add(m.kind)
       const cap = getBuiltinCapability(m.kind)
       if (!cap) continue
-      const prefix = effectiveProvider === 'codex'
-        ? capabilityToolPrefixCodex(cap)
-        : capabilityToolPrefixClaude(cap)
-      lines.push(`- "${cap.displayName}" (${cap.intent}): tools start with "${prefix}"`)
+      lines.push(formatCapabilityReminderLine(cap, effectiveProvider === 'codex' ? 'codex' : 'claude'))
     }
     capabilityReminderSuffix = `\n\n<superone-capability-reminder>\n${lines.join('\n')}\n</superone-capability-reminder>`
   }

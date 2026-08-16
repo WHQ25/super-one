@@ -289,6 +289,17 @@ describe('ChatMessage capability mention bubble', () => {
     expect(chip).toHaveTextContent('Widget')
   })
 
+  it('renders debug capability chip from a popup tag', () => {
+    const text =
+      '<superone-capability><name>Debug</name><id>debug</id></superone-capability> this crashed'
+    const { container } = render(
+      <ChatMessage message={createUserMessage(text)} sessionStatus="idle" isLastAssistant={false} />,
+    )
+    const chip = container.querySelector('[data-mention-kind="debug"]')
+    expect(chip).not.toBeNull()
+    expect(chip).toHaveTextContent('Debug')
+  })
+
   it('renders session chip with title, not raw sessionId', () => {
     const sid = 'a9382a53-7d35-4a01-9e13-411bcbc8e850'
     const text =

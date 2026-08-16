@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { Bot, Folder, Globe, LayoutDashboard, MessageSquare, MousePointer2, Users } from 'lucide-react'
+import { Bot, Bug, Folder, Globe, LayoutDashboard, MessageSquare, MousePointer2, Users } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
@@ -50,6 +50,7 @@ function CapabilityIcon({ kind }: { kind: MentionNodeAttrs['kind'] }) {
   if (kind === 'computer') return <MousePointer2 className="text-emerald-600 dark:text-emerald-400" />
   if (kind === 'browser') return <Globe className="text-sky-600 dark:text-sky-400" />
   if (kind === 'widget') return <LayoutDashboard className="text-amber-600 dark:text-amber-400" />
+  if (kind === 'debug') return <Bug className="text-rose-600 dark:text-rose-400" />
   return null
 }
 

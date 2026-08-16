@@ -1,6 +1,6 @@
-/** Built-in @-mention capabilities (collab / computer / browser / widget). */
+/** Built-in @-mention capabilities (collab / computer / browser / widget / debug). */
 
-export type BuiltinCapabilityId = 'collab' | 'computer' | 'browser' | 'widget'
+export type BuiltinCapabilityId = 'collab' | 'computer' | 'browser' | 'widget' | 'debug'
 
 export interface BuiltinCapability {
   id: BuiltinCapabilityId
@@ -12,8 +12,14 @@ export interface BuiltinCapability {
    * Bare tool-name prefix after the server qualifier.
    * Claude: `mcp__superone__${toolPrefix}…`
    * Codex:  `mcp__superone.${toolPrefix}…` (dot after server — listed the same way as miniapp).
+   * Omit when the capability is a manual/workflow (e.g. debug), not a tool family.
    */
-  toolPrefix: string
+  toolPrefix?: string
+  /**
+   * Replaces the default `tools start with "…"` reminder clause.
+   * Use when the capability is not a tool-prefix family.
+   */
+  hint?: string
 }
 
 export const BUILTIN_CAPABILITIES: readonly BuiltinCapability[] = [
@@ -40,6 +46,13 @@ export const BUILTIN_CAPABILITIES: readonly BuiltinCapability[] = [
     displayName: 'Widget',
     intent: 'render SVG, diagrams, charts, or interactive HTML inline in chat via widget tools',
     toolPrefix: 'widget_',
+  },
+  {
+    id: 'debug',
+    displayName: 'Debug',
+    intent: 'diagnose SuperOne bugs, gather logs, and help file an upstream issue when the user wants',
+    hint:
+      'first call read_manual({ domain: "product", topic: "debug" }); then read_manual({ domain: "product", topic: "contribute" }) only if they want to report upstream. If they have no GitHub account, draft the issue for them to copy — do not open a PR',
   },
 ] as const
 
@@ -82,11 +95,24 @@ export function stripCapabilityMarkup(text: string): string {
 }
 
 /** Claude-style qualified prefix (double underscore). */
-export function capabilityToolPrefixClaude(cap: BuiltinCapability): string {
-  return `mcp__superone__${cap.toolPrefix}`
+export function capabilityToolPrefixClaude(cap: BuiltinCapability): string | undefined {
+  return cap.toolPrefix ? `mcp__superone__${cap.toolPrefix}` : undefined
 }
 
 /** Codex-style qualified prefix (dot after server). */
-export function capabilityToolPrefixCodex(cap: BuiltinCapability): string {
-  return `mcp__superone.${cap.toolPrefix}`
+export function capabilityToolPrefixCodex(cap: BuiltinCapability): string | undefined {
+  return cap.toolPrefix ? `mcp__superone.${cap.toolPrefix}` : undefined
+}
+
+export function formatCapabilityReminderLine(
+  cap: BuiltinCapability,
+  harness: 'claude' | 'codex',
+): string {
+  if (cap.hint) {
+    return `- "${cap.displayName}" (${cap.intent}): ${cap.hint}`
+  }
+  const prefix = harness === 'codex'
+    ? capabilityToolPrefixCodex(cap)
+    : capabilityToolPrefixClaude(cap)
+  return `- "${cap.displayName}" (${cap.intent}): tools start with "${prefix}"`
 }

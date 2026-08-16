@@ -820,6 +820,7 @@ describe('sendMessageImpl: built-in capability reminder', () => {
         { kind: 'collab', value: 'collab', displayName: '智能体协作' },
         { kind: 'computer', value: 'computer', displayName: '控制电脑' },
         { kind: 'widget', value: 'widget', displayName: '小组件' },
+        { kind: 'debug', value: 'debug', displayName: '调试' },
       ],
     })
 
@@ -833,19 +834,25 @@ describe('sendMessageImpl: built-in capability reminder', () => {
     expect(content).toContain('tools start with "mcp__superone__session_collab_"')
     expect(content).toContain('tools start with "mcp__superone__computer_"')
     expect(content).toContain('tools start with "mcp__superone__widget_"')
+    expect(content).toContain('read_manual({ domain: "product", topic: "debug" })')
+    expect(content).toContain('read_manual({ domain: "product", topic: "contribute" })')
+    expect(content).not.toContain('tools start with "mcp__superone__debug')
     expect(content).toContain('"Super Browser"')
     expect(content).toContain('"Agents Collaboration"')
     expect(content).toContain('"Computer Use"')
     expect(content).toContain('"Widget"')
+    expect(content).toContain('"Debug"')
     expect(content).toContain('<name>Super Browser</name>')
     expect(content).not.toContain('Super浏览器')
     expect(content).not.toContain('智能体协作')
     expect(content).not.toContain('控制电脑')
     expect(content).not.toContain('小组件')
+    expect(content).not.toContain('调试')
     expect(content).toContain('automate the built-in browser')
     expect(content).toContain('spawn and coordinate child agent sessions')
     expect(content).toContain('control the desktop UI')
     expect(content).toContain('render SVG, diagrams, charts')
+    expect(content).toContain('diagnose SuperOne bugs')
   })
 
   it('uses Codex-style tool prefixes (dot after server) for codex', async () => {

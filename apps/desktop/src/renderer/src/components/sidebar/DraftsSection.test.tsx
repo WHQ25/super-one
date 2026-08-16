@@ -36,7 +36,7 @@ function draft(id: string, title: string): DraftListEntry {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  useDraftsStore.setState({ byConnection: {}, loading: {}, resumingDraftId: null })
+  useDraftsStore.setState({ byConnection: {}, loading: {}, resumingDraftId: null, discardedIds: {} })
 })
 
 describe('DraftsSection', () => {
@@ -105,6 +105,29 @@ describe('DraftsSection', () => {
     expect(slotOf('draft 4')).toBe(before.d4)
     expect(slotOf('draft 5')).toBe(before.d5)
     expect(screen.getByText('composer')).toBeInTheDocument()
+  })
+
+  it('tombstones the row when the trash is clicked so a later flush cannot resurrect it', async () => {
+    const one = draft('d1', 'first draft')
+    useDraftsStore.setState({ byConnection: { local: [one] } })
+    const deleteDraft = vi.fn(async () => {})
+    window.environment = {
+      ...(window.environment ?? {}),
+      listDrafts: vi.fn(async () => [one]),
+      deleteDraft,
+      upsertDraft: vi.fn(async (d: { id: string }) => d),
+    } as unknown as typeof window.environment
+
+    render(<DraftsSection connectionId="local" />)
+    fireEvent.click(screen.getByRole('button', { name: 'common.delete' }))
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(useDraftsStore.getState().isDraftDiscarded('d1')).toBe(true)
+    expect(useDraftsStore.getState().byConnection.local?.map((d) => d.id) ?? []).toEqual([])
+    expect(deleteDraft).toHaveBeenCalledWith('local', 'd1')
   })
 
   it('leaves a copy of the clicked row behind to fly out after it drops from the list', () => {

@@ -7,7 +7,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { resumeDraft } from '@/lib/draft-resume'
 import { useDraftsStore } from '@/stores/drafts'
 import { useChatStore } from '@/stores/chat-store'
-import { getDraftIdForSession } from '@/stores/chat-store/helpers/draft-promote'
+import { discardDeletedDraft, getDraftIdForSession } from '@/stores/chat-store/helpers/draft-promote'
 import { nextDraftSlots, selectVisibleDrafts } from './draft-visibility'
 
 interface DraftsSectionProps {
@@ -52,7 +52,7 @@ const DraftRow = memo(function DraftRow({
   onResume?: (draft: DraftListEntry, slotY: number) => void
 }) {
   const { t } = useTranslation()
-  const removeDraft = useDraftsStore((s) => s.removeDraft)
+  const discardDraft = useDraftsStore((s) => s.discardDraft)
 
   const resume = () => {
     onResume?.(draft, slotY ?? 0)
@@ -88,7 +88,8 @@ const DraftRow = memo(function DraftRow({
         aria-label={t('common.delete')}
         onClick={(e) => {
           e.stopPropagation()
-          void removeDraft(connectionId, draft.id)
+          discardDeletedDraft(draft.id)
+          void discardDraft(connectionId, draft.id)
         }}
         className="opacity-0 transition-opacity group-hover/draft:opacity-100"
       >

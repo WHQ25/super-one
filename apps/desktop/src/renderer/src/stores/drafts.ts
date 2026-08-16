@@ -21,24 +21,43 @@ interface DraftsState {
    * still on disk until resume actually succeeds.
    */
   resumingDraftId: string | null
+  /**
+   * Sidebar-deleted ids. A visibility flush / in-flight upsert / list refresh
+   * must not put these back — the parked origin session often still has the
+   * text, which is how deleted drafts used to reappear.
+   */
+  discardedIds: Record<string, true>
   setResumingDraft: (draftId: string | null) => void
+  markDraftDiscarded: (draftId: string) => void
+  isDraftDiscarded: (draftId: string) => boolean
   loadDrafts: (connectionId: string) => Promise<void>
   saveDraft: (connectionId: string, draft: DraftUpsertRequest) => Promise<void>
+  /** Drop the row from the list + disk. Resume uses this — do not tombstone. */
   removeDraft: (connectionId: string, draftId: string) => Promise<void>
+  /** User deleted this draft. Tombstone so a later flush cannot put it back. */
+  discardDraft: (connectionId: string, draftId: string) => Promise<void>
 }
 
-export const useDraftsStore = create<DraftsState>((set) => ({
+export const useDraftsStore = create<DraftsState>((set, get) => ({
   byConnection: {},
   loading: {},
   resumingDraftId: null,
+  discardedIds: {},
 
   setResumingDraft: (draftId) => set({ resumingDraftId: draftId }),
+
+  markDraftDiscarded: (draftId) => {
+    set((s) => ({ discardedIds: { ...s.discardedIds, [draftId]: true } }))
+  },
+
+  isDraftDiscarded: (draftId) => !!get().discardedIds[draftId],
 
   loadDrafts: async (connectionId) => {
     set((s) => ({ loading: { ...s.loading, [connectionId]: true } }))
     try {
+      const discarded = get().discardedIds
       const drafts = (await window.environment.listDrafts(connectionId))
-        .filter((d) => !!d.projectPath)
+        .filter((d) => !!d.projectPath && !discarded[d.id])
       window.app?.trace?.('drafts', 'load', {
         connectionId,
         count: drafts.length,
@@ -52,7 +71,12 @@ export const useDraftsStore = create<DraftsState>((set) => ({
           textLen: d.text?.length ?? 0,
         })),
       })
-      set((s) => ({ byConnection: { ...s.byConnection, [connectionId]: drafts } }))
+      set((s) => ({
+        byConnection: {
+          ...s.byConnection,
+          [connectionId]: drafts.filter((d) => !s.discardedIds[d.id]),
+        },
+      }))
     } catch {
       // An unreachable environment has no drafts to show. Keep the last known
       // list rather than blanking the group on a transient failure.
@@ -62,9 +86,16 @@ export const useDraftsStore = create<DraftsState>((set) => ({
   },
 
   saveDraft: async (connectionId, draft) => {
+    if (get().discardedIds[draft.id]) return
     // upsertDraft resolves with the queued projection when the node is down,
     // so the row appears immediately either way.
     const saved = await window.environment.upsertDraft(connectionId, draft)
+    if (get().discardedIds[draft.id] || get().discardedIds[saved.id]) {
+      // User deleted this row while the upsert was in flight — undo the write
+      // so the next list/flush cannot resurrect it.
+      void window.environment.deleteDraft(connectionId, saved.id).catch(() => {})
+      return
+    }
     window.app?.trace?.('drafts', 'save_ipc', {
       sentHarness: draft.harness,
       sentModel: draft.model,
@@ -85,7 +116,9 @@ export const useDraftsStore = create<DraftsState>((set) => ({
       settings: { ...(draft.settings ?? {}), ...(saved.settings ?? {}) },
     }
     if (!merged.projectPath) return
+    if (get().discardedIds[merged.id]) return
     set((s) => {
+      if (s.discardedIds[merged.id]) return s
       const list = s.byConnection[connectionId] ?? []
       const next = [merged, ...list.filter((d) => d.id !== merged.id)]
       const deduped = merged.originSessionId
@@ -96,13 +129,20 @@ export const useDraftsStore = create<DraftsState>((set) => ({
   },
 
   removeDraft: async (connectionId, draftId) => {
-    await window.environment.deleteDraft(connectionId, draftId)
     set((s) => ({
       byConnection: {
         ...s.byConnection,
         [connectionId]: (s.byConnection[connectionId] ?? []).filter((d) => d.id !== draftId),
       },
     }))
+    await window.environment.deleteDraft(connectionId, draftId)
+  },
+
+  discardDraft: async (connectionId, draftId) => {
+    // Tombstone before IPC: a visibility flush / in-flight upsert must not
+    // recreate the row. Resume still uses removeDraft so it can be re-promoted.
+    get().markDraftDiscarded(draftId)
+    await get().removeDraft(connectionId, draftId)
   },
 }))
 

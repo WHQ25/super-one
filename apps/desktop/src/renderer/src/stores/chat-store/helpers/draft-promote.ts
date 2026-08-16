@@ -508,8 +508,26 @@ export async function promoteDraftIfUnsent(
     return
   }
 
+  const existingId = draftIdBySession.get(sessionId) ?? session.draftId ?? null
+  try {
+    if (existingId && useDraftsStore.getState().isDraftDiscarded?.(existingId)) {
+      draftTrace('promote_skip', { reason: 'discarded', projectPath, sessionId, draftId: existingId }, sessionId)
+      return
+    }
+  } catch {
+    /* drafts store unavailable in some unit tests */
+  }
+
   const target = resolveDraftTarget(projectPath)
   const draft = buildUpsertFromSession(store, projectPath, sessionId, session, project)
+  try {
+    if (useDraftsStore.getState().isDraftDiscarded?.(draft.id)) {
+      draftTrace('promote_skip', { reason: 'discarded', projectPath, sessionId, draftId: draft.id }, draft.id)
+      return
+    }
+  } catch {
+    /* drafts store mocked without this seam in some tests */
+  }
   parkDraftSnapshot({
     draftId: draft.id,
     projectPath,
@@ -607,6 +625,69 @@ export function isDraftOwnedBySession(
   if (!sessionId) return false
   if (sessionDraftId && sessionDraftId === draft.id) return true
   return !!draft.originSessionId && draft.originSessionId === sessionId
+}
+
+/**
+ * User deleted this draft from the sidebar. Drop the parked origin so a later
+ * visibility flush / session switch cannot upsert the same id back into the list.
+ */
+export function discardDeletedDraft(draftId: string, store?: ChatStore): void {
+  try {
+    useDraftsStore.getState().markDraftDiscarded?.(draftId)
+  } catch {
+    /* drafts store mocked without this seam in some tests */
+  }
+
+  let sessionId: string | undefined
+  const parked = parkedByDraftId.get(draftId)
+  if (parked) sessionId = parked.sessionId
+  if (!sessionId) {
+    for (const [sid, id] of draftIdBySession) {
+      if (id === draftId) {
+        sessionId = sid
+        break
+      }
+    }
+  }
+  if (sessionId) draftIdBySession.delete(sessionId)
+  parkedByDraftId.delete(draftId)
+
+  const apply = (s: ChatStore): Partial<ChatStore> => {
+    if (!sessionId) return {}
+    let changed = false
+    const next = { ...s.projectSessions }
+    for (const [path, project] of Object.entries(next)) {
+      const sess = project._sessions[sessionId]
+      if (!sess) continue
+      changed = true
+      if (project._activeSessionId === sessionId) {
+        next[path] = {
+          ...project,
+          _sessions: {
+            ...project._sessions,
+            [sessionId]: { ...sess, ...emptyDraftFields() },
+          },
+        }
+      } else {
+        const { [sessionId]: _removed, ...rest } = project._sessions
+        next[path] = { ...project, _sessions: rest }
+      }
+    }
+    return changed ? { projectSessions: next } : {}
+  }
+
+  if (store) {
+    const patch = apply(store)
+    if (patch.projectSessions) store.projectSessions = patch.projectSessions
+    return
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { useChatStore } = require('../index') as typeof import('../index')
+    useChatStore.setState((s) => apply(s))
+  } catch {
+    /* chat store unavailable in unit tests */
+  }
 }
 
 /**

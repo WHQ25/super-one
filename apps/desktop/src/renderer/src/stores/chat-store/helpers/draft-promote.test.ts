@@ -20,6 +20,7 @@ import {
   captureOpenDraft,
   claimDraftForSession,
   consumeDraftForSession,
+  discardDeletedDraft,
   getDraftIdForSession,
   getParkedDraft,
   isDraftOwnedBySession,
@@ -406,5 +407,42 @@ describe('consumeDraftForSession', () => {
   it('is a no-op when the session was never promoted to a draft', async () => {
     await consumeDraftForSession('/repo', 'sid-none')
     expect(removeDraft).not.toHaveBeenCalled()
+  })
+})
+
+describe('deleting a parked draft from the sidebar', () => {
+  it('does not resurrect the deleted draft when a later visibility flush re-promotes unsent composers', async () => {
+    const store = {
+      projectSessions: {
+        '/repo': {
+          _activeSessionId: 'sid-3',
+          _sessions: {
+            'sid-1': session({ draftText: 'old idea' }),
+            'sid-2': session({ draftText: 'keep this one' }),
+            'sid-3': session({ draftText: '' }),
+          },
+        },
+      },
+    } as unknown as ChatStore
+
+    await promoteDraftIfUnsent(store, '/repo', 'sid-1')
+    await promoteDraftIfUnsent(store, '/repo', 'sid-2')
+    const deletedId = saveDraft.mock.calls.find(([, d]) => d.text === 'old idea')?.[1].id
+    const keptId = saveDraft.mock.calls.find(([, d]) => d.text === 'keep this one')?.[1].id
+    expect(deletedId).toBeTruthy()
+    saveDraft.mockClear()
+
+    // Sidebar delete: drop the environment row AND the parked origin. Today
+    // only the row is deleted, so the next pagehide upserts the same id.
+    discardDeletedDraft(deletedId!, store)
+
+    await promoteAllUnsentDrafts(store)
+    const flushed = saveDraft.mock.calls.map(([, d]) => d.id)
+    expect(flushed).not.toContain(deletedId)
+    expect(flushed).toContain(keptId)
+    expect(store.projectSessions['/repo']._sessions['sid-1']).toBeUndefined()
+    expect(store.projectSessions['/repo']._sessions['sid-2']).toBeDefined()
+    expect(getParkedDraft(deletedId!)).toBeUndefined()
+    expect(getDraftIdForSession('sid-1')).toBeUndefined()
   })
 })

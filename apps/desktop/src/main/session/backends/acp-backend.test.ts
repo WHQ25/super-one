@@ -41,6 +41,21 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('prefetches Grok billing once the runtime is ready', async () => {
+    const getRateLimits = vi.fn(async () => ({
+      title: 'Grok Build',
+      planType: 'SuperGrok Heavy',
+      windows: [{ label: 'Weekly limit', usedPercent: 0, resetsAt: null }],
+      extraUsage: null,
+      fetchedAt: 1,
+    }))
+    setAcpRuntimeFactory(async () => mockRuntime({ getRateLimits }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await vi.waitFor(() => expect(getRateLimits).toHaveBeenCalledTimes(1))
+    await backend.close()
+  })
+
   it('records Grok turn usage with the selected model', async () => {
     setAcpRuntimeFactory(async () => mockRuntime({
       getConfigOptions: () => [],

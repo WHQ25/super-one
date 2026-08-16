@@ -94,6 +94,7 @@ export function mockAcpRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
     setModel: async () => {},
     setAcpSessionMode: async () => {},
     getContextUsage: async () => null,
+    getRateLimits: async () => null,
     isSessionRecapAvailable: () => true,
     requestRecap: async () => {},
     prompt: async (_text, messageId, onEvent) => {

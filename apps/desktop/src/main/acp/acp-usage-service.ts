@@ -29,6 +29,11 @@ export function clearAcpRateLimitCache(): void {
   cache.clear()
 }
 
+/** Seed the gauge cache from a runtime-ready prefetch so a later UI read is instant. */
+export function cacheAcpRateLimits(agentId: string, data: ProviderRateLimits): void {
+  cache.set(cacheKey(agentId), { data, lastFetchMs: Date.now() })
+}
+
 export async function getAcpRateLimits(
   agentId: string,
   session: SessionContract | null | undefined,
@@ -38,11 +43,17 @@ export async function getAcpRateLimits(
   const cached = cache.get(key)
   const nowMs = Date.now()
   if (!force && cached && nowMs - cached.lastFetchMs < MIN_FETCH_INTERVAL_MS) return cached.data
-  if (!session) return cached?.data ?? null
+  if (!session) {
+    log.info('[acp-usage] no active session agent=%s cached=%s', agentId, cached ? 'yes' : 'no')
+    return cached?.data ?? null
+  }
 
   try {
     const fresh = await session.getRateLimits()
-    if (!fresh) return cached?.data ?? null
+    if (!fresh) {
+      log.info('[acp-usage] empty rate limits agent=%s cached=%s', agentId, cached ? 'yes' : 'no')
+      return cached?.data ?? null
+    }
     cache.set(key, { data: fresh, lastFetchMs: nowMs })
     return fresh
   } catch (err) {

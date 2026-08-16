@@ -10,10 +10,11 @@ import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 const RATE_LIMIT_TIP_MS = 6_000
-const GROK_AGENT_ID = 'grok-build'
+const ACP_BILLING_RETRY_MS = [2_000, 6_000] as const
 
 type RateLimitTipInfo = {
   status: 'allowed_warning' | 'rejected'
@@ -397,9 +398,12 @@ function useRefetchOnTurnEnd(status: string, fetchLimits: () => void) {
     fetchLimits()
   }, [fetchLimits])
   useEffect(() => {
-    const wasStreaming = prevStatusRef.current === 'streaming'
+    const prev = prevStatusRef.current
     prevStatusRef.current = status
-    if (wasStreaming && status === 'idle') fetchLimits()
+    if (prev === 'streaming' && status === 'idle') fetchLimits()
+    // Runtime is definitely up once a turn starts — covers the prewarm race
+    // where the first mount fetch ran before the agent answered billing.
+    if (prev !== 'streaming' && status === 'streaming') fetchLimits()
   }, [status, fetchLimits])
 }
 
@@ -579,6 +583,15 @@ function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { pr
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
+  // First paint often races prewarm: no runtime yet → null. Retry a couple of
+  // times so a later runtime-ready prefetch (or a late first answer) shows up
+  // without waiting for the turn to finish.
+  useEffect(() => {
+    if (limits) return
+    const timers = ACP_BILLING_RETRY_MS.map((ms) => window.setTimeout(fetchLimits, ms))
+    return () => { for (const id of timers) window.clearTimeout(id) }
+  }, [limits, fetchLimits])
+
   if (!limits || limits.windows.length === 0) {
     return (
       <RateLimitTipHost tip={tip}>
@@ -653,7 +666,7 @@ export function UsageStatusIcon() {
 
   // Grok is the only ACP agent with a billing surface; asking the others would
   // just be a round-trip to `method not found` on every turn end.
-  if (activeProvider === 'acp' && acpAgentId === GROK_AGENT_ID) {
+  if (activeProvider === 'acp' && isGrokAcpAgent(acpAgentId)) {
     return <AcpRateLimitIcon projectPath={activeProject} agentId={acpAgentId} status={status} tip={tip} highlight={highlight} />
   }
 

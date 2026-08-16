@@ -167,6 +167,12 @@ class FakeBackend implements SessionBackend {
   dismissQuestion(): void {}
   respondToPlanApproval(): void {}
   async getContextUsage() { return null }
+  getRateLimitsCalls = 0
+  getRateLimitsResult: import('@superone/shared/agent-types').ProviderRateLimits | null = null
+  async getRateLimits() {
+    this.getRateLimitsCalls += 1
+    return this.getRateLimitsResult
+  }
   async getMcpServerStatus() { return [] }
   async rewindFiles() { return { canRewind: false } }
   async reconnectMcp(): Promise<void> {}
@@ -472,6 +478,20 @@ describe('Session state machine', () => {
     await session.setPermissionMode('plan')
     expect(backend.setPermissionModeCalls).toEqual(['plan'])
     expect(session.permissionMode).toBe('plan')
+  })
+
+  it('getRateLimits forwards to backend even when backendStarted is false (prewarm path)', async () => {
+    ;({ session, backend } = makeSession({ permissionMode: 'default' }))
+    backend.getRateLimitsResult = {
+      title: 'Grok Build',
+      planType: 'SuperGrok Heavy',
+      windows: [{ label: 'Weekly limit', usedPercent: 0, resetsAt: null }],
+      extraUsage: null,
+      fetchedAt: 1,
+    }
+    session.prewarm()
+    await expect(session.getRateLimits()).resolves.toEqual(backend.getRateLimitsResult)
+    expect(backend.getRateLimitsCalls).toBe(1)
   })
 
   it('setSessionMode forwards to backend even when backendStarted is false (Grok effort prewarm path)', async () => {

@@ -9,6 +9,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
 import {
@@ -611,6 +612,9 @@ export class AcpBackend implements SessionBackend {
       // The listeners above only reach the DB. The renderer learns the real id from this event.
       this.emit({ type: 'provider_session_id', providerSessionId: runtime.sessionId })
       this.emitConfigFromRuntime(runtime, agentId, epoch)
+      // Billing rides this connection. Ask now so the sidebar gauge is filled
+      // before the first turn ends — the renderer often fetches during prewarm.
+      if (isGrokAcpAgent(agentId)) void this.prefetchRateLimits(agentId)
       return runtime
     })()
     this.ensureRuntimePromise = promise
@@ -1208,11 +1212,25 @@ export class AcpBackend implements SessionBackend {
    * open must never cold-start an agent process (matches requestSessionRecap).
    */
   async getRateLimits(): Promise<ProviderRateLimits | null> {
-    if (!this.runtime) return null
+    if (!this.runtime || typeof this.runtime.getRateLimits !== 'function') {
+      log.info('[AcpBackend] getRateLimits skipped — no runtime')
+      return null
+    }
     try {
       return await this.runtime.getRateLimits()
     } catch {
       return null
+    }
+  }
+
+  private async prefetchRateLimits(agentId: string): Promise<void> {
+    if (!this.runtime || typeof this.runtime.getRateLimits !== 'function') return
+    try {
+      const { cacheAcpRateLimits } = await import('../../acp/acp-usage-service')
+      const limits = await this.runtime.getRateLimits()
+      if (limits) cacheAcpRateLimits(agentId, limits)
+    } catch (err) {
+      log.debug('[AcpBackend] prefetch rate limits failed agent=%s:', agentId, err)
     }
   }
 

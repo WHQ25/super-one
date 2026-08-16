@@ -831,9 +831,12 @@ export class Session implements SessionContract {
     return this.backend.getContextUsage()
   }
 
-  /** Reading the gauge is not agent activity — deliberately no `touchRuntimeActivity()`. */
+  /**
+   * Reading the gauge is not agent activity — deliberately no `touchRuntimeActivity()`.
+   * Also no `backendStarted` gate: ACP prewarm already has a runtime that can
+   * answer `_x.ai/billing` before the first `send()` flips that flag.
+   */
   async getRateLimits(): Promise<ProviderRateLimits | null> {
-    if (!this.backendStarted) return null
     return (await this.backend.getRateLimits?.()) ?? null
   }
 

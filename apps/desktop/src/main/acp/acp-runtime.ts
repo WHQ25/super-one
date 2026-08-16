@@ -1026,13 +1026,21 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     },
     async getRateLimits() {
       try {
+        log.info('[acp-runtime] x.ai/billing request agent=%s', launch.agentId)
         const raw = await activeConnection.agent.request(xaiExtWireMethod(XAI_BILLING), {})
         const limits = parseGrokBilling(raw)
+        if (!limits) {
+          const keys = raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? Object.keys(raw as Record<string, unknown>).join(',')
+            : typeof raw
+          log.info('[acp-runtime] x.ai/billing unparsed agent=%s shape=%s', launch.agentId, keys)
+          return null
+        }
         log.info(
           '[acp-runtime] x.ai/billing agent=%s plan=%s used=%s%%',
           launch.agentId,
-          limits?.planType ?? '(none)',
-          limits?.windows[0]?.usedPercent ?? '?',
+          limits.planType ?? '(none)',
+          limits.windows[0]?.usedPercent ?? '?',
         )
         return limits
       } catch (err) {

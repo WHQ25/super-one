@@ -87,6 +87,69 @@ describe('parseGrokBilling', () => {
     expect(parseGrokBilling(null)).toBeNull()
   })
 
+  it('maps a live 1.0.4 post-reset payload (camelCase tier, omitted 0%)', () => {
+    // Verbatim grok 1.0.4 `_x.ai/billing` after the weekly reset on 2026-08-15.
+    const periodEnd = '2026-08-22T21:26:16.084846+00:00'
+    const limits = parseGrokBilling({
+      config: {
+        currentPeriod: {
+          type: 'USAGE_PERIOD_TYPE_WEEKLY',
+          start: '2026-08-15T21:26:16.084846+00:00',
+          end: periodEnd,
+        },
+        onDemandCap: { val: 0 },
+        onDemandUsed: { val: 0 },
+        prepaidBalance: { val: 0 },
+        isUnifiedBillingUser: true,
+        billingPeriodStart: '2026-08-15T21:26:16.084846+00:00',
+        billingPeriodEnd: periodEnd,
+      },
+      subscriptionTier: 'SuperGrok Heavy',
+    })
+    expect(limits).toMatchObject({
+      title: 'Grok Build',
+      planType: 'SuperGrok Heavy',
+      windows: [{
+        label: 'Weekly limit',
+        usedPercent: 0,
+        resetsAt: Math.floor(Date.parse(periodEnd) / 1000),
+      }],
+    })
+  })
+
+  it('treats an omitted zero percent as 0% when the period is present', () => {
+    // Verbatim `_x.ai/billing` after a weekly reset: proto3 drops 0.0
+    // `creditUsagePercent`, and the deprecated limit/used pair is also absent.
+    const periodEnd = '2026-08-22T21:26:16.084846+00:00'
+    const limits = parseGrokBilling({
+      config: {
+        currentPeriod: {
+          type: 'USAGE_PERIOD_TYPE_WEEKLY',
+          start: '2026-08-15T21:26:16.084846+00:00',
+          end: periodEnd,
+        },
+        onDemandCap: { val: 0 },
+        onDemandUsed: { val: 0 },
+        prepaidBalance: { val: 0 },
+        isUnifiedBillingUser: true,
+        billingPeriodStart: '2026-08-15T21:26:16.084846+00:00',
+        billingPeriodEnd: periodEnd,
+      },
+      subscription_tier: 'SuperGrok Heavy',
+    })
+    expect(limits).toEqual({
+      title: 'Grok Build',
+      planType: 'SuperGrok Heavy',
+      windows: [{
+        label: 'Weekly limit',
+        usedPercent: 0,
+        resetsAt: Math.floor(Date.parse(periodEnd) / 1000),
+      }],
+      extraUsage: null,
+      fetchedAt: expect.any(Number),
+    })
+  })
+
   it('treats a zero-valued Cent (proto3 omits it) as zero, not missing', () => {
     // proto3 JSON drops zero scalars, so `$0` arrives as `{}`.
     const limits = parseGrokBilling({

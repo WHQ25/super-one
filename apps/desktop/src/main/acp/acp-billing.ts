@@ -79,6 +79,9 @@ export function parseGrokBilling(raw: unknown): ProviderRateLimits | null {
     ?? (limitCents && limitCents > 0 && usedCents != null
       ? (usedCents / limitCents) * 100
       : null)
+    // proto3 / grok agent omit a 0% `creditUsagePercent` at the start of a new
+    // period. If we still have a period, that is occupancy 0, not "no data".
+    ?? (period || periodEnd ? 0 : null)
   // No occupancy signal at all — an empty gauge is worse than no gauge.
   if (usedPercent == null) return null
 

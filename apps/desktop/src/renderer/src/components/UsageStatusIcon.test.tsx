@@ -266,6 +266,38 @@ describe('UsageStatusIcon rate-limit tip', () => {
     expect(screen.getByText('$12.34')).toBeInTheDocument()
   })
 
+  it('retries Grok billing after the first empty prewarm fetch', async () => {
+    hoisted.sessionState.sessionProvider = 'acp'
+    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.acpAgentId = 'grok-build'
+    const payload = {
+      title: 'Grok Build',
+      planType: 'SuperGrok Heavy',
+      windows: [{ label: 'Weekly limit', usedPercent: 0, resetsAt: null }],
+      extraUsage: null,
+      fetchedAt: Date.now(),
+    }
+    const acpGetRateLimits = vi.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(payload)
+    vi.stubGlobal('app', { acpGetRateLimits })
+
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.queryByText('Grok Build')).toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(2_000)
+      await Promise.resolve()
+    })
+
+    expect(acpGetRateLimits).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Grok Build')).toBeInTheDocument()
+    expect(screen.getByText('SuperGrok Heavy')).toBeInTheDocument()
+  })
+
   it('stays hidden for a non-Grok ACP agent with no billing surface', async () => {
     hoisted.sessionState.sessionProvider = 'acp'
     hoisted.sessionState.preferredProvider = 'acp'

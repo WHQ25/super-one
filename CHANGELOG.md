@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.8-alpha] - 2026-08-16
+
+### Added
+
+- Session: first `session_rename` now asks for 1–4 kebab-case tags (agents can invent a label when the catalog has no fit).
+- Widget: `widget_show` can render native SuperOne galleries (`@native/image-gallery`, `@native/video-gallery`) so agent-produced media gets the same viewer, download, and drag-to-Finder as built-in generation.
+- Cursor: rename Auto permission mode to Agent to match Cursor CLI; stored `auto` still migrates.
+- Settings: split Cursor harness settings into tabs (same pattern as Claude/Codex) and reuse the AI Provider model list for enable/disable.
+
+### Fixed
+
+- Sidebar: deleted drafts no longer reappear after a pagehide / visibility flush.
+- Chat: show Cursor billed usage and million-scale counts without inventing a fake 200k window or percent.
+- Cursor: keep one tool row per call (no doubled Bash rows) and unwrap Shell / Grep / Glob to stdout and match lines instead of raw JSON.
+- Chat: show Cursor Edit +/− on the tool header after the call ends.
+- Cursor: nest subagent tool calls under the parent task card.
+- Widget: failed or denied `widget_show` calls now show the default error / denied row instead of a bare "Generate widget" label.
+
 ## [0.53.7-alpha] - 2026-08-15
 
 ### Fixed

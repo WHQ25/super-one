@@ -82,6 +82,36 @@ describe('FilePreview tab derivation', () => {
     expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active')
   })
 
+  it('shows Preview + File for a notebook, defaulting to the rendered cells', async () => {
+    const notebook = JSON.stringify({
+      nbformat: 4,
+      metadata: { language_info: { name: 'python' } },
+      cells: [
+        { cell_type: 'markdown', source: '# Analysis\n' },
+        {
+          cell_type: 'code',
+          execution_count: 1,
+          source: 'print("hi")',
+          outputs: [{ output_type: 'stream', name: 'stdout', text: 'hi\n' }],
+        },
+      ],
+    })
+    stubFile({ language: 'json', content: notebook, diff: '' })
+    render(<FilePreview filePath="notebooks/analysis.ipynb" />)
+    await waitFor(() => expect(screen.getByText('In [1]:')).toBeInTheDocument())
+    expect(tabLabels()).toEqual(['Preview', 'File'])
+    expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active')
+    expect(screen.queryByRole('tab', { name: 'Editor' })).not.toBeInTheDocument()
+    expect(screen.getByText('hi')).toBeInTheDocument()
+  })
+
+  it('falls back to a hint instead of blank output when a .ipynb is not parseable', async () => {
+    stubFile({ language: 'json', content: '{ broken', diff: '' })
+    render(<FilePreview filePath="notebooks/broken.ipynb" />)
+    await waitFor(() => expect(screen.getByText(/Not a valid notebook/)).toBeInTheDocument())
+    expect(tabLabels()).toEqual(['Preview', 'File'])
+  })
+
   it('shows Editor + File for HTML (no in-editor Preview tab)', async () => {
     stubFile({ language: 'html', content: '<html><body>hi</body></html>', diff: '' })
     render(<FilePreview filePath="index.html" />)

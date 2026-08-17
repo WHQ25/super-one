@@ -12,10 +12,12 @@ import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
 import { ImagePreview } from './ImagePreview'
 import { MarkdownEditor } from './MarkdownEditor'
+import { NotebookPreview } from './NotebookPreview'
 import { TextFileEditor } from './TextFileEditor'
 import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
+const NOTEBOOK_EXTS = new Set(['ipynb'])
 const BINARY_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'])
 const PDF_EXTS = new Set(['pdf'])
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'mov'])
@@ -50,9 +52,10 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
       const isSvg = c.language === 'svg'
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       const isMd = MARKDOWN_EXTS.has(ext)
-      // Default: media + markdown → Preview; dirty git → Changes; else File.
+      const isNb = NOTEBOOK_EXTS.has(ext)
+      // Default: media + markdown + notebook → Preview; dirty git → Changes; else File.
       setTab(
-        isBin || isSvg || isMd
+        isBin || isSvg || isMd || isNb
           ? 'preview'
           : d.diff
             ? 'changes'
@@ -83,6 +86,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const fileName = selectedFile?.split('/').pop() ?? ''
   const ext = getFileExt(fileName)
   const isMd = MARKDOWN_EXTS.has(ext)
+  const isNotebook = NOTEBOOK_EXTS.has(ext)
   const isBinImg = BINARY_IMAGE_EXTS.has(ext)
   const isPdfFile = PDF_EXTS.has(ext)
   const isSvgFile = ext === 'svg'
@@ -91,8 +95,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const hasDiff = !!fileDiff?.diff
   const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
-  // Non-md text files still use Editor + File; markdown uses Preview + File only.
-  const isTextEditable = !isBinaryPreview && !isUnpreviewable && !isSvgFile && !isMd
+  // Non-md text files still use Editor + File; markdown and notebooks use
+  // Preview + File only (a notebook's raw JSON is not hand-editable safely).
+  const isTextEditable = !isBinaryPreview && !isUnpreviewable && !isSvgFile && !isMd && !isNotebook
   const fullFilePath = isAbsoluteLocalPath(selectedFile) ? selectedFile : `${fileRoot}/${selectedFile}`
 
   const tabs = (() => {
@@ -100,7 +105,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
     if (isBinaryPreview) return [{ key: 'preview' as TabKey, label: 'Preview' }]
     const items: { key: TabKey; label: string }[] = []
     if (hasDiff) items.push({ key: 'changes', label: 'Changes' })
-    if (isSvgFile || isMd) items.push({ key: 'preview', label: 'Preview' })
+    if (isSvgFile || isMd || isNotebook) items.push({ key: 'preview', label: 'Preview' })
     if (isTextEditable) items.push({ key: 'editor', label: 'Editor' })
     items.push({ key: 'file', label: 'File' })
     return items
@@ -271,6 +276,10 @@ export function FilePreview({ filePath }: FilePreviewProps) {
             {effectiveTab === 'changes' && hasDiff ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} content={fileContent?.content ?? ''} />
+              </FileSelectionContextMenuZone>
+            ) : effectiveTab === 'preview' && isNotebook ? (
+              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
+                <NotebookPreview content={fileContent?.content ?? ''} />
               </FileSelectionContextMenuZone>
             ) : effectiveTab === 'preview' && isBinImg ? (
               <ImagePreview

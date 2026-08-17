@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences, webContents } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
+import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
 import { cpus, homedir, hostname } from 'os'
 import { resolveRealPath, isPathWithinAllowed, isPathAtOrWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
@@ -114,6 +114,7 @@ import {
 } from '@superone/shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, setUpdateChannel, isInstallingUpdate } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
+import { detectTextOrBinary, maxReadableBytes } from './file-read-limits'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
@@ -2581,7 +2582,7 @@ function registerIpcHandlers(): void {
   const EXT_LANG: Record<string, string> = {
     '.ts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.jsx': 'jsx',
     '.py': 'python', '.rb': 'ruby', '.rs': 'rust', '.go': 'go', '.java': 'java',
-    '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.toml': 'toml',
+    '.json': 'json', '.ipynb': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.toml': 'toml',
     '.html': 'html', '.css': 'css', '.scss': 'scss', '.md': 'markdown',
     '.sh': 'bash', '.sql': 'sql', '.swift': 'swift', '.kt': 'kotlin',
     '.c': 'c', '.cpp': 'cpp', '.cs': 'csharp', '.php': 'php',
@@ -2623,23 +2624,6 @@ function registerIpcHandlers(): void {
   const PDF_EXTS = new Set(['.pdf'])
   const VIDEO_EXTS = new Set(['.mp4', '.webm', '.ogg', '.mov'])
   const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'])
-  const BINARY_SNIFF_BYTES = 8192
-  const MAX_TEXT_FILE_BYTES = 10 * 1024 * 1024
-
-  async function detectTextOrBinary(fullPath: string): Promise<'text' | 'binary' | 'too-large'> {
-    const st = await stat(fullPath)
-    if (st.size > MAX_TEXT_FILE_BYTES) return 'too-large'
-    if (st.size === 0) return 'text'
-    const fd = await open(fullPath, 'r')
-    try {
-      const sniffSize = Math.min(BINARY_SNIFF_BYTES, st.size)
-      const buf = Buffer.alloc(sniffSize)
-      await fd.read(buf, 0, sniffSize, 0)
-      return buf.includes(0) ? 'binary' : 'text'
-    } finally {
-      await fd.close()
-    }
-  }
 
   ipcMain.handle(AgentIpcChannels.READ_PROJECT_FILE, async (_event, folderPath: string, filePath: string) => {
     try {
@@ -2663,7 +2647,7 @@ function registerIpcHandlers(): void {
       if (!isAbsolute(filePath) && !isPathWithinAllowed(fullPath, [folderPath])) {
         return { path: filePath, content: '', language: 'text' }
       }
-      const kind = await detectTextOrBinary(fullPath)
+      const kind = await detectTextOrBinary(fullPath, maxReadableBytes(ext))
       if (kind === 'binary') return { path: filePath, content: '', language: 'binary' }
       if (kind === 'too-large') return { path: filePath, content: '', language: 'too-large' }
       const content = await readFile(fullPath, 'utf-8')

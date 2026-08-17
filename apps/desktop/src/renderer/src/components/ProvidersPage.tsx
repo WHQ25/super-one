@@ -1,50 +1,34 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { ChevronDown, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
-import { Badge } from '@superone/ui/components/ui/badge'
 import { Input } from '@superone/ui/components/ui/input'
-import { Checkbox } from '@superone/ui/components/ui/checkbox'
+import { Badge } from '@superone/ui/components/ui/badge'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import {
   applyCapabilitiesToPlan,
-  capabilityEndpoints,
-  cloneEndpoints,
   defaultOverridesForPlan,
-  foldOverridesIntoEndpoints,
   isCustomPlatform,
   planCapabilities,
-  type CapabilityTask,
   type Credential,
-  type EndpointDefaults,
   type EndpointOverride,
   type Plan,
   type Platform,
-  type ProtocolFamily,
-  type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
-import type { ProviderModelEnv } from '@superone/shared/agent-types'
 import { useSettingsStore } from '@/stores/settings'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useIsDark } from '@/hooks/use-is-dark'
+import { siteRootFromEndpoints } from './providers/site-url'
 import { platformsByBrand } from '@/lib/provider-resolve'
 import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
-import { CapabilityPicker, TASK_LABEL_KEY, toPlanCapabilities, useCapabilityState } from './providers/CapabilityPicker'
-import { CredentialConfig, EnvEditor, ModelEnvEditor, OverridesEditor } from './providers/CredentialConfig'
+import { CapabilityPicker, toPlanCapabilities, useCapabilityState } from './providers/CapabilityPicker'
+import { CredentialConfig, OverridesEditor } from './providers/CredentialConfig'
 import { CredentialTabs } from './providers/CredentialTabs'
+import { CustomPlatformForm } from './providers/CustomPlatformForm'
 import { PlatformModelsPanel } from './providers/PlatformModelsPanel'
-import {
-  AddCustomModelPopover,
-  endpointsSupportedTasks,
-  upsertCustomModel,
-  type CustomModel,
-} from './providers/custom-models'
-import { mergeDiscoveredIntoCustomModels } from './providers/discovery-apply'
-import type { DiscoverState } from './providers/useModelDiscovery'
-import { useEndpointTest } from './providers/test-endpoints'
-import { TestConnectionButton, TestConnectionStatus } from './providers/TestConnection'
 
 const BRAND_POPULARITY = [
   'anthropic',
@@ -94,11 +78,15 @@ function PlanSection({
   plan,
   selectedKeyId,
   onSelectKey,
+  extraDirty,
+  onSaveExtras,
 }: {
   platform: Platform
   plan: Plan
   selectedKeyId: string
   onSelectKey: (id: string) => void
+  extraDirty?: boolean
+  onSaveExtras?: () => Promise<void>
 }) {
   const credentials = useSettingsStore((s) => s.credentials)
   const planCreds = useMemo(
@@ -133,7 +121,16 @@ function PlanSection({
         onStartAdd={() => setAdding(true)}
         onDoneAdd={closeAdd}
         pendingOverrides={pendingOverrides}
+        extraDirty={extraDirty}
+        onSaveExtras={onSaveExtras}
       />
+      <div className="rounded-lg border border-border p-3">
+        <PlatformModelsPanel
+          platform={platform}
+          plan={plan}
+          selectedKeyId={activeKeyId}
+        />
+      </div>
       <AdvancedConfigSection
         platform={platform}
         plan={plan}
@@ -196,7 +193,14 @@ function AdvancedConfigSection({
               <OverridesEditor platform={platform} plan={plan} value={pendingOverrides} onChange={onPendingOverridesChange} />
             </div>
           ) : (
-            selected && <CredentialConfig key={selected.id} platform={platform} plan={plan} credential={selected} />
+            selected && (
+              <CredentialConfig
+                key={`${selected.id}:${(selected.endpoints ?? []).map((e) => e.baseUrl).join('|')}`}
+                platform={platform}
+                plan={plan}
+                credential={selected}
+              />
+            )
           )}
         </>
       )}
@@ -209,22 +213,121 @@ function AdvancedConfigSection({
 function PlatformDetail({ platform }: { platform: Platform }) {
   const { t } = useTranslation()
   const platforms = useSettingsStore((s) => s.platforms)
+  const credentials = useSettingsStore((s) => s.credentials)
   const deleteCustomPlatform = useSettingsStore((s) => s.deleteCustomPlatform)
+  const updateCustomPlatform = useSettingsStore((s) => s.updateCustomPlatform)
+  const isDark = useIsDark()
   const isCustom = isCustomPlatform(platform)
   const variantLabel = platformVariantLabel(platform, platforms)
   const [planId, setPlanId] = useState(platform.plans[0]?.id ?? '')
   const selectedPlan = platform.plans.find((p) => p.id === planId) ?? platform.plans[0]
   const [selectedKeyId, setSelectedKeyId] = useState('')
+  const [editingName, setEditingName] = useState(false)
+  const [iconBusy, setIconBusy] = useState(false)
+  const [name, setName] = useState(platform.name)
+  const [storedName, setStoredName] = useState(platform.name)
+  if (platform.name !== storedName) {
+    setStoredName(platform.name)
+    setName(platform.name)
+  }
+  const nameDirty = name.trim() !== '' && name.trim() !== platform.name
+  const iconSourceUrl = useMemo(() => {
+    if (!selectedPlan) return ''
+    const cred =
+      credentials.find((c) => c.id === selectedKeyId) ??
+      credentials.find((c) => c.platformId === platform.id && c.planId === selectedPlan.id)
+    const endpoints = cred?.endpoints?.length ? cred.endpoints : selectedPlan.endpoints
+    return siteRootFromEndpoints(endpoints)
+  }, [credentials, selectedKeyId, platform.id, selectedPlan])
+
+  const commitName = useCallback(async () => {
+    const next = name.trim()
+    if (!next) {
+      setName(platform.name)
+      setEditingName(false)
+      return
+    }
+    if (next !== platform.name) {
+      await updateCustomPlatform({ ...platform, name: next })
+    }
+    setEditingName(false)
+  }, [name, platform, updateCustomPlatform])
+
+  const startEditName = useCallback(() => {
+    setName(platform.name)
+    setEditingName(true)
+  }, [platform.name])
+
+  const cancelEditName = useCallback(() => {
+    setName(platform.name)
+    setEditingName(false)
+  }, [platform.name])
+
+  const refreshIcon = useCallback(async () => {
+    if (!iconSourceUrl || iconBusy) return
+    setIconBusy(true)
+    try {
+      const identity = await window.app.resolveSiteIdentity(iconSourceUrl, isDark, true)
+      if (identity.icon && identity.icon !== platform.icon) {
+        await updateCustomPlatform({ ...platform, icon: identity.icon })
+      }
+    } finally {
+      setIconBusy(false)
+    }
+  }, [iconSourceUrl, iconBusy, isDark, platform, updateCustomPlatform])
+
+  const iconButton = (
+    <button
+      type="button"
+      className="shrink-0 cursor-pointer rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+      onClick={() => void refreshIcon()}
+      disabled={iconBusy || !iconSourceUrl}
+      title={t('resources.providers.refreshIcon')}
+      aria-label={t('resources.providers.refreshIcon')}
+    >
+      {iconBusy ? (
+        <Loader2 className="size-7 animate-spin text-muted-foreground" />
+      ) : (
+        <ProviderLabel brandKey={platform.brand} fallback={platform.name} icon={platform.icon} iconOnly size={28} />
+      )}
+    </button>
+  )
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <span className="flex min-w-0 items-center gap-3">
-          <span className="flex shrink-0 items-center gap-2">
-            <ProviderLabel brandKey={platform.brand} fallback={platform.name} combine size={28} />
+          <span className="flex min-w-0 items-center gap-2">
+            {isCustom ? (
+              <>
+                {iconButton}
+                {editingName ? (
+                  <Input
+                    className="h-8 min-w-0 flex-1"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') cancelEditName()
+                    }}
+                    placeholder={t('resources.providers.platformName')}
+                    aria-label={t('resources.providers.platformName')}
+                    autoFocus
+                  />
+                ) : (
+                  <span className="truncate text-sm font-medium">{platform.name}</span>
+                )}
+                {!editingName && (
+                  <IconButton size="sm" tooltip={t('common.edit')} onClick={startEditName}>
+                    <Pencil />
+                  </IconButton>
+                )}
+              </>
+            ) : (
+              <ProviderLabel brandKey={platform.brand} fallback={platform.name} icon={platform.icon} combine size={28} />
+            )}
             {variantLabel && <Badge variant="secondary">{variantLabel}</Badge>}
           </span>
-          {platform.plans.length > 0 && (
+          {platform.plans.length > 1 && (
             <span className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
               {platform.plans.map((plan) => (
                 <button
@@ -264,17 +367,9 @@ function PlatformDetail({ platform }: { platform: Platform }) {
           plan={selectedPlan}
           selectedKeyId={selectedKeyId}
           onSelectKey={setSelectedKeyId}
+          extraDirty={isCustom && nameDirty}
+          onSaveExtras={isCustom ? commitName : undefined}
         />
-      )}
-
-      {selectedPlan && (
-        <div className="rounded-lg border border-border p-3">
-          <PlatformModelsPanel
-            platform={platform}
-            plan={selectedPlan}
-            selectedKeyId={selectedKeyId}
-          />
-        </div>
       )}
     </div>
   )
@@ -340,178 +435,6 @@ function CustomCapabilitiesSection({
   )
 }
 
-// Inline add-form rendered in the detail panel (not a modal). onDone(id) is called with the new
-// platform id on success, or with no argument on cancel; the parent unmounts the form either way.
-function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }) {
-  const { t } = useTranslation()
-  const createCustomPlatform = useSettingsStore((s) => s.createCustomPlatform)
-  const createCredential = useSettingsStore((s) => s.createCredential)
-  const [name, setName] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
-  const { families, familyTasks, familyExtras, selection, toggleFamily, toggleTask, toggleExtra } = useCapabilityState()
-  const [extraEnv, setExtraEnv] = useState<Record<string, string>>({})
-  const [modelMapping, setModelMapping] = useState<ProviderModelEnv>({})
-  const [customModels, setCustomModels] = useState<CustomModel[]>([])
-  const [keyName, setKeyName] = useState('')
-  const [secret, setSecret] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  // Each selected format carries its own capabilities (plus any opt-in extra wire like OpenAI Responses).
-  // A format with only chat (anthropic) contributes ['chat'] implicitly and shows no sub-picker.
-  const hasExtraEnv = Object.keys(extraEnv).length > 0
-  // Model mapping is a claude-harness concept, so it only attaches to the anthropic-messages endpoint.
-  const hasModelMapping = families.has('anthropic') && Object.keys(modelMapping).length > 0
-  const rawEndpoints = capabilityEndpoints(toPlanCapabilities(selection), baseUrl.trim())
-  const endpoints = rawEndpoints.map((e) => {
-    const defaults: EndpointDefaults = {}
-    if (hasExtraEnv) defaults.extraEnv = extraEnv
-    if (hasModelMapping && e.protocols.includes('anthropic-messages')) defaults.modelMapping = modelMapping
-    return Object.keys(defaults).length > 0 ? { ...e, defaults } : e
-  })
-  const supportedTasks = useMemo(() => endpointsSupportedTasks(endpoints), [endpoints])
-  const canSubmit = !!name.trim() && !!baseUrl.trim() && endpoints.length > 0
-  const { state: testState, run: runTest } = useEndpointTest()
-  // Connection Test: main process probes one preferred auth surface (openai → google → anthropic).
-  const test = useCallback(() => void runTest(endpoints, secret.trim()), [runTest, endpoints, secret])
-
-  const [discoverState, setDiscoverState] = useState<DiscoverState>({ status: 'idle' })
-  const runDiscover = useCallback(async () => {
-    const trimmedBase = baseUrl.trim()
-    if (!trimmedBase) return
-    setDiscoverState({ status: 'loading' })
-    try {
-      const probe: ServiceEndpoint = { id: 'openai', baseUrl: trimmedBase, protocols: ['openai-chat'] }
-      const result = await window.app.discoverProviderModels({ apiKey: secret.trim(), endpoint: probe })
-      for (const m of result.models) {
-        for (const [family, tasks] of Object.entries(m.byFamily) as [ProtocolFamily, CapabilityTask[]][]) {
-          if (!tasks?.length) continue
-          toggleFamily(family, true)
-          for (const tk of tasks) toggleTask(family, tk, true)
-        }
-      }
-      setCustomModels((prev) => mergeDiscoveredIntoCustomModels(prev, result.models))
-      setDiscoverState({ status: 'done', truncated: result.truncated })
-    } catch (err) {
-      setDiscoverState({ status: 'error', message: err instanceof Error ? err.message : String(err) })
-    }
-  }, [baseUrl, secret, toggleFamily, toggleTask])
-
-  const submit = useCallback(async () => {
-    if (!canSubmit) return
-    setBusy(true)
-    try {
-      const id = `custom:${crypto.randomUUID()}`
-      // Plan keeps a seed template for "Add key"; the first credential owns the live endpoints.
-      const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints: cloneEndpoints(endpoints) }
-      const platform: Platform = { id, brand: 'custom', name: name.trim(), plans: [plan] }
-      let overrides: Record<string, EndpointOverride> = {}
-      for (const m of customModels) overrides = upsertCustomModel(overrides, plan, m)
-      const keyEndpoints = foldOverridesIntoEndpoints(cloneEndpoints(endpoints), overrides)
-      await createCustomPlatform(platform)
-      await createCredential({
-        platformId: id,
-        planId: 'api',
-        name: keyName.trim() || t('resources.providers.defaultKeyName'),
-        secret: secret.trim(),
-        endpoints: keyEndpoints,
-      })
-      onDone(id)
-    } finally {
-      setBusy(false)
-    }
-  }, [canSubmit, endpoints, customModels, name, keyName, secret, createCustomPlatform, createCredential, onDone, t])
-
-  return (
-    <div className="flex flex-col gap-4">
-      <span className="text-base font-semibold">{t('resources.providers.addCustom')}</span>
-      <div className="flex flex-col gap-3">
-          <Input placeholder={t('resources.providers.customName')} value={name} onChange={(e) => setName(e.target.value)} />
-          <Input placeholder={t('resources.providers.baseUrl')} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-          {families.size > 1 && (
-            <span className="text-xs text-muted-foreground">{t('resources.providers.relayHint')}</span>
-          )}
-          <Input placeholder={t('resources.providers.keyLabel')} value={keyName} onChange={(e) => setKeyName(e.target.value)} />
-          <Input
-            type="password"
-            placeholder={t('resources.providers.apiKey')}
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-          />
-          <CapabilityPicker
-            families={families}
-            familyTasks={familyTasks}
-            familyExtras={familyExtras}
-            onToggleFamily={toggleFamily}
-            onToggleTask={toggleTask}
-            onToggleExtra={toggleExtra}
-          />
-          {families.has('anthropic') && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
-              <ModelEnvEditor value={modelMapping} onChange={setModelMapping} />
-            </div>
-          )}
-          {supportedTasks.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.mediaModels')}</span>
-                <AddCustomModelPopover
-                  supportedTasks={supportedTasks}
-                  existingIds={customModels.map((m) => m.id)}
-                  onAdd={(m) => setCustomModels((prev) => [...prev, m])}
-                />
-              </div>
-              {customModels.map((m) => (
-                <div key={m.id} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{m.name || m.id}</span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground">{m.tasks.map((tk) => t(TASK_LABEL_KEY[tk])).join(' / ')}</span>
-                  <IconButton size="sm" variant="destructive" onClick={() => setCustomModels((prev) => prev.filter((x) => x.id !== m.id))}>
-                    <Trash2 />
-                  </IconButton>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.environmentVariables')}</span>
-            <EnvEditor value={extraEnv} onChange={setExtraEnv} />
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button disabled={busy || !canSubmit} onClick={submit}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.create')}
-          </Button>
-          <Button variant="ghost" onClick={() => onDone()}>{t('common.cancel')}</Button>
-          <TestConnectionButton
-            state={testState}
-            onTest={test}
-            size="default"
-            disabled={!baseUrl.trim() || !secret.trim() || endpoints.length === 0}
-          />
-          <TestConnectionStatus state={testState} />
-          <Button
-            variant="outline"
-            onClick={() => void runDiscover()}
-            disabled={!baseUrl.trim() || !secret.trim() || discoverState.status === 'loading'}
-          >
-            {discoverState.status === 'loading' ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            {t('resources.providerDialog.models.discover')}
-          </Button>
-          {discoverState.status === 'error' && (
-            <span className="text-[11px] text-destructive">{t('resources.providerDialog.models.discoverError', { message: discoverState.message })}</span>
-          )}
-          {discoverState.status === 'done' && (
-            <span className="text-[11px] text-success">
-              {discoverState.truncated
-                ? t('resources.providerDialog.models.discoverTruncated')
-                : t('resources.providers.discoverModelsDone')}
-            </span>
-          )}
-        </div>
-    </div>
-  )
-}
-
 // --- page --------------------------------------------------------------------
 
 export function ProvidersPage() {
@@ -524,6 +447,7 @@ export function ProvidersPage() {
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+
 
   // Follow the sidebar host: remote connection id → node provider store.
   useEffect(() => {
@@ -662,7 +586,7 @@ function PlatformRow({
       )}
     >
       <span className="flex min-w-0 items-center gap-1.5">
-        <ProviderLabel brandKey={platform.brand} fallback={platform.name} combine size={24} />
+        <ProviderLabel brandKey={platform.brand} fallback={platform.name} icon={platform.icon} combine size={24} />
         {variantLabel && (
           <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[9px] font-normal">
             {variantLabel}

@@ -9,6 +9,7 @@ import {
   cloneEndpoints,
   foldOverridesIntoEndpoints,
   isCustomPlatformId,
+  rebaseEndpoints,
   type Credential,
   type EndpointOverride,
   type Plan,
@@ -16,6 +17,7 @@ import {
 } from '@superone/shared/platform-registry'
 import { useSettingsStore } from '@/stores/settings'
 import { pruneOverrides } from './CredentialConfig'
+import { baseUrlHasHost, ensureHttpsPrefix, siteRootFromEndpoints } from './site-url'
 import { planTestEndpoints, useEndpointTest } from './test-endpoints'
 import { TestConnectionButton, TestConnectionStatus } from './TestConnection'
 
@@ -48,6 +50,11 @@ function KeyForm({
   seedFromCredential,
   pendingOverrides,
   takenNames,
+  baseUrl,
+  extraDirty,
+  baseUrlDirty,
+  onSaveExtras,
+  onSaveBaseUrl,
   onCancel,
   onCreated,
 }: {
@@ -60,6 +67,12 @@ function KeyForm({
   seedFromCredential?: Credential
   pendingOverrides: Record<string, EndpointOverride>
   takenNames: string[]
+  /** Custom platforms: site root from the row above the API-keys title. */
+  baseUrl: string
+  extraDirty?: boolean
+  baseUrlDirty?: boolean
+  onSaveExtras?: () => Promise<void>
+  onSaveBaseUrl?: () => Promise<void>
   onCancel: () => void
   onCreated: (id: string) => void
 }) {
@@ -70,6 +83,7 @@ function KeyForm({
   const [name, setName] = useState(credential?.name ?? '')
   const [secret, setSecret] = useState('')
   const [busy, setBusy] = useState(false)
+  const isCustom = isCustomPlatformId(platformId)
   const { state: testState, run: runTest } = useEndpointTest()
 
   const overrides = credential?.overrides ?? pendingOverrides
@@ -95,29 +109,38 @@ function KeyForm({
     [takenNames, effectiveName, credential?.name],
   )
 
-  const dirty = credential ? effectiveName !== credential.name || !!secret.trim() : !!(name.trim() || secret.trim())
+  const keyDirty = credential ? effectiveName !== credential.name || !!secret.trim() : !!(name.trim() || secret.trim())
+  const dirty = keyDirty || !!extraDirty || (!!credential && !!baseUrlDirty)
 
   // A blank secret input means "keep the stored key" — only send `secret` when the user typed one.
   const submit = useCallback(async () => {
     if (conflict || !dirty) return
     setBusy(true)
     try {
+      if (extraDirty) await onSaveExtras?.()
       if (credential) {
-        await updateCredential(credential.id, {
-          name: effectiveName,
-          ...(secret.trim() ? { secret: secret.trim() } : {}),
-        })
-        setSecret('')
-      } else {
+        if (baseUrlDirty) await onSaveBaseUrl?.()
+        if (keyDirty) {
+          await updateCredential(credential.id, {
+            name: effectiveName,
+            ...(secret.trim() ? { secret: secret.trim() } : {}),
+          })
+          setSecret('')
+        }
+      } else if (keyDirty) {
         const pruned = pruneOverrides(pendingOverrides)
-        const isCustom = isCustomPlatformId(platformId)
-        const seedEndpoints =
+        const nextSeed =
           seedFromCredential?.endpoints?.length
             ? cloneEndpoints(seedFromCredential.endpoints)
             : cloneEndpoints(plan.endpoints)
-        const keyEndpoints = isCustom
-          ? foldOverridesIntoEndpoints(seedEndpoints, pruned)
-          : undefined
+        const folded = isCustom ? foldOverridesIntoEndpoints(nextSeed, pruned) : undefined
+        const trimmedBase = ensureHttpsPrefix(baseUrl)
+        const keyEndpoints =
+          isCustom && folded
+            ? baseUrlHasHost(trimmedBase)
+              ? rebaseEndpoints(folded, trimmedBase)
+              : folded
+            : undefined
         const created = await createCredential({
           platformId,
           planId,
@@ -137,6 +160,11 @@ function KeyForm({
   }, [
     conflict,
     dirty,
+    extraDirty,
+    baseUrlDirty,
+    keyDirty,
+    onSaveExtras,
+    onSaveBaseUrl,
     credential,
     effectiveName,
     secret,
@@ -148,6 +176,8 @@ function KeyForm({
     seedFromCredential,
     createCredential,
     onCreated,
+    isCustom,
+    baseUrl,
   ])
 
   return (
@@ -199,10 +229,10 @@ function KeyForm({
             <Button size="sm" disabled={busy || conflict} onClick={submit}>
               {busy ? (
                 <Loader2 className="size-4 animate-spin" />
-              ) : credential ? (
-                t('common.save')
-              ) : (
+              ) : !credential && keyDirty ? (
                 t('resources.providers.addKey')
+              ) : (
+                t('common.save')
               )}
             </Button>
           )}
@@ -229,6 +259,8 @@ export function CredentialTabs({
   onStartAdd,
   onDoneAdd,
   pendingOverrides,
+  extraDirty,
+  onSaveExtras,
 }: {
   platformId: string
   platform?: Platform
@@ -241,11 +273,28 @@ export function CredentialTabs({
   onStartAdd: () => void
   onDoneAdd: () => void
   pendingOverrides: Record<string, EndpointOverride>
+  extraDirty?: boolean
+  onSaveExtras?: () => Promise<void>
 }) {
   const { t } = useTranslation()
+  const updateCredential = useSettingsStore((s) => s.updateCredential)
   const selected = adding ? undefined : planCreds.find((c) => c.id === selectedKeyId)
   // When adding, seed from the previously selected key if any.
   const seedFrom = planCreds.find((c) => c.id === selectedKeyId) ?? planCreds[0]
+  const isCustom = isCustomPlatformId(platformId)
+  const sourceEndpoints = selected?.endpoints?.length
+    ? selected.endpoints
+    : seedFrom?.endpoints?.length
+      ? seedFrom.endpoints
+      : plan.endpoints
+  const urlKey = selected?.id ?? `add:${seedFrom?.id ?? 'none'}`
+  const nextRoot = siteRootFromEndpoints(sourceEndpoints)
+  const [heldUrlKey, setHeldUrlKey] = useState(urlKey)
+  const [baseUrl, setBaseUrl] = useState(nextRoot)
+  if (heldUrlKey !== urlKey) {
+    setHeldUrlKey(urlKey)
+    setBaseUrl(nextRoot)
+  }
 
   const created = useCallback(
     (id: string) => {
@@ -255,8 +304,38 @@ export function CredentialTabs({
     [onDoneAdd, onSelectKey],
   )
 
+  const storedRoot = nextRoot
+  const normalizedBase = ensureHttpsPrefix(baseUrl)
+  const baseUrlDirty = isCustom && normalizedBase !== storedRoot
+
+  const saveBaseUrl = useCallback(async () => {
+    const next = ensureHttpsPrefix(baseUrl)
+    if (!isCustom || !selected) return
+    if (!baseUrlHasHost(next)) {
+      setBaseUrl(storedRoot)
+      return
+    }
+    setBaseUrl(next)
+    const current = selected.endpoints?.length ? selected.endpoints : plan.endpoints
+    const rebased = rebaseEndpoints(current, next)
+    if (JSON.stringify(rebased) === JSON.stringify(current)) return
+    await updateCredential(selected.id, { endpoints: rebased })
+  }, [baseUrl, isCustom, selected, storedRoot, plan.endpoints, updateCredential])
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
+      {isCustom && (
+        <Input
+          placeholder={t('resources.providers.baseUrl')}
+          aria-label={t('resources.providers.baseUrl')}
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          onBlur={(e) => {
+            const next = ensureHttpsPrefix(e.currentTarget.value)
+            if (next !== baseUrl) setBaseUrl(next)
+          }}
+        />
+      )}
       <div className="flex items-center gap-3 border-b border-border">
         <span className="shrink-0 text-sm font-semibold">{t('resources.providers.apiKeys')}</span>
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
@@ -293,6 +372,10 @@ export function CredentialTabs({
           seedFromCredential={seedFrom}
           pendingOverrides={pendingOverrides}
           takenNames={takenNames}
+          baseUrl={baseUrl}
+          extraDirty={extraDirty}
+          baseUrlDirty={false}
+          onSaveExtras={onSaveExtras}
           onCancel={onDoneAdd}
           onCreated={created}
         />
@@ -306,6 +389,11 @@ export function CredentialTabs({
           credential={selected}
           pendingOverrides={pendingOverrides}
           takenNames={takenNames}
+          baseUrl={baseUrl}
+          extraDirty={extraDirty}
+          baseUrlDirty={baseUrlDirty}
+          onSaveExtras={onSaveExtras}
+          onSaveBaseUrl={saveBaseUrl}
           onCancel={onDoneAdd}
           onCreated={created}
         />

@@ -19,7 +19,9 @@ export type Messages = {
     retry: string
     refresh: string
     continue: string
+    next: string
     terminal: string
+    edit: string
   }
   sidebar: {
     newSession: string
@@ -2101,9 +2103,18 @@ export type Messages = {
       keyNameConflict: string
       notSet: string
       customName: string
+      platformName: string
+      refreshIcon: string
       baseUrl: string
       relayHint: string
+      draftDiscoverHint: string
       discoverModelsDone: string
+      relayDetected: string
+      relayDetectedNamed: string
+      relayKindNewApi: string
+      relayKindOneApi: string
+      relayKindSub2api: string
+      relayKindOpenaiCompatible: string
       apiKey: string
       formats: string
       capabilities: string
@@ -2207,12 +2218,14 @@ export type Messages = {
         add: string
         duplicate: string
         deleteCustom: string
+        editModel: string
         discover: string
         discoverError: string
         discoverEmpty: string
         discoverTruncated: string
         discoveredGroup: string
         enableAllDiscovered: string
+        disableAllDiscovered: string
       }
     }
     mcp: {
@@ -2767,7 +2780,9 @@ export const en: Messages = {
     retry: 'Retry',
     refresh: 'Refresh',
     continue: 'Continue',
+    next: 'Next',
     terminal: 'Terminal',
+    edit: 'Edit',
   },
   sidebar: {
     newSession: 'New Session',
@@ -4919,10 +4934,19 @@ export const en: Messages = {
       keyLabel: 'Key Name',
       keyNameConflict: 'A key with this name already exists',
       notSet: 'Not Set',
-      customName: 'Platform Name',
+      customName: 'Platform name (leave blank to auto-detect)',
+      platformName: 'Platform name',
+      refreshIcon: 'Update icon',
       baseUrl: 'Base URL',
-      relayHint: 'Relay / aggregator (e.g. NewAPI): enter the site root — OpenAI-compatible paths get /v1 appended automatically.',
+      relayHint: 'Enter the site root or any /v1 URL. The site name and icon are filled in automatically. Then click Discover Models.',
+      draftDiscoverHint: 'Fill in the base URL and API key, then click Discover Models.',
       discoverModelsDone: 'Models discovered — review the checked formats/capabilities and the model list below.',
+      relayDetected: 'Detected {{kind}} — review the checked formats and model list below.',
+      relayDetectedNamed: 'Detected {{kind}} ({{name}}) — review the checked formats and model list below.',
+      relayKindNewApi: 'New API',
+      relayKindOneApi: 'One API',
+      relayKindSub2api: 'Sub2API',
+      relayKindOpenaiCompatible: 'OpenAI-compatible',
       apiKey: 'API Key',
       formats: 'Compatible Formats',
       capabilities: 'Capabilities',
@@ -5026,12 +5050,14 @@ export const en: Messages = {
         add: 'Add',
         duplicate: 'This model id already exists.',
         deleteCustom: 'Remove custom model',
+        editModel: 'Edit model',
         discover: 'Discover Models',
         discoverError: 'Could not discover models: {{message}}',
         discoverEmpty: 'No models were discovered on this endpoint.',
         discoverTruncated: 'Showing the first 500 discovered models.',
         discoveredGroup: 'Discovered',
         enableAllDiscovered: 'Enable All',
+        disableAllDiscovered: 'Disable All',
       },
     },
     mcp: {

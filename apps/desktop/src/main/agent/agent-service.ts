@@ -72,6 +72,7 @@ import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './dis
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } from '../plugins-service'
 import { cacheRemoteImage } from '../image-cache'
 import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
+import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import type { HookSavePayload, SessionForkRequest, HarnessId } from '@superone/shared/agent-types'
@@ -2234,8 +2235,12 @@ export class AgentService {
       return cacheRemoteImage(url)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESOLVE_FAVICON, async (_event, url: string, isDark: boolean) => {
-      return resolveFavicon(url, isDark)
+    ipcMain.handle(AgentIpcChannels.RESOLVE_FAVICON, async (_event, url: string, isDark: boolean, force?: boolean) => {
+      return resolveFavicon(url, isDark, force)
+    })
+
+    ipcMain.handle(AgentIpcChannels.RESOLVE_SITE_IDENTITY, async (_event, url: string, isDark: boolean, force?: boolean) => {
+      return resolveSiteIdentity(url, isDark, force)
     })
 
     ipcMain.handle(AgentIpcChannels.CACHE_FAVICON, async (_event, pageUrl: string, faviconUrl: string, isDark: boolean) => {

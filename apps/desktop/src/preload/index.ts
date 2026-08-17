@@ -1135,8 +1135,11 @@ const appAPI = {
   cacheRemoteImage: (url: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CACHE_IMAGE, url),
 
-  resolveFavicon: (url: string, isDark: boolean) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESOLVE_FAVICON, url, isDark),
+  resolveFavicon: (url: string, isDark: boolean, force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESOLVE_FAVICON, url, isDark, force),
+
+  resolveSiteIdentity: (url: string, isDark: boolean, force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESOLVE_SITE_IDENTITY, url, isDark, force),
 
   cacheFavicon: (pageUrl: string, faviconUrl: string, isDark: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.CACHE_FAVICON, pageUrl, faviconUrl, isDark),

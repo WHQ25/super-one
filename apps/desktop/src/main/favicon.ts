@@ -22,15 +22,19 @@ function writeCache(filePath: string, buf: Buffer): void {
   renameSync(tmp, filePath)
 }
 
-async function fetchHtml(pageUrl: string): Promise<string | null> {
+/** Shared HTML fetch used by favicon resolution and page-title parsing. */
+export async function fetchPageHtml(pageUrl: string): Promise<string | null> {
   try {
     const res = await fetch(pageUrl, {
       redirect: 'follow',
       signal: AbortSignal.timeout(HTML_TIMEOUT_MS),
       headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
     })
-    if (!res.ok || !(res.headers.get('content-type') || '').includes('html')) return null
-    return (await res.text()).slice(0, MAX_HTML_BYTES)
+    if (!res.ok) return null
+    const text = (await res.text()).slice(0, MAX_HTML_BYTES)
+    const type = (res.headers.get('content-type') || '').toLowerCase()
+    if (type.includes('html') || type.includes('xml') || /^\s*</.test(text)) return text
+    return null
   } catch {
     return null
   }
@@ -71,7 +75,7 @@ function googleFaviconUrl(pageUrl: string): string {
 async function resolveAndDownload(pageUrl: string, origin: string, isDark: boolean): Promise<Buffer | null> {
   const seen = new Set<string>()
   const candidates: string[] = []
-  const html = await fetchHtml(pageUrl)
+  const html = await fetchPageHtml(pageUrl)
   if (html) candidates.push(...parseIconCandidates(html, pageUrl, isDark))
   candidates.push(`${origin}/favicon.ico`)
   candidates.push(googleFaviconUrl(pageUrl))
@@ -133,7 +137,7 @@ async function refreshInBackground(pageUrl: string, origin: string, isDark: bool
  * it as a data URL. Keyed by origin + theme, disk-cached for 3 days with background
  * refresh past the TTL. Returns null on any failure.
  */
-export async function resolveFavicon(pageUrl: string, isDark: boolean): Promise<string | null> {
+export async function resolveFavicon(pageUrl: string, isDark: boolean, force = false): Promise<string | null> {
   if (!/^https?:\/\//i.test(pageUrl)) return null
   let origin: string
   try {
@@ -143,7 +147,7 @@ export async function resolveFavicon(pageUrl: string, isDark: boolean): Promise<
   }
   const filePath = cacheFileFor(origin, isDark)
 
-  if (existsSync(filePath)) {
+  if (!force && existsSync(filePath)) {
     try {
       const dataUrl = toDataUrl(readFileSync(filePath))
       if (dataUrl) {

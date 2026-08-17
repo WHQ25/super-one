@@ -259,7 +259,8 @@ interface AppAPI {
     unavailable: boolean
   }>
   cacheRemoteImage(url: string): Promise<string | null>
-  resolveFavicon(url: string, isDark: boolean): Promise<string | null>
+  resolveFavicon(url: string, isDark: boolean, force?: boolean): Promise<string | null>
+  resolveSiteIdentity(url: string, isDark: boolean, force?: boolean): Promise<{ name: string | null; icon: string | null }>
   cacheFavicon(pageUrl: string, faviconUrl: string, isDark: boolean): Promise<void>
   addMarketplace(source: string, scope: ResourceScope, projectPath: string): Promise<void>
   removeMarketplace(name: string, scope: MarketplaceScope, projectPath: string): Promise<void>

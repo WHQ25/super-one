@@ -4,6 +4,20 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.11-alpha] - 2026-08-18
+
+### Added
+
+- Chat: unify tool status rows and error handling across Codex and SuperOne media tools.
+- Codex: add Fast and Approve for Me modes.
+- Coding: render `.ipynb` notebooks as safe, read-only cell previews instead of raw JSON.
+- Sidebar: show and copy session tags from session context menus.
+- Providers: enable tool search by default for Anthropic-compatible endpoints while preserving explicit overrides.
+
+### Fixed
+
+- Codex: show context compaction as in progress until the app server reports completion.
+
 ## [0.53.10-alpha] - 2026-08-17
 
 ### Added

@@ -838,6 +838,78 @@ describe('streamTurnEvents mcp startup failure reason', () => {
   })
 })
 
+describe('streamTurnEvents compaction lifecycle', () => {
+  it('keeps contextCompaction out of Codex items and completes the shared compact UI lifecycle', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      {
+        method: 'thread/tokenUsage/updated',
+        params: {
+          tokenUsage: {
+            last: { inputTokens: 12_000, cachedInputTokens: 0, outputTokens: 10 },
+            total: { inputTokens: 12_000, cachedInputTokens: 0, outputTokens: 10 },
+            modelContextWindow: 128_000,
+          },
+        },
+      },
+      {
+        method: 'item/started',
+        params: {
+          threadId: 'main-thread',
+          turnId: 'compact-turn',
+          startedAtMs: 1_000,
+          item: { id: 'compact-item', type: 'contextCompaction' },
+        },
+      },
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'main-thread',
+          turnId: 'compact-turn',
+          completedAtMs: 2_500,
+          item: { id: 'compact-item', type: 'contextCompaction' },
+        },
+      },
+      { method: 'thread/compacted', params: { threadId: 'main-thread', turnId: 'compact-turn' } },
+      { method: 'turn/completed', params: { threadId: 'main-thread', turn: { id: 'compact-turn', status: 'completed' } } },
+    ]
+    const connection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+    const onItemDelta = vi.fn()
+    const onCompactionStarted = vi.fn()
+    const onCompactionCompleted = vi.fn()
+
+    const result = await streamTurnEvents(
+      connection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta, onCompactionStarted, onCompactionCompleted },
+      { compactionTrigger: 'manual' },
+    )
+
+    expect(onCompactionStarted).toHaveBeenCalledOnce()
+    expect(onCompactionStarted).toHaveBeenCalledWith('manual')
+    expect(onCompactionCompleted).toHaveBeenCalledOnce()
+    expect(onCompactionCompleted).toHaveBeenCalledWith({
+      trigger: 'manual',
+      preTokens: 12_000,
+      postTokens: 12_000,
+      durationMs: 1_500,
+    })
+    expect(onItemDelta).not.toHaveBeenCalled()
+    expect(result.items).toEqual([])
+  })
+})
+
 describe('streamTurnEvents child-thread routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()

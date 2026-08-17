@@ -29,6 +29,7 @@ export interface CodexAgentEventMapperOptions {
   emit: (event: AgentEvent) => void
   model?: string
   turnId?: string | null
+  turnKind?: 'run' | 'steer' | 'review' | 'compact'
   now?: () => number
 }
 
@@ -480,6 +481,9 @@ export function createCodexAgentEventMapper(
   let lastItemCompletedAt = startedAt
   let started = false
   let terminal = false
+  let activeCompaction: { turnId: string | null; startedAt: number; preTokens: number } | null = null
+  const completedCompactionTurns = new Set<string>()
+  const compactionTrigger: 'manual' | 'auto' = options.turnKind === 'compact' ? 'manual' : 'auto'
 
   const upsert = (item: CodexThreadItem) => {
     if (!itemMap.has(item.id)) order.push(item.id)
@@ -491,9 +495,54 @@ export function createCodexAgentEventMapper(
     options.emit({ type: 'codex_item_delta', messageId: options.messageId, phase, item })
   }
   const finishStatus = () => options.emit({ type: 'status_change', status: 'idle' })
+  const startCompaction = (params: Record<string, unknown>) => {
+    const turnId = readString(params.turnId) ?? readString(params.turn_id) ?? currentTurnId
+    if (turnId && completedCompactionTurns.has(turnId)) return
+    if (activeCompaction && (!activeCompaction.turnId || !turnId || activeCompaction.turnId === turnId)) {
+      if (!activeCompaction.turnId && turnId) {
+        activeCompaction = {
+          turnId,
+          startedAt: readNumber(params.startedAtMs ?? params.started_at_ms) ?? activeCompaction.startedAt,
+          preTokens: currentUsage?.lastInputTokens ?? activeCompaction.preTokens,
+        }
+      }
+      return
+    }
+    activeCompaction = {
+      turnId,
+      startedAt: readNumber(params.startedAtMs ?? params.started_at_ms) ?? now(),
+      preTokens: currentUsage?.lastInputTokens ?? 0,
+    }
+    options.emit({ type: 'status_indicator', indicator: 'compacting' })
+  }
+  const completeCompaction = (params: Record<string, unknown>) => {
+    const turnId = readString(params.turnId) ?? readString(params.turn_id) ?? currentTurnId
+    if (turnId && completedCompactionTurns.has(turnId)) return
+    if (!activeCompaction) startCompaction(params)
+    const current = activeCompaction
+    if (!current) return
+    const completedAt = readNumber(params.completedAtMs ?? params.completed_at_ms) ?? now()
+    const postTokens = currentUsage?.lastInputTokens
+    options.emit({
+      type: 'compact_boundary',
+      trigger: compactionTrigger,
+      preTokens: current.preTokens,
+      ...(postTokens !== undefined && postTokens > 0 ? { postTokens } : {}),
+      ...(completedAt >= current.startedAt ? { durationMs: completedAt - current.startedAt } : {}),
+      ...(compactionTrigger === 'manual' ? { messageId: options.messageId } : {}),
+    })
+    options.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+    const completedTurnId = turnId ?? current.turnId
+    if (completedTurnId) completedCompactionTurns.add(completedTurnId)
+    activeCompaction = null
+  }
   const fail = (error: string, interrupted = false) => {
     if (terminal) return
     terminal = true
+    if (activeCompaction) {
+      activeCompaction = null
+      options.emit({ type: 'status_indicator', indicator: null, compactResult: 'failed', compactError: error })
+    }
     options.emit(interrupted
       ? { type: 'message_interrupted', messageId: options.messageId }
       : { type: 'message_error', messageId: options.messageId, error })
@@ -518,6 +567,7 @@ export function createCodexAgentEventMapper(
       })
       options.emit({ type: 'status_change', status: 'streaming' })
       if (threadId) options.emit({ type: 'codex_thread_started', messageId: options.messageId, threadId })
+      if (options.turnKind === 'compact') startCompaction({})
     },
 
     apply(note) {
@@ -537,6 +587,11 @@ export function createCodexAgentEventMapper(
         case 'item/completed': {
           const raw = asRecord(params.item)
           if (!raw) break
+          if (readString(raw.type) === 'contextCompaction') {
+            if (note.method === 'item/started') startCompaction(params)
+            else completeCompaction(params)
+            break
+          }
           const previous = readString(raw.id) ? itemMap.get(readString(raw.id)!) : undefined
           if (previous?.type === 'plan' && note.method === 'item/completed') {
             emitItem('completed', previous)
@@ -644,6 +699,10 @@ export function createCodexAgentEventMapper(
           }
           break
         }
+        case 'thread/compacted': {
+          completeCompaction(params)
+          break
+        }
         case 'mcpServer/startupStatus/updated': {
           const name = readString(params.name)
           if (!name) break
@@ -684,6 +743,7 @@ export function createCodexAgentEventMapper(
             fail(result.error, true)
             break
           }
+          if (activeCompaction) completeCompaction(params)
           for (const id of order) {
             const item = itemMap.get(id)
             if (!item) continue

@@ -597,6 +597,7 @@ export async function runCodexAppServerTurn(opts: {
         emit: opts.onAgentEvent,
         model: opts.model,
         turnId,
+        turnKind,
       })
     : null
   agentEventMapper?.start(threadId)

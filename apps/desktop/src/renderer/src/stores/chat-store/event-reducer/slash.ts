@@ -170,8 +170,9 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
 
     case 'compact_boundary': {
       const compactUserId = session._pendingCompactUserId
+      const sourceMessageId = compactUserId ? event.messageId : undefined
       const msgs = compactUserId
-        ? session.messages.filter((m) => m.id !== compactUserId)
+        ? session.messages.filter((m) => m.id !== compactUserId && m.id !== sourceMessageId)
         : [...session.messages]
       let insertIdx = msgs.length
       if (!compactUserId) {

@@ -56,6 +56,9 @@ export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
+  onCompactionStarted?: (trigger: 'manual' | 'auto') => void
+  onCompactionCompleted?: (info: { trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number }) => void
+  onCompactionFailed?: (error: string) => void
   onPermissionRequest?: (request: PermissionRequest) => void
   onAskUserQuestion?: (request: AskUserQuestionRequest) => void
 }
@@ -674,7 +677,21 @@ export class CodexBackend implements SessionBackend {
       },
     })
     this.emit({ type: 'status_change', status: 'streaming' })
-    const callbacks = this.buildCallbacks()
+    const baseCallbacks = this.buildCallbacks()
+    let compactLifecycleSettled = false
+    const callbacks: CodexRunStreamCallbacks = mode === 'compact'
+      ? {
+          ...baseCallbacks,
+          onCompactionCompleted: (info) => {
+            compactLifecycleSettled = true
+            baseCallbacks.onCompactionCompleted?.(info)
+          },
+          onCompactionFailed: (error) => {
+            compactLifecycleSettled = true
+            baseCallbacks.onCompactionFailed?.(error)
+          },
+        }
+      : baseCallbacks
 
     const task = (async () => {
       try {
@@ -701,6 +718,7 @@ export class CodexBackend implements SessionBackend {
             messageId: assistantMessageId,
             cwd: resolvedCwd,
           }
+          callbacks.onCompactionStarted?.('manual')
           result = await compactCodexTurn(session, auth, projectPath, compactRequest, callbacks)
         } else {
           const codexRequest: CodexRunRequest = {
@@ -750,6 +768,9 @@ export class CodexBackend implements SessionBackend {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const isInterrupt = /interrupt|abort/i.test(message)
+        if (mode === 'compact' && !compactLifecycleSettled) {
+          callbacks.onCompactionFailed?.(message)
+        }
         if (isInterrupt) {
           this.emit({ type: 'message_interrupted', messageId: runningAssistantId })
         } else {
@@ -1080,6 +1101,21 @@ export class CodexBackend implements SessionBackend {
           outputTokens: usage.lastOutputTokens,
           codexUsage: usage,
         })
+      },
+      onCompactionStarted: () => {
+        this.emit({ type: 'status_indicator', indicator: 'compacting' })
+      },
+      onCompactionCompleted: (info) => {
+        const messageId = info.trigger === 'manual' ? this.currentMessageId ?? undefined : undefined
+        this.emit({
+          type: 'compact_boundary',
+          ...info,
+          ...(messageId ? { messageId } : {}),
+        })
+        this.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+      },
+      onCompactionFailed: (error) => {
+        this.emit({ type: 'status_indicator', indicator: null, compactResult: 'failed', compactError: error })
       },
       onPermissionRequest: (request) => {
         this.emit({ type: 'permission_request', request })

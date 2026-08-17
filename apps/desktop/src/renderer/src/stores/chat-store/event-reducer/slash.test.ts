@@ -227,6 +227,7 @@ describe('reduceSlash: compact_boundary', () => {
     session._pendingCompactUserId = 'u-pending'
     session.messages = [
       makeMessage('u-pending', { role: 'user' }),
+      makeMessage('compact-assistant', { role: 'assistant', providerId: 'codex' }),
       makeMessage('u1', { role: 'user' }),
     ]
 
@@ -234,10 +235,12 @@ describe('reduceSlash: compact_boundary', () => {
       type: 'compact_boundary',
       trigger: 'manual',
       preTokens: 5000,
+      messageId: 'compact-assistant',
     } as never)
 
     const msgs = patch.messages!
     expect(msgs.some((m) => m.id === 'u-pending')).toBe(false)
+    expect(msgs.some((m) => m.id === 'compact-assistant')).toBe(false)
     expect(msgs.some((m) => m.providerId === 'system')).toBe(true)
     expect(patch._pendingSlashCommand).toBe('')
   })

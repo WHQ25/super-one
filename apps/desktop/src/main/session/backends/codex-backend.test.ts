@@ -571,12 +571,28 @@ describe('CodexBackend send()', () => {
       assistantMessageId: 'comp_1',
       codex: { mode: 'compact' },
     })
+    service.capturedCallbacks?.onCompactionCompleted?.({
+      trigger: 'manual',
+      preTokens: 8_000,
+      postTokens: 1_200,
+      durationMs: 900,
+    })
     service.resolveRun(makeResult({ finalResponse: '' }))
     await pending
     expect(service.compactMock).toHaveBeenCalledOnce()
     expect(service.runMock).not.toHaveBeenCalled()
     const complete = events.find((e) => e.type === 'message_complete') as { metadata: { codex: { finalResponse: string } } }
     expect(complete.metadata.codex.finalResponse).toBe('Conversation compacted.')
+    expect(events).toContainEqual({ type: 'status_indicator', indicator: 'compacting' })
+    expect(events).toContainEqual({
+      type: 'compact_boundary',
+      trigger: 'manual',
+      preTokens: 8_000,
+      postTokens: 1_200,
+      durationMs: 900,
+      messageId: 'comp_1',
+    })
+    expect(events).toContainEqual({ type: 'status_indicator', indicator: null, compactResult: 'success' })
   })
 
   it('maps bypassPermissions → full-access preset', async () => {

@@ -91,4 +91,64 @@ describe('Codex AgentEvent mapper', () => {
       agentsStates: { 'child-1': { status: 'running', message: 'working' } },
     })
   })
+
+  it('maps contextCompaction lifecycle to the shared compact UI without a Codex item', () => {
+    const events: AgentEvent[] = []
+    let now = 500
+    const mapper = createCodexAgentEventMapper({
+      messageId: 'compact-message',
+      emit: (event) => events.push(event),
+      turnKind: 'compact',
+      now: () => now,
+    })
+
+    mapper.start('thread-1')
+    mapper.apply({
+      method: 'thread/tokenUsage/updated',
+      params: {
+        tokenUsage: {
+          last: { inputTokens: 9_000, cachedInputTokens: 0, outputTokens: 0 },
+          total: { inputTokens: 9_000, cachedInputTokens: 0, outputTokens: 0 },
+          modelContextWindow: 128_000,
+        },
+      },
+    })
+    now = 1_000
+    mapper.apply({
+      method: 'item/started',
+      params: {
+        turnId: 'compact-turn',
+        startedAtMs: 1_000,
+        item: { id: 'compact-item', type: 'contextCompaction' },
+      },
+    })
+    now = 2_250
+    mapper.apply({
+      method: 'item/completed',
+      params: {
+        turnId: 'compact-turn',
+        completedAtMs: 2_250,
+        item: { id: 'compact-item', type: 'contextCompaction' },
+      },
+    })
+    mapper.apply({
+      method: 'thread/compacted',
+      params: { threadId: 'thread-1', turnId: 'compact-turn' },
+    })
+
+    const compactEvents = events.filter((event) => event.type === 'compact_boundary')
+    expect(compactEvents).toEqual([{
+      type: 'compact_boundary',
+      trigger: 'manual',
+      preTokens: 9_000,
+      postTokens: 9_000,
+      durationMs: 1_250,
+      messageId: 'compact-message',
+    }])
+    expect(events.filter((event) => event.type === 'status_indicator')).toEqual([
+      { type: 'status_indicator', indicator: 'compacting' },
+      { type: 'status_indicator', indicator: null, compactResult: 'success' },
+    ])
+    expect(mapper.items()).toEqual([])
+  })
 })

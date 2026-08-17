@@ -94,6 +94,14 @@ export interface CodexRunStreamCallbacks {
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   emitForkItem?: (forkThreadId: string, phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
+  onCompactionStarted?: (trigger: 'manual' | 'auto') => void
+  onCompactionCompleted?: (info: {
+    trigger: 'manual' | 'auto'
+    preTokens: number
+    postTokens?: number
+    durationMs?: number
+  }) => void
+  onCompactionFailed?: (error: string) => void
   onPermissionRequest?: (request: PermissionRequest) => void
   onAskUserQuestion?: (request: AskUserQuestionRequest) => void
   onMcpServerStatus?: (servers: CodexMcpServerStartup[]) => void
@@ -1495,6 +1503,7 @@ export async function streamTurnEvents(
   runtime?: {
     notificationInbox?: NotificationInbox | null
     connectionId?: string | null
+    compactionTrigger?: 'manual' | 'auto'
   },
 ): Promise<{ threadId: string | null; turnId?: string; usage: CodexUsageInfo | null; items: CodexThreadItem[] }> {
   const streamStartedAt = Date.now()
@@ -1516,6 +1525,46 @@ export async function streamTurnEvents(
   let usage: CodexUsageInfo | null = null
   let turnCompleted = false
   let lastTurnItemCompletedAt = Date.now()
+  let activeCompaction: { turnId: string | null; startedAt: number; preTokens: number } | null = null
+  const completedCompactionTurns = new Set<string>()
+  const compactionTrigger = runtime?.compactionTrigger ?? 'auto'
+
+  const startCompaction = (params: Record<string, unknown>): void => {
+    const turnId = readNotificationTurnId(params)
+    if (turnId && completedCompactionTurns.has(turnId)) return
+    if (activeCompaction?.turnId === turnId) return
+    activeCompaction = {
+      turnId,
+      startedAt: readNumber(params.startedAtMs ?? params.started_at_ms) ?? Date.now(),
+      preTokens: usage?.lastInputTokens ?? 0,
+    }
+    callbacks?.onCompactionStarted?.(compactionTrigger)
+  }
+
+  const completeCompaction = (params: Record<string, unknown>): void => {
+    const turnId = readNotificationTurnId(params)
+    if (turnId && completedCompactionTurns.has(turnId)) return
+    if (!activeCompaction) startCompaction(params)
+    const current = activeCompaction
+    if (!current) return
+    const completedAt = readNumber(params.completedAtMs ?? params.completed_at_ms) ?? Date.now()
+    const postTokens = usage?.lastInputTokens
+    callbacks?.onCompactionCompleted?.({
+      trigger: compactionTrigger,
+      preTokens: current.preTokens,
+      ...(postTokens !== undefined && postTokens > 0 ? { postTokens } : {}),
+      ...(completedAt >= current.startedAt ? { durationMs: completedAt - current.startedAt } : {}),
+    })
+    const completedTurnId = turnId ?? current.turnId
+    if (completedTurnId) completedCompactionTurns.add(completedTurnId)
+    activeCompaction = null
+  }
+
+  const failCompaction = (error: string): void => {
+    if (!activeCompaction) return
+    activeCompaction = null
+    callbacks?.onCompactionFailed?.(error)
+  }
 
   const subscribedChildThreads = new Set<string>()
   const childItemMaps = new Map<string, { order: string[]; map: Map<string, CodexThreadItem> }>()
@@ -1757,7 +1806,13 @@ export async function streamTurnEvents(
     Promise.race([readNextNotification(), aborted])
 
   while (!turnCompleted) {
-    const notification = await nextNotification()
+    let notification: AppServerNotification
+    try {
+      notification = await nextNotification()
+    } catch (error) {
+      failCompaction(error instanceof Error ? error.message : String(error))
+      throw error
+    }
     const { method, params } = notification
     if (process.env.NODE_ENV === 'development') {
       trace('codex.raw', method, {
@@ -1940,6 +1995,12 @@ export async function streamTurnEvents(
         const rawItem = asRecord(params.item)
         if (!rawItem) break
 
+        if (readString(rawItem.type) === 'contextCompaction') {
+          if (method === 'item/started') startCompaction(params)
+          else completeCompaction(params)
+          break
+        }
+
         const itemId = readString(rawItem.id)
         const previous = itemId ? itemMap.get(itemId) : undefined
         if (previous?.type === 'plan' && method === 'item/completed') {
@@ -2121,6 +2182,11 @@ export async function streamTurnEvents(
         break
       }
 
+      case 'thread/compacted': {
+        completeCompaction(params)
+        break
+      }
+
       case 'mcpServer/startupStatus/updated': {
         const name = readString(params.name)
         if (!name) break
@@ -2137,18 +2203,24 @@ export async function streamTurnEvents(
       case 'error': {
         const willRetry = readBoolean(params.willRetry) ?? false
         if (willRetry) break
-        throw new Error(extractTurnErrorMessage(params))
+        const message = extractTurnErrorMessage(params)
+        failCompaction(message)
+        throw new Error(message)
       }
 
       case 'turn/completed': {
         const completedTurn = asRecord(params.turn)
         const status = readString(completedTurn?.status) ?? 'completed'
         if (status === 'failed') {
-          throw new Error(extractTurnErrorMessage(completedTurn?.error ?? params))
+          const message = extractTurnErrorMessage(completedTurn?.error ?? params)
+          failCompaction(message)
+          throw new Error(message)
         }
         if (status === 'interrupted') {
+          failCompaction('Codex run interrupted')
           throw new Error('Codex run interrupted')
         }
+        if (activeCompaction) completeCompaction(params)
         for (const id of itemOrder) {
           const item = itemMap.get(id)
           if (!item) continue
@@ -2446,6 +2518,7 @@ export async function compactCodexTurn(
         return streamTurnEvents(connection, session, null, controller, callbacks, {
           notificationInbox,
           connectionId,
+          compactionTrigger: 'manual',
         })
       },
     )

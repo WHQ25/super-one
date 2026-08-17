@@ -84,6 +84,7 @@ describe('getReadableAssetRoots', () => {
       '/private/tmp',
       '/Users/alice/.codex/.tmp/plugins',
       '/Users/alice/.codex/.tmp/bundled-marketplaces',
+      '/Users/alice/.codex/generated_images',
       '/Users/alice/.cache/codex-runtimes',
       '/Users/alice/.grok/sessions',
       '/Users/alice/.claude/projects',
@@ -96,6 +97,7 @@ describe('getReadableAssetRoots', () => {
       '/private/tmp',
       '/Users/alice/.codex/.tmp/plugins',
       '/Users/alice/.codex/.tmp/bundled-marketplaces',
+      '/Users/alice/.codex/generated_images',
       '/Users/alice/.cache/codex-runtimes',
       '/Users/alice/.grok/sessions',
       '/Users/alice/.claude/projects',
@@ -111,5 +113,15 @@ describe('getReadableAssetRoots', () => {
     expect(isPathWithinAllowed(grokImage, roots)).toBe(true)
     expect(isPathWithinAllowed(grokVideo, roots)).toBe(true)
     expect(isPathWithinAllowed('/Users/alice/.ssh/id_rsa', roots)).toBe(false)
+  })
+
+  it('allows generated Codex images without exposing other Codex data', () => {
+    const roots = getReadableAssetRoots(['/projects/myapp'], { homeDir: '/Users/alice', tmpDir: '/tmp' })
+    const generatedImage =
+      '/Users/alice/.codex/generated_images/session-1/generated-image.png'
+
+    expect(isPathWithinAllowed(generatedImage, roots)).toBe(true)
+    expect(isPathWithinAllowed('/Users/alice/.codex/auth.json', roots)).toBe(false)
+    expect(isPathWithinAllowed('/Users/alice/.codex/config.toml', roots)).toBe(false)
   })
 })

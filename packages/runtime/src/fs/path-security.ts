@@ -252,6 +252,10 @@ export function getReadableAssetRoots(
   const extraRoots = [
     join(homeDir, '.codex', '.tmp', 'plugins'),
     join(homeDir, '.codex', '.tmp', 'bundled-marketplaces'),
+    // Built-in image generation persists completed assets here. Allow only the
+    // generated media subtree rather than all of ~/.codex, which may contain
+    // credentials and other private configuration.
+    join(homeDir, '.codex', 'generated_images'),
     join(homeDir, '.cache', 'codex-runtimes'),
     // Grok Imagine / video tools write under ~/.grok/sessions/<cwd>/<session>/images|videos.
     // Chat gallery streams those via media-server (and local-file fallback); without this

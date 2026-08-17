@@ -1,4 +1,4 @@
-import type { CapabilityTask, EffortLevel, ProviderModelEnv } from '../agent-types'
+import type { CapabilityTask, DiscoveredOpenAiModel, EffortLevel, ProviderModelEnv } from '../agent-types'
 import type { WireProtocol } from './protocols'
 
 export type PlanAuth = 'api-key' | 'oauth' | 'aws' | 'gcp'
@@ -51,7 +51,14 @@ export interface Platform {
   brand: string // 'zhipu' — icon + display grouping only
   name: string // 'GLM (CN)'
   description?: string
+  /** Custom platforms: site favicon as a data URL. Builtins leave this unset. */
+  icon?: string
   catalogProviderId?: string // link into @opencode-ai/models
+  /**
+   * Custom platforms: last `/v1/models` probe result. Written at create time and replaced
+   * when the user refreshes discovery. Builtins leave this unset.
+   */
+  discoveredModels?: DiscoveredOpenAiModel[]
   plans: Plan[]
 }
 

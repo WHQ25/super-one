@@ -8,7 +8,9 @@ import {
   flattenDiscoveredTasks,
   mergeDiscovered,
   parseNewApiPricing,
+  parseOneApiRatioPricing,
   parseOpenAiModelsList,
+  parseRelayPricing,
   type DiscoveredModel,
 } from './relay-discovery'
 
@@ -35,10 +37,10 @@ describe('parseNewApiPricing', () => {
     ])
   })
 
-  it('unions multiple tasks for a model spanning several endpoint types', () => {
+  it('does not invent an image task from image-generation when the model is a chat id', () => {
     const json = { data: [{ model_name: 'gpt-5', supported_endpoint_types: ['openai', 'image-generation'] }] }
     expect(parseNewApiPricing(json)).toEqual([
-      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat', 'image'] } },
+      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'] } },
     ])
   })
 
@@ -56,11 +58,11 @@ describe('parseNewApiPricing', () => {
     const json = {
       data: [
         { model_name: 'gpt-5', supported_endpoint_types: ['openai'] },
-        { model_name: 'gpt-5', supported_endpoint_types: ['image-generation'] },
+        { model_name: 'gpt-5', supported_endpoint_types: ['anthropic'] },
       ],
     }
     expect(parseNewApiPricing(json)).toEqual([
-      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat', 'image'] } },
+      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'], anthropic: ['chat'] } },
     ])
   })
 
@@ -84,6 +86,85 @@ describe('parseNewApiPricing', () => {
     const json = { data: [{ supported_endpoint_types: ['openai'] }, { model_name: 'gpt-5', supported_endpoint_types: ['openai'] }] }
     expect(parseNewApiPricing(json)).toEqual([{ id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'] } }])
   })
+
+  it('rides openai-video when the gateway actually exposes that type', () => {
+    const json = {
+      data: [{ model_name: 'doubao-seedance-1-5-pro', supported_endpoint_types: ['openai-video'] }],
+    }
+    expect(parseNewApiPricing(json)).toEqual([
+      { id: 'doubao-seedance-1-5-pro', name: undefined, byFamily: { openai: ['video'] } },
+    ])
+  })
+
+  it('falls back to newapi-video when a video id is only listed on chat wires', () => {
+    const json = {
+      data: [{
+        model_name: 'doubao-seedance-2-0-260128',
+        supported_endpoint_types: ['openai', 'anthropic', 'gemini', 'openai-response'],
+      }],
+    }
+    expect(parseNewApiPricing(json)).toEqual([
+      { id: 'doubao-seedance-2-0-260128', name: undefined, byFamily: { newapi: ['video'] } },
+    ])
+  })
+
+  it('classifies a row with no endpoint types via the model id', () => {
+    const json = { data: [{ model_name: 'claude-sonnet-4-5' }] }
+    expect(parseNewApiPricing(json)).toEqual([
+      { id: 'claude-sonnet-4-5', name: undefined, byFamily: { anthropic: ['chat'] } },
+    ])
+  })
+
+  it('uses owner_by when the model id is a custom alias', () => {
+    const json = { data: [{ model_name: 'sonnet-alias', owner_by: 'anthropic' }] }
+    expect(parseNewApiPricing(json)).toEqual([
+      { id: 'sonnet-alias', name: undefined, byFamily: { anthropic: ['chat'] } },
+    ])
+  })
+
+  it('uses tags and output_modalities as extra capability hints', () => {
+    const json = {
+      data: [
+        { model_name: 'gpt-image-alias', owner_by: 'openai', tags: '图像', output_modalities: ['image'] },
+        { model_name: 'dreamina-seedance-2', tags: '视频' },
+      ],
+    }
+    expect(parseNewApiPricing(json)).toEqual([
+      { id: 'gpt-image-alias', name: undefined, byFamily: { openai: ['image'] } },
+      { id: 'dreamina-seedance-2', name: undefined, byFamily: { newapi: ['video'] } },
+    ])
+  })
+})
+
+describe('parseOneApiRatioPricing', () => {
+  it('reads model_ratio keys and classifies them', () => {
+    const json = {
+      data: {
+        model_ratio: { 'gpt-4': 15, 'claude-3-opus': 75, 'gemini-2.5-pro': 1 },
+        completion_ratio: { 'gpt-4': 2 },
+      },
+    }
+    expect(parseOneApiRatioPricing(json)).toEqual([
+      { id: 'gpt-4', byFamily: { openai: ['chat'] } },
+      { id: 'claude-3-opus', byFamily: { anthropic: ['chat'] } },
+      { id: 'gemini-2.5-pro', byFamily: { google: ['chat'] } },
+    ])
+  })
+
+  it('returns null for the NewAPI array shape (caller uses parseNewApiPricing)', () => {
+    expect(parseOneApiRatioPricing({ data: [{ model_name: 'gpt-5' }] })).toBeNull()
+  })
+})
+
+describe('parseRelayPricing', () => {
+  it('prefers the NewAPI array shape and falls back to One API model_ratio', () => {
+    expect(parseRelayPricing({ data: [{ model_name: 'gpt-5', supported_endpoint_types: ['openai'] }] })).toEqual([
+      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'] } },
+    ])
+    expect(parseRelayPricing({ data: { model_ratio: { 'gpt-4': 1 } } })).toEqual([
+      { id: 'gpt-4', byFamily: { openai: ['chat'] } },
+    ])
+  })
 })
 
 describe('parseOpenAiModelsList', () => {
@@ -104,7 +185,7 @@ describe('parseOpenAiModelsList', () => {
       ],
     }
     expect(parseOpenAiModelsList(json)).toEqual([
-      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat', 'image'] } },
+      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'] } },
       { id: 'claude-opus', name: undefined, byFamily: { anthropic: ['chat'] } },
       { id: 'gemini-pro', name: undefined, byFamily: { google: ['chat'] } },
     ])
@@ -138,11 +219,84 @@ describe('parseOpenAiModelsList', () => {
     ])
   })
 
-  it('prefers supported_endpoint_types over the catalog index when both are present', () => {
+  it('uses catalog tasks and only consults endpoint types for the wire', () => {
     const catalogIndex: Map<string, CapabilityTask[]> = new Map([['gpt-5', ['image']]])
     const json = { data: [{ id: 'gpt-5', supported_endpoint_types: ['openai'] }] }
     expect(parseOpenAiModelsList(json, catalogIndex)).toEqual([
+      { id: 'gpt-5', name: undefined, byFamily: { openai: ['image'] } },
+    ])
+  })
+
+  it('routes Claude / Gemini ids to their families when the list has no endpoint types (Sub2API)', () => {
+    const json = {
+      data: [{ id: 'claude-sonnet-4-5' }, { id: 'gemini-2.5-pro' }, { id: 'gpt-5' }],
+    }
+    expect(parseOpenAiModelsList(json)).toEqual([
+      { id: 'claude-sonnet-4-5', name: undefined, byFamily: { anthropic: ['chat'] } },
+      { id: 'gemini-2.5-pro', name: undefined, byFamily: { google: ['chat'] } },
       { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'] } },
+    ])
+  })
+
+  it('puts a Gemini image model on the openai image wire when types are openai-only', () => {
+    const json = {
+      data: [{ id: 'gemini-3.1-flash-image', supported_endpoint_types: ['openai'] }],
+    }
+    expect(parseOpenAiModelsList(json)).toEqual([
+      { id: 'gemini-3.1-flash-image', name: undefined, byFamily: { openai: ['image'] } },
+    ])
+  })
+
+  it('puts a Gemini image model on google when the gateway actually exposes gemini', () => {
+    const json = {
+      data: [{ id: 'gemini-3.1-flash-image', supported_endpoint_types: ['gemini'] }],
+    }
+    expect(parseOpenAiModelsList(json)).toEqual([
+      { id: 'gemini-3.1-flash-image', name: undefined, byFamily: { google: ['image'] } },
+    ])
+  })
+
+  it('classifies a Gemini image id as google image when the list has no endpoint types', () => {
+    const json = { data: [{ id: 'gemini-3.1-flash-image' }] }
+    expect(parseOpenAiModelsList(json)).toEqual([
+      { id: 'gemini-3.1-flash-image', name: undefined, byFamily: { google: ['image'] } },
+    ])
+  })
+
+  it('uses official catalog tasks and openai types together (Nano Banana via OpenAI wire)', () => {
+    const catalogIndex: Map<string, CapabilityTask[]> = new Map([
+      ['gemini-3.1-flash-image', ['image']],
+    ])
+    const json = { data: [{ id: 'gemini-3.1-flash-image', supported_endpoint_types: ['openai'] }] }
+    expect(parseOpenAiModelsList(json, catalogIndex)).toEqual([
+      { id: 'gemini-3.1-flash-image', name: undefined, byFamily: { openai: ['image'] } },
+    ])
+  })
+
+  it('does not put Seedance video onto chat families even when types list them all', () => {
+    const json = {
+      data: [{
+        id: 'doubao-seedance-2-0-260128',
+        owned_by: 'newapi',
+        supported_endpoint_types: ['openai', 'openai-response', 'anthropic', 'gemini'],
+      }],
+    }
+    expect(parseOpenAiModelsList(json)).toEqual([
+      { id: 'doubao-seedance-2-0-260128', name: undefined, byFamily: { newapi: ['video'] } },
+    ])
+  })
+
+  it('rides openai-video when the list actually tags Seedance as openai-video', () => {
+    const json = { data: [{ id: 'doubao-seedance-1-5-pro', supported_endpoint_types: ['openai-video'] }] }
+    expect(parseOpenAiModelsList(json)).toEqual([
+      { id: 'doubao-seedance-1-5-pro', name: undefined, byFamily: { openai: ['video'] } },
+    ])
+  })
+
+  it('uses owned_by from /v1/models when the id is a renamed alias', () => {
+    const json = { data: [{ id: 'cc-sonnet', owned_by: 'anthropic', object: 'model' }] }
+    expect(parseOpenAiModelsList(json)).toEqual([
+      { id: 'cc-sonnet', name: undefined, byFamily: { anthropic: ['chat'] } },
     ])
   })
 })

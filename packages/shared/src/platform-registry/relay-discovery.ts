@@ -3,6 +3,13 @@ import type { CatalogModel, ModelCatalog } from '../model-catalog-types'
 import { MODEL_TASK_ORDER, modelTasks } from '../model-tasks'
 import type { ProtocolFamily } from './protocols'
 import { FAMILY_TASKS } from './protocols'
+import {
+  classifyModelById,
+  fallbackByFamily,
+  familyFromOwner,
+  tasksFromModalities,
+  tasksFromTags,
+} from './relay-identify'
 
 export interface DiscoveredModel {
   id: string
@@ -13,10 +20,21 @@ export interface DiscoveredModel {
 export const MAX_DISCOVERED_MODELS = 500
 
 /**
- * NewAPI/one-api `supported_endpoint_types` → the protocol family + capability task it proves.
- * `jina-rerank` / `embeddings` have no SuperOne CapabilityTask (chat/image/video/tts/asr) and are
- * omitted — a model reporting only those is dropped entirely by parseNewApiPricing.
+ * NewAPI/one-api `supported_endpoint_types` → the wire family that type speaks.
+ * Tasks are NOT inferred here — they come from the official catalog / model id.
+ * `jina-rerank` / `embeddings` have no SuperOne family and are ignored.
  */
+export const ENDPOINT_TYPE_FAMILY: Record<string, ProtocolFamily> = {
+  openai: 'openai',
+  'openai-response': 'openai',
+  'openai-response-compact': 'openai',
+  anthropic: 'anthropic',
+  gemini: 'google',
+  'image-generation': 'openai',
+  'openai-video': 'openai',
+}
+
+/** @deprecated Use ENDPOINT_TYPE_FAMILY + catalog tasks. Kept so older callers still typecheck. */
 export const ENDPOINT_TYPE_MAP: Record<string, { family: ProtocolFamily; task: CapabilityTask }> = {
   openai: { family: 'openai', task: 'chat' },
   'openai-response': { family: 'openai', task: 'chat' },
@@ -129,14 +147,114 @@ export function buildCatalogModelIndex(catalog: ModelCatalog): Map<string, Catal
   return index
 }
 
-function byFamilyFromEndpointTypes(endpointTypes: unknown): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
-  const byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
-  if (!Array.isArray(endpointTypes)) return byFamily
-  for (const et of endpointTypes) {
-    const mapped = typeof et === 'string' ? ENDPOINT_TYPE_MAP[et] : undefined
-    if (mapped) addTask(byFamily, mapped.family, mapped.task)
+function hasExplicitEndpointTypes(endpointTypes: unknown): boolean {
+  return Array.isArray(endpointTypes) && endpointTypes.length > 0
+}
+
+function endpointTypeList(endpointTypes: unknown): string[] {
+  if (!Array.isArray(endpointTypes)) return []
+  return endpointTypes.filter((t): t is string => typeof t === 'string' && t.length > 0)
+}
+
+function declaredFamilies(types: string[]): Set<ProtocolFamily> {
+  const out = new Set<ProtocolFamily>()
+  for (const t of types) {
+    const family = ENDPOINT_TYPE_FAMILY[t]
+    if (family) out.add(family)
   }
-  return byFamily
+  return out
+}
+
+/**
+ * Which wires from `types` can carry `task`. Order is preference (first wins for
+ * single-wire tasks). Chat may ride every listed chat wire.
+ */
+function familiesForTask(task: CapabilityTask, types: ReadonlySet<string>): ProtocolFamily[] {
+  switch (task) {
+    case 'chat': {
+      const out: ProtocolFamily[] = []
+      if (types.has('openai') || types.has('openai-response') || types.has('openai-response-compact')) out.push('openai')
+      if (types.has('anthropic')) out.push('anthropic')
+      if (types.has('gemini')) out.push('google')
+      return out
+    }
+    case 'image':
+      if (types.has('image-generation') || types.has('openai')) return ['openai']
+      if (types.has('gemini')) return ['google']
+      return []
+    case 'video':
+      if (types.has('openai-video')) return ['openai']
+      return []
+    case 'tts':
+    case 'asr':
+      if (types.has('openai')) return ['openai']
+      return []
+  }
+}
+
+function tasksForModel(
+  id: string,
+  hints: {
+    tags?: string
+    inputModalities?: unknown
+    outputModalities?: unknown
+    catalogTasks?: CapabilityTask[]
+  },
+): CapabilityTask[] {
+  if (hints.catalogTasks && hints.catalogTasks.length > 0) {
+    return MODEL_TASK_ORDER.filter((t) => hints.catalogTasks!.includes(t))
+  }
+  const fromId = flattenDiscoveredTasks(classifyModelById(id))
+  if (fromId.length > 0) return fromId
+  const fromHints = [...tasksFromTags(hints.tags), ...tasksFromModalities(hints.inputModalities, hints.outputModalities)]
+  if (fromHints.length > 0) return MODEL_TASK_ORDER.filter((t) => fromHints.includes(t))
+  return ['chat']
+}
+
+function stringHint(row: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const v = row[key]
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return undefined
+}
+
+/**
+ * Tasks come from the official catalog (then id / tags). `supported_endpoint_types`
+ * only decide which family wire each task rides. When types cannot carry a video
+ * task, fall back to newapi-video (Seedance/Kling on a chat-only type list).
+ */
+function resolveByFamily(
+  id: string,
+  hints: {
+    endpointTypes?: unknown
+    ownedBy?: string
+    tags?: string
+    inputModalities?: unknown
+    outputModalities?: unknown
+    catalogTasks?: CapabilityTask[]
+  },
+): Partial<Record<ProtocolFamily, CapabilityTask[]>> | null {
+  const types = endpointTypeList(hints.endpointTypes)
+  const tasks = tasksForModel(id, hints)
+
+  if (types.length === 0) {
+    return fallbackByFamily(id, tasks, familyFromOwner(hints.ownedBy))
+  }
+
+  if (declaredFamilies(types).size === 0) return null
+
+  const typeSet = new Set(types)
+  const byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
+  for (const task of tasks) {
+    const families = familiesForTask(task, typeSet)
+    if (families.length === 0) {
+      if (task === 'video') addTask(byFamily, 'newapi', 'video')
+      continue
+    }
+    for (const family of families) addTask(byFamily, family, task)
+  }
+  return Object.keys(byFamily).length > 0 ? byFamily : null
 }
 
 function mergeById(models: DiscoveredModel[]): DiscoveredModel[] {
@@ -184,7 +302,7 @@ export function sanitizeDiscoveredByFamily(
  * embeddings) are dropped; duplicate `model_name` rows (one per billing channel) are merged, unioning
  * their capabilities.
  */
-export function parseNewApiPricing(json: unknown): DiscoveredModel[] | null {
+export function parseNewApiPricing(json: unknown, catalogIndex?: Map<string, CapabilityTask[]>): DiscoveredModel[] | null {
   if (!json || typeof json !== 'object') return null
   const data = (json as Record<string, unknown>).data
   if (!Array.isArray(data)) return null
@@ -195,20 +313,51 @@ export function parseNewApiPricing(json: unknown): DiscoveredModel[] | null {
     const row = entry as Record<string, unknown>
     const id = row.model_name
     if (typeof id !== 'string' || !id) continue
-    const byFamily = byFamilyFromEndpointTypes(row.supported_endpoint_types)
-    if (Object.keys(byFamily).length === 0) continue
-    const name = typeof row.description === 'string' && row.description ? row.description : undefined
+    const byFamily = resolveByFamily(id, {
+      endpointTypes: row.supported_endpoint_types,
+      ownedBy: stringHint(row, 'owner_by', 'owned_by', 'vendor_name'),
+      tags: stringHint(row, 'tags'),
+      inputModalities: row.input_modalities,
+      outputModalities: row.output_modalities,
+      catalogTasks: catalogIndex?.get(normalizeModelId(id)),
+    })
+    if (!byFamily || Object.keys(byFamily).length === 0) continue
+    const name = stringHint(row, 'description', 'name')
     models.push({ id, name, byFamily })
   }
   return mergeById(models)
 }
 
 /**
- * Parse OpenAI-compatible `GET {base}/v1/models` (NewAPI Bearer form). When NewAPI attaches
- * `supported_endpoint_types`, those map to openai/anthropic/google families. Plain OpenAI-compatible
- * gateways without that field fall back to a `catalogIndex` lookup (see `buildCatalogTaskIndex`) —
- * matching the discovered id against models.dev's real capability data — and only default to
- * openai/chat when no catalog match exists either.
+ * Original One API `GET {site}/api/pricing` object form (`data.model_ratio` is a name→multiplier
+ * map, no `supported_endpoint_types`). Returns `null` when the shape is not that object.
+ */
+export function parseOneApiRatioPricing(json: unknown): DiscoveredModel[] | null {
+  if (!json || typeof json !== 'object') return null
+  const data = (json as Record<string, unknown>).data
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const ratio = (data as Record<string, unknown>).model_ratio
+  if (!ratio || typeof ratio !== 'object' || Array.isArray(ratio)) return null
+
+  const models: DiscoveredModel[] = []
+  for (const id of Object.keys(ratio as Record<string, unknown>)) {
+    if (!id) continue
+    const byFamily = fallbackByFamily(id)
+    if (Object.keys(byFamily).length === 0) continue
+    models.push({ id, byFamily })
+  }
+  return mergeById(models)
+}
+
+/** New API array first; One API `model_ratio` object as fallback. `null` when neither matches. */
+export function parseRelayPricing(json: unknown, catalogIndex?: Map<string, CapabilityTask[]>): DiscoveredModel[] | null {
+  return parseNewApiPricing(json, catalogIndex) ?? parseOneApiRatioPricing(json)
+}
+
+/**
+ * Parse OpenAI-compatible `GET {base}/v1/models` (NewAPI Bearer form).
+ * Tasks come from `catalogIndex` (models.dev) then id heuristics; `supported_endpoint_types`
+ * only choose which family wire each task rides.
  */
 export function parseOpenAiModelsList(json: unknown, catalogIndex?: Map<string, CapabilityTask[]>): DiscoveredModel[] | null {
   if (!json || typeof json !== 'object') return null
@@ -221,12 +370,16 @@ export function parseOpenAiModelsList(json: unknown, catalogIndex?: Map<string, 
     const row = entry as Record<string, unknown>
     const id = row.id
     if (typeof id !== 'string' || !id) continue
-    let byFamily = byFamilyFromEndpointTypes(row.supported_endpoint_types)
-    if (Object.keys(byFamily).length === 0) {
-      const catalogTasks = catalogIndex?.get(normalizeModelId(id))
-      byFamily = { openai: catalogTasks && catalogTasks.length > 0 ? catalogTasks : ['chat'] }
-    }
-    const name = typeof row.name === 'string' && row.name ? row.name : undefined
+    const byFamily = resolveByFamily(id, {
+      endpointTypes: row.supported_endpoint_types,
+      ownedBy: stringHint(row, 'owned_by', 'owner_by', 'ownedBy'),
+      tags: stringHint(row, 'tags'),
+      inputModalities: row.input_modalities,
+      outputModalities: row.output_modalities,
+      catalogTasks: catalogIndex?.get(normalizeModelId(id)),
+    })
+    if (!byFamily || Object.keys(byFamily).length === 0) continue
+    const name = stringHint(row, 'name', 'display_name', 'description')
     models.push({ id, name, byFamily })
   }
   return mergeById(models)

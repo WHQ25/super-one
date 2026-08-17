@@ -2377,7 +2377,21 @@ export interface ProviderEndpointTestResponse {
 }
 
 /** Protocol families a discovered relay model can be reached over (mirrors platform-registry ProtocolFamily). */
-export type DiscoveredProtocolFamily = 'anthropic' | 'openai' | 'google'
+export type DiscoveredProtocolFamily = 'anthropic' | 'openai' | 'google' | 'newapi'
+
+/** Opt-in extra wires the discover pass can turn on (Codex Responses, etc.). */
+export type DiscoveredExtraProtocol = 'openai-responses'
+
+/**
+ * Identified relay/aggregator lineage for a custom provider's site root.
+ * `openai-compatible` is the fallback when nothing distinctive matched.
+ */
+export type RelayKind = 'new-api' | 'one-api' | 'sub2api' | 'openai-compatible'
+
+export interface RelayFingerprint {
+  kind: RelayKind
+  name?: string
+}
 
 /**
  * A model discovered on a relay/aggregator (e.g. NewAPI OpenAI-format `/v1/models` + optional `/api/pricing`).
@@ -2394,6 +2408,8 @@ export interface DiscoverModelsResult {
   models: DiscoveredOpenAiModel[]
   truncated: boolean
   sources: { pricing: 'ok' | 'unavailable'; modelsList: 'ok' | 'unavailable' }
+  extras?: DiscoveredExtraProtocol[]
+  relay?: RelayFingerprint
 }
 
 export interface CodexRunRequest {
@@ -2636,6 +2652,7 @@ export const AgentIpcChannels = {
   OPEN_TMP_FOLDER: 'app:open-tmp-folder',
   CACHE_IMAGE: 'app:cache-image',
   RESOLVE_FAVICON: 'app:resolve-favicon',
+  RESOLVE_SITE_IDENTITY: 'app:resolve-site-identity',
   CACHE_FAVICON: 'app:cache-favicon',
   CLOSE_PROJECT: 'app:close-project',
   SETUP_CHECK_CLAUDE: 'app:setup-check-claude',

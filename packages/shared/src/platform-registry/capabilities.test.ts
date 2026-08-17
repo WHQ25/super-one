@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyCapabilitiesToPlan, capabilityEndpoints, planCapabilities } from './capabilities'
+import { applyCapabilitiesToPlan, capabilityEndpoints, planCapabilities, rebaseEndpoints } from './capabilities'
 import { customPlatformEndpoints } from './protocols'
 import type { Plan } from './types'
 
@@ -54,5 +54,23 @@ describe('plan capability projection', () => {
     const endpoints = capabilityEndpoints({ families: ['anthropic'], tasks: {}, extras: {} }, 'https://relay.example.com')
     expect(endpoints).toHaveLength(1)
     expect(endpoints[0].protocols).toEqual(['anthropic-messages'])
+  })
+
+  it('recovers the site root from an openai-only plan (not the /v1 family URL)', () => {
+    const plan = planOf(customPlatformEndpoints({ openai: ['chat'] }, 'https://relay.example.com'))
+    expect(plan.endpoints[0].baseUrl).toBe('https://relay.example.com/v1')
+    expect(planCapabilities(plan).baseUrl).toBe('https://relay.example.com')
+  })
+
+  it('rebases every family URL from a new site root and keeps models', () => {
+    const endpoints = customPlatformEndpoints(
+      { anthropic: ['chat'], openai: ['chat'] },
+      'https://old.example.com',
+    ).map((e) => (e.id === 'openai' ? { ...e, models: [{ id: 'gpt-5', tasks: ['chat' as const] }] } : e))
+
+    const next = rebaseEndpoints(endpoints, 'https://new.example.com')
+    expect(next.find((e) => e.id === 'openai')?.baseUrl).toBe('https://new.example.com/v1')
+    expect(next.find((e) => e.id === 'anthropic')?.baseUrl).toBe('https://new.example.com')
+    expect(next.find((e) => e.id === 'openai')?.models).toEqual([{ id: 'gpt-5', tasks: ['chat'] }])
   })
 })

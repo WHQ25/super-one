@@ -24,6 +24,14 @@ describe('modelTasks', () => {
     expect(modelTasks(model(['text'], ['image']))).toEqual(['image'])
   })
 
+  it('does not treat Nano Banana-style text+image output as chat', () => {
+    expect(modelTasks(model(['text', 'image'], ['text', 'image']))).toEqual(['image'])
+  })
+
+  it('does not treat a video generator that also emits text as chat', () => {
+    expect(modelTasks(model(['text'], ['text', 'video']))).toEqual(['video'])
+  })
+
   it('classifies a video generator as video', () => {
     expect(modelTasks(model(['text'], ['video']))).toEqual(['video'])
   })

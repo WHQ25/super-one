@@ -18,6 +18,7 @@ export * from './types'
 export * from './capabilities'
 export * from './merge'
 export * from './relay-discovery'
+export * from './relay-identify'
 export * from './effective-endpoints'
 export { BUILTIN_PLATFORMS } from './builtin'
 

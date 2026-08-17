@@ -9,6 +9,7 @@ import {
   type ProtocolFamily,
   type WireProtocol,
 } from './protocols'
+import { relaySiteRoot } from './relay-identify'
 import type { Plan, ServiceEndpoint } from './types'
 
 /**
@@ -43,7 +44,7 @@ export function planCapabilities(plan: Plan): PlanCapabilities & { baseUrl: stri
     tasks[family] = [...(tasks[family] ?? []), ...picked.filter((t) => !tasks[family]?.includes(t))]
     const pickedExtras = FAMILY_EXTRA_PROTOCOLS[family].filter((p) => endpoint.protocols.includes(p))
     if (pickedExtras.length > 0) extras[family] = pickedExtras
-    if (!baseUrl) baseUrl = endpoint.baseUrl
+    if (!baseUrl) baseUrl = relaySiteRoot(endpoint.baseUrl) || endpoint.baseUrl
   }
   return { families: PROTOCOL_FAMILIES.filter((f) => families.includes(f)), tasks, extras, baseUrl }
 }
@@ -77,4 +78,11 @@ export function applyCapabilitiesToPlan(plan: Plan, caps: PlanCapabilities, base
     if (prev.models) next.models = prev.models
     return next
   })
+}
+
+/** Rebuild every family URL from a shared site root, keeping protocols / models / defaults. */
+export function rebaseEndpoints(endpoints: ServiceEndpoint[], baseUrl: string): ServiceEndpoint[] {
+  if (endpoints.length === 0) return endpoints
+  const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints }
+  return applyCapabilitiesToPlan(plan, planCapabilities(plan), baseUrl)
 }

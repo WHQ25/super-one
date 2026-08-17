@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   cloneEndpoints,
   effectiveEndpoints,
+  ENABLE_TOOL_SEARCH_ENV,
   foldOverridesIntoEndpoints,
   isCustomPlatform,
+  withCustomAnthropicDefaults,
 } from './effective-endpoints'
 import type { Plan, Platform, ServiceEndpoint } from './types'
 
@@ -55,11 +57,13 @@ describe('effectiveEndpoints', () => {
     expect(effectiveEndpoints(builtin, plan, { endpoints: [anthropic] })).toEqual(plan.endpoints)
   })
 
-  it('prefers credential.endpoints for custom platforms', () => {
+  it('prefers credential.endpoints for custom platforms and defaults tool search on', () => {
     const keyOnly: ServiceEndpoint[] = [
       { id: 'anthropic', baseUrl: 'https://key-only', protocols: ['anthropic-messages'] },
     ]
-    expect(effectiveEndpoints(customPlatform, plan, { endpoints: keyOnly })).toEqual(keyOnly)
+    expect(effectiveEndpoints(customPlatform, plan, { endpoints: keyOnly })).toEqual(
+      withCustomAnthropicDefaults(keyOnly),
+    )
   })
 
   it('falls back to plan + overrides when custom key has no endpoints yet', () => {
@@ -68,6 +72,44 @@ describe('effectiveEndpoints', () => {
     })
     expect(eps.find((e) => e.id === 'openai')?.baseUrl).toBe('https://over/v1')
     expect(eps.find((e) => e.id === 'anthropic')?.baseUrl).toBe(anthropic.baseUrl)
+  })
+
+  it('defaults ENABLE_TOOL_SEARCH=true on custom anthropic endpoints', () => {
+    const bare: ServiceEndpoint = {
+      id: 'anthropic',
+      baseUrl: 'https://relay.com',
+      protocols: ['anthropic-messages'],
+    }
+    const platform: Platform = {
+      id: 'custom:tool-search',
+      brand: 'custom',
+      name: 'Relay',
+      plans: [{ id: 'api', name: 'API', auth: 'api-key', endpoints: [bare, openai] }],
+    }
+    const eps = effectiveEndpoints(platform, platform.plans[0])
+    expect(eps.find((e) => e.id === 'anthropic')?.defaults?.extraEnv).toEqual({
+      [ENABLE_TOOL_SEARCH_ENV]: 'true',
+    })
+    expect(eps.find((e) => e.id === 'openai')?.defaults?.extraEnv).toBeUndefined()
+  })
+
+  it('does not override an explicit ENABLE_TOOL_SEARCH on a custom anthropic endpoint', () => {
+    const off: ServiceEndpoint = {
+      id: 'anthropic',
+      baseUrl: 'https://relay.com',
+      protocols: ['anthropic-messages'],
+      defaults: { extraEnv: { [ENABLE_TOOL_SEARCH_ENV]: 'false', KEEP: '1' } },
+    }
+    const platform: Platform = {
+      id: 'custom:tool-search-off',
+      brand: 'custom',
+      name: 'Relay',
+      plans: [{ id: 'api', name: 'API', auth: 'api-key', endpoints: [off] }],
+    }
+    expect(effectiveEndpoints(platform, platform.plans[0])[0].defaults?.extraEnv).toEqual({
+      [ENABLE_TOOL_SEARCH_ENV]: 'false',
+      KEEP: '1',
+    })
   })
 })
 

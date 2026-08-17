@@ -9,6 +9,7 @@ import {
   type ProtocolFamily,
   type WireProtocol,
 } from './protocols'
+import { withCustomAnthropicDefaults } from './effective-endpoints'
 import { relaySiteRoot } from './relay-identify'
 import type { Plan, ServiceEndpoint } from './types'
 
@@ -64,7 +65,7 @@ export function capabilityEndpoints(caps: PlanCapabilities, baseUrl: string): Se
     const picked = FAMILY_EXTRA_PROTOCOLS[family].filter((p) => caps.extras[family]?.includes(p))
     if (picked.length > 0) extraByFamily[family] = picked
   }
-  return customPlatformEndpoints(tasksByFamily, baseUrl, extraByFamily)
+  return withCustomAnthropicDefaults(customPlatformEndpoints(tasksByFamily, baseUrl, extraByFamily))
 }
 
 /** Rebuild a plan's endpoints from a capability selection, preserving defaults + models by id. */

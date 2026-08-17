@@ -114,6 +114,23 @@ describe('builtin registry', () => {
     ).toBe('kimi-k3')
   })
 
+  it('defaults ENABLE_TOOL_SEARCH=true on builtin anthropic endpoints except Kimi/Moonshot presets', () => {
+    const keepOff = new Set(['kimi', 'moonshot'])
+    for (const platform of BUILTIN_PLATFORMS) {
+      for (const plan of platform.plans) {
+        for (const endpoint of plan.endpoints) {
+          if (!endpoint.protocols.includes('anthropic-messages')) continue
+          const value = endpoint.defaults?.extraEnv?.ENABLE_TOOL_SEARCH
+          if (keepOff.has(platform.id)) {
+            expect(value, `${platform.id}/${plan.id}`).toBe('false')
+          } else {
+            expect(value, `${platform.id}/${plan.id}`).toBe('true')
+          }
+        }
+      }
+    }
+  })
+
   it('official oauth platforms carry an oauth plan and no api key url', () => {
     const claude = findPlatform(BUILTIN_PLATFORMS, 'claude-official')
     expect(claude?.plans[0].auth).toBe('oauth')

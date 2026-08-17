@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyCapabilitiesToPlan, capabilityEndpoints, planCapabilities, rebaseEndpoints } from './capabilities'
+import { ENABLE_TOOL_SEARCH_ENV, withCustomAnthropicDefaults } from './effective-endpoints'
 import { customPlatformEndpoints } from './protocols'
 import type { Plan } from './types'
 
@@ -22,7 +23,7 @@ describe('plan capability projection', () => {
     expect(caps.extras.openai).toEqual(['openai-responses'])
     expect(caps.baseUrl).toBe('https://relay.example.com')
 
-    expect(capabilityEndpoints(caps, caps.baseUrl)).toEqual(endpoints)
+    expect(capabilityEndpoints(caps, caps.baseUrl)).toEqual(withCustomAnthropicDefaults(endpoints))
   })
 
   it('recovers a responses-only endpoint as an extra wire without checking chat', () => {
@@ -54,6 +55,7 @@ describe('plan capability projection', () => {
     const endpoints = capabilityEndpoints({ families: ['anthropic'], tasks: {}, extras: {} }, 'https://relay.example.com')
     expect(endpoints).toHaveLength(1)
     expect(endpoints[0].protocols).toEqual(['anthropic-messages'])
+    expect(endpoints[0].defaults?.extraEnv).toEqual({ [ENABLE_TOOL_SEARCH_ENV]: 'true' })
   })
 
   it('recovers the site root from an openai-only plan (not the /v1 family URL)', () => {

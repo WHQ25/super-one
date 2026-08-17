@@ -60,9 +60,14 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
   const hasModelMapping = families.has('anthropic') && Object.keys(modelMapping).length > 0
   const rawEndpoints = capabilityEndpoints(toPlanCapabilities(selection), baseUrl.trim())
   const endpoints = rawEndpoints.map((e) => {
+    const extra = { ...e.defaults?.extraEnv, ...(hasExtraEnv ? extraEnv : {}) }
+    const mapping =
+      hasModelMapping && e.protocols.includes('anthropic-messages')
+        ? modelMapping
+        : e.defaults?.modelMapping
     const defaults: EndpointDefaults = {}
-    if (hasExtraEnv) defaults.extraEnv = extraEnv
-    if (hasModelMapping && e.protocols.includes('anthropic-messages')) defaults.modelMapping = modelMapping
+    if (Object.keys(extra).length > 0) defaults.extraEnv = extra
+    if (mapping && Object.keys(mapping).length > 0) defaults.modelMapping = mapping
     return Object.keys(defaults).length > 0 ? { ...e, defaults } : e
   })
   const displayName = nameInput.trim() || siteName?.trim() || DEFAULT_LABEL

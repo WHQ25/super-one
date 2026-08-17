@@ -9,6 +9,32 @@ export function isCustomPlatform(platform: Pick<Platform, 'id'>): boolean {
   return isCustomPlatformId(platform.id)
 }
 
+/** Claude Code env that turns on deferred tool loading for Anthropic-compatible relays. */
+export const ENABLE_TOOL_SEARCH_ENV = 'ENABLE_TOOL_SEARCH'
+
+/**
+ * Custom Anthropic-wire endpoints default tool search on. Third-party Claude-compatible
+ * relays leave it off unless the env is set; the user can still set the key to `false`.
+ */
+export function withCustomAnthropicDefaults(endpoints: ServiceEndpoint[]): ServiceEndpoint[] {
+  return endpoints.map((endpoint) => {
+    if (!endpoint.protocols.includes('anthropic-messages')) return endpoint
+    if (endpoint.defaults?.extraEnv && ENABLE_TOOL_SEARCH_ENV in endpoint.defaults.extraEnv) {
+      return endpoint
+    }
+    return {
+      ...endpoint,
+      defaults: {
+        ...endpoint.defaults,
+        extraEnv: {
+          [ENABLE_TOOL_SEARCH_ENV]: 'true',
+          ...endpoint.defaults?.extraEnv,
+        },
+      },
+    }
+  })
+}
+
 /**
  * Fold legacy per-endpoint overrides into a concrete ServiceEndpoint list
  * (used when migrating custom keys and as a fallback before endpoints_json exists).
@@ -52,8 +78,11 @@ export function effectiveEndpoints(
   credential?: Pick<Credential, 'endpoints' | 'overrides'> | null,
 ): ServiceEndpoint[] {
   if (isCustomPlatform(platform)) {
-    if (credential?.endpoints && credential.endpoints.length > 0) return credential.endpoints
-    return foldOverridesIntoEndpoints(plan.endpoints, credential?.overrides)
+    const endpoints =
+      credential?.endpoints && credential.endpoints.length > 0
+        ? credential.endpoints
+        : foldOverridesIntoEndpoints(plan.endpoints, credential?.overrides)
+    return withCustomAnthropicDefaults(endpoints)
   }
   return plan.endpoints
 }

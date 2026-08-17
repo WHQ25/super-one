@@ -164,6 +164,59 @@ describe('resolveService', () => {
       experimentalClaudeOpenAiChatEnabled: true,
     })?.protocol).toBe('openai-chat')
   })
+
+  it('defaults ENABLE_TOOL_SEARCH=true for a custom anthropic provider', () => {
+    const customAnthropic: Platform = {
+      id: 'custom:relay',
+      brand: 'custom',
+      name: 'Relay',
+      plans: [{
+        id: 'api',
+        name: 'API',
+        auth: 'api-key',
+        endpoints: [{ id: 'anthropic', baseUrl: 'https://relay.example.com', protocols: ['anthropic-messages'] }],
+      }],
+    }
+    const customCred: Credential = {
+      ...cred,
+      platformId: customAnthropic.id,
+      planId: 'api',
+    }
+    mockedGetBinding.mockReturnValue({ consumer: 'chat:claude', credentialId: customCred.id })
+    mockedGetCred.mockReturnValue(customCred)
+    mockedGetPlatforms.mockReturnValue([customAnthropic])
+
+    expect(resolveService('chat:claude')?.extraEnv).toEqual({ ENABLE_TOOL_SEARCH: 'true' })
+  })
+
+  it('keeps an explicit ENABLE_TOOL_SEARCH=false on a custom anthropic provider', () => {
+    const customAnthropic: Platform = {
+      id: 'custom:relay-off',
+      brand: 'custom',
+      name: 'Relay',
+      plans: [{
+        id: 'api',
+        name: 'API',
+        auth: 'api-key',
+        endpoints: [{
+          id: 'anthropic',
+          baseUrl: 'https://relay.example.com',
+          protocols: ['anthropic-messages'],
+          defaults: { extraEnv: { ENABLE_TOOL_SEARCH: 'false' } },
+        }],
+      }],
+    }
+    const customCred: Credential = {
+      ...cred,
+      platformId: customAnthropic.id,
+      planId: 'api',
+    }
+    mockedGetBinding.mockReturnValue({ consumer: 'chat:claude', credentialId: customCred.id })
+    mockedGetCred.mockReturnValue(customCred)
+    mockedGetPlatforms.mockReturnValue([customAnthropic])
+
+    expect(resolveService('chat:claude')?.extraEnv).toEqual({ ENABLE_TOOL_SEARCH: 'false' })
+  })
 })
 
 describe('buildClaudeEnv', () => {

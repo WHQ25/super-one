@@ -1,4 +1,5 @@
 import type { ProviderModelEnv } from '../agent-types'
+import { ENABLE_TOOL_SEARCH_ENV } from './effective-endpoints'
 import { PROXY_TRANSFORMERS_ENV } from './protocols'
 import type { EndpointModel, Platform, ServiceEndpoint } from './types'
 
@@ -8,8 +9,14 @@ function anthropic(
   baseUrl: string,
   opts: { extraEnv?: Record<string, string>; modelMapping?: ProviderModelEnv; models?: EndpointModel[]; id?: string } = {},
 ): ServiceEndpoint {
-  const defaults =
-    opts.extraEnv || opts.modelMapping ? { extraEnv: opts.extraEnv, modelMapping: opts.modelMapping } : undefined
+  const extraEnv = {
+    [ENABLE_TOOL_SEARCH_ENV]: 'true',
+    ...opts.extraEnv,
+  }
+  const defaults = {
+    extraEnv,
+    ...(opts.modelMapping ? { modelMapping: opts.modelMapping } : {}),
+  }
   return { id: opts.id ?? 'anthropic', baseUrl, protocols: ['anthropic-messages'], defaults, models: opts.models }
 }
 

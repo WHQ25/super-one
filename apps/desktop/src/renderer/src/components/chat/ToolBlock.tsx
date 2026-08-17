@@ -21,7 +21,8 @@ import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
-import { isMediaToolErrorResult, mediaToolErrorMessage } from './media-generation'
+import { ImageGenToolBlock } from './ImageGenToolBlock'
+import { isMediaToolErrorResult } from './media-generation'
 import { getBrowserOp } from './browser-tool-display'
 import { getComputerOp } from './computer-tool-display'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
@@ -1182,27 +1183,15 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       )
     }
     if (mcpInfo.mcpToolName === 'media_generate_image') {
-      const prompt = String(params.prompt ?? '').replace(/\s+/g, ' ').trim()
-      const failed = !isDenied && isMediaToolErrorResult(cleanResult, isError)
-      const err = mediaToolErrorMessage(cleanResult)
-      const label = toolOutcomeLabel({
-        streaming: isStreaming,
-        interrupted: isDenied || failed,
-        streamingLabel: t('chat.toolBlock.generatingImage'),
-        actionLabel: t('chat.toolBlock.generateImage'),
-        doneLabel: t('chat.toolBlock.generatedImage'),
-      })
       return (
-        <ExpandableToolRow
-          icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
-          label={withStreamingEllipsis(label, isStreaming)}
-          summary={prompt || undefined}
-          streaming={isStreaming}
-          tone={toolRowTone(isDenied, failed)}
-          expandable={allowExpand && !isStreaming && !!err}
-        >
-          <div className="whitespace-pre-wrap break-words text-warning/90">{err}</div>
-        </ExpandableToolRow>
+        <ImageGenToolBlock
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          allowExpand={allowExpand}
+        />
       )
     }
     if (mcpInfo.mcpToolName === 'media_list_providers') {

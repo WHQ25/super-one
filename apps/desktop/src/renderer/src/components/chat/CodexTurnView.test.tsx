@@ -13,7 +13,9 @@ vi.mock('./CopyableMarkdown', () => ({
 }))
 
 vi.mock('./ToolBlock', () => ({
-  ToolBlock: ({ toolName }: { toolName: string }) => <div>{toolName}</div>,
+  ToolBlock: ({ toolName, isError }: { toolName: string; isError?: boolean }) => (
+    <div data-testid={`tool-${toolName}`} data-error={isError ? 'true' : 'false'}>{toolName}</div>
+  ),
   FileChip: ({ name }: { name: string }) => <div>{name}</div>,
 }))
 
@@ -386,6 +388,94 @@ describe('CodexTurnView', () => {
 
     expect(screen.getByText(/line one/).parentElement).toHaveClass('max-h-72', 'overflow-y-auto')
     expect(screen.getByText(/bun run test/)).toHaveClass('line-clamp-3')
+  })
+
+  it('uses shared warning chrome and an Error badge for a failed command', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [{
+                id: 'cmd-failed',
+                type: 'command_execution',
+                command: 'bun run test',
+                aggregatedOutput: 'FAIL src/example.test.ts',
+                exitCode: 1,
+                status: 'failed',
+              }],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    const row = screen.getByText('Bash').closest('.tool-node')
+    expect(row).toHaveClass('errored', 'bg-warning/10')
+    expect(screen.getByText('Error')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Bash'))
+    expect(screen.getByText(/FAIL src\/example\.test\.ts/)).toBeTruthy()
+  })
+
+  it.each([
+    {
+      label: 'MCP call',
+      item: {
+        id: 'mcp-failed',
+        type: 'mcp_tool_call' as const,
+        server: 'example',
+        tool: 'lookup',
+        arguments: { query: 'auth' },
+        error: { message: 'server unavailable' },
+        status: 'failed' as const,
+      },
+      toolName: 'mcp__example__lookup',
+    },
+    {
+      label: 'file change',
+      item: {
+        id: 'patch-failed',
+        type: 'file_change' as const,
+        changes: [{ path: '/test/src/example.ts', kind: 'update' as const }],
+        status: 'failed' as const,
+      },
+      toolName: 'FileChange',
+    },
+    {
+      label: 'web search',
+      item: {
+        id: 'search-failed',
+        type: 'web_search' as const,
+        query: 'SuperOne tool UI',
+        status: 'failed' as const,
+      },
+      toolName: 'WebSearch',
+    },
+  ])('forwards a failed Codex $label to ToolBlock', ({ item, toolName }) => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [item],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByTestId(`tool-${toolName}`)).toHaveAttribute('data-error', 'true')
   })
 
   it('auto expands grouped streaming read and search blocks and collapses after completion', () => {

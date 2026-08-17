@@ -426,7 +426,13 @@ describe('SuperOne compact tool row grammar', () => {
     const { container } = render(
       <ToolBlock
         toolName="mcp__superone__media_generate_image"
-        input={JSON.stringify({ prompt: 'a red cube on a table' })}
+        input={JSON.stringify({
+          prompt: 'a red cube on a table',
+          provider: 'grok',
+          model: 'grok-imagine',
+          aspect_ratio: '16:9',
+          size: '2K',
+        })}
         status="complete"
         result={JSON.stringify({ status: 'error', message: 'provider timeout' })}
         isError
@@ -437,6 +443,15 @@ describe('SuperOne compact tool row grammar', () => {
     expect(container.querySelector('.errored')).not.toBeNull()
     fireEvent.click(container.querySelector('.tool-node > div')!)
     await waitFor(() => expect(container.textContent).toContain('provider timeout'))
+    expect(container.textContent).toContain('Prompt')
+    expect(container.textContent).toContain('Provider')
+    expect(container.textContent).toContain('grok')
+    expect(container.textContent).toContain('Model')
+    expect(container.textContent).toContain('grok-imagine')
+    expect(container.textContent).toContain('Aspect Ratio')
+    expect(container.textContent).toContain('16:9')
+    expect(container.textContent).toContain('Size')
+    expect(container.textContent).toContain('2K')
   })
 
   it('uses the shared Error chrome on a failed SuperOne compact row', () => {

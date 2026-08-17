@@ -1,12 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Video as VideoIcon, Loader2, Image, FileVideo, FileAudio, AlertCircle } from 'lucide-react'
+import { Video as VideoIcon, Loader2, FileVideo, FileAudio } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession } from '@/stores/chat'
 import { FileChip } from './ToolBlock'
-import { useImageDataUri } from './image-shared'
-import { ToolName, ToolStatusBadge, ToolStatusIcon, ToolSummary, toolRowSurfaceClass } from './tool-row'
+import { ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
 import { mediaToolErrorMessage } from './media-generation'
+import { MediaImageRefThumb, MediaParamRow } from './media-tool-params'
 
 interface VideoGenToolBlockProps {
   params: Record<string, unknown>
@@ -25,44 +25,12 @@ function parseResult(resultText: string | undefined): Record<string, unknown> | 
   }
 }
 
-function ParamRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <span className="w-28 shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-all font-medium text-foreground">{value}</span>
-    </div>
-  )
-}
-
 function BooleanParamRow({ label, value, onLabel, offLabel }: { label: string; value: boolean | undefined; onLabel: string; offLabel: string }) {
   if (value === undefined) return null
   return (
     <div className="flex items-baseline gap-2">
       <span className="w-28 shrink-0 text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 break-all font-medium text-foreground">{value ? onLabel : offLabel}</span>
-    </div>
-  )
-}
-
-function ImageRefThumb({ path, label }: { path: string; label: string }) {
-  const { dataUri, loadError } = useImageDataUri(path, false)
-
-  return (
-    <div className="flex w-16 flex-none flex-col gap-1">
-      <div className="h-16 w-16 overflow-hidden rounded-md border border-border bg-muted/30">
-        {loadError ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <AlertCircle className="size-3" />
-          </div>
-        ) : dataUri ? (
-          <img src={dataUri} alt={label} className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <Image className="size-4" />
-          </div>
-        )}
-      </div>
-      <span className="truncate text-center text-xs text-muted-foreground">{label}</span>
     </div>
   )
 }
@@ -79,7 +47,6 @@ function FileRefChip({ path, label, icon: Icon }: { path: string; label: string;
 
 export function VideoGenToolBlock({ params, result, isStreaming, isError }: VideoGenToolBlockProps) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
 
   const resultParsed = parseResult(result)
   const generationId = typeof resultParsed?.generationId === 'string' ? resultParsed.generationId : undefined
@@ -125,122 +92,106 @@ export function VideoGenToolBlock({ params, result, isStreaming, isError }: Vide
   const offLabel = t('chat.videoGenToolBlock.off', 'off')
 
   const hasResult = !!result && !isStreaming
+  const tone = isFailed ? 'error' as const : 'default' as const
+  const headerLabel = withStreamingEllipsis(toolOutcomeLabel({
+    streaming: isStreaming,
+    interrupted: isFailed,
+    streamingLabel: t('chat.toolBlock.generatingVideo'),
+    actionLabel: t('chat.toolBlock.generateVideo'),
+    doneLabel: t('chat.toolBlock.generatedVideo'),
+  }), isStreaming)
 
   return (
-    <div className={toolRowSurfaceClass(isFailed ? 'error' : 'default', hasResult)}>
-      <div
-        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
-        onClick={hasResult ? () => setExpanded((e) => !e) : undefined}
-      >
-        <ToolStatusIcon
-          tone={isFailed ? 'error' : 'default'}
-          fallback={<VideoIcon className="size-3 shrink-0 text-muted-foreground" />}
-        />
-        <ToolName streaming={isStreaming} tone={isFailed ? 'error' : 'default'}>
-          {isStreaming
-            ? <>{t('chat.videoGenToolBlock.generating')}…</>
-            : isFailed
-              ? t('chat.toolBlock.generateVideo')
-              : t('chat.videoGenToolBlock.label')}
-        </ToolName>
-        {title ? <ToolSummary>{title}</ToolSummary> : null}
-        {isFailed ? <ToolStatusBadge tone="error" /> : badgeLabel ? (
-          <span className="shrink-0 rounded bg-muted px-1 py-px text-xs text-muted-foreground">
-            {badgeLabel}
-          </span>
-        ) : null}
-        {hasResult && (
-          <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-        )}
-      </div>
-
-      {hasResult && (
-        <div
-          className="grid transition-[grid-template-rows] duration-200 ease-out"
-          style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-        >
-          <div className="overflow-hidden">
-            <div className="space-y-2 border-t border-border/40 px-2 py-2 text-xs">
-              {expanded && (
-                <>
-                  {isFailed && statusError ? (
-                    <div className="whitespace-pre-wrap break-words text-warning/90">{statusError}</div>
-                  ) : null}
-                  {hasRefs && (
-                    <div className="space-y-2">
-                      <span className="text-xs font-medium text-foreground">{t('chat.videoGenToolBlock.referenceMaterials')}</span>
-                      {(firstFramePath || lastFramePath) && (
-                        <div className="flex flex-wrap gap-2">
-                          {firstFramePath && <ImageRefThumb path={firstFramePath} label={t('chat.videoGenToolBlock.firstFrame')} />}
-                          {lastFramePath && <ImageRefThumb path={lastFramePath} label={t('chat.videoGenToolBlock.lastFrame')} />}
-                        </div>
-                      )}
-                      {referenceImagePaths && referenceImagePaths.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {referenceImagePaths.map((p, i) => (
-                            <ImageRefThumb key={p} path={p} label={t('chat.videoGenToolBlock.reference', { index: i + 1 })} />
-                          ))}
-                        </div>
-                      )}
-                      {referenceVideoPaths && referenceVideoPaths.length > 0 && (
-                        <div className="space-y-1">
-                          {referenceVideoPaths.map((p) => (
-                            <FileRefChip key={p} path={p} label={t('chat.videoGenToolBlock.referenceVideos')} icon={FileVideo} />
-                          ))}
-                        </div>
-                      )}
-                      {referenceAudioPaths && referenceAudioPaths.length > 0 && (
-                        <div className="space-y-1">
-                          {referenceAudioPaths.map((p) => (
-                            <FileRefChip key={p} path={p} label={t('chat.videoGenToolBlock.referenceAudio')} icon={FileAudio} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="space-y-1">
-                    <ParamRow label={t('chat.videoGenToolBlock.prompt')} value={prompt} />
-                  </div>
-
-                  <div className="grid grid-cols-1 @md:grid-cols-2 gap-x-3 gap-y-1">
-                    {provider && <ParamRow label={t('chat.videoGenToolBlock.provider')} value={provider} />}
-                    {model && <ParamRow label={t('chat.videoGenToolBlock.model')} value={model} />}
-                    {aspectRatio && <ParamRow label={t('chat.videoGenToolBlock.aspectRatio')} value={aspectRatio} />}
-                    {resolution && <ParamRow label={t('chat.videoGenToolBlock.resolution')} value={resolution} />}
-                    {duration !== undefined && <ParamRow label={t('chat.videoGenToolBlock.duration')} value={`${duration}s`} />}
-                    {hasAdvanced && (
-                      <>
-                        {fps !== undefined && <ParamRow label={t('chat.videoGenToolBlock.fps')} value={String(fps)} />}
-                        {seed !== undefined && <ParamRow label={t('chat.videoGenToolBlock.seed')} value={String(seed)} />}
-                        <BooleanParamRow label={t('chat.videoGenToolBlock.generateAudio')} value={generateAudio} onLabel={onLabel} offLabel={offLabel} />
-                        <BooleanParamRow label={t('chat.videoGenToolBlock.watermark')} value={watermark} onLabel={onLabel} offLabel={offLabel} />
-                        <BooleanParamRow label={t('chat.videoGenToolBlock.cameraFixed')} value={cameraFixed} onLabel={onLabel} offLabel={offLabel} />
-                      </>
-                    )}
-                  </div>
-
-                  {currentStatus && (
-                    <div className={cn(
-                      'flex items-center gap-1.5 rounded px-2 py-1',
-                      currentStatus === 'running' ? 'bg-primary/10 text-primary' :
-                      isFailed ? 'text-warning/90' :
-                      'bg-muted/40 text-muted-foreground',
-                    )}>
-                      {currentStatus === 'running' && <Loader2 className="size-3 shrink-0 animate-spin" />}
-                      <span className="font-medium">{badgeLabel}</span>
-                      {statusError && <span>— {statusError}</span>}
-                      {genStatus?.warnings && genStatus.warnings.length > 0 && (
-                        <span className="text-warning/80">({genStatus.warnings.length} warning{genStatus.warnings.length !== 1 ? 's' : ''})</span>
-                      )}
-                    </div>
-                  )}
-                </>
+    <ToolRow
+      icon={<VideoIcon className="size-3 shrink-0 text-muted-foreground" />}
+      tone={tone}
+      expandable={hasResult}
+      mountDetails="expanded"
+      trailing={!isFailed && badgeLabel ? (
+        <span className="shrink-0 rounded bg-muted px-1 py-px text-xs text-muted-foreground">
+          {badgeLabel}
+        </span>
+      ) : null}
+      details={(
+        <>
+          {isFailed && statusError ? (
+            <div className="whitespace-pre-wrap break-words text-warning/90">{statusError}</div>
+          ) : null}
+          {hasRefs && (
+            <div className="space-y-2">
+              <span className="text-xs font-medium text-foreground">{t('chat.videoGenToolBlock.referenceMaterials')}</span>
+              {(firstFramePath || lastFramePath) && (
+                <div className="flex flex-wrap gap-2">
+                  {firstFramePath && <MediaImageRefThumb path={firstFramePath} label={t('chat.videoGenToolBlock.firstFrame')} />}
+                  {lastFramePath && <MediaImageRefThumb path={lastFramePath} label={t('chat.videoGenToolBlock.lastFrame')} />}
+                </div>
+              )}
+              {referenceImagePaths && referenceImagePaths.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {referenceImagePaths.map((p, i) => (
+                    <MediaImageRefThumb key={p} path={p} label={t('chat.videoGenToolBlock.reference', { index: i + 1 })} />
+                  ))}
+                </div>
+              )}
+              {referenceVideoPaths && referenceVideoPaths.length > 0 && (
+                <div className="space-y-1">
+                  {referenceVideoPaths.map((p) => (
+                    <FileRefChip key={p} path={p} label={t('chat.videoGenToolBlock.referenceVideos')} icon={FileVideo} />
+                  ))}
+                </div>
+              )}
+              {referenceAudioPaths && referenceAudioPaths.length > 0 && (
+                <div className="space-y-1">
+                  {referenceAudioPaths.map((p) => (
+                    <FileRefChip key={p} path={p} label={t('chat.videoGenToolBlock.referenceAudio')} icon={FileAudio} />
+                  ))}
+                </div>
               )}
             </div>
+          )}
+
+          <div className="space-y-1">
+            <MediaParamRow label={t('chat.videoGenToolBlock.prompt')} value={prompt} />
           </div>
-        </div>
+
+          <div className="grid grid-cols-1 @md:grid-cols-2 gap-x-3 gap-y-1">
+            {provider && <MediaParamRow label={t('chat.videoGenToolBlock.provider')} value={provider} />}
+            {model && <MediaParamRow label={t('chat.videoGenToolBlock.model')} value={model} />}
+            {aspectRatio && <MediaParamRow label={t('chat.videoGenToolBlock.aspectRatio')} value={aspectRatio} />}
+            {resolution && <MediaParamRow label={t('chat.videoGenToolBlock.resolution')} value={resolution} />}
+            {duration !== undefined && <MediaParamRow label={t('chat.videoGenToolBlock.duration')} value={`${duration}s`} />}
+            {hasAdvanced && (
+              <>
+                {fps !== undefined && <MediaParamRow label={t('chat.videoGenToolBlock.fps')} value={String(fps)} />}
+                {seed !== undefined && <MediaParamRow label={t('chat.videoGenToolBlock.seed')} value={String(seed)} />}
+                <BooleanParamRow label={t('chat.videoGenToolBlock.generateAudio')} value={generateAudio} onLabel={onLabel} offLabel={offLabel} />
+                <BooleanParamRow label={t('chat.videoGenToolBlock.watermark')} value={watermark} onLabel={onLabel} offLabel={offLabel} />
+                <BooleanParamRow label={t('chat.videoGenToolBlock.cameraFixed')} value={cameraFixed} onLabel={onLabel} offLabel={offLabel} />
+              </>
+            )}
+          </div>
+
+          {currentStatus && (
+            <div className={cn(
+              'flex items-center gap-1.5 rounded px-2 py-1',
+              currentStatus === 'running' ? 'bg-primary/10 text-primary' :
+              isFailed ? 'text-warning/90' :
+              'bg-muted/40 text-muted-foreground',
+            )}>
+              {currentStatus === 'running' && <Loader2 className="size-3 shrink-0 animate-spin" />}
+              <span className="font-medium">{badgeLabel}</span>
+              {statusError && <span>— {statusError}</span>}
+              {genStatus?.warnings && genStatus.warnings.length > 0 && (
+                <span className="text-warning/80">({t('chat.videoGenToolBlock.warnings', { count: genStatus.warnings.length })})</span>
+              )}
+            </div>
+          )}
+        </>
       )}
-    </div>
+      detailsClassName="space-y-2 border-t border-border/40 px-2 py-2 text-xs"
+    >
+      <ToolName streaming={isStreaming} tone={tone}>{headerLabel}</ToolName>
+      {title ? <ToolSummary>{title}</ToolSummary> : null}
+    </ToolRow>
   )
 }

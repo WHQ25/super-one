@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, CodexPlanApprovalState, ImageGenerationItem, CodexMcpToolCallItem, CodexReasoningItem, CodexThreadItem } from '@superone/shared/agent-types'
-import { ChevronRight, BookOpenText } from 'lucide-react'
+import { BookOpenText } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
@@ -22,6 +23,7 @@ import {
 } from './compact-chat-mode'
 import { summarizeCodexProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
+import { ToolName, ToolRow, ToolSummary } from './tool-row'
 
 function safeStringify(value: unknown): string {
   try { return JSON.stringify(value) } catch { return String(value) }
@@ -65,10 +67,12 @@ function sameItemReferences<T>(previous: T[], current: T[]): boolean {
 const MemoCodexSubagentMarker = memo(CodexSubagentMarker)
 
 const CodexAppToolGroup = memo(function CodexAppToolGroup({ appId, items, isStreaming, sealed }: CodexAppToolGroupProps) {
+  const { t } = useTranslation()
   const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
   const appName = app?.manifest.name ?? appId
   const runningItem = useMemo(() => (isStreaming ? items.find((i) => i.status === 'in_progress') ?? null : null), [isStreaming, items])
   const [expanded, setExpanded] = useState(!!runningItem && !sealed)
+  const failed = items.some((item) => item.status === 'failed' || !!item.error)
   const scrollRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
 
@@ -93,32 +97,35 @@ const CodexAppToolGroup = memo(function CodexAppToolGroup({ appId, items, isStre
 
   return (
     <div className="tool-group my-0.5">
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs transition-colors hover:bg-muted/70"
+      <ToolRow
+        icon={<MiniAppIcon appId={appId} className="size-3.5 shrink-0" />}
+        tone={failed ? 'error' : 'default'}
+        expandable
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+        details={(
+          <div ref={scrollRef} className="max-h-30 space-y-0.5 overflow-y-auto">
+            {items.map((item) => (
+              <ToolBlock
+                key={item.id}
+                toolName={`mcp__${item.server}__${item.tool}`}
+                toolUseId={item.id}
+                input={safeStringify(item.arguments)}
+                status={codexMcpToolStatus(item.status)}
+                result={codexMcpItemResultText(item)}
+                isError={item.status === 'failed' || !!item.error}
+                grouped
+              />
+            ))}
+          </div>
+        )}
+        detailsClassName="border-t border-border/40 p-1.5"
+        mountDetails="expanded"
+        className="my-0"
       >
-        <MiniAppIcon appId={appId} className="size-3.5 shrink-0" />
-        <span className="shrink-0 font-medium text-foreground">{appName}</span>
-        <span className="shrink-0 text-muted-foreground">·</span>
-        <span className="text-muted-foreground">{items.length} tool call{items.length !== 1 ? 's' : ''}</span>
-        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-      </button>
-
-      {expanded && (
-        <div ref={scrollRef} className="mt-0.5 max-h-30 space-y-0.5 overflow-y-auto pl-2">
-          {items.map((item) => (
-            <ToolBlock
-              key={item.id}
-              toolName={`mcp__${item.server}__${item.tool}`}
-              toolUseId={item.id}
-              input={safeStringify(item.arguments)}
-              status={codexMcpToolStatus(item.status)}
-              result={codexMcpItemResultText(item)}
-              grouped
-            />
-          ))}
-        </div>
-      )}
+        <ToolName streaming={!!runningItem && !failed} tone={failed ? 'error' : 'default'}>{appName}</ToolName>
+        <ToolSummary>{t('chat.codex.appToolCalls', { count: items.length })}</ToolSummary>
+      </ToolRow>
 
       {!expanded && runningItem && (
         <div className="mt-0.5">
@@ -127,6 +134,7 @@ const CodexAppToolGroup = memo(function CodexAppToolGroup({ appId, items, isStre
             toolUseId={runningItem.id}
             input={safeStringify(runningItem.arguments)}
             status={codexMcpToolStatus(runningItem.status)}
+            isError={runningItem.status === 'failed' || !!runningItem.error}
             grouped
           />
         </div>
@@ -281,7 +289,7 @@ function buildCodexTopology(
   return { segments, imageIndices, hasAssistantMessage, lastPlanItemId }
 }
 
-function generateCommandGroupSummary(items: CodexCommandExecutionItem[]): string {
+function generateCommandGroupSummary(items: CodexCommandExecutionItem[], t: (key: string, options?: Record<string, unknown>) => string): string {
   let readCount = 0
   let searchCount = 0
   for (const item of items) {
@@ -289,16 +297,15 @@ function generateCommandGroupSummary(items: CodexCommandExecutionItem[]): string
     if (t === 'read') readCount++
     else if (t === 'search') searchCount++
   }
-  const parts: string[] = []
-  if (readCount > 0) parts.push(`read ${readCount} file${readCount > 1 ? 's' : ''}`)
-  if (searchCount > 0) parts.push(`searched ${searchCount} code`)
-  const text = parts.join(', ')
-  return text.charAt(0).toUpperCase() + text.slice(1)
+  const read = readCount > 0 ? t('chat.codex.commandGroupRead', { count: readCount }) : ''
+  const search = searchCount > 0 ? t('chat.codex.commandGroupSearch', { count: searchCount }) : ''
+  return read && search ? t('chat.codex.commandGroupCombined', { read, search }) : read || search
 }
 
 const CodexCommandGroup = memo(function CodexCommandGroup({ items, isStreaming, sealed }: { items: CodexCommandExecutionItem[]; isStreaming: boolean; sealed: boolean }) {
+  const { t } = useTranslation()
   const hasRunning = items.some((item) => isStreaming && item.status === 'in_progress')
-  const runningItem = hasRunning ? items.find((item) => item.status === 'in_progress') : null
+  const failed = items.some((item) => item.status === 'failed' || (item.exitCode !== undefined && item.exitCode !== 0))
   const [expanded, setExpanded] = useState(hasRunning && !sealed)
 
   useEffect(() => {
@@ -311,25 +318,32 @@ const CodexCommandGroup = memo(function CodexCommandGroup({ items, isStreaming, 
 
   return (
     <div className="tool-group my-1 min-w-0">
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
+      <ToolRow
+        icon={<BookOpenText className="size-3 shrink-0 text-muted-foreground" />}
+        tone={failed ? 'error' : 'default'}
+        expandable
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+        details={(
+          <div className="space-y-0.5">
+            {items.map((item, i) => (
+              <CodexCommandBlock key={`${item.id}-${i}`} item={item} isStreaming={isStreaming} />
+            ))}
+          </div>
+        )}
+        detailsClassName="border-t border-border/40 p-1.5"
+        mountDetails="expanded"
+        className="my-0"
       >
-        <BookOpenText className="size-3 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate text-foreground">
-          {hasRunning && runningItem
-            ? <>{runningItem.commandActions?.[0]?.type === 'read' ? 'Reading' : 'Searching'}…</>
-            : generateCommandGroupSummary(items)}
-        </span>
-        <ChevronRight className={cn('ml-auto size-3 shrink-0 transition-transform duration-200', expanded && 'rotate-90')} />
-      </button>
-      {expanded && (
-        <div className="mt-0.5 space-y-0.5 pl-2">
-          {items.map((item, i) => (
-            <CodexCommandBlock key={`${item.id}-${i}`} item={item} isStreaming={isStreaming} />
-          ))}
-        </div>
-      )}
+        <ToolName streaming={hasRunning && !failed} tone={failed ? 'error' : 'default'}>
+          {hasRunning
+            ? `${t('chat.codex.exploringCode')}…`
+            : failed
+              ? t('chat.codex.exploreCode')
+              : t('chat.codex.codeExplored')}
+        </ToolName>
+        <ToolSummary>{generateCommandGroupSummary(items, t)}</ToolSummary>
+      </ToolRow>
     </div>
   )
 }, (previous, current) => previous.isStreaming === current.isStreaming

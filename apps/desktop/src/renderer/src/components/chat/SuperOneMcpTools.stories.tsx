@@ -339,9 +339,21 @@ export const Media: Story = {
       <Section title="media_generate_image (failed — success hides the row)">
         <Row
           tool="media_generate_image"
-          input={{ prompt: 'a red cube on a table' }}
+          input={{
+            prompt: 'a red cube on a table',
+            provider: 'grok',
+            model: 'grok-imagine',
+            aspect_ratio: '16:9',
+            size: '2K',
+            reference_image_paths: ['/tmp/ref-a.png'],
+          }}
           result={JSON.stringify({ status: 'error', message: 'provider timeout' })}
           isError
+        />
+        <Row
+          tool="media_generate_image"
+          input={{ prompt: 'a red cube on a table', provider: 'grok', model: 'grok-imagine' }}
+          result="[denied] User denied permission"
         />
       </Section>
       <Section title="media_generate_video">

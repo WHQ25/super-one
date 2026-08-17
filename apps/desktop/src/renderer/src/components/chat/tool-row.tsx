@@ -103,6 +103,92 @@ export function ToolSummary({
   )
 }
 
+export interface ToolRowProps {
+  icon: ReactNode
+  /** Header content after the status-aware leading icon. */
+  children: ReactNode
+  /** Optional progressive detail body. The tool owns its content, the row owns its chrome. */
+  details?: ReactNode
+  expandable?: boolean
+  tone?: ToolRowTone
+  className?: string
+  headerClassName?: string
+  detailsClassName?: string
+  trailing?: ReactNode
+  showStatusBadge?: boolean
+  defaultExpanded?: boolean
+  expanded?: boolean
+  onExpandedChange?: (expanded: boolean) => void
+  /** Heavy or sensitive details can stay unmounted until the user expands the row. */
+  mountDetails?: 'always' | 'expanded'
+}
+
+/**
+ * Shared Tool UI shell. Feature blocks provide label, summary, and detail content;
+ * this component keeps surface, outcome chrome, spacing, and disclosure behavior identical.
+ */
+export function ToolRow({
+  icon,
+  children,
+  details,
+  expandable = false,
+  tone = 'default',
+  className,
+  headerClassName,
+  detailsClassName = 'border-t border-border/40 px-2 py-2 text-xs',
+  trailing,
+  showStatusBadge = true,
+  defaultExpanded = false,
+  expanded: controlledExpanded,
+  onExpandedChange,
+  mountDetails = 'always',
+}: ToolRowProps) {
+  const [uncontrolledExpanded, setUncontrolledExpanded] = useState(defaultExpanded)
+  const expanded = controlledExpanded ?? uncontrolledExpanded
+  const canExpand = expandable && details !== undefined && details !== null
+
+  const toggle = (): void => {
+    if (!canExpand) return
+    const next = !expanded
+    if (controlledExpanded === undefined) setUncontrolledExpanded(next)
+    onExpandedChange?.(next)
+  }
+
+  return (
+    <div className={cn(toolRowSurfaceClass(tone, canExpand), className)}>
+      <div
+        className={cn('flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs', headerClassName)}
+        onClick={canExpand ? toggle : undefined}
+      >
+        <ToolStatusIcon tone={tone} fallback={icon} />
+        {children}
+        {showStatusBadge ? <ToolStatusBadge tone={tone} /> : null}
+        {trailing}
+        {canExpand ? (
+          <ChevronRight
+            className={cn(
+              'ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200',
+              expanded && 'rotate-90',
+            )}
+          />
+        ) : null}
+      </div>
+      {canExpand ? (
+        <div
+          className="grid transition-[grid-template-rows] duration-200 ease-out"
+          style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+        >
+          <div className="overflow-hidden">
+            {mountDetails === 'always' || expanded ? (
+              <div className={detailsClassName}>{details}</div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function CompactToolRow({
   icon,
   children,
@@ -115,12 +201,14 @@ export function CompactToolRow({
   tone?: ToolRowTone
 }) {
   return (
-    <div className={cn(toolRowSurfaceClass(tone), className)}>
-      <div className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs">
-        <ToolStatusIcon tone={tone} fallback={icon} />
-        {children}
-      </div>
-    </div>
+    <ToolRow
+      icon={icon}
+      tone={tone}
+      className={className}
+      showStatusBadge={false}
+    >
+      {children}
+    </ToolRow>
   )
 }
 
@@ -140,12 +228,11 @@ export function CompactLabeledToolRow({
   children?: ReactNode
 }) {
   return (
-    <CompactToolRow icon={icon} tone={tone}>
+    <ToolRow icon={icon} tone={tone}>
       <ToolName streaming={streaming} tone={tone}>{label}</ToolName>
       {summary ? <ToolSummary>{summary}</ToolSummary> : null}
-      <ToolStatusBadge tone={tone} />
       {children}
-    </CompactToolRow>
+    </ToolRow>
   )
 }
 
@@ -167,42 +254,21 @@ export function ExpandableToolRow({
   children?: ReactNode
   tone?: ToolRowTone
 }) {
-  const [expanded, setExpanded] = useState(false)
   const canExpand = !!expandable && !!children
   const summaryTitle = typeof summary === 'string' ? summary : undefined
 
   return (
-    <div className={toolRowSurfaceClass(tone, canExpand)}>
-      <div
-        className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
-        onClick={canExpand ? () => setExpanded((v) => !v) : undefined}
-      >
-        <ToolStatusIcon tone={tone} fallback={icon} />
-        <ToolName streaming={streaming} tone={tone}>{label}</ToolName>
-        {summary ? (
-          <ToolSummary title={summaryTitle}>{summary}</ToolSummary>
-        ) : null}
-        <ToolStatusBadge tone={tone} />
-        {canExpand ? (
-          <ChevronRight
-            className={cn(
-              'ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200',
-              expanded && 'rotate-90',
-            )}
-          />
-        ) : null}
-      </div>
-      {canExpand ? (
-        <div
-          className="grid transition-[grid-template-rows] duration-200 ease-out"
-          style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-        >
-          <div className="overflow-hidden">
-            <div className="border-t border-border/40 px-2 py-2 text-xs">{children}</div>
-          </div>
-        </div>
+    <ToolRow
+      icon={icon}
+      tone={tone}
+      expandable={canExpand}
+      details={children}
+    >
+      <ToolName streaming={streaming} tone={tone}>{label}</ToolName>
+      {summary ? (
+        <ToolSummary title={summaryTitle}>{summary}</ToolSummary>
       ) : null}
-    </div>
+    </ToolRow>
   )
 }
 

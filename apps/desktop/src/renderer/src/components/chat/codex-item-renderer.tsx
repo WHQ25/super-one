@@ -21,6 +21,7 @@ import { createContext, memo, useContext, useState, useEffect, useRef } from 're
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
+import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
 
 interface PlanFooterActions {
   onApprove?: () => void
@@ -86,23 +87,32 @@ export const CodexCommandBlock = memo(function CodexCommandBlock({ item, isStrea
 
   const isRunning = isStreaming && showRunning
   const [expanded, setExpanded] = useState(false)
+  const isFailed = item.status === 'failed' || (item.exitCode !== undefined && item.exitCode !== 0)
+  const tone = isFailed ? 'error' as const : 'default' as const
+  const runningLabel = display.label === 'Bash'
+    ? t('chat.codex.statusRunning')
+    : display.label === 'Read'
+      ? t('chat.codex.statusReading')
+      : t('chat.codex.statusSearching')
 
   return (
-    <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
-      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
-        <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
-        <span className={cn('shrink-0 whitespace-nowrap font-medium text-foreground', isRunning && 'animate-shimmer')}>
-          {isRunning ? <>{display.label === 'Bash' ? t('chat.codex.statusRunning') : display.label === 'Read' ? t('chat.codex.statusReading') : t('chat.codex.statusSearching')}…</> : display.label}
-        </span>
-        {action?.type === 'read' && action.path
-          ? <FileChip name={action.path.split('/').pop() || ''} title={display.summary} filePath={action.path} />
-          : (!expanded) && <span className="min-w-0 truncate text-muted-foreground">{display.summary}</span>}
-        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-      </div>
-      {expanded && (
-        <CodexCommandOutput item={item} isRunning={isRunning} />
-      )}
-    </div>
+    <ToolRow
+      icon={<ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />}
+      tone={tone}
+      expandable
+      details={<CodexCommandOutput item={item} isRunning={isRunning} />}
+      detailsClassName=""
+      mountDetails="expanded"
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+    >
+      <ToolName streaming={isRunning} tone={tone}>
+        {isRunning ? `${runningLabel}…` : display.label}
+      </ToolName>
+      {action?.type === 'read' && action.path
+        ? <FileChip name={action.path.split('/').pop() || ''} title={display.summary} filePath={action.path} />
+        : !expanded ? <ToolSummary>{display.summary}</ToolSummary> : null}
+    </ToolRow>
   )
 })
 
@@ -138,38 +148,45 @@ function CollabWaitBlock({ item }: { item: CodexCollabToolCallItem }) {
   if (!isWaiting) return null
 
   const name = agentName ?? t('chat.codex.fallbackAgentName')
-  const label = elapsed >= 1 ? t('chat.codex.waitingForWithElapsed', { name, elapsed }) : t('chat.codex.waitingFor', { name })
+  const label = withStreamingEllipsis(t('chat.codex.waitingFor', { name }), true)
 
   return (
-    <div className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Clock className="size-3 animate-pulse" />
-      <span>{label}</span>
-    </div>
+    <CompactLabeledToolRow
+      icon={<Clock className="size-3 shrink-0 animate-pulse text-muted-foreground" />}
+      label={label}
+      summary={elapsed >= 1 ? `${elapsed}s` : undefined}
+      streaming
+    />
   )
 }
 
 function CollabSendInputBlock({ item }: { item: CodexCollabToolCallItem }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
   const prompt = item.prompt ?? ''
   const receiverId = item.receiverThreadIds?.[0]
   const agentName = (receiverId && item.agentsStates[receiverId]?.nickname)
     || Object.values(item.agentsStates).find((s) => s.nickname)?.nickname
-  const label = `${t('chat.codex.followUp')}${agentName ? ` → ${agentName}` : ''}`
+  const isRunning = item.status === 'in_progress'
+  const tone = item.status === 'failed' ? 'error' as const : 'default' as const
+  const label = withStreamingEllipsis(toolOutcomeLabel({
+    streaming: isRunning,
+    interrupted: item.status === 'failed',
+    streamingLabel: t('chat.codex.sendingFollowUp'),
+    actionLabel: t('chat.codex.sendFollowUp'),
+    doneLabel: t('chat.codex.followUpSent'),
+  }), isRunning)
   return (
-    <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
-      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
-        <MessageSquare className="size-3 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 whitespace-nowrap font-medium text-foreground">{label}</span>
-        {!expanded && prompt && <span className="min-w-0 truncate text-muted-foreground">{prompt}</span>}
-        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-      </div>
-      {expanded && prompt && (
-        <div className="bg-terminal-bg px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-terminal-fg max-h-48 overflow-y-auto">
-          {prompt}
-        </div>
-      )}
-    </div>
+    <ToolRow
+      icon={<MessageSquare className="size-3 shrink-0 text-muted-foreground" />}
+      tone={tone}
+      expandable={!!prompt}
+      details={prompt}
+      detailsClassName="max-h-48 overflow-y-auto whitespace-pre-wrap bg-terminal-bg px-3 py-2 font-mono text-xs leading-relaxed text-terminal-fg"
+      mountDetails="expanded"
+    >
+      <ToolName streaming={isRunning} tone={tone}>{label}</ToolName>
+      {agentName || prompt ? <ToolSummary>{agentName || prompt}</ToolSummary> : null}
+    </ToolRow>
   )
 }
 
@@ -361,6 +378,7 @@ export function renderCodexItem(
             input={JSON.stringify({})}
             status="complete"
             result={item.status === 'failed' ? 'Failed to apply file changes.' : undefined}
+            isError={item.status === 'failed'}
           />
         )
       }
@@ -373,6 +391,7 @@ export function renderCodexItem(
               input={JSON.stringify({ file_path: change.path, kind: change.kind, diff: change.diff ?? '' })}
               status="complete"
               result={item.status === 'failed' && i === 0 ? 'Failed to apply file changes.' : undefined}
+              isError={item.status === 'failed'}
             />
           ))}
         </div>
@@ -395,6 +414,7 @@ export function renderCodexItem(
             input={safeStringify(item.arguments)}
             status={toToolStatus(item.status)}
             result={result || undefined}
+            isError={item.status === 'failed' || !!item.error}
           />
         )
       }
@@ -406,6 +426,7 @@ export function renderCodexItem(
           toolName="WebSearch"
           input={JSON.stringify({ query: item.query })}
           status={toToolStatus(item.status)}
+          isError={item.status === 'failed'}
         />
       )
 

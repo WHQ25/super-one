@@ -1146,7 +1146,23 @@ export type Messages = {
       startReview: string
       reviewComplete: string
       conversationCompacted: string
-      followUp: string
+      sendingFollowUp: string
+      sendFollowUp: string
+      followUpSent: string
+      loadImage: string
+      imageGenerationFailed: string
+      imageLoadFailed: string
+      generatedImageAlt: string
+      appToolCalls_one: string
+      appToolCalls_other: string
+      commandGroupRead_one: string
+      commandGroupRead_other: string
+      commandGroupSearch_one: string
+      commandGroupSearch_other: string
+      commandGroupCombined: string
+      exploringCode: string
+      exploreCode: string
+      codeExplored: string
       modelFallback: string
       permissionPreset: string
       goal: {
@@ -1348,6 +1364,8 @@ export type Messages = {
       cameraFixed: string
       on: string
       off: string
+      warnings_one: string
+      warnings_other: string
     }
     configConfirm: {
       title: string
@@ -1422,6 +1440,17 @@ export type Messages = {
       generatingImage: string
       generatedImage: string
       generateImage: string
+      image: {
+        fields: {
+          prompt: string
+          provider: string
+          model: string
+          aspectRatio: string
+          size: string
+          referenceImages: string
+          reference: string
+        }
+      }
       generatingVideo: string
       generatedVideo: string
       generateVideo: string
@@ -3981,14 +4010,30 @@ export const en: Messages = {
       mcpReauthSuccess: 'Re-authenticated {{name}}',
       mcpReauthFailed: 'Re-authentication failed for {{name}}',
       runningInline: 'Running…',
-      waitingFor: 'Waiting for {{name}}...',
+      waitingFor: 'Waiting for {{name}}',
       waitingForWithElapsed: 'Waiting for {{name}} for {{elapsed}}s...',
       fallbackAgentName: 'subagent',
       codexError: 'Codex Error',
       startReview: 'Start review',
       reviewComplete: 'Review complete',
       conversationCompacted: 'Conversation compacted',
-      followUp: 'Follow-up',
+      sendingFollowUp: 'Sending follow-up',
+      sendFollowUp: 'Send Follow-up',
+      followUpSent: 'Follow-up Sent',
+      loadImage: 'Load Image',
+      imageGenerationFailed: 'The image could not be generated',
+      imageLoadFailed: 'The generated image could not be loaded',
+      generatedImageAlt: 'Generated image',
+      appToolCalls_one: '{{count}} tool call',
+      appToolCalls_other: '{{count}} tool calls',
+      commandGroupRead_one: 'Read {{count}} file',
+      commandGroupRead_other: 'Read {{count}} files',
+      commandGroupSearch_one: 'searched {{count}} code',
+      commandGroupSearch_other: 'searched {{count}} code',
+      commandGroupCombined: '{{read}}, {{search}}',
+      exploringCode: 'Exploring code',
+      exploreCode: 'Explore Code',
+      codeExplored: 'Code Explored',
       modelFallback: 'Codex model',
       permissionPreset: 'Permission Preset',
       goal: {
@@ -4188,6 +4233,8 @@ export const en: Messages = {
       cameraFixed: 'Lock Camera',
       on: 'on',
       off: 'off',
+      warnings_one: '{{count}} warning',
+      warnings_other: '{{count}} warnings',
     },
     configConfirm: {
       title: 'Confirm Settings Change',
@@ -4265,6 +4312,17 @@ export const en: Messages = {
       generatingImage: 'Generating image',
       generatedImage: 'Image Generated',
       generateImage: 'Generate Image',
+      image: {
+        fields: {
+          prompt: 'Prompt',
+          provider: 'Provider',
+          model: 'Model',
+          aspectRatio: 'Aspect Ratio',
+          size: 'Size',
+          referenceImages: 'Reference Images',
+          reference: 'Reference {{index}}',
+        },
+      },
       generatingVideo: 'Generating video',
       generatedVideo: 'Video Generated',
       generateVideo: 'Generate Video',

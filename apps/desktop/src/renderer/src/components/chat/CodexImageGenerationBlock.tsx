@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
 import {
@@ -10,12 +10,15 @@ import {
   imageThumbPath,
   useImageMediaSrc,
 } from './image-shared'
+import { ToolIcon } from './ToolIcon'
+import { CompactLabeledToolRow } from './tool-row'
 
 interface Props {
   item: ImageGenerationItem
 }
 
 export function CodexImageGenerationBlock({ item }: Props) {
+  const { t } = useTranslation()
   const [viewerOpen, setViewerOpen] = useState(false)
 
   const isFailed = item.status === 'failed'
@@ -26,10 +29,12 @@ export function CodexImageGenerationBlock({ item }: Props) {
 
   if (isFailed) {
     return (
-      <div className="my-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-        <AlertCircle className="size-3.5 shrink-0" />
-        <span>Image generation failed.</span>
-      </div>
+      <CompactLabeledToolRow
+        icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
+        label={t('chat.toolBlock.generateImage')}
+        summary={t('chat.codex.imageGenerationFailed')}
+        tone="error"
+      />
     )
   }
 
@@ -39,10 +44,12 @@ export function CodexImageGenerationBlock({ item }: Props) {
 
   if (loadError) {
     return (
-      <div className="my-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-        <AlertCircle className="size-3.5 shrink-0" />
-        <span>Failed to load image</span>
-      </div>
+      <CompactLabeledToolRow
+        icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
+        label={t('chat.codex.loadImage')}
+        summary={t('chat.codex.imageLoadFailed')}
+        tone="error"
+      />
     )
   }
 
@@ -55,7 +62,7 @@ export function CodexImageGenerationBlock({ item }: Props) {
       <ImageInteractive
         savedPath={fullPath ?? thumbPath!}
         onOpen={() => setViewerOpen(true)}
-        ariaLabel={item.revisedPrompt ?? 'Generated image'}
+        ariaLabel={item.revisedPrompt ?? t('chat.codex.generatedImageAlt')}
         prompt={item.revisedPrompt}
         downloadable
         className={cn(
@@ -65,7 +72,7 @@ export function CodexImageGenerationBlock({ item }: Props) {
       >
         <img
           src={src}
-          alt={item.revisedPrompt ?? 'Generated image'}
+          alt={item.revisedPrompt ?? t('chat.codex.generatedImageAlt')}
           onError={onError}
           onLoad={onLoad}
           className="block h-40 w-auto max-w-full object-contain"

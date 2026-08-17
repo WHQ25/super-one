@@ -10,6 +10,7 @@ import { NestedToolContext } from './nested-tool-context'
 import { useForkNavigation } from './fork-navigation-context'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
+import { CompactLabeledToolRow } from './tool-row'
 
 export const TASK_CARD_ITEM_TYPES = new Set<CodexThreadItem['type']>([
   'command_execution',
@@ -102,40 +103,46 @@ function MiniToolChip({ item }: { item: CodexThreadItem }) {
   const { t } = useTranslation()
   if (item.type === 'command_execution') {
     return (
-      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs">
-        <Terminal className="size-3 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 font-medium text-foreground">{t('chat.codexCollab.miniTool.bash')}</span>
-        <span className="min-w-0 truncate text-muted-foreground">{item.command}</span>
-      </div>
+      <CompactLabeledToolRow
+        icon={<Terminal className="size-3 shrink-0 text-muted-foreground" />}
+        label={t('chat.codexCollab.miniTool.bash')}
+        summary={item.command}
+        streaming={item.status === 'in_progress'}
+        tone={item.status === 'failed' ? 'error' : 'default'}
+      />
     )
   }
   if (item.type === 'file_change') {
     const first = item.changes[0]
     return (
-      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs">
-        <FileEdit className="size-3 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 font-medium text-foreground">{t('chat.codexCollab.miniTool.edit')}</span>
-        <span className="min-w-0 truncate text-muted-foreground">{first?.path ?? t('chat.codexCollab.miniTool.filesFallback', { count: item.changes.length })}</span>
-      </div>
+      <CompactLabeledToolRow
+        icon={<FileEdit className="size-3 shrink-0 text-muted-foreground" />}
+        label={t('chat.codexCollab.miniTool.edit')}
+        summary={first?.path ?? t('chat.codexCollab.miniTool.filesFallback', { count: item.changes.length })}
+        tone={item.status === 'failed' ? 'error' : 'default'}
+      />
     )
   }
   if (item.type === 'mcp_tool_call') {
     return (
-      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs">
-        <Wrench className="size-3 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 font-medium text-foreground">
-          {item.server} · {item.tool}
-        </span>
-      </div>
+      <CompactLabeledToolRow
+        icon={<Wrench className="size-3 shrink-0 text-muted-foreground" />}
+        label={item.server}
+        summary={item.tool.replace(/_/g, ' ')}
+        streaming={item.status === 'in_progress'}
+        tone={item.status === 'failed' || !!item.error ? 'error' : 'default'}
+      />
     )
   }
   if (item.type === 'web_search') {
     return (
-      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs">
-        <Search className="size-3 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 font-medium text-foreground">{t('chat.codexCollab.miniTool.webSearch')}</span>
-        <span className="min-w-0 truncate text-muted-foreground">{item.query}</span>
-      </div>
+      <CompactLabeledToolRow
+        icon={<Search className="size-3 shrink-0 text-muted-foreground" />}
+        label={t('chat.codexCollab.miniTool.webSearch')}
+        summary={item.query}
+        streaming={item.status === 'in_progress'}
+        tone={item.status === 'failed' ? 'error' : 'default'}
+      />
     )
   }
   return null
@@ -251,14 +258,24 @@ function OutputPreview({ text }: { text: string }) {
   )
 }
 
-export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToolCallItem[]; isStreaming: boolean }) {
+interface CodexCollabBlockProps {
+  items: CodexCollabToolCallItem[]
+  isStreaming: boolean
+  defaultExpanded?: boolean
+}
+
+export function CodexCollabBlock({
+  items,
+  isStreaming,
+  defaultExpanded = false,
+}: CodexCollabBlockProps) {
   const { t } = useTranslation()
   const { name: nickname, role } = useMemo(() => getAgentDisplay(items), [items])
   const status = useMemo(() => resolveStatus(items, isStreaming), [items, isStreaming])
   const isRunning = status === 'running'
   const isComplete = status === 'completed'
   const isErrored = status === 'errored'
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const name = nickname ?? t('chat.codexCollab.defaultName')
 
   const colorKey = items[0]?.receiverThreadIds[0] ?? items[0]?.id ?? ''

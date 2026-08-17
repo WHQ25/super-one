@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AudioLines,
   Image as ImageIcon,
@@ -45,7 +45,8 @@ import {
   upsertCustomModel,
   type CustomModel,
 } from './custom-models'
-import { excludeDiscoveredIds } from './discovery-apply'
+import { applyCatalogDisplayNames, excludeDiscoveredIds, patchDiscoveredModel } from './discovery-apply'
+import { EditDiscoveredModelPopover } from './EditDiscoveredModelPopover'
 import { useModelDiscovery } from './useModelDiscovery'
 
 type Tab = 'all' | CapabilityTask
@@ -153,7 +154,15 @@ export function PlatformModelsPanel({
     state: discoverState,
     discover,
     enableModels,
+    patchDiscovered,
+    replaceDiscovered,
   } = useModelDiscovery({ platform, plan, credential: selectedCred, updateCredential, updateCustomPlatform })
+
+  useEffect(() => {
+    if (!catalogModelIndex) return
+    const named = applyCatalogDisplayNames(discovered, catalogModelIndex)
+    if (named !== discovered) replaceDiscovered(named)
+  }, [catalogModelIndex, discovered, replaceDiscovered])
 
   const fetchBusy = isCustom ? discoverState.status === 'loading' : refreshing
   const canFetch = isCustom ? !!discoveryEp && !!selectedCred : true
@@ -260,8 +269,13 @@ export function PlatformModelsPanel({
   // A model id belongs to the catalog if the endpoint's resolved pool contains it; anything else in
   // the credential's overrides is a user-added custom model.
   const isCatalogModel = useCallback(
-    (endpointId: string, modelId: string) => (endpointPools.get(endpointId) ?? []).some((m) => m.id === modelId),
-    [endpointPools],
+    (endpointId: string, modelId: string) => {
+      // Custom platforms have no models.dev catalog; endpoint.models is the enabled set,
+      // not a catalog pool. Treating it as catalog hid every saved model after create.
+      if (isCustom) return false
+      return (endpointPools.get(endpointId) ?? []).some((m) => m.id === modelId)
+    },
+    [endpointPools, isCustom],
   )
   const customModels = useMemo(() => {
     if (isCustom) {
@@ -318,6 +332,34 @@ export function PlatformModelsPanel({
     [enableModels, removeCustom],
   )
 
+  const editDiscovered = useCallback(
+    (model: DiscoveredOpenAiModel) => {
+      patchDiscovered(model)
+      const enabled = liveEndpoints.some((ep) => modelsOnEndpoint(ep.id).some((m) => m.id === model.id))
+      if (enabled) void enableModels([model])
+    },
+    [patchDiscovered, liveEndpoints, modelsOnEndpoint, enableModels],
+  )
+
+  const disableDiscovered = useCallback(
+    (models: DiscoveredOpenAiModel[]) => {
+      if (!selectedCred || models.length === 0) return
+      const ids = new Set(models.map((m) => m.id))
+      if (isCustom) {
+        const nextEndpoints = liveEndpoints.map((e) => ({
+          ...e,
+          models: e.models?.filter((m) => !ids.has(m.id)),
+        }))
+        void updateCredential(selectedCred.id, { endpoints: nextEndpoints })
+        return
+      }
+      let overrides = { ...selectedCred.overrides }
+      for (const id of ids) overrides = removeCustomModel(overrides, id)
+      void updateCredential(selectedCred.id, { overrides })
+    },
+    [selectedCred, isCustom, liveEndpoints, updateCredential],
+  )
+
   const taskCounts = useMemo(() => {
     const counts = new Map<CapabilityTask, number>()
     for (const { m } of annotated) for (const tk of modelTasks(m)) counts.set(tk, (counts.get(tk) ?? 0) + 1)
@@ -363,6 +405,11 @@ export function PlatformModelsPanel({
       return true
     })
   }, [discovered, activeTab, query])
+  const discoveredBulk = useMemo(() => {
+    const unlocked = discoveredRows.filter((d) => !modelState(endpointsForTasks(livePlan, d.tasks), d.id).locked)
+    const allOn = unlocked.length > 0 && unlocked.every((d) => modelState(endpointsForTasks(livePlan, d.tasks), d.id).enabled)
+    return { unlocked, allOn }
+  }, [discoveredRows, livePlan, modelState])
   const existingIds = useMemo(
     () => [...annotated.map((a) => a.m.id), ...customModels.map((c) => c.id), ...discovered.map((d) => d.id)],
     [annotated, customModels, discovered],
@@ -417,14 +464,14 @@ export function PlatformModelsPanel({
   }
 
   const renderDiscoveredRow = (d: DiscoveredOpenAiModel) => {
-    const endpoints = endpointsForTasks(plan, d.tasks)
+    const endpoints = endpointsForTasks(livePlan, d.tasks)
     const { enabled, locked } = modelState(endpoints, d.id)
     const catModel = catalogModelIndex?.get(normalizeModelId(d.id))
     return (
       <ProviderModelRow
         key={d.id}
         id={d.id}
-        name={d.name || d.id}
+        name={d.name || catModel?.name || d.id}
         enabled={enabled}
         locked={locked}
         lockedHint={t('resources.providerDialog.models.lockedHint')}
@@ -436,6 +483,11 @@ export function PlatformModelsPanel({
             {d.tasks.map((tk) => (
               <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />
             ))}
+            <EditDiscoveredModelPopover
+              name={d.name || catModel?.name || ''}
+              tasks={d.tasks}
+              onSave={({ name, tasks }) => editDiscovered(patchDiscoveredModel(d, { name, tasks }))}
+            />
           </span>
         }
       />
@@ -469,7 +521,7 @@ export function PlatformModelsPanel({
           disabled={!canFetch || fetchBusy}
         >
           {fetchBusy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-          {t('resources.providerDialog.models.refresh')}
+          {isCustom ? t('resources.providerDialog.models.discover') : t('resources.providerDialog.models.refresh')}
         </Button>
       </div>
     </div>
@@ -538,9 +590,15 @@ export function PlatformModelsPanel({
                     variant="ghost"
                     size="sm"
                     className="h-6 text-[11px]"
-                    onClick={() => void enableModels(discoveredRows.filter((d) => !modelState(endpointsForTasks(plan, d.tasks), d.id).enabled))}
+                    disabled={discoveredBulk.unlocked.length === 0}
+                    onClick={() => {
+                      if (discoveredBulk.allOn) disableDiscovered(discoveredBulk.unlocked)
+                      else void enableModels(discoveredBulk.unlocked.filter((d) => !modelState(endpointsForTasks(livePlan, d.tasks), d.id).enabled))
+                    }}
                   >
-                    {t('resources.providerDialog.models.enableAllDiscovered')}
+                    {discoveredBulk.allOn
+                      ? t('resources.providerDialog.models.disableAllDiscovered')
+                      : t('resources.providerDialog.models.enableAllDiscovered')}
                   </Button>
                 </div>
                 {discoveredRows.map(renderDiscoveredRow)}

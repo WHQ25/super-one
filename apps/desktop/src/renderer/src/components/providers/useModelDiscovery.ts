@@ -1,17 +1,23 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { DiscoveredOpenAiModel } from '@superone/shared/agent-types'
+import type { DiscoveredExtraProtocol, DiscoveredOpenAiModel, RelayFingerprint } from '@superone/shared/agent-types'
 import {
   effectiveEndpoints,
   familyBaseUrl,
   isCustomPlatform,
   mergeEndpoint,
+  relaySiteRoot,
   type Credential,
   type EndpointOverride,
   type Plan,
   type Platform,
   type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
-import { applyDiscoveredModels, discoveryEndpoint, widenedPlanEndpoints } from './discovery-apply'
+import {
+  applyDiscoveredModels,
+  cachedDiscoveredModels,
+  discoveryEndpoint,
+  widenedPlanEndpoints,
+} from './discovery-apply'
 
 export type DiscoverState =
   | { status: 'idle' }
@@ -20,7 +26,7 @@ export type DiscoverState =
   | { status: 'error'; message: string }
 
 function siteRootFrom(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, '').replace(/\/v\d+$/, '')
+  return relaySiteRoot(baseUrl)
 }
 
 function endpointsSiteRoot(endpoints: ServiceEndpoint[], probeBaseUrl?: string): string {
@@ -49,16 +55,28 @@ export function useModelDiscovery({
   ) => Promise<void>
   updateCustomPlatform: (def: Platform) => Promise<void>
 }) {
-  const [discovered, setDiscovered] = useState<DiscoveredOpenAiModel[]>([])
-  const [state, setState] = useState<DiscoverState>({ status: 'idle' })
   const custom = isCustomPlatform(platform)
-
   const liveEndpoints = useMemo(
     () => effectiveEndpoints(platform, plan, credential),
     [platform, plan, credential],
   )
+  const [discovered, setDiscovered] = useState<DiscoveredOpenAiModel[]>(() =>
+    custom ? cachedDiscoveredModels(platform.discoveredModels, liveEndpoints) : [],
+  )
+  const [extras, setExtras] = useState<DiscoveredExtraProtocol[]>([])
+  const [relay, setRelay] = useState<RelayFingerprint | undefined>()
+  const [state, setState] = useState<DiscoverState>({ status: 'idle' })
   const livePlan = useMemo(() => ({ ...plan, endpoints: liveEndpoints }), [plan, liveEndpoints])
   const endpoint = discoveryEndpoint(livePlan)
+
+  const persistDiscovered = useCallback(
+    async (models: DiscoveredOpenAiModel[]) => {
+      if (!custom) return
+      if (JSON.stringify(platform.discoveredModels ?? []) === JSON.stringify(models)) return
+      await updateCustomPlatform({ ...platform, discoveredModels: models })
+    },
+    [custom, platform, updateCustomPlatform],
+  )
 
   const discover = useCallback(async () => {
     if (!endpoint || !credential) return
@@ -74,11 +92,19 @@ export function useModelDiscovery({
         endpoint: { ...endpoint, baseUrl: effectiveBaseUrl },
       })
       setDiscovered(result.models)
+      setExtras(result.extras ?? [])
+      setRelay(result.relay)
+      const siteRoot = endpointsSiteRoot(liveEndpoints, effectiveBaseUrl)
+      const widened = widenedPlanEndpoints(livePlan, siteRoot, result.models, result.extras)
+      if (custom) {
+        await persistDiscovered(result.models)
+        if (widened) await updateCredential(credential.id, { endpoints: widened })
+      }
       setState({ status: 'done', truncated: result.truncated })
     } catch (err) {
       setState({ status: 'error', message: err instanceof Error ? err.message : String(err) })
     }
-  }, [endpoint, credential, liveEndpoints])
+  }, [endpoint, credential, liveEndpoints, livePlan, custom, persistDiscovered, updateCredential])
 
   const enableModels = useCallback(
     async (models: DiscoveredOpenAiModel[]) => {
@@ -92,7 +118,7 @@ export function useModelDiscovery({
             : endpoint.baseUrl)
         : familyBaseUrl('openai', endpointsSiteRoot(liveEndpoints))
       const siteRoot = endpointsSiteRoot(liveEndpoints, probeBase)
-      const widenedEndpoints = widenedPlanEndpoints(livePlan, siteRoot, models)
+      const widenedEndpoints = widenedPlanEndpoints(livePlan, siteRoot, models, extras)
 
       if (custom) {
         const nextEndpoints = widenedEndpoints ?? liveEndpoints
@@ -102,7 +128,9 @@ export function useModelDiscovery({
         const folded = nextEndpoints.map((e) => {
           const ov = overrides[e.id]
           if (!ov?.models) return e
-          return { ...e, models: ov.models }
+          const incomingIds = new Set(ov.models.map((m) => m.id))
+          const kept = (e.models ?? []).filter((m) => !incomingIds.has(m.id))
+          return { ...e, models: [...kept, ...ov.models] }
         })
         await updateCredential(credential.id, { endpoints: folded, overrides: {} })
         return
@@ -121,8 +149,20 @@ export function useModelDiscovery({
       const overrides = applyDiscoveredModels(credential.overrides, effectivePlan, models)
       await updateCredential(credential.id, { overrides })
     },
-    [credential, endpoint, liveEndpoints, livePlan, plan, platform, custom, updateCredential, updateCustomPlatform],
+    [credential, endpoint, liveEndpoints, livePlan, plan, platform, custom, extras, updateCredential, updateCustomPlatform],
   )
 
-  return { endpoint, discovered, state, discover, enableModels }
+  const patchDiscovered = useCallback((model: DiscoveredOpenAiModel) => {
+    setDiscovered((prev) => {
+      const next = prev.map((m) => (m.id === model.id ? model : m))
+      void persistDiscovered(next)
+      return next
+    })
+  }, [persistDiscovered])
+
+  const replaceDiscovered = useCallback((models: DiscoveredOpenAiModel[]) => {
+    setDiscovered(models)
+  }, [])
+
+  return { endpoint, discovered, extras, relay, state, discover, enableModels, patchDiscovered, replaceDiscovered }
 }

@@ -1,10 +1,19 @@
 import type { CapabilityTask, DiscoverModelsResult, DiscoveredOpenAiModel } from '@superone/shared/agent-types'
 import {
   MAX_DISCOVERED_MODELS,
+  extrasForRelayKind,
+  extrasFromRelayData,
+  familyBaseUrl,
   flattenDiscoveredTasks,
+  inferRelayKind,
   mergeDiscovered,
-  parseNewApiPricing,
+  mergeDiscoveredExtras,
+  parseNewApiStatus,
   parseOpenAiModelsList,
+  parseRelayPricing,
+  parseSub2ApiPublicSettings,
+  pricingHasEndpointTypes,
+  relaySiteRoot,
   sanitizeDiscoveredByFamily,
   type DiscoveredModel,
   type ServiceEndpoint,
@@ -15,9 +24,9 @@ import { authHeaders, modelsUrl } from './endpoint-test'
 const FETCH_TIMEOUT_MS = 8000
 const BODY_PREVIEW_CHARS = 800
 
-/** Strip a trailing `/v{n}` version segment — the inverse of familyBaseUrl's openai suffixing. */
+/** Strip version + pasted API suffixes — the inverse of familyBaseUrl's openai suffixing. */
 function siteRootFrom(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, '').replace(/\/v\d+$/, '')
+  return relaySiteRoot(baseUrl)
 }
 
 function previewBody(text: string): string {
@@ -69,23 +78,58 @@ async function fetchJson(url: string, init?: RequestInit): Promise<FetchJsonResu
 }
 
 /** NewAPI/one-api pricing is a public, unauthenticated endpoint — no key sent. */
-async function fetchPricing(siteRoot: string): Promise<DiscoveredModel[] | null> {
+async function fetchPricing(
+  siteRoot: string,
+  catalogIndex?: Map<string, CapabilityTask[]>,
+): Promise<{ models: DiscoveredModel[] | null; json: unknown | null }> {
   const url = `${siteRoot}/api/pricing`
   const result = await fetchJson(url)
   if (!result.ok) {
     log.info('[discover-models] pricing unavailable url=%s reason=%s', url, result.error)
-    return null
+    return { models: null, json: null }
   }
-  const parsed = parseNewApiPricing(result.json)
+  const parsed = parseRelayPricing(result.json, catalogIndex)
   if (!parsed) {
     log.warn(
       '[discover-models] pricing parse returned null (shape mismatch) url=%s keys=%s',
       url,
       result.json && typeof result.json === 'object' ? Object.keys(result.json as object).join(',') : typeof result.json,
     )
-    return null
+    return { models: null, json: result.json }
   }
   log.info('[discover-models] pricing ok count=%d sample=%j', parsed.length, parsed.slice(0, 3))
+  return { models: parsed, json: result.json }
+}
+
+async function fetchStatusFingerprint(siteRoot: string) {
+  const url = `${siteRoot}/api/status`
+  const result = await fetchJson(url)
+  if (!result.ok) {
+    log.info('[discover-models] status unavailable url=%s reason=%s', url, result.error)
+    return null
+  }
+  const parsed = parseNewApiStatus(result.json)
+  if (!parsed) {
+    log.info('[discover-models] status parse returned null url=%s', url)
+    return null
+  }
+  log.info('[discover-models] status ok kind=%s name=%s', parsed.kind, parsed.name ?? '')
+  return parsed
+}
+
+async function fetchSub2Fingerprint(siteRoot: string) {
+  const url = `${siteRoot}/api/v1/settings/public`
+  const result = await fetchJson(url)
+  if (!result.ok) {
+    log.info('[discover-models] sub2 settings unavailable url=%s reason=%s', url, result.error)
+    return null
+  }
+  const parsed = parseSub2ApiPublicSettings(result.json)
+  if (!parsed) {
+    log.info('[discover-models] sub2 settings parse returned null url=%s', url)
+    return null
+  }
+  log.info('[discover-models] sub2 settings ok name=%s', parsed.name ?? '')
   return parsed
 }
 
@@ -94,12 +138,12 @@ async function fetchOpenAiModelsList(
   baseUrl: string,
   apiKey: string,
   catalogIndex?: Map<string, CapabilityTask[]>,
-): Promise<DiscoveredModel[] | null> {
+): Promise<{ models: DiscoveredModel[] | null; json: unknown | null }> {
   const url = modelsUrl('openai', baseUrl)
   const result = await fetchJson(url, { headers: authHeaders('openai', apiKey) })
   if (!result.ok) {
     log.info('[discover-models] modelsList unavailable url=%s reason=%s', url, result.error)
-    return null
+    return { models: null, json: null }
   }
   const parsed = parseOpenAiModelsList(result.json, catalogIndex)
   if (!parsed) {
@@ -116,14 +160,14 @@ async function fetchOpenAiModelsList(
           }
         : result.json,
     )
-    return null
+    return { models: null, json: result.json }
   }
   log.info(
     '[discover-models] modelsList ok count=%d sample=%j',
     parsed.length,
     parsed.slice(0, 3).map((m) => ({ id: m.id, byFamily: m.byFamily })),
   )
-  return parsed
+  return { models: parsed, json: result.json }
 }
 
 function toResultModel(m: DiscoveredModel): DiscoveredOpenAiModel | null {
@@ -145,7 +189,8 @@ export async function discoverModels(
   catalogIndex?: Map<string, CapabilityTask[]>,
 ): Promise<DiscoverModelsResult> {
   const siteRoot = siteRootFrom(endpoint.baseUrl)
-  const listUrl = modelsUrl('openai', endpoint.baseUrl)
+  const openaiBase = familyBaseUrl('openai', siteRoot)
+  const listUrl = modelsUrl('openai', openaiBase)
   log.info(
     '[discover-models] start endpointId=%s baseUrl=%s siteRoot=%s listUrl=%s pricingUrl=%s keyLen=%d keyPrefix=%s',
     endpoint.id,
@@ -157,12 +202,14 @@ export async function discoverModels(
     apiKey ? `${apiKey.slice(0, 4)}…` : '(empty)',
   )
 
-  const [pricing, modelsList] = await Promise.all([
-    fetchPricing(siteRoot),
-    fetchOpenAiModelsList(endpoint.baseUrl, apiKey, catalogIndex),
+  const [pricing, modelsList, status, sub2] = await Promise.all([
+    fetchPricing(siteRoot, catalogIndex),
+    fetchOpenAiModelsList(openaiBase, apiKey, catalogIndex),
+    fetchStatusFingerprint(siteRoot),
+    fetchSub2Fingerprint(siteRoot),
   ])
 
-  const merged = mergeDiscovered(pricing, modelsList)
+  const merged = mergeDiscovered(pricing.models, modelsList.models)
   const models: DiscoveredOpenAiModel[] = []
   let dropped = 0
   for (const m of merged) {
@@ -171,10 +218,25 @@ export async function discoverModels(
     else dropped++
   }
 
+  const relay = inferRelayKind({
+    status,
+    sub2,
+    pricingHasEndpointTypes: pricingHasEndpointTypes(pricing.json),
+    pricingOk: pricing.models != null,
+    modelsListOk: modelsList.models != null,
+  })
+  const extras = mergeDiscoveredExtras(
+    extrasFromRelayData(pricing.json),
+    extrasFromRelayData(modelsList.json),
+    extrasForRelayKind(relay.kind),
+  )
+
   const result: DiscoverModelsResult = {
     models,
     truncated: merged.length >= MAX_DISCOVERED_MODELS,
-    sources: { pricing: pricing ? 'ok' : 'unavailable', modelsList: modelsList ? 'ok' : 'unavailable' },
+    sources: { pricing: pricing.models ? 'ok' : 'unavailable', modelsList: modelsList.models ? 'ok' : 'unavailable' },
+    extras: extras.length > 0 ? extras : undefined,
+    relay,
   }
   log.info(
     '[discover-models] done sources=%j merged=%d dropped=%d returned=%d truncated=%s sample=%j',

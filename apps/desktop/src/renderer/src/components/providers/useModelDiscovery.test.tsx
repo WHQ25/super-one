@@ -50,8 +50,9 @@ describe('useModelDiscovery', () => {
       })),
     })
 
+    const updateCustomPlatform = vi.fn()
     const { result } = renderHook(() =>
-      useModelDiscovery({ platform, plan, credential, updateCredential: vi.fn(), updateCustomPlatform: vi.fn() }),
+      useModelDiscovery({ platform, plan, credential, updateCredential: vi.fn(), updateCustomPlatform }),
     )
 
     await act(async () => {
@@ -60,6 +61,43 @@ describe('useModelDiscovery', () => {
 
     expect(result.current.discovered).toEqual([{ id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } }])
     expect(result.current.state).toEqual({ status: 'done', truncated: false })
+    expect(updateCustomPlatform).toHaveBeenCalledWith(
+      expect.objectContaining({
+        discoveredModels: [{ id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } }],
+      }),
+    )
+  })
+
+  it('hydrates from platform.discoveredModels without probing', () => {
+    const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
+    const { platform, plan } = makePlatform([openaiEp])
+    platform.discoveredModels = [{ id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } }]
+    const credential = makeCredential()
+
+    const { result } = renderHook(() =>
+      useModelDiscovery({ platform, plan, credential, updateCredential: vi.fn(), updateCustomPlatform: vi.fn() }),
+    )
+
+    expect(result.current.discovered).toEqual([{ id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } }])
+  })
+
+  it('hydrates from enabled endpoint models when the platform cache is empty', () => {
+    const openaiEp: ServiceEndpoint = {
+      id: 'openai',
+      baseUrl: 'https://relay.com/v1',
+      protocols: ['openai-chat'],
+      models: [{ id: 'gpt-5', name: 'GPT-5', tasks: ['chat'] }],
+    }
+    const { platform, plan } = makePlatform([openaiEp])
+    const credential: Credential = { ...makeCredential(), endpoints: [openaiEp] }
+
+    const { result } = renderHook(() =>
+      useModelDiscovery({ platform, plan, credential, updateCredential: vi.fn(), updateCustomPlatform: vi.fn() }),
+    )
+
+    expect(result.current.discovered).toEqual([
+      { id: 'gpt-5', name: 'GPT-5', tasks: ['chat'], byFamily: { openai: ['chat'] } },
+    ])
   })
 
   it('sets error state when the IPC call rejects', async () => {
@@ -190,5 +228,50 @@ describe('useModelDiscovery', () => {
     expect(result.current.discovered).toEqual([
       { id: 'claude-opus', tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
     ])
+  })
+
+  it('widens custom key protocols on discover without enabling models', async () => {
+    const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
+    const { platform, plan } = makePlatform([openaiEp])
+    const credential = makeCredential()
+    const updateCredential = vi.fn()
+    const updateCustomPlatform = vi.fn()
+    stubApp({
+      discoverProviderModels: vi.fn(async () => ({
+        models: [
+          { id: 'claude-opus', tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
+          { id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } },
+        ],
+        extras: ['openai-responses'],
+        truncated: false,
+        sources: { pricing: 'ok', modelsList: 'ok' },
+      })),
+    })
+
+    const { result } = renderHook(() =>
+      useModelDiscovery({ platform, plan, credential, updateCredential, updateCustomPlatform }),
+    )
+
+    await act(async () => {
+      await result.current.discover()
+    })
+
+    expect(updateCustomPlatform).toHaveBeenCalledWith(
+      expect.objectContaining({
+        discoveredModels: [
+          { id: 'claude-opus', tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
+          { id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } },
+        ],
+      }),
+    )
+    expect(updateCredential).toHaveBeenCalledWith('cred-1', {
+      endpoints: expect.arrayContaining([
+        expect.objectContaining({ id: 'openai', protocols: expect.arrayContaining(['openai-responses', 'openai-chat']) }),
+        expect.objectContaining({ id: 'anthropic', protocols: ['anthropic-messages'] }),
+      ]),
+    })
+    const written = updateCredential.mock.calls[0][1].endpoints as ServiceEndpoint[]
+    expect(written.every((e) => !e.models?.length)).toBe(true)
+    expect(result.current.discovered).toHaveLength(2)
   })
 })

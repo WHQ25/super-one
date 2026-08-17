@@ -197,6 +197,9 @@ export type Messages = {
       unpin: string
       hide: string
       unhide: string
+      tags: string
+      noTags: string
+      tagCopiedToast: string
       /** Provider / harness session id (Claude SDK, Codex thread, …). */
       copySessionId: string
       copyWorkingDirectory: string
@@ -2958,6 +2961,9 @@ export const en: Messages = {
       unpin: 'Unpin Session',
       hide: 'Hide Session',
       unhide: 'Unhide Session',
+      tags: 'Tags',
+      noTags: 'No tags',
+      tagCopiedToast: 'Tag copied',
       copySessionId: 'Copy Session ID',
       copyWorkingDirectory: 'Copy Working Directory',
       openFolder: 'Open Folder',

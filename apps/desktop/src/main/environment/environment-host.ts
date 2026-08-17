@@ -73,6 +73,7 @@ import type {
   ProjectSnapshot,
 } from '@superone/shared/environment'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+import { parseTagsJson } from '@superone/shared/session-tags'
 import {
   deletePendingDraft,
   enqueuePendingDraft,
@@ -349,6 +350,7 @@ export class EnvironmentHost {
       providerSessionId?: string | null
       /** Prefixed resume token from node SessionRuntime. */
       providerResume?: string | null
+      tags?: unknown
     }
     const sessionId = String(s.sessionId ?? '')
     const ts = s.updatedAt ?? s.createdAt ?? Date.now()
@@ -369,6 +371,7 @@ export class EnvironmentHost {
       harness === 'claude' || harness === 'codex' || harness === 'acp' || harness === 'opencode'
         ? harness
         : 'claude'
+    const tags = parseTagsJson(s.tags)
     return {
       sessionId,
       title: (s.title && String(s.title).trim()) || 'New session',
@@ -381,6 +384,7 @@ export class EnvironmentHost {
       worktreePath: cwd ?? undefined,
       isWorktree: Boolean(cwd),
       ...(providerSessionId ? { providerSessionId } : {}),
+      ...(tags.length ? { tags } : {}),
     }
   }
 

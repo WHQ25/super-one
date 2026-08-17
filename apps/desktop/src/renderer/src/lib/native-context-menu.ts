@@ -15,13 +15,34 @@ export type AdaptiveMenuEntry =
       disabled?: boolean
       onSelect: () => void
     }
+  | {
+      kind: 'submenu'
+      id: string
+      label: string
+      icon?: IconComponent
+      items: AdaptiveMenuEntry[]
+    }
 
 export function toNativeMenu(entries: AdaptiveMenuEntry[]): NativeMenuItem[] {
-  return entries.map((entry) =>
-    entry.kind === 'separator'
-      ? { type: 'separator' }
-      : { id: entry.id, label: entry.label, icon: entry.icon, enabled: !entry.disabled, onSelect: entry.onSelect },
-  )
+  return entries.map((entry) => {
+    if (entry.kind === 'separator') return { type: 'separator' }
+    if (entry.kind === 'submenu') {
+      return {
+        id: entry.id,
+        label: entry.label,
+        type: 'submenu',
+        icon: entry.icon,
+        submenu: toNativeMenu(entry.items),
+      }
+    }
+    return {
+      id: entry.id,
+      label: entry.label,
+      icon: entry.icon,
+      enabled: !entry.disabled,
+      onSelect: entry.onSelect,
+    }
+  })
 }
 
 export interface NativeMenuItem {

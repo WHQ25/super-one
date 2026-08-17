@@ -864,6 +864,7 @@ export interface EnvironmentAPI {
       automationId?: string
       acpAgentId?: string
       providerSessionId?: string
+      tags?: string[]
     }>
   >
   /** Create a session on a remote node project. */

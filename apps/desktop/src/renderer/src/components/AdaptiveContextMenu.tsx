@@ -4,6 +4,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@superone/ui/components/ui/context-menu'
 import { useAppStore } from '@/stores/app'
@@ -13,6 +16,37 @@ interface AdaptiveContextMenuProps {
   items: AdaptiveMenuEntry[]
   children: ReactNode
   contentClassName?: string
+}
+
+function ContextMenuEntries({ items }: { items: AdaptiveMenuEntry[] }) {
+  return items.map((entry, i) => {
+    if (entry.kind === 'separator') return <ContextMenuSeparator key={i} />
+    if (entry.kind === 'submenu') {
+      return (
+        <ContextMenuSub key={entry.id}>
+          <ContextMenuSubTrigger className="text-xs">
+            {entry.icon ? <entry.icon className="size-3.5" /> : null}
+            {entry.label}
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            <ContextMenuEntries items={entry.items} />
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )
+    }
+    return (
+      <ContextMenuItem
+        key={entry.id}
+        variant={entry.destructive ? 'destructive' : 'default'}
+        disabled={entry.disabled}
+        onClick={entry.onSelect}
+        className="text-xs"
+      >
+        {entry.icon ? <entry.icon className="size-3.5" /> : null}
+        {entry.label}
+      </ContextMenuItem>
+    )
+  })
 }
 
 export function AdaptiveContextMenu({ items, children, contentClassName }: AdaptiveContextMenuProps) {
@@ -43,22 +77,7 @@ export function AdaptiveContextMenu({ items, children, contentClassName }: Adapt
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className={contentClassName}>
-        {items.map((entry, i) =>
-          entry.kind === 'separator' ? (
-            <ContextMenuSeparator key={i} />
-          ) : (
-            <ContextMenuItem
-              key={entry.id}
-              variant={entry.destructive ? 'destructive' : 'default'}
-              disabled={entry.disabled}
-              onClick={entry.onSelect}
-              className="text-xs"
-            >
-              {entry.icon ? <entry.icon className="size-3.5" /> : null}
-              {entry.label}
-            </ContextMenuItem>
-          ),
-        )}
+        <ContextMenuEntries items={items} />
       </ContextMenuContent>
     </ContextMenu>
   )

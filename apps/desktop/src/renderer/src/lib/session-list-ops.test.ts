@@ -73,6 +73,18 @@ describe('session-list-ops', () => {
     expect(mapped.providerSessionId).toBe('prov-123')
   })
 
+  it('preserves tags from environment rows', async () => {
+    const { mapEnvironmentSessionRow } = await import('./session-list-ops')
+    const mapped = mapEnvironmentSessionRow({
+      sessionId: 's1',
+      title: 'Tagged',
+      lastActiveAt: '2026-01-01T00:00:00.000Z',
+      messageCount: 1,
+      tags: ['ui', 'sidebar'],
+    })
+    expect(mapped.tags).toEqual(['ui', 'sidebar'])
+  })
+
   it('listSessionsPage for remote resolves projectId then lists', async () => {
     listProjects.mockResolvedValueOnce([
       { projectId: 'pid-1', path: '/work/app', name: 'app' },

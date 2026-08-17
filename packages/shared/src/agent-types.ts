@@ -1979,6 +1979,8 @@ export interface SessionHistoryEntry {
   worktreePath?: string // filesystem path to the worktree directory
   isPinned?: boolean   // true if session is pinned by user
   isHidden?: boolean   // true if session is hidden by user
+  /** Agent-set labels for archive list/search. Omitted when empty. */
+  tags?: string[]
   isAutomation?: boolean
   automationId?: string
   /** Parent SuperOne session when this entry was created through session_start. */

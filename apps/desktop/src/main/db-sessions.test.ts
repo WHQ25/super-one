@@ -95,6 +95,36 @@ describe('db-sessions session query + mapping', () => {
     expect(sessions[0].parentSessionId).toBe('parent-1')
   })
 
+  it('listSessionsForFolder maps tags_json onto the history entry', () => {
+    getProjectIdMock.mockReturnValue('proj-1')
+    const rows = [
+      {
+        id: 's1',
+        title: 'tagged',
+        created_at: '2026-01-01T00:00:00.000Z',
+        last_user_msg_at: '2026-01-01T00:00:00.000Z',
+        tags_json: '["ui","sidebar"]',
+      },
+      {
+        id: 's2',
+        title: 'untagged',
+        created_at: '2026-01-01T00:00:00.000Z',
+        last_user_msg_at: '2026-01-01T00:00:00.000Z',
+        tags_json: '[]',
+      },
+    ]
+    const allMock = vi.fn().mockReturnValue(rows)
+    const prepareMock = vi.fn((sql: string) => {
+      expect(sql).toContain('tags_json')
+      return { all: allMock }
+    })
+    getDbMock.mockReturnValue({ prepare: prepareMock })
+
+    const sessions = listSessionsForFolder('/tmp/project-1')
+    expect(sessions[0].tags).toEqual(['ui', 'sidebar'])
+    expect(sessions[1].tags).toBeUndefined()
+  })
+
   it('listPinnedSessions keeps inferred provider from SQL rows', () => {
     const rows = [
       {

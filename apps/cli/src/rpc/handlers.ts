@@ -2015,6 +2015,7 @@ function handleSessionList(payload: unknown, ctx: RpcContext): RpcResult {
         automationId: s.automationId ?? null,
         providerResume,
         ...(providerSessionId ? { providerSessionId } : {}),
+        tags: Array.isArray(s.tags) ? s.tags : [],
       }
     }),
   }

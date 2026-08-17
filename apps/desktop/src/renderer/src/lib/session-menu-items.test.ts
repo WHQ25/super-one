@@ -97,6 +97,32 @@ describe('buildSessionMenuItems remote vs local', () => {
   })
 })
 
+describe('buildSessionMenuItems tags submenu', () => {
+  function tagsSubmenu(session: SessionHistoryEntry) {
+    const items = buildSessionMenuItems(session, '/Users/me/app', t, handlers)
+    return items.find((e): e is Extract<typeof e, { kind: 'submenu' }> => e.kind === 'submenu' && e.id === 'tags')
+  }
+
+  it('shows a disabled empty-state item when the session has no tags', () => {
+    const submenu = tagsSubmenu(base)
+    expect(submenu).toBeDefined()
+    expect(submenu?.items).toEqual([
+      expect.objectContaining({ id: 'tags-empty', disabled: true, label: 'sidebar.contextMenu.noTags' }),
+    ])
+  })
+
+  it('lists current tags as enabled items that copy on select', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const submenu = tagsSubmenu({ ...base, tags: ['ui', 'sidebar'] })
+    expect(submenu?.items.map((e) => (e.kind === 'item' ? e.label : e.kind))).toEqual(['ui', 'sidebar'])
+    expect(submenu?.items.every((e) => e.kind === 'item' && !e.disabled)).toBe(true)
+    const first = submenu?.items[0]
+    if (first?.kind === 'item') first.onSelect()
+    expect(writeText).toHaveBeenCalledWith('ui')
+  })
+})
+
 describe('resolveSessionIdForCopy', () => {
   beforeEach(() => {
     getSession.mockReset()

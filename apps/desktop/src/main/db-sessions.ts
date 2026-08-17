@@ -3,6 +3,7 @@ import { getProjectId } from './recent-folders'
 import { serializeMessageContent, parseMessageContent, deriveHarnessId } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
+import { parseTagsJson } from '@superone/shared/session-tags'
 
 interface DbSession {
   id: string
@@ -40,6 +41,7 @@ export function listSessionsForProjectId(
     WITH related_sessions AS (
       SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
              s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
+             s.tags_json,
              g.parent_session_id,
              COALESCE(g.parent_session_id, s.id) AS root_session_id,
              COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
@@ -66,25 +68,29 @@ export function listSessionsForProjectId(
     : safeOffset > 0
       ? db.prepare(`${baseSql} LIMIT -1 OFFSET ?`).all(projectId, safeOffset)
       : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; parent_session_id: string | null }>
+  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; parent_session_id: string | null; tags_json: string | null }>
 
-  return rows.map((r) => ({
-    sessionId: r.id,
-    title: r.title ?? 'Untitled',
-    lastActiveAt: r.last_user_msg_at,
-    provider: deriveHarnessId(r),
-    messageCount: 0,
-    ...(r.is_worktree ? { isWorktree: true } : {}),
-    ...(r.is_pinned ? { isPinned: true } : {}),
-    ...(r.is_hidden ? { isHidden: true } : {}),
-    ...(r.git_branch ? { gitBranch: r.git_branch } : {}),
-    ...(r.worktree_path ? { worktreePath: r.worktree_path } : {}),
-    ...(r.is_automation ? { isAutomation: true } : {}),
-    ...(r.automation_id ? { automationId: r.automation_id } : {}),
-    ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
-    ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
-    ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
-  }))
+  return rows.map((r) => {
+    const tags = parseTagsJson(r.tags_json)
+    return {
+      sessionId: r.id,
+      title: r.title ?? 'Untitled',
+      lastActiveAt: r.last_user_msg_at,
+      provider: deriveHarnessId(r),
+      messageCount: 0,
+      ...(r.is_worktree ? { isWorktree: true } : {}),
+      ...(r.is_pinned ? { isPinned: true } : {}),
+      ...(r.is_hidden ? { isHidden: true } : {}),
+      ...(r.git_branch ? { gitBranch: r.git_branch } : {}),
+      ...(r.worktree_path ? { worktreePath: r.worktree_path } : {}),
+      ...(r.is_automation ? { isAutomation: true } : {}),
+      ...(r.automation_id ? { automationId: r.automation_id } : {}),
+      ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
+      ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
+      ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
+      ...(tags.length ? { tags } : {}),
+    }
+  })
 }
 
 /** List sessions for a project folder from DB (no external sync). */
@@ -152,12 +158,7 @@ export function isSessionUserRenamed(sessionId: string): boolean {
 export function getSessionTags(sessionId: string): string[] | null {
   const row = getDb().prepare('SELECT tags_json FROM sessions WHERE id = ?').get(sessionId) as { tags_json: string | null } | undefined
   if (!row) return null
-  try {
-    const parsed = JSON.parse(row.tags_json || '[]') as unknown
-    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : []
-  } catch {
-    return []
-  }
+  return parseTagsJson(row.tags_json)
 }
 
 /** Returns false when the session id is unknown. */

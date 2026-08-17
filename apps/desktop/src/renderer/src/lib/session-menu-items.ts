@@ -1,4 +1,4 @@
-import { Copy, Eye, EyeOff, FolderOpen, GitFork, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Trash2 } from 'lucide-react'
+import { Copy, Eye, EyeOff, FolderOpen, GitFork, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -72,11 +72,35 @@ export function buildSessionMenuItems(
   const hostPath = isRemoteHost
     ? folderPath.slice(folderPath.indexOf(':', 'remote:'.length) + 1) || folderPath
     : folderPath
+  const tags = session.tags ?? []
 
   const items: AdaptiveMenuEntry[] = [
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: handlers.onRename },
     { kind: 'item', id: 'pin', label: session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin'), icon: Pin, onSelect: handlers.onPin },
     { kind: 'item', id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: handlers.onHide },
+    {
+      kind: 'submenu',
+      id: 'tags',
+      label: t('sidebar.contextMenu.tags'),
+      icon: Tag,
+      items: tags.length
+        ? tags.map((tag) => ({
+            kind: 'item' as const,
+            id: `tag:${tag}`,
+            label: tag,
+            onSelect: () => {
+              void navigator.clipboard.writeText(tag)
+              toast.success(t('sidebar.contextMenu.tagCopiedToast'))
+            },
+          }))
+        : [{
+            kind: 'item' as const,
+            id: 'tags-empty',
+            label: t('sidebar.contextMenu.noTags'),
+            disabled: true,
+            onSelect: () => undefined,
+          }],
+    },
     { kind: 'separator' },
     // Mini window is a desktop shell around the same chat store; remote: project keys work via selectProject/switchSession.
     {

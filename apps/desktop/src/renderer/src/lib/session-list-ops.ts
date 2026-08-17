@@ -33,6 +33,7 @@ type EnvironmentSessionRow = {
   automationId?: string | null
   acpAgentId?: string
   providerSessionId?: string
+  tags?: string[]
 }
 
 /** Normalize environment listSessions rows to SessionHistoryEntry. */
@@ -53,6 +54,9 @@ export function mapEnvironmentSessionRow(row: EnvironmentSessionRow): SessionHis
     ...(row.automationId ? { automationId: row.automationId } : {}),
     ...(row.acpAgentId ? { acpAgentId: row.acpAgentId } : {}),
     ...(row.providerSessionId ? { providerSessionId: row.providerSessionId } : {}),
+    ...(Array.isArray(row.tags) && row.tags.length
+      ? { tags: row.tags.filter((t): t is string => typeof t === 'string') }
+      : {}),
   }
 }
 

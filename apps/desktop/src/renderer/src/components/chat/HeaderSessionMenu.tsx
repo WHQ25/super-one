@@ -10,6 +10,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -17,10 +20,41 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
-import { showNativeContextMenu, toNativeMenu } from '@/lib/native-context-menu'
+import { showNativeContextMenu, toNativeMenu, type AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { RenameSessionDialog, type RenameSessionTarget } from '@/components/sidebar/RenameSessionDialog'
 
 const NO_DRAG: CSSProperties = { WebkitAppRegion: 'no-drag' } as CSSProperties
+
+function DropdownMenuEntries({ items }: { items: AdaptiveMenuEntry[] }) {
+  return items.map((item, i) => {
+    if (item.kind === 'separator') return <DropdownMenuSeparator key={i} />
+    if (item.kind === 'submenu') {
+      return (
+        <DropdownMenuSub key={item.id}>
+          <DropdownMenuSubTrigger className="text-xs">
+            {item.icon ? <item.icon className="size-3.5" /> : null}
+            {item.label}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuEntries items={item.items} />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )
+    }
+    return (
+      <DropdownMenuItem
+        key={item.id}
+        variant={item.destructive ? 'destructive' : 'default'}
+        disabled={item.disabled}
+        onClick={item.onSelect}
+        className="text-xs"
+      >
+        {item.icon ? <item.icon className="size-3.5" /> : null}
+        {item.label}
+      </DropdownMenuItem>
+    )
+  })
+}
 
 export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string; folderPath: string }) {
   const { t } = useTranslation()
@@ -149,22 +183,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
           </IconButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48">
-          {items.map((item, i) =>
-            item.kind === 'separator' ? (
-              <DropdownMenuSeparator key={i} />
-            ) : (
-              <DropdownMenuItem
-                key={item.id}
-                variant={item.destructive ? 'destructive' : 'default'}
-                disabled={item.disabled}
-                onClick={item.onSelect}
-                className="text-xs"
-              >
-                {item.icon ? <item.icon className="size-3.5" /> : null}
-                {item.label}
-              </DropdownMenuItem>
-            ),
-          )}
+          <DropdownMenuEntries items={items} />
         </DropdownMenuContent>
       </DropdownMenu>
       {dialog}

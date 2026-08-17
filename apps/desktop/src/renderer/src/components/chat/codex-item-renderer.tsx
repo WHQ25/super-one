@@ -22,6 +22,7 @@ import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
+import { isCodexCommandToolError } from './codex-command-status'
 
 interface PlanFooterActions {
   onApprove?: () => void
@@ -87,8 +88,8 @@ export const CodexCommandBlock = memo(function CodexCommandBlock({ item, isStrea
 
   const isRunning = isStreaming && showRunning
   const [expanded, setExpanded] = useState(false)
-  const isFailed = item.status === 'failed' || (item.exitCode !== undefined && item.exitCode !== 0)
-  const tone = isFailed ? 'error' as const : 'default' as const
+  const isToolError = isCodexCommandToolError(item)
+  const tone = isToolError ? 'error' as const : 'default' as const
   const runningLabel = display.label === 'Bash'
     ? t('chat.codex.statusRunning')
     : display.label === 'Read'

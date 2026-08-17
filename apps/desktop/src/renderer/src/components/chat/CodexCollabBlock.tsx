@@ -11,6 +11,7 @@ import { useForkNavigation } from './fork-navigation-context'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
 import { CompactLabeledToolRow } from './tool-row'
+import { isCodexCommandToolError } from './codex-command-status'
 
 export const TASK_CARD_ITEM_TYPES = new Set<CodexThreadItem['type']>([
   'command_execution',
@@ -108,7 +109,7 @@ function MiniToolChip({ item }: { item: CodexThreadItem }) {
         label={t('chat.codexCollab.miniTool.bash')}
         summary={item.command}
         streaming={item.status === 'in_progress'}
-        tone={item.status === 'failed' ? 'error' : 'default'}
+        tone={isCodexCommandToolError(item) ? 'error' : 'default'}
       />
     )
   }

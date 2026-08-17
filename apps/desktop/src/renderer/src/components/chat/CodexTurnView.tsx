@@ -24,6 +24,7 @@ import {
 import { summarizeCodexProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
 import { ToolName, ToolRow, ToolSummary } from './tool-row'
+import { isCodexCommandToolError } from './codex-command-status'
 
 function safeStringify(value: unknown): string {
   try { return JSON.stringify(value) } catch { return String(value) }
@@ -305,7 +306,7 @@ function generateCommandGroupSummary(items: CodexCommandExecutionItem[], t: (key
 const CodexCommandGroup = memo(function CodexCommandGroup({ items, isStreaming, sealed }: { items: CodexCommandExecutionItem[]; isStreaming: boolean; sealed: boolean }) {
   const { t } = useTranslation()
   const hasRunning = items.some((item) => isStreaming && item.status === 'in_progress')
-  const failed = items.some((item) => item.status === 'failed' || (item.exitCode !== undefined && item.exitCode !== 0))
+  const failed = items.some(isCodexCommandToolError)
   const [expanded, setExpanded] = useState(hasRunning && !sealed)
 
   useEffect(() => {

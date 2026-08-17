@@ -390,7 +390,7 @@ describe('CodexTurnView', () => {
     expect(screen.getByText(/bun run test/)).toHaveClass('line-clamp-3')
   })
 
-  it('uses shared warning chrome and an Error badge for a failed command', () => {
+  it('renders a non-zero command exit as a normal tool call outcome', () => {
     render(
       <CodexTurnView
         message={createMessage({
@@ -416,11 +416,83 @@ describe('CodexTurnView', () => {
     )
 
     const row = screen.getByText('Bash').closest('.tool-node')
-    expect(row).toHaveClass('errored', 'bg-warning/10')
-    expect(screen.getByText('Error')).toBeTruthy()
+    expect(row).not.toHaveClass('errored', 'bg-warning/10')
+    expect(screen.queryByText('Error')).toBeNull()
 
     fireEvent.click(screen.getByText('Bash'))
     expect(screen.getByText(/FAIL src\/example\.test\.ts/)).toBeTruthy()
+    expect(screen.getByText(/Exit code 1/)).toBeTruthy()
+  })
+
+  it('keeps warning chrome for a command tool failure without an exit code', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [{
+                id: 'cmd-error',
+                type: 'command_execution',
+                command: 'bun run test',
+                aggregatedOutput: 'Failed to start command process',
+                status: 'failed',
+              }],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    const row = screen.getByText('Bash').closest('.tool-node')
+    expect(row).toHaveClass('errored', 'bg-warning/10')
+    expect(screen.getByText('Error')).toBeTruthy()
+  })
+
+  it('keeps a grep no-match result neutral in a collapsed command group', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'grep-no-match',
+                  type: 'command_execution',
+                  command: 'rg missing src',
+                  aggregatedOutput: '',
+                  exitCode: 1,
+                  status: 'failed',
+                  commandActions: [{ type: 'search', query: 'missing', path: '/test/src' }],
+                },
+                {
+                  id: 'read-after-grep',
+                  type: 'command_execution',
+                  command: 'cat src/example.ts',
+                  aggregatedOutput: 'export {}',
+                  exitCode: 0,
+                  status: 'completed',
+                  commandActions: [{ type: 'read', path: '/test/src/example.ts' }],
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    const row = screen.getByText('Code Explored').closest('.tool-node')
+    expect(row).not.toHaveClass('errored', 'bg-warning/10')
+    expect(screen.queryByText('Error')).toBeNull()
   })
 
   it.each([

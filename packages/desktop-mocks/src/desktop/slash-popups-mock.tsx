@@ -549,7 +549,6 @@ interface BrandEntry {
   Mono: ComponentType<{ size?: number }>
   Color?: ComponentType<{ size?: number }>
   Text?: ComponentType<{ size?: number }>
-  Combine?: typeof OpenAI.Combine
   extraLabel?: string
 }
 
@@ -574,7 +573,7 @@ const BRANDS: Record<ProviderBrandKey, BrandEntry> = {
   siliconcloud: { Mono: SiliconCloud, Color: SiliconCloud.Color, Text: SiliconCloud.Text },
   xiaomimimo: { Mono: XiaomiMiMo, Text: XiaomiMiMo.Text },
   openai: { Mono: OpenAI, Text: OpenAI.Text },
-  chatgpt: { Mono: OpenAI, Combine: OpenAI.Combine, extraLabel: "ChatGPT" },
+  chatgpt: { Mono: OpenAI, extraLabel: "ChatGPT" },
 }
 
 function BrandLabel({ brand, fallback, size = 20 }: { brand?: ProviderBrandKey; fallback?: string; size?: number }) {
@@ -588,19 +587,17 @@ function BrandLabel({ brand, fallback, size = 20 }: { brand?: ProviderBrandKey; 
     )
   }
   const IconComp = entry.Color ?? entry.Mono
-  if (entry.Combine && entry.extraLabel) {
+  if (entry.extraLabel) {
     return (
-      <entry.Combine
-        size={size}
-        extra={entry.extraLabel}
-        showText={false}
-        style={{ display: "inline-flex", flexDirection: "row", alignItems: "center" }}
-      />
+      <span className="inline-flex items-center" style={{ gap: size * 0.4 }}>
+        <IconComp size={size} />
+        <span className="leading-none" style={{ fontSize: size * 0.75 * 0.95 }}>{entry.extraLabel}</span>
+      </span>
     )
   }
   if (entry.Text) {
     return (
-      <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex items-center" style={{ gap: size * 0.4 }}>
         <IconComp size={size} />
         <entry.Text size={size * 0.75} />
       </span>

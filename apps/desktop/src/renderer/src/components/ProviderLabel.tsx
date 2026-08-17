@@ -1,14 +1,16 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Globe } from 'lucide-react'
 import { Anthropic, Claude, Cursor, OpenRouter, Zhipu, ZAI, Kimi, Moonshot, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI } from '@lobehub/icons'
 import type { IconType } from '@lobehub/icons'
+import { TightCombine } from './TightCombine'
 
 interface BrandEntry {
   Mono: IconType
   Color?: IconType
   Text?: IconType
-  Combine?: typeof OpenAI.Combine
   extraLabel?: string
+  /** Color mark is white-on-transparent (Avatar-only). Use Mono so it follows the theme. */
+  combineMono?: true
 }
 
 const BRANDS: Record<string, BrandEntry> = {
@@ -17,7 +19,7 @@ const BRANDS: Record<string, BrandEntry> = {
   openrouter: { Mono: OpenRouter, Text: OpenRouter.Text },
   zhipu: { Mono: Zhipu, Color: Zhipu.Color, Text: Zhipu.Text },
   zai: { Mono: ZAI, Text: ZAI.Text },
-  kimi: { Mono: Kimi, Color: Kimi.Color, Text: Kimi.Text },
+  kimi: { Mono: Kimi, Color: Kimi.Color, Text: Kimi.Text, combineMono: true },
   moonshot: { Mono: Moonshot, Text: Moonshot.Text },
   minimax: { Mono: Minimax, Color: Minimax.Color, Text: Minimax.Text },
   volcengine: { Mono: Volcengine, Color: Volcengine.Color, Text: Volcengine.Text },
@@ -34,7 +36,7 @@ const BRANDS: Record<string, BrandEntry> = {
   siliconcloud: { Mono: SiliconCloud, Color: SiliconCloud.Color, Text: SiliconCloud.Text },
   xiaomimimo: { Mono: XiaomiMiMo, Text: XiaomiMiMo.Text },
   openai: { Mono: OpenAI, Text: OpenAI.Text },
-  chatgpt: { Mono: OpenAI, Combine: OpenAI.Combine, extraLabel: 'ChatGPT' },
+  chatgpt: { Mono: OpenAI, extraLabel: 'ChatGPT' },
   cursor: { Mono: Cursor, Text: Cursor.Text },
 }
 
@@ -71,7 +73,6 @@ export function ProviderLabel({
   fallback,
   size = 44,
   iconOnly = false,
-  combine = false,
   compactFallback = false,
   icon,
 }: {
@@ -89,27 +90,12 @@ export function ProviderLabel({
     if (iconOnly) {
       return <IconComp size={size} />
     }
-    if (brand.Combine && brand.extraLabel) {
-      return (
-        <brand.Combine
-          size={size}
-          extra={brand.extraLabel}
-          showText={false}
-          style={{ display: 'inline-flex', flexDirection: 'row', alignItems: 'center' }}
-        />
-      )
-    }
-    const CombineComp = (brand.Mono as unknown as { Combine?: (p: { size?: number; type?: 'color' | 'mono'; style?: CSSProperties }) => ReactNode }).Combine
-    if (combine && CombineComp) {
-      return <CombineComp size={size} type="color" style={{ display: 'inline-flex', flexDirection: 'row', alignItems: 'center' }} />
+    const Mark = brand.combineMono ? brand.Mono : IconComp
+    if (brand.extraLabel) {
+      return <TightCombine Icon={Mark} extra={brand.extraLabel} size={size} />
     }
     if (brand.Text) {
-      return (
-        <span className="inline-flex items-center gap-1.5">
-          <IconComp size={size} />
-          <brand.Text size={size * 0.75} />
-        </span>
-      )
+      return <TightCombine Icon={Mark} Text={brand.Text} size={size} />
     }
     return <IconComp size={size} />
   }

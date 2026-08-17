@@ -72,12 +72,10 @@ export function NewSessionMock({
                 <Claude.Text size={9} />
               </span>
             ) : (
-              <OpenAI.Combine
-                size={12}
-                extra="ChatGPT"
-                showText={false}
-                style={{ display: "inline-flex", flexDirection: "row", alignItems: "center" }}
-              />
+              <span className="inline-flex items-center" style={{ gap: 12 * 0.4 }}>
+                <OpenAI size={12} />
+                <span className="leading-none" style={{ fontSize: 12 * 0.75 * 0.95 }}>ChatGPT</span>
+              </span>
             )}
           </HarnessFader>
 

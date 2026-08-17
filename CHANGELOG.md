@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.10-alpha] - 2026-08-17
+
+### Added
+
+- Settings: create and edit a custom provider from a base URL and API key. Review discovered models, change the name, rebase the URL, refresh the site icon, and save from the test-connection row. Reopening a saved provider keeps the last model list.
+- Settings: pick a more specific model glyph from catalog aliases (for example `gemini-3.1-flash-image` shows Nano Banana).
+
+### Fixed
+
+- Settings: crop official Combine marks to their ink box so icon-to-wordmark gaps look even across the provider list.
+- Chat: SuperOne tool rows share one label grammar (running / done / interrupted) and the same Denied/Error chrome as Bash.
+
 ## [0.53.9-alpha] - 2026-08-16
 
 ### Added

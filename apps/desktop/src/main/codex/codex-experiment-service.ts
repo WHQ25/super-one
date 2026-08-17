@@ -79,6 +79,28 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
     : Array.isArray(rec.reasoningEffort)
       ? rec.reasoningEffort
       : []
+  const parsedServiceTiers = Array.isArray(rec.serviceTiers)
+    ? rec.serviceTiers
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null
+          const tier = entry as Record<string, unknown>
+          const tierId = readString(tier.id)
+          if (!tierId) return null
+          return {
+            id: tierId,
+            name: readString(tier.name) ?? tierId,
+            description: readString(tier.description) ?? '',
+          }
+        })
+        .filter((entry): entry is { id: string; name: string; description: string } => entry !== null)
+    : []
+  const serviceTiers = parsedServiceTiers.length > 0
+    ? parsedServiceTiers
+    : Array.isArray(rec.additionalSpeedTiers)
+      ? rec.additionalSpeedTiers
+          .filter((tier): tier is string => typeof tier === 'string')
+          .map((tier) => ({ id: tier, name: tier === 'fast' ? 'Fast' : tier, description: '' }))
+      : []
 
   return {
     id,
@@ -104,6 +126,8 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
           .filter((entry): entry is ReasoningEffortOption => Boolean(entry))
       : [],
     defaultReasoningEffort: toReasoningEffort(rec.defaultReasoningEffort) ?? undefined,
+    serviceTiers,
+    defaultServiceTier: readString(rec.defaultServiceTier),
   }
 }
 

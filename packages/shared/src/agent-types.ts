@@ -1303,7 +1303,7 @@ export type AgentEventBase =
   | { type: 'plan_approval'; request: PlanApprovalRequest }
   | { type: 'hook_started'; hook: HookEvent }
   | { type: 'hook_complete'; hook: HookEvent }
-  | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number }
+  | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number; messageId?: string }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
   | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string; outputFile?: string }
   | {
@@ -1433,6 +1433,7 @@ export interface SessionSettingsPatch {
   // Codex
   selectedCodexModel?: string | null
   selectedCodexReasoningEffort?: CodexReasoningEffort | null
+  selectedCodexServiceTier?: string | null
   selectedCodexPermissionPreset?: CodexPermissionPreset | null
   selectedCodexCollaborationMode?: CodexCollaborationMode | null
   // OpenCode
@@ -1493,6 +1494,7 @@ export interface CodexSendExtras {
   reviewTarget?: CodexReviewTarget
   permissionPreset?: CodexPermissionPreset
   reasoningEffort?: CodexReasoningEffort
+  serviceTier?: string | null
   collaborationMode?: CodexCollaborationMode
   threadId?: string
   cwd?: string
@@ -1527,6 +1529,9 @@ export interface ModelOption {
   supportsAutoMode?: boolean
   supportedReasoningEfforts?: ReasoningEffortOption[]
   defaultReasoningEffort?: CodexReasoningEffort
+  /** App-server service tiers available for this model (for example `fast`). */
+  serviceTiers?: Array<{ id: string; name: string; description: string }>
+  defaultServiceTier?: string | null
   /**
    * Harness-native parameter catalog (e.g. Cursor SDK `ModelParameterDefinition`).
    * Used to rebuild provider-specific model selections (fast / effort / optimize_for).
@@ -2166,10 +2171,12 @@ export interface StartupData {
 export type CodexAuthMode = 'auto' | 'chatgpt' | 'apiKey'
 export type CodexApprovalMode = 'never' | 'on-request' | 'on-failure' | 'untrusted'
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
-export type CodexPermissionPreset = 'read-only' | 'default' | 'full-access'
+export type CodexPermissionPreset = 'read-only' | 'default' | 'auto-review' | 'full-access'
+export type CodexApprovalsReviewer = 'user' | 'auto_review'
 
 export interface CodexPermissionProfile {
   approvalPolicy: CodexApprovalMode
+  approvalsReviewer: CodexApprovalsReviewer
   sandboxMode: CodexSandboxMode
   networkAccessEnabled: boolean
 }
@@ -2177,16 +2184,25 @@ export interface CodexPermissionProfile {
 export const CODEX_PERMISSION_PRESETS: Record<CodexPermissionPreset, CodexPermissionProfile> = {
   'read-only': {
     approvalPolicy: 'on-request',
+    approvalsReviewer: 'user',
     sandboxMode: 'read-only',
     networkAccessEnabled: false,
   },
   default: {
     approvalPolicy: 'on-request',
+    approvalsReviewer: 'user',
+    sandboxMode: 'workspace-write',
+    networkAccessEnabled: false,
+  },
+  'auto-review': {
+    approvalPolicy: 'on-request',
+    approvalsReviewer: 'auto_review',
     sandboxMode: 'workspace-write',
     networkAccessEnabled: false,
   },
   'full-access': {
     approvalPolicy: 'never',
+    approvalsReviewer: 'user',
     sandboxMode: 'danger-full-access',
     networkAccessEnabled: true,
   },
@@ -2195,9 +2211,10 @@ export const CODEX_PERMISSION_PRESETS: Record<CodexPermissionPreset, CodexPermis
 export const CODEX_PERMISSION_PROFILE_IDS: Record<CodexPermissionPreset, string> = {
   'read-only': ':read-only',
   default: ':workspace',
+  'auto-review': ':workspace',
   'full-access': ':danger-full-access',
 }
-export const DEFAULT_CODEX_PERMISSION_PRESET: CodexPermissionPreset = 'default'
+export const DEFAULT_CODEX_PERMISSION_PRESET: CodexPermissionPreset = 'auto-review'
 export const DEFAULT_CODEX_PERMISSION_PROFILE: CodexPermissionProfile =
   CODEX_PERMISSION_PRESETS[DEFAULT_CODEX_PERMISSION_PRESET]
 
@@ -2419,6 +2436,7 @@ export interface CodexRunRequest {
   model?: string
   reasoningEffort?: CodexReasoningEffort
   permissionPreset?: CodexPermissionPreset
+  serviceTier?: string | null
   collaborationMode?: CodexCollaborationMode
   images?: ImageAttachment[]
   threadId?: string
@@ -2444,6 +2462,7 @@ export interface CodexReviewRequest {
   model?: string
   reasoningEffort?: CodexReasoningEffort
   permissionPreset?: CodexPermissionPreset
+  serviceTier?: string | null
   threadId?: string
   messageId?: string
   cwd?: string
@@ -2452,6 +2471,7 @@ export interface CodexReviewRequest {
 export interface CodexCompactRequest {
   model?: string
   permissionPreset?: CodexPermissionPreset
+  serviceTier?: string | null
   threadId?: string
   messageId?: string
   cwd?: string

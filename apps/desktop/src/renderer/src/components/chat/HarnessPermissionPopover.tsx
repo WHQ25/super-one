@@ -18,13 +18,15 @@ import { modes, PermissionModeList } from './PermissionModeList'
  * exactly the ones `mapPermissionMode` (codex-backend) round-trips. `read-only` has no
  * `PermissionMode` spelling and is therefore not offered here.
  */
-const CODEX_REACHABLE_PRESETS: CodexPermissionPreset[] = ['default', 'full-access']
+const CODEX_REACHABLE_PRESETS: CodexPermissionPreset[] = ['default', 'auto-review', 'full-access']
 
 function codexPresetOf(mode: PermissionMode): CodexPermissionPreset {
+  if (mode === 'auto') return 'auto-review'
   return mode === 'bypassPermissions' || mode === 'acceptEdits' ? 'full-access' : 'default'
 }
 
 function modeOfCodexPreset(preset: CodexPermissionPreset): PermissionMode {
+  if (preset === 'auto-review') return 'auto'
   return preset === 'full-access' ? 'bypassPermissions' : 'default'
 }
 

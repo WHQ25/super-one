@@ -2547,9 +2547,11 @@ export type Messages = {
       defaultValue: string
       fullAccess: string
       readOnly: string
+      approveForMe: string
       defaultDesc: string
       fullAccessDesc: string
       readOnlyDesc: string
+      approveForMeDesc: string
       model: string
       effort: string
       permission: string
@@ -5382,9 +5384,11 @@ export const en: Messages = {
       defaultValue: 'Default',
       fullAccess: 'Full Access',
       readOnly: 'Read-Only',
+      approveForMe: 'Approve for Me',
       defaultDesc: 'Codex automatically runs commands in a sandbox',
       fullAccessDesc: 'Codex has full access over your computer (elevated risk)',
       readOnlyDesc: 'Codex can only read files; no edits or commands',
+      approveForMeDesc: 'Codex reviews actions that need elevated permissions',
       model: 'Model',
       effort: 'Effort',
       permission: 'Permission',

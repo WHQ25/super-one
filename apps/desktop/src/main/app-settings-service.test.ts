@@ -42,7 +42,7 @@ describe('app-settings-service', () => {
   const defaultCodex = {
     defaultModel: '',
     defaultReasoningEffort: '',
-    defaultPermissionPreset: '',
+    defaultPermissionPreset: 'auto-review',
     brandHue: null,
     tokenOverrides: {},
   }
@@ -283,7 +283,7 @@ describe('app-settings-service', () => {
           codex: {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'low',
-            defaultPermissionPreset: '',
+            defaultPermissionPreset: 'auto-review',
             brandHue: null,
             tokenOverrides: {},
           },

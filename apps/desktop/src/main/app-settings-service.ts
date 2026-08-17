@@ -93,7 +93,7 @@ const defaults: AppSettings = {
     codex: {
       defaultModel: '',
       defaultReasoningEffort: '',
-      defaultPermissionPreset: '',
+      defaultPermissionPreset: 'auto-review',
       brandHue: null,
       tokenOverrides: {},
     },
@@ -322,7 +322,7 @@ function isCodexReasoningEffort(value: unknown): value is CodexPref['defaultReas
 }
 
 function isCodexPermissionPreset(value: unknown): value is CodexPermissionPreset {
-  return value === 'read-only' || value === 'default' || value === 'full-access'
+  return value === 'read-only' || value === 'default' || value === 'auto-review' || value === 'full-access'
 }
 
 function readClaudePreference(data: Record<string, unknown>): ClaudePref {

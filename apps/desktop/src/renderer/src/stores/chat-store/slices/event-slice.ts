@@ -56,6 +56,9 @@ function sessionPatchFromUiSettings(
   if (ui.selectedCodexReasoningEffort !== undefined) {
     patch.selectedCodexReasoningEffort = (ui.selectedCodexReasoningEffort ?? undefined) as CodexReasoningEffort | undefined
   }
+  if (ui.selectedCodexServiceTier !== undefined) {
+    patch.selectedCodexServiceTier = ui.selectedCodexServiceTier
+  }
   if (ui.selectedCodexPermissionPreset != null) {
     patch.selectedCodexPermissionPreset = ui.selectedCodexPermissionPreset as CodexPermissionPreset
   }

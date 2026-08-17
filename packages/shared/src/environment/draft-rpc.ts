@@ -53,6 +53,7 @@ export interface DraftSessionSettings {
   effortUserChosen?: boolean
   codexModel?: string | null
   codexReasoningEffort?: string | null
+  codexServiceTier?: string | null
   codexModelUserChosen?: boolean
   codexReasoningEffortUserChosen?: boolean
   codexPermissionPreset?: string | null

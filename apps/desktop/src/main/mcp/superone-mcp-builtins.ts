@@ -703,7 +703,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       .optional()
       .describe('Codex legacy alias for effort.'),
     permissionPreset: z
-      .enum(['read-only', 'default', 'full-access'])
+      .enum(['read-only', 'default', 'auto-review', 'full-access'])
       .optional()
       .describe('Codex legacy alias for permissionMode (full-access ≈ bypassPermissions).'),
   }).describe(AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA.description as string)

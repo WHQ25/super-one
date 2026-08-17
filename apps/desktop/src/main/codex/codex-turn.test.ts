@@ -1779,6 +1779,35 @@ describe('runCodexTurn turn/start payload', () => {
       },
     }))
   })
+
+  it('sends Fast service tier and Approve for me reviewer to app-server', async () => {
+    const { handle, request } = makeConnectionDriver('thread-fast', 'turn-fast')
+    const session = { ...makeSession({ model: 'gpt-5.4' }) }
+    session.permissionPreset = 'auto-review'
+    session.serviceTier = 'priority'
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+
+    await runCodexTurn(session, { mode: 'auto' }, '/project', {
+      prompt: 'Test prompt',
+      model: 'gpt-5.4',
+      permissionPreset: 'auto-review',
+      serviceTier: 'priority',
+    })
+
+    expect(request).toHaveBeenCalledWith('thread/start', expect.objectContaining({
+      serviceTier: 'priority',
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
+      sandbox: 'workspace-write',
+    }))
+    expect(request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      threadId: 'thread-fast',
+      serviceTier: 'priority',
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
+    }))
+  })
 })
 
 describe('mapThreadItemFromAppServer image generation', () => {

@@ -16,7 +16,7 @@ import { CodexModelList, CodexReasoningEffortList } from '@/components/chat/Mode
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { invalidateDefaultCodexPreferencesCache, resolveCodexReasoningEffort, useChatStore } from '@/stores/chat'
-import type { CodexPermissionPreset, CodexReasoningEffort, ModelOption } from '@superone/shared/agent-types'
+import { DEFAULT_CODEX_PERMISSION_PRESET, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption } from '@superone/shared/agent-types'
 
 export function CodexPreferencesPage() {
   const { t } = useTranslation()
@@ -80,7 +80,7 @@ export function CodexPreferencesPage() {
     : defaultReasoningEffort
   const disabled = loading || saving
   const pillTriggerClass = 'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60'
-  const activePermissionPreset = defaultPermissionPreset || 'default'
+  const activePermissionPreset = defaultPermissionPreset || DEFAULT_CODEX_PERMISSION_PRESET
   const currentPermissionPreset = codexPermissionPresetOptions.find((option) => option.id === activePermissionPreset) ?? codexPermissionPresetOptions[1]
 
   async function saveCodexDefaults(patch: {

@@ -88,6 +88,7 @@ interface WarmCodexHandle {
 }
 
 function mapPermissionMode(mode: PermissionMode | undefined): CodexPermissionPreset {
+  if (mode === 'auto') return 'auto-review'
   if (mode === 'bypassPermissions' || mode === 'acceptEdits') return 'full-access'
   return 'default'
 }
@@ -563,6 +564,7 @@ export class CodexBackend implements SessionBackend {
     requestedThreadId?: string,
     requestedReasoningEffort?: CodexReasoningEffort,
     requestedPermissionPreset?: CodexPermissionPreset,
+    requestedServiceTier?: string | null,
   ): CodexSession {
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend missing startOpts')
@@ -577,6 +579,7 @@ export class CodexBackend implements SessionBackend {
         requestedPermissionPreset,
         startOpts.apiProviderId ?? null,
         startOpts.systemPromptAppend,
+        requestedServiceTier,
       )
       this.session = created
       return created
@@ -590,6 +593,7 @@ export class CodexBackend implements SessionBackend {
     if (requestedModel !== undefined) existing.model = requestedModel
     if (requestedReasoningEffort !== undefined) existing.modelReasoningEffort = requestedReasoningEffort
     if (requestedPermissionPreset !== undefined) existing.permissionPreset = requestedPermissionPreset
+    if (requestedServiceTier !== undefined) existing.serviceTier = requestedServiceTier
     existing.apiProviderId = startOpts.apiProviderId ?? null
 
     return existing
@@ -622,6 +626,9 @@ export class CodexBackend implements SessionBackend {
       ?? mapEffort(request.effort)
       ?? config.reasoningEffort
     const resolvedModel = request.model ?? config.model
+    const resolvedServiceTier = request.codex?.serviceTier !== undefined
+      ? request.codex.serviceTier
+      : (this.session?.serviceTier ?? null)
     const resolvedThreadId = request.codex?.threadId ?? this.providerSessionId ?? undefined
     const resolvedCwd = request.codex?.cwd ?? startOpts.cwd
 
@@ -630,6 +637,7 @@ export class CodexBackend implements SessionBackend {
       resolvedThreadId,
       resolvedReasoningEffort,
       resolvedPermissionPreset,
+      resolvedServiceTier,
     )
 
     const auth = this.service.getProjectAuth(projectPath)
@@ -678,6 +686,7 @@ export class CodexBackend implements SessionBackend {
             model: resolvedModel,
             reasoningEffort: resolvedReasoningEffort,
             permissionPreset: resolvedPermissionPreset,
+            serviceTier: resolvedServiceTier,
             threadId: resolvedThreadId,
             messageId: assistantMessageId,
             cwd: resolvedCwd,
@@ -687,6 +696,7 @@ export class CodexBackend implements SessionBackend {
           const compactRequest: CodexCompactRequest = {
             model: resolvedModel,
             permissionPreset: resolvedPermissionPreset,
+            serviceTier: resolvedServiceTier,
             threadId: resolvedThreadId,
             messageId: assistantMessageId,
             cwd: resolvedCwd,
@@ -699,6 +709,7 @@ export class CodexBackend implements SessionBackend {
             model: resolvedModel,
             reasoningEffort: resolvedReasoningEffort,
             permissionPreset: resolvedPermissionPreset,
+            serviceTier: resolvedServiceTier,
             collaborationMode: request.codex?.collaborationMode,
             threadId: resolvedThreadId,
             messageId: assistantMessageId,

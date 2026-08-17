@@ -1,12 +1,12 @@
-import { AlertTriangle, Check, Eye, ShieldCheck, ShieldOff } from 'lucide-react'
+import { AlertTriangle, Bot, Check, Eye, ShieldCheck, ShieldOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import type { CodexPermissionPreset } from '@superone/shared/agent-types'
 
 export interface CodexPermissionPresetOption {
   id: CodexPermissionPreset
-  labelKey: 'resources.automation.readOnly' | 'resources.automation.defaultValue' | 'resources.automation.fullAccess'
-  descriptionKey: 'resources.automation.readOnlyDesc' | 'resources.automation.defaultDesc' | 'resources.automation.fullAccessDesc'
+  labelKey: 'resources.automation.readOnly' | 'resources.automation.defaultValue' | 'resources.automation.approveForMe' | 'resources.automation.fullAccess'
+  descriptionKey: 'resources.automation.readOnlyDesc' | 'resources.automation.defaultDesc' | 'resources.automation.approveForMeDesc' | 'resources.automation.fullAccessDesc'
   icon: React.ReactNode
   triggerIcon: React.ReactNode
   toneClass: string
@@ -35,6 +35,17 @@ export const codexPermissionPresetOptions: CodexPermissionPresetOption[] = [
     triggerIcon: <ShieldCheck className="size-3" />,
     toneClass: 'text-foreground',
     triggerToneClass: 'text-muted-foreground hover:bg-muted',
+    hoverBg: 'hover:bg-accent',
+    activeBg: 'bg-accent',
+  },
+  {
+    id: 'auto-review',
+    labelKey: 'resources.automation.approveForMe',
+    descriptionKey: 'resources.automation.approveForMeDesc',
+    icon: <Bot className="size-3.5" />,
+    triggerIcon: <Bot className="size-3" />,
+    toneClass: 'text-primary',
+    triggerToneClass: 'text-primary hover:bg-accent',
     hoverBg: 'hover:bg-accent',
     activeBg: 'bg-accent',
   },

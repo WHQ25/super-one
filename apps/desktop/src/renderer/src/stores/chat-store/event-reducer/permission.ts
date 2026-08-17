@@ -26,6 +26,7 @@ export function reducePermission(session: PerSessionState, event: PermissionEven
         selectedEffort: eventPatch.selectedEffort ?? event.selectedEffort,
         selectedCodexModel: eventPatch.selectedCodexModel,
         selectedCodexReasoningEffort: eventPatch.selectedCodexReasoningEffort,
+        selectedCodexServiceTier: eventPatch.selectedCodexServiceTier,
         selectedCodexPermissionPreset: eventPatch.selectedCodexPermissionPreset,
         selectedCodexCollaborationMode: eventPatch.selectedCodexCollaborationMode,
         openCodeAgentId: eventPatch.openCodeAgentId,
@@ -50,6 +51,9 @@ export function reducePermission(session: PerSessionState, event: PermissionEven
       if (merged.selectedCodexReasoningEffort !== undefined) {
         patch.selectedCodexReasoningEffort = merged.selectedCodexReasoningEffort ?? undefined
         patch.codexReasoningEffortUserChosen = true
+      }
+      if (merged.selectedCodexServiceTier !== undefined) {
+        patch.selectedCodexServiceTier = merged.selectedCodexServiceTier
       }
       if (merged.selectedCodexPermissionPreset != null) {
         patch.selectedCodexPermissionPreset = merged.selectedCodexPermissionPreset

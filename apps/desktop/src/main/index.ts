@@ -1845,7 +1845,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const persistedUserMessageId = userMessageId ?? `user_${Date.now()}`
@@ -1865,6 +1865,7 @@ function registerIpcHandlers(): void {
           mode: 'run',
           prompt,
           reasoningEffort,
+          serviceTier: extras?.serviceTier,
           permissionPreset,
           collaborationMode,
           threadId,
@@ -2230,7 +2231,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
@@ -2248,6 +2249,7 @@ function registerIpcHandlers(): void {
           mode: 'review',
           reviewTarget: target,
           reasoningEffort,
+          serviceTier: extras?.serviceTier,
           permissionPreset,
           threadId,
           cwd,
@@ -2271,7 +2273,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
@@ -2287,6 +2289,7 @@ function registerIpcHandlers(): void {
         ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
         codex: {
           mode: 'compact',
+          serviceTier: extras?.serviceTier,
           permissionPreset,
           threadId,
           cwd,

@@ -22,6 +22,7 @@ import {
 } from '@superone/shared/agent-types'
 import type {
   CodexApprovalMode,
+  CodexApprovalsReviewer,
   CodexAuthMode,
   CodexCollaborationMode,
   CodexPermissionPreset,
@@ -132,6 +133,8 @@ export interface CodexAppServerModel {
   isDefault: boolean
   supportedReasoningEfforts: ReasoningEffortOption[]
   defaultReasoningEffort?: CodexReasoningEffort
+  serviceTiers: Array<{ id: string; name: string; description: string }>
+  defaultServiceTier?: string | null
 }
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
@@ -449,6 +452,8 @@ export function mapAppServerModel(m: CodexAppServerModel): ModelOption {
     isDefault: m.isDefault,
     supportedReasoningEfforts: m.supportedReasoningEfforts,
     defaultReasoningEffort: m.defaultReasoningEffort,
+    serviceTiers: m.serviceTiers,
+    defaultServiceTier: m.defaultServiceTier,
   }
 }
 
@@ -457,6 +462,7 @@ export function resolvePermissionProfile(
 ): {
   permissionPreset: CodexPermissionPreset
   approvalPolicy: CodexApprovalMode
+  approvalsReviewer: CodexApprovalsReviewer
   sandboxMode: CodexSandboxMode
   networkAccessEnabled: boolean
 } {
@@ -465,6 +471,7 @@ export function resolvePermissionProfile(
   return {
     permissionPreset: resolvedPreset,
     approvalPolicy: profile.approvalPolicy,
+    approvalsReviewer: profile.approvalsReviewer,
     sandboxMode: profile.sandboxMode,
     networkAccessEnabled: profile.networkAccessEnabled,
   }

@@ -148,6 +148,7 @@ export interface PerSessionState {
   effortUserChosen: boolean
   selectedCodexModel: string
   selectedCodexReasoningEffort?: CodexReasoningEffort
+  selectedCodexServiceTier: string | null
   codexModelUserChosen: boolean
   codexReasoningEffortUserChosen: boolean
   selectedCodexPermissionPreset: CodexPermissionPreset
@@ -396,6 +397,7 @@ export interface ChatStore {
   loadClaudeModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
   setSelectedCodexModel: (model: string) => void
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
+  setSelectedCodexServiceTier: (tier: string | null) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
   setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode) => void
   loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>

@@ -25,6 +25,7 @@ type UserMessageExtras = {
   userSelections?: string[]
   userMessageContent?: ContentBlock[]
   apiProviderId?: string | null
+  serviceTier?: string | null
 }
 
 const agentAPI = {

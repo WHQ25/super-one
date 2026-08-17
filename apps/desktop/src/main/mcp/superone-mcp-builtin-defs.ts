@@ -388,7 +388,7 @@ export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
     },
     permissionPreset: {
       type: 'string',
-      enum: ['read-only', 'default', 'full-access'],
+      enum: ['read-only', 'default', 'auto-review', 'full-access'],
       description: 'Codex legacy alias for permissionMode (full-access ≈ bypassPermissions).',
     },
   },

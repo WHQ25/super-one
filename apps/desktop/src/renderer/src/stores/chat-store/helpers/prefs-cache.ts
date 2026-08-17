@@ -6,6 +6,7 @@ import type {
   SandboxInfo,
   SandboxMode,
 } from '@superone/shared/agent-types'
+import { DEFAULT_CODEX_PERMISSION_PRESET } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
 import type { PerSessionState } from '../types'
 
@@ -22,7 +23,7 @@ export const defaultPrefsCache: DefaultPrefsCache = {
   sandboxMode: null,
   claudeSelection: null,
   codexSelection: null,
-  codexPermissionPreset: 'default',
+  codexPermissionPreset: DEFAULT_CODEX_PERMISSION_PRESET,
 }
 
 let defaultPrefsLoadGeneration = 0
@@ -41,7 +42,9 @@ export function toCodexReasoningEffort(value: unknown): CodexReasoningEffort | u
 }
 
 export function toCodexPermissionPreset(value: unknown): CodexPermissionPreset {
-  return value === 'read-only' || value === 'full-access' ? value : 'default'
+  return value === 'read-only' || value === 'default' || value === 'auto-review' || value === 'full-access'
+    ? value
+    : DEFAULT_CODEX_PERMISSION_PRESET
 }
 
 export function toEffortLevel(value: unknown): EffortLevel | undefined {
@@ -87,7 +90,7 @@ export async function _loadDefaultSessionPrefs(): Promise<void> {
     defaultPrefsCache.sandboxMode = null
     defaultPrefsCache.claudeSelection = { modelId: '', effort: undefined }
     defaultPrefsCache.codexSelection = { modelId: '', reasoningEffort: undefined }
-    defaultPrefsCache.codexPermissionPreset = 'default'
+    defaultPrefsCache.codexPermissionPreset = DEFAULT_CODEX_PERMISSION_PRESET
   }
 }
 
@@ -111,7 +114,7 @@ export function _clearDefaultPrefsCache(): void {
   defaultPrefsCache.sandboxMode = null
   defaultPrefsCache.claudeSelection = null
   defaultPrefsCache.codexSelection = null
-  defaultPrefsCache.codexPermissionPreset = 'default'
+  defaultPrefsCache.codexPermissionPreset = DEFAULT_CODEX_PERMISSION_PRESET
 }
 
 // Eager load on module init — same side-effect as the original index.ts.

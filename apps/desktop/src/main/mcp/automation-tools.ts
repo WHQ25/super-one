@@ -500,8 +500,8 @@ const DEFAULT_CLAUDE_CONFIG: ClaudeRunConfig = {
 
 const DEFAULT_CODEX_CONFIG: CodexRunConfig = {
   type: 'codex',
-  permissionPreset: 'full-access',
-  permissionMode: 'bypassPermissions',
+  permissionPreset: 'auto-review',
+  permissionMode: 'auto',
 }
 
 const DEFAULT_ACP_CONFIG: import('@superone/shared/agent-types').AcpRunConfig = {
@@ -595,7 +595,7 @@ export function toAgentView(config: AgentRunConfig): AutomationConfirmAgentView 
     const effort = config.effort ?? config.reasoningEffort
     const permissionMode =
       config.permissionMode
-      ?? (config.permissionPreset === 'full-access' ? 'bypassPermissions' : 'default')
+      ?? (config.permissionPreset === 'full-access' ? 'bypassPermissions' : config.permissionPreset === 'auto-review' ? 'auto' : 'default')
     return {
       type: 'codex',
       ...(config.model ? { model: config.model } : {}),
@@ -639,14 +639,16 @@ export function agentViewToConfig(view: AutomationConfirmAgentView): AgentRunCon
   if (view.type === 'codex') {
     const permissionPreset =
       view.permissionPreset
-      ?? (view.permissionMode === 'bypassPermissions' || view.permissionMode === 'acceptEdits'
+      ?? (view.permissionMode === 'auto'
+        ? 'auto-review'
+        : view.permissionMode === 'bypassPermissions' || view.permissionMode === 'acceptEdits'
         ? 'full-access'
         : 'default')
     return {
       type: 'codex',
       ...(view.model ? { model: view.model } : {}),
       ...(view.effort ? { effort: view.effort, reasoningEffort: view.effort as CodexRunConfig['reasoningEffort'] } : {}),
-      permissionMode: view.permissionMode ?? (permissionPreset === 'full-access' ? 'bypassPermissions' : 'default'),
+      permissionMode: view.permissionMode ?? (permissionPreset === 'full-access' ? 'bypassPermissions' : permissionPreset === 'auto-review' ? 'auto' : 'default'),
       permissionPreset,
       ...(view.apiProviderId !== undefined ? { apiProviderId: view.apiProviderId } : {}),
     }

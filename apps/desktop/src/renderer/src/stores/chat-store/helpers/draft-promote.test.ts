@@ -91,6 +91,7 @@ describe('promoting a draft on navigate away', () => {
         sessionProvider: 'codex',
         selectedCodexModel: 'gpt-5.1',
         selectedCodexReasoningEffort: 'high',
+        selectedCodexServiceTier: 'fast',
         selectedCodexPermissionPreset: 'full-access',
         permissionMode: 'plan',
         _worktreePath: '/repo/.wt/feat',
@@ -108,6 +109,7 @@ describe('promoting a draft on navigate away', () => {
     expect(draft.harness).toBe('codex')
     expect(draft.settings?.codexModel).toBe('gpt-5.1')
     expect(draft.settings?.codexReasoningEffort).toBe('high')
+    expect(draft.settings?.codexServiceTier).toBe('fast')
     expect(draft.settings?.worktreePath).toBe('/repo/.wt/feat')
     expect(draft.settings?.gitBranch).toBe('feat/ack')
     expect(draft.settings?.permissionMode).toBe('plan')

@@ -52,6 +52,7 @@ export interface CodexSession {
   projectPath: string
   model?: string
   modelReasoningEffort?: CodexReasoningEffort
+  serviceTier: string | null
   permissionPreset: CodexPermissionPreset
   threadId: string | null
   threadReady: boolean
@@ -87,12 +88,14 @@ export function createCodexSession(
   permissionPreset?: CodexPermissionPreset,
   apiProviderId?: string | null,
   systemPromptAppend?: string,
+  serviceTier: string | null = null,
 ): CodexSession {
   return {
     superoneSessionId,
     projectPath,
     model,
     modelReasoningEffort,
+    serviceTier,
     permissionPreset: resolvePermissionPreset(permissionPreset),
     threadId: threadId ?? null,
     threadReady: false,

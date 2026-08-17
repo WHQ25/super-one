@@ -225,13 +225,15 @@ export class AgentService {
       apiProviderId = cfg.apiProviderId
     } else if (cfg.type === 'codex') {
       permissionPreset = cfg.permissionPreset
-        ?? (cfg.permissionMode === 'bypassPermissions' || cfg.permissionMode === 'acceptEdits'
+        ?? (cfg.permissionMode === 'auto'
+          ? 'auto-review'
+          : cfg.permissionMode === 'bypassPermissions' || cfg.permissionMode === 'acceptEdits'
           ? 'full-access'
           : cfg.permissionMode
             ? 'default'
             : 'full-access')
       permissionMode = cfg.permissionMode
-        ?? (permissionPreset === 'full-access' ? 'bypassPermissions' : 'default')
+        ?? (permissionPreset === 'full-access' ? 'bypassPermissions' : permissionPreset === 'auto-review' ? 'auto' : 'default')
       apiProviderId = cfg.apiProviderId
     } else if (cfg.type === 'acp') {
       permissionMode = cfg.permissionMode ?? 'bypassPermissions'
@@ -1088,7 +1090,7 @@ export class AgentService {
                 ...userPrompts.map((p) => ({ name: p.name, description: p.description ?? '', argumentHint: p.argumentHint ?? '' })),
               ],
               account: this.codexGetAuthStatus?.(command.projectPath) ?? null,
-              permissionPresets: ['read-only', 'default', 'full-access'],
+              permissionPresets: ['read-only', 'default', 'auto-review', 'full-access'],
               activeProvider,
               defaults: {
                 model: agentPreference.codex.defaultModel || null,

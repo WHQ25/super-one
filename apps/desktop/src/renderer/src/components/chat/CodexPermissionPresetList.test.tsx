@@ -11,6 +11,8 @@ describe('CodexPermissionPresetList', () => {
 
     expect(screen.getByRole('button', { name: /read-only/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^default/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Approve for Me/ }))
+    expect(onSelect).toHaveBeenCalledWith('auto-review')
     fireEvent.click(screen.getByRole('button', { name: /full access/i }))
 
     expect(onSelect).toHaveBeenCalledWith('full-access')

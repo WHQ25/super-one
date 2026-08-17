@@ -4538,7 +4538,7 @@ describe('createDefaultPerSessionState', () => {
     expect(state.selectedEffort).toBeUndefined()
     expect(state.selectedCodexModel).toBe('')
     expect(state.selectedCodexReasoningEffort).toBeUndefined()
-    expect(state.selectedCodexPermissionPreset).toBe('default')
+    expect(state.selectedCodexPermissionPreset).toBe('auto-review')
     expect(state.selectedCodexCollaborationMode).toBe('default')
     expect(state.preferredProvider).toBe('claude')
     expect(state.draftText).toBe('')

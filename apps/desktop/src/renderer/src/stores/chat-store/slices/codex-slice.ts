@@ -21,6 +21,7 @@ import {
 export interface CodexSlice {
   setSelectedCodexModel: (model: string) => void
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
+  setSelectedCodexServiceTier: (tier: string | null) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
   setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode) => void
   loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
@@ -35,10 +36,15 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
     const proj = getProject(get(), activeProject)
     const selectedModel = proj.codexModels.find((entry) => entry.id === model)
     const selectedEffort = resolveCodexReasoningEffort(selectedModel)
+    const activeSession = getActivePerSession(get())
+    const selectedServiceTier = selectedModel?.serviceTiers?.some((tier) => tier.id === activeSession.selectedCodexServiceTier)
+      ? activeSession.selectedCodexServiceTier
+      : (selectedModel?.defaultServiceTier ?? null)
     saveLastCodexSelection(model, selectedEffort)
     set((s) => updateActivePerSession(s, () => ({
       selectedCodexModel: model,
       selectedCodexReasoningEffort: selectedEffort,
+      selectedCodexServiceTier: selectedServiceTier,
       codexModelUserChosen: true,
       codexReasoningEffortUserChosen: false,
     })))
@@ -47,6 +53,7 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
       void window.agent.broadcastSessionSetting(sid, {
         selectedCodexModel: model,
         selectedCodexReasoningEffort: selectedEffort ?? null,
+        selectedCodexServiceTier: selectedServiceTier,
       })
     }
   },
@@ -69,6 +76,18 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
         selectedCodexReasoningEffort: selectedEffort ?? null,
       })
     }
+  },
+
+  setSelectedCodexServiceTier: (tier) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    const project = getProject(get(), activeProject)
+    const session = getActivePerSession(get())
+    const model = project.codexModels.find((entry) => entry.id === session.selectedCodexModel)
+    const selectedTier = tier && model?.serviceTiers?.some((entry) => entry.id === tier) ? tier : null
+    set((state) => updateActivePerSession(state, () => ({ selectedCodexServiceTier: selectedTier })))
+    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
+    if (sid) void window.agent.broadcastSessionSetting(sid, { selectedCodexServiceTier: selectedTier })
   },
 
   setSelectedCodexPermissionPreset: (preset) => {
@@ -119,6 +138,7 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
         const selected = appliesToActiveSession && activeSession
           ? resolveSessionCodexSelection(models, activeSession.selectedCodexModel, activeSession.selectedCodexReasoningEffort)
           : null
+        const selectedModel = selected ? models.find((model) => model.id === selected.modelId) : undefined
         return {
           projectSessions: {
             ...s.projectSessions,
@@ -134,6 +154,9 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
                         ...activeSession,
                         selectedCodexModel: selected.modelId,
                         selectedCodexReasoningEffort: selected.reasoningEffort,
+                        selectedCodexServiceTier: selectedModel?.serviceTiers?.some((tier) => tier.id === activeSession.selectedCodexServiceTier)
+                          ? activeSession.selectedCodexServiceTier
+                          : (selectedModel?.defaultServiceTier ?? null),
                       },
                     },
                   }

@@ -155,6 +155,7 @@ export function snapshotDraftSettings(
     effortUserChosen: session.effortUserChosen || !!effort,
     codexModel,
     codexReasoningEffort: codexEffort,
+    codexServiceTier: session.selectedCodexServiceTier,
     codexModelUserChosen: session.codexModelUserChosen || !!codexModel,
     codexReasoningEffortUserChosen: session.codexReasoningEffortUserChosen || !!codexEffort,
     codexPermissionPreset: session.selectedCodexPermissionPreset,
@@ -201,6 +202,9 @@ export function sessionFieldsFromSettings(
   if (settings.codexReasoningEffort != null && settings.codexReasoningEffort !== '') {
     patch.selectedCodexReasoningEffort = settings.codexReasoningEffort as CodexReasoningEffort
     patch.codexReasoningEffortUserChosen = true
+  }
+  if (settings.codexServiceTier !== undefined) {
+    patch.selectedCodexServiceTier = settings.codexServiceTier
   }
   if (settings.codexPermissionPreset) {
     patch.selectedCodexPermissionPreset = settings.codexPermissionPreset as CodexPermissionPreset

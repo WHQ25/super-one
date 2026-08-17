@@ -80,6 +80,13 @@ describe('reducePermission: agent_setting_change', () => {
     expect(patch.selectedCodexPermissionPreset).toBe('full-access')
   })
 
+  it('writes codex service tier', () => {
+    const patch = reducePermission(createDefaultPerSessionState(), {
+      type: 'agent_setting_change', patch: { selectedCodexServiceTier: 'fast' },
+    } as never)
+    expect(patch.selectedCodexServiceTier).toBe('fast')
+  })
+
   it('writes codex collaboration mode + clears plan-reject hint', () => {
     const patch = reducePermission(createDefaultPerSessionState(), {
       type: 'agent_setting_change', patch: { selectedCodexCollaborationMode: 'plan' },

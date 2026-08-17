@@ -3402,7 +3402,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
             },
             "permissionPreset": {
               "type": "string",
-              "enum": ["read-only", "default", "full-access"],
+              "enum": ["read-only", "default", "auto-review", "full-access"],
               "description": "Codex legacy alias for permissionMode (full-access ≈ bypassPermissions)."
             }
           },

@@ -529,18 +529,28 @@ describe('resolvePermissionProfile', () => {
     expect(resolvePermissionProfile('read-only')).toEqual({
       permissionPreset: 'read-only',
       approvalPolicy: 'on-request',
+      approvalsReviewer: 'user',
       sandboxMode: 'read-only',
       networkAccessEnabled: false,
     })
     expect(resolvePermissionProfile('default')).toEqual({
       permissionPreset: 'default',
       approvalPolicy: 'on-request',
+      approvalsReviewer: 'user',
+      sandboxMode: 'workspace-write',
+      networkAccessEnabled: false,
+    })
+    expect(resolvePermissionProfile('auto-review')).toEqual({
+      permissionPreset: 'auto-review',
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
       sandboxMode: 'workspace-write',
       networkAccessEnabled: false,
     })
     expect(resolvePermissionProfile('full-access')).toEqual({
       permissionPreset: 'full-access',
       approvalPolicy: 'never',
+      approvalsReviewer: 'user',
       sandboxMode: 'danger-full-access',
       networkAccessEnabled: true,
     })

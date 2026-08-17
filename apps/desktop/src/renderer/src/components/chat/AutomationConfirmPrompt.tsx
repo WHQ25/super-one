@@ -292,7 +292,9 @@ export function agentViewToRunConfig(
     const permissionPreset =
       edits.permissionPreset
       ?? base?.permissionPreset
-      ?? (permissionMode === 'bypassPermissions' || permissionMode === 'acceptEdits'
+      ?? (permissionMode === 'auto'
+        ? 'auto-review'
+        : permissionMode === 'bypassPermissions' || permissionMode === 'acceptEdits'
         ? 'full-access'
         : 'default')
     return {
@@ -304,7 +306,7 @@ export function agentViewToRunConfig(
             reasoningEffort: effort as 'minimal' | 'low' | 'medium' | 'high' | 'xhigh',
           }
         : {}),
-      permissionMode: permissionMode ?? (permissionPreset === 'full-access' ? 'bypassPermissions' : 'default'),
+      permissionMode: permissionMode ?? (permissionPreset === 'full-access' ? 'bypassPermissions' : permissionPreset === 'auto-review' ? 'auto' : 'default'),
       permissionPreset,
       ...(apiProviderId !== undefined ? { apiProviderId } : {}),
     }

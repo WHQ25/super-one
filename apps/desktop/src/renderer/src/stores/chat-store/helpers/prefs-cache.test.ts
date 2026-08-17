@@ -14,7 +14,7 @@ vi.stubGlobal('window', {
   app: { getAppSettings },
 })
 
-function settings(defaultPermissionPreset: 'default' | 'full-access') {
+function settings(defaultPermissionPreset: '' | 'default' | 'full-access') {
   return {
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
@@ -41,6 +41,14 @@ beforeEach(async () => {
 })
 
 describe('_loadDefaultSessionPrefs', () => {
+  it('uses auto-review when no explicit Codex permission preference is stored', async () => {
+    getAppSettings.mockResolvedValue(settings(''))
+
+    await _loadDefaultSessionPrefs()
+
+    expect(defaultPrefsCache.codexPermissionPreset).toBe('auto-review')
+  })
+
   it('ignores an older settings read that resolves after the latest read', async () => {
     const older = deferred<ReturnType<typeof settings>>()
     const latest = deferred<ReturnType<typeof settings>>()

@@ -58,9 +58,13 @@ export async function runCodexCommand(
     userSelections?: string[]
   },
 ): Promise<void> {
-  const userMessageExtras = userMessageContent || contexts || (userSelections && userSelections.length > 0) || session.apiProviderId
-    ? { userMessageContent, contexts, userSelections, apiProviderId: session.apiProviderId ?? undefined }
-    : undefined
+  const userMessageExtras = {
+    userMessageContent,
+    contexts,
+    userSelections,
+    apiProviderId: session.apiProviderId ?? undefined,
+    serviceTier: session.selectedCodexServiceTier,
+  }
   set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
 
   const assistantId = `codex_${Date.now()}`

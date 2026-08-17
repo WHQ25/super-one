@@ -1248,6 +1248,7 @@ export class Session implements SessionContract {
     if (ui.selectedAcpModeId) return true
     if (ui.selectedCodexModel) return true
     if (ui.selectedCodexReasoningEffort) return true
+    if (ui.selectedCodexServiceTier) return true
     if (ui.selectedCodexPermissionPreset && ui.selectedCodexPermissionPreset !== 'default') return true
     if (ui.selectedCodexCollaborationMode && ui.selectedCodexCollaborationMode !== 'default') return true
     if (ui.openCodeAgentId) return true

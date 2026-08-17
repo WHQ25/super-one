@@ -1241,6 +1241,22 @@ function buildTurnSandboxPolicy(
   }
 }
 
+async function updateThreadSettings(
+  connection: AppServerConnection,
+  threadId: string,
+  session: CodexSession,
+  cwd: string,
+  permissionProfile: ReturnType<typeof resolvePermissionProfile>,
+): Promise<void> {
+  await connection.request('thread/settings/update', {
+    threadId,
+    approvalPolicy: permissionProfile.approvalPolicy,
+    approvalsReviewer: permissionProfile.approvalsReviewer,
+    sandboxPolicy: buildTurnSandboxPolicy(cwd, permissionProfile),
+    serviceTier: session.serviceTier,
+  })
+}
+
 export async function resolveThread(
   connection: AppServerConnection,
   session: CodexSession,
@@ -1279,8 +1295,10 @@ export async function resolveThread(
       compactRecord({
         model: session.model,
         model_provider: modelProvider,
+        serviceTier: session.serviceTier,
         cwd,
         approvalPolicy: permissionProfile.approvalPolicy,
+        approvalsReviewer: permissionProfile.approvalsReviewer,
         sandbox: permissionProfile.sandboxMode,
         config: threadConfig,
         experimentalRawEvents: false,
@@ -1302,8 +1320,10 @@ export async function resolveThread(
           threadId: session.threadId,
           model: session.model,
           model_provider: modelProvider,
+          serviceTier: session.serviceTier,
           cwd,
           approvalPolicy: permissionProfile.approvalPolicy,
+          approvalsReviewer: permissionProfile.approvalsReviewer,
           sandbox: permissionProfile.sandboxMode,
           config: threadConfig,
         }),
@@ -2260,9 +2280,11 @@ export async function runCodexTurn(
               },
             ],
             model: session.model,
+            serviceTier: session.serviceTier,
             effort: session.modelReasoningEffort,
             ...(session.modelReasoningEffort ? { summary: 'concise' } : {}),
             approvalPolicy: permissionProfile.approvalPolicy,
+            approvalsReviewer: permissionProfile.approvalsReviewer,
             sandboxPolicy: buildTurnSandboxPolicy(effectiveCwd, permissionProfile),
             ...(collaborationMode ? { collaborationMode } : {}),
           }),
@@ -2357,6 +2379,7 @@ export async function reviewCodexTurn(
       permissionProfile,
       async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, markMutationStarted }) => {
         markMutationStarted()
+        await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile)
         await connection.request('review/start', compactRecord({
           threadId: resolvedThreadId,
           delivery: 'inline',
@@ -2417,6 +2440,7 @@ export async function compactCodexTurn(
       permissionProfile,
       async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, markMutationStarted }) => {
         markMutationStarted()
+        await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile)
         await connection.request('thread/compact/start', { threadId: resolvedThreadId })
 
         return streamTurnEvents(connection, session, null, controller, callbacks, {

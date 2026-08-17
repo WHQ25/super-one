@@ -2140,7 +2140,7 @@ describe('AgentService.handleRemoteCommand', () => {
 
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
     expect(payload.defaults).toEqual({ model: 'gpt-5-codex', reasoningEffort: 'high', permissionPreset: 'full-access' })
-    expect(payload.permissionPresets).toEqual(['read-only', 'default', 'full-access'])
+    expect(payload.permissionPresets).toEqual(['read-only', 'default', 'auto-review', 'full-access'])
   })
 })
 

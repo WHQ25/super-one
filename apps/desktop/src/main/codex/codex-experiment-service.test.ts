@@ -43,7 +43,7 @@ vi.mock('./app-server-connection', async () => {
   }
 })
 
-const { CodexExperimentService } = await import('./codex-experiment-service')
+const { CodexExperimentService, parseAppServerModelForTest } = await import('./codex-experiment-service')
 const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
 const { resolveChatService } = await import('../providers/resolver')
 
@@ -208,6 +208,36 @@ describe('CodexExperimentService auth state', () => {
     const models = await service.listModels('/project')
 
     expect(models[0]?.supportedReasoningEfforts?.map((e) => e.value)).toEqual(['high', 'minimal', 'medium'])
+  })
+
+  it('exposes app-server service tiers for the model selector', async () => {
+    const handle = makeModelHandle()
+    vi.mocked(handle.connection.request).mockResolvedValueOnce({
+      data: [{
+        id: 'gpt-test',
+        model: 'gpt-test',
+        displayName: 'GPT Test',
+        supportedReasoningEfforts: [],
+        serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Lower latency' }],
+        defaultServiceTier: null,
+      }],
+    })
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+
+    const models = await service.listModels('/project')
+
+    expect(models[0]?.serviceTiers).toEqual([{ id: 'priority', name: 'Fast', description: 'Lower latency' }])
+    expect(models[0]?.defaultServiceTier).toBeNull()
+  })
+
+  it('falls back to legacy additionalSpeedTiers when serviceTiers are absent', () => {
+    expect(parseAppServerModelForTest({
+      id: 'gpt-test',
+      model: 'gpt-test',
+      supportedReasoningEfforts: [],
+      additionalSpeedTiers: ['fast'],
+    })?.serviceTiers).toEqual([{ id: 'fast', name: 'Fast', description: '' }])
   })
 
   it('caches models per active codex provider and refetches when the provider changes', async () => {

@@ -40,8 +40,8 @@ const defaultClaudeConfig: ClaudeRunConfig = {
 
 const defaultCodexConfig: CodexRunConfig = {
   type: 'codex',
-  permissionPreset: 'full-access',
-  permissionMode: 'bypassPermissions',
+  permissionPreset: 'auto-review',
+  permissionMode: 'auto',
 }
 
 const defaultAcpConfig: AcpRunConfig = {
@@ -278,6 +278,7 @@ export function AutomationDialog({
 
   const codexPermOptions = [
     { id: 'default' as const, label: t('resources.automation.defaultValue'), description: t('resources.automation.defaultDesc') },
+    { id: 'auto-review' as const, label: t('resources.automation.approveForMe'), description: t('resources.automation.approveForMeDesc') },
     { id: 'full-access' as const, label: t('resources.automation.fullAccess'), description: t('resources.automation.fullAccessDesc') },
   ]
 
@@ -419,11 +420,11 @@ export function AutomationDialog({
                     />
                     <PopoverSelect
                       label={t('resources.automation.permission')}
-                      value={form.codexConfig.permissionPreset ?? 'default'}
+                      value={form.codexConfig.permissionPreset ?? 'auto-review'}
                       options={codexPermOptions}
                       onChange={(v) => updateCodex({
                         permissionPreset: v as CodexRunConfig['permissionPreset'],
-                        permissionMode: v === 'full-access' ? 'bypassPermissions' : 'default',
+                        permissionMode: v === 'full-access' ? 'bypassPermissions' : v === 'auto-review' ? 'auto' : 'default',
                       })}
                     />
                   </>

@@ -38,7 +38,51 @@ const BRANDS: Record<string, BrandEntry> = {
   cursor: { Mono: Cursor, Text: Cursor.Text },
 }
 
-export function ProviderLabel({ brandKey, fallback, size = 44, iconOnly = false, combine = false, compactFallback = false }: { brandKey?: string | null; fallback?: string; size?: number; iconOnly?: boolean; combine?: boolean; compactFallback?: boolean }): ReactNode {
+/** models.dev provider ids that don't match a `BRANDS` key 1:1. */
+const CATALOG_PROVIDER_BRAND: Record<string, string> = {
+  zhipuai: 'zhipu',
+  'zhipuai-coding-plan': 'zhipu',
+  moonshotai: 'moonshot',
+  'moonshotai-cn': 'kimi',
+  alibaba: 'bailian',
+  'alibaba-cn': 'bailian',
+  'amazon-bedrock': 'bedrock',
+  siliconflow: 'siliconcloud',
+  xiaomi: 'xiaomimimo',
+}
+
+/** Map a models.dev `providerId` onto a `ProviderLabel` brand key, if we have an icon for it. */
+export function brandKeyForCatalogProvider(providerId?: string | null): string | undefined {
+  if (!providerId) return undefined
+  if (BRANDS[providerId]) return providerId
+  const mapped = CATALOG_PROVIDER_BRAND[providerId]
+  return mapped && BRANDS[mapped] ? mapped : undefined
+}
+
+function SiteGlyph({ src, size }: { src?: string | null; size: number }) {
+  if (src) {
+    return <img src={src} alt="" className="shrink-0 rounded-sm object-contain" style={{ width: size, height: size }} />
+  }
+  return <Globe className="shrink-0 text-muted-foreground" style={{ width: size, height: size }} />
+}
+
+export function ProviderLabel({
+  brandKey,
+  fallback,
+  size = 44,
+  iconOnly = false,
+  combine = false,
+  compactFallback = false,
+  icon,
+}: {
+  brandKey?: string | null
+  fallback?: string
+  size?: number
+  iconOnly?: boolean
+  combine?: boolean
+  compactFallback?: boolean
+  icon?: string | null
+}): ReactNode {
   const brand = brandKey ? BRANDS[brandKey] : null
   if (brand) {
     const IconComp = brand.Color ?? brand.Mono
@@ -70,19 +114,19 @@ export function ProviderLabel({ brandKey, fallback, size = 44, iconOnly = false,
     return <IconComp size={size} />
   }
   if (iconOnly) {
-    return <Globe className="text-muted-foreground" style={{ width: size, height: size }} />
+    return <SiteGlyph src={icon} size={size} />
   }
   if (compactFallback) {
     return (
       <span className="inline-flex min-w-0 items-center gap-1.5">
-        <Globe className="shrink-0 text-muted-foreground" style={{ width: size, height: size }} />
+        <SiteGlyph src={icon} size={size} />
         <span className="truncate leading-none" style={{ fontSize: size * 0.75 }}>{fallback}</span>
       </span>
     )
   }
   return (
     <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
-      <Globe className="size-5 shrink-0 text-muted-foreground" />
+      <SiteGlyph src={icon} size={size} />
       <span className="truncate">{fallback}</span>
     </span>
   )

@@ -66,6 +66,7 @@
     "build-storybook": "bun --filter @superone/desktop build-storybook"
   },
   "dependencies": {
+    "@lobehub/icons": "^5.16.0",
     "@musistudio/llms": "1.0.53",
     "lowlight-mermaid": "^0.0.0",
     "remark-math": "^6.0.0"

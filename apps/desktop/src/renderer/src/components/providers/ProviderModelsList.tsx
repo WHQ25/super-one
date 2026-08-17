@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Switch } from '@superone/ui/components/ui/switch'
 import type { CatalogModality, CatalogModel } from '@superone/shared/model-catalog-types'
+import { brandKeyForCatalogProvider } from '../ProviderLabel'
 import { ModelGlyph } from './ModelGlyph'
 
 const MODALITY_LABEL: Record<CatalogModality, string> = {
@@ -173,7 +174,12 @@ export function ProviderModelRow({
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
       <div className="flex size-7 shrink-0 items-center justify-center">
-        <ModelGlyph modelId={id} providerBrand={providerBrand} size={26} />
+        <ModelGlyph
+          modelId={catalog?.id ?? id}
+          modelName={name}
+          providerBrand={brandKeyForCatalogProvider(catalog?.providerId) ?? providerBrand}
+          size={26}
+        />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">

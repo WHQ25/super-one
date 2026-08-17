@@ -10,7 +10,7 @@ import { useActivityDropStore } from '@/stores/activity-drop'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
-import { LAYOUT } from '@/lib/layout-constants'
+import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
@@ -219,8 +219,13 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
       <div
         ref={outerRef}
         data-activity-outer=""
-        className={cn('relative shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]')}
-        style={{ width: visible ? (maximized ? '100%' : panelWidth) : 0, order: side === 'left' ? 0 : 2 }}
+        className={cn('relative shrink-0 overflow-hidden transition-[width]')}
+        style={{
+          width: visible ? (maximized ? '100%' : panelWidth) : 0,
+          order: side === 'left' ? 0 : 2,
+          transitionDuration: `${ACTIVITY_PANEL_TRANSITION.durationMs}ms`,
+          transitionTimingFunction: ACTIVITY_PANEL_TRANSITION.easing,
+        }}
       >
         <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col overflow-hidden" style={{ width: maximized ? '100%' : panelWidth }}>
           <div className="min-h-0 flex-1">

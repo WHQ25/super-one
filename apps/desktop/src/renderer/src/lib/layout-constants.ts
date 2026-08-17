@@ -6,6 +6,11 @@ export const LAYOUT = {
   CARD_GUTTER: 12,
 } as const
 
+export const ACTIVITY_PANEL_TRANSITION = {
+  durationMs: 300,
+  easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+} as const
+
 /**
  * Largest the sidebar may grow to while the main area keeps at least `mainMin`
  * (in mosaic mode `mainMin` is the split's measured minimum, not LAYOUT.MIN_MAIN).

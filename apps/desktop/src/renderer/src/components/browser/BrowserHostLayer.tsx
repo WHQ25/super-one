@@ -14,6 +14,7 @@ import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_CTX_TRACKER_SCRIPT, ANNOTATE_MSG_PREFI
 import { isBlankUrl, sameOrigin } from './browser-url'
 import { useBrowserContextMenu } from './browser-context-menu'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
+import { ACTIVITY_PANEL_TRANSITION } from '@/lib/layout-constants'
 
 // Fallback viewport used only while capturing a slotless tab (a background session's
 // tab has no dock geometry). Width matches the screenshot cap so no downscale needed.
@@ -213,6 +214,11 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   // mosaic/collapse; display:none if slotless) rather than always compositing,
   // which would cost GPU + un-throttled CPU for every background tab.
   const inViewport = visible || capturing
+  const clipPath = visible || capturing
+    ? 'inset(0 0 0 0)'
+    : activitySide === 'left'
+      ? 'inset(0 100% 0 0)'
+      : 'inset(0 0 0 100%)'
   const width = hasSlot ? slot!.width : CAPTURE_VIEWPORT.width
   const height = hasSlot ? slot!.height : CAPTURE_VIEWPORT.height
 
@@ -249,6 +255,10 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
         height,
         display: mounted || capturing ? 'block' : 'none',
         opacity: visible ? 1 : 0,
+        clipPath,
+        transition: capturing
+          ? 'none'
+          : `clip-path ${ACTIVITY_PANEL_TRANSITION.durationMs}ms ${ACTIVITY_PANEL_TRANSITION.easing}`,
         pointerEvents: visible && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
         borderBottomLeftRadius: roundLeft && activitySide === 'left' ? 'var(--radius-xl)' : undefined,

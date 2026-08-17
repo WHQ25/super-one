@@ -45,7 +45,7 @@ beforeEach(async () => {
 })
 
 describe('BrowserHostLayer mosaic visibility', () => {
-  it('parks panel-mode browser off-screen but keeps it mounted while the activity panel is collapsed (mosaic keep-alive)', () => {
+  it('parks the browser while collapsed and reveals it from the activity edge without fading', () => {
     const { container } = render(<BrowserHostLayer />)
     act(() => {
       useBrowserStore.getState().ensure('browser-a', 'https://example.com')
@@ -56,6 +56,7 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host).not.toBeNull()
     expect(host.style.display).toBe('block')
     expect(host.style.left).toBe('120px')
+    expect(host.style.clipPath).toBe('inset(0 0 0 0)')
     expect(host.style.pointerEvents).toBe('auto')
 
     act(() => useActivityPanelStore.getState().setShowPanel(false))
@@ -65,11 +66,15 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.left).toBe('-99999px')
     expect(host.style.width).toBe('560px')
     expect(host.style.height).toBe('800px')
+    expect(host.style.clipPath).toBe('inset(0 100% 0 0)')
     expect(host.style.pointerEvents).toBe('none')
 
     act(() => useActivityPanelStore.getState().setShowPanel(true))
     expect(host.style.display).toBe('block')
     expect(host.style.left).toBe('120px')
+    expect(host.style.opacity).toBe('1')
+    expect(host.style.clipPath).toBe('inset(0 0 0 0)')
+    expect(host.style.transition).toBe('clip-path 300ms cubic-bezier(0.4, 0, 0.2, 1)')
     expect(host.style.pointerEvents).toBe('auto')
   })
 
@@ -84,6 +89,22 @@ describe('BrowserHostLayer mosaic visibility', () => {
     const host = container.querySelector('[data-browser-id="browser-bg"]') as HTMLElement
     expect(host).not.toBeNull()
     expect(host.style.display).toBe('none')
+  })
+
+  it('reveals a right-docked browser from the right activity edge', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
+      useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
+      useActivityPanelStore.getState().setSide('right')
+      useActivityPanelStore.getState().setShowPanel(false)
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
+    expect(host.style.clipPath).toBe('inset(0 0 0 100%)')
+
+    act(() => useActivityPanelStore.getState().setShowPanel(true))
+    expect(host.style.clipPath).toBe('inset(0 0 0 0)')
   })
 
   it('pulls a hidden tab into the viewport (opacity-masked) only while a capture is in flight', () => {
@@ -102,6 +123,8 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.width).toBe('1280px')
     expect(host.style.height).toBe('800px')
     expect(host.style.opacity).toBe('0')
+    expect(host.style.clipPath).toBe('inset(0 0 0 0)')
+    expect(host.style.transition).toBe('none')
     expect(host.style.pointerEvents).toBe('none')
 
     // Capture done — back to the cheap resting state.

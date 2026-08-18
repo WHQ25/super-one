@@ -1971,6 +1971,11 @@ export type Messages = {
     }
     browser: {
       addressPlaceholder: string
+      previewLabel: string
+      previewExpandedLabel: string
+      previewHide: string
+      previewExpand: string
+      previewShrink: string
       screenshotCopied: string
       screenshotFailed: string
       quickAnnotate: string
@@ -4837,6 +4842,11 @@ export const en: Messages = {
     },
     browser: {
       addressPlaceholder: 'Search or enter a URL',
+      previewLabel: 'Browser picture in picture',
+      previewExpandedLabel: 'Expanded browser preview',
+      previewHide: 'Hide browser preview',
+      previewExpand: 'Expand browser preview',
+      previewShrink: 'Shrink browser preview',
       screenshotCopied: 'Screenshot copied to clipboard',
       screenshotFailed: 'Failed to capture screenshot',
       quickAnnotate: 'Quick Annotation',

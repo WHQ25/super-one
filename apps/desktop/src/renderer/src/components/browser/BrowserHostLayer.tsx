@@ -15,6 +15,7 @@ import { isBlankUrl, sameOrigin } from './browser-url'
 import { useBrowserContextMenu } from './browser-context-menu'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { ACTIVITY_PANEL_TRANSITION } from '@/lib/layout-constants'
+import { BrowserPictureInPicture } from './BrowserPictureInPicture'
 
 // Fallback viewport used only while capturing a slotless tab (a background session's
 // tab has no dock geometry). Width matches the screenshot cap so no downscale needed.
@@ -25,6 +26,7 @@ export function BrowserHostLayer() {
   const sashResizing = useSashResizing()
   const globalDragging = useGlobalDragging()
   const resizing = sashResizing || globalDragging
+  const overlayOpen = useBrowserStore((s) => s.expandedBrowserId != null)
   useBrowserAutomationHost()
 
   useEffect(() => {
@@ -56,16 +58,23 @@ export function BrowserHostLayer() {
   }, [])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 20 }}>
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: overlayOpen ? 50 : 20 }}>
       {ids.map((id) => (
         <PersistentBrowser key={id} browserId={id} resizing={resizing} />
       ))}
+      <BrowserPictureInPicture />
     </div>
   )
 }
 
 function PersistentBrowser({ browserId, resizing }: { browserId: string; resizing: boolean }) {
-  const slot = useBrowserStore((s) => s.slots[browserId])
+  const panelSlot = useBrowserStore((s) => s.slots[browserId])
+  const pipSlot = useBrowserStore((s) => s.pipSlots[browserId])
+  const overlaySlot = useBrowserStore((s) => s.overlaySlots[browserId])
+  const automationPreview = useBrowserStore((s) => s.automationPreviewBrowserId === browserId)
+  const previewExpanded = useBrowserStore((s) => s.expandedBrowserId === browserId)
+  const previewPinned = useBrowserStore((s) => s.pinnedPipBrowserId === browserId)
+  const previewHidden = useBrowserStore((s) => s.hiddenPreviewBrowserId === browserId)
   const emulation = useBrowserStore((s) => s.emulations[browserId])
   const capturing = useBrowserStore((s) => (s.captureRefs[browserId] ?? 0) > 0)
   const activityShown = useActivityPanelStore((s) => s.showPanel)
@@ -156,7 +165,12 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       patch(browserId, { url, canGoBack: wv.canGoBack(), canGoForward: wv.canGoForward(), ...reset })
     }
     const onStart = () => patch(browserId, { loading: true })
-    const onStop = () => { patch(browserId, { loading: false }); syncNav(); recordVisit() }
+    const onStop = () => {
+      patch(browserId, { loading: false })
+      useBrowserStore.getState().markAutomationPreviewReady(browserId)
+      syncNav()
+      recordVisit()
+    }
     const onTitle = (e: Electron.PageTitleUpdatedEvent) => { patch(browserId, { title: e.title }); void window.app.recordBrowserHistory(wv.getURL(), e.title, true) }
     const onFavicon = (e: Electron.PageFaviconUpdatedEvent) => {
       const favicon = e.favicons[0] ?? null
@@ -204,9 +218,18 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
     }
   }, [browserId])
 
-  const hasSlot = slot != null && slot.width > 0 && slot.height > 0
+  const pipVisible = !previewHidden && (automationPreview || previewPinned)
+  const slot = activityShown
+    ? panelSlot
+    : previewExpanded
+      ? overlaySlot
+      : pipVisible
+        ? pipSlot
+        : undefined
+  const restingSlot = slot ?? panelSlot ?? overlaySlot ?? pipSlot
+  const hasSlot = restingSlot != null && restingSlot.width > 0 && restingSlot.height > 0
   const mounted = hasSlot
-  const visible = mounted && activityShown && !home && !certErrored
+  const visible = slot != null && slot.width > 0 && slot.height > 0 && !home && !certErrored
   // A screenshot transiently pulls a hidden/background tab into the viewport and
   // masks it with opacity:0 — Chromium won't rasterize a layer parked off-screen,
   // so capturePage would hang otherwise. Outside capture, hidden tabs keep their
@@ -219,8 +242,23 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
     : activitySide === 'left'
       ? 'inset(0 100% 0 0)'
       : 'inset(0 0 0 100%)'
-  const width = hasSlot ? slot!.width : CAPTURE_VIEWPORT.width
-  const height = hasSlot ? slot!.height : CAPTURE_VIEWPORT.height
+  const width = hasSlot ? restingSlot!.width : CAPTURE_VIEWPORT.width
+  const height = hasSlot ? restingSlot!.height : CAPTURE_VIEWPORT.height
+  const pipViewport = emulation ?? (
+    panelSlot && panelSlot.width > 0 && panelSlot.height > 0
+      ? panelSlot
+      : CAPTURE_VIEWPORT
+  )
+  const webviewStyle = slot?.mode === 'pip'
+    ? {
+        width: pipViewport.width,
+        height: pipViewport.height,
+        transform: `scale(${slot.width / pipViewport.width})`,
+        transformOrigin: 'left top',
+      }
+    : emulation
+      ? { width: emulation.width, height: emulation.height }
+      : { width: '100%', height: '100%' }
 
   // Agent (and guest-page) focus must never stick on a webview the user is not
   // looking at — otherwise a background session's type/click steals the caret.
@@ -246,7 +284,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
     <div
       data-browser-host=""
       data-browser-id={browserId}
-      data-browser-presentation={slot?.mode}
+      data-browser-presentation={slot?.mode ?? restingSlot?.mode}
       style={{
         position: 'absolute',
         left: inViewport ? (slot?.left ?? 0) : -99999,
@@ -259,10 +297,12 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
         transition: capturing
           ? 'none'
           : `clip-path ${ACTIVITY_PANEL_TRANSITION.durationMs}ms ${ACTIVITY_PANEL_TRANSITION.easing}`,
-        pointerEvents: visible && !resizing ? 'auto' : 'none',
+        pointerEvents: visible && slot?.mode !== 'pip' && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
-        borderBottomLeftRadius: roundLeft && activitySide === 'left' ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: roundRight && activitySide === 'right' ? 'var(--radius-xl)' : undefined,
+        borderTopLeftRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
+        borderTopRightRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundLeft && activitySide === 'left') ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundRight && activitySide === 'right') ? 'var(--radius-xl)' : undefined,
       }}
     >
       <webview
@@ -270,7 +310,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
         src={initialSrcRef.current}
         partition="persist:browser"
         {...({ allowpopups: 'true' } as Record<string, string>)}
-        style={emulation ? { width: emulation.width, height: emulation.height } : { width: '100%', height: '100%' }}
+        style={webviewStyle}
       />
     </div>
     {menuNode}

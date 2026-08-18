@@ -207,7 +207,7 @@ export function closeMiniAppTab(instanceKey: string) {
   if (existing) existing.api.close()
 }
 
-export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: string | null, opts?: { background?: boolean }) {
+export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: string | null, opts?: { background?: boolean; reveal?: boolean }) {
   const resolvedOwner = owner !== undefined ? owner : (currentSessionIdGetter?.() ?? null)
   const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
   // Register the tab (and its persistent webview, rendered per store tab by
@@ -222,8 +222,8 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
   const currentSession = currentSessionIdGetter?.() ?? null
   if (resolvedOwner != null && resolvedOwner !== currentSession) return
 
-  ensureVisible()
-  recordMosaicOpen(browserId, () => openBrowserTab(url, browserId, resolvedOwner))
+  if (opts?.reveal !== false) ensureVisible()
+  recordMosaicOpen(browserId, () => openBrowserTab(url, browserId, resolvedOwner, opts))
   execOrDefer(() => {
     if (!dockApi) return
     const existing = dockApi.panels.find((p) => p.id === browserId)

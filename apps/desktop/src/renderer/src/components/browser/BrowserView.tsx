@@ -6,13 +6,25 @@ import { BrowserNewTab } from './BrowserNewTab'
 import { BrowserCertWarning } from './BrowserCertWarning'
 import { normalizeUrl, isBlankUrl, hostOf } from './browser-url'
 import { browserNavigate, browserGoBack, browserGoForward, browserReload } from './browser-host-api'
+import { cn } from '@superone/ui/lib/utils'
 
 interface BrowserViewProps {
   browserId: string
   mode: BrowserSlotMode
+  className?: string
+  interactive?: boolean
+  showChrome?: boolean
+  trackBoundsContinuously?: boolean
 }
 
-export function BrowserView({ browserId, mode }: BrowserViewProps) {
+export function BrowserView({
+  browserId,
+  mode,
+  className,
+  interactive = true,
+  showChrome = true,
+  trackBoundsContinuously = false,
+}: BrowserViewProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const isHome = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
   const certError = useBrowserStore((s) => s.tabs[browserId]?.certError ?? null)
@@ -22,6 +34,7 @@ export function BrowserView({ browserId, mode }: BrowserViewProps) {
     `${browserId}:${mode}`,
     (rect) => useBrowserStore.getState().updateSlot(browserId, mode, rect),
     () => useBrowserStore.getState().unregisterSlot(browserId, mode),
+    trackBoundsContinuously,
   )
 
   const navigate = useCallback((input: string) => {
@@ -50,15 +63,20 @@ export function BrowserView({ browserId, mode }: BrowserViewProps) {
   }, [browserId])
 
   return (
-    <div className="flex h-full w-full flex-col bg-transparent">
-      <BrowserChrome
-        browserId={browserId}
-        onNavigate={navigate}
-        onBack={goBack}
-        onForward={goForward}
-        onReload={reload}
-      />
-      <div ref={contentRef} className="min-h-0 flex-1">
+    <div className={cn('flex h-full w-full flex-col bg-transparent', className)}>
+      {showChrome && (
+        <BrowserChrome
+          browserId={browserId}
+          onNavigate={navigate}
+          onBack={goBack}
+          onForward={goForward}
+          onReload={reload}
+        />
+      )}
+      <div
+        ref={contentRef}
+        className={cn('min-h-0 flex-1', interactive && (isHome || certError) ? 'pointer-events-auto' : 'pointer-events-none')}
+      >
         {isHome && <BrowserNewTab onOpen={navigate} />}
         {certError && !isHome && <BrowserCertWarning error={certError} onBack={certBack} onProceed={certProceed} />}
       </div>

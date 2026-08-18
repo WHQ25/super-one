@@ -55,13 +55,15 @@ function Fixture({
   trackingKey,
   onBounds,
   onUnregister,
+  continuous = false,
 }: {
   trackingKey: string
   onBounds: (next: DOMRectReadOnly) => void
   onUnregister: () => void
+  continuous?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  useSlotBounds(ref, trackingKey, onBounds, onUnregister)
+  useSlotBounds(ref, trackingKey, onBounds, onUnregister, continuous)
   return <div ref={ref} />
 }
 
@@ -159,6 +161,50 @@ describe('useSlotBounds', () => {
     expect(frames.size).toBe(1)
 
     act(() => dispatchTransition('transitionend', 'width'))
+    act(flushFrames)
+    expect(frames.size).toBe(0)
+  })
+
+  it('keeps tracking position changes while continuous measurement is enabled', () => {
+    const onBounds = vi.fn()
+    const view = render(
+      <Fixture
+        trackingKey="slot-1"
+        onBounds={onBounds}
+        onUnregister={vi.fn()}
+      />,
+    )
+    act(flushFrames)
+    expect(frames.size).toBe(0)
+
+    view.rerender(
+      <Fixture
+        trackingKey="slot-1"
+        onBounds={onBounds}
+        onUnregister={vi.fn()}
+        continuous
+      />,
+    )
+    expect(frames.size).toBe(1)
+
+    bounds = { ...bounds, left: 64, top: 72 }
+    act(() => {
+      const pending = [...frames.values()]
+      frames = new Map()
+      for (const callback of pending) callback(performance.now())
+    })
+
+    expect(onBounds).toHaveBeenCalledTimes(2)
+    expect(onBounds.mock.calls[1][0]).toMatchObject({ left: 64, top: 72 })
+    expect(frames.size).toBe(1)
+
+    view.rerender(
+      <Fixture
+        trackingKey="slot-1"
+        onBounds={onBounds}
+        onUnregister={vi.fn()}
+      />,
+    )
     act(flushFrames)
     expect(frames.size).toBe(0)
   })

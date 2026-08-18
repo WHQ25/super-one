@@ -10,6 +10,7 @@ import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { getPendingReason } from '@/components/sidebar/session-state-utils'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { cn } from '@superone/ui/lib/utils'
+import { createDragCapture } from '@/lib/drag-capture'
 
 const OFFSET = 8
 const DEFAULT_PANEL_W = 360
@@ -77,26 +78,6 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 type ResizeEdge = 'top' | 'bottom' | 'left' | 'right'
-
-/** Insert a full-viewport transparent overlay so the cursor can't enter an underlying
- *  iframe (mini-app) during a drag/resize — iframes intercept mouse events and would
- *  break the window-level mousemove listener. */
-function createDragCapture(cursor: string) {
-  let el: HTMLDivElement | null = null
-  return {
-    acquire() {
-      if (el) return
-      el = document.createElement('div')
-      el.style.cssText = `position:fixed;inset:0;z-index:2147483647;cursor:${cursor}`
-      document.body.appendChild(el)
-    },
-    release() {
-      if (!el) return
-      el.remove()
-      el = null
-    },
-  }
-}
 
 export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchorBoundaryRef: React.RefObject<HTMLElement | null> }) {
   const { t } = useTranslation()

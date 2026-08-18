@@ -11,7 +11,7 @@ export interface BrowserTabState {
   certError: { url: string; error: string } | null
 }
 
-export type BrowserSlotMode = 'panel'
+export type BrowserSlotMode = 'panel' | 'pip' | 'overlay'
 
 export type AnnotateQuickMode = 'plain' | 'shot'
 
@@ -30,9 +30,19 @@ export interface BrowserEmulation {
 
 interface BrowserStore {
   tabs: Record<string, BrowserTabState>
+  /** Dockview-owned browser geometry. Kept stable while PiP temporarily mounts. */
   slots: Record<string, BrowserSlot>
+  pipSlots: Record<string, BrowserSlot>
+  overlaySlots: Record<string, BrowserSlot>
   emulations: Record<string, BrowserEmulation>
   captureRefs: Record<string, number>
+  automationCounts: Record<string, number>
+  activeAutomationId: string | null
+  pendingPreviewBrowserId: string | null
+  automationPreviewBrowserId: string | null
+  expandedBrowserId: string | null
+  pinnedPipBrowserId: string | null
+  hiddenPreviewBrowserId: string | null
   annotatingId: string | null
   annotateQuick: AnnotateQuickMode | null
   insecureHosts: Record<string, string>
@@ -45,6 +55,14 @@ interface BrowserStore {
   setEmulation: (id: string, emulation: BrowserEmulation | null) => void
   beginCapture: (id: string) => void
   endCapture: (id: string) => void
+  beginAutomation: (id: string) => void
+  endAutomation: (id: string) => void
+  markAutomationPreviewReady: (id: string) => void
+  clearAutomationPreview: () => void
+  expandPreview: (id: string) => void
+  shrinkPreview: (id: string) => void
+  hidePreview: (id: string) => void
+  clearManualPreview: () => void
   updateSlot: (id: string, mode: BrowserSlotMode, rect: DOMRectReadOnly) => void
   unregisterSlot: (id: string, mode: BrowserSlotMode) => void
 }
@@ -70,8 +88,17 @@ function withoutKey<T extends Record<string, unknown>>(obj: T, key: string): T {
 export const useBrowserStore = create<BrowserStore>((set) => ({
   tabs: {},
   slots: {},
+  pipSlots: {},
+  overlaySlots: {},
   emulations: {},
   captureRefs: {},
+  automationCounts: {},
+  activeAutomationId: null,
+  pendingPreviewBrowserId: null,
+  automationPreviewBrowserId: null,
+  expandedBrowserId: null,
+  pinnedPipBrowserId: null,
+  hiddenPreviewBrowserId: null,
   annotatingId: null,
   annotateQuick: null,
   insecureHosts: {},
@@ -87,8 +114,17 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
     set((s) => ({
       tabs: withoutKey(s.tabs, id),
       slots: withoutKey(s.slots, id),
+      pipSlots: withoutKey(s.pipSlots, id),
+      overlaySlots: withoutKey(s.overlaySlots, id),
       emulations: withoutKey(s.emulations, id),
       captureRefs: withoutKey(s.captureRefs, id),
+      automationCounts: withoutKey(s.automationCounts, id),
+      activeAutomationId: s.activeAutomationId === id ? null : s.activeAutomationId,
+      pendingPreviewBrowserId: s.pendingPreviewBrowserId === id ? null : s.pendingPreviewBrowserId,
+      automationPreviewBrowserId: s.automationPreviewBrowserId === id ? null : s.automationPreviewBrowserId,
+      expandedBrowserId: s.expandedBrowserId === id ? null : s.expandedBrowserId,
+      pinnedPipBrowserId: s.pinnedPipBrowserId === id ? null : s.pinnedPipBrowserId,
+      hiddenPreviewBrowserId: s.hiddenPreviewBrowserId === id ? null : s.hiddenPreviewBrowserId,
       annotatingId: s.annotatingId === id ? null : s.annotatingId,
       annotateQuick: s.annotatingId === id ? null : s.annotateQuick,
     })),
@@ -101,18 +137,73 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       const next = (s.captureRefs[id] ?? 0) - 1
       return { captureRefs: next > 0 ? { ...s.captureRefs, [id]: next } : withoutKey(s.captureRefs, id) }
     }),
+  beginAutomation: (id) =>
+    set((s) => ({
+      automationCounts: { ...s.automationCounts, [id]: (s.automationCounts[id] ?? 0) + 1 },
+      activeAutomationId: id,
+      pendingPreviewBrowserId: id,
+      hiddenPreviewBrowserId: s.hiddenPreviewBrowserId === id ? null : s.hiddenPreviewBrowserId,
+    })),
+  endAutomation: (id) =>
+    set((s) => {
+      const nextCount = Math.max(0, (s.automationCounts[id] ?? 0) - 1)
+      const automationCounts = nextCount > 0
+        ? { ...s.automationCounts, [id]: nextCount }
+        : withoutKey(s.automationCounts, id)
+      const activeAutomationId = s.activeAutomationId === id && nextCount === 0
+        ? Object.keys(automationCounts).at(-1) ?? null
+        : s.activeAutomationId
+      return { automationCounts, activeAutomationId }
+    }),
+  markAutomationPreviewReady: (id) =>
+    set((s) => s.pendingPreviewBrowserId === id && !s.tabs[id]?.loading
+      ? { pendingPreviewBrowserId: null, automationPreviewBrowserId: id }
+      : s),
+  clearAutomationPreview: () => set({
+    pendingPreviewBrowserId: null,
+    automationPreviewBrowserId: null,
+  }),
+  expandPreview: (id) => set({
+    expandedBrowserId: id,
+    pinnedPipBrowserId: null,
+    hiddenPreviewBrowserId: null,
+  }),
+  shrinkPreview: (id) => set((s) => ({
+    expandedBrowserId: s.expandedBrowserId === id ? null : s.expandedBrowserId,
+    pinnedPipBrowserId: id,
+    hiddenPreviewBrowserId: null,
+  })),
+  hidePreview: (id) => set((s) => ({
+    pendingPreviewBrowserId: s.pendingPreviewBrowserId === id ? null : s.pendingPreviewBrowserId,
+    automationPreviewBrowserId: s.automationPreviewBrowserId === id ? null : s.automationPreviewBrowserId,
+    expandedBrowserId: s.expandedBrowserId === id ? null : s.expandedBrowserId,
+    pinnedPipBrowserId: s.pinnedPipBrowserId === id ? null : s.pinnedPipBrowserId,
+    hiddenPreviewBrowserId: id,
+  })),
+  clearManualPreview: () => set({
+    expandedBrowserId: null,
+    pinnedPipBrowserId: null,
+    hiddenPreviewBrowserId: null,
+  }),
   updateSlot: (id, mode, rect) =>
     set((s) => {
-      const prev = s.slots[id]
+      const target = mode === 'pip' ? s.pipSlots : mode === 'overlay' ? s.overlaySlots : s.slots
+      const prev = target[id]
       const left = Math.round(rect.left), top = Math.round(rect.top)
       const width = Math.round(rect.width), height = Math.round(rect.height)
       if (prev && prev.mode === mode && prev.left === left && prev.top === top && prev.width === width && prev.height === height) return s
-      return { slots: { ...s.slots, [id]: { mode, left, top, width, height } } }
+      const next = { ...target, [id]: { mode, left, top, width, height } }
+      return mode === 'pip' ? { pipSlots: next } : mode === 'overlay' ? { overlaySlots: next } : { slots: next }
     }),
   unregisterSlot: (id, mode) =>
     set((s) => {
-      const prev = s.slots[id]
+      const target = mode === 'pip' ? s.pipSlots : mode === 'overlay' ? s.overlaySlots : s.slots
+      const prev = target[id]
       if (!prev || prev.mode !== mode) return s
-      return { slots: withoutKey(s.slots, id) }
+      return mode === 'pip'
+        ? { pipSlots: withoutKey(s.pipSlots, id) }
+        : mode === 'overlay'
+          ? { overlaySlots: withoutKey(s.overlaySlots, id) }
+          : { slots: withoutKey(s.slots, id) }
     }),
 }))

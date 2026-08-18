@@ -107,6 +107,84 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.clipPath).toBe('inset(0 0 0 0)')
   })
 
+  it('moves an automated browser between picture-in-picture and the activity panel', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
+      useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
+      useBrowserStore.getState().updateSlot('browser-a', 'pip', {
+        left: 700,
+        top: 80,
+        width: 360,
+        height: 240,
+      } as DOMRectReadOnly)
+      useBrowserStore.getState().beginAutomation('browser-a')
+      useBrowserStore.getState().markAutomationPreviewReady('browser-a')
+      useActivityPanelStore.getState().setShowPanel(false)
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
+    const webview = host.querySelector('webview') as HTMLElement
+    expect(host.dataset.browserPresentation).toBe('pip')
+    expect(host.style.left).toBe('700px')
+    expect(host.style.top).toBe('80px')
+    expect(host.style.width).toBe('360px')
+    expect(host.style.pointerEvents).toBe('none')
+    expect(host.style.borderTopLeftRadius).toBe('var(--radius-xl)')
+    expect(host.style.borderTopRightRadius).toBe('var(--radius-xl)')
+    expect(host.style.borderBottomLeftRadius).toBe('var(--radius-xl)')
+    expect(host.style.borderBottomRightRadius).toBe('var(--radius-xl)')
+    expect(webview.style.width).toBe('560px')
+    expect(webview.style.height).toBe('800px')
+    expect(webview.style.transform).toBe('scale(0.6428571428571429)')
+    expect(webview.style.transformOrigin).toBe('left top')
+
+    act(() => {
+      useBrowserStore.getState().updateSlot('browser-a', 'pip', {
+        left: 700,
+        top: 80,
+        width: 280,
+        height: 240,
+      } as DOMRectReadOnly)
+    })
+    expect(webview.style.width).toBe('560px')
+    expect(webview.style.height).toBe('800px')
+    expect(webview.style.transform).toBe('scale(0.5)')
+
+    act(() => useActivityPanelStore.getState().setShowPanel(true))
+    expect(host.dataset.browserPresentation).toBe('panel')
+    expect(host.style.left).toBe('120px')
+    expect(host.style.top).toBe('44px')
+    expect(host.style.width).toBe('560px')
+    expect(webview.style.width).toBe('100%')
+    expect(webview.style.height).toBe('100%')
+    expect(webview.style.transform).toBe('')
+  })
+
+  it('only enables webview interaction in the expanded overlay', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
+      useBrowserStore.getState().updateSlot('browser-a', 'overlay', {
+        left: 80,
+        top: 60,
+        width: 1200,
+        height: 760,
+      } as DOMRectReadOnly)
+      useBrowserStore.getState().expandPreview('browser-a')
+      useActivityPanelStore.getState().setShowPanel(false)
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
+    expect(host.dataset.browserPresentation).toBe('overlay')
+    expect(host.style.left).toBe('80px')
+    expect(host.style.pointerEvents).toBe('auto')
+    expect(host.style.borderTopLeftRadius).toBe('')
+    expect(host.style.borderTopRightRadius).toBe('')
+    expect(host.style.borderBottomLeftRadius).toBe('')
+    expect(host.style.borderBottomRightRadius).toBe('')
+  })
+
   it('pulls a hidden tab into the viewport (opacity-masked) only while a capture is in flight', () => {
     const { container } = render(<BrowserHostLayer />)
     act(() => {

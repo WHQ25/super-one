@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, beforeEach } from 'vitest'
-import { HELPERS } from './browser-automation-runtime'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { HELPERS, runBrowserOp } from './browser-automation-runtime'
+import { useBrowserStore } from '@/stores/browser'
 
 interface Sone {
   selectorOf(el: Element): string | null
@@ -61,5 +62,31 @@ describe('dynamicToken', () => {
     expect(sone.dynamicToken('btn-primary')).toBe(false)
     expect(sone.dynamicToken('card')).toBe(false)
     expect(sone.dynamicToken('px-4')).toBe(false)
+  })
+})
+
+describe('browser automation presentation activity', () => {
+  it('marks the operated tab active for the duration of a browser call', async () => {
+    useBrowserStore.setState({
+      tabs: {},
+      automationCounts: {},
+      activeAutomationId: null,
+      pendingPreviewBrowserId: null,
+      automationPreviewBrowserId: null,
+    })
+    useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
+    const begin = vi.spyOn(useBrowserStore.getState(), 'beginAutomation')
+    const end = vi.spyOn(useBrowserStore.getState(), 'endAutomation')
+
+    await runBrowserOp('session-a', 'emulateViewport', {
+      tab: 'browser-a',
+      width: 390,
+      height: 844,
+    })
+
+    expect(begin).toHaveBeenCalledWith('browser-a')
+    expect(end).toHaveBeenCalledWith('browser-a')
+    expect(useBrowserStore.getState().activeAutomationId).toBeNull()
+    expect(useBrowserStore.getState().automationPreviewBrowserId).toBe('browser-a')
   })
 })

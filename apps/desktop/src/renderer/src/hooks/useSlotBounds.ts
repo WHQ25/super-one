@@ -50,11 +50,15 @@ export function useSlotBounds(
   trackingKey: string,
   onBounds: (rect: DOMRectReadOnly) => void,
   onUnregister: () => void,
+  continuous = false,
 ): void {
   const onBoundsRef = useRef(onBounds)
   const onUnregisterRef = useRef(onUnregister)
+  const continuousRef = useRef(continuous)
+  const scheduleRef = useRef<() => void>(() => {})
   onBoundsRef.current = onBounds
   onUnregisterRef.current = onUnregister
+  continuousRef.current = continuous
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -80,7 +84,11 @@ export function useSlotBounds(
         onBoundsRef.current(rect)
       }
 
-      if (activeTransitions > 0 || stableFrames < STABLE_FRAMES_TO_STOP) {
+      if (
+        continuousRef.current ||
+        activeTransitions > 0 ||
+        stableFrames < STABLE_FRAMES_TO_STOP
+      ) {
         rafId = requestAnimationFrame(frame)
       }
     }
@@ -89,6 +97,7 @@ export function useSlotBounds(
       stableFrames = 0
       if (!rafId && !document.hidden) rafId = requestAnimationFrame(frame)
     }
+    scheduleRef.current = schedule
 
     const onTransitionStart = (event: TransitionEvent) => {
       if (!GEOMETRY_TRANSITION_PROPERTIES.has(event.propertyName)) return
@@ -115,6 +124,7 @@ export function useSlotBounds(
     document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
+      scheduleRef.current = () => {}
       if (rafId) cancelAnimationFrame(rafId)
       observer.disconnect()
       window.removeEventListener('resize', schedule)
@@ -126,4 +136,8 @@ export function useSlotBounds(
       unregister()
     }
   }, [ref, trackingKey])
+
+  useLayoutEffect(() => {
+    if (continuous) scheduleRef.current()
+  }, [continuous])
 }

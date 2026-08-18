@@ -2026,6 +2026,11 @@ export const zh: Messages = {
     },
     browser: {
       addressPlaceholder: '搜索或输入网址',
+      previewLabel: '浏览器画中画',
+      previewExpandedLabel: '放大的浏览器预览',
+      previewHide: '隐藏浏览器预览',
+      previewExpand: '放大浏览器预览',
+      previewShrink: '缩小浏览器预览',
       screenshotCopied: '截图已复制到剪贴板',
       screenshotFailed: '截图失败',
       quickAnnotate: '快速标注',

@@ -179,6 +179,18 @@ describe('mosaic-opened panels survive the return to single', () => {
     expect(useActivityPanelStore.getState().showPanel).toBe(true)
   })
 
+  it('preserves an agent-opened browser as non-revealing when mosaic exits', () => {
+    const dock = fakeDock()
+    beginMosaicRecording()
+
+    openBrowserTab('example.com', 'browser-agent', null, { reveal: false })
+    dock.panels.length = 0
+    replayMosaicOpenedPanels()
+
+    expect(dock.panels.some((panel) => panel.id === 'browser-agent')).toBe(true)
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
+  })
+
   it('replays a mini-app opened during mosaic', () => {
     const dock = fakeDock()
     beginMosaicRecording()
@@ -289,6 +301,15 @@ describe('browser tabs stay confined to their owner session', () => {
 
     expect(dock.addPanel).toHaveBeenCalledWith(expect.objectContaining({ id: 'browser-fg' }))
     expect(useActivityPanelStore.getState().showPanel).toBe(true)
+  })
+
+  it('keeps the activity panel collapsed for an agent-opened browser tab', () => {
+    const dock = fakeDock()
+
+    openBrowserTab('example.com', 'browser-agent', 'sess-visible', { reveal: false })
+
+    expect(dock.addPanel).toHaveBeenCalledWith(expect.objectContaining({ id: 'browser-agent' }))
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
   })
 
   it('materializes a background tab into its owner panel on restore, skipping foreign and existing panels', () => {

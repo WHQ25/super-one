@@ -614,11 +614,19 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   if (op === 'open') {
     const url = input.url ?? 'about:blank'
     const targetId = input.tab ?? `browser-${crypto.randomUUID()}`
-    openBrowserTab(url, targetId, sessionId)
-    await waitForTabRegistered(targetId)
-    if ((input.readiness ?? 'load') !== 'none') await waitForLoadStop(targetId)
-    const tab = useBrowserStore.getState().tabs[targetId]
-    return { ok: true, tab: targetId, url: tab?.url ?? url, title: tab?.title ?? '' }
+    openBrowserTab(url, targetId, sessionId, { reveal: false })
+    const store = useBrowserStore.getState()
+    store.patch(targetId, { loading: true })
+    store.beginAutomation(targetId)
+    try {
+      await waitForTabRegistered(targetId)
+      if ((input.readiness ?? 'load') !== 'none') await waitForLoadStop(targetId)
+      store.markAutomationPreviewReady(targetId)
+      const tab = useBrowserStore.getState().tabs[targetId]
+      return { ok: true, tab: targetId, url: tab?.url ?? url, title: tab?.title ?? '' }
+    } finally {
+      store.endAutomation(targetId)
+    }
   }
   if (op === 'ownedWebContentsIds') {
     const ids = ownedTabIds(sessionId)
@@ -637,7 +645,11 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     return { tabs, count: tabs.length }
   }
   const id = resolveBrowserId(input.tab, sessionId)
-  switch (op) {
+  const store = useBrowserStore.getState()
+  store.beginAutomation(id)
+  if (op !== 'navigate') store.markAutomationPreviewReady(id)
+  try {
+    switch (op) {
     case 'resolveWebContentsId': {
       const webContentsId = webContentsIdForBrowser(id)
       if (webContentsId == null) throw new Error('Browser view is not attached yet')
@@ -721,6 +733,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
         browserNavigate(id, resolveNavigateUrl(input as Parameters<typeof resolveNavigateUrl>[0]))
       }
       if ((input.readiness ?? 'load') !== 'none') await waitForLoadStop(id)
+      store.markAutomationPreviewReady(id)
       const tab = useBrowserStore.getState().tabs[id]
       return { ok: true, action: input.action ?? 'navigate', url: tab?.url ?? '', title: tab?.title ?? '', loading: tab?.loading ?? false }
     }
@@ -751,8 +764,11 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       if (json.length > 5_000_000) throw new Error('Evaluate result exceeds 5MB; narrow the expression')
       return { value: value ?? null }
     }
-    default:
-      throw new Error(`Unknown browser automation op: ${op}`)
+      default:
+        throw new Error(`Unknown browser automation op: ${op}`)
+    }
+  } finally {
+    store.endAutomation(id)
   }
 }
 

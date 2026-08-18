@@ -16,7 +16,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
-import { listMcpConfigs } from '../../mcp-config-service'
+import { listDshMcpConfigs } from '@superone/runtime/fs'
 import { addToolsChangedListener } from '../../mcp/superone-mcp-server'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from '../../mcp/superone-mcp-tool-surface'
 import {
@@ -38,14 +38,17 @@ function readConfig(config: unknown): DeepseekConfig {
 }
 
 /**
- * User- and project-scope MCP servers for one workspace, in the shape the dsh
- * runtime mounts. SSE is dropped: `dsh-mcp-client` speaks stdio and Streamable
- * HTTP only, and advertising a server we cannot reach would be worse than
- * leaving it out.
+ * dsh's own MCP servers, from its own file.
+ *
+ * SuperOne extends a harness rather than centralizing it, so this reads
+ * `~/.dsh/profiles/<profile>/cordis.patch.yml` — the entries the user's own dsh
+ * CLI writes — not the Claude-shaped config other harnesses share. dsh composes
+ * per deployment, so every server is user scope; SSE is dropped because
+ * `dsh-mcp-client` speaks stdio and Streamable HTTP only.
  */
 function readMcpServerSpecs(cwd: string): DeepseekMcpServerSpec[] {
   const specs: DeepseekMcpServerSpec[] = []
-  for (const config of listMcpConfigs(cwd)) {
+  for (const config of listDshMcpConfigs(cwd)) {
     if (config.disabled) continue
     const name = config.name?.trim()
     if (!name) continue
@@ -54,7 +57,6 @@ function readMcpServerSpecs(cwd: string): DeepseekMcpServerSpec[] {
       if (!command) continue
       specs.push({
         name,
-        scope: config.scope === 'user' ? 'user' : 'project',
         transport: 'stdio',
         command,
         args: config.args ?? [],
@@ -69,13 +71,7 @@ function readMcpServerSpecs(cwd: string): DeepseekMcpServerSpec[] {
     }
     const url = config.url?.trim()
     if (!url) continue
-    specs.push({
-      name,
-      scope: config.scope === 'user' ? 'user' : 'project',
-      transport: 'streamable-http',
-      url,
-      headers: config.headers ?? {},
-    })
+    specs.push({ name, transport: 'streamable-http', url, headers: config.headers ?? {} })
   }
   return specs
 }

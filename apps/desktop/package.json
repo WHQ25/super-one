@@ -154,7 +154,8 @@
     "sonner": "^2.0.7",
     "unzipper": "^0.12.3",
     "utf-8-validate": "^6.0.6",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

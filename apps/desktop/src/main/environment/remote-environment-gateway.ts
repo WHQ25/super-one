@@ -40,6 +40,7 @@ import type {
   WorkspaceSearchInput,
   WorkspaceWatchInput,
   WorkspaceWriteInput,
+  ResourceProvider,
 } from '@superone/shared/environment'
 import type { NodeRpcClient } from './node-rpc-client'
 
@@ -501,14 +502,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   // --- Skills / MCP resource management (node disk via skills.* / mcp.*) ---
 
-  async skillsList(projectId: string, provider: 'claude' | 'codex' = 'claude'): Promise<unknown> {
+  async skillsList(projectId: string, provider: ResourceProvider = 'claude'): Promise<unknown> {
     return this.client.rpc('skills.list', { projectId, provider })
   }
 
   async skillsGet(
     projectId: string,
     name: string,
-    opts?: { sourcePath?: string; provider?: 'claude' | 'codex' },
+    opts?: { sourcePath?: string; provider?: ResourceProvider },
   ): Promise<unknown> {
     return this.client.rpc('skills.get', {
       projectId,
@@ -522,7 +523,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     projectId: string,
     skillName: string,
     relativePath: string,
-    opts?: { sourcePath?: string; provider?: 'claude' | 'codex' },
+    opts?: { sourcePath?: string; provider?: ResourceProvider },
   ): Promise<unknown> {
     return this.client.rpc('skills.readFile', {
       projectId,
@@ -536,7 +537,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async skillsDelete(
     projectId: string,
     sourcePath: string,
-    provider: 'claude' | 'codex' = 'claude',
+    provider: ResourceProvider = 'claude',
   ): Promise<unknown> {
     return this.client.rpc('skills.delete', { projectId, sourcePath, provider })
   }
@@ -547,7 +548,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       scope: 'user' | 'project'
       name: string
       files: Record<string, string>
-      provider?: 'claude' | 'codex'
+      provider?: ResourceProvider
     },
   ): Promise<unknown> {
     return this.client.rpc('skills.install', {
@@ -559,26 +560,26 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     })
   }
 
-  async mcpList(projectId: string, provider: 'claude' | 'codex'): Promise<unknown> {
+  async mcpList(projectId: string, provider: ResourceProvider): Promise<unknown> {
     return this.client.rpc('mcp.list', { projectId, provider })
   }
 
-  async additionalDirsList(projectId: string, provider: 'claude' | 'codex'): Promise<unknown> {
+  async additionalDirsList(projectId: string, provider: ResourceProvider): Promise<unknown> {
     return this.client.rpc('additionalDirs.list', { projectId, provider })
   }
 
-  async additionalDirsAdd(projectId: string, dir: string, provider: 'claude' | 'codex'): Promise<unknown> {
+  async additionalDirsAdd(projectId: string, dir: string, provider: ResourceProvider): Promise<unknown> {
     return this.client.rpc('additionalDirs.add', { projectId, dir, provider })
   }
 
-  async additionalDirsRemove(projectId: string, dir: string, provider: 'claude' | 'codex'): Promise<unknown> {
+  async additionalDirsRemove(projectId: string, dir: string, provider: ResourceProvider): Promise<unknown> {
     return this.client.rpc('additionalDirs.remove', { projectId, dir, provider })
   }
 
   async mcpSave(
     projectId: string,
     input: {
-      provider: 'claude' | 'codex'
+      provider: ResourceProvider
       name: string
       scope: 'user' | 'project'
       config: Record<string, unknown>
@@ -596,7 +597,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async mcpToggle(
     projectId: string,
     input: {
-      provider: 'claude' | 'codex'
+      provider: ResourceProvider
       name: string
       scope: 'user' | 'project'
       disabled: boolean
@@ -614,7 +615,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async mcpDelete(
     projectId: string,
     input: {
-      provider: 'claude' | 'codex'
+      provider: ResourceProvider
       name: string
       scope: 'user' | 'project'
     },

@@ -1,9 +1,9 @@
 /**
- * The risk here is not MCP — it is dsh's scoping: whether a project's servers
- * reach that project's agents and nobody else's, and whether one process-wide
- * `serverName` namespace can hold two projects at once. So these tests mount a
- * fake server plugin (same registration surface, no network) and assert on the
- * tools each agent can actually call.
+ * The risk here is not MCP itself — it is placement: dsh's servers are
+ * deployment-level, so they must reach every session of the tree, survive a
+ * second session starting, and go away when the config drops them. These tests
+ * mount a fake server plugin (same registration surface, no network) and assert
+ * on the tools an agent can actually call.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
@@ -119,79 +119,65 @@ function toolResults(events: AgentEvent[]): string {
     .join('\n')
 }
 
-const httpServer = (
-  name: string,
-  scope: 'user' | 'project',
-  url: string,
-): DeepseekMcpServerSpec => ({ name, scope, transport: 'streamable-http', url, headers: {} })
+const httpServer = (name: string, url: string): DeepseekMcpServerSpec =>
+  ({ name, transport: 'streamable-http', url, headers: {} })
 
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()?.()
 })
 
 describe('third-party MCP servers', () => {
-  it('reaches only the agents chained to that project scope', async () => {
+  it('reaches every session, because dsh composes per deployment', async () => {
     const runtime = await bootRuntime()
-    const a = await startAgent(runtime, '/projects/a', [httpServer('repo', 'project', 'http://a')])
-    const b = await startAgent(runtime, '/projects/b', [httpServer('other', 'project', 'http://b')])
+    const specs = [httpServer('repo', 'http://a')]
+    const a = await startAgent(runtime, '/projects/a', specs)
+    const b = await startAgent(runtime, '/projects/b', specs)
 
     await runTurn(a.agent, 'CALL mcp__repo__ping {}')
     await runTurn(b.agent, 'CALL mcp__repo__ping {}')
 
+    // One mount, one name, both sessions — what the profile patch layer says.
     expect(toolResults(a.events)).toContain('pong:repo')
-    // Project B never chained to project A's scope, so the tool is not there.
-    expect(toolResults(b.events)).toContain('unknown tool')
+    expect(toolResults(b.events)).toContain('pong:repo')
   })
 
-  it('shares a user-scope server with every project', async () => {
+  it('mounts a server once even as sessions come and go', async () => {
     const runtime = await bootRuntime()
-    const shared = httpServer('shared', 'user', 'http://shared')
-    const a = await startAgent(runtime, '/projects/a', [shared])
-    const b = await startAgent(runtime, '/projects/b', [shared])
-
-    await runTurn(a.agent, 'CALL mcp__shared__ping {}')
-    await runTurn(b.agent, 'CALL mcp__shared__ping {}')
-
-    // One mount, one name, both sessions — the config's own semantics.
-    expect(toolResults(a.events)).toContain('pong:shared')
-    expect(toolResults(b.events)).toContain('pong:shared')
-  })
-
-  it('keeps the plain name for one project and renames only the clashing config', async () => {
-    const runtime = await bootRuntime()
-    const a = await startAgent(runtime, '/projects/a', [httpServer('repo', 'project', 'http://a')])
-    const b = await startAgent(runtime, '/projects/b', [httpServer('repo', 'project', 'http://b')])
-
-    await runTurn(a.agent, 'CALL mcp__repo__ping {}')
-    await runTurn(b.agent, 'CALL mcp__repo-2__ping {}')
-
-    expect(toolResults(a.events)).toContain('pong:repo:http://a')
-    // Same name, different config: the second one cannot hold the process-wide
-    // reservation, so it is mounted under a numbered variant instead of lost.
-    expect(toolResults(b.events)).toContain('pong:repo-2:http://b')
-  })
-
-  it('frees the name once the last session in that project goes away', async () => {
-    const runtime = await bootRuntime()
-    const first = await startAgent(runtime, '/projects/a', [httpServer('repo', 'project', 'http://a')])
+    const specs = [httpServer('repo', 'http://a')]
+    const first = await startAgent(runtime, '/projects/a', specs)
     await first.agent.dispose()
 
-    const second = await startAgent(runtime, '/projects/b', [httpServer('repo', 'project', 'http://b')])
+    // A second mount under the same name would throw on the process-wide
+    // reservation the real client keeps, so this is the regression that matters.
+    const second = await startAgent(runtime, '/projects/a', specs)
     await runTurn(second.agent, 'CALL mcp__repo__ping {}')
 
+    expect(toolResults(second.events)).toContain('pong:repo:http://a')
+  })
+
+  it('re-mounts when the config changed and drops what is gone', async () => {
+    const runtime = await bootRuntime()
+    const first = await startAgent(runtime, '/projects/a', [httpServer('repo', 'http://a')])
+    await first.agent.dispose()
+
+    const second = await startAgent(runtime, '/projects/a', [httpServer('repo', 'http://b')])
+    await runTurn(second.agent, 'CALL mcp__repo__ping {}')
+
+    // Same name, new endpoint: the old mount had to go before the new one
+    // could take the name back.
     expect(toolResults(second.events)).toContain('pong:repo:http://b')
   })
 
-  it('leaves sessions with no servers unchained', async () => {
+  it('leaves a session with no configured servers alone', async () => {
     const runtime = await bootRuntime()
-    const acquire = vi.spyOn(
+    const sync = vi.spyOn(
       (runtime as unknown as { mcpServers: DeepseekMcpServers }).mcpServers,
-      'acquire',
+      'sync',
     )
     const { agent } = await startAgent(runtime, '/projects/a', [])
 
     await runTurn(agent, 'hello')
 
-    expect(acquire).not.toHaveBeenCalled()
+    expect(sync).toHaveBeenCalledWith([])
   })
 })

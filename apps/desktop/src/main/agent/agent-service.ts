@@ -67,6 +67,7 @@ function getGitRoot(cwd: string): string {
 import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
+import { listDshMcpConfigs } from '@superone/runtime/fs'
 import { listHooks, saveHook, deleteHook } from '../hooks-config-service'
 import { checkMcpServers, readMcpMetaCache } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
@@ -2637,7 +2638,13 @@ export class AgentService {
       // codex config.toml (not Claude's MCP config) and vice-versa. Falls back to the
       // active session's harness, then Claude (the settings page passes no harness).
       const resolvedHarness = harness ?? this.sessionManager?.getActiveSession(projectPath)?.snapshot.harnessId ?? 'claude'
-      const configs = resolvedHarness === 'codex' ? listCodexMcpConfigs(projectPath) : listMcpConfigs(projectPath)
+      const configs = resolvedHarness === 'codex'
+        ? listCodexMcpConfigs(projectPath)
+        // dsh keeps its servers in its own profile patch layer, not the shared
+        // Claude-shaped files the other harnesses read.
+        : resolvedHarness === 'dsh'
+          ? listDshMcpConfigs(projectPath)
+          : listMcpConfigs(projectPath)
       const result = await checkMcpServers(configs)
       if (resolvedHarness !== 'codex') {
         try {

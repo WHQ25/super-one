@@ -57,6 +57,11 @@ export {
   saveCodexMcpConfig,
   toggleCodexMcpConfig,
   deleteCodexMcpConfig,
+  listDshMcpConfigs,
+  saveDshMcpConfig,
+  toggleDshMcpConfig,
+  deleteDshMcpConfig,
+  getDshPatchPath,
   type McpManageOptions,
   type McpWriteFields,
 } from './mcp-config'

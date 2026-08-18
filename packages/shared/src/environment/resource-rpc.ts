@@ -21,8 +21,13 @@ import type {
   SkillInfo,
 } from '../agent-types'
 
-/** Provider surface that owns skill roots / MCP config files. */
-export type ResourceProvider = 'claude' | 'codex'
+/**
+ * Harness whose own config files a resource request targets. SuperOne extends
+ * each harness rather than centralizing its config, so this names the owner of
+ * the file being read or written — `dsh` reaches its profile patch layer, and
+ * only for MCP: it has no skills surface here.
+ */
+export type ResourceProvider = 'claude' | 'codex' | 'dsh'
 
 // --- Skills ---
 

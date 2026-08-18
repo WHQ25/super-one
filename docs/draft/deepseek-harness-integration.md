@@ -163,18 +163,31 @@ Two containment rules survive from the bridge: a broken surface is caught inside
 
 **Layer A admission.** `isStaticHostOwnedSuperoneToolQualified()` short-circuits the permission gate for SuperOne's own tools, so their executor (which runs the real product confirmation) owns the authorization. Dynamic mini-app / third-party tools sharing the prefix are deliberately not matched, and `computer_*` still prompts — the feature-gated set is not plumbed into the gate yet.
 
-**Landed (P4c) — third-party MCP servers on the scope chain.** `packages/deepseek/src/mcp-servers.ts` mounts `@deepseek-ai/dsh-mcp-client` unmodified, once per distinct server config.
+**Landed (P4c) — third-party MCP servers, from dsh's own config file.** `@deepseek-ai/dsh-mcp-client` is mounted unmodified, once per distinct server config, in the tree's global layer.
 
-The two models had to be reconciled first. **dsh's own model is deployment-level**: its Host runs one process for *many* workspaces (`ctx.workspaceRegistry`), MCP servers are composition entries in `cordis.yml` with no runtime add/remove API, and `serverName` is reserved process-globally on purpose — it is a deployment namespace. SuperOne inherits Claude Code's per-user *and* per-project `.mcp.json` instead. dsh's answer for "different agents, different tools" is the standing scope `agent-presets` uses, so that is what SuperOne's two config scopes map onto:
+The decisive question was *whose config file*, and the answer follows SuperOne's product principle: SuperOne **extends** a harness rather than centralizing it, so each harness keeps its servers in its own file — Codex in `~/.codex/config.toml`, dsh in its profile patch layer. (SuperOne's cross-harness MCP list exists so a user can *re-apply* a server they used elsewhere; it is a catalog for reconfiguration, not one shared runtime config.) An earlier cut of this had dsh reading the Claude-shaped `~/.claude.json` / `.mcp.json` family that Cursor, ACP and OpenCode share — wrong for exactly that reason.
 
-| SuperOne config scope | dsh placement | Visible to |
-|---|---|---|
-| `user` (`~/.claude.json`) | tree global layer, mounted once | every session |
-| `project` (`.mcp.json`, project settings) | standing scope per cwd, `createScope` | agents that `bindScopeParent` to it |
+Verified location (`~/.dsh` on a machine that had run dsh):
 
-Each session's `setup` binds its agent's scope key to its project's scope, so those registrations inherit down the chain to it alone; the mount is refcounted and torn down with the last session in that cwd. Names stay plain (`mcp__repo__x`) — only a genuine clash, one name with two different configs across projects, costs the later one a numbered variant (`repo-2`), because the reservation is still process-wide. Config identity is the whole connection tuple, so the same server in two projects is one mount, not a clash.
+```
+~/.dsh/
+  settings.yaml                        # runtime settings — not plugins
+  .credentials.yaml                    # DEEPSEEK_API_KEY
+  profiles/
+    node_modules/                      # installed plugin packages (dsh-mcp-client included)
+    web/
+      package.json                     # dsh.profile.bundles
+      cordis.yml                       # "Edit cordis.patch.yml, not this file."
+      cordis.patch.yml                 # ← MCP servers live here, as loader entries
+```
 
-Not covered: the plugin's own reservation failure surfaces asynchronously at activation (our allocator and its `activeServerNames` can disagree if something else mounts a name), SSE servers are dropped (`dsh-mcp-client` speaks stdio and Streamable HTTP), and `getMcpServerStatus()` still returns `[]` — dsh exposes no per-server status seam. Upstream one-liner still worth filing: keying that reservation on `scopeOf(ctx) ?? ctx.root` would remove the rename case entirely.
+`packages/runtime/src/fs/mcp-config-dsh.ts` reads and writes that patch layer through the `yaml` document API, touching only entries whose `name` is `@deepseek-ai/dsh-mcp-client`; every other row, its comments and dsh's `!!js` expressions round-trip untouched (covered by tests). `listMcpConfigs(provider, cwd)` gains a `dsh` branch beside Claude's and Codex's, and `ResourceProvider` widens to include `dsh` — for MCP only, since dsh has no skills surface there.
+
+**Placement follows dsh, not SuperOne.** dsh composes per deployment: one Host process serves many workspaces, its servers are composition entries, and `serverName` is a process-wide reservation by design. So there is no project scope to model — every server mounts once in the global layer and every session sees the same set, which is exactly what that one file says. `DeepseekMcpServers.sync()` diffs by connection-tuple identity, so an edited endpoint re-mounts and a removed server goes away.
+
+Not covered: the desktop settings page still has no dsh MCP CRUD channel (the runtime facade supports `provider: 'dsh'`, so the node/CLI path is complete); SSE servers are dropped (`dsh-mcp-client` speaks stdio and Streamable HTTP); `getMcpServerStatus()` still returns `[]`.
+
+**Open, related:** `~/.dsh/.credentials.yaml` holds the user's `DEEPSEEK_API_KEY`. D7 currently ignores it and serves credentials from SuperOne's own store. Under the same "extend the harness" principle that decided this section, that deserves a second look.
 
 ### D7 — Models & credentials stay SuperOne-owned
 

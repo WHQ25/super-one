@@ -10,6 +10,7 @@ import type {
   ProjectRef,
   SupervisorSnapshot,
   TerminalReadResult,
+  ResourceProvider,
 } from '@superone/shared/environment'
 import {
   DEFAULT_NODE_REMOTE_PORT,
@@ -826,7 +827,7 @@ export class EnvironmentHost {
   async listRemoteSkills(
     connectionId: string,
     projectId: string,
-    provider: 'claude' | 'codex' = 'claude',
+    provider: ResourceProvider = 'claude',
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).skillsList(projectId, provider)
   }
@@ -834,7 +835,7 @@ export class EnvironmentHost {
   async listRemoteAdditionalDirs(
     connectionId: string,
     projectId: string,
-    provider: 'claude' | 'codex',
+    provider: ResourceProvider,
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).additionalDirsList(projectId, provider)
   }
@@ -843,7 +844,7 @@ export class EnvironmentHost {
     connectionId: string,
     projectId: string,
     dir: string,
-    provider: 'claude' | 'codex',
+    provider: ResourceProvider,
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).additionalDirsAdd(projectId, dir, provider)
   }
@@ -852,7 +853,7 @@ export class EnvironmentHost {
     connectionId: string,
     projectId: string,
     dir: string,
-    provider: 'claude' | 'codex',
+    provider: ResourceProvider,
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).additionalDirsRemove(projectId, dir, provider)
   }
@@ -861,7 +862,7 @@ export class EnvironmentHost {
     connectionId: string,
     projectId: string,
     name: string,
-    opts?: { sourcePath?: string; provider?: 'claude' | 'codex' },
+    opts?: { sourcePath?: string; provider?: ResourceProvider },
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).skillsGet(projectId, name, opts)
   }
@@ -871,7 +872,7 @@ export class EnvironmentHost {
     projectId: string,
     skillName: string,
     relativePath: string,
-    opts?: { sourcePath?: string; provider?: 'claude' | 'codex' },
+    opts?: { sourcePath?: string; provider?: ResourceProvider },
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).skillsReadFile(
       projectId,
@@ -885,7 +886,7 @@ export class EnvironmentHost {
     connectionId: string,
     projectId: string,
     sourcePath: string,
-    provider: 'claude' | 'codex' = 'claude',
+    provider: ResourceProvider = 'claude',
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).skillsDelete(projectId, sourcePath, provider)
   }
@@ -897,7 +898,7 @@ export class EnvironmentHost {
       scope: 'user' | 'project'
       name: string
       files: Record<string, string>
-      provider?: 'claude' | 'codex'
+      provider?: ResourceProvider
     },
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).skillsInstall(projectId, input)
@@ -906,7 +907,7 @@ export class EnvironmentHost {
   async listRemoteMcpConfigs(
     connectionId: string,
     projectId: string,
-    provider: 'claude' | 'codex',
+    provider: ResourceProvider,
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).mcpList(projectId, provider)
   }
@@ -954,7 +955,7 @@ export class EnvironmentHost {
     connectionId: string,
     projectId: string,
     input: {
-      provider: 'claude' | 'codex'
+      provider: ResourceProvider
       name: string
       scope: 'user' | 'project'
       config: Record<string, unknown>
@@ -967,7 +968,7 @@ export class EnvironmentHost {
     connectionId: string,
     projectId: string,
     input: {
-      provider: 'claude' | 'codex'
+      provider: ResourceProvider
       name: string
       scope: 'user' | 'project'
       disabled: boolean
@@ -980,7 +981,7 @@ export class EnvironmentHost {
     connectionId: string,
     projectId: string,
     input: {
-      provider: 'claude' | 'codex'
+      provider: ResourceProvider
       name: string
       scope: 'user' | 'project'
     },

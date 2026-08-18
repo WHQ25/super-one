@@ -99,6 +99,9 @@ export function ensureMediaServerPort(): Promise<number> {
     _portFetch = (async () => {
       try {
         for (let attempt = 0; attempt < 40; attempt++) {
+          // The loop outlives the window it started in (teardown, navigation),
+          // so re-check rather than trusting the guard above.
+          if (typeof window === 'undefined' || !window.app?.getMediaServerPort) return 0
           const port = await window.app.getMediaServerPort()
           if (port > 0) {
             notifyMediaServerPort(port)

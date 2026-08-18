@@ -4250,7 +4250,7 @@ export const en: Messages = {
       triggerActiveDetached: 'Worktree <commit></commit>{{hash}}',
       forkHeading: 'Fork to new worktree',
       forkInfo: 'Fork this conversation into an independent session running in a new worktree.',
-      forkIncludesChanges: 'Includes local changes',
+      forkIncludesChanges: 'Carry local changes',
       forkButton: 'Fork session',
       handoffHeading: 'Hand off changes to main checkout',
       handoffInfo: "Copy this worktree's changes into the main checkout.",

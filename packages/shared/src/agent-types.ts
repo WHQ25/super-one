@@ -1319,6 +1319,8 @@ export interface SessionForkRequest {
   sessionId: string
   /** Fork target. Defaults to `worktree`. */
   mode?: SessionForkMode
+  /** Copy uncommitted changes into a new worktree. Defaults to `true`. */
+  carryLocalChanges?: boolean
   /**
    * Fork the conversation up to and including this message (a `ChatMessage.id`).
    * Omit for a full copy. The source harness resolves it to a transcript

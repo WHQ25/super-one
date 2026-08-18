@@ -69,19 +69,20 @@ async function persistFork(
 
 /**
  * Branch the conversation into a brand-new git worktree, checked out detached at
- * the source's current commit — HEAD plus every uncommitted change. That keeps
- * the forked code coherent with the forked conversation and (like Codex's
- * worktree fork) leaves no stray branch behind; the user can create one later.
+ * the source's current commit. Uncommitted changes are copied when requested.
+ * Like Codex's worktree fork, this leaves no stray branch behind; the user can
+ * create one later.
  */
 async function forkToNewWorktree(
   record: SessionRecord,
   harness: Harness,
   ctx: ForkContext,
   sourceCwd: string,
+  carryLocalChanges: boolean,
 ): Promise<SessionForkResult> {
   let worktreePath: string
   try {
-    const wt = await activateWorktree(sourceCwd, { baseBranch: 'HEAD', mode: 'detach', carryLocalChanges: true })
+    const wt = await activateWorktree(sourceCwd, { baseBranch: 'HEAD', mode: 'detach', carryLocalChanges })
     worktreePath = wt.path
   } catch (err) {
     return { ok: false, error: gitErrorMessage(err) }
@@ -149,5 +150,5 @@ export async function forkSession(req: SessionForkRequest): Promise<SessionForkR
 
   return (req.mode ?? 'worktree') === 'local'
     ? forkToLocal(record, harness, ctx, sourceCwd)
-    : forkToNewWorktree(record, harness, ctx, sourceCwd)
+    : forkToNewWorktree(record, harness, ctx, sourceCwd, req.carryLocalChanges ?? true)
 }

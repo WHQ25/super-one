@@ -1370,7 +1370,7 @@ export const zh: Messages = {
       triggerActiveDetached: 'Worktree <commit></commit>{{hash}}',
       forkHeading: 'Fork 到新 worktree',
       forkInfo: '把这段对话分叉成一个跑在新 worktree 里的独立会话。',
-      forkIncludesChanges: '包含本地修改',
+      forkIncludesChanges: '携带本地修改',
       forkButton: 'Fork 会话',
       handoffHeading: '把改动交接回主工作区',
       handoffInfo: '把这个 worktree 的改动复制到主工作区。',

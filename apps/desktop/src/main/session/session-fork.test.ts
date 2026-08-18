@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import type { SessionRecord } from './session-repo'
 
-const { getSessionRecordMock, loadSessionStateBySidMock, forkSessionRecordMock, getSessionProviderMock, sdkForkSessionMock, withAppServerRequestMock, forkOpenCodeSessionMock } = vi.hoisted(() => ({
+const { getSessionRecordMock, loadSessionStateBySidMock, forkSessionRecordMock, getSessionProviderMock, sdkForkSessionMock, withAppServerRequestMock, forkOpenCodeSessionMock, activateWorktreeMock } = vi.hoisted(() => ({
   getSessionRecordMock: vi.fn(),
   loadSessionStateBySidMock: vi.fn(),
   forkSessionRecordMock: vi.fn(),
@@ -13,6 +13,7 @@ const { getSessionRecordMock, loadSessionStateBySidMock, forkSessionRecordMock, 
   sdkForkSessionMock: vi.fn(),
   withAppServerRequestMock: vi.fn(),
   forkOpenCodeSessionMock: vi.fn(async () => 'opencode-forked'),
+  activateWorktreeMock: vi.fn(),
 }))
 
 vi.mock('../logger', () => ({
@@ -29,6 +30,10 @@ vi.mock('./session-repo', () => ({
 }))
 vi.mock('./session-provider-repo', () => ({ getSessionProvider: getSessionProviderMock }))
 vi.mock('./backends/opencode-fork', () => ({ forkOpenCodeSession: forkOpenCodeSessionMock }))
+vi.mock('../git/worktree-ops', () => ({
+  activateWorktree: activateWorktreeMock,
+  gitErrorMessage: (error: unknown) => String(error),
+}))
 // Stub the backend classes so the real harness registry loads without pulling
 // in the heavy Electron-laden backend modules — fork never instantiates them.
 vi.mock('./backends/claude-backend', () => ({ ClaudeBackend: class {} }))
@@ -86,6 +91,27 @@ function stubClaudeSdkFork() {
 }
 
 describe('forkSession harness dispatch', () => {
+  it('creates a clean worktree when carrying local changes is disabled', async () => {
+    const worktreePath = join(tmpRoot, 'worktree')
+    mkdirSync(worktreePath)
+    activateWorktreeMock.mockResolvedValue({ ok: true, path: worktreePath, recordedBranch: null })
+    setupSource(makeRecord({ harnessId: 'claude', providerSessionId: 'claude-src' }), [])
+    stubClaudeSdkFork()
+
+    const result = await forkSession({
+      sessionId: 's-src',
+      mode: 'worktree',
+      carryLocalChanges: false,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(activateWorktreeMock).toHaveBeenCalledWith(projectPath, {
+      baseBranch: 'HEAD',
+      mode: 'detach',
+      carryLocalChanges: false,
+    })
+  })
+
   it('forks a Claude session, resolving upToMessageId from the selected turn anchor', async () => {
     setupSource(makeRecord({ harnessId: 'claude', providerSessionId: 'claude-src' }), [
       msg('u1', 'user'),

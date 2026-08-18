@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { existsSync } from 'fs'
 import { ComputerUseService, resetComputerUseIds } from '../computer-use-service'
 import { findNode, searchOutline } from '../outline'
@@ -13,6 +13,7 @@ import {
   getOrCreateComputerUseService,
   isComputerUseEnabled,
   registerComputerUseTools,
+  hideComputerUseVisuals,
   setComputerUseEnabledForTests,
 } from '../tools'
 
@@ -433,6 +434,39 @@ describe('Computer Use P0 contract', () => {
     })
     const q = JSON.parse(qReply.content[0]!.text!)
     expect(q.matches.length).toBeGreaterThan(0)
+  })
+
+  it('does not let queued stale cleanup clear a newer tool call', async () => {
+    setComputerUseEnabledForTests(true)
+    const s = getOrCreateComputerUseService('sess-lifecycle', { backend: 'fake' } as never)
+    s.policy.setEnabled(true)
+    const originalApps = s.apps.bind(s)
+    let releaseFirst!: () => void
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let invocation = 0
+    const appsSpy = vi.spyOn(s, 'apps').mockImplementation(async (...args) => {
+      invocation += 1
+      if (invocation === 1) await firstBlocked
+      return originalApps(...args)
+    })
+    const clearSpy = vi.spyOn(s, 'clearVisuals')
+
+    const first = executeComputerUseTool('sess-lifecycle', 'computer_apps', {
+      description: 'Inspect desktop apps for the current turn',
+    })
+    await vi.waitFor(() => expect(appsSpy).toHaveBeenCalledTimes(1))
+    const staleCleanup = hideComputerUseVisuals('sess-lifecycle')
+    const next = executeComputerUseTool('sess-lifecycle', 'computer_apps', {
+      description: 'Inspect desktop apps for the next turn',
+    })
+
+    releaseFirst()
+    await Promise.all([first, staleCleanup, next])
+
+    expect(appsSpy).toHaveBeenCalledTimes(2)
+    expect(clearSpy).not.toHaveBeenCalled()
   })
 
   it('executeComputerUseTool observe visual returns image.path on disk (not base64)', async () => {

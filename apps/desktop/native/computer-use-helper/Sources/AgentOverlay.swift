@@ -93,6 +93,7 @@ final class AgentOverlayController {
     private var animWorkItem: DispatchWorkItem?
     private var lastAppName: String = ""
     private var lastBundleId: String = ""
+    private var lastSessionId: String = ""
     /// Apps under control, pushed by the host via `overlay_set_targets`.
     private var controlledTargets: [ControlledTarget] = []
     private let menuTarget = StatusMenuTarget()
@@ -162,6 +163,7 @@ final class AgentOverlayController {
             self.cancelScheduledHide()
             let localeChanged = self.localizer.setLocale(locale)
             self.lastAppName = appName
+            self.lastSessionId = sessionId ?? ""
             if let bundleId, !bundleId.isEmpty {
                 self.lastBundleId = bundleId
             }
@@ -522,6 +524,36 @@ final class AgentOverlayController {
         }
     }
 
+    /// Remove one session without tearing down another active session's status UI.
+    func hideImmediately(sessionId: String) {
+        guard !sessionId.isEmpty else {
+            hideImmediately()
+            return
+        }
+        DispatchQueue.main.async {
+            self.cancelScheduledHide()
+            let removedCurrent = self.lastSessionId == sessionId
+            self.controlledTargets.removeAll { $0.sessionId == sessionId }
+            guard !self.controlledTargets.isEmpty else {
+                self.hideNow()
+                return
+            }
+
+            if removedCurrent, let fallback = self.controlledTargets.last {
+                self.lastSessionId = fallback.sessionId
+                self.lastAppName = fallback.app
+                self.lastBundleId = fallback.bundleId
+                self.anchorWindowId = 0
+                self.anchorLayer = 0
+                self.hideCursorNow()
+                self.stopWatchingControlTarget()
+                self.beginWatchingControlTarget(bundleId: fallback.bundleId, pid: nil)
+            }
+            self.rebuildStatusMenu()
+            self.refreshStatusItem()
+        }
+    }
+
     /// Temporarily hide the software cursor for a screenshot without losing tip
     /// state, so the hop continues after capture. Status chip stays up.
     /// - Parameter suspended: true = orderOut for capture; false = restore tip.
@@ -612,6 +644,7 @@ final class AgentOverlayController {
         anchorLayer = 0
         lastAppName = ""
         lastBundleId = ""
+        lastSessionId = ""
         // Control is over — the menu must not keep listing apps as controlled.
         controlledTargets = []
     }
@@ -656,6 +689,7 @@ final class AgentOverlayController {
                 let matchPid = self.watchedPid != 0 && pid == self.watchedPid
                 if matchBundle || matchPid {
                     self.hideNow()
+                    PictureInPictureController.shared.hideImmediately()
                 }
             }
         }

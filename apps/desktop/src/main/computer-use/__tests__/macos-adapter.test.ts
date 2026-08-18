@@ -36,9 +36,127 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     adapter = new MacosPlatformAdapter({
       client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
       getGrantedBundleIds: () => granted,
+      getPictureInPictureEnabled: () => true,
+      getDedicatedDisplayId: () => null,
       getLocale: () => locale,
+      sessionId: 'session-a',
       maxCaptureWidth: 800,
     })
+  })
+
+  it('shows a session-scoped live preview for the active window', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'capture') {
+        return {
+          mimeType: 'image/png',
+          data: 'abc',
+          width: 800,
+          height: 600,
+          coordinateSpace: {
+            width: 800,
+            height: 600,
+            scale: 1,
+            fullScreen: false,
+            kind: 'window',
+            windowId: 12345,
+            capturedBounds: { x: 0, y: 0, width: 800, height: 600 },
+          },
+        }
+      }
+      return { ok: true }
+    })
+
+    await adapter.look(root(), 'visual')
+
+    expect(call).toHaveBeenCalledWith('pip_set_enabled', { enabled: true })
+    expect(call).toHaveBeenCalledWith('pip_show_target', expect.objectContaining({
+      sessionId: 'session-a',
+      windowId: 12345,
+      app: 'TextEdit',
+      bundleId: 'com.apple.TextEdit',
+    }))
+  })
+
+  it('hides only its own live preview when visuals are cleared', async () => {
+    call.mockResolvedValue({ ok: true })
+
+    await adapter.clearVisuals()
+
+    expect(call).toHaveBeenCalledTimes(1)
+    expect(call).toHaveBeenCalledWith('session_clear_visuals', { sessionId: 'session-a' })
+  })
+
+  it('moves a target to the dedicated display before capturing it', async () => {
+    const dedicatedAdapter = new MacosPlatformAdapter({
+      client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
+      getGrantedBundleIds: () => granted,
+      getPictureInPictureEnabled: () => true,
+      getDedicatedDisplayId: () => '731752946',
+      sessionId: 'session-a',
+      maxCaptureWidth: 800,
+    })
+    call.mockImplementation(async (method: string) => {
+      if (method === 'display_place_window') {
+        return {
+          moved: true,
+          bounds: { x: 1512, y: 80, width: 800, height: 600 },
+        }
+      }
+      if (method === 'capture') {
+        return {
+          mimeType: 'image/png',
+          data: 'abc',
+          width: 800,
+          height: 600,
+          coordinateSpace: {
+            width: 800,
+            height: 600,
+            scale: 1,
+            fullScreen: false,
+            kind: 'window',
+            windowId: 12345,
+            capturedBounds: { x: 1512, y: 80, width: 800, height: 600 },
+          },
+        }
+      }
+      return { ok: true }
+    })
+
+    const result = await dedicatedAdapter.look(root(), 'visual')
+
+    expect(call).toHaveBeenCalledWith('display_place_window', {
+      sessionId: 'session-a',
+      displayId: '731752946',
+      windowId: 12345,
+      pid: 42,
+      title: 'Untitled',
+    })
+    const methods = call.mock.calls.map(([method]) => method)
+    expect(methods.indexOf('display_place_window')).toBeLessThan(methods.indexOf('capture'))
+    expect(result.root.bounds).toEqual({ x: 1512, y: 80, width: 800, height: 600 })
+  })
+
+  it('does not show a live preview when picture-in-picture is disabled', async () => {
+    const disabledAdapter = new MacosPlatformAdapter({
+      client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
+      getGrantedBundleIds: () => granted,
+      getPictureInPictureEnabled: () => false,
+      sessionId: 'session-a',
+    })
+    call.mockImplementation(async (method: string) => {
+      if (method === 'capture') {
+        return {
+          data: 'abc', width: 800, height: 600,
+          coordinateSpace: { width: 800, height: 600, scale: 1, fullScreen: false, kind: 'window' },
+        }
+      }
+      return { ok: true }
+    })
+
+    await disabledAdapter.look(root(), 'visual')
+
+    expect(call).toHaveBeenCalledWith('pip_set_enabled', { enabled: false })
+    expect(call.mock.calls.some(([method]) => method === 'pip_show_target')).toBe(false)
   })
 
   it('listRoots preserves native dialog and modal metadata', async () => {
@@ -586,6 +704,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     windowApp: 'TextEdit',
     windowBundleId: 'com.apple.TextEdit',
     targetBundleId: 'com.apple.TextEdit',
+    sessionId: 'session-a',
     locale: 'en',
     windowX: 0,
     windowY: 0,
@@ -678,8 +797,85 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(call).toHaveBeenCalledWith('click', expect.objectContaining({
       x: 600,
       y: 450,
+      sessionId: 'session-a',
       ...coordinateFields,
     }))
+  })
+
+  it('repositions a restored target before input and shifts captured geometry', async () => {
+    const dedicatedAdapter = new MacosPlatformAdapter({
+      client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
+      getGrantedBundleIds: () => granted,
+      getDedicatedDisplayId: () => '731752946',
+      sessionId: 'session-a',
+    })
+    call.mockImplementation(async (method: string) => {
+      if (method === 'display_place_window') {
+        return { moved: true, bounds: { x: 1512, y: 80, width: 800, height: 600 } }
+      }
+      return { ok: true, unknown: true }
+    })
+
+    await dedicatedAdapter.act({
+      root: root({ bounds: { x: 0, y: 20, width: 800, height: 600 } }),
+      actions: [{ type: 'click', x: 400, y: 300 }],
+      delivery: 'app-directed',
+      coordinateSpace: {
+        width: 800,
+        height: 600,
+        scale: 2,
+        fullScreen: false,
+        kind: 'window',
+        windowId: 12345,
+        capturedBounds: { x: 0, y: 20, width: 800, height: 600 },
+      },
+    })
+
+    const methods = call.mock.calls.map(([method]) => method)
+    expect(methods.indexOf('display_place_window')).toBeLessThan(methods.indexOf('validate_geometry'))
+    expect(methods.indexOf('validate_geometry')).toBeLessThan(methods.indexOf('click'))
+    expect(call).toHaveBeenCalledWith('click', expect.objectContaining({
+      x: 400,
+      y: 300,
+      capturedX: 1512,
+      capturedY: 80,
+      windowX: 1512,
+      windowY: 80,
+    }))
+  })
+
+  it('fails closed before input when dedicated-display placement fails', async () => {
+    const dedicatedAdapter = new MacosPlatformAdapter({
+      client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
+      getGrantedBundleIds: () => granted,
+      getDedicatedDisplayId: () => 'missing-display',
+      sessionId: 'session-a',
+    })
+    call.mockImplementation(async (method: string) => {
+      if (method === 'display_place_window') {
+        throw Object.assign(new Error('display unavailable'), { code: 'DISPLAY_UNAVAILABLE' })
+      }
+      return { ok: true }
+    })
+
+    const result = await dedicatedAdapter.act({
+      root: root(),
+      actions: [{ type: 'click', x: 10, y: 20 }],
+      delivery: 'app-directed',
+      coordinateSpace: {
+        width: 800,
+        height: 600,
+        scale: 2,
+        fullScreen: false,
+        kind: 'window',
+        windowId: 12345,
+        capturedBounds: { x: 0, y: 0, width: 800, height: 600 },
+      },
+    })
+
+    expect(result.steps[0]).toMatchObject({ applied: false })
+    expect(result.steps[0]?.description).toContain('DISPLAY_UNAVAILABLE')
+    expect(call.mock.calls.some(([method]) => method === 'click')).toBe(false)
   })
 
   it('fails closed before input when window geometry changed', async () => {
@@ -797,6 +993,30 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       targetPid: 42,
       ...overlayFields,
     })
+  })
+
+  it('uses capture-local center for cursor feedback on a secondary display', async () => {
+    call.mockResolvedValue({ ok: true, unknown: true })
+    await adapter.act({
+      root: root({ bounds: { x: 1512, y: 0, width: 800, height: 600 } }),
+      actions: [{ type: 'keypress', keys: ['Return'] }],
+      delivery: 'app-directed',
+      coordinateSpace: {
+        width: 1200,
+        height: 900,
+        scale: 1.5,
+        fullScreen: true,
+        kind: 'display',
+        capturedBounds: { x: 1512, y: 0, width: 800, height: 600 },
+        displayBounds: { x: 1512, y: 0, width: 800, height: 600 },
+      },
+    })
+
+    expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
+      cursorX: 600,
+      cursorY: 450,
+      coordinateKind: 'display',
+    }))
   })
 
   it('act scroll posts wheel at outline center', async () => {

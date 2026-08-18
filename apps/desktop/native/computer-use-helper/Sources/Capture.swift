@@ -23,6 +23,21 @@ private func backingScale(for display: SCDisplay) -> Double {
     Double(display.width) / max(Double(display.frame.width), 1)
 }
 
+/// Privacy UI owned by this helper (for example Picture in Picture) must never
+/// appear in a display capture, even when the user allows all target apps.
+private func captureExclusions(
+    content: SCShareableContent,
+    grantedBundleIds: [String],
+    allowAllApps: Bool
+) -> [SCRunningApplication] {
+    let helperBundleId = Bundle.main.bundleIdentifier
+    let granted = Set(grantedBundleIds)
+    return content.applications.filter { app in
+        if app.bundleIdentifier == helperBundleId { return true }
+        return !allowAllApps && !granted.contains(app.bundleIdentifier)
+    }
+}
+
 private func captureSize(
     sourceWidth: Double,
     sourceHeight: Double,
@@ -116,13 +131,11 @@ func captureAxRoot(
     guard bounds.width > 1, bounds.height > 1 else {
         throw HelperError(code: "AX_ROOT_NOT_FOUND", message: "AX root \(axRootId) has no capturable area")
     }
-    let exclusion: [SCRunningApplication]
-    if allowAllApps {
-        exclusion = []
-    } else {
-        let granted = Set(grantedBundleIds)
-        exclusion = content.applications.filter { !granted.contains($0.bundleIdentifier) }
-    }
+    let exclusion = captureExclusions(
+        content: content,
+        grantedBundleIds: grantedBundleIds,
+        allowAllApps: allowAllApps
+    )
     let filter = SCContentFilter(display: display, excludingApplications: exclusion, exceptingWindows: [])
     let localBounds = CGRect(
         x: bounds.minX - display.frame.minX,
@@ -167,15 +180,11 @@ func captureDisplay(
         throw HelperError(code: "NO_DISPLAY", message: "No shareable display")
     }
 
-    let exclusion: [SCRunningApplication]
-    if allowAllApps {
-        exclusion = []
-    } else {
-        let granted = Set(grantedBundleIds)
-        exclusion = content.applications.filter { app in
-            !granted.contains(app.bundleIdentifier)
-        }
-    }
+    let exclusion = captureExclusions(
+        content: content,
+        grantedBundleIds: grantedBundleIds,
+        allowAllApps: allowAllApps
+    )
 
     let filter = SCContentFilter(display: display, excludingApplications: exclusion, exceptingWindows: [])
     return try await encodeCapture(

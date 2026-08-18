@@ -716,6 +716,17 @@ export type Messages = {
         label: string
         description: string
       }
+      pictureInPicture: {
+        label: string
+        description: string
+      }
+      dedicatedDisplay: {
+        label: string
+        description: string
+        singleDisplayDescription: string
+        current: string
+        unavailable: string
+      }
       allowAll: {
         label: string
         description: string
@@ -3765,6 +3776,17 @@ export const en: Messages = {
       enable: {
         label: 'Enable Computer Use',
         description: 'Expose computer_* tools to the agent. Off by default. Requires the SuperOne Computer Use helper app and macOS Accessibility + Screen Recording permissions.',
+      },
+      pictureInPicture: {
+        label: 'Live Picture in Picture',
+        description: 'Keep a floating, read-only preview of the app currently controlled by Computer Use.',
+      },
+      dedicatedDisplay: {
+        label: 'Dedicated Display',
+        description: 'Temporarily move the controlled window to a connected secondary display, then restore it when the turn ends.',
+        singleDisplayDescription: 'Connect a secondary display to keep controlled windows off your primary screen.',
+        current: 'Current display',
+        unavailable: 'Disconnected display',
       },
       allowAll: {
         label: 'Allow All Apps',

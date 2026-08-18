@@ -257,6 +257,21 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ computerUseEnabled: v as boolean }),
       },
       {
+        key: 'computerUsePictureInPicture',
+        label: 'Live Picture in Picture',
+        type: 'boolean',
+        read: (s) => s.computerUsePictureInPicture,
+        toPatch: (v) => ({ computerUsePictureInPicture: v as boolean }),
+      },
+      {
+        key: 'computerUseDedicatedDisplayId',
+        label: 'Dedicated Display ID',
+        type: 'string',
+        note: 'null keeps target windows on their current display.',
+        read: (s) => s.computerUseDedicatedDisplayId,
+        toPatch: (v) => ({ computerUseDedicatedDisplayId: (v || null) as string | null }),
+      },
+      {
         key: 'computerUseAllowAllApps',
         label: 'Allow All Apps',
         type: 'boolean',

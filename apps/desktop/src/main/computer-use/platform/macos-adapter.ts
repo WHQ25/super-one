@@ -47,6 +47,10 @@ export interface MacosAdapterOptions {
   getGrantedBundleIds?: () => string[]
   /** When true, capture excludes no applications. */
   getAllowAllApps?: () => boolean
+  /** Show a native live preview of the current window. */
+  getPictureInPictureEnabled?: () => boolean
+  /** Connected display used as a temporary workspace; null keeps the current display. */
+  getDedicatedDisplayId?: () => string | null
   /**
    * Session driving this adapter. Sent with overlay updates so the helper's
    * status menu can tell the host which turn to interrupt on Stop.
@@ -67,16 +71,21 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   private readonly maxCaptureWidth: number
   private readonly getGrantedBundleIds: () => string[]
   private readonly getAllowAllApps: () => boolean
+  private readonly getPictureInPictureEnabled: () => boolean
+  private readonly getDedicatedDisplayId: () => string | null
   private readonly getLocale: () => Locale
   private readonly sessionId: string
   private lookSeq = 0
   private indicatorsSynced: boolean | null = null
+  private pictureInPictureSynced: boolean | null = null
 
   constructor(options: MacosAdapterOptions = {}) {
     this.client = options.client ?? getSharedHelperClient()
     this.maxCaptureWidth = options.maxCaptureWidth ?? 1440
     this.getGrantedBundleIds = options.getGrantedBundleIds ?? (() => [])
     this.getAllowAllApps = options.getAllowAllApps ?? (() => false)
+    this.getPictureInPictureEnabled = options.getPictureInPictureEnabled ?? (() => true)
+    this.getDedicatedDisplayId = options.getDedicatedDisplayId ?? (() => null)
     this.getLocale = options.getLocale ?? (() => 'en')
     this.sessionId = options.sessionId ?? ''
   }
@@ -96,6 +105,19 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     }
   }
 
+  private async syncPictureInPicturePref(): Promise<boolean> {
+    const enabled = this.getPictureInPictureEnabled()
+    if (this.pictureInPictureSynced !== enabled) {
+      try {
+        await this.client.call('pip_set_enabled', { enabled })
+        this.pictureInPictureSynced = enabled
+      } catch {
+        // helper may be offline in unit tests
+      }
+    }
+    return enabled
+  }
+
   private windowOverlayFields(root: UiRootIdentity): Record<string, unknown> {
     const b = root.bounds
     return {
@@ -103,6 +125,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       windowApp: root.app,
       windowBundleId: root.bundleId,
       targetBundleId: root.bundleId,
+      sessionId: this.sessionId,
       locale: this.getLocale(),
       // Bounds still sent for helpers that want them; status-item mode ignores geometry.
       windowX: b.x,
@@ -111,6 +134,54 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       windowHeight: b.height,
       ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
       ...(typeof root.windowLayer === 'number' ? { windowLayer: root.windowLayer } : {}),
+    }
+  }
+
+  private async placeOnDedicatedDisplay(
+    root: UiRootIdentity,
+    options: { failClosed?: boolean } = {},
+  ): Promise<UiRootIdentity> {
+    const displayId = this.getDedicatedDisplayId()
+    if (!displayId || typeof root.windowId !== 'number') return root
+    try {
+      const result = await this.client.call<{
+        moved?: boolean
+        bounds?: { x: number; y: number; width: number; height: number }
+      }>('display_place_window', {
+        sessionId: this.sessionId,
+        displayId,
+        windowId: root.windowId,
+        pid: root.pid,
+        title: root.title,
+      })
+      const bounds = result.bounds
+      if (!bounds || bounds.width <= 1 || bounds.height <= 1) return root
+      return { ...root, bounds: { ...bounds } }
+    } catch (error) {
+      if (options.failClosed) throw error
+      // Display disconnected, helper unavailable, or window rejects AXPosition.
+      return root
+    }
+  }
+
+  private coordinateSpaceAfterMove(
+    coordinateSpace: CoordinateSpace | undefined,
+    previousRoot: UiRootIdentity,
+    targetRoot: UiRootIdentity,
+  ): CoordinateSpace | undefined {
+    if (coordinateSpace?.kind !== 'window' || !coordinateSpace.capturedBounds) {
+      return coordinateSpace
+    }
+    const dx = targetRoot.bounds.x - previousRoot.bounds.x
+    const dy = targetRoot.bounds.y - previousRoot.bounds.y
+    if (dx === 0 && dy === 0) return coordinateSpace
+    return {
+      ...coordinateSpace,
+      capturedBounds: {
+        ...coordinateSpace.capturedBounds,
+        x: coordinateSpace.capturedBounds.x + dx,
+        y: coordinateSpace.capturedBounds.y + dy,
+      },
     }
   }
 
@@ -126,6 +197,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   }): Promise<void> {
     if (!this.visualOn()) return
     await this.syncIndicatorPref()
+    const showPictureInPicture = await this.syncPictureInPicturePref()
     try {
       await this.client.call('overlay_show_target', {
         app: root.app,
@@ -147,6 +219,21 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         ...(opts?.hideCursor ? { hideCursor: true } : {}),
         ...this.coordinatePayload(opts?.coordinateSpace),
       })
+      if (showPictureInPicture && typeof root.windowId === 'number') {
+        await this.client.call('pip_show_target', {
+          sessionId: this.sessionId,
+          windowId: root.windowId,
+          app: root.app,
+          bundleId: root.bundleId,
+          title: root.title,
+          sourceWidth: opts?.coordinateSpace?.width ?? root.bounds.width,
+          sourceHeight: opts?.coordinateSpace?.height ?? root.bounds.height,
+          ...(opts?.cursorX != null && opts?.cursorY != null
+            ? { cursorX: opts.cursorX, cursorY: opts.cursorY, pulse: opts.pulseRing ?? false }
+            : {}),
+          ...this.coordinatePayload(opts?.coordinateSpace),
+        })
+      }
     } catch {
       // non-fatal
     }
@@ -181,7 +268,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     }
     if (x == null || y == null) {
       const b = opts?.outline?.bounds
-        ?? (opts?.coordinateSpace?.kind === 'window'
+        ?? (opts?.coordinateSpace
           ? { x: 0, y: 0, width: opts.coordinateSpace.width, height: opts.coordinateSpace.height }
           : root.bounds)
       if (b && b.width > 0 && b.height > 0) {
@@ -207,11 +294,12 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   /** Hide menu-bar chip + software cursor immediately (agent idle / interrupt / app quit). */
   async clearVisuals(): Promise<void> {
     try {
-      await this.client.call('overlay_hide', { delayMs: 0 })
+      await this.client.call('session_clear_visuals', { sessionId: this.sessionId })
     } catch {
       // helper offline / tests
     }
     this.indicatorsSynced = null
+    this.pictureInPictureSynced = null
   }
 
   async doctor(): Promise<HelperDoctor> {
@@ -288,6 +376,8 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       )
     }
 
+    const targetRoot = await this.placeOnDedicatedDisplay(root)
+
     await this.syncIndicatorPref()
 
     let coordinateSpace: CoordinateSpace
@@ -296,24 +386,24 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     if (mode === 'semantic') {
       const semanticSpace: CoordinateSpace | undefined = captureScope === 'window'
         ? {
-            width: root.bounds.width,
-            height: root.bounds.height,
+            width: targetRoot.bounds.width,
+            height: targetRoot.bounds.height,
             scale: 1,
             fullScreen: false,
             kind: 'window',
-            ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
-            ...(root.axRootId ? { axRootId: root.axRootId } : {}),
-            capturedBounds: { ...root.bounds },
+            ...(typeof targetRoot.windowId === 'number' ? { windowId: targetRoot.windowId } : {}),
+            ...(targetRoot.axRootId ? { axRootId: targetRoot.axRootId } : {}),
+            capturedBounds: { ...targetRoot.bounds },
           }
         : undefined
-      const axBootstrap = await this.fetchAxOutline(root, semanticSpace)
+      const axBootstrap = await this.fetchAxOutline(targetRoot, semanticSpace)
       coordinateSpace = axBootstrap.coordinateSpace
       image = undefined
       // No screenshot — keep cursor if a control turn is in progress.
-      await this.showTargetOverlay(root, { pulseRing: true })
+      await this.showTargetOverlay(targetRoot, { pulseRing: true })
       this.lookSeq += 1
       return {
-        root: { ...root, focused: true },
+        root: { ...targetRoot, focused: true },
         outline: axBootstrap.outline,
         image,
         coordinateSpace,
@@ -328,14 +418,14 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         grantedBundleIds: allowAll ? [] : granted,
         maxWidth: this.maxCaptureWidth,
         capture: captureScope,
-        pid: root.pid,
-        ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
-        ...(root.axRootId ? { axRootId: root.axRootId } : {}),
+        pid: targetRoot.pid,
+        ...(typeof targetRoot.windowId === 'number' ? { windowId: targetRoot.windowId } : {}),
+        ...(targetRoot.axRootId ? { axRootId: targetRoot.axRootId } : {}),
       }),
     )
 
     // Chip + restore last tip (if any). Do not force-hide cursor after observe.
-    await this.showTargetOverlay(root, { pulseRing: true })
+    await this.showTargetOverlay(targetRoot, { pulseRing: true })
 
     this.lookSeq += 1
     coordinateSpace = { ...capture.coordinateSpace }
@@ -350,18 +440,18 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     let outline: UiOutlineNode
     if (mode === 'visual') {
       outline = pictureOnlyOutline(
-        root.title || root.app,
+        targetRoot.title || targetRoot.app,
         coordinateSpace.width,
         coordinateSpace.height,
       )
     } else {
       // fused: AX tree + screenshot; fall back to picture-only if AX missing.
       try {
-        const ax = await this.fetchAxOutline(root, coordinateSpace)
+        const ax = await this.fetchAxOutline(targetRoot, coordinateSpace)
         outline = ax.outline
       } catch {
         outline = pictureOnlyOutline(
-          root.title || root.app,
+          targetRoot.title || targetRoot.app,
           coordinateSpace.width,
           coordinateSpace.height,
         )
@@ -370,7 +460,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
 
     return {
       root: {
-        ...root,
+        ...targetRoot,
         focused: true,
         ...(coordinateSpace.kind === 'window' && coordinateSpace.capturedBounds
           ? { bounds: { ...coordinateSpace.capturedBounds } }
@@ -422,12 +512,31 @@ export class MacosPlatformAdapter implements PlatformAdapter {
 
   async act(req: PlatformActRequest): Promise<PlatformActResult> {
     await this.syncIndicatorPref()
-    if (req.coordinateSpace?.kind === 'window') {
+    let targetRoot: UiRootIdentity
+    try {
+      targetRoot = await this.placeOnDedicatedDisplay(req.root, { failClosed: true })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const code = (err as { code?: string }).code
+      return {
+        steps: [{
+          applied: false,
+          description: `display placement: ${code ?? 'error'}: ${message}`,
+        }],
+        stoppedAt: 0,
+      }
+    }
+    const coordinateSpace = this.coordinateSpaceAfterMove(
+      req.coordinateSpace,
+      req.root,
+      targetRoot,
+    )
+    if (coordinateSpace?.kind === 'window') {
       try {
         await this.client.call('validate_geometry', {
-          targetBundleId: req.root.bundleId,
-          targetPid: req.root.pid,
-          ...this.coordinatePayload(req.coordinateSpace),
+          targetBundleId: targetRoot.bundleId,
+          targetPid: targetRoot.pid,
+          ...this.coordinatePayload(coordinateSpace),
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
@@ -443,16 +552,16 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     }
     // Menu-bar chip at transaction start; per-action showActionCursor paints/moves the tip.
     // Cursor stays visible for the whole control turn — only screenshots suspend it.
-    await this.showTargetOverlay(req.root, { pulseRing: false })
+    await this.showTargetOverlay(targetRoot, { pulseRing: false, coordinateSpace })
 
     const steps: PlatformActStepResult[] = []
     let stoppedAt: number | undefined
     const target = {
-      bundleId: req.root.bundleId,
-      pid: req.root.pid,
-      root: req.root,
+      bundleId: targetRoot.bundleId,
+      pid: targetRoot.pid,
+      root: targetRoot,
       outline: req.outline,
-      coordinateSpace: req.coordinateSpace,
+      coordinateSpace,
     }
 
     for (let i = 0; i < req.actions.length; i++) {

@@ -82,6 +82,8 @@ SOURCES=(
   "$ROOT/Sources/RootDiscovery.swift"
   "$ROOT/Sources/AgentCursorVisuals.swift"
   "$ROOT/Sources/AgentOverlay.swift"
+  "$ROOT/Sources/PictureInPicture.swift"
+  "$ROOT/Sources/WindowPlacement.swift"
   "$ROOT/Sources/CursorMotionModel.swift"
   "$ROOT/Sources/CursorMotionHeading.swift"
   "$ROOT/Sources/CursorVisualDynamics.swift"
@@ -200,6 +202,8 @@ swiftc -O \
   "$ROOT/Sources/RootDiscovery.swift" \
   "$ROOT/Sources/AgentCursorVisuals.swift" \
   "$ROOT/Sources/AgentOverlay.swift" \
+  "$ROOT/Sources/PictureInPicture.swift" \
+  "$ROOT/Sources/WindowPlacement.swift" \
   "$ROOT/Sources/CursorMotionModel.swift" \
   "$ROOT/Sources/CursorMotionHeading.swift" \
   "$ROOT/Sources/CursorVisualDynamics.swift" \

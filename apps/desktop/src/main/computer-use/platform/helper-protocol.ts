@@ -26,6 +26,15 @@ export type HelperMethod =
   /** Suspend/resume software cursor around screenshots (keeps tip state). */
   | 'overlay_cursor_visible'
   | 'overlay_hide'
+  | 'pip_set_enabled'
+  | 'pip_show_target'
+  | 'pip_update_cursor'
+  | 'pip_hide'
+  | 'display_place_window'
+  | 'display_restore_session'
+  | 'display_restore_all'
+  /** Atomically clear one session's overlay, preview, and temporary window placement. */
+  | 'session_clear_visuals'
   | 'terminate'
 
 export interface HelperRequest {

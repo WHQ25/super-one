@@ -115,6 +115,7 @@ import {
   type FileTreeEntry,
   type FileOpResult,
   type NativeContextMenuItemSpec,
+  type ComputerUseDisplayInfo,
 } from '@superone/shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, setUpdateChannel, isInstallingUpdate } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
@@ -479,6 +480,21 @@ function safeSend(channel: string, ...args: unknown[]): void {
   }
 }
 
+function listComputerUseDisplays(): ComputerUseDisplayInfo[] {
+  if (process.platform !== 'darwin') return []
+  const primaryId = screen.getPrimaryDisplay().id
+  return screen.getAllDisplays().map((display, index) => ({
+    id: String(display.id),
+    name: display.label || `Display ${index + 1}`,
+    primary: display.id === primaryId,
+    internal: display.internal === true,
+  }))
+}
+
+function pushComputerUseDisplaysChanged(): void {
+  safeSend(AgentIpcChannels.COMPUTER_USE_DISPLAYS_CHANGED)
+}
+
 const rendererAgentEventTransport = createRendererAgentEventTransport((events) => {
   safeSend(AgentIpcChannels.EVENT, events)
 })
@@ -623,6 +639,24 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       await hideComputerUseVisuals()
     } catch {
       // ignore
+    }
+  }
+  if (patch?.computerUsePictureInPicture !== undefined) {
+    try {
+      const { getSharedHelperClient } = await import('./computer-use/platform/macos-helper-client')
+      await getSharedHelperClient().call('pip_set_enabled', {
+        enabled: result.computerUsePictureInPicture,
+      })
+    } catch {
+      // helper offline or unsupported platform
+    }
+  }
+  if (patch?.computerUseDedicatedDisplayId !== undefined) {
+    try {
+      const { getSharedHelperClient } = await import('./computer-use/platform/macos-helper-client')
+      await getSharedHelperClient().call('display_restore_all')
+    } catch {
+      // helper offline or unsupported platform
     }
   }
   if (patch?.computerUseEnabled !== undefined) {
@@ -3567,6 +3601,9 @@ function registerIpcHandlers(): void {
       return []
     }
   })
+  ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_DISPLAYS, () => {
+    return listComputerUseDisplays()
+  })
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS, async () => {
     if (process.platform !== 'darwin') return []
     try {
@@ -4940,6 +4977,9 @@ app.whenReady().then(async () => {
     }
   })()
   registerIpcHandlers()
+  screen.on('display-added', pushComputerUseDisplaysChanged)
+  screen.on('display-removed', pushComputerUseDisplaysChanged)
+  screen.on('display-metrics-changed', pushComputerUseDisplaysChanged)
   terminalSweepTimer = setInterval(() => terminalManager.sweep(), 30_000)
 
   const ses = session.defaultSession

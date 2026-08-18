@@ -52,6 +52,20 @@ export function createComputerUseService(
             return policy.listGranted().map((g) => g.bundleId).filter((id) => id !== '*')
           },
           getAllowAllApps: () => policy.isAllowAllApps(),
+          getPictureInPictureEnabled: () => {
+            try {
+              return readAppSettings().computerUsePictureInPicture !== false
+            } catch {
+              return true
+            }
+          },
+          getDedicatedDisplayId: () => {
+            try {
+              return readAppSettings().computerUseDedicatedDisplayId ?? null
+            } catch {
+              return null
+            }
+          },
           getLocale: getCurrentLocale,
         })
       : new FakePlatformBackend()

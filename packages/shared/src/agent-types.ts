@@ -986,6 +986,14 @@ export interface ComputerUseAlwaysAllowApp {
   bundleId: string
 }
 
+/** Connected macOS display exposed to the Computer Use settings UI. */
+export interface ComputerUseDisplayInfo {
+  id: string
+  name: string
+  primary: boolean
+  internal: boolean
+}
+
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto' | 'agent'
 
 export type AccountApiProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'anthropicGoogleCloud' | 'mantle' | 'gateway'
@@ -3115,6 +3123,10 @@ export const AgentIpcChannels = {
   COMPUTER_USE_CONTINUE_PERMISSION_STEP: 'computer-use:continue-permission-step',
   /** List currently running apps (for Computer Use always-allow picker). */
   COMPUTER_USE_LIST_RUNNING_APPS: 'computer-use:list-running-apps',
+  /** List connected displays that can host Computer Use target windows. */
+  COMPUTER_USE_LIST_DISPLAYS: 'computer-use:list-displays',
+  /** Connected display topology changed (add/remove/metrics). */
+  COMPUTER_USE_DISPLAYS_CHANGED: 'computer-use:displays-changed',
   /** Installed desktop apps catalog (mention popup / search). */
   COMPUTER_USE_LIST_INSTALLED_APPS: 'computer-use:list-installed-apps',
   /** Session-scoped temporary grants from @ desktop-app mentions. */
@@ -3734,6 +3746,10 @@ export interface AppSettings {
   browserToolSurface: 'legacy' | 'compact'
   /** Opt-in Computer Use (desktop GUI automation). Default off. */
   computerUseEnabled: boolean
+  /** Show the active Computer Use target in a floating native preview. Default on. */
+  computerUsePictureInPicture: boolean
+  /** Optional connected display id used as a temporary Computer Use workspace. */
+  computerUseDedicatedDisplayId: string | null
   /** Skip the per-app session allowlist and permit capture of all apps. Default off. */
   computerUseAllowAllApps: boolean
   /**
@@ -3858,6 +3874,8 @@ export interface AppSettingsPatch {
   cdpEmulateEnabled?: boolean
   browserToolSurface?: 'legacy' | 'compact'
   computerUseEnabled?: boolean
+  computerUsePictureInPicture?: boolean
+  computerUseDedicatedDisplayId?: string | null
   computerUseAllowAllApps?: boolean
   computerUseAlwaysAllowApps?: ComputerUseAlwaysAllowApp[]
   miniAppOrder?: Record<string, string[]>

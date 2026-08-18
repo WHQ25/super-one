@@ -32,6 +32,8 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     liquidGlass: false,
     cdpEnabled: false,
     computerUseEnabled: false,
+    computerUsePictureInPicture: true,
+    computerUseDedicatedDisplayId: null,
     computerUseAllowAllApps: false,
     computerUseAlwaysAllowApps: [],
     cdpCookiesEnabled: false,

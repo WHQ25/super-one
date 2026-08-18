@@ -4,9 +4,20 @@ import { CheckCircle2, CircleAlert, Loader2, Plus, Trash2 } from 'lucide-react'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Button } from '@superone/ui/components/ui/button'
 import { Input } from '@superone/ui/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@superone/ui/components/ui/select'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
-import type { ComputerUseAlwaysAllowApp } from '@superone/shared/agent-types'
+import type {
+  ComputerUseAlwaysAllowApp,
+  ComputerUseDisplayInfo,
+} from '@superone/shared/agent-types'
 
 type RunningApp = { app: string; bundleId: string; pid: number; frontmost: boolean }
 type PermissionStatus = {
@@ -27,6 +38,9 @@ function isPermissionGranted(value?: string): boolean {
 export function ComputerUseSettingsPage() {
   const { t } = useTranslation()
   const [enabled, setEnabled] = useState(false)
+  const [pictureInPicture, setPictureInPicture] = useState(true)
+  const [dedicatedDisplayId, setDedicatedDisplayId] = useState<string | null>(null)
+  const [displays, setDisplays] = useState<ComputerUseDisplayInfo[]>([])
   const [allowAll, setAllowAll] = useState(false)
   const [alwaysAllow, setAlwaysAllow] = useState<ComputerUseAlwaysAllowApp[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,15 +60,38 @@ export function ComputerUseSettingsPage() {
 
   useEffect(() => {
     let mounted = true
-    window.app.getAppSettings().then((settings) => {
+    Promise.all([
+      window.app.getAppSettings(),
+      window.app.listComputerUseDisplays().catch(() => [] as ComputerUseDisplayInfo[]),
+    ]).then(([settings, connectedDisplays]) => {
       if (!mounted) return
       setEnabled(settings.computerUseEnabled === true)
+      setPictureInPicture(settings.computerUsePictureInPicture !== false)
+      setDedicatedDisplayId(settings.computerUseDedicatedDisplayId ?? null)
+      setDisplays(connectedDisplays)
       setAllowAll(settings.computerUseAllowAllApps === true)
       setAlwaysAllow(settings.computerUseAlwaysAllowApps ?? [])
       setLoading(false)
     })
     return () => {
       mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    const unsubscribe = window.app.onComputerUseDisplaysChanged(() => {
+      void window.app.listComputerUseDisplays()
+        .then((connectedDisplays) => {
+          if (mounted) setDisplays(connectedDisplays)
+        })
+        .catch(() => {
+          if (mounted) setDisplays([])
+        })
+    })
+    return () => {
+      mounted = false
+      unsubscribe()
     }
   }, [])
 
@@ -113,6 +150,8 @@ export function ComputerUseSettingsPage() {
     const turningOn = value && !enabled
     const result = await window.app.saveAppSettings({ computerUseEnabled: value })
     setEnabled(result.computerUseEnabled === true)
+    setPictureInPicture(result.computerUsePictureInPicture !== false)
+    setDedicatedDisplayId(result.computerUseDedicatedDisplayId ?? null)
     setAllowAll(result.computerUseAllowAllApps === true)
     setAlwaysAllow(result.computerUseAlwaysAllowApps ?? [])
     // First enable: open the combined two-step guided float when anything is missing.
@@ -125,6 +164,18 @@ export function ComputerUseSettingsPage() {
     const result = await window.app.saveAppSettings({ computerUseAllowAllApps: value })
     setAllowAll(result.computerUseAllowAllApps === true)
     if (result.computerUseAllowAllApps === true) setAddOpen(false)
+  }
+
+  async function handlePictureInPictureToggle(value: boolean) {
+    const result = await window.app.saveAppSettings({ computerUsePictureInPicture: value })
+    setPictureInPicture(result.computerUsePictureInPicture !== false)
+  }
+
+  async function handleDedicatedDisplayChange(value: string) {
+    const result = await window.app.saveAppSettings({
+      computerUseDedicatedDisplayId: value === '__current__' ? null : value,
+    })
+    setDedicatedDisplayId(result.computerUseDedicatedDisplayId ?? null)
   }
 
   async function persistAlwaysAllow(next: ComputerUseAlwaysAllowApp[]) {
@@ -227,6 +278,16 @@ export function ComputerUseSettingsPage() {
       .slice(0, 40)
   }, [runningApps, alwaysAllow, addQuery])
 
+  const dedicatedDisplayOptions = useMemo(
+    () => displays.length > 1
+      ? displays
+      : displays.filter((display) => display.id === dedicatedDisplayId),
+    [dedicatedDisplayId, displays],
+  )
+  const selectedDisplayAvailable = dedicatedDisplayId == null
+    || displays.some((display) => display.id === dedicatedDisplayId)
+  const hasSecondaryDisplay = displays.length > 1
+
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-6">
@@ -248,6 +309,62 @@ export function ComputerUseSettingsPage() {
               onCheckedChange={handleEnableToggle}
               disabled={loading || permBusy}
             />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 border-t border-border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.computerUse.pictureInPicture.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.computerUse.pictureInPicture.description')}
+              </p>
+            </div>
+            <Switch
+              aria-label={t('settings.computerUse.pictureInPicture.label')}
+              checked={enabled && pictureInPicture}
+              onCheckedChange={handlePictureInPictureToggle}
+              disabled={loading || !enabled}
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 border-t border-border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.computerUse.dedicatedDisplay.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {hasSecondaryDisplay
+                  ? t('settings.computerUse.dedicatedDisplay.description')
+                  : t('settings.computerUse.dedicatedDisplay.singleDisplayDescription')}
+              </p>
+            </div>
+            <Select
+              value={dedicatedDisplayId ?? '__current__'}
+              onValueChange={handleDedicatedDisplayChange}
+              disabled={loading || !enabled || (!hasSecondaryDisplay && dedicatedDisplayId == null)}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-52 shrink-0"
+                aria-label={t('settings.computerUse.dedicatedDisplay.label')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="__current__">
+                    {t('settings.computerUse.dedicatedDisplay.current')}
+                  </SelectItem>
+                  {!selectedDisplayAvailable && dedicatedDisplayId && (
+                    <SelectItem value={dedicatedDisplayId} disabled>
+                      {t('settings.computerUse.dedicatedDisplay.unavailable')}
+                    </SelectItem>
+                  )}
+                  {dedicatedDisplayOptions.map((display) => (
+                    <SelectItem key={display.id} value={display.id}>
+                      {display.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex items-start justify-between gap-4 border-t border-border p-4">

@@ -157,6 +157,8 @@ export class Session implements SessionContract {
   private _status: SessionStatus = 'idle'
   private _sendChain: Promise<void> = Promise.resolve()
   private _currentMessageId: string | null = null
+  private _computerUseTurnGeneration = 0
+  private _computerUseTurnGenerations = new Map<string, number>()
   private _providerSessionId: string | null = null
   private _lastUserMessageAt: number | null = null
   private _lastEventAt = 0
@@ -1399,6 +1401,11 @@ export class Session implements SessionContract {
       // Scope the swap dedup to one turn: the same fallback recurring in a later
       // turn is news again, only a retry loop re-announcing it is not.
       this._lastModelFallbackSignature = null
+      this._computerUseTurnGeneration += 1
+      this._computerUseTurnGenerations.set(
+        event.message.id,
+        this._computerUseTurnGeneration,
+      )
     } else if (
       event.type === 'message_complete' ||
       event.type === 'message_interrupted' ||
@@ -1487,7 +1494,9 @@ export class Session implements SessionContract {
       || event.type === 'message_interrupted'
       || event.type === 'message_error'
     ) {
-      void this.clearComputerUseVisuals(event.type)
+      const generation = this._computerUseTurnGenerations.get(event.messageId)
+      this._computerUseTurnGenerations.delete(event.messageId)
+      void this.clearComputerUseVisuals(event.type, generation)
     }
     return tagged
   }
@@ -1496,11 +1505,20 @@ export class Session implements SessionContract {
    * Best-effort: hide Computer Use software cursor + menu-bar chip when this
    * session is no longer actively controlling the desktop.
    */
-  private async clearComputerUseVisuals(reason: string): Promise<void> {
+  private async clearComputerUseVisuals(
+    reason: string,
+    expectedTurnGeneration?: number,
+  ): Promise<void> {
     try {
       const { hideComputerUseVisuals, disposeComputerUseService } = await import(
         '../computer-use/tools'
       )
+      if (
+        expectedTurnGeneration !== undefined
+        && expectedTurnGeneration !== this._computerUseTurnGeneration
+      ) {
+        return
+      }
       await hideComputerUseVisuals(this.id)
       if (reason === 'dispose') {
         disposeComputerUseService(this.id)

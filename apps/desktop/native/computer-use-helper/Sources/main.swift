@@ -355,6 +355,7 @@ func maybeShowOverlayFromParams(
         bundleId: bundleId,
         windowId: windowId,
         windowLayer: windowLayer,
+        sessionId: AnyCodable.string(params, "sessionId"),
         locale: AnyCodable.string(params, "locale")
     )
     AgentOverlayController.shared.setWatchedTarget(bundleId: bundleId, pid: targetPid)
@@ -417,6 +418,7 @@ final class HostLifecycle {
         processSource = nil
         hostPid = 0
         AgentOverlayController.shared.hideImmediately()
+        WindowPlacementController.shared.restoreAllImmediately()
         exit(0)
     }
 }
@@ -874,6 +876,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 AgentOverlayController.shared.showActive(
                     appName: app,
                     bundleId: bundleId,
+                    sessionId: AnyCodable.string(params, "sessionId"),
                     locale: AnyCodable.string(params, "locale")
                 )
             }
@@ -892,14 +895,37 @@ func handle(request: HelperRequest) async -> HelperResponse {
             return .success(id: request.id, result: ["ok": true, "visible": visible])
         case "overlay_hide":
             let delayMs = AnyCodable.int(params, "delayMs") ?? 0
-            if delayMs > 0 {
+            let sessionId = AnyCodable.string(params, "sessionId") ?? ""
+            if !sessionId.isEmpty {
+                AgentOverlayController.shared.hideImmediately(sessionId: sessionId)
+            } else if delayMs > 0 {
                 AgentOverlayController.shared.scheduleHide(afterMs: delayMs)
             } else {
                 AgentOverlayController.shared.hideImmediately()
             }
             return .success(id: request.id, result: ["ok": true])
+        case "pip_set_enabled", "pip_show_target", "pip_update_cursor", "pip_hide":
+            let result = try await handlePictureInPictureCommand(request.method, params: params)
+            return .success(id: request.id, result: result)
+        case "display_place_window", "display_restore_session", "display_restore_all":
+            let result = try handleWindowPlacementCommand(request.method, params: params)
+            return .success(id: request.id, result: result)
+        case "session_clear_visuals":
+            let sessionId = AnyCodable.string(params, "sessionId") ?? ""
+            if sessionId.isEmpty {
+                AgentOverlayController.shared.hideImmediately()
+                await PictureInPictureController.shared.hide(sessionId: nil)
+                _ = WindowPlacementController.shared.restoreAll()
+            } else {
+                AgentOverlayController.shared.hideImmediately(sessionId: sessionId)
+                await PictureInPictureController.shared.hide(sessionId: sessionId)
+                _ = WindowPlacementController.shared.restore(sessionId: sessionId)
+            }
+            return .success(id: request.id, result: ["ok": true])
         case "terminate":
             AgentOverlayController.shared.hideImmediately()
+            PictureInPictureController.shared.hideImmediately()
+            WindowPlacementController.shared.restoreAllImmediately()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 exit(0)
             }
@@ -1097,6 +1123,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             FileHandle.standardError.write(Data("[superone-cu-helper] failed: \(error)\n".utf8))
             exit(1)
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        WindowPlacementController.shared.restoreAllImmediately()
     }
 }
 

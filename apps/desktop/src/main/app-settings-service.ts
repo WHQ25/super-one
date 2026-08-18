@@ -41,6 +41,12 @@ function readEnabledExperimentalAgents(raw: unknown): string[] {
   return out
 }
 
+function normalizeComputerUseDisplayId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const displayId = value.trim()
+  return displayId || null
+}
+
 const defaults: AppSettings = {
   analyticsEnabled: true,
   experimentalAgentsEnabled: false,
@@ -67,6 +73,8 @@ const defaults: AppSettings = {
   cdpEmulateEnabled: false,
   browserToolSurface: 'legacy',
   computerUseEnabled: false,
+  computerUsePictureInPicture: true,
+  computerUseDedicatedDisplayId: null,
   computerUseAllowAllApps: false,
   computerUseAlwaysAllowApps: [],
   miniAppOrder: {},
@@ -456,6 +464,12 @@ export function readAppSettings(): AppSettings {
         ? data.browserToolSurface
         : defaults.browserToolSurface,
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
+      computerUsePictureInPicture: typeof data.computerUsePictureInPicture === 'boolean'
+        ? data.computerUsePictureInPicture
+        : defaults.computerUsePictureInPicture,
+      computerUseDedicatedDisplayId: normalizeComputerUseDisplayId(
+        data.computerUseDedicatedDisplayId,
+      ),
       computerUseAllowAllApps: typeof data.computerUseAllowAllApps === 'boolean' ? data.computerUseAllowAllApps : defaults.computerUseAllowAllApps,
       computerUseAlwaysAllowApps: readComputerUseAlwaysAllowApps(data.computerUseAlwaysAllowApps),
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
@@ -522,6 +536,8 @@ export function readAppSettings(): AppSettings {
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
       browserToolSurface: defaults.browserToolSurface,
       computerUseEnabled: defaults.computerUseEnabled,
+      computerUsePictureInPicture: defaults.computerUsePictureInPicture,
+      computerUseDedicatedDisplayId: defaults.computerUseDedicatedDisplayId,
       computerUseAllowAllApps: defaults.computerUseAllowAllApps,
       computerUseAlwaysAllowApps: [],
       miniAppOrder: {},
@@ -634,6 +650,12 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,
     browserToolSurface: patch.browserToolSurface === undefined ? current.browserToolSurface : patch.browserToolSurface,
     computerUseEnabled: patch.computerUseEnabled === undefined ? current.computerUseEnabled : patch.computerUseEnabled,
+    computerUsePictureInPicture: patch.computerUsePictureInPicture === undefined
+      ? current.computerUsePictureInPicture
+      : patch.computerUsePictureInPicture,
+    computerUseDedicatedDisplayId: patch.computerUseDedicatedDisplayId === undefined
+      ? current.computerUseDedicatedDisplayId
+      : normalizeComputerUseDisplayId(patch.computerUseDedicatedDisplayId),
     computerUseAllowAllApps: patch.computerUseAllowAllApps === undefined ? current.computerUseAllowAllApps : patch.computerUseAllowAllApps,
     computerUseAlwaysAllowApps: patch.computerUseAlwaysAllowApps === undefined
       ? current.computerUseAlwaysAllowApps

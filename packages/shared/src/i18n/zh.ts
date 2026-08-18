@@ -762,6 +762,17 @@ export const zh: Messages = {
         label: '启用「使用电脑」',
         description: '向智能体暴露 computer_* 工具。默认关闭。需要 SuperOne Computer Use 辅助 App，以及 macOS 的辅助功能与屏幕录制权限。',
       },
+      pictureInPicture: {
+        label: '实时画中画',
+        description: '悬浮显示「使用电脑」当前正在操控的应用，只用于监看，不会抢占键盘焦点。',
+      },
+      dedicatedDisplay: {
+        label: '专用屏幕',
+        description: '操作时把目标窗口暂时移到已连接的副屏，当前轮次结束后恢复原位。',
+        singleDisplayDescription: '连接副屏后，可以让被操作的窗口避开主屏幕。',
+        current: '当前屏幕',
+        unavailable: '已断开的屏幕',
+      },
       allowAll: {
         label: '允许所有应用',
         description: '跳过按应用授权，截图与操控覆盖整个桌面。开启期间，智能体可以观察并控制任意应用。',

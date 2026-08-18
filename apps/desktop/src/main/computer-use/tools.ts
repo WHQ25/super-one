@@ -399,6 +399,25 @@ export interface ComputerUseToolExecutionContext {
 }
 
 const defaultServices = new Map<string, ComputerUseService>()
+const lifecycleTails = new Map<string, Promise<void>>()
+const activityGenerations = new Map<string, number>()
+
+function noteComputerUseActivity(sessionId: string): number {
+  const generation = (activityGenerations.get(sessionId) ?? 0) + 1
+  activityGenerations.set(sessionId, generation)
+  return generation
+}
+
+function runInComputerUseLifecycle<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
+  const previous = lifecycleTails.get(sessionId) ?? Promise.resolve()
+  const result = previous.catch(() => {}).then(task)
+  const tail = result.then(() => {}, () => {})
+  lifecycleTails.set(sessionId, tail)
+  void tail.finally(() => {
+    if (lifecycleTails.get(sessionId) === tail) lifecycleTails.delete(sessionId)
+  })
+  return result
+}
 
 export function getOrCreateComputerUseService(
   sessionId: string,
@@ -415,18 +434,23 @@ export function getOrCreateComputerUseService(
 /** Drop session grants + state when the chat session is disposed. */
 export function disposeComputerUseService(sessionId: string): void {
   const s = defaultServices.get(sessionId)
-  if (!s) return
-  try {
-    s.reset()
-  } catch {
-    // ignore
+  if (s) {
+    try {
+      s.reset()
+    } catch {
+      // ignore
+    }
+    defaultServices.delete(sessionId)
   }
-  defaultServices.delete(sessionId)
+  activityGenerations.delete(sessionId)
+  lifecycleTails.delete(sessionId)
 }
 
 export function clearComputerUseServices(): void {
   for (const s of defaultServices.values()) s.reset()
   defaultServices.clear()
+  activityGenerations.clear()
+  lifecycleTails.clear()
   resetModuleGate()
 }
 
@@ -435,34 +459,41 @@ export function clearComputerUseServices(): void {
  * Call when the agent is no longer controlling: turn ended, interrupted, idle,
  * session disposed, or Computer Use disabled.
  *
- * @param sessionId When set, clear that session's service first; always also
- *   pokes the shared macOS helper so a stale chip cannot linger.
+ * @param sessionId When set, clear only that session. Calls are serialized with
+ *   tool execution so an older turn cannot tear down a newer turn's visuals.
  */
 export async function hideComputerUseVisuals(sessionId?: string): Promise<void> {
   if (sessionId) {
-    const s = defaultServices.get(sessionId)
-    if (s) {
-      try {
-        await s.clearVisuals()
-      } catch {
-        // ignore
+    const requestedGeneration = activityGenerations.get(sessionId) ?? 0
+    await runInComputerUseLifecycle(sessionId, async () => {
+      // A newer tool call was queued after this cleanup request. Leave its UI
+      // and dedicated-display placement intact.
+      if ((activityGenerations.get(sessionId) ?? 0) !== requestedGeneration) return
+      const service = defaultServices.get(sessionId)
+      if (service) {
+        await service.clearVisuals()
+        return
       }
-    }
-  } else {
-    for (const s of defaultServices.values()) {
+      if (process.platform !== 'darwin') return
       try {
-        await s.clearVisuals()
+        const { getSharedHelperClient } = await import('./platform/macos-helper-client')
+        await getSharedHelperClient().call('session_clear_visuals', { sessionId })
       } catch {
-        // ignore
+        // helper offline
       }
-    }
+    })
+    return
   }
-  // Shared helper may still be painting from a previous act even if the session
-  // map entry is gone — force-hide on the socket.
+
+  const sessionIds = [...defaultServices.keys()]
+  if (sessionIds.length > 0) {
+    await Promise.all(sessionIds.map((id) => hideComputerUseVisuals(id)))
+    return
+  }
   if (process.platform === 'darwin') {
     try {
       const { getSharedHelperClient } = await import('./platform/macos-helper-client')
-      await getSharedHelperClient().call('overlay_hide', { delayMs: 0 })
+      await getSharedHelperClient().call('session_clear_visuals')
     } catch {
       // helper offline
     }
@@ -595,7 +626,7 @@ async function ensureGrantForState(
   })
 }
 
-export async function executeComputerUseTool(
+async function executeComputerUseToolInner(
   sessionId: string,
   toolName: string,
   args: Record<string, unknown>,
@@ -734,4 +765,17 @@ export async function executeComputerUseTool(
   } catch (err) {
     return errorReply(err)
   }
+}
+
+export async function executeComputerUseTool(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  context: ComputerUseToolExecutionContext = {},
+): Promise<ComputerUseToolReply> {
+  noteComputerUseActivity(sessionId)
+  return runInComputerUseLifecycle(
+    sessionId,
+    () => executeComputerUseToolInner(sessionId, toolName, args, context),
+  )
 }

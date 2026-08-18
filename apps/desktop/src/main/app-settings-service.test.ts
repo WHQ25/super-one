@@ -84,9 +84,11 @@ describe('app-settings-service', () => {
     onboardingCompletedAt: null,
     onboardingEpoch: 0,
     cdpEnabled: false,
-    computerUseEnabled: false,
-    computerUseAllowAllApps: false,
-    computerUseAlwaysAllowApps: [],
+        computerUseEnabled: false,
+        computerUsePictureInPicture: true,
+        computerUseDedicatedDisplayId: null,
+        computerUseAllowAllApps: false,
+        computerUseAlwaysAllowApps: [],
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
@@ -153,9 +155,11 @@ describe('app-settings-service', () => {
         onboardingCompletedAt: null,
         onboardingEpoch: 0,
         cdpEnabled: false,
-    computerUseEnabled: false,
-    computerUseAllowAllApps: false,
-    computerUseAlwaysAllowApps: [],
+        computerUseEnabled: false,
+        computerUsePictureInPicture: true,
+        computerUseDedicatedDisplayId: null,
+        computerUseAllowAllApps: false,
+        computerUseAlwaysAllowApps: [],
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
@@ -271,9 +275,11 @@ describe('app-settings-service', () => {
         onboardingCompletedAt: null,
         onboardingEpoch: 0,
         cdpEnabled: false,
-    computerUseEnabled: false,
-    computerUseAllowAllApps: false,
-    computerUseAlwaysAllowApps: [],
+        computerUseEnabled: false,
+        computerUsePictureInPicture: true,
+        computerUseDedicatedDisplayId: null,
+        computerUseAllowAllApps: false,
+        computerUseAlwaysAllowApps: [],
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
@@ -479,6 +485,20 @@ describe('app-settings-service', () => {
       const result = saveAppSettings({})
       expect(result).toEqual(defaultSettings)
       expect(mocks.writeFileSync).toHaveBeenCalledOnce()
+    })
+
+    it('persists a normalized Computer Use display id and clears it with null', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+
+      const selected = saveAppSettings({ computerUseDedicatedDisplayId: ' 69733382 ' })
+      expect(selected.computerUseDedicatedDisplayId).toBe('69733382')
+
+      const written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+      expect(readAppSettings().computerUseDedicatedDisplayId).toBe('69733382')
+
+      const cleared = saveAppSettings({ computerUseDedicatedDisplayId: null })
+      expect(cleared.computerUseDedicatedDisplayId).toBeNull()
     })
 
     // The dsh self-referential toolset is an opt-in the user has to make

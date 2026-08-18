@@ -3,6 +3,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+Object.defineProperties(HTMLElement.prototype, {
+  hasPointerCapture: { configurable: true, value: () => false },
+  setPointerCapture: { configurable: true, value: () => {} },
+  releasePointerCapture: { configurable: true, value: () => {} },
+  scrollIntoView: { configurable: true, value: () => {} },
+})
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
@@ -12,6 +19,14 @@ const saveAppSettings = vi.fn()
 const openComputerUsePermissions = vi.fn()
 const recheckComputerUsePermissions = vi.fn()
 const listComputerUseRunningApps = vi.fn()
+const listComputerUseDisplays = vi.fn()
+let displaysChangedCallback: (() => void) | undefined
+const onComputerUseDisplaysChanged = vi.fn((callback: () => void) => {
+  displaysChangedCallback = callback
+  return () => {
+    displaysChangedCallback = undefined
+  }
+})
 const startDrag = vi.fn()
 const onComputerUsePermissionStatus = vi.fn(() => () => {})
 
@@ -23,6 +38,8 @@ Object.defineProperty(window, 'app', {
     openComputerUsePermissions,
     recheckComputerUsePermissions,
     listComputerUseRunningApps,
+    listComputerUseDisplays,
+    onComputerUseDisplaysChanged,
     startDrag,
     onComputerUsePermissionStatus,
   },
@@ -35,6 +52,8 @@ let currentSettings: ReturnType<typeof settings>
 function settings(computerUseEnabled: boolean) {
   return {
     computerUseEnabled,
+    computerUsePictureInPicture: true,
+    computerUseDedicatedDisplayId: null,
     computerUseAllowAllApps: false,
     computerUseAlwaysAllowApps: [],
   }
@@ -43,6 +62,7 @@ function settings(computerUseEnabled: boolean) {
 describe('ComputerUseSettingsPage permissions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    displaysChangedCallback = undefined
     currentSettings = settings(false)
     getAppSettings.mockImplementation(async () => currentSettings)
     saveAppSettings.mockImplementation(async (patch: Partial<typeof currentSettings>) => {
@@ -67,6 +87,10 @@ describe('ComputerUseSettingsPage permissions', () => {
       reason: 'already_granted',
     })
     listComputerUseRunningApps.mockResolvedValue([])
+    listComputerUseDisplays.mockResolvedValue([
+      { id: '1', name: 'Built-in Retina Display', primary: true, internal: true },
+      { id: '2', name: 'Studio Display', primary: false, internal: false },
+    ])
   })
 
   it('checks permission status once without requesting on mount', async () => {
@@ -140,17 +164,105 @@ describe('ComputerUseSettingsPage permissions', () => {
   it('hides Always allow without turning the Allow all description red', async () => {
     currentSettings = settings(true)
     render(<ComputerUseSettingsPage />)
-    await waitFor(() => expect(screen.getAllByRole('switch')[1]).toBeEnabled())
+    await waitFor(() => expect(screen.getAllByRole('switch')[2]).toBeEnabled())
 
     const description = screen.getByText('settings.computerUse.allowAll.description')
     expect(description.className).toContain('text-muted-foreground')
     expect(description.className).not.toContain('text-destructive')
 
-    fireEvent.click(screen.getAllByRole('switch')[1])
+    fireEvent.click(screen.getAllByRole('switch')[2])
 
     await waitFor(() => {
       expect(saveAppSettings).toHaveBeenCalledWith({ computerUseAllowAllApps: true })
       expect(screen.queryByText('settings.computerUse.alwaysAllow.title')).toBeNull()
     })
+  })
+
+  it('persists the live picture-in-picture preference', async () => {
+    currentSettings = settings(true)
+    render(<ComputerUseSettingsPage />)
+    const toggle = await screen.findByRole('switch', {
+      name: 'settings.computerUse.pictureInPicture.label',
+    })
+
+    fireEvent.click(toggle)
+
+    await waitFor(() => {
+      expect(saveAppSettings).toHaveBeenCalledWith({ computerUsePictureInPicture: false })
+    })
+  })
+
+  it('shows connected secondary displays as dedicated-screen options', async () => {
+    currentSettings = settings(true)
+    render(<ComputerUseSettingsPage />)
+
+    const trigger = await screen.findByRole('combobox', {
+      name: 'settings.computerUse.dedicatedDisplay.label',
+    })
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' })
+
+    fireEvent.click(await screen.findByText('Studio Display'))
+    await waitFor(() => {
+      expect(saveAppSettings).toHaveBeenCalledWith({ computerUseDedicatedDisplayId: '2' })
+    })
+    expect(listComputerUseDisplays).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows a macOS primary display to be selected when another display is connected', async () => {
+    currentSettings = settings(true)
+    listComputerUseDisplays.mockResolvedValue([
+      { id: '1', name: 'Built-in Retina Display', primary: false, internal: true },
+      { id: '2', name: 'Studio Display', primary: true, internal: false },
+    ])
+    render(<ComputerUseSettingsPage />)
+
+    const trigger = await screen.findByRole('combobox', {
+      name: 'settings.computerUse.dedicatedDisplay.label',
+    })
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' })
+    fireEvent.click(await screen.findByText('Studio Display'))
+
+    await waitFor(() => {
+      expect(saveAppSettings).toHaveBeenCalledWith({ computerUseDedicatedDisplayId: '2' })
+    })
+  })
+
+  it('refreshes display choices after a macOS display topology change', async () => {
+    currentSettings = settings(true)
+    listComputerUseDisplays
+      .mockResolvedValueOnce([
+        { id: '1', name: 'Built-in Retina Display', primary: true, internal: true },
+      ])
+      .mockResolvedValueOnce([
+        { id: '1', name: 'Built-in Retina Display', primary: true, internal: true },
+        { id: '2', name: 'Studio Display', primary: false, internal: false },
+      ])
+    render(<ComputerUseSettingsPage />)
+
+    const trigger = await screen.findByRole('combobox', {
+      name: 'settings.computerUse.dedicatedDisplay.label',
+    })
+    expect(trigger).toBeDisabled()
+
+    displaysChangedCallback?.()
+
+    await waitFor(() => expect(trigger).toBeEnabled())
+    expect(listComputerUseDisplays).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps dedicated-screen selection unavailable on a single display', async () => {
+    currentSettings = settings(true)
+    listComputerUseDisplays.mockResolvedValue([
+      { id: '1', name: 'Built-in Retina Display', primary: true, internal: true },
+    ])
+    render(<ComputerUseSettingsPage />)
+
+    const trigger = await screen.findByRole('combobox', {
+      name: 'settings.computerUse.dedicatedDisplay.label',
+    })
+    expect(trigger).toBeDisabled()
+    expect(screen.getByText(
+      'settings.computerUse.dedicatedDisplay.singleDisplayDescription',
+    )).toBeInTheDocument()
   })
 })

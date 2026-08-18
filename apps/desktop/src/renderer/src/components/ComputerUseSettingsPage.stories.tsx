@@ -4,6 +4,8 @@ import { ComputerUseSettingsPage } from './ComputerUseSettingsPage'
 
 let settings = {
   computerUseEnabled: true,
+  computerUsePictureInPicture: true,
+  computerUseDedicatedDisplayId: null,
   computerUseAllowAllApps: false,
   computerUseAlwaysAllowApps: [
     { app: 'TextEdit', bundleId: 'com.apple.TextEdit' },
@@ -16,6 +18,11 @@ mockIpc('app', 'saveAppSettings', async (patch: unknown) => {
   settings = { ...settings, ...(patch as Partial<typeof settings>) }
   return settings
 })
+mockIpc('app', 'listComputerUseDisplays', async () => [
+  { id: '1', name: 'Built-in Retina Display', primary: true, internal: true },
+  { id: '2', name: 'Studio Display', primary: false, internal: false },
+])
+mockIpc('app', 'onComputerUseDisplaysChanged', () => () => {})
 mockIpc('app', 'openComputerUsePermissions', async () => ({
   requested: false,
   accessibility: 'granted',

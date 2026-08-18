@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.54.0-alpha] - 2026-08-18
+
+### Added
+
+- Desktop: enable Liquid Glass on Windows 11 22H2+ (Linux and older Windows stay on solid chrome).
+- Sidebar: clone with `--depth=1` by default, with an option for a full history. Older clients that omit the flag still get a full clone.
+- Browser: picture-in-picture preview for agent browser so automation stays visible without opening the Activity Panel.
+
+### Fixed
+
+- Desktop: highlight remote `.ipynb` notebooks as JSON instead of plain text.
+- Chat: hide harness tool-search activity rows.
+- Collab: show the mailbox wake row when Claude or Codex receives a steer.
+- Chat: restore lightweight Codex tool group headers.
+- Browser: clip the webview to the activity panel reveal so it no longer flashes full-width before the panel opens.
+- Codex: treat nonzero command exits as a normal tool outcome, not an error.
+- Media: allow Codex-generated images stored outside the project to appear in the chat gallery.
+
 ## [0.53.11-alpha] - 2026-08-18
 
 ### Added

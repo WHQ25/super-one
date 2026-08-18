@@ -12,7 +12,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runHarnessCli } from './harness-cli'
-import type { HarnessInstallationStatus } from '@superone/shared/environment'
+import {
+  NODE_HARNESS_IDS,
+  type HarnessInstallationStatus,
+} from '@superone/shared/environment'
 import { currentHostArch, currentHostPlatform } from './managed-harness-release'
 
 const dirs: string[] = []
@@ -90,7 +93,7 @@ describe('harness CLI (Stage 2)', () => {
     expect(result.ok).toBe(true)
     expect(result.exitCode).toBe(0)
     const list = result.json as HarnessInstallationStatus[]
-    expect(list).toHaveLength(5)
+    expect(list).toHaveLength(NODE_HARNESS_IDS.length)
     expect(list.every((h) => !h.enabled && h.state === 'disabled')).toBe(true)
   })
 

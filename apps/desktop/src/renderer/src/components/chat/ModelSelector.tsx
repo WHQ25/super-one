@@ -23,7 +23,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
   if (activeProvider === 'cursor') {
     return <CursorModelSelector onCloseAutoFocus={onCloseAutoFocus} />
   }
-  if (activeProvider === 'deepseek') {
+  if (activeProvider === 'dsh') {
     return <DeepseekModelSelector onCloseAutoFocus={onCloseAutoFocus} />
   }
   return <ClaudeModelSelector onCloseAutoFocus={onCloseAutoFocus} />

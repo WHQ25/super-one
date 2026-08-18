@@ -21,7 +21,7 @@ export function resolveSessionIcon(
   if (harnessId === 'codex') return CodexSessionIcon
   if (harnessId === 'opencode') return OpenCodeSessionIcon
   if (harnessId === 'cursor') return CursorSessionIcon
-  if (harnessId === 'deepseek') return DeepseekSessionIcon
+  if (harnessId === 'dsh') return DeepseekSessionIcon
   if (harnessId === 'acp') {
     if (isGrokAcpAgent(acpAgentId)) return GrokSessionIcon
     if (isOpenCodeAcpAgent(acpAgentId)) return OpenCodeSessionIcon

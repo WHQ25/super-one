@@ -3,29 +3,12 @@ import type { ChatProvider } from '@/stores/chat'
 
 /**
  * Pick the slash-command catalog for the active harness.
- * ACP must never fall through to project-level Claude slashCommands/skills.
+ * Every harness must declare its own catalog so none can inherit Claude
+ * project commands or skills by falling through a default branch.
  */
 export function resolveSlashCommandsForProvider(
   provider: ChatProvider,
-  catalogs: {
-    claude: SlashCommandInfo[]
-    codex: SlashCommandInfo[]
-    acp: SlashCommandInfo[]
-    opencode: SlashCommandInfo[]
-    cursor: SlashCommandInfo[]
-  },
+  catalogs: Record<ChatProvider, SlashCommandInfo[]>,
 ): SlashCommandInfo[] {
-  switch (provider) {
-    case 'codex':
-      return catalogs.codex
-    case 'acp':
-      return catalogs.acp
-    case 'opencode':
-      return catalogs.opencode
-    case 'cursor':
-      return catalogs.cursor
-    case 'claude':
-    default:
-      return catalogs.claude
-  }
+  return catalogs[provider]
 }

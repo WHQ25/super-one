@@ -125,7 +125,7 @@ const deepseekConfigSchema = z.object({
 }).passthrough()
 
 const deepseekHarness: Harness = {
-  id: 'deepseek',
+  id: 'dsh',
   name: 'DeepSeek',
   configSchema: deepseekConfigSchema,
   createBackend: () => new DeepseekBackend(),
@@ -138,7 +138,7 @@ const registry = new Map<HarnessId, Harness>([
   ['acp', acpHarness],
   ['opencode', openCodeHarness],
   ['cursor', cursorHarness],
-  ['deepseek', deepseekHarness],
+  ['dsh', deepseekHarness],
 ])
 
 export const harnessRegistry = {

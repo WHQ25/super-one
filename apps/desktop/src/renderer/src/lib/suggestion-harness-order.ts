@@ -35,7 +35,7 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
   }
   if (option.provider === 'opencode') return 4
   if (option.provider === 'cursor') return 5
-  if (option.provider === 'deepseek') return 6
+  if (option.provider === 'dsh') return 6
   return 50
 }
 
@@ -135,11 +135,11 @@ export function orderSuggestionHarnesses(input: {
 
   if (input.includeDeepseek) {
     options.push({
-      key: 'deepseek',
-      provider: 'deepseek',
+      key: 'dsh',
+      provider: 'dsh',
       acpAgentId: null,
       label: 'DeepSeek',
-      sessionCount: countByKey.get('deepseek') ?? 0,
+      sessionCount: countByKey.get('dsh') ?? 0,
     })
   }
 

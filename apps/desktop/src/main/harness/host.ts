@@ -26,6 +26,7 @@ import { getBinding, listCredentials, getCredentialDecrypted } from '../provider
 import { resolveSdkClaudeBinary } from '../agent/claude-binary'
 import { resolveCursorApiKey } from '../cursor/cursor-auth'
 import { getBaseProvider } from '../session/session-provider-repo'
+import { resolveDeepseekApiKey } from '../deepseek/deepseek-credentials'
 import { allowBundledHarnessPlatformPackages } from './bundled-fallback'
 import { resolveHarnessHomeRoot } from './home'
 import {
@@ -145,6 +146,7 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     if (id === 'acp-grok') return Boolean(envBinary('SUPERONE_ACP_BINARY'))
     if (id === 'opencode') return Boolean(envBinary('SUPERONE_OPENCODE_BINARY'))
     if (id === 'cursor') return isCursorSdkAvailable()
+    if (id === 'dsh') return true
     return false
   },
 
@@ -202,6 +204,11 @@ export function desktopHarnessAuthProbe(): HarnessAuthProbe {
           /* no cursor-base provider yet */
         }
         return null
+      }
+      if (id === 'dsh') {
+        return resolveDeepseekApiKey()
+          ? { ok: true, reason: 'DeepSeek provider credential' }
+          : null
       }
       if (id !== 'claude' && id !== 'codex') return null
       const consumer: ConsumerId = id === 'codex' ? 'chat:codex' : 'chat:claude'

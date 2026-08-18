@@ -15,6 +15,7 @@ import {
   type WireProtocol,
 } from '@superone/shared/platform-registry'
 import { DRAFTS_TABLE_DDL } from '@superone/runtime/drafts'
+import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type Database from 'better-sqlite3'
 import { encryptSecret } from './crypto/secret-store'
 
@@ -639,11 +640,9 @@ function seedBaseSessionProviders(db: Database.Database): void {
       (id, harness_id, name, is_base, config_json, created_at, updated_at)
     VALUES (?, ?, ?, 1, ?, ?, ?)
   `)
-  stmt.run('claude-base', 'claude', 'Claude (Base)', '{}', now, now)
-  stmt.run('codex-base', 'codex', 'Codex (Base)', '{}', now, now)
-  stmt.run('acp-base', 'acp', 'Others (ACP)', JSON.stringify({ agentId: 'grok-build' }), now, now)
-  stmt.run('opencode-base', 'opencode', 'OpenCode (Base)', '{}', now, now)
-  stmt.run('cursor-base', 'cursor', 'Cursor (Base)', '{}', now, now)
+  for (const seed of BASE_SESSION_PROVIDER_DEFINITIONS) {
+    stmt.run(seed.id, seed.harnessId, seed.name, JSON.stringify(seed.config), now, now)
+  }
 }
 
 function migrateGlobalResourceCacheToHarness(db: Database.Database): void {

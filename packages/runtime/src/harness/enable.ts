@@ -69,6 +69,8 @@ export async function enableHarness(
     })
   } else if (id === 'cursor') {
     status = enableCursor(manager)
+  } else if (id === 'dsh') {
+    status = enableDeepseek(manager)
   } else {
     status = enableAcpGrok(manager, {
       command: input.command,
@@ -268,6 +270,18 @@ export function enableCursor(manager: HarnessManager): HarnessInstallationStatus
     diagnosticCode: hasKey ? null : 'needs_auth',
     lastProbedAt: Date.now(),
     configJson: JSON.stringify({ command: 'cursor-sdk', source: 'cursor-sdk' }),
+  })
+}
+
+/** Enable the embedded dsh runtime; readiness probing owns credential promotion. */
+export function enableDeepseek(manager: HarnessManager): HarnessInstallationStatus {
+  return manager.update('dsh', {
+    enabled: true,
+    state: 'needs_auth',
+    command: null,
+    diagnosticCode: 'needs_auth',
+    lastProbedAt: Date.now(),
+    configJson: JSON.stringify({ source: 'deepseek-in-process' }),
   })
 }
 

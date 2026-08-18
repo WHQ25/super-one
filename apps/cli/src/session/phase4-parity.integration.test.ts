@@ -33,7 +33,7 @@ async function boot(opts?: { simulatedHarness?: boolean }) {
 }
 
 describe('Phase 4 harness parity + collaboration', () => {
-  it('descriptor advertises all four harnesses and each can complete a turn', async () => {
+  it('advertises every catalog harness and completes a simulated turn with each', async () => {
     const rt = await boot({ simulatedHarness: true })
     const client = await connectAuthedRpc(rt)
     const descriptor = (await client.rpc('environment.descriptor')) as {

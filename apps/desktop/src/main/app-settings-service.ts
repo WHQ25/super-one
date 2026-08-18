@@ -19,6 +19,7 @@ import type {
   UpdateChannel,
 } from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 
 export type { AppSettings, AppSettingsPatch }
 
@@ -106,19 +107,23 @@ const defaults: AppSettings = {
   },
 }
 
-const HARNESS_IDS = new Set<HarnessId>(['claude', 'codex', 'acp', 'opencode'])
+const HARNESS_IDS = new Set(Object.keys(HARNESS_CAPABILITIES) as HarnessId[])
+
+function isHarnessId(value: string): value is HarnessId {
+  return HARNESS_IDS.has(value as HarnessId)
+}
 
 function readSuggestionHarness(value: unknown): SuggestionHarnessPreference | null {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
   const raw = value as Record<string, unknown>
   const provider = typeof raw.provider === 'string' ? raw.provider.trim() : ''
-  if (!HARNESS_IDS.has(provider as HarnessId)) return null
+  if (!isHarnessId(provider)) return null
   const acpAgentId = typeof raw.acpAgentId === 'string' && raw.acpAgentId.trim()
     ? raw.acpAgentId.trim()
     : null
   if (provider === 'acp' && !acpAgentId) return null
   return {
-    provider: provider as HarnessId,
+    provider,
     acpAgentId: provider === 'acp' ? acpAgentId : null,
   }
 }
@@ -135,7 +140,7 @@ export function serializeSuggestionHarness(pref: SuggestionHarnessPreference | n
 
 /**
  * Parse a harness key from settings UI / config tools.
- * Accepts object form, `"auto"`/`null`/empty for Auto, or `claude`/`codex`/`opencode`/`acp:<id>`.
+ * Accepts object form, `"auto"`/`null`/empty for Auto, a non-ACP harness id, or `acp:<id>`.
  */
 export function parseSuggestionHarnessKey(value: unknown): SuggestionHarnessPreference | null {
   if (value == null || value === '' || value === 'auto') return null
@@ -143,7 +148,7 @@ export function parseSuggestionHarnessKey(value: unknown): SuggestionHarnessPref
   if (typeof value !== 'string') return null
   const key = value.trim()
   if (!key || key === 'auto') return null
-  if (key === 'claude' || key === 'codex' || key === 'opencode') {
+  if (key !== 'acp' && isHarnessId(key)) {
     return { provider: key, acpAgentId: null }
   }
   if (key.startsWith('acp:')) {
@@ -153,7 +158,7 @@ export function parseSuggestionHarnessKey(value: unknown): SuggestionHarnessPref
   return null
 }
 
-/** Valid order keys: `claude` | `codex` | `opencode` | `acp:<agentId>`. */
+/** Valid order keys: a non-ACP harness id or `acp:<agentId>`. */
 export function isHarnessOrderKey(key: string): boolean {
   return parseSuggestionHarnessKey(key) != null
 }

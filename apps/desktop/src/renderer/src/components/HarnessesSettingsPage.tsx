@@ -15,7 +15,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Blocks, Bot, Cloud, Cpu, GripVertical, KeyRound, Loader2, Palette, Puzzle, RefreshCw, Server, Webhook } from 'lucide-react'
-import { Codex, Cursor, Grok, OpenCode } from '@lobehub/icons'
+import { Codex, Cursor, DeepSeek, Grok, OpenCode } from '@lobehub/icons'
 import { toast } from 'sonner'
 import {
   DndContext,
@@ -39,6 +39,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/component
 import { cn } from '@superone/ui/lib/utils'
 import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
+import {
+  NODE_HARNESS_IDS,
+  type NodeHarnessId,
+} from '@superone/shared/environment/harness-installation'
+import type { HarnessId } from '@superone/shared/session-types'
 import { suggestionHarnessKey } from '@/lib/suggestion-harness-order'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type HarnessConfigSection } from '@/stores/app'
@@ -67,9 +72,9 @@ type ListItem =
   | {
       key: string
       kind: 'catalog'
-      catalogId: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
+      catalogId: NodeHarnessId
       label: string
-      provider: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp'
+      provider: HarnessId
       acpAgentId: string | null
       experimental: boolean
       description: string
@@ -95,6 +100,60 @@ interface ProgressState {
 }
 
 const EMPTY_ACP: AcpAgentDescriptor[] = []
+
+interface CatalogHarnessMeta {
+  provider: HarnessId
+  labelKey: string
+  descriptionKey: string
+  experimental: boolean
+  configProvider?: SettingsProvider
+}
+
+/**
+ * UI metadata for every first-party catalog harness. The exhaustive Record is
+ * intentional: adding a NodeHarnessId must also add its settings entry.
+ */
+const CATALOG_HARNESS_META = {
+  claude: {
+    provider: 'claude',
+    labelKey: 'settings.harnesses.ids.claude',
+    descriptionKey: 'settings.harnesses.desc.claude',
+    experimental: false,
+    configProvider: 'claude',
+  },
+  codex: {
+    provider: 'codex',
+    labelKey: 'settings.harnesses.ids.codex',
+    descriptionKey: 'settings.harnesses.desc.codex',
+    experimental: false,
+    configProvider: 'codex',
+  },
+  opencode: {
+    provider: 'opencode',
+    labelKey: 'settings.harnesses.ids.opencode',
+    descriptionKey: 'settings.harnesses.desc.opencode',
+    experimental: true,
+  },
+  cursor: {
+    provider: 'cursor',
+    labelKey: 'settings.harnesses.ids.cursor',
+    descriptionKey: 'settings.harnesses.desc.cursor',
+    experimental: true,
+    configProvider: 'cursor',
+  },
+  'acp-grok': {
+    provider: 'acp',
+    labelKey: 'settings.harnesses.ids.acp-grok',
+    descriptionKey: 'settings.harnesses.desc.acpGrok',
+    experimental: false,
+  },
+  dsh: {
+    provider: 'dsh',
+    labelKey: 'settings.harnesses.ids.deepseek',
+    descriptionKey: 'settings.harnesses.desc.deepseek',
+    experimental: true,
+  },
+} satisfies Record<NodeHarnessId, CatalogHarnessMeta>
 
 const CONFIG_TAB_META: Record<
   HarnessConfigSection,
@@ -219,6 +278,9 @@ function HarnessBrandTitle({
   }
   if (provider === 'cursor') {
     return wrap(<Cursor.Text size={size} />)
+  }
+  if (provider === 'dsh') {
+    return wrap(<DeepSeek.Text size={size} />)
   }
   if (provider === 'acp' && isGrokAcpAgent(acpAgentId)) {
     return wrap(<Grok.Text size={size} />)
@@ -346,65 +408,25 @@ export function HarnessesSettingsPage() {
   }, [catalog])
 
   const items = useMemo((): ListItem[] => {
-    const list: ListItem[] = [
-      {
-        key: 'claude',
-        kind: 'catalog',
-        catalogId: 'claude',
-        label: t('settings.harnesses.ids.claude'),
-        provider: 'claude',
-        acpAgentId: null,
-        experimental: false,
-        description: t('settings.harnesses.desc.claude'),
-        configProvider: 'claude',
-      },
-      {
-        key: 'codex',
-        kind: 'catalog',
-        catalogId: 'codex',
-        label: t('settings.harnesses.ids.codex'),
-        provider: 'codex',
-        acpAgentId: null,
-        experimental: false,
-        description: t('settings.harnesses.desc.codex'),
-        configProvider: 'codex',
-      },
-      {
-        key: 'opencode',
-        kind: 'catalog',
-        catalogId: 'opencode',
-        label: t('settings.harnesses.ids.opencode'),
-        provider: 'opencode',
-        acpAgentId: null,
-        experimental: true,
-        description: t('settings.harnesses.desc.opencode'),
-      },
-      {
-        key: 'cursor',
-        kind: 'catalog',
-        catalogId: 'cursor',
-        label: t('settings.harnesses.ids.cursor'),
-        provider: 'cursor',
-        acpAgentId: null,
-        experimental: true,
-        description: t('settings.harnesses.desc.cursor'),
-        configProvider: 'cursor',
-      },
-    ]
-
     const agents = acpAgents.filter((a) => a.id !== 'opencode')
     const grok = agents.find((a) => isGrokAcpAgent(a.id))
     const rest = agents.filter((a) => !isGrokAcpAgent(a.id))
-
-    list.push({
-      key: 'acp-grok',
-      kind: 'catalog',
-      catalogId: 'acp-grok',
-      label: grok?.name || t('settings.harnesses.ids.acp-grok'),
-      provider: 'acp',
-      acpAgentId: grok?.id ?? 'grok-build',
-      experimental: false,
-      description: t('settings.harnesses.desc.acpGrok'),
+    const list: ListItem[] = NODE_HARNESS_IDS.map((catalogId) => {
+      const meta: CatalogHarnessMeta = CATALOG_HARNESS_META[catalogId]
+      return {
+        key: catalogId,
+        kind: 'catalog',
+        catalogId,
+        label:
+          catalogId === 'acp-grok'
+            ? (grok?.name || t(meta.labelKey))
+            : t(meta.labelKey),
+        provider: meta.provider,
+        acpAgentId: catalogId === 'acp-grok' ? (grok?.id ?? 'grok-build') : null,
+        experimental: meta.experimental,
+        description: t(meta.descriptionKey),
+        configProvider: meta.configProvider,
+      }
     })
 
     for (const agent of rest) {

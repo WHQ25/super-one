@@ -87,6 +87,25 @@ async function runTurn(
 }
 
 describe('deepseek runtime end-to-end (mock adapter)', () => {
+  it('preserves configured model display names in the live catalog', async () => {
+    const runtime = await DeepseekRuntime.create({
+      persona: 'test agent',
+      deepseekAdapter: {
+        models: [
+          { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', contextWindow: 128_000 },
+          { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', contextWindow: 128_000 },
+        ],
+      },
+    })
+
+    await expect(runtime.listModels()).resolves.toEqual([
+      expect.objectContaining({ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }),
+      expect.objectContaining({ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }),
+    ])
+
+    await runtime.dispose()
+  })
+
   it('streams a text turn as message_start → deltas → usage → message_complete', async () => {
     const { runtime } = await bootRuntime()
     const events: AgentEvent[] = []
@@ -97,6 +116,8 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
     expect(types).toContain('content_delta')
     expect(types).toContain('message_usage')
     expect(types).toContain('message_complete')
+    const messageStart = events.find((event) => event.type === 'message_start')
+    expect(messageStart?.type === 'message_start' ? messageStart.message.providerId : undefined).toBe('dsh')
     // The context ring feeds off this pair (shared usage reducer contract).
     const usage = events.find((event) => event.type === 'message_usage')
     expect(usage && 'contextTokens' in usage ? usage.contextTokens : undefined).toBeGreaterThan(0)

@@ -65,7 +65,7 @@ export function keyToHarnessPreference(
       provider !== 'codex' &&
       provider !== 'acp' &&
       provider !== 'opencode' &&
-      provider !== 'deepseek'
+      provider !== 'dsh'
     ) {
       return null
     }
@@ -85,7 +85,7 @@ export function keyToHarnessPreference(
     key === 'claude' ||
     key === 'codex' ||
     key === 'opencode' ||
-    key === 'deepseek'
+    key === 'dsh'
   ) {
     return { provider: key, acpAgentId: null }
   }
@@ -118,7 +118,7 @@ export function formatHarnessPreferenceLabel(
   if (pref.provider === 'claude') return labels.claude
   if (pref.provider === 'codex') return labels.codex
   if (pref.provider === 'opencode') return labels.opencode
-  if (pref.provider === 'deepseek') return labels.deepseek
+  if (pref.provider === 'dsh') return labels.deepseek
   if (pref.provider === 'acp') return acpAgentDisplayName(pref.acpAgentId)
   return harnessPreferenceToKey(pref) ?? autoLabel
 }
@@ -241,11 +241,11 @@ export function HarnessPreferencePicker({
         label: t('settings.general.harnessOptions.codex'),
       })
     }
-    if (isCatalogHarnessEnabled(harnessCatalog, 'deepseek')) {
+    if (isCatalogHarnessEnabled(harnessCatalog, 'dsh')) {
       list.push({
-        key: 'deepseek',
-        value: 'deepseek',
-        pref: { provider: 'deepseek', acpAgentId: null },
+        key: 'dsh',
+        value: 'dsh',
+        pref: { provider: 'dsh', acpAgentId: null },
         label: t('settings.general.harnessOptions.deepseek'),
       })
     }

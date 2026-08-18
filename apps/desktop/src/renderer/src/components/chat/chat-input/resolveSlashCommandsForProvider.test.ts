@@ -22,7 +22,14 @@ const opencode: SlashCommandInfo[] = [
   { name: 'deploy', description: 'Deploy', argumentHint: 'env', isSkill: true },
 ]
 
-const catalogs = { claude, codex, acp, opencode, cursor: [] as SlashCommandInfo[] }
+const catalogs = {
+  claude,
+  codex,
+  acp,
+  opencode,
+  cursor: [] as SlashCommandInfo[],
+  dsh: [] as SlashCommandInfo[],
+}
 
 describe('resolveSlashCommandsForProvider', () => {
   it('returns Claude project slashCommands for claude', () => {
@@ -56,5 +63,12 @@ describe('resolveSlashCommandsForProvider', () => {
     expect(result).toBe(cursor)
     expect(result.map((c) => c.name)).not.toContain('tdd')
     expect(result.map((c) => c.name)).not.toContain('compact')
+  })
+
+  it('returns an explicit empty DeepSeek catalog and never Claude skills', () => {
+    const result = resolveSlashCommandsForProvider('dsh', catalogs)
+    expect(result).toBe(catalogs.dsh)
+    expect(result).toEqual([])
+    expect(result).not.toBe(claude)
   })
 })

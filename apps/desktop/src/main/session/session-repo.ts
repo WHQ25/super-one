@@ -5,6 +5,7 @@ import { getProjectId } from '../recent-folders'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
+import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type { HarnessId, MessagePersistMode } from './types'
 
 export function serializeMessageContent(msg: ChatMessage): string {
@@ -141,20 +142,15 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
 }
 
 function inferLegacyProviderId(row: { provider?: string | null }): string {
-  if (row.provider === 'codex') return 'codex-base'
-  if (row.provider === 'acp') return 'acp-base'
-  if (row.provider === 'opencode') return 'opencode-base'
-  if (row.provider === 'cursor') return 'cursor-base'
-  return 'claude-base'
+  return BASE_SESSION_PROVIDER_DEFINITIONS.find(({ harnessId }) => harnessId === row.provider)?.id
+    ?? 'claude-base'
 }
 
 /** Map a session_providers id (or legacy base id) to its harness. */
 export function harnessIdFromProviderId(providerId: string): HarnessId {
-  if (providerId.startsWith('codex')) return 'codex'
-  if (providerId.startsWith('acp')) return 'acp'
-  if (providerId.startsWith('opencode')) return 'opencode'
-  if (providerId.startsWith('cursor')) return 'cursor'
-  return 'claude'
+  return BASE_SESSION_PROVIDER_DEFINITIONS.find(
+    ({ harnessId }) => providerId.startsWith(harnessId),
+  )?.harnessId ?? 'claude'
 }
 
 /**

@@ -217,8 +217,8 @@ describe('applySessionAgentDefaults', () => {
 
   it('returns {} for a deepseek session (no claude default-model fallback)', () => {
     const session = createDefaultPerSessionState()
-    session.sessionProvider = 'deepseek'
-    session.preferredProvider = 'deepseek'
+    session.sessionProvider = 'dsh'
+    session.preferredProvider = 'dsh'
     session.selectedModel = ''
     const project = createDefaultProjectState()
     expect(applySessionAgentDefaults(session, project, [opus])).toEqual({})

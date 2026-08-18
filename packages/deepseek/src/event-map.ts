@@ -62,7 +62,7 @@ export class DeepseekEventMapper {
           status: 'streaming',
           content: [],
           createdAt: new Date(event.time).toISOString(),
-          providerId: 'deepseek',
+          providerId: 'dsh',
         }
         this.emit({ type: 'message_start', message })
         break

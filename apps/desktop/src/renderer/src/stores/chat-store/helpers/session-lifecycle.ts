@@ -997,12 +997,12 @@ export function setPreferredProviderImpl(
       void get().refreshCursorSlashItems(activeProject)
     }
   }
-  if (provider === 'deepseek') {
-    void get().initializeHarness('deepseek').then(async () => {
+  if (provider === 'dsh') {
+    void get().initializeHarness('dsh').then(async () => {
       const session = getActivePerSession(get())
       // User may have switched harness before DeepSeek resources finished loading.
-      if ((session.sessionProvider ?? session.preferredProvider) !== 'deepseek') return
-      const models = get().harnessResources.deepseek?.models ?? []
+      if ((session.sessionProvider ?? session.preferredProvider) !== 'dsh') return
+      const models = get().harnessResources.dsh?.models ?? []
       const selected = models.find((model) => model.id === session.selectedModel)
       const fallback = selected ?? models.find((model) => model.isDefault) ?? models[0]
       if (fallback && fallback.id !== session.selectedModel) {

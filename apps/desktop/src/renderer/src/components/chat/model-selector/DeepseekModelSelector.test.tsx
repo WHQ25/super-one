@@ -64,7 +64,7 @@ function seedStore(resources: { models: ModelOption[] } | null): void {
       acp: null,
       opencode: null,
       cursor: null,
-      deepseek: resources,
+      dsh: resources,
     },
     setSelectedModel: realSetSelectedModel,
     setSelectedEffort: realSetSelectedEffort,

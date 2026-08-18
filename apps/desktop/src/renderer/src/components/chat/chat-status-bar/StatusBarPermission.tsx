@@ -33,7 +33,7 @@ export function StatusBarPermission({
   if (activeProvider === 'cursor') {
     return <CursorPermissionSelector compact={compactIndicators} />
   }
-  if (activeProvider === 'deepseek') {
+  if (activeProvider === 'dsh') {
     return <DeepseekPermissionSelector compact={compactIndicators} />
   }
   return <PermissionModeSelector compact={compactIndicators} />

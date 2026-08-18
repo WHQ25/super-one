@@ -49,6 +49,11 @@ const RUNTIME_SPECS: Record<
     failReason:
       'cursor runtime unavailable: install @cursor/sdk and set CURSOR_API_KEY (or enable harness cursor)',
   },
+  dsh: {
+    catalogId: 'dsh',
+    okReason: 'embedded DeepSeek Harness runtime available',
+    failReason: 'DeepSeek Harness runtime unavailable in this host build',
+  },
 }
 
 /**
@@ -204,7 +209,8 @@ function isAuthSatisfied(
   if (process.env.SUPERONE_HARNESS_MARK_READY === '1') {
     return { ok: true, reason: 'SUPERONE_HARNESS_MARK_READY' }
   }
-  const defRequiresAuth = id === 'claude' || id === 'codex' || id === 'cursor'
+  const defRequiresAuth =
+    id === 'claude' || id === 'codex' || id === 'cursor' || id === 'dsh'
   if (!defRequiresAuth) {
     return { ok: true, reason: 'external harness does not require SuperOne provider auth' }
   }
@@ -215,6 +221,12 @@ function isAuthSatisfied(
 
   // Bundled SDK / env-pinned binary implies host credentials in $HOME.
   if (deps.resolver.isRunnableWithoutCatalog(id)) {
+    if (id === 'dsh') {
+      return {
+        ok: false,
+        reason: 'needs_auth: add a DeepSeek credential or set DEEPSEEK_API_KEY',
+      }
+    }
     if (id === 'cursor') {
       // SDK loadable alone is not auth — require key via auth probe or env.
       if (resolveCursorApiKeyPlain()) {

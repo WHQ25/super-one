@@ -362,6 +362,24 @@ describe('app-settings-service', () => {
       expect(saved.secondaryHarness).toEqual({ provider: 'claude', acpAgentId: null })
     })
 
+    it('round-trips Cursor and dsh in harnessOrder', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        harnessOrder: ['claude', 'codex'],
+      }))
+      const expectedOrder = ['dsh', 'cursor', 'opencode', 'claude', 'codex']
+      const saved = saveAppSettings({ harnessOrder: expectedOrder })
+
+      expect(saved.harnessOrder).toEqual(expectedOrder)
+      expect(saved.suggestionHarness).toEqual({ provider: 'dsh', acpAgentId: null })
+      expect(saved.secondaryHarness).toEqual({ provider: 'cursor', acpAgentId: null })
+
+      mocks.readFileSync.mockReturnValue(JSON.stringify(saved))
+      const reread = readAppSettings()
+      expect(reread.harnessOrder).toEqual(expectedOrder)
+      expect(reread.suggestionHarness).toEqual({ provider: 'dsh', acpAgentId: null })
+      expect(reread.secondaryHarness).toEqual({ provider: 'cursor', acpAgentId: null })
+    })
+
     it('moves pins within harnessOrder when default/secondary are patched', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         harnessOrder: ['claude', 'codex', 'acp:grok-build'],

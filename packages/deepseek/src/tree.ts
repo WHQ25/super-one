@@ -8,6 +8,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import * as LlmDeepseek from '@deepseek-ai/dsh-llm-deepseek'
+import type { DeepSeekCatalogModel } from '@deepseek-ai/dsh-llm-deepseek'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
 import { createCredentialPlugin, type CredentialLookup } from './credentials'
@@ -34,7 +35,7 @@ export interface DeepseekTreeOptions {
 }
 
 export interface DeepseekAdapterOptions {
-  models: Array<{ id: string; contextWindow?: number }>
+  models: readonly DeepSeekCatalogModel[]
   thinking?: 'enabled' | 'disabled'
   /** Credential reference name resolved through the credential seam per request. */
   apiKeyEnv?: string

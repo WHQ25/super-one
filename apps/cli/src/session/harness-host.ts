@@ -55,6 +55,7 @@ export const cliHarnessResolver: HarnessRuntimeResolver = {
     if (id === 'codex') return isCodexBinaryOverrideRunnable()
     if (id === 'acp-grok') return envBinaryExists('SUPERONE_ACP_BINARY')
     if (id === 'cursor') return isCursorSdkAvailable()
+    if (id === 'dsh') return false
     return envBinaryExists('SUPERONE_OPENCODE_BINARY')
   },
 

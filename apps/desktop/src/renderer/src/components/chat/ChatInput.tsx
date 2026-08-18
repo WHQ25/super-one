@@ -62,6 +62,7 @@ import { chatInputAPI } from './chat-input-api'
 
 export { chatInputAPI } from './chat-input-api'
 
+const EMPTY_DEEPSEEK_SLASH_COMMANDS: SlashCommandInfo[] = []
 
 export function ChatInput() {
     const { t } = useTranslation()
@@ -361,7 +362,7 @@ export function ChatInput() {
       return [...host, ...fromFs]
     }, [t, cursorFsSlashItems])
 
-    // Never fall through to project-level Claude slashCommands/skills for ACP.
+    // Each harness owns an explicit catalog and can never inherit Claude entries.
     const activeSlashCommands = useMemo(
       () => resolveSlashCommandsForProvider(activeProviderForResources, {
         claude: slashCommands,
@@ -369,6 +370,7 @@ export function ChatInput() {
         acp: acpSlashCommands,
         opencode: openCodeSlashCommands,
         cursor: cursorSlashCommands,
+        dsh: EMPTY_DEEPSEEK_SLASH_COMMANDS,
       }),
       [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands],
     )

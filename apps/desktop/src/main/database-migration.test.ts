@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const dbMock = vi.hoisted(() => {
   const exec = vi.fn()
+  const sessionProviderSeedRun = vi.fn()
   const pragma = vi.fn((source: string) => {
     if (source === 'foreign_key_check') return []
     if (source === 'foreign_keys') return 1
@@ -47,6 +48,9 @@ const dbMock = vi.hoisted(() => {
     if (sql === 'SELECT * FROM api_providers WHERE agent_configs = \'{}\'') {
       return { all: () => [] }
     }
+    if (sql.includes('INSERT OR IGNORE INTO session_providers')) {
+      return { all: () => [], get: () => undefined, run: sessionProviderSeedRun }
+    }
     return { all: () => [], get: () => undefined, run: vi.fn() }
   })
   // better-sqlite3's transaction wrapper: calling the returned function runs
@@ -55,7 +59,7 @@ const dbMock = vi.hoisted(() => {
     const run = () => fn()
     return Object.assign(run, { immediate: run, deferred: run, exclusive: run })
   })
-  return { exec, pragma, prepare, transaction }
+  return { exec, pragma, prepare, transaction, sessionProviderSeedRun }
 })
 
 const DatabaseCtor = vi.hoisted(() => vi.fn(function MockDatabase() {
@@ -77,6 +81,7 @@ describe('database migration', () => {
     dbMock.exec.mockClear()
     dbMock.pragma.mockClear()
     dbMock.prepare.mockClear()
+    dbMock.sessionProviderSeedRun.mockClear()
   })
 
   it('adds last_user_message_at before creating its index on legacy databases', async () => {
@@ -130,7 +135,7 @@ describe('database migration', () => {
     expect(execSql).toContain('UNIQUE(credential_hash, sender_session_id, client_message_id)')
   })
 
-  it('seeds base providers (claude-base, codex-base, acp-base)', async () => {
+  it('seeds every base provider including dsh-base', async () => {
     const { getDb } = await import('./database')
     getDb()
 
@@ -139,6 +144,14 @@ describe('database migration', () => {
       sql.includes('INSERT OR IGNORE INTO session_providers') || sql.includes('INSERT INTO session_providers')
     )
     expect(seedStmt).toBeDefined()
+    expect(dbMock.sessionProviderSeedRun).toHaveBeenCalledWith(
+      'dsh-base',
+      'dsh',
+      'DeepSeek (Base)',
+      '{}',
+      expect.any(String),
+      expect.any(String),
+    )
   })
 
   it('adds provider_id and provider_session_id to sessions, plus new indexes', async () => {

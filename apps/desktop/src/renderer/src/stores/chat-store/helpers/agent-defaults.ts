@@ -60,7 +60,7 @@ export function applySessionAgentDefaults(
     if (sel.reasoningEffort !== session.selectedCodexReasoningEffort) patch.selectedCodexReasoningEffort = sel.reasoningEffort
     return patch
   }
-  if (provider === 'acp' || provider === 'opencode' || provider === 'cursor' || provider === 'deepseek') return {}
+  if (provider === 'acp' || provider === 'opencode' || provider === 'cursor' || provider === 'dsh') return {}
   if (!session.selectedModel) {
     const draft = { ...session }
     applyDefaultModel(draft, claudeModels)

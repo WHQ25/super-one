@@ -104,7 +104,7 @@ function resetStore() {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, deepseek: null },
+    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, dsh: null },
     initializedHarnesses: new Set(),
     _bashOutputs: {},
   })
@@ -125,9 +125,9 @@ function setDeepseekResources(models: ModelOption[]) {
   useChatStore.setState((s) => ({
     harnessResources: {
       ...s.harnessResources,
-      deepseek: { models },
+      dsh: { models },
     },
-    initializedHarnesses: new Set([...s.initializedHarnesses, 'deepseek']),
+    initializedHarnesses: new Set([...s.initializedHarnesses, 'dsh']),
   }))
 }
 
@@ -727,14 +727,14 @@ describe('setPreferredProviderImpl', () => {
       selectedModel: 'claude-sonnet-4',
     })
 
-    useChatStore.getState().setPreferredProvider('deepseek')
+    useChatStore.getState().setPreferredProvider('dsh')
 
     await vi.waitFor(() => {
       expect(activeSession().selectedModel).toBe('deepseek-v4-pro')
     })
     expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
       PATH,
-      expect.objectContaining({ provider: 'deepseek', model: 'deepseek-v4-pro' }),
+      expect.objectContaining({ provider: 'dsh', model: 'deepseek-v4-pro' }),
     )
     expect(mockWindowAgent.setSessionForeground).toHaveBeenCalled()
   })
@@ -747,7 +747,7 @@ describe('setPreferredProviderImpl', () => {
     ])
     patchSession({ sessionProvider: 'claude', preferredProvider: 'claude' })
 
-    useChatStore.getState().setPreferredProvider('deepseek')
+    useChatStore.getState().setPreferredProvider('dsh')
     useChatStore.getState().setSelectedModel('deepseek-reasoner')
 
     await vi.waitFor(() => {

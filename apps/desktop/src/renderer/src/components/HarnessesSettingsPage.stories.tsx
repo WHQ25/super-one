@@ -99,6 +99,13 @@ function baseCatalog(overrides: Partial<Record<string, Partial<CatalogRow>>> = {
       runtimeSource: 'none',
       requiresAuth: true,
     },
+    {
+      id: 'dsh',
+      enabled: false,
+      state: 'disabled',
+      runtimeSource: 'managed',
+      requiresAuth: true,
+    },
   ]
   return rows.map((row) => ({ ...row, ...overrides[row.id] }))
 }

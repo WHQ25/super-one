@@ -11,7 +11,7 @@ describe('suggestionHarnessKey', () => {
     expect(suggestionHarnessKey('claude')).toBe('claude')
     expect(suggestionHarnessKey('codex')).toBe('codex')
     expect(suggestionHarnessKey('opencode')).toBe('opencode')
-    expect(suggestionHarnessKey('deepseek')).toBe('deepseek')
+    expect(suggestionHarnessKey('dsh')).toBe('dsh')
   })
 
   it('keys ACP agents per agent id', () => {
@@ -184,18 +184,18 @@ describe('orderSuggestionHarnesses', () => {
 
   it('includes deepseek only when includeDeepseek is true', () => {
     const off = orderSuggestionHarnesses({
-      ranks: [{ key: 'deepseek', provider: 'deepseek', acpAgentId: null, sessionCount: 99 }],
+      ranks: [{ key: 'dsh', provider: 'dsh', acpAgentId: null, sessionCount: 99 }],
       acpAgents: [],
       includeDeepseek: false,
     })
     expect(off.map((o) => o.key)).toEqual(['claude', 'codex'])
 
     const on = orderSuggestionHarnesses({
-      ranks: [{ key: 'deepseek', provider: 'deepseek', acpAgentId: null, sessionCount: 99 }],
+      ranks: [{ key: 'dsh', provider: 'dsh', acpAgentId: null, sessionCount: 99 }],
       acpAgents: [],
       includeDeepseek: true,
     })
-    expect(on.map((o) => o.key)).toEqual(['deepseek', 'claude', 'codex'])
+    expect(on.map((o) => o.key)).toEqual(['dsh', 'claude', 'codex'])
   })
 
   it('omits claude/codex when include flags are false', () => {

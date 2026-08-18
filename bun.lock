@@ -432,6 +432,7 @@
       "name": "@superone/ui",
       "version": "0.0.0",
       "dependencies": {
+        "@lobehub/icons": "^5.0.1",
         "clsx": "^2.1.1",
         "tailwind-merge": "^3.4.0",
       },

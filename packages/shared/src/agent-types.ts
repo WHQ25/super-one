@@ -2192,7 +2192,7 @@ export interface HarnessResourcesMap {
   acp: AcpResources
   opencode: OpenCodeResources
   cursor: CursorResources
-  deepseek: DeepseekResources
+  dsh: DeepseekResources
 }
 
 export type HarnessId = keyof HarnessResourcesMap
@@ -2206,7 +2206,7 @@ export interface StartupData {
     acp: AcpResources | null
     opencode?: OpenCodeResources | null
     cursor?: CursorResources | null
-    deepseek?: DeepseekResources | null
+    dsh?: DeepseekResources | null
   }
   sandboxCapability: SandboxCapability
   appVersion: string

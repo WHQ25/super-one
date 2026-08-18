@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { SCHEMA_GENERATION, SCHEMA_SQL } from './schema'
+import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 
 export type NodeDatabase = Database.Database
 
@@ -316,11 +317,9 @@ CREATE INDEX IF NOT EXISTS idx_session_providers_harness ON session_providers(ha
       (id, harness_id, name, is_base, config_json, created_at, updated_at)
     VALUES (?, ?, ?, 1, ?, ?, ?)
   `)
-  stmt.run('claude-base', 'claude', 'Claude (Base)', '{}', now, now)
-  stmt.run('codex-base', 'codex', 'Codex (Base)', '{}', now, now)
-  stmt.run('acp-base', 'acp', 'Others (ACP)', JSON.stringify({ agentId: 'grok-build' }), now, now)
-  stmt.run('opencode-base', 'opencode', 'OpenCode (Base)', '{}', now, now)
-  stmt.run('cursor-base', 'cursor', 'Cursor (Base)', '{}', now, now)
+  for (const seed of BASE_SESSION_PROVIDER_DEFINITIONS) {
+    stmt.run(seed.id, seed.harnessId, seed.name, JSON.stringify(seed.config), now, now)
+  }
 }
 
 export function getMeta(db: NodeDatabase, key: string): string | null {

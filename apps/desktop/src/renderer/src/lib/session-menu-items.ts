@@ -23,7 +23,7 @@ export function providerLabelFor(session: SessionHistoryEntry): string {
   }
   if (session.provider === 'opencode') return 'OpenCode'
   if (session.provider === 'cursor') return 'Cursor'
-  if (session.provider === 'deepseek') return 'DeepSeek'
+  if (session.provider === 'dsh') return 'DeepSeek'
   return 'Claude Code'
 }
 

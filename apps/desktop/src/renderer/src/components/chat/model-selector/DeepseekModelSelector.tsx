@@ -18,7 +18,7 @@ const EFFORT_LABELS: Record<EffortLevel, string> = {
 }
 
 export function DeepseekModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
-  const resources = useChatStore((state) => state.harnessResources.deepseek)
+  const resources = useChatStore((state) => state.harnessResources.dsh)
   const selectedModel = useActiveSession((state) => state.selectedModel)
   const selectedEffort = useActiveSession((state) => state.selectedEffort)
   const setSelectedModel = useChatStore((state) => state.setSelectedModel)

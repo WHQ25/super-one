@@ -62,6 +62,10 @@ describe('DeepseekBackend', () => {
     approvalRouters.clear()
   })
 
+  it('uses the canonical dsh harness id', () => {
+    expect(new DeepseekBackend().kind).toBe('dsh')
+  })
+
   it('reports the minted provider session id so cold resume can find the dsh log', async () => {
     installFakeAgent()
     const backend = new DeepseekBackend()

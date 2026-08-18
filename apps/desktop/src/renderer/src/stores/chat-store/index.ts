@@ -387,7 +387,7 @@ const harnessHandlers: HarnessHandlerMap = {
     connect: (opts) => window.app.connectCursor(opts?.force),
     apply: (s, r) => applyCursorResources(s, r),
   },
-  deepseek: {
+  dsh: {
     // Live catalog from the embedded dsh tree (`ctx.llm`), no disk cache (D7).
     connect: () => window.app.connectDeepseek(),
     apply: (s, r) => applyDeepseekResources(s, r),
@@ -421,7 +421,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   isOpen: false,
   corner: 'br',
   cursorApiKeyPromptOpen: false,
-  harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, deepseek: null },
+  harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, dsh: null },
   initializedHarnesses: new Set<HarnessId>(),
   claudeResourcesLoading: false,
   disabledSkills: [],

@@ -43,7 +43,7 @@ interface PendingApproval {
  * session contract.
  */
 export class DeepseekBackend implements SessionBackend {
-  readonly kind: HarnessId = 'deepseek'
+  readonly kind: HarnessId = 'dsh'
 
   private agent: DeepseekAgentHandle | null = null
   private startPromise: Promise<DeepseekAgentHandle> | null = null

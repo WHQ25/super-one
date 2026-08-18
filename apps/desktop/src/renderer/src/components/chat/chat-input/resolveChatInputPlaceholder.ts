@@ -2,6 +2,33 @@ import type { TFunction } from 'i18next'
 import type { PermissionMode } from '@superone/shared/agent-types'
 import type { ChatProvider } from '@/stores/chat'
 
+const PLACEHOLDER_KEYS = {
+  claude: {
+    ask: 'chat.placeholder.claudeAsk',
+    plan: 'chat.placeholder.claudePlan',
+  },
+  codex: {
+    ask: 'chat.placeholder.codexAsk',
+    plan: 'chat.placeholder.codexPlan',
+  },
+  acp: {
+    ask: 'chat.placeholder.acpAsk',
+    plan: 'chat.placeholder.acpPlan',
+  },
+  opencode: {
+    ask: 'chat.placeholder.openCodeAsk',
+    plan: 'chat.placeholder.openCodePlan',
+  },
+  cursor: {
+    ask: 'chat.placeholder.cursorAsk',
+    plan: 'chat.placeholder.cursorPlan',
+  },
+  dsh: {
+    ask: 'chat.placeholder.deepseekAsk',
+    plan: 'chat.placeholder.deepseekPlan',
+  },
+} as const satisfies Record<ChatProvider, { ask: string; plan: string }>
+
 export function resolveChatInputPlaceholder(
   t: TFunction,
   options: {
@@ -11,19 +38,14 @@ export function resolveChatInputPlaceholder(
     acpAgentName: string
   },
 ): string {
-  if (options.codexPlanMode) return t('chat.placeholder.codexPlan')
-  if (options.provider === 'codex') return t('chat.placeholder.codexAsk')
+  const mode = options.provider === 'codex'
+    ? (options.codexPlanMode ? 'plan' : 'ask')
+    : (options.permissionMode === 'plan' ? 'plan' : 'ask')
+  const key = PLACEHOLDER_KEYS[options.provider][mode]
+
   if (options.provider === 'acp') {
-    return t(
-      options.permissionMode === 'plan' ? 'chat.placeholder.acpPlan' : 'chat.placeholder.acpAsk',
-      { agent: options.acpAgentName },
-    )
+    return t(key, { agent: options.acpAgentName })
   }
-  if (options.provider === 'opencode') {
-    return t(options.permissionMode === 'plan' ? 'chat.placeholder.openCodePlan' : 'chat.placeholder.openCodeAsk')
-  }
-  if (options.provider === 'cursor') {
-    return t(options.permissionMode === 'plan' ? 'chat.placeholder.cursorPlan' : 'chat.placeholder.cursorAsk')
-  }
-  return t(options.permissionMode === 'plan' ? 'chat.placeholder.claudePlan' : 'chat.placeholder.claudeAsk')
+
+  return t(key)
 }

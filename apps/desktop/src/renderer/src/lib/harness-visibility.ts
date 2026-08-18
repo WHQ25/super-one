@@ -30,7 +30,7 @@ export function catalogEntryOn(
  */
 export function isCatalogHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
-  id: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'deepseek',
+  id: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'dsh',
 ): boolean {
   if (catalog == null) return false
   return catalogEntryOn(catalog, id)
@@ -58,7 +58,7 @@ export function catalogIdForSessionProvider(
   provider: string,
   acpAgentId?: string | null,
 ): string | null {
-  if (provider === 'claude' || provider === 'codex' || provider === 'opencode' || provider === 'cursor' || provider === 'deepseek') {
+  if (provider === 'claude' || provider === 'codex' || provider === 'opencode' || provider === 'cursor' || provider === 'dsh') {
     return provider
   }
   if (provider === 'acp') {
@@ -123,5 +123,5 @@ export function isCursorHarnessEnabled(
 export function isDeepseekHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
 ): boolean {
-  return isCatalogHarnessEnabled(catalog, 'deepseek')
+  return isCatalogHarnessEnabled(catalog, 'dsh')
 }

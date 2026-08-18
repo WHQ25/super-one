@@ -16,7 +16,7 @@ const allOff = [
   { id: 'codex', enabled: false, state: 'disabled' },
   { id: 'opencode', enabled: false, state: 'disabled' },
   { id: 'acp-grok', enabled: false, state: 'disabled' },
-  { id: 'deepseek', enabled: false, state: 'disabled' },
+  { id: 'dsh', enabled: false, state: 'disabled' },
 ]
 
 const claudeOn = [
@@ -24,7 +24,7 @@ const claudeOn = [
   { id: 'codex', enabled: false, state: 'disabled' },
   { id: 'opencode', enabled: false, state: 'disabled' },
   { id: 'acp-grok', enabled: true, state: 'ready' },
-  { id: 'deepseek', enabled: true, state: 'ready' },
+  { id: 'dsh', enabled: true, state: 'ready' },
 ]
 
 describe('harness-visibility', () => {

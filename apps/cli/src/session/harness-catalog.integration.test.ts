@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { AuthScope, HarnessInstallationStatus } from '@superone/shared/environment'
+import {
+  NODE_HARNESS_IDS,
+  type AuthScope,
+  type HarnessInstallationStatus,
+} from '@superone/shared/environment'
 import { startNodeRuntime, type NodeRuntime } from '../runtime'
 import { connectAuthedRpc } from '../test/ws-rpc'
 import { PHASE4_HARNESS_IDS } from './harness-runners'
@@ -175,8 +179,8 @@ describe('Harness catalog (Stage 1)', () => {
     expect(desc.capabilities.harnessIds).toEqual(withRunnableOverrides([]))
 
     const list = (await client.rpc('harness.list')) as HarnessInstallationStatus[]
-    expect(list).toHaveLength(5)
-    expect(list.map((h) => h.id).sort()).toEqual(['acp-grok', 'claude', 'codex', 'cursor', 'opencode'])
+    expect(list).toHaveLength(NODE_HARNESS_IDS.length)
+    expect(list.map((h) => h.id).sort()).toEqual([...NODE_HARNESS_IDS].sort())
     expect(list.every((h) => h.enabled === false && h.state === 'disabled')).toBe(true)
     expect(JSON.stringify(list)).not.toMatch(/password|token|secret_ref|secretRef/i)
 

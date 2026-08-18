@@ -1,4 +1,5 @@
 import type { HarnessId } from '@superone/shared/session-types'
+import { NODE_HARNESS_DEFINITIONS } from '@superone/shared/environment/harness-installation'
 import { createSimulatedTurnRunner, type TurnRunner } from '@superone/runtime/session'
 import { createAcpTurnRunner, createSimulatedAcpTurnRunner } from '@superone/acp'
 import {
@@ -37,10 +38,10 @@ export function createHarnessRunner(harnessId: HarnessId, opts?: { delayMs?: num
       return createSimulatedOpenCodeTurnRunner({ delayMs })
     case 'cursor':
       return createSimulatedCursorTurnRunner({ delayMs })
-    case 'deepseek':
+    case 'dsh':
       return createSimulatedTurnRunner({
         delayMs,
-        chunks: ['[deepseek] ', 'done'],
+        chunks: ['[dsh] ', 'done'],
       })
     default: {
       const _exhaustive: never = harnessId
@@ -106,7 +107,9 @@ export function createAcpOpenCodeProductionRouter(opts?: {
  * Order matches NODE_HARNESS_DEFINITIONS → sessionHarnessId mapping
  * (acp-grok → acp).
  */
-export const PHASE4_HARNESS_IDS: HarnessId[] = ['claude', 'codex', 'opencode', 'cursor', 'acp']
+export const PHASE4_HARNESS_IDS: HarnessId[] = NODE_HARNESS_DEFINITIONS.map(
+  ({ sessionHarnessId }) => sessionHarnessId,
+)
 
 // Re-export for production turn runner wiring.
 export { createCursorTurnRunner }

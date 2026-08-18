@@ -27,8 +27,9 @@ describe('session-provider-store', () => {
   it('seeds base providers on ensure', () => {
     const store = openStore()
     const ids = store.list().map((p) => p.id).sort()
-    expect(ids).toEqual(['acp-base', 'claude-base', 'codex-base', 'cursor-base', 'opencode-base'])
+    expect(ids).toEqual(['acp-base', 'claude-base', 'codex-base', 'cursor-base', 'dsh-base', 'opencode-base'])
     expect(store.getBase('claude').isBase).toBe(true)
+    expect(store.getBase('dsh').isBase).toBe(true)
     expect(store.get('claude-base')?.name).toContain('Claude')
   })
 

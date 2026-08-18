@@ -35,6 +35,21 @@ describe('resolveChatInputPlaceholder', () => {
     })).toBe('chat.placeholder.cursorPlan')
   })
 
+  it('uses DeepSeek copy for normal and plan modes', () => {
+    expect(resolveChatInputPlaceholder(t, {
+      provider: 'dsh',
+      permissionMode: 'default',
+      codexPlanMode: false,
+      acpAgentName: '',
+    })).toBe('chat.placeholder.deepseekAsk')
+    expect(resolveChatInputPlaceholder(t, {
+      provider: 'dsh',
+      permissionMode: 'plan',
+      codexPlanMode: false,
+      acpAgentName: '',
+    })).toBe('chat.placeholder.deepseekPlan')
+  })
+
   it('keeps provider-specific Claude, Codex and ACP copy', () => {
     expect(resolveChatInputPlaceholder(t, {
       provider: 'claude',

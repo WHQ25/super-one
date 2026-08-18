@@ -1048,8 +1048,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     window.app.saveRemoteConfig(config)
   },
 
-  brandHues: { claude: null, codex: null, acp: null, opencode: null, cursor: null, deepseek: null },
-  tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {}, cursor: {}, deepseek: {} },
+  brandHues: { claude: null, codex: null, acp: null, opencode: null, cursor: null, dsh: null },
+  tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {}, cursor: {}, dsh: {} },
   harnessCatalog: null,
   refreshHarnessCatalog: async () => {
     try {
@@ -1109,7 +1109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           acp: settings.agentPreference.acp?.brandHue ?? null,
           opencode: null,
           cursor: null,
-          deepseek: null,
+          dsh: null,
         },
         tokenOverrides: {
           claude: settings.agentPreference.claude.tokenOverrides ?? {},
@@ -1117,7 +1117,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           acp: settings.agentPreference.acp?.tokenOverrides ?? {},
           opencode: {},
           cursor: {},
-          deepseek: {},
+          dsh: {},
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
         enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
@@ -1348,7 +1348,7 @@ if (typeof window !== 'undefined') {
         acp: acp?.brandHue ?? null,
         opencode: null,
         cursor: null,
-        deepseek: null,
+        dsh: null,
       },
       tokenOverrides: {
         claude: claude.tokenOverrides ?? {},
@@ -1356,7 +1356,7 @@ if (typeof window !== 'undefined') {
         acp: acp?.tokenOverrides ?? {},
         opencode: {},
         cursor: {},
-        deepseek: {},
+        dsh: {},
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],

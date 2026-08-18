@@ -14,6 +14,7 @@ import {
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest, type TerminalEvent } from '@superone/shared/agent-types'
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
@@ -1537,12 +1538,7 @@ export class AgentService {
   }
 
   private baseProviderIdForHarness(harnessId: HarnessId | undefined): string {
-    if (harnessId === 'codex') return 'codex-base'
-    if (harnessId === 'acp') return 'acp-base'
-    if (harnessId === 'opencode') return 'opencode-base'
-    if (harnessId === 'cursor') return 'cursor-base'
-    if (harnessId === 'deepseek') return 'deepseek-base'
-    return 'claude-base'
+    return baseSessionProviderId(harnessId ?? 'claude')
   }
 
   /**

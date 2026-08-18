@@ -106,7 +106,7 @@ export function HarnessPermissionPopover({
     // Claude offers every mode; OpenCode/DeepSeek only the subset their backends implement.
     const availableModes = harnessId === 'opencode'
       ? OPENCODE_PERMISSION_MODES
-      : harnessId === 'deepseek'
+      : harnessId === 'dsh'
         ? DEEPSEEK_PERMISSION_MODES
         : modes.map((mode) => mode.id)
     const active = modes.find((mode) => mode.id === value && availableModes.includes(mode.id)) ?? modes[0]

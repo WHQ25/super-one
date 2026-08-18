@@ -8,6 +8,6 @@ import type { ChatStore } from '../types'
  */
 export function applyDeepseekResources(state: ChatStore, resources: DeepseekResources): Partial<ChatStore> {
   return {
-    harnessResources: { ...state.harnessResources, deepseek: resources },
+    harnessResources: { ...state.harnessResources, dsh: resources },
   }
 }

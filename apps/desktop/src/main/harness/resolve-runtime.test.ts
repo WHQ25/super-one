@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { NODE_HARNESS_IDS } from '@superone/shared/environment/harness-installation'
 
 const harnessHome = { current: '' as string }
 let testDb: Database.Database | null = null
@@ -120,6 +121,20 @@ describe('resolveHarnessRuntime', () => {
     expect(resolved).toBe(bin)
   })
 
+  it('enables the in-process DeepSeek harness without mutating Grok', async () => {
+    const status = await enableDesktopHarness({ harnessId: 'dsh' })
+
+    expect(status).toMatchObject({
+      id: 'dsh',
+      enabled: true,
+      state: 'needs_auth',
+    })
+    expect(getHarnessManager().get('acp-grok')).toMatchObject({
+      enabled: false,
+      state: 'disabled',
+    })
+  })
+
   // Disabling a harness keeps its binary on disk so re-enabling stays instant,
   // but it must stop resolving: sessions on a disabled harness are read-only,
   // and that has to hold for mobile / automation turns too — not just for the
@@ -142,7 +157,7 @@ describe('resolveHarnessRuntime', () => {
   it('manager ensures harness_installations rows exist', () => {
     const m = getHarnessManager()
     const list = m.list()
-    expect(list.map((h) => h.id).sort()).toEqual(['acp-grok', 'claude', 'codex', 'cursor', 'opencode'])
+    expect(list.map((h) => h.id).sort()).toEqual([...NODE_HARNESS_IDS].sort())
     expect(list.every((h) => h.enabled === false && h.state === 'disabled')).toBe(true)
   })
 })

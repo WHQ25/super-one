@@ -38,7 +38,7 @@ function storeWithHarnessResources(): ChatStore {
 }
 
 describe('deepseek-handler', () => {
-  it('merges the bundle into harnessResources.deepseek without clobbering other harness entries', () => {
+  it('merges the bundle into harnessResources.dsh without clobbering other harness entries', () => {
     const resources: DeepseekResources = {
       models,
       permissionPresets: [{ id: 'default', name: 'Default' }],
@@ -52,7 +52,7 @@ describe('deepseek-handler', () => {
       acp: null,
       opencode: null,
       cursor: existingCursor,
-      deepseek: resources,
+      dsh: resources,
     })
     expect(patch.harnessResources?.claude).toBe(existingClaude)
     expect(patch.harnessResources?.cursor).toBe(existingCursor)

@@ -11,6 +11,7 @@
     "./lib/utils": "./src/lib/utils.ts"
   },
   "dependencies": {
+    "@lobehub/icons": "^5.0.1",
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.4.0"
   },

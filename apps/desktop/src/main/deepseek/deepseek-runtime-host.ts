@@ -1,34 +1,27 @@
-import { DeepseekRuntime, type ApprovalDecision, type DeepseekApprovalRequest } from '@superone/deepseek'
+import {
+  DeepseekRuntime,
+  type ApprovalDecision,
+  type DeepseekAdapterOptions,
+  type DeepseekApprovalRequest,
+} from '@superone/deepseek'
 import { app } from 'electron'
 import { join } from 'node:path'
 import log from '../logger'
-import { getCredentialDecrypted, listCredentials } from '../providers/credential-store'
-import { getPlatforms } from '../providers/registry'
+import { DEEPSEEK_CREDENTIAL_REF, resolveDeepseekApiKey } from './deepseek-credentials'
 
 /**
  * Credential reference the embedded adapter asks for. It is a *name*, never a
  * value: the credential seam resolves it out of SuperOne's store per request.
  */
-export const DEEPSEEK_CREDENTIAL_REF = 'DEEPSEEK_API_KEY'
+export { DEEPSEEK_CREDENTIAL_REF } from './deepseek-credentials'
 
 /** Route defaults shared by the backend and the connect probe. */
 export const DEEPSEEK_DEFAULT_PROVIDER = 'deepseek-official'
 export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
-
-/** Newest DeepSeek-brand credential in SuperOne's store, decrypted. */
-function findDeepseekSecret(): string | undefined {
-  const platformIds = new Set(
-    getPlatforms().filter((platform) => platform.brand === 'deepseek').map((platform) => platform.id),
-  )
-  for (const credential of listCredentials()) {
-    if (!platformIds.has(credential.platformId)) continue
-    const decrypted = getCredentialDecrypted(credential.id)
-    if (decrypted?.secret) return decrypted.secret
-    // A key stored as an env reference stays in the environment by design.
-    if (decrypted?.secretEnv) return process.env[decrypted.secretEnv] || undefined
-  }
-  return process.env[DEEPSEEK_CREDENTIAL_REF] || undefined
-}
+export const DEEPSEEK_MODEL_CATALOG = [
+  { id: DEEPSEEK_DEFAULT_MODEL, name: 'DeepSeek V4 Pro', contextWindow: 128_000 },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', contextWindow: 128_000 },
+] as const satisfies DeepseekAdapterOptions['models']
 
 /**
  * One embedded dsh Cordis tree per app lifetime, shared by every DeepSeek
@@ -56,13 +49,10 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
       persistenceRoot: join(app.getPath('userData'), 'deepseek-sessions'),
       // Resolved per request, so re-binding a key in SuperOne settings reaches
       // the next turn without a restart — and no secret enters process.env.
-      credentialLookup: (ref) => (ref === DEEPSEEK_CREDENTIAL_REF ? findDeepseekSecret() : undefined),
+      credentialLookup: (ref) => (ref === DEEPSEEK_CREDENTIAL_REF ? resolveDeepseekApiKey() : undefined),
       deepseekAdapter: {
         apiKeyEnv: DEEPSEEK_CREDENTIAL_REF,
-        models: [
-          { id: DEEPSEEK_DEFAULT_MODEL, contextWindow: 128_000 },
-          { id: 'deepseek-v4-flash', contextWindow: 128_000 },
-        ],
+        models: DEEPSEEK_MODEL_CATALOG,
       },
       onApproval: async (request) => {
         const decision = approvalRouters.get(request.sessionId)?.(request)

@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { HarnessId } from '@superone/shared/session-types'
+import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type { SqliteDatabase } from '../sqlite'
 
 export interface SessionProviderRecord {
@@ -28,15 +29,9 @@ interface SessionProviderRow {
   updated_at: string
 }
 
-const VALID_HARNESS_IDS = new Set<string>(['claude', 'codex', 'acp', 'opencode', 'cursor'])
-
-const BASE_SEEDS: Array<{ id: string; harnessId: HarnessId; name: string; config: unknown }> = [
-  { id: 'claude-base', harnessId: 'claude', name: 'Claude (Base)', config: {} },
-  { id: 'codex-base', harnessId: 'codex', name: 'Codex (Base)', config: {} },
-  { id: 'acp-base', harnessId: 'acp', name: 'Others (ACP)', config: { agentId: 'grok-build' } },
-  { id: 'opencode-base', harnessId: 'opencode', name: 'OpenCode (Base)', config: {} },
-  { id: 'cursor-base', harnessId: 'cursor', name: 'Cursor (Base)', config: {} },
-]
+const VALID_HARNESS_IDS = new Set<string>(
+  BASE_SESSION_PROVIDER_DEFINITIONS.map((provider) => provider.harnessId),
+)
 
 function assertHarnessId(raw: string): HarnessId {
   if (!VALID_HARNESS_IDS.has(raw)) {
@@ -107,7 +102,7 @@ function seedBaseSessionProviders(db: SqliteDatabase): void {
       (id, harness_id, name, is_base, config_json, created_at, updated_at)
     VALUES (?, ?, ?, 1, ?, ?, ?)
   `)
-  for (const seed of BASE_SEEDS) {
+  for (const seed of BASE_SESSION_PROVIDER_DEFINITIONS) {
     stmt.run(seed.id, seed.harnessId, seed.name, JSON.stringify(seed.config), now, now)
   }
 }

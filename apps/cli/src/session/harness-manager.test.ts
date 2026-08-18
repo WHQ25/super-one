@@ -4,6 +4,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openNodeDatabase } from '../db/database'
 import { HarnessManager } from './harness-manager'
+import {
+  NODE_HARNESS_DEFINITIONS,
+  NODE_HARNESS_IDS,
+} from '@superone/shared/environment/harness-installation'
 
 const dirs: string[] = []
 
@@ -22,7 +26,7 @@ describe('HarnessManager', () => {
   it('defaults every first-party harness to disabled', () => {
     const { manager, db } = bootManager()
     const list = manager.list()
-    expect(list).toHaveLength(5)
+    expect(list).toHaveLength(NODE_HARNESS_IDS.length)
     expect(list.every((s) => !s.enabled && s.state === 'disabled')).toBe(true)
     expect(manager.readySessionHarnessIds()).toEqual([])
     expect(manager.isSessionHarnessRunnable('codex')).toBe(false)
@@ -147,7 +151,9 @@ describe('HarnessManager', () => {
       const db = openNodeDatabase(path)
       const manager = new HarnessManager(db)
       manager.enableSimulatedOverlay()
-      expect(manager.readySessionHarnessIds()).toEqual(['claude', 'codex', 'opencode', 'cursor', 'acp'])
+      expect(manager.readySessionHarnessIds()).toEqual(
+        NODE_HARNESS_DEFINITIONS.map(({ sessionHarnessId }) => sessionHarnessId),
+      )
       db.close()
     }
     {

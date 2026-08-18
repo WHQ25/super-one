@@ -89,7 +89,7 @@ function ProviderIcon({
   }
   if (provider === 'opencode') return <OpenCode size={size} />
   if (provider === 'cursor') return <Cursor size={size} />
-  if (provider === 'deepseek') return <DeepseekSessionIcon status="default" size={size} />
+  if (provider === 'dsh') return <DeepseekSessionIcon status="default" size={size} />
   return <ClaudeSessionIcon status="default" size={size} />
 }
 
@@ -145,10 +145,10 @@ export function ProviderSelector({
   }, [harnessCatalog, initializeHarness])
 
   useEffect(() => {
-    if (!isCatalogHarnessEnabled(harnessCatalog, 'deepseek')) return
+    if (!isCatalogHarnessEnabled(harnessCatalog, 'dsh')) return
     if (deepseekHarnessBootstrapped) return
     deepseekHarnessBootstrapped = true
-    void initializeHarness('deepseek')
+    void initializeHarness('dsh')
   }, [harnessCatalog, initializeHarness])
 
   useEffect(() => {
@@ -337,8 +337,8 @@ export function ProviderSelector({
       if (provider === 'cursor') {
         return isCatalogHarnessEnabled(harnessCatalog, 'cursor')
       }
-      if (provider === 'deepseek') {
-        return isCatalogHarnessEnabled(harnessCatalog, 'deepseek')
+      if (provider === 'dsh') {
+        return isCatalogHarnessEnabled(harnessCatalog, 'dsh')
       }
       if (provider === 'acp' && agentId) {
         if (isGrokAcpAgent(agentId)) {
@@ -408,7 +408,7 @@ export function ProviderSelector({
       includeOpenCode:
         isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled,
       includeCursor: isCatalogHarnessEnabled(harnessCatalog, 'cursor'),
-      includeDeepseek: isCatalogHarnessEnabled(harnessCatalog, 'deepseek'),
+      includeDeepseek: isCatalogHarnessEnabled(harnessCatalog, 'dsh'),
       harnessOrder,
       defaultHarness: suggestionHarness === undefined ? null : suggestionHarness,
       secondaryHarness,
@@ -525,7 +525,7 @@ export function ProviderSelector({
           {preferredProvider !== 'acp' &&
             preferredProvider !== 'opencode' &&
             preferredProvider !== 'cursor' &&
-            preferredProvider !== 'deepseek' && <ActiveProviderHint />}
+            preferredProvider !== 'dsh' && <ActiveProviderHint />}
           {fixedHarness && orderedHarnesses.length > 1 ? (
             <Tabs
               value={tabsValue}
@@ -680,7 +680,7 @@ function ActiveProviderHint() {
     preferredProvider === 'acp' ||
     preferredProvider === 'opencode' ||
     preferredProvider === 'cursor' ||
-    preferredProvider === 'deepseek'
+    preferredProvider === 'dsh'
   ) return null
 
   const effective = resolveEffective(

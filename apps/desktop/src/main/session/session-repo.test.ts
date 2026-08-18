@@ -381,6 +381,12 @@ describe('session-repo', () => {
       expect(fake.sessionsRows.get('sess-acp')?.provider_id).toBe('acp-base')
     })
 
+    it('maps dsh-* providerId to legacy provider=dsh', () => {
+      insertSessionRecord({ id: 'sess-dsh', projectPath: '/tmp/proj', providerId: 'dsh-base' })
+      expect(fake.sessionsRows.get('sess-dsh')?.provider).toBe('dsh')
+      expect(fake.sessionsRows.get('sess-dsh')?.provider_id).toBe('dsh-base')
+    })
+
     it('throws when project is not in recent-folders', () => {
       getProjectIdMock.mockReturnValue(null)
       expect(() => insertSessionRecord({ id: 'x', projectPath: '/missing', providerId: 'claude-base' })).toThrow(/Project not found/)
@@ -410,6 +416,11 @@ describe('session-repo', () => {
       const rec = getSessionRecord('a1')
       expect(rec?.harnessId).toBe('acp')
       expect(rec?.providerId).toBe('acp-base')
+    })
+
+    it('derives harnessId=dsh from the dsh provider id', () => {
+      insertSessionRecord({ id: 'd1', projectPath: '/tmp/proj', providerId: 'dsh-base' })
+      expect(getSessionRecord('d1')?.harnessId).toBe('dsh')
     })
   })
 

@@ -3,6 +3,7 @@ import { AcpModeSelector } from '../AcpModeSelector'
 import { AcpPermissionSelector } from '../AcpPermissionSelector'
 import { CodexPermissionSelector } from '../CodexPermissionSelector'
 import { CursorPermissionSelector } from '../CursorPermissionSelector'
+import { DeepseekPermissionSelector } from '../DeepseekPermissionSelector'
 import { OpenCodePermissionSelector } from '../OpenCodePermissionSelector'
 import { PermissionModeSelector } from '../PermissionModeSelector'
 
@@ -31,6 +32,9 @@ export function StatusBarPermission({
   }
   if (activeProvider === 'cursor') {
     return <CursorPermissionSelector compact={compactIndicators} />
+  }
+  if (activeProvider === 'deepseek') {
+    return <DeepseekPermissionSelector compact={compactIndicators} />
   }
   return <PermissionModeSelector compact={compactIndicators} />
 }

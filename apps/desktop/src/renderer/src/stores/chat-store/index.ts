@@ -388,8 +388,8 @@ const harnessHandlers: HarnessHandlerMap = {
     apply: (s, r) => applyCursorResources(s, r),
   },
   deepseek: {
-    // P0: empty bundle; P1 pulls live model catalogs from the embedded dsh tree.
-    connect: async () => ({ models: [] }),
+    // Live catalog from the embedded dsh tree (`ctx.llm`), no disk cache (D7).
+    connect: () => window.app.connectDeepseek(),
     apply: (s, r) => applyDeepseekResources(s, r),
   },
 }

@@ -97,6 +97,9 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
     expect(types).toContain('content_delta')
     expect(types).toContain('message_usage')
     expect(types).toContain('message_complete')
+    // The context ring feeds off this pair (shared usage reducer contract).
+    const usage = events.find((event) => event.type === 'message_usage')
+    expect(usage && 'contextTokens' in usage ? usage.contextTokens : undefined).toBeGreaterThan(0)
     const text = events
       .filter((event) => event.type === 'content_delta')
       .map((event) => (event.delta.type === 'text' ? event.delta.text : ''))

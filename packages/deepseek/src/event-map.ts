@@ -114,13 +114,17 @@ export class DeepseekEventMapper {
       case 'assistant/message': {
         const usage = event.data.usage
         if (usage && this.openMessageId) {
+          const billedInput = usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
           this.emit({
             type: 'message_usage',
             messageId: this.openMessageId,
-            inputTokens: usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0),
+            inputTokens: billedInput,
             outputTokens: usage.outputTokens,
             ...(usage.cacheReadTokens !== undefined ? { cacheReadTokens: usage.cacheReadTokens } : {}),
             ...(this.model !== undefined ? { model: this.model } : {}),
+            // The step's full prompt + completion is the session's context
+            // occupancy after this step — that pair drives the context ring.
+            contextTokens: billedInput + usage.outputTokens,
             ...(this.contextWindow !== undefined ? { contextWindow: this.contextWindow } : {}),
           })
         }

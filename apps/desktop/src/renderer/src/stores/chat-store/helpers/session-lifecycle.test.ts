@@ -104,7 +104,7 @@ function resetStore() {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, deepseek: null },
     initializedHarnesses: new Set(),
     _bashOutputs: {},
   })
@@ -119,6 +119,16 @@ function setClaudeResources(partial: Partial<ClaudeResources>) {
     models: [], account: {} as never, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [],
     ...partial,
   })
+}
+
+function setDeepseekResources(models: ModelOption[]) {
+  useChatStore.setState((s) => ({
+    harnessResources: {
+      ...s.harnessResources,
+      deepseek: { models },
+    },
+    initializedHarnesses: new Set([...s.initializedHarnesses, 'deepseek']),
+  }))
 }
 
 /** Seed harness ACP cache with Grok models + effort modes (configByAgentId path). */
@@ -703,6 +713,47 @@ describe('setPreferredProviderImpl', () => {
     expect(sess.acpModels.map((m) => m.id)).toEqual(['openai/gpt-5.4', 'opencode/big-pickle'])
     expect(sess.selectedModel).toBe('opencode/big-pickle')
     expect(sess.acpModelsStatus).toBe('ready')
+  })
+
+  it('initializes DeepSeek and falls back to deepseek-v4-pro', async () => {
+    setupProject()
+    setDeepseekResources([
+      { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: '' },
+      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', description: '' },
+    ])
+    patchSession({
+      sessionProvider: 'claude',
+      preferredProvider: 'claude',
+      selectedModel: 'claude-sonnet-4',
+    })
+
+    useChatStore.getState().setPreferredProvider('deepseek')
+
+    await vi.waitFor(() => {
+      expect(activeSession().selectedModel).toBe('deepseek-v4-pro')
+    })
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
+      PATH,
+      expect.objectContaining({ provider: 'deepseek', model: 'deepseek-v4-pro' }),
+    )
+    expect(mockWindowAgent.setSessionForeground).toHaveBeenCalled()
+  })
+
+  it('preserves a DeepSeek model selected while resources initialize', async () => {
+    setupProject()
+    setDeepseekResources([
+      { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: '' },
+      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', description: '' },
+    ])
+    patchSession({ sessionProvider: 'claude', preferredProvider: 'claude' })
+
+    useChatStore.getState().setPreferredProvider('deepseek')
+    useChatStore.getState().setSelectedModel('deepseek-reasoner')
+
+    await vi.waitFor(() => {
+      expect(mockWindowAgent.prewarm).toHaveBeenCalled()
+    })
+    expect(activeSession().selectedModel).toBe('deepseek-reasoner')
   })
 })
 

@@ -4060,6 +4060,30 @@ function registerIpcHandlers(): void {
     return { ...resources, probing: false, disabledModelIds }
   })
 
+  ipcMain.handle(AgentIpcChannels.CONNECT_DEEPSEEK, async () => {
+    // Live in-process catalog (integration plan D7): the embedded dsh tree is
+    // the source of truth, so there is no disk cache to go stale — the boot
+    // paid here is the same boot the first DeepSeek session needs anyway.
+    try {
+      const { getDeepseekRuntime, DEEPSEEK_DEFAULT_MODEL } = await import('./deepseek/deepseek-runtime-host')
+      const runtime = await getDeepseekRuntime()
+      const models = await runtime.listModels()
+      log.info('[CONNECT_DEEPSEEK] %d models', models.length)
+      return {
+        models: models.map((model) => ({
+          id: model.id,
+          name: model.name,
+          description: model.provider,
+          isDefault: model.id === DEEPSEEK_DEFAULT_MODEL,
+        })),
+        probing: false,
+      }
+    } catch (error) {
+      log.warn('[CONNECT_DEEPSEEK] failed: %s', error instanceof Error ? error.message : String(error))
+      return { models: [] }
+    }
+  })
+
   ipcMain.handle(AgentIpcChannels.GET_CURSOR_AUTH_STATUS, async () => {
     try {
       const config = getBaseProvider('cursor').config
@@ -5050,6 +5074,9 @@ function performQuit(): void {
     remoteStop,
     disposeAgentSessions(),
     closeAllOpenCodeServers(),
+    // Unwinds the embedded dsh Cordis tree so JSONL persistence flushes;
+    // resolves immediately when no DeepSeek session ever booted it.
+    import('./deepseek/deepseek-runtime-host').then((host) => host.disposeDeepseekRuntime()),
   ]).finally(() => {
     codexService.dispose()
     disposeGlobalWarmupManager()

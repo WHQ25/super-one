@@ -13,6 +13,7 @@ import type {
   CodexResources,
   CodexTodoListItem,
   CursorResources,
+  DeepseekResources,
   OpenCodeResources,
   CodexReviewTarget,
   CodexUsageInfo,
@@ -346,6 +347,7 @@ export interface ChatStore {
     acp: AcpResources | null
     opencode?: OpenCodeResources | null
     cursor?: CursorResources | null
+    deepseek?: DeepseekResources | null
   }
   initializedHarnesses: Set<HarnessId>
   /** True while a manual `refreshClaudeResources` round-trip is in flight. */

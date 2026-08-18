@@ -1109,6 +1109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           acp: settings.agentPreference.acp?.brandHue ?? null,
           opencode: null,
           cursor: null,
+          deepseek: null,
         },
         tokenOverrides: {
           claude: settings.agentPreference.claude.tokenOverrides ?? {},
@@ -1116,6 +1117,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           acp: settings.agentPreference.acp?.tokenOverrides ?? {},
           opencode: {},
           cursor: {},
+          deepseek: {},
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
         enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
@@ -1346,6 +1348,7 @@ if (typeof window !== 'undefined') {
         acp: acp?.brandHue ?? null,
         opencode: null,
         cursor: null,
+        deepseek: null,
       },
       tokenOverrides: {
         claude: claude.tokenOverrides ?? {},
@@ -1353,6 +1356,7 @@ if (typeof window !== 'undefined') {
         acp: acp?.tokenOverrides ?? {},
         opencode: {},
         cursor: {},
+        deepseek: {},
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],

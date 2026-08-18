@@ -2660,6 +2660,7 @@ export const AgentIpcChannels = {
   CONNECT_CODEX: 'app:connect-codex',
   CONNECT_OPENCODE: 'app:connect-opencode',
   CONNECT_CURSOR: 'app:connect-cursor',
+  CONNECT_DEEPSEEK: 'app:connect-deepseek',
   SET_CURSOR_API_KEY: 'app:set-cursor-api-key',
   GET_CURSOR_AUTH_STATUS: 'app:get-cursor-auth-status',
   CURSOR_LIST_AGENTS: 'app:cursor-list-agents',

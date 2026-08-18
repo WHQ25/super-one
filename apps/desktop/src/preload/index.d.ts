@@ -72,6 +72,7 @@ interface AppAPI {
   connectCodex(): Promise<CodexResources>
   connectOpenCode(force?: boolean): Promise<OpenCodeResources>
   connectCursor(force?: boolean): Promise<import('@superone/shared/agent-types').CursorResources>
+  connectDeepseek(): Promise<import('@superone/shared/agent-types').DeepseekResources>
   setCursorApiKey(apiKey: string): Promise<{ ok: true; providerId: string }>
   getCursorAuthStatus(): Promise<{ configured: boolean; apiKeyName: string | null; userEmail: string | null }>
   updateCursorBaseConfig(patch: Record<string, unknown>): Promise<{ ok: true; config: Record<string, unknown> }>

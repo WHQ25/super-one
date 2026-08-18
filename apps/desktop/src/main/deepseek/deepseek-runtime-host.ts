@@ -11,6 +11,10 @@ import { getPlatforms } from '../providers/registry'
  */
 export const DEEPSEEK_CREDENTIAL_REF = 'DEEPSEEK_API_KEY'
 
+/** Route defaults shared by the backend and the connect probe. */
+export const DEEPSEEK_DEFAULT_PROVIDER = 'deepseek-official'
+export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
+
 /** Newest DeepSeek-brand credential in SuperOne's store, decrypted. */
 function findDeepseekSecret(): string | undefined {
   const platformIds = new Set(
@@ -56,7 +60,7 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
       deepseekAdapter: {
         apiKeyEnv: DEEPSEEK_CREDENTIAL_REF,
         models: [
-          { id: 'deepseek-v4-pro', contextWindow: 128_000 },
+          { id: DEEPSEEK_DEFAULT_MODEL, contextWindow: 128_000 },
           { id: 'deepseek-v4-flash', contextWindow: 128_000 },
         ],
       },

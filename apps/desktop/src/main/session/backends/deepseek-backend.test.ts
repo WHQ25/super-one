@@ -12,6 +12,8 @@ vi.mock('../../logger', () => ({
 }))
 
 vi.mock('../../deepseek/deepseek-runtime-host', () => ({
+  DEEPSEEK_DEFAULT_PROVIDER: 'deepseek-official',
+  DEEPSEEK_DEFAULT_MODEL: 'deepseek-v4-pro',
   getDeepseekRuntime: async () => ({ createAgent: createAgentMock }),
   registerApprovalRouter: (sessionId: string, router: (request: unknown) => Promise<string>) => {
     approvalRouters.set(sessionId, router)

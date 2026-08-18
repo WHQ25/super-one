@@ -10,6 +10,7 @@ import {
   resolveCursorPermissionMode,
 } from './cursorPermissionModes'
 import { CursorPermissionModeList, cursorPermissionModeOption } from './CursorPermissionModeList'
+import { DEEPSEEK_PERMISSION_MODES } from './deepseekPermissionModes'
 import { OPENCODE_PERMISSION_MODES } from './opencodePermissionModes'
 import { modes, PermissionModeList } from './PermissionModeList'
 
@@ -102,8 +103,12 @@ export function HarnessPermissionPopover({
       ),
     }
   } else {
-    // Claude offers every mode; OpenCode only the subset its backend implements.
-    const availableModes = harnessId === 'opencode' ? OPENCODE_PERMISSION_MODES : modes.map((mode) => mode.id)
+    // Claude offers every mode; OpenCode/DeepSeek only the subset their backends implement.
+    const availableModes = harnessId === 'opencode'
+      ? OPENCODE_PERMISSION_MODES
+      : harnessId === 'deepseek'
+        ? DEEPSEEK_PERMISSION_MODES
+        : modes.map((mode) => mode.id)
     const active = modes.find((mode) => mode.id === value && availableModes.includes(mode.id)) ?? modes[0]
     trigger = {
       label: t(`chat.permissionModes.${active.id}.label`),

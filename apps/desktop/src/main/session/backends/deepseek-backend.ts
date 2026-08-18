@@ -12,11 +12,13 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
-import { getDeepseekRuntime, registerApprovalRouter } from '../../deepseek/deepseek-runtime-host'
+import {
+  DEEPSEEK_DEFAULT_MODEL as DEFAULT_MODEL,
+  DEEPSEEK_DEFAULT_PROVIDER as DEFAULT_PROVIDER,
+  getDeepseekRuntime,
+  registerApprovalRouter,
+} from '../../deepseek/deepseek-runtime-host'
 import type { BackendEvent, BackendStartOptions, HarnessId, SessionBackend } from '../types'
-
-const DEFAULT_PROVIDER = 'deepseek-official'
-const DEFAULT_MODEL = 'deepseek-v4-pro'
 
 interface DeepseekConfig {
   provider?: string

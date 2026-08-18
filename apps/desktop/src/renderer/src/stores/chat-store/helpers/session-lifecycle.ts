@@ -997,6 +997,22 @@ export function setPreferredProviderImpl(
       void get().refreshCursorSlashItems(activeProject)
     }
   }
+  if (provider === 'deepseek') {
+    void get().initializeHarness('deepseek').then(async () => {
+      const session = getActivePerSession(get())
+      // User may have switched harness before DeepSeek resources finished loading.
+      if ((session.sessionProvider ?? session.preferredProvider) !== 'deepseek') return
+      const models = get().harnessResources.deepseek?.models ?? []
+      const selected = models.find((model) => model.id === session.selectedModel)
+      const fallback = selected ?? models.find((model) => model.isDefault) ?? models[0]
+      if (fallback && fallback.id !== session.selectedModel) {
+        set((state) => updateActivePerSession(state, () => ({ selectedModel: fallback.id })))
+      }
+      await disposePriorMain
+      triggerPrewarm(get())
+      reassertForeground()
+    })
+  }
   if (provider === 'claude') {
     void disposePriorMain
     const isRemote = !!parseRemoteProjectKey(activeProject)

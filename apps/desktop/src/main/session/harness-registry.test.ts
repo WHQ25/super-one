@@ -52,7 +52,7 @@ setCodexServiceFactory(() => ({
 describe('harnessRegistry', () => {
   it('lists every registered harness', () => {
     const ids = harnessRegistry.list().map((h) => h.id).sort()
-    expect(ids).toEqual(['acp', 'claude', 'codex', 'cursor', 'opencode'])
+    expect(ids).toEqual(['acp', 'claude', 'codex', 'cursor', 'deepseek', 'opencode'])
   })
 
   it('get returns the claude harness', () => {

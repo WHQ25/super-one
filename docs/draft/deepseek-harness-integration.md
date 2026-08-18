@@ -1,7 +1,9 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **draft** — direction chosen (Route D), all feasibility experiments passed, open questions resolved with the user (§12), plan not yet executed
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 pending (tool plane / MCP mount / resume / fork / subagents / permission presets)
 Last updated: 2026-08-18
+
+> Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
 Spike: [`docs/draft/deepseek-harness-spike.mjs`](./deepseek-harness-spike.mjs) (reproducible; see Appendix)
 Related: `.claude/skills/superone-harness/` (new-harness roadmap, event contract, experiences matrix), `docs/design/cursor-sdk-harness.md` (breadth reference: 152 files / 7 commits)
 

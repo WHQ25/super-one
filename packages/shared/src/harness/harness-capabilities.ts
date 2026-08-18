@@ -81,12 +81,12 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
   },
   deepseek: {
     // In-process dsh Cordis tree (docs/draft/deepseek-harness-integration.md).
-    // Every flag stays false until the corresponding event path is wired:
-    // mcp → dsh-mcp-client mount (P4), todos → todo/write mapping (P1+),
-    // streaming tool input → tool-call-delta mapping (P1+), subagents (P4).
+    // Flags flip only when the corresponding event path is wired:
+    // mcp → dsh-mcp-client mount (P4), streaming tool input →
+    // tool-call-delta mapping, subagents (P4), compact (compaction-basic).
     supportsMcp: false,
     supportsPlanMode: false,
-    supportsTodos: false,
+    supportsTodos: true,
     supportsSubagents: false,
     supportsCompact: false,
     supportsStreamingToolInput: false,

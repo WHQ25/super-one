@@ -735,6 +735,9 @@ const appAPI = {
   connectCursor: (force?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CURSOR, force),
 
+  connectDeepseek: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_DEEPSEEK),
+
   setCursorApiKey: (apiKey: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_CURSOR_API_KEY, apiKey),
 

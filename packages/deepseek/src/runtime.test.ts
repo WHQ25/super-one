@@ -4,12 +4,15 @@ import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime, type DeepseekAgentHandle } from './runtime'
 
-/** Scripted adapter: replies keyed on the last message; no network. */
+/**
+ * Scripted adapter keyed on the whole message list — not the last message:
+ * dsh appends a runtime-context snapshot after the user prompt, so the tail is
+ * never the caller's text.
+ */
 class MockAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const last = options.messages[options.messages.length - 1]
     const allText = JSON.stringify(options.messages)
-    if (last?.role === 'tool' || allText.includes('tool-result')) {
+    if (allText.includes('tool-result')) {
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: 'tool done' }
       yield { type: 'block-end', index: 0, block: { type: 'text', text: 'tool done' } }

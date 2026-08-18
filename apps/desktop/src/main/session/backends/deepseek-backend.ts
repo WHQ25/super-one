@@ -1,63 +1,225 @@
+import { randomUUID } from 'node:crypto'
+import type { DeepseekAgentHandle } from '@superone/deepseek'
 import type {
   AgentEvent,
   ContextUsageInfo,
   McpServerInfo,
   PermissionMode,
+  PermissionRequest,
   QuestionAnnotations,
   RewindFilesResult,
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
+import log from '../../logger'
+import { getDeepseekRuntime, registerApprovalRouter } from '../../deepseek/deepseek-runtime-host'
 import type { BackendEvent, BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
+const DEFAULT_PROVIDER = 'deepseek-official'
+const DEFAULT_MODEL = 'deepseek-v4-pro'
+
+interface DeepseekConfig {
+  provider?: string
+  model?: string
+  maxTokens?: number
+}
+
+function readConfig(config: unknown): DeepseekConfig {
+  return (config && typeof config === 'object' ? config : {}) as DeepseekConfig
+}
+
+interface PendingApproval {
+  request: PermissionRequest
+  event: AgentEvent
+  settle: (decision: 'allowed-once' | 'rejected' | 'cancelled') => void
+}
+
 /**
- * DeepSeek Harness backend — P0 skeleton.
- *
- * The real runtime embeds the dsh Cordis tree in-process and drives it through
- * `ctx.agents` (design: docs/draft/deepseek-harness-integration.md). Until P1
- * lands, every entry point reports "not implemented" honestly instead of
- * pretending a turn happened.
+ * DeepSeek Harness backend — a thin state machine over the shared in-process
+ * dsh Cordis tree (docs/draft/deepseek-harness-integration.md, D1/D4). All dsh
+ * vocabulary lives in `@superone/deepseek`; this class only owns SuperOne's
+ * session contract.
  */
 export class DeepseekBackend implements SessionBackend {
   readonly kind: HarnessId = 'deepseek'
-  private eventHandlers = new Set<(event: BackendEvent) => void>()
-  private providerSessionIdHandlers = new Set<(id: string) => void>()
-  private permissionModeHandlers = new Set<(mode: PermissionMode) => void>()
+
+  private agent: DeepseekAgentHandle | null = null
+  private startPromise: Promise<DeepseekAgentHandle> | null = null
+  private opts: BackendStartOptions | null = null
+  private permissionMode: PermissionMode = 'default'
+  private unregisterApproval: (() => void) | null = null
+  private pendingApprovals = new Map<string, PendingApproval>()
+
+  private listeners = new Set<(event: BackendEvent) => void>()
+  private providerSessionListeners = new Set<(id: string) => void>()
+  private permissionModeListeners = new Set<(mode: PermissionMode) => void>()
 
   hasActiveRuntime(): boolean {
-    return false
+    return Boolean(this.agent || this.startPromise)
   }
 
-  async releaseRuntime(_reason: 'idle'): Promise<void> {}
-
-  async start(_opts: BackendStartOptions): Promise<void> {}
-
-  async rebuild(_opts: BackendStartOptions): Promise<void> {}
-
-  prewarm(_opts: BackendStartOptions): void {}
-
-  async send(_request: SendMessageRequest): Promise<void> {
-    throw new Error('DeepSeek harness runtime is not implemented yet (P1)')
+  async releaseRuntime(_reason: 'idle'): Promise<void> {
+    await this.teardownAgent()
   }
 
-  async interrupt(): Promise<void> {}
+  async start(opts: BackendStartOptions): Promise<void> {
+    this.opts = opts
+    this.permissionMode = opts.permissionMode
+    await this.ensureAgent()
+  }
+
+  async rebuild(opts: BackendStartOptions): Promise<void> {
+    await this.teardownAgent()
+    await this.start(opts)
+  }
+
+  prewarm(opts: BackendStartOptions): void {
+    this.opts = opts
+    void this.ensureAgent().catch((error: unknown) => {
+      log.warn('[deepseek] prewarm failed', error)
+    })
+  }
+
+  private async ensureAgent(): Promise<DeepseekAgentHandle> {
+    if (this.agent) return this.agent
+    if (this.startPromise) return this.startPromise
+    const opts = this.opts
+    if (!opts) throw new Error('DeepseekBackend.start() must run before the agent is used')
+
+    this.startPromise = (async () => {
+      const runtime = await getDeepseekRuntime()
+      const config = readConfig(opts.config)
+      // The dsh session id doubles as our provider session id, so cold resume
+      // finds the persisted JSONL log by the same identity.
+      const providerSessionId = opts.providerSessionId ?? randomUUID()
+
+      this.unregisterApproval = registerApprovalRouter(
+        providerSessionId,
+        (request) => this.askPermission(request),
+      )
+
+      const agent = await runtime.createAgent({
+        sessionId: providerSessionId,
+        cwd: opts.cwd,
+        provider: config.provider ?? DEFAULT_PROVIDER,
+        model: opts.model ?? config.model ?? DEFAULT_MODEL,
+        ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
+        resume: Boolean(opts.providerSessionId),
+        onEvent: (event) => this.emit(event),
+      })
+
+      this.agent = agent
+      this.emit({ type: 'provider_session_id', providerSessionId })
+      for (const callback of this.providerSessionListeners) callback(providerSessionId)
+      return agent
+    })()
+
+    try {
+      return await this.startPromise
+    } catch (error) {
+      this.startPromise = null
+      this.unregisterApproval?.()
+      this.unregisterApproval = null
+      throw error
+    } finally {
+      this.startPromise = null
+    }
+  }
+
+  private async teardownAgent(): Promise<void> {
+    for (const requestId of [...this.pendingApprovals.keys()]) {
+      this.respondToPermission(requestId, false)
+    }
+    this.unregisterApproval?.()
+    this.unregisterApproval = null
+    const agent = this.agent
+    this.agent = null
+    await agent?.dispose()
+  }
+
+  async send(request: SendMessageRequest): Promise<void> {
+    const agent = await this.ensureAgent()
+    if (request.model) agent.setRoute({ model: request.model })
+    if (request.effort) agent.setRoute({ reasoningEffort: request.effort })
+    agent.sendText(request.content)
+  }
+
+  async interrupt(): Promise<void> {
+    this.agent?.cancel()
+  }
 
   async close(): Promise<void> {
-    this.eventHandlers.clear()
-    this.providerSessionIdHandlers.clear()
-    this.permissionModeHandlers.clear()
+    await this.teardownAgent()
+    this.listeners.clear()
+    this.providerSessionListeners.clear()
+    this.permissionModeListeners.clear()
   }
 
-  async setModel(_model: string): Promise<void> {}
+  async setModel(model: string): Promise<void> {
+    // In place: the runtime rewrites the route on the next request instead of
+    // rebuilding the agent (AgentOptions is create-time and readonly).
+    this.agent?.setRoute({ model })
+    if (this.opts) this.opts.model = model
+  }
 
   async setSessionMode(_modeId: string): Promise<void> {}
 
-  async setPermissionMode(_mode: PermissionMode): Promise<void> {}
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
+    this.permissionMode = mode
+    if (this.opts) this.opts.permissionMode = mode
+    for (const callback of this.permissionModeListeners) callback(mode)
+  }
 
   async setSandbox(_sandboxInfo: SandboxInfo): Promise<void> {}
 
-  respondToPermission(): boolean {
-    return false
+  /**
+   * Bridge one dsh approval question onto the SuperOne permission popover.
+   * The returned promise settles the dsh `approval/request` waterfall, so the
+   * tool stays parked until the user answers (or dsh withdraws the question).
+   */
+  private askPermission(request: {
+    toolName: string
+    callId?: string
+    reason?: string
+    signal?: AbortSignal
+  }): Promise<'allowed-once' | 'rejected' | 'cancelled'> {
+    if (this.permissionMode === 'bypassPermissions') return Promise.resolve('allowed-once')
+
+    const requestId = randomUUID()
+    return new Promise((resolve) => {
+      const permissionRequest: PermissionRequest = {
+        requestId,
+        toolName: request.toolName,
+        ...(request.callId ? { toolUseId: request.callId } : {}),
+        input: {},
+        ...(request.reason ? { decisionReason: request.reason } : {}),
+        // dsh answers are one-shot; a durable grant needs its preset plane.
+        allowAlwaysAllow: false,
+      }
+      const event: AgentEvent = { type: 'permission_request', request: permissionRequest }
+      const settle = (decision: 'allowed-once' | 'rejected' | 'cancelled'): void => {
+        if (!this.pendingApprovals.delete(requestId)) return
+        resolve(decision)
+      }
+      this.pendingApprovals.set(requestId, { request: permissionRequest, event, settle })
+      request.signal?.addEventListener('abort', () => settle('cancelled'), { once: true })
+      this.emit(event)
+    })
+  }
+
+  respondToPermission(
+    requestId: string,
+    allow: boolean,
+    _alwaysAllow?: boolean,
+    _reason?: string,
+    _selectedSuggestions?: number[],
+    decision?: 'cancel',
+  ): boolean {
+    const pending = this.pendingApprovals.get(requestId)
+    if (!pending) return false
+    pending.settle(decision === 'cancel' ? 'cancelled' : allow ? 'allowed-once' : 'rejected')
+    this.emit({ type: 'interaction_resolved', interactionType: 'permission', requestId, approved: allow })
+    return true
   }
 
   respondToQuestion(_requestId: string, _answers: Record<string, string>, _annotations?: QuestionAnnotations): void {}
@@ -93,21 +255,25 @@ export class DeepseekBackend implements SessionBackend {
   }
 
   getPendingInteractions(): AgentEvent[] {
-    return []
+    return [...this.pendingApprovals.values()].map((pending) => pending.event)
   }
 
   onEvent(handler: (event: BackendEvent) => void): () => void {
-    this.eventHandlers.add(handler)
-    return () => this.eventHandlers.delete(handler)
+    this.listeners.add(handler)
+    return () => this.listeners.delete(handler)
   }
 
   onProviderSessionId(handler: (id: string) => void): () => void {
-    this.providerSessionIdHandlers.add(handler)
-    return () => this.providerSessionIdHandlers.delete(handler)
+    this.providerSessionListeners.add(handler)
+    return () => this.providerSessionListeners.delete(handler)
   }
 
   onPermissionModeApplied(handler: (mode: PermissionMode) => void): () => void {
-    this.permissionModeHandlers.add(handler)
-    return () => this.permissionModeHandlers.delete(handler)
+    this.permissionModeListeners.add(handler)
+    return () => this.permissionModeListeners.delete(handler)
+  }
+
+  private emit(event: BackendEvent): void {
+    for (const listener of this.listeners) listener(event)
   }
 }

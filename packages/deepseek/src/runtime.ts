@@ -43,15 +43,28 @@ export interface DeepseekAgentHandle {
   readonly sessionId: string
   sendText(text: string): void
   cancel(): void
+  /**
+   * Change the route for subsequent requests without rebuilding the agent.
+   * `AgentOptions` is create-time and readonly, so the switch rides the
+   * documented `agent/request` waterfall instead.
+   */
+  setRoute(route: { provider?: string; model?: string; reasoningEffort?: string }): void
   whenIdle(): Promise<void>
   status(): 'idle' | 'running'
   dispose(): Promise<void>
+}
+
+interface RouteOverride {
+  provider?: string
+  model?: string
+  reasoningEffort?: string
 }
 
 interface AgentRecord {
   agent: Agent
   mapper: DeepseekEventMapper
   onEvent: (event: AgentEvent) => void
+  route: RouteOverride
   dispose: () => Promise<void>
 }
 
@@ -108,6 +121,22 @@ export class DeepseekRuntime {
       const record = runtime.records.get(String(agent.id))
       if (!record) return
       record.onEvent({ type: 'status_change', status: status === 'running' ? 'streaming' : 'idle' })
+    })
+
+    // In-place route switching: AgentOptions is create-time and readonly, so a
+    // model/effort change rides this waterfall instead of forcing a rebuild.
+    bridge.on('agent/request', async (payload, next) => {
+      const config = await next()
+      const route = runtime.records.get(String(payload.agent.id))?.route
+      if (!route) return config
+      return {
+        ...config,
+        ...(route.provider !== undefined ? { provider: route.provider } : {}),
+        ...(route.model !== undefined ? { model: route.model } : {}),
+        ...(route.reasoningEffort !== undefined
+          ? { reasoningEffort: route.reasoningEffort as typeof config.reasoningEffort }
+          : {}),
+      }
     })
 
     if (options.onApproval) {
@@ -171,6 +200,7 @@ export class DeepseekRuntime {
       agent: handle.agent,
       mapper: new DeepseekEventMapper({ sessionId: options.sessionId, emit: options.onEvent }),
       onEvent: options.onEvent,
+      route: {},
       dispose: () => handle.dispose(),
     }
     this.records.set(options.sessionId, record)
@@ -189,6 +219,9 @@ export class DeepseekRuntime {
       },
       cancel() {
         record.agent.cancel({ kind: 'user' })
+      },
+      setRoute(route) {
+        Object.assign(record.route, route)
       },
       whenIdle: () => record.agent.whenIdle(),
       status: () => record.agent.status,

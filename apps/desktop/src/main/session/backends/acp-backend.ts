@@ -31,6 +31,7 @@ import {
   upsertAcpAgentSlashCommands,
 } from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
+import { describeAcpRequestFailure } from '../../acp/acp-request-error'
 import { notifySessionRecapReceived } from '../../acp/acp-recap-focus'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
 import { decideAcpPermission } from '../../acp/acp-permission-preapprove'
@@ -902,8 +903,8 @@ export class AcpBackend implements SessionBackend {
         return
       }
       if (!emittedTerminal) {
-        const error = err instanceof Error ? err.message : String(err)
-        this.emit({ type: 'message_error', messageId, error })
+        const errorInfo = describeAcpRequestFailure(err)
+        this.emit({ type: 'message_error', messageId, error: errorInfo.raw, errorInfo })
         this.emit({ type: 'status_change', status: 'error' })
       }
     } finally {

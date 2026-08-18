@@ -77,9 +77,10 @@ import {
   grokYoloModeNotificationParams,
 } from './acp-permission-preapprove'
 import { parseGrokBilling } from './acp-billing'
-import { describeAcpRequestError } from './acp-request-error'
+import { describeAcpRequestFailure } from './acp-request-error'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
+  AgentErrorInfo,
   AgentEvent,
   ContextUsageInfo,
   ImageAttachment,
@@ -1081,13 +1082,13 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     },
     async prompt(text, messageId, onEvent, images) {
       let settled = false
-      const fail = (error: string) => {
+      const fail = (errorInfo: AgentErrorInfo) => {
         if (settled) return
         settled = true
         for (const ev of cancelOpenToolEvents(turn.lastMessageId ?? messageId, turn.openToolIds)) {
           onEvent(ev)
         }
-        onEvent({ type: 'message_error', messageId, error })
+        onEvent({ type: 'message_error', messageId, error: errorInfo.raw, errorInfo })
         onEvent({ type: 'status_change', status: 'error' })
       }
 
@@ -1165,7 +1166,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         onEvent({ type: 'status_change', status: 'idle' })
       } catch (err) {
         if (settled) return
-        fail(describeAcpRequestError(err))
+        fail(describeAcpRequestFailure(err))
         throw err
       } finally {
         // Only the newest turn owns `currentTurn`; an older turn settling late

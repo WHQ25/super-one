@@ -1,4 +1,5 @@
-import type { AgentEvent, SlashCommandInfo } from '@superone/shared/agent-types'
+import type { AgentErrorInfo, AgentEvent, SlashCommandInfo } from '@superone/shared/agent-types'
+import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type { SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk'
 import { readArgumentHintFromMarkdownFile } from '@superone/runtime/fs'
 import { extractModeConfig, extractModelConfig } from './config-map'
@@ -301,7 +302,7 @@ export interface AcpAgentEventMapper {
   apply(update: SessionUpdate, notificationMeta?: Record<string, unknown> | null): AcpAgentEventApplyResult
   applyXaiNotification(method: string, params: Record<string, unknown>): void
   complete(stopReason?: string): void
-  fail(error: string, interrupted?: boolean): void
+  fail(error: string, interrupted?: boolean, errorInfo?: AgentErrorInfo): void
 }
 
 /** Track open tools so cancellation can close every streaming block. */
@@ -391,16 +392,19 @@ export function createAcpAgentEventMapper(
     })
   }
 
-  const fail = (error: string, interrupted = false) => {
+  const fail = (error: string, interrupted = false, errorInfo?: AgentErrorInfo) => {
     if (terminal) return
     terminal = true
     if (interrupted) {
       for (const event of cancelOpenAcpTools(currentMessageId, openTools)) options.emit(event)
     }
+    // The caller supplies structure when it has it (JSON-RPC code, HTTP status);
+    // otherwise fall back to reading the agent's prose.
+    const info = interrupted ? undefined : errorInfo ?? buildAgentErrorInfo(error)
     for (const messageId of localMessageIds) {
       options.emit(interrupted
         ? { type: 'message_interrupted', messageId }
-        : { type: 'message_error', messageId, error })
+        : { type: 'message_error', messageId, error, errorInfo: info })
     }
     options.emit({ type: 'status_change', status: interrupted ? 'idle' : 'error' })
   }

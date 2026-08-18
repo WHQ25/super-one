@@ -369,6 +369,8 @@ export function applyClaudeEventToRuntime(
         )),
       }
     case 'message_error':
+      // Mirrors the renderer reducer: the failure lives in metadata so it
+      // survives a reload as a footer badge rather than a stray text block.
       return {
         ...runtime,
         messages: runtime.messages.map((message) => (
@@ -377,7 +379,7 @@ export function applyClaudeEventToRuntime(
             : {
                 ...message,
                 status: 'error' as const,
-                content: [...message.content, { type: 'text' as const, text: `Error: ${event.error}` }],
+                metadata: { ...message.metadata, errorInfo: event.errorInfo ?? { raw: event.error } },
               }
         )),
       }

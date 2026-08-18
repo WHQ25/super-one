@@ -20,6 +20,7 @@ import type {
   RewindFilesResult,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
+import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import log from '../../logger'
 import { trace } from '../../agent/event-trace'
 import { recordCodexFromUsage } from '../../usage-stats-service'
@@ -296,7 +297,7 @@ export class CodexBackend implements SessionBackend {
         const isInterrupt = /interrupt|abort/i.test(error.message)
         this.emit(isInterrupt
           ? { type: 'message_interrupted', messageId }
-          : { type: 'message_error', messageId, error: error.message })
+          : { type: 'message_error', messageId, error: error.message, errorInfo: buildAgentErrorInfo(error.message) })
       },
       onIdle: () => {
         this.emit({ type: 'status_change', status: 'idle' })
@@ -786,7 +787,7 @@ export class CodexBackend implements SessionBackend {
         if (isInterrupt) {
           this.emit({ type: 'message_interrupted', messageId: runningAssistantId })
         } else {
-          this.emit({ type: 'message_error', messageId: runningAssistantId, error: message })
+          this.emit({ type: 'message_error', messageId: runningAssistantId, error: message, errorInfo: buildAgentErrorInfo(message) })
         }
         throw error
       } finally {

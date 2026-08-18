@@ -485,6 +485,24 @@ describe('stripEventForRemote permission_request', () => {
 })
 
 describe('stripMessagesForRemote', () => {
+  it('materializes a failed turn back into a text block for clients without an error badge', () => {
+    const msg = makeMessage([], {
+      status: 'error',
+      metadata: { errorInfo: { raw: 'API Error: 529 overloaded', code: 'overloaded' } },
+    })
+    const [result] = stripMessagesForRemote([msg])
+    expect(result.content).toContainEqual({ type: 'text', text: 'Error: API Error: 529 overloaded' })
+  })
+
+  it('does not duplicate the failure when the transcript already carries it', () => {
+    const msg = makeMessage([{ type: 'text', text: 'Error: boom' }], {
+      status: 'error',
+      metadata: { errorInfo: { raw: 'boom' } },
+    })
+    const [result] = stripMessagesForRemote([msg])
+    expect(result.content.filter((b) => b.type === 'text')).toHaveLength(1)
+  })
+
   it('should pass through text blocks', () => {
     const msg = makeMessage([{ type: 'text', text: 'Hello world' }])
     const [result] = stripMessagesForRemote([msg])

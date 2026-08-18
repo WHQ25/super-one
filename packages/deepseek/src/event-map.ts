@@ -1,4 +1,5 @@
 import type { AgentEvent, ChatMessage, ContentBlock, TodoItem } from '@superone/shared/agent-types'
+import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 /** Message id derivation is deterministic so replay produces identical ids. */
@@ -146,7 +147,8 @@ export class DeepseekEventMapper {
         } else if (reason.kind === 'error') {
           const id = this.openMessageId ?? this.lastMessageId
           if (id) {
-            this.emit({ type: 'message_error', messageId: id, error: reason.error?.message ?? 'model request failed' })
+            const dshError = reason.error?.message ?? 'model request failed'
+            this.emit({ type: 'message_error', messageId: id, error: dshError, errorInfo: buildAgentErrorInfo(dshError) })
           }
           this.openMessageId = null
         }

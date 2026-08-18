@@ -47,6 +47,7 @@ import { RewindButton } from './RewindButton'
 import { ForkButton } from './ForkButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { tryCopy } from '@/lib/clipboard'
+import { MessageErrorBadge } from './MessageErrorBadge'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { CollabTaskBubble } from './CollabTaskBubble'
 import { CopyButton, useCopyText } from './chat-message/copy-button'
@@ -1323,8 +1324,12 @@ function DurationFooter({
 
   const showCopy = !isStreaming && !!copyText
   const showFork = !isStreaming && message.status !== 'error'
+  const errorInfo = message.metadata?.errorInfo
+  const showError = !isStreaming && !!errorInfo
   const terminalReason = message.metadata?.terminalReason
-  const showTerminalReason = !isStreaming && !!terminalReason && terminalReason !== 'completed' && message.status !== 'interrupted'
+  // The error badge already names the failure; the bare terminal-reason chip
+  // would just repeat it in developer vocabulary.
+  const showTerminalReason = !isStreaming && !showError && !!terminalReason && terminalReason !== 'completed' && message.status !== 'interrupted'
   const mcpStartup = message.metadata?.codex?.mcpStartup
   const mcpServers = mcpStartup ?? []
   const hasCodexItems = (message.metadata?.codex?.items?.length ?? 0) > 0
@@ -1333,7 +1338,7 @@ function DurationFooter({
   const mcpReadyCount = showMcpStartup ? mcpServers.filter((s) => s.status === 'ready').length : 0
   const failedMcp = mcpServers.filter((s) => s.status === 'failed')
   const showMcpFailure = !isStreaming && failedMcp.length > 0
-  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showMcpStartup && !showMcpFailure) return null
+  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !showMcpStartup && !showMcpFailure) return null
 
   const seconds = durationMs ? Math.round(durationMs / 1000) : 0
   const display = seconds < 60
@@ -1378,6 +1383,12 @@ function DurationFooter({
           <AnimatedToken value={tokenOutput} direction="down" active={isStreaming} />
         </>
       )}
+      {showError && (
+        <>
+          {(showDuration || hasTokens) && <span>·</span>}
+          <MessageErrorBadge info={errorInfo!} />
+        </>
+      )}
       {showTerminalReason && (
         <>
           {(showDuration || hasTokens) && <span>·</span>}
@@ -1389,7 +1400,7 @@ function DurationFooter({
         const reauthServers = failedMcp.filter((s) => s.failureReason === 'reauthenticationRequired')
         return (
           <>
-            {(showDuration || hasTokens || showTerminalReason) && <span>·</span>}
+            {(showDuration || hasTokens || showTerminalReason || showError) && <span>·</span>}
             <AlertTriangle className="size-3 text-warning" />
             {reauthServers.length > 0 ? (
               <button

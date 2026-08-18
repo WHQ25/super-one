@@ -18,6 +18,7 @@ import type {
   PlanApprovalRequest,
   UserQuestion,
 } from './agent-types'
+import { buildAgentErrorInfo } from './agent-error'
 import type { EnvironmentEventEnvelope } from './environment/events'
 import { SESSION_DURABLE_EVENT } from './environment/session-events'
 
@@ -466,7 +467,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
         // exits during spawn). Open a block so the reason is visible instead of
         // leaving the UI on a bare error status with no message.
         const errorId = ensureAssistant(push)
-        push({ type: 'message_error', messageId: errorId, error: message })
+        push({ type: 'message_error', messageId: errorId, error: message, errorInfo: buildAgentErrorInfo(message) })
         lastAssistantId = null
         push({ type: 'status_change', status: 'error' })
         break

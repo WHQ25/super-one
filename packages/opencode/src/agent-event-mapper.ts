@@ -1,10 +1,12 @@
 import type { Event, Message, Part, Todo } from '@opencode-ai/sdk/v2'
 import type {
+  AgentErrorInfo,
   AgentEvent,
   AskUserQuestionRequest,
   MessageMetadata,
   PermissionRequest,
 } from '@superone/shared/agent-types'
+import { buildAgentErrorInfo, type AgentErrorCode } from '@superone/shared/agent-error'
 
 export interface OpenCodeRuntimeConfig {
   binaryPath?: string
@@ -126,6 +128,23 @@ export function openCodeErrorMessage(error: unknown): string {
   }
 }
 
+/**
+ * OpenCode names its failures (`ProviderAuthError`, `MessageOutputLengthError`,
+ * …) in `error.name`. That is the only structured signal on the wire, so map the
+ * ones we recognize and let the text classifier handle the rest.
+ */
+const OPENCODE_ERROR_NAMES: Record<string, AgentErrorCode> = {
+  ProviderAuthError: 'authentication_failed',
+  MessageOutputLengthError: 'max_output_tokens',
+}
+
+export function openCodeErrorInfo(error: unknown): AgentErrorInfo {
+  const raw = openCodeErrorMessage(error)
+  const name = error && typeof error === 'object' ? (error as { name?: unknown }).name : undefined
+  const code = typeof name === 'string' ? OPENCODE_ERROR_NAMES[name] : undefined
+  return buildAgentErrorInfo(raw, code ? { code } : {})
+}
+
 export function openCodeAssistantMetadata(info: Extract<Message, { role: 'assistant' }>): MessageMetadata {
   return {
     model: `${info.providerID}/${info.modelID}`,
@@ -158,7 +177,7 @@ export interface OpenCodeAgentEventMapper {
   start(providerSessionId?: string | null): void
   apply(event: Event | { type: string; properties?: Record<string, unknown> }): OpenCodeAgentEventApplyResult
   complete(interrupted?: boolean): void
-  fail(error: string): void
+  fail(error: string, errorInfo?: AgentErrorInfo): void
 }
 
 export function openCodeEventSessionId(event: unknown): string | undefined {
@@ -260,10 +279,10 @@ export function createOpenCodeAgentEventMapper(
     emit({ type: 'status_change', status: 'idle' })
   }
 
-  const fail = (error: string) => {
+  const fail = (error: string, errorInfo?: AgentErrorInfo) => {
     if (terminal) return
     terminal = true
-    emit({ type: 'message_error', messageId: options.messageId, error })
+    emit({ type: 'message_error', messageId: options.messageId, error, errorInfo: errorInfo ?? buildAgentErrorInfo(error) })
     emit({ type: 'status_change', status: 'error' })
   }
 
@@ -421,7 +440,7 @@ export function createOpenCodeAgentEventMapper(
         emit({ type: 'compact_boundary', trigger: 'auto', preTokens: lastContextTokens })
         emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
       } else if (event.type === 'session.error') {
-        fail(openCodeErrorMessage(event.properties.error))
+        fail(openCodeErrorMessage(event.properties.error), openCodeErrorInfo(event.properties.error))
       } else if (event.type === 'session.updated') {
         const session = event.properties as unknown as { session?: { status?: string }; status?: string }
         if (session.session?.status === 'idle' || session.status === 'idle') complete()

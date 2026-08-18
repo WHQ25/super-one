@@ -430,6 +430,34 @@ export interface CollaborationMessageMeta {
   messageId?: string
 }
 
+/**
+ * Structured turn failure. Harness-neutral: every backend that emits
+ * `message_error` fills at least `raw`, and Claude additionally supplies the
+ * typed SDK fields below. Drives the footer error badge and its popover.
+ */
+export interface AgentErrorInfo {
+  /** SDK `SDKAssistantMessageError` code — `authentication_failed`, `overloaded`, … */
+  code?: string
+  /** HTTP status behind the failure (SDK `api_error_status`). */
+  httpStatus?: number
+  /** SDK `terminal_reason` — why the turn stopped (`api_error`, `prompt_too_long`, …). */
+  terminalReason?: string
+  /** SDK result `subtype` — `error_during_execution`, `error_max_turns`, … */
+  subtype?: string
+  /** Model in play when the turn failed. */
+  model?: string
+  /** Upstream request id, when the SDK surfaced one. */
+  requestId?: string
+  /**
+   * Retries burned before the turn gave up. `attempts` is the only field every
+   * harness can fill; Claude additionally reports the backoff ladder and the
+   * configured ceiling, Codex reports neither.
+   */
+  retries?: { attempts: number; delaysMs?: number[]; max?: number }
+  /** Raw upstream text. Always present — the display fallback when nothing maps. */
+  raw: string
+}
+
 export interface MessageMetadata {
   model?: string
   /** Harness-native agent used for the turn (for example an OpenCode primary agent). */
@@ -453,6 +481,8 @@ export interface MessageMetadata {
   structuredOutput?: unknown
   isError?: boolean
   apiErrorStatus?: number | null
+  /** Structured failure detail behind the footer error badge. */
+  errorInfo?: AgentErrorInfo
   /** SDK assistant message UUID of this turn — anchor for forking at this message. */
   forkAnchorId?: string
   /**
@@ -1290,7 +1320,7 @@ export type AgentEventBase =
   | { type: 'message_timestamp'; messageId: string; timestamp: string }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_interrupted'; messageId: string; metadata?: MessageMetadata }
-  | { type: 'message_error'; messageId: string; error: string }
+  | { type: 'message_error'; messageId: string; error: string; errorInfo?: AgentErrorInfo }
   | { type: 'status_change'; status: AgentStatus }
   | { type: 'permission_request'; request: PermissionRequest }
   | { type: 'permission_mode_change'; mode: PermissionMode }

@@ -7,6 +7,9 @@
  * in `error.message` (which is the bare literal `"Rate limited"`).
  */
 
+import type { AgentErrorInfo } from '@superone/shared/agent-types'
+import { buildAgentErrorInfo } from '@superone/shared/agent-error'
+
 /** Grok's ACP code for HTTP 429, in the JSON-RPC implementation-defined range. */
 export const ACP_RATE_LIMITED_ERROR_CODE = -32003
 
@@ -67,4 +70,27 @@ export function describeAcpRequestError(err: unknown): string {
     return detail || RATE_LIMITED_MESSAGE
   }
   return detail || rpc.message
+}
+
+/** Pulls the HTTP status out of `SamplingError::Api`'s Display wrapper before it is stripped. */
+const API_ERROR_STATUS = /^API error \(status (\d{3})[^)]*\)/
+
+/**
+ * Structured twin of {@link describeAcpRequestError} for the error badge. The
+ * user-facing text is unchanged; this recovers the two facts the display string
+ * deliberately throws away — the JSON-RPC code and the upstream HTTP status.
+ */
+export function describeAcpRequestFailure(err: unknown): AgentErrorInfo {
+  const raw = describeAcpRequestError(err)
+  const rpc = asJsonRpcError(err)
+  if (!rpc) return buildAgentErrorInfo(raw)
+
+  const wrapped = readDetail(rpc.data)
+  const statusMatch = API_ERROR_STATUS.exec(wrapped)
+  const httpStatus = statusMatch?.[1] ? Number(statusMatch[1]) : undefined
+
+  return buildAgentErrorInfo(raw, {
+    ...(rpc.code === ACP_RATE_LIMITED_ERROR_CODE ? { code: 'rate_limit' as const } : {}),
+    ...(httpStatus === undefined ? {} : { httpStatus }),
+  })
 }

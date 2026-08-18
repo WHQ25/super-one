@@ -5024,7 +5024,7 @@ describe('handleAgentEvent supplemental', () => {
   })
 
   describe('message_error', () => {
-    it('adds error content block and sets status to error', () => {
+    it('stores structured error info and sets status to error', () => {
       setupProject('/test')
 
       useChatStore.getState().handleAgentEvent(makeEvent({
@@ -5036,14 +5036,34 @@ describe('handleAgentEvent supplemental', () => {
         type: 'message_error',
         messageId: 'msg-e1',
         error: 'API timeout',
+        errorInfo: { raw: 'API timeout', code: 'overloaded', httpStatus: 529, terminalReason: 'api_error' },
       }))
 
       const session = getActiveDraftSession('/test')!
       const msg = session.messages.find((m) => m.id === 'msg-e1')
       expect(msg?.status).toBe('error')
-      const errorBlock = msg?.content.find((b) => b.type === 'text' && (b as { text: string }).text.includes('Error:'))
-      expect(errorBlock).toBeDefined()
-      expect((errorBlock as { text: string }).text).toBe('Error: API timeout')
+      expect(msg?.metadata?.errorInfo).toEqual({ raw: 'API timeout', code: 'overloaded', httpStatus: 529, terminalReason: 'api_error' })
+      // The badge owns the summary — no text block is spliced into the transcript.
+      expect(msg?.content.some((b) => b.type === 'text')).toBe(false)
+    })
+
+    it('synthesizes error info from the plain string when a harness sends none', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-e2', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'codex' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_error',
+        messageId: 'msg-e2',
+        error: 'spawn ENOENT',
+      }))
+
+      const msg = getActiveDraftSession('/test')!.messages.find((m) => m.id === 'msg-e2')
+      expect(msg?.status).toBe('error')
+      expect(msg?.metadata?.errorInfo).toEqual({ raw: 'spawn ENOENT' })
     })
   })
 })
@@ -5734,7 +5754,7 @@ describe('interaction response routing', () => {
     mockWindowAgent.setPermissionMode.mockClear()
     useChatStore.getState().respondToPlanApproval('p1', true, undefined, 'acceptEdits')
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'acceptEdits')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'a', 'acceptEdits')
   })
 
   it('respondToPlanApproval(approved=true, no postApprovalMode) defaults to switching main to "default"', () => {
@@ -5760,7 +5780,7 @@ describe('interaction response routing', () => {
     mockWindowAgent.setPermissionMode.mockClear()
     useChatStore.getState().respondToPlanApproval('p1', true)
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'default')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'a', 'default')
   })
 
   it('respondToPlanApproval(approved=false) does NOT invoke setPermissionMode', () => {

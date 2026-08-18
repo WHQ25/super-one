@@ -1545,8 +1545,13 @@ export class Session implements SessionContract {
         const codexMeta = event.type === 'message_complete'
           ? (event.metadata as Record<string, unknown> | undefined)?.codex as Record<string, unknown> | undefined
           : undefined
+        // A failed turn's detail now travels in metadata (the footer error badge
+        // reads it); only fall back to inline text when the harness sent none.
+        const errorInfo = event.type === 'message_error'
+          ? event.errorInfo ?? { raw: event.error }
+          : undefined
         const finalText = (codexMeta?.finalResponse as string | undefined)
-          ?? (event.type === 'message_interrupted' ? 'Codex run interrupted.' : event.type === 'message_error' ? `Codex run failed: ${event.error}` : '')
+          ?? (event.type === 'message_interrupted' ? 'Codex run interrupted.' : '')
         const result = codexMeta ? {
           threadId: (codexMeta.threadId as string | null) ?? null,
           finalResponse: (codexMeta.finalResponse as string | undefined) ?? '',
@@ -1564,7 +1569,11 @@ export class Session implements SessionContract {
           durationMs: codexMeta?.durationMs as number | undefined,
           model: codexMeta?.model as string | undefined,
         })
-        this.replaceMessages(next.messages)
+        this.replaceMessages(errorInfo
+          ? next.messages.map((m) => (m.id === event.messageId
+              ? { ...m, metadata: { ...m.metadata, errorInfo } }
+              : m))
+          : next.messages)
         this._totalCostUsd = next.totalCostUsd
         this._contextTokens = next.contextTokens
         this._streamingTokensByMessageId = next.streamingTokensByMessageId

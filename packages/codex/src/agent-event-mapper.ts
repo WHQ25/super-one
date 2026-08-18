@@ -4,6 +4,7 @@
  * This mirrors the desktop Codex turn/backend semantics. Hosts own transport
  * and process lifecycle; this mapper owns item state and message projection.
  */
+import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type {
   AgentEvent,
   CodexCollabAgentState,
@@ -475,6 +476,7 @@ export function createCodexAgentEventMapper(
   const order: string[] = []
   const itemMap = new Map<string, CodexThreadItem>()
   const mcpServers = new Map<string, Omit<CodexMcpServerStartup, 'name'>>()
+  const retriedErrors: string[] = []
   let currentUsage: CodexUsageInfo | null = null
   let currentThreadId: string | null = null
   let currentTurnId: string | null = options.turnId ?? null
@@ -545,7 +547,14 @@ export function createCodexAgentEventMapper(
     }
     options.emit(interrupted
       ? { type: 'message_interrupted', messageId: options.messageId }
-      : { type: 'message_error', messageId: options.messageId, error })
+      : {
+          type: 'message_error',
+          messageId: options.messageId,
+          error,
+          errorInfo: buildAgentErrorInfo(error, retriedErrors.length > 0
+            ? { retries: { attempts: retriedErrors.length } }
+            : {}),
+        })
     finishStatus()
   }
 
@@ -722,7 +731,12 @@ export function createCodexAgentEventMapper(
           break
         }
         case 'error': {
-          if (readBoolean(params.willRetry) === true) break
+          if (readBoolean(params.willRetry) === true) {
+            // Codex retries in-process and reports no backoff delay, so keep the
+            // count only — a give-up can then say how many attempts it burned.
+            retriedErrors.push(extractError(params))
+            break
+          }
           result.error = extractError(params)
           fail(result.error)
           break

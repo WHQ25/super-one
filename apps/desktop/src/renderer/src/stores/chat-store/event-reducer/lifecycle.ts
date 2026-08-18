@@ -101,10 +101,16 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
         streamingTokens: { input: 0, output: 0 },
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
+          // The failure lives in metadata, not in a text block: the footer badge
+          // owns the summary and its popover owns the detail. Harnesses that send
+          // no structured info still get a badge via the raw fallback.
           return {
             ...msg,
             status: 'error' as const,
-            content: [...msg.content, { type: 'text' as const, text: `Error: ${event.error}` }],
+            metadata: {
+              ...msg.metadata,
+              errorInfo: event.errorInfo ?? { raw: event.error },
+            },
           }
         }),
       }

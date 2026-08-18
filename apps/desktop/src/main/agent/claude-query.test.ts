@@ -54,6 +54,7 @@ vi.mock('../mcp/superone-mcp-server', () => ({
   createSuperoneMcpServer: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })),
 }))
 
+import { STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import {
   buildUserMessage,
   buildClaudeOptions,
@@ -103,6 +104,22 @@ describe('buildClaudeOptions permissionMode', () => {
     expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'default' }).allowDangerouslySkipPermissions).toBe(true)
     expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'dontAsk' }).allowDangerouslySkipPermissions).toBe(true)
     expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'plan' }).allowDangerouslySkipPermissions).toBe(true)
+  })
+})
+
+describe('buildClaudeOptions allowedTools', () => {
+  it('pre-allows every statically host-owned SuperOne tool so auto mode never classifies them', () => {
+    const allowed = buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'auto' }).allowedTools
+    expect(allowed).toEqual([...STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES])
+    // Tools whose approval is raised by our own executor must not depend on the classifier.
+    expect(allowed).toContain('mcp__superone__session_collab_request')
+    expect(allowed).toContain('mcp__superone__config_apply')
+    expect(allowed).toContain('mcp__superone__miniapp_call')
+  })
+
+  it('omits feature-gated computer_* so the list stays valid for any warm session', () => {
+    const allowed = buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'auto' }).allowedTools ?? []
+    expect(allowed.some((name) => name.startsWith('mcp__superone__computer_'))).toBe(false)
   })
 })
 
@@ -472,11 +489,11 @@ describe('createSessionQuery', () => {
     )
     await handle.iterationDone
 
-    expect(events).toContainEqual({
+    expect(events).toContainEqual(expect.objectContaining({
       type: 'message_error',
       messageId: 'msg-error',
       error: 'failure-1; failure-2',
-    })
+    }))
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
   })
 
@@ -504,11 +521,11 @@ describe('createSessionQuery', () => {
     )
     await handle.iterationDone
 
-    expect(events).toContainEqual({
+    expect(events).toContainEqual(expect.objectContaining({
       type: 'message_error',
       messageId: 'msg-drop',
       error: refusal,
-    })
+    }))
     expect(vi.mocked(log.warn)).toHaveBeenCalledWith(
       expect.stringContaining('resume-drops-turn refused'),
       'session-drop',
@@ -602,6 +619,72 @@ describe('createSessionQuery', () => {
     expect(events.some((e) => e.type === 'slash_command_output')).toBe(false)
     const messageError = events.find((e) => e.type === 'message_error') as Record<string, unknown> | undefined
     expect(messageError?.error).toBe('API Error: 529 overloaded')
+  })
+
+  it('carries the typed code, HTTP status and burned retry ladder on the failure event', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'api_retry', attempt: 1, max_retries: 3, retry_delay_ms: 2000, error: 'overloaded' },
+      { type: 'system', subtype: 'api_retry', attempt: 2, max_retries: 3, retry_delay_ms: 4000, error: 'overloaded' },
+      {
+        type: 'assistant',
+        message: { id: 'step-retry', model: 'claude-opus-5', content: [] },
+        request_id: 'req_abc123',
+        error: 'overloaded',
+      },
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        errors: ['API Error: 529 overloaded'],
+        terminal_reason: 'api_error',
+        api_error_status: 529,
+      },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-retry-err',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const messageError = events.find((e) => e.type === 'message_error') as Record<string, unknown> | undefined
+    expect(messageError?.errorInfo).toEqual({
+      raw: 'API Error: 529 overloaded',
+      code: 'overloaded',
+      httpStatus: 529,
+      terminalReason: 'api_error',
+      subtype: 'error_during_execution',
+      model: 'claude-opus-5',
+      requestId: 'req_abc123',
+      retries: { attempts: 2, delaysMs: [2000, 4000], max: 3 },
+    })
+  })
+
+  it('falls back to the typed code when the result carries an empty errors array', async () => {
+    state.messages = [
+      { type: 'assistant', message: { id: 'step-empty', model: 'claude-opus-5', content: [] }, error: 'authentication_failed' },
+      { type: 'result', subtype: 'error_during_execution', errors: [], terminal_reason: 'api_error', api_error_status: 401 },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-empty-err',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const messageError = events.find((e) => e.type === 'message_error') as Record<string, unknown> | undefined
+    // Without the fallback this reads as an empty string — the original blank-error bug.
+    expect(messageError?.error).toBe('authentication_failed')
+    expect((messageError?.errorInfo as { raw: string }).raw).toBe('authentication_failed')
   })
 
   it('flushes synthetic slash command output to the popup on a successful result', async () => {
@@ -832,11 +915,11 @@ describe('createSessionQuery', () => {
     )
     await handle.iterationDone
 
-    expect(events).toContainEqual({
+    expect(events).toContainEqual(expect.objectContaining({
       type: 'message_error',
       messageId: 'msg-catch',
       error: 'stream crashed',
-    })
+    }))
     expect(events).toContainEqual({ type: 'status_change', status: 'error' })
   })
 

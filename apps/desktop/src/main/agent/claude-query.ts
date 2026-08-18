@@ -1,6 +1,6 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import type { AgentErrorInfo, AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import {
   isResumeDropsTurnRefusal,
@@ -16,7 +16,7 @@ import { makeClaudeSpawn } from './claude-spawn'
 import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
-import { isMainThreadOnlySuperoneTool, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
+import { isMainThreadOnlySuperoneTool, STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
 import { persistAttachment, buildAttachmentPathNote } from './attachment-store'
 
 export { isResumeDropsTurnRefusal, RESUME_DROPS_TURN_REFUSAL_PREFIX }
@@ -87,6 +87,13 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     includePartialMessages: true,
     forwardSubagentText: true,
     permissionMode: opts.permissionMode,
+    // Match SuperOne's own tools upstream of the harness permission engine. Without
+    // this they are unknown tools to the CLI, so `auto` mode routes every one of them
+    // through the classifier — paying a model round-trip per call, and letting a
+    // classifier deny pre-empt the approval our executors raise themselves (see
+    // STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES). The canUseTool short-circuit
+    // in claude-permissions stays as the backstop for remote node and computer_*.
+    allowedTools: [...STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES],
     allowDangerouslySkipPermissions: true,
     canUseTool: opts.canUseTool,
     onElicitation: opts.onElicitation,
@@ -269,6 +276,13 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   // Last replay user message UUID — SDK creates file-history snapshots for replay UUIDs only
   let lastReplayCheckpointId = ''
   let lastAssistantTypedError: string | undefined
+  let lastAssistantRequestId: string | undefined
+  let lastAssistantModel: string | undefined
+  // Retry ladder for the in-flight turn. Kept until the result lands so the
+  // failure can report how many retries were burned — the `apiRetry` store
+  // field is cleared by the trailing idle and cannot answer this.
+  const retryDelaysMs: number[] = []
+  let retryMaxRetries: number | undefined
   let pendingSlashOutput = ''
   // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
@@ -629,6 +643,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               elicitationId: sys.elicitation_id ?? '',
             })
           } else if (sys.subtype === 'api_retry') {
+            retryDelaysMs.push(sys.retry_delay_ms ?? 0)
+            retryMaxRetries = sys.max_retries ?? 3
+            if (sys.error) lastAssistantTypedError = String(sys.error)
             emit({
               type: 'api_retry',
               attempt: sys.attempt ?? 1,
@@ -674,6 +691,10 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           if (assistantError) {
             lastAssistantTypedError = String(assistantError)
           }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const assistantRequestId = (msg as any).request_id
+          if (assistantRequestId) lastAssistantRequestId = String(assistantRequestId)
+          if (msg.message?.model) lastAssistantModel = msg.message.model
 
           if (!assistantParent) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -980,8 +1001,23 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             }
             emit({ type: 'message_complete', messageId, metadata })
           } else {
-            const rawError = result.errors?.join('; ') ?? 'Unknown error'
+            // `errors` is frequently an empty array on api_error results — join
+            // would yield '' and strand the user with a blank failure.
+            const rawError = result.errors?.join('; ') || lastAssistantTypedError || 'Unknown error'
             const decorated = decorateMessageErrorText(rawError, lastAssistantTypedError, metadata.apiErrorStatus)
+            const errorInfo: AgentErrorInfo = {
+              raw: rawError,
+              ...(lastAssistantTypedError ? { code: lastAssistantTypedError } : {}),
+              ...(typeof metadata.apiErrorStatus === 'number' ? { httpStatus: metadata.apiErrorStatus } : {}),
+              ...(result.terminal_reason ? { terminalReason: String(result.terminal_reason) } : {}),
+              ...(result.subtype ? { subtype: String(result.subtype) } : {}),
+              ...(lastAssistantModel ? { model: lastAssistantModel } : {}),
+              ...(lastAssistantRequestId ? { requestId: lastAssistantRequestId } : {}),
+              ...(retryDelaysMs.length > 0
+                ? { retries: { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) } }
+                : {}),
+            }
+            metadata.errorInfo = errorInfo
             if (isResumeDropsTurnRefusal(rawError)) {
               // Deterministic refusal: clear any truncating fork target and full-resume only.
               // Re-sending the same resumeSessionAt + resumeDropsTurn pair fails forever.
@@ -1000,9 +1036,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 decorated,
               )
             }
-            emit({ type: 'message_error', messageId, error: decorated })
+            emit({ type: 'message_error', messageId, error: decorated, errorInfo })
           }
           lastAssistantTypedError = undefined
+          lastAssistantRequestId = undefined
+          retryDelaysMs.length = 0
+          retryMaxRetries = undefined
           pendingSlashOutput = ''
 
           resultSeen = true
@@ -1062,7 +1101,20 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
       return
     }
     const errMsg = err instanceof Error ? err.message : String(err)
-    emit({ type: 'message_error', messageId, error: errMsg })
+    emit({
+      type: 'message_error',
+      messageId,
+      error: errMsg,
+      errorInfo: {
+        raw: errMsg,
+        ...(lastAssistantTypedError ? { code: lastAssistantTypedError } : {}),
+        ...(lastAssistantModel ? { model: lastAssistantModel } : {}),
+        ...(lastAssistantRequestId ? { requestId: lastAssistantRequestId } : {}),
+        ...(retryDelaysMs.length > 0
+          ? { retries: { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) } }
+          : {}),
+      },
+    })
     emit({ type: 'status_change', status: 'error' })
   }
 }

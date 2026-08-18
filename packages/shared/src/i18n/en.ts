@@ -354,6 +354,7 @@ export type Messages = {
       desc: {
         claude: string
         codex: string
+        deepseek: string
         opencode: string
         cursor: string
         acpGrok: string
@@ -362,6 +363,7 @@ export type Messages = {
       ids: {
         claude: string
         codex: string
+        deepseek: string
         opencode: string
         cursor: string
         'acp-grok': string
@@ -955,6 +957,8 @@ export type Messages = {
       openCodeAsk: string
       cursorPlan: string
       cursorAsk: string
+      deepseekPlan: string
+      deepseekAsk: string
       acpPlan: string
       acpAsk: string
     }
@@ -1132,6 +1136,45 @@ export type Messages = {
     selectionMenu: {
       copy: string
       addToChat: string
+    }
+    error: {
+      detailsToggle: string
+      copy: string
+      copied: string
+      title: {
+        auth: string
+        orgNotAllowed: string
+        billing: string
+        rateLimit: string
+        overloaded: string
+        modelNotFound: string
+        serverError: string
+        promptTooLong: string
+        imageError: string
+        maxOutputTokens: string
+        maxTurns: string
+        budgetExhausted: string
+        malformedToolUse: string
+        invalidRequest: string
+        unknown: string
+      }
+      hint: {
+        auth: string
+        orgNotAllowed: string
+        billing: string
+        rateLimit: string
+        overloaded: string
+        modelNotFound: string
+        serverError: string
+        promptTooLong: string
+        imageError: string
+        maxOutputTokens: string
+        maxTurns: string
+        budgetExhausted: string
+        malformedToolUse: string
+        invalidRequest: string
+        unknown: string
+      }
     }
     codex: {
       statusRunning: string
@@ -3171,6 +3214,7 @@ export const en: Messages = {
       desc: {
         claude: 'Claude Code runtime (Agent SDK binary). Downloads on enable when not bundled.',
         codex: 'OpenAI Codex app-server binary. Downloads on enable when not bundled.',
+        deepseek: 'Experimental in-process DeepSeek Harness runtime. Requires a DeepSeek API key.',
         opencode: 'OpenCode CLI / server. External runtime resolved from PATH or config.',
         cursor: 'Experimental Cursor Agent SDK harness. Managed in-process runtime; requires a Cursor User API Key.',
         acpGrok: 'Grok via the Agent Client Protocol.',
@@ -3179,6 +3223,7 @@ export const en: Messages = {
       ids: {
         claude: 'Claude Code',
         codex: 'Codex',
+        deepseek: 'DeepSeek',
         opencode: 'OpenCode',
         cursor: 'Cursor',
         'acp-grok': 'Grok (ACP)',
@@ -3820,6 +3865,8 @@ export const en: Messages = {
       openCodeAsk: 'Ask OpenCode anything, @ for files & mini-apps, / for commands and skills',
       cursorPlan: "Let's make a plan! What's in your mind?",
       cursorAsk: 'Ask Cursor anything, @ for files & mini-apps, / for commands and skills',
+      deepseekPlan: "Let's make a plan with DeepSeek! What's in your mind?",
+      deepseekAsk: 'Ask DeepSeek anything, @ for files & mini-apps',
       acpPlan: "Let's make a plan with {{agent}}! What's in your mind?",
       acpAsk: 'Ask {{agent}} anything, @ for files & mini-apps, / for slash commands',
     },
@@ -4013,6 +4060,45 @@ export const en: Messages = {
     selectionMenu: {
       copy: 'Copy',
       addToChat: 'Add to Chat',
+    },
+    error: {
+      detailsToggle: 'Error Details',
+      copy: 'Copy',
+      copied: 'Copied',
+      title: {
+        auth: 'Sign-in Expired',
+        orgNotAllowed: 'Account Not Allowed',
+        billing: 'Billing Problem',
+        rateLimit: 'Usage Limit Reached',
+        overloaded: 'Service Busy',
+        modelNotFound: 'Model Unavailable',
+        serverError: 'Server Error',
+        promptTooLong: 'Conversation Too Long',
+        imageError: 'Image Not Accepted',
+        maxOutputTokens: 'Reply Cut Off',
+        maxTurns: 'Step Limit Reached',
+        budgetExhausted: 'Budget Used Up',
+        malformedToolUse: 'Tool Call Kept Failing',
+        invalidRequest: 'Request Rejected',
+        unknown: 'Request Failed',
+      },
+      hint: {
+        auth: 'The saved credentials were rejected. Sign in again from Settings → Account, then resend this message — nothing is lost.',
+        orgNotAllowed: 'Your organization blocks this account from using the model. Switch accounts, or ask an admin to grant access.',
+        billing: 'The account has no available credit, or its payment method needs attention. Sort out billing, then resend.',
+        rateLimit: 'You have hit the usage limit for now. Wait for it to reset, or switch to another model in the model picker.',
+        overloaded: 'The service is temporarily overloaded. It usually recovers within a few minutes — just resend. Switching models works too.',
+        modelNotFound: 'The current provider does not offer this model. Pick a different one in the model picker.',
+        serverError: 'Something broke on the server side. Resend in a moment; if it keeps happening, copy the details when reporting it.',
+        promptTooLong: 'This turn exceeded the context length the model accepts. Run /compact to shrink it, or switch to a model with a longer context window.',
+        imageError: 'One of the attached images could not be processed. Remove or re-export it, then resend.',
+        maxOutputTokens: 'The reply hit the output length limit and stopped early. Ask it to continue, or ask for a shorter answer.',
+        maxTurns: 'The turn reached its step limit before finishing. Send a follow-up to keep it going.',
+        budgetExhausted: 'The turn ran out of its configured budget. Raise the budget, or narrow the task and try again.',
+        malformedToolUse: 'The model kept producing malformed tool calls and gave up. Rephrase the request, or try another model.',
+        invalidRequest: 'The service rejected this request as invalid. The error details below say what it objected to.',
+        unknown: 'The turn failed before it finished. See the error details below, or copy them when reporting the problem.',
+      },
     },
     codex: {
       statusRunning: 'Running',

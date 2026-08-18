@@ -1754,6 +1754,25 @@ describe('Session persist hook', () => {
     expect(session.snapshot.messages.find((m) => m.id === 'a2')?.status).toBe('error')
   })
 
+  it('persists structured failure detail so a reloaded turn still shows its error badge', () => {
+    const { session, backend } = makeSession()
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.emit({
+      type: 'message_error',
+      messageId: 'a1',
+      error: 'API Error: 529 overloaded',
+      errorInfo: { raw: 'API Error: 529 overloaded', code: 'overloaded', httpStatus: 529 },
+    })
+
+    const msg = session.snapshot.messages.find((m) => m.id === 'a1')
+    expect(msg?.metadata?.errorInfo).toEqual({ raw: 'API Error: 529 overloaded', code: 'overloaded', httpStatus: 529 })
+    // The transcript stays clean — the badge, not a text block, carries the failure.
+    expect(msg?.content).toEqual([])
+  })
+
   it('switchCwd rebuilds backend with new cwd when session is idle', async () => {
     const { session, backend } = makeSession()
     const p0 = session.send({ content: 'hi', clientMessageId: 'u0' })

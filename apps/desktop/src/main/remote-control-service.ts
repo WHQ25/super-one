@@ -565,8 +565,20 @@ function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: strin
   return blocks
 }
 
+/**
+ * Desktop keeps a failed turn's detail in `metadata.errorInfo` and surfaces it
+ * through the footer badge. Mobile has no badge, so materialize the raw text
+ * back into the transcript for remote consumers.
+ */
+function appendRemoteErrorText(msg: ChatMessage): ChatMessage {
+  const raw = msg.metadata?.errorInfo?.raw
+  if (!raw) return msg
+  if (msg.content.some((b) => b.type === 'text' && b.text.includes(raw))) return msg
+  return { ...msg, content: [...msg.content, { type: 'text', text: `Error: ${raw}` }] }
+}
+
 export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string): ChatMessage[] {
-  return messages.map((msg) => {
+  return messages.map(appendRemoteErrorText).map((msg) => {
     if (msg.providerId === 'codex' && msg.metadata?.codex?.items?.length) {
       const converted = convertCodexItemsToBlocks(msg.metadata.codex.items, projectPath)
       const { codex: _c, ...rest } = msg.metadata

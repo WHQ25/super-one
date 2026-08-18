@@ -5,6 +5,7 @@ import type {
   SDKToolUseMessage,
 } from '@cursor/sdk'
 import type { AgentEvent, ContextUsageCategory, ContextUsageInfo } from '@superone/shared/agent-types'
+import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import { formatTranscriptToolResult, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 
 /** Map Cursor toolCall.type (and free-form names) to SuperOne tool display names. */
@@ -704,7 +705,8 @@ export function mapSdkMessageLifecycle(
       } else if (message.status === 'FINISHED' || message.status === 'CANCELLED' || message.status === 'EXPIRED') {
         events.push({ type: 'status_change', status: 'idle' })
       } else if (message.status === 'ERROR') {
-        events.push({ type: 'message_error', messageId, error: message.message ?? 'Cursor run error' })
+        const cursorError = message.message ?? 'Cursor run error'
+        events.push({ type: 'message_error', messageId, error: cursorError, errorInfo: buildAgentErrorInfo(cursorError) })
         events.push({ type: 'status_change', status: 'error' })
       }
       break

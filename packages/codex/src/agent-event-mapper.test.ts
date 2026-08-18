@@ -6,6 +6,36 @@ import {
 } from './agent-event-mapper'
 
 describe('Codex AgentEvent mapper', () => {
+  it('counts retried errors and attaches structured failure detail when the turn gives up', () => {
+    const events: AgentEvent[] = []
+    const mapper = createCodexAgentEventMapper({
+      messageId: 'message-retry',
+      emit: (event) => events.push(event),
+      model: 'gpt-5.4',
+      now: () => 1_000,
+    })
+
+    mapper.start('thread-retry')
+    // Retried errors are not terminal — they must not surface as a failure…
+    mapper.apply({ method: 'error', params: { message: 'stream reset', willRetry: true } })
+    mapper.apply({ method: 'error', params: { message: 'stream reset', willRetry: true } })
+    expect(events.some((e) => e.type === 'message_error')).toBe(false)
+
+    // …but the give-up must report how many attempts they burned.
+    mapper.apply({ method: 'error', params: { message: 'API error (status 429): rate limit reached' } })
+
+    const failure = events.find((e) => e.type === 'message_error')
+    expect(failure).toMatchObject({
+      messageId: 'message-retry',
+      errorInfo: {
+        raw: 'API error (status 429): rate limit reached',
+        code: 'rate_limit',
+        httpStatus: 429,
+        retries: { attempts: 2 },
+      },
+    })
+  })
+
   it('projects the desktop item, usage, MCP, and lifecycle semantics', () => {
     const events: AgentEvent[] = []
     const mapper = createCodexAgentEventMapper({

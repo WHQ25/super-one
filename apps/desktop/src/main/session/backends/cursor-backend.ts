@@ -8,6 +8,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
+import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import { buildCursorModelSelection, mapCursorContextUsageInfo, resolveCursorSelectedContextWindow } from '@superone/cursor'
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
@@ -500,7 +501,7 @@ export class CursorBackend implements SessionBackend {
   private fail(messageId: string, error: string): void {
     if (this.terminalMessageId === messageId) return
     this.terminalMessageId = messageId
-    this.emit({ type: 'message_error', messageId, error })
+    this.emit({ type: 'message_error', messageId, error, errorInfo: buildAgentErrorInfo(error) })
     this.emit({ type: 'status_change', status: 'error' })
     if (this.activeTurn?.messageId === messageId) this.activeTurn.resolve()
   }

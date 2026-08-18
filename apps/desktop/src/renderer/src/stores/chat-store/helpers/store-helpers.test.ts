@@ -124,6 +124,22 @@ describe('mergeProjectAndSessionDirs', () => {
     const sess = { ...createDefaultPerSessionState(), additionalDirs: ['/b', '/c'] }
     expect(mergeProjectAndSessionDirs(proj, sess)).toEqual(['/a', '/b', '/c'])
   })
+
+  it('uses only Codex project config for Codex sessions', () => {
+    const proj = {
+      ...createDefaultProjectState(),
+      userAdditionalDirs: ['/claude-user'],
+      projectAdditionalDirs: ['/claude-project'],
+      codexUserAdditionalDirs: ['/codex-user'],
+      codexProjectAdditionalDirs: ['/codex-project'],
+    }
+    const sess = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'codex' as const,
+      additionalDirs: ['/session'],
+    }
+    expect(mergeProjectAndSessionDirs(proj, sess)).toEqual(['/codex-user', '/codex-project', '/session'])
+  })
 })
 
 describe('triggerPrewarm', () => {

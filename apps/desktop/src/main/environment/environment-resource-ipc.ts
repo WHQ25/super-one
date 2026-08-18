@@ -147,6 +147,25 @@ export function ensureEnvironmentResourceIpcRegistered(): void {
     },
   )
 
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_LIST_REMOTE_ADDITIONAL_DIRS,
+    async (_e, connectionId: string, projectId: string, provider: ResourceProvider) => {
+      return (await host()).listRemoteAdditionalDirs(connectionId, projectId, provider)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_ADD_REMOTE_ADDITIONAL_DIR,
+    async (_e, connectionId: string, projectId: string, dir: string, provider: ResourceProvider) => {
+      return (await host()).addRemoteAdditionalDir(connectionId, projectId, dir, provider)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_REMOVE_REMOTE_ADDITIONAL_DIR,
+    async (_e, connectionId: string, projectId: string, dir: string, provider: ResourceProvider) => {
+      return (await host()).removeRemoteAdditionalDir(connectionId, projectId, dir, provider)
+    },
+  )
+
   // --- harness.resources + sessionProviders (node discovery path) ---
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_HARNESS_RESOURCES,

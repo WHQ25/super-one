@@ -5,6 +5,9 @@ const handle = vi.fn()
 const listRemoteMcpConfigs = vi.fn(async () => ({ servers: [] }))
 const saveRemoteMcpConfig = vi.fn(async () => ({ ok: true }))
 const listRemoteSkills = vi.fn(async () => ({ skills: [] }))
+const listRemoteAdditionalDirs = vi.fn(async () => ({ user: [], projectShared: [], projectLocal: [] }))
+const addRemoteAdditionalDir = vi.fn(async () => ({ ok: true }))
+const removeRemoteAdditionalDir = vi.fn(async () => ({ ok: true }))
 
 vi.mock('electron', () => ({
   ipcMain: { handle },
@@ -21,6 +24,9 @@ vi.mock('./environment-host', () => ({
     installRemoteSkill: vi.fn(),
     toggleRemoteMcpConfig: vi.fn(),
     deleteRemoteMcpConfig: vi.fn(),
+    listRemoteAdditionalDirs,
+    addRemoteAdditionalDir,
+    removeRemoteAdditionalDir,
   }),
 }))
 
@@ -45,6 +51,9 @@ describe('ensureEnvironmentResourceIpcRegistered', () => {
     expect(channels).toContain(AgentIpcChannels.ENVIRONMENT_SAVE_REMOTE_MCP_CONFIG)
     expect(channels).toContain(AgentIpcChannels.ENVIRONMENT_TOGGLE_REMOTE_MCP_CONFIG)
     expect(channels).toContain(AgentIpcChannels.ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG)
+    expect(channels).toContain(AgentIpcChannels.ENVIRONMENT_LIST_REMOTE_ADDITIONAL_DIRS)
+    expect(channels).toContain(AgentIpcChannels.ENVIRONMENT_ADD_REMOTE_ADDITIONAL_DIR)
+    expect(channels).toContain(AgentIpcChannels.ENVIRONMENT_REMOVE_REMOTE_ADDITIONAL_DIR)
     // Idempotent
     expect(
       channels.filter((c) => c === AgentIpcChannels.ENVIRONMENT_SAVE_REMOTE_MCP_CONFIG),

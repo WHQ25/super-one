@@ -1800,6 +1800,26 @@ describe('runCodexTurn turn/start payload', () => {
     expect(turnStartCall?.[1]).not.toHaveProperty('summary')
   })
 
+  it('adds project and session directories to workspace-write roots', async () => {
+    const { handle, request } = makeConnectionDriver('thread-roots', 'turn-roots')
+    const session = { ...makeSession({ model: 'gpt-5.4' }) }
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+
+    await runCodexTurn(session, { mode: 'auto' }, '/project', {
+      prompt: 'Test prompt',
+      permissionPreset: 'default',
+      additionalDirectories: ['/shared', '/project'],
+    })
+
+    expect(request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      sandboxPolicy: expect.objectContaining({
+        type: 'workspaceWrite',
+        writableRoots: ['/project', '/shared'],
+      }),
+    }))
+  })
+
   it('sends explicit default collaboration mode when plan mode is not selected', async () => {
     const { handle, request } = makeConnectionDriver('thread-3', 'turn-3')
     const session = { ...makeSession({ model: 'gpt-5.4' }) }

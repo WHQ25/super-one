@@ -150,6 +150,7 @@ describe('createNodeCodexTurnRunner', () => {
     const turnP = runner({
       session: session(),
       text: 'ping',
+      additionalDirectories: [join(dir, 'shared')],
       onDelta: (d) => deltas.push(d),
       onAgentEvent: (event) => agentEvents.push(event),
       signal: new AbortController().signal,
@@ -167,6 +168,7 @@ describe('createNodeCodexTurnRunner', () => {
 
     await pump()
     const turn = JSON.parse(lines.find((l) => l.includes('turn/start'))!)
+    expect(turn.params.sandboxPolicy.writableRoots).toEqual([dir, join(dir, 'shared')])
     child.stdout.write(
       `${JSON.stringify({ jsonrpc: '2.0', id: turn.id, result: { turn: { id: 'u1' } } })}\n`,
     )
@@ -607,6 +609,9 @@ url = "https://mcp.linear.app/mcp"
         result: { thread: { id: 't-c' } },
       })}\n`,
     )
+    await pump()
+    const settings = JSON.parse(lines.find((l) => l.includes('thread/settings/update'))!)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: settings.id, result: {} })}\n`)
     await pump()
     expect(lines.some((l) => l.includes('thread/compact/start'))).toBe(true)
     const compact = JSON.parse(lines.find((l) => l.includes('thread/compact/start'))!)

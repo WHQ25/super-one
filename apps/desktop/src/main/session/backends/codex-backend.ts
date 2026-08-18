@@ -543,6 +543,15 @@ export class CodexBackend implements SessionBackend {
     this.discardSessionConnection('rebuild')
   }
 
+  async setAdditionalDirectories(dirs: string[]): Promise<boolean> {
+    if (!this.startOpts) return false
+    this.startOpts = {
+      ...this.startOpts,
+      additionalDirectories: dirs.length > 0 ? [...dirs] : undefined,
+    }
+    return true
+  }
+
   private handleAuthChanged(): void {
     this.discardSessionConnection('auth-changed')
   }
@@ -707,6 +716,7 @@ export class CodexBackend implements SessionBackend {
             threadId: resolvedThreadId,
             messageId: assistantMessageId,
             cwd: resolvedCwd,
+            additionalDirectories: startOpts.additionalDirectories,
           }
           result = await reviewCodexTurn(session, auth, projectPath, reviewRequest, callbacks)
         } else if (mode === 'compact') {
@@ -717,6 +727,7 @@ export class CodexBackend implements SessionBackend {
             threadId: resolvedThreadId,
             messageId: assistantMessageId,
             cwd: resolvedCwd,
+            additionalDirectories: startOpts.additionalDirectories,
           }
           callbacks.onCompactionStarted?.('manual')
           result = await compactCodexTurn(session, auth, projectPath, compactRequest, callbacks)
@@ -732,6 +743,7 @@ export class CodexBackend implements SessionBackend {
             threadId: resolvedThreadId,
             messageId: assistantMessageId,
             cwd: resolvedCwd,
+            additionalDirectories: startOpts.additionalDirectories,
           }
           result = await runCodexTurn(session, auth, projectPath, codexRequest, callbacks)
         }

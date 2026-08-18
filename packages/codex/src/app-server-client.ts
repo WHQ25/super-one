@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs'
 import { buildSafeEnv } from '@superone/runtime/spawn-env'
 import { redactHarnessDiagnosticText } from '@superone/shared/environment'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { buildCodexWorkspaceWriteSandboxPolicy } from './sandbox-policy'
 import {
   createCodexAgentEventMapper,
   deriveCodexFinalResponse,
@@ -487,6 +488,7 @@ export async function runCodexAppServerTurn(opts: {
   client: CodexAppServerHandle
   prompt: string
   cwd: string
+  additionalDirectories?: string[]
   threadId?: string | null
   model?: string
   /** Codex model reasoning effort (desktop parity). */
@@ -557,8 +559,18 @@ export async function runCodexAppServerTurn(opts: {
   let turnId: string | null = null
 
   if (turnKind === 'compact') {
+    await opts.client.request('thread/settings/update', {
+      threadId,
+      approvalPolicy: 'never',
+      sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
+    })
     await opts.client.request('thread/compact/start', { threadId })
   } else if (turnKind === 'review') {
+    await opts.client.request('thread/settings/update', {
+      threadId,
+      approvalPolicy: 'never',
+      sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
+    })
     await opts.client.request('review/start', compactRecord({
       threadId,
       delivery: 'inline',
@@ -578,10 +590,7 @@ export async function runCodexAppServerTurn(opts: {
         ? { effort: opts.reasoningEffort, reasoning_effort: opts.reasoningEffort, summary: 'concise' }
         : {}),
       approvalPolicy: 'never',
-      sandboxPolicy: {
-        type: 'workspaceWrite',
-        writableRoots: [opts.cwd],
-      },
+      sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
       ...(collaborationMode ? { collaborationMode } : {}),
     }))
 

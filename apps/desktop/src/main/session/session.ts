@@ -1036,8 +1036,7 @@ export class Session implements SessionContract {
         } as AgentEvent)
         return
       }
-      case 'claude.set_additional_dirs': {
-        if (this.harnessId !== 'claude') return
+      case 'session.set_additional_dirs': {
         if (sameStringArray(cmd.dirs, this.additionalDirectories)) return
         this.additionalDirectories = [...cmd.dirs]
         if (!this.backendStarted) return

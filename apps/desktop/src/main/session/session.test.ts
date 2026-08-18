@@ -602,8 +602,8 @@ describe('Session state machine', () => {
     await p2
   })
 
-  describe('claude.set_additional_dirs command', () => {
-    const cmd = (dirs: string[]) => ({ kind: 'claude.set_additional_dirs', dirs }) as import('./types').BackendCommand
+  describe('session.set_additional_dirs command', () => {
+    const cmd = (dirs: string[]) => ({ kind: 'session.set_additional_dirs', dirs }) as import('./types').BackendCommand
 
     it('applies dirs in place even while streaming, without deferring a rebuild', async () => {
       const pending = session.send({ content: 'hi', clientMessageId: 'u0' })

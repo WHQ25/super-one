@@ -51,7 +51,7 @@ const mockWindowAgent = {
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
   interrupt: vi.fn().mockResolvedValue(true),
-  readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
+  readProjectAdditionalDirs: vi.fn().mockResolvedValue({ user: [], projectShared: [], projectLocal: [] }),
   respondToPermission: vi.fn().mockResolvedValue(true),
   answerQuestion: vi.fn().mockResolvedValue(undefined),
   dismissQuestion: vi.fn().mockResolvedValue(undefined),
@@ -2774,6 +2774,43 @@ describe('codex plan mode', () => {
     expect(call?.[1]).toBe('/test')
     expect(call?.[2]).toBe('hello')
     expect(call?.[6]).toBe('default')
+  })
+
+  it('passes merged project and session directories to codex runs', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const sid = draftOf(proj)
+
+    mockWindowAgent.readProjectAdditionalDirs.mockResolvedValue({
+      user: ['/codex-user'],
+      projectShared: [],
+      projectLocal: ['/codex-project'],
+    })
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          userAdditionalDirs: ['/claude-user'],
+          projectAdditionalDirs: ['/claude-project'],
+          _sessions: {
+            ...proj._sessions,
+            [sid]: {
+              ...proj._sessions[sid],
+              preferredProvider: 'codex',
+              additionalDirs: ['/session-shared', '/codex-project'],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().sendMessage('hello')
+
+    const call = mockWindowApp.codexRun.mock.calls.at(-1)
+    expect(mockWindowAgent.readProjectAdditionalDirs).toHaveBeenCalledWith('/test', 'codex')
+    expect(call?.[15]).toMatchObject({
+      additionalDirectories: ['/codex-user', '/codex-project', '/session-shared'],
+    })
   })
 
   it('approves codex plan with default collaboration mode without consuming draft attachments or mentions', async () => {

@@ -1883,7 +1883,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const persistedUserMessageId = userMessageId ?? `user_${Date.now()}`
@@ -1896,6 +1896,7 @@ function registerIpcHandlers(): void {
         assistantMessageId,
         gitBranch,
         worktreePath,
+        additionalDirs: extras?.additionalDirectories,
         ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
         ...(extras?.contexts ? { contexts: extras.contexts } : {}),
         ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
@@ -2269,7 +2270,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
@@ -2280,6 +2281,7 @@ function registerIpcHandlers(): void {
         assistantMessageId,
         gitBranch,
         worktreePath,
+        additionalDirs: extras?.additionalDirectories,
         ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
         ...(extras?.contexts ? { contexts: extras.contexts } : {}),
         ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
@@ -2311,7 +2313,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
@@ -2322,6 +2324,7 @@ function registerIpcHandlers(): void {
         assistantMessageId,
         gitBranch,
         worktreePath,
+        additionalDirs: extras?.additionalDirectories,
         ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
         ...(extras?.contexts ? { contexts: extras.contexts } : {}),
         ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),

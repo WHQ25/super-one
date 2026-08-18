@@ -154,6 +154,12 @@ export {
   commitPerSession,
   resolveActiveSessionId,
 } from './helpers/store-helpers'
+import {
+  addRemoteAdditionalDir,
+  isRemoteAdditionalDirsProject,
+  readRemoteAdditionalDirs,
+  removeRemoteAdditionalDir,
+} from '@/lib/remote-additional-dirs'
 
 import {
   getProject,
@@ -1003,14 +1009,47 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     set((s) => ({ mountedSessions: removeMountedSession(s.mountedSessions, projectPath, sessionId) }))
   },
 
-  addDir: (path, scope, target) => {
+  refreshProjectAdditionalDirs: async (harness, target) => {
     const projectPath = target?.projectPath ?? get().activeProject
     if (!projectPath) return
+    try {
+      const scoped = await readRemoteAdditionalDirs(projectPath, harness)
+        ?? await window.agent.readProjectAdditionalDirs(projectPath, harness)
+      set((s) => updateProjectState(s, projectPath, () => harness === 'codex'
+        ? {
+            codexUserAdditionalDirs: [...scoped.user],
+            codexProjectAdditionalDirs: Array.from(new Set([
+              ...scoped.projectShared,
+              ...scoped.projectLocal,
+            ])),
+          }
+        : {
+            userAdditionalDirs: [...scoped.user],
+            projectSharedDirs: [...scoped.projectShared],
+            projectLocalDirs: [...scoped.projectLocal],
+            projectAdditionalDirs: Array.from(new Set([
+              ...scoped.projectShared,
+              ...scoped.projectLocal,
+            ])),
+          }))
+    } catch (err) {
+      console.warn(`[additionalDirs] Failed to read ${harness} project config:`, err)
+    }
+  },
+
+  addDir: (path, scope, target, harness) => {
+    const projectPath = target?.projectPath ?? get().activeProject
+    if (!projectPath) return
+    const sessionProvider = resolveProvider(getScopedPerSession(get(), target))
+    const resolvedHarness = harness ?? (sessionProvider === 'codex' ? 'codex' : 'claude')
     if (scope === 'session') {
       set((s) => {
         const sess = getScopedPerSession(s, target)
         const proj = getProject(s, projectPath)
-        if (sess.additionalDirs.includes(path) || proj.projectAdditionalDirs.includes(path)) return {}
+        const projectDirs = resolvedHarness === 'codex'
+          ? proj.codexProjectAdditionalDirs
+          : proj.projectAdditionalDirs
+        if (sess.additionalDirs.includes(path) || projectDirs.includes(path)) return {}
         return commitPerSession(s, target, () => ({
           additionalDirs: [...sess.additionalDirs, path],
           additionalDirsDirty: true,
@@ -1020,8 +1059,24 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       set((s) => {
         const sess = getScopedPerSession(s, target)
         const proj = getProject(s, projectPath)
+        if (resolvedHarness === 'codex') {
+          if (sess.additionalDirs.includes(path) || proj.codexProjectAdditionalDirs.includes(path)) return {}
+          if (isRemoteAdditionalDirsProject(projectPath)) {
+            addRemoteAdditionalDir(projectPath, path, 'codex').catch(() => {})
+          } else {
+            window.agent.addProjectAdditionalDir(projectPath, path, 'codex').catch(() => {})
+          }
+          const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
+            codexProjectAdditionalDirs: [...proj.codexProjectAdditionalDirs, path],
+          })) } as ChatStore
+          return commitPerSession(merged, target, () => ({ additionalDirsDirty: true }))
+        }
         if (sess.additionalDirs.includes(path) || proj.projectLocalDirs.includes(path)) return {}
-        window.agent.addProjectAdditionalDir(projectPath, path).catch(() => {})
+        if (isRemoteAdditionalDirsProject(projectPath)) {
+          addRemoteAdditionalDir(projectPath, path, 'claude').catch(() => {})
+        } else {
+          window.agent.addProjectAdditionalDir(projectPath, path, 'claude').catch(() => {})
+        }
         const nextLocal = [...proj.projectLocalDirs, path]
         const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
         const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
@@ -1033,9 +1088,11 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
   },
 
-  removeDir: (path, scope, target) => {
+  removeDir: (path, scope, target, harness) => {
     const projectPath = target?.projectPath ?? get().activeProject
     if (!projectPath) return
+    const sessionProvider = resolveProvider(getScopedPerSession(get(), target))
+    const resolvedHarness = harness ?? (sessionProvider === 'codex' ? 'codex' : 'claude')
     if (scope === 'session') {
       set((s) => commitPerSession(s, target, (sess) => ({
         additionalDirs: sess.additionalDirs.filter((d) => d !== path),
@@ -1044,8 +1101,24 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     } else {
       set((s) => {
         const proj = getProject(s, projectPath)
+        if (resolvedHarness === 'codex') {
+          if (!proj.codexProjectAdditionalDirs.includes(path)) return {}
+          if (isRemoteAdditionalDirsProject(projectPath)) {
+            removeRemoteAdditionalDir(projectPath, path, 'codex').catch(() => {})
+          } else {
+            window.agent.removeProjectAdditionalDir(projectPath, path, 'codex').catch(() => {})
+          }
+          const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
+            codexProjectAdditionalDirs: proj.codexProjectAdditionalDirs.filter((d) => d !== path),
+          })) } as ChatStore
+          return commitPerSession(merged, target, () => ({ additionalDirsDirty: true }))
+        }
         if (!proj.projectLocalDirs.includes(path)) return {}
-        window.agent.removeProjectAdditionalDir(projectPath, path).catch(() => {})
+        if (isRemoteAdditionalDirsProject(projectPath)) {
+          removeRemoteAdditionalDir(projectPath, path, 'claude').catch(() => {})
+        } else {
+          window.agent.removeProjectAdditionalDir(projectPath, path, 'claude').catch(() => {})
+        }
         const nextLocal = proj.projectLocalDirs.filter((d) => d !== path)
         const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
         const merged = { ...s, ...updateProjectState(s, projectPath, () => ({

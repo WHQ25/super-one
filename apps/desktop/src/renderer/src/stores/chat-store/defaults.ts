@@ -143,6 +143,8 @@ export function createDefaultProjectState(): ProjectState {
     userAdditionalDirs: [],
     projectSharedDirs: [],
     projectLocalDirs: [],
+    codexProjectAdditionalDirs: [],
+    codexUserAdditionalDirs: [],
     showDirManager: false,
     showReviewPanel: false,
     reviewPanelInitialMode: 'uncommitted',

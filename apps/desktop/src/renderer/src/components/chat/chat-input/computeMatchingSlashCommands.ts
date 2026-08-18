@@ -38,10 +38,9 @@ function rankAndGroup(matched: MatchedSlashCommand[]): MatchedSlashCommand[] {
  * `getText()` joins block nodes with `\n`, so a multi-line message must not let
  * later lines bleed into the fuzzy match.
  *
- * Claude path additionally hides debug commands, bails on `/add-dir …` (a
- * stateful subcommand) and on any command line with a space (argument input,
- * not command search). Codex commands legitimately contain spaces (`auth
- * auto`), so the space/add-dir guards do not apply there.
+ * `/add-dir …` always defers to its stateful popup. Non-Codex paths also bail
+ * on any other command line with a space (argument input, not command search).
+ * Codex commands legitimately contain spaces (`auth auto`).
  */
 export function computeMatchingSlashCommands(
   text: string,
@@ -50,8 +49,8 @@ export function computeMatchingSlashCommands(
 ): MatchedSlashCommand[] {
   if (!text.startsWith('/')) return []
   const firstLine = text.split('\n', 1)[0]
+  if (/^\/add-dir(\s|$)/.test(firstLine)) return []
   if (activeProvider !== 'codex') {
-    if (/^\/add-dir(\s|$)/.test(firstLine)) return []
     // Only after `/workflow ` (space) — bare `/workflow` stays in the slash list
     // so `/workflows` remains visible/selectable.
     if (isWorkflowSlashArgsMode(firstLine)) return []

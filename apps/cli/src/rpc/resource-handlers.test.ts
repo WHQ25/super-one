@@ -123,6 +123,36 @@ describe('resource RPC handlers', () => {
     expect(deleted?.result).toEqual({ ok: true, provider: 'claude' })
   })
 
+  it('keeps Claude and Codex additional directory configs isolated', () => {
+    const ctx = ctxFor(['workspace:read', 'workspace:write'])
+
+    expect(dispatchResourceRpc('additionalDirs.add', {
+      projectId: 'p1', provider: 'claude', dir: '/claude-extra',
+    }, ctx)?.error).toBeUndefined()
+    expect(dispatchResourceRpc('additionalDirs.add', {
+      projectId: 'p1', provider: 'codex', dir: '/codex-extra',
+    }, ctx)?.error).toBeUndefined()
+
+    const claude = dispatchResourceRpc('additionalDirs.list', {
+      projectId: 'p1', provider: 'claude',
+    }, ctx)?.result
+    const codex = dispatchResourceRpc('additionalDirs.list', {
+      projectId: 'p1', provider: 'codex',
+    }, ctx)?.result
+    expect(claude).toEqual({ user: [], projectShared: [], projectLocal: ['/claude-extra'] })
+    expect(codex).toEqual({ user: [], projectShared: [], projectLocal: ['/codex-extra'] })
+
+    dispatchResourceRpc('additionalDirs.remove', {
+      projectId: 'p1', provider: 'codex', dir: '/codex-extra',
+    }, ctx)
+    expect(dispatchResourceRpc('additionalDirs.list', {
+      projectId: 'p1', provider: 'claude',
+    }, ctx)?.result).toEqual({ user: [], projectShared: [], projectLocal: ['/claude-extra'] })
+    expect(dispatchResourceRpc('additionalDirs.list', {
+      projectId: 'p1', provider: 'codex',
+    }, ctx)?.result).toEqual({ user: [], projectShared: [], projectLocal: [] })
+  })
+
   it('forbids write without workspace:write', () => {
     const ctx = ctxFor(['workspace:read'])
     const res = dispatchResourceRpc(

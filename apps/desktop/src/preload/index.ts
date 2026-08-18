@@ -27,6 +27,7 @@ type UserMessageExtras = {
   userMessageContent?: ContentBlock[]
   apiProviderId?: string | null
   serviceTier?: string | null
+  additionalDirectories?: string[]
 }
 
 const agentAPI = {
@@ -145,14 +146,14 @@ const agentAPI = {
   disconnectRemoteSession: (sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, sessionId),
 
-  readProjectAdditionalDirs: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, projectPath) as Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>,
+  readProjectAdditionalDirs: (projectPath: string, harness: Extract<HarnessId, 'claude' | 'codex'> = 'claude') =>
+    ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, projectPath, harness) as Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>,
 
-  addProjectAdditionalDir: (projectPath: string, dir: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, projectPath, dir),
+  addProjectAdditionalDir: (projectPath: string, dir: string, harness: Extract<HarnessId, 'claude' | 'codex'> = 'claude') =>
+    ipcRenderer.invoke(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, projectPath, dir, harness),
 
-  removeProjectAdditionalDir: (projectPath: string, dir: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, projectPath, dir),
+  removeProjectAdditionalDir: (projectPath: string, dir: string, harness: Extract<HarnessId, 'claude' | 'codex'> = 'claude') =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, projectPath, dir, harness),
 
   onAgentEvent: (callback: (event: AgentEvent) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, payload: AgentEvent | AgentEvent[]): void => {
@@ -606,6 +607,30 @@ const environmentAPI = {
       AgentIpcChannels.ENVIRONMENT_HARNESS_RESOURCES,
       connectionId,
       input,
+    ),
+
+  listRemoteAdditionalDirs: (connectionId: string, projectId: string, provider: 'claude' | 'codex') =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_LIST_REMOTE_ADDITIONAL_DIRS,
+      connectionId,
+      projectId,
+      provider,
+    ) as Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>,
+  addRemoteAdditionalDir: (connectionId: string, projectId: string, dir: string, provider: 'claude' | 'codex') =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_ADD_REMOTE_ADDITIONAL_DIR,
+      connectionId,
+      projectId,
+      dir,
+      provider,
+    ),
+  removeRemoteAdditionalDir: (connectionId: string, projectId: string, dir: string, provider: 'claude' | 'codex') =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_REMOVE_REMOTE_ADDITIONAL_DIR,
+      connectionId,
+      projectId,
+      dir,
+      provider,
     ),
 
   /** Node session_providers CRUD (multi-profile). */

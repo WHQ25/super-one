@@ -290,6 +290,72 @@ describe('provider_changed', () => {
   })
 })
 
+describe('additional_dirs_changed', () => {
+  function seedProviderDirs() {
+    const project = createDefaultProjectState()
+    project._activeSessionId = 'sid-1'
+    project._sessions = {
+      'sid-1': {
+        ...createDefaultPerSessionState(),
+        additionalDirs: ['/old-session'],
+        additionalDirsDirty: true,
+      },
+    }
+    project.userAdditionalDirs = ['/claude-user']
+    project.projectAdditionalDirs = ['/claude-project']
+    project.codexUserAdditionalDirs = ['/old-codex-user']
+    project.codexProjectAdditionalDirs = ['/old-codex-project']
+    useChatStore.setState({ projectSessions: { '/p': project }, activeProject: '/p' })
+  }
+
+  it('updates only Codex project roots for a Codex event', () => {
+    seedProviderDirs()
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'additional_dirs_changed',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+      provider: 'codex',
+      additionalDirectories: ['/codex-user', '/codex-project', '/session'],
+      additionalDirsScoped: {
+        user: ['/codex-user'],
+        projectShared: [],
+        projectLocal: ['/codex-project'],
+      },
+      sessionAdditionalDirs: ['/session'],
+    } as AgentEvent)
+
+    const project = useChatStore.getState().projectSessions['/p']
+    expect(project.codexUserAdditionalDirs).toEqual(['/codex-user'])
+    expect(project.codexProjectAdditionalDirs).toEqual(['/codex-project'])
+    expect(project.userAdditionalDirs).toEqual(['/claude-user'])
+    expect(project.projectAdditionalDirs).toEqual(['/claude-project'])
+    expect(project._sessions['sid-1'].additionalDirs).toEqual(['/session'])
+    expect(project._sessions['sid-1'].additionalDirsDirty).toBe(false)
+  })
+
+  it('keeps legacy provider-less events scoped to Claude', () => {
+    seedProviderDirs()
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'additional_dirs_changed',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+      additionalDirectories: ['/new-claude'],
+      additionalDirsScoped: {
+        user: [],
+        projectShared: ['/new-claude'],
+        projectLocal: [],
+      },
+      sessionAdditionalDirs: [],
+    } as AgentEvent)
+
+    const project = useChatStore.getState().projectSessions['/p']
+    expect(project.projectAdditionalDirs).toEqual(['/new-claude'])
+    expect(project.codexProjectAdditionalDirs).toEqual(['/old-codex-project'])
+  })
+})
+
 describe('session_title_changed', () => {
   it('updates agentTitles, projectSessions[].sessions[].title, and _sessions[].._title together', () => {
     const proj = createDefaultProjectState()

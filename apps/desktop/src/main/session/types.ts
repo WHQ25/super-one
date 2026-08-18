@@ -157,7 +157,7 @@ export type BackendCommand =
       mode: string
     }
   | {
-      kind: 'claude.set_additional_dirs'
+      kind: 'session.set_additional_dirs'
       dirs: string[]
     }
   | {

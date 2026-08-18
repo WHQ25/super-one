@@ -8,6 +8,7 @@ import {
   deriveCodexFinalResponse,
   type CodexAppServerHandle,
   type CodexAppServerTurnResult,
+  buildCodexWorkspaceWriteSandboxPolicy,
 } from '@superone/codex'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
@@ -68,6 +69,7 @@ export async function openTurnAndStream(opts: {
   client: CodexAppServerHandle
   prompt: string
   cwd: string
+  additionalDirectories?: string[]
   threadId: string
   model?: string
   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
@@ -100,10 +102,7 @@ export async function openTurnAndStream(opts: {
           }
         : {}),
       approvalPolicy: 'never',
-      sandboxPolicy: {
-        type: 'workspaceWrite',
-        writableRoots: [opts.cwd],
-      },
+      sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
       ...(collaborationMode ? { collaborationMode } : {}),
     }),
   )

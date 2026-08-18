@@ -59,9 +59,9 @@ interface AgentAPI {
   searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
   searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>
   disconnectRemoteSession(sessionId?: string): Promise<void>
-  readProjectAdditionalDirs(projectPath: string): Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>
-  addProjectAdditionalDir(projectPath: string, dir: string): Promise<void>
-  removeProjectAdditionalDir(projectPath: string, dir: string): Promise<void>
+  readProjectAdditionalDirs(projectPath: string, harness?: Extract<HarnessId, 'claude' | 'codex'>): Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>
+  addProjectAdditionalDir(projectPath: string, dir: string, harness?: Extract<HarnessId, 'claude' | 'codex'>): Promise<void>
+  removeProjectAdditionalDir(projectPath: string, dir: string, harness?: Extract<HarnessId, 'claude' | 'codex'>): Promise<void>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
@@ -184,10 +184,10 @@ interface AppAPI {
     phase: 'download' | 'done' | 'error'
     message?: string
   }) => void): () => void
-  codexRun(sessionId: string, projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, collaborationMode?: CodexCollaborationMode, threadId?: string, messageId?: string, images?: ImageAttachment[], cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null }): Promise<CodexRunResult>
+  codexRun(sessionId: string, projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, collaborationMode?: CodexCollaborationMode, threadId?: string, messageId?: string, images?: ImageAttachment[], cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] }): Promise<CodexRunResult>
   codexSteer(sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] }): Promise<void>
-  codexReview(sessionId: string, projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null }): Promise<CodexRunResult>
-  codexCompact(sessionId: string, projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null }): Promise<CodexRunResult>
+  codexReview(sessionId: string, projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] }): Promise<CodexRunResult>
+  codexCompact(sessionId: string, projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] }): Promise<CodexRunResult>
   codexListModels(projectPath: string, apiProviderId?: string | null, force?: boolean): Promise<ModelOption[]>
   codexPlanApproval(projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void>
   codexCollaborationModeChange(projectPath: string, sessionId: string, mode: string): Promise<void>
@@ -1045,6 +1045,24 @@ export interface EnvironmentAPI {
       harnessId?: string
       apiProviderId?: string | null
     },
+  ): Promise<unknown>
+
+  listRemoteAdditionalDirs(
+    connectionId: string,
+    projectId: string,
+    provider: 'claude' | 'codex',
+  ): Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>
+  addRemoteAdditionalDir(
+    connectionId: string,
+    projectId: string,
+    dir: string,
+    provider: 'claude' | 'codex',
+  ): Promise<unknown>
+  removeRemoteAdditionalDir(
+    connectionId: string,
+    projectId: string,
+    dir: string,
+    provider: 'claude' | 'codex',
   ): Promise<unknown>
 
   /** Node session_providers list (optional harness filter). */

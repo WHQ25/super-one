@@ -15,6 +15,7 @@ export interface AddDirPopupHandle {
 }
 
 interface AddDirPopupProps {
+  harness: 'claude' | 'codex'
   argsText: string
   selectedIndex: number
   onSetSelectedIndex: (index: number) => void
@@ -86,12 +87,17 @@ function joinPath(parent: string, name: string, isDir: boolean): string {
 }
 
 export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
-  function AddDirPopup({ argsText, selectedIndex, onSetSelectedIndex, onScopeFill, onPathNavigate, onPathCommit, onAddViaPicker, onRemoveDir }, ref) {
+  function AddDirPopup({ harness, argsText, selectedIndex, onSetSelectedIndex, onScopeFill, onPathNavigate, onPathCommit, onAddViaPicker, onRemoveDir }, ref) {
     const fileRoot = useEffectiveProjectRoot()
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
-    const projectSharedDirs = useActiveSession((s) => s.projectSharedDirs)
-    const projectLocalDirs = useActiveSession((s) => s.projectLocalDirs)
-    const userAdditionalDirs = useActiveSession((s) => s.userAdditionalDirs)
+    const claudeProjectSharedDirs = useActiveSession((s) => s.projectSharedDirs)
+    const claudeProjectLocalDirs = useActiveSession((s) => s.projectLocalDirs)
+    const claudeUserAdditionalDirs = useActiveSession((s) => s.userAdditionalDirs)
+    const codexProjectAdditionalDirs = useActiveSession((s) => s.codexProjectAdditionalDirs)
+    const codexUserAdditionalDirs = useActiveSession((s) => s.codexUserAdditionalDirs)
+    const projectSharedDirs = harness === 'codex' ? [] : claudeProjectSharedDirs
+    const projectLocalDirs = harness === 'codex' ? codexProjectAdditionalDirs : claudeProjectLocalDirs
+    const userAdditionalDirs = harness === 'codex' ? codexUserAdditionalDirs : claudeUserAdditionalDirs
     const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
     const [entries, setEntries] = useState<ListDirEntry[]>([])
     const [absolutePath, setAbsolutePath] = useState<string>('')

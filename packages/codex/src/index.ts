@@ -19,6 +19,11 @@ export {
   type CodexSpawnFn,
 } from './app-server-client'
 export {
+  buildCodexWorkspaceWriteSandboxPolicy,
+  resolveCodexWritableRoots,
+  type CodexWorkspaceWriteSandboxOptions,
+} from './sandbox-policy'
+export {
   applySetAuth,
   consumeRateLimitReset,
   detectExternalAgentConfig,

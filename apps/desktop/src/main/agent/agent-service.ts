@@ -6,6 +6,11 @@ import { gitRun } from '../git-run'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { addProjectAdditionalDir, readScopedAdditionalDirs, removeProjectAdditionalDir } from './project-additional-dirs'
+import {
+  addCodexProjectAdditionalDir,
+  readCodexScopedAdditionalDirs,
+  removeCodexProjectAdditionalDir,
+} from '../codex-config-service'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest, type TerminalEvent } from '@superone/shared/agent-types'
@@ -389,13 +394,21 @@ export class AgentService {
     }
   }
 
-  private emitAdditionalDirsChanged(projectPath: string, sessionId?: string): void {
-    const scoped = readScopedAdditionalDirs(projectPath)
+  private emitAdditionalDirsChanged(
+    projectPath: string,
+    sessionId?: string,
+    provider?: Extract<HarnessId, 'claude' | 'codex'>,
+  ): void {
     const targetSession = sessionId ? this.sessionManager?.getSession(sessionId) : this.sessionManager?.getActiveSession(projectPath)
+    const resolvedProvider = provider ?? (targetSession?.snapshot.harnessId === 'codex' ? 'codex' : 'claude')
+    const scoped = resolvedProvider === 'codex'
+      ? readCodexScopedAdditionalDirs(projectPath)
+      : readScopedAdditionalDirs(projectPath)
     const sessionDirs = targetSession?.getAdditionalDirectoriesSnapshot() ?? []
     const dedup = Array.from(new Set([...scoped.user, ...scoped.projectShared, ...scoped.projectLocal, ...sessionDirs]))
     const event: AgentEvent = {
       type: 'additional_dirs_changed',
+      provider: resolvedProvider,
       projectPath,
       sessionId: targetSession?.snapshot.id,
       additionalDirectories: dedup,
@@ -1124,8 +1137,12 @@ export class AgentService {
             })
           } else {
             const skills = await getSharedCodexSkillsService().list(command.projectPath)
+            const scoped = readCodexScopedAdditionalDirs(command.projectPath)
             await respond?.(command.requestId, {
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
+              additionalDirsScoped: scoped,
+              cwd: command.projectPath,
+              homedir: homedir(),
             })
           }
         } catch (err) {
@@ -1251,9 +1268,14 @@ export class AgentService {
             await respond?.(command.requestId, v)
             break
           }
-          addProjectAdditionalDir(command.projectPath, command.dir)
-          this.sessionManager?.invalidateProjectResources(command.projectPath)
-          this.emitAdditionalDirsChanged(command.projectPath)
+          if (command.provider === 'codex') {
+            addCodexProjectAdditionalDir(command.projectPath, command.dir)
+            this.emitAdditionalDirsChanged(command.projectPath, undefined, 'codex')
+          } else {
+            addProjectAdditionalDir(command.projectPath, command.dir)
+            this.sessionManager?.invalidateProjectResources(command.projectPath)
+            this.emitAdditionalDirsChanged(command.projectPath)
+          }
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
@@ -1262,9 +1284,14 @@ export class AgentService {
       }
       case 'remove_project_additional_dir': {
         try {
-          removeProjectAdditionalDir(command.projectPath, command.dir)
-          this.sessionManager?.invalidateProjectResources(command.projectPath)
-          this.emitAdditionalDirsChanged(command.projectPath)
+          if (command.provider === 'codex') {
+            removeCodexProjectAdditionalDir(command.projectPath, command.dir)
+            this.emitAdditionalDirsChanged(command.projectPath, undefined, 'codex')
+          } else {
+            removeProjectAdditionalDir(command.projectPath, command.dir)
+            this.sessionManager?.invalidateProjectResources(command.projectPath)
+            this.emitAdditionalDirsChanged(command.projectPath)
+          }
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
@@ -1278,8 +1305,12 @@ export class AgentService {
             await respond?.(command.requestId, { ok: false, reason: 'session-not-found' })
             break
           }
-          await session.dispatchBackendCommand({ kind: 'claude.set_additional_dirs', dirs: command.dirs })
-          this.emitAdditionalDirsChanged(command.projectPath, command.sessionId)
+          await session.dispatchBackendCommand({ kind: 'session.set_additional_dirs', dirs: command.dirs })
+          this.emitAdditionalDirsChanged(
+            command.projectPath,
+            command.sessionId,
+            session.snapshot.harnessId === 'codex' ? 'codex' : 'claude',
+          )
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
@@ -2087,17 +2118,29 @@ export class AgentService {
 
     // --- Additional directories ---
 
-    ipcMain.handle(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, (_event, projectPath: string) => {
-      return readScopedAdditionalDirs(projectPath)
+    ipcMain.handle(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, (_event, projectPath: string, harness: HarnessId = 'claude') => {
+      return harness === 'codex'
+        ? readCodexScopedAdditionalDirs(projectPath)
+        : readScopedAdditionalDirs(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string) => {
+    ipcMain.handle(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string, harness: HarnessId = 'claude') => {
+      if (harness === 'codex') {
+        addCodexProjectAdditionalDir(projectPath, dir)
+        this.emitAdditionalDirsChanged(projectPath, undefined, 'codex')
+        return
+      }
       addProjectAdditionalDir(projectPath, dir)
       this.sessionManager?.invalidateProjectResources(projectPath)
       this.emitAdditionalDirsChanged(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string) => {
+    ipcMain.handle(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string, harness: HarnessId = 'claude') => {
+      if (harness === 'codex') {
+        removeCodexProjectAdditionalDir(projectPath, dir)
+        this.emitAdditionalDirsChanged(projectPath, undefined, 'codex')
+        return
+      }
       removeProjectAdditionalDir(projectPath, dir)
       this.sessionManager?.invalidateProjectResources(projectPath)
       this.emitAdditionalDirsChanged(projectPath)

@@ -1,6 +1,7 @@
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { X, FolderPlus, Folder } from 'lucide-react'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 interface DirManagerPanelProps {
   isCoding: boolean
@@ -65,10 +66,17 @@ function DirSection({ label, dirs, scope, readOnly, removableSet, onAdd, onRemov
 
 export function DirManagerPanel({ isCoding }: DirManagerPanelProps) {
   const setShowDirManager = useChatStore((s) => s.setShowDirManager)
+  const provider = useActiveSession((s) => resolveProvider(s))
+  const harness = provider === 'codex' ? 'codex' : 'claude'
   const additionalDirs = useActiveSession((s) => s.additionalDirs)
-  const projectAdditionalDirs = useActiveSession((s) => s.projectAdditionalDirs)
-  const projectLocalDirs = useActiveSession((s) => s.projectLocalDirs)
-  const userAdditionalDirs = useActiveSession((s) => s.userAdditionalDirs)
+  const claudeProjectAdditionalDirs = useActiveSession((s) => s.projectAdditionalDirs)
+  const claudeProjectLocalDirs = useActiveSession((s) => s.projectLocalDirs)
+  const claudeUserAdditionalDirs = useActiveSession((s) => s.userAdditionalDirs)
+  const codexProjectAdditionalDirs = useActiveSession((s) => s.codexProjectAdditionalDirs)
+  const codexUserAdditionalDirs = useActiveSession((s) => s.codexUserAdditionalDirs)
+  const projectAdditionalDirs = harness === 'codex' ? codexProjectAdditionalDirs : claudeProjectAdditionalDirs
+  const projectLocalDirs = harness === 'codex' ? codexProjectAdditionalDirs : claudeProjectLocalDirs
+  const userAdditionalDirs = harness === 'codex' ? codexUserAdditionalDirs : claudeUserAdditionalDirs
   const addDir = useChatStore((s) => s.addDir)
   const removeDir = useChatStore((s) => s.removeDir)
 
@@ -97,10 +105,16 @@ export function DirManagerPanel({ isCoding }: DirManagerPanelProps) {
           dirs={projectAdditionalDirs}
           scope="project"
           removableSet={removableInProject}
-          onAdd={addDir}
-          onRemove={removeDir}
+          onAdd={(dir, scope) => addDir(dir, scope, undefined, harness)}
+          onRemove={(dir, scope) => removeDir(dir, scope, undefined, harness)}
         />
-        <DirSection label="Session" dirs={additionalDirs} scope="session" onAdd={addDir} onRemove={removeDir} />
+        <DirSection
+          label="Session"
+          dirs={additionalDirs}
+          scope="session"
+          onAdd={(dir, scope) => addDir(dir, scope, undefined, harness)}
+          onRemove={(dir, scope) => removeDir(dir, scope, undefined, harness)}
+        />
       </div>
     </div>
   )

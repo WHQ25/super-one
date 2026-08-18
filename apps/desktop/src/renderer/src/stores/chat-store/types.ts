@@ -279,6 +279,8 @@ export interface ProjectState {
   userAdditionalDirs: string[]
   projectSharedDirs: string[]
   projectLocalDirs: string[]
+  codexProjectAdditionalDirs: string[]
+  codexUserAdditionalDirs: string[]
   showDirManager: boolean
   showReviewPanel: boolean
   reviewPanelInitialMode?: 'uncommitted' | 'branch' | 'commit'
@@ -462,8 +464,9 @@ export interface ChatStore {
   removeUserSelectionAt: (index: number, target?: SessionWriteTarget) => void
   clearUserSelections: (target?: SessionWriteTarget) => void
 
-  addDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget) => void
-  removeDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget) => void
+  refreshProjectAdditionalDirs: (harness: Extract<ChatProvider, 'claude' | 'codex'>, target?: SessionWriteTarget) => Promise<void>
+  addDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget, harness?: Extract<ChatProvider, 'claude' | 'codex'>) => void
+  removeDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget, harness?: Extract<ChatProvider, 'claude' | 'codex'>) => void
   setShowDirManager: (show: boolean) => void
   setShowReviewPanel: (show: boolean, initialMode?: 'uncommitted' | 'branch' | 'commit') => void
   startCodexReview: (target: CodexReviewTarget) => void

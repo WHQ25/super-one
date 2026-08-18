@@ -1907,6 +1907,7 @@ export type Messages = {
       reviewDesc: string
       compactDesc: string
       planDesc: string
+      addDirDesc: string
       providerDesc: string
       mcpDesc: string
       goalDesc: string
@@ -4782,6 +4783,7 @@ export const en: Messages = {
       reviewDesc: 'Review code changes',
       compactDesc: 'Compact thread context',
       planDesc: 'Enter plan mode',
+      addDirDesc: 'Manage additional working directories',
       providerDesc: 'Choose API provider for this session',
       mcpDesc: 'View MCP servers in this session',
       goalDesc: 'Set or clear the goal for this Codex thread',

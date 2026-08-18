@@ -66,6 +66,7 @@ import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment-store'
+import { buildCodexWorkspaceWriteSandboxPolicy } from '@superone/codex'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 
@@ -1227,6 +1228,7 @@ function buildTurnSandboxPolicy(
     sandboxMode: CodexSandboxMode
     networkAccessEnabled: boolean
   },
+  additionalDirectories: readonly string[] = [],
 ): Record<string, unknown> {
   if (permissionProfile.sandboxMode === 'danger-full-access') {
     return { type: 'dangerFullAccess' }
@@ -1239,14 +1241,12 @@ function buildTurnSandboxPolicy(
     }
   }
 
-  return {
-    type: 'workspaceWrite',
-    writableRoots: [cwd],
+  return buildCodexWorkspaceWriteSandboxPolicy(cwd, additionalDirectories, {
     readOnlyAccess: { type: 'fullAccess' },
     networkAccess: permissionProfile.networkAccessEnabled,
     excludeTmpdirEnvVar: false,
     excludeSlashTmp: false,
-  }
+  })
 }
 
 async function updateThreadSettings(
@@ -1255,12 +1255,13 @@ async function updateThreadSettings(
   session: CodexSession,
   cwd: string,
   permissionProfile: ReturnType<typeof resolvePermissionProfile>,
+  additionalDirectories: readonly string[] = [],
 ): Promise<void> {
   await connection.request('thread/settings/update', {
     threadId,
     approvalPolicy: permissionProfile.approvalPolicy,
     approvalsReviewer: permissionProfile.approvalsReviewer,
-    sandboxPolicy: buildTurnSandboxPolicy(cwd, permissionProfile),
+    sandboxPolicy: buildTurnSandboxPolicy(cwd, permissionProfile, additionalDirectories),
     serviceTier: session.serviceTier,
   })
 }
@@ -2357,7 +2358,7 @@ export async function runCodexTurn(
             ...(session.modelReasoningEffort ? { summary: 'concise' } : {}),
             approvalPolicy: permissionProfile.approvalPolicy,
             approvalsReviewer: permissionProfile.approvalsReviewer,
-            sandboxPolicy: buildTurnSandboxPolicy(effectiveCwd, permissionProfile),
+            sandboxPolicy: buildTurnSandboxPolicy(effectiveCwd, permissionProfile, request.additionalDirectories),
             ...(collaborationMode ? { collaborationMode } : {}),
           }),
         )
@@ -2451,7 +2452,7 @@ export async function reviewCodexTurn(
       permissionProfile,
       async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, markMutationStarted }) => {
         markMutationStarted()
-        await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile)
+        await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile, request.additionalDirectories)
         await connection.request('review/start', compactRecord({
           threadId: resolvedThreadId,
           delivery: 'inline',
@@ -2512,7 +2513,7 @@ export async function compactCodexTurn(
       permissionProfile,
       async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, markMutationStarted }) => {
         markMutationStarted()
-        await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile)
+        await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile, request.additionalDirectories)
         await connection.request('thread/compact/start', { threadId: resolvedThreadId })
 
         return streamTurnEvents(connection, session, null, controller, callbacks, {

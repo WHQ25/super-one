@@ -1350,7 +1350,7 @@ export type AgentEventBase =
   | { type: 'codex_mcp_startup'; messageId: string; servers: CodexMcpServerStartup[] }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
-  | { type: 'additional_dirs_changed'; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; sessionAdditionalDirs: string[] }
+  | { type: 'additional_dirs_changed'; provider?: Extract<HarnessId, 'claude' | 'codex'>; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; sessionAdditionalDirs: string[] }
   | { type: 'prompt_suggestion'; suggestion: string }
   | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number; errorCode?: 'credits_required'; canUserPurchaseCredits?: boolean; hasChargeableSavedPaymentMethod?: boolean }
   | { type: 'hook_progress'; hook: HookEvent }
@@ -2458,6 +2458,7 @@ export interface CodexRunRequest {
   threadId?: string
   messageId?: string
   cwd?: string
+  additionalDirectories?: string[]
 }
 
 export interface CodexRunResult {
@@ -2482,6 +2483,7 @@ export interface CodexReviewRequest {
   threadId?: string
   messageId?: string
   cwd?: string
+  additionalDirectories?: string[]
 }
 
 export interface CodexCompactRequest {
@@ -2491,6 +2493,7 @@ export interface CodexCompactRequest {
   threadId?: string
   messageId?: string
   cwd?: string
+  additionalDirectories?: string[]
 }
 
 // --- Update events ---
@@ -3291,6 +3294,9 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SAVE_REMOTE_MCP_CONFIG: 'environment:saveRemoteMcpConfig',
   ENVIRONMENT_TOGGLE_REMOTE_MCP_CONFIG: 'environment:toggleRemoteMcpConfig',
   ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG: 'environment:deleteRemoteMcpConfig',
+  ENVIRONMENT_LIST_REMOTE_ADDITIONAL_DIRS: 'environment:listRemoteAdditionalDirs',
+  ENVIRONMENT_ADD_REMOTE_ADDITIONAL_DIR: 'environment:addRemoteAdditionalDir',
+  ENVIRONMENT_REMOVE_REMOTE_ADDITIONAL_DIR: 'environment:removeRemoteAdditionalDir',
   /** Node harness.resources aggregate (models + skills/commands/agents/prompts). */
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',
   /** Node session_providers CRUD. */
@@ -3392,8 +3398,8 @@ export type RemoteCommand =
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'list_directory_for_add_dir'; requestId: string; projectPath: string; rawInput: string }
   | { type: 'validate_add_dir'; requestId: string; projectPath: string; candidate: string }
-  | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string }
-  | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string }
+  | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }
+  | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }
   | { type: 'set_session_additional_dirs'; requestId: string; projectPath: string; sessionId: string; dirs: string[] }
   | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean }
   | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }

@@ -1961,6 +1961,7 @@ export const zh: Messages = {
       reviewDesc: '审查代码变更',
       compactDesc: '压缩线程上下文',
       planDesc: '进入计划模式',
+      addDirDesc: '管理额外工作目录',
       providerDesc: '为本会话选择 API 服务商',
       mcpDesc: '查看本会话的 MCP 服务器',
       goalDesc: '为当前 Codex 线程设置或清除目标',

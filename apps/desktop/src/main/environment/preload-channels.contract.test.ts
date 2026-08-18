@@ -167,6 +167,15 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG).toBe(
       'environment:deleteRemoteMcpConfig',
     )
+    expect(AgentIpcChannels.ENVIRONMENT_LIST_REMOTE_ADDITIONAL_DIRS).toBe(
+      'environment:listRemoteAdditionalDirs',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_ADD_REMOTE_ADDITIONAL_DIR).toBe(
+      'environment:addRemoteAdditionalDir',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_REMOVE_REMOTE_ADDITIONAL_DIR).toBe(
+      'environment:removeRemoteAdditionalDir',
+    )
   })
 
   it('environment package registers resource IPC (renderer may use electron.ipcRenderer)', () => {

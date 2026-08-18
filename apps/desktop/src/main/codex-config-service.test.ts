@@ -21,7 +21,15 @@ vi.mock('os', () => ({
   homedir: homedirMock,
 }))
 
-import { deleteCodexMcpConfig, listCodexMcpConfigs, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
+import {
+  addCodexProjectAdditionalDir,
+  deleteCodexMcpConfig,
+  listCodexMcpConfigs,
+  readCodexScopedAdditionalDirs,
+  removeCodexProjectAdditionalDir,
+  saveCodexMcpConfig,
+  toggleCodexMcpConfig,
+} from './codex-config-service'
 
 describe('listCodexMcpConfigs', () => {
   beforeEach(() => {
@@ -319,6 +327,77 @@ url = "https://developers.openai.com/mcp"
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/home/testuser', '.codex', 'config.toml'),
       expect.stringContaining('[mcp_servers.docs]'),
+      'utf-8',
+    )
+  })
+})
+
+describe('Codex additional directories', () => {
+  beforeEach(() => {
+    existsSyncMock.mockReset()
+    mkdirSyncMock.mockReset()
+    readFileSyncMock.mockReset()
+    writeFileSyncMock.mockReset()
+  })
+
+  it('reads user and project roots from their own Codex config layers', () => {
+    const userPath = join('/home/testuser', '.codex', 'config.toml')
+    const projectPath = join('/project', '.codex', 'config.toml')
+    existsSyncMock.mockReturnValue(true)
+    readFileSyncMock.mockImplementation((path: string) => path === userPath
+      ? '[sandbox_workspace_write]\nwritable_roots = ["/user-root"]\n'
+      : '[sandbox_workspace_write]\nwritable_roots = ["/project-root"]\n')
+
+    expect(readCodexScopedAdditionalDirs('/project')).toEqual({
+      user: ['/user-root'],
+      projectShared: [],
+      projectLocal: ['/project-root'],
+    })
+    expect(readFileSyncMock).toHaveBeenCalledWith(projectPath, 'utf-8')
+  })
+
+  it('adds a project root without removing other Codex settings', () => {
+    existsSyncMock.mockReturnValue(true)
+    readFileSyncMock.mockReturnValue(`
+model = "gpt-5.4"
+
+[sandbox_workspace_write]
+network_access = true
+writable_roots = ["/existing"]
+`)
+
+    addCodexProjectAdditionalDir('/project', '/shared')
+
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/project', '.codex', 'config.toml'),
+      expect.stringContaining('model = "gpt-5.4"'),
+      'utf-8',
+    )
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/project', '.codex', 'config.toml'),
+      expect.stringContaining('writable_roots = [ "/existing", "/shared" ]'),
+      'utf-8',
+    )
+  })
+
+  it('removes only the requested project root', () => {
+    existsSyncMock.mockReturnValue(true)
+    readFileSyncMock.mockReturnValue(`
+[sandbox_workspace_write]
+network_access = false
+writable_roots = ["/keep", "/remove"]
+`)
+
+    removeCodexProjectAdditionalDir('/project', '/remove')
+
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/project', '.codex', 'config.toml'),
+      expect.stringContaining('writable_roots = [ "/keep" ]'),
+      'utf-8',
+    )
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/project', '.codex', 'config.toml'),
+      expect.stringContaining('network_access = false'),
       'utf-8',
     )
   })

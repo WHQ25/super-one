@@ -195,6 +195,44 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return
+    if (event.type === 'additional_dirs_changed') {
+      set((s) => updateProjectState(s, projectPath, (project) => {
+        const targetSid = eventSessionId ?? project._activeSessionId
+        const session = targetSid ? project._sessions[targetSid] : undefined
+        const sessionPatch = session && targetSid
+          ? {
+              _sessions: {
+                ...project._sessions,
+                [targetSid]: {
+                  ...session,
+                  additionalDirs: [...event.sessionAdditionalDirs],
+                  additionalDirsDirty: false,
+                },
+              },
+            }
+          : {}
+        return event.provider === 'codex'
+          ? {
+              ...sessionPatch,
+              codexUserAdditionalDirs: [...event.additionalDirsScoped.user],
+              codexProjectAdditionalDirs: Array.from(new Set([
+                ...event.additionalDirsScoped.projectShared,
+                ...event.additionalDirsScoped.projectLocal,
+              ])),
+            }
+          : {
+              ...sessionPatch,
+              userAdditionalDirs: [...event.additionalDirsScoped.user],
+              projectSharedDirs: [...event.additionalDirsScoped.projectShared],
+              projectLocalDirs: [...event.additionalDirsScoped.projectLocal],
+              projectAdditionalDirs: Array.from(new Set([
+                ...event.additionalDirsScoped.projectShared,
+                ...event.additionalDirsScoped.projectLocal,
+              ])),
+            }
+      }))
+      return
+    }
     if (event.type === 'agent_setting_change' && event.patch?.sandboxInfo) {
       const next = event.patch.sandboxInfo
       set((s) => updateProjectState(s, projectPath, () => ({ sandboxInfo: next })))

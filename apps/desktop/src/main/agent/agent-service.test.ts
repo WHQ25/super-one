@@ -17,6 +17,12 @@ const { createdAgents } = vi.hoisted(() => ({
   }>,
 }))
 
+const codexAdditionalDirMocks = vi.hoisted(() => ({
+  read: vi.fn(() => ({ user: ['/codex-user'], projectShared: [], projectLocal: ['/codex-project'] })),
+  add: vi.fn(),
+  remove: vi.fn(),
+}))
+
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
 }))
@@ -87,6 +93,9 @@ vi.mock('../codex/codex-skills-rpc-singleton', () => ({
 
 vi.mock('../codex-config-service', () => ({
   listCodexMcpConfigs: vi.fn(),
+  readCodexScopedAdditionalDirs: codexAdditionalDirMocks.read,
+  addCodexProjectAdditionalDir: codexAdditionalDirMocks.add,
+  removeCodexProjectAdditionalDir: codexAdditionalDirMocks.remove,
 }))
 
 vi.mock('./discover-resources', () => ({
@@ -2142,6 +2151,84 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(payload.defaults).toEqual({ model: 'gpt-5-codex', reasoningEffort: 'high', permissionPreset: 'full-access' })
     expect(payload.permissionPresets).toEqual(['read-only', 'default', 'auto-review', 'full-access'])
   })
+
+  it('get_project_resources returns Codex roots without reading Claude config', async () => {
+    const respond = vi.fn()
+    const service = new AgentService()
+
+    await service.handleRemoteCommand({
+      type: 'get_project_resources',
+      requestId: 'resources-codex',
+      projectPath: '/p',
+      provider: 'codex',
+    }, respond)
+
+    expect(codexAdditionalDirMocks.read).toHaveBeenCalledWith('/p')
+    expect(respond).toHaveBeenCalledWith('resources-codex', expect.objectContaining({
+      additionalDirsScoped: {
+        user: ['/codex-user'],
+        projectShared: [],
+        projectLocal: ['/codex-project'],
+      },
+      cwd: '/p',
+    }))
+  })
+
+  it('routes remote Codex project directory writes to Codex config', async () => {
+    const respond = vi.fn()
+    const service = new AgentService()
+    ;(service as unknown as { validateAddDirCandidate: () => { ok: true; absolutePath: string } }).validateAddDirCandidate = () => ({
+      ok: true,
+      absolutePath: '/shared',
+    })
+
+    await service.handleRemoteCommand({
+      type: 'add_project_additional_dir',
+      requestId: 'add-codex-dir',
+      projectPath: '/p',
+      dir: '/shared',
+      provider: 'codex',
+    }, respond)
+    await service.handleRemoteCommand({
+      type: 'remove_project_additional_dir',
+      requestId: 'remove-codex-dir',
+      projectPath: '/p',
+      dir: '/shared',
+      provider: 'codex',
+    }, respond)
+
+    expect(codexAdditionalDirMocks.add).toHaveBeenCalledWith('/p', '/shared')
+    expect(codexAdditionalDirMocks.remove).toHaveBeenCalledWith('/p', '/shared')
+  })
+
+  it('applies remote session directories through the provider-neutral session command', async () => {
+    const dispatchBackendCommand = vi.fn().mockResolvedValue(undefined)
+    const session = makeMockSession({
+      id: 'sid-codex',
+      snapshot: { harnessId: 'codex' },
+      dispatchBackendCommand,
+      getAdditionalDirectoriesSnapshot: vi.fn(() => ['/session-dir']),
+    })
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => session),
+      getActiveSession: vi.fn(() => session),
+    }
+
+    await service.handleRemoteCommand({
+      type: 'set_session_additional_dirs',
+      requestId: 'set-session-dirs',
+      projectPath: '/p',
+      sessionId: 'sid-codex',
+      dirs: ['/session-dir'],
+    }, vi.fn())
+
+    expect(dispatchBackendCommand).toHaveBeenCalledWith({
+      kind: 'session.set_additional_dirs',
+      dirs: ['/session-dir'],
+    })
+    expect(codexAdditionalDirMocks.read).toHaveBeenCalledWith('/p')
+  })
 })
 
 describe('IPC interaction-response broadcasts', () => {
@@ -2331,6 +2418,29 @@ describe('add-dir IPC handlers', () => {
 
   afterEach(() => {
     try { rmSync(tmpRoot, { recursive: true, force: true }) } catch { /* noop */ }
+  })
+
+  it('routes Codex project directory reads and writes to Codex config', async () => {
+    const claudeAdditionalDirs = await import('./project-additional-dirs')
+    const service = new AgentService()
+    service.setup()
+    const read = getRegisteredIpcHandler(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS)!
+    const add = getRegisteredIpcHandler(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR)!
+    const remove = getRegisteredIpcHandler(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR)!
+
+    expect(await read({}, '/project', 'codex')).toEqual({
+      user: ['/codex-user'],
+      projectShared: [],
+      projectLocal: ['/codex-project'],
+    })
+    await add({}, '/project', '/shared', 'codex')
+    await remove({}, '/project', '/shared', 'codex')
+
+    expect(codexAdditionalDirMocks.read).toHaveBeenCalledWith('/project')
+    expect(codexAdditionalDirMocks.add).toHaveBeenCalledWith('/project', '/shared')
+    expect(codexAdditionalDirMocks.remove).toHaveBeenCalledWith('/project', '/shared')
+    expect(claudeAdditionalDirs.addProjectAdditionalDir).not.toHaveBeenCalled()
+    expect(claudeAdditionalDirs.removeProjectAdditionalDir).not.toHaveBeenCalled()
   })
 
   describe('validate-add-dir', () => {

@@ -90,6 +90,7 @@ describe('codex app-server client (Stage 4)', () => {
       client,
       prompt: 'hello',
       cwd: dir,
+      additionalDirectories: [join(dir, 'shared')],
       onDelta: (d) => deltas.push(d),
       signal: new AbortController().signal,
       threadConfig: {
@@ -117,6 +118,7 @@ describe('codex app-server client (Stage 4)', () => {
 
     await pump()
     const turnReq = JSON.parse(lines.find((l) => l.includes('"turn/start"'))!)
+    expect(turnReq.params.sandboxPolicy.writableRoots).toEqual([dir, join(dir, 'shared')])
     // Real ordering: turn/start result first (turn id only), then deltas, then completed.
     child.stdout.write(
       `${JSON.stringify({
@@ -374,6 +376,9 @@ describe('codex app-server client (Stage 4)', () => {
         result: { thread: { id: 't-c' } },
       })}\n`,
     )
+    await pump()
+    const settingsReq = JSON.parse(lines.find((l) => l.includes('thread/settings/update'))!)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: settingsReq.id, result: {} })}\n`)
     await pump()
     expect(lines.some((l) => l.includes('thread/compact/start'))).toBe(true)
     const compactReq = JSON.parse(lines.find((l) => l.includes('thread/compact/start'))!)

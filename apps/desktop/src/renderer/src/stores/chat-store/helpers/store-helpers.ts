@@ -16,10 +16,24 @@ export function getActivePerSession(state: ChatStore, projectPath?: string | nul
   return proj._sessions[proj._activeSessionId] ?? applyCachedCodexPermissionPreset(createDefaultPerSessionState())
 }
 
-export function mergeProjectAndSessionDirs(project: ProjectState, session: PerSessionState): string[] {
+export function getProjectDirsForProvider(
+  project: ProjectState,
+  provider: 'claude' | 'codex',
+): { user: string[]; project: string[] } {
+  return provider === 'codex'
+    ? { user: project.codexUserAdditionalDirs, project: project.codexProjectAdditionalDirs }
+    : { user: project.userAdditionalDirs, project: project.projectAdditionalDirs }
+}
+
+export function mergeProjectAndSessionDirs(
+  project: ProjectState,
+  session: PerSessionState,
+  provider: 'claude' | 'codex' = resolveProvider(session) === 'codex' ? 'codex' : 'claude',
+): string[] {
+  const configured = getProjectDirsForProvider(project, provider)
   return [...new Set([
-    ...project.userAdditionalDirs,
-    ...project.projectAdditionalDirs,
+    ...configured.user,
+    ...configured.project,
     ...session.additionalDirs,
   ])]
 }

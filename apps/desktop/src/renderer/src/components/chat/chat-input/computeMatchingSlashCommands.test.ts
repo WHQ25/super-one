@@ -45,6 +45,12 @@ describe('slash command match ranking', () => {
     expect(result.map((c) => c.name)).toEqual(['review', 'code-review'])
   })
 
+  it('defers Codex add-dir arguments to the directory popup', () => {
+    const commands = [cmd('add-dir', false)]
+    expect(computeMatchingSlashCommands('/add-dir ', commands, 'codex')).toEqual([])
+    expect(computeMatchingSlashCommands('/add-dir project ../shared', commands, 'codex')).toEqual([])
+  })
+
   it('matches only the first line, ignoring later lines of a multi-line message', () => {
     const commands = [cmd('review', true)]
     const result = computeMatchingSlashCommands('/review\nsome more context here', commands, 'claude')

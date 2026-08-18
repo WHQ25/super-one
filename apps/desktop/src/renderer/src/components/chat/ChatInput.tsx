@@ -94,10 +94,11 @@ export function ChatInput() {
       clearUserSelections: s.clearUserSelections,
       addDir: s.addDir,
       removeDir: s.removeDir,
+      refreshProjectAdditionalDirs: s.refreshProjectAdditionalDirs,
     })))
     const { sendMessage, interrupt, setShowReviewPanel } = storeActions
     const sessionScope = useSessionScope()
-    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, userAdditionalDirs, projectAdditionalDirs, additionalDirs } =
+    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, claudeUserAdditionalDirs, claudeProjectAdditionalDirs, codexUserAdditionalDirs, codexProjectAdditionalDirs, additionalDirs, additionalDirsDirty } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         draftJson: s.draftJson,
@@ -110,9 +111,12 @@ export function ChatInput() {
         queuedMessages: s.queuedMessages,
         miniAppContexts: s.miniAppContexts,
         userSelections: s.userSelections,
-        userAdditionalDirs: s.userAdditionalDirs,
-        projectAdditionalDirs: s.projectAdditionalDirs,
+        claudeUserAdditionalDirs: s.userAdditionalDirs,
+        claudeProjectAdditionalDirs: s.projectAdditionalDirs,
+        codexUserAdditionalDirs: s.codexUserAdditionalDirs,
+        codexProjectAdditionalDirs: s.codexProjectAdditionalDirs,
         additionalDirs: s.additionalDirs,
+        additionalDirsDirty: s.additionalDirsDirty,
       })))
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
@@ -169,8 +173,8 @@ export function ChatInput() {
         clearMiniAppContext: (id: string) => storeActions.clearMiniAppContext(id, target),
         removeUserSelectionAt: (i: number) => storeActions.removeUserSelectionAt(i, target),
         clearUserSelections: () => storeActions.clearUserSelections(target),
-        addDir: (p: string, scope: 'session' | 'project') => storeActions.addDir(p, scope, target),
-        removeDir: (p: string, scope: 'session' | 'project') => storeActions.removeDir(p, scope, target),
+        addDir: (p: string, scope: 'session' | 'project', harness: 'claude' | 'codex') => storeActions.addDir(p, scope, target, harness),
+        removeDir: (p: string, scope: 'session' | 'project', harness: 'claude' | 'codex') => storeActions.removeDir(p, scope, target, harness),
       }
     }, [storeActions, sessionScope])
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -233,10 +237,26 @@ export function ChatInput() {
     const isRemoteLocked = useIsRemoteLocked()
     const isStreaming = status === 'streaming'
     const activeProviderForResources = resolveProvider({ sessionProvider, preferredProvider })
+    const additionalDirsHarness = activeProviderForResources === 'codex' ? 'codex' : 'claude'
+    const userAdditionalDirs = additionalDirsHarness === 'codex'
+      ? codexUserAdditionalDirs
+      : claudeUserAdditionalDirs
+    const projectAdditionalDirs = additionalDirsHarness === 'codex'
+      ? codexProjectAdditionalDirs
+      : claudeProjectAdditionalDirs
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
-    const canSend = hasContent && !isRemoteLocked
+    const codexDirsPendingNextTurn = activeProviderForResources === 'codex' && isStreaming && additionalDirsDirty
+    const canSend = hasContent && !isRemoteLocked && !codexDirsPendingNextTurn
     const showAgentMentions = activeProviderForResources === 'claude'
+
+    useEffect(() => {
+      if (activeProviderForResources !== 'claude' && activeProviderForResources !== 'codex') return
+      void storeActions.refreshProjectAdditionalDirs(
+        activeProviderForResources,
+        sessionScope ?? undefined,
+      )
+    }, [activeProviderForResources, sessionScope, storeActions])
 
     const codexPrompts = useChatStore(selectCodexPrompts)
     const codexSkills = useChatStore(selectActiveCodexSkills)
@@ -270,6 +290,7 @@ export function ChatInput() {
       { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: '', isSkill: false },
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
+      { name: 'add-dir', description: t('chat.codexCommands.addDirDesc'), argumentHint: '[project|session] [dir]', isSkill: false },
       // /provider command retired — provider selection moved into the model selector (kept for reference)
       // { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
       { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
@@ -526,7 +547,9 @@ export function ChatInput() {
     )
 
     const addDirParse = useMemo(() => {
-      if (activeProviderForResources !== 'claude') return { active: false, argsText: '' }
+      if (activeProviderForResources !== 'claude' && activeProviderForResources !== 'codex') {
+        return { active: false, argsText: '' }
+      }
       const firstLine = text.split('\n', 1)[0]
       const m = firstLine.match(/^\/add-dir(?:\s(.*))?$/)
       if (!m) return { active: false, argsText: '' }
@@ -610,9 +633,12 @@ export function ChatInput() {
         toast.error(messageMap[res.reason] ?? res.reason)
         return false
       }
-      addDir(absolutePath, scope)
+      addDir(absolutePath, scope, additionalDirsHarness)
+      if (activeProviderForResources === 'codex' && isStreaming) {
+        toast.info(t('chat.addDir.nextTurn', { defaultValue: 'Directory will be available to Codex on the next turn' }))
+      }
       return true
-    }, [activeProject, addDir, additionalDirs, projectAdditionalDirs, userAdditionalDirs, t])
+    }, [activeProject, activeProviderForResources, addDir, additionalDirsHarness, additionalDirs, isStreaming, projectAdditionalDirs, userAdditionalDirs, t])
 
     const handleAddDirCommit = useCallback(async (absolutePath: string, scope: 'project' | 'session') => {
       const ok = await validateAndAddDir(absolutePath, scope)
@@ -628,8 +654,8 @@ export function ChatInput() {
     }, [validateAndAddDir])
 
     const handleAddDirRemove = useCallback((path: string, scope: 'project' | 'session') => {
-      removeDir(path, scope)
-    }, [removeDir])
+      removeDir(path, scope, additionalDirsHarness)
+    }, [additionalDirsHarness, removeDir])
 
     const handleMentionSelect = useCallback(
       (value: string, action: 'navigate' | 'select', kindHint?: MentionKind, displayNameHint?: string) => {
@@ -1512,7 +1538,7 @@ export function ChatInput() {
 
     return (
       <div className="relative">
-        {activeProviderForResources === 'claude' && <ChatInputDirsHint />}
+        {(activeProviderForResources === 'claude' || activeProviderForResources === 'codex') && <ChatInputDirsHint />}
         <div
           className={cn(
             'relative mx-3 mb-1 rounded-xl border border-border px-3 py-2',
@@ -1627,6 +1653,7 @@ export function ChatInput() {
         {addDirActive && (
           <AddDirPopup
             ref={addDirRef}
+            harness={additionalDirsHarness}
             argsText={addDirArgsText}
             selectedIndex={addDirIndex}
             onSetSelectedIndex={setAddDirIndex}

@@ -4,6 +4,7 @@ import { useActiveSession } from '@/stores/chat'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { cn } from '@superone/ui/lib/utils'
 import { shortenPath } from '@/lib/path-utils'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 type DirScope = 'user' | 'project' | 'session'
 
@@ -15,8 +16,13 @@ function basename(p: string): string {
 
 export function ChatInputDirsHint() {
   const { t } = useTranslation()
-  const userDirs = useActiveSession((s) => s.userAdditionalDirs)
-  const projectDirs = useActiveSession((s) => s.projectAdditionalDirs)
+  const provider = useActiveSession((s) => resolveProvider(s))
+  const claudeUserDirs = useActiveSession((s) => s.userAdditionalDirs)
+  const claudeProjectDirs = useActiveSession((s) => s.projectAdditionalDirs)
+  const codexUserDirs = useActiveSession((s) => s.codexUserAdditionalDirs)
+  const codexProjectDirs = useActiveSession((s) => s.codexProjectAdditionalDirs)
+  const userDirs = provider === 'codex' ? codexUserDirs : claudeUserDirs
+  const projectDirs = provider === 'codex' ? codexProjectDirs : claudeProjectDirs
   const sessionDirs = useActiveSession((s) => s.additionalDirs)
   const messagesLen = useActiveSession((s) => s.messages.length)
   const dirty = useActiveSession((s) => s.additionalDirsDirty)

@@ -20,6 +20,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     userSelections: [] as string[],
     projectAdditionalDirs: [] as string[],
     userAdditionalDirs: [] as string[],
+    codexProjectAdditionalDirs: [] as string[],
+    codexUserAdditionalDirs: [] as string[],
     additionalDirs: [] as string[],
     messages: [] as unknown[],
     cwd: '/project' as string,
@@ -63,6 +65,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     setShowReviewPanel: vi.fn((show: boolean) => {
       activeSessionState.showReviewPanel = show
     }),
+    refreshProjectAdditionalDirs: vi.fn(async () => undefined),
     toggleMiniAppContext: vi.fn(),
     clearMiniAppContext: vi.fn(),
     removeUserSelectionAt: vi.fn(),
@@ -363,6 +366,7 @@ beforeEach(() => {
     app: {
       ...window.app,
       codexGetGoal: goalState.getGoal,
+      getMediaServerPort: vi.fn(async () => 0),
     },
   })
   mentionPopup.props = null
@@ -593,6 +597,18 @@ describe('ChatInput @-mention no-match suppression', () => {
 })
 
 describe('ChatInput slash command grouping', () => {
+  it('shows the local add-dir command in the Codex slash popup', () => {
+    activeSessionState.preferredProvider = 'codex'
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    const addDirButton = screen.getByText('Manage additional working directories').closest('button')
+    expect(addDirButton).toBeTruthy()
+    expect(addDirButton).toHaveTextContent('/add-dir')
+  })
+
   it('splits the slash popup into Slash commands and Skills sections with commands listed first', () => {
     activeSessionState.slashCommands = [
       { name: 'release', description: 'Release the app', argumentHint: '', isSkill: true },

@@ -6,6 +6,7 @@ import {
   isCatalogHarnessEnabled,
   isClaudeHarnessEnabled,
   isCodexHarnessEnabled,
+  isDeepseekHarnessEnabled,
   isGrokHarnessEnabled,
   isOpenCodeEnabled,
 } from './harness-visibility'
@@ -15,6 +16,7 @@ const allOff = [
   { id: 'codex', enabled: false, state: 'disabled' },
   { id: 'opencode', enabled: false, state: 'disabled' },
   { id: 'acp-grok', enabled: false, state: 'disabled' },
+  { id: 'deepseek', enabled: false, state: 'disabled' },
 ]
 
 const claudeOn = [
@@ -22,6 +24,7 @@ const claudeOn = [
   { id: 'codex', enabled: false, state: 'disabled' },
   { id: 'opencode', enabled: false, state: 'disabled' },
   { id: 'acp-grok', enabled: true, state: 'ready' },
+  { id: 'deepseek', enabled: true, state: 'ready' },
 ]
 
 describe('harness-visibility', () => {
@@ -38,6 +41,7 @@ describe('harness-visibility', () => {
     expect(isCodexHarnessEnabled(null)).toBe(false)
     expect(isOpenCodeEnabled(null)).toBe(false)
     expect(isGrokHarnessEnabled(null)).toBe(false)
+    expect(isDeepseekHarnessEnabled(null)).toBe(false)
   })
 
   it('hard-filters from catalog when loaded', () => {
@@ -46,6 +50,8 @@ describe('harness-visibility', () => {
     expect(isClaudeHarnessEnabled(claudeOn)).toBe(true)
     expect(isCatalogHarnessEnabled(claudeOn, 'acp-grok')).toBe(true)
     expect(isOpenCodeEnabled(claudeOn)).toBe(false)
+    expect(isDeepseekHarnessEnabled(claudeOn)).toBe(true)
+    expect(isDeepseekHarnessEnabled(allOff)).toBe(false)
   })
 
   it('legacy experimental master still unlocks opencode', () => {

@@ -716,6 +716,7 @@ export type Messages = {
         claude: string
         codex: string
         opencode: string
+        deepseek: string
       }
       experimental: string
       experimentalAgents: {
@@ -3577,6 +3578,7 @@ export const en: Messages = {
         claude: 'Claude Code',
         codex: 'Codex',
         opencode: 'OpenCode',
+        deepseek: 'DeepSeek',
       },
       experimental: 'Experimental',
       experimentalAgents: {

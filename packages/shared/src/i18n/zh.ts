@@ -761,6 +761,7 @@ export const zh: Messages = {
         claude: 'Claude Code',
         codex: 'Codex',
         opencode: 'OpenCode',
+        deepseek: 'DeepSeek',
       },
       experimental: '实验功能',
       experimentalAgents: {

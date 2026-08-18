@@ -10,6 +10,7 @@ import {
 describe('harness preference key helpers', () => {
   it('round-trips top-level harnesses and ACP agents', () => {
     expect(keyToHarnessPreference('claude')).toEqual({ provider: 'claude', acpAgentId: null })
+    expect(keyToHarnessPreference('deepseek')).toEqual({ provider: 'deepseek', acpAgentId: null })
     expect(keyToHarnessPreference('acp:grok-build')).toEqual({
       provider: 'acp',
       acpAgentId: 'grok-build',
@@ -38,9 +39,15 @@ describe('harness preference key helpers', () => {
   })
 
   it('formats labels for display', () => {
-    const labels = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' }
+    const labels = {
+      claude: 'Claude Code',
+      codex: 'Codex',
+      opencode: 'OpenCode',
+      deepseek: 'DeepSeek',
+    }
     expect(formatHarnessPreferenceLabel(null, 'Auto', labels)).toBe('Auto')
     expect(formatHarnessPreferenceLabel('claude', 'Auto', labels)).toBe('Claude Code')
+    expect(formatHarnessPreferenceLabel('deepseek', 'Auto', labels)).toBe('DeepSeek')
     expect(formatHarnessPreferenceLabel('acp:grok-build', 'Auto', labels)).toMatch(/Grok/i)
   })
 

@@ -35,6 +35,7 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
   }
   if (option.provider === 'opencode') return 4
   if (option.provider === 'cursor') return 5
+  if (option.provider === 'deepseek') return 6
   return 50
 }
 
@@ -44,6 +45,7 @@ function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'ac
  * - Include each visible ACP agent as its own entry (caller filters experimental)
  * - Include opencode only when `includeOpenCode` (catalog enable)
  * - Include cursor only when `includeCursor` (catalog enable)
+ * - Include DeepSeek only when `includeDeepseek` (catalog enable)
  * - When `harnessOrder` is non-empty: full manual order (index 0 = default, 1 = secondary, …);
  *   unknown keys among enabled options append after, sorted by usage then product default
  * - Else: manual default → secondary pins first, then parent-session count desc,
@@ -60,6 +62,8 @@ export function orderSuggestionHarnesses(input: {
   includeOpenCode?: boolean
   /** When true, add Cursor as a suggestion harness. */
   includeCursor?: boolean
+  /** When true, add DeepSeek as a suggestion harness. */
+  includeDeepseek?: boolean
   /**
    * @deprecated Use `includeOpenCode`. Kept so older call sites compiling
    * against experimentalAgentsEnabled still typecheck during migration.
@@ -126,6 +130,16 @@ export function orderSuggestionHarnesses(input: {
       acpAgentId: null,
       label: 'Cursor',
       sessionCount: countByKey.get('cursor') ?? 0,
+    })
+  }
+
+  if (input.includeDeepseek) {
+    options.push({
+      key: 'deepseek',
+      provider: 'deepseek',
+      acpAgentId: null,
+      label: 'DeepSeek',
+      sessionCount: countByKey.get('deepseek') ?? 0,
     })
   }
 

@@ -60,7 +60,13 @@ export function keyToHarnessPreference(
   if (typeof value === 'object' && !Array.isArray(value)) {
     const raw = value as Record<string, unknown>
     const provider = typeof raw.provider === 'string' ? raw.provider.trim() : ''
-    if (provider !== 'claude' && provider !== 'codex' && provider !== 'acp' && provider !== 'opencode') {
+    if (
+      provider !== 'claude' &&
+      provider !== 'codex' &&
+      provider !== 'acp' &&
+      provider !== 'opencode' &&
+      provider !== 'deepseek'
+    ) {
       return null
     }
     const acpAgentId = typeof raw.acpAgentId === 'string' && raw.acpAgentId.trim()
@@ -75,7 +81,12 @@ export function keyToHarnessPreference(
   if (typeof value !== 'string') return null
   const key = value.trim()
   if (!key || key === 'auto') return null
-  if (key === 'claude' || key === 'codex' || key === 'opencode') {
+  if (
+    key === 'claude' ||
+    key === 'codex' ||
+    key === 'opencode' ||
+    key === 'deepseek'
+  ) {
     return { provider: key, acpAgentId: null }
   }
   if (key.startsWith('acp:')) {
@@ -100,13 +111,14 @@ export function harnessPreferencesEqual(
 export function formatHarnessPreferenceLabel(
   value: unknown,
   autoLabel: string,
-  labels: { claude: string; codex: string; opencode: string },
+  labels: { claude: string; codex: string; opencode: string; deepseek: string },
 ): string {
   const pref = keyToHarnessPreference(value)
   if (!pref) return autoLabel
   if (pref.provider === 'claude') return labels.claude
   if (pref.provider === 'codex') return labels.codex
   if (pref.provider === 'opencode') return labels.opencode
+  if (pref.provider === 'deepseek') return labels.deepseek
   if (pref.provider === 'acp') return acpAgentDisplayName(pref.acpAgentId)
   return harnessPreferenceToKey(pref) ?? autoLabel
 }
@@ -229,6 +241,14 @@ export function HarnessPreferencePicker({
         label: t('settings.general.harnessOptions.codex'),
       })
     }
+    if (isCatalogHarnessEnabled(harnessCatalog, 'deepseek')) {
+      list.push({
+        key: 'deepseek',
+        value: 'deepseek',
+        pref: { provider: 'deepseek', acpAgentId: null },
+        label: t('settings.general.harnessOptions.deepseek'),
+      })
+    }
     const visibleAgents = acpAgents.filter((agent) => {
       if (agent.id === 'opencode') return false
       if (isGrokAcpAgent(agent.id)) {
@@ -284,6 +304,7 @@ export function HarnessPreferencePicker({
           claude: t('settings.general.harnessOptions.claude'),
           codex: t('settings.general.harnessOptions.codex'),
           opencode: t('settings.general.harnessOptions.opencode'),
+          deepseek: t('settings.general.harnessOptions.deepseek'),
         }),
       })
 

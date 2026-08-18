@@ -26,6 +26,7 @@ import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
 import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
+import { DeepseekSessionIcon } from '@superone/ui/components/harness/DeepseekSessionIcon'
 import { Grok, OpenCode, Cursor } from '@lobehub/icons'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
@@ -63,6 +64,7 @@ let rememberedSuggestionMenuHarness: SuggestionHarnessPreference | null | undefi
  *  `initializedHarnesses`, and empty-session harness switches mint a new
  *  session id — without this latch that pair retries forever. */
 let cursorHarnessBootstrapped = false
+let deepseekHarnessBootstrapped = false
 
 /** Shared trigger chrome — flex-none so short labels (e.g. Codex) don't stretch. */
 const tabTriggerLayoutClass =
@@ -87,6 +89,7 @@ function ProviderIcon({
   }
   if (provider === 'opencode') return <OpenCode size={size} />
   if (provider === 'cursor') return <Cursor size={size} />
+  if (provider === 'deepseek') return <DeepseekSessionIcon status="default" size={size} />
   return <ClaudeSessionIcon status="default" size={size} />
 }
 
@@ -139,6 +142,13 @@ export function ProviderSelector({
     if (cursorHarnessBootstrapped) return
     cursorHarnessBootstrapped = true
     void initializeHarness('cursor')
+  }, [harnessCatalog, initializeHarness])
+
+  useEffect(() => {
+    if (!isCatalogHarnessEnabled(harnessCatalog, 'deepseek')) return
+    if (deepseekHarnessBootstrapped) return
+    deepseekHarnessBootstrapped = true
+    void initializeHarness('deepseek')
   }, [harnessCatalog, initializeHarness])
 
   useEffect(() => {
@@ -327,6 +337,9 @@ export function ProviderSelector({
       if (provider === 'cursor') {
         return isCatalogHarnessEnabled(harnessCatalog, 'cursor')
       }
+      if (provider === 'deepseek') {
+        return isCatalogHarnessEnabled(harnessCatalog, 'deepseek')
+      }
       if (provider === 'acp' && agentId) {
         if (isGrokAcpAgent(agentId)) {
           return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
@@ -395,6 +408,7 @@ export function ProviderSelector({
       includeOpenCode:
         isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled,
       includeCursor: isCatalogHarnessEnabled(harnessCatalog, 'cursor'),
+      includeDeepseek: isCatalogHarnessEnabled(harnessCatalog, 'deepseek'),
       harnessOrder,
       defaultHarness: suggestionHarness === undefined ? null : suggestionHarness,
       secondaryHarness,
@@ -508,7 +522,10 @@ export function ProviderSelector({
               />
             </motion.div>
           </AnimatePresence>
-          {preferredProvider !== 'acp' && preferredProvider !== 'opencode' && preferredProvider !== 'cursor' && <ActiveProviderHint />}
+          {preferredProvider !== 'acp' &&
+            preferredProvider !== 'opencode' &&
+            preferredProvider !== 'cursor' &&
+            preferredProvider !== 'deepseek' && <ActiveProviderHint />}
           {fixedHarness && orderedHarnesses.length > 1 ? (
             <Tabs
               value={tabsValue}
@@ -659,7 +676,12 @@ function ActiveProviderHint() {
     void fetchProviderData()
   }, [fetchProviderData, providerScope])
 
-  if (preferredProvider === 'acp' || preferredProvider === 'opencode' || preferredProvider === 'cursor') return null
+  if (
+    preferredProvider === 'acp' ||
+    preferredProvider === 'opencode' ||
+    preferredProvider === 'cursor' ||
+    preferredProvider === 'deepseek'
+  ) return null
 
   const effective = resolveEffective(
     platforms,

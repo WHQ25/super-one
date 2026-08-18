@@ -94,6 +94,7 @@ export function formatSettingsFieldDisplay(
       claude: 'Claude Code',
       codex: 'Codex',
       opencode: 'OpenCode',
+      deepseek: 'DeepSeek',
     })
   }
 

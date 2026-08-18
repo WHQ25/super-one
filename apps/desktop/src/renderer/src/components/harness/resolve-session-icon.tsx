@@ -8,6 +8,7 @@ import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSes
 import { GrokSessionIcon } from '@superone/ui/components/harness/GrokSessionIcon'
 import { OpenCodeSessionIcon } from '@superone/ui/components/harness/OpenCodeSessionIcon'
 import { CursorSessionIcon } from '@superone/ui/components/harness/CursorSessionIcon'
+import { DeepseekSessionIcon } from '@superone/ui/components/harness/DeepseekSessionIcon'
 
 export type { SessionIconProps }
 
@@ -20,6 +21,7 @@ export function resolveSessionIcon(
   if (harnessId === 'codex') return CodexSessionIcon
   if (harnessId === 'opencode') return OpenCodeSessionIcon
   if (harnessId === 'cursor') return CursorSessionIcon
+  if (harnessId === 'deepseek') return DeepseekSessionIcon
   if (harnessId === 'acp') {
     if (isGrokAcpAgent(acpAgentId)) return GrokSessionIcon
     if (isOpenCodeAcpAgent(acpAgentId)) return OpenCodeSessionIcon
@@ -37,6 +39,7 @@ export function resolveSessionIconFromBrandKey(
   if (brandKey === 'codex') return CodexSessionIcon
   if (brandKey === 'opencode' || brandKey === 'acp-opencode') return OpenCodeSessionIcon
   if (brandKey === 'cursor') return CursorSessionIcon
+  if (brandKey === 'deepseek') return DeepseekSessionIcon
   if (brandKey === 'acp-grok' || brandKey.includes('grok')) return GrokSessionIcon
   if (brandKey === 'acp' || brandKey.startsWith('acp')) return AcpSessionIcon
   return null

@@ -1,6 +1,7 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
 import type { AgentErrorInfo, AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import { mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import {
   isResumeDropsTurnRefusal,
@@ -273,6 +274,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let lastAssistantUsage: any = null
   // Track the most recent top-level assistant message UUID for resumeSessionAt
   let lastTopLevelAssistantUuid = ''
+  // SDK wire uuid -> our message id, so a refusal fallback's
+  // `retracted_message_uuids` can be evicted from our own transcript.
+  const wireUuidToMessageId = new Map<string, string>()
+  const resolveRetractedMessageIds = (uuids: string[]): string[] =>
+    [...new Set(uuids.map((uuid) => wireUuidToMessageId.get(uuid)).filter((id): id is string => !!id))]
   // Last replay user message UUID — SDK creates file-history snapshots for replay UUIDs only
   let lastReplayCheckpointId = ''
   let lastAssistantTypedError: string | undefined
@@ -652,13 +658,8 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               maxRetries: sys.max_retries ?? 3,
               delayMs: sys.retry_delay_ms ?? 0,
             })
-          } else if (sys.subtype === 'model_fallback' || sys.subtype === 'model_refusal_fallback') {
-            emit({
-              type: 'model_fallback',
-              trigger: typeof sys.trigger === 'string' ? sys.trigger : 'unknown',
-              fromModel: sys.original_model ?? sys.from_model,
-              toModel: sys.fallback_model ?? sys.to_model,
-            })
+          } else if (MODEL_FALLBACK_SUBTYPES.has(sys.subtype)) {
+            for (const mapped of mapModelFallbackWire(sys, resolveRetractedMessageIds)) emit(mapped)
           } else if (sys.subtype === 'local_command_output') {
             const text = typeof sys.content === 'string' ? sys.content : ''
             if (text) {
@@ -699,6 +700,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           if (!assistantParent) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             lastTopLevelAssistantUuid = (msg as any).uuid ?? ''
+            if (lastTopLevelAssistantUuid) wireUuidToMessageId.set(lastTopLevelAssistantUuid, messageId)
             seedMessageTimestamp(messageId, msg)
           }
 

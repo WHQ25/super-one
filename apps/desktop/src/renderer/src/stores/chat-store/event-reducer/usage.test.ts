@@ -213,19 +213,3 @@ describe('reduceUsage: api_retry', () => {
     expect(patch.apiRetry).toEqual({ attempt: 2, maxRetries: 5, delayMs: 750 })
   })
 })
-
-describe('reduceUsage: model_fallback', () => {
-  it('records the fallback trigger + model swap', () => {
-    const patch = reduceUsage(createDefaultPerSessionState(), {
-      type: 'model_fallback',
-      trigger: 'overloaded',
-      fromModel: 'claude-opus-4-8',
-      toModel: 'claude-sonnet-4-6',
-    } as never)
-    expect(patch.modelFallback).toEqual({
-      trigger: 'overloaded',
-      fromModel: 'claude-opus-4-8',
-      toModel: 'claude-sonnet-4-6',
-    })
-  })
-})

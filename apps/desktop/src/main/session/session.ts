@@ -47,6 +47,7 @@ import {
   taskNotificationRequest,
 } from './task-notification-queue'
 import { buildOrphanTaskNotificationMessage } from './orphan-task-notification'
+import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
 import {
   LOCAL_OWNER,
   SessionClaimConflictError,
@@ -184,6 +185,8 @@ export class Session implements SessionContract {
    * resume-time orphan scan cannot mint a second transcript row for the task.
    */
   private _settledBackgroundTaskIds = new Set<string>()
+  /** Last announced model swap, so a retry loop cannot mint the same row twice. */
+  private _lastModelFallbackSignature: string | null = null
   private _streamingTokensByMessageId: Record<string, { input: number; output: number }> = {}
   private _lastUsageByMessageId: Record<string, CodexUsageInfo | null> = {}
 
@@ -1108,6 +1111,7 @@ export class Session implements SessionContract {
     this._contextTokens = 0
     this._taskProgress = {}
     this._settledBackgroundTaskIds.clear()
+    this._lastModelFallbackSignature = null
     this._streamingTokensByMessageId = {}
     this._lastUsageByMessageId = {}
     // Allow empty-transcript persist (e.g. rewind to first checkpoint at index 0).
@@ -1369,6 +1373,9 @@ export class Session implements SessionContract {
       }
     } else if (event.type === 'message_start') {
       this._currentMessageId = event.message.id
+      // Scope the swap dedup to one turn: the same fallback recurring in a later
+      // turn is news again, only a retry loop re-announcing it is not.
+      this._lastModelFallbackSignature = null
     } else if (
       event.type === 'message_complete' ||
       event.type === 'message_interrupted' ||
@@ -1390,6 +1397,16 @@ export class Session implements SessionContract {
     const orphanNotificationRow = sequenced.type === 'task_notification' && !isRepeatedTaskNotification
       ? buildOrphanTaskNotificationMessage(sequenced, this._messages, this._taskProgress)
       : null
+    // The swap outlives its turn, so it lands in the transcript instead of in
+    // transient session state that `status: idle` would wipe.
+    let modelFallbackRow: ChatMessage | null = null
+    if (sequenced.type === 'model_fallback') {
+      const signature = modelFallbackSignature(sequenced)
+      if (signature !== this._lastModelFallbackSignature) {
+        this._lastModelFallbackSignature = signature
+        modelFallbackRow = buildModelFallbackMessage(sequenced)
+      }
+    }
     this.applyReducer(sequenced)
     if (taskNotificationId) this._settledBackgroundTaskIds.add(taskNotificationId)
     const outbound = this.enrichOutboundEvent(sequenced)
@@ -1410,6 +1427,7 @@ export class Session implements SessionContract {
     // re-emits it as user_message_appended — renderer and mobile both pick it up
     // without either having to reduce task_notification a second time.
     if (orphanNotificationRow) this.appendTranscriptMessage(orphanNotificationRow)
+    if (modelFallbackRow) this.appendTranscriptMessage(modelFallbackRow)
     if (tagged.type === 'acp_models') {
       this._cachedAcpModels = tagged
       // Keep Session.model aligned with agent-advertised selection for snapshots.

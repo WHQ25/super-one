@@ -16,6 +16,7 @@ interface FakeSessionState {
   status: string
   lastAssistantMessageId: string | null
   queuedMessages: unknown[]
+  acpModels: unknown[]
   _historyHydrated: boolean
   awaitingAssistantReply: boolean
   draftId: string | null
@@ -38,6 +39,7 @@ const hoisted = vi.hoisted(() => {
     status: 'idle',
     lastAssistantMessageId: null,
     queuedMessages: [],
+    acpModels: [],
     _historyHydrated: true,
     awaitingAssistantReply: false,
     draftId: null,
@@ -66,6 +68,10 @@ vi.mock('@/stores/chat', () => ({
       editQueuedMessage: vi.fn(),
       deleteQueuedMessage: vi.fn(),
       disconnectRemoteSession: vi.fn(),
+      // Read by selectClaudeModels for model-fallback display names.
+      activeProject: null,
+      projectSessions: {},
+      harnessResources: {},
     }),
     { getState: () => ({}) },
   ),
@@ -136,7 +142,6 @@ vi.mock('./ChatMessage', async () => {
     CompactingIndicator: () => <div data-testid="compacting" />,
     CompactIndicator: () => <div data-testid="compact" />,
     ApiRetryIndicator: () => <div data-testid="api-retry" />,
-    ModelFallbackIndicator: () => <div data-testid="model-fallback" />,
     parseCompactMarker: () => null,
     parseTurnMetaMarker: () => null,
     TurnMetaIndicator: () => <div data-testid="turn-meta" />,

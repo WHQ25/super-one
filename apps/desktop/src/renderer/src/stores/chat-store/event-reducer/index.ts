@@ -23,6 +23,7 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'queued_message_consumed':
     case 'message_start':
     case 'message_timestamp':
+    case 'messages_retracted':
     case 'user_message_appended':
     case 'message_interrupted':
     case 'message_error':
@@ -80,7 +81,6 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'status_indicator':
     case 'rate_limit':
     case 'api_retry':
-    case 'model_fallback':
       return reduceUsage(session, event)
 
     case 'hook_started':
@@ -89,6 +89,9 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'auth_status':
     case 'files_persisted':
     case 'elicitation_complete':
+    // The swap is rendered from the transcript row the main process appends for
+    // it, so there is no session state to patch here.
+    case 'model_fallback':
     case 'stream_message_start':
     case 'stream_message_stop':
       return {}

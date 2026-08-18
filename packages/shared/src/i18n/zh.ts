@@ -1184,6 +1184,23 @@ export const zh: Messages = {
       group_other: '{{count}} 条通知',
       outputFile: '输出日志',
     },
+    modelFallback: {
+      switchedTo: '已切换到 {{model}}',
+      switched: '已切换模型',
+      localOnly: '本次回复由 {{model}} 生成',
+      declined: '{{model}} 拒绝回答',
+      declinedNoModel: '模型拒绝回答',
+      noFallback: '无可用备用模型',
+      reason: {
+        overloaded: '主模型负载过高',
+        server_error: '服务端错误',
+        model_not_found: '模型不可用',
+        permission_denied: '访问被拒绝',
+        model_blocked: '模型不可用',
+        last_resort: '没有可用的首选模型',
+        refusal: '主模型拒绝回答',
+      },
+    },
     pasteChip: {
       title_one: '已粘贴文本 · {{count}} 行',
       title_other: '已粘贴文本 · {{count}} 行',

@@ -6,6 +6,7 @@
  * state and emits IPC-safe AgentEvents.
  */
 import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
+import { mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 
@@ -215,6 +216,11 @@ export function createClaudeAgentEventMapper(
   const activeBackgroundTasks = new Map<string, { toolUseId?: string; description: string }>()
   let lastAssistantUsage: Raw | null = null
   let lastTopLevelAssistantUuid = ''
+  // SDK wire uuid -> our message id, so a refusal fallback's
+  // `retracted_message_uuids` can be evicted from our own transcript.
+  const wireUuidToMessageId = new Map<string, string>()
+  const resolveRetractedMessageIds = (uuids: string[]): string[] =>
+    [...new Set(uuids.map((uuid) => wireUuidToMessageId.get(uuid)).filter((id): id is string => !!id))]
   let lastReplayCheckpointId = ''
   let lastAssistantTypedError: string | undefined
   let pendingSlashOutput = ''
@@ -461,12 +467,8 @@ export function createClaudeAgentEventMapper(
         break
       case 'model_fallback':
       case 'model_refusal_fallback':
-        emit({
-          type: 'model_fallback',
-          trigger: typeof system.trigger === 'string' ? system.trigger : 'unknown',
-          fromModel: system.original_model ?? system.from_model,
-          toModel: system.fallback_model ?? system.to_model,
-        })
+      case 'model_refusal_no_fallback':
+        for (const mapped of mapModelFallbackWire(system, resolveRetractedMessageIds)) emit(mapped)
         break
       case 'local_command_output':
         if (typeof system.content === 'string' && system.content) {
@@ -543,6 +545,7 @@ export function createClaudeAgentEventMapper(
           if (raw.error) lastAssistantTypedError = String(raw.error)
           if (!assistantParent) {
             lastTopLevelAssistantUuid = raw.uuid ?? ''
+            if (lastTopLevelAssistantUuid) wireUuidToMessageId.set(lastTopLevelAssistantUuid, messageId)
             if (!timestampApplied && typeof raw.timestamp === 'string' && raw.timestamp) {
               timestampApplied = true
               emit({ type: 'message_timestamp', messageId, timestamp: raw.timestamp })

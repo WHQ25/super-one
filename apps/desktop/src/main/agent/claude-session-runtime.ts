@@ -224,6 +224,12 @@ export function applyClaudeEventToRuntime(
   switch (event.type) {
     case 'message_start':
       return { ...runtime, messages: upsertMessage(runtime.messages, event.message) }
+    case 'messages_retracted': {
+      const dropped = new Set(event.messageIds)
+      const messages = runtime.messages.filter((message) => !dropped.has(message.id))
+      // Idempotent by contract: an already-evicted id must not churn identity.
+      return messages.length === runtime.messages.length ? runtime : { ...runtime, messages }
+    }
     case 'message_timestamp':
       return {
         ...runtime,

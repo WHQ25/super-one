@@ -1122,6 +1122,24 @@ export type Messages = {
       group_other: string
       outputFile: string
     }
+    /** Automatic model swap row (SDK `model_fallback`). */
+    modelFallback: {
+      switchedTo: string
+      switched: string
+      localOnly: string
+      declined: string
+      declinedNoModel: string
+      noFallback: string
+      reason: {
+        overloaded: string
+        server_error: string
+        model_not_found: string
+        permission_denied: string
+        model_blocked: string
+        last_resort: string
+        refusal: string
+      }
+    }
     pasteChip: {
       title_one: string
       title_other: string
@@ -4045,6 +4063,23 @@ export const en: Messages = {
       group_one: '{{count}} notification',
       group_other: '{{count}} notifications',
       outputFile: 'Output log',
+    },
+    modelFallback: {
+      switchedTo: 'Switched to {{model}}',
+      switched: 'Switched model',
+      localOnly: 'This response came from {{model}}',
+      declined: '{{model}} declined',
+      declinedNoModel: 'The model declined',
+      noFallback: 'no fallback available',
+      reason: {
+        overloaded: 'primary model overloaded',
+        server_error: 'a server error',
+        model_not_found: 'model unavailable',
+        permission_denied: 'access denied',
+        model_blocked: 'model unavailable',
+        last_resort: 'no preferred model available',
+        refusal: 'primary model declined',
+      },
     },
     pasteChip: {
       title_one: 'Pasted text · {{count}} line',

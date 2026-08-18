@@ -2876,3 +2876,81 @@ describe('orphan background task notification', () => {
     expect(appendedRows(events)).toHaveLength(0)
   })
 })
+
+describe('Session model fallback transcript row', () => {
+  function fallback(overrides: Partial<Extract<AgentEvent, { type: 'model_fallback' }>> = {}): AgentEvent {
+    return {
+      type: 'model_fallback',
+      trigger: 'overloaded',
+      fromModel: 'claude-fable-5',
+      toModel: 'claude-opus-5',
+      ...overrides,
+    } as AgentEvent
+  }
+
+  function fallbackRows(session: Session) {
+    return session.snapshot.messages.filter((m) => m.metadata?.modelFallback)
+  }
+
+  function startTurn(backend: FakeBackend, id: string) {
+    backend.emit({
+      type: 'message_start',
+      message: { id, role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+  }
+
+  it('appends the swap to the transcript so it outlives the turn it happened in', () => {
+    const { session, backend } = makeSession()
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    backend.emit(fallback())
+    backend.emit({ type: 'status_change', status: 'idle' })
+
+    expect(fallbackRows(session)).toHaveLength(1)
+    expect(fallbackRows(session)[0].metadata?.modelFallback).toEqual({
+      trigger: 'overloaded',
+      fromModel: 'claude-fable-5',
+      toModel: 'claude-opus-5',
+    })
+    // Re-emitted as an append so the renderer and mobile both pick the row up
+    // without either having to reduce model_fallback a second time.
+    expect(events.filter((e) => e.type === 'user_message_appended')).toHaveLength(1)
+  })
+
+  it('lands after the messages already in the transcript, where the swap happened', () => {
+    const { session, backend } = makeSession()
+    startTurn(backend, 'a1')
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: 'partial' } })
+
+    backend.emit(fallback())
+
+    const ids = session.snapshot.messages.map((m) => m.id)
+    expect(ids[ids.length - 2]).toBe('a1')
+    expect(session.snapshot.messages[ids.length - 1].metadata?.modelFallback).toBeDefined()
+  })
+
+  it('announces each chain hop but not a retry re-announcing the same hop', () => {
+    const { session, backend } = makeSession()
+    startTurn(backend, 'a1')
+
+    backend.emit(fallback())
+    backend.emit(fallback())
+    backend.emit(fallback({ fromModel: 'claude-opus-5', toModel: 'claude-sonnet-5' }))
+
+    expect(fallbackRows(session).map((m) => m.metadata?.modelFallback?.toModel)).toEqual([
+      'claude-opus-5',
+      'claude-sonnet-5',
+    ])
+  })
+
+  it('re-announces the same swap in a later turn — it is news again', () => {
+    const { session, backend } = makeSession()
+    startTurn(backend, 'a1')
+    backend.emit(fallback())
+    startTurn(backend, 'a2')
+    backend.emit(fallback())
+
+    expect(fallbackRows(session)).toHaveLength(2)
+  })
+})

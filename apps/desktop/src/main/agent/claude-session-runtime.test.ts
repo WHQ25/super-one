@@ -737,3 +737,29 @@ describe('resuming a completed sub-agent via SendMessage (runtime)', () => {
     expect((block as { taskUsage?: { totalTokens: number } }).taskUsage?.totalTokens).toBe(99)
   })
 })
+
+describe('applyClaudeEventToRuntime: messages_retracted', () => {
+  function plain(id: string): ChatMessage {
+    return { id, role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'claude' }
+  }
+
+  it('evicts the refused partial the harness retracted', () => {
+    const runtime = makeRuntime([plain('a1'), plain('a2'), plain('a3')])
+    const next = applyClaudeEventToRuntime(runtime, {
+      type: 'messages_retracted',
+      messageIds: ['a2'],
+    } as AgentEvent)
+
+    expect(next.messages.map((m) => m.id)).toEqual(['a1', 'a3'])
+  })
+
+  it('is a no-op for ids already gone, so a replayed eviction cannot churn state', () => {
+    const runtime = makeRuntime([plain('a1')])
+    const next = applyClaudeEventToRuntime(runtime, {
+      type: 'messages_retracted',
+      messageIds: ['gone'],
+    } as AgentEvent)
+
+    expect(next).toBe(runtime)
+  })
+})

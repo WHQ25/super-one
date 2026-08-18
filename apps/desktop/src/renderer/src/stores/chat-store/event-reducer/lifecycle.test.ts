@@ -70,3 +70,21 @@ describe('reduceLifecycle: Grok queued-turn handoff', () => {
     expect(afterStart.queuedMessages).toEqual([])
   })
 })
+
+describe('reduceLifecycle: messages_retracted', () => {
+  it('evicts the refused partial so it does not linger above the retry', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [msg('u1', 'user'), msg('a1', 'assistant'), msg('a2', 'assistant')]
+
+    const patch = reduceLifecycle(session, { type: 'messages_retracted', messageIds: ['a1'] } as never)
+
+    expect(patch.messages?.map((m) => m.id)).toEqual(['u1', 'a2'])
+  })
+
+  it('is a no-op for ids already gone, so a replayed eviction cannot churn state', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [msg('a1', 'assistant')]
+
+    expect(reduceLifecycle(session, { type: 'messages_retracted', messageIds: ['gone'] } as never)).toEqual({})
+  })
+})

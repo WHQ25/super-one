@@ -503,6 +503,38 @@ export interface MessageMetadata {
    * (see `buildOrphanTaskNotificationMessage`).
    */
   taskNotification?: TaskNotificationMeta
+  /**
+   * Automatic model swap (SDK `model_fallback` / `model_refusal_fallback`, and
+   * the ACP equivalent). Present only on the synthetic transcript row minted
+   * for it (see `buildModelFallbackMessage`).
+   */
+  modelFallback?: ModelFallbackMeta
+}
+
+/**
+ * Structured payload behind the "switched model" transcript row.
+ *
+ * `trigger` is an open string: the CLI ships new reasons on the wire ahead of
+ * any schema, so the renderer maps known ones to prose and falls through to the
+ * raw value for the rest.
+ */
+export interface ModelFallbackMeta {
+  trigger: string
+  fromModel?: string
+  toModel?: string
+  /**
+   * `'declined'` = the model refused and nothing took over (SDK
+   * `model_refusal_no_fallback`), so nothing was swapped. Absent = `'swapped'`.
+   */
+  outcome?: 'swapped' | 'declined'
+  /**
+   * `'local'` = only a subagent / side-question / background fork fell back and
+   * the session model is unchanged; `'session'` = the main thread swapped.
+   * Absent on older CLIs — treat as `'session'`.
+   */
+  scope?: 'session' | 'local'
+  /** Refusal category (`'cyber'`, `'bio'`, …). Open string: new ones ship ahead of any schema. */
+  refusalCategory?: string | null
 }
 
 /** Structured payload behind the compact "agent was notified" transcript row. */
@@ -1394,7 +1426,21 @@ export type AgentEventBase =
   | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
   | { type: 'api_retry'; attempt: number; maxRetries?: number; delayMs: number; message?: string }
-  | { type: 'model_fallback'; trigger: string; fromModel?: string; toModel?: string }
+  | {
+      type: 'model_fallback'
+      trigger: string
+      fromModel?: string
+      toModel?: string
+      outcome?: 'swapped' | 'declined'
+      scope?: 'session' | 'local'
+      refusalCategory?: string | null
+    }
+  /**
+   * Messages the harness retracted (SDK `retracted_message_uuids` on a refusal
+   * fallback). Resolution-time eviction: drop them from transcript state on
+   * receipt. Idempotent — unknown or already-removed ids are a no-op.
+   */
+  | { type: 'messages_retracted'; messageIds: string[] }
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }

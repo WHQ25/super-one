@@ -14,12 +14,14 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import {
   groupConsecutiveTaskNotifications,
   TaskNotificationGroup,
   TaskNotificationRow,
 } from './TaskNotificationRow'
+import { ModelFallbackRow } from './ModelFallbackRow'
+import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
 import { DraftSessionSurface } from './DraftSessionSurface'
 import { PermissionPrompt } from './PermissionPrompt'
@@ -180,10 +182,12 @@ function ChatTranscript({
   liquidGlass,
 }: ChatTranscriptProps) {
   const scope = useSessionScope()
+  // Model ids arrive raw on the wire; display names live in the harness catalogs.
+  const claudeModels = useChatStore(selectClaudeModels)
   const {
-    messages, isCompacting, isRecapping, compactError, apiRetry, modelFallback,
+    messages, isCompacting, isRecapping, compactError, apiRetry,
     displayedSessionId, historyHydrated,
-    sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
+    sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
     draftId,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -191,13 +195,13 @@ function ChatTranscript({
     isRecapping: s.isRecapping,
     compactError: s.compactError,
     apiRetry: s.apiRetry,
-    modelFallback: s.modelFallback,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
     historyHydrated: s._historyHydrated,
     sessionStatus: s.status,
     lastAssistantMessageId: s.lastAssistantMessageId,
     queuedMessages: s.queuedMessages,
     awaitingAssistantReply: s.awaitingAssistantReply,
+    acpModels: s.acpModels,
     draftId: s.draftId,
   })))
 
@@ -229,6 +233,9 @@ function ChatTranscript({
   useEffect(() => { setRenderCount(INITIAL_RENDER_COUNT) }, [displayedSessionId])
   const hasMore = renderCount < visibleMessages.length
   const renderedMessages = hasMore ? visibleMessages.slice(-renderCount) : visibleMessages
+  // A fallback id can name a model from either catalog: model_fallback is emitted
+  // by the Claude SDK and by the ACP backends.
+  const modelCatalog = useMemo(() => [...claudeModels, ...acpModels], [claudeModels, acpModels])
   const renderEntries = groupConsecutiveTaskNotifications(renderedMessages)
 
   useEffect(() => {
@@ -351,6 +358,14 @@ function ChatTranscript({
                 )
               }
               const msg = entry.message
+              const fallbackMeta = msg.metadata?.modelFallback
+              if (fallbackMeta) {
+                return (
+                  <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                    <ModelFallbackRow meta={fallbackMeta} models={modelCatalog} />
+                  </div>
+                )
+              }
               const compactInfo = parseCompactMarker(msg)
               if (compactInfo) {
                 const origIdx = messages.indexOf(msg)
@@ -406,7 +421,6 @@ function ChatTranscript({
             {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
             {isRecapping && <RecappingIndicator />}
             {apiRetry && <ApiRetryIndicator info={apiRetry} />}
-            {modelFallback && <ModelFallbackIndicator info={modelFallback} />}
           </SelectionContextMenuZone>
         </ScrollArea>
       )}

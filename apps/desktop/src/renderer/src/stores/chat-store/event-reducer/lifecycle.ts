@@ -7,6 +7,7 @@ type LifecycleEvent = Extract<AgentEvent, {
     | 'queued_message_consumed'
     | 'message_start'
     | 'message_timestamp'
+    | 'messages_retracted'
     | 'user_message_appended'
     | 'message_interrupted'
     | 'message_error'
@@ -66,6 +67,14 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
       }
     }
 
+    case 'messages_retracted': {
+      const dropped = new Set(event.messageIds)
+      const messages = session.messages.filter((m) => !dropped.has(m.id))
+      // Idempotent by contract: an already-evicted id must not churn identity.
+      if (messages.length === session.messages.length) return {}
+      return { messages, lastEventAt: Date.now() }
+    }
+
     case 'message_interrupted': {
       const ft = session.streamingTokens
       const consumedTokens = ft.input > 0 || ft.output > 0
@@ -122,7 +131,7 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
       // above the reply it is waiting on. Consume is the source of truth.
       return {
         status: event.status,
-        ...(event.status === 'idle' ? { apiRetry: null, modelFallback: null } : {}),
+        ...(event.status === 'idle' ? { apiRetry: null } : {}),
       }
 
     case 'session_init':

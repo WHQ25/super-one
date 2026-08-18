@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Bot, Inbox } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -776,33 +776,6 @@ export function ApiRetryIndicator({ info }: { info: { attempt: number; maxRetrie
       <Loader2 className="size-3 shrink-0 animate-spin text-warning" />
       <span className="font-medium text-warning" title={info.message}>
         Retrying API request ({info.attempt}{info.maxRetries ? `/${info.maxRetries}` : ''})… {secs > 0 && <>{secs}s</>}
-      </span>
-    </div>
-  )
-}
-
-const MODEL_FALLBACK_REASONS: Record<string, string> = {
-  overloaded: 'primary model overloaded',
-  server_error: 'a server error',
-  model_not_found: 'the model being unavailable',
-  permission_denied: 'access being denied',
-  last_resort: 'all preferred models being unavailable',
-  refusal: 'the primary model declining',
-}
-
-function shortModelName(model?: string): string | null {
-  if (!model) return null
-  return model.replace(/^(claude|anthropic|us\.anthropic)[./-]/, '').replace(/\[1m\]$/, '')
-}
-
-export function ModelFallbackIndicator({ info }: { info: { trigger: string; fromModel?: string; toModel?: string } }) {
-  const reason = MODEL_FALLBACK_REASONS[info.trigger] ?? info.trigger
-  const to = shortModelName(info.toModel)
-  return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs">
-      <Shuffle className="size-3 shrink-0 text-warning" />
-      <span className="font-medium text-warning">
-        {to ? <>Switched to {to}</> : <>Switched model</>} due to {reason}
       </span>
     </div>
   )

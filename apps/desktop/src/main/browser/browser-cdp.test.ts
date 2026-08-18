@@ -6,6 +6,7 @@ interface SentCommand {
 }
 
 const sent: SentCommand[] = []
+const failNext = new Set<string>()
 let attachedFlag = false
 
 const fakeDebugger = {
@@ -13,11 +14,18 @@ const fakeDebugger = {
   attach: vi.fn(() => {
     attachedFlag = true
   }),
+  detach: vi.fn(() => {
+    attachedFlag = false
+  }),
   on: vi.fn(),
   once: vi.fn(),
   off: vi.fn(),
   sendCommand: vi.fn((method: string, params?: object) => {
     sent.push({ method, params })
+    if (failNext.has(method)) {
+      failNext.delete(method)
+      return Promise.reject(new Error(`CDP refused ${method}`))
+    }
     if (method === 'Runtime.evaluate') return Promise.resolve({ result: { value: null } })
     return Promise.resolve({})
   }),
@@ -41,14 +49,116 @@ vi.mock('./browser-automation-bridge', () => ({ browserAutomationCall: vi.fn() }
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 
-const { cdpPress, cdpType } = await import('./browser-cdp')
+const { cdpPress, cdpType, acquireDomain, releaseDomain, detachAllCdp } = await import('./browser-cdp')
 
 beforeEach(() => {
+  detachAllCdp()
   sent.length = 0
+  failNext.clear()
   attachedFlag = false
   fakeDebugger.attach.mockClear()
+  fakeDebugger.detach.mockClear()
   fakeDebugger.sendCommand.mockClear()
   fakeWc.focus.mockClear()
+})
+
+// A CDP domain is process-wide per target, but several features enable the same
+// one concurrently (network recording + perf measurement both need `Network`).
+// Without a shared refcount, whichever feature stops first disables the domain
+// under the other — and the survivor fails silently, still believing it is
+// subscribed.
+describe('cdp domain refcounting', () => {
+  it('enables a domain only on the first acquire', async () => {
+    await acquireDomain(42, 'Network', { maxTotalBufferSize: 1024 })
+    await acquireDomain(42, 'Network')
+    expect(sent.filter((c) => c.method === 'Network.enable')).toHaveLength(1)
+  })
+
+  it('passes the enable arguments from the first acquire', async () => {
+    await acquireDomain(42, 'Network', { maxTotalBufferSize: 1024 })
+    expect(sent.find((c) => c.method === 'Network.enable')?.params).toMatchObject({ maxTotalBufferSize: 1024 })
+  })
+
+  it('keeps the domain enabled while another holder remains', async () => {
+    await acquireDomain(42, 'Network')
+    await acquireDomain(42, 'Network')
+    await releaseDomain(42, 'Network')
+    expect(sent.some((c) => c.method === 'Network.disable')).toBe(false)
+  })
+
+  it('disables the domain when the last holder releases', async () => {
+    await acquireDomain(42, 'Network')
+    await acquireDomain(42, 'Network')
+    await releaseDomain(42, 'Network')
+    await releaseDomain(42, 'Network')
+    expect(sent.filter((c) => c.method === 'Network.disable')).toHaveLength(1)
+  })
+
+  it('re-enables after the count drops to zero and a new holder acquires', async () => {
+    await acquireDomain(42, 'Network')
+    await releaseDomain(42, 'Network')
+    await acquireDomain(42, 'Network')
+    expect(sent.filter((c) => c.method === 'Network.enable')).toHaveLength(2)
+  })
+
+  it('tracks domains independently', async () => {
+    await acquireDomain(42, 'Network')
+    await acquireDomain(42, 'Profiler')
+    await releaseDomain(42, 'Network')
+    expect(sent.filter((c) => c.method === 'Network.disable')).toHaveLength(1)
+    expect(sent.some((c) => c.method === 'Profiler.disable')).toBe(false)
+  })
+
+  // Network.enable carries buffer sizing. If a later holder needs a bigger buffer
+  // than the first one asked for, skipping enable silently downgrades it — the
+  // second holder runs with the first holder's (possibly default) limits.
+  it('applies enable arguments from a later acquire so a richer config is not lost', async () => {
+    await acquireDomain(42, 'Network')
+    await acquireDomain(42, 'Network', { maxTotalBufferSize: 1024 })
+    const enables = sent.filter((c) => c.method === 'Network.enable')
+    expect(enables).toHaveLength(2)
+    expect(enables[1].params).toMatchObject({ maxTotalBufferSize: 1024 })
+  })
+
+  it('does not re-enable when a later acquire repeats the same arguments', async () => {
+    await acquireDomain(42, 'Network', { maxTotalBufferSize: 1024 })
+    await acquireDomain(42, 'Network', { maxTotalBufferSize: 1024 })
+    expect(sent.filter((c) => c.method === 'Network.enable')).toHaveLength(1)
+  })
+
+  // A count incremented before a failed enable is never released by anyone, so
+  // every later acquire skips enable and its caller receives no events at all.
+  it('rolls the count back when enable fails, so a retry still enables', async () => {
+    failNext.add('Network.enable')
+    await expect(acquireDomain(42, 'Network')).rejects.toThrow()
+    sent.length = 0
+    await acquireDomain(42, 'Network')
+    expect(sent.filter((c) => c.method === 'Network.enable')).toHaveLength(1)
+  })
+
+  it('leaves no holder behind after a failed acquire, so a stray release stays a no-op', async () => {
+    failNext.add('Network.enable')
+    await expect(acquireDomain(42, 'Network')).rejects.toThrow()
+    sent.length = 0
+    await releaseDomain(42, 'Network')
+    expect(sent.some((c) => c.method === 'Network.disable')).toBe(false)
+  })
+
+  it('ignores an unbalanced release instead of sending a stray disable', async () => {
+    await releaseDomain(42, 'Network')
+    expect(sent.some((c) => c.method === 'Network.disable')).toBe(false)
+  })
+
+  // Detaching drops every domain subscription on the target. If the refcount
+  // survived, the next acquire would skip `enable` and the caller would receive
+  // no events at all.
+  it('clears counts on detach so the next acquire re-enables', async () => {
+    await acquireDomain(42, 'Network')
+    detachAllCdp()
+    sent.length = 0
+    await acquireDomain(42, 'Network')
+    expect(sent.filter((c) => c.method === 'Network.enable')).toHaveLength(1)
+  })
 })
 
 describe('cdpPress focus routing', () => {

@@ -277,6 +277,7 @@ const TAB_SCOPED_TOOLS = new Set<string>([
   'browser_evaluate',
   'browser_resize',
   'browser_network_start',
+  'browser_perf_measure',
   'browser_cookies',
   'browser_upload_file',
   'browser_emulate',

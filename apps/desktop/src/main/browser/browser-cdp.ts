@@ -36,9 +36,13 @@ function ensureAttached(wc: WebContents): void {
     }
     wc.debugger.on('detach', (_event, reason) => {
       attached.delete(wc.id)
+      domainRefs.delete(wc.id)
       log.info('[browser-cdp] detached wc=%d reason=%s', wc.id, reason)
     })
-    wc.once('destroyed', () => attached.delete(wc.id))
+    wc.once('destroyed', () => {
+      attached.delete(wc.id)
+      domainRefs.delete(wc.id)
+    })
     wc.debugger
       .sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
       .catch((err) => log.warn('[browser-cdp] focus emulation failed wc=%d %s', wc.id, err instanceof Error ? err.message : String(err)))
@@ -56,6 +60,62 @@ export async function cdpSend<T = unknown>(webContentsId: number, method: string
   const wc = targetWebContents(webContentsId)
   ensureAttached(wc)
   return wc.debugger.sendCommand(method, params) as Promise<T>
+}
+
+// A CDP domain is enabled per target, not per caller, so two features that both
+// need one (network recording and perf measurement both need `Network`) must
+// share a count — otherwise whichever stops first disables it under the other,
+// and the survivor keeps running while silently receiving no events.
+//
+// The count alone is not enough: `enable` carries configuration (Network's
+// buffer sizes). A later holder needing a richer config than the first one asked
+// for must still get it, so the last applied args are tracked and a differing
+// request re-enables. CDP `*.enable` is idempotent, so re-issuing is safe.
+interface DomainState {
+  count: number
+  args?: object
+}
+const domainRefs = new Map<number, Map<string, DomainState>>()
+
+export async function acquireDomain(webContentsId: number, domain: string, enableArgs?: object): Promise<void> {
+  let perTarget = domainRefs.get(webContentsId)
+  if (!perTarget) {
+    perTarget = new Map()
+    domainRefs.set(webContentsId, perTarget)
+  }
+  const previous = perTarget.get(domain)
+  const argsChanged = enableArgs != null && JSON.stringify(enableArgs) !== JSON.stringify(previous?.args)
+  const needsEnable = !previous || argsChanged
+  perTarget.set(domain, { count: (previous?.count ?? 0) + 1, args: enableArgs ?? previous?.args })
+  if (!needsEnable) return
+
+  try {
+    await cdpSend(webContentsId, `${domain}.enable`, enableArgs ?? {})
+  } catch (err) {
+    // Restore the prior state. A count left behind by a failed enable is never
+    // released, so every later acquire would skip enable and its caller would
+    // receive no events at all.
+    if (previous) {
+      perTarget.set(domain, previous)
+    } else {
+      perTarget.delete(domain)
+      if (perTarget.size === 0) domainRefs.delete(webContentsId)
+    }
+    throw err
+  }
+}
+
+export async function releaseDomain(webContentsId: number, domain: string): Promise<void> {
+  const perTarget = domainRefs.get(webContentsId)
+  const state = perTarget?.get(domain)
+  if (!state || state.count === 0) return
+  if (state.count > 1) {
+    perTarget!.set(domain, { ...state, count: state.count - 1 })
+    return
+  }
+  perTarget!.delete(domain)
+  if (perTarget!.size === 0) domainRefs.delete(webContentsId)
+  await cdpSend(webContentsId, `${domain}.disable`, {}).catch(() => {})
 }
 
 export function ensureAttachedById(webContentsId: number): WebContents {
@@ -409,4 +469,7 @@ export function detachAllCdp(): void {
     }
   }
   attached.clear()
+  // Detaching drops every domain subscription; a surviving count would make the
+  // next acquire skip `enable` and deliver no events.
+  domainRefs.clear()
 }

@@ -156,7 +156,10 @@ export const BROWSER_ACT_DESCRIPTION =
   + 'engine=auto|cdp|synthetic (default auto). description is shown to the user instead of raw selectors. '
   + 'Do not use this to navigate (browser_tabs), wait (browser_wait_for), or run JS (browser_evaluate). Fail-fast: stops at the first error.'
 
-export const BROWSER_NETWORK_DESCRIPTION =
+export const BROWSER_PERF_DESCRIPTION =
+  "Profile what a page (or SuperOne itself) burns CPU on: hotspot functions by self time, plus layout/style/heap deltas. Pass `action` to measure ONE interaction — the app opens and closes the window around it, so your thinking time never dilutes the result. It first samples a ~1s baseline of ambient load and waits for load to return to it, so it works on pages that never go idle; hotspots are reported AFTER subtracting it. Omit `action` to profile steady state for `sampleMs` (no baseline; the only mode for target='app'). Read `settled`: 'timeout' = window cut at maxWaitMs, durations are LOWER BOUNDS. `jsSelfMs` far below `metrics.TaskDurationMs` means the cost is layout/paint/GC, not script."
+
+const BROWSER_NETWORK_DESCRIPTION =
   'Network, downloads, and page environment. '
   + 'Recording ladder: action=start → do an act/navigate → action=wait or stop (lean manifest) → action=body({requestId}) for one response. '
   + 'action=download fetches a URL through the session; action=downloads lists page-triggered captures. '
@@ -390,6 +393,36 @@ export function registerCompactBrowserTools(
       }
       return browserTextReply({ ok: true, stepsExecuted: executed.length, last })
     },
+  )
+
+  server.registerTool(
+    'browser_perf',
+    {
+      description: BROWSER_PERF_DESCRIPTION,
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        target: z.enum(['tab', 'app']).optional().describe("'tab' (default) = a browser view. 'app' = SuperOne's own renderer; sample mode only."),
+        action: z
+          .object({
+            tool: z.string().describe("Browser primitive to measure, e.g. 'browser_click', 'browser_navigate', 'browser_scroll'."),
+            args: z.record(z.string(), z.unknown()).optional().describe('Arguments for that tool, as you would pass them directly.'),
+          })
+          .optional()
+          .describe('Action mode: the action runs inside the profiling window. Omit for sample mode.'),
+        sampleMs: z.number().int().optional().describe('Sample mode: how long to profile steady-state load. Default 3000.'),
+        until: z
+          .object({
+            urlContains: z.string().optional(),
+            selector: z.string().optional(),
+          })
+          .optional()
+          .describe('Action mode: explicit completion signal for an exact window.'),
+        maxWaitMs: z.number().int().optional().describe('Action mode: upper bound on the wait. Default 10000.'),
+        baselineMs: z.number().int().optional().describe("Action mode: ambient-load sample length. Default 1000."),
+      },
+    },
+    (args) => runPrimitive('browser_perf_measure', args as Record<string, unknown>),
   )
 
   server.registerTool(

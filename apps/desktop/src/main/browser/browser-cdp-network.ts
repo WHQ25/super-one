@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { ensureAttachedById, cdpSend, isCdpMockEnabled } from './browser-cdp'
+import { ensureAttachedById, cdpSend, isCdpMockEnabled, acquireDomain, releaseDomain } from './browser-cdp'
 import log from '../logger'
 
 // On-demand, scoped network recording. Nothing is captured unless an agent
@@ -78,6 +78,24 @@ function cleanup(webContentsId: number): void {
   }
   activeByWc.delete(webContentsId)
   listening.delete(webContentsId)
+  mockRules.delete(webContentsId)
+  fetchEnabled.delete(webContentsId)
+}
+
+function handleDetach(webContentsId: number): void {
+  const ids = activeByWc.get(webContentsId)
+  if (ids) {
+    // A debugger detach drops Chromium's Network domain and browser-cdp clears
+    // its refcounts. Retire these holders without releasing later: after a
+    // reattach, that release could disable a newly started recording.
+    for (const id of ids) {
+      const rec = recordings.get(id)
+      if (!rec) continue
+      rec.active = false
+      retain(id)
+    }
+    activeByWc.delete(webContentsId)
+  }
   mockRules.delete(webContentsId)
   fetchEnabled.delete(webContentsId)
 }
@@ -238,6 +256,7 @@ function ensureListening(webContentsId: number): void {
   if (listening.has(webContentsId)) return
   const wc = ensureAttachedById(webContentsId)
   wc.debugger.on('message', (_e, method, params) => handleMessage(webContentsId, method, params))
+  wc.debugger.on('detach', () => handleDetach(webContentsId))
   wc.once('destroyed', () => cleanup(webContentsId))
   listening.add(webContentsId)
 }
@@ -251,8 +270,9 @@ export interface StartRecordingOptions {
 
 export async function startRecording(webContentsId: number, opts: StartRecordingOptions = {}): Promise<string> {
   ensureListening(webContentsId)
-  const firstOnTab = !activeByWc.has(webContentsId) || activeByWc.get(webContentsId)!.size === 0
-  if (firstOnTab) await cdpSend(webContentsId, 'Network.enable', NETWORK_ENABLE_ARGS)
+  // Refcounted so a concurrent perf measurement (which also needs Network) is
+  // not torn down when this recording stops.
+  await acquireDomain(webContentsId, 'Network', NETWORK_ENABLE_ARGS)
   const types = opts.resourceTypes && opts.resourceTypes.length ? opts.resourceTypes : DEFAULT_RESOURCE_TYPES
   const rec: Recording = {
     id: randomUUID(),
@@ -302,11 +322,9 @@ export async function stopRecording(recordingId: string, keep = false): Promise<
     const ids = activeByWc.get(rec.webContentsId)
     if (ids) {
       ids.delete(recordingId)
-      if (ids.size === 0) {
-        activeByWc.delete(rec.webContentsId)
-        await cdpSend(rec.webContentsId, 'Network.disable', {}).catch(() => {})
-      }
+      if (ids.size === 0) activeByWc.delete(rec.webContentsId)
     }
+    await releaseDomain(rec.webContentsId, 'Network')
     retain(recordingId)
   }
   return snapshot

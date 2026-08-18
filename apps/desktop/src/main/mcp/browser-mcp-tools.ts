@@ -6,6 +6,7 @@ import { existsSync } from 'fs'
 import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpScreenshot, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
 import { encode as toonEncode } from '@toon-format/toon'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest, addMockRule, clearMockRules, type RecordedRequest } from '../browser/browser-cdp-network'
+import { measurePerf, samplePerf, resolveAppTarget } from '../browser/browser-cdp-perf'
 import { persistScreenshot } from '../agent/browser-screenshot-store'
 import { raceDownloadTask, startUrlDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
@@ -1092,5 +1093,113 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string): void 
         })
         return { ok: true, mocking: args.url }
       }),
+  )
+
+  server.registerTool(
+    'browser_perf_measure',
+    {
+      description:
+        "Profile what a page (or SuperOne itself) is spending CPU on — hotspot functions by self time, plus a script/layout/style/heap breakdown (requires the browser CDP setting). TWO MODES. (1) ACTION MODE — pass `action` to measure what one interaction costs. The profiling window is opened and closed by the app around that action, so your own thinking time between tool calls never lands in the profile and cannot dilute the result. It first samples a ~1s BASELINE of the page's ambient load (animation, polling, video, ads), then fires the action and waits until load falls back to that baseline — which is why it works even on pages that never go idle. Hotspots are reported AFTER subtracting that baseline; a row flagged baselineAdjusted was partly ambient, and its remaining cost is the growth caused by the action. Pass `until` when you know the completion signal (a URL substring, or a selector that appears) for an exact window instead of an inferred one. (2) SAMPLE MODE — omit `action` to profile steady-state load for `sampleMs`: what a page burns while sitting there, or what SuperOne's own renderer does while streaming. No baseline is taken in this mode, because the ambient load IS what you are measuring. Compare `jsSelfMs` (everything the JS sampler accounted for) against `metrics.TaskDurationMs` (all main-thread work): a large gap means the cost is NOT in script but in layout, paint, style, GC or compositing, and tuning JS will not help — chase the layout/style numbers instead. ALWAYS read `settled`: 'until' = exact window; 'baseline'/'quiet' = inferred and trustworthy; 'sample' = fixed span; 'timeout' = the window was cut at maxWaitMs, so actionDurationMs and every duration are LOWER BOUNDS, not measurements.",
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        target: z
+          .enum(['tab', 'app'])
+          .default('tab')
+          .describe(
+            "What to profile. 'tab' (default) = a browser view you are driving. 'app' = SuperOne's own renderer, for diagnosing the app's UI performance; requires sample mode (there is no way to drive SuperOne's own UI as an action) and fails if DevTools is open on that window.",
+          ),
+        action: z
+          .object({
+            tool: z
+              .string()
+              .describe("The browser primitive to measure, e.g. 'browser_click', 'browser_navigate', 'browser_type', 'browser_scroll', 'browser_press'."),
+            args: z
+              .record(z.string(), z.unknown())
+              .default({})
+              .describe('Arguments for that tool, exactly as you would pass them when calling it directly.'),
+          })
+          .optional()
+          .describe('The action to measure; it runs inside the profiling window. Omit for sample mode.'),
+        sampleMs: z
+          .number()
+          .int()
+          .min(200)
+          .max(30000)
+          .default(3000)
+          .describe('Sample mode only: how long to profile steady-state load. Default 3000.'),
+        until: z
+          .object({
+            urlContains: z.string().optional().describe('Settle as soon as a request whose URL contains this substring completes.'),
+            selector: z.string().optional().describe('Settle as soon as this CSS selector matches an element.'),
+          })
+          .optional()
+          .describe('Action mode only. Explicit completion signal — pass it when you know what ends the action, for an exact window.'),
+        maxWaitMs: z
+          .number()
+          .int()
+          .min(500)
+          .max(60000)
+          .default(10000)
+          .describe('Action mode only. Upper bound on the wait after the action. Default 10000. If hit, settled is "timeout" and durations are lower bounds.'),
+        baselineMs: z
+          .number()
+          .int()
+          .min(0)
+          .max(5000)
+          .default(1000)
+          .describe("Action mode only. How long to sample ambient load before acting. Default 1000. Set 0 only on a page you know is idle — without it an always-busy page cannot be judged."),
+      },
+    },
+    async (args) => {
+      try {
+        if (!isCdpEnabled()) return errorReply(CDP_REQUIRED_MESSAGE)
+        if (args.target === 'app') {
+          if (args.action) {
+            return errorReply(
+              new Error("target 'app' profiles SuperOne's own renderer and cannot run a browser action; omit `action` to sample it, or use target 'tab'."),
+            )
+          }
+          return toonReply(await samplePerf({ webContentsId: resolveAppTarget(), durationMs: args.sampleMs }))
+        }
+        const webContentsId = await resolveCdpTarget(sessionId, args.tab)
+        if (!args.action) {
+          return toonReply(await samplePerf({ webContentsId, durationMs: args.sampleMs }))
+        }
+        if (args.action.tool === 'browser_perf_measure') {
+          return errorReply(new Error('browser_perf_measure cannot measure itself; name the browser primitive you want profiled.'))
+        }
+        const action = args.action
+        // The nested action must target the SAME view being profiled. Without
+        // this it resolves its own target and, with several views open, either
+        // errors as ambiguous or measures a different tab than it acts on.
+        const actionArgs = { ...(action.args as Record<string, unknown>) }
+        if (args.tab != null && actionArgs.tab == null) actionArgs.tab = args.tab
+        return toonReply(
+          await measurePerf({
+            webContentsId,
+            runAction: async () => {
+              // runPrimitive reports failure as an isError reply, never a
+              // rejection. Ignoring it would return a confident measurement of
+              // an action that never happened.
+              const reply = await runPrimitive(sessionId, action.tool, actionArgs)
+              if (reply.isError) {
+                const detail = reply.content
+                  ?.map((c) => ('text' in c ? c.text : ''))
+                  .join(' ')
+                  .trim()
+                throw new Error(`Measured action ${action.tool} failed: ${detail || 'unknown error'}`)
+              }
+              return reply
+            },
+            until: args.until,
+            maxWaitMs: args.maxWaitMs,
+            baselineMs: args.baselineMs,
+          }),
+        )
+      } catch (err) {
+        return errorReply(err)
+      }
+    },
   )
 }

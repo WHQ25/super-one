@@ -41,6 +41,7 @@ export const BROWSER_PRIMITIVE_TOOL_NAMES = [
   'browser_list_downloads',
   'browser_emulate',
   'browser_mock',
+  'browser_perf_measure',
 ] as const
 
 export const BROWSER_ACTION_TOOL_NAMES = [
@@ -54,7 +55,7 @@ export const BROWSER_LEGACY_TOOL_NAMES = [
   ...BROWSER_ACTION_TOOL_NAMES,
 ] as const
 
-/** 8-tool surface: observe / query / act / wait + tabs / evaluate / network / saved actions. */
+/** 9-tool surface: observe / query / act / wait + tabs / evaluate / network / perf / saved actions. */
 export const BROWSER_COMPACT_TOOL_NAMES = [
   'browser_tabs',
   'browser_snapshot',
@@ -63,6 +64,7 @@ export const BROWSER_COMPACT_TOOL_NAMES = [
   'browser_wait_for',
   'browser_evaluate',
   'browser_network',
+  'browser_perf',
   'browser_action',
 ] as const
 

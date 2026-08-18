@@ -12,6 +12,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
+import { getSuperoneMcpHttpConfig } from '../../mcp/superone-mcp-stdio-state'
 import {
   DEEPSEEK_DEFAULT_MODEL as DEFAULT_MODEL,
   DEEPSEEK_DEFAULT_PROVIDER as DEFAULT_PROVIDER,
@@ -94,6 +95,9 @@ export class DeepseekBackend implements SessionBackend {
       // The dsh session id doubles as our provider session id, so cold resume
       // finds the persisted JSONL log by the same identity.
       const providerSessionId = opts.providerSessionId ?? randomUUID()
+      // Keyed on the SuperOne session id: that is the identity the MCP tools
+      // act on (session_rename, widget_show, …), not dsh's own session id.
+      const superoneMcp = getSuperoneMcpHttpConfig(opts.sessionId)
 
       this.unregisterApproval = registerApprovalRouter(
         providerSessionId,
@@ -107,6 +111,9 @@ export class DeepseekBackend implements SessionBackend {
         // second session never inherits this cwd's executors.
         toolPlane: {
           cwd: opts.cwd,
+          // Same per-session HTTP bridge Codex/ACP/Cursor/OpenCode connect to,
+          // so `mcp__superone__*` means the same thing in every harness.
+          ...(superoneMcp ? { mcp: { serverName: 'superone', ...superoneMcp } } : {}),
           requestPermission: (request) => this.askPermission(request),
         },
         provider: config.provider ?? DEFAULT_PROVIDER,

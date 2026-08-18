@@ -25,3 +25,4 @@ export {
   type DeepseekToolPlaneOptions,
   type ToolApprovalDecision,
 } from './tool-plane'
+export { mountMcpBridge, publicToolName, type DeepseekMcpBridgeOptions } from './mcp-bridge'

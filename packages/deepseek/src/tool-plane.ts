@@ -7,6 +7,8 @@ import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
+import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superone-host-owned-tools'
+import { mountMcpBridge, type DeepseekMcpBridgeOptions } from './mcp-bridge'
 
 export type ToolApprovalDecision = 'allowed-once' | 'rejected' | 'cancelled'
 
@@ -22,6 +24,12 @@ export interface DeepseekToolPermissionRequest {
 export interface DeepseekToolPlaneOptions {
   /** Session working directory: the filesystem and shell executors are rooted here. */
   cwd: string
+  /**
+   * SuperOne's MCP surface for this session. Omitted, the session runs with
+   * native tools only — a failed bridge degrades to exactly that rather than
+   * failing session creation.
+   */
+  mcp?: DeepseekMcpBridgeOptions
   /**
    * Ask the user before a mutating tool runs. Resolving `allowed-once` releases
    * the parked call; anything else denies it with a model-readable reason.
@@ -76,6 +84,16 @@ export async function mountToolPlane(
   // One in-progress todo at a time mirrors every other SuperOne harness's panel.
   await toolCtx.plugin(ToolTodo, { allowParallelInProgress: false })
 
+  if (options.mcp) {
+    try {
+      await mountMcpBridge(agentCtx, options.mcp)
+    } catch (error) {
+      // `setup` rejecting rolls the whole scope back and the session is never
+      // published, so an unreachable MCP bridge must not escape.
+      console.warn('[deepseek] superone MCP bridge unavailable:', error)
+    }
+  }
+
   installPermissionGate(agentCtx, options.requestPermission)
 }
 
@@ -97,6 +115,11 @@ export function installPermissionGate(
     next: () => Promise<unknown>,
   ) => {
     if (READ_ONLY_TOOLS.has(exec.name)) return next()
+    // Layer A admission: SuperOne's own host-owned tools are admitted here so
+    // their executor — which runs the real product confirmation — is the thing
+    // that authorizes the effect. Dynamic mini-app / third-party tools sharing
+    // the `mcp__superone__` prefix are deliberately not matched.
+    if (isStaticHostOwnedSuperoneToolQualified(exec.name)) return next()
 
     const decision = await requestPermission({
       toolName: exec.name,

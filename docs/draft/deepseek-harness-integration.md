@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate) landed; MCP mount / resume / fork / subagents / permission presets still pending
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate) and the SuperOne MCP bridge landed; resume / fork / subagents / permission presets still pending
 Last updated: 2026-08-19
 
 > Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
@@ -153,7 +153,13 @@ Skills, goals, workflow, jobs, e2b, LSP, terminal: deferred until a product deci
 
 **Naming.** dsh's argument shapes already match Claude's (`file_path`, `command`, `old_string`…), so the event mapper renames `read/write/edit/bash/glob/grep/todo_write` to the canonical `Read/Write/Edit/Bash/Glob/Grep/TodoWrite` and the existing renderers (Bash terminal view, edit diff, todo panel) light up unchanged. The permission popover uses the same canonical name.
 
-**Still pending (P4b): MCP.** `dsh-mcp-client` mounted on the agent scope would scope its tools correctly, but it reserves `serverName` **process-globally** (`activeServerNames` keyed on `ctx.root`), so the second session mounting `superone` throws. A per-session `serverName` is not an option — the `mcp__superone__*` prefix is a contract on our side. Plan: a SuperOne-owned scoped MCP registrar (MCP SDK client against `getSuperoneMcpHttpConfig(sessionId)`), or upstream keying that reservation on `scopeOf(ctx) ?? ctx.root`.
+**Landed (P4b) — SuperOne's MCP surface, one connection per session.** `packages/deepseek/src/mcp-bridge.ts` is a SuperOne-owned scoped registrar: an MCP SDK `Client` over Streamable HTTP against `getSuperoneMcpHttpConfig(sessionId)` (the same per-session bridge Codex/ACP/Cursor/OpenCode use), whose discovered tools are registered on the agent's scoped context as `mcp__superone__<raw>`.
+
+`@deepseek-ai/dsh-mcp-client` cannot do this job: it reserves `serverName` **process-globally** (`activeServerNames` keyed on `ctx.root`, which every context in the app shares), so the second session mounting `superone` throws at activation — and a per-session `serverName` is not available either, because `mcp__superone__*` is a contract on the SuperOne side (host-owned admission, hidden tool rows, mini-app dispatch all match on it). Worth an upstream issue: keying that reservation on `scopeOf(ctx) ?? ctx.root` would make the plugin scope-safe in one line.
+
+Containment rules, both load-bearing: a failed handshake is caught inside `mountToolPlane` (a `setup` rejection rolls the scope back and the session is never published), and a rejected registration skips one tool rather than the whole surface. The advertised `outputSchema` is deliberately dropped — dsh validates `output.schema` at `register()`, and an MCP server may advertise vocabulary dsh does not implement — so every tool declares the canonical `{content, structuredContent?}` envelope instead.
+
+**Layer A admission.** `isStaticHostOwnedSuperoneToolQualified()` short-circuits the permission gate for SuperOne's own tools, so their executor (which runs the real product confirmation) owns the authorization. Dynamic mini-app / third-party tools sharing the prefix are deliberately not matched, and `computer_*` still prompts — the feature-gated set is not plumbed into the gate yet.
 
 ### D7 — Models & credentials stay SuperOne-owned
 

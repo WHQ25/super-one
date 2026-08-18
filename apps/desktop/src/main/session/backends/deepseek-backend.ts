@@ -12,7 +12,8 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
-import { getSuperoneMcpHttpConfig } from '../../mcp/superone-mcp-stdio-state'
+import { addToolsChangedListener } from '../../mcp/superone-mcp-server'
+import { executeSuperoneMcpTool, listSuperoneMcpTools } from '../../mcp/superone-mcp-tool-surface'
 import {
   DEEPSEEK_DEFAULT_MODEL as DEFAULT_MODEL,
   DEEPSEEK_DEFAULT_PROVIDER as DEFAULT_PROVIDER,
@@ -95,9 +96,9 @@ export class DeepseekBackend implements SessionBackend {
       // The dsh session id doubles as our provider session id, so cold resume
       // finds the persisted JSONL log by the same identity.
       const providerSessionId = opts.providerSessionId ?? randomUUID()
-      // Keyed on the SuperOne session id: that is the identity the MCP tools
-      // act on (session_rename, widget_show, …), not dsh's own session id.
-      const superoneMcp = getSuperoneMcpHttpConfig(opts.sessionId)
+      // Keyed on the SuperOne session id: that is the identity the tools act
+      // on (session_rename, widget_show, …), not dsh's own session id.
+      const superoneSessionId = opts.sessionId
 
       this.unregisterApproval = registerApprovalRouter(
         providerSessionId,
@@ -111,9 +112,23 @@ export class DeepseekBackend implements SessionBackend {
         // second session never inherits this cwd's executors.
         toolPlane: {
           cwd: opts.cwd,
-          // Same per-session HTTP bridge Codex/ACP/Cursor/OpenCode connect to,
-          // so `mcp__superone__*` means the same thing in every harness.
-          ...(superoneMcp ? { mcp: { serverName: 'superone', ...superoneMcp } } : {}),
+          // In-process, not over our own MCP server: dsh resolves tools per
+          // agent scope, so SuperOne's tools are registered as native dsh
+          // tools that call the same executor the MCP surface calls.
+          superoneTools: {
+            list: () => listSuperoneMcpTools(superoneSessionId),
+            call: async (name, args, { signal }) => {
+              // A tool that returns nothing (fire-and-forget host actions) still
+              // owes the model a result block.
+              const result = await executeSuperoneMcpTool(superoneSessionId, name, args, signal)
+              return result ?? { content: [{ type: 'text', text: '(no output)' }] }
+            },
+            // Mini-app registration and the Computer Use toggle change the set
+            // mid-session; re-register so the next request sees it.
+            onChanged: (listener) => addToolsChangedListener((changed) => {
+              if (changed === superoneSessionId) listener()
+            }),
+          },
           requestPermission: (request) => this.askPermission(request),
         },
         provider: config.provider ?? DEFAULT_PROVIDER,

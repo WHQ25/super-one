@@ -8,7 +8,7 @@ import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superone-host-owned-tools'
-import { mountMcpBridge, type DeepseekMcpBridgeOptions } from './mcp-bridge'
+import { mountSuperoneTools, type SuperoneToolSurface } from './tool-surface'
 
 export type ToolApprovalDecision = 'allowed-once' | 'rejected' | 'cancelled'
 
@@ -25,11 +25,11 @@ export interface DeepseekToolPlaneOptions {
   /** Session working directory: the filesystem and shell executors are rooted here. */
   cwd: string
   /**
-   * SuperOne's MCP surface for this session. Omitted, the session runs with
-   * native tools only — a failed bridge degrades to exactly that rather than
-   * failing session creation.
+   * SuperOne's own tools (browser, media, widget, mini-app, config…), registered
+   * natively on the agent scope. Omitted, the session runs with dsh's file and
+   * shell tools only.
    */
-  mcp?: DeepseekMcpBridgeOptions
+  superoneTools?: SuperoneToolSurface
   /**
    * Ask the user before a mutating tool runs. Resolving `allowed-once` releases
    * the parked call; anything else denies it with a model-readable reason.
@@ -84,13 +84,13 @@ export async function mountToolPlane(
   // One in-progress todo at a time mirrors every other SuperOne harness's panel.
   await toolCtx.plugin(ToolTodo, { allowParallelInProgress: false })
 
-  if (options.mcp) {
+  if (options.superoneTools) {
     try {
-      await mountMcpBridge(agentCtx, options.mcp)
+      mountSuperoneTools(agentCtx, options.superoneTools)
     } catch (error) {
       // `setup` rejecting rolls the whole scope back and the session is never
-      // published, so an unreachable MCP bridge must not escape.
-      console.warn('[deepseek] superone MCP bridge unavailable:', error)
+      // published, so a broken tool surface costs the tools, not the session.
+      console.warn('[deepseek] superone tools unavailable:', error)
     }
   }
 

@@ -99,6 +99,7 @@ export function AppearancePage() {
   const setDetailChatMode = useAppStore((s) => s.setDetailChatMode)
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
   const isMac = window.app.platform === 'darwin'
+  const supportsLiquidGlass = window.app.supportsLiquidGlass
 
   const loadFonts = useCallback(async () => {
     if (fontsLoaded || fontsLoading) return
@@ -263,7 +264,7 @@ export function AppearancePage() {
               />
             </div>
           )}
-          {isMac && (
+          {supportsLiquidGlass && (
             <div className="flex items-center justify-between gap-4 border-t border-border p-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium">{t('settings.general.liquidGlass.label')}</p>

@@ -3609,7 +3609,7 @@ export const en: Messages = {
       },
       liquidGlass: {
         label: 'Glass Theme',
-        description: 'Make window surfaces translucent to reveal the native macOS glass material behind them. macOS only.',
+        description: 'Make window surfaces translucent to reveal the native system glass material. macOS and Windows 11.',
       },
       language: {
         label: 'Language',

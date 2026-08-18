@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nati
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
-import { cpus, homedir, hostname } from 'os'
+import { cpus, homedir, hostname, release as osRelease } from 'os'
 import { resolveRealPath, isPathWithinAllowed, isPathAtOrWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
 import { gitRun, type GitRunOptions } from './git-run'
@@ -177,6 +177,14 @@ import type { AppSettings, AppSettingsPatch, GitInfo, ThemeMode } from '@superon
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
+import {
+  GLASS_BACKGROUND,
+  WINDOWS_GLASS_MATERIAL,
+  glassConstructorOptions,
+  isGlassPlatformSupported,
+  isWindowsGlassSupported,
+  windowsChromeBackground,
+} from './window-glass'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
 import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } from './app-icon'
 import { planStartDrag } from './start-drag'
@@ -555,21 +563,32 @@ function resolveTerminalCwd(projectPath: string, sessionId?: string): string {
 }
 
 function isGlassEnabled(): boolean {
-  return process.platform === 'darwin' && readAppSettings().liquidGlass
+  return isGlassPlatformSupported(process.platform, osRelease()) && readAppSettings().liquidGlass
 }
 
 function glassWindowOptions(): Electron.BrowserWindowConstructorOptions {
-  if (!isGlassEnabled() || !currentDarkTheme) return {}
-  return { vibrancy: 'under-window', visualEffectState: 'active', backgroundColor: '#00000000' }
+  return glassConstructorOptions({
+    enabled: isGlassEnabled(),
+    dark: currentDarkTheme,
+    platform: process.platform,
+    release: osRelease(),
+  })
 }
 
 function applyLiquidGlass(): void {
-  if (process.platform !== 'darwin') return
   const active = isGlassEnabled() && currentDarkTheme
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
-    win.setVibrancy(active ? 'under-window' : null)
-    win.setBackgroundColor(active ? '#00000000' : currentDarkTheme ? '#1c1c1c' : '#ffffff')
+    if (process.platform === 'darwin') {
+      win.setVibrancy(active ? 'under-window' : null)
+      win.setBackgroundColor(active ? GLASS_BACKGROUND : currentDarkTheme ? '#1c1c1c' : '#ffffff')
+    } else if (process.platform === 'win32' && isWindowsGlassSupported(process.platform, osRelease())) {
+      try {
+        win.setBackgroundMaterial(active ? WINDOWS_GLASS_MATERIAL : 'none')
+      } catch {
+        // Frameless hosts (drag preview / permission float) have no material surface.
+      }
+    }
   }
 }
 
@@ -582,7 +601,7 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
     setUpdateChannel(result.updateChannel)
   }
   if (patch?.liquidGlass !== undefined) {
-    applyLiquidGlass()
+    applyWindowAppearance()
   }
   if (patch?.cdpEnabled === false) {
     detachAllCdp()
@@ -658,8 +677,7 @@ function setThemeMode(mode: ThemeMode): void {
   saveAppSettings({ themeMode: mode })
   syncNativeAppearance()
   currentDarkTheme = nativeTheme.shouldUseDarkColors
-  applyLiquidGlass()
-  applyWindowsChrome()
+  applyWindowAppearance()
   broadcastTheme()
 }
 
@@ -672,11 +690,15 @@ function windowChromeColors(): { backgroundColor: string; symbolColor: string } 
 
 function windowsChromeOptions(overlayHeight: number): Electron.BrowserWindowConstructorOptions {
   const { backgroundColor, symbolColor } = windowChromeColors()
-  return {
+  const chromeBg = windowsChromeBackground({
+    glassActive: isGlassEnabled() && currentDarkTheme,
     backgroundColor,
+  })
+  return {
+    backgroundColor: chromeBg,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: backgroundColor,
+      color: chromeBg,
       symbolColor,
       height: overlayHeight,
     },
@@ -686,15 +708,24 @@ function windowsChromeOptions(overlayHeight: number): Electron.BrowserWindowCons
 function applyWindowsChrome(): void {
   if (process.platform !== 'win32') return
   const { backgroundColor, symbolColor } = windowChromeColors()
+  const chromeBg = windowsChromeBackground({
+    glassActive: isGlassEnabled() && currentDarkTheme,
+    backgroundColor,
+  })
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
-    win.setBackgroundColor(backgroundColor)
+    win.setBackgroundColor(chromeBg)
     try {
-      win.setTitleBarOverlay({ color: backgroundColor, symbolColor })
+      win.setTitleBarOverlay({ color: chromeBg, symbolColor })
     } catch {
       // Frameless windows (drag preview, permission float) have no overlay.
     }
   }
+}
+
+function applyWindowAppearance(): void {
+  applyLiquidGlass()
+  applyWindowsChrome()
 }
 
 function attachRendererDiagnostics(win: BrowserWindow, role: string): void {
@@ -718,7 +749,7 @@ function createWindow(): void {
     minHeight: 700,
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 }, ...glassWindowOptions() }
-      : windowsChromeOptions(40)),
+      : { ...windowsChromeOptions(40), ...glassWindowOptions() }),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -825,7 +856,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     title: title ?? 'Session',
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 12 }, ...glassWindowOptions() }
-      : windowsChromeOptions(36)),
+      : { ...windowsChromeOptions(36), ...glassWindowOptions() }),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -2627,7 +2658,6 @@ function registerIpcHandlers(): void {
   const PDF_EXTS = new Set(['.pdf'])
   const VIDEO_EXTS = new Set(['.mp4', '.webm', '.ogg', '.mov'])
   const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'])
-
   ipcMain.handle(AgentIpcChannels.READ_PROJECT_FILE, async (_event, folderPath: string, filePath: string) => {
     try {
       if (parseRemoteProjectKey(folderPath)) {
@@ -4705,8 +4735,7 @@ app.whenReady().then(async () => {
     const nextDark = nativeTheme.shouldUseDarkColors
     if (nextDark === currentDarkTheme) return
     currentDarkTheme = nextDark
-    applyLiquidGlass()
-    applyWindowsChrome()
+    applyWindowAppearance()
     broadcastTheme()
   })
   registerBrowserPopupRedirect()

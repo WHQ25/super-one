@@ -795,7 +795,7 @@ export const zh: Messages = {
       },
       liquidGlass: {
         label: '玻璃主题',
-        description: '让窗口表面半透明,透出 macOS 原生玻璃材质。仅 macOS 生效。',
+        description: '让窗口表面半透明，透出系统原生磨砂材质。macOS 与 Windows 11 生效。',
       },
       language: {
         label: '语言',

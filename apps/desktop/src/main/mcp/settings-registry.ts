@@ -148,7 +148,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         key: 'liquidGlass',
         label: 'Liquid Glass',
         type: 'boolean',
-        note: 'Translucent glass window material (opt-in).',
+        note: 'Translucent glass window material on macOS and Windows 11 (opt-in).',
         read: (s) => s.liquidGlass,
         toPatch: (v) => ({ liquidGlass: v as boolean }),
       },

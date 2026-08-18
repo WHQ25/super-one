@@ -10,6 +10,7 @@ import {
   type LCHPartial,
   type TokenOverrides,
 } from '@superone/shared/harness-brand'
+import { shouldApplyLiquidGlassClass } from '@/lib/liquid-glass-platform'
 
 function readDarkClass(): boolean {
   return document.documentElement.classList.contains('dark')
@@ -128,7 +129,7 @@ export function useHarnessTheme(): void {
     const userHue = brandHue ?? HARNESS_DEFAULT_BRAND_HUE[harness]
     const root = document.documentElement
     root.dataset.harness = harness
-    root.classList.toggle('liquid-glass', liquidGlass)
+    root.classList.toggle('liquid-glass', shouldApplyLiquidGlassClass(liquidGlass, window.app))
     if (terminalLightPalette) root.dataset.terminalPaletteLight = terminalLightPalette
     else delete root.dataset.terminalPaletteLight
     if (terminalDarkPalette) root.dataset.terminalPaletteDark = terminalDarkPalette

@@ -67,6 +67,7 @@ interface AgentAPI {
 
 interface AppAPI {
   platform: NodeJS.Platform
+  supportsLiquidGlass: boolean
   connectClaude(force?: boolean): Promise<ClaudeResources>
   connectCodex(): Promise<CodexResources>
   connectOpenCode(force?: boolean): Promise<OpenCodeResources>

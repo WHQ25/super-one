@@ -26,6 +26,7 @@ export function OnboardingWelcome(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const currentLocale: Locale = i18n.language === 'zh' ? 'zh' : 'en'
   const isMac = window.app.platform === 'darwin'
+  const supportsLiquidGlass = window.app.supportsLiquidGlass
 
   useEffect(() => {
     let cancelled = false
@@ -42,11 +43,11 @@ export function OnboardingWelcome(): React.JSX.Element {
         if (detected !== i18n.language) await changeLocale(detected)
       }
 
-      // macOS onboarding defaults: liquid glass + crisp text.
+      if (supportsLiquidGlass && !settings.liquidGlass) {
+        await setLiquidGlass(true)
+      }
+      // Crisp text is a macOS font-smoothing override.
       if (isMac) {
-        if (!settings.liquidGlass) {
-          await setLiquidGlass(true)
-        }
         if (!settings.crispText) {
           applyCrispText(true)
           await window.app.saveAppSettings({ crispText: true })
@@ -58,7 +59,7 @@ export function OnboardingWelcome(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [i18n.language, isMac, setLiquidGlass])
+  }, [i18n.language, isMac, setLiquidGlass, supportsLiquidGlass])
 
   const pickLocale = async (locale: Locale) => {
     if (busy || locale === currentLocale) return

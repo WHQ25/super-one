@@ -270,9 +270,10 @@ body[data-scroll-locked] {
   background-color: color-mix(in oklab, var(--muted) 60%, transparent);
 }
 
-/* CSS backdrop filters create stale compositor surfaces over macOS vibrancy,
-   which can leave ghost frames across the transparent window. Disable them for
-   every glass-mode surface, including portals and pseudo-elements. */
+/* CSS backdrop filters create stale compositor surfaces over native window
+   materials (macOS vibrancy / Windows acrylic), which can leave ghost frames
+   across the transparent window. Disable them for every glass-mode surface,
+   including portals and pseudo-elements. */
 .liquid-glass.dark,
 .liquid-glass.dark::before,
 .liquid-glass.dark::after,

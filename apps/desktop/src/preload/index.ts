@@ -5,6 +5,7 @@ import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import { forEachAgentEventPayload } from './agent-event-payload'
+import { isGlassPlatformSupported } from '../main/window-glass'
 
 // Do not try to name this renderer via `process.title` here — it cannot work.
 // Under `sandbox: true` preload's `process` is an Electron shim, so the assignment
@@ -1652,6 +1653,7 @@ const appAPI = {
   },
 
   platform: process.platform,
+  supportsLiquidGlass: isGlassPlatformSupported(process.platform, process.getSystemVersion()),
 
   onContentZoom: (callback: (action: 'in' | 'out' | 'reset') => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, action: 'in' | 'out' | 'reset'): void => {

@@ -178,6 +178,12 @@ export class Session implements SessionContract {
   private _totalCostUsd = 0
   private _contextTokens = 0
   private _taskProgress: Record<string, TaskProgressEntry> = {}
+  /**
+   * Terminal task ids already observed (or explicitly stopped) in this Session.
+   * The set intentionally outlives an idle backend runtime release so Claude's
+   * resume-time orphan scan cannot mint a second transcript row for the task.
+   */
+  private _settledBackgroundTaskIds = new Set<string>()
   private _streamingTokensByMessageId: Record<string, { input: number; output: number }> = {}
   private _lastUsageByMessageId: Record<string, CodexUsageInfo | null> = {}
 
@@ -1047,7 +1053,9 @@ export class Session implements SessionContract {
       }
       case 'claude.stop_task': {
         if (this.harnessId !== 'claude') return
-        await this.backend.stopTask?.(cmd.taskId)
+        if (!this.backend.stopTask) return
+        await this.backend.stopTask(cmd.taskId)
+        this._settledBackgroundTaskIds.add(cmd.taskId)
         return
       }
     }
@@ -1100,6 +1108,7 @@ export class Session implements SessionContract {
     this._totalCostUsd = 0
     this._contextTokens = 0
     this._taskProgress = {}
+    this._settledBackgroundTaskIds.clear()
     this._streamingTokensByMessageId = {}
     this._lastUsageByMessageId = {}
     // Allow empty-transcript persist (e.g. rewind to first checkpoint at index 0).
@@ -1371,13 +1380,19 @@ export class Session implements SessionContract {
     const sequenced = event.seq === undefined
       ? ({ ...event, ...nextEventSeq() } as AgentEvent)
       : event
+    const taskNotificationId = sequenced.type === 'task_notification'
+      ? (sequenced.taskId || sequenced.toolUseId)
+      : undefined
+    const isRepeatedTaskNotification = !!taskNotificationId
+      && this._settledBackgroundTaskIds.has(taskNotificationId)
     // Snapshot the pre-reducer transcript: the reducer may attach the result to a
     // tool block, and only its absence from the current turn *before* that
     // decides whether to mint a wake row.
-    const orphanNotificationRow = sequenced.type === 'task_notification'
+    const orphanNotificationRow = sequenced.type === 'task_notification' && !isRepeatedTaskNotification
       ? buildOrphanTaskNotificationMessage(sequenced, this._messages, this._taskProgress)
       : null
     this.applyReducer(sequenced)
+    if (taskNotificationId) this._settledBackgroundTaskIds.add(taskNotificationId)
     const outbound = this.enrichOutboundEvent(sequenced)
     const existingProjectPath = (sequenced as { projectPath?: string }).projectPath
     const tagged = { ...outbound, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent

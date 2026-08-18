@@ -1175,6 +1175,8 @@ export const zh: Messages = {
       completed: '后台任务已完成',
       failed: '后台任务失败',
       stopped: '后台任务已停止',
+      group_one: '{{count}} 条通知',
+      group_other: '{{count}} 条通知',
       outputFile: '输出日志',
     },
     pasteChip: {

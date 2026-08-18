@@ -1113,6 +1113,8 @@ export type Messages = {
       completed: string
       failed: string
       stopped: string
+      group_one: string
+      group_other: string
       outputFile: string
     }
     pasteChip: {
@@ -3990,6 +3992,8 @@ export const en: Messages = {
       completed: 'Background task finished',
       failed: 'Background task failed',
       stopped: 'Background task stopped',
+      group_one: '{{count}} notification',
+      group_other: '{{count}} notifications',
       outputFile: 'Output log',
     },
     pasteChip: {

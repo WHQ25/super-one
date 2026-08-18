@@ -691,6 +691,22 @@ describe('Session state machine', () => {
       backend.resolveSend?.()
       await pending
     })
+
+    it('records an explicitly stopped task so a later orphan replay stays silent', async () => {
+      await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: 'bg-task-1' } as import('./types').BackendCommand)
+      const events: AgentEvent[] = []
+      session.on((event) => events.push(event))
+
+      backend.emit({
+        type: 'task_notification',
+        taskId: 'bg-task-1',
+        toolUseId: 'toolu_resume_waker',
+        taskStatus: 'stopped',
+        summary: 'Orphaned by a previous Claude Code process exit and reported in an aggregate summary.',
+      } as AgentEvent)
+
+      expect(events.filter((event) => event.type === 'user_message_appended')).toHaveLength(0)
+    })
   })
 
   describe('setForeground', () => {
@@ -2684,6 +2700,59 @@ describe('orphan background task notification', () => {
       usage: { totalTokens: 120, toolUses: 3, durationMs: 134_000 },
     })
     expect(session.snapshot.messages.some((m) => m.id === row.message.id)).toBe(true)
+  })
+
+  it('does not append the same terminal task notification again after runtime resume', () => {
+    const { session, backend } = makeSession()
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    backend.emit(notification())
+    backend.emit(notification({
+      toolUseId: 'toolu_resume_waker',
+      summary: 'Orphaned by a previous Claude Code process exit and reported in an aggregate summary.',
+    }))
+
+    expect(appendedRows(events)).toHaveLength(1)
+  })
+
+  it('remembers a terminal notification even when it was attached to a live task block', async () => {
+    const { session, backend } = makeSession({
+      initialMessages: [
+        {
+          id: 'u1',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'watch the ci' }],
+          createdAt: new Date().toISOString(),
+          providerId: 'claude-base',
+        },
+        {
+          id: 'a1',
+          role: 'assistant',
+          status: 'complete',
+          content: [{ type: 'tool_use', toolUseId: 'toolu_live', toolName: 'Bash', input: {} }],
+          createdAt: new Date().toISOString(),
+          providerId: 'claude-base',
+        },
+      ],
+    })
+    backend.emit({ type: 'task_started', taskId: 'task-abc', toolUseId: 'toolu_live', description: 'watch ci' } as AgentEvent)
+    backend.emit(notification({ toolUseId: 'toolu_live' }))
+
+    const nextTurn = session.send({ content: 'next', clientMessageId: 'u2' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    backend.resolveSend?.()
+    await nextTurn
+    const events: AgentEvent[] = []
+    session.on((event) => events.push(event))
+
+    backend.emit(notification({
+      toolUseId: 'toolu_resume_waker',
+      summary: 'Orphaned by a previous Claude Code process exit and reported in an aggregate summary.',
+    }))
+
+    expect(appendedRows(events)).toHaveLength(0)
   })
 
   it('carries the task_started description when the tool block was compacted away but progress survived', () => {

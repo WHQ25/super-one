@@ -15,7 +15,11 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
-import { TaskNotificationRow } from './TaskNotificationRow'
+import {
+  groupConsecutiveTaskNotifications,
+  TaskNotificationGroup,
+  TaskNotificationRow,
+} from './TaskNotificationRow'
 import { ChatSuggestions } from './ChatSuggestions'
 import { DraftSessionSurface } from './DraftSessionSurface'
 import { PermissionPrompt } from './PermissionPrompt'
@@ -225,6 +229,7 @@ function ChatTranscript({
   useEffect(() => { setRenderCount(INITIAL_RENDER_COUNT) }, [displayedSessionId])
   const hasMore = renderCount < visibleMessages.length
   const renderedMessages = hasMore ? visibleMessages.slice(-renderCount) : visibleMessages
+  const renderEntries = groupConsecutiveTaskNotifications(renderedMessages)
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -332,7 +337,20 @@ function ChatTranscript({
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
             {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
-            {renderedMessages.map((msg) => {
+            {renderEntries.map((entry) => {
+              if (entry.type === 'task-notification-group') {
+                const first = entry.items[0]
+                return (
+                  <div key={first.id} data-message-id={first.id} className="chat-message-wrapper">
+                    {entry.items.length === 1 ? (
+                      <TaskNotificationRow meta={first.meta} />
+                    ) : (
+                      <TaskNotificationGroup items={entry.items} />
+                    )}
+                  </div>
+                )
+              }
+              const msg = entry.message
               const compactInfo = parseCompactMarker(msg)
               if (compactInfo) {
                 const origIdx = messages.indexOf(msg)
@@ -351,14 +369,6 @@ function ChatTranscript({
                       setExpandLevel(isExpanded ? rank : rank + 1)
                     }}
                   />
-                )
-              }
-              const taskNotification = msg.metadata?.taskNotification
-              if (taskNotification) {
-                return (
-                  <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
-                    <TaskNotificationRow meta={taskNotification} />
-                  </div>
                 )
               }
               const turnMeta = parseTurnMetaMarker(msg)

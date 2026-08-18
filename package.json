@@ -56,6 +56,7 @@
     "build:linux": "bun --filter @superone/desktop build:linux",
     "preview": "bun --filter @superone/desktop preview",
     "test": "bun --filter @superone/desktop test",
+    "test:quiet": "bun --filter @superone/desktop test:quiet",
     "test:watch": "bun --filter @superone/desktop test:watch",
     "test:coverage": "bun --filter @superone/desktop test:coverage",
     "test:e2e": "bun --filter @superone/desktop test:e2e",

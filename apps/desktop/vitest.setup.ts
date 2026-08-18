@@ -1,6 +1,4 @@
 import { vi } from 'vitest'
-import '@testing-library/jest-dom/vitest'
-import i18n from 'i18next'
 
 // Default stubs so files that import electron / @electron-toolkit/utils
 // (via harness/home.ts) can load under vitest. Per-file vi.mock() still wins.
@@ -19,19 +17,33 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
-import { initReactI18next } from 'react-i18next'
-import { resources } from '@superone/shared/i18n'
 
-if (!i18n.isInitialized) {
-  await i18n
-    .use(initReactI18next)
-    .init({
-      resources,
-      lng: 'en',
-      fallbackLng: 'en',
-      interpolation: { escapeValue: false },
-      returnNull: false,
-    })
+// This setup file re-runs in every test file (the forks pool shares no module
+// cache), so anything imported here is paid 600+ times. jest-dom's matchers and
+// the react-i18next bootstrap — which parses every translation bundle — are only
+// reachable from tests that render, so they load lazily under jsdom only.
+const isDom = typeof document !== 'undefined'
+
+if (isDom) {
+  await import('@testing-library/jest-dom/vitest')
+
+  const [{ default: i18n }, { initReactI18next }, { resources }] = await Promise.all([
+    import('i18next'),
+    import('react-i18next'),
+    import('@superone/shared/i18n'),
+  ])
+
+  if (!i18n.isInitialized) {
+    await i18n
+      .use(initReactI18next)
+      .init({
+        resources,
+        lng: 'en',
+        fallbackLng: 'en',
+        interpolation: { escapeValue: false },
+        returnNull: false,
+      })
+  }
 }
 
 if (typeof (globalThis as unknown as { self?: unknown }).self === 'undefined') {

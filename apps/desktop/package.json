@@ -23,6 +23,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test": "vitest run",
+    "test:quiet": "vitest run --maxWorkers=50%",
     "doctor": "react-doctor",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

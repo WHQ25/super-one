@@ -6,7 +6,12 @@ import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekEventMapper } from './event-map'
-import { createDeepseekTree, type DeepseekTreeOptions } from './tree'
+import {
+  createDeepseekTree,
+  deepseekAdapterPlugin,
+  type DeepseekAdapterOptions,
+  type DeepseekTreeOptions,
+} from './tree'
 
 export type ApprovalDecision = 'allowed-once' | 'rejected' | 'cancelled'
 
@@ -76,6 +81,7 @@ interface AgentRecord {
  */
 export class DeepseekRuntime {
   private records = new Map<string, AgentRecord>()
+  private adapterFiber: { dispose: () => Promise<void> } | null = null
 
   private constructor(
     private readonly root: Context,
@@ -161,6 +167,17 @@ export class DeepseekRuntime {
     }
 
     return runtime
+  }
+
+  /**
+   * Mount (or re-mount) the official DeepSeek adapter. Cordis registrations are
+   * reversible effects, so a changed credential or model list swaps the adapter
+   * fiber in place — no tree restart, no session loss.
+   */
+  configureProvider(options: DeepseekAdapterOptions): void {
+    this.adapterFiber?.dispose()
+    const { plugin, config } = deepseekAdapterPlugin(options)
+    this.adapterFiber = this.bridge.plugin(plugin, config) as { dispose: () => Promise<void> }
   }
 
   /** Live model catalog for pickers, straight from the adapter registries. */

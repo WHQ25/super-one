@@ -10,6 +10,7 @@ import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import * as LlmDeepseek from '@deepseek-ai/dsh-llm-deepseek'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
+import { createCredentialPlugin, type CredentialLookup } from './credentials'
 
 export interface DeepseekTreeOptions {
   /**
@@ -20,14 +21,39 @@ export interface DeepseekTreeOptions {
   /** JSONL session-log root; omit to run without durable persistence (tests). */
   persistenceRoot?: string
   /**
-   * Mount the official DeepSeek adapter. The adapter resolves its credential
-   * reference (DEEPSEEK_API_KEY) itself; SuperOne's credential store material
-   * must be exported into the process environment before the first request
-   * (D7 — we deliberately do not mount dsh's settings/credentials file plugins).
+   * Serve dsh credential references from SuperOne's credential store instead of
+   * `dsh-credentials-local` or the process environment (D7).
    */
-  deepseekAdapter?: {
-    models: Array<{ id: string; contextWindow?: number }>
-    thinking?: 'enabled' | 'disabled'
+  credentialLookup?: CredentialLookup
+  /**
+   * Mount the official DeepSeek adapter at boot. Omit and call
+   * `DeepseekRuntime.configureProvider()` later to mount or re-mount it when
+   * the user's credential or model selection changes.
+   */
+  deepseekAdapter?: DeepseekAdapterOptions
+}
+
+export interface DeepseekAdapterOptions {
+  models: Array<{ id: string; contextWindow?: number }>
+  thinking?: 'enabled' | 'disabled'
+  /** Credential reference name resolved through the credential seam per request. */
+  apiKeyEnv?: string
+  baseURL?: string
+}
+
+/** Build the adapter plugin row so boot and later re-mounts stay identical. */
+export function deepseekAdapterPlugin(options: DeepseekAdapterOptions): {
+  plugin: typeof LlmDeepseek
+  config: Record<string, unknown>
+} {
+  return {
+    plugin: LlmDeepseek,
+    config: {
+      thinking: options.thinking ?? 'enabled',
+      models: options.models,
+      ...(options.apiKeyEnv !== undefined ? { apiKeyEnv: options.apiKeyEnv } : {}),
+      ...(options.baseURL !== undefined ? { baseURL: options.baseURL } : {}),
+    },
   }
 }
 
@@ -52,11 +78,13 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   ctx.plugin(ApprovalService, { policy: 'ask' })
   ctx.plugin(AgentLoop, { agents: [] })
 
+  if (options.credentialLookup) {
+    ctx.plugin(createCredentialPlugin(options.credentialLookup))
+  }
+
   if (options.deepseekAdapter) {
-    ctx.plugin(LlmDeepseek, {
-      thinking: options.deepseekAdapter.thinking ?? 'enabled',
-      models: options.deepseekAdapter.models,
-    })
+    const { plugin, config } = deepseekAdapterPlugin(options.deepseekAdapter)
+    ctx.plugin(plugin, config)
   }
 
   if (options.persistenceRoot) {

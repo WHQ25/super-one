@@ -1,5 +1,15 @@
 export { DeepseekEventMapper, type DeepseekMapperOptions } from './event-map'
-export { createDeepseekTree, type DeepseekTreeOptions } from './tree'
+export {
+  SuperoneCredentialProvider,
+  createCredentialPlugin,
+  type CredentialLookup,
+} from './credentials'
+export {
+  createDeepseekTree,
+  deepseekAdapterPlugin,
+  type DeepseekAdapterOptions,
+  type DeepseekTreeOptions,
+} from './tree'
 export {
   DeepseekRuntime,
   type ApprovalDecision,

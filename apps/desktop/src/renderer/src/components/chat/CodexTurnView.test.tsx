@@ -6,6 +6,7 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 import { CodexTurnView } from './CodexTurnView'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { PlanFullscreenContext } from './codex-item-renderer'
 
 vi.mock('./CopyableMarkdown', () => ({
@@ -75,6 +76,7 @@ beforeEach(() => {
   mockRejectCodexPlan.mockReset()
   // Tests assert full process content; opt into Detail Mode so compact default doesn't hide it.
   useAppStore.setState({ detailChatMode: true })
+  useMiniAppStore.setState({ apps: [] })
   useChatStore.setState({
     activeProject: null,
     projectSessions: {},
@@ -490,9 +492,65 @@ describe('CodexTurnView', () => {
       />,
     )
 
-    const row = screen.getByText('Code Explored').closest('.tool-node')
-    expect(row).not.toHaveClass('errored', 'bg-warning/10')
+    const groupHeader = screen.getByRole('button', { name: /Read 1 file, searched 1 code/ })
+    expect(groupHeader).toHaveClass('bg-muted/50')
+    expect(groupHeader).not.toHaveClass('tool-node', 'errored', 'bg-warning/10')
     expect(screen.queryByText('Error')).toBeNull()
+  })
+
+  it('keeps a mini-app tool group on the lightweight group header', () => {
+    useMiniAppStore.setState({
+      apps: [{
+        id: 'project-tools',
+        installDir: '/test/project-tools',
+        manifest: {
+          appId: 'project-tools',
+          name: 'Project Tools',
+          tools: [
+            { name: 'find_files', description: '', inputSchema: {}, groupable: true },
+            { name: 'inspect_file', description: '', inputSchema: {}, groupable: true },
+          ],
+        },
+      }],
+    })
+
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'find-files',
+                  type: 'mcp_tool_call',
+                  server: 'superone',
+                  tool: 'miniapp_call',
+                  arguments: { appId: 'project-tools', tool: 'find_files', arguments: {} },
+                  status: 'completed',
+                },
+                {
+                  id: 'inspect-file',
+                  type: 'mcp_tool_call',
+                  server: 'superone',
+                  tool: 'miniapp_call',
+                  arguments: { appId: 'project-tools', tool: 'inspect_file', arguments: {} },
+                  status: 'completed',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    const groupHeader = screen.getByRole('button', { name: /Project Tools.*2 tool calls/ })
+    expect(groupHeader).toHaveClass('bg-muted/50')
+    expect(groupHeader).not.toHaveClass('tool-node')
   })
 
   it.each([

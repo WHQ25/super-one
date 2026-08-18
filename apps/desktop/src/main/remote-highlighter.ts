@@ -20,7 +20,7 @@ const EXT_LANG: Record<string, string> = {
   cs: 'csharp', rb: 'ruby', lua: 'lua',
   sh: 'bash', zsh: 'bash', bash: 'bash', fish: 'bash',
   sql: 'sql', html: 'html', htm: 'html', css: 'css', scss: 'scss',
-  json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
+  json: 'json', ipynb: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
   xml: 'xml', svg: 'xml', md: 'markdown', mdx: 'markdown',
   graphql: 'graphql', gql: 'graphql', php: 'php', scala: 'scala', r: 'r',
   ex: 'elixir', exs: 'elixir', dockerfile: 'dockerfile',

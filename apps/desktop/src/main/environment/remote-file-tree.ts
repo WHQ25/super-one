@@ -97,6 +97,7 @@ const REMOTE_EXT_LANG: Record<string, string> = {
   '.go': 'go',
   '.java': 'java',
   '.json': 'json',
+  '.ipynb': 'json',
   '.yaml': 'yaml',
   '.yml': 'yaml',
   '.toml': 'toml',

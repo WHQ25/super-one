@@ -1048,8 +1048,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     window.app.saveRemoteConfig(config)
   },
 
-  brandHues: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
-  tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {}, cursor: {} },
+  brandHues: { claude: null, codex: null, acp: null, opencode: null, cursor: null, deepseek: null },
+  tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {}, cursor: {}, deepseek: {} },
   harnessCatalog: null,
   refreshHarnessCatalog: async () => {
     try {

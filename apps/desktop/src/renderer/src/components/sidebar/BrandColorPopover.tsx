@@ -40,6 +40,7 @@ const HARNESS_LABEL: Record<HarnessId, string> = {
   acp: 'Others',
   opencode: 'OpenCode',
   cursor: 'Cursor',
+  deepseek: 'DeepSeek',
 }
 
 const GROUP_LABEL: Record<TokenGroup, string> = {

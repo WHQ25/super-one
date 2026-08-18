@@ -357,6 +357,7 @@ import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
 import { applyOpenCodeResources, resolveDefaultOpenCodeAgent, resolveDefaultOpenCodeSelection } from './harness/opencode-handler'
 import { applyCursorResources } from './harness/cursor-handler'
+import { applyDeepseekResources } from './harness/deepseek-handler'
 
 const harnessHandlers: HarnessHandlerMap = {
   claude: {
@@ -379,6 +380,11 @@ const harnessHandlers: HarnessHandlerMap = {
   cursor: {
     connect: (opts) => window.app.connectCursor(opts?.force),
     apply: (s, r) => applyCursorResources(s, r),
+  },
+  deepseek: {
+    // P0: empty bundle; P1 pulls live model catalogs from the embedded dsh tree.
+    connect: async () => ({ models: [] }),
+    apply: (s, r) => applyDeepseekResources(s, r),
   },
 }
 
@@ -409,7 +415,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   isOpen: false,
   corner: 'br',
   cursorApiKeyPromptOpen: false,
-  harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+  harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, deepseek: null },
   initializedHarnesses: new Set<HarnessId>(),
   claudeResourcesLoading: false,
   disabledSkills: [],

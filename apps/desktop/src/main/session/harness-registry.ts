@@ -3,11 +3,13 @@ import { AcpBackend } from './backends/acp-backend'
 import { ClaudeBackend } from './backends/claude-backend'
 import { CodexBackend } from './backends/codex-backend'
 import { CursorBackend } from './backends/cursor-backend'
+import { DeepseekBackend } from './backends/deepseek-backend'
 import { OpenCodeBackend } from './backends/opencode-backend'
 import { forkAcpTranscript } from './backends/acp-fork'
 import { forkClaudeTranscript } from './backends/claude-fork'
 import { forkCodexThread } from './backends/codex-fork'
 import { forkCursorTranscript } from './backends/cursor-fork'
+import { forkDeepseekTranscript } from './backends/deepseek-fork'
 import { forkOpenCodeSession } from './backends/opencode-fork'
 import type { Harness, HarnessId } from './types'
 
@@ -113,12 +115,30 @@ const cursorHarness: Harness = {
   forkTranscript: forkCursorTranscript,
 }
 
+const deepseekConfigSchema = z.object({
+  /** Provider route registered on the embedded tree's ctx.llm (e.g. 'deepseek-official'). */
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  maxTokens: z.number().positive().optional(),
+  /** dsh permission preset id (displayed mode vocabulary for this harness). */
+  permissionPreset: z.string().optional(),
+}).passthrough()
+
+const deepseekHarness: Harness = {
+  id: 'deepseek',
+  name: 'DeepSeek',
+  configSchema: deepseekConfigSchema,
+  createBackend: () => new DeepseekBackend(),
+  forkTranscript: forkDeepseekTranscript,
+}
+
 const registry = new Map<HarnessId, Harness>([
   ['claude', claudeHarness],
   ['codex', codexHarness],
   ['acp', acpHarness],
   ['opencode', openCodeHarness],
   ['cursor', cursorHarness],
+  ['deepseek', deepseekHarness],
 ])
 
 export const harnessRegistry = {

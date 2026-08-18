@@ -30,7 +30,7 @@ export function catalogEntryOn(
  */
 export function isCatalogHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
-  id: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok',
+  id: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'deepseek',
 ): boolean {
   if (catalog == null) return false
   return catalogEntryOn(catalog, id)
@@ -58,7 +58,7 @@ export function catalogIdForSessionProvider(
   provider: string,
   acpAgentId?: string | null,
 ): string | null {
-  if (provider === 'claude' || provider === 'codex' || provider === 'opencode' || provider === 'cursor') {
+  if (provider === 'claude' || provider === 'codex' || provider === 'opencode' || provider === 'cursor' || provider === 'deepseek') {
     return provider
   }
   if (provider === 'acp') {
@@ -117,4 +117,11 @@ export function isCursorHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
 ): boolean {
   return isCatalogHarnessEnabled(catalog, 'cursor')
+}
+
+/** Whether the DeepSeek catalog harness may appear in pickers / chat bar. */
+export function isDeepseekHarnessEnabled(
+  catalog: HarnessCatalogStatus[] | null | undefined,
+): boolean {
+  return isCatalogHarnessEnabled(catalog, 'deepseek')
 }

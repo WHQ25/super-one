@@ -7,6 +7,8 @@ export const HARNESS_DEFAULT_BRAND_HUE: Record<HarnessId, number> = {
   opencode: 150,
   /** Cool slate / Cursor-adjacent blue-gray. */
   cursor: 210,
+  /** DeepSeek brand blue-violet (#4D6BFE-adjacent). */
+  deepseek: 265,
 }
 
 export const BRAND_HUE_LIGHTNESS = 0.65
@@ -111,6 +113,7 @@ export const HARNESS_DEFAULT_TOKENS: Record<HarnessId, Record<DesignToken, LCH>>
   acp: buildHarnessDefaults('acp'),
   opencode: buildHarnessDefaults('opencode'),
   cursor: buildHarnessDefaults('cursor'),
+  deepseek: buildHarnessDefaults('deepseek'),
 }
 
 export function clampBrandHue(hue: number): number {

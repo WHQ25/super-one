@@ -1505,11 +1505,12 @@ export class AgentService {
     return this.sessionManager
   }
 
-  private baseProviderIdForHarness(harnessId: 'claude' | 'codex' | 'acp' | 'opencode' | 'cursor' | undefined): string {
+  private baseProviderIdForHarness(harnessId: HarnessId | undefined): string {
     if (harnessId === 'codex') return 'codex-base'
     if (harnessId === 'acp') return 'acp-base'
     if (harnessId === 'opencode') return 'opencode-base'
     if (harnessId === 'cursor') return 'cursor-base'
+    if (harnessId === 'deepseek') return 'deepseek-base'
     return 'claude-base'
   }
 
@@ -1544,7 +1545,7 @@ export class AgentService {
       worktreePath?: string | null
       gitBranch?: string | null
       apiProviderId?: string | null
-      provider?: 'claude' | 'codex' | 'acp' | 'opencode' | 'cursor'
+      provider?: HarnessId
     },
   ): Promise<import('../session/types').Session> {
     const mgr = this.requireSessionManager()
@@ -1556,7 +1557,7 @@ export class AgentService {
     const shouldApplyHint = (existing: import('../session/types').Session): boolean =>
       apiProviderHint !== null && existing.snapshot.apiProviderId !== apiProviderHint
     const expectedHarness = hint?.provider
-    const prefsFor = (provider: 'claude' | 'codex' | 'acp' | 'opencode' | undefined) =>
+    const prefsFor = (provider: HarnessId | undefined) =>
       provider === 'claude' || !provider
         ? this.readDefaultSessionPrefs()
         : { permissionMode: undefined as PermissionMode | undefined, sandboxMode: undefined as SandboxMode | undefined }

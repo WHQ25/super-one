@@ -37,6 +37,11 @@ export function createHarnessRunner(harnessId: HarnessId, opts?: { delayMs?: num
       return createSimulatedOpenCodeTurnRunner({ delayMs })
     case 'cursor':
       return createSimulatedCursorTurnRunner({ delayMs })
+    case 'deepseek':
+      return createSimulatedTurnRunner({
+        delayMs,
+        chunks: ['[deepseek] ', 'done'],
+      })
     default: {
       const _exhaustive: never = harnessId
       throw new Error(`unsupported harness: ${_exhaustive}`)

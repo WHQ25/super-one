@@ -265,7 +265,7 @@ bindAutomationService(automationService)
 // `apiProviderId` carries the session's chosen credential id (dynamic-follow: null follows the global binding).
 function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
-  if (provider.harnessId === 'opencode' || provider.harnessId === 'cursor') return provider.config
+  if (provider.harnessId === 'opencode' || provider.harnessId === 'cursor' || provider.harnessId === 'deepseek') return provider.config
   if (provider.harnessId === 'acp') {
     const base = (provider.config && typeof provider.config === 'object')
       ? provider.config as Record<string, unknown>
@@ -393,13 +393,13 @@ const sessionManager = new SessionManagerImpl({
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {
-    if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor') return null
+    if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'deepseek') return null
     return buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null, {
       experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
     }), harnessId)
   },
   getActiveDefaultApiProviderId: (harnessId) => {
-    if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor') return null
+    if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'deepseek') return null
     return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId ?? null
   },
   onBeforeInterrupt: (sessionId) => {

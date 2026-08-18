@@ -2054,6 +2054,20 @@ export interface CursorResources {
   disabledModelIds?: string[]
 }
 
+/**
+ * Cached resources for the DeepSeek Harness (`@deepseek-ai/dsh-*`, in-process
+ * Cordis tree). Models are read live from the tree's `ctx.llm` registries and
+ * cached here for pickers; permission presets come from `dsh-permission-presets`
+ * and are the displayed mode vocabulary for this harness.
+ */
+export interface DeepseekResources {
+  models: ModelOption[]
+  /** dsh permission preset vocabulary shown by the mode selector. */
+  permissionPresets?: Array<{ id: string; name: string; description?: string | null }>
+  /** True while a background re-probe is in flight. */
+  probing?: boolean
+}
+
 export interface AcpAgentDescriptor {
   id: string
   name: string
@@ -2148,6 +2162,7 @@ export interface HarnessResourcesMap {
   acp: AcpResources
   opencode: OpenCodeResources
   cursor: CursorResources
+  deepseek: DeepseekResources
 }
 
 export type HarnessId = keyof HarnessResourcesMap
@@ -2161,6 +2176,7 @@ export interface StartupData {
     acp: AcpResources | null
     opencode?: OpenCodeResources | null
     cursor?: CursorResources | null
+    deepseek?: DeepseekResources | null
   }
   sandboxCapability: SandboxCapability
   appVersion: string

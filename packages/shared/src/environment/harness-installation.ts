@@ -12,7 +12,7 @@
 import type { HarnessId } from '../session-types'
 
 /** First-party node Harness catalog IDs (target identities). */
-export type NodeHarnessId = 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
+export type NodeHarnessId = 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'deepseek'
 
 export type HarnessRuntimeSource = 'managed' | 'external'
 
@@ -55,6 +55,8 @@ export const NODE_HARNESS_DEFINITIONS: readonly NodeHarnessDefinition[] = [
   // Managed runtimeSource (SDK) but not on ManagedHarnessId CDN pin chain yet.
   { id: 'cursor', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'cursor' },
   { id: 'acp-grok', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp' },
+  // In-process dsh Cordis tree (npm @deepseek-ai/dsh-*); no external binary to install.
+  { id: 'deepseek', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'deepseek' },
 ] as const
 
 export const NODE_HARNESS_IDS: readonly NodeHarnessId[] = NODE_HARNESS_DEFINITIONS.map((d) => d.id)
@@ -67,7 +69,8 @@ export function isNodeHarnessId(value: unknown): value is NodeHarnessId {
     value === 'codex' ||
     value === 'opencode' ||
     value === 'cursor' ||
-    value === 'acp-grok'
+    value === 'acp-grok' ||
+    value === 'deepseek'
   )
 }
 
@@ -87,7 +90,8 @@ export function sessionHarnessIdToNodeHarnessId(sessionId: string): NodeHarnessI
     sessionId === 'claude' ||
     sessionId === 'codex' ||
     sessionId === 'opencode' ||
-    sessionId === 'cursor'
+    sessionId === 'cursor' ||
+    sessionId === 'deepseek'
   ) {
     return sessionId
   }

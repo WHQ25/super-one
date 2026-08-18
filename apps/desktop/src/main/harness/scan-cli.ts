@@ -26,6 +26,8 @@ const SEARCH_NAMES: Record<NodeHarnessId, string[]> = {
   opencode: ['opencode'],
   cursor: ['cursor'],
   'acp-grok': ['grok'],
+  // In-process npm packages; no CLI binary to detect on PATH.
+  deepseek: [],
 }
 
 const ONBOARDING_ORDER: readonly NodeHarnessId[] = [
@@ -107,6 +109,7 @@ export function integrationLabels(): Record<NodeHarnessId, IntegrationLabel> {
     opencode: { label: 'OpenCode SDK' },
     cursor: { label: 'Cursor Agent SDK' },
     'acp-grok': { label: 'Agent Client Protocol' },
+    deepseek: { label: 'DeepSeek Harness (in-process)' },
   }
 }
 

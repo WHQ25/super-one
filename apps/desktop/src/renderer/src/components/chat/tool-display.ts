@@ -79,6 +79,10 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
  * groupContent (emits no segment, so surrounding thinking blocks stay adjacent). */
 const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 
+/** Harness-native tool discovery calls are implementation detail. Providers use
+ * several spellings for the same operation, so compare a separator-free key. */
+const HIDDEN_HARNESS_TOOL_KEYS = new Set(['toolsearch', 'searchtool', 'searchtools'])
+
 /** SuperOne MCP tools that are agent-internal discovery/meta — never useful as chat UI.
  * Session archive (project_list/list/search/read/cleanup) is user-visible via SessionArchiveToolBlock —
  * do not hide those names here. session_tag_list is agent discovery only. */
@@ -93,6 +97,8 @@ const HIDDEN_SUPERONE_MCP_TOOLS = new Set([
 
 export function isAlwaysHiddenToolBlock(toolName: string): boolean {
   if (HIDDEN_TASK_TOOLS.has(toolName)) return true
+  const harnessToolKey = toolName.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (HIDDEN_HARNESS_TOOL_KEYS.has(harnessToolKey)) return true
   const mcp = parseMcpToolName(toolName)
   return mcp?.serverName === 'superone' && HIDDEN_SUPERONE_MCP_TOOLS.has(mcp.mcpToolName)
 }

@@ -3,7 +3,7 @@ import { MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
 import { uiToolNameFromId } from '@superone/shared/tool-ui'
-import { getToolDisplay, getToolVerb } from './tool-display'
+import { getToolDisplay, getToolVerb, isAlwaysHiddenToolBlock } from './tool-display'
 import { ToolIcon } from './ToolIcon'
 import { ToolName, ToolSummary } from './tool-row'
 import { ToolBlock } from './ToolBlock'
@@ -56,6 +56,7 @@ export function SubagentScrollArea({ children, borderClass, maxHeightClass = 'ma
 
 /** Single tool row for live stubs only (no input/result yet). */
 export function AsyncToolRow({ toolName, description, isActive }: { toolName: string; description: string; isActive: boolean }) {
+  if (isAlwaysHiddenToolBlock(toolName)) return null
   const name = displayToolName(toolName)
   const icon = getToolDisplay(name, {}).icon
   return (

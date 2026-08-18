@@ -148,8 +148,7 @@ describe('SubagentBlock activity surface', () => {
       />,
     )
     expect(screen.getByText('WebSearch')).toBeInTheDocument()
-    // ToolSearch id normalizes to SearchTools in AsyncToolRow display.
-    expect(screen.getByText('SearchTools')).toBeInTheDocument()
+    expect(screen.queryByText('SearchTools')).not.toBeInTheDocument()
   })
 
   it('shows tool calls from the persisted block on history reload (empty live store)', () => {
@@ -173,7 +172,7 @@ describe('SubagentBlock activity surface', () => {
       />,
     )
     expect(screen.getByText('WebSearch')).toBeInTheDocument()
-    expect(screen.getByText('SearchTools')).toBeInTheDocument()
+    expect(screen.queryByText('SearchTools')).not.toBeInTheDocument()
   })
 
   it('renders as running when taskProgress is active, even though the tool_result arrived and the turn is idle', () => {

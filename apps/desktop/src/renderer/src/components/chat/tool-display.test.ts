@@ -38,6 +38,12 @@ describe('parseMcpToolName', () => {
 })
 
 describe('isAlwaysHiddenToolBlock', () => {
+  it('hides harness tool-search aliases', () => {
+    for (const name of ['ToolSearch', 'SearchTools', 'SearchTool', 'tool_search', 'search_tool']) {
+      expect(isAlwaysHiddenToolBlock(name)).toBe(true)
+    }
+  })
+
   it('hides miniapp_list (agent discovery, not human-facing)', () => {
     expect(isAlwaysHiddenToolBlock('mcp__superone__miniapp_list')).toBe(true)
   })
@@ -236,4 +242,3 @@ describe('getToolLabel', () => {
     expect(getToolLabel('SomeCustomTool')).toBe('Some Custom Tool')
   })
 })
-

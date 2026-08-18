@@ -146,7 +146,7 @@ describe('SubagentFullView', () => {
     render(<SubagentFullView view={{ toolUseId: 'nested-1' }} />)
 
     expect(screen.getByText('WebSearch')).toBeInTheDocument()
-    expect(screen.getByText('SearchTools')).toBeInTheDocument()
+    expect(screen.queryByText('SearchTools')).not.toBeInTheDocument()
   })
 
   it('shows a nested agent\'s tool calls from the persisted block on history reload (empty live store)', () => {
@@ -172,6 +172,6 @@ describe('SubagentFullView', () => {
     render(<SubagentFullView view={{ toolUseId: 'nested-1' }} />)
 
     expect(screen.getByText('WebSearch')).toBeInTheDocument()
-    expect(screen.getByText('SearchTools')).toBeInTheDocument()
+    expect(screen.queryByText('SearchTools')).not.toBeInTheDocument()
   })
 })

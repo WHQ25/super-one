@@ -1676,6 +1676,10 @@ export class Session implements SessionContract {
    * Wake the agent after a host background task settles.
    * Mid-turn: backend hook (Claude SDK push, Codex steer, or queue).
    * Idle: always Session.send so synthetic turns take `_sendChain` / status machine.
+   *
+   * A backend that delivers the wake itself (`sent-inline`) bypasses Session.send,
+   * so the redacted transcript bubble — the "inbox has messages" row, and the only
+   * persisted trace of the wake — is appended here on its behalf.
    */
   async injectTaskNotification(content: string): Promise<void> {
     if (this._status === 'disposed') return
@@ -1690,8 +1694,12 @@ export class Session implements SessionContract {
     }
     if (this.backend.injectTaskNotification) {
       try {
-        const handled = await this.backend.injectTaskNotification(text)
-        if (handled) return
+        const outcome = await this.backend.injectTaskNotification(text)
+        if (outcome === 'sent-inline') {
+          this.appendUserMessage(taskNotificationRequest(text), 'host')
+          return
+        }
+        if (outcome === 'deferred') return
       } catch (err) {
         log.warn('[Session] injectTaskNotification harness path failed, falling back sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
       }

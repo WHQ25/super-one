@@ -35,7 +35,7 @@ import type {
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { trace } from '../../agent/event-trace'
-import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
 import { readAppSettings } from '../../app-settings-service'
 import { ensureProxy, type ProxyUpstream } from '../../providers/llm-proxy-manager'
 import { getSandboxCapability } from '../../sandbox-platform'
@@ -287,8 +287,11 @@ export class ClaudeBackend implements SessionBackend {
    * Push a machine wake-up via Claude Agent SDK provenance
    * `origin: { kind: 'task-notification' }` (not a human composer message).
    * Uses priority `next` so an in-flight turn is not interrupted.
+   *
+   * Always `sent-inline` (both the immediate push and the in-turn queue land in
+   * the SDK stream, never in Session.send), so Session mirrors the bubble.
    */
-  async injectTaskNotification(content: string): Promise<boolean> {
+  async injectTaskNotification(content: string): Promise<TaskNotificationInjectResult> {
     await this.ensureRuntime()
     if (!this.bridge) throw new Error('ClaudeBackend not started')
     const userMsg: SDKUserMessage = {
@@ -309,7 +312,7 @@ export class ClaudeBackend implements SessionBackend {
     } else {
       this.bridge.push(userMsg, tag)
     }
-    return true
+    return 'sent-inline'
   }
 
   async send(request: SendMessageRequest): Promise<void> {

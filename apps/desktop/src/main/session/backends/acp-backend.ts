@@ -51,7 +51,7 @@ import {
   taskNotificationRequest,
 } from '../task-notification-queue'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
-import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
 
 export interface AcpBackendConfig {
   agentId?: string
@@ -819,15 +819,15 @@ export class AcpBackend implements SessionBackend {
    * Mid-turn queue only. Idle synthetic turns are owned by Session.send.
    * ACP has no mid-turn inject / steer.
    */
-  async injectTaskNotification(content: string): Promise<boolean> {
-    if (!this.started || this.disposed) return true
+  async injectTaskNotification(content: string): Promise<TaskNotificationInjectResult> {
+    if (!this.started || this.disposed) return 'deferred'
     const text = content.trim()
-    if (!text) return true
+    if (!text) return 'deferred'
     if (this.isTurnBusy()) {
       this.pendingTaskNotifications.enqueue(text)
-      return true
+      return 'deferred'
     }
-    return false
+    return 'unhandled'
   }
 
   /**

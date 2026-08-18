@@ -1040,7 +1040,7 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
-  it('injectTaskNotification returns false when idle so Session.send owns the turn', async () => {
+  it('injectTaskNotification returns unhandled when idle so Session.send owns the turn', async () => {
     const promptTexts: string[] = []
     setAcpRuntimeFactory(async () => mockRuntime({
       prompt: async (text, messageId, onEvent) => {
@@ -1053,7 +1053,7 @@ describe('AcpBackend', () => {
     const backend = new AcpBackend()
     await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
     const handled = await backend.injectTaskNotification('idle wake')
-    expect(handled).toBe(false)
+    expect(handled).toBe('unhandled')
     expect(promptTexts).toEqual([])
     await backend.close()
   })

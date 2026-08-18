@@ -487,12 +487,12 @@ describe('OpenCodeBackend', () => {
     await backend.close()
   })
 
-  it('injectTaskNotification returns false when idle so Session.send owns the turn', async () => {
+  it('injectTaskNotification returns unhandled when idle so Session.send owns the turn', async () => {
     const backend = new OpenCodeBackend()
     await backend.start(startOptions())
 
     const handled = await backend.injectTaskNotification('idle wake')
-    expect(handled).toBe(false)
+    expect(handled).toBe('unhandled')
     expect(prompt).not.toHaveBeenCalled()
     await backend.close()
   })

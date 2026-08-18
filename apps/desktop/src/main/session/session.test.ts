@@ -2347,6 +2347,44 @@ describe('Session ownership', () => {
     expect(backend.sendCalls[0].source).toBe('task-notification')
   })
 
+  it('backend-inlined wake still appends a redacted transcript bubble', async () => {
+    const { session, backend } = makeSession()
+    const secret = 's1sc_abcdefghijklmnopqrstuvwxyz0123456789'
+    const prompt = `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(secret)} to receive it.`
+    // Claude SDK push / Codex steer: delivered by the backend, never via Session.send.
+    backend.injectTaskNotification = async () => 'sent-inline'
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    await session.injectTaskNotification(prompt)
+
+    expect(backend.sendCalls).toHaveLength(0)
+    const userEvent = events.find((e) => e.type === 'user_message_appended')
+    expect(userEvent?.type).toBe('user_message_appended')
+    if (userEvent && userEvent.type === 'user_message_appended') {
+      const text = userEvent.message.content
+        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
+      // The renderer keys the "inbox has messages" row off this exact pair.
+      expect(userEvent.message.metadata?.source).toBe('task-notification')
+      expect(text).toMatch(/collaboration mailbox message is ready/i)
+      expect(text).not.toContain('s1sc_')
+    }
+  })
+
+  it('backend-deferred wake does not append a bubble (the later flush does)', async () => {
+    const { session, backend } = makeSession()
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    backend.injectTaskNotification = async () => 'deferred'
+
+    await session.injectTaskNotification('A collaboration mailbox message is ready.')
+
+    expect(backend.sendCalls).toHaveLength(0)
+    expect(events.some((e) => e.type === 'user_message_appended')).toBe(false)
+  })
+
   it('task-notification transcript redacts collaboration credential', async () => {
     const { session, backend } = makeSession()
     const secret = 's1sc_abcdefghijklmnopqrstuvwxyz0123456789'

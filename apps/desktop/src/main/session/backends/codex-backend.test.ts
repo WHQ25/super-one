@@ -747,7 +747,8 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     const session = (backend as unknown as { session: { steerFn: ((text: string) => Promise<void>) | null } }).session
     session.steerFn = async () => {}
 
-    await backend.injectTaskNotification('mailbox ready')
+    // 'sent-inline': steer bypasses Session.send, so Session owes the transcript bubble.
+    expect(await backend.injectTaskNotification('mailbox ready')).toBe('sent-inline')
 
     expect(service.steerMock).toHaveBeenCalledWith(expect.any(Object), 'mailbox ready')
     expect(service.runMock).toHaveBeenCalledTimes(1)
@@ -777,9 +778,9 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     await vi.waitFor(() => expect(service.runMock.mock.results[1]?.type).toBe('return'))
   })
 
-  it('injectTaskNotification returns false when idle so Session.send owns the turn', async () => {
+  it('injectTaskNotification returns unhandled when idle so Session.send owns the turn', async () => {
     const handled = await backend.injectTaskNotification('idle wake')
-    expect(handled).toBe(false)
+    expect(handled).toBe('unhandled')
     expect(service.runMock).not.toHaveBeenCalled()
   })
 

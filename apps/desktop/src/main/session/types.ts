@@ -183,6 +183,23 @@ export type SessionLockReason = 'remote-owned' | 'remote-subscribed'
  */
 export type SendProviderOrigin = 'local' | 'remote' | 'host'
 
+/**
+ * How a backend disposed of a host wake (collab mailbox, download settle, …).
+ *
+ * The distinction matters because only `Session.send` appends the redacted user
+ * bubble that renders the "inbox has messages" row — a backend that delivers the
+ * wake itself leaves the transcript empty unless Session mirrors it.
+ *
+ * - `sent-inline`  — pushed straight into the live provider stream (Claude SDK
+ *   push, Codex `turn/steer`). Session never sees a send, so Session appends the
+ *   transcript bubble on the backend's behalf.
+ * - `deferred`     — queued (or dropped because the backend is gone). Any later
+ *   flush goes through `bindTaskNotificationSend` → `Session.send`, which
+ *   appends the bubble itself; Session must not append now or it would double.
+ * - `unhandled`    — backend is idle. Session.send owns the synthetic turn.
+ */
+export type TaskNotificationInjectResult = 'sent-inline' | 'deferred' | 'unhandled'
+
 export class SessionLockedError extends Error {
   readonly sessionId: string
   readonly reason: SessionLockReason
@@ -253,13 +270,12 @@ export interface SessionBackend {
   clearCodexGoal?(threadId: string): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
   /**
-   * Mid-turn host wake only. Return true if the notification was fully handled
-   * (steered, queued into an in-flight turn, or SDK-pushed). Return false when
-   * idle so Session can start a synthetic turn via Session.send / _sendChain.
-   * Never call backend.send() for a new turn from this hook — that races the
-   * Session state machine.
+   * Mid-turn host wake only. Never call backend.send() for a new turn from this
+   * hook — that races the Session state machine. See
+   * {@link TaskNotificationInjectResult} for what each outcome obliges Session
+   * to do about the transcript.
    */
-  injectTaskNotification?(content: string): Promise<boolean>
+  injectTaskNotification?(content: string): Promise<TaskNotificationInjectResult>
   /**
    * Redirect idle flushes of queued task notifications through Session.send
    * (so they take `_sendChain` / status machine) instead of backend.send.

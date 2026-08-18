@@ -41,7 +41,7 @@ import {
   taskNotificationRequest,
 } from '../task-notification-queue'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
-import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
 
 type OpenCodeRuntimeFactory = (opts: OpenCodeRuntimeOptions) => Promise<OpenCodeRuntime>
 
@@ -193,15 +193,15 @@ export class OpenCodeBackend implements SessionBackend {
    * Mid-turn queue only. Idle synthetic turns are owned by Session.send.
    * OpenCode has no mid-turn inject API.
    */
-  async injectTaskNotification(content: string): Promise<boolean> {
-    if (!this.started || this.disposed) return true
+  async injectTaskNotification(content: string): Promise<TaskNotificationInjectResult> {
+    if (!this.started || this.disposed) return 'deferred'
     const text = content.trim()
-    if (!text) return true
+    if (!text) return 'deferred'
     if (this.activeTurn) {
       this.pendingTaskNotifications.enqueue(text)
-      return true
+      return 'deferred'
     }
-    return false
+    return 'unhandled'
   }
 
   private flushPendingTaskNotifications(): void {

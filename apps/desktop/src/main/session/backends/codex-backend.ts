@@ -50,7 +50,7 @@ import {
   TaskNotificationQueue,
   taskNotificationRequest,
 } from '../task-notification-queue'
-import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
@@ -314,22 +314,22 @@ export class CodexBackend implements SessionBackend {
    * Mid-turn wake only. Idle synthetic turns are owned by Session.send.
    * Prefer mid-turn `turn/steer` when a run is live; otherwise queue until idle.
    */
-  async injectTaskNotification(content: string): Promise<boolean> {
+  async injectTaskNotification(content: string): Promise<TaskNotificationInjectResult> {
     this.assertStarted()
     const text = content.trim()
-    if (!text) return true
+    if (!text) return 'deferred'
 
     if (this.session?.steerFn) {
       await steerCodex(this.session, text)
-      return true
+      return 'sent-inline'
     }
 
     if (this.isTurnBusy()) {
       this.pendingTaskNotifications.enqueue(text)
-      return true
+      return 'deferred'
     }
 
-    return false
+    return 'unhandled'
   }
 
   private isTurnBusy(): boolean {

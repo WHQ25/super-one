@@ -3,6 +3,7 @@
 import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
+import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 
 let sessionsByFolder: Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; parentSessionId?: string }>> = {}
 
@@ -35,7 +36,7 @@ const chatState = {
 }
 
 const mockWindowApp = {
-  listPinnedSessions: vi.fn(async () => []),
+  listPinnedSessions: vi.fn(async (): Promise<PinnedSessionEntry[]> => []),
   listSessionsForFolder: vi.fn(async (folderPath: string) => sessionsByFolder[folderPath] ?? []),
   listSessionsForFolderPage: vi.fn(async (folderPath: string, limit: number, offset: number) => (sessionsByFolder[folderPath] ?? []).slice(offset, offset + limit)),
   onSessionChanged: vi.fn(() => () => {}),
@@ -54,6 +55,7 @@ const mockWindowApp = {
   onAutomationsChanged: vi.fn(() => () => {}),
   onAutomationEvent: vi.fn(() => () => {}),
   getAppSettings: vi.fn(async () => ({ miniAppOrder: {} })),
+  getMediaServerPort: vi.fn(async () => 0),
 }
 
 const mockEnvironment = {
@@ -259,6 +261,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockWindowApp.listPinnedSessions.mockResolvedValue([])
   appState.sidebarTab = 'sessions'
   appState.currentFolder = '/project-a'
   appState.recentFolders = [{ name: 'project-a', path: '/project-a', addedAt: '2026-03-02T00:00:00.000Z' }]
@@ -502,6 +505,32 @@ describe('AppSidebar interactions', () => {
     await waitFor(() => {
       expect(screen.queryByText('Old Session')).toBeNull()
     })
+  })
+
+  it('shows the normal session menu with unpin for a pinned session', async () => {
+    mockWindowApp.listPinnedSessions.mockResolvedValue([{
+      sessionId: 'sid-pinned',
+      title: 'Pinned Session',
+      lastActiveAt: '2026-03-02T00:00:00.000Z',
+      messageCount: 2,
+      provider: 'claude',
+      isPinned: true,
+      folderPath: '/project-a',
+      folderName: 'project-a',
+    }])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    await screen.findByText('Pinned Session')
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin Session' }))
+
+    await waitFor(() => {
+      expect(mockWindowApp.pinSession).toHaveBeenCalledWith('sid-pinned', false)
+    })
+    expect(screen.getByRole('button', { name: 'Rename Session' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hide Session' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
   })
 
   it('shows collapsed live session when awaitingAssistantReply is true', async () => {

@@ -750,8 +750,11 @@ export const AppSidebar = memo(function AppSidebar() {
                 isActive={currentFolder === s.folderPath && currentActiveSid === s.sessionId}
                 status={pinStatus}
                 isUnseen={pinUnseenFlag === '1'}
-                onSwitch={handleSwitchSession}
-                onUnpin={handlePinSession}
+                onSwitchSession={handleSwitchSession}
+                onPinSession={handlePinSession}
+                onHideSession={handleHideSession}
+                onRenameSession={handleRequestRenameSession}
+                onDeleteSession={handleRequestDeleteSession}
               />
             )
           })}

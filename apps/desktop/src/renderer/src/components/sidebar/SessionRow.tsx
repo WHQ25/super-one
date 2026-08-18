@@ -1,6 +1,5 @@
 import { memo, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Bot, ChevronDown, ChevronRight, CornerDownRight, Eye, EyeOff, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
@@ -9,13 +8,12 @@ import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
-import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
-import { chatInputAPI } from '@/components/chat/chat-input-api'
-import { buildSessionMenuItems } from '@/lib/session-menu-items'
 import { getPendingReason } from './session-state-utils'
 import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated, useSessionTitleByAgent } from './AnimatedSessionTitle'
+import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
@@ -42,13 +40,7 @@ function PlainSessionTitle({ sessionId, fallback, className }: { sessionId: stri
   return <span className={cn('session-row-title min-w-0 flex-1 truncate text-[13px]', className)}>{title}</span>
 }
 
-export interface SessionRowCallbacks {
-  onSwitchSession: (folderPath: string, sessionId: string) => void
-  onPinSession: (sessionId: string, pinned: boolean, folderPath: string) => void
-  onHideSession: (sessionId: string, hidden: boolean, folderPath: string) => void
-  onRenameSession: (target: { sessionId: string; title: string; folderPath: string }) => void
-  onDeleteSession: (target: { sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId }) => void
-}
+export type SessionRowCallbacks = SessionMenuCallbacks
 
 interface SessionRowProps extends SessionRowCallbacks {
   session: SessionHistoryEntry
@@ -120,54 +112,18 @@ export const SessionRow = memo(function SessionRow({
           : 'default'
   const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
 
-  const handleForkSession = useCallback(async (mode: SessionForkMode) => {
-    const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
-    try {
-      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-      const remote = parseRemoteProjectKey(folderPath)
-      const result = remote
-        ? await window.environment.forkSession(remote.connectionId, {
-            sessionId: session.sessionId,
-            mode,
-          })
-        : await window.app.forkSession({ sessionId: session.sessionId, mode })
-      if (result.ok) {
-        onSwitchSession(folderPath, result.sessionId)
-        toast.success(
-          t(mode === 'local' ? 'sidebar.contextMenu.forkedLocalToast' : 'sidebar.contextMenu.forkedToast'),
-          { id: toastId },
-        )
-      } else {
-        toast.error(result.error, { id: toastId })
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err), { id: toastId })
-    }
-  }, [t, onSwitchSession, folderPath, session.sessionId])
-
   const { rowRef, dragHandlers, dragPreview } = useSessionDragOut({
     folderPath,
     sessionId: session.sessionId,
     title: session.title,
   })
 
-  const menuItems = buildSessionMenuItems(session, folderPath, t, {
-    onRename: () => onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath }),
-    onPin: () => onPinSession(session.sessionId, !session.isPinned, folderPath),
-    onHide: () => onHideSession(session.sessionId, !session.isHidden, folderPath),
-    onFork: handleForkSession,
-    onDelete: () => onDeleteSession({
-      sessionId: session.sessionId,
-      title: session.title,
-      folderPath,
-      provider: (session.provider ?? 'claude') as 'claude' | 'codex',
-    }),
-    onAddToChat: () => {
-      // Same chip as @session mention (History icon / blended), not mini-app context inject.
-      // Chip insert is enough feedback — no toast.
-      const title = (session.title || 'Untitled').trim()
-      chatInputAPI.insertMention?.('session', session.sessionId, title)
-    },
+  const menuItems = useSessionMenuItems(session, folderPath, {
+    onSwitchSession,
+    onPinSession,
+    onHideSession,
+    onRenameSession,
+    onDeleteSession,
   })
 
   const rowInner = (

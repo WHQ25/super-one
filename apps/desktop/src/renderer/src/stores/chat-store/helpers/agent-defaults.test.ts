@@ -214,6 +214,15 @@ describe('applySessionAgentDefaults', () => {
     const project = createDefaultProjectState()
     expect(applySessionAgentDefaults(session, project, [opus])).toEqual({})
   })
+
+  it('returns {} for a deepseek session (no claude default-model fallback)', () => {
+    const session = createDefaultPerSessionState()
+    session.sessionProvider = 'deepseek'
+    session.preferredProvider = 'deepseek'
+    session.selectedModel = ''
+    const project = createDefaultProjectState()
+    expect(applySessionAgentDefaults(session, project, [opus])).toEqual({})
+  })
 })
 
 describe('_computeClaudeDefaultPatch', () => {

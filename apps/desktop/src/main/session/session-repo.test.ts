@@ -845,6 +845,31 @@ describe('session-repo', () => {
       expect(forked!.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
     })
 
+    it('rewrites copied Codex message metadata to the forked thread id', () => {
+      const sourceThreadId = 'thread-source'
+      const forkedThreadId = 'thread-forked'
+      saveSessionStateBySid({
+        sid: 'src-codex', projectPath: '/tmp/proj', providerId: 'codex-base',
+        providerSessionId: sourceThreadId,
+        messages: [{
+          id: 'a-codex', role: 'assistant', status: 'complete', content: [],
+          createdAt: '2026-04-18T00:00:00Z', providerId: 'codex',
+          metadata: { codex: { threadId: sourceThreadId, usage: null, items: [] } },
+        }],
+        totalCostUsd: 0, contextTokens: 0,
+      })
+
+      forkSessionRecord({
+        sourceId: 'src-codex', newId: 'fork-codex', providerSessionId: forkedThreadId,
+        worktreePath: '/tmp/proj/.worktrees/codex', gitBranch: null, title: 'Codex (fork)',
+      })
+
+      const forked = loadSessionStateBySid('fork-codex')
+      expect(forked?.record.providerSessionId).toBe(forkedThreadId)
+      expect(forked?.messages[0].metadata?.codex?.threadId).toBe(forkedThreadId)
+      expect(resolveProviderSessionIdForResume(forked!.record, forked!.messages)).toBe(forkedThreadId)
+    })
+
     it('truncates copied messages up to and including the fork point', () => {
       seedSourceWithMessages('src-cut', [
         chatMsg('u1', 'user', 'one'),

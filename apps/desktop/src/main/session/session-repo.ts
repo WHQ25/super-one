@@ -505,6 +505,28 @@ export interface ForkSessionRecordInput {
   forkFromMessageId?: string
 }
 
+function rewriteForkedMessageMetadata(
+  metadataJson: string | null,
+  harnessId: HarnessId,
+  providerSessionId: string,
+): string | null {
+  if (harnessId !== 'codex' || !metadataJson) return metadataJson
+
+  try {
+    const metadata: unknown = JSON.parse(metadataJson)
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return metadataJson
+    const metadataRecord = metadata as Record<string, unknown>
+    const codex = metadataRecord.codex
+    if (!codex || typeof codex !== 'object' || Array.isArray(codex)) return metadataJson
+    return JSON.stringify({
+      ...metadataRecord,
+      codex: { ...codex, threadId: providerSessionId },
+    })
+  } catch {
+    return metadataJson
+  }
+}
+
 /**
  * Copy a session's row + messages into a new session id (session fork).
  *
@@ -558,7 +580,9 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
       insMsg.run(
         randomUUID(), input.newId, i, m.role,
         m.status === 'streaming' ? 'interrupted' : m.status,
-        m.content_json, m.created_at, m.provider_id, m.metadata_json, now,
+        m.content_json, m.created_at, m.provider_id,
+        rewriteForkedMessageMetadata(m.metadata_json, source.harnessId, input.providerSessionId),
+        now,
       )
     })
   })()

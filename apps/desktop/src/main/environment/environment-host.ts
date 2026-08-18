@@ -2216,7 +2216,7 @@ export class EnvironmentHost {
    */
   async cloneRepository(
     connectionId: string,
-    input: { remoteUrl: string; parentPath: string; directoryName?: string },
+    input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
   ): Promise<ProjectSnapshot> {
     if (connectionId !== 'local') {
       const project = await this.requireRemoteGateway(connectionId).cloneRepository(input)

@@ -91,6 +91,8 @@ export type Messages = {
       createDirectory: string
       /** Destination-step checkbox: remember this parent for future clones. */
       saveAsDefaultClonePath: string
+      /** Destination-step checkbox: git clone --depth=1. */
+      shallowClone: string
       pathRequired: string
       /** Clone failed because `<parent>/<repo>` is already on disk. */
       destinationExists: string
@@ -2892,6 +2894,7 @@ export const en: Messages = {
       createSection: 'Create',
       createDirectory: 'Create Directory',
       saveAsDefaultClonePath: 'Save as Default Clone Path',
+      shallowClone: 'Shallow Clone (--depth=1)',
       pathRequired: 'Enter a project path.',
       destinationExists:
         '"{{path}}" already exists. Pick another folder, or add that project instead of cloning.',

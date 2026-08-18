@@ -93,6 +93,7 @@ export const zh: Messages = {
       createSection: '创建',
       createDirectory: '创建目录',
       saveAsDefaultClonePath: '设为默认克隆路径',
+      shallowClone: '浅克隆（--depth=1）',
       pathRequired: '请输入项目路径。',
       destinationExists: '"{{path}}" 已存在。请换一个目录，或直接添加该已有项目。',
       browse: '浏览',

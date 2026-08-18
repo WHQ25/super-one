@@ -1662,7 +1662,7 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: { remoteUrl: string; parentPath: string; directoryName?: string },
+      input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().cloneRepository(connectionId, input)

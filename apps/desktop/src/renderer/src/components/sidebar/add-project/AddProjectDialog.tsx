@@ -455,6 +455,16 @@ export function AddProjectDialog({
             )}
             <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
               <Checkbox
+                checked={flow.shallowClone}
+                disabled={flow.busy}
+                onCheckedChange={(value) => flow.setShallowClone(value === true)}
+              />
+              <span className="min-w-0 leading-snug">
+                {t('sidebar.addProject.shallowClone')}
+              </span>
+            </label>
+            <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
                 checked={flow.saveAsDefault}
                 disabled={flow.busy}
                 onCheckedChange={(value) => flow.setSaveAsDefault(value === true)}

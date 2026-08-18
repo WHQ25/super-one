@@ -566,7 +566,7 @@ const environmentAPI = {
     }>,
   cloneRepository: (
     connectionId: string,
-    input: { remoteUrl: string; parentPath: string; directoryName?: string },
+    input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_CLONE_REPOSITORY,

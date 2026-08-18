@@ -21,6 +21,20 @@ export interface CloneRepositoryInput {
   parentPath: string
   /** Folder name to create; defaults to the repo name derived from the URL. */
   directoryName?: string
+  /**
+   * When true, pass `--depth=1` so only the tip commit is fetched.
+   * Omitted / false keeps a full clone (older clients and explicit opt-out).
+   */
+  shallow?: boolean
+}
+
+/** `git clone` argv after the binary name. Exported so tests can lock the flag order. */
+export function buildCloneArgs(input: CloneRepositoryInput, destinationPath: string): string[] {
+  const args = ['clone']
+  if (input.shallow) args.push('--depth=1')
+  // `--` stops git from reading a hostile URL as an option.
+  args.push('--', input.remoteUrl.trim(), destinationPath)
+  return args
 }
 
 export interface CloneRepositoryResult {
@@ -76,8 +90,7 @@ export async function cloneRepository(
   await new Promise<void>((resolvePromise, reject) => {
     execFile(
       'git',
-      // `--` stops git from reading a hostile URL as an option.
-      ['clone', '--', input.remoteUrl.trim(), destination.path],
+      buildCloneArgs(input, destination.path),
       {
         cwd: parent,
         timeout: CLONE_TIMEOUT_MS,

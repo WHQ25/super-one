@@ -316,6 +316,7 @@ describe('add-project dialog', () => {
         remoteUrl: 'https://github.com/WHQ25/super-one.git',
         parentPath: '/Users/dev/Projects',
         directoryName: 'super-one',
+        shallow: true,
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
@@ -581,6 +582,7 @@ describe('add-project dialog', () => {
         remoteUrl: 'https://github.com/WHQ25/super-one.git',
         parentPath: '/Users/dev/Projects',
         directoryName: 'super-one',
+        shallow: true,
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
@@ -610,8 +612,12 @@ describe('add-project dialog', () => {
     expect(input().value).toBe('~/Github/')
     // Checkbox is pre-checked when a default was applied.
     expect(screen.getByText('Save as Default Clone Path')).toBeInTheDocument()
-    const checkbox = screen.getByRole('checkbox')
+    const checkbox = screen.getByRole('checkbox', { name: 'Save as Default Clone Path' })
     expect(checkbox).toHaveAttribute('data-state', 'checked')
+    expect(screen.getByRole('checkbox', { name: /Shallow Clone/ })).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/Github/'))
   })
 
@@ -629,8 +635,9 @@ describe('add-project dialog', () => {
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/Projects/'))
 
     // Opt in to remember this parent.
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(screen.getByRole('checkbox')).toHaveAttribute('data-state', 'checked')
+    const saveDefault = screen.getByRole('checkbox', { name: 'Save as Default Clone Path' })
+    fireEvent.click(saveDefault)
+    expect(saveDefault).toHaveAttribute('data-state', 'checked')
 
     fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await waitFor(() => expect(cloneRepository).toHaveBeenCalled())
@@ -640,6 +647,32 @@ describe('add-project dialog', () => {
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
+  })
+
+  it('opts out of a shallow clone when the checkbox is unchecked', async () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
+    await screen.findByRole('button', { name: /WHQ25\/super-one/ })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    await waitFor(() => expect(browsePath).toHaveBeenCalled())
+
+    const shallow = screen.getByRole('checkbox', { name: /Shallow Clone/ })
+    expect(shallow).toHaveAttribute('data-state', 'checked')
+    fireEvent.click(shallow)
+    expect(shallow).toHaveAttribute('data-state', 'unchecked')
+
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
+    await waitFor(() =>
+      expect(cloneRepository).toHaveBeenCalledWith('local', {
+        remoteUrl: 'https://github.com/WHQ25/super-one.git',
+        parentPath: '/Users/dev/Projects',
+        directoryName: 'super-one',
+        shallow: false,
+      }),
+    )
   })
 
   it('goes back to the source picker on Backspace with an empty input', () => {

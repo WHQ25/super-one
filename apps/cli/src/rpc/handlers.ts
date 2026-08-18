@@ -1828,6 +1828,7 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
       remoteUrl: String(p.remoteUrl ?? ''),
       parentPath: expandHostPath(String(p.parentPath ?? '')),
       directoryName: typeof p.directoryName === 'string' ? p.directoryName : undefined,
+      shallow: p.shallow === true,
     })
     return { result: ctx.projects.open(cloned.path, cloned.name) }
   } catch (err) {

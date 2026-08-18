@@ -202,6 +202,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     remoteUrl: string
     parentPath: string
     directoryName?: string
+    shallow?: boolean
   }): Promise<ProjectSnapshot> {
     return this.client.rpc('git.clone', input)
   }

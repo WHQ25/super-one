@@ -136,6 +136,8 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const [defaultClonePath, setDefaultClonePath] = useState<string | null>(null)
   /** When true, successful clone writes the current path as defaultClonePath. */
   const [saveAsDefault, setSaveAsDefault] = useState(false)
+  /** Destination checkbox: default on — most clones only need the tip commit. */
+  const [shallowClone, setShallowClone] = useState(true)
   // Ref tracks the same value so continueWithRepo sees a load that finished
   // after the last render without waiting for another commit.
   const defaultClonePathRef = useRef<string | null>(null)
@@ -172,6 +174,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     setGithubError(null)
     setGithubUnavailable(false)
     setSaveAsDefault(false)
+    setShallowClone(true)
     githubMyPageRef.current = 0
     githubLoadingMoreRef.current = false
     // Focus after paint so Tab completes the path instead of moving focus.
@@ -868,6 +871,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
           remoteUrl: step.remoteUrl,
           parentPath,
           directoryName: step.repoName,
+          shallow: shallowClone,
         })
         // Persist (or clear) the default clone parent after a successful clone.
         const currentDir = ensureBrowseDirectoryPath(
@@ -909,6 +913,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       query,
       saveAsDefault,
       defaultClonePath,
+      shallowClone,
     ],
   )
 
@@ -1123,6 +1128,8 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     pathInlineGhost,
     saveAsDefault,
     setSaveAsDefault,
+    shallowClone,
+    setShallowClone,
     canSubmit,
     activateItem,
     completePath,

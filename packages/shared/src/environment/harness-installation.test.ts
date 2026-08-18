@@ -38,12 +38,6 @@ describe('NodeHarnessId', () => {
     expect(nodeHarnessIdToSessionHarnessId('deepseek')).toBe('deepseek')
   })
 
-  it('maps deepseek as a first-party identity on both session and node ids', () => {
-    expect(isNodeHarnessId('deepseek')).toBe(true)
-    expect(sessionHarnessIdToNodeHarnessId('deepseek')).toBe('deepseek')
-    expect(nodeHarnessIdToSessionHarnessId('deepseek')).toBe('deepseek')
-  })
-
   it('normalizes session wire ids so Grok always persists as acp in Stage 1', () => {
     expect(normalizeSessionHarnessId('acp-grok')).toBe('acp')
     expect(normalizeSessionHarnessId('acp')).toBe('acp')

@@ -90,6 +90,11 @@ interface MessageRow {
   created_at: string
 }
 
+export interface SessionCollaborationRunConfig {
+  permissionMode?: PermissionMode
+  sandboxMode?: SandboxMode
+}
+
 type AuthorizedGrant = GrantRow & { credential: string }
 
 let notifySessionsChanged: (() => void) | null = null
@@ -833,6 +838,31 @@ export function getSessionCollaborationSystemPrompt(sessionId: string): string |
   if (!row?.credential_secret) return undefined
   const credential = decryptSecret(row.credential_secret)
   return credential ? collaborationSystemPrompt(credential, row.parent_session_id) : undefined
+}
+
+/** Human-approved launch settings for a spawned collaboration child. */
+export function getSessionCollaborationRunConfig(
+  sessionId: string,
+): SessionCollaborationRunConfig | null {
+  const row = getDb().prepare(`
+    SELECT config_json
+    FROM session_collaboration_grants
+    WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn'
+  `).get(sessionId) as { config_json: string } | undefined
+  if (!row) return null
+
+  const config = parseConfig(row.config_json)
+  const permissionMode = config.permissionMode && EDITABLE_PERMISSION_MODES.has(config.permissionMode)
+    ? config.permissionMode
+    : undefined
+  const sandboxMode = config.sandboxMode && EDITABLE_SANDBOX_MODES.has(config.sandboxMode)
+    ? config.sandboxMode
+    : undefined
+  if (!permissionMode && !sandboxMode) return null
+  return {
+    ...(permissionMode ? { permissionMode } : {}),
+    ...(sandboxMode ? { sandboxMode } : {}),
+  }
 }
 
 function linkActivationWakeText(

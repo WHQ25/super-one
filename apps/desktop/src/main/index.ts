@@ -79,7 +79,11 @@ import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
-import { getSessionCollaborationSystemPrompt, setSessionCollaborationCallbacks } from './session/session-collaboration'
+import {
+  getSessionCollaborationRunConfig,
+  getSessionCollaborationSystemPrompt,
+  setSessionCollaborationCallbacks,
+} from './session/session-collaboration'
 import { buildClaudeEnv, buildRemoteActiveService, resolveChatService } from './providers/resolver'
 import type { ProxyUpstream } from './providers/llm-proxy-manager'
 import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager'
@@ -359,6 +363,7 @@ const sessionManager = new SessionManagerImpl({
   loadSession: (sessionId) => {
     const loaded = loadSessionStateBySid(sessionId)
     if (!loaded) return null
+    const collaborationConfig = getSessionCollaborationRunConfig(sessionId)
     const providerSessionId = resolveProviderSessionIdForResume(loaded.record, loaded.messages)
     if (providerSessionId && providerSessionId !== loaded.record.providerSessionId) {
       updateProviderSessionId(sessionId, providerSessionId)
@@ -382,6 +387,8 @@ const sessionManager = new SessionManagerImpl({
       acpAgentId: loaded.record.acpAgentId,
       selectedModel: loaded.record.selectedModel,
       selectedEffort: loaded.record.selectedEffort,
+      permissionMode: collaborationConfig?.permissionMode,
+      sandboxMode: collaborationConfig?.sandboxMode,
       systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId),
     }
   },

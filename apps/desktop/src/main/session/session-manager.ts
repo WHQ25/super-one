@@ -1,7 +1,13 @@
 import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
-import type { AgentEvent, ChatMessage, RemoteActiveProvider } from '@superone/shared/agent-types'
+import type {
+  AgentEvent,
+  ChatMessage,
+  PermissionMode,
+  RemoteActiveProvider,
+  SandboxMode,
+} from '@superone/shared/agent-types'
 import type { HarnessId } from './types'
 import log from '../logger'
 import { discoverProjectAgents, discoverProjectCommands, discoverSkills } from '../agent/discover-resources'
@@ -41,6 +47,9 @@ export interface LoadedSessionData {
   acpAgentId?: string | null
   selectedModel?: string | null
   selectedEffort?: import('@superone/shared/agent-types').EffortLevel | null
+  /** Human-approved launch settings for collaboration children. */
+  permissionMode?: PermissionMode
+  sandboxMode?: SandboxMode
   systemPromptAppend?: string
 }
 
@@ -164,9 +173,8 @@ export class SessionManagerImpl implements SessionManagerContract {
     const providerConfig = resolveProviderConfig
       ? resolveProviderConfig(provider, apiProviderId)
       : provider.config
-    const sandboxInfo = opts.sandboxMode !== undefined
-      ? { enabled: opts.sandboxMode !== 'off', autoAllowBash: opts.sandboxMode === 'auto' }
-      : undefined
+    let permissionMode = opts.permissionMode
+    let sandboxMode = opts.sandboxMode
     // Cold create with a known SuperOne session id (prewarm / send fallback) must
     // still carry the stored provider session id so ACP agents can session/load.
     // Only hydrate when the DB row is the same provider — harness switches must not
@@ -188,11 +196,16 @@ export class SessionManagerImpl implements SessionManagerContract {
           }
           selectedModel ??= prior.selectedModel ?? undefined
           selectedEffort ??= prior.selectedEffort ?? undefined
+          permissionMode = prior.permissionMode ?? permissionMode
+          sandboxMode = prior.sandboxMode ?? sandboxMode
         }
       } catch (err) {
         log.debug('[SessionManager] createSession loadSession hydrate skipped:', err)
       }
     }
+    const sandboxInfo = sandboxMode !== undefined
+      ? { enabled: sandboxMode !== 'off', autoAllowBash: sandboxMode === 'auto' }
+      : undefined
     const session = new Session({
       id: sessionId,
       projectPath: opts.projectPath,
@@ -201,7 +214,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       harnessId: provider.harnessId,
       providerConfig,
       backend,
-      permissionMode: opts.permissionMode,
+      permissionMode,
       sandboxInfo,
       effort: selectedEffort,
       model: selectedModel,
@@ -284,8 +297,10 @@ export class SessionManagerImpl implements SessionManagerContract {
       ? resolveProviderConfig(provider, apiProviderId)
       : provider.config
     const { cwd: resumedCwd, missingWorktreePath } = resolveResumedCwd(data)
-    const sandboxInfo = opts?.sandboxMode !== undefined
-      ? { enabled: opts.sandboxMode !== 'off', autoAllowBash: opts.sandboxMode === 'auto' }
+    const permissionMode = data.permissionMode ?? opts?.permissionMode
+    const sandboxMode = data.sandboxMode ?? opts?.sandboxMode
+    const sandboxInfo = sandboxMode !== undefined
+      ? { enabled: sandboxMode !== 'off', autoAllowBash: sandboxMode === 'auto' }
       : undefined
     const session = new Session({
       id: sessionId,
@@ -295,7 +310,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       harnessId: provider.harnessId,
       providerConfig,
       backend,
-      permissionMode: opts?.permissionMode,
+      permissionMode,
       sandboxInfo,
       resumedProviderSessionId: data.providerSessionId ?? undefined,
       initialMessages: data.messages,

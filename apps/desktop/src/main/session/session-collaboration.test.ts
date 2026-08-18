@@ -139,6 +139,7 @@ vi.mock('../recent-folders', () => ({
 import {
   requestSessionAgents,
   listSessionAgentProfiles,
+  getSessionCollaborationRunConfig,
   getSessionCollaborationSystemPrompt,
   sendSessionMessage,
   startSessionAgent,
@@ -729,7 +730,7 @@ describe('session collaboration', () => {
       }]),
     })
     const grants = resultJson(await promise).launches as Array<{ credential: string }>
-    await startSessionAgent('parent', grants[0].credential, host)
+    const started = resultJson(await startSessionAgent('parent', grants[0].credential, host))
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       model: 'other-model',
       permissionMode: 'bypassPermissions',
@@ -737,6 +738,10 @@ describe('session collaboration', () => {
       providerId: 'claude-base',
       cwd: TEST_CWD,
     }))
+    expect(getSessionCollaborationRunConfig(started.sessionId as string)).toEqual({
+      permissionMode: 'bypassPermissions',
+      sandboxMode: 'on',
+    })
     const child = createSession.mock.results[0]?.value as Session
     expect(child.send).toHaveBeenCalledWith(expect.objectContaining({
       content: 'Original task',

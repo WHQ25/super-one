@@ -203,6 +203,17 @@ describe('session agents confirm prompt', () => {
     expect(launches[0].task).toBe('Review the failing tests and report the root cause.')
   })
 
+  it('uses the human-selected permission instead of the agent draft', async () => {
+    const onConfirm = vi.fn()
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Normal' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Bypass all permission checks/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
+
+    expect(onConfirm.mock.calls[0][0][0].config.permissionMode).toBe('bypassPermissions')
+  })
+
   it('rejects on Escape', () => {
     const onReject = vi.fn()
     renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={onReject} />)

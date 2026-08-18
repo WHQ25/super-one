@@ -859,6 +859,62 @@ describe('SessionManager', () => {
       expect(session.getCurrentSandboxInfo()).toEqual({ enabled: false, autoAllowBash: false })
     })
 
+    it('restores human-approved collaboration settings ahead of generic resume defaults', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        permissionMode: 'bypassPermissions' as const,
+        sandboxMode: 'off' as const,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+
+      const session = mgr2.resumeSession('sid-collab', {
+        permissionMode: 'default',
+        sandboxMode: 'on',
+      })
+
+      expect(session.getCurrentPermissionMode()).toBe('bypassPermissions')
+      expect(session.getCurrentSandboxInfo()).toEqual({ enabled: false, autoAllowBash: false })
+    })
+
+    it('keeps human-approved collaboration settings after create, dispose, and resume', async () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        permissionMode: 'acceptEdits' as const,
+        sandboxMode: 'auto' as const,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+
+      const created = mgr2.createSession({
+        id: 'sid-collab-cold-create',
+        projectPath: '/proj',
+        providerId: 'claude-base',
+        permissionMode: 'default',
+        sandboxMode: 'off',
+      })
+
+      expect(created.getCurrentPermissionMode()).toBe('acceptEdits')
+      expect(created.getCurrentSandboxInfo()).toEqual({ enabled: true, autoAllowBash: true })
+
+      await mgr2.disposeSession('sid-collab-cold-create')
+      const resumed = mgr2.resumeSession('sid-collab-cold-create', {
+        permissionMode: 'default',
+        sandboxMode: 'off',
+      })
+
+      expect(resumed.getCurrentPermissionMode()).toBe('acceptEdits')
+      expect(resumed.getCurrentSandboxInfo()).toEqual({ enabled: true, autoAllowBash: true })
+    })
+
     it('resumeSession with sandboxMode="auto" enables sandbox with autoAllowBash', () => {
       const loadSession = vi.fn(() => ({
         projectPath: '/proj',

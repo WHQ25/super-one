@@ -108,7 +108,8 @@ describe('DeepseekBackend', () => {
 
     await Promise.resolve()
     const prompt = events.find((event) => event.type === 'permission_request')
-    expect(prompt?.type === 'permission_request' && prompt.request.toolName).toBe('bash')
+    // Canonical name, so the popover matches the tool row rendered above it.
+    expect(prompt?.type === 'permission_request' && prompt.request.toolName).toBe('Bash')
     expect(settled).toBeUndefined()
 
     const requestId = prompt?.type === 'permission_request' ? prompt.request.requestId : ''

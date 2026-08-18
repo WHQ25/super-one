@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 pending (tool plane / MCP mount / resume / fork / subagents / permission presets)
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate) landed; MCP mount / resume / fork / subagents / permission presets still pending
 Last updated: 2026-08-19
 
 > Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
@@ -145,9 +145,15 @@ Skills, goals, workflow, jobs, e2b, LSP, terminal: deferred until a product deci
 
 ### D6 — Tool plane: MCP first, native second
 
-Phase 1: mount `dsh-mcp-client` pointed at the SuperOne MCP server — the entire `mcp__superone__*` surface (browser, media, widget, miniapp, config…) becomes model-visible with zero new code, and existing chat ToolBlocks already render those tools' results.
-Phase 2 (optional, per-tool): re-register high-traffic tools natively on `ctx.tools` for richer `meta` presentation payloads and tighter approval semantics.
-dsh-native tools (`bash`, `read/write/edit`, `todo_write`, `subagent`) map to the same renderers used for Claude's equivalents where shapes align; otherwise generic ToolBlock.
+**Landed (P4a) — native tools, per agent scope.** `packages/deepseek/src/tool-plane.ts` mounts `subprocess-local` + `fs-local` + `bash-local` + `shell-env` and the `read/write/edit`, `glob/grep`, `bash`, `todo_write` tools inside `agents.create({setup})`. Two dsh mechanics carry it:
+- registrations made under an agent's scoped context file into *that agent's* tool layer (`ctx.tools` resolves per scope key), so one shared tree still gives each session its own tool set;
+- `agentCtx.isolate('subprocess'|'fs'|'shell'|'shellEnv')` gives the executors a private service realm. Without it the first session's `ctx.fs`/`ctx.shell` land in the ROOT realm — process-global, rooted at that session's cwd — and session two silently resolves relative paths against session one's workspace. (Same hazard `dsh-agent-presets` guards with `leakedServices`.) Covered by the "keeps each session rooted in its own cwd" test.
+
+**Permission gate.** dsh's own `ctx.approval` only fires for *sandbox escalation*, and with an unconfined `bash-local` that never happens — so mounting tools without a gate would run `write`/`bash` with no prompt at all. A SuperOne-owned `tools/pre-execute` listener (scope-filtered to the agent) allows read-only tools (`read`, `read_image`, `glob`, `grep`, `todo_write`) and asks for everything else. It asks through the backend's own answerer rather than returning dsh's `{kind:'ask'}`, because `approval.request` carries only a tool name while the popover renders the call — the bash command, the file being written. `bypassPermissions` short-circuits in the backend, so both paths share one mode check.
+
+**Naming.** dsh's argument shapes already match Claude's (`file_path`, `command`, `old_string`…), so the event mapper renames `read/write/edit/bash/glob/grep/todo_write` to the canonical `Read/Write/Edit/Bash/Glob/Grep/TodoWrite` and the existing renderers (Bash terminal view, edit diff, todo panel) light up unchanged. The permission popover uses the same canonical name.
+
+**Still pending (P4b): MCP.** `dsh-mcp-client` mounted on the agent scope would scope its tools correctly, but it reserves `serverName` **process-globally** (`activeServerNames` keyed on `ctx.root`), so the second session mounting `superone` throws. A per-session `serverName` is not an option — the `mcp__superone__*` prefix is a contract on our side. Plan: a SuperOne-owned scoped MCP registrar (MCP SDK client against `getSuperoneMcpHttpConfig(sessionId)`), or upstream keying that reservation on `scopeOf(ctx) ?? ctx.root`.
 
 ### D7 — Models & credentials stay SuperOne-owned
 

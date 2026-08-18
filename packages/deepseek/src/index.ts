@@ -1,4 +1,4 @@
-export { DeepseekEventMapper, type DeepseekMapperOptions } from './event-map'
+export { DeepseekEventMapper, displayToolName, type DeepseekMapperOptions } from './event-map'
 export {
   SuperoneCredentialProvider,
   createCredentialPlugin,
@@ -18,3 +18,10 @@ export {
   type DeepseekApprovalRequest,
   type DeepseekRuntimeOptions,
 } from './runtime'
+export {
+  mountToolPlane,
+  installPermissionGate,
+  type DeepseekToolPermissionRequest,
+  type DeepseekToolPlaneOptions,
+  type ToolApprovalDecision,
+} from './tool-plane'

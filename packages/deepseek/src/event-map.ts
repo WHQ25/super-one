@@ -81,7 +81,7 @@ export class DeepseekEventMapper {
       case 'tool/call': {
         this.emitDelta({
           type: 'tool_use',
-          toolName: event.data.name,
+          toolName: displayToolName(event.data.name),
           toolUseId: String(event.data.callId),
           input: event.data.arguments,
           status: 'complete',
@@ -175,4 +175,28 @@ export class DeepseekEventMapper {
         break
     }
   }
+}
+
+/**
+ * dsh's native tool names in the vocabulary the chat renderers already speak.
+ *
+ * The argument shapes are the same (`file_path`, `command`, `old_string`, …),
+ * so renaming the call is all it takes for dsh to reuse the Bash terminal view,
+ * the edit diff, and the todo panel instead of falling back to a generic row.
+ * Anything not in this table — MCP tools, dsh tools we do not mount — keeps its
+ * own name.
+ */
+const CANONICAL_TOOL_NAMES: Record<string, string> = {
+  read: 'Read',
+  read_image: 'Read',
+  write: 'Write',
+  edit: 'Edit',
+  bash: 'Bash',
+  glob: 'Glob',
+  grep: 'Grep',
+  todo_write: 'TodoWrite',
+}
+
+export function displayToolName(name: string): string {
+  return CANONICAL_TOOL_NAMES[name] ?? name
 }

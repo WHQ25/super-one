@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { DeepseekAgentHandle } from '@superone/deepseek'
+import { displayToolName, type DeepseekAgentHandle } from '@superone/deepseek'
 import type {
   AgentEvent,
   ContextUsageInfo,
@@ -103,6 +103,12 @@ export class DeepseekBackend implements SessionBackend {
       const agent = await runtime.createAgent({
         sessionId: providerSessionId,
         cwd: opts.cwd,
+        // File/shell/search/todo tools live on this session's agent scope, so a
+        // second session never inherits this cwd's executors.
+        toolPlane: {
+          cwd: opts.cwd,
+          requestPermission: (request) => this.askPermission(request),
+        },
         provider: config.provider ?? DEFAULT_PROVIDER,
         model: opts.model ?? config.model ?? DEFAULT_MODEL,
         ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
@@ -181,6 +187,8 @@ export class DeepseekBackend implements SessionBackend {
    */
   private askPermission(request: {
     toolName: string
+    /** Parsed tool arguments when the caller has them (the tool gate does). */
+    input?: Record<string, unknown>
     callId?: string
     reason?: string
     signal?: AbortSignal
@@ -191,9 +199,11 @@ export class DeepseekBackend implements SessionBackend {
     return new Promise((resolve) => {
       const permissionRequest: PermissionRequest = {
         requestId,
-        toolName: request.toolName,
+        // Same canonical name the chat row shows, so the popover and the tool
+        // block above it cannot disagree about what is being approved.
+        toolName: displayToolName(request.toolName),
         ...(request.callId ? { toolUseId: request.callId } : {}),
-        input: {},
+        input: request.input ?? {},
         ...(request.reason ? { decisionReason: request.reason } : {}),
         // dsh answers are one-shot; a durable grant needs its preset plane.
         allowAlwaysAllow: false,

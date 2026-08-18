@@ -6,6 +6,7 @@ import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekEventMapper } from './event-map'
+import { mountToolPlane, type DeepseekToolPlaneOptions } from './tool-plane'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
@@ -42,6 +43,12 @@ export interface CreateDeepseekAgentOptions {
   onEvent: (event: AgentEvent) => void
   /** Resume a persisted dsh session instead of creating a fresh one. */
   resume?: boolean
+  /**
+   * File/shell/search/todo tools for this session. Omitted, the agent runs
+   * chat-only — the tools are mounted on the agent's own scope, so they can
+   * neither be shared nor leak into another session.
+   */
+  toolPlane?: DeepseekToolPlaneOptions
 }
 
 export interface DeepseekAgentHandle {
@@ -205,12 +212,19 @@ export class DeepseekRuntime {
       model: options.model,
       ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
     }
+    // Creation-time composition: everything `setup` mounts exists before the
+    // first prompt assembly, and it unwinds with the agent.
+    const toolPlane = options.toolPlane
+    const setup = toolPlane
+      ? { setup: (agentCtx: Context) => mountToolPlane(agentCtx, toolPlane) }
+      : {}
     const handle = options.resume
-      ? await agents.resume({ resumeSessionId: SessionId(options.sessionId), agentOptions })
+      ? await agents.resume({ resumeSessionId: SessionId(options.sessionId), agentOptions, ...setup })
       : await agents.create({
           sessionId: SessionId(options.sessionId),
           meta: { cwd: options.cwd },
           agentOptions,
+          ...setup,
         })
 
     const record: AgentRecord = {

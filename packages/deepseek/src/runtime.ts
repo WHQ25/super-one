@@ -4,9 +4,11 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 // Side-effect type import: declaration-merges the approval waterfall we answer below.
 import type {} from '@deepseek-ai/dsh-user-approval'
+import { bindScopeParent, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekEventMapper } from './event-map'
 import { mountToolPlane, type DeepseekToolPlaneOptions } from './tool-plane'
+import { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
@@ -49,6 +51,12 @@ export interface CreateDeepseekAgentOptions {
    * neither be shared nor leak into another session.
    */
   toolPlane?: DeepseekToolPlaneOptions
+  /**
+   * Third-party MCP servers configured for this session's workspace. User-scope
+   * entries are shared across the app; project-scope entries reach only the
+   * agents chained to that project's scope.
+   */
+  mcpServers?: readonly DeepseekMcpServerSpec[]
 }
 
 export interface DeepseekAgentHandle {
@@ -89,11 +97,14 @@ interface AgentRecord {
 export class DeepseekRuntime {
   private records = new Map<string, AgentRecord>()
   private adapterFiber: { dispose: () => Promise<void> } | null = null
+  private readonly mcpServers: DeepseekMcpServers
 
   private constructor(
     private readonly root: Context,
     private readonly bridge: Context,
-  ) {}
+  ) {
+    this.mcpServers = new DeepseekMcpServers(bridge)
+  }
 
   /**
    * The bridge plugin's scoped context — the mount point for additional
@@ -212,11 +223,25 @@ export class DeepseekRuntime {
       model: options.model,
       ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
     }
+    // Servers are mounted before the agent exists: the scope it chains to has to
+    // already carry their registrations when the first prompt is assembled.
+    const mcp = options.mcpServers?.length
+      ? this.mcpServers.acquire(options.cwd, options.mcpServers)
+      : null
+
     // Creation-time composition: everything `setup` mounts exists before the
     // first prompt assembly, and it unwinds with the agent.
     const toolPlane = options.toolPlane
-    const setup = toolPlane
-      ? { setup: (agentCtx: Context) => mountToolPlane(agentCtx, toolPlane) }
+    const setup = toolPlane || mcp?.scopeKey
+      ? {
+          setup: async (agentCtx: Context) => {
+            const agentKey = mcp?.scopeKey ? scopeOf(agentCtx) : undefined
+            // Chaining, not mounting: the project's servers are registered once
+            // and inherit down to every agent bound under that scope.
+            if (agentKey && mcp?.scopeKey) bindScopeParent(agentKey, mcp.scopeKey)
+            if (toolPlane) await mountToolPlane(agentCtx, toolPlane)
+          },
+        }
       : {}
     const handle = options.resume
       ? await agents.resume({ resumeSessionId: SessionId(options.sessionId), agentOptions, ...setup })
@@ -232,7 +257,10 @@ export class DeepseekRuntime {
       mapper: new DeepseekEventMapper({ sessionId: options.sessionId, emit: options.onEvent }),
       onEvent: options.onEvent,
       route: {},
-      dispose: () => handle.dispose(),
+      dispose: async () => {
+        await handle.dispose()
+        mcp?.release()
+      },
     }
     this.records.set(options.sessionId, record)
 
@@ -268,6 +296,7 @@ export class DeepseekRuntime {
       this.records.delete(sessionId)
       await record.dispose()
     }
+    this.mcpServers.dispose()
     await (this.root as Context & { stop?: () => Promise<void> }).stop?.()
   }
 }

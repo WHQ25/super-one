@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate) and SuperOne's own tools as native dsh plugins landed; third-party MCP / resume / fork / subagents / permission presets still pending
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate) and SuperOne's own tools as native dsh plugins landed; resume / fork / subagents / permission presets still pending
 Last updated: 2026-08-19
 
 > Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
@@ -163,7 +163,18 @@ Two containment rules survive from the bridge: a broken surface is caught inside
 
 **Layer A admission.** `isStaticHostOwnedSuperoneToolQualified()` short-circuits the permission gate for SuperOne's own tools, so their executor (which runs the real product confirmation) owns the authorization. Dynamic mini-app / third-party tools sharing the prefix are deliberately not matched, and `computer_*` still prompts — the feature-gated set is not plumbed into the gate yet.
 
-**Third-party MCP servers (pending).** These are what `@deepseek-ai/dsh-mcp-client` is for, and it should be used as-is. One caveat to design around first: it reserves `serverName` **process-globally** (`activeServerNames` keyed on `ctx.root`, shared by every context in the app), so two sessions in different projects that each define a server named `github` collide. Unlike our own surface, third-party tool names are not a SuperOne contract, so a disambiguated `serverName` per config is acceptable there — or the upstream one-liner, keying that reservation on `scopeOf(ctx) ?? ctx.root`, which is worth filing either way.
+**Landed (P4c) — third-party MCP servers on the scope chain.** `packages/deepseek/src/mcp-servers.ts` mounts `@deepseek-ai/dsh-mcp-client` unmodified, once per distinct server config.
+
+The two models had to be reconciled first. **dsh's own model is deployment-level**: its Host runs one process for *many* workspaces (`ctx.workspaceRegistry`), MCP servers are composition entries in `cordis.yml` with no runtime add/remove API, and `serverName` is reserved process-globally on purpose — it is a deployment namespace. SuperOne inherits Claude Code's per-user *and* per-project `.mcp.json` instead. dsh's answer for "different agents, different tools" is the standing scope `agent-presets` uses, so that is what SuperOne's two config scopes map onto:
+
+| SuperOne config scope | dsh placement | Visible to |
+|---|---|---|
+| `user` (`~/.claude.json`) | tree global layer, mounted once | every session |
+| `project` (`.mcp.json`, project settings) | standing scope per cwd, `createScope` | agents that `bindScopeParent` to it |
+
+Each session's `setup` binds its agent's scope key to its project's scope, so those registrations inherit down the chain to it alone; the mount is refcounted and torn down with the last session in that cwd. Names stay plain (`mcp__repo__x`) — only a genuine clash, one name with two different configs across projects, costs the later one a numbered variant (`repo-2`), because the reservation is still process-wide. Config identity is the whole connection tuple, so the same server in two projects is one mount, not a clash.
+
+Not covered: the plugin's own reservation failure surfaces asynchronously at activation (our allocator and its `activeServerNames` can disagree if something else mounts a name), SSE servers are dropped (`dsh-mcp-client` speaks stdio and Streamable HTTP), and `getMcpServerStatus()` still returns `[]` — dsh exposes no per-server status seam. Upstream one-liner still worth filing: keying that reservation on `scopeOf(ctx) ?? ctx.root` would remove the rename case entirely.
 
 ### D7 — Models & credentials stay SuperOne-owned
 

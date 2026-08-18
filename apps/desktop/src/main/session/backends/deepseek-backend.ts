@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { displayToolName, type DeepseekAgentHandle } from '@superone/deepseek'
+import {
+  displayToolName,
+  type DeepseekAgentHandle,
+  type DeepseekMcpServerSpec,
+} from '@superone/deepseek'
 import type {
   AgentEvent,
   ContextUsageInfo,
@@ -12,6 +16,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
+import { listMcpConfigs } from '../../mcp-config-service'
 import { addToolsChangedListener } from '../../mcp/superone-mcp-server'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from '../../mcp/superone-mcp-tool-surface'
 import {
@@ -30,6 +35,49 @@ interface DeepseekConfig {
 
 function readConfig(config: unknown): DeepseekConfig {
   return (config && typeof config === 'object' ? config : {}) as DeepseekConfig
+}
+
+/**
+ * User- and project-scope MCP servers for one workspace, in the shape the dsh
+ * runtime mounts. SSE is dropped: `dsh-mcp-client` speaks stdio and Streamable
+ * HTTP only, and advertising a server we cannot reach would be worse than
+ * leaving it out.
+ */
+function readMcpServerSpecs(cwd: string): DeepseekMcpServerSpec[] {
+  const specs: DeepseekMcpServerSpec[] = []
+  for (const config of listMcpConfigs(cwd)) {
+    if (config.disabled) continue
+    const name = config.name?.trim()
+    if (!name) continue
+    if (config.type === 'stdio') {
+      const command = config.command?.trim()
+      if (!command) continue
+      specs.push({
+        name,
+        scope: config.scope === 'user' ? 'user' : 'project',
+        transport: 'stdio',
+        command,
+        args: config.args ?? [],
+        env: config.env ?? {},
+        cwd,
+      })
+      continue
+    }
+    if (config.type !== 'http') {
+      log.info('[deepseek] skipping MCP server %s: %s transport is not supported', name, config.type)
+      continue
+    }
+    const url = config.url?.trim()
+    if (!url) continue
+    specs.push({
+      name,
+      scope: config.scope === 'user' ? 'user' : 'project',
+      transport: 'streamable-http',
+      url,
+      headers: config.headers ?? {},
+    })
+  }
+  return specs
 }
 
 interface PendingApproval {
@@ -135,6 +183,7 @@ export class DeepseekBackend implements SessionBackend {
         model: opts.model ?? config.model ?? DEFAULT_MODEL,
         ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
         resume: Boolean(opts.providerSessionId),
+        mcpServers: readMcpServerSpecs(opts.cwd),
         onEvent: (event) => this.emit(event),
       })
 

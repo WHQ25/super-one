@@ -32,3 +32,4 @@ export {
   type SuperoneToolResult,
   type SuperoneToolSurface,
 } from './tool-surface'
+export { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'

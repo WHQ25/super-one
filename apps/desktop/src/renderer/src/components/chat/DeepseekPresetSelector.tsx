@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Boxes, Check, ChevronDown } from 'lucide-react'
+import { Boxes, Braces, Check, ChevronDown, Feather, Layers, Puzzle } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { DeepseekPresetInfo } from '@superone/shared/agent-types'
 import {
   DropdownMenu,
@@ -10,6 +11,26 @@ import {
 } from '@superone/ui/components/ui/dropdown-menu'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
+
+/**
+ * A mark per shipped preset, keyed by id rather than by name or order.
+ *
+ * The roster is discovered from directories, so ids are the only stable handle:
+ * `preset.yml` names are translated prose and `order` is authoring metadata a
+ * locally added preset can shift. Anything not shipped here — a preset the user
+ * authored — keeps the generic mark instead of borrowing a meaning it does not
+ * have.
+ */
+const PRESET_ICONS: Record<string, LucideIcon> = {
+  standard: Layers,
+  code: Braces,
+  minimal: Feather,
+  cordis: Puzzle,
+}
+
+function presetIcon(id: string | null): LucideIcon {
+  return (id !== null ? PRESET_ICONS[id] : undefined) ?? Boxes
+}
 
 /**
  * The dsh agent-preset picker — the harness's own "mode" vocabulary.
@@ -45,6 +66,7 @@ export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?
   // its own log, so the store's pick may name a preset this session never ran.
   const selectedId = current ?? draft ?? presets[0]?.id ?? null
   const selected = presets.find((preset) => preset.id === selectedId)
+  const SelectedIcon = presetIcon(selectedId)
 
   const choose = useCallback(async (preset: DeepseekPresetInfo) => {
     if (preset.id === selectedId) return
@@ -64,34 +86,44 @@ export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?
       <DropdownMenuTrigger
         disabled={!switchable}
         className={cn(
-          'flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground',
+          'group flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground',
           switchable ? 'hover:bg-muted hover:text-foreground' : 'cursor-default',
         )}
         title={switchable ? undefined : t('chatDshPreset.locked')}
       >
-        <Boxes className="size-3.5 shrink-0" />
+        <SelectedIcon className="size-3.5 shrink-0" />
         <span className="truncate">{selected?.name ?? t('chatDshPreset.label')}</span>
-        {switchable && <ChevronDown className="size-3 shrink-0" />}
+        {/* Radix stamps `data-state` on the trigger, so the caret follows the
+            menu without this component tracking its open state. */}
+        {switchable && (
+          <ChevronDown className="size-3 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-w-sm" onCloseAutoFocus={onCloseAutoFocus}>
-        {presets.map((preset) => (
-          <DropdownMenuItem
-            key={preset.id}
-            disabled={preset.broken !== null}
-            onSelect={() => { void choose(preset) }}
-            className="flex flex-col items-start gap-0.5 py-2"
-          >
-            <span className="flex w-full items-center gap-2 text-xs font-medium">
-              {preset.name}
-              {preset.id === selectedId && <Check className="ml-auto size-3.5 shrink-0" />}
-            </span>
-            {/* A broken preset stays listed with its reason: hiding it would
-                leave its directory blocking the id with nothing to see. */}
-            <span className={cn('text-2xs', preset.broken !== null ? 'text-destructive' : 'text-muted-foreground')}>
-              {preset.broken ?? preset.description}
-            </span>
-          </DropdownMenuItem>
-        ))}
+        {presets.map((preset) => {
+          const Icon = presetIcon(preset.id)
+          return (
+            <DropdownMenuItem
+              key={preset.id}
+              disabled={preset.broken !== null}
+              onSelect={() => { void choose(preset) }}
+              className="flex items-start gap-2 py-2"
+            >
+              <Icon className="mt-0.5 size-3.5 shrink-0" />
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="flex w-full items-center gap-2 text-xs font-medium">
+                  {preset.name}
+                  {preset.id === selectedId && <Check className="ml-auto size-3.5 shrink-0" />}
+                </span>
+                {/* A broken preset stays listed with its reason: hiding it would
+                    leave its directory blocking the id with nothing to see. */}
+                <span className={cn('text-2xs', preset.broken !== null ? 'text-destructive' : 'text-muted-foreground')}>
+                  {preset.broken ?? preset.description}
+                </span>
+              </div>
+            </DropdownMenuItem>
+          )
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   )

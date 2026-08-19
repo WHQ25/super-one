@@ -52,3 +52,23 @@ export function formatJson(text: string): string {
     return text
   }
 }
+
+/**
+ * Format a duration range with a single shared unit.
+ *
+ * `4–10s` rather than `4.00s–10.0s`: the two ends of one span are read
+ * together, so repeating the unit and padding both to the same precision makes
+ * the pair harder to compare, not easier. The larger end picks the unit.
+ * @param from - the range start in ms.
+ * @param to - the range end in ms.
+ * @returns the display string.
+ */
+export function formatDurationRange(from: number, to: number): string {
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return '—'
+  const trim = (value: number, digits: number) =>
+    value.toFixed(digits).replace(/\.0+$/, '')
+
+  if (to < 1_000) return `${Math.round(from)}–${Math.round(to)}ms`
+  if (to < 60_000) return `${trim(from / 1_000, 1)}–${trim(to / 1_000, 1)}s`
+  return `${trim(from / 60_000, 1)}–${trim(to / 60_000, 1)}m`
+}

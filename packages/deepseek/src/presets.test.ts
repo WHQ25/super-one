@@ -78,7 +78,7 @@ async function catalogFor(runtime: DeepseekRuntime, preset: string): Promise<str
   await new Promise((resolve) => setTimeout(resolve, 20))
   await agent.whenIdle()
 
-  const trajectory = await runtime.trajectory(sessionId)
+  const trajectory = await runtime.trajectorySnapshot(sessionId)
   return (trajectory?.headers[0]?.tools ?? []).map((tool) => tool.name).sort()
 }
 
@@ -135,7 +135,7 @@ describe('agent preset session identity', () => {
     disposers.push(() => resumed.dispose())
 
     expect(second.sessionPreset(sessionId)).toBe('minimal')
-    const trajectory = await second.trajectory(sessionId)
+    const trajectory = await second.trajectorySnapshot(sessionId)
     const catalog = (trajectory?.headers.at(-1)?.tools ?? []).map((tool) => tool.name).sort()
     expect(catalog).toEqual(['bash', 'str_replace_editor'])
   })

@@ -72,7 +72,7 @@ async function oneTurn() {
 describe('trajectory over a real dsh session log', () => {
   it('projects the header, the prompt, and the reply of one turn', async () => {
     const { runtime, sessionId } = await oneTurn()
-    const trajectory = await runtime.trajectory(sessionId)
+    const trajectory = await runtime.trajectorySnapshot(sessionId)
     expect(trajectory).not.toBeNull()
     if (trajectory === null) return
 
@@ -100,7 +100,7 @@ describe('trajectory over a real dsh session log', () => {
 
   it('measures a real TTFT strictly inside the step duration', async () => {
     const { runtime, sessionId } = await oneTurn()
-    const trajectory = await runtime.trajectory(sessionId)
+    const trajectory = await runtime.trajectorySnapshot(sessionId)
     expect(trajectory).not.toBeNull()
     if (trajectory === null) return
 
@@ -115,7 +115,7 @@ describe('trajectory over a real dsh session log', () => {
 
   it('records the route and closes the turn as completed', async () => {
     const { runtime, sessionId } = await oneTurn()
-    const trajectory = await runtime.trajectory(sessionId)
+    const trajectory = await runtime.trajectorySnapshot(sessionId)
     expect(trajectory).not.toBeNull()
     if (trajectory === null) return
 
@@ -135,14 +135,14 @@ describe('trajectory over a real dsh session log', () => {
 
   it('projects a disposed session identically from its durable transcript', async () => {
     const { runtime, sessionId } = await oneTurn()
-    const fromMemory = await runtime.trajectory(sessionId)
+    const fromMemory = await runtime.trajectorySnapshot(sessionId)
     expect(fromMemory).not.toBeNull()
     if (fromMemory === null) return
 
     // Dropping the agent releases the live session; the next read has to come
     // off disk, and the two projections have to agree on everything but liveness.
     await disposers.pop()?.()
-    const fromDisk = await runtime.trajectory(sessionId)
+    const fromDisk = await runtime.trajectorySnapshot(sessionId)
     expect(fromDisk).not.toBeNull()
     if (fromDisk === null) return
 
@@ -159,6 +159,6 @@ describe('trajectory over a real dsh session log', () => {
     // A SuperOne session exists the moment the user opens it; its dsh session
     // does not exist until a turn runs. Reporting that as a read failure told
     // every user opening a fresh session that something had broken.
-    expect(await runtime.trajectory(randomUUID())).toBeNull()
+    expect(await runtime.trajectorySnapshot(randomUUID())).toBeNull()
   })
 })

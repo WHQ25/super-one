@@ -1,36 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { projectTrajectory, RECORD_WINDOW } from './project'
-
-/**
- * Build a seq-contiguous log the way dsh writes one: seq is the array index and
- * time advances by a fixed tick unless the case pins an exact instant.
- */
-function log(entries: Array<[SessionEvent['type'], unknown, number?]>): SessionEvent[] {
-  return entries.map(([type, data, time], index) => ({
-    type,
-    seq: index,
-    time: time ?? 1_000 + index * 10,
-    data,
-  })) as SessionEvent[]
-}
-
-/** A minimal assistant message carrying `text` from one provider route. */
-function assistantMessage(text: string) {
-  return {
-    id: 'msg',
-    role: 'assistant',
-    content: [{ type: 'text', text }],
-    source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' },
-  }
-}
-
-/** A header with one tool, so schema lookup has something to resolve. */
-const HEADER = {
-  config: { provider: 'deepseek', model: 'deepseek-chat', temperature: 0.2 },
-  system: 'you are helpful',
-  tools: [{ name: 'read', description: 'read a file', parameters: { type: 'object' } }],
-}
+import { HEADER, assistantMessage, log } from './test-log'
 
 describe('projectTrajectory', () => {
   it('numbers requests across generation and compaction in one chronological space', () => {
@@ -219,7 +190,7 @@ describe('projectTrajectory', () => {
     expect(projection.turns[0]).toMatchObject({ turn: 0, outcome: 'aborted', steps: 2, durationMs: 8_000 })
   })
 
-  it('keeps the tail when the window bound is reached and reports what it dropped', () => {
+  it('keeps the tail when the window bound is reached and states where it starts', () => {
     const entries: Array<[SessionEvent['type'], unknown]> = []
     for (let i = 0; i < RECORD_WINDOW + 5; i += 1) {
       entries.push(['user/message', {
@@ -231,7 +202,8 @@ describe('projectTrajectory', () => {
     }
     const projection = projectTrajectory('s1', log(entries), false)
 
-    expect(projection.dropped).toBe(5)
+    expect(projection.total).toBe(RECORD_WINDOW + 5)
+    expect(projection.firstIndex).toBe(6)
     expect(projection.records).toHaveLength(RECORD_WINDOW)
     // Ledger positions stay absolute, so a dropped prefix does not renumber
     // the records a user is looking at.

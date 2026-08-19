@@ -42,6 +42,16 @@ export interface TrajectoryPayload {
   truncatedChars?: number
 }
 
+/** A durable image reference, resolved to bytes only when inspected. */
+export interface TrajectoryImageRef {
+  attachmentId: string
+  mediaType: string
+  width: number
+  height: number
+  bytes: number
+  name?: string
+}
+
 /** One source content block preserved in model order for the inspector. */
 export interface TrajectoryBlock {
   type: string
@@ -50,6 +60,12 @@ export interface TrajectoryBlock {
   callId?: string
   /** `tool-call` blocks only. */
   toolName?: string
+  /**
+   * `image` blocks only. dsh logs a content-addressed reference rather than
+   * bytes, so the inspector fetches the raster on demand instead of the
+   * projection carrying every image of a long session across the wire.
+   */
+  image?: TrajectoryImageRef
 }
 
 /** A call configuration, structurally mirroring dsh's `LlmCallConfig`. */
@@ -247,13 +263,69 @@ export interface TrajectoryProjection {
   records: TrajectoryRecord[]
   requests: TrajectoryRequest[]
   turns: TrajectoryTurn[]
-  /** Cumulative usage over the projected window. */
+  /** Cumulative usage over the whole fold, not just the loaded window. */
   totals: TrajectoryUsage
-  /** Records dropped from the head when the window bound was reached. */
-  dropped: number
+  /**
+   * The `index` of `records[0]`, so a loaded window states where it sits in the
+   * fold. `1` means the window reaches the start of the session; anything
+   * higher means an earlier page can still be requested.
+   */
+  firstIndex: number
+  /** How many records the fold holds, loaded window included. */
+  total: number
+  /** How many source events the fold has consumed — the delta cursor. */
+  cursor: number
   /** Whether the source session is still live. */
   live: boolean
 }
+
+/**
+ * What changed in the fold since a caller's cursor.
+ *
+ * A trajectory grows by appending records, but it also *revises* them: a
+ * `tool/result` completes a call opened thousands of events earlier, an
+ * approval decision lands after the user answers. So a delta carries both, and
+ * every entry is a whole record addressed by its stable `index` — the consumer
+ * merges by position and never has to replay a patch.
+ */
+export interface TrajectoryDelta {
+  /** The cursor to send on the next poll. */
+  cursor: number
+  /**
+   * Records created or revised since the cursor, in ledger order. Whole
+   * records, so a consumer merges by `index` without replaying a patch, and a
+   * record revised twice between polls arrives once, in its final state.
+   */
+  records: TrajectoryRecord[]
+  /** Header snapshots created since the cursor, in `index` order. */
+  headers: TrajectoryHeader[]
+  /** Requests created or revised since the cursor, addressed by `ordinal`. */
+  requests: TrajectoryRequest[]
+  /** Turns created or revised since the cursor, addressed by `turn`. */
+  turns: TrajectoryTurn[]
+  totals: TrajectoryUsage
+  total: number
+  live: boolean
+}
+
+/** One page of records older than the caller's loaded window. */
+export interface TrajectoryPage {
+  records: TrajectoryRecord[]
+  /** The `index` of `records[0]`, or the caller's own first index when empty. */
+  firstIndex: number
+}
+
+/**
+ * What the inspector asks for when a bounded payload is not enough.
+ *
+ * Text refs name a record field rather than carrying an offset: the fold owns
+ * the untruncated text, and a field name survives a re-fold while a byte range
+ * would not.
+ */
+export type TrajectoryPayloadRef =
+  | { kind: 'text'; recordId: string; field: string }
+  /** The whole reference: dsh verifies stored bytes against it on read. */
+  | { kind: 'image'; image: TrajectoryImageRef }
 
 /**
  * What the trajectory IPC answers with.
@@ -266,8 +338,28 @@ export interface TrajectoryProjection {
  * A genuine failure is reported rather than thrown across the boundary: the
  * panel is a diagnostic surface, and "the log is there and unreadable, here is
  * why" is more useful than an empty ledger.
+ *
+ * A caller that sends no cursor gets a `full` window; one that sends the cursor
+ * it last received gets a `delta`, unless the fold was rebuilt underneath it
+ * (a live session reopened, a re-fold after restart), which answers `full`
+ * again so the consumer never merges onto a foreign fold.
  */
 export type TrajectoryResult =
-  | { ok: true; trajectory: TrajectoryProjection }
+  | { ok: true; kind: 'full'; trajectory: TrajectoryProjection }
+  | { ok: true; kind: 'delta'; delta: TrajectoryDelta }
+  | { ok: false; reason: 'absent' }
+  | { ok: false; reason: 'error'; error: string }
+
+/** What the backward-paging IPC answers with. */
+export type TrajectoryPageResult =
+  | { ok: true; page: TrajectoryPage }
+  | { ok: false; reason: 'absent' }
+  | { ok: false; reason: 'error'; error: string }
+
+/** What the on-demand payload IPC answers with. */
+export type TrajectoryPayloadResult =
+  | { ok: true; kind: 'text'; text: string }
+  /** A `data:` URL, so the inspector renders the raster without a file route. */
+  | { ok: true; kind: 'image'; dataUrl: string }
   | { ok: false; reason: 'absent' }
   | { ok: false; reason: 'error'; error: string }

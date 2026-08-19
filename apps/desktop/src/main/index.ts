@@ -79,6 +79,9 @@ import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
+import { deepseekTrajectorySource } from './deepseek/trajectory-source'
+import { clearTrajectoryWatches, setTrajectoryWatch } from './deepseek/trajectory-watch'
+import type { TrajectoryPayloadRef } from '@superone/shared/trajectory-types'
 import {
   getSessionCollaborationRunConfig,
   getSessionCollaborationSystemPrompt,
@@ -3343,6 +3346,24 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(
+    AgentIpcChannels.SAVE_TEXT_AS,
+    async (_event, text: string, suggestedName: string) => {
+      try {
+        const ext = extname(suggestedName).toLowerCase().replace(/^\./, '') || 'txt'
+        const result = await dialog.showSaveDialog(mainWindow ?? undefined!, {
+          defaultPath: suggestedName,
+          filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+        })
+        if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+        await writeFile(result.filePath, text, 'utf8')
+        return { ok: true, savedPath: result.filePath }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
   ipcMain.handle(AgentIpcChannels.OPEN_EXTERNAL_LINK, (_event, url: string) => {
     if (!/^https?:\/\//i.test(url)) {
       throw new Error(`Blocked: only http/https URLs are allowed, got: ${url}`)
@@ -4164,29 +4185,73 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.DEEPSEEK_TRAJECTORY, async (_event, sessionId: string) => {
-    // The fold runs here, not in the renderer: a real session's log is mostly
-    // `assistant/chunk` frames, and none of them survive the projection.
-    try {
-      // Callers address a SuperOne session; dsh keys its log — live map AND
-      // on-disk transcript — by the harness-side id the backend minted for it.
-      // Resolved from the DB rather than from the renderer's
-      // `_providerSessionId`, which only the current run's event stream fills:
-      // a session reopened after a restart has none until its next turn, and
-      // the ledger's whole point is reading a session that already ran.
-      const dshSessionId = getSessionRecord(sessionId)?.providerSessionId ?? sessionId
-      const { getDeepseekRuntime } = await import('./deepseek/deepseek-runtime-host')
-      const runtime = await getDeepseekRuntime()
-      const trajectory = await runtime.trajectory(dshSessionId)
-      // A session that has never run a turn has no dsh log — that is a state,
-      // not a failure, and the panel says so in its own words.
-      return trajectory === null ? { ok: false, reason: 'absent' } : { ok: true, trajectory }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      log.warn('[DEEPSEEK_TRAJECTORY] %s failed: %s', sessionId, message)
-      return { ok: false, reason: 'error', error: message }
-    }
-  })
+  ipcMain.handle(
+    AgentIpcChannels.DEEPSEEK_TRAJECTORY,
+    async (_event, sessionId: string, cursor?: number) => {
+      // The fold runs here, not in the renderer: a real session's log is mostly
+      // `assistant/chunk` frames, and none of them survive the projection. It is
+      // also held open across calls, so a streaming turn ships what changed
+      // rather than the whole history on every poll.
+      try {
+        const { runtime, dshSessionId } = await deepseekTrajectorySource(sessionId)
+        const read = await runtime.trajectory(dshSessionId, cursor)
+        // A session that has never run a turn has no dsh log — that is a state,
+        // not a failure, and the panel says so in its own words.
+        if (read === null) return { ok: false, reason: 'absent' }
+        return read.kind === 'full'
+          ? { ok: true, kind: 'full', trajectory: read.trajectory }
+          : { ok: true, kind: 'delta', delta: read.delta }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        log.warn('[DEEPSEEK_TRAJECTORY] %s failed: %s', sessionId, message)
+        return { ok: false, reason: 'error', error: message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.DEEPSEEK_TRAJECTORY_WATCH,
+    async (event, sessionId: string, watching: boolean) => {
+      await setTrajectoryWatch(event.sender, sessionId, watching)
+      return { ok: true }
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.DEEPSEEK_TRAJECTORY_PAGE,
+    async (_event, sessionId: string, before: number, count: number) => {
+      try {
+        const { runtime, dshSessionId } = await deepseekTrajectorySource(sessionId)
+        const page = await runtime.trajectoryPage(dshSessionId, before, count)
+        return page === null ? { ok: false, reason: 'absent' } : { ok: true, page }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        log.warn('[DEEPSEEK_TRAJECTORY_PAGE] %s failed: %s', sessionId, message)
+        return { ok: false, reason: 'error', error: message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.DEEPSEEK_TRAJECTORY_PAYLOAD,
+    async (_event, sessionId: string, ref: TrajectoryPayloadRef) => {
+      try {
+        const { runtime, dshSessionId } = await deepseekTrajectorySource(sessionId)
+        if (ref.kind === 'image') {
+          const image = await runtime.trajectoryImage(ref.image)
+          if (image === null) return { ok: false, reason: 'absent' }
+          const base64 = Buffer.from(image.data).toString('base64')
+          return { ok: true, kind: 'image', dataUrl: `data:${image.mediaType};base64,${base64}` }
+        }
+        const text = await runtime.trajectoryText(dshSessionId, ref.recordId, ref.field)
+        return text === null ? { ok: false, reason: 'absent' } : { ok: true, kind: 'text', text }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        log.warn('[DEEPSEEK_TRAJECTORY_PAYLOAD] %s failed: %s', sessionId, message)
+        return { ok: false, reason: 'error', error: message }
+      }
+    },
+  )
 
   ipcMain.handle(AgentIpcChannels.GET_CURSOR_AUTH_STATUS, async () => {
     try {
@@ -5182,8 +5247,11 @@ function performQuit(): void {
     disposeAgentSessions(),
     closeAllOpenCodeServers(),
     // Unwinds the embedded dsh Cordis tree so JSONL persistence flushes;
-    // resolves immediately when no DeepSeek session ever booted it.
-    import('./deepseek/deepseek-runtime-host').then((host) => host.disposeDeepseekRuntime()),
+    // resolves immediately when no DeepSeek session ever booted it. The
+    // trajectory watches hold a listener on that runtime, so they go first.
+    Promise.resolve(clearTrajectoryWatches())
+      .then(() => import('./deepseek/deepseek-runtime-host'))
+      .then((host) => host.disposeDeepseekRuntime()),
   ]).finally(() => {
     codexService.dispose()
     disposeGlobalWarmupManager()

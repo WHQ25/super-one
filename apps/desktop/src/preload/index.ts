@@ -739,8 +739,23 @@ const appAPI = {
   connectDeepseek: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_DEEPSEEK),
 
-  readDeepseekTrajectory: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_TRAJECTORY, sessionId),
+  readDeepseekTrajectory: (sessionId: string, cursor?: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_TRAJECTORY, sessionId, cursor),
+
+  readDeepseekTrajectoryPage: (sessionId: string, before: number, count: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_TRAJECTORY_PAGE, sessionId, before, count),
+
+  readDeepseekTrajectoryPayload: (sessionId: string, ref: unknown) =>
+    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_TRAJECTORY_PAYLOAD, sessionId, ref),
+
+  watchDeepseekTrajectory: (sessionId: string, watching: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_TRAJECTORY_WATCH, sessionId, watching),
+
+  onDeepseekTrajectoryChanged: (callback: (sessionId: string) => void) => {
+    const handler = (_event: unknown, sessionId: string) => callback(sessionId)
+    ipcRenderer.on(AgentIpcChannels.DEEPSEEK_TRAJECTORY_CHANGED, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.DEEPSEEK_TRAJECTORY_CHANGED, handler)
+  },
 
   listDeepseekPresets: (sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_PRESETS, sessionId),
@@ -1479,6 +1494,9 @@ const appAPI = {
       args: Array<{ name: string; description?: string; required?: boolean }>
       exampleJson?: string
     }>>,
+  saveTextAs: (text: string, suggestedName: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SAVE_TEXT_AS, text, suggestedName),
+
   saveFileAs: (sourcePath: string, defaultName: string, defaultDir?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE_AS, sourcePath, defaultName, defaultDir),
   showInFolder: (folderPath: string, relPath: string) =>

@@ -76,6 +76,11 @@ export function blocksTextOfType(blocks: readonly ContentBlock[], type: 'text' |
 
 /**
  * Preserve the source blocks in model order for the inspector's hierarchy view.
+ *
+ * An image block carries dsh's durable reference rather than its bytes: dsh
+ * logs a content-addressed id, and resolving every image at fold time would put
+ * a session's whole raster history into one IPC payload for the sake of a view
+ * the user may never open.
  * @param blocks - the source blocks.
  * @returns the projected blocks, each bounded independently.
  */
@@ -87,6 +92,10 @@ export function projectBlocks(blocks: readonly ContentBlock[]): TrajectoryBlock[
       projected.toolName = block.name
     }
     if (block.type === 'tool-result') projected.callId = block.toolCallId
+    if (block.type === 'image') {
+      const { attachmentId, mediaType, width, height, bytes, name } = block.attachment
+      projected.image = { attachmentId: String(attachmentId), mediaType, width, height, bytes, name }
+    }
     return projected
   })
 }

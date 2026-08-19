@@ -77,7 +77,23 @@ interface AppAPI {
   connectDeepseek(): Promise<import('@superone/shared/agent-types').DeepseekResources>
   readDeepseekTrajectory(
     sessionId: string,
+    cursor?: number,
   ): Promise<import('@superone/shared/trajectory-types').TrajectoryResult>
+  readDeepseekTrajectoryPage(
+    sessionId: string,
+    before: number,
+    count: number,
+  ): Promise<import('@superone/shared/trajectory-types').TrajectoryPageResult>
+  saveTextAs(
+    text: string,
+    suggestedName: string,
+  ): Promise<{ ok: boolean; savedPath?: string; canceled?: boolean; error?: string }>
+  readDeepseekTrajectoryPayload(
+    sessionId: string,
+    ref: import('@superone/shared/trajectory-types').TrajectoryPayloadRef,
+  ): Promise<import('@superone/shared/trajectory-types').TrajectoryPayloadResult>
+  watchDeepseekTrajectory(sessionId: string, watching: boolean): Promise<{ ok: boolean }>
+  onDeepseekTrajectoryChanged(callback: (sessionId: string) => void): () => void
   listDeepseekPresets(
     sessionId?: string,
   ): Promise<import('@superone/shared/agent-types').DeepseekPresetRoster>

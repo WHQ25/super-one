@@ -97,7 +97,9 @@ function projection(records: TrajectoryRecord[]): TrajectoryProjection {
       { turn: 2, startedAt: 2_000, durationMs: 100, outcome: 'completed', steps: 1, toolCalls: 0 },
     ],
     totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
-    dropped: 0,
+    firstIndex: 1,
+    total: records.length,
+    cursor: records.length,
     live: false,
   }
 }
@@ -118,6 +120,7 @@ describe('buildLedgerRows', () => {
     const rows = buildLedgerRows({
       projection: projection(RECORDS),
       query: '',
+      visibleIds: null,
       foldedTurns: NONE,
       foldedSteps: NONE,
     })
@@ -133,6 +136,7 @@ describe('buildLedgerRows', () => {
     const rows = buildLedgerRows({
       projection: projection(RECORDS),
       query: '',
+      visibleIds: null,
       foldedTurns: new Set([1]),
       foldedSteps: NONE,
     })
@@ -148,6 +152,7 @@ describe('buildLedgerRows', () => {
     const rows = buildLedgerRows({
       projection: projection(RECORDS),
       query: '',
+      visibleIds: null,
       foldedTurns: NONE,
       foldedSteps: new Set([stepKey(1, 1)]),
     })
@@ -161,6 +166,7 @@ describe('buildLedgerRows', () => {
     const rows = buildLedgerRows({
       projection: projection(RECORDS),
       query: 'read',
+      visibleIds: null,
       // Both fold sets would hide the matching tool record; a search that
       // silently returns nothing would be worse than one that expands.
       foldedTurns: new Set([1, 2]),
@@ -170,10 +176,68 @@ describe('buildLedgerRows', () => {
     expect(rows.filter((row) => row.kind === 'record').map((row) => row.record.id)).toEqual(['tool:3'])
   })
 
+  it('opens a boundary row where each model call begins', () => {
+    const window = projection(RECORDS)
+    window.requests = [
+      { ordinal: 1, seq: 2, purpose: 'generation', turn: 1, step: 1, startedAt: 1_000, durationMs: 900, ttftMs: 200, usage: null, route: null, header: null },
+    ]
+    const rows = buildLedgerRows({
+      projection: window,
+      query: '',
+      visibleIds: null,
+      foldedTurns: NONE,
+      foldedSteps: NONE,
+    })
+
+    // The boundary precedes the first record that belongs to the call, so a
+    // user reads "this call, then what it produced".
+    const positions = rows.map((row) => row.kind)
+    expect(positions).toContain('request')
+    expect(positions.indexOf('request')).toBeLessThan(
+      rows.findIndex((row) => row.kind === 'record' && row.record.kind === 'message'),
+    )
+  })
+
+  it('offers an interactive head row only while earlier history exists', () => {
+    const reachesStart = buildLedgerRows({
+      projection: projection(RECORDS),
+      query: '',
+      visibleIds: null,
+      foldedTurns: NONE,
+      foldedSteps: NONE,
+    })
+    expect(reachesStart.some((row) => row.kind === 'earlier')).toBe(false)
+
+    const partial = projection(RECORDS)
+    partial.firstIndex = 40
+    partial.total = 45
+    const rows = buildLedgerRows({
+      projection: partial,
+      query: '',
+      visibleIds: null,
+      foldedTurns: NONE,
+      foldedSteps: NONE,
+    })
+    expect(rows[0]?.kind).toBe('earlier')
+  })
+
+  it('narrows the ledger to the ids a timeline selection admits', () => {
+    const rows = buildLedgerRows({
+      projection: projection(RECORDS),
+      query: '',
+      visibleIds: new Set(['tool:3']),
+      foldedTurns: NONE,
+      foldedSteps: NONE,
+    })
+
+    expect(rows.filter((row) => row.kind === 'record').map((row) => row.record.id)).toEqual(['tool:3'])
+  })
+
   it('matches a tool by name and a message by model without reading payloads', () => {
     const byModel = buildLedgerRows({
       projection: projection(RECORDS),
       query: 'deepseek-chat',
+      visibleIds: null,
       foldedTurns: NONE,
       foldedSteps: NONE,
     })
@@ -182,6 +246,7 @@ describe('buildLedgerRows', () => {
     const byNothing = buildLedgerRows({
       projection: projection(RECORDS),
       query: 'no such thing',
+      visibleIds: null,
       foldedTurns: NONE,
       foldedSteps: NONE,
     })

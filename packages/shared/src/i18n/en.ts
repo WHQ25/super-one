@@ -23,7 +23,19 @@ export type Messages = {
     turn: string
     turnCounts: string
     betweenTurns: string
-    droppedPrefix: string
+    loadEarlier: string
+    recordRange: string
+    timeline: string
+    resetZoom: string
+    segmentAria: string
+    segment: { time: string; turn: string; request: string }
+    segmentCount: { turn: string; request: string }
+    segmentRange: { turn: string; request: string }
+    decode: string
+    clearRange: string
+    export: string
+    exportJson: string
+    exportMarkdown: string
     request: string
     requestCount: string
     tokenTotals: string
@@ -98,6 +110,19 @@ export type Messages = {
       route: string
       contextWindow: string
       preset: string
+      images: string
+      options: string
+      effort: string
+      temperature: string
+      maxTokens: string
+      stop: string
+      adapterDefault: string
+      noHeader: string
+      loadFull: string
+      fullUnavailable: string
+      imageUnavailable: string
+      jumpToResult: string
+      inspectRequest: string
     }
   }
   common: {
@@ -3026,7 +3051,19 @@ export const en: Messages = {
     turn: 'Turn {{turn}}',
     turnCounts: '{{steps}} steps · {{calls}} calls',
     betweenTurns: 'Between Turns',
-    droppedPrefix: '{{count}} earlier records are outside the loaded window.',
+    loadEarlier: 'Load earlier records',
+    recordRange: '{{first}}–{{last}} of {{total}}',
+    timeline: 'Timeline',
+    resetZoom: 'Show the whole session',
+    segmentAria: 'Timeline segmentation',
+    segment: { time: 'Time', turn: 'Turns', request: 'Calls' },
+    segmentCount: { turn: '{{count}} turns', request: '{{count}} calls' },
+    segmentRange: { turn: '{{range}} turns / {{total}} turns', request: '{{range}} calls / {{total}} calls' },
+    decode: 'decode',
+    clearRange: 'Clear range selection',
+    export: 'Export',
+    exportJson: 'Export as JSON',
+    exportMarkdown: 'Export as Markdown',
     request: 'Request #{{ordinal}}',
     requestCount: '{{count}} requests',
     tokenTotals: 'in {{input}} · out {{output}}',
@@ -3101,6 +3138,19 @@ export const en: Messages = {
       route: 'Route',
       contextWindow: 'Context Window',
       preset: 'Preset',
+      images: 'Images',
+      options: 'Options',
+      effort: 'Reasoning Effort',
+      temperature: 'Temperature',
+      maxTokens: 'Max Tokens',
+      stop: 'Stop Sequences',
+      adapterDefault: '(adapter default)',
+      noHeader: 'This call ran before the first prompt snapshot.',
+      loadFull: 'Load full content',
+      fullUnavailable: 'The full text is no longer retained.',
+      imageUnavailable: 'Image unavailable',
+      jumpToResult: 'Go to record #{{index}}',
+      inspectRequest: 'Inspect request #{{ordinal}}',
     },
   },
   common: {

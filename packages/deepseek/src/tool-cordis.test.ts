@@ -76,7 +76,7 @@ async function catalogFor(preset: string): Promise<string[]> {
   await new Promise((resolve) => setTimeout(resolve, 20))
   await agent.whenIdle()
 
-  const trajectory = await runtime.trajectory(sessionId)
+  const trajectory = await runtime.trajectorySnapshot(sessionId)
   return (trajectory?.headers[0]?.tools ?? []).map((tool) => tool.name)
 }
 

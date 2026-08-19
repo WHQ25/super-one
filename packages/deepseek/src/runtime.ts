@@ -17,8 +17,13 @@ import {
 import { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
 import { DeepseekPlugins, type MountReport } from './plugin-host/mount'
 import type { DshPermissionPreset } from './permission-presets'
-import { projectTrajectory } from './trajectory/project'
-import type { TrajectoryProjection } from '@superone/shared/trajectory-types'
+import { TrajectoryFold } from './trajectory/fold'
+import type {
+  TrajectoryDelta,
+  TrajectoryImageRef,
+  TrajectoryPage,
+  TrajectoryProjection,
+} from '@superone/shared/trajectory-types'
 import {
   presetRoster,
   sessionIsBlank,
@@ -189,11 +194,23 @@ const TASK_PROGRESS_EVENTS = new Set(['tool/call', 'tool/result', 'assistant/mes
  * `approval/request`) — the production descendant of the validated spike
  * (docs/draft/deepseek-harness-spike.mjs).
  */
+/**
+ * How many session folds stay resident.
+ *
+ * Small on purpose: a fold retains its session's records, and the panel is
+ * an inspection surface a user points at one session at a time.
+ */
+const TRAJECTORY_FOLD_CACHE = 8
+
 export class DeepseekRuntime {
   private records = new Map<string, AgentRecord>()
   /** Live delegated children, keyed by the child's own dsh session id. */
   private subagentRuns = new Map<string, SubagentRun>()
   private adapterFiber: { dispose: () => Promise<void> } | null = null
+  /** Open trajectory folds, keyed by dsh session id. */
+  private readonly folds = new Map<string, { fold: TrajectoryFold; live: boolean }>()
+  /** Notified for every appended session event, before it is mapped. */
+  readonly logListeners = new Set<(dshSessionId: string) => void>()
   private readonly mcpServers: DeepseekMcpServers
   private readonly plugins: DeepseekPlugins
   private onPluginMount: ((report: MountReport) => void) | undefined
@@ -241,6 +258,11 @@ export class DeepseekRuntime {
 
     bridge.on('session/event', (session: { header: { id: string } }, event: SessionEvent) => {
       const id = String(session.header.id)
+      // Announced before any mapping: the trajectory follows the log, and the
+      // AgentEvent stream is a lossy projection of it — `request/header`,
+      // injected context, preset selection and approvals never reach a
+      // consumer that listens there instead.
+      for (const listener of runtime.logListeners) listener(id)
       const record = runtime.records.get(id)
       if (record) {
         record.mapper.handle(event)
@@ -692,38 +714,173 @@ export class DeepseekRuntime {
    * log — `assistant/chunk` frames included — so a closed session projects
    * identically to how it looked while it ran.
    *
+   * The fold is held open between calls. A caller that sends the cursor it last
+   * received gets only what changed since; one that sends nothing, or whose
+   * cursor belongs to a fold that has since been rebuilt, gets a full window.
+   * Re-folding per poll would cost the entire history on every frame of a
+   * streaming turn, which is exactly when the panel is most likely to be open.
+   *
    * The projection is what crosses the process boundary, never the raw events:
    * a real session's chunk frames outnumber its records by three orders of
    * magnitude, and none of them survive the fold.
    * @param sessionId - the dsh session to project.
+   * @param cursor - the caller's last known cursor, absent for a first read.
+   * @returns the read, or `null` when this session has no dsh log at all.
+   */
+  async trajectory(
+    sessionId: string,
+    cursor?: number,
+  ): Promise<
+    { kind: 'full'; trajectory: TrajectoryProjection } | { kind: 'delta'; delta: TrajectoryDelta } | null
+  > {
+    const entry = await this.foldFor(sessionId)
+    if (entry === null) return null
+    // A cursor ahead of the fold belongs to a previous fold of this session
+    // (a restart, or a live session that has since closed and been reloaded).
+    // Answering a delta there would merge two different histories.
+    if (cursor === undefined || cursor > entry.fold.cursor) {
+      return { kind: 'full', trajectory: entry.fold.snapshot(entry.live) }
+    }
+    return { kind: 'delta', delta: entry.fold.delta(cursor, entry.live) }
+  }
+
+  /**
+   * Watch every session log this runtime appends to.
+   *
+   * The listener receives the dsh session id and nothing else: what changed is
+   * a question the fold answers from the caller's own cursor, and pushing the
+   * change itself would require this runtime to track every consumer's window.
+   * @param listener - called once per appended event.
+   * @returns a disposer.
+   */
+  onLogEvent(listener: (dshSessionId: string) => void): () => void {
+    this.logListeners.add(listener)
+    return () => {
+      this.logListeners.delete(listener)
+    }
+  }
+
+  /**
+   * The full window, for a caller that holds no cursor.
+   * @param sessionId - the dsh session to project.
    * @returns the projection, or `null` when this session has no dsh log at all.
    */
-  async trajectory(sessionId: string): Promise<TrajectoryProjection | null> {
-    const bridge = this.bridge as Context & { get(name: string): unknown }
-    const sessions = bridge.get('sessions') as {
+  async trajectorySnapshot(sessionId: string): Promise<TrajectoryProjection | null> {
+    const entry = await this.foldFor(sessionId)
+    return entry === null ? null : entry.fold.snapshot(entry.live)
+  }
+
+  /**
+   * One page of records older than a consumer's loaded window.
+   * @param sessionId - the dsh session to read.
+   * @param before - the `index` of the consumer's first loaded record.
+   * @param count - how many records to return.
+   * @returns the page, or `null` when this session has no dsh log at all.
+   */
+  async trajectoryPage(sessionId: string, before: number, count: number): Promise<TrajectoryPage | null> {
+    const entry = await this.foldFor(sessionId)
+    return entry === null ? null : entry.fold.page(before, count)
+  }
+
+  /**
+   * The untruncated text behind one bounded inspector payload.
+   * @param sessionId - the dsh session to read.
+   * @param recordId - the owning record's stable id.
+   * @param field - the payload's field name.
+   * @returns the full text, or `null` when the fold did not retain it.
+   */
+  async trajectoryText(sessionId: string, recordId: string, field: string): Promise<string | null> {
+    const entry = await this.foldFor(sessionId)
+    return entry === null ? null : entry.fold.payload(recordId, field)
+  }
+
+  /**
+   * The bytes behind one logged image reference.
+   *
+   * dsh logs a content-addressed reference and verifies the stored bytes
+   * against it on read, so the whole reference is the argument — an id alone
+   * could not be verified.
+   * @param ref - the reference the projection carried.
+   * @returns the media type and bytes, or `null` without an attachment store.
+   */
+  async trajectoryImage(ref: TrajectoryImageRef): Promise<{ mediaType: string; data: Uint8Array } | null> {
+    const attachments = (this.bridge as Context & {
+      attachments?: { readImage(ref: unknown): Promise<{ data: Uint8Array }> }
+    }).attachments
+    if (!attachments) return null
+    const stored = await attachments.readImage(ref)
+    return { mediaType: ref.mediaType, data: stored.data }
+  }
+
+  /**
+   * The open fold for one session, built or rebuilt as its source demands.
+   *
+   * The source itself is part of the cache key: a session that was closed when
+   * first read and is live now has a different authoritative log, and folding
+   * the live one onto state built from the transcript would double every
+   * record the transcript already held.
+   * @param sessionId - the dsh session to fold.
+   * @returns the entry, or `null` when this session has no dsh log at all.
+   */
+  private async foldFor(sessionId: string): Promise<{ fold: TrajectoryFold; live: boolean } | null> {
+    const sessions = (this.bridge as Context & { get(name: string): unknown }).get('sessions') as {
       get(id: unknown): { events: readonly SessionEvent[] } | undefined
     } | undefined
-    const live = sessions?.get(SessionId(sessionId))
-    if (live) return projectTrajectory(sessionId, live.events, true)
+    const liveSession = sessions?.get(SessionId(sessionId))
+    const live = liveSession !== undefined
 
-    const persistence = bridge.get('sessionPersistence') as {
-      load(id: unknown): Promise<{ events: readonly SessionEvent[] }>
-      list(signal?: AbortSignal): Promise<readonly { id: unknown }[]>
-    } | undefined
-    if (!persistence) {
-      throw new Error('deepseek trajectory: session persistence is not configured')
+    let entry = this.folds.get(sessionId)
+    if (entry !== undefined && entry.live !== live) entry = undefined
+    // A log shorter than what the fold has consumed is not the log the fold was
+    // built from — a rollback rewrote it. Folding the remainder onto that state
+    // would splice two histories together.
+    if (entry !== undefined && liveSession !== undefined && liveSession.events.length < entry.fold.cursor) {
+      entry = undefined
     }
 
-    // A SuperOne session exists from the moment the user opens it, but its dsh
-    // session only exists once a turn has run. `list` omits a
-    // created-but-never-appended session, so this separates "nothing has
-    // happened yet" from "the log is there and unreadable" without matching on
-    // a backend error string.
-    const known = await persistence.list()
-    if (!known.some((header) => String(header.id) === sessionId)) return null
+    let events = liveSession?.events
+    if (events === undefined) {
+      const persistence = (this.bridge as Context & { get(name: string): unknown }).get('sessionPersistence') as {
+        load(id: unknown): Promise<{ events: readonly SessionEvent[] }>
+        list(signal?: AbortSignal): Promise<readonly { id: unknown }[]>
+      } | undefined
+      if (!persistence) throw new Error('deepseek trajectory: session persistence is not configured')
 
-    const stored = await persistence.load(SessionId(sessionId))
-    return projectTrajectory(sessionId, stored.events, false)
+      // A SuperOne session exists from the moment the user opens it, but its
+      // dsh session only exists once a turn has run. `list` omits a
+      // created-but-never-appended session, so this separates "nothing has
+      // happened yet" from "the log is there and unreadable" without matching
+      // on a backend error string.
+      if (entry === undefined) {
+        const known = await persistence.list()
+        if (!known.some((header) => String(header.id) === sessionId)) {
+          this.folds.delete(sessionId)
+          return null
+        }
+        events = (await persistence.load(SessionId(sessionId))).events
+      } else {
+        // A closed session's transcript does not grow under us, so the fold
+        // built from it is already complete.
+        events = undefined
+      }
+    }
+
+    if (entry === undefined) {
+      entry = { fold: new TrajectoryFold(sessionId), live }
+      this.folds.set(sessionId, entry)
+      // Bounded, in insertion order: the panel follows the session a user is
+      // looking at, and an unbounded cache would retain every session's records
+      // for the lifetime of the app.
+      while (this.folds.size > TRAJECTORY_FOLD_CACHE) {
+        const oldest = this.folds.keys().next().value
+        if (oldest === undefined) break
+        this.folds.delete(oldest)
+      }
+    }
+    if (events !== undefined && events.length > entry.fold.cursor) {
+      entry.fold.consume(events.slice(entry.fold.cursor))
+    }
+    return entry
   }
 
   /**
@@ -876,6 +1033,7 @@ export class DeepseekRuntime {
   }
 
   async dispose(): Promise<void> {
+    this.folds.clear()
     for (const [sessionId, record] of [...this.records]) {
       this.records.delete(sessionId)
       await record.dispose()

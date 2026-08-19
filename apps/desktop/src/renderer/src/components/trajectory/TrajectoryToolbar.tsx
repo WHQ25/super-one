@@ -1,7 +1,14 @@
 import { useTranslation } from 'react-i18next'
-import { FoldVertical, RefreshCw, Search, UnfoldVertical } from 'lucide-react'
+import { Activity, Download, FoldVertical, RefreshCw, Search, UnfoldVertical, X } from 'lucide-react'
 import { Input } from '@superone/ui/components/ui/input'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@superone/ui/components/ui/dropdown-menu'
+import { cn } from '@superone/ui/lib/utils'
 import type { TrajectoryProjection } from '@superone/shared/trajectory-types'
 import { formatTokens } from './trajectory-format'
 
@@ -13,11 +20,17 @@ export interface TrajectoryToolbarProps {
   callsFolded: boolean
   onToggleAllTurns: () => void
   onToggleAllCalls: () => void
+  timelineShown: boolean
+  onToggleTimeline: () => void
+  /** Whether the timeline currently narrows the ledger. */
+  filtered: boolean
+  onClearFilter: () => void
+  onExport: (format: 'json' | 'markdown') => void
   onRefresh: () => void
   refreshing: boolean
 }
 
-/** Search, folding, and the window's cumulative accounting. */
+/** Search, folding, export, and the window's cumulative accounting. */
 export function TrajectoryToolbar({
   projection,
   query,
@@ -26,6 +39,11 @@ export function TrajectoryToolbar({
   callsFolded,
   onToggleAllTurns,
   onToggleAllCalls,
+  timelineShown,
+  onToggleTimeline,
+  filtered,
+  onClearFilter,
+  onExport,
   onRefresh,
   refreshing,
 }: TrajectoryToolbarProps) {
@@ -51,6 +69,21 @@ export function TrajectoryToolbar({
 
       <IconButton
         size="sm"
+        tooltip={t('trajectory.timeline')}
+        aria-pressed={timelineShown}
+        onClick={onToggleTimeline}
+      >
+        <Activity className={cn(timelineShown && 'text-foreground')} />
+      </IconButton>
+
+      {filtered && (
+        <IconButton size="sm" tooltip={t('trajectory.clearRange')} onClick={onClearFilter}>
+          <X />
+        </IconButton>
+      )}
+
+      <IconButton
+        size="sm"
         tooltip={t(turnsFolded ? 'trajectory.expandTurns' : 'trajectory.collapseTurns')}
         onClick={onToggleAllTurns}
       >
@@ -65,6 +98,12 @@ export function TrajectoryToolbar({
       </IconButton>
 
       <div className="ml-auto flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
+        <span>{t('trajectory.recordRange', {
+          first: projection.firstIndex,
+          last: projection.firstIndex + projection.records.length - 1,
+          total: projection.total,
+        })}
+        </span>
         <span>{t('trajectory.requestCount', { count: projection.requests.length })}</span>
         <span>
           {t('trajectory.tokenTotals', {
@@ -73,6 +112,22 @@ export function TrajectoryToolbar({
           })}
         </span>
       </div>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <IconButton size="sm" tooltip={t('trajectory.export')}>
+            <Download />
+          </IconButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onExport('json')}>
+            {t('trajectory.exportJson')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onExport('markdown')}>
+            {t('trajectory.exportMarkdown')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <IconButton
         size="sm"

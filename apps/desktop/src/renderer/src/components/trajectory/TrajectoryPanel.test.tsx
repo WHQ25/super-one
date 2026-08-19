@@ -14,13 +14,16 @@ vi.mock('@tanstack/react-virtual', () => ({
       key: index, index, start: index * 26, size: 26,
     })),
     measureElement: () => {},
+    scrollToIndex: () => {},
   }),
 }))
 
 const TRAJECTORY: TrajectoryProjection = {
   sessionId: 's1',
   live: false,
-  dropped: 0,
+  firstIndex: 1,
+  total: 2,
+  cursor: 9,
   totals: { input: 120, output: 4, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
   turns: [{ turn: 1, startedAt: 1_000, durationMs: 900, outcome: 'completed', steps: 1, toolCalls: 1 }],
   requests: [{
@@ -90,13 +93,29 @@ const TRAJECTORY: TrajectoryProjection = {
   ],
 }
 
-const readTrajectory = vi.fn<(sessionId: string) => Promise<TrajectoryResult>>()
+const readTrajectory = vi.fn<(sessionId: string, cursor?: number) => Promise<TrajectoryResult>>()
+const readPage = vi.fn()
+const watchTrajectory = vi.fn().mockResolvedValue({ ok: true })
+/** The main-process push the panel follows, captured by the mocked bridge. */
+let notifyChanged: ((sessionId: string) => void) | null = null
+const readPayload = vi.fn()
+const saveTextAs = vi.fn()
 
 beforeEach(() => {
   readTrajectory.mockReset()
-  readTrajectory.mockResolvedValue({ ok: true, trajectory: TRAJECTORY })
+  readTrajectory.mockResolvedValue({ ok: true, kind: 'full', trajectory: TRAJECTORY })
   Object.assign(window, {
-    app: { readDeepseekTrajectory: readTrajectory },
+    app: {
+      readDeepseekTrajectory: readTrajectory,
+      readDeepseekTrajectoryPage: readPage,
+      readDeepseekTrajectoryPayload: readPayload,
+      saveTextAs,
+      watchDeepseekTrajectory: watchTrajectory,
+      onDeepseekTrajectoryChanged: (callback: (sessionId: string) => void) => {
+        notifyChanged = callback
+        return () => { notifyChanged = null }
+      },
+    },
     agent: { onAgentEvent: () => () => {} },
   })
 })
@@ -142,9 +161,102 @@ describe('TrajectoryPanel', () => {
 
     // Retrying has to actually re-read: a dead end is what made the previous
     // one-line error unhelpful.
-    readTrajectory.mockResolvedValue({ ok: true, trajectory: TRAJECTORY })
+    readTrajectory.mockResolvedValue({ ok: true, kind: 'full', trajectory: TRAJECTORY })
     await userEvent.click(screen.getByRole('button', { name: 'Try Again' }))
     expect(await screen.findByText('Turn 1')).toBeInTheDocument()
+  })
+
+  it('inspects a model call as itself when its boundary row is selected', async () => {
+    render(<TrajectoryPanel sessionId="s1" />)
+    await userEvent.click(await screen.findByText('Request #1'))
+
+    // The call's options are the prompt-time facts no single record carries.
+    expect(await screen.findByRole('tab', { name: 'Options' })).toBeInTheDocument()
+    expect(screen.getByText('Reasoning Effort')).toBeInTheDocument()
+    expect(screen.getByText('Temperature')).toBeInTheDocument()
+  })
+
+  it('reads an earlier page and keeps the loaded window numbered from the fold', async () => {
+    readTrajectory.mockResolvedValue({
+      ok: true,
+      kind: 'full',
+      trajectory: { ...TRAJECTORY, firstIndex: 4, total: 5 },
+    })
+    readPage.mockResolvedValue({
+      ok: true,
+      page: {
+        firstIndex: 3,
+        records: [{ ...TRAJECTORY.records[0]!, id: 'user:0', index: 3, kind: 'user', summary: 'earlier prompt', content: { text: 'earlier prompt' }, blocks: [] }],
+      },
+    })
+    render(<TrajectoryPanel sessionId="s1" />)
+
+    // Both the timeline's truncation control and the ledger's head row reach
+    // the same page; the ledger's is the one a scrolling user meets.
+    const entries = await screen.findAllByRole('button', { name: 'Load earlier records' })
+    await userEvent.click(entries[entries.length - 1]!)
+    expect(await screen.findByText('earlier prompt')).toBeInTheDocument()
+    expect(readPage).toHaveBeenCalledWith('s1', 4, expect.any(Number))
+  })
+
+  it('polls with its cursor and merges the revision a completed call sends back', async () => {
+    const running = {
+      ...TRAJECTORY,
+      records: TRAJECTORY.records.map((record) =>
+        (record.kind === 'tool' ? { ...record, result: null, durationMs: null } : record)),
+    }
+    readTrajectory.mockResolvedValue({ ok: true, kind: 'full', trajectory: running })
+    render(<TrajectoryPanel sessionId="s1" />)
+    await userEvent.click(await screen.findByText('read {"path":"a.ts"}'))
+    expect(await screen.findByRole('tab', { name: 'Result' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Result' }))
+    expect(screen.getByText('Still running.')).toBeInTheDocument()
+  })
+
+  it('follows the session log rather than the agent event stream', async () => {
+    render(<TrajectoryPanel sessionId="s1" />)
+    await screen.findByText('Turn 1')
+    // Watching starts with the panel and ends with it, so the main process
+    // notifies nobody once the tab is closed.
+    expect(watchTrajectory).toHaveBeenCalledWith('s1', true)
+
+    // A record with no agent-event counterpart — an injected context snapshot —
+    // still reaches the ledger, because the push comes off the log.
+    readTrajectory.mockResolvedValue({
+      ok: true,
+      kind: 'delta',
+      delta: {
+        cursor: 12,
+        records: [{
+          id: 'context:9',
+          index: 3,
+          kind: 'context',
+          seq: 9,
+          turn: 1,
+          step: null,
+          request: null,
+          startedAt: 3_000,
+          durationMs: null,
+          summary: 'AGENTS.md loaded',
+          content: { text: 'AGENTS.md' },
+          blocks: [],
+          producer: 'dsh-agents-md',
+          form: 'instructions',
+          notice: null,
+          sections: null,
+        }],
+        headers: [],
+        requests: [],
+        turns: [],
+        totals: TRAJECTORY.totals,
+        total: 3,
+        live: true,
+      },
+    })
+    notifyChanged?.('s1')
+
+    expect(await screen.findByText('AGENTS.md loaded')).toBeInTheDocument()
+    expect(readTrajectory).toHaveBeenLastCalledWith('s1', 9)
   })
 
   it('says a fresh session has no trajectory yet rather than reporting an error', async () => {

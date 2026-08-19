@@ -981,15 +981,20 @@ export class DeepseekRuntime {
     // for the service from out here resolves the outer realm and finds nothing.
     const commands = (this.bridge as Context & { get(name: string): unknown })
       .get('commands') as {
-        execute(agent: Agent, line: string, signal: AbortSignal): Promise<{
-          result: { kind: 'success' | 'error'; text?: string }
-        } | undefined>
+        execute(
+          agent: Agent,
+          line: string,
+          images: readonly never[],
+          signal: AbortSignal,
+        ): Promise<{ result: { kind: 'success' | 'error'; text?: string } } | undefined>
       } | undefined
     if (!commands) throw new Error('deepseek compact: command registry is not mounted')
 
     const execution = await commands.execute(
       record.agent,
       '/compact',
+      // SuperOne is text-only; the slot exists so the abort signal lands last.
+      [],
       signal ?? new AbortController().signal,
     )
     // `execute` answers `undefined` for a line no composed command claims —

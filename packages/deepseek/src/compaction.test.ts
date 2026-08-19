@@ -110,6 +110,38 @@ describe('deepseek compaction', () => {
     expect(text).not.toContain(SUMMARY_TEXT)
   })
 
+  /**
+   * rc.8 inserted `images` as a positional argument on `commands.execute`.
+   * SuperOne re-types that service locally, so typecheck cannot catch a stale
+   * call. This goes through the mounted registry (not a mock of our own
+   * declaration) and asserts the abort signal is not in the images slot —
+   * which is exactly how `/compact` used to throw `Cannot read properties of
+   * undefined (reading 'aborted')`.
+   */
+  it('passes an empty images array so the abort signal lands last', async () => {
+    const { runtime, sessionId } = await session(3)
+
+    const commands = (runtime.context as unknown as {
+      get(name: string): { execute: (...args: unknown[]) => Promise<unknown> } | undefined
+    }).get('commands')
+    expect(commands).toBeDefined()
+
+    const original = commands!.execute.bind(commands)
+    const calls: unknown[][] = []
+    commands!.execute = (...args: unknown[]) => {
+      calls.push(args)
+      return original(...args)
+    }
+
+    await runtime.compactSession(sessionId)
+
+    expect(calls).toHaveLength(1)
+    const [, line, images, signal] = calls[0]!
+    expect(line).toBe('/compact')
+    expect(images).toEqual([])
+    expect(signal).toBeInstanceOf(AbortSignal)
+  })
+
   it('reports a failure instead of a boundary when compaction is already running', async () => {
     const { runtime, sessionId, events } = await session(3)
     events.length = 0

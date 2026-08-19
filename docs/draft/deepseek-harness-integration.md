@@ -28,7 +28,7 @@ This is different from every existing harness (Claude = black-box SDK, Codex = s
 | C. Web Client protocol (Connection `/api` + Typert RPC) | ✅ | ✅ | ✅ | full fidelity but generated-artifact coupling; fallback option |
 | **D. In-process embedding (this plan)** | ✅ verified | ✅ verified | ✅ verified | **chosen** |
 
-dsh is in **developer preview** (`0.1.0-rc.7` at time of writing) with breaking changes promised. §11 owns the version strategy; the short version is: exact-pin the whole family, keep the spike as a smoke test, absorb breakage on explicit upgrades only.
+dsh is in **developer preview** (`0.1.0-rc.8` at time of writing) with breaking changes promised. §11 owns the version strategy; the short version is: exact-pin the whole family, keep the spike as a smoke test, absorb breakage on explicit upgrades only.
 
 ---
 
@@ -40,7 +40,7 @@ dsh is built on [Cordis](https://github.com/cordiverse/cordis): every part of th
 
 ## 3. Verified facts (experiments, 2026-08-18)
 
-All experiments ran against the **published npm packages** `@deepseek-ai/*@0.1.0-rc.7` (not the repo checkout), which is exactly how SuperOne will consume them. Full script: `deepseek-harness-spike.mjs`; runs green under **both Node 24 and bun 1.3.9**.
+All experiments ran against the **published npm packages** `@deepseek-ai/*@0.1.0-rc.8` (not the repo checkout), which is exactly how SuperOne will consume them. Full script: `deepseek-harness-spike.mjs`; runs green under **both Node 24 and bun 1.3.9**.
 
 | # | Experiment | Result |
 |---|---|---|
@@ -332,7 +332,7 @@ Estimated shape: backend + bridge ≈ Claude-backend-sized (~500–800 lines); t
 ```sh
 mkdir /tmp/dsh-spike && cd /tmp/dsh-spike
 echo '{"name":"dsh-spike","type":"module","private":true}' > package.json
-bun add @deepseek-ai/dsh@0.1.0-rc.7        # or the current pinned version
+bun add @deepseek-ai/dsh@0.1.0-rc.8        # or the current pinned version
 cp <repo>/docs/draft/deepseek-harness-spike.mjs .
 node deepseek-harness-spike.mjs             # or: bun deepseek-harness-spike.mjs
 ```
@@ -370,12 +370,12 @@ concern in the official design too, which is exactly where we put it.
 | dist-tag | version | published |
 |---|---|---|
 | `latest` | `0.0.1-rc.1` | 2026-08-10 (first publish, never moved) |
-| `next` | `0.1.0-rc.7` | 2026-08-17 (our pinned line) |
+| `next` | `0.1.0-rc.8` | 2026-08-20 (our pinned line) |
 
 `npm add @deepseek-ai/dsh-<x>` with no version resolves to the **oldest** release,
 and that release uses **different package names** for the same capability:
 
-| 0.0.1-rc.1 | 0.1.0-rc.7 (ours) |
+| 0.0.1-rc.1 | 0.1.0-rc.8 (ours) |
 |---|---|
 | `dsh-permission` | `dsh-permission-presets` |
 | `dsh-compact-basic` | `dsh-compaction-basic` |
@@ -390,7 +390,7 @@ and that release uses **different package names** for the same capability:
 | `dsh-workflow-workerthread` | `dsh-workflow-worker-thread` |
 | `dsh-compact-tool-result-prune` | `dsh-compaction-tool-result-pruner` |
 
-Always pin `0.1.0-rc.7` explicitly. A bare install silently gives a different
+Always pin `0.1.0-rc.8` explicitly. A bare install silently gives a different
 harness whose rows do not match anything written here.
 
 ### 13.3 The gap: 21 of 79 rows mounted
@@ -876,7 +876,7 @@ one thing that cost a red test — **the mounts must be awaited**. An unawaited
 `ctx.plugin()` pair leaves the tools dormant with an unchanged registry, which
 looks exactly like the switch not working.
 
-**Registry over README.** `0.1.0-rc.7` registers `cordis_inspect_list` /
+**Registry over README.** `0.1.0-rc.8` registers `cordis_inspect_list` /
 `cordis_inspect_query` / `cordis_inspect_self`, not the single `cordis_inspect`
 the README documents. The test reads the names off `ctx.tools.schemas()` for
 that reason.
@@ -1110,7 +1110,7 @@ and shipped through `extraResources`, rather than read out of
 dependencies including the whole `dsh-client-ui-*` browser surface, and a preset
 **is** a composition — its rows run with shell-level trust and its YAML may carry
 `!!js` expressions — so the exact text that composes an agent belongs somewhere
-a reviewer reads. Adopting them added 30 npm packages at `0.1.0-rc.7`.
+a reviewer reads. Adopting them added 30 npm packages at `0.1.0-rc.8`.
 
 ### Four things the mount refused before it worked
 
@@ -1264,7 +1264,7 @@ recording the row — is the part we own, and `registry.json` is that record.
 assume; and `@deepseek-ai/dsh` pulls the whole official deployment —
 `dsh-base`, `dsh-web-app`, `dsh-headless`, `dsh-terminal` — as dependencies.
 `@deepseek-ai/dsh-app-boot` is the reusable half, published separately with only
-`js-yaml`, but it is at **rc.6 while the family is rc.7**, so lockstep is already
+`js-yaml`, but it is at **rc.6 while the family is rc.8**, so lockstep is already
 broken there and it needs verification before adoption.)
 
 ### The dual-package hazard is the whole problem
@@ -1313,7 +1313,7 @@ against the app's copies before copying anything.
 
 Two semver facts worth pinning, both covered by tests:
 
-- **`^0.1.0` does NOT admit `0.1.0-rc.7`.** A prerelease sorts below its release,
+- **`^0.1.0` does NOT admit `0.1.0-rc.8`.** A prerelease sorts below its release,
   so `>=0.1.0` excludes it. `includePrerelease` does not rescue this. A plugin
   written against the eventual 0.1.0 release genuinely does not run here, and
   saying so at install time beats a mid-turn crash — but it *will* surprise
@@ -1385,7 +1385,7 @@ Known limits, all deliberate:
 
 - **No dependency resolution.** A plugin with its own runtime dependencies must
   bundle them; the install reports what it could not satisfy.
-- **`^0.1.0` reads as incompatible** against this `0.1.0-rc.7` build, because a
+- **`^0.1.0` reads as incompatible** against this `0.1.0-rc.8` build, because a
   prerelease sorts below its release. Correct semver, and it will surprise plugin
   authors.
 - **`workspace:^` is unchecked**, not refused — it is what a locally-developed

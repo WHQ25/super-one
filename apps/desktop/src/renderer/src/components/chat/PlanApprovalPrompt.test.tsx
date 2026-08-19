@@ -168,7 +168,7 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
       expect.any(String), 'plan-req-1', true, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
 
     const session = activeSession()
     expect(session.permissionMode).toBe('auto')
@@ -185,7 +185,7 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
       expect.any(String), 'plan-req-1', true, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
     expect(activeSession().permissionMode).toBe('auto')
   })
 
@@ -198,7 +198,7 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
       expect.any(String), 'plan-req-1', true, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'default')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'default')
     expect(activeSession().permissionMode).toBe('default')
   })
 
@@ -227,7 +227,7 @@ describe('PlanApprovalPrompt — integration', () => {
     ;(container.querySelector('[data-chat-root]') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'Enter' })
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
   })
 
   it('scenario: account+model support auto mode → toggle switches post-approval mode to "auto"', () => {
@@ -262,7 +262,7 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
       expect.any(String), 'plan-req-1', true, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
     expect(activeSession().permissionMode).toBe('auto')
   })
 
@@ -294,7 +294,7 @@ describe('PlanApprovalPrompt — integration', () => {
 
     fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
     expect(activeSession().permissionMode).toBe('auto')
   })
 

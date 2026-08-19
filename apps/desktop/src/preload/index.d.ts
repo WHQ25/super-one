@@ -26,7 +26,7 @@ interface AgentAPI {
   interrupt(sessionId: string): Promise<boolean>
   stopTask(sessionId: string, taskId: string): Promise<boolean>
   respondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): Promise<boolean>
-  setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
+  setPermissionMode(projectPath: string, sessionId: string, mode: PermissionMode): Promise<boolean>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>
   setSessionSettings(projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }): Promise<void>
   setSessionApiProvider(sessionId: string, apiProviderId: string | null): Promise<void>

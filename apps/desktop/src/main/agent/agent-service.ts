@@ -1849,11 +1849,39 @@ export class AgentService {
       return result
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
+    ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (
+      _event,
+      projectPath: string,
+      sessionId: string,
+      mode: PermissionMode,
+    ) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      // Read one snapshot for the guard: `snapshot` is a live getter, so keeping
+      // the post-failure re-check on a separate read is what makes it meaningful.
+      const snapshot = session?.snapshot
+      if (
+        !session
+        || !snapshot
+        || snapshot.projectPath !== projectPath
+        || snapshot.status === 'disposed'
+      ) {
+        trace('permission.flow', 'ipc_setMode_stale', { projectPath, sessionId, mode })
+        return false
+      }
       this.throwIfRemoteLocked(projectPath)
-      const session = await this.getOrCreateActiveSession(projectPath)
       trace('permission.flow', 'ipc_setMode', { projectPath, mode, sid: session.id, status: session.snapshot.status })
-      await session.setPermissionMode(mode)
+      try {
+        await session.setPermissionMode(mode)
+        return true
+      } catch (error) {
+        // Session disposal can win after getSession() but before setPermissionMode().
+        // A stale renderer effect must not reject or mutate a replacement session.
+        if (session.snapshot.status === 'disposed') {
+          trace('permission.flow', 'ipc_setMode_disposed', { projectPath, sessionId, mode })
+          return false
+        }
+        throw error
+      }
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode) => {

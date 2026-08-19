@@ -264,7 +264,7 @@ describe('PermissionPrompt + real store integration', () => {
     expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
       expect.any(String), 'r1', true, undefined, undefined, undefined, undefined, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'alpha', 'auto')
   })
 
   it('upgrades acceptEdits setMode suggestions to auto even without account/model metadata', async () => {
@@ -285,7 +285,7 @@ describe('PermissionPrompt + real store integration', () => {
     expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
       expect.any(String), 'r1', true, undefined, undefined, undefined, undefined, undefined,
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'alpha', 'auto')
   })
 
   it('leaves the active-session prompt intact when message_interrupted targets a different session', () => {

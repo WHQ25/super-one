@@ -335,14 +335,23 @@ export async function setPermissionModeImpl(
 ): Promise<void> {
   const { activeProject } = get()
   if (!activeProject) return
+  const sessionId = getProject(get(), activeProject)._activeSessionId
+  if (!sessionId) return
   // Remote node projects: UI-only until send (node has its own permission handling).
   // Never getOrCreate a desktop SessionManager entry for a remote: path.
   if (parseRemoteProjectKey(activeProject)) {
-    set((s) => updateActivePerSession(s, () => ({ permissionMode: mode })))
+    set((s) => updatePerSession(s, activeProject, sessionId, () => ({ permissionMode: mode })))
     return
   }
-  await window.agent.setPermissionMode(activeProject, mode)
-  set((s) => updateActivePerSession(s, () => ({ permissionMode: mode })))
+  try {
+    await window.agent.setPermissionMode(activeProject, sessionId, mode)
+  } catch (error) {
+    console.warn('[chat] setPermissionMode failed:', error)
+    return
+  }
+  // The active session may have changed while IPC was in flight. Apply only
+  // to the session that initiated the request, never its replacement.
+  set((s) => updatePerSession(s, activeProject, sessionId, () => ({ permissionMode: mode })))
 }
 
 /**
@@ -571,7 +580,9 @@ export function respondToPlanApprovalImpl(
       window.agent.respondToPlanApproval(targetSid, requestId, approved, feedback)
       if (approved) {
         const nextMode: PermissionMode = postApprovalMode ?? 'default'
-        void window.agent.setPermissionMode(activeProject, nextMode)
+        void window.agent
+          .setPermissionMode(activeProject, targetSid, nextMode)
+          .catch((error) => console.warn('[chat] setPermissionMode after plan approval failed:', error))
       }
     }
   }

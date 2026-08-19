@@ -2474,6 +2474,38 @@ describe('IPC interaction-response broadcasts', () => {
     expect(broadcasts.filter((b) => (b as { type?: string }).type === 'interaction_resolved')).toHaveLength(0)
   })
 
+  it('SET_PERMISSION_MODE applies only to the explicitly targeted session', async () => {
+    const setPermissionMode = vi.fn().mockResolvedValue(undefined)
+    const session = makeMockSession({
+      id: 'sid-mode',
+      snapshot: { projectPath: '/p-mode', harnessId: 'dsh', status: 'idle', messages: [] },
+      setPermissionMode,
+    })
+    setupServiceWithSession(session)
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SET_PERMISSION_MODE)!
+
+    await expect(handler(null, '/p-mode', 'sid-mode', 'default')).resolves.toBe(true)
+
+    expect(setPermissionMode).toHaveBeenCalledWith('default')
+  })
+
+  it('SET_PERMISSION_MODE treats a disposal race as a stale no-op', async () => {
+    const snapshot = { projectPath: '/p', harnessId: 'dsh', status: 'idle', messages: [] }
+    const setPermissionMode = vi.fn().mockImplementation(async () => {
+      snapshot.status = 'disposed'
+      throw new Error('disposed')
+    })
+    const session = makeMockSession({
+      id: 'sid-disposed',
+      snapshot,
+      setPermissionMode,
+    })
+    setupServiceWithSession(session)
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SET_PERMISSION_MODE)!
+
+    await expect(handler(null, '/p', 'sid-disposed', 'default')).resolves.toBe(false)
+  })
+
   it('ANSWER_QUESTION handler broadcasts interaction_resolved to sync mini-window state', async () => {
     const respondToQuestion = vi.fn()
     const session = makeMockSession({

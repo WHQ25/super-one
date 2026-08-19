@@ -7,7 +7,7 @@ const mockAgent = {
   answerQuestion: vi.fn().mockResolvedValue(undefined),
   dismissQuestion: vi.fn().mockResolvedValue(undefined),
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
-  setPermissionMode: vi.fn().mockResolvedValue(undefined),
+  setPermissionMode: vi.fn().mockResolvedValue(true),
   parkSession: vi.fn().mockResolvedValue(undefined),
   resumeSession: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
@@ -104,6 +104,7 @@ beforeEach(() => {
   mockAgent.respondToPermission.mockResolvedValue(true)
   mockAgent.answerQuestion.mockResolvedValue(undefined)
   mockAgent.dismissQuestion.mockResolvedValue(undefined)
+  mockAgent.setPermissionMode.mockReset().mockResolvedValue(true)
   mockEnvRespondSessionQuestion.mockReset().mockResolvedValue({
     sessionId: 'sid-1',
     status: 'streaming',
@@ -165,6 +166,44 @@ describe('respondToPermissionImpl', () => {
     expect(result).toBe(false)
     expect(mockAgent.respondToPermission).not.toHaveBeenCalled()
     expect(activeSession().pendingPermissions).toHaveLength(1)
+  })
+})
+
+describe('setPermissionModeImpl', () => {
+  it('targets the initiating session and never a replacement that becomes active mid-flight', async () => {
+    let resolveIpc!: (value: boolean) => void
+    mockAgent.setPermissionMode.mockReturnValue(new Promise((resolve) => { resolveIpc = resolve }))
+    const project = createDefaultProjectState()
+    project._activeSessionId = 'sid-1'
+    project._sessions = {
+      'sid-1': { ...createDefaultPerSessionState(), permissionMode: 'default' },
+      'sid-2': { ...createDefaultPerSessionState(), permissionMode: 'plan' },
+    }
+    useChatStore.setState({ projectSessions: { '/p1': project }, activeProject: '/p1' })
+
+    const pending = useChatStore.getState().setPermissionMode('acceptEdits')
+    useChatStore.setState((state) => ({
+      projectSessions: {
+        ...state.projectSessions,
+        '/p1': { ...state.projectSessions['/p1'], _activeSessionId: 'sid-2' },
+      },
+    }))
+    resolveIpc(true)
+    await pending
+
+    expect(mockAgent.setPermissionMode).toHaveBeenCalledWith('/p1', 'sid-1', 'acceptEdits')
+    const sessions = useChatStore.getState().projectSessions['/p1']._sessions
+    expect(sessions['sid-1'].permissionMode).toBe('acceptEdits')
+    expect(sessions['sid-2'].permissionMode).toBe('plan')
+  })
+
+  it('contains IPC failures so selector effects cannot create unhandled rejections', async () => {
+    mockAgent.setPermissionMode.mockRejectedValue(new Error('Session sid-1 is disposed'))
+    seedSession('sid-1', { permissionMode: 'plan' })
+
+    await expect(useChatStore.getState().setPermissionMode('default')).resolves.toBeUndefined()
+
+    expect(activeSession().permissionMode).toBe('plan')
   })
 })
 
@@ -544,7 +583,7 @@ describe('respondToPlanApprovalImpl', () => {
     useChatStore.getState().respondToPlanApproval('p1', true, undefined, 'acceptEdits')
 
     expect(mockAgent.respondToPlanApproval).toHaveBeenCalledWith('sid-1', 'p1', true, undefined)
-    expect(mockAgent.setPermissionMode).toHaveBeenCalledWith('/p1', 'acceptEdits')
+    expect(mockAgent.setPermissionMode).toHaveBeenCalledWith('/p1', 'sid-1', 'acceptEdits')
     const sess = activeSession()
     expect(sess.pendingPlanApproval).toBeNull()
     expect(sess.planApprovalOutcome).toEqual({ approved: true, feedback: undefined })

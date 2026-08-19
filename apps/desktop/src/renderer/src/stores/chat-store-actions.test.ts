@@ -493,7 +493,7 @@ describe('cyclePermissionMode + togglePlanModeShortcut', () => {
     useChatStore.getState().cyclePermissionMode()
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledTimes(1)
     // next mode is 'acceptEdits'
-    expect(mockWindowAgent.setPermissionMode.mock.calls[0][1]).not.toBe('default')
+    expect(mockWindowAgent.setPermissionMode.mock.calls[0][2]).not.toBe('default')
   })
 
   it("togglePlanModeShortcut routes to setSelectedCodexCollaborationMode for Codex sessions", () => {
@@ -514,11 +514,11 @@ describe('cyclePermissionMode + togglePlanModeShortcut', () => {
     setupProject()
     patchSession({ sessionProvider: 'acp', permissionMode: 'default' })
     useChatStore.getState().togglePlanModeShortcut()
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(expect.any(String), 'plan')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'plan')
     mockWindowAgent.setPermissionMode.mockClear()
     patchSession({ sessionProvider: 'acp', permissionMode: 'plan' })
     useChatStore.getState().togglePlanModeShortcut()
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(expect.any(String), 'default')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'default')
   })
 })
 

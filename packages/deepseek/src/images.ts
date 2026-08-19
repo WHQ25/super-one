@@ -34,25 +34,47 @@ export function modelAcceptsImages(inputModalities: readonly ModelModality[] | u
 /**
  * Project SuperOne's composer attachments onto dsh's wire form.
  *
- * An attachment whose media type dsh does not admit is dropped here rather than
- * at the store, because the store's refusal is an exception and this is an
- * ordinary "the composer allowed something this provider cannot take" case.
+ * Refuses the whole batch when any attachment cannot be carried, for the same
+ * reason the two checks in `DeepseekRuntime.imageBlocksFor` throw: the user
+ * attached something and is owed an answer about it. Skipping the unusable ones
+ * would send the turn as plain text while the attachment chip still sits in the
+ * transcript — the model never saw it and nothing ever said so. Reachable
+ * input, too: the composer accepts `image/*` and keeps the file's own media
+ * type verbatim unless the image is large enough to be re-encoded, so heic /
+ * avif / svg reach this function untouched.
+ *
+ * Refusing before {@link admitImageBlocks} keeps the all-or-nothing property
+ * the caller depends on — nothing durable has been written at this point.
  * @param images - the composer's attachments, in message order.
- * @returns the admissible subset, order preserved.
+ * @returns one wire image per input, order preserved.
+ * @throws when any attachment carries no data or a media type dsh cannot admit.
  */
 export function encodeComposerImages(
   images: readonly ImageAttachment[],
 ): EncodedImageAttachment[] {
   const encoded: EncodedImageAttachment[] = []
+  const refused: string[] = []
   for (const image of images) {
-    if (!image.base64) continue
-    if (!SUPPORTED_MEDIA_TYPES.has(image.mimeType)) continue
+    const label = image.name || 'an attached image'
+    if (!image.base64) {
+      refused.push(`"${label}" carried no image data`)
+      continue
+    }
+    if (!SUPPORTED_MEDIA_TYPES.has(image.mimeType)) {
+      refused.push(`"${label}" is ${image.mimeType}, which DeepSeek cannot accept`)
+      continue
+    }
     encoded.push({
       mediaType: image.mimeType as ImageMediaType,
       data: image.base64,
       // dsh never interprets this as a path, but an empty string is not a name.
       ...(image.name ? { name: image.name } : {}),
     })
+  }
+  if (refused.length > 0) {
+    throw new Error(
+      `deepseek images: ${refused.join('; ')}. Accepted types: ${[...SUPPORTED_MEDIA_TYPES].join(', ')}`,
+    )
   }
   return encoded
 }

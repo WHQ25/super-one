@@ -101,14 +101,33 @@ afterAll(async () => {
 })
 
 describe('composer image projection', () => {
-  it('drops payloads dsh cannot admit instead of handing them to the store', () => {
+  it('projects every admissible attachment, order preserved', () => {
     expect(encodeComposerImages([
       attachment(),
-      // A media type outside dsh's admitted set.
-      attachment({ mimeType: 'image/svg+xml' }),
-      // An attachment chip whose bytes never arrived.
-      attachment({ base64: '' }),
-    ])).toEqual([{ mediaType: 'image/png', data: PNG_1X1_BASE64, name: 'pixel.png' }])
+      attachment({ mimeType: 'image/webp', name: 'shot.webp' }),
+    ])).toEqual([
+      { mediaType: 'image/png', data: PNG_1X1_BASE64, name: 'pixel.png' },
+      { mediaType: 'image/webp', data: PNG_1X1_BASE64, name: 'shot.webp' },
+    ])
+  })
+
+  /**
+   * Reachable input, not a hypothetical: the composer accepts `image/*` and
+   * keeps the file's own media type verbatim whenever the image is small enough
+   * to skip canvas re-encoding, so heic / avif / svg arrive here untouched.
+   * Skipping them would send the turn as plain text — the user would see their
+   * attachment chip in the transcript and never learn the model did not get it.
+   */
+  it('refuses a payload dsh cannot admit rather than sending the turn without it', () => {
+    expect(() => encodeComposerImages([
+      attachment(),
+      attachment({ mimeType: 'image/svg+xml', name: 'logo.svg' }),
+    ])).toThrow(/logo\.svg.*image\/svg\+xml/)
+  })
+
+  it('refuses an attachment chip whose bytes never arrived', () => {
+    expect(() => encodeComposerImages([attachment({ base64: '', name: 'empty.png' })]))
+      .toThrow(/empty\.png/)
   })
 
   it('treats an undisclosed modality list as text-only, the way upstream does', () => {

@@ -207,8 +207,9 @@ export class DeepseekBackend implements SessionBackend {
     if (reasoningEffort) agent.setRoute({ reasoningEffort })
     // Images ride the same call as the text. `sendText` commits them to dsh's
     // durable attachment store before it queues anything, and rejects — having
-    // stored nothing — when the store is absent or the routed model does not
-    // accept image input, so a refusal leaves the session untouched.
+    // stored nothing — when an attachment is unusable, the store is absent, or
+    // the routed model does not accept image input, so a refusal leaves the
+    // session untouched and the user hears about it.
     await agent.sendText(request.content, request.images)
   }
 

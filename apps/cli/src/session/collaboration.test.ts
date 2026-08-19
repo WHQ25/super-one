@@ -345,4 +345,71 @@ describe('collaboration grants + mailbox', () => {
     expect(retrieved.status).toBe('messages')
     expect(retrieved.messages.some((m) => m.content.includes('hello peer') || m.content.includes('API shape'))).toBe(true)
   })
+
+  /**
+   * Remote-node parity for handoff. Without it a remote session's handoff would
+   * silently fall back to spawn — a nested, credential-bearing child.
+   */
+  it('handoff creates a sibling session with no credential, no endpoint row, no mailbox', async () => {
+    const { collab, sessions, projects, db } = bootCollab()
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-handoff-'))
+    dirs.push(projectDir)
+    writeFileSync(join(projectDir, 'f'), '1')
+    const project = projects.open(projectDir)
+    const parent = sessions.create({
+      projectId: project.projectId,
+      harnessId: 'claude',
+      title: 'Migration phase 1',
+    })
+
+    const req = await collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [
+        {
+          mode: 'handoff',
+          agentId: 'claude',
+          task: 'Finish phase 2.',
+          name: 'Dana',
+          role: 'Implementer',
+          config: { cwd: projectDir },
+        },
+      ],
+    })
+    if (req.status !== 'approved') throw new Error('expected approved')
+    const grant = req.launches[0]
+    expect(grant.mode).toBe('handoff')
+
+    const started = await collab.start({ credential: grant.credential })
+    expect(started).toMatchObject({ status: 'started', mode: 'handoff', reused: false })
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toBeUndefined()
+    collab.rehydrateSystemPrompts()
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toBeUndefined()
+
+    // Sibling, not endpoint: child_session_id stays free so parent→child queries
+    // skip it and it can still be linked/spawned against later.
+    const row = db
+      .prepare(`SELECT kind, child_session_id, config_json FROM session_collaboration_grants WHERE credential_hash = ?`)
+      .get(grant.grantId) as { kind: string; child_session_id: string | null; config_json: string }
+    expect(row.kind).toBe('handoff')
+    expect(row.child_session_id).toBeNull()
+    expect(JSON.parse(row.config_json).handoffSessionId).toBe(started.sessionId)
+
+    const again = await collab.start({ credential: grant.credential })
+    expect(again).toMatchObject({ reused: true, sessionId: started.sessionId })
+
+    expect(() =>
+      collab.send({
+        credential: grant.credential,
+        sessionId: parent.sessionId,
+        content: 'follow-up?',
+      }),
+    ).toThrow(/one-way/i)
+    expect(() =>
+      collab.retrieve({ credential: grant.credential, sessionId: started.sessionId }),
+    ).toThrow(/one-way/i)
+
+    // The grant is not FK-linked to the sibling, so a retry after deletion is reachable.
+    sessions.remove(started.sessionId)
+    await expect(collab.start({ credential: grant.credential })).rejects.toThrow(/no longer exists/i)
+  })
 })

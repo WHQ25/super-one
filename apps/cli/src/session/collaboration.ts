@@ -94,6 +94,16 @@ function parseConfig(raw: string): SessionAgentLaunchConfig & { worktreePath?: s
   }
 }
 
+function resolveLaunchMode(raw: unknown): SessionCollabLaunchMode {
+  if (raw === 'link') return 'link'
+  if (raw === 'handoff') return 'handoff'
+  return 'spawn'
+}
+
+const HANDOFF_NO_MAILBOX =
+  'This credential belongs to a handoff launch. Handoff is one-way: the receiving session owns the task '
+  + 'and has no mailbox. Use mode "spawn" (nested child) or "link" (existing session) when you need to exchange messages.'
+
 export function collaborationSystemPrompt(credential: string, parentSessionId: string): string {
   return (
     `<superone-session-collaboration>\n`
@@ -353,7 +363,7 @@ export class CollaborationService {
     const profileList = this.listProfiles()
     const profiles = new Map(profileList.map((p) => [p.id, p]))
     const normalized: SessionAgentLaunchProposal[] = launches.map((launch) => {
-      const mode: SessionCollabLaunchMode = launch.mode === 'link' ? 'link' : 'spawn'
+      const mode = resolveLaunchMode(launch.mode)
       const launchId = launch.launchId?.trim() || randomUUID()
 
       if (mode === 'link') {
@@ -408,10 +418,12 @@ export class CollaborationService {
         }
       }
 
+      // spawn + handoff share this whole branch; they differ only in nesting and
+      // in whether the new session gets a mailbox credential.
       const agentId = launch.agentId?.trim()
       if (!agentId) {
         throw Object.assign(
-          new Error('Spawn launches require agentId from session_collab_list_agents'),
+          new Error(`${mode} launches require agentId from session_collab_list_agents`),
           { code: 'invalid_argument' },
         )
       }
@@ -441,13 +453,13 @@ export class CollaborationService {
       }
       const name = launch.name?.trim()
       if (!name) {
-        throw Object.assign(new Error('Every spawn launch must include a non-empty name'), {
+        throw Object.assign(new Error(`Every ${mode} launch must include a non-empty name`), {
           code: 'invalid_argument',
         })
       }
       const role = launch.role?.trim()
       if (!role) {
-        throw Object.assign(new Error('Every spawn launch must include a non-empty role'), {
+        throw Object.assign(new Error(`Every ${mode} launch must include a non-empty role`), {
           code: 'invalid_argument',
         })
       }
@@ -469,7 +481,7 @@ export class CollaborationService {
       if (typeof raw.cwd === 'string' && raw.cwd.trim()) safeFromLaunch.cwd = raw.cwd.trim()
       return {
         launchId,
-        mode: 'spawn',
+        mode,
         agentId,
         summary,
         task,
@@ -514,10 +526,12 @@ export class CollaborationService {
       confirmed = this.mergeConfirmedLaunches(normalized, outcome.content)
     }
 
-    const insertSpawn = this.deps.db.prepare(`
+    // spawn and handoff insert identically; only `kind` differs, and that single
+    // column is what keeps handoff sessions out of every parent→child query.
+    const insertChild = this.deps.db.prepare(`
       INSERT INTO session_collaboration_grants
         (credential_hash, credential_secret, credential_hint, parent_session_id, agent_id, task, config_json, created_at, kind)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'spawn')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     const insertLink = this.deps.db.prepare(`
       INSERT INTO session_collaboration_grants
@@ -527,7 +541,7 @@ export class CollaborationService {
 
     const results = this.deps.db.transaction(() =>
       confirmed.map((launch) => {
-        const mode = launch.mode === 'link' ? 'link' : 'spawn'
+        const mode = resolveLaunchMode(launch.mode)
         if (mode === 'link') {
           const peerSessionId = launch.sessionId!
           const existing = this.deps.db
@@ -638,7 +652,7 @@ export class CollaborationService {
           role: launch.role,
           summary: launch.summary,
         }
-        insertSpawn.run(
+        insertChild.run(
           credentialHash,
           this.deps.secrets.encrypt(credential),
           credential.slice(-8),
@@ -647,6 +661,7 @@ export class CollaborationService {
           launch.task,
           JSON.stringify(config),
           new Date().toISOString(),
+          mode,
         )
         this.deps.events.append({
           aggregateType: 'session',
@@ -654,14 +669,14 @@ export class CollaborationService {
           eventType: 'collaboration.grant_created',
           payload: {
             grantId: credentialHash,
-            mode: 'spawn',
+            mode,
             agentId: launch.agentId,
             launchId: launch.launchId,
           },
         })
         return {
           launchId: launch.launchId,
-          mode: 'spawn' as const,
+          mode,
           agentId: launch.agentId,
           summary: launch.summary,
           task: launch.task,
@@ -782,6 +797,40 @@ export class CollaborationService {
       }
     }
 
+    // spawn + handoff both create a session and deliver the task. A handoff session
+    // is deliberately *not* written to child_session_id: that column is UNIQUE and
+    // marks a session as a collaboration endpoint, which would nest the sibling in
+    // parent→child queries and block it from ever being linked or spawned against.
+    // The created id lives in config_json instead.
+    const isHandoff = grant.kind === 'handoff'
+    const existingHandoffSessionId = isHandoff
+      ? (parseConfig(grant.config_json) as { handoffSessionId?: string }).handoffSessionId
+      : undefined
+    if (existingHandoffSessionId) {
+      // Unlike a spawn child, a handoff session is not FK-linked to the grant, so
+      // deleting it leaves this row behind — do not report a dead session as started.
+      if (!this.deps.sessions.get(existingHandoffSessionId)) {
+        throw Object.assign(
+          new Error(`The handoff session no longer exists: ${existingHandoffSessionId}`),
+          { code: 'not_found' },
+        )
+      }
+      await this.deliverInitialTask(grant, existingHandoffSessionId)
+      const peer = this.describePeer(grant)
+      return {
+        status: 'started',
+        mode: 'handoff',
+        sessionId: existingHandoffSessionId,
+        reused: true,
+        name: peer.name,
+        role: peer.role,
+        title: peer.title,
+        config: peer.config,
+        credential,
+        grantId: grant.credential_hash,
+      }
+    }
+
     if (grant.child_session_id) {
       const existing = this.deps.sessions.get(grant.child_session_id)
       if (existing) {
@@ -847,15 +896,30 @@ export class CollaborationService {
         sandboxMode: config.sandboxMode ?? null,
         apiProviderId: config.apiProviderId ?? null,
         controllerClientSessionId: input.controllerClientSessionId ?? parent.controllerClientSessionId,
-        systemPromptAppend: collaborationSystemPrompt(credential, grant.parent_session_id),
+        // Handoff is one-way by construction: never hand the receiver a credential.
+        ...(isHandoff
+          ? {}
+          : { systemPromptAppend: collaborationSystemPrompt(credential, grant.parent_session_id) }),
       })
-      const updated = this.deps.db
-        .prepare(
-          `UPDATE session_collaboration_grants
-           SET child_session_id = ?, started_at = ?
-           WHERE credential_hash = ? AND child_session_id IS NULL`,
-        )
-        .run(child.sessionId, new Date().toISOString(), grant.credential_hash)
+      const updated = isHandoff
+        ? this.deps.db
+          .prepare(
+            `UPDATE session_collaboration_grants
+             SET config_json = ?, started_at = ?
+             WHERE credential_hash = ? AND started_at IS NULL`,
+          )
+          .run(
+            JSON.stringify({ ...config, handoffSessionId: child.sessionId }),
+            new Date().toISOString(),
+            grant.credential_hash,
+          )
+        : this.deps.db
+          .prepare(
+            `UPDATE session_collaboration_grants
+             SET child_session_id = ?, started_at = ?
+             WHERE credential_hash = ? AND child_session_id IS NULL`,
+          )
+          .run(child.sessionId, new Date().toISOString(), grant.credential_hash)
       if (updated.changes !== 1) {
         throw Object.assign(new Error('Credential was already consumed'), {
           code: 'failed_precondition',
@@ -872,13 +936,13 @@ export class CollaborationService {
       throw err
     }
 
-    grant = { ...grant, child_session_id: child.sessionId }
+    grant = isHandoff ? grant : { ...grant, child_session_id: child.sessionId }
     await this.deliverInitialTask(grant, child.sessionId)
 
     this.deps.events.append({
       aggregateType: 'session',
       aggregateId: grant.parent_session_id,
-      eventType: 'collaboration.child_started',
+      eventType: isHandoff ? 'collaboration.handoff_started' : 'collaboration.child_started',
       payload: {
         grantId: grant.credential_hash,
         childSessionId: child.sessionId,
@@ -887,7 +951,7 @@ export class CollaborationService {
 
     return {
       status: 'started',
-      mode: 'spawn',
+      mode: grant.kind,
       sessionId: child.sessionId,
       reused: false,
       name: displayName,
@@ -1264,6 +1328,11 @@ export class CollaborationService {
   }
 
   private assertEndpoint(grant: GrantRow, callerSessionId: string): void {
+    // Handoff grants exist only to create and brief the sibling session; they are
+    // never a channel, so neither side may read or write their mailbox.
+    if (grant.kind === 'handoff') {
+      throw Object.assign(new Error(HANDOFF_NO_MAILBOX), { code: 'failed_precondition' })
+    }
     if (
       callerSessionId !== grant.parent_session_id
       && callerSessionId !== grant.child_session_id
@@ -1415,7 +1484,8 @@ export class CollaborationService {
           : {}
       return {
         ...base,
-        mode: 'spawn' as const,
+        // Mode comes from the server-side proposal, never from renderer formAnswers.
+        mode: base.mode ?? 'spawn',
         config: {
           ...base.config,
           ...(typeof patch.model === 'string' && patch.model.trim()
@@ -1436,13 +1506,29 @@ export class CollaborationService {
     })
   }
 
+  /**
+   * Opening body for the receiving session. A handoff has no credential and no
+   * mailbox, so this line is the receiver's only way to trace where the work came from.
+   */
+  private initialTaskContent(grant: GrantRow): string {
+    if (grant.kind !== 'handoff') return grant.task
+    const initiator = this.deps.sessions.get(grant.parent_session_id)
+    const title = initiator?.title?.trim() || grant.parent_session_id.slice(0, 8)
+    return (
+      `> Handed off from SuperOne session \`${grant.parent_session_id}\` ("${title}"). `
+      + 'This is a one-way handoff: you own this task now and cannot message that session back. '
+      + 'Read its context with session_read({ sessionId }) if you need it.\n\n'
+      + grant.task
+    )
+  }
+
   private async deliverInitialTask(grant: GrantRow, childSessionId: string): Promise<void> {
     if (grant.task_sent === 1) return
     const config = parseConfig(grant.config_json)
     try {
       await this.deps.sessions.sendWithoutLease({
         sessionId: childSessionId,
-        text: grant.task,
+        text: this.initialTaskContent(grant),
         model: config.model,
         effort: config.effort,
         permissionMode: config.permissionMode,

@@ -4,12 +4,15 @@ import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
   LAUNCH_CWD_DESCRIPTION,
+  LAUNCH_MODE_DESCRIPTION,
+  LAUNCH_TASK_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_WORKTREE_DESCRIPTION,
   AUTOMATION_TOOL_NAMES,
   SESSION_ARCHIVE_TOOL_NAMES,
   SESSION_COLLABORATION_TOOL_NAMES,
   SESSION_REQUEST_AGENTS_DESCRIPTION,
+  SESSION_START_DESCRIPTION,
 } from './superone-mcp-builtin-defs'
 
 /**
@@ -220,7 +223,7 @@ describe('built-in superone tool registration surfaces', () => {
     const item = launches.items as Record<string, unknown>
     expect(item.required).toEqual(['summary'])
     const properties = item.properties as Record<string, Record<string, unknown>>
-    expect(properties.mode).toMatchObject({ enum: ['spawn', 'link'] })
+    expect(properties.mode).toMatchObject({ enum: ['spawn', 'handoff', 'link'] })
     expect(properties.sessionId).toMatchObject({ minLength: 1 })
     expect(properties.name).toMatchObject({ minLength: 1, maxLength: 64 })
     expect(properties.role).toMatchObject({ minLength: 1, maxLength: 64 })
@@ -231,9 +234,22 @@ describe('built-in superone tool registration surfaces', () => {
     expect(properties.task).not.toHaveProperty('minLength')
   })
 
-  it('documents link mode and sessionId on session_collab_request', () => {
-    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/mode "link"/i)
+  it('documents link + handoff modes and sessionId on session_collab_request', () => {
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/"link"/i)
+    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/"handoff"/i)
     expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/sessionId/)
     expect(SESSION_REQUEST_AGENTS_DESCRIPTION.length).toBeLessThanOrEqual(700)
+  })
+
+  /**
+   * Handoff only pays off if the model can tell it apart from spawn without the
+   * manual: sibling (not nested), one-way (no mailbox), self-contained brief.
+   */
+  it('distinguishes handoff from spawn in the mode + task field blurbs', () => {
+    expect(LAUNCH_MODE_DESCRIPTION).toMatch(/sibling/i)
+    expect(LAUNCH_MODE_DESCRIPTION).toMatch(/no mailbox/i)
+    expect(LAUNCH_MODE_DESCRIPTION).toMatch(/not nested/i)
+    expect(LAUNCH_TASK_DESCRIPTION).toMatch(/self-contained/i)
+    expect(SESSION_START_DESCRIPTION).toMatch(/handoff/i)
   })
 })

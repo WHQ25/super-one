@@ -337,7 +337,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       inputSchema: {
         launches: z.array(z.object({
           launchId: z.string().optional(),
-          mode: z.enum(['spawn', 'link']).optional().describe(LAUNCH_MODE_DESCRIPTION),
+          mode: z.enum(['spawn', 'handoff', 'link']).optional().describe(LAUNCH_MODE_DESCRIPTION),
           sessionId: z.string().min(1).optional().describe(LAUNCH_SESSION_ID_DESCRIPTION),
           agentId: z.string().optional(),
           summary: z.string().trim().min(1).describe(LAUNCH_SUMMARY_DESCRIPTION),

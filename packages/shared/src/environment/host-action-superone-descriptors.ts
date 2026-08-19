@@ -19,7 +19,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
     {
     "name": "session_collab_request",
-    "description": "Request user approval for collaboration launches: mode \"spawn\" (default) creates a child; mode \"link\" opens a mailbox with an existing sessionId. Spawn: list_agents; require agentId, name, role, summary, task; for cwd/worktree call read_manual({ domain: \"product\", topic: \"collaboration\" }); same-repo isolation belongs in config.worktree. Link: require sessionId + summary; optional task opening (turn-injected, not system prompt). User must approve; credential for session_collab_start.",
+    "description": "Request user approval for collaboration launches: \"spawn\" (default) creates a nested child you keep messaging; \"handoff\" creates a top-level sibling that takes the task over one-way (no mailbox); \"link\" opens a mailbox with an existing sessionId. Spawn/handoff: list_agents; require agentId, name, role, summary, task; for cwd/worktree call read_manual({ domain: \"product\", topic: \"collaboration\" }); same-repo isolation belongs in config.worktree. Link: require sessionId + summary; optional task opening (turn-injected, not system prompt). User must approve; credential for session_collab_start.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -38,9 +38,10 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                 "type": "string",
                 "enum": [
                   "spawn",
+                  "handoff",
                   "link"
                 ],
-                "description": "\"spawn\" (default) creates a new child session. \"link\" connects to an already-existing SuperOne session (sessionId required)."
+                "description": "\"spawn\" (default) creates a new child session nested under this one, with a two-way mailbox. \"handoff\" creates a new top-level sibling session that receives the task and owns it from then on \u2014 no mailbox, no reply, not nested. Use it to pass work forward (fresh context, next phase, unattended follow-up) instead of supervising it. \"link\" connects to an already-existing SuperOne session (sessionId required)."
               },
               "sessionId": {
                 "type": "string",
@@ -49,7 +50,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
               },
               "agentId": {
                 "type": "string",
-                "description": "Agent profile id from session_collab_list_agents. Required for mode \"spawn\"; omit for \"link\"."
+                "description": "Agent profile id from session_collab_list_agents. Required for mode \"spawn\" and \"handoff\"; omit for \"link\"."
               },
               "summary": {
                 "type": "string",
@@ -58,23 +59,23 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
               },
               "task": {
                 "type": "string",
-                "description": "Full Markdown brief. Spawn: delivered to the child on session_collab_start. Link: optional opening for the peer (mailbox + turn wake, never system prompt). Expandable in the confirm UI."
+                "description": "Full Markdown brief. Spawn/handoff: delivered to the new session on session_collab_start. A handoff receiver cannot ask you anything back, so make the brief self-contained. Link: optional opening for the peer (mailbox + turn wake, never system prompt). Expandable in the confirm UI."
               },
               "name": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64,
-                "description": "Spawn: human-friendly child label (e.g. \"Alice\"). Link: optional; defaults to peer session title."
+                "description": "Spawn/handoff: human-friendly session label (e.g. \"Alice\"). Link: optional; defaults to peer session title."
               },
               "role": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64,
-                "description": "Spawn: role for title \"Name - Role\". Link: optional; defaults to \"Peer\"."
+                "description": "Spawn/handoff: role for title \"Name - Role\". Link: optional; defaults to \"Peer\"."
               },
               "config": {
                 "type": "object",
-                "description": "Spawn only. Ignored for mode \"link\".",
+                "description": "Spawn and handoff only. Ignored for mode \"link\".",
                 "properties": {
                   "model": {
                     "type": "string"
@@ -168,7 +169,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
     {
     "name": "session_collab_start",
-    "description": "Activate one approved collaboration credential. Spawn: create the child and deliver its task. Link: bind the existing peer and wake it via turn injection (not system prompt). Returns when the peer begins (spawn) or is notified (link). Retries are idempotent. Start all credentials back-to-back.",
+    "description": "Activate one approved collaboration credential. Spawn: create the child and deliver its task. Handoff: create the sibling session and deliver the task; the credential is spent, no mailbox follows. Link: bind the existing peer and wake it via turn injection (not system prompt). Returns when the peer begins or is notified. Retries are idempotent. Start all credentials back-to-back.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -380,7 +380,7 @@ export async function sendMessageImpl(
         '- session_collab_request({ launches: [{ mode: "link", sessionId, summary, task? }] })',
         '- You MUST pass sessionId from the list below; never invent ids.',
         '- After approval: session_collab_start → session_collab_send / session_collab_retrieve.',
-        '- Do NOT use mode "spawn" for an already-existing session (spawn creates a new child).',
+        '- Do NOT use mode "spawn" or "handoff" for an already-existing session (both create a new session).',
         '',
         'Mentioned sessions:',
       ]

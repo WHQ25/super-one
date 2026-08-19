@@ -768,8 +768,10 @@ export const SESSION_AGENT_TASK_MAX = 100_000
  * Collaboration launch mode:
  * - `spawn` — create a new child session (system-prompt credential injection)
  * - `link` — mailbox with an already-existing session (turn/wake injection only)
+ * - `handoff` — create a new **sibling** session that only receives the task
+ *   (no credential, no mailbox, not nested under the initiator in the sidebar)
  */
-export type SessionCollabLaunchMode = 'spawn' | 'link'
+export type SessionCollabLaunchMode = 'spawn' | 'link' | 'handoff'
 
 /**
  * Resolve the user-facing summary for a collab launch.
@@ -787,7 +789,7 @@ export interface SessionAgentLaunchProposal {
   /** Defaults to `spawn` when omitted (back-compat). */
   mode?: SessionCollabLaunchMode
   /**
-   * Agent profile id for `spawn`. Empty string for `link` (no new agent).
+   * Agent profile id for `spawn` / `handoff`. Empty string for `link` (no new agent).
    */
   agentId: string
   /**
@@ -815,6 +817,8 @@ export interface SessionAgentLaunchProposal {
   /**
    * Full task brief (Markdown).
    * `spawn`: delivered to the child on session_collab_start.
+   * `handoff`: delivered to the new sibling session as its opening turn, with a
+   * provenance line naming the initiator. No credential is ever injected.
    * `link`: optional opening for the peer (mailbox + turn wake — not system prompt).
    * Shown when the user expands the summary in the confirm UI.
    */

@@ -1512,6 +1512,8 @@ export const zh: Messages = {
       peerSession: '对端会话',
       peerProject: '对端项目',
       workWith: '协作对象：',
+      handOffTo: '交接给：',
+      handOffHint: '在独立的顶层会话中接手任务，不会再回复当前会话。',
       openPeerSession: '打开会话',
       expandTask: '展开完整任务',
       collapseTask: '收起任务',

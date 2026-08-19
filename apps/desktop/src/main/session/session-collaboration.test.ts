@@ -932,6 +932,151 @@ describe('session collaboration', () => {
     expect(early).toMatchObject({ status: 'error' })
     expect(String(early.message)).toMatch(/not been started/i)
   })
+
+  /**
+   * Handoff = spawn's launch shape, but the created session is a sibling that owns
+   * the task. The three load-bearing differences are asserted here: no credential in
+   * the system prompt, no endpoint row (child_session_id stays NULL so every
+   * parent→child query and the UNIQUE endpoint slot skip it), and a provenance line
+   * in the delivered task since the receiver has no other way to trace the work.
+   */
+  async function approveHandoff(parent: Session, host: SessionManager) {
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{
+        mode: 'handoff',
+        agentId: 'claude-base',
+        summary: 'Continue the migration',
+        task: 'Finish phase 2 of the migration and run the focused tests.',
+        name: 'Dana',
+        role: 'Implementer',
+        config: { cwd: TEST_CWD, model: 'test-model', effort: 'high', permissionMode: 'bypassPermissions' },
+      }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    expect(launches[0]).toMatchObject({ mode: 'handoff', agentId: 'claude-base' })
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+    })
+    const approved = resultJson(await promise)
+    expect(approved.status).toBe('approved')
+    return (approved.launches as Array<{ credential: string; mode: string }>)[0]
+  }
+
+  it('hands off to a sibling session with the task but no credential or mailbox', async () => {
+    const parent = fakeSession('parent')
+    const { host, sessions, createSession } = fakeHost(parent)
+    const grant = await approveHandoff(parent, host)
+    expect(grant.mode).toBe('handoff')
+
+    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    expect(started).toMatchObject({ status: 'started', mode: 'handoff', reused: false })
+    expect(String(started.note)).toMatch(/sibling/i)
+
+    const sessionId = started.sessionId as string
+    // No system-prompt credential injection — the receiver cannot reply at all.
+    expect(createSession.mock.calls[0][0].systemPromptAppend).toBeUndefined()
+    expect(getSessionCollaborationSystemPrompt(sessionId)).toBeUndefined()
+    // Approved permission mode applies at creation...
+    expect(createSession.mock.calls[0][0].permissionMode).toBe('bypassPermissions')
+    // ...but is not re-pinned on resume: the sibling is the user's session from here on.
+    expect(getSessionCollaborationRunConfig(sessionId)).toBeNull()
+
+    // Never an endpoint: the sidebar/archive parent→child joins and the UNIQUE
+    // child_session_id slot must both stay free for this session.
+    const row = state.db!.prepare(`
+      SELECT kind, child_session_id, started_at FROM session_collaboration_grants
+      WHERE parent_session_id = 'parent'
+    `).get() as { kind: string; child_session_id: string | null; started_at: string | null }
+    expect(row.kind).toBe('handoff')
+    expect(row.child_session_id).toBeNull()
+    expect(row.started_at).toBeTruthy()
+
+    const child = sessions.get(sessionId)!
+    const sent = (child.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as { content: string }
+    expect(sent.content).toContain('Handed off from SuperOne session `parent`')
+    expect(sent.content).toContain('Finish phase 2 of the migration')
+  })
+
+  it('refuses mailbox traffic on a handoff credential from either side', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const grant = await approveHandoff(parent, host)
+    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const sessionId = started.sessionId as string
+
+    const send = resultJson(await sendSessionMessage('parent', {
+      credential: grant.credential,
+      content: 'any follow-up?',
+    }, host))
+    expect(send).toMatchObject({ status: 'error' })
+    expect(String(send.message)).toMatch(/one-way/i)
+
+    const retrieve = resultJson(await retrieveSessionMessages(sessionId, { credentials: [grant.credential] }))
+    expect(retrieve).toMatchObject({ status: 'error' })
+    expect(String(retrieve.message)).toMatch(/one-way/i)
+  })
+
+  it('is idempotent on retry: same sibling session, task delivered once', async () => {
+    const parent = fakeSession('parent')
+    const { host, sessions, createSession } = fakeHost(parent)
+    const grant = await approveHandoff(parent, host)
+    const first = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const second = resultJson(await startSessionAgent('parent', grant.credential, host))
+
+    expect(second).toMatchObject({ status: 'started', mode: 'handoff', reused: true })
+    expect(second.sessionId).toBe(first.sessionId)
+    expect(createSession).toHaveBeenCalledTimes(1)
+    const child = sessions.get(first.sessionId as string)!
+    expect(child.send).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * A spawn child is FK-linked to its grant (delete cascades the row away, so a retry
+   * cannot find the credential at all). A handoff session is not, so this retry path
+   * is reachable with a session that no longer exists.
+   */
+  it('reports a deleted handoff session instead of throwing on retry', async () => {
+    const parent = fakeSession('parent')
+    const { host, sessions } = fakeHost(parent)
+    const grant = await approveHandoff(parent, host)
+    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const sessionId = started.sessionId as string
+
+    sessions.delete(sessionId)
+    state.db!.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
+
+    const retry = resultJson(await startSessionAgent('parent', grant.credential, host))
+    expect(retry).toMatchObject({ status: 'error' })
+    expect(String(retry.message)).toMatch(/no longer exists/i)
+  })
+
+  it('lets a handoff receiver hand off again — siblings are not nested children', async () => {
+    const parent = fakeSession('parent')
+    const { host, sessions } = fakeHost(parent)
+    const grant = await approveHandoff(parent, host)
+    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const sibling = sessions.get(started.sessionId as string)!
+
+    const promise = requestSessionAgents(sibling.id, {
+      launches: [{
+        mode: 'handoff',
+        agentId: 'claude-base',
+        summary: 'Pass phase 3 on',
+        task: 'Run phase 3.',
+        name: 'Eli',
+        role: 'Implementer',
+        config: { cwd: TEST_CWD },
+      }],
+    }, host)
+    const event = (sibling.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call[0] as AgentEvent)
+      .find((e) => e.type === 'permission_request')
+    if (!event || event.type !== 'permission_request') throw new Error('Expected permission request')
+    resolveSessionAgentsConfirm(event.request.requestId, 'decline', {})
+    expect(resultJson(await promise).status).toBe('rejected')
+  })
 })
 
 describe('child session project attribution', () => {

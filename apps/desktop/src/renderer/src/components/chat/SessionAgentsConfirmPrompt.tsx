@@ -81,6 +81,15 @@ function isLinkLaunch(launch: SessionAgentLaunchProposal): boolean {
 }
 
 /**
+ * Handoff shares spawn's card (agent profile, editable model/permission), so the
+ * header prefix is the only thing telling the user this launch is one-way and
+ * lands as a top-level sibling rather than a child they can keep talking to.
+ */
+function isHandoffLaunch(launch: SessionAgentLaunchProposal): boolean {
+  return launch.mode === 'handoff'
+}
+
+/**
  * Tab labels always show harness (Claude / Grok / …), including link launches
  * (peer session harness). Duplicate harnesses get a 1-based suffix.
  */
@@ -188,6 +197,7 @@ function LaunchPanel({
   const sandboxCapability = useAppStore((state) => state.sandboxCapability)
   const { config } = launch
   const link = isLinkLaunch(launch)
+  const handoff = isHandoffLaunch(launch)
   const harnessId = profile?.harnessId ?? 'claude'
   const modelSelector = useCollabLaunchModelSelector({
     harnessId,
@@ -233,7 +243,17 @@ function LaunchPanel({
             )}
           </>
         ) : (
-          <span className="min-w-0 truncate">{nameRole}</span>
+          <>
+            {handoff && (
+              <span
+                className="shrink-0 text-muted-foreground"
+                title={t('chat.sessionAgentsConfirm.handOffHint')}
+              >
+                {t('chat.sessionAgentsConfirm.handOffTo')}
+              </span>
+            )}
+            <span className="min-w-0 truncate">{nameRole}</span>
+          </>
         )}
       </div>
 

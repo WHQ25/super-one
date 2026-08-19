@@ -131,7 +131,7 @@ export const MANUAL_READ_DESCRIPTION =
   'Read bundled SuperOne manuals. Omit domain to list all domains; pass domain to list its topics; ' +
   'pass domain with topic to read one topic. For widget, pass either topic or modules, never both. ' +
   'Use product/contribute for GitHub issues and PRs (any bug or idea; issue-first, optional red–green PR), product/debug for support and runtime paths, ' +
-  'product/collaboration before session_collab_request (worktree vs cwd, parallel implementers/reviewers), ' +
+  'product/collaboration before session_collab_request (spawn vs handoff vs link, worktree vs cwd), ' +
   'product/sessions for session_list/search/read/cleanup (archive cite/handoff), ' +
   'miniapp/overview before mini-app development, and media/overview before provider-specific options. ' +
   'Use config_read for live settings and widget_list_templates for saved widgets.'
@@ -248,19 +248,23 @@ export const SESSION_LIST_AGENTS_DESCRIPTION =
   'You may reuse one agentId for multiple launches.'
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
-  'Request user approval for collaboration launches: mode "spawn" (default) creates a child; mode "link" opens a mailbox with an existing sessionId. ' +
-  'Spawn: list_agents; require agentId, name, role, summary, task; for cwd/worktree call read_manual({ domain: "product", topic: "collaboration" }); same-repo isolation belongs in config.worktree. ' +
+  'Request user approval for collaboration launches: "spawn" (default) creates a nested child you keep messaging; "handoff" creates a top-level sibling that takes the task over one-way (no mailbox); "link" opens a mailbox with an existing sessionId. ' +
+  'Spawn/handoff: list_agents; require agentId, name, role, summary, task; for cwd/worktree call read_manual({ domain: "product", topic: "collaboration" }); same-repo isolation belongs in config.worktree. ' +
   'Link: require sessionId + summary; optional task opening (turn-injected, not system prompt). User must approve; credential for session_collab_start.'
 
 export const LAUNCH_SUMMARY_DESCRIPTION =
   'Short 2–3 sentence task summary shown collapsed in the confirm dialog. Not the full brief — put detail in task.'
 
 export const LAUNCH_TASK_DESCRIPTION =
-  'Full Markdown brief. Spawn: delivered to the child on session_collab_start. ' +
+  'Full Markdown brief. Spawn/handoff: delivered to the new session on session_collab_start. ' +
+  'A handoff receiver cannot ask you anything back, so make the brief self-contained. ' +
   'Link: optional opening for the peer (mailbox + turn wake, never system prompt). Expandable in the confirm UI.'
 
 export const LAUNCH_MODE_DESCRIPTION =
-  '"spawn" (default) creates a new child session. "link" connects to an already-existing SuperOne session (sessionId required).'
+  '"spawn" (default) creates a new child session nested under this one, with a two-way mailbox. ' +
+  '"handoff" creates a new top-level sibling session that receives the task and owns it from then on — no mailbox, no reply, not nested. ' +
+  'Use it to pass work forward (fresh context, next phase, unattended follow-up) instead of supervising it. ' +
+  '"link" connects to an already-existing SuperOne session (sessionId required).'
 
 export const LAUNCH_SESSION_ID_DESCRIPTION =
   'Existing SuperOne session id to link with (mode "link" only). Required for link; ignore for spawn. Prefer ids from @session mentions or session_list — never invent ids.'
@@ -297,8 +301,9 @@ export const LAUNCH_BRANCH_NAME_DESCRIPTION =
 
 export const SESSION_START_DESCRIPTION =
   'Activate one approved collaboration credential. Spawn: create the child and deliver its task. ' +
+  'Handoff: create the sibling session and deliver the task; the credential is spent, no mailbox follows. ' +
   'Link: bind the existing peer and wake it via turn injection (not system prompt). ' +
-  'Returns when the peer begins (spawn) or is notified (link). Retries are idempotent. Start all credentials back-to-back.'
+  'Returns when the peer begins or is notified. Retries are idempotent. Start all credentials back-to-back.'
 
 export const SESSION_SEND_DESCRIPTION =
   'Send a persistent Markdown message through one collaboration mailbox (spawn parent-child or link peers). ' +
@@ -418,7 +423,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
               launchId: { type: 'string', description: 'Optional caller correlation id.' },
               mode: {
                 type: 'string',
-                enum: ['spawn', 'link'],
+                enum: ['spawn', 'handoff', 'link'],
                 description: LAUNCH_MODE_DESCRIPTION,
               },
               sessionId: {
@@ -428,7 +433,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
               },
               agentId: {
                 type: 'string',
-                description: 'Agent profile id from session_collab_list_agents. Required for mode "spawn"; omit for "link".',
+                description: 'Agent profile id from session_collab_list_agents. Required for mode "spawn" and "handoff"; omit for "link".',
               },
               summary: {
                 type: 'string',
@@ -443,17 +448,17 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                 type: 'string',
                 minLength: 1,
                 maxLength: 64,
-                description: 'Spawn: human-friendly child label (e.g. "Alice"). Link: optional; defaults to peer session title.',
+                description: 'Spawn/handoff: human-friendly session label (e.g. "Alice"). Link: optional; defaults to peer session title.',
               },
               role: {
                 type: 'string',
                 minLength: 1,
                 maxLength: 64,
-                description: 'Spawn: role for title "Name - Role". Link: optional; defaults to "Peer".',
+                description: 'Spawn/handoff: role for title "Name - Role". Link: optional; defaults to "Peer".',
               },
               config: {
                 type: 'object',
-                description: 'Spawn only. Ignored for mode "link".',
+                description: 'Spawn and handoff only. Ignored for mode "link".',
                 properties: {
                   model: { type: 'string' },
                   effort: { type: 'string' },

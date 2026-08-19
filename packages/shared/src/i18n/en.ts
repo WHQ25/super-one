@@ -1454,6 +1454,10 @@ export type Messages = {
       peerProject: string
       /** Prefix before a clickable peer session title, e.g. "Work with:" */
       workWith: string
+      /** Prefix before a handoff target, e.g. "Hand off to:" */
+      handOffTo: string
+      /** One-line explanation shown on handoff launches (one-way, sibling session). */
+      handOffHint: string
       /** Tooltip / a11y for opening the peer session from the confirm card. */
       openPeerSession: string
       expandTask: string
@@ -4395,6 +4399,8 @@ export const en: Messages = {
       peerSession: 'Peer session',
       peerProject: 'Peer project',
       workWith: 'Work with:',
+      handOffTo: 'Hand off to:',
+      handOffHint: 'Takes the task over in its own top-level session — no replies back to this one.',
       openPeerSession: 'Open session',
       expandTask: 'Show the full task',
       collapseTask: 'Collapse the task',

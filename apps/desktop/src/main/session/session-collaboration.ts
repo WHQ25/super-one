@@ -45,18 +45,31 @@ import {
 
 const MAX_MESSAGES_PER_RETRIEVE = 100
 
+/** Returned by the mailbox tools when either side tries to use a handoff credential. */
+const HANDOFF_NO_MAILBOX =
+  'This credential belongs to a handoff launch. Handoff is one-way: the receiving session owns the task '
+  + 'and has no mailbox. Use mode "spawn" (nested child) or "link" (existing session) when you need to exchange messages.'
+
+/** Told to the initiator, because a handoff credential is spent by session_collab_start. */
+const HANDOFF_NOTE =
+  'Handoff complete. The new session is a top-level sibling and owns the task now — '
+  + 'there is no mailbox, so this credential cannot be used with session_collab_send or session_collab_retrieve.'
+
 export interface RequestSessionAgentsArgs {
   launches: Array<{
     launchId?: string
-    /** `spawn` (default) creates a child; `link` connects an existing sessionId. */
+    /**
+     * `spawn` (default) creates a nested child; `link` connects an existing
+     * sessionId; `handoff` creates a top-level sibling that only receives the task.
+     */
     mode?: SessionCollabLaunchMode
-    /** Required for spawn; ignored for link. */
+    /** Required for spawn/handoff; ignored for link. */
     agentId?: string
     /** Required for link: existing SuperOne session id. */
     sessionId?: string
-    /** Short confirm-UI description. Optional for spawn when task is present. */
+    /** Short confirm-UI description. Optional for spawn/handoff when task is present. */
     summary?: string
-    /** Spawn: full task. Link: optional opening for the peer. */
+    /** Spawn/handoff: full task. Link: optional opening for the peer. */
     task?: string
     /** Agent-chosen human label (not harness name). Used in `Name - Role`. */
     name?: string
@@ -362,7 +375,9 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
 }
 
 function resolveLaunchMode(raw: unknown): SessionCollabLaunchMode {
-  return raw === 'link' ? 'link' : 'spawn'
+  if (raw === 'link') return 'link'
+  if (raw === 'handoff') return 'handoff'
+  return 'spawn'
 }
 
 function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): SessionAgentLaunchProposal[] {
@@ -438,26 +453,28 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
       }
     }
 
+    // spawn + handoff share the whole launch shape; they differ only in whether the
+    // new session is nested under the initiator and gets a mailbox credential.
     const agentId = launch.agentId?.trim()
-    if (!agentId) throw new Error('Spawn launches require agentId from session_collab_list_agents')
+    if (!agentId) throw new Error(`${mode} launches require agentId from session_collab_list_agents`)
     const profile = profiles.get(agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${agentId}`)
     const task = launch.task?.trim()
-    if (!task) throw new Error('Every spawn launch must include a non-empty task')
+    if (!task) throw new Error(`Every ${mode} launch must include a non-empty task`)
     if (task.length > SESSION_AGENT_TASK_MAX) {
       throw new Error(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`)
     }
     const summary = resolveLaunchSummary(task, launch.summary)
     if (!summary) throw new Error('Every launch must include a non-empty summary')
     const name = launch.name?.trim()
-    if (!name) throw new Error('Every spawn launch must include a non-empty name')
+    if (!name) throw new Error(`Every ${mode} launch must include a non-empty name`)
     if (name.length > 64) throw new Error('A launch name may contain at most 64 characters')
     const role = launch.role?.trim()
-    if (!role) throw new Error('Every spawn launch must include a non-empty role')
+    if (!role) throw new Error(`Every ${mode} launch must include a non-empty role`)
     if (role.length > 64) throw new Error('A launch role may contain at most 64 characters')
     return {
       launchId,
-      mode: 'spawn',
+      mode,
       agentId,
       summary,
       task,
@@ -557,7 +574,9 @@ function mergeConfirmedLaunches(
 
     return {
       launchId: base.launchId,
-      mode: 'spawn',
+      // Mode comes from the server-side proposal, never from renderer formAnswers:
+      // a tampered mode could turn a supervised child into a one-way handoff.
+      mode: base.mode ?? 'spawn',
       agentId: base.agentId,
       summary: base.summary,
       task: base.task,
@@ -632,10 +651,12 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
   const launchIds = new Set(launches.map((launch) => launch.launchId))
   if (launchIds.size !== launches.length) throw new Error('Every confirmed launch must have a unique launchId')
   const profiles = new Set(listSessionAgentProfiles().map((profile) => profile.id))
-  const insertSpawn = getDb().prepare(`
+  // spawn and handoff insert identically; only `kind` differs, and that single
+  // column is what keeps handoff sessions out of every parent→child query.
+  const insertChild = getDb().prepare(`
     INSERT INTO session_collaboration_grants
       (credential_hash, credential_secret, credential_hint, parent_session_id, agent_id, task, config_json, created_at, kind)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'spawn')
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const insertLink = getDb().prepare(`
     INSERT INTO session_collaboration_grants
@@ -648,7 +669,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
     if (!name) throw new Error('Every launch must include a non-empty name')
     const role = launch.role?.trim()
     if (!role) throw new Error('Every launch must include a non-empty role')
-    const mode = launch.mode === 'link' ? 'link' : 'spawn'
+    const mode = resolveLaunchMode(launch.mode)
 
     if (mode === 'link') {
       const peerSessionId = launch.sessionId?.trim()
@@ -741,7 +762,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
     }
 
     if (!profiles.has(launch.agentId)) throw new Error(`Unknown agent profile: ${launch.agentId}`)
-    if (!launch.task?.trim()) throw new Error('Every spawn launch must include a non-empty task')
+    if (!launch.task?.trim()) throw new Error(`Every ${mode} launch must include a non-empty task`)
     const credential = `s1sc_${randomBytes(32).toString('base64url')}`
     const config = {
       ...launch.config,
@@ -749,7 +770,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       role,
       summary: launch.summary.trim(),
     }
-    insertSpawn.run(
+    insertChild.run(
       hashCredential(credential),
       encryptSecret(credential),
       credential.slice(-8),
@@ -758,10 +779,11 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       launch.task.trim(),
       JSON.stringify(config),
       new Date().toISOString(),
+      mode,
     )
     return {
       launchId: launch.launchId,
-      mode: 'spawn' as const,
+      mode,
       agentId: launch.agentId,
       summary: launch.summary.trim(),
       task: launch.task.trim(),
@@ -840,7 +862,14 @@ export function getSessionCollaborationSystemPrompt(sessionId: string): string |
   return credential ? collaborationSystemPrompt(credential, row.parent_session_id) : undefined
 }
 
-/** Human-approved launch settings for a spawned collaboration child. */
+/**
+ * Human-approved launch settings for a spawned collaboration child, re-applied on
+ * every resume because the child is agent-owned.
+ *
+ * Spawn children only. A handoff sibling is a normal top-level session the user
+ * owns after the first turn: the approved permission/sandbox settings are applied
+ * once at creation, and whatever the user picks afterwards wins on resume.
+ */
 export function getSessionCollaborationRunConfig(
   sessionId: string,
 ): SessionCollaborationRunConfig | null {
@@ -883,6 +912,9 @@ function linkActivationWakeText(
 }
 
 function assertEndpoint(grant: GrantRow, callerSessionId: string): void {
+  // Handoff grants exist only to create and brief the sibling session; they are
+  // never a channel, so neither endpoint may read or write their mailbox.
+  if (grant.kind === 'handoff') throw new Error(HANDOFF_NO_MAILBOX)
   if (callerSessionId !== grant.parent_session_id && callerSessionId !== grant.child_session_id) {
     throw new Error('This credential does not authorize the current session')
   }
@@ -993,6 +1025,25 @@ async function ensureChildProject(cwd: string, parentProjectPath: string): Promi
 }
 
 /**
+ * Opening body for the receiving session.
+ *
+ * `handoff` has no credential and no mailbox, so the only way the receiver can
+ * trace where the work came from is this line in the delivered message itself.
+ */
+function initialTaskContent(grant: GrantRow): string {
+  if (grant.kind !== 'handoff') return grant.task
+  const row = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
+    .get(grant.parent_session_id) as { title: string | null } | undefined
+  const title = row?.title?.trim() || grant.parent_session_id.slice(0, 8)
+  return (
+    `> Handed off from SuperOne session \`${grant.parent_session_id}\` ("${title}"). `
+    + 'This is a one-way handoff: you own this task now and cannot message that session back. '
+    + 'Read its context with session_read({ sessionId }) if you need it.\n\n'
+    + grant.task
+  )
+}
+
+/**
  * Deliver the approved launch task and resolve once the child agent has begun
  * replying (assistant message_start). The remainder of the turn continues in
  * the background so session_start is not blocked for the full first turn.
@@ -1022,7 +1073,7 @@ async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void
   })
 
   const sendPromise = child.send({
-    content: grant.task,
+    content: initialTaskContent(grant),
     model: config.model,
     effort: config.effort as EffortLevel | undefined,
     clientMessageId: `collaboration-task-${grant.credential_hash.slice(0, 16)}`,
@@ -1164,7 +1215,43 @@ export async function startSessionAgent(
     })
   }
 
-  // --- spawn (existing path) ---
+  // --- spawn + handoff: both create a session and deliver the task. They differ
+  // in nesting, in whether a mailbox credential is injected, and in where the new
+  // session id is recorded.
+  //
+  // A handoff session is deliberately *not* written to child_session_id: that column
+  // is UNIQUE and marks a session as a collaboration endpoint, which would both nest
+  // the sibling in parent→child queries and permanently block it from being linked or
+  // spawned against later. The created id lives in config_json instead. ---
+  const isHandoff = grant.kind === 'handoff'
+  const existingHandoffSessionId = isHandoff
+    ? (parseConfig(grant.config_json) as { handoffSessionId?: string }).handoffSessionId
+    : undefined
+  if (existingHandoffSessionId) {
+    // Unlike a spawn child, a handoff session is not FK-linked to the grant, so
+    // deleting it leaves this row behind. resolveLiveSession swallows the resume
+    // failure; report it instead of throwing out of the tool call.
+    const existing = resolveLiveSession(host, existingHandoffSessionId)
+    if (!existing) {
+      return toolResult({
+        status: 'error',
+        message: `The handoff session no longer exists: ${existingHandoffSessionId}`,
+      }, true)
+    }
+    await deliverInitialTask(grant, existing)
+    const peer = describeCollaborationPeer(grant)
+    return toolResult({
+      status: 'started',
+      mode: 'handoff',
+      sessionId: existingHandoffSessionId,
+      reused: true,
+      note: HANDOFF_NOTE,
+      name: peer.name,
+      role: peer.role,
+      title: peer.title,
+      config: peer.config,
+    })
+  }
   if (grant.child_session_id) {
     const existing = host.getSession(grant.child_session_id)
       ?? host.resumeSession(grant.child_session_id, { passive: true })
@@ -1172,9 +1259,10 @@ export async function startSessionAgent(
     const peer = describeCollaborationPeer(grant)
     return toolResult({
       status: 'started',
-      mode: 'spawn',
+      mode: grant.kind,
       sessionId: grant.child_session_id,
       reused: true,
+      ...(isHandoff ? { note: HANDOFF_NOTE } : {}),
       name: peer.name,
       role: peer.role,
       title: peer.title,
@@ -1236,7 +1324,10 @@ export async function startSessionAgent(
       permissionMode: config.permissionMode as PermissionMode | undefined,
       sandboxMode: config.sandboxMode as SandboxMode | undefined,
       acpAgentId: profile?.acpAgentId ?? null,
-      systemPromptAppend: collaborationSystemPrompt(credential, grant.parent_session_id),
+      // Handoff is one-way by construction: never hand the receiver a credential.
+      ...(isHandoff
+        ? {}
+        : { systemPromptAppend: collaborationSystemPrompt(credential, grant.parent_session_id) }),
     })
     if (previousActiveId && previousActiveId !== childSessionId) {
       try {
@@ -1267,11 +1358,21 @@ export async function startSessionAgent(
       title,
       childSessionId,
     )
-    const updated = getDb().prepare(`
-      UPDATE session_collaboration_grants
-      SET child_session_id = ?, started_at = ?
-      WHERE credential_hash = ? AND child_session_id IS NULL
-    `).run(childSessionId, new Date().toISOString(), grant.credential_hash)
+    const updated = isHandoff
+      ? getDb().prepare(`
+        UPDATE session_collaboration_grants
+        SET config_json = ?, started_at = ?
+        WHERE credential_hash = ? AND started_at IS NULL
+      `).run(
+        JSON.stringify({ ...config, handoffSessionId: childSessionId }),
+        new Date().toISOString(),
+        grant.credential_hash,
+      )
+      : getDb().prepare(`
+        UPDATE session_collaboration_grants
+        SET child_session_id = ?, started_at = ?
+        WHERE credential_hash = ? AND child_session_id IS NULL
+      `).run(childSessionId, new Date().toISOString(), grant.credential_hash)
     if (updated.changes !== 1) throw new Error('Credential was already consumed')
   } catch (error) {
     await host.disposeSession(childSessionId).catch(() => {})
@@ -1279,14 +1380,15 @@ export async function startSessionAgent(
     throw error
   }
 
-  grant = { ...grant, child_session_id: childSessionId }
+  grant = isHandoff ? grant : { ...grant, child_session_id: childSessionId }
   notifySessionsChanged?.()
   await deliverInitialTask(grant, child)
   return toolResult({
     status: 'started',
-    mode: 'spawn',
+    mode: grant.kind,
     sessionId: childSessionId,
     reused: false,
+    ...(isHandoff ? { note: HANDOFF_NOTE } : {}),
     name: displayName,
     role,
     title,
@@ -1401,7 +1503,14 @@ export async function sendSessionMessage(
 ) {
   const grant = grantForCredential(args.credential)
   if (!grant) return toolResult({ status: 'error', message: 'Invalid collaboration credential' }, true)
-  assertEndpoint(grant, callerSessionId)
+  try {
+    assertEndpoint(grant, callerSessionId)
+  } catch (error) {
+    return toolResult({
+      status: 'error',
+      message: error instanceof Error ? error.message : String(error),
+    }, true)
+  }
   if (!grant.child_session_id) {
     return toolResult({
       status: 'error',

@@ -2,24 +2,43 @@
 
 Read this before `session_collab_request`, especially when a child needs an isolated checkout or a different project.
 
-## Two launch modes
+## Three launch modes
 
 | `mode` | Purpose | Required fields | Injection |
 |--------|---------|-----------------|-----------|
-| `spawn` (default) | Create a **new** child session | `agentId`, `name`, `role`, `summary`, `task` | Child gets collaboration **system prompt** with credential |
+| `spawn` (default) | Create a **new** child session you keep talking to | `agentId`, `name`, `role`, `summary`, `task` | Child gets collaboration **system prompt** with credential |
+| `handoff` | Create a **new top-level sibling** that takes the task over | `agentId`, `name`, `role`, `summary`, `task` | **None.** No credential, no mailbox. The task is delivered as the opening turn with a provenance line naming you. |
 | `link` | Mailbox with an **existing** session | `sessionId`, `summary` (`task` = optional opening body; omit for wake-only) | Peer is woken via **turn injection** only — never system prompt. Link peers stay top-level in the sidebar (not nested under the initiator). |
 
-`sessionId` for `link` must be a real SuperOne session id (from `@session` mentions or `session_list` / `session_search`). Never invent ids. Do not use `spawn` when the target already exists.
+`sessionId` for `link` must be a real SuperOne session id (from `@session` mentions or `session_list` / `session_search`). Never invent ids. Do not use `spawn` or `handoff` when the target already exists.
+
+### `spawn` or `handoff`?
+
+Both take the same launch shape (`agentId`, `name`, `role`, `summary`, `task`, `config`). Pick by whether you stay responsible for the work.
+
+| Ask | Use |
+|-----|-----|
+| Do I need its findings back in *this* conversation (review, parallel fan-out I will merge)? | `spawn` |
+| Am I passing the work on for good (next phase, fresh context, unattended follow-up, "continue this in a new session")? | `handoff` |
+
+Handoff consequences, all intentional:
+
+- The new session is **top-level**, listed beside you in the sidebar — not nested under this one.
+- It **cannot reply**, and you **cannot** call `session_collab_send` / `session_collab_retrieve` with a handoff credential (both return an error). `session_collab_start` spends the credential.
+- Nothing is inherited: the receiver sees only the `task` body plus a provenance line with your session id, so it can `session_read({ sessionId })` for context. **Write a self-contained brief** — it has no way to ask a follow-up question.
+- A handoff receiver may itself hand off / spawn again (nesting limits do not apply to siblings), so chains are fine.
+
+Say what you did in your own reply: the user sees a new top-level session, not a child under yours.
 
 ## Launch flow
 
 | Step | Action |
 |------|--------|
-| 1 | **Spawn:** call `session_collab_list_agents` and choose an `agentId`. **Link:** take `sessionId` from `@session` / session tools. |
-| 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn: invent `name`/`role`, pass `summary` + full Markdown `task`. Link: pass `sessionId` + `summary` (+ optional `task` opening). |
+| 1 | **Spawn / handoff:** call `session_collab_list_agents` and choose an `agentId`. **Link:** take `sessionId` from `@session` / session tools. |
+| 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn/handoff: invent `name`/`role`, pass `summary` + full Markdown `task`. Link: pass `sessionId` + `summary` (+ optional `task` opening). |
 | 3 | Wait for user approval. Each approved launch returns a private, one-shot credential. |
-| 4 | Call `session_collab_start` for every credential back-to-back. Spawn: host creates the child and delivers `task`. Link: host binds the peer and wakes it (opening via mailbox + turn wake). |
-| 5 | Exchange durable Markdown handoffs with `session_collab_send` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. |
+| 4 | Call `session_collab_start` for every credential back-to-back. Spawn: host creates the child and delivers `task`. Handoff: host creates the sibling, delivers `task`, and the credential is spent. Link: host binds the peer and wakes it (opening via mailbox + turn wake). |
+| 5 | Spawn/link only: exchange durable Markdown handoffs with `session_collab_send` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. Handoff has no step 5. |
 
 ### Link example
 
@@ -36,7 +55,25 @@ Read this before `session_collab_request`, especially when a child needs an isol
 }
 ```
 
-A single request may mix spawn and link launches (one confirm card, multiple tabs).
+### Handoff example
+
+```json
+{
+  "launches": [
+    {
+      "mode": "handoff",
+      "agentId": "claude-base",
+      "name": "Dana",
+      "role": "Implementer",
+      "summary": "Continue the migration with phase 2",
+      "task": "## Context\nPhase 1 (schema + backfill) is merged on `main`.\n\n## Your task\nImplement phase 2 …\n\n## Done when\n`bun run test` passes.",
+      "config": { "permissionMode": "bypassPermissions" }
+    }
+  ]
+}
+```
+
+A single request may mix spawn, handoff and link launches (one confirm card, multiple tabs).
 
 ## Choose `cwd` or `worktree`
 
@@ -200,8 +237,10 @@ Set `cwd` only because this launch targets a genuinely different project root. T
 
 ## Permission and sandbox
 
-Nobody watches child sessions. Prefer the most autonomous mode that can finish the task: `permissionMode: "bypassPermissions"` for Claude-family and Codex harnesses, or `"auto"` for ACP. The user can downgrade permission and sandbox settings in the approval dialog. Use `"plan"` or `"default"` only when stopping for human review is the purpose of the launch.
+Nobody watches child or handoff sessions. Prefer the most autonomous mode that can finish the task: `permissionMode: "bypassPermissions"` for Claude-family and Codex harnesses, or `"auto"` for ACP. The user can downgrade permission and sandbox settings in the approval dialog. Use `"plan"` or `"default"` only when stopping for human review is the purpose of the launch.
 
 ## Mailbox
+
+Spawn children and link peers only — handoff grants have no mailbox and reject both mailbox tools.
 
 Write `session_collab_send` content as structured Markdown. Use `clientMessageId` when a send may be retried. After sending, continue other work or end the turn. When a collaboration wake arrives, call `session_collab_retrieve`; an `empty` result is not a reason to sleep or poll.

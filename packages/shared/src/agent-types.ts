@@ -3684,6 +3684,13 @@ export interface AppSettings {
   mermaidDarkTheme: string | null
   uiFontFamily: string | null
   liquidGlass: boolean
+  /**
+   * Let the DeepSeek harness's model rewrite this process's own plugin tree
+   * (`dsh-tool-cordis`). Off by default: its sandbox is explicitly "not a
+   * security boundary" and a dynamic package lives in shared process memory,
+   * so it reaches every dsh session — not just the one that defined it.
+   */
+  dshToolCordis: boolean
   cdpEnabled: boolean
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
@@ -3815,6 +3822,7 @@ export interface AppSettingsPatch {
   mermaidDarkTheme?: string | null
   uiFontFamily?: string | null
   liquidGlass?: boolean
+  dshToolCordis?: boolean
   cdpEnabled?: boolean
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean

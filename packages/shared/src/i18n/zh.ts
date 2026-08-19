@@ -610,6 +610,13 @@ export const zh: Messages = {
         dark: '深色',
       },
     },
+    dsh: {
+      toolCordis: {
+        label: '自我修改插件',
+        description: '允许 DeepSeek 在运行中的 SuperOne 里定义并运行插件——它可以查看当前运行时、写一个插件、启动它，再把它停掉。',
+        warning: '实验特性。沙箱不是安全边界——请把它当作给模型开放 shell 权限。运行中的插件由本进程内所有 DeepSeek 会话共享，重启后全部消失。',
+      },
+    },
     browser: {
       title: '浏览器',
       subtitle: '配置内置浏览器及其自动化工具',

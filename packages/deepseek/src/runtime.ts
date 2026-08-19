@@ -18,8 +18,10 @@ import { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
+  mountToolCordis,
   type DeepseekAdapterOptions,
   type DeepseekTreeOptions,
+  type DisposableFiber,
 } from './tree'
 
 export type ApprovalDecision = 'allowed-once' | 'rejected' | 'cancelled'
@@ -148,6 +150,7 @@ export class DeepseekRuntime {
   /** Live delegated children, keyed by the child's own dsh session id. */
   private subagentRuns = new Map<string, SubagentRun>()
   private adapterFiber: { dispose: () => Promise<void> } | null = null
+  private toolCordisFiber: DisposableFiber | null = null
   private readonly mcpServers: DeepseekMcpServers
 
   private constructor(
@@ -288,6 +291,8 @@ export class DeepseekRuntime {
     // One gate for every agent in the tree, including delegated children — the
     // per-session answerer is looked up per call, not captured per mount.
     installPermissionGate(bridge, (request) => runtime.answerPermission(request))
+
+    if (options.toolCordis) await runtime.setToolCordisEnabled(true)
 
     return runtime
   }
@@ -577,6 +582,34 @@ export class DeepseekRuntime {
   }
 
   /**
+   * Turn the self-referential Cordis toolset on or off while the tree runs.
+   *
+   * Cordis registrations are reversible effects and dsh re-assembles the prompt
+   * from the tool registry on every request, so this takes effect on the next
+   * turn of every session — no restart, no "reopen the app to apply". That
+   * matters more here than for most settings: the thing being toggled is the
+   * model's ability to run code in this process, so the off switch has to be
+   * immediate rather than eventual.
+   *
+   * Idempotent — the desktop calls it on every settings change.
+   */
+  async setToolCordisEnabled(enabled: boolean): Promise<void> {
+    if (enabled === (this.toolCordisFiber !== null)) return
+    if (!enabled) {
+      const fiber = this.toolCordisFiber
+      this.toolCordisFiber = null
+      await fiber?.dispose()
+      return
+    }
+    this.toolCordisFiber = await mountToolCordis(this.bridge)
+  }
+
+  /** Whether the model can currently rewrite this process's plugin tree. */
+  get toolCordisEnabled(): boolean {
+    return this.toolCordisFiber !== null
+  }
+
+  /**
    * Compact one session's history now, on the user's explicit request.
    *
    * Automatic compaction needs no seam — `compaction-basic` mounts its own
@@ -619,6 +652,7 @@ export class DeepseekRuntime {
       await record.dispose()
     }
     await this.mcpServers.dispose()
+    await this.setToolCordisEnabled(false)
     await (this.root as Context & { stop?: () => Promise<void> }).stop?.()
   }
 }

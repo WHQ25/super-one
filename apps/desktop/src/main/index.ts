@@ -613,6 +613,14 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   if (patch?.cdpEnabled === false) {
     detachAllCdp()
   }
+  if (patch?.dshToolCordis !== undefined) {
+    // Reaches the next turn of every live dsh session, without a restart. The
+    // off switch has to be immediate: what it withdraws is the model's ability
+    // to run code in this process. `peek` so toggling never boots a tree.
+    const { peekDeepseekRuntime } = await import('./deepseek/deepseek-runtime-host')
+    const runtime = await peekDeepseekRuntime()
+    await runtime?.setToolCordisEnabled(result.dshToolCordis)
+  }
   if (patch?.experimentalClaudeOpenAiChatEnabled !== undefined) {
     sessionManager.markAllNeedsRebuild('claude')
   }

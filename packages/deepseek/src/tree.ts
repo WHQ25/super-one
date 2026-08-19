@@ -16,6 +16,8 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentForkInProcess from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+import DynamicCordisRunner from '@deepseek-ai/dsh-cordis-host-runner'
+import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
@@ -41,6 +43,50 @@ export interface DeepseekTreeOptions {
    * the user's credential or model selection changes.
    */
   deepseekAdapter?: DeepseekAdapterOptions
+  /**
+   * Let the model rewrite this process's own plugin tree (`dsh-tool-cordis`).
+   * Off unless the user opted in; see `toolCordisPlugin`.
+   */
+  toolCordis?: boolean
+}
+
+/** A mounted plugin subtree that can be taken back out. */
+export interface DisposableFiber {
+  dispose(): Promise<void>
+}
+
+/**
+ * Mount the self-referential toolset: five tools that let the model inspect,
+ * define, run and stop plugins **inside the running dsh process**.
+ *
+ * Behind a user opt-in (`AppSettings.dshToolCordis`, default off) for two
+ * reasons its own README states plainly. Its sandbox "is not a security
+ * boundary" — "treat this toolset like bash access" — and a dynamic package
+ * lives in shared process memory, so it "may affect other sessions in that
+ * process". Neither fits SuperOne's per-tool permission model: the gate can
+ * refuse `cordis_run`, but it cannot scope what a package does once running.
+ *
+ * Both rows travel together: the runner (`ctx.dynamicCordisRunner`) owns the vm
+ * and the package registry, and the toolset alone never activates without it.
+ * Mounted on the host plane like every other model-facing row, and reversible —
+ * turning the setting off withdraws the tools from the next request's schema.
+ */
+export async function mountToolCordis(ctx: Context): Promise<DisposableFiber> {
+  // Awaited, not fired: the toolset injects the runner's service, so an
+  // unawaited pair leaves the tools dormant and the registry unchanged —
+  // indistinguishable from the switch not working.
+  const runner = await ctx.plugin(DynamicCordisRunner, {}) as DisposableFiber
+  // The toolset takes no config at all — its vm and broadcast bounds live on
+  // the runner, which is why only that row is configurable.
+  const tools = await ctx.plugin(ToolCordis) as DisposableFiber
+  return {
+    async dispose() {
+      // Tools first: the runner is what they inject, and unmounting a service
+      // out from under a live consumer is the noisier of the two orders.
+      await tools.dispose()
+      await runner.dispose()
+    },
+  }
 }
 
 export interface DeepseekAdapterOptions {

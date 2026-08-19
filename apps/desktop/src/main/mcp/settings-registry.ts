@@ -310,6 +310,21 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
     ],
   },
   {
+    domain: 'agent-dsh',
+    label: 'DeepSeek Harness',
+    description: 'Experimental capabilities of the embedded dsh runtime.',
+    fields: [
+      {
+        key: 'dshToolCordis',
+        label: 'Self-Modifying Plugins',
+        type: 'boolean',
+        note: 'Lets the model define and run plugins inside the running dsh process (cordis_define / cordis_run). Its sandbox is not a security boundary — treat it like bash access — and a running package is shared by every dsh session in this process. Takes effect on the next turn.',
+        read: (s) => s.dshToolCordis,
+        toPatch: (v) => ({ dshToolCordis: v as boolean }),
+      },
+    ],
+  },
+  {
     domain: 'agent-claude',
     label: 'Claude Defaults',
     description: 'Default settings for new Claude chat sessions.',

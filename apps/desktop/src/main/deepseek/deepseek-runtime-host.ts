@@ -7,6 +7,7 @@ import {
 import { app } from 'electron'
 import { join } from 'node:path'
 import log from '../logger'
+import { readAppSettings } from '../app-settings-service'
 import { DEEPSEEK_CREDENTIAL_REF, resolveDeepseekApiKey } from './deepseek-credentials'
 import { stopTrackingDshMcpConfig } from './deepseek-mcp-sync'
 
@@ -66,6 +67,9 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
         apiKeyEnv: DEEPSEEK_CREDENTIAL_REF,
         models: DEEPSEEK_MODEL_CATALOG,
       },
+      // Read at boot; later changes ride `setToolCordisEnabled` from the
+      // settings handler, so the tree is never rebuilt for it.
+      toolCordis: readAppSettings().dshToolCordis,
       onApproval: async (request) => {
         const decision = approvalRouters.get(request.sessionId)?.(request)
         // No owner (session closed mid-question) fails closed.

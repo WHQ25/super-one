@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, session fork and foreground subagents (spawn + fork, rendered as a Task block) landed; compaction landed; background/continuable children and permission presets still pending
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, session fork and foreground subagents (spawn + fork, rendered as a Task block) landed; compaction and the `tool-cordis` opt-in landed; background/continuable children and permission presets still pending
 Last updated: 2026-08-19
 
 > Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
@@ -323,7 +323,7 @@ Estimated shape: backend + bridge ≈ Claude-backend-sized (~500–800 lines); t
 2. **Permission vocabulary** → **show dsh's own permission-preset names**; shared `PermissionMode` remains the carrier type across store/wire surfaces, mapped Codex-style (see D5).
 3. **Sandbox** → `ctx.sandbox` backend spike for SuperOne's macOS sandbox is scheduled **after P4**; until then `sandboxHarness.ts` returns `false` (no dead toggle).
 4. **utilityProcess trigger** (owner: engineering) → revisit D1 when either (a) the bash/PTY executors land in the main process, or (b) the event trace shows dsh-attributed main-process stalls.
-5. **`tool-cordis`** → **user-facing opt-in setting**, default off, lands in P4 (see D9).
+5. **`tool-cordis`** → **user-facing opt-in setting**, default off, lands in P4 (see D9). ✅ Landed — §19.
 
 ---
 
@@ -842,3 +842,54 @@ Production never races either one (the watch arms at session start; the user
 edits much later). The tests now await arming and poll for the callback, with a
 fixed wait kept only where elapsed time is the evidence (the negative cases and
 the debounce count).
+
+---
+
+## 19. `tool-cordis` opt-in (P4g, 2026-08-19)
+
+The last item of §12.5. `AppSettings.dshToolCordis`, default **off**, gates
+`dsh-cordis-host-runner` + `dsh-tool-cordis` — seven tools that let the model
+inspect the live runtime, define a plugin, run it in this process, stop it and
+forget it.
+
+**Why an opt-in and not a permission rule.** Its own README is unambiguous: the
+vm sandbox "is not a security boundary", "treat this toolset like bash access",
+and a dynamic package lives in shared process memory so it "may affect other
+sessions in that process". SuperOne's Layer-A/Layer-B model gates a *call*; it
+has nothing that scopes what a package does once it is running, or that keeps
+one session's package out of another's. The coarse grant is therefore the
+honest one, and the per-call permission prompt stays on top of it — every
+`cordis_*` call still parks on the popover, including the read-only reports,
+because after the opt-in the prompt is the only remaining brake.
+
+**It toggles live, not at boot.** The tree is one per app lifetime, so a boot
+flag would mean "restart to apply" — the wrong contract for a switch whose *off*
+position withdraws the model's ability to run code in this process. Cordis
+registrations are reversible effects and dsh re-assembles the request's tool
+list from the registry every turn, so `DeepseekRuntime.setToolCordisEnabled()`
+mounts or unmounts the pair and the next turn of every session sees the change.
+The settings handler calls it through `peekDeepseekRuntime()`, so toggling never
+boots a tree.
+
+Both rows travel together: the toolset injects the runner's service, and — the
+one thing that cost a red test — **the mounts must be awaited**. An unawaited
+`ctx.plugin()` pair leaves the tools dormant with an unchanged registry, which
+looks exactly like the switch not working.
+
+**Registry over README.** `0.1.0-rc.7` registers `cordis_inspect_list` /
+`cordis_inspect_query` / `cordis_inspect_self`, not the single `cordis_inspect`
+the README documents. The test reads the names off `ctx.tools.schemas()` for
+that reason.
+
+Surfaces: `AppSettings` + the four `app-settings-service.ts` sites, a
+`DeepSeek → Preferences` tab in `HarnessesSettingsPage` rendering
+`DshPreferencesPage` (`PreferencesPage` edits `~/.claude/settings.json`, which
+is not dsh's), an `agent-dsh` domain in `settings-registry.ts` so `config_read`
+/ `config_apply` can see it, and en/zh strings.
+
+Tests: `tool-cordis.test.ts` (4) — absent by default while the file and shell
+tools are unaffected, present when opted in at boot, appearing and disappearing
+on a running tree, and idempotent because the settings handler calls it on
+every change. Plus an `app-settings-service.test.ts` round trip, since a
+deliberate opt-in that gets re-defaulted on the next save is worse than no
+setting.

@@ -574,6 +574,13 @@ export type Messages = {
         dark: string
       }
     }
+    dsh: {
+      toolCordis: {
+        label: string
+        description: string
+        warning: string
+      }
+    }
     browser: {
       title: string
       subtitle: string
@@ -3494,6 +3501,13 @@ export const en: Messages = {
         system: 'System',
         light: 'Light',
         dark: 'Dark',
+      },
+    },
+    dsh: {
+      toolCordis: {
+        label: 'Self-modifying plugins',
+        description: 'Let DeepSeek define and run plugins inside SuperOne while it works — it can inspect the live runtime, write a plugin, start it, and stop it again.',
+        warning: 'Experimental. The sandbox is not a security boundary — treat this like giving the model shell access. A running plugin is shared by every DeepSeek session in this process, and none of it survives a restart.',
       },
     },
     browser: {

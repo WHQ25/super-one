@@ -1069,6 +1069,8 @@ const appAPI = {
   acpGetRateLimits: (projectPath: string, agentId: string, force?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_GET_RATE_LIMITS, projectPath, agentId, force),
 
+  acpGetSandbox: () => ipcRenderer.invoke(AgentIpcChannels.ACP_GET_SANDBOX),
+
   codexSetAuth: (
     projectPath: string,
     request: { mode: 'auto' | 'chatgpt' | 'apiKey'; apiKey?: string }

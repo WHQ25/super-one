@@ -2893,6 +2893,14 @@ export class AgentService {
       return refreshAcpModelsOnce(agentId ? { agentIds: [agentId] } : undefined)
     })
 
+    // Observation, not configuration: Grok applies its sandbox at process start
+    // from env / its own config, and SuperOne never sets it. Read so the status
+    // bar can report the real state instead of assuming `off`.
+    ipcMain.handle(AgentIpcChannels.ACP_GET_SANDBOX, async () => {
+      const { currentGrokSandbox } = await import('../acp/grok-sandbox')
+      return currentGrokSandbox()
+    })
+
     // --- Session Providers (new session_providers table) ---
 
     ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST, async () => {

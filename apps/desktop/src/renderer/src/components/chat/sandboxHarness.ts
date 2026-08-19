@@ -7,6 +7,8 @@ import type { HarnessId, SandboxMode } from '@superone/shared/agent-types'
  * `sandbox/mode` plus an `approval/policy`, so a second toggle here would be a
  * way to contradict the one the user just picked. ACP / OpenCode have no
  * surface.
+ * This gate is about the *toggle*, not visibility — every harness shows a sandbox
+ * chip; the ones gated out here get read-only state via `StatusBarDerivedSandbox`.
  */
 export function harnessSupportsSandbox(harnessId: HarnessId): boolean {
   return harnessId === 'claude' || harnessId === 'cursor'

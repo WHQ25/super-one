@@ -209,6 +209,8 @@ interface AppAPI {
   claudeGetRateLimits(force?: boolean): Promise<ClaudeRateLimits | null>
   providerGetRateLimits(apiProviderId: string, force?: boolean): Promise<ProviderRateLimits | null>
   acpGetRateLimits(projectPath: string, agentId: string, force?: boolean): Promise<ProviderRateLimits | null>
+  /** Observe the sandbox Grok will apply; SuperOne never sets it, so this is read-only. */
+  acpGetSandbox(): Promise<SandboxInfo>
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
   installUpdate(): Promise<void>
   checkForUpdates(): Promise<void>

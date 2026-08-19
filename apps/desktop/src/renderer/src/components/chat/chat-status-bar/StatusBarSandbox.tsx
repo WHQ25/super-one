@@ -1,9 +1,10 @@
 import type { ChatProvider } from '@/stores/chat'
 import { harnessSupportsSandbox, SandboxModeSelector } from '../SandboxModeSelector'
+import { StatusBarDerivedSandbox } from './StatusBarDerivedSandbox'
 
 /**
- * Sandbox-mode chip. Claude + Cursor — Codex covers this via permission presets;
- * ACP / OpenCode have no sandbox protocol surface.
+ * Sandbox chip — shown for every harness. Claude + Cursor get the interactive
+ * selector; the rest get read-only state (`StatusBarDerivedSandbox`).
  */
 export function StatusBarSandbox({
   activeProvider,
@@ -14,11 +15,12 @@ export function StatusBarSandbox({
   compactIndicators: boolean
   showDivider: boolean
 }) {
-  if (!harnessSupportsSandbox(activeProvider)) return null
   return (
     <>
       {showDivider && <div className="h-3 w-px bg-border" />}
-      <SandboxModeSelector compact={compactIndicators} />
+      {harnessSupportsSandbox(activeProvider)
+        ? <SandboxModeSelector compact={compactIndicators} />
+        : <StatusBarDerivedSandbox activeProvider={activeProvider} compactIndicators={compactIndicators} />}
     </>
   )
 }

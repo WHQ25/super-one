@@ -3171,6 +3171,8 @@ export const AgentIpcChannels = {
   ACP_REFRESH_MODELS: 'acp:refresh-models',
   /** Report unsaved editor buffer content for ACP fs/read_text_file. */
   ACP_SET_UNSAVED_BUFFER: 'acp:set-unsaved-buffer',
+  /** Observe the sandbox Grok will apply (SuperOne never sets it). Read-only. */
+  ACP_GET_SANDBOX: 'acp:get-sandbox',
 
   // Media generation providers (read-only status derived from image-serving credentials)
   MEDIA_GEN_PROVIDERS: 'mediaGen:providers',

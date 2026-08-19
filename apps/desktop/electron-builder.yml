@@ -55,6 +55,10 @@ win:
     - nsis
 
 linux:
+  # electron-builder derives executableName from package.json `name`
+  # (@superone/desktop), which sanitizes to an invalid `@superonedesktop`
+  # and fails AppImage path validation on 26.15+. Pin it explicitly.
+  executableName: superone
   target:
     - AppImage
   category: Development

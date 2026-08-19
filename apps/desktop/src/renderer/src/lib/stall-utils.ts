@@ -20,6 +20,22 @@ export function getStallColor(level: StallLevel, normalColor = 'text-muted-foreg
   return normalColor
 }
 
+/**
+ * Chromium never repaints the `text-overflow: ellipsis` glyph on a color-only
+ * style change: the drawn "…" keeps whatever color it was first painted with
+ * until something else invalidates that region (hovering the row, a screenshot
+ * capture). A session that stalls red and then recovers therefore renders white
+ * text with a red "…" — the mismatch the sidebar showed.
+ *
+ * Feed this to React's `key` on the element that owns the truncation, so the
+ * node is recreated whenever the stall color changes. A fresh layout object is
+ * always painted from scratch, which is the only fix that does not depend on
+ * Blink's paint-invalidation heuristics.
+ */
+export function ellipsisRepaintKey(colorClassName: string): string {
+  return colorClassName
+}
+
 function readActiveLastEventAt(): number {
   const state = useChatStore.getState()
   const project = state.activeProject ? state.projectSessions[state.activeProject] : null

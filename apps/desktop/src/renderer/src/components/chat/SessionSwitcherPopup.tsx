@@ -7,7 +7,7 @@ import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
 import { useCtrlTabSwitcher } from '@/hooks/useCtrlTabSwitcher'
 import { getPendingReason, isLiveSession, resolveSessionTitle, type PendingReasonT } from '@/components/sidebar/session-state-utils'
-import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
+import { useStallLevel, getStallColor, ellipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
 import type { AgentStatus, HarnessId, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -359,7 +359,7 @@ function SessionRow({ row, idx, isSelected }: { row: SwitcherRow; idx: number; i
           provider={row.provider}
           acpAgentId={row.acpAgentId}
         />
-        <span className={titleClassName}>{row.title}</span>
+        <span key={ellipsisRepaintKey(titleClassName)} className={titleClassName}>{row.title}</span>
         {row.isCurrent ? (
           <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">Current</span>
         ) : row.isPrevious ? (

@@ -7,7 +7,7 @@ import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
-import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
+import { useStallLevel, getStallColor, ellipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { getPendingReason } from './session-state-utils'
@@ -37,7 +37,11 @@ function SessionStatusSpinner({ stallLevel }: { stallLevel: StallLevel }) {
 
 function PlainSessionTitle({ sessionId, fallback, className }: { sessionId: string; fallback: string; className?: string }) {
   const title = useSessionTitleByAgent(sessionId, fallback)
-  return <span className={cn('session-row-title min-w-0 flex-1 truncate text-[13px]', className)}>{title}</span>
+  return (
+    <span key={ellipsisRepaintKey(className ?? '')} className={cn('session-row-title min-w-0 flex-1 truncate text-[13px]', className)}>
+      {title}
+    </span>
+  )
 }
 
 export type SessionRowCallbacks = SessionMenuCallbacks

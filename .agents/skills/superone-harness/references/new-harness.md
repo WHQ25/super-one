@@ -44,21 +44,24 @@ Do this in one commit and let type errors drive you. Start with `HarnessResource
 | File | What to add |
 |---|---|
 | `packages/shared/src/agent-types.ts` | `XxxResources` interface + key in `HarnessResourcesMap` + key in `StartupData.cached` |
+| `packages/shared/src/session-provider-definitions.ts` | base `SessionProvider` entry; its exhaustive `Record<HarnessId, …>` must stay compiler-complete |
 | `packages/shared/src/harness/harness-capabilities.ts` | entry in `HARNESS_CAPABILITIES` — **all false** except `displayName` until each is actually wired |
 | `packages/shared/src/harness/harness-brand.ts` | `HARNESS_DEFAULT_BRAND_HUE` + `HARNESS_DEFAULT_TOKENS` entries |
 | `apps/desktop/src/main/session/harness-registry.ts` | config zod schema + `Harness` object + registry map entry |
 | `apps/desktop/src/main/session/backends/xxx-backend.ts` | `SessionBackend` skeleton — required members only, throw/no-op bodies |
 | `apps/desktop/src/main/session/backends/xxx-fork.ts` | `forkTranscript` stub (can throw "not supported" initially) |
-| `apps/desktop/src/main/session/session-repo.ts`, `db-sessions.ts`, `database-migrations.ts` | persist/read the new provider value; migration only if you need new columns |
+| `apps/desktop/src/main/session/session-repo.ts`, `db-sessions.ts`, `database-migrations.ts` | seed/read the base provider, persist its id, and derive the Harness id; migrate aliases when renaming an id |
 | `apps/desktop/src/renderer/src/stores/app.ts` | `brandHues` / `tokenOverrides` records |
 | `apps/desktop/src/renderer/src/stores/chat-store/helpers/agent-defaults.ts` | default model/effort branch |
 | `apps/desktop/src/renderer/src/stores/chat-store/harness/xxx-handler.ts` + `harness/index.ts` + `chat-store/index.ts` | `HarnessHandler` — `connect()` may return an empty bundle |
 | `apps/desktop/src/renderer/src/components/sidebar/BrandColorPopover.tsx` | `HARNESS_LABEL` entry |
 | `apps/desktop/src/renderer/src/lib/session-menu-items.ts` | menu entry so a session can be created at all |
+| `apps/desktop/src/main/app-settings-service.ts` | accept the id in suggestion/default/secondary parsing and `harnessOrder` validation; these are hard-coded allowlists and do not fail typecheck |
 | `apps/cli/src/session/harness-runners.ts` | `createHarnessRunner` case — a simulated runner is fine and satisfies the `never` guard |
 
-**Acceptance:** `bun run typecheck` is green and you can create a session on the new harness from the
-UI (it just won't answer).
+**Acceptance:** `bun run typecheck` is green, both desktop and runtime/CLI databases contain the
+base provider row, and you can create a session on the new harness from the UI without a
+`SessionProvider not found` error (it just won't answer).
 
 ---
 
@@ -121,8 +124,13 @@ denying it stops it, and interrupt mid-stream leaves a clean transcript.
 
 This is where the silent enumerations live. Work through `experiences.md` row by row —
 model/effort, permission modes, sandbox, context usage, slash commands, mentions, placeholder,
-session icon, suggestion ordering. Do not skip the "deliberately absent" half: `sandboxHarness.ts`
-returning `false` is a real deliverable, not a gap.
+session icon, suggestion ordering, and order persistence. Do not skip the "deliberately absent"
+half: `sandboxHarness.ts` returning `false` is a real deliverable, not a gap.
+
+Placeholder and slash-command dispatch must contain an explicit entry for the harness through their
+`Record<ChatProvider, ...>` maps. Add localized ask/plan copy even when plan mode is currently hidden,
+and register an explicit empty slash catalog when commands are unsupported. Never use Claude as the
+fallback for either surface.
 
 Flip `HARNESS_CAPABILITIES` flags to `true` **as each one lands**, not up front.
 
@@ -139,7 +147,8 @@ showing another harness's vocabulary.
 | Surface | Files |
 |---|---|
 | Install catalog / enable-disable | `packages/shared/src/environment/harness-installation.ts` (`NodeHarnessId`, `NODE_HARNESS_DEFINITIONS`), `apps/desktop/src/main/harness/{host,scan-cli,resolve-runtime,resource-cache}.ts`, `packages/runtime/src/harness/{enable,runtime-ready}.ts` |
-| Settings pages | `HarnessesSettingsPage.tsx`, `AppSettingsPage.tsx`, a `<Harness>AuthSettings.tsx` if auth is non-trivial |
+| Settings pages | `HarnessesSettingsPage.tsx` (`CATALOG_HARNESS_META` must cover every `NodeHarnessId`), `AppSettingsPage.tsx`, a `<Harness>AuthSettings.tsx` if auth is non-trivial |
+| Ordering persistence | `apps/desktop/src/main/app-settings-service.ts` (`HARNESS_IDS`, `parseSuggestionHarnessKey`, `readHarnessOrder`) + `app-settings-service.test.ts`; verify save/read preserves the new key |
 | Visibility gating | `renderer/src/lib/harness-visibility.ts` — **fails closed**, so this is what makes the harness appear at all |
 | Usage & cost | `apps/desktop/src/main/usage-stats-service.ts` (`HarnessKind`, provider→kind mapping), `UsagePage.tsx`, `usage-model-presentation.ts` |
 | i18n | `packages/shared/src/i18n/{en,zh}.ts` — both, always |
@@ -148,7 +157,8 @@ showing another harness's vocabulary.
 | Automation | `apps/desktop/src/main/mcp/automation-tools.ts` run-config type + `AutomationDialog.tsx` |
 
 **Acceptance:** fresh profile → Settings → Harnesses shows the harness, enabling + authenticating it
-makes it appear in the session picker, and a completed turn shows up on the Usage page.
+makes it appear in the session picker, drag it to a new rank and reopen the page/app without the
+order reverting, and verify a completed turn shows up on the Usage page.
 
 ---
 
@@ -157,7 +167,7 @@ makes it appear in the session picker, and a completed turn shows up on the Usag
 
 Optional for a first ship — state that explicitly rather than silently deferring it.
 
-- **Remote node / CLI**: `apps/cli/src/session/{harness-cli,harness-enable,harness-host,harness-runners}.ts`, and a real (non-simulated) runner in `packages/<harness>/`. The simulated runner must never be reachable in production — `createAcpOpenCodeProductionRouter` gates it behind an explicit opt-in for exactly this reason.
+- **Remote node / CLI**: `apps/cli/src/session/{harness-cli,harness-enable,harness-host,harness-runners}.ts`, `packages/runtime/src/session/session-provider-store.ts`, and a real (non-simulated) runner in `packages/<harness>/`. Seed the same shared base SessionProvider catalog used by desktop. The simulated runner must never be reachable in production — `createAcpOpenCodeProductionRouter` gates it behind an explicit opt-in for exactly this reason.
 - **Packaging**: `apps/desktop/electron-builder.yml`, `build/afterPack.cjs` if the harness ships platform binaries. Managed runtimes download on demand under `~/.superone/harness` instead — prefer that (see `docs/design/harness-hot-swap.md`).
 - **Mobile**: events reach mobile through the shared `AgentEvent` stream, so most of it is free. Check `stripContentBlock` truncation if the harness emits rich tool payloads.
 - **Package extraction**: moving provider code into `packages/<harness>/` is what makes the CLI able to use it. Do it when P5 starts, not before — Cursor extracted at commit 4 of 7.

@@ -18,6 +18,7 @@ same claim, and the two drift.
 - [6. Todos & subagents](#todos)
 - [7. MCP](#mcp)
 - [8. Context usage, rate limits, cost](#usage)
+- [8b. Turn failure reporting](#errors)
 - [9. Fork, rewind, checkpoints](#fork)
 - [10. Identity: icon, hue, label, ordering](#identity)
 - [11. Install catalog, auth, visibility](#install)
@@ -29,18 +30,19 @@ same claim, and the two drift.
 <a id="matrix"></a>
 ## Support matrix
 
-| Experience | claude | codex | acp (grok) | opencode | cursor |
-|---|:--:|:--:|:--:|:--:|:--:|
-| MCP | ✅ | ❌ | ✅ host-injected | ✅ | ✅ |
-| Plan mode | ✅ host | ✅ | ✅ agent-driven | ✅ | ✅ |
-| Todos | ✅ | ❌ | ✅ via plan entries | ✅ | ✅ |
-| Subagents | ✅ | ❌ | ❌ | ✅ | ✅ |
-| Compact | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Streaming tool input | ✅ | ❌ | ❌ | ❌ | ✅ |
-| Sandbox toggle | ✅ off/on/auto | folded into presets | ❌ | ❌ | ✅ off/on |
-| Slash commands | ✅ | ✅ | ✅ | ✅ | host + `.cursor` FS |
-| Session recap | ❌ | ❌ | ✅ grok only | ❌ | ❌ |
-| Steer mid-turn | — | ✅ | ❌ queue only | — | — |
+| Experience | claude | codex | acp (grok) | opencode | cursor | dsh (DeepSeek) |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| MCP | ✅ | ✅ host-injected | ✅ host-injected | ✅ | ✅ | ❌ |
+| Plan mode | ✅ host | ✅ | ✅ agent-driven | ✅ | ✅ | ❌ |
+| Todos | ✅ | ❌ | ✅ via plan entries | ✅ | ✅ | ✅ |
+| Subagents | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Compact | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| Streaming tool input | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Sandbox toggle | ✅ off/on/auto | folded into presets | ❌ | ❌ | ✅ off/on | ❌ |
+| Slash commands | ✅ | ✅ | ✅ | ✅ | host + `.cursor` FS | ❌ |
+| Session recap | ❌ | ❌ | ✅ grok only | ❌ | ❌ | ❌ |
+| Steer mid-turn | — | ✅ | ❌ queue only | — | — | — |
+| Typed failure code | ✅ SDK enum | ⚠️ text + retry count | ⚠️ JSON-RPC code + status | ⚠️ SDK error name | ⚠️ text only | ⚠️ text only |
 
 ---
 
@@ -154,12 +156,16 @@ Set `supportsPlanMode` only when approve **and** reject both change what the age
 | Catalog dispatch | `R/components/chat/chat-input/resolveSlashCommandsForProvider.ts` |
 | Popups | `R/components/chat/{ProviderSlashPopup,McpSlashPopup,WorkflowsSlashPopup}.tsx` |
 | Placeholder text | `R/components/chat/chat-input/resolveChatInputPlaceholder.ts` |
+| Localized placeholder keys | `packages/shared/src/i18n/{en,zh}.ts` — ask and plan copy for every harness |
 | Mentions + capability gating | `R/components/chat/mention-capability-match.ts`, `MentionPopup.tsx` |
 | Source of the catalog | `init_ready` event (`skills`, `projectCommands`, `projectAgents`) or the harness's own list (ACP `available_commands_update` cached in `AcpAgentConfigCatalog.slashCommands`) |
+| Regression tests | `R/components/chat/chat-input/{resolveChatInputPlaceholder,resolveSlashCommandsForProvider}.test.ts` |
 
-The critical rule is written in `resolveSlashCommandsForProvider.ts`: a harness must **never** fall
-through to Claude's project-level skills. Cursor lists host `/mcp` `/clear` plus scanned
-`.cursor/skills` and `.cursor/commands` — never Claude's catalog. A fall-through shows commands that will not run.
+Both dispatches must be exhaustive over `ChatProvider`; do not add a `default` branch. A harness must
+**never** fall through to Claude's placeholder or project-level skills. Cursor lists host `/mcp`
+`/clear` plus scanned `.cursor/skills` and `.cursor/commands` — never Claude's catalog. A harness
+without slash support still needs an explicit empty catalog. Otherwise the UI advertises commands
+that will not run, and a new harness appears to speak Claude's vocabulary without any type error.
 
 ---
 
@@ -211,6 +217,49 @@ harness id without adding a `HarnessKind` gives a permanently empty usage row wi
 
 ---
 
+<a id="errors"></a>
+## 8b. Turn failure reporting
+
+A failed turn renders as a footer badge whose title is plain language ("Service Busy") and whose
+popover explains the next step. The badge is **harness-neutral and already works everywhere** —
+`reduceLifecycle` synthesizes `{ raw: event.error }` for any harness that sends only a string. What
+varies per harness is how good the classification is, so the gap is never "no UI", it is always
+"badge says Request Failed when it could say Sign-in Expired".
+
+| Cell | File |
+|---|---|
+| Event payload | `message_error` carries `errorInfo?: AgentErrorInfo` (`packages/shared/src/agent-types.ts`) |
+| Shared classifier | `packages/shared/src/agent-error.ts` — `buildAgentErrorInfo(raw, overrides)`; explicit overrides always beat the text regex |
+| Renderer state | `R/stores/chat-store/event-reducer/lifecycle.ts` → `metadata.errorInfo` (no text block) |
+| **Persistence** | `M/agent/claude-session-runtime.ts` (claude/acp/opencode/cursor) **and** the codex branch of `M/session/session.ts` (codex/dsh) — two reducers, both must store it |
+| Presentation | `R/components/chat/agent-error-presentation.ts` (code→kind), `MessageErrorBadge.tsx`, i18n `chat.error.title.*` / `chat.error.hint.*` |
+| Mobile | `stripMessagesForRemote` in `M/remote-control-service.ts` re-materializes the raw text — mobile has no badge |
+
+Per-harness sources, all funnelled through `buildAgentErrorInfo`:
+
+| Harness | Structured signal | Where |
+|---|---|---|
+| claude | `assistant.error` enum, `api_error_status`, `terminal_reason`, `system/api_retry` ladder | `M/agent/claude-query.ts` |
+| codex | error text + `willRetry` flag counted into `retries.attempts` | `packages/codex/src/agent-event-mapper.ts` |
+| acp | JSON-RPC code (`-32003` = rate limit) + the HTTP status inside `API error (status NNN)` | `M/acp/acp-request-error.ts` → `describeAcpRequestFailure()` |
+| opencode | `error.name` (`ProviderAuthError`, `MessageOutputLengthError`) | `packages/opencode/src/agent-event-mapper.ts` |
+| cursor / dsh / remote node | text only | their event maps + `packages/shared/src/node-session-event-map.ts` |
+
+Traps:
+
+- **Two persistence reducers.** The renderer reducer only feeds the UI; the DB is written by the
+  main-process reducer, and `dsh` shares Codex's, not Claude's. Change one and the badge is right
+  live but gone after reload — a class of bug no unit test catches. Assert on `session.snapshot`.
+- **Never guess a label.** A wrong badge tells the user to do the wrong thing, so an unrecognized
+  failure must fall through to `unknown`, which leads with the raw text. Do not map an abort or a
+  cancel onto a request-rejected code.
+- **Anchor status parsing.** A bare `\d{3}` matches version strings and byte counts; require a
+  `status`/`http`/`code` keyword or a following status phrase.
+- **`retries` must survive a harness with no delays.** Claude reports a backoff ladder, Codex only a
+  count — hence `retries: { attempts, delaysMs?, max? }` rather than a bare array.
+
+---
+
 <a id="fork"></a>
 ## 9. Fork, rewind, checkpoints
 
@@ -237,16 +286,31 @@ Cheap individually, and *always* the last thing anyone remembers.
 | Cell | File |
 |---|---|
 | Icon component | `packages/ui/src/components/harness/<Harness>SessionIcon.tsx` |
+| Official brand assets | `@lobehub/icons` first (`<Harness>`, `.Color`, `.Text`); add it to the importing package's dependency manifest rather than relying on workspace hoisting |
 | Icon resolution (2 paths!) | `R/components/harness/resolve-session-icon.tsx` — both `resolveSessionIcon()` **and** `resolveSessionIconFromBrandKey()` |
 | Brand hue + tokens | `packages/shared/src/harness/harness-brand.ts` |
 | Hue picker label | `R/components/sidebar/BrandColorPopover.tsx` |
 | Suggestion ordering | `R/lib/suggestion-harness-order.ts`, `R/components/chat/ChatSuggestions.tsx` |
+| Order validation + persistence | `M/app-settings-service.ts` — `HARNESS_IDS`, `parseSuggestionHarnessKey`, `isHarnessOrderKey`, `readHarnessOrder`, default/secondary derivation |
+| Harness settings catalog | `R/components/HarnessesSettingsPage.tsx` — exhaustive `CATALOG_HARNESS_META` over `NODE_HARNESS_IDS` |
 | Session create menu | `R/lib/session-menu-items.ts` |
 | Onboarding | `R/components/onboarding/OnboardingDiscover.tsx` |
 | Strings | `packages/shared/src/i18n/{en,zh}.ts` — **both** |
+| Regression tests | `M/app-settings-service.test.ts`, `R/lib/suggestion-harness-order.test.ts`, `R/components/HarnessesSettingsPage.test.tsx` |
 
 Brand hue only applies in light mode by design; dark mode never reads it. Non-React consumers must
 stamp the hue explicitly at their entry CSS (default 240).
+
+The renderer's drag list and the main process do not share one validator. A new key can render and
+move optimistically, then be removed by `readHarnessOrder()` during `saveAppSettings()`. The returned
+settings and `APP_SETTINGS_CHANGED` broadcast immediately replace renderer state, so the row snaps
+back with no error. Treat persistence as part of identity: test the new key in object form, string
+form, and a full `harnessOrder` read/save round trip.
+
+For session icons, reuse the official LobeHub mark when it exists. `HarnessIconFallback` supplies
+running/background/unseen/automation chrome around a static mark; the glyph itself should not be a
+generic Lucide placeholder. Use `.Color` when the product calls for the brand-colored mark and
+`.Text` for settings detail headers.
 
 ---
 
@@ -256,9 +320,10 @@ stamp the hue explicitly at their entry CSS (default 240).
 | Cell | File |
 |---|---|
 | Catalog identity | `packages/shared/src/environment/harness-installation.ts` (`NodeHarnessId`, `NODE_HARNESS_DEFINITIONS`) |
+| Base SessionProvider identity | `packages/shared/src/session-provider-definitions.ts`; desktop `M/database-migrations.ts`; node `packages/runtime/src/{db/database.ts,session/session-provider-store.ts}` |
 | Runtime resolution | `M/harness/{host,resolve-runtime,scan-cli,bundled-fallback,tarball-installer}.ts` |
 | Enable / readiness | `packages/runtime/src/harness/{enable,runtime-ready}.ts` |
-| Settings UI | `R/components/HarnessesSettingsPage.tsx` |
+| Settings UI | `R/components/HarnessesSettingsPage.tsx` — add exhaustive catalog metadata and cover enabled/disabled rendering in its test |
 | Auth UI | `R/components/<Harness>AuthSettings.tsx`, `AppSettingsPage.tsx` |
 | **Visibility gate** | `R/lib/harness-visibility.ts` |
 
@@ -271,6 +336,11 @@ thing to check when a newly added harness "doesn't show up".
 
 Diagnostics are allowlisted codes only (`HARNESS_DIAGNOSTIC_CODES`) — never surface raw provider
 error text, it leaks credentials.
+
+The install catalog and SessionProvider catalog are independent. A harness can be enabled, visible,
+and constructible while its first send still fails because `<harness>-base` was never seeded. Test
+the base row in both desktop and runtime databases. For id renames, migrate the provider catalog,
+session rows, and installation rows together while keeping an explicit read alias for old data.
 
 ---
 

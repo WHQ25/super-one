@@ -1,6 +1,6 @@
 ---
 name: superone-harness
-description: "Integrating a NEW coding-agent harness into SuperOne, or extending an EXISTING harness's integration (claude, codex, acp/grok, opencode, cursor). Use only when the task is scoped to a harness as a whole: adding a harness or provider CLI/SDK, implementing or changing a SessionBackend, mapping provider events onto AgentEvent, registering a harness id across its layers, or closing a per-harness capability gap — 'give OpenCode a sandbox toggle', 'Grok shows no models', 'this works in Claude but not Codex', 'audit which experiences harness X is missing', 'what would it take to support harness Y'. Do NOT use for ordinary work on a file that merely happens to be per-harness (restyling ModelSelector, fixing a tooltip in the permission popover, renaming a token, a bug inside one existing backend that isn't about harness coverage), and do NOT use for adding an API provider / credential / model endpoint to an existing harness — that path never touches harness code."
+description: "Integrating a NEW coding-agent harness into SuperOne, or extending an EXISTING harness's integration (claude, codex, acp/grok, opencode, cursor, dsh/deepseek). Use only when the task is scoped to a harness as a whole: adding a harness or provider CLI/SDK, implementing or changing a SessionBackend, mapping provider events onto AgentEvent, registering a harness id across its layers, or closing a per-harness capability gap — 'give OpenCode a sandbox toggle', 'Grok shows no models', 'this works in Claude but not Codex', 'audit which experiences harness X is missing', 'what would it take to support harness Y'. Do NOT use for ordinary work on a file that merely happens to be per-harness (restyling ModelSelector, fixing a tooltip in the permission popover, renaming a token, a bug inside one existing backend that isn't about harness coverage), and do NOT use for adding an API provider / credential / model endpoint to an existing harness — that path never touches harness code."
 ---
 
 # Integrating a Harness into SuperOne
@@ -11,9 +11,9 @@ node, packaging. Most of those surfaces are `if (provider === 'claude')`-style e
 TypeScript will never complain about. So the failure mode is never a crash: it's a harness that
 launches fine but silently has no model picker, no sandbox toggle, no icon, and an empty usage row.
 
-Cursor — the most recent integration — took **152 files across 7 commits** to go from skeleton to
-parity. Almost none of that was the backend. The backend was ~500 lines; the rest was re-declaring
-the identity everywhere else.
+Cursor took **152 files across 7 commits** to go from skeleton to parity. DeepSeek later confirmed
+the same pattern: the runtime can work while presentation and persistence still silently reject its
+identity. Almost none of that work is the backend; most is re-declaring one id everywhere else.
 
 The job, therefore, is not "write an adapter". It is **make the compiler enumerate everything it
 can, then walk a checklist for everything it can't.**
@@ -53,7 +53,7 @@ Everything *outside* those two seams is a silent enumeration. That's what
 
 ## Reference implementations — copy from the right one
 
-The four integrations are not equally mature, and they solve *different* shapes of problem. Picking
+The integrations are not equally mature, and they solve *different* shapes of problem. Picking
 the wrong model to copy costs more than starting from scratch.
 
 | Harness | Shape | Copy it when your provider… | Entry point |
@@ -61,7 +61,9 @@ the wrong model to copy costs more than starting from scratch.
 | **Claude** | In-process TS SDK, richest surface | is an SDK you `import` and drive with an async generator | `apps/desktop/src/main/session/backends/claude-backend.ts`, `packages/claude/` |
 | **Codex** | Spawned binary, JSON-RPC app-server protocol | ships a CLI binary speaking a line protocol | `apps/desktop/src/main/session/backends/codex-backend.ts`, `apps/desktop/src/main/codex/app-server-client.ts` |
 | **Grok (ACP)** | Standard protocol, N agents behind one harness id | speaks ACP, or you want *many* agents under one id | `apps/desktop/src/main/session/backends/acp-backend.ts` |
+| **OpenCode** | External server/SDK with its own event stream | exposes an SDK plus a long-lived local server | `apps/desktop/src/main/session/backends/opencode-backend.ts`, `packages/opencode/` |
 | **Cursor** | Native SDK + local store, newest and most complete-in-one-pass | is an SDK with its own session store/auth | `apps/desktop/src/main/session/backends/cursor-backend.ts`, `packages/cursor/` |
+| **DeepSeek** | In-process Cordis service tree + official adapter | is a plugin graph whose agent loop, persistence, credentials, and adapter are mounted in-process | `apps/desktop/src/main/deepseek/deepseek-runtime-host.ts`, `packages/deepseek/` |
 
 For **breadth of touchpoints**, read the Cursor integration's git history —
 `git log --name-only c1242119^..0784584c` is the most complete single worked example in the repo,
@@ -93,6 +95,79 @@ Layer ⑤ is genuinely optional for a first cut, and saying so out loud is part 
 that works locally but not on a remote node is a legitimate shipping state (OpenCode and Cursor both
 shipped that way). Don't let it block P3.
 
+## SuperOne host-owned tool permissions
+
+Treat permission as **two independent layers**, not one low/medium/high ladder. A tool such as
+`config_apply` must be admitted automatically by the harness so its own executor can run, while the
+executor must still park before the effect and ask the user. "Harness allowed the call" never means
+"the product authorized the effect."
+
+### Layer A — harness admission
+
+Classify the tool identity before the harness's permission classifier:
+
+| Class | Harness behavior | Source / examples |
+|---|---|---|
+| **Static host-owned** | Pre-allow by exact tool name | `STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES`: built-ins, `mobile_share_file`, `miniapp_list`, `miniapp_call` |
+| **Feature-gated host-owned** | Recognize always; pre-allow only while enabled | `computer_*` |
+| **Dynamic / third-party** | Use normal harness permission or an args-aware preapproval; never blanket-allow | mini-app `slug__tool`, third-party MCP |
+
+The source of truth is `packages/shared/src/superone-host-owned-tools.ts`. Do not copy its names into
+a backend. Do not approve the entire `superone` server or `mcp__superone__*`: dynamic third-party
+tools may share that namespace. `miniapp_call` is safe to admit as a fixed host dispatcher because
+the executor separately authorizes the requested `appId + tool` before dispatch.
+
+Apply the exact static set **upstream of any auto-review/classifier**, then retain the shared
+predicate as a downstream backstop. Current integration shapes are:
+
+| Harness shape | Upstream admission |
+|---|---|
+| Claude Agent SDK | `allowedTools` with qualified names; keep `canUseTool` fallback |
+| Codex app-server | `mcp_servers.superone.tools.<bare>.approval_mode = "approve"`; keep elicitation fallback |
+| ACP / Grok | Resolve `session/request_permission` through the shared preapprove decision |
+| OpenCode | Generate exact `permission: superone_<bare>, action: allow` rules |
+| Other SDKs | Use their exact per-tool allow mechanism; if none exists, intercept their permission request before UI |
+
+Codex snapshots `tools/list` once and ignores `list_changed`, so register the whole fixed surface
+before its first handshake. Never solve this by changing to a server-wide approval default.
+
+### Layer B — product authorization inside the executor
+
+The executor, not the harness, owns authorization for destructive, paid, autonomous, or
+third-party effects. These tools may still be Layer-A host-owned and pre-allowed. They must emit a
+host `permission_request` through `HostConfirmRegistry`, wait for the answer, and perform no effect
+before approval. `Session.respondToPermission` must resolve these host confirms before forwarding an
+unknown request to `backend.respondToPermission`, which makes the path harness-independent.
+
+See the `superone-tool` skill, **Step 3 — Permission**, for the executor-side rules. In particular:
+
+- pass the turn `AbortSignal` so cancel/timeout removes the prompt;
+- set `allowAlwaysAllow: false` for delete, spend, and spawn operations;
+- return a neutral rejected/cancelled result and tell the model not to retry;
+- allow scoped persistence only when the grant key is precise, such as mini-app `appId + tool`.
+
+### Main-thread and remote-node invariants
+
+Check main-thread-only tools (`session_rename`, `session_tag`) **before** any auto-allow. A subagent
+must receive a direct denial even if it inherits the parent's MCP connection or allow rules.
+
+Remote-node wiring is a separate implementation of the same contract: inject the host-action MCP,
+apply the same exact static admission set in every node harness, preserve args-aware preapproval,
+and route host confirmation events and responses through the session runtime. Desktop parity does
+not imply node parity.
+
+### Permission acceptance tests for every harness
+
+Before calling a harness integrated, prove all of these:
+
+1. Static host-owned sentinels are present in its upstream allow configuration.
+2. `computer_*` is absent while disabled and allowed only while enabled.
+3. A dynamic mini-app/third-party tool is not admitted by prefix or server default.
+4. The downstream permission callback still auto-allows a host-owned call without UI.
+5. A child session cannot call a main-thread-only tool.
+6. Decline, cancel, timeout, and abort of an executor-owned confirm perform no effect and clear UI.
+7. The same behavior works on desktop and remote node when remote support is in scope.
+
 ## How to know you're done
 
 Type-checking passing means almost nothing here — it only covers seam #1. Use behaviour instead:
@@ -109,7 +184,9 @@ Type-checking passing means almost nothing here — it only covers seam #1. Use 
    are backend event-mapper tests (`*-event-map.test.ts` / `agent-event-mapper.test.ts`, table-driven
    over recorded provider payloads) and store-routing tests
    (`chat-store/harness/*-handler.test.ts`, `helpers/session-lifecycle.test.ts`). Both catch the
-   silent-drift class; unit-testing the backend class does not.
+   silent-drift class; unit-testing the backend class does not. Also extend
+   `app-settings-service.test.ts` with the new id in `harnessOrder`: read, save, default/secondary
+   derivation, and round-trip persistence. That is the test that catches a drag order snapping back.
 
 ## Recurring traps
 
@@ -132,10 +209,35 @@ These have each cost a real debugging session. They are ordered by how often the
 - **Icons and brand hue are three separate registries.** `resolveSessionIcon`,
   `resolveSessionIconFromBrandKey` (profile/brandKey path), and `HARNESS_DEFAULT_BRAND_HUE` +
   `HARNESS_DEFAULT_TOKENS`. Missing the brandKey variant is the classic "icon works in the sidebar
-  but not in the session profile" bug.
+  but not in the session profile" bug. Before drawing a placeholder, check `@lobehub/icons` for the
+  official mono/color/text assets. If `packages/ui` imports it, declare the dependency in that
+  package; wrap the official static mark with `HarnessIconFallback` for session status chrome.
+- **Ordering has a second, main-process allowlist.** The renderer can display and drag a new harness
+  while `app-settings-service.ts` still rejects its key in `HARNESS_IDS`,
+  `parseSuggestionHarnessKey`, `isHarnessOrderKey`, or `readHarnessOrder`. The save result and
+  `APP_SETTINGS_CHANGED` event then overwrite the optimistic UI with the filtered order, which looks
+  like DnD randomly reverted. Add every new harness to the parser and test a full read/save round
+  trip; Cursor and DeepSeek both exposed this drift.
+- **Chat input defaults can impersonate Claude.** A final `default` branch in placeholder or slash
+  command dispatch makes every newly added `HarnessId` silently inherit Claude copy, commands, and
+  skills. Define both dispatches as exhaustive `Record<ChatProvider, ...>` maps, give the new harness
+  its own localized ask/plan keys, and use an explicit empty slash catalog when the harness supports
+  none. Add regression tests for both modes and catalog identity; the absence of a compiler error is
+  otherwise exactly how this ships repeatedly.
+- **A Harness is not automatically a SessionProvider.** Creating a session selects a persisted
+  `provider_id`, and `sendMessage()` resolves that row before it ever reaches the backend. A missing
+  base row produces `SessionProvider not found: <harness>-base` even when the registry, picker, and
+  backend are correct. Add the harness to the exhaustive
+  `packages/shared/src/session-provider-definitions.ts` catalog; use that catalog for desktop and
+  runtime/CLI seeds and for legacy provider-to-harness derivation. If an id changes, migrate both
+  `session_providers` and existing `sessions`, and preserve a read alias for old persisted values.
 - **The install catalog uses different ids than sessions.** `NodeHarnessId` (`acp-grok`) ≠ `HarnessId`
   (`acp`). Always convert via `normalizeSessionHarnessId` / `nodeHarnessIdToSessionHarnessId` in
   `packages/shared/src/environment/harness-installation.ts` — never string-compare across the two.
+- **The settings list is another silent catalog.** `HarnessesSettingsPage.tsx` must map every
+  `NodeHarnessId` to provider, label, description, experimental state, and optional config provider.
+  Prefer an exhaustive `Record<NodeHarnessId, CatalogHarnessMeta>` generated over
+  `NODE_HARNESS_IDS`; a hand-written array let new harnesses disappear without a type error.
 - **Visibility fails closed.** `harness-visibility.ts` treats a null catalog as "not enabled" on
   purpose, so a harness missing from `NODE_HARNESS_DEFINITIONS` is invisible everywhere with no
   error. If your new harness never appears in any picker, check the catalog before the store.

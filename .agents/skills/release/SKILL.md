@@ -1,9 +1,7 @@
 ---
 name: release
 description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, harness R2 mirror (when pins change), promote artifacts to draft release, and publish. Trigger with /release [alpha|beta|public] [major|feature|patch]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
-user_invocable: true
-arguments: "[alpha|beta|public] [major|feature|patch]"
-argument-hint: "[alpha|beta|public] [major|feature|patch]"
+compatibility: "Requires git, gh, bun, npm, curl, GitHub Actions access, and network approval for GitHub, npm, and dl.super-one.dev."
 ---
 
 # Release Skill
@@ -34,7 +32,11 @@ Tags are created by GitHub at publish time, never pushed from local. A failing b
 
 ## Workflow
 
-**Sandbox note**: every `gh workflow run`, `gh run view`, `gh release ...`, verification `curl`, and `npm view` in this skill talks to hosts (`api.github.com`, `dl.super-one.dev`, `registry.npmjs.org`) that are outside the default Bash sandbox's network allowlist. Run these with `dangerouslyDisableSandbox: true` from the start — don't wait for a sandbox-denial error first. This applies to every network-touching command below (Steps 3, 4, 5, 6, 7, 8, 9, and the Recovery Patterns).
+**Network approval note**: every `gh workflow run`, `gh run view`, `gh release ...`, verification
+`curl`, and `npm view` in this skill talks to `api.github.com`, `dl.super-one.dev`, or
+`registry.npmjs.org`. Use the current agent environment's approved network/escalation mechanism from
+the start instead of waiting for a sandbox-denial error. This applies to every network-touching
+command below (Steps 3–9 and the Recovery Patterns).
 
 ### Step 1: Confirm version + CHANGELOG + relay / harness decisions (single turn)
 
@@ -66,7 +68,10 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
    - `CLI npm: yes (@super-one/cli@A.B.C-alpha, dist-tag alpha)` — default for every release (required for SSH registry install). Only note skip if the user explicitly asks for a desktop-only release.
    - `Harness R2: yes (channel=<alpha|beta|stable>, pins/script changed since v<previous>)` **or** `Harness R2: no (no managed pin / pack-script diff since v<previous>)` — when yes, note that Claude/Codex tarball mirrors + `harness/manifest/<channel>.json` will be rewritten on R2 (~1.2 GB pack, ~1–3 min CI).
    - The full drafted CHANGELOG entry (as the literal block that will be inserted)
-9. Ask for one combined confirmation / edits, as a plain-language question at the end of the same message (e.g. "Proceed with this?"). **Do NOT use the `AskUserQuestion` tool for this step** — the CHANGELOG draft is multi-line formatted content that AskUserQuestion's option-card UI isn't built to display; it's for discrete choices, not reviewing a text block. A normal markdown reply lets the user read and edit it inline.
+9. Ask for one combined confirmation / edits, as a plain-language question at the end of the same
+   message (e.g. "Proceed with this?"). Do not use a structured choice-card input tool for this step:
+   the CHANGELOG draft is multi-line formatted content that option cards are not built to review. A
+   normal markdown reply lets the user read and edit it inline.
 
 After this confirmation, **everything below runs without further prompting** unless an actual error occurs. Do not ask the user to confirm before push, before build, before promote, or before publish.
 

@@ -351,14 +351,15 @@ Useful members on the session object:
 ### When it is mandatory
 
 A tool **must** confirm with a human when a call can destroy user data, spend the user's money or
-quota, or spawn autonomous work — `session_cleanup` (delete), `media_generate_video`,
-`session_collab_request` (starts sub-sessions), `miniapp_call` (non-preapproved), `config_apply`.
+quota, spawn autonomous work, hand control to a third party, or reshape the app — `session_cleanup`
+(delete), `media_generate_video`, `session_collab_request` (starts sub-sessions), `miniapp_call`
+(non-preapproved), `config_apply`, `automation_apply`, and `automation_delete`.
 
-For that tier the confirmation cannot live in the harness permission layer, because every prompt it
-raises is removable by design: built-in SuperOne tools are auto-approved via
-`BUILT_IN_SUPERONE_TOOL_NAMES` on all four harnesses, `bypassPermissions` mode stops asking entirely,
-`codex-turn.ts` auto-accepts MCP elicitations from any `isBuiltInSuperoneTool` name, and `alwaysAllow`
-silences the rest. A gate the agent can turn off is not a gate.
+For that authorization class the confirmation cannot live in the harness permission layer, because
+every prompt it raises is removable by design: the exact static host-owned set is pre-allowed by
+each integrated harness, `bypassPermissions` mode stops asking entirely, `codex-turn.ts`
+auto-accepts MCP elicitations from any `isBuiltInSuperoneTool` name, and `alwaysAllow` silences the
+rest. A gate the agent can turn off is not a gate.
 
 The unbypassable path is a host `permission_request` raised **inside the executor**:
 
@@ -408,7 +409,7 @@ const outcome = await confirms.open(session, (requestId) => ({
 }), { signal: deps.signal, abortError: () => new Error('Session cleanup cancelled') })
 ```
 
-### Wiring checklist (all four harnesses)
+### Wiring checklist (all harnesses)
 
 1. `packages/shared/src/agent-types.ts` — add the `requestKind` to the union plus its payload field,
    documented as present only for that kind.

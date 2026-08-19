@@ -87,7 +87,7 @@ tool's parameter space without turning that tool into a mode switch, then yes: n
 
 | # | Surface | Where | What breaks if you skip it |
 |---|---|---|---|
-| 1 | Name allowlist | `packages/shared/src/superone-host-owned-tools.ts` → `BUILT_IN_SUPERONE_TOOL_NAMES` | Tool prompts the user for permission on every call (or is refused), on all four harnesses |
+| 1 | Host-owned admission set | `packages/shared/src/superone-host-owned-tools.ts` → `STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES` | Auto-review may prompt for or refuse the tool before its executor runs |
 | 2 | JSON-Schema descriptor | `apps/desktop/src/main/mcp/superone-mcp-builtin-defs.ts` → `BUILT_IN_SUPERONE_TOOL_DEFS` | Invisible to Codex / ACP / OpenCode (stdio bridge), works fine in Claude |
 | 3 | Zod registration + execute switch | `apps/desktop/src/main/mcp/superone-mcp-builtins.ts` | Invisible to Claude (in-process SDK server) / `Unknown SuperOne MCP tool` at call time |
 | 4 | Remote-node descriptor | `packages/shared/src/environment/host-action-superone-descriptors.ts` | Missing when the session runs on a remote node (CLI) |
@@ -104,6 +104,28 @@ Read `references/backend.md` for the file-by-file code, in the order to write it
 
 Design for the **agent** first: what does it need to decide and act, and what should stay behind a
 follow-up call? (Tool UI is Step 4 — human observability.)
+
+### Permission design comes before name and schema
+
+Before writing a descriptor or handler, record two independent decisions:
+
+1. **Harness admission:** is this a static SuperOne-owned dispatcher, a feature-gated host tool, or
+   a dynamic/third-party tool? This decides whether the exact name belongs in the shared host-owned
+   set, is conditionally allowed, or must follow normal/args-aware permission handling.
+2. **Executor authorization:** what can one successful call cost the user? Reads and reversible
+   SuperOne-state writes can proceed; disabled capabilities fail closed; destructive, paid,
+   autonomous, app-reshaping, or third-party effects require a host confirmation inside the
+   executor.
+
+These answers are deliberately independent. `session_cleanup`, `config_apply`,
+`media_generate_video`, `session_collab_request`, and the fixed `miniapp_call` dispatcher should be
+admitted by every harness so their executors are reachable, but their sensitive effects remain
+gated inside those executors. Never omit a host-owned name from the admission set as a substitute
+for implementing the product confirmation: auto modes may deny it before SuperOne can show the
+correct prompt, while bypass modes may remove the harness prompt entirely.
+
+Write tests for the chosen policy before the handler: admission-set membership (or deliberate
+absence), feature-off behavior, and no-effect decline/cancel/abort cases for executor confirmation.
 
 ### Name
 
@@ -192,20 +214,25 @@ rather than importing app singletons into the handler — that is what keeps the
 
 ## Step 3 — Permission
 
-Classify by **what one wrong call costs the user**, then pick a tier deliberately:
+Permission has the same two layers chosen in Step 1:
 
-| Tier | When | Mechanism |
+| Layer | Class | Mechanism |
 |---|---|---|
-| **Auto-approved** (default for built-ins) | reads and reversible writes to SuperOne's own state | name in `BUILT_IN_SUPERONE_TOOL_NAMES` |
-| **Feature-gated** | capability the user must switch on first (computer-use) | recognized for name-rewrite always, auto-allowed only when the setting is on (`superone-host-owned-tools.ts`) |
-| **Mandatory user confirm** | destroys user data, spends user resources, or spawns autonomous work | host `permission_request` raised **inside the executor** — see below |
+| Harness admission | **Static host-owned** | exact name in the shared static set; each harness pre-allows it before auto-review |
+| Harness admission | **Feature-gated host-owned** | recognize the name always; pre-allow only while enabled (`computer_*`) |
+| Harness admission | **Dynamic / third-party** | normal harness permission or args-aware preapproval; never approve by server/prefix |
+| Executor authorization | **No confirm** | reads and reversible writes to SuperOne's own state |
+| Executor authorization | **Feature check** | fail closed when the capability is disabled |
+| Executor authorization | **Mandatory host confirm** | host `permission_request` raised **inside the executor** before any effect |
 
-`BUILT_IN_SUPERONE_TOOL_NAMES` is the single list feeding Claude's `canUseTool` short-circuit
-(`packages/claude/src/run-sdk-turn.ts`), the Codex elicitation rewrite, the ACP pre-approve, and the
-OpenCode allow-rule generator. Auto-approve is justified there because those tools act on SuperOne's
-own state, not the user's.
+`STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES`, derived from
+`BUILT_IN_SUPERONE_TOOL_NAMES` plus the fixed host dispatchers, is the single static admission set.
+It feeds upstream rules such as Claude `allowedTools` and Codex per-tool `approval_mode`; shared
+predicates remain the downstream fallback for Claude `canUseTool`, Codex elicitation, ACP, and other
+permission callbacks. Feature-gated `computer_*` stays outside the static set. Dynamic mini-app
+tools (`slug__tool`) are never made host-owned merely because they use the `superone` MCP server.
 
-### Tier 3 — destructive / resource-consuming tools must ask a human, unbypassably
+### Mandatory confirm — sensitive effects must ask a human, unbypassably
 
 Apply this tier when a call can:
 
@@ -220,7 +247,7 @@ raise is legitimately removable, and mostly *already* removed:
 
 | Bypass | Why the prompt disappears |
 |---|---|
-| Membership in `BUILT_IN_SUPERONE_TOOL_NAMES` | that list *is* an auto-approve short-circuit on all four harnesses |
+| Membership in the static host-owned admission set | every integrated harness pre-allows that exact set before or inside its permission path |
 | `bypassPermissions` permission mode | the harness stops asking at all |
 | Codex elicitation auto-accept | `codex-turn.ts` auto-accepts elicitations from any `isBuiltInSuperoneTool` name (only rich-confirm payloads are exempted) — so **never model the confirm as an MCP elicitation** |
 | `alwaysAllow` | one earlier click silences every later call |
@@ -310,7 +337,7 @@ wrong* if they regressed:
 - `required` field sets, and the deliberate *absence* of a cap
 - desktop def ≡ host-action descriptor, if you added the tool to a family list like
   `SESSION_ARCHIVE_TOOL_NAMES`
-- for a Tier-3 tool: the confirm is **unskippable** — with a decline/cancel/abort answer the handler
+- for a mandatory-confirm tool: the confirm is **unskippable** — with a decline/cancel/abort answer the handler
   performs no deletion / no submit and returns a neutral status. `session-archive-tools.test.ts`
   ("delete with user confirm", "dismisses host confirm when tool AbortSignal aborts") is the template
 

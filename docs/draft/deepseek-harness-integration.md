@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, session fork and foreground subagents (spawn + fork, rendered as a Task block) landed; background/continuable children, compaction and permission presets still pending
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, session fork and foreground subagents (spawn + fork, rendered as a Task block) landed; compaction landed; background/continuable children and permission presets still pending
 Last updated: 2026-08-19
 
 > Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
@@ -421,7 +421,7 @@ the actual backlog):
 | Group | Rows |
 |---|---|
 | subagents | ~~`subagent`~~ ~~`subagent-spawn-in-process`~~ ~~`subagent-fork-in-process`~~ ~~`tool-subagent`×2~~ (landed, §17) · still out: `tool-subagent-control`(+`/list-agents`), `tool-subagent-report` |
-| compaction | `compaction-basic` `compaction-tool-result-pruner` |
+| compaction | ~~`compaction-basic`~~ ~~`compaction-tool-result-pruner`~~ ~~`token-meter`~~ (landed, §18) |
 | permission / sandbox | `permission-presets` `sandbox-local` `sandbox-policy` `bash-sandbox` (`pwsh-sandbox` + `tool-pwsh` on Windows) |
 | context & durability | `session-projection` `spill-local` `spill-policy` `token-meter` `tool-call-timeout-policy` |
 | model plane | `llm-retry` `llm-pi-ai` (dormant multi-provider adapter) |
@@ -771,3 +771,74 @@ workspace (the host-plane proof: with per-agent tools the child's registry is
 empty and no file appears), its `write` reaches the parent's answerer tagged
 with the *child's* session id while `subagent` itself never prompts, and a
 rejection leaves no file.
+
+---
+
+## 18. Compaction (P4f, 2026-08-19)
+
+`dsh-token-meter` + `dsh-compaction-basic` + `dsh-compaction-tool-result-pruner`
+mounted unmodified in `tree.ts`. `supportsCompact` is now true.
+
+**`auto` stays on** (its default). The step-boundary pressure listener and the
+provider-overflow recovery path are the whole reason a long dsh session
+survives; a harness that only compacts when asked is one that dies at the
+context wall. Compaction happens at `0.8 × routedContextWindow`, keeps a
+`0.16` tail, prunes oversized tool results before summarizing, and summarizes
+through a direct `llm.stream()` call marked `purpose: 'compaction'`.
+
+**`dsh-command-compact` is NOT mounted.** SuperOne owns the slash surface, so
+the manual path is `DeepseekBackend.send()` intercepting `/compact` →
+`DeepseekRuntime.compactSession()` → `ctx.compaction.compactNow()`. That keeps
+the whole `commands` family out of the tree, consistent with §13.3.
+
+### The bracket is the mapping
+
+dsh writes one compaction as `compaction/start` … `compaction/summary` …
+`compaction/end`, all log-only, with the actual surface mutation riding a
+`user/message` (`surfaceOp: replace`) between the last two. So the transcript
+events come from the mapper, not from the backend:
+
+| dsh | SuperOne |
+|---|---|
+| `compaction/start` | `status_indicator: 'compacting'`; `turn: null` ⇒ `trigger: 'manual'`, a numeric owner ⇒ `'auto'` |
+| `compaction/summary` | remembers `shadowedTokenCount` as `preTokens` and the summarization `usage.outputTokens` as `postTokens` |
+| `compaction/end` | `compact_boundary` + `status_indicator: null, compactResult: 'success'`, or the `failed` indicator when it carries `error` |
+
+The replacement `user/message` is deliberately **not** mapped: it shadows
+history the chat panel is already showing, so rendering it would duplicate the
+transcript rather than compact it. A test asserts the summary text never
+reaches the event stream.
+
+The backend handles only the rejection path — `compactNow` rejects *before*
+appending anything for `busy` and `changed`, so nothing in the log would tell
+the UI what happened. It also emits `status_change: idle`, because `/compact`
+opens no turn and nothing else would clear the optimistic streaming state.
+
+`/compact` is dsh's only slash entry (`ChatInput.tsx`). It borrows
+`chat.codexCommands.compactDesc` for its label — shared wording, not a shared
+surface; a dsh-owned i18n key is a small follow-up. `isCompactSlash` in
+`send-message.ts` now includes `dsh`, so the typed message is replaced by the
+boundary row instead of sitting unanswered.
+
+### Known gaps
+
+- **No context-pressure UI.** `ctx.tokenMeter` knows the live pressure ratio;
+  the context gauge still derives from `request/context` usage.
+- **The retention policy is dsh's default** (`0.8` / `0.16`), not a setting.
+
+Tests: `compaction.test.ts` (3) — the manual bracket end to end against the
+real engine (indicator → `compact_boundary {trigger:'manual', preTokens>0}` →
+success), the negative case that no transcript message or summary text escapes,
+and two racing compactions where dsh's durable lock rejects the loser without
+leaving the indicator spinning.
+
+### Unrelated fix carried here
+
+`deepseek-mcp-watcher.test.ts` had gone red on this machine. `fs.watch` returns
+before the platform watch is necessarily live — on macOS the FSEvents stream
+starts asynchronously — so a write issued in the same tick could be missed, and
+a fixed 120 ms wait made the assertions hostage to FSEvents latency besides.
+Production never races either one (the watch arms at session start; the user
+edits much later). The tests now await arming and poll for the callback, with a
+fixed wait kept only where elapsed time is the evidence (the negative cases and
+the debounce count).

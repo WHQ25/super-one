@@ -577,6 +577,32 @@ export class DeepseekRuntime {
   }
 
   /**
+   * Compact one session's history now, on the user's explicit request.
+   *
+   * Automatic compaction needs no seam — `compaction-basic` mounts its own
+   * step-boundary pressure listener. This is the manual path, and it goes
+   * straight to `ctx.compaction.compactNow()` rather than through
+   * `dsh-command-compact`, because SuperOne owns the slash surface.
+   *
+   * The whole bracket (`compaction/start` … `compaction/end`) lands on the
+   * session log, so the transcript-facing events come from the mapper like any
+   * other dsh activity. What this returns is only whether the request itself
+   * got that far: `compactNow` resolves without writing when no useful span
+   * exists, and rejects with `ManualCompactionError` for `busy`/`changed`/
+   * `summary`/`commit`/`persistence`.
+   */
+  async compactSession(sessionId: string, signal?: AbortSignal): Promise<void> {
+    const record = this.records.get(sessionId)
+    if (!record) throw new Error(`deepseek compact: no live agent for session ${sessionId}`)
+    const compaction = (this.bridge as Context & { get(name: string): unknown })
+      .get('compaction') as {
+        compactNow(agent: Agent, signal: AbortSignal): Promise<unknown>
+      } | undefined
+    if (!compaction) throw new Error('deepseek compact: compaction engine is not mounted')
+    await compaction.compactNow(record.agent, signal ?? new AbortController().signal)
+  }
+
+  /**
    * Re-mount third-party MCP servers from a fresh read of dsh's config.
    *
    * Sessions already sync at creation; this is the seam for a config edit that

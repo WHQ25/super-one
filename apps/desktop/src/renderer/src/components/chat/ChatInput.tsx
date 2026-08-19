@@ -62,7 +62,6 @@ import { chatInputAPI } from './chat-input-api'
 
 export { chatInputAPI } from './chat-input-api'
 
-const EMPTY_DEEPSEEK_SLASH_COMMANDS: SlashCommandInfo[] = []
 
 export function ChatInput() {
     const { t } = useTranslation()
@@ -281,6 +280,17 @@ export function ChatInput() {
       return () => { cancelled = true }
     }, [activeProviderForResources, displayedSessionId, codexThreadId, status])
 
+    /**
+     * dsh mounts no command surface of its own: `dsh-commands` and every
+     * `command-*` row stay out because SuperOne owns slash. `/compact` is the
+     * one entry, and the backend implements it directly over
+     * `ctx.compaction.compactNow()`.
+     */
+    const deepseekSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
+      // Shared wording, not a shared surface — dsh has no Codex thread.
+      { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
+    ]), [t])
+
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
       { name: 'help', description: t('chat.codexCommands.helpDesc'), argumentHint: '', isSkill: false },
       { name: 'reset', description: t('chat.codexCommands.resetDesc'), argumentHint: '', isSkill: false },
@@ -370,9 +380,9 @@ export function ChatInput() {
         acp: acpSlashCommands,
         opencode: openCodeSlashCommands,
         cursor: cursorSlashCommands,
-        dsh: EMPTY_DEEPSEEK_SLASH_COMMANDS,
+        dsh: deepseekSlashCommands,
       }),
-      [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands],
+      [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands, deepseekSlashCommands],
     )
 
     const matchingCommands = useMemo(

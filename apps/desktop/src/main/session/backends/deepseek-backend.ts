@@ -178,9 +178,41 @@ export class DeepseekBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     const agent = await this.ensureAgent()
+    // `/compact` is not a prompt: it drives `ctx.compaction.compactNow()` and
+    // opens no turn. Intercepted here rather than mounting dsh's own
+    // `command-compact` row, because SuperOne owns the slash surface.
+    if (request.content.trim() === '/compact') {
+      await this.compactNow(agent.sessionId)
+      return
+    }
     if (request.model) agent.setRoute({ model: request.model })
     if (request.effort) agent.setRoute({ reasoningEffort: request.effort })
     agent.sendText(request.content)
+  }
+
+  /**
+   * The whole compaction bracket lands on the session log, so `compacting`,
+   * `compact_boundary` and the success indicator all come from the mapper. Only
+   * a rejection needs handling here: `compactNow` rejects before appending
+   * anything when it is busy or the span changed under it, which would
+   * otherwise leave the UI with no answer at all.
+   */
+  private async compactNow(providerSessionId: string): Promise<void> {
+    try {
+      const runtime = await getDeepseekRuntime()
+      await runtime.compactSession(providerSessionId)
+    } catch (error) {
+      this.emit({
+        type: 'status_indicator',
+        indicator: null,
+        compactResult: 'failed',
+        compactError: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      // No turn opened, so nothing else will take this session out of the
+      // optimistic streaming state the send put it in.
+      this.emit({ type: 'status_change', status: 'idle' })
+    }
   }
 
   async interrupt(): Promise<void> {

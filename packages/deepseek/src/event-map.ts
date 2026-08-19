@@ -55,6 +55,12 @@ export class DeepseekEventMapper {
   private model: string | undefined
   private toolUses = 0
   private totalTokens = 0
+  /** Open compaction bracket, from `compaction/start` to `compaction/end`. */
+  private compaction: {
+    trigger: 'manual' | 'auto'
+    preTokens?: number
+    postTokens?: number
+  } | null = null
 
   constructor(private readonly opts: DeepseekMapperOptions) {}
 
@@ -245,6 +251,51 @@ export class DeepseekEventMapper {
           status: todo.status,
         }))
         this.emit({ type: 'todos_updated', todos })
+        break
+      }
+      // --- Compaction -----------------------------------------------------
+      // dsh brackets one compaction with `start` … `summary` … `end`, and the
+      // surface replacement rides a `user/message` between the last two. Only
+      // the bracket is mapped: the replacement is a shadow of history the chat
+      // already shows, so rendering it would duplicate the transcript.
+      case 'compaction/start': {
+        if (this.opts.nested) break
+        // `turn: null` is dsh's marker for a standalone manual transaction
+        // between turns; a numbered owner means the pressure listener fired
+        // inside an open turn.
+        this.compaction = { trigger: event.data.turn === null ? 'manual' : 'auto' }
+        this.emit({ type: 'status_indicator', indicator: 'compacting' })
+        break
+      }
+      case 'compaction/summary': {
+        if (!this.compaction) break
+        this.compaction.preTokens = event.data.shadowedTokenCount
+        // What the shadowed range costs from here on is the summary itself.
+        this.compaction.postTokens = event.data.usage?.outputTokens
+        break
+      }
+      case 'compaction/end': {
+        const compaction = this.compaction
+        if (!compaction) break
+        this.compaction = null
+        const error = event.data.error
+        if (error !== undefined) {
+          this.emit({
+            type: 'status_indicator',
+            indicator: null,
+            compactResult: 'failed',
+            compactError: error,
+          })
+          break
+        }
+        this.emit({
+          type: 'compact_boundary',
+          trigger: compaction.trigger,
+          preTokens: compaction.preTokens ?? 0,
+          ...(compaction.postTokens !== undefined ? { postTokens: compaction.postTokens } : {}),
+          ...(this.lastMessageId ? { messageId: this.lastMessageId } : {}),
+        })
+        this.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
         break
       }
       case 'request/context': {

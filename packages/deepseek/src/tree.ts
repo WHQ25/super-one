@@ -16,6 +16,9 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentForkInProcess from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
+import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 import { createCredentialPlugin, type CredentialLookup } from './credentials'
 import { mountHostToolPlane } from './tool-plane'
 
@@ -125,6 +128,20 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
     enableRunInBackground: false,
     maxDepth: 3,
   })
+
+  // Compaction. `token-meter` prices the live request envelope; the basic
+  // engine reads that pressure, prunes oversized tool results first, then
+  // summarizes the oldest balanced span through a direct `llm.stream()` call.
+  //
+  // `auto` stays on (its default): the step-boundary pressure listener and the
+  // provider-overflow recovery path are the whole reason a long dsh session
+  // survives, and a harness that only compacts when asked is one that dies at
+  // the context wall. `dsh-command-compact` is NOT mounted — SuperOne owns the
+  // slash surface, so `/compact` reaches `ctx.compaction.compactNow()` through
+  // the backend instead.
+  ctx.plugin(TokenMeter)
+  ctx.plugin(ToolResultPruner, {})
+  ctx.plugin(BasicCompactionEngine, {})
 
   if (options.credentialLookup) {
     ctx.plugin(createCredentialPlugin(options.credentialLookup))

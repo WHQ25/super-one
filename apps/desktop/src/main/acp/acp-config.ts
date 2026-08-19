@@ -3,6 +3,7 @@ import type {
   AcpConfigOption,
   AcpConfigSelectValue,
   AcpSessionCatalog,
+  EffortLevel,
   ModelOption,
 } from '@superone/shared/agent-types'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
@@ -367,6 +368,20 @@ const EFFORT_ASC_RANK: Record<string, number> = {
   high: 3,
   xhigh: 4,
   max: 5,
+}
+
+/**
+ * Narrow a raw ACP mode id to the host `EffortLevel` union. Grok ships reasoning
+ * effort as a session *mode*, so ids arrive as free-form strings — anything the
+ * host slider cannot represent (OpenCode ask/code, Grok `minimal`) must fall
+ * back rather than masquerade as an effort.
+ */
+export function asEffortLevel(raw: string | undefined | null): EffortLevel | undefined {
+  const value = raw?.trim().toLowerCase()
+  if (!value) return undefined
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
+    ? value
+    : undefined
 }
 
 /** Grok sessionConfig category=mode ids. Rejects OpenCode ask/code and empty. */

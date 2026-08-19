@@ -13,6 +13,7 @@ import type {
   ContextUsageInfo,
   EffortLevel,
 } from '@superone/shared/agent-types'
+import { asEffortLevel } from './acp-config'
 import log from '../logger'
 
 // ── Method names ────────────────────────────────────────────────────────────
@@ -1493,7 +1494,7 @@ function mapModelChanged(u: Record<string, unknown>): AgentEvent[] {
   const modelId = strField(u, 'model_id', 'modelId')
   if (!modelId) return []
   const effort = strField(u, 'reasoning_effort', 'reasoningEffort')
-  const selectedEffort = toEffortLevel(effort)
+  const selectedEffort = asEffortLevel(effort)
   return [{
     type: 'agent_setting_change',
     selectedModel: modelId,
@@ -1614,13 +1615,4 @@ function mapFollowUps(u: Record<string, unknown>): AgentEvent[] {
     count += 1
   }
   return events
-}
-
-function toEffortLevel(v: string | undefined): EffortLevel | undefined {
-  if (!v) return undefined
-  const lower = v.toLowerCase()
-  if (lower === 'low' || lower === 'medium' || lower === 'high' || lower === 'xhigh' || lower === 'max') {
-    return lower
-  }
-  return undefined
 }

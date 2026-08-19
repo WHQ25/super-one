@@ -7,6 +7,7 @@ import {
   extractModelConfig,
   extractModesFromNewSessionResult,
   extractModesFromXaiSessionConfig,
+  asEffortLevel,
   asGrokReasoningEffort,
   extractModelsFromInitializeResult,
   extractModelsFromNewSessionResult,
@@ -400,5 +401,25 @@ describe('asGrokReasoningEffort', () => {
     expect(asGrokReasoningEffort('code')).toBeUndefined()
     expect(asGrokReasoningEffort('')).toBeUndefined()
     expect(asGrokReasoningEffort(null)).toBeUndefined()
+  })
+})
+
+describe('asEffortLevel', () => {
+  it('narrows raw mode ids onto the host EffortLevel union', () => {
+    expect(asEffortLevel('low')).toBe('low')
+    expect(asEffortLevel('  XHigh  ')).toBe('xhigh')
+    expect(asEffortLevel('max')).toBe('max')
+  })
+
+  it('rejects ids the host slider cannot represent', () => {
+    // Grok ships `minimal` on the wire but the host union stops at `low`;
+    // letting it through would stamp an effort no picker can round-trip.
+    expect(asEffortLevel('minimal')).toBeUndefined()
+    // OpenCode session modes are not efforts at all.
+    expect(asEffortLevel('ask')).toBeUndefined()
+    expect(asEffortLevel('code')).toBeUndefined()
+    expect(asEffortLevel('')).toBeUndefined()
+    expect(asEffortLevel(null)).toBeUndefined()
+    expect(asEffortLevel(undefined)).toBeUndefined()
   })
 })

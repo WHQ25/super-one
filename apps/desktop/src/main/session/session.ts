@@ -42,6 +42,7 @@ import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mc
 import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automation-tools'
 import { nextEventSeq } from './event-seq'
 import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
+import { asEffortLevel } from '../acp/acp-config'
 import { collectChangedMessageIds } from './message-dirty'
 import { messageDialectFor } from './message-dialect'
 import {
@@ -933,7 +934,7 @@ export class Session implements SessionContract {
       config: this.providerConfig,
       permissionMode: this.permissionMode,
       sandboxInfo: this.sandboxInfo,
-      effort: hint?.effort ?? this._uiSettings.selectedAcpModeId ?? this.effort,
+      effort: hint?.effort ?? asEffortLevel(this._uiSettings.selectedAcpModeId) ?? this.effort,
       model: hint?.model ?? this.model,
       additionalDirectories: dirs.length > 0 ? dirs : undefined,
       abortController: new AbortController(),
@@ -1352,7 +1353,7 @@ export class Session implements SessionContract {
       config: this.providerConfig,
       permissionMode: this.permissionMode,
       sandboxInfo: this.sandboxInfo,
-      effort: this._uiSettings.selectedAcpModeId ?? this.effort,
+      effort: asEffortLevel(this._uiSettings.selectedAcpModeId) ?? this.effort,
       model: this.model,
       additionalDirectories: this.additionalDirectories.length > 0 ? this.additionalDirectories : undefined,
       abortController: this.abortController,

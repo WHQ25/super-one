@@ -41,3 +41,40 @@ export {
   dshPresetForMode,
   type DshPermissionPreset,
 } from './permission-presets'
+export {
+  DSH_FAMILY_PREFIX,
+  installDshPeerResolver,
+  registerDshPluginRoot,
+} from './plugin-host/resolver'
+export {
+  DSH_PLUGIN_REGISTRY_VERSION,
+  enabledPlugins,
+  readPluginRegistry,
+  updatePluginRegistry,
+  resolvePluginEntryUrl,
+  type DshPluginRegistry,
+  type DshPluginRow,
+} from './plugin-host/registry'
+export {
+  DEFAULT_NPM_REGISTRY,
+  checkPeerLockstep,
+  installPluginFromDirectory,
+  installPluginFromNpm,
+  installPluginFromTarball,
+  lockstepBlocks,
+  readPluginManifest,
+  setPluginDisabled,
+  uninstallPlugin,
+  type InstallOptions,
+  type InstallResult,
+  type LockstepReport,
+  type NpmInstallOptions,
+  type PluginManifest,
+  type TrustGrant,
+} from './plugin-host/install'
+export {
+  DeepseekPlugins,
+  type MountReport,
+  type MountStatus,
+  type PluginMountOutcome,
+} from './plugin-host/mount'

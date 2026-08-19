@@ -420,6 +420,24 @@ export type Messages = {
         codex: string
       }
     }
+    dshPlugins: {
+      trustTitle: string
+      trustBody: string
+      npmPlaceholder: string
+      installFromNpm: string
+      installFromFolder: string
+      installed: string
+      unmetDeps: string
+      empty: string
+      uninstall: string
+      rootPath: string
+      status: {
+        mounted: string
+        unresolved: string
+        failed: string
+        disabled: string
+      }
+    }
     harnesses: {
       title: string
       subtitle: string
@@ -3402,6 +3420,25 @@ export const en: Messages = {
       providers: {
         claude: 'Claude Code',
         codex: 'Codex',
+      },
+    },
+    dshPlugins: {
+      trustTitle: 'Plugins run with full access',
+      trustBody:
+        'A dsh plugin runs inside SuperOne with the same privileges as the app itself \u2014 it can read your files, run commands, and reach the network. There is no sandbox. Install one only if you trust its author, the way you would an editor extension.',
+      npmPlaceholder: 'npm package name, e.g. @scope/dsh-tool-example',
+      installFromNpm: 'Install',
+      installFromFolder: 'From folder\u2026',
+      installed: 'Installed {{name}} {{version}}.',
+      unmetDeps: 'It declares dependencies that were not installed ({{deps}}); it only works if it bundled them.',
+      empty: 'No plugins installed.',
+      uninstall: 'Uninstall',
+      rootPath: 'Plugins live in {{path}}',
+      status: {
+        mounted: 'Active',
+        unresolved: 'Missing files',
+        failed: 'Failed to load',
+        disabled: 'Disabled',
       },
     },
     harnesses: {

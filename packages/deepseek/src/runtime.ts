@@ -15,6 +15,7 @@ import {
   type ToolApprovalDecision,
 } from './tool-plane'
 import { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
+import { DeepseekPlugins, type MountReport } from './plugin-host/mount'
 import type { DshPermissionPreset } from './permission-presets'
 import { projectTrajectory } from './trajectory/project'
 import type { TrajectoryProjection } from '@superone/shared/trajectory-types'
@@ -44,6 +45,21 @@ export interface DeepseekApprovalRequest {
 }
 
 export interface DeepseekRuntimeOptions extends DeepseekTreeOptions {
+  /**
+   * Writable root holding third-party plugins the user installed
+   * (`<userData>/dsh-plugins`). Omit to run with only the plugins this build
+   * carries — what every test that does not care about them wants.
+   */
+  pluginRoot?: string
+  /**
+   * Receives the outcome of each plugin reconcile pass, including the one at
+   * boot.
+   *
+   * A callback rather than a return value because a plugin that fails is not a
+   * boot failure — the runtime comes up without it — but the user still has to
+   * be told, and only the host knows where to say it.
+   */
+  onPluginMount?: (report: MountReport) => void
   /**
    * Answer one HITL approval question (SuperOne's permission popover).
    * Absent handler = delegate to dsh's default policy (fail-closed under
@@ -179,12 +195,18 @@ export class DeepseekRuntime {
   private subagentRuns = new Map<string, SubagentRun>()
   private adapterFiber: { dispose: () => Promise<void> } | null = null
   private readonly mcpServers: DeepseekMcpServers
+  private readonly plugins: DeepseekPlugins
+  private onPluginMount: ((report: MountReport) => void) | undefined
 
   private constructor(
     private readonly root: Context,
     private readonly bridge: Context,
+    pluginRoot: string | undefined,
+    onPluginMount: ((report: MountReport) => void) | undefined,
   ) {
     this.mcpServers = new DeepseekMcpServers(bridge)
+    this.plugins = new DeepseekPlugins(bridge, pluginRoot)
+    this.onPluginMount = onPluginMount
   }
 
   /**
@@ -215,7 +237,7 @@ export class DeepseekRuntime {
       })
     })
 
-    const runtime = new DeepseekRuntime(root, bridge)
+    const runtime = new DeepseekRuntime(root, bridge, options.pluginRoot, options.onPluginMount)
 
     bridge.on('session/event', (session: { header: { id: string } }, event: SessionEvent) => {
       const id = String(session.header.id)
@@ -319,6 +341,11 @@ export class DeepseekRuntime {
     // per-session answerer is looked up per call, not captured per mount.
     installPermissionGate(bridge, (request) => runtime.answerPermission(request))
 
+    // Third-party plugins mount last, so every service this build provides — and
+    // the permission gate above — is already in place when they load. A plugin
+    // that fails is reported through `onPluginMount`, never thrown: the runtime
+    // is usable without it.
+    await runtime.syncPlugins()
 
     return runtime
   }
@@ -833,12 +860,28 @@ export class DeepseekRuntime {
     await this.mcpServers.sync(specs)
   }
 
+  /**
+   * Reconcile installed third-party plugins against `registry.json`.
+   *
+   * The single mutation path: installing, enabling, disabling, reconfiguring and
+   * removing all reduce to "write the registry, then call this". Because
+   * mounting rides `ctx.loader`, the reconcile reaches the *running* tree — an
+   * install does not wait for a restart.
+   * @returns what each enabled row produced.
+   */
+  async syncPlugins(): Promise<MountReport> {
+    const report = await this.plugins.sync()
+    this.onPluginMount?.(report)
+    return report
+  }
+
   async dispose(): Promise<void> {
     for (const [sessionId, record] of [...this.records]) {
       this.records.delete(sessionId)
       await record.dispose()
     }
     await this.mcpServers.dispose()
+    await this.plugins.dispose()
     await (this.root as Context & { stop?: () => Promise<void> }).stop?.()
   }
 }

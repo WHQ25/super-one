@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
+import type { DshPluginInstallSource } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import { forEachAgentEventPayload } from './agent-event-payload'
@@ -1296,6 +1297,14 @@ const appAPI = {
   // dsh MCP config
   dshListMcpConfigs: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DSH_MCP_LIST_CONFIG, projectPath),
+  // dsh third-party plugins
+  dshListPlugins: () => ipcRenderer.invoke(AgentIpcChannels.DSH_PLUGIN_LIST),
+  dshInstallPlugin: (source: DshPluginInstallSource, force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.DSH_PLUGIN_INSTALL, source, force),
+  dshSetPluginDisabled: (id: string, disabled: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.DSH_PLUGIN_SET_DISABLED, id, disabled),
+  dshUninstallPlugin: (id: string) => ipcRenderer.invoke(AgentIpcChannels.DSH_PLUGIN_UNINSTALL, id),
+
   dshSaveMcpConfig: (
     projectPath: string,
     name: string,

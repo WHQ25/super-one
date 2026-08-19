@@ -87,7 +87,7 @@ import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
-import type { HookSavePayload, SessionForkRequest, HarnessId } from '@superone/shared/agent-types'
+import type { HookSavePayload, SessionForkRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
 import { forkSession } from '../session/session-fork'
 
 export class AgentService {
@@ -2634,6 +2634,31 @@ export class AgentService {
       toggleDshMcpConfig(name, disabled, scope, projectPath)
     })
 
+    // --- dsh third-party plugins ---
+    //
+    // Imported lazily: the plugin service pulls in @superone/deepseek, and a
+    // build with no dsh session should not pay for it at startup.
+
+    ipcMain.handle(AgentIpcChannels.DSH_PLUGIN_LIST, async () => {
+      const { listDshPlugins } = await import('../deepseek/deepseek-plugins')
+      return await listDshPlugins()
+    })
+
+    ipcMain.handle(AgentIpcChannels.DSH_PLUGIN_INSTALL, async (_event, source: DshPluginInstallSource, force?: boolean) => {
+      const { installDshPlugin } = await import('../deepseek/deepseek-plugins')
+      return await installDshPlugin(source, force === true)
+    })
+
+    ipcMain.handle(AgentIpcChannels.DSH_PLUGIN_SET_DISABLED, async (_event, id: string, disabled: boolean) => {
+      const { setDshPluginDisabled } = await import('../deepseek/deepseek-plugins')
+      return await setDshPluginDisabled(id, disabled)
+    })
+
+    ipcMain.handle(AgentIpcChannels.DSH_PLUGIN_UNINSTALL, async (_event, id: string) => {
+      const { uninstallDshPlugin } = await import('../deepseek/deepseek-plugins')
+      return await uninstallDshPlugin(id)
+    })
+
     // --- Agents (read-only) ---
 
     ipcMain.handle(AgentIpcChannels.AGENTS_LIST, async (_event, projectPath: string) => {
@@ -3175,6 +3200,10 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.DSH_MCP_SAVE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.DSH_MCP_DELETE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_PLUGIN_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_PLUGIN_INSTALL)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_PLUGIN_SET_DISABLED)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_PLUGIN_UNINSTALL)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_CONFIG)

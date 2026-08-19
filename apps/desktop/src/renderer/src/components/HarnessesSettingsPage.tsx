@@ -54,6 +54,7 @@ import { SkillsPage } from './SkillsPage'
 import { McpPage } from './McpPage'
 import { HooksPage } from './HooksPage'
 import { PluginsPage } from './PluginsPage'
+import { DshPluginsPage } from './DshPluginsPage'
 import { PreferencesPage } from './PreferencesPage'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
 
@@ -195,7 +196,7 @@ const CURSOR_CONFIG_TABS: HarnessConfigSection[] = [
   'cloud',
 ]
 
-const DSH_CONFIG_TABS: HarnessConfigSection[] = ['mcp']
+const DSH_CONFIG_TABS: HarnessConfigSection[] = ['mcp', 'plugins']
 
 function configTabsFor(provider: SettingsProvider | undefined): HarnessConfigSection[] | null {
   if (provider === 'claude') return CLAUDE_CONFIG_TABS
@@ -941,7 +942,10 @@ function HarnessDetail({
                 {section === 'skills' && <SkillsPage />}
                 {section === 'mcp' && <McpPage />}
                 {section === 'hooks' && <HooksPage />}
-                {section === 'plugins' && <PluginsPage />}
+                {/* dsh's plugin surface is its own: third-party cordis plugins, not
+                    the Claude/Codex marketplace this page otherwise shows. */}
+                {section === 'plugins'
+                  && (item.provider === 'dsh' ? <DshPluginsPage /> : <PluginsPage />)}
               </TabsContent>
             ))
           )}

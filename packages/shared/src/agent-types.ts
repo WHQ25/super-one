@@ -2957,6 +2957,10 @@ export const AgentIpcChannels = {
   DSH_MCP_SAVE_CONFIG: 'dsh:mcp-save-config',
   DSH_MCP_DELETE_CONFIG: 'dsh:mcp-delete-config',
   DSH_MCP_TOGGLE_CONFIG: 'dsh:mcp-toggle-config',
+  DSH_PLUGIN_LIST: 'dsh:plugin-list',
+  DSH_PLUGIN_INSTALL: 'dsh:plugin-install',
+  DSH_PLUGIN_SET_DISABLED: 'dsh:plugin-set-disabled',
+  DSH_PLUGIN_UNINSTALL: 'dsh:plugin-uninstall',
 
   // MCP config
   MCP_LIST_CONFIG: 'mcp:list-config',
@@ -3883,4 +3887,47 @@ export interface AppSettingsPatch {
     codex?: Partial<AppSettings['agentPreference']['codex']>
     acp?: Partial<AppSettings['agentPreference']['acp']>
   }
+}
+
+/** One installed dsh plugin as the settings page sees it. */
+export interface DshPluginInfo {
+  /** Row identity — the unit every mutation addresses. */
+  id: string
+  /** Package name inside the plugin root. */
+  name: string
+  version: string
+  disabled: boolean
+  /**
+   * Whether the row is live in the running tree. `null` when no dsh runtime is
+   * up, which is different from "not mounted" and must not render as a failure.
+   */
+  status: 'mounted' | 'unresolved' | 'failed' | null
+  /** Why it is not mounted, when it is not. */
+  reason?: string
+}
+
+/** The settings page's whole view of the plugin root. */
+export interface DshPluginList {
+  plugins: DshPluginInfo[]
+  /** Set when `registry.json` itself could not be used. */
+  problem?: string
+  /** Absolute path of the plugin root, shown so a user can open it. */
+  root: string
+}
+
+/** Where an install reads the package from. */
+export type DshPluginInstallSource =
+  | { kind: 'directory'; path: string }
+  | { kind: 'tarball'; path: string }
+  | { kind: 'npm'; name: string; version?: string }
+
+/** What an install reported back. */
+export interface DshPluginInstallResult {
+  id: string
+  name: string
+  version: string
+  /** Runtime dependencies nothing installed; non-empty means it must have bundled them. */
+  unmetDependencies: string[]
+  /** dsh peers whose declared range this build does not satisfy (force installs only). */
+  mismatched: { name: string; wanted: string; actual: string }[]
 }

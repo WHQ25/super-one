@@ -1230,3 +1230,166 @@ composition configures the row, which a bare `ctx.plugin(ToolCordis)` did not.
 check — it proves the YAML parses and holds named rows, not that every row's
 host service exists — so `cordis` listed as healthy while being unmountable.
 `presets.test.ts` now mounts all four.
+
+---
+
+## 23. Runtime plugin installation (2026-08-19)
+
+The goal this serves: **install third-party dsh plugins at runtime**, so the
+community's host-side ecosystem (tools, model adapters, executors, skills,
+workflows) is reachable without a SuperOne release. UI plugins are explicitly
+out of scope and go through SuperOne's own slot system instead — see
+`docs/draft/superone-ui-plugin-system.md` for why the two tracks separated.
+
+### Upstream does not solve this, but not for the reason first recorded
+
+An earlier note here said dsh has no plugin installation at all. That was too
+strong, and the correction matters. `dsh plugin --profile <p> add <package>`
+exists — a thin `pnpm` forwarder that installs into a profile directory and then
+reconciles `dsh.profile.bundles` **by installed state**, so a package that gains
+a `dsh.bundle` declaration in a newer version activates on `update`.
+
+What is true is narrower and more useful: **its activation test is
+`dsh.bundle.patch`, and host-side capability plugins do not declare one.** Of the
+38 packages in the repo that declare `dsh.bundle`, nearly all are `client/ui-*`,
+plus `api/gateway`, `api/remotes`, `client/modules`, `typert/registry` and the
+three real bundles. No `tool-*`, no `llm-*`, no executor. Those are plain
+packages that a composition names as a **row**.
+
+So `dsh plugin add @scope/dsh-tool-foo` would install the dependency and then
+warn that it is not a bundle, without activating it. The activation step —
+recording the row — is the part we own, and `registry.json` is that record.
+
+(Separately: the CLI `spawnSync`s `pnpm`, which a packaged desktop app cannot
+assume; and `@deepseek-ai/dsh` pulls the whole official deployment —
+`dsh-base`, `dsh-web-app`, `dsh-headless`, `dsh-terminal` — as dependencies.
+`@deepseek-ai/dsh-app-boot` is the reusable half, published separately with only
+`js-yaml`, but it is at **rc.6 while the family is rc.7**, so lockstep is already
+broken there and it needs verification before adoption.)
+
+### The dual-package hazard is the whole problem
+
+A plugin under `<userData>/dsh-plugins` resolves its own `node_modules`, so its
+`import { Context } from '@deepseek-ai/cordis'` finds either nothing or a
+**second copy** — and a second `Context` class makes every `ctx.plugin()` and
+service injection silently miss.
+
+`plugin-host/resolver.ts` fixes it with `module.registerHooks` (Electron 43 ships
+Node 24.18, where it is available in the main process). Verified: the redirected
+module is the *same module record* the app's static imports hold, and a plugin
+imported this way mounts on a real app-side `Context`.
+
+Scope is narrow on both axes. **By specifier**: only `@deepseek-ai/*` — the whole
+family is scoped, `cordis`/`cosmokit`/`schemastery` included, so one prefix
+suffices. **By importer**: only modules under a registered plugin root.
+Redirecting indiscriminately took **4370 hook hits** to load one plugin; scoping
+by importer makes it one per external import site.
+
+**Footgun, cost a red test to find:** `require.resolve` returns realpaths, so a
+root registered by its lexical path never prefix-matches its own importers and
+the redirect **silently never fires**. macOS makes this the default for anything
+under a temp dir (`/var` → `/private/var`). The root is realpath'd once at
+registration — not per resolve, which would touch the disk on every import.
+
+### Layout and vocabulary
+
+The plugin root is an ordinary npm root (`package.json` + `node_modules/`), so
+any package manager can install into it and a plugin can bring its own non-dsh
+dependencies. `registry.json` beside it records enablement, deliberately
+separate: a package may be present but disabled.
+
+Rows follow **dsh's own composition-row vocabulary** — `{ id, name, config,
+disabled }`, where `id` is the unit later layers override by and `disabled`
+(absent = enabled) is how a composition turns a row off without removing it.
+`version` is ours; dsh rows carry none because their packages are pinned by a
+profile lockfile and we have none. Reads and writes go through dsh's own
+`withFileLock` + `writeFileAtomic`.
+
+### Lockstep is checked at install, not at resolve
+
+The resolver cannot check versions — its only options mid-turn are a silent
+mismatch or a crash. `install.ts` checks the plugin's `@deepseek-ai/*` peers
+against the app's copies before copying anything.
+
+Two semver facts worth pinning, both covered by tests:
+
+- **`^0.1.0` does NOT admit `0.1.0-rc.7`.** A prerelease sorts below its release,
+  so `>=0.1.0` excludes it. `includePrerelease` does not rescue this. A plugin
+  written against the eventual 0.1.0 release genuinely does not run here, and
+  saying so at install time beats a mid-turn crash — but it *will* surprise
+  plugin authors.
+- **`workspace:^` is reported as unchecked, not as a mismatch.** It is valid in
+  the author's own monorepo and rewritten at publish time, so a plugin installed
+  from a local working tree carries it verbatim. Blocking on it would block every
+  locally-developed plugin.
+
+### Mounting
+
+`mount.ts` registers the plugin root **before the first import** (the hook
+rewrites resolution and cannot re-point a live module record), resolves each
+enabled row to a `file:` URL (a bare specifier resolves from inside the app and
+can never reach the plugin root), unwraps through the Loader's own
+`unwrapExports`, and mounts. A plugin that throws is reported, never rethrown:
+one bad third-party package must not sink the runtime.
+
+### Mounting rides `ctx.loader`, not `ctx.plugin()`
+
+The first cut mounted rows with a bare `ctx.plugin()`, which works exactly once:
+there is no handle to update or remove. Rewritten onto `ctx.loader` — the same
+runtime entry tree `DeepseekMcpServers` drives — the whole surface falls out of
+one method. `DeepseekPlugins.sync()` reconciles the tree against
+`registry.json`: mount what is newly enabled, `loader.update` what changed config
+(in place, not dispose-then-remount), `loader.remove` what is gone or disabled.
+
+That makes **write the registry, then sync** the single mutation path. Install,
+enable, disable, reconfigure and uninstall all reduce to it, so no second code
+path exists that could drift — and an install reaches the *running* process
+instead of waiting for a restart. Entry ids are `plugin-<row.id>`, readable in a
+tree dump.
+
+### Trust is a required argument
+
+A host plugin runs in the main process with full Node privileges: it can read any
+file, spawn any process, reach the network. There is no sandbox — the opposite of
+the mini-app model users may expect from the word "plugin".
+
+So `InstallOptions.trust: 'granted'` is **required, not optional**. The type is
+what stops a future install path from being written that quietly skips asking.
+The settings page carries the matching notice above its install controls, and
+`installDshPlugin` is the one place that supplies the value.
+
+### Install sources
+
+Directory, npm tarball (`.tgz`, `package/` prefix stripped), and npm registry
+fetch. The registry path resolves metadata, downloads one tarball, and unpacks
+it — it is **not a package manager and resolves no dependency tree**. A plugin's
+dsh peers come from this build through the resolver hook, which is the only
+reason one tarball is enough; anything else it declares comes back as
+`unmetDependencies` and is shown to the user rather than silently missing.
+
+Both archive paths expand into a temp directory first, so a malformed archive
+fails before anything touches the plugin root.
+
+### Status
+
+Complete and wired end to end: resolver, registry, three install sources,
+loader-driven mount with hot reconcile, uninstall, enable/disable, the IPC
+surface, and a settings page under Harnesses → DeepSeek → Plugins. 146 tests in
+`@superone/deepseek`, 20 in the desktop main service.
+
+Four guarantees are each pinned by a test verified to fail without its fix:
+module identity across roots, realpath prefix matching, re-registering the root
+at install time, and the reconcile reaching a running tree.
+
+Known limits, all deliberate:
+
+- **No dependency resolution.** A plugin with its own runtime dependencies must
+  bundle them; the install reports what it could not satisfy.
+- **`^0.1.0` reads as incompatible** against this `0.1.0-rc.7` build, because a
+  prerelease sorts below its release. Correct semver, and it will surprise plugin
+  authors.
+- **`workspace:^` is unchecked**, not refused — it is what a locally-developed
+  plugin carries before publish.
+- **A packaged build has not been verified.** `file:` URLs pointing *into*
+  `app.asar` are adjacent to what §14 proved but are not the same operation, and
+  dev mode cannot exercise it.

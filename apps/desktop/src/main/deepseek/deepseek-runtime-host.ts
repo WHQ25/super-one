@@ -16,6 +16,17 @@ import { stopTrackingDshMcpConfig } from './deepseek-mcp-sync'
 export const DEFAULT_DSH_AGENT_PRESET = 'standard'
 
 /**
+ * Where third-party dsh plugins the user installed live.
+ *
+ * Under `userData` rather than beside the app: the app directory is read-only
+ * once packaged (and is replaced wholesale by an update), while this must
+ * survive upgrades and be writable without elevation.
+ */
+export function dshPluginRoot(): string {
+  return join(app.getPath('userData'), 'dsh-plugins')
+}
+
+/**
  * Credential reference the embedded adapter asks for. It is a *name*, never a
  * value: the credential seam resolves it out of SuperOne's store per request.
  */
@@ -58,6 +69,19 @@ export async function peekDeepseekRuntime(): Promise<DeepseekRuntime | null> {
 }
 
 /**
+ * Push the plugin registry's current state into the running tree, if there is
+ * one.
+ *
+ * Every plugin mutation ends here, which is what makes an install or a toggle
+ * take effect without a restart. Deliberately built on `peek`: managing plugins
+ * must not boot dsh as a side effect of opening a settings page.
+ */
+export async function reconcileDshPlugins(): Promise<void> {
+  const runtime = await peekDeepseekRuntime()
+  await runtime?.syncPlugins()
+}
+
+/**
  * The shipped agent-preset root — the `system`-trust half of the roster.
  *
  * Not optional in production: since the model-facing tool rows live in the
@@ -80,6 +104,22 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
       persistenceRoot: join(app.getPath('userData'), 'deepseek-sessions'),
       presetRoots: [shippedPresetRoot()],
       defaultPreset: DEFAULT_DSH_AGENT_PRESET,
+      pluginRoot: dshPluginRoot(),
+      onPluginMount: (report) => {
+        // A plugin that did not load is reported, never fatal — the runtime is
+        // already up by the time this runs. Logging each one by name is what
+        // makes a silently missing tool diagnosable.
+        for (const outcome of report.outcomes) {
+          if (outcome.status === 'mounted') {
+            log.info(`[deepseek] plugin mounted: ${outcome.row.id} (${outcome.row.name}@${outcome.row.version})`)
+          } else {
+            log.error(`[deepseek] plugin ${outcome.status}: ${outcome.row.id} — ${outcome.reason ?? 'no reason given'}`)
+          }
+        }
+        if (report.registryProblem !== undefined) {
+          log.error(`[deepseek] plugin registry unusable, no plugins loaded: ${report.registryProblem}`)
+        }
+      },
       // Resolved per request, so re-binding a key in SuperOne settings reaches
       // the next turn without a restart — and no secret enters process.env.
       credentialLookup: (ref) => (ref === DEEPSEEK_CREDENTIAL_REF ? resolveDeepseekApiKey() : undefined),

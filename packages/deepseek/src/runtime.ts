@@ -224,7 +224,7 @@ export class DeepseekRuntime {
     // Mounted before the agent exists, in the tree's global layer: dsh's MCP
     // servers are deployment-level, so re-syncing here just picks up an edit to
     // the profile patch layer since the last session started.
-    if (options.mcpServers) this.mcpServers.sync(options.mcpServers)
+    if (options.mcpServers) await this.mcpServers.sync(options.mcpServers)
 
     // Creation-time composition: everything `setup` mounts exists before the
     // first prompt assembly, and it unwinds with the agent.
@@ -332,7 +332,7 @@ export class DeepseekRuntime {
       this.records.delete(sessionId)
       await record.dispose()
     }
-    this.mcpServers.dispose()
+    await this.mcpServers.dispose()
     await (this.root as Context & { stop?: () => Promise<void> }).stop?.()
   }
 }

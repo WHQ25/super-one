@@ -2,8 +2,10 @@
  * The risk here is not MCP itself — it is placement: dsh's servers are
  * deployment-level, so they must reach every session of the tree, survive a
  * second session starting, and go away when the config drops them. These tests
- * mount a fake server plugin (same registration surface, no network) and assert
- * on the tools an agent can actually call.
+ * drive the REAL `ctx.loader` entry tree and register a fake server plugin as a
+ * `cordis:` builtin (same registration surface, no network), so the loader path
+ * under test is the one production uses — only the module behind the specifier
+ * differs.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
@@ -11,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
-import { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
+import { DeepseekMcpServers, DSH_MCP_CLIENT_SPECIFIER, type DeepseekMcpServerSpec } from './mcp-servers'
 
 class ToolCallAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -57,6 +59,8 @@ class ToolCallAdapter extends LlmAdapter {
  * `mcp__<serverName>__ping` on the context it is mounted on, and reserves
  * nothing globally so the test can observe our own name allocation.
  */
+const FAKE_BUILTIN_KEY = 'superone-test-mcp-client'
+
 const fakeServerPlugin = {
   name: 'fake-mcp-client',
   inject: ['tools'],
@@ -82,9 +86,15 @@ async function bootRuntime() {
   ;(runtime.context as unknown as {
     llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }
   }).llm.registerAdapter(['mock'], new ToolCallAdapter())
-  // Swap in the fake plugin: mounting the real client would need live servers.
+  // Register the fake behind a `cordis:` specifier — the loader's own escape
+  // hatch for modules that are not on disk. Mounting the real client would
+  // need live servers.
+  const loader = (runtime.context as unknown as {
+    get(name: string): { builtins: Record<string, unknown> }
+  }).get('loader')
+  loader.builtins[FAKE_BUILTIN_KEY] = fakeServerPlugin
   ;(runtime as unknown as { mcpServers: DeepseekMcpServers }).mcpServers =
-    new DeepseekMcpServers(runtime.context, fakeServerPlugin)
+    new DeepseekMcpServers(runtime.context, `cordis:${FAKE_BUILTIN_KEY}`)
   return runtime
 }
 
@@ -166,6 +176,68 @@ describe('third-party MCP servers', () => {
     // Same name, new endpoint: the old mount had to go before the new one
     // could take the name back.
     expect(toolResults(second.events)).toContain('pong:repo:http://b')
+  })
+
+  // Every other test here swaps in a `cordis:` builtin, which would keep
+  // passing if the real package were renamed or dropped from the manifest.
+  // This one drives the production specifier through the real create path. The
+  // server is deliberately unreachable: `failOnStartupError: false` means a
+  // dead endpoint costs its own tools and nothing else, so an entry that
+  // survives proves the module RESOLVED — which is the thing under test.
+  it('resolves the real dsh-mcp-client through the loader', async () => {
+    const runtime = await bootRuntime()
+    const servers = new DeepseekMcpServers(runtime.context, DSH_MCP_CLIENT_SPECIFIER)
+    cleanups.push(() => servers.dispose())
+    const loader = (runtime.context as unknown as {
+      get(name: string): { store: Record<string, unknown> }
+    }).get('loader')
+
+    await servers.sync([httpServer('probe', 'http://127.0.0.1:1')])
+
+    // A bad specifier throws inside `loader.create`, which the registrar
+    // swallows — so the entry would simply be absent.
+    expect(Object.keys(loader.store)).toContain('mcp-probe')
+  })
+
+  // The reason this registrar went through `ctx.loader` at all: dsh reserves
+  // `serverName` process-wide, so an edited server must restart its own row
+  // rather than disappear and re-take the name.
+  it('restarts a changed server in place instead of dropping its entry', async () => {
+    const runtime = await bootRuntime()
+    const servers = (runtime as unknown as { mcpServers: DeepseekMcpServers }).mcpServers
+    const loader = (runtime.context as unknown as {
+      get(name: string): { store: Record<string, unknown>; update: unknown }
+    }).get('loader')
+    const updates = vi.spyOn(loader as unknown as { update: (...args: never[]) => Promise<void> }, 'update')
+    const removes = vi.spyOn(loader as unknown as { remove: (...args: never[]) => Promise<void> }, 'remove')
+
+    await servers.sync([httpServer('repo', 'http://a')])
+    // Entry ids follow dsh's own patch-file convention, so a running tree reads
+    // like the file the user edits.
+    expect(Object.keys(loader.store)).toContain('mcp-repo')
+
+    await servers.sync([httpServer('repo', 'http://b')])
+
+    expect(updates).toHaveBeenCalledTimes(1)
+    expect(removes).not.toHaveBeenCalled()
+    expect(Object.keys(loader.store)).toContain('mcp-repo')
+
+    // ...and an unchanged re-sync is a no-op, not a pointless restart.
+    await servers.sync([httpServer('repo', 'http://b')])
+    expect(updates).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops the loader entry when the server leaves the config', async () => {
+    const runtime = await bootRuntime()
+    const servers = (runtime as unknown as { mcpServers: DeepseekMcpServers }).mcpServers
+    const loader = (runtime.context as unknown as {
+      get(name: string): { store: Record<string, unknown> }
+    }).get('loader')
+
+    await servers.sync([httpServer('repo', 'http://a')])
+    await servers.sync([])
+
+    expect(Object.keys(loader.store)).not.toContain('mcp-repo')
   })
 
   it('leaves a session with no configured servers alone', async () => {

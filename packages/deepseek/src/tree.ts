@@ -1,5 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -59,14 +60,24 @@ export function deepseekAdapterPlugin(options: DeepseekAdapterOptions): {
 }
 
 /**
- * Compose the embedded dsh spine with plain `ctx.plugin(...)` calls — no
- * Loader, no YAML profiles, no $DSH_HOME (design D3). The returned context is
- * the root the bridge plugin mounts on; callers dispose it via `root.stop()`
- * semantics owned by DeepseekRuntime.
+ * Compose the embedded dsh spine with plain `ctx.plugin(...)` calls — no YAML
+ * profiles, no bundles, no $DSH_HOME (design D3). The Loader *service* is
+ * mounted anyway, for the one thing D3 did not anticipate: rows that have to
+ * change while the tree runs (third-party MCP). Its file-backed half
+ * (`cordis-plugin-include`) and its hot-reload half (`cordis-plugin-hmr`) stay
+ * out. The returned context is the root the bridge plugin mounts on; callers
+ * dispose it via `root.stop()` semantics owned by DeepseekRuntime.
  */
 export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<Context> {
   const ctx = new Context()
   ctx.plugin(Timer)
+  // The runtime entry tree. dsh's own CLI drives composition through this
+  // service; we mount it without `cordis-plugin-include` (no YAML) and without
+  // `cordis-plugin-hmr` (that one needs Node ESM internals through a native
+  // addon). What is left is exactly the part we want: create/update/remove a
+  // plugin row while the tree is running. Its `write()` is a no-op — nothing
+  // this loader holds is ever persisted to disk.
+  ctx.plugin(Loader, { baseUrl: import.meta.url })
   ctx.plugin(LlmRuntime)
   ctx.plugin(SessionStore)
   ctx.plugin(SystemPrompt, {

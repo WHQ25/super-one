@@ -28,6 +28,7 @@
     "@deepseek-ai/dsh-anonymous-user-id": "0.1.0-rc.8",
     "@deepseek-ai/dsh-atomic-write": "0.1.0-rc.8",
     "@deepseek-ai/dsh-attachment": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-attachment-local": "0.1.0-rc.8",
     "@deepseek-ai/dsh-bash-local": "0.1.0-rc.8",
     "@deepseek-ai/dsh-bash-sandbox": "0.1.0-rc.8",
     "@deepseek-ai/dsh-brand": "0.1.0-rc.8",

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ImageBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 // Side-effect type imports: each declaration-merges one service onto `Context`,
 // which is what makes `ctx.get('name')` return that service's REAL upstream type
@@ -12,10 +12,11 @@ import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 // `/compact` at runtime. Keep one line here per service this file resolves.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-commands'
-import { AttachmentId, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { AttachmentId, type EncodedImageAttachment, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-permission-presets'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ImageAttachment } from '@superone/shared/agent-types'
+import { admitImageBlocks, encodeComposerImages, modelAcceptsImages } from './images'
 import { DeepseekEventMapper } from './event-map'
 import {
   installPermissionGate,
@@ -114,7 +115,14 @@ export interface CreateDeepseekAgentOptions {
 
 export interface DeepseekAgentHandle {
   readonly sessionId: string
-  sendText(text: string): void
+  /**
+   * Queue one user turn.
+   *
+   * Async because images are committed to the durable attachment store before
+   * the message is queued; a rejection means nothing was queued and nothing was
+   * stored, so the caller may surface the error and let the user retry.
+   */
+  sendText(text: string, images?: readonly ImageAttachment[]): Promise<void>
   cancel(): void
   /**
    * Change the route for subsequent requests without rebuilding the agent.
@@ -624,12 +632,22 @@ export class DeepseekRuntime {
     const runtime = this
     return {
       sessionId: options.sessionId,
-      sendText(text) {
+      async sendText(text, images) {
+        // Images are committed BEFORE the message is queued, and a refusal
+        // throws out of here without queueing anything. That ordering is the
+        // whole point: an admitted image lives in the durable log and rides
+        // every later request of the session, so a message that dsh could
+        // store but not serialize would not fail once — it would fail on every
+        // subsequent turn too, with no way back. See `imageBlocksFor`.
+        const encoded = images?.length ? encodeComposerImages(images) : []
+        const imageBlocks = encoded.length > 0
+          ? await runtime.imageBlocksFor(record, options, encoded)
+          : []
         // followup() queues and wakes; input landing between turn/end and idle
         // can park until the next wake (integration plan §3 footgun 2) — the
         // queued-message chip covers that surface until steering lands.
         record.agent.followup(createUserMessage({
-          content: [{ type: 'text', text }],
+          content: [{ type: 'text', text }, ...imageBlocks],
           source: { kind: 'user' },
         }))
       },
@@ -647,6 +665,52 @@ export class DeepseekRuntime {
         await record.dispose()
       },
     }
+  }
+
+  /**
+   * Commit one message's images, refusing before anything durable is written.
+   *
+   * Two refusals, both deliberate and both BEFORE `admitEncodedImages`:
+   *
+   * 1. **No attachment store.** A tree mounted without `attachmentHome` has
+   *    nowhere to put the bytes. The DeepSeek adapter reports the same thing
+   *    (`resolveAttachments` returning undefined rejects image input), but it
+   *    reports it at serialization — by which point the message is logged.
+   * 2. **The model does not accept images.** `llm-deepseek` refuses image
+   *    content for any model whose catalog entry omits the `image` modality,
+   *    and it refuses it while serializing a request from history. An image
+   *    admitted for a text-only model would therefore poison the session
+   *    permanently: every later turn re-serializes the same history and throws
+   *    again. Checking `inputModalities` first is what keeps that from
+   *    happening, and it reads the very field the adapter enforces, so the two
+   *    cannot disagree about a model.
+   *
+   * Both throw rather than dropping the images silently. The user attached
+   * something and is owed an answer about it, and a failed send leaves the
+   * session exactly as it was — nothing was queued, nothing was stored.
+   * @param record - the live agent, for its current route.
+   * @param created - the creation options holding the route's defaults.
+   * @param encoded - already-projected wire images.
+   * @returns one block per image, ready to append to the user message.
+   */
+  private async imageBlocksFor(
+    record: AgentRecord,
+    created: CreateDeepseekAgentOptions,
+    encoded: readonly EncodedImageAttachment[],
+  ): Promise<ImageBlock[]> {
+    const store = this.bridge.get('attachments')
+    if (!store) {
+      throw new Error('deepseek images: no attachment store is mounted, so images cannot be sent')
+    }
+    // The route a request would actually take: `setRoute` overrides the model
+    // picked at creation, and the capability belongs to whichever one wins.
+    const provider = record.route.provider ?? created.provider
+    const model = record.route.model ?? created.model
+    const info = await this.bridge.llm.resolveModelInfo(provider, model)
+    if (!modelAcceptsImages(info.inputModalities)) {
+      throw new Error(`deepseek images: model "${model}" does not accept image input`)
+    }
+    return admitImageBlocks(store, encoded)
   }
 
   /**

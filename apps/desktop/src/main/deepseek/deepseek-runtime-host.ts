@@ -35,6 +35,29 @@ export { DEEPSEEK_CREDENTIAL_REF } from './deepseek-credentials'
 /** Route defaults shared by the backend and the connect probe. */
 export const DEEPSEEK_DEFAULT_PROVIDER = 'deepseek-official'
 export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
+/**
+ * The routes SuperOne offers, and what they accept.
+ *
+ * Both entries are deliberately text-only. `DeepSeekCatalogModel` takes an
+ * `inputModalities` list and rc.8 wired the whole multimodal path — attachment
+ * store, admission, `image_url` content parts — but DeepSeek's own API
+ * documentation describes both published models as text-only: the chat
+ * completions reference states that user message content accepts text only,
+ * and neither the pricing nor the token-usage page mentions image input.
+ * Upstream treats an uncatalogued endpoint as text-only for exactly this
+ * reason, so the omission here is the accurate answer rather than a TODO.
+ *
+ * Getting this wrong is not a cosmetic error. `llm-deepseek` refuses image
+ * content while SERIALIZING a request from history, so an image admitted for a
+ * model that rejects it would fail every later turn of that session, not just
+ * the one it was attached to. SuperOne therefore refuses before storing
+ * anything (`DeepseekRuntime.imageBlocksFor`) and reads this very field to
+ * decide.
+ *
+ * Enabling a route once DeepSeek publishes an image-capable model is one line:
+ * add `inputModalities: ['text', 'image']` to its entry. Nothing else needs to
+ * change — the store is mounted and the send path is wired.
+ */
 export const DEEPSEEK_MODEL_CATALOG = [
   { id: DEEPSEEK_DEFAULT_MODEL, name: 'DeepSeek V4 Pro', contextWindow: 128_000 },
   { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', contextWindow: 128_000 },
@@ -102,6 +125,13 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
       // (docs/draft/deepseek-harness-integration.md §12.1).
       persona: '',
       persistenceRoot: join(app.getPath('userData'), 'deepseek-sessions'),
+      // Passed explicitly because `dsh-attachment-local` otherwise follows
+      // `DSH_HOME` and then `~/.dsh`, and SuperOne runs with no dsh home (D3).
+      // The store keeps content-addressed image bytes: what `read_image` puts
+      // away, what the trajectory inspector reads back, and what a multimodal
+      // model route would be sent. It sits under `userData` for the same reason
+      // the session logs do — the app directory is read-only once packaged.
+      attachmentHome: join(app.getPath('userData'), 'deepseek-attachments'),
       presetRoots: [shippedPresetRoot()],
       defaultPreset: DEFAULT_DSH_AGENT_PRESET,
       pluginRoot: dshPluginRoot(),

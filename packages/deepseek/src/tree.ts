@@ -11,6 +11,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import * as LlmDeepseek from '@deepseek-ai/dsh-llm-deepseek'
 import type { DeepSeekCatalogModel } from '@deepseek-ai/dsh-llm-deepseek'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -41,6 +42,20 @@ export interface DeepseekTreeOptions {
   persona?: string
   /** JSONL session-log root; omit to run without durable persistence (tests). */
   persistenceRoot?: string
+  /**
+   * Durable image-attachment root, as a dsh home: the local store writes under
+   * `<attachmentHome>/attachments/<version>`.
+   *
+   * Passing it explicitly is not optional decoration. `dsh-attachment-local`
+   * otherwise follows `DSH_HOME` and then `~/.dsh`, and SuperOne deliberately
+   * runs with no dsh home at all (design D3) — leaving it unset would scatter
+   * user images into a directory the app neither owns nor cleans up.
+   *
+   * Omit to run with no attachment store, which is what every test that does
+   * not care about images wants. Without one, dsh's `read_image` cannot store
+   * what it read and the DeepSeek adapter rejects image input outright.
+   */
+  attachmentHome?: string
   /**
    * Read-only preset roots, in precedence order — the compositions shipped with
    * the app. `dsh-agent-presets` appends `<dshHome>/.agent-presets` as the
@@ -130,6 +145,20 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   ctx.loader.builtins.group = Group
   ctx.plugin(LlmRuntime)
   ctx.plugin(SessionStore)
+  // The durable attachment store, mounted on the root plane next to the session
+  // store because both own content every session and every delegated child may
+  // read. dsh stores an image ONCE, content-addressed, and puts only a
+  // reference in the log, so the store has to outlive any one agent scope.
+  //
+  // Flat on the root context on purpose: `llm-deepseek` resolves it with
+  // `ctx.get('attachments')` from its own plugin context, and a preset's
+  // entry-local `isolate` realm would make an outer-realm service invisible to
+  // rows inside it. Nothing here isolates, so both the adapter and the
+  // preset-composed `read_image` resolve the one instance. `images.test.ts`
+  // asserts that resolution rather than trusting it.
+  if (options.attachmentHome !== undefined) {
+    ctx.plugin(LocalAttachmentStore, { dshHome: options.attachmentHome })
+  }
   ctx.plugin(SystemPrompt, {
     includeHarnessIdentity: true,
     includeRuntimeContext: true,

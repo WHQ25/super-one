@@ -259,6 +259,8 @@ function makeMockSession<T extends Record<string, unknown>>(props: T): T & MockS
   const lifecycleListeners = new Set<(event: unknown) => void>()
   const s = {
     getReplayEvents: () => [] as unknown[],
+    setAcpAgentId: vi.fn(),
+    setApiProviderId: vi.fn(),
     ...props,
     owner: { kind: 'local' as const },
     subscribers,
@@ -667,6 +669,42 @@ describe('AgentService SEND_MESSAGE', () => {
     })
 
     expect(switchCwd).toHaveBeenCalledWith('/repo/main/.worktrees/feat', 'feat')
+    expect(send).toHaveBeenCalled()
+  })
+
+  it('creates an ACP session with acpAgentId so Grok persist keeps the brand', async () => {
+    const service = new AgentService()
+    const send = vi.fn().mockResolvedValue(undefined)
+    const created = makeMockSession({
+      id: 'sid-grok',
+      cwd: '/repo/main',
+      snapshot: { harnessId: 'acp', messages: [] },
+      isStreaming: vi.fn(() => false),
+      send,
+    })
+    const createSession = vi.fn(() => created)
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      getActiveSession: vi.fn(() => null),
+      resumeSession: vi.fn(() => { throw new Error('Session not found: sid-grok') }),
+      createSession,
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
+
+    await handler(null, '/repo/main', {
+      content: 'hello grok',
+      sessionId: 'sid-grok',
+      provider: 'acp' as const,
+      acpAgentId: 'grok-build',
+    })
+
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      projectPath: '/repo/main',
+      providerId: 'acp-base',
+      id: 'sid-grok',
+      acpAgentId: 'grok-build',
+    }))
     expect(send).toHaveBeenCalled()
   })
 

@@ -1558,6 +1558,8 @@ export interface SendMessageRequest {
   apiProviderId?: string | null
   /** Harness used when creating a new session for this send. */
   provider?: HarnessId
+  /** ACP agent id when `provider` is `acp` (e.g. `grok-build`). */
+  acpAgentId?: string | null
   /** Transcript provenance for non-human or collab-originated user bubbles. */
   source?: ChatMessageSource
   collaboration?: CollaborationMessageMeta

@@ -444,14 +444,14 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
   const db = getDb()
   const rows = db.prepare(`
     SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_automation, s.automation_id, s.provider_session_id,
-           s.provider_id, s.provider,
+           s.provider_id, s.provider, s.acp_agent_id,
            p.path AS folder_path, p.name AS folder_name,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
     FROM sessions s
     JOIN projects p ON p.id = s.project_id
     WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
     ORDER BY last_user_msg_at DESC
-  `).all() as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; folder_path: string; folder_name: string }>
+  `).all() as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; folder_path: string; folder_name: string }>
 
   return rows.map((r) => ({
     sessionId: r.id,
@@ -463,6 +463,7 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
     ...(r.is_automation ? { isAutomation: true } : {}),
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
     ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
+    ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
     isPinned: true,
     folderPath: r.folder_path,
     folderName: r.folder_name,

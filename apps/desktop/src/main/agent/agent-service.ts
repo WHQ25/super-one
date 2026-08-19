@@ -1579,6 +1579,7 @@ export class AgentService {
       gitBranch?: string | null
       apiProviderId?: string | null
       provider?: HarnessId
+      acpAgentId?: string | null
     },
   ): Promise<import('../session/types').Session> {
     const mgr = this.requireSessionManager()
@@ -1586,6 +1587,7 @@ export class AgentService {
     const cwd = hint?.worktreePath ?? activeCwd
     const gitBranch = hint?.gitBranch ?? null
     const apiProviderHint = hint?.apiProviderId ?? null
+    const acpAgentHint = hint?.acpAgentId ?? null
     const providerId = this.baseProviderIdForHarness(hint?.provider)
     const shouldApplyHint = (existing: import('../session/types').Session): boolean =>
       apiProviderHint !== null && existing.snapshot.apiProviderId !== apiProviderHint
@@ -1617,10 +1619,12 @@ export class AgentService {
             permissionMode: prefs.permissionMode,
             sandboxMode: prefs.sandboxMode,
             apiProviderId: apiProviderHint,
+            acpAgentId: acpAgentHint,
           })
         }
         mgr.setActiveSession(projectPath, requestedSid)
         if (shouldApplyHint(existing)) existing.setApiProviderId(apiProviderHint)
+        if (acpAgentHint) existing.setAcpAgentId(acpAgentHint)
         await this.applyWorktreeCwdHint(existing, hint)
         return existing
       }
@@ -1643,9 +1647,11 @@ export class AgentService {
             permissionMode: prefs.permissionMode,
             sandboxMode: prefs.sandboxMode,
             apiProviderId: apiProviderHint,
+            acpAgentId: acpAgentHint,
           })
         }
         if (shouldApplyHint(resumed)) resumed.setApiProviderId(apiProviderHint)
+        if (acpAgentHint) resumed.setAcpAgentId(acpAgentHint)
         await this.applyWorktreeCwdHint(resumed, hint)
         return resumed
       } catch {
@@ -1659,12 +1665,14 @@ export class AgentService {
           permissionMode: prefs.permissionMode,
           sandboxMode: prefs.sandboxMode,
           apiProviderId: apiProviderHint,
+          acpAgentId: acpAgentHint,
         })
       }
     }
     const active = mgr.getActiveSession(projectPath)
     if (active) {
       if (shouldApplyHint(active)) active.setApiProviderId(apiProviderHint)
+      if (acpAgentHint) active.setAcpAgentId(acpAgentHint)
       await this.applyWorktreeCwdHint(active, hint)
       return active
     }
@@ -1677,6 +1685,7 @@ export class AgentService {
       permissionMode: prefs.permissionMode,
       sandboxMode: prefs.sandboxMode,
       apiProviderId: apiProviderHint,
+      acpAgentId: acpAgentHint,
     })
   }
 
@@ -1781,6 +1790,7 @@ export class AgentService {
         gitBranch: request.gitBranch,
         ...(request.apiProviderId !== undefined ? { apiProviderId: request.apiProviderId } : {}),
         ...(request.provider ? { provider: request.provider } : {}),
+        ...(request.acpAgentId !== undefined ? { acpAgentId: request.acpAgentId } : {}),
       })
       trace('session.lifecycle', 'ipc_sendMessage', {
         projectPath,

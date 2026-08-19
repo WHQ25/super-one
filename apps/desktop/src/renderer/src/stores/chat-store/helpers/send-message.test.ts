@@ -567,6 +567,23 @@ describe('sendMessageImpl: intercepted commands', () => {
     expect(getActiveSession('/proj').isRecapping).toBe(false)
   })
 
+  it('includes acpAgentId on Grok send so the main process can persist the brand', async () => {
+    seedProject('/proj', 'sid-grok', {
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+    })
+
+    await useChatStore.getState().sendMessage('hello grok')
+
+    expect(mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(mockSendMessage.mock.calls[0]?.[1]).toMatchObject({
+      provider: 'acp',
+      acpAgentId: 'grok-build',
+      content: 'hello grok',
+    })
+  })
+
   it('does not intercept /recap for non-Grok ACP agents', async () => {
     mockRequestSessionRecap.mockClear()
     seedProject('/proj', 'sid-other', {

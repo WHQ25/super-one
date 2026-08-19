@@ -310,7 +310,13 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       git_branch = excluded.git_branch,
       worktree_path = excluded.worktree_path,
       api_provider_id = excluded.api_provider_id,
-      acp_agent_id = excluded.acp_agent_id,
+      -- Same SuperOne sid can persist mid-turn before acpAgentId is known
+      -- (send creates the Session without the hint). A later null must not
+      -- wipe grok-build and flip the sidebar icon to the ACP fallback.
+      acp_agent_id = CASE
+        WHEN excluded.provider_id IS NOT sessions.provider_id THEN excluded.acp_agent_id
+        ELSE COALESCE(excluded.acp_agent_id, sessions.acp_agent_id)
+      END,
       selected_model = excluded.selected_model,
       selected_effort = excluded.selected_effort
   `)

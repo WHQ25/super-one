@@ -1230,6 +1230,9 @@ export async function sendMessageImpl(
       userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
       provider: effectiveProvider,
       ...(liveSession.apiProviderId ? { apiProviderId: liveSession.apiProviderId } : {}),
+      ...(effectiveProvider === 'acp' && liveSession.acpAgentId
+        ? { acpAgentId: liveSession.acpAgentId }
+        : {}),
       ...(effectiveProvider === 'cursor'
         ? { cursor: { params: liveSession.cursorModelParams ?? {} } }
         : {}),

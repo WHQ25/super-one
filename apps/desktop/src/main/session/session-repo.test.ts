@@ -164,10 +164,13 @@ function makeFakeDb() {
           ) => {
             const prev = sessionsRows.get(id)
             // Mirror SQL CASE: when provider_id changes, do not COALESCE-keep the
-            // prior harness's provider_session_id.
+            // prior harness's provider_session_id / acp_agent_id.
             const nextProviderSessionId = prev && prev.provider_id !== providerId
               ? providerSessionId
               : (providerSessionId ?? prev?.provider_session_id ?? null)
+            const nextAcpAgentId = prev && prev.provider_id !== providerId
+              ? (acpAgentId ?? null)
+              : (acpAgentId ?? prev?.acp_agent_id ?? null)
             sessionsRows.set(id, {
               id, project_id: projectId, provider_id: providerId, provider, title,
               created_at: prev?.created_at ?? createdAt, last_user_message_at: lastUserMsg,
@@ -176,7 +179,7 @@ function makeFakeDb() {
               is_worktree: isWorktree, git_branch: gitBranch, worktree_path: worktreePath,
               is_pinned: prev?.is_pinned ?? 0, is_hidden: prev?.is_hidden ?? 0,
               api_provider_id: apiProviderId ?? null,
-              acp_agent_id: acpAgentId ?? null,
+              acp_agent_id: nextAcpAgentId,
               selected_model: selectedModel ?? null,
               selected_effort: selectedEffort ?? null,
             })
@@ -450,6 +453,31 @@ describe('session-repo', () => {
       updateAcpAgentId('s-upd-agent', 'grok-build')
       expect(getSessionRecord('s-upd-agent')?.acpAgentId).toBe('grok-build')
     })
+
+    it('does not wipe acpAgentId when a later persist omits it', () => {
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'acp' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-keep-agent',
+        projectPath: '/tmp/proj',
+        providerId: 'acp-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        acpAgentId: 'grok-build',
+      })
+      saveSessionStateBySid({
+        sid: 's-keep-agent',
+        projectPath: '/tmp/proj',
+        providerId: 'acp-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 10,
+        acpAgentId: null,
+      })
+      expect(getSessionRecord('s-keep-agent')?.acpAgentId).toBe('grok-build')
+    })
   })
 
   describe('listSessionRecordsByProject', () => {
@@ -576,6 +604,7 @@ describe('session-repo', () => {
       })
       expect(getSessionRecord('s-switch')?.providerId).toBe('claude-base')
       expect(getSessionRecord('s-switch')?.providerSessionId).toBeNull()
+      expect(getSessionRecord('s-switch')?.acpAgentId).toBeNull()
     })
 
     it('COALESCE-keeps providerSessionId when provider_id is unchanged and new value is null', () => {

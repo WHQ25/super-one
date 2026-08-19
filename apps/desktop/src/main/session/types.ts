@@ -348,6 +348,7 @@ export interface Session {
   getSelectedEffort(): SendMessageRequest['effort']
   setApiProviderId(apiProviderId: string | null): void
   getApiProviderId(): string | null
+  setAcpAgentId(agentId: string | null): void
   setTitle(title: string, source: 'user' | 'agent'): void
   emitHostEvent(event: import('@superone/shared/agent-types').AgentEvent): void
   /**

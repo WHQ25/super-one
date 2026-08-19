@@ -177,6 +177,34 @@ describe('db-sessions session query + mapping', () => {
     expect(providerBySessionId['p2']).toBe('claude')
     expect(providerBySessionId['p3']).toBe('acp')
   })
+
+  it('listPinnedSessions maps acpAgentId so grok keeps its brand icon', () => {
+    const rows = [
+      {
+        id: 'p-grok',
+        title: 'grok pinned',
+        created_at: '2026-01-01T00:00:00.000Z',
+        last_user_msg_at: '2026-01-01T00:00:00.000Z',
+        is_worktree: 0,
+        folder_path: '/tmp/project-1',
+        folder_name: 'project-1',
+        provider_id: 'acp-base',
+        provider: 'acp',
+        acp_agent_id: 'grok-build',
+      },
+    ]
+    const allMock = vi.fn().mockReturnValue(rows)
+    const prepareMock = vi.fn((sql: string) => {
+      expect(sql).toContain('acp_agent_id')
+      return { all: allMock }
+    })
+    getDbMock.mockReturnValue({ prepare: prepareMock })
+
+    const sessions = listPinnedSessions()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]?.provider).toBe('acp')
+    expect(sessions[0]?.acpAgentId).toBe('grok-build')
+  })
 })
 
 describe('deleteSessionsOlderThan', () => {

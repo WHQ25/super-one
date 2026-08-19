@@ -491,6 +491,7 @@ export class Session implements SessionContract {
     this._apiProviderId = apiProviderId
     if (this.resolveProviderConfigForApiProvider) {
       this.providerConfig = this.resolveProviderConfigForApiProvider(apiProviderId)
+      this.applyAcpAgentToConfig()
     }
     this._needsRebuild = true
     this.notifyStateChange()
@@ -518,6 +519,7 @@ export class Session implements SessionContract {
       }
       if (changed) {
         this.providerConfig = nextConfig
+        this.applyAcpAgentToConfig()
         this._needsRebuild = true
       }
     }

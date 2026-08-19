@@ -78,7 +78,7 @@ import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
-import { listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
+import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import {
   getSessionCollaborationRunConfig,
   getSessionCollaborationSystemPrompt,
@@ -4168,9 +4168,16 @@ function registerIpcHandlers(): void {
     // The fold runs here, not in the renderer: a real session's log is mostly
     // `assistant/chunk` frames, and none of them survive the projection.
     try {
+      // Callers address a SuperOne session; dsh keys its log — live map AND
+      // on-disk transcript — by the harness-side id the backend minted for it.
+      // Resolved from the DB rather than from the renderer's
+      // `_providerSessionId`, which only the current run's event stream fills:
+      // a session reopened after a restart has none until its next turn, and
+      // the ledger's whole point is reading a session that already ran.
+      const dshSessionId = getSessionRecord(sessionId)?.providerSessionId ?? sessionId
       const { getDeepseekRuntime } = await import('./deepseek/deepseek-runtime-host')
       const runtime = await getDeepseekRuntime()
-      const trajectory = await runtime.trajectory(sessionId)
+      const trajectory = await runtime.trajectory(dshSessionId)
       // A session that has never run a turn has no dsh log — that is a state,
       // not a failure, and the panel says so in its own words.
       return trajectory === null ? { ok: false, reason: 'absent' } : { ok: true, trajectory }

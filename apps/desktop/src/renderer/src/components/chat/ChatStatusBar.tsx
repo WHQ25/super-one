@@ -343,8 +343,13 @@ export function ChatStatusBar() {
     if (open) {
       setSearch('')
       if (currentFolder) window.app.getGitBranches(currentFolder).then(setBranches)
+      // Opening the popup is the one moment the user is looking straight at branch/dirty
+      // state, and it can be stale: anything that touched the repo outside SuperOne (an
+      // external terminal, another editor) emits no signal we listen for. Refresh here so
+      // the current-branch row and the dirty guard match reality before a checkout.
+      void refreshGitInfo()
     }
-  }, [currentFolder])
+  }, [currentFolder, refreshGitInfo])
 
   const handleBranchSelect = useCallback(async (branch: string) => {
     if (!currentFolder || branch === gitInfo?.branch) return

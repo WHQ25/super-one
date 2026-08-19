@@ -4,6 +4,41 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.55.0-alpha] - 2026-08-19
+
+### Added
+
+- DeepSeek: new `dsh` harness running in-process — credentials served from SuperOne's own store, agent-preset roster, and a trajectory ledger.
+- DeepSeek: native tool plane per session, with SuperOne's MCP surface bridged in and third-party MCP servers mounted from dsh's own config.
+- DeepSeek: manage dsh MCP servers from the settings page, with edits applied to running sessions.
+- DeepSeek: `subagent_fork` delegation — foreground subagents run on a host-plane tool surface and render as a Task block.
+- DeepSeek: automatic session compaction plus `/compact`, fork and pin cold resume, sandbox-backed permission presets, self-modifying plugin opt-in, and runtime install of third-party dsh plugins.
+- Desktop: background Computer Use workspace.
+- Chat: sandbox chip for every harness.
+- Chat: keep model fallback in the transcript as a notice row.
+- Chat: report turn failures as a structured error badge.
+- Chat: group and deduplicate task notifications.
+- Chat: persist additional directories for Codex and remote sessions.
+- Browser: reliable CDP performance profiling.
+- Collab: handoff launch mode for sibling sessions.
+- Session: make including local changes optional for worktree forks.
+- ACP: apply grok-build session effort and surface extension notifications.
+- MCP: allow-rule statically host-owned tools upstream of the permission classifier.
+
+### Fixed
+
+- ACP: narrow ACP mode ids before stamping them as session effort.
+- Session: apply permission mode only to the targeted session.
+- Session: keep the grok brand icon after pinning and across persistence.
+- Session: preserve the forked Codex thread id in message metadata.
+- Session: preserve approved collaboration permissions on resume.
+- Codex: count full turn token usage.
+- Chat: map the grok `[reviewer]` prefix onto the subagent badge.
+- Sidebar: repaint the session title ellipsis when the stall color clears.
+- Sidebar: show the full menu for pinned sessions.
+- Browser: size picture-in-picture to the tab viewport.
+- Renderer: stop media server port polling once the window is gone.
+
 ## [0.54.0-alpha] - 2026-08-18
 
 ### Added

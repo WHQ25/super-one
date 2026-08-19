@@ -21,6 +21,17 @@ export const XAI_FOLLOW_UPS = 'x.ai/follow_ups'
 export const XAI_SCHEDULED_TASK_CREATED = 'x.ai/scheduled_task_created'
 export const XAI_SCHEDULED_TASK_FIRED = 'x.ai/scheduled_task_fired'
 export const XAI_SCHEDULED_TASK_DELETED = 'x.ai/scheduled_task_deleted'
+export const XAI_SETTINGS_UPDATE = 'x.ai/settings/update'
+
+export const SUBAGENT_LIFECYCLE = new Set([
+  'subagent_spawned',
+  'subagent_progress',
+  'subagent_finished',
+])
+
+export function skipEventSeqDedup(kind: string | null | undefined): boolean {
+  return kind === 'workflow_updated' || (!!kind && SUBAGENT_LIFECYCLE.has(kind))
+}
 
 /** Methods registered on the ACP client for progressive work. */
 export const XAI_EXT_NOTIFICATION_METHODS = [
@@ -35,6 +46,8 @@ export const XAI_EXT_NOTIFICATION_METHODS = [
   XAI_SCHEDULED_TASK_CREATED,
   XAI_SCHEDULED_TASK_FIRED,
   XAI_SCHEDULED_TASK_DELETED,
+  XAI_SETTINGS_UPDATE,
+  `_${XAI_SETTINGS_UPDATE}`,
 ] as const
 
 // ── Correlation state ───────────────────────────────────────────────────────
@@ -75,6 +88,10 @@ export interface XaiCorrelationState {
   subagentOutputById: Map<string, string>
   /** subagent_ids that already emitted task_started */
   subagentStarted: Set<string>
+  /** Finish payloads that arrived before spawn (Grok TUI AwaitSpawn). */
+  deferredSubagentFinishes: Map<string, Record<string, unknown>>
+  /** tool_call_id values that already opened a streaming tool_use chip. */
+  deltaToolStarted: Set<string>
   /** task_id → bg task info */
   bgTaskById: Map<string, BgTaskInfo>
   /** goal_ids that already emitted task_started */
@@ -111,6 +128,8 @@ export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelati
     subagentToolById: new Map(),
     subagentOutputById: new Map(),
     subagentStarted: new Set(),
+    deferredSubagentFinishes: new Map(),
+    deltaToolStarted: new Set(),
     bgTaskById: new Map(),
     goalStarted: new Set(),
     lastEventSeq: null,

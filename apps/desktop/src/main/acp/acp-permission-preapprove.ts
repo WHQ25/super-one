@@ -140,13 +140,16 @@ export function shouldAutoAllowAcpPermission(
  */
 export const GROK_ACP_CLIENT_IDENTIFIER = 'superone'
 
-/** session/new `_meta` keys Grok understands for permission baseline. */
+/** session/new + session/load `_meta` keys Grok understands for permission + effort. */
 export function grokSessionPermissionMeta(
   mode: string | undefined | null,
+  opts?: { reasoningEffort?: string | null },
 ): Record<string, unknown> {
   const meta: Record<string, unknown> = { clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER }
   if (mode === 'bypassPermissions') meta.yoloMode = true
   if (mode === 'auto') meta.autoMode = true
+  const effort = opts?.reasoningEffort?.trim()
+  if (effort) meta.reasoningEffort = effort
   return meta
 }
 

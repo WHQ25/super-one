@@ -19,6 +19,7 @@ import {
 } from '../../usage-stats-service'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import {
+  asGrokReasoningEffort,
   extractModeConfig,
   extractModelConfig,
   type AcpModeConfig,
@@ -39,10 +40,12 @@ import { grantParentMainThreadCall } from '../../mcp/main-thread-session-guard'
 import {
   buildAskUserQuestionRequest,
   buildPlanApprovalRequest,
+  consentGateToAskUserQuestion,
   formatGrokAskUserResponse,
   formatGrokExitPlanModeResponse,
   type GrokAskUserAnswer,
   type GrokAskUserQuestionParams,
+  type GrokConsentGate,
   type GrokExitPlanModeAnswer,
   type GrokExitPlanModeParams,
 } from '../../acp/acp-xai-extensions'
@@ -145,6 +148,8 @@ export class AcpBackend implements SessionBackend {
   private modeConfigId: string | null = null
   /** Last known selected model (needed for Grok set_model / effort without configId). */
   private selectedModelId: string | null = null
+  /** Last Grok effort pick from setSessionMode. Survives spawn before runtime exists. */
+  private grokReasoningEffort: string | null = null
   /**
    * Last Grok `message_usage` totals recorded into usage_daily per assistant
    * message. Mid-turn events are cumulative (response_started/completed +
@@ -565,6 +570,11 @@ export class AcpBackend implements SessionBackend {
         launch,
         superoneSessionId: this.startOpts?.sessionId,
         permissionMode: this.startOpts?.permissionMode,
+        reasoningEffort:
+          asGrokReasoningEffort(this.grokReasoningEffort)
+          ?? asGrokReasoningEffort(
+            typeof this.startOpts?.effort === 'string' ? this.startOpts.effort : null,
+          ),
         systemPromptAppend: this.startOpts?.systemPromptAppend,
         // Resume Grok/ACP agent memory when we have a stored provider session id.
         resumeSessionId: resumeAtSpawn,
@@ -576,6 +586,9 @@ export class AcpBackend implements SessionBackend {
         },
         exitPlanMode: {
           request: (params) => this.handleExitPlanMode(params),
+        },
+        consentNotice: {
+          request: (gate) => this.handleConsentNotice(gate),
         },
         onModelConfig: (cfg) => {
           // Early model discovery (initialize) before session/new configOptions land.
@@ -745,6 +758,24 @@ export class AcpBackend implements SessionBackend {
     const event: AgentEvent = { type: 'permission_request', request }
     return new Promise((resolve) => {
       this.pendingPermissions.set(request.requestId, { resolve, options, event })
+      this.emit(event)
+    })
+  }
+
+  private handleConsentNotice(gate: GrokConsentGate): Promise<boolean> {
+    const requestId = `acp_consent_${gate.id}_${gate.version}`
+    const prev = this.pendingQuestions.get(requestId)
+    if (prev) {
+      this.pendingQuestions.delete(requestId)
+      prev.resolve({ kind: 'cancelled' })
+    }
+    const request = consentGateToAskUserQuestion(gate, requestId)
+    const event: AgentEvent = { type: 'ask_user_question', request }
+    return new Promise((resolve) => {
+      this.pendingQuestions.set(requestId, {
+        resolve: (answer) => resolve(answer.kind === 'accepted'),
+        event,
+      })
       this.emit(event)
     })
   }
@@ -1048,6 +1079,8 @@ export class AcpBackend implements SessionBackend {
   }
 
   async setSessionMode(modeId: string): Promise<void> {
+    const effort = asGrokReasoningEffort(modeId)
+    if (effort) this.grokReasoningEffort = effort
     if (!this.runtime) return
     const epoch = this.runtimeEpoch
     const agentId = this.config.agentId ?? null

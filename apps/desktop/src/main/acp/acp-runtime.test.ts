@@ -8,6 +8,7 @@ import {
 } from '@agentclientprotocol/sdk'
 import { createAcpRuntime } from './acp-runtime'
 import {
+  XAI_CONSENT_RECORD,
   XAI_RECAP,
   XAI_YOLO_MODE_CHANGED,
   xaiExtWireMethod,
@@ -22,6 +23,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 // agent by registering the same wire names SuperOne must send.
 const XAI_RECAP_WIRE = xaiExtWireMethod(XAI_RECAP)
 const XAI_YOLO_MODE_CHANGED_WIRE = xaiExtWireMethod(XAI_YOLO_MODE_CHANGED)
+const XAI_CONSENT_RECORD_WIRE = xaiExtWireMethod(XAI_CONSENT_RECORD)
 
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -225,6 +227,53 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.close()
   })
 
+  it('records consent after the host accepts a settings/update gate', async () => {
+    const consentRecords: Array<Record<string, unknown>> = []
+    const agentApp = agent({ name: 'consent-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        queueMicrotask(() => {
+          void ctx.client.notify('_x.ai/settings/update' as never, {
+            consent_gate: { id: 'tos', version: 2, title: 'Terms' },
+          } as never)
+        })
+        return { sessionId: 'consent-session' }
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(
+        XAI_CONSENT_RECORD_WIRE,
+        (raw: unknown) => raw,
+        async (ctx) => {
+          consentRecords.push(ctx.params as Record<string, unknown>)
+          return { ok: true }
+        },
+      )
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      consentNotice: { request: async () => true },
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    await vi.waitFor(() => {
+      expect(consentRecords).toEqual([{ noticeId: 'tos', version: 2 }])
+    })
+    await runtime.close()
+  })
+
   it('passes yoloMode on session/new when permissionMode is bypassPermissions', async () => {
     const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
     const runtime = await createAcpRuntime({
@@ -266,6 +315,50 @@ describe('createAcpRuntime (in-process agent)', () => {
       clientIdentifier: 'superone',
     })
     expect((captured.newSession?._meta as { yoloMode?: boolean } | undefined)?.yoloMode).toBeUndefined()
+  })
+
+  it('stamps reasoningEffort on session/new so spawn sampling matches the picker', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: {
+        agentId: 'grok-build',
+        command: 'unused',
+        defaultCwd: '/tmp/proj',
+      },
+      permissionMode: 'auto',
+      reasoningEffort: 'xhigh',
+      permission: {
+        request: async () => ({ outcome: { outcome: 'cancelled' } }),
+      },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    await runtime.close()
+    expect(captured.newSession?._meta).toMatchObject({
+      autoMode: true,
+      clientIdentifier: 'superone',
+      reasoningEffort: 'xhigh',
+    })
+  })
+
+  it('stamps reasoningEffort on session/load', async () => {
+    const loadCapture: CapturedLoad = { loads: [], news: 0 }
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      resumeSessionId: 'prior-grok-session',
+      reasoningEffort: 'low',
+      streamFactory: async () => makeEchoAgentStream(
+        captured,
+        { loadSession: true },
+        loadCapture,
+      ),
+    })
+    expect(loadCapture.loads[0]?._meta).toMatchObject({
+      clientIdentifier: 'superone',
+      reasoningEffort: 'low',
+    })
+    await runtime.close()
   })
 
   it('omits yolo/auto flags on session/new for default mode but still stamps clientIdentifier', async () => {

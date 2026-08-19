@@ -50,13 +50,18 @@ import { AcpTerminalManager } from './acp-terminals'
 import {
   XAI_ASK_USER_QUESTION,
   XAI_BILLING,
+  XAI_CONSENT_RECORD,
   XAI_EXIT_PLAN_MODE,
   XAI_RECAP,
+  XAI_SETTINGS_UPDATE,
   XAI_YOLO_MODE_CHANGED,
+  buildConsentRecordParams,
+  parseGrokConsentGate,
   parseGrokExitPlanModeParams,
   formatGrokExitPlanModeResponse,
   xaiExtWireMethod,
   type GrokAskUserQuestionParams,
+  type GrokConsentGate,
   type GrokExitPlanModeParams,
 } from './acp-xai-extensions'
 import {
@@ -126,6 +131,11 @@ export interface AcpExitPlanModeGate {
   request(params: GrokExitPlanModeParams): Promise<Record<string, unknown>>
 }
 
+/** Grok remote consent notice — accept records `x.ai/consent/record`. */
+export interface AcpConsentNoticeGate {
+  request(gate: GrokConsentGate): Promise<boolean>
+}
+
 export interface AcpRuntime {
   readonly sessionId: string
   readonly launch: ResolvedAcpLaunch
@@ -179,6 +189,7 @@ export interface AcpRuntimeOptions {
   permission: AcpPermissionGate
   askUserQuestion?: AcpAskUserQuestionGate
   exitPlanMode?: AcpExitPlanModeGate
+  consentNotice?: AcpConsentNoticeGate
   /** Inject stream (in-process agent) instead of spawning a process. */
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
   /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
@@ -196,6 +207,8 @@ export interface AcpRuntimeOptions {
   superoneSessionId?: string
   /** SuperOne session permission mode — mapped to Grok yolo/auto on session/new. */
   permissionMode?: PermissionMode
+  /** Host pick for session/new and session/load `_meta.reasoningEffort`. */
+  reasoningEffort?: string
   /**
    * Provider (agent) session id to resume via session/load when the agent
    * advertises loadSession. Falls back to session/new on failure.
@@ -336,6 +349,23 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     ctx: { params: Record<string, unknown> },
   ): Promise<void> => {
     try {
+      const bare = method.replace(/^_/, '')
+      if (bare === XAI_SETTINGS_UPDATE) {
+        const gate = parseGrokConsentGate(ctx.params)
+        if (gate && opts.consentNotice) {
+          const accepted = await opts.consentNotice.request(gate)
+          if (accepted && connection) {
+            try {
+              await connection.agent.request(
+                xaiExtWireMethod(XAI_CONSENT_RECORD),
+                buildConsentRecordParams(gate),
+              )
+            } catch (err) {
+              log.warn('[acp-runtime] x.ai/consent/record failed id=%s:', gate.id, err)
+            }
+          }
+        }
+      }
       const events = mapXaiStandaloneNotification(
         method,
         ctx.params,
@@ -517,7 +547,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     mcpAttached = mcpServers.some((s) => s.name === 'superone')
     const extraRoots = fsRoots.slice(1)
     const supportsExtraRoots = agentCapabilities?.sessionCapabilities.additionalDirectories ?? false
-    const permissionMeta = grokSessionPermissionMeta(opts.permissionMode)
+    const permissionMeta = grokSessionPermissionMeta(opts.permissionMode, {
+      reasoningEffort: opts.reasoningEffort,
+    })
     const sessionRequestBase = {
       cwd: launch.cwd,
       mcpServers,

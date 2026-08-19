@@ -244,6 +244,20 @@ describe('grok permission meta helpers', () => {
     })
   })
 
+  it('stamps reasoningEffort when provided so session/new spawn sampling matches the picker', () => {
+    expect(grokSessionPermissionMeta('auto', { reasoningEffort: 'xhigh' })).toEqual({
+      clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+      autoMode: true,
+      reasoningEffort: 'xhigh',
+    })
+    expect(grokSessionPermissionMeta('default', { reasoningEffort: '  ' })).toEqual({
+      clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+    })
+    expect(grokSessionPermissionMeta('default', { reasoningEffort: null })).toEqual({
+      clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+    })
+  })
+
   it('maps modes to yolo notification params without a clientIdentifier filter', () => {
     expect(grokYoloModeNotificationParams('bypassPermissions')).toEqual({
       yolo_mode: true,

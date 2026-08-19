@@ -278,11 +278,13 @@ export function extractModelsFromAgentModelsField(raw: unknown): AcpModelConfig 
       ?? (meta && typeof meta.context_window === 'number' ? meta.context_window : undefined)
       ?? (meta && typeof meta.contextWindow === 'number' ? meta.contextWindow : undefined)
     const contextWindow = typeof rawCw === 'number' && Number.isFinite(rawCw) && rawCw > 0 ? rawCw : undefined
+    const effortLevels = parseModelEffortLevels(m, meta)
     models.push({
       id,
       name,
       description: typeof m.description === 'string' ? m.description : '',
       ...(contextWindow != null ? { contextWindow } : {}),
+      ...(effortLevels ? { supportsEffort: true, supportedEffortLevels: effortLevels } : {}),
     })
   }
   if (models.length === 0) return null
@@ -293,6 +295,31 @@ export function extractModelsFromAgentModelsField(raw: unknown): AcpModelConfig 
       : (models[0]?.id ?? null)
 
   return { configId: null, models, selectedModelId: current }
+}
+
+const ACP_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
+
+function parseModelEffortLevels(
+  model: Record<string, unknown>,
+  meta: Record<string, unknown> | null,
+): ModelOption['supportedEffortLevels'] {
+  const raw = model.reasoningEfforts
+    ?? model.reasoning_efforts
+    ?? meta?.reasoningEfforts
+    ?? meta?.reasoning_efforts
+  if (!Array.isArray(raw)) return undefined
+  const out: NonNullable<ModelOption['supportedEffortLevels']> = []
+  for (const item of raw) {
+    const value = typeof item === 'string'
+      ? item
+      : (item && typeof item === 'object' && !Array.isArray(item)
+        ? (item as { value?: unknown }).value
+        : null)
+    if (typeof value !== 'string') continue
+    const key = value.trim().toLowerCase()
+    if (ACP_EFFORT_LEVELS.has(key)) out.push(key as NonNullable<ModelOption['supportedEffortLevels']>[number])
+  }
+  return out.length > 0 ? out : undefined
 }
 
 /** Options array from `_meta["x.ai/sessionConfig"].options`. */
@@ -340,6 +367,13 @@ const EFFORT_ASC_RANK: Record<string, number> = {
   high: 3,
   xhigh: 4,
   max: 5,
+}
+
+/** Grok sessionConfig category=mode ids. Rejects OpenCode ask/code and empty. */
+export function asGrokReasoningEffort(raw: string | undefined | null): string | undefined {
+  const value = raw?.trim()
+  if (!value) return undefined
+  return value.toLowerCase() in EFFORT_ASC_RANK ? value : undefined
 }
 
 function effortRankKey(id: string, name: string): string {

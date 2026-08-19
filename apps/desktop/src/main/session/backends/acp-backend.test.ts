@@ -22,6 +22,7 @@ vi.mock('../../usage-stats-service', async (importOriginal) => {
 })
 
 import { AcpBackend, setAcpRuntimeFactory } from './acp-backend'
+import type { AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { acpStartOpts as startOpts, mockAcpRuntime as mockRuntime } from '../../../test/fixtures/acp-backend-fixtures'
 
 describe('AcpBackend', () => {
@@ -38,6 +39,70 @@ describe('AcpBackend', () => {
     const backend = new AcpBackend()
     expect(backend.kind).toBe('acp')
     await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.close()
+  })
+
+  it('passes startOpts.effort as session/new reasoningEffort', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    await backend.start({ ...startOpts({ agentId: 'grok-build' }), effort: 'xhigh' })
+    expect(captured?.reasoningEffort).toBe('xhigh')
+    expect(captured?.consentNotice).toBeDefined()
+    await backend.close()
+  })
+
+  it('stamps setSessionMode effort even when picked before runtime exists', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    await backend.setSessionMode('low')
+    await backend.start({ ...startOpts({ agentId: 'grok-build' }), effort: 'ask' })
+    expect(captured?.reasoningEffort).toBe('low')
+    await backend.close()
+  })
+
+  it('ignores OpenCode mode ids as session/new reasoningEffort', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    await backend.start({ ...startOpts({ agentId: 'opencode' }), effort: 'ask' })
+    expect(captured?.reasoningEffort).toBeUndefined()
+    await backend.close()
+  })
+
+  it('parks a consent notice as ask_user_question and resolves accept', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const pending = captured?.consentNotice?.request({
+      id: 'tos',
+      version: 2,
+      title: 'Terms',
+      body: 'Please accept.',
+      acceptLabel: 'I agree',
+    })
+    const question = events.find((e): e is Extract<AgentEvent, { type: 'ask_user_question' }> =>
+      e.type === 'ask_user_question')
+    expect(question?.request.requestId).toBe('acp_consent_tos_2')
+    expect(question?.request.questions[0]?.options[0]?.label).toBe('I agree')
+    backend.respondToQuestion('acp_consent_tos_2', { 'Terms\n\nPlease accept.': 'I agree' })
+    await expect(pending).resolves.toBe(true)
     await backend.close()
   })
 

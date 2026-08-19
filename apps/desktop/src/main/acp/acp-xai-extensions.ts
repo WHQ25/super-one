@@ -14,6 +14,19 @@ export const XAI_RECAP = 'x.ai/recap'
 export const XAI_YOLO_MODE_CHANGED = 'x.ai/yolo_mode_changed'
 /** Client → agent: Grok Build credits + subscription tier for the usage gauge. */
 export const XAI_BILLING = 'x.ai/billing'
+/** Agent → client: remote settings snapshot (may carry a consent notice). */
+export const XAI_SETTINGS_UPDATE = 'x.ai/settings/update'
+/** Client → agent: record that the user accepted a consent notice. */
+export const XAI_CONSENT_RECORD = 'x.ai/consent/record'
+
+/** `consent_gate` on `x.ai/settings/update`. */
+export interface GrokConsentGate {
+  id: string
+  version: number
+  title?: string
+  body?: string
+  acceptLabel?: string
+}
 
 /**
  * Wire name for an outgoing x.ai extension method.
@@ -97,6 +110,55 @@ export function buildAskUserQuestionRequest(
     requestId,
     questions: normalizeGrokQuestions(params.questions),
   }
+}
+
+export function parseGrokConsentGate(raw: unknown): GrokConsentGate | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const nested = o.consent_gate ?? o.consentGate
+  if (!nested || typeof nested !== 'object' || Array.isArray(nested)) return null
+  const src = nested as Record<string, unknown>
+  const id = typeof src.id === 'string' ? src.id.trim() : ''
+  if (!id) return null
+  const versionRaw = src.version
+  const version = typeof versionRaw === 'number' && Number.isFinite(versionRaw)
+    ? Math.trunc(versionRaw)
+    : 1
+  const title = typeof src.title === 'string' ? src.title.trim() : ''
+  const body = typeof src.body === 'string' ? src.body.trim() : ''
+  const acceptLabel = typeof src.accept_label === 'string'
+    ? src.accept_label.trim()
+    : typeof src.acceptLabel === 'string'
+      ? src.acceptLabel.trim()
+      : ''
+  return {
+    id,
+    version,
+    ...(title ? { title } : {}),
+    ...(body ? { body } : {}),
+    ...(acceptLabel ? { acceptLabel } : {}),
+  }
+}
+
+export function consentGateToAskUserQuestion(
+  gate: GrokConsentGate,
+  requestId: string,
+): AskUserQuestionRequest {
+  const title = gate.title || 'Notice'
+  const question = gate.body ? `${title}\n\n${gate.body}` : title
+  return {
+    requestId,
+    questions: [{
+      question,
+      header: title,
+      options: [{ label: gate.acceptLabel || 'Accept', description: '' }],
+      multiSelect: false,
+    }],
+  }
+}
+
+export function buildConsentRecordParams(gate: GrokConsentGate): { noticeId: string; version: number } {
+  return { noticeId: gate.id, version: gate.version }
 }
 
 /**

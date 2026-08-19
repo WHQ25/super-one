@@ -484,6 +484,52 @@ describe('ACP xAI AgentEvent mapping', () => {
     }, state)).toEqual([{ type: 'session_recap_unavailable' }])
   })
 
+  it('defers late subagent_finished until spawn', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_finished',
+      subagent_id: 'late',
+      status: 'completed',
+    }, state)).toEqual([])
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_spawned',
+      subagent_id: 'late',
+      description: 'Explore',
+    }, state)
+    expect(events.map((event) => event.type)).toEqual(['task_started', 'task_notification'])
+  })
+
+  it('flushes deferred finish when progress starts the subagent before spawn', () => {
+    const state = createXaiCorrelationState()
+    mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_finished',
+      subagent_id: 'late',
+      status: 'completed',
+    }, state)
+    const progress = mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_progress',
+      subagent_id: 'late',
+      duration_ms: 1,
+      tool_call_count: 0,
+      tokens_used: 0,
+    }, state)
+    expect(progress.map((event) => event.type)).toEqual(['task_started', 'task_notification'])
+  })
+
+  it('maps tool_call_delta_chunk onto a streaming tool chip', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'call_1',
+      name: 'grep',
+      arguments_delta: '{"q":',
+    }, state, { messageId: 'msg-1' })[0]).toMatchObject({
+      type: 'content_delta',
+      messageId: 'msg-1',
+      delta: { type: 'tool_use', toolName: 'grep', toolUseId: 'call_1' },
+    })
+  })
+
   it('deduplicates non-workflow notifications by event sequence', () => {
     const state = createXaiCorrelationState()
     const notification = (eventSeq: number): Record<string, unknown> => ({

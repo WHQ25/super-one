@@ -245,6 +245,46 @@ describe('mapXaiSessionUpdate — subagent', () => {
       outputFile: expect.stringContaining('/sa1/chat_history.jsonl'),
     })
   })
+
+  it('defers subagent_finished until spawn, then applies both', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_finished',
+      subagent_id: 'late',
+      status: 'completed',
+    }, state)).toEqual([])
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_spawned',
+      subagent_id: 'late',
+      description: 'Explore',
+      subagent_type: 'explore',
+    }, state)
+    expect(events[0]).toMatchObject({ type: 'task_started', taskId: 'late', description: 'Explore' })
+    expect(events[1]).toMatchObject({ type: 'task_notification', taskId: 'late', taskStatus: 'completed' })
+  })
+
+  it('flushes deferred finish when progress synthesizes start before spawn', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_finished',
+      subagent_id: 'late',
+      status: 'completed',
+    }, state)).toEqual([])
+    const progress = mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_progress',
+      subagent_id: 'late',
+      child_session_id: 'late',
+      duration_ms: 10,
+      tool_call_count: 0,
+      tokens_used: 0,
+    }, state)
+    expect(progress.map((e) => e.type)).toEqual(['task_started', 'task_notification'])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_spawned',
+      subagent_id: 'late',
+      description: 'Explore',
+    }, state)).toEqual([])
+  })
 })
 
 describe('mapXaiSessionUpdate — session meta', () => {
@@ -553,6 +593,80 @@ describe('mapXaiStandaloneNotification', () => {
       },
     }, state)
     expect(events.some((e) => e.type === 'task_started')).toBe(true)
+  })
+
+  it('keeps late subagent lifecycle even when eventSeq is behind', () => {
+    const state = createXaiCorrelationState()
+    state.lastEventSeq = 10
+    const finish = mapXaiStandaloneNotification(XAI_SESSION_NOTIFICATION, {
+      sessionId: 's',
+      update: { sessionUpdate: 'subagent_finished', subagent_id: 'sa-late', status: 'completed' },
+      _meta: { eventSeq: 8 },
+    }, state)
+    expect(finish).toEqual([])
+    const spawn = mapXaiStandaloneNotification(XAI_SESSION_NOTIFICATION, {
+      sessionId: 's',
+      update: { sessionUpdate: 'subagent_spawned', subagent_id: 'sa-late', description: 'Review' },
+      _meta: { eventSeq: 7 },
+    }, state)
+    expect(spawn.map((e) => e.type)).toEqual(['task_started', 'task_notification'])
+  })
+
+  it('maps tool_call_delta_chunk to a streaming tool chip plus input delta', () => {
+    const state = createXaiCorrelationState()
+    const first = mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'call_1',
+      tool_index: 0,
+      name: 'search_replace',
+      arguments_delta: '{"path":',
+    }, state, { messageId: 'msg-1' })
+    expect(first).toEqual([
+      {
+        type: 'content_delta',
+        messageId: 'msg-1',
+        delta: {
+          type: 'tool_use',
+          toolUseId: 'call_1',
+          toolName: 'search_replace',
+          input: '',
+          status: 'streaming',
+        },
+      },
+      {
+        type: 'tool_input_delta',
+        messageId: 'msg-1',
+        toolUseId: 'call_1',
+        partialJson: '{"path":',
+      },
+    ])
+    const next = mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'call_1',
+      tool_index: 0,
+      arguments_delta: '"a.ts"}',
+    }, state, { messageId: 'msg-1' })
+    expect(next).toEqual([{
+      type: 'tool_input_delta',
+      messageId: 'msg-1',
+      toolUseId: 'call_1',
+      partialJson: '"a.ts"}',
+    }])
+  })
+
+  it('includes scheduled-task deletion reason when present', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'scheduled_task_deleted',
+      task_id: 't1',
+      reason: 'expired',
+    }, state)).toEqual([{
+      type: 'task_notification',
+      taskId: 't1',
+      taskStatus: 'stopped',
+      outputFile: '',
+      summary: 'scheduled task deleted (expired)',
+    }])
   })
 
   it('drops stale eventSeq for non-workflow', () => {

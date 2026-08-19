@@ -745,7 +745,7 @@ export function setPreferredProviderImpl(
   // Main-process runtime for a prior harness is disposed eagerly below so stale
   // events cannot land on the shared sid before the next prewarm/send.
 
-  // ACP model ids (e.g. grok-4.5 / opencode/…) must not stick on Claude/Codex selectors.
+  // ACP model ids (e.g. grok-4.6 / opencode/…) must not stick on Claude/Codex selectors.
   const acpModeReset = {
     acpModes: [] as import('@superone/shared/agent-types').ModelOption[],
     acpModeConfigId: null as string | null,

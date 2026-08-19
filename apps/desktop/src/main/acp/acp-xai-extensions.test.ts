@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAskUserQuestionRequest,
+  buildConsentRecordParams,
   buildPlanApprovalRequest,
+  consentGateToAskUserQuestion,
   formatGrokAskUserResponse,
   formatGrokExitPlanModeResponse,
   normalizeGrokQuestions,
+  parseGrokConsentGate,
   parseGrokExitPlanModeParams,
 } from './acp-xai-extensions'
 
@@ -111,6 +114,66 @@ describe('parseGrokExitPlanModeParams', () => {
     expect(parseGrokExitPlanModeParams({ toolCallId: 't', planContent: null }).planContent).toBeNull()
     expect(parseGrokExitPlanModeParams(null)).toEqual({})
     expect(parseGrokExitPlanModeParams('x')).toEqual({})
+  })
+})
+
+describe('parseGrokConsentGate', () => {
+  it('reads nested consent_gate with camelCase or snake_case accept label', () => {
+    expect(parseGrokConsentGate({
+      consent_gate: {
+        id: 'enterprise-tos-2026-08',
+        version: 2,
+        title: 'Terms',
+        body: 'Please accept.',
+        accept_label: 'I agree',
+      },
+    })).toEqual({
+      id: 'enterprise-tos-2026-08',
+      version: 2,
+      title: 'Terms',
+      body: 'Please accept.',
+      acceptLabel: 'I agree',
+    })
+    expect(parseGrokConsentGate({
+      consentGate: { id: 'n', acceptLabel: 'OK' },
+    })).toEqual({ id: 'n', version: 1, acceptLabel: 'OK' })
+  })
+
+  it('returns null without an id', () => {
+    expect(parseGrokConsentGate({ consent_gate: { version: 1 } })).toBeNull()
+    expect(parseGrokConsentGate({})).toBeNull()
+    expect(parseGrokConsentGate(null)).toBeNull()
+  })
+
+  it('does not treat a settings snapshot as a consent gate', () => {
+    expect(parseGrokConsentGate({
+      id: 'settings-rev',
+      sharing_enabled: true,
+      permission_mode: 'ask',
+    })).toBeNull()
+  })
+})
+
+describe('consentGateToAskUserQuestion', () => {
+  it('maps a gate onto the existing ask-user-question prompt', () => {
+    const req = consentGateToAskUserQuestion({
+      id: 'tos',
+      version: 1,
+      title: 'Terms of use',
+      body: 'Read this.',
+      acceptLabel: 'Accept',
+    }, 'acp_consent_tos_1')
+    expect(req.requestId).toBe('acp_consent_tos_1')
+    expect(req.questions[0]).toMatchObject({
+      header: 'Terms of use',
+      question: 'Terms of use\n\nRead this.',
+      options: [{ label: 'Accept', description: '' }],
+      multiSelect: false,
+    })
+    expect(buildConsentRecordParams({ id: 'tos', version: 3 })).toEqual({
+      noticeId: 'tos',
+      version: 3,
+    })
   })
 })
 

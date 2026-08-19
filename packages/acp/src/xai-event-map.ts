@@ -16,6 +16,7 @@ import {
   numField,
   parseXaiSessionNotificationEnvelope,
   resetTurnTokens,
+  skipEventSeqDedup,
   str,
   strField,
   type XaiCorrelationState,
@@ -100,6 +101,8 @@ export function mapXaiSessionUpdate(
       return mapSessionRecap(update)
     case 'session_recap_unavailable':
       return [{ type: 'session_recap_unavailable' }]
+    case 'tool_call_delta_chunk':
+      return mapToolCallDeltaChunk(update, state, ctx)
     case 'unknown':
       return []
     default:
@@ -126,16 +129,16 @@ export function mapXaiStandaloneNotification(
         log.debug('[acp-xai] bad session_notification envelope')
         return []
       }
-      // Dedup non-workflow by eventSeq (Grok TUI pattern).
+      // Dedup non-workflow / non-subagent-lifecycle by eventSeq (Grok TUI pattern).
       const kind = strField(env.update, 'sessionUpdate', 'session_update')
-      if (kind !== 'workflow_updated' && env.eventSeq != null) {
+      if (!skipEventSeqDedup(kind) && env.eventSeq != null) {
         if (state.lastEventSeq != null && env.eventSeq <= state.lastEventSeq) {
           log.debug('[acp-xai] drop stale eventSeq=%s last=%s', env.eventSeq, state.lastEventSeq)
           return []
         }
       }
       const events = mapXaiSessionUpdate(env.update, state, ctx)
-      if (kind !== 'workflow_updated' && env.eventSeq != null && events.length > 0) {
+      if (!skipEventSeqDedup(kind) && env.eventSeq != null && events.length > 0) {
         state.lastEventSeq = env.eventSeq
       }
       return events
@@ -348,11 +351,21 @@ function buildWorkflowPhaseSummary(
 
 // ── Subagent ────────────────────────────────────────────────────────────────
 
+function takeDeferredSubagentFinish(
+  state: XaiCorrelationState,
+  id: string,
+): AgentEvent[] {
+  const deferred = state.deferredSubagentFinishes.get(id)
+  if (!deferred) return []
+  state.deferredSubagentFinishes.delete(id)
+  return mapSubagentFinished(deferred, state)
+}
+
 function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const id = strField(u, 'subagent_id', 'subagentId')
   if (!id) return []
-  if (state.subagentStarted.has(id)) return []
-  state.subagentStarted.add(id)
+  const alreadyStarted = state.subagentStarted.has(id)
+  if (!alreadyStarted) state.subagentStarted.add(id)
 
   const description = strField(u, 'description') ?? id
   const subagentType = strField(u, 'subagent_type', 'subagentType')
@@ -368,14 +381,19 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
   const childSessionId = strField(u, 'child_session_id', 'childSessionId') ?? id
   const outputFile = workflowRunId ? undefined : noteSubagentOutputFile(state, id, childSessionId)
 
-  return [{
-    type: 'task_started',
-    taskId: id,
-    ...(toolUseId ? { toolUseId } : {}),
-    description,
-    ...(subagentType ? { taskType: subagentType } : {}),
-    ...(outputFile ? { outputFile } : {}),
-  }]
+  const events: AgentEvent[] = []
+  if (!alreadyStarted) {
+    events.push({
+      type: 'task_started',
+      taskId: id,
+      ...(toolUseId ? { toolUseId } : {}),
+      description,
+      ...(subagentType ? { taskType: subagentType } : {}),
+      ...(outputFile ? { outputFile } : {}),
+    })
+  }
+  events.push(...takeDeferredSubagentFinish(state, id))
+  return events
 }
 
 function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
@@ -396,6 +414,9 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
       description: id,
       ...(outputFile ? { outputFile } : {}),
     })
+    const flushed = takeDeferredSubagentFinish(state, id)
+    events.push(...flushed)
+    if (flushed.length > 0) return events
   }
   const durationMs = numField(u, 'duration_ms', 'durationMs') ?? 0
   const toolCalls = numField(u, 'tool_call_count', 'toolCallCount') ?? 0
@@ -428,6 +449,10 @@ function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationSt
   if (!id) return []
   // Same as progress: workflow children finish is reflected by workflow_updated.
   if (state.workflowOwnedSubagents.has(id)) return []
+  if (!state.subagentStarted.has(id)) {
+    state.deferredSubagentFinishes.set(id, u)
+    return []
+  }
   const status = (strField(u, 'status') ?? 'completed').toLowerCase()
   const taskStatus =
     status === 'completed' || status === 'complete' ? 'completed' as const
@@ -442,18 +467,7 @@ function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationSt
   const childSessionId = strField(u, 'child_session_id', 'childSessionId') ?? id
   const outputFile = noteSubagentOutputFile(state, id, childSessionId) ?? ''
 
-  const events: AgentEvent[] = []
-  if (!state.subagentStarted.has(id)) {
-    state.subagentStarted.add(id)
-    events.push({
-      type: 'task_started',
-      taskId: id,
-      ...(toolUseId ? { toolUseId } : {}),
-      description: id,
-      ...(outputFile ? { outputFile } : {}),
-    })
-  }
-  events.push({
+  return [{
     type: 'task_notification',
     taskId: id,
     ...(toolUseId ? { toolUseId } : {}),
@@ -462,8 +476,7 @@ function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationSt
     summary: error ?? status,
     usage: { totalTokens: tokens, toolUses: toolCalls, durationMs },
     ...(output ? { resultText: output } : error ? { resultText: error } : {}),
-  })
-  return events
+  }]
 }
 
 // ── Background tasks / monitor ──────────────────────────────────────────────
@@ -691,13 +704,52 @@ function mapScheduledTaskFired(u: Record<string, unknown>, state: XaiCorrelation
 function mapScheduledTaskDeleted(u: Record<string, unknown>, _state: XaiCorrelationState): AgentEvent[] {
   const taskId = strField(u, 'task_id', 'taskId')
   if (!taskId) return []
+  const reason = strField(u, 'reason')
   return [{
     type: 'task_notification',
     taskId,
     taskStatus: 'stopped',
     outputFile: '',
-    summary: 'scheduled task deleted',
+    summary: reason ? `scheduled task deleted (${reason})` : 'scheduled task deleted',
   }]
+}
+
+function mapToolCallDeltaChunk(
+  u: Record<string, unknown>,
+  state: XaiCorrelationState,
+  ctx: MapXaiNotifyContext,
+): AgentEvent[] {
+  const toolCallId = strField(u, 'tool_call_id', 'toolCallId')
+  const index = numField(u, 'tool_index', 'toolIndex')
+  const id = toolCallId ?? (index != null ? `acp_delta_${index}` : null)
+  const messageId = ctx.messageId ?? state.lastMessageId
+  if (!id || !messageId) return []
+  const name = strField(u, 'name')
+  const delta = strField(u, 'arguments_delta', 'argumentsDelta') ?? ''
+  const events: AgentEvent[] = []
+  if (name && !state.deltaToolStarted.has(id)) {
+    state.deltaToolStarted.add(id)
+    events.push({
+      type: 'content_delta',
+      messageId,
+      delta: {
+        type: 'tool_use',
+        toolUseId: id,
+        toolName: name,
+        input: '',
+        status: 'streaming',
+      },
+    })
+  }
+  if (delta) {
+    events.push({
+      type: 'tool_input_delta',
+      messageId,
+      toolUseId: id,
+      partialJson: delta,
+    })
+  }
+  return events
 }
 
 // ── Session meta ────────────────────────────────────────────────────────────

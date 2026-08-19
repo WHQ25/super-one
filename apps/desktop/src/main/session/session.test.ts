@@ -502,6 +502,13 @@ describe('Session state machine', () => {
     expect(backend.setSessionModeCalls).toEqual(['high'])
   })
 
+  it('prewarm uses selectedAcpModeId as effort when no hint is provided', () => {
+    ;({ session, backend } = makeSession({ harnessId: 'acp', providerId: 'acp-base', effort: 'medium' }))
+    session.setSelectedSettings({ mode: 'xhigh' })
+    session.prewarm()
+    expect(backend.prewarmCalls[0]?.effort).toBe('xhigh')
+  })
+
   it('prewarm overrides effort/model/additionalDirs when hint is provided', () => {
     ;({ session, backend } = makeSession({ model: 'baseline', effort: 'low' }))
     session.prewarm({ effort: 'high', model: 'override', additionalDirs: ['/extra'] })

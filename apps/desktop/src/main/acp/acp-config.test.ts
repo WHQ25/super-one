@@ -7,6 +7,7 @@ import {
   extractModelConfig,
   extractModesFromNewSessionResult,
   extractModesFromXaiSessionConfig,
+  asGrokReasoningEffort,
   extractModelsFromInitializeResult,
   extractModelsFromNewSessionResult,
   serializeConfigOptions,
@@ -243,6 +244,41 @@ describe('extractModelsFromInitializeResult (Grok)', () => {
     })
     expect(result?.models[0]?.contextWindow).toBe(500_000)
   })
+
+  it('reads grok-4.6 reasoningEfforts from model meta and ignores minimal', () => {
+    const result = extractModelsFromInitializeResult({
+      protocolVersion: 1,
+      _meta: {
+        modelState: {
+          currentModelId: 'grok-4.6',
+          availableModels: [
+            {
+              modelId: 'grok-4.6',
+              name: 'Grok 4.6',
+              model_family: 'xai',
+              _meta: {
+                totalContextTokens: 500_000,
+                reasoningEfforts: [
+                  { value: 'xhigh' },
+                  { value: 'high', default: true },
+                  { value: 'medium' },
+                  { value: 'low' },
+                  { value: 'minimal' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    })
+    expect(result?.selectedModelId).toBe('grok-4.6')
+    expect(result?.models[0]).toMatchObject({
+      id: 'grok-4.6',
+      contextWindow: 500_000,
+      supportsEffort: true,
+      supportedEffortLevels: ['xhigh', 'high', 'medium', 'low'],
+    })
+  })
 })
 
 describe('extractModelsFromNewSessionResult (Grok)', () => {
@@ -353,5 +389,16 @@ describe('buildSetModelParams', () => {
       sessionId: 's1',
       modelId: 'm',
     })
+  })
+})
+
+describe('asGrokReasoningEffort', () => {
+  it('accepts Grok effort ids and rejects OpenCode mode ids', () => {
+    expect(asGrokReasoningEffort('xhigh')).toBe('xhigh')
+    expect(asGrokReasoningEffort('  high  ')).toBe('high')
+    expect(asGrokReasoningEffort('ask')).toBeUndefined()
+    expect(asGrokReasoningEffort('code')).toBeUndefined()
+    expect(asGrokReasoningEffort('')).toBeUndefined()
+    expect(asGrokReasoningEffort(null)).toBeUndefined()
   })
 })

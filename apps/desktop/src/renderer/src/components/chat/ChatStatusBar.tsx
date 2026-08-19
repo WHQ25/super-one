@@ -36,6 +36,7 @@ import {
   isSubagentToolName,
   looksLikeBackgroundSubagentAck,
   parseSubagentIdFromText,
+  parseTaskInput,
   resolveTaskProgressEntry,
 } from './subagent-utils'
 import { isWorkflowSmokeCheck, parseWorkflowInput, parseWorkflowLaunch, workflowToolTargetLabel } from './workflow-utils'
@@ -152,8 +153,8 @@ export function collectBackgroundActivities(
       }
 
       if (isSubagentToolName(block.toolName)) {
-        const params = parseToolInput(block.input, block.toolName)
-        const isAsync = params.run_in_background === true || params.background === true
+        const taskInput = parseTaskInput(block.input)
+        const isAsync = taskInput.runInBackground
         const resultBlock = results.get(block.toolUseId)
         const resultSummary = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
         const taskIdHint = parseSubagentIdFromText(resultSummary) ?? parseSubagentIdFromText(block.taskResultText)
@@ -175,7 +176,7 @@ export function collectBackgroundActivities(
             : (!resultBlock && (isAsync || isStreaming))
         if (!isRunning) continue
         const childBlocks = collectSubagentSubtree(message.content, block.toolUseId)
-        const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Agent').trim() || 'Agent'
+        const title = (taskInput.description || taskInput.name || taskInput.subagentType || 'Agent').trim() || 'Agent'
         agentActivities.push({
           id: block.toolUseId,
           kind: 'agent',

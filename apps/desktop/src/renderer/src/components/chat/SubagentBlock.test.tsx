@@ -54,6 +54,30 @@ beforeEach(() => {
   hoisted.jsonl = { entries: [], resultText: undefined }
 })
 
+describe('SubagentBlock header label', () => {
+  it('shows reviewer instead of general-purpose when description is prefixed', () => {
+    render(
+      <SubagentBlock
+        taskBlock={{
+          type: 'tool_use',
+          toolUseId: 'tu_review',
+          toolName: 'Agent',
+          input: JSON.stringify({
+            subagent_type: 'general-purpose',
+            description: '[reviewer] local changes',
+          }),
+        } as ContentBlock & { type: 'tool_use' }}
+        childBlocks={[]}
+        isStreaming={false}
+      />,
+    )
+    expect(screen.getByText('reviewer')).toBeInTheDocument()
+    expect(screen.getByText('local changes')).toBeInTheDocument()
+    expect(screen.queryByText('general-purpose')).not.toBeInTheDocument()
+    expect(screen.queryByText('[reviewer] local changes')).not.toBeInTheDocument()
+  })
+})
+
 describe('SubagentBlock activity surface', () => {
   it('resolves outputFile from persisted taskOutputFile when live taskProgress is empty (history reload)', () => {
     hoisted.sessionState.taskProgress = {}

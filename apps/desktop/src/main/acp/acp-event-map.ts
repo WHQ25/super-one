@@ -8,6 +8,7 @@ import {
   looksLikeSessionArchiveToon,
 } from '@superone/shared/session-archive-result-shape'
 import {
+  applyDescriptionPersonaLabel,
   formatAgentToolOutput,
   normalizeToolIdKey,
   uiToolNameFromId,
@@ -484,9 +485,12 @@ function normalizeInput(
     case 'Task': {
       const out: Record<string, unknown> = {}
       const desc = pickString(raw, ['description', 'prompt', 'name', 'task', 'objective'])
-      if (desc) out.description = desc
       const sub = pickString(raw, ['subagent_type', 'agent_type', 'agent', 'type'])
-      if (sub) out.subagent_type = sub
+      if (desc || sub) {
+        const labeled = applyDescriptionPersonaLabel(desc ?? '', sub ?? '')
+        if (labeled.description) out.description = labeled.description
+        if (labeled.subagentType) out.subagent_type = labeled.subagentType
+      }
       const prompt = pickString(raw, ['prompt'])
       if (prompt) out.prompt = prompt
       const model = pickString(raw, ['model'])

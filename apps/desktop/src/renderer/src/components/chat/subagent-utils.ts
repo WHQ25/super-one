@@ -1,5 +1,6 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
 import {
+  applyDescriptionPersonaLabel,
   formatTranscriptToolResult as formatSharedTranscriptToolResult,
   isSubagentToolName,
   normalizeTranscriptTool,
@@ -308,11 +309,15 @@ export function resolveTaskProgressEntry<T extends { taskId?: string }>(
 /** Parse Task/Agent tool input to extract display info. */
 export function parseTaskInput(input: string): ParsedTaskInput {
   const params = parseToolInput(input, 'Task')
+  const labeled = applyDescriptionPersonaLabel(
+    String(params.description ?? ''),
+    String(params.subagent_type ?? ''),
+  )
   return {
     name: String(params.name ?? ''),
     teamName: String(params.team_name ?? ''),
-    description: String(params.description ?? ''),
-    subagentType: String(params.subagent_type ?? ''),
+    description: labeled.description,
+    subagentType: labeled.subagentType,
     prompt: String(params.prompt ?? ''),
     model: params.model ? String(params.model) : undefined,
     runInBackground: params.run_in_background === true || params.background === true,

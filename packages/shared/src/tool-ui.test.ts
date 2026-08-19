@@ -1,11 +1,42 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyDescriptionPersonaLabel,
   formatAgentToolOutput,
   formatTranscriptToolResult,
   normalizeTranscriptTool,
   truncateTranscriptToolResult,
   uiToolNameFromId,
 } from './tool-ui'
+
+describe('applyDescriptionPersonaLabel', () => {
+  it('promotes a [reviewer] prefix over general-purpose', () => {
+    expect(applyDescriptionPersonaLabel('[reviewer] local changes', 'general-purpose')).toEqual({
+      description: 'local changes',
+      subagentType: 'reviewer',
+    })
+  })
+
+  it('strips the prefix when type is already specific', () => {
+    expect(applyDescriptionPersonaLabel('[reviewer] local changes', 'explore')).toEqual({
+      description: 'local changes',
+      subagentType: 'explore',
+    })
+  })
+
+  it('leaves unprefixed descriptions alone', () => {
+    expect(applyDescriptionPersonaLabel('Search angle 1', 'general-purpose')).toEqual({
+      description: 'Search angle 1',
+      subagentType: 'general-purpose',
+    })
+  })
+
+  it('promotes the prefix when type is empty', () => {
+    expect(applyDescriptionPersonaLabel('[implementer] add tests', '')).toEqual({
+      description: 'add tests',
+      subagentType: 'implementer',
+    })
+  })
+})
 
 describe('uiToolNameFromId', () => {
   it('maps Grok ids to Claude-shaped UI names', () => {

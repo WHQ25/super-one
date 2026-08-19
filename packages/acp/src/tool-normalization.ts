@@ -1,7 +1,7 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
 import type { ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import { getBuiltinCapability } from '@superone/shared/capability-prompt-tags'
-import { normalizeToolIdKey, uiToolNameFromId } from '@superone/shared/tool-ui'
+import { applyDescriptionPersonaLabel, normalizeToolIdKey, uiToolNameFromId } from '@superone/shared/tool-ui'
 
 type AcpToolLike = ToolCall | ToolCallUpdate
 
@@ -468,9 +468,12 @@ function normalizeInput(
     case 'Task': {
       const out: Record<string, unknown> = {}
       const desc = pickString(raw, ['description', 'prompt', 'name', 'task', 'objective'])
-      if (desc) out.description = desc
       const sub = pickString(raw, ['subagent_type', 'agent_type', 'agent', 'type'])
-      if (sub) out.subagent_type = sub
+      if (desc || sub) {
+        const labeled = applyDescriptionPersonaLabel(desc ?? '', sub ?? '')
+        if (labeled.description) out.description = labeled.description
+        if (labeled.subagentType) out.subagent_type = labeled.subagentType
+      }
       const prompt = pickString(raw, ['prompt'])
       if (prompt) out.prompt = prompt
       const model = pickString(raw, ['model'])

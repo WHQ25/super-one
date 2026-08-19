@@ -97,6 +97,31 @@ export function isSubagentToolName(name: string | undefined | null): boolean {
   return name === 'Agent' || name === 'Task'
 }
 
+const GENERIC_SUBAGENT_TYPES = new Set(['general-purpose', 'general'])
+const DESCRIPTION_PERSONA_RE = /^\[([a-zA-Z][a-zA-Z0-9_-]*)\]\s*/
+
+/**
+ * Grok skills encode a persona as a leading `[tag]` on spawn `description`
+ * (`spawn_subagent` has no persona field; type stays `general-purpose`).
+ * Promote that tag when the type is generic, and strip the prefix from the
+ * displayed description — same contract as Grok pager `format_subagent_label`.
+ */
+export function applyDescriptionPersonaLabel(
+  description: string,
+  subagentType: string,
+): { description: string; subagentType: string } {
+  const match = DESCRIPTION_PERSONA_RE.exec(description)
+  if (!match) return { description, subagentType }
+  const label = match[1]
+  const rest = description.slice(match[0].length)
+  const typeKey = subagentType.trim().toLowerCase()
+  const generic = !typeKey || GENERIC_SUBAGENT_TYPES.has(typeKey)
+  return {
+    description: rest,
+    subagentType: generic ? label : subagentType,
+  }
+}
+
 /**
  * Resolve a machine tool id to a Claude-shaped UI name.
  * Returns null for human titles (spaces, path punctuation) that are not ids.

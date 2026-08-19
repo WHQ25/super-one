@@ -1124,6 +1124,27 @@ describe('Grok full tool set mapping', () => {
     })
   })
 
+  it('promotes Grok [reviewer] description prefix to subagent_type', () => {
+    expect(normalizeAcpTool({
+      toolCallId: 'c_rev',
+      title: 'spawn_subagent',
+      kind: 'other',
+      rawInput: {
+        type: 'general-purpose',
+        description: '[reviewer] local changes',
+        prompt: 'review the diff',
+      },
+      _meta: grokMeta('spawn_subagent', 'other', 'Spawn'),
+    } as never)).toMatchObject({
+      toolName: 'Agent',
+      input: {
+        subagent_type: 'reviewer',
+        description: 'local changes',
+        prompt: 'review the diff',
+      },
+    })
+  })
+
   it('maps ask_user_question with questions payload', () => {
     const events = mapSessionUpdate({
       sessionUpdate: 'tool_call',

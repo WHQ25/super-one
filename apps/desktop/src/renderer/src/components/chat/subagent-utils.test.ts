@@ -8,6 +8,7 @@ import {
   groupSubagentChildren,
   collectSubagentSubtree,
   parseSubagentIdFromText,
+  parseTaskInput,
   looksLikeBackgroundSubagentAck,
   resolveTaskProgressEntry,
   type SubagentChildItem,
@@ -391,5 +392,29 @@ describe('subagent progress helpers', () => {
     expect(resolveTaskProgressEntry(map, 'tu-1', 'sa-1')).toEqual(map['sa-1'])
     expect(resolveTaskProgressEntry({ 'tu-1': { taskId: 'sa-1', description: 'a' } }, 'tu-1', 'sa-1'))
       .toEqual({ taskId: 'sa-1', description: 'a' })
+  })
+})
+
+describe('parseTaskInput', () => {
+  it('promotes a Grok [reviewer] description prefix over general-purpose', () => {
+    expect(parseTaskInput(JSON.stringify({
+      subagent_type: 'general-purpose',
+      description: '[reviewer] local changes',
+      prompt: 'review the diff',
+    }))).toMatchObject({
+      subagentType: 'reviewer',
+      description: 'local changes',
+      prompt: 'review the diff',
+    })
+  })
+
+  it('keeps a specific type and still strips the prefix', () => {
+    expect(parseTaskInput(JSON.stringify({
+      subagent_type: 'explore',
+      description: '[reviewer] look around',
+    }))).toMatchObject({
+      subagentType: 'explore',
+      description: 'look around',
+    })
   })
 })

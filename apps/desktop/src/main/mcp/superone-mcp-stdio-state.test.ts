@@ -14,6 +14,17 @@ const {
   setSuperoneMcpBridgeRuntime,
 } = await import('./superone-mcp-stdio-state')
 const { deriveSuperoneMcpSessionToken } = await import('./superone-mcp-auth')
+const {
+  MCP_SUPERONE_TOOL_PREFIX,
+  STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES,
+} = await import('@superone/shared/superone-host-owned-tools')
+
+const expectedCodexToolApprovals = Object.fromEntries(
+  STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES.map((qualifiedName) => [
+    qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length),
+    { approval_mode: 'approve' },
+  ]),
+)
 
 describe('getCodexSuperoneMcpConfig', () => {
   beforeEach(() => {
@@ -51,7 +62,28 @@ describe('getCodexSuperoneMcpConfig', () => {
         'X-SuperOne-Session-Id': 'session-1',
       },
       startup_timeout_sec: 60,
+      tools: expectedCodexToolApprovals,
     })
+  })
+
+  it('pre-approves exactly the static host-owned tools before Codex auto-review', () => {
+    setSuperoneMcpBridgeRuntime({
+      endpoint: '/tmp/superone.sock',
+      httpUrl: 'http://127.0.0.1:3210/mcp',
+      token: 'token-1',
+      bridgeScriptPath: '/app/out/main/superone-mcp-stdio-bridge.js',
+    })
+
+    const tools = getCodexSuperoneMcpConfig('session-1')?.tools
+
+    expect(tools).toEqual(expectedCodexToolApprovals)
+    expect(tools).toMatchObject({
+      session_collab_request: { approval_mode: 'approve' },
+      config_apply: { approval_mode: 'approve' },
+      miniapp_call: { approval_mode: 'approve' },
+    })
+    expect(Object.keys(tools ?? {}).some((name) => name.startsWith('computer_'))).toBe(false)
+    expect(tools).not.toHaveProperty('excalidraw__clear_canvas')
   })
 
   it('keeps stdio config available for agents without HTTP support', () => {

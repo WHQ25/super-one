@@ -367,7 +367,13 @@ describe('resolveThread fallback', () => {
           'X-SuperOne-Session-Id': session.superoneSessionId,
         },
         startup_timeout_sec: 60,
+        tools: expect.objectContaining({
+          session_collab_request: { approval_mode: 'approve' },
+          config_apply: { approval_mode: 'approve' },
+          miniapp_call: { approval_mode: 'approve' },
+        }),
       })
+      expect(payload.config.mcp_servers.superone).not.toHaveProperty('default_tools_approval_mode')
     } finally {
       setSuperoneMcpBridgeRuntime(null)
     }

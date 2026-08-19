@@ -1,3 +1,7 @@
+import {
+  MCP_SUPERONE_TOOL_PREFIX,
+  STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES,
+} from '@superone/shared/superone-host-owned-tools'
 import { getNodeRuntime } from '../agent/resolve-cli'
 import {
   deriveSuperoneMcpSessionToken,
@@ -38,7 +42,16 @@ export interface CodexSuperoneMcpConfig {
   url: string
   http_headers: Record<string, string>
   startup_timeout_sec: number
+  tools: Record<string, { approval_mode: 'approve' }>
 }
+
+const CODEX_STATIC_HOST_OWNED_TOOL_APPROVALS: Record<string, { approval_mode: 'approve' }> =
+  Object.fromEntries(
+    STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES.map((qualifiedName) => [
+      qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length),
+      { approval_mode: 'approve' as const },
+    ]),
+  )
 
 let bridgeRuntime: SuperoneMcpBridgeRuntime | null = null
 
@@ -82,5 +95,9 @@ export function getCodexSuperoneMcpConfig(sessionId: string): CodexSuperoneMcpCo
     url: base.url,
     http_headers: base.headers,
     startup_timeout_sec: SUPERONE_MCP_STARTUP_TIMEOUT_SEC,
+    // Approve only the existing static host-owned set before Codex auto-review.
+    // A server-wide default would also admit dynamic mini-app tools that still
+    // require the normal preapproval path.
+    tools: CODEX_STATIC_HOST_OWNED_TOOL_APPROVALS,
   }
 }

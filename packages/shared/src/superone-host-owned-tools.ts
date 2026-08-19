@@ -153,3 +153,26 @@ export function isStaticHostOwnedSuperoneToolQualified(qualifiedName: string): b
   const bare = qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length)
   return isStaticHostOwnedSuperoneBareName(bare)
 }
+
+/**
+ * Qualified names of every statically host-owned tool, for harness-level allow
+ * rules (Claude `allowedTools`, Codex per-tool approval, OpenCode pre-allow, …).
+ *
+ * Why this exists on top of the `isStaticHostOwned…` predicates: those only run
+ * inside `canUseTool`, which the harness reaches *after* it has already decided
+ * to prompt — in `auto` mode that means every SuperOne tool call first pays a
+ * classifier round-trip, and a classifier deny never reaches us at all. Feeding
+ * the same set to the harness as an allow rule matches upstream of the
+ * classifier, so tools whose approval lives in our own executor (session_collab_
+ * request, config_apply, miniapp_call, …) can no longer be intercepted.
+ *
+ * Derived from the lists above — never hand-maintain entries here. Feature-gated
+ * computer_* is deliberately excluded: this list must stay static so it cannot
+ * drift against a warm session spawned under different settings.
+ */
+export const STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES: readonly string[] = [
+  ...BUILT_IN_SUPERONE_TOOL_NAMES,
+  MOBILE_SHARE_FILE_TOOL_NAME,
+  MINIAPP_LIST_BARE_NAME,
+  MINIAPP_CALL_BARE_NAME,
+].map((bare) => `${MCP_SUPERONE_TOOL_PREFIX}${bare}`)

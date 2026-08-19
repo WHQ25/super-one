@@ -113,10 +113,10 @@ export class DeepseekBackend implements SessionBackend {
       const agent = await runtime.createAgent({
         sessionId: providerSessionId,
         cwd: opts.cwd,
-        // File/shell/search/todo tools live on this session's agent scope, so a
-        // second session never inherits this cwd's executors.
+        // dsh's file/shell/search/todo rows are mounted for the whole tree (a
+        // delegated child has to inherit them); each still resolves the calling
+        // agent's own session cwd. What is per session is below.
         toolPlane: {
-          cwd: opts.cwd,
           // In-process, not over our own MCP server: dsh resolves tools per
           // agent scope, so SuperOne's tools are registered as native dsh
           // tools that call the same executor the MCP surface calls.

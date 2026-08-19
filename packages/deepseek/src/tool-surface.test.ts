@@ -95,7 +95,7 @@ async function startAgent(surface: SuperoneToolSurface, ask: () => Promise<'allo
     provider: 'mock',
     model: 'mock-1',
     onEvent: (event) => events.push(event),
-    toolPlane: { cwd: process.cwd(), superoneTools: surface, requestPermission: ask as never },
+    toolPlane: { superoneTools: surface, requestPermission: ask as never },
   })
   cleanups.push(() => agent.dispose())
   return { agent, events }

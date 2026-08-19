@@ -6,7 +6,13 @@ import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekEventMapper } from './event-map'
-import { mountToolPlane, type DeepseekToolPlaneOptions } from './tool-plane'
+import {
+  installPermissionGate,
+  mountToolPlane,
+  type DeepseekToolPermissionRequest,
+  type DeepseekToolPlaneOptions,
+  type ToolApprovalDecision,
+} from './tool-plane'
 import { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
 import {
   createDeepseekTree,
@@ -45,9 +51,11 @@ export interface CreateDeepseekAgentOptions {
   /** Resume a persisted dsh session instead of creating a fresh one. */
   resume?: boolean
   /**
-   * File/shell/search/todo tools for this session. Omitted, the agent runs
-   * chat-only — the tools are mounted on the agent's own scope, so they can
-   * neither be shared nor leak into another session.
+   * This session's half of the tool plane: SuperOne's own tools and the
+   * permission answerer its calls (and its delegated children's) are parked on.
+   * dsh's file/shell/search/todo rows are mounted for the whole tree, so
+   * omitting this leaves them available but ungated — every mutating call is
+   * refused instead.
    */
   toolPlane?: DeepseekToolPlaneOptions
   /**
@@ -83,8 +91,13 @@ interface AgentRecord {
   mapper: DeepseekEventMapper
   onEvent: (event: AgentEvent) => void
   route: RouteOverride
+  /** This session's permission answerer, also used by its delegated children. */
+  requestPermission?: (request: DeepseekToolPermissionRequest) => Promise<ToolApprovalDecision>
   dispose: () => Promise<void>
 }
+
+/** How far up a delegation chain the permission gate will look for an owner. */
+const MAX_DELEGATION_LOOKUP_DEPTH = 8
 
 /**
  * The embedded dsh runtime: one Cordis tree per app lifetime hosting N agents,
@@ -182,7 +195,53 @@ export class DeepseekRuntime {
       })
     }
 
+    // One gate for every agent in the tree, including delegated children — the
+    // per-session answerer is looked up per call, not captured per mount.
+    installPermissionGate(bridge, (request) => runtime.answerPermission(request))
+
     return runtime
+  }
+
+  /**
+   * Route one tool-permission question to the SuperOne session that owns the
+   * calling agent.
+   *
+   * A delegated child has its own dsh session, so it is absent from `records`;
+   * its durable header names its parent, and walking that chain lands on the
+   * top-level session the user is actually looking at.
+   *
+   * The two ways that walk can come up empty are not the same thing. A session
+   * that simply configured no answerer keeps dsh's own approval waterfall
+   * (`undefined` defers). An agent that resolves to no SuperOne session at all
+   * is refused: an effect nobody can attribute is an effect nobody can approve.
+   */
+  private async answerPermission(
+    request: DeepseekToolPermissionRequest,
+  ): Promise<ToolApprovalDecision | undefined> {
+    const owner = request.agentSessionId
+      ? this.ownerOf(request.agentSessionId)
+      : undefined
+    if (!owner) return 'rejected'
+    if (!owner.requestPermission) return undefined
+    return owner.requestPermission(request)
+  }
+
+  /** The record for this dsh session, or the nearest ancestor that has one. */
+  private ownerOf(agentSessionId: string): AgentRecord | undefined {
+    const sessions = (this.bridge as Context & {
+      get(name: string): unknown
+    }).get('sessions') as {
+      get(id: unknown): { header: { parentSession?: unknown } } | undefined
+    } | undefined
+
+    let id: string | undefined = agentSessionId
+    for (let depth = 0; depth < MAX_DELEGATION_LOOKUP_DEPTH && id; depth += 1) {
+      const record = this.records.get(id)
+      if (record) return record
+      const parent: unknown = sessions?.get(SessionId(id))?.header.parentSession
+      id = parent === undefined ? undefined : String(parent)
+    }
+    return undefined
   }
 
   /**
@@ -246,6 +305,7 @@ export class DeepseekRuntime {
       mapper: new DeepseekEventMapper({ sessionId: options.sessionId, emit: options.onEvent }),
       onEvent: options.onEvent,
       route: {},
+      ...(toolPlane ? { requestPermission: toolPlane.requestPermission } : {}),
       dispose: () => handle.dispose(),
     }
     this.records.set(options.sessionId, record)

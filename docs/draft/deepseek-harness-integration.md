@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate) and SuperOne's own tools as native dsh plugins landed; resume + fork landed; subagents / permission presets still pending
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, fork and foreground subagents landed; the subagent Task block, compaction and permission presets still pending
 Last updated: 2026-08-19
 
 > Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
@@ -145,11 +145,9 @@ Skills, goals, workflow, jobs, e2b, LSP, terminal: deferred until a product deci
 
 ### D6 — Tool plane: everything is a plugin (revised 2026-08-19)
 
-**Landed (P4a) — native tools, per agent scope.** `packages/deepseek/src/tool-plane.ts` mounts `subprocess-local` + `fs-local` + `bash-local` + `shell-env` and the `read/write/edit`, `glob/grep`, `bash`, `todo_write` tools inside `agents.create({setup})`. Two dsh mechanics carry it:
-- registrations made under an agent's scoped context file into *that agent's* tool layer (`ctx.tools` resolves per scope key), so one shared tree still gives each session its own tool set;
-- `agentCtx.isolate('subprocess'|'fs'|'shell'|'shellEnv')` gives the executors a private service realm. Without it the first session's `ctx.fs`/`ctx.shell` land in the ROOT realm — process-global, rooted at that session's cwd — and session two silently resolves relative paths against session one's workspace. (Same hazard `dsh-agent-presets` guards with `leakedServices`.) Covered by the "keeps each session rooted in its own cwd" test.
+**Landed (P4a) — native tools. Relocated to the host plane in P4e; see §17.** `packages/deepseek/src/tool-plane.ts` mounts `subprocess-local` + `fs-local` + `bash-local` + `shell-env` and the `read/write/edit`, `glob/grep`, `bash`, `todo_write` tools. The first cut put them inside `agents.create({setup})`, one isolated realm per session; delegation made that unrepresentable and they now sit in the tree's global layer, where dsh's own rosterless deployments keep them. Per-session correctness moved with them and did not weaken: dsh resolves the workspace at the *tool* boundary (`tool-fs` passes `exec.agent.session.header.cwd` into `ctx.fs.resolve()`, `tool-bash` defaults `workdir` the same way), so `config.cwd` is only the fallback for a non-agent caller. The "keeps each session rooted in its own cwd" test passed unchanged across the move, which is the evidence.
 
-**Permission gate.** dsh's own `ctx.approval` only fires for *sandbox escalation*, and with an unconfined `bash-local` that never happens — so mounting tools without a gate would run `write`/`bash` with no prompt at all. A SuperOne-owned `tools/pre-execute` listener (scope-filtered to the agent) allows read-only tools (`read`, `read_image`, `glob`, `grep`, `todo_write`) and asks for everything else. It asks through the backend's own answerer rather than returning dsh's `{kind:'ask'}`, because `approval.request` carries only a tool name while the popover renders the call — the bash command, the file being written. `bypassPermissions` short-circuits in the backend, so both paths share one mode check.
+**Permission gate.** dsh's own `ctx.approval` only fires for *sandbox escalation*, and with an unconfined `bash-local` that never happens — so mounting tools without a gate would run `write`/`bash` with no prompt at all. A SuperOne-owned `tools/pre-execute` listener allows read-only tools (`read`, `read_image`, `glob`, `grep`, `todo_write`) and asks for everything else. It asks through the backend's own answerer rather than returning dsh's `{kind:'ask'}`, because `approval.request` carries only a tool name while the popover renders the call — the bash command, the file being written. `bypassPermissions` short-circuits in the backend, so both paths share one mode check. The listener is host-plane too (P4e): a gate on the parent's agent scope never sees a delegated child's calls.
 
 **Naming.** dsh's argument shapes already match Claude's (`file_path`, `command`, `old_string`…), so the event mapper renames `read/write/edit/bash/glob/grep/todo_write` to the canonical `Read/Write/Edit/Bash/Glob/Grep/TodoWrite` and the existing renderers (Bash terminal view, edit diff, todo panel) light up unchanged. The permission popover uses the same canonical name.
 
@@ -422,7 +420,7 @@ the actual backlog):
 
 | Group | Rows |
 |---|---|
-| subagents | `subagent` `subagent-spawn-in-process` `subagent-fork-in-process` `tool-subagent`(×2: `subagent`/`subagent_fork`) `tool-subagent-control`(+`/list-agents`) `tool-subagent-report` |
+| subagents | ~~`subagent`~~ ~~`subagent-spawn-in-process`~~ ~~`tool-subagent`~~ (landed, §17) · still out: `subagent-fork-in-process` + its second `tool-subagent` instance (`subagent_fork`), `tool-subagent-control`(+`/list-agents`), `tool-subagent-report` |
 | compaction | `compaction-basic` `compaction-tool-result-pruner` |
 | permission / sandbox | `permission-presets` `sandbox-local` `sandbox-policy` `bash-sandbox` (`pwsh-sandbox` + `tool-pwsh` on Windows) |
 | context & durability | `session-projection` `spill-local` `spill-policy` `token-meter` `tool-call-timeout-policy` |
@@ -619,3 +617,105 @@ event coalescing, arming before the directory exists) and
 `deepseek-mcp-sync.test.ts` (5, real `saveDshMcpConfig`/`toggleDshMcpConfig`
 writes; only the tree is stubbed, because booting one needs Electron's userData
 path).
+
+---
+
+## 17. Subagents (P4e, 2026-08-19)
+
+Foreground delegation runs. `dsh-subagent` (provider registry) +
+`dsh-subagent-spawn-in-process` (fresh child Agent, this process) +
+`dsh-tool-subagent` (the one model-facing row, `toolName: 'subagent'`,
+`maxDepth: 3`) are mounted unmodified in `tree.ts`.
+
+### The finding that reshaped the tool plane
+
+dsh composes a child agent with one call — `applyChildComposition(childCtx,
+parent, composition)` — which **joins the parent's `dsh-agent-presets`
+composition** before applying the child's own persona and tool filter. Its
+README states the consequence directly: *"a child that joined nothing would
+reach the model with an empty tool registry."*
+
+That left three possible shapes, only two of them official:
+
+| Shape | Where model-facing rows live | Verdict |
+|---|---|---|
+| Preset roster (`dsh-web-app`) | per-preset standing mount, joined by scope-key parenting | needs preset **directories** with `agent.cordis.yml` on disk — the YAML composition D3 exists to avoid |
+| Rosterless (`dsh-base`) | the host composition; children resolve them through the tool registry's global layer | matches D3; `composeFrom()` returns `undefined` for a rosterless parent and that is explicitly *"not an error"* |
+| What we had | the **parent's agent scope**, no roster | neither — a child joins nothing *and* finds nothing globally |
+
+So P4a's per-agent mount was not a conservative choice, it was an unrepresented
+one: it worked precisely because nothing had ever tried to create a child.
+
+**Adopted the rosterless shape.** `mountHostToolPlane(ctx)` moves the executors
+and the `tool-fs`/`tool-fs-search`/`tool-bash`/`tool-todo` rows to the tree's
+global layer.
+
+The isolation P4a bought with `agentCtx.isolate('fs'|'shell'|…)` turns out not
+to have been load-bearing. dsh resolves the workspace **per call, at the tool
+boundary** — `tool-fs` passes `exec.agent.session.header.cwd` into
+`ctx.fs.resolve()` and `tool-bash` defaults `workdir` from the same field
+(`.agents/notes/…/2026-07-02-fs-per-session-cwd.md` in dsh's tree). `config.cwd`
+is only the fallback for a caller with no agent. The evidence is that the
+"keeps each session rooted in its own cwd" test — written to prove the isolation
+was necessary — passes unchanged with one shared `ctx.fs`.
+
+### The permission gate had to move for a second reason
+
+A `tools/pre-execute` listener on the parent's agent scope never observes a
+child's executions. Left there, a delegated child would run `write` and `bash`
+with **no prompt at all** — a strictly worse hole than the one P4a's gate
+closed. It is now installed once on the bridge, and resolves its answerer per
+call:
+
+- the calling agent's dsh session id comes from `exec.agent.session.header.id`;
+- a child is absent from `DeepseekRuntime.records`, so `ownerOf()` walks
+  `header.parentSession` through the live session store (bounded at 8 hops)
+  until it reaches the SuperOne session the user is looking at.
+
+The two empty outcomes of that walk are deliberately different. A session that
+configured **no answerer** returns `undefined`, which defers the call to dsh's
+own approval waterfall — that is what keeps chat-only and MCP-only sessions
+behaving as they did. An agent that resolves to **no SuperOne session at all**
+is refused: an effect nobody can attribute is an effect nobody can approve.
+
+`subagent` itself joins the read-only set. Delegating is not an effect, and
+every effect it causes is gated under the child's own call; prompting for both
+would ask twice for one action.
+
+### Deliberately not enabled
+
+- **`run_in_background`.** The one-shot background route registers a
+  parent-owned Task whose status/collection/kill tools (`job_output`,
+  `job_kill`) are a surface SuperOne does not render. Exposing it would let the
+  model start work the user can neither see nor stop. Foreground only until the
+  Task block lands.
+- **Continuable children** (`startContinuable`, `send_message`, `list_agents`)
+  — a durable multi-turn child conversation is a product surface, not a mapping.
+- **`subagent_fork`** (`dsh-subagent-fork-in-process`): a second
+  `tool-subagent` instance over the fork provider, whose child inherits the
+  parent's completed turns. Cheap to add once the Task block exists to
+  distinguish the two in the transcript.
+
+### Known gaps
+
+- **A child does not get SuperOne's own tools.** `mountSuperoneTools` stays on
+  the agent scope because the surface is per session — feature gates, registered
+  mini-apps, whether a phone is subscribed. A child therefore runs with dsh's
+  file/search/shell/todo tools alone. Fixing it means a session-resolved
+  surface on the host plane, keyed off `exec.agent.session.header.id` and its
+  ancestry the same way the permission gate now is.
+- **No Task block.** The child's steps are not aggregated; the parent's
+  transcript shows one `subagent` tool call and its final result. Mapping
+  `subagent/start` / `subagent/end` (both carry a service-minted `runId`) plus
+  the child's own `session/event` stream onto `task_started` / `tool_progress` /
+  `parentToolUseId` is the next piece. `supportsSubagents` is flipped to `true`
+  with that stated in the capability comment.
+- **`session-projection` is unmounted**, so `listChildren()` / `listDescendants()`
+  would fail loud. Nothing calls them yet; they become required with
+  `list_agents`.
+
+Tests: `subagent.test.ts` (3) — a delegated child writes a file in the parent's
+workspace (the host-plane proof: with per-agent tools the child's registry is
+empty and no file appears), its `write` reaches the parent's answerer tagged
+with the *child's* session id while `subagent` itself never prompts, and a
+rejection leaves no file.

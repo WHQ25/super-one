@@ -12,7 +12,11 @@ import * as LlmDeepseek from '@deepseek-ai/dsh-llm-deepseek'
 import type { DeepSeekCatalogModel } from '@deepseek-ai/dsh-llm-deepseek'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import * as SubagentSpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { createCredentialPlugin, type CredentialLookup } from './credentials'
+import { mountHostToolPlane } from './tool-plane'
 
 export interface DeepseekTreeOptions {
   /**
@@ -89,6 +93,25 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   ctx.plugin(AgentRegistry)
   ctx.plugin(ApprovalService, { policy: 'ask' })
   ctx.plugin(AgentLoop, { agents: [] })
+
+  // dsh's executors and its model-facing file/search/shell/todo rows, on the
+  // host plane so delegated children inherit them (see `mountHostToolPlane`).
+  await mountHostToolPlane(ctx)
+
+  // Delegation. `subagents` is the provider registry, `spawn` creates a fresh
+  // child Agent in this process, and `tool-subagent` is the one model-facing
+  // row over it. Foreground only for now: the background route registers a
+  // parent-owned Task whose status/collection/kill tools are a separate surface
+  // SuperOne does not render yet, so exposing `run_in_background` would let the
+  // model start work the user cannot see or stop.
+  ctx.plugin(SubagentRuntime)
+  ctx.plugin(SubagentSpawnInProcess, { providerName: 'spawn' })
+  ctx.plugin(ToolSubagent, {
+    provider: 'spawn',
+    toolName: 'subagent',
+    enableRunInBackground: false,
+    maxDepth: 3,
+  })
 
   if (options.credentialLookup) {
     ctx.plugin(createCredentialPlugin(options.credentialLookup))

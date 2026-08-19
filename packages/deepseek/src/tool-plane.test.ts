@@ -83,7 +83,7 @@ async function startAgent(
     provider: 'mock',
     model: 'mock-1',
     onEvent: (event) => events.push(event),
-    toolPlane: { cwd, requestPermission: requestPermission as never },
+    toolPlane: { requestPermission: requestPermission as never },
   })
   disposers.push(() => agent.dispose())
   return { agent, events }
@@ -147,9 +147,10 @@ describe('deepseek tool plane', () => {
     expect(() => readFileSync(join(cwd, 'rejected.txt'), 'utf8')).toThrow()
   })
 
-  // The whole reason the executors are mounted in an isolated realm: two agents
-  // share one Cordis tree, so a leaked `ctx.fs` would resolve session two's
-  // relative paths against session one's cwd.
+  // Two agents share one `ctx.fs` now that the executors sit on the host plane,
+  // so this is the test that says the sharing is safe: dsh resolves the
+  // workspace at the tool boundary from `session.header.cwd`, not from the
+  // backend's mount-time `config.cwd`.
   it('keeps each session rooted in its own cwd', async () => {
     const runtime = await bootRuntime()
     const first = workspace({ 'shared-name.txt': 'first workspace' })

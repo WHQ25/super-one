@@ -82,13 +82,16 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
   dsh: {
     // In-process dsh Cordis tree (docs/draft/deepseek-harness-integration.md).
     // Flags flip only when the corresponding event path is wired: streaming
-    // tool input → tool-call-delta mapping, subagents (P4), compact
-    // (compaction-basic). `supportsMcp` covers SuperOne's own MCP surface,
-    // bridged per session; user-configured MCP servers are not wired yet.
+    // tool input → tool-call-delta mapping, compact (compaction-basic).
+    // `supportsMcp` covers both SuperOne's own tools (native dsh rows) and
+    // third-party servers read from dsh's own profile patch layer.
+    // `supportsSubagents`: foreground delegation runs (`dsh-tool-subagent` over
+    // the in-process spawn provider); the child's steps are not aggregated into
+    // a Task block yet, so it renders as one tool call with its result.
     supportsMcp: true,
     supportsPlanMode: false,
     supportsTodos: true,
-    supportsSubagents: false,
+    supportsSubagents: true,
     supportsCompact: false,
     supportsStreamingToolInput: false,
     displayName: 'DeepSeek',

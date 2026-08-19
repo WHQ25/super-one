@@ -1,0 +1,156 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { AgentEvent } from '@superone/shared/agent-types'
+import { DeepseekRuntime } from './runtime'
+import type { DeepseekToolPermissionRequest, ToolApprovalDecision } from './tool-plane'
+
+const CHILD_MARKER = 'WRITE-THE-FILE'
+const CHILD_FILE = 'from-the-child.txt'
+const CHILD_TEXT = 'the child wrote this'
+
+/**
+ * Two-agent script. The parent delegates once; the child writes one file and
+ * answers. Which agent is speaking is read off the transcript rather than
+ * tracked, because both run through the same adapter instance.
+ */
+class DelegatingAdapter extends LlmAdapter {
+  async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const transcript = JSON.stringify(options.messages)
+    const closing = transcript.includes('"tool-result"')
+
+    if (!closing && transcript.includes(CHILD_MARKER)) {
+      yield* toolCall('write', { file_path: CHILD_FILE, content: CHILD_TEXT })
+      return
+    }
+    if (!closing && transcript.includes('DELEGATE')) {
+      yield* toolCall('subagent', { description: 'write one file', prompt: CHILD_MARKER })
+      return
+    }
+    yield* finalText(transcript.includes(CHILD_MARKER) ? 'child done' : 'parent done')
+  }
+
+  override providerInfo(provider: string) {
+    return { id: provider, name: 'Mock' }
+  }
+
+  override async listModels(provider: string) {
+    return [{ provider, id: 'mock-1', name: 'Mock One' }]
+  }
+
+  override async resolveModel(provider: string, model: string) {
+    return { provider, id: model, name: 'Mock One', context: { contextWindow: 4000 } }
+  }
+}
+
+function* toolCall(name: string, args: Record<string, unknown>): Generator<StreamChunk> {
+  const id = `call-${randomUUID().slice(0, 8)}` as never
+  const encoded = JSON.stringify(args)
+  yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+  yield { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: encoded }
+  yield { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: encoded } }
+  yield { type: 'finish', reason: { kind: 'tool-calls' } }
+}
+
+function* finalText(text: string): Generator<StreamChunk> {
+  yield { type: 'block-start', index: 0, blockType: 'text' }
+  yield { type: 'text-delta', index: 0, text }
+  yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+  yield { type: 'finish', reason: { kind: 'stop' } }
+}
+
+const dirs: string[] = []
+const disposers: Array<() => Promise<void>> = []
+
+afterEach(async () => {
+  while (disposers.length) await disposers.pop()?.().catch(() => undefined)
+  while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true })
+})
+
+async function delegateOnce(decide: () => ToolApprovalDecision) {
+  const cwd = mkdtempSync(join(tmpdir(), 'dsh-subagent-'))
+  dirs.push(cwd)
+
+  const runtime = await DeepseekRuntime.create({ persona: 'test agent' })
+  disposers.push(() => runtime.dispose())
+  ;(runtime.context as unknown as {
+    llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }
+  }).llm.registerAdapter(['mock'], new DelegatingAdapter())
+
+  const asked: DeepseekToolPermissionRequest[] = []
+  const ask = vi.fn(async (request: DeepseekToolPermissionRequest) => {
+    asked.push(request)
+    return decide()
+  })
+
+  const sessionId = randomUUID()
+  const events: AgentEvent[] = []
+  const agent = await runtime.createAgent({
+    sessionId,
+    cwd,
+    provider: 'mock',
+    model: 'mock-1',
+    onEvent: (event) => events.push(event),
+    toolPlane: { requestPermission: ask },
+  })
+  disposers.push(() => agent.dispose())
+
+  agent.sendText('DELEGATE the work')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await agent.whenIdle()
+
+  return { cwd, sessionId, events, asked, ask }
+}
+
+function toolResults(events: AgentEvent[]): string {
+  return events
+    .filter((event) => event.type === 'content_delta' && event.delta.type === 'tool_result')
+    .map((event) => JSON.stringify(event.type === 'content_delta' ? event.delta : {}))
+    .join('\n')
+}
+
+describe('deepseek subagents', () => {
+  /**
+   * The reason the tool plane moved to the host plane. dsh composes a child by
+   * joining its parent's *preset* composition, and this deployment runs no
+   * preset roster — so anything registered on the parent's agent scope is
+   * invisible to the child. If `write` were still mounted per agent, the child
+   * would reach the model with an empty tool registry and this file would never
+   * appear.
+   */
+  it('gives a delegated child the host tool plane, rooted in the parent workspace', async () => {
+    const { cwd, events } = await delegateOnce(() => 'allowed-once')
+
+    expect(readFileSync(join(cwd, CHILD_FILE), 'utf8')).toBe(CHILD_TEXT)
+    expect(toolResults(events)).toContain('child done')
+  })
+
+  /**
+   * The other half of that move: a gate installed on the parent's agent scope
+   * never sees the child's calls, so the child would have written that file
+   * with no prompt at all.
+   */
+  it('routes a child tool call to the parent answerer, tagged with the child session', async () => {
+    const { sessionId, asked } = await delegateOnce(() => 'allowed-once')
+
+    const write = asked.find((request) => request.toolName === 'write')
+    expect(write).toBeDefined()
+    expect(write?.input).toMatchObject({ file_path: CHILD_FILE })
+    // Delegating is not itself an effect — every effect it causes is gated
+    // under the child's own call, so `subagent` must not have asked as well.
+    expect(asked.map((request) => request.toolName)).not.toContain('subagent')
+    // Attributable to the child, answered by the parent.
+    expect(write?.agentSessionId).toBeDefined()
+    expect(write?.agentSessionId).not.toBe(sessionId)
+  })
+
+  it('performs no child effect when the user rejects', async () => {
+    const { cwd, asked } = await delegateOnce(() => 'rejected')
+
+    expect(asked.some((request) => request.toolName === 'write')).toBe(true)
+    expect(existsSync(join(cwd, CHILD_FILE))).toBe(false)
+  })
+})

@@ -243,9 +243,10 @@ export const VIDEO_STATUS_DESCRIPTION =
   'Poll roughly every 30 seconds while it is running. Do not tell the user the video is ready until this returns `generated`.'
 
 export const SESSION_LIST_AGENTS_DESCRIPTION =
-  'List the agent profiles available for user-approved child sessions. ' +
+  'List the agent profiles available for user-approved child sessions. Only launchable agents are returned. ' +
   'Inspect each profile\'s harness and defaultConfig before session_collab_request. ' +
-  'You may reuse one agentId for multiple launches.'
+  'You may reuse one agentId for multiple launches. ' +
+  'Skip this call when the user already named an agent with @ — that mention carries its agentId.'
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
   'Request user approval for collaboration launches: "spawn" (default) creates a nested child you keep messaging; "handoff" creates a top-level sibling that takes the task over one-way (no mailbox); "link" opens a mailbox with an existing sessionId. ' +

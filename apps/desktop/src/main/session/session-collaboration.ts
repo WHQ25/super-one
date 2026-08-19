@@ -4,12 +4,10 @@ import { homedir } from 'os'
 import { resolve, sep } from 'path'
 import type {
   EffortLevel,
-  ModelOption,
   PermissionMode,
   SandboxMode,
   SessionAgentLaunchConfig,
   SessionAgentLaunchProposal,
-  SessionAgentProfile,
   SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
 import {
@@ -18,30 +16,25 @@ import {
   SESSION_AGENT_TASK_MAX,
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
-import { formatCodexModelName } from '@superone/shared/codex-model-label'
-import {
-  effectiveEndpoints,
-  findPlan,
-  findPlatform,
-  selectEndpoint,
-  type Credential,
-} from '@superone/shared/platform-registry'
 import { activateWorktree, resolveMainWorktreeDir } from '../git/worktree-ops'
-import { deriveSessionCatalog } from '../acp/acp-config'
-import { readAppSettings } from '../app-settings-service'
 import { decryptSecret, encryptSecret } from '../crypto/secret-store'
-import { getCachedHarnessResources, getDb } from '../database'
+import { getDb } from '../database'
 import { createSession as createSessionRecord } from '../db-sessions'
-import { listCredentials } from '../providers/credential-store'
-import { getPlatforms } from '../providers/registry'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import log from '../logger'
-import { listSessionProviders } from './session-provider-repo'
+import { listSessionAgentProfiles } from './agent-profiles'
 import type { Session, SessionManager } from './types'
 import {
   openSessionAgentsConfirm,
   type SessionAgentsConfirmOutcome,
 } from './session-collaboration-confirm'
+
+/**
+ * Agent-profile listing moved to ./agent-profiles when this file passed 1600
+ * lines. Re-exported here so existing importers keep resolving it from the
+ * collaboration module.
+ */
+export { listSessionAgentProfiles } from './agent-profiles'
 
 const MAX_MESSAGES_PER_RETRIEVE = 100
 
@@ -128,168 +121,6 @@ function parseConfig(raw: string): SessionAgentLaunchConfig {
   return JSON.parse(raw) as SessionAgentLaunchConfig
 }
 
-function resolveAcpAgentId(provider: ReturnType<typeof listSessionProviders>[number]): string | null {
-  const fromConfig = typeof (provider.config as { agentId?: unknown })?.agentId === 'string'
-    ? (provider.config as { agentId: string }).agentId.trim()
-    : ''
-  if (fromConfig) return fromConfig
-  const selected = readAppSettings().agentPreference?.acp?.selectedAgentId
-  if (typeof selected === 'string' && selected.trim()) return selected.trim()
-  const cached = getCachedHarnessResources('acp')
-  if (typeof cached?.selectedAgentId === 'string' && cached.selectedAgentId.trim()) {
-    return cached.selectedAgentId.trim()
-  }
-  return null
-}
-
-function profileResources(
-  provider: ReturnType<typeof listSessionProviders>[number],
-  acpAgentId?: string | null,
-): {
-  models: ModelOption[]
-  efforts: string[]
-  defaultConfig: SessionAgentLaunchConfig
-} {
-  let models: ModelOption[]
-  const efforts = new Set<string>()
-  let defaultModel: ModelOption | undefined
-  let defaultEffort: string | undefined
-  if (provider.harnessId === 'acp') {
-    const cached = getCachedHarnessResources('acp')
-    if (!cached) return { models: [], efforts: [], defaultConfig: {} }
-    const agentId = acpAgentId ?? resolveAcpAgentId(provider) ?? cached.selectedAgentId
-    const catalog = agentId ? cached.configByAgentId?.[agentId] : undefined
-    const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
-    models = sessionCatalog?.models ?? []
-    for (const mode of sessionCatalog?.modes ?? []) efforts.add(mode.id)
-    defaultModel = models.find((model) => model.id === sessionCatalog?.selectedModelId)
-      ?? models.find((model) => model.isDefault)
-      ?? models[0]
-    defaultEffort = sessionCatalog?.selectedModeId
-      ?? sessionCatalog?.modes.find((mode) => mode.isDefault)?.id
-      ?? sessionCatalog?.modes[0]?.id
-  } else {
-    const cached = provider.harnessId === 'claude'
-      ? getCachedHarnessResources('claude')
-      : provider.harnessId === 'codex'
-        ? getCachedHarnessResources('codex')
-        : getCachedHarnessResources('opencode')
-    if (!cached) return { models: [], efforts: [], defaultConfig: {} }
-    models = cached.models
-    const preferences = readAppSettings().agentPreference
-    if (provider.harnessId === 'claude') {
-      defaultModel = models.find((model) => model.id === preferences.claude.defaultModel) ?? models[0]
-      const supported = defaultModel?.supportedEffortLevels ?? []
-      defaultEffort = supported.includes(preferences.claude.defaultEffort as EffortLevel)
-        ? preferences.claude.defaultEffort
-        : supported.includes('high')
-          ? 'high'
-          : supported.includes('medium')
-            ? 'medium'
-            : supported[0]
-    } else if (provider.harnessId === 'codex') {
-      defaultModel = models.find((model) => model.id === preferences.codex.defaultModel)
-        ?? models.find((model) => model.isDefault)
-        ?? models[0]
-      const supported = defaultModel?.supportedReasoningEfforts?.map((effort) => effort.value) ?? []
-      defaultEffort = supported.includes(preferences.codex.defaultReasoningEffort as typeof supported[number])
-        ? preferences.codex.defaultReasoningEffort
-        : defaultModel?.defaultReasoningEffort && supported.includes(defaultModel.defaultReasoningEffort)
-          ? defaultModel.defaultReasoningEffort
-          : supported[supported.length - 1]
-    } else {
-      defaultModel = models.find((model) => model.isDefault) ?? models[0]
-      const supported = defaultModel?.supportedEffortLevels ?? []
-      defaultEffort = supported.includes('medium') ? 'medium' : supported[0]
-    }
-  }
-  for (const model of models) {
-    for (const effort of model.supportedEffortLevels ?? []) efforts.add(effort)
-    for (const effort of model.supportedReasoningEfforts ?? []) efforts.add(effort.value)
-  }
-  return {
-    models,
-    efforts: [...efforts],
-    defaultConfig: {
-      ...(defaultModel ? { model: defaultModel.id } : {}),
-      ...(defaultEffort ? { effort: defaultEffort } : {}),
-    },
-  }
-}
-
-function hasUsedProfile(
-  provider: ReturnType<typeof listSessionProviders>[number],
-  acpAgentId?: string | null,
-): boolean {
-  if (provider.harnessId === 'acp') {
-    const agentId = acpAgentId ?? resolveAcpAgentId(provider)
-    if (!agentId) {
-      return Boolean(getDb().prepare(`
-        SELECT 1 FROM sessions WHERE provider_id = ? LIMIT 1
-      `).get(provider.id))
-    }
-    return Boolean(getDb().prepare(`
-      SELECT 1 FROM sessions
-      WHERE provider_id = ? AND (acp_agent_id = ? OR acp_agent_id IS NULL)
-      LIMIT 1
-    `).get(provider.id, agentId))
-  }
-  return Boolean(getDb().prepare('SELECT 1 FROM sessions WHERE provider_id = ? LIMIT 1').get(provider.id))
-}
-
-function profileDisplayName(
-  provider: ReturnType<typeof listSessionProviders>[number],
-  acpAgentId: string | null,
-): string {
-  if (provider.harnessId !== 'acp') return provider.name
-  const cached = getCachedHarnessResources('acp')
-  const catalogName = acpAgentId
-    ? cached?.agents?.find((agent) => agent.id === acpAgentId)?.name
-    : null
-  return acpAgentDisplayName(acpAgentId, catalogName)
-}
-
-/**
- * Match the chat model selector: platform registry name as the primary label,
- * user-defined credential name as the secondary key label.
- */
-function apiProviderOption(credential: Credential): {
-  id: string
-  name: string
-  brand?: string
-  keyName?: string
-} {
-  const platform = findPlatform(getPlatforms(), credential.platformId)
-  return {
-    id: credential.id,
-    name: platform?.name ?? credential.name,
-    ...(platform?.brand ? { brand: platform.brand } : {}),
-    ...(credential.name ? { keyName: credential.name } : {}),
-  }
-}
-
-/** Same filter as the main chat provider picker (endpoint-capable credentials). */
-function listApiProvidersForHarness(harnessId: 'claude' | 'codex'): Array<{
-  id: string
-  name: string
-  brand?: string
-  keyName?: string
-}> {
-  const consumer = harnessId === 'codex' ? 'chat:codex' : 'chat:claude'
-  const platforms = getPlatforms()
-  return listCredentials()
-    .filter((credential) => {
-      const platform = findPlatform(platforms, credential.platformId)
-      const plan = findPlan(platform, credential.planId)
-      if (!platform || !plan) return false
-      const endpoints = effectiveEndpoints(platform, plan, credential)
-      return !!selectEndpoint(plan, consumer, undefined, credential, endpoints, {
-        experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
-      })
-    })
-    .map(apiProviderOption)
-}
-
 /** Prefer explicit role, then human launchId, then a short task-derived label. */
 export function deriveCollaborationRole(input: {
   role?: string
@@ -336,42 +167,6 @@ export function collaborationSessionTitle(name: string, role: string): string {
   const n = name.trim() || 'Agent'
   const r = role.trim() || 'Agent'
   return `${n} - ${r}`
-}
-
-export function listSessionAgentProfiles(): SessionAgentProfile[] {
-  return listSessionProviders()
-    .filter((provider) => provider.isBase)
-    .flatMap((provider) => {
-      const acpAgentId = provider.harnessId === 'acp' ? resolveAcpAgentId(provider) : null
-      if (!hasUsedProfile(provider, acpAgentId)) return []
-      const resources = profileResources(provider, acpAgentId)
-      const models = resources.models.map((model) => ({
-        id: model.id,
-        name: provider.harnessId === 'codex'
-          ? formatCodexModelName(model.name, model.id)
-          : (model.name || model.id),
-        ...(model.description ? { description: model.description } : {}),
-      }))
-      if (models.length === 0) return []
-      const name = profileDisplayName(provider, acpAgentId)
-      const brandKey = resolveHarnessBrandKey(provider.harnessId, acpAgentId)
-      return [{
-        id: provider.id,
-        name,
-        harnessId: provider.harnessId,
-        ...(acpAgentId ? { acpAgentId } : {}),
-        brandKey,
-        description: provider.harnessId === 'acp'
-          ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
-          : `${provider.harnessId} harness with the built-in configuration`,
-        defaultConfig: resources.defaultConfig,
-        models,
-        efforts: resources.efforts,
-        apiProviders: provider.harnessId === 'claude' || provider.harnessId === 'codex'
-          ? listApiProvidersForHarness(provider.harnessId)
-          : [],
-      }]
-    })
 }
 
 function resolveLaunchMode(raw: unknown): SessionCollabLaunchMode {

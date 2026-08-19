@@ -58,6 +58,12 @@ export type MentionKind =
   | 'desktop-app'
   /** SuperOne session archive — value is sessions.id (not provider session id). */
   | 'session'
+  /**
+   * A launchable agent / run configuration — value is the encoded provider ref
+   * (`codex-base`, `acp-base:grok-build`). Not `agent`: that kind is already
+   * taken by Claude's `.claude/agents` subagents.
+   */
+  | 'agent-profile'
 export interface Mention {
   kind: MentionKind
   value: string

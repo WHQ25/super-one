@@ -17,10 +17,8 @@ import {
   type SessionAgentProfile,
   type SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
-import {
-  NODE_HARNESS_DEFINITIONS,
-  normalizeSessionHarnessId,
-} from '@superone/shared/environment'
+import { normalizeSessionHarnessId } from '@superone/shared/environment'
+import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/session-types'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import type { NodeDatabase } from '../db/database'
@@ -92,6 +90,23 @@ function parseConfig(raw: string): SessionAgentLaunchConfig & { worktreePath?: s
   } catch {
     return {}
   }
+}
+
+/**
+ * Accept a bare harness id (`claude`) as well as a provider row id
+ * (`claude-base`). The bare form used to be listed as its own profile; it no
+ * longer is (desktop never listed it, and it duplicated every agent in the
+ * @-mention popup), but grants written before this — and any tool call that
+ * still passes it — must keep resolving.
+ */
+function resolveProfile(
+  profiles: Map<string, SessionAgentProfile>,
+  agentId: string,
+): SessionAgentProfile | undefined {
+  const direct = profiles.get(agentId)
+  if (direct) return direct
+  const wire = normalizeSessionHarnessId(agentId)
+  return wire ? profiles.get(`${wire}-base`) : undefined
 }
 
 function resolveLaunchMode(raw: unknown): SessionCollabLaunchMode {
@@ -186,9 +201,10 @@ export class CollaborationService {
       profileConfig?: unknown,
     ) => {
       if (seen.has(profileId)) return
-      if (harnessId !== 'claude' && harnessId !== 'codex' && harnessId !== 'acp' && harnessId !== 'opencode') {
-        return
-      }
+      // Same gate as session.create: never offer an agent this node cannot
+      // launch. Desktop applies the identical enabled+ready rule, so a
+      // remote @codex mention means the same thing on both sides.
+      if (!harnesses.isSessionHarnessRunnable(harnessId)) return
       seen.add(profileId)
       const models = listHarnessModels(providers, harnessId, null, providerOptions).map((m) => ({
         id: m.id,
@@ -212,6 +228,12 @@ export class CollaborationService {
           : typeof cfg.reasoningEffort === 'string' && cfg.reasoningEffort.trim()
             ? cfg.reasoningEffort.trim()
             : undefined
+      // ACP is a protocol, not a brand: the row's config names the concrete
+      // agent (grok-build), which is what the user sees and @-mentions.
+      const acpAgentId =
+        harnessId === 'acp' && typeof cfg.agentId === 'string' && cfg.agentId.trim()
+          ? cfg.agentId.trim()
+          : null
       const modelDefault = cfgModel ?? defaultModel?.id
       const effortDefault =
         cfgEffort ??
@@ -224,9 +246,10 @@ export class CollaborationService {
               : undefined)
       profiles.push({
         id: profileId,
-        name,
+        name: harnessId === 'acp' ? acpAgentDisplayName(acpAgentId) : name,
         harnessId,
-        brandKey: harnessId === 'acp' ? 'acp' : harnessId,
+        ...(acpAgentId ? { acpAgentId } : {}),
+        brandKey: resolveHarnessBrandKey(harnessId, acpAgentId),
         description,
         defaultConfig: {
           ...(modelDefault ? { model: modelDefault } : {}),
@@ -250,30 +273,17 @@ export class CollaborationService {
             : `Custom ${p.harnessId} profile`,
           p.config,
         )
-        // Alias harness id for base profiles so MCP/tools using agentId=claude still work.
-        if (p.isBase && p.id === `${p.harnessId}-base`) {
-          pushProfile(
-            p.harnessId,
-            p.harnessId,
-            p.harnessId,
-            `${p.harnessId} harness`,
-            p.config,
-          )
-        }
       }
     }
 
-    // Fallback: ready harness ids + session seeds when store empty / missing.
+    // Fallback for a node without the session_providers store: ready harnesses,
+    // plus any harness that has actually run a session here. Previously this
+    // seeded EVERY catalog harness when none were ready, which offered agents
+    // the node could not launch; pushProfile's gate now rejects those anyway.
     if (profiles.length === 0) {
-      const ready = new Set(harnesses.readySessionHarnessIds())
-      const seedIds = new Set<string>(
-        ready.size > 0
-          ? [...ready]
-          : NODE_HARNESS_DEFINITIONS.map((d) => d.sessionHarnessId),
-      )
+      const seedIds = new Set<string>(harnesses.readySessionHarnessIds())
       for (const s of sessions.list()) {
         if (s.harnessId) seedIds.add(s.harnessId)
-        if (s.providerId) seedIds.add(s.providerId)
       }
       for (const id of seedIds) {
         const harnessId = (normalizeSessionHarnessId(id) ?? id) as HarnessId
@@ -427,7 +437,7 @@ export class CollaborationService {
           { code: 'invalid_argument' },
         )
       }
-      const profile = profiles.get(agentId)
+      const profile = resolveProfile(profiles, agentId)
       if (!profile) {
         throw Object.assign(new Error(`Unknown agent profile: ${agentId}`), {
           code: 'invalid_argument',
@@ -874,7 +884,10 @@ export class CollaborationService {
       cwd = wt.path
     }
 
-    const profile = this.listProfiles().find((p) => p.id === grant!.agent_id)
+    const profile = resolveProfile(
+      new Map(this.listProfiles().map((p) => [p.id, p])),
+      grant!.agent_id,
+    )
     const harnessId = (profile?.harnessId
       ?? normalizeSessionHarnessId(grant.agent_id)
       ?? 'claude') as HarnessId

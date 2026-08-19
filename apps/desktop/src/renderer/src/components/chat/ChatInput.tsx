@@ -8,6 +8,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ArrowUp, Loader2, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useShallow } from 'zustand/react/shallow'
@@ -701,6 +702,11 @@ export function ChatInput() {
           kind = 'session'
           mentionValue = value
           displayName = displayNameHint || value
+        } else if (kindHint === 'agent-profile') {
+          kind = 'agent-profile'
+          // value is the encoded provider ref, never the typed slug.
+          mentionValue = value
+          displayName = displayNameHint || value
         } else if (kindHint && isBuiltinCapabilityId(kindHint)) {
           kind = kindHint
           mentionValue = kindHint
@@ -767,6 +773,8 @@ export function ChatInput() {
               current += ` <superone-desktop-app><name>${attrs.displayName}</name><bundleId>${attrs.value}</bundleId></superone-desktop-app> `
             } else if (attrs.kind === 'session') {
               current += ` <superone-session><title>${attrs.displayName}</title><sessionId>${attrs.value}</sessionId></superone-session> `
+            } else if (attrs.kind === 'agent-profile') {
+              current += ` ${wrapAgentMention(attrs.value, attrs.displayName)} `
             } else if (isBuiltinCapabilityId(attrs.kind)) {
               current += ` <superone-capability><name>${attrs.displayName}</name><id>${attrs.kind}</id></superone-capability> `
             } else {

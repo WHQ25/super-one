@@ -829,12 +829,50 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
   })
 })
 
+describe('sendMessageImpl: @agent reminder', () => {
+  it('pins the mentioned agent id and tells the model not to look it up', async () => {
+    seedProject('/proj', 'sid-1', {
+      mentions: [{ kind: 'agent-profile', value: 'codex-base', displayName: 'Codex' }],
+    })
+
+    await useChatStore.getState().sendMessage(
+      '<superone-agent><name>Codex</name><ref>codex-base</ref></superone-agent> review this',
+    )
+
+    const content = mockSendMessage.mock.calls[0][1].content as string
+    expect(content).toContain('<superone-agent-reminder>')
+    expect(content).toContain('- "Codex" → agentId "codex-base"')
+    expect(content).toContain('do NOT call session_collab_list_agents')
+    expect(content).toContain('session_collab_request')
+  })
+
+  it('passes the providerId, not the ACP-qualified ref, as agentId', async () => {
+    seedProject('/proj', 'sid-1', {
+      mentions: [{ kind: 'agent-profile', value: 'acp-base:grok-build', displayName: 'Grok' }],
+    })
+
+    await useChatStore.getState().sendMessage(
+      '<superone-agent><name>Grok</name><ref>acp-base:grok-build</ref></superone-agent> help',
+    )
+
+    const content = mockSendMessage.mock.calls[0][1].content as string
+    expect(content).toContain('- "Grok" → agentId "acp-base"')
+    expect(content).not.toContain('agentId "acp-base:grok-build"')
+  })
+
+  it('adds no reminder when no agent was mentioned', async () => {
+    seedProject('/proj', 'sid-1', { mentions: [] })
+    await useChatStore.getState().sendMessage('just a message')
+    const content = mockSendMessage.mock.calls[0][1].content as string
+    expect(content).not.toContain('superone-agent-reminder')
+  })
+})
+
 describe('sendMessageImpl: built-in capability reminder', () => {
   it('injects English-only intent + Claude tool prefix even when chips were localized', async () => {
     seedProject('/proj', 'sid-1', {
       mentions: [
         { kind: 'browser', value: 'browser', displayName: 'Super浏览器' },
-        { kind: 'collab', value: 'collab', displayName: '智能体协作' },
         { kind: 'computer', value: 'computer', displayName: '控制电脑' },
         { kind: 'widget', value: 'widget', displayName: '小组件' },
         { kind: 'debug', value: 'debug', displayName: '调试' },
@@ -848,25 +886,21 @@ describe('sendMessageImpl: built-in capability reminder', () => {
     const content = mockSendMessage.mock.calls[0][1].content as string
     expect(content).toContain('<superone-capability-reminder>')
     expect(content).toContain('tools start with "mcp__superone__browser_"')
-    expect(content).toContain('tools start with "mcp__superone__session_collab_"')
     expect(content).toContain('tools start with "mcp__superone__computer_"')
     expect(content).toContain('tools start with "mcp__superone__widget_"')
     expect(content).toContain('read_manual({ domain: "product", topic: "debug" })')
     expect(content).toContain('read_manual({ domain: "product", topic: "contribute" })')
     expect(content).not.toContain('tools start with "mcp__superone__debug')
     expect(content).toContain('"Super Browser"')
-    expect(content).toContain('"Agents Collaboration"')
     expect(content).toContain('"Computer Use"')
     expect(content).toContain('"Widget"')
     expect(content).toContain('"Debug"')
     expect(content).toContain('<name>Super Browser</name>')
     expect(content).not.toContain('Super浏览器')
-    expect(content).not.toContain('智能体协作')
     expect(content).not.toContain('控制电脑')
     expect(content).not.toContain('小组件')
     expect(content).not.toContain('调试')
     expect(content).toContain('automate the built-in browser')
-    expect(content).toContain('spawn and coordinate child agent sessions')
     expect(content).toContain('control the desktop UI')
     expect(content).toContain('render SVG, diagrams, charts')
     expect(content).toContain('diagnose SuperOne bugs')

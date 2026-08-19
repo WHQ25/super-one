@@ -142,7 +142,8 @@ describe('parseUserMentions', () => {
       ])
     })
 
-    it('parses all built-in capability kinds', () => {
+    // `collab` is retired from the popup but must keep rendering in old bubbles.
+    it('parses every capability kind a stored message can carry, including retired collab', () => {
       const input =
         '<superone-capability><name>Agents Collaboration</name><id>collab</id></superone-capability> ' +
         '<superone-capability><name>Computer Use</name><id>computer</id></superone-capability> ' +
@@ -159,6 +160,30 @@ describe('parseUserMentions', () => {
         { type: 'mention', kind: 'widget', value: 'widget', displayName: 'Widget' },
         { type: 'text', text: ' ' },
         { type: 'mention', kind: 'debug', value: 'debug', displayName: 'Debug' },
+      ])
+    })
+
+    it('chips an @agent mention and keeps its provider ref as the value', () => {
+      const input =
+        '<superone-agent><name>Codex</name><ref>codex-base</ref></superone-agent> review this'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'agent-profile', value: 'codex-base', displayName: 'Codex' },
+        { type: 'text', text: ' review this' },
+      ])
+    })
+
+    it('keeps the ACP agent id inside the ref so the chip can pick the right brand', () => {
+      const input = '<superone-agent><name>Grok</name><ref>acp-base:grok-build</ref></superone-agent>'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'agent-profile', value: 'acp-base:grok-build', displayName: 'Grok' },
+      ])
+    })
+
+    it('strips the agent reminder block entirely', () => {
+      const input =
+        'ask codex\n\n<superone-agent-reminder>\n- "Codex" → agentId "codex-base"\n</superone-agent-reminder>'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'text', text: 'ask codex' },
       ])
     })
 

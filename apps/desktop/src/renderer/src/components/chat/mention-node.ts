@@ -12,6 +12,7 @@ export interface MentionNodeAttrs {
     | BuiltinCapabilityId
     | 'desktop-app'
     | 'session'
+    | 'agent-profile'
   value: string
   displayName: string
 }

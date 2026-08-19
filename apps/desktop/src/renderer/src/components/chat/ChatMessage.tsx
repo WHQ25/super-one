@@ -31,7 +31,7 @@ import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { FileText } from 'lucide-react'
-import { MentionChipContent, mentionChipIcon } from './MentionChip'
+import { MentionChipContent, isBlendedMentionKind, mentionChipIcon } from './MentionChip'
 import { PasteChipPreview } from './PasteChipPreview'
 import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { toast } from 'sonner'
@@ -54,7 +54,6 @@ import { CopyButton, useCopyText } from './chat-message/copy-button'
 import { fileLinkComponents } from './chat-markdown-components'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
-import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { replaceMiniAppTagsWithMention } from '@superone/shared/miniapp-prompt-tags'
 import { deriveColors, ContextPreviewContent } from './ContextChip'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
@@ -436,10 +435,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
     return () => { cancelled = true }
   }, [kind, value])
 
-  const isCapability = isBuiltinCapabilityId(resolvedKind)
-  // Match composer MentionChip: session/desktop-app/capability show displayName, not raw id.
-  const isBlendedChip =
-    isCapability || resolvedKind === 'desktop-app' || resolvedKind === 'session'
+  const isBlendedChip = isBlendedMentionKind(resolvedKind)
   const display =
     resolvedKind === 'miniapp' || isBlendedChip
       ? (displayName || value)

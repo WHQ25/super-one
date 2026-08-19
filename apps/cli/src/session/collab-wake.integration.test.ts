@@ -42,6 +42,9 @@ function boot() {
     },
   )
   const harnesses = new HarnessManager(db)
+  // listProfiles only offers agents session.create would accept; without a
+  // runnable catalog row there is nothing to launch.
+  harnesses.enableSimulatedOverlay()
   const providers = new ProviderStore(db, join(nodeHome, 'secrets', 'provider.key'))
   const projects = new ProjectRegistry(db)
   const workspaceGit = new WorkspaceGitService(projects)

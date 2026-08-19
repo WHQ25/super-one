@@ -4,10 +4,27 @@ import type { NodeViewProps } from '@tiptap/react'
 import { Bot, Bug, Folder, Globe, LayoutDashboard, MessageSquare, MousePointer2, Users } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
-import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { isStoredCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { brandKeyForAgentRef } from '@superone/shared/agent-mention-tags'
+import { resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DesktopAppIcon } from './DesktopAppIcon'
 import type { MentionNodeAttrs } from './mention-node'
+
+/**
+ * Chips that carry a human label rather than a path: they render "blended"
+ * (no resource border) and show `displayName`, never the raw value. Shared so
+ * the composer NodeView and the sent-bubble chip cannot disagree — they did,
+ * and an @agent chip rendered as `codex-base` in the bubble.
+ */
+export function isBlendedMentionKind(kind: string): boolean {
+  return (
+    isStoredCapabilityId(kind)
+    || kind === 'desktop-app'
+    || kind === 'session'
+    || kind === 'agent-profile'
+  )
+}
 
 /**
  * Shared shell for composer + bubble mention chips.
@@ -44,7 +61,7 @@ export function MentionChipContent({
   )
 }
 
-function CapabilityIcon({ kind }: { kind: MentionNodeAttrs['kind'] }) {
+function CapabilityIcon({ kind }: { kind: string }) {
   if (kind === 'collab') return <Users className="text-violet-600 dark:text-violet-400" />
   // Match Settings / ComputerUseToolBlock branding (pointer, not monitor).
   if (kind === 'computer') return <MousePointer2 className="text-emerald-600 dark:text-emerald-400" />
@@ -54,11 +71,25 @@ function CapabilityIcon({ kind }: { kind: MentionNodeAttrs['kind'] }) {
   return null
 }
 
+/**
+ * A mentioned agent shows its own brand mark — that is the whole point of
+ * `@codex` over `@collab`: you see who you are delegating to.
+ */
+function AgentProfileIcon({ refValue }: { refValue: string }) {
+  const Icon = resolveSessionIconFromBrandKey(brandKeyForAgentRef(refValue))
+  if (!Icon) return <Bot className="text-foreground" />
+  // Same render as the session title: compact drops the idle float / leg wiggle
+  // so a chip sitting in a sentence does not fidget. No `size` — the wrapper is
+  // sized by .mention-chip__icon > span, so the mark scales with the text.
+  return <Icon status="default" renderLevel="compact" />
+}
+
 export function mentionChipIcon(
   kind: MentionNodeAttrs['kind'] | string,
   value: string,
   displayName: string,
 ): ReactNode {
+  if (kind === 'agent-profile') return <AgentProfileIcon refValue={value} />
   if (kind === 'agent') return <Bot className="text-purple-600 dark:text-purple-400" />
   if (kind === 'directory') return <Folder className="text-blue-600 dark:text-blue-400" />
   if (kind === 'miniapp') return <MiniAppIcon appId={value} />
@@ -66,7 +97,7 @@ export function mentionChipIcon(
   // Neutral, matching the sidebar session list: a session is content, not a capability,
   // so it takes no identity hue. text-foreground (not muted) keeps it clear of disabled.
   if (kind === 'session') return <MessageSquare className="text-foreground" />
-  if (isBuiltinCapabilityId(kind)) {
+  if (isStoredCapabilityId(kind)) {
     return <CapabilityIcon kind={kind} />
   }
   // width/height attrs are overridden by .mention-chip__icon > svg { 100% }.
@@ -75,8 +106,7 @@ export function mentionChipIcon(
 
 export function MentionChip({ node }: NodeViewProps) {
   const { kind, value, displayName } = node.attrs as MentionNodeAttrs
-  const isCapability = isBuiltinCapabilityId(kind)
-  const isBlendedChip = isCapability || kind === 'desktop-app' || kind === 'session'
+  const isBlendedChip = isBlendedMentionKind(kind)
   const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop() : displayName
   // Only path-like resource names truncate; multi-word capability labels must show fully.
   const truncateLabel = kind === 'file' || kind === 'directory' || kind === 'miniapp' || kind === 'session'

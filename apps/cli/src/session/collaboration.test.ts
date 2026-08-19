@@ -29,7 +29,7 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
-function bootCollab() {
+function bootCollab(opts?: { simulateReady?: boolean }) {
   const nodeHome = mkdtempSync(join(tmpdir(), 'collab-unit-'))
   dirs.push(nodeHome)
   const db = openNodeDatabase(join(nodeHome, 'state.sqlite'))
@@ -41,6 +41,10 @@ function bootCollab() {
     return { finalText: 'ok' }
   })
   const harnesses = new HarnessManager(db)
+  // listProfiles only offers agents this node can actually launch (same gate as
+  // session.create). Without this the catalog is all-disabled and there are no
+  // agents to collaborate with.
+  if (opts?.simulateReady !== false) harnesses.enableSimulatedOverlay()
   const providers = new ProviderStore(db, join(nodeHome, 'secrets', 'provider.key'))
   const projects = new ProjectRegistry(db)
   const workspaceGit = new WorkspaceGitService(projects)
@@ -61,7 +65,7 @@ function bootCollab() {
     secrets,
     sessionProviders,
   })
-  return { db, sessions, collab, projects, providers, nodeHome, sessionProviders }
+  return { db, sessions, collab, projects, providers, nodeHome, sessionProviders, harnesses }
 }
 
 describe('collaboration helpers', () => {
@@ -90,7 +94,44 @@ describe('collaboration grants + mailbox', () => {
     // openNodeDatabase seeds claude-base / codex-base / … via session_providers.
     const profiles = collab.listProfiles()
     expect(profiles.length).toBeGreaterThan(0)
-    expect(profiles.some((p) => p.id === 'claude-base' || p.id === 'claude')).toBe(true)
+    expect(profiles.some((p) => p.id === 'claude-base')).toBe(true)
+  })
+
+  // Desktop parity: the @codex popup is built from these ids, so a gap here is
+  // an agent the user can name on desktop but not on a node.
+  it('covers every harness the node can launch, cursor and dsh included', () => {
+    const { collab } = bootCollab()
+    const ids = collab.listProfiles().map((p) => p.id)
+    expect(ids).toEqual(
+      expect.arrayContaining(['claude-base', 'codex-base', 'opencode-base', 'cursor-base', 'dsh-base']),
+    )
+  })
+
+  it('omits a harness this node cannot launch, matching session.create', () => {
+    const { collab, harnesses } = bootCollab({ simulateReady: false })
+    expect(collab.listProfiles()).toEqual([])
+    harnesses.update('codex', { enabled: true, state: 'ready' })
+    expect(collab.listProfiles().map((p) => p.id)).toEqual(['codex-base'])
+  })
+
+  it('names the ACP row after the agent behind it, not the protocol', () => {
+    const { collab } = bootCollab()
+    const acp = collab.listProfiles().find((p) => p.id === 'acp-base')
+    expect(acp).toMatchObject({
+      harnessId: 'acp',
+      acpAgentId: 'grok-build',
+      brandKey: 'acp-grok',
+      name: 'Grok',
+    })
+  })
+
+  // The bare `claude` alias row used to be listed next to `claude-base`, which
+  // duplicated every agent in the @-mention popup. It is still ACCEPTED as an
+  // agentId (see the grants test below, which launches with agentId 'claude').
+  it('lists one row per agent, not a duplicate under the bare harness id', () => {
+    const { collab } = bootCollab()
+    expect(collab.listProfiles().filter((p) => p.harnessId === 'claude').map((p) => p.id))
+      .toEqual(['claude-base'])
   })
 
   it('listProfiles exposes third-party API providers for claude and codex', () => {

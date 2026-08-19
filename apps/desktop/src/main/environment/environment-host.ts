@@ -1016,6 +1016,10 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).harnessResources(input)
   }
 
+  async listRemoteCollabProfiles(connectionId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).collaborationListProfiles()
+  }
+
   async listRemoteSessionProviders(
     connectionId: string,
     harnessId?: string,

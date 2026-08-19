@@ -10,7 +10,7 @@ export interface HostActionSuperoneToolDescriptor {
 export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
   {
     "name": "session_collab_list_agents",
-    "description": "List the agent profiles available for user-approved child sessions. Inspect each profile's harness and defaultConfig before session_collab_request. You may reuse one agentId for multiple launches.",
+    "description": "List the agent profiles available for user-approved child sessions. Only launchable agents are returned. Inspect each profile's harness and defaultConfig before session_collab_request. You may reuse one agentId for multiple launches. Skip this call when the user already named an agent with @ — that mention carries its agentId.",
     "inputSchema": {
       "type": "object",
       "properties": {},

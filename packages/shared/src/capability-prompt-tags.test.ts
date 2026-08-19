@@ -8,6 +8,7 @@ import {
   capabilityToolPrefixClaude,
   capabilityToolPrefixCodex,
   formatCapabilityReminderLine,
+  isStoredCapabilityId,
 } from './capability-prompt-tags'
 
 describe('capability-prompt-tags', () => {
@@ -16,7 +17,10 @@ describe('capability-prompt-tags', () => {
     expect(isBuiltinCapabilityId('widget')).toBe(true)
     expect(isBuiltinCapabilityId('debug')).toBe(true)
     expect(isBuiltinCapabilityId('file')).toBe(false)
-    expect(getBuiltinCapability('collab')?.displayName).toBe('Agents Collaboration')
+    // Retired: naming the agent directly (@codex) replaced it.
+    expect(isBuiltinCapabilityId('collab')).toBe(false)
+    expect(getBuiltinCapability('collab')).toBeUndefined()
+    expect(isStoredCapabilityId('collab')).toBe(true)
     expect(getBuiltinCapability('widget')?.displayName).toBe('Widget')
     expect(getBuiltinCapability('widget')?.toolPrefix).toBe('widget_')
     expect(getBuiltinCapability('debug')?.displayName).toBe('Debug')

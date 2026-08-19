@@ -2933,6 +2933,14 @@ export class AgentService {
       return listSessionProviders()
     })
 
+    // Composer @-mention list. Derived from the same usable-provider set as
+    // session_collab_list_agents, so the popup can never offer an agent that
+    // session_collab_request would reject.
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_MENTION_TARGETS, async () => {
+      const { listAgentMentionTargets } = await import('../session/agent-profiles')
+      return listAgentMentionTargets()
+    })
+
     ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS, async (_event, harnessId: 'claude' | 'codex') => {
       const { listByHarness } = await import('../session/session-provider-repo')
       return listByHarness(harnessId)
@@ -3219,6 +3227,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.HOOKS_SAVE)
     ipcMain.removeHandler(AgentIpcChannels.HOOKS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_MENTION_TARGETS)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_GET)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_GET_BASE)

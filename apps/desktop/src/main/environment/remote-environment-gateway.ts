@@ -704,6 +704,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   // --- Session-layer provider profiles (session_providers) ---
 
+  /** Agents this node can actually launch — the ids its session_collab_request validates against. */
+  async collaborationListProfiles(): Promise<unknown> {
+    return this.client.rpc('collaboration.listProfiles', {})
+  }
+
   async sessionProvidersList(harnessId?: string): Promise<unknown> {
     return this.client.rpc('sessionProviders.list', harnessId ? { harnessId } : {})
   }

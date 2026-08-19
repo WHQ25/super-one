@@ -732,6 +732,33 @@ export interface SessionAgentProfile {
   apiProviders: Array<{ id: string; name: string; brand?: string; keyName?: string }>
 }
 
+/**
+ * One `@codex` / `@grok` row in the composer popup — a launchable agent the
+ * user can name directly instead of describing to the model.
+ *
+ * `providerId` is what `session_collab_request({ agentId })` takes, so a
+ * mention never encodes model/effort/permission: those live behind the
+ * provider row and stay editable after the message is sent.
+ */
+export interface AgentMentionTarget {
+  /** Encoded ref stored in the message tag — see `@superone/shared/agent-mention-tags`. */
+  ref: string
+  /** `session_providers.id`, passed verbatim as `session_collab_request.agentId`. */
+  providerId: string
+  harnessId: HarnessId
+  /** ACP protocol agent id (e.g. `grok-build`); only set when harnessId is `acp`. */
+  acpAgentId?: string
+  /** The keyword typed after `@` (unique across the list). */
+  slug: string
+  /** Extra match keywords; never displayed. */
+  aliases: string[]
+  displayName: string
+  /** Stable UI brand identity, e.g. `claude` / `codex` / `acp-grok`. */
+  brandKey: string
+  /** False once user-defined run configurations exist. */
+  isBase: boolean
+}
+
 export interface SessionAgentWorktreeConfig {
   enabled: boolean
   baseBranch: string
@@ -3210,6 +3237,8 @@ export const AgentIpcChannels = {
   SESSION_PROVIDERS_CREATE: 'sessionProviders:create',
   SESSION_PROVIDERS_UPDATE: 'sessionProviders:update',
   SESSION_PROVIDERS_DELETE: 'sessionProviders:delete',
+  /** `@codex` / `@grok` composer list — usable agents only. */
+  SESSION_PROVIDERS_MENTION_TARGETS: 'sessionProviders:mention-targets',
 
   // Bash output watcher
   BASH_OUTPUT_WATCH: 'app:bash-output-watch',
@@ -3449,6 +3478,8 @@ export const AgentIpcChannels = {
   /** Node harness.resources aggregate (models + skills/commands/agents/prompts). */
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',
   /** Node session_providers CRUD. */
+  /** Node-side collaboration agent profiles — authoritative agentIds for @-mentions on a remote session. */
+  ENVIRONMENT_COLLAB_LIST_PROFILES: 'environment:collabListProfiles',
   ENVIRONMENT_SESSION_PROVIDERS_LIST: 'environment:sessionProvidersList',
   ENVIRONMENT_SESSION_PROVIDERS_GET: 'environment:sessionProvidersGet',
   ENVIRONMENT_SESSION_PROVIDERS_GET_BASE: 'environment:sessionProvidersGetBase',

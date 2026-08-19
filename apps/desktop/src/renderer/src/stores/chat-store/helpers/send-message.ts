@@ -337,6 +337,23 @@ export async function sendMessageImpl(
       capabilityReminderSuffix = `\n\n<superone-capability-reminder>\n${lines.join('\n')}\n</superone-capability-reminder>`
     }
 
+    // @codex / @grok — the agent id is already decided, so the reminder pins it
+    // and tells the model to skip session_collab_list_agents entirely.
+    let agentReminderSuffix = ''
+    const agentMentions = mentions.filter((m) => m.kind === 'agent-profile' && m.value)
+    if (agentMentions.length > 0) {
+      const { decodeAgentRef, formatAgentMentionReminder } = await import(
+        '@superone/shared/agent-mention-tags'
+      )
+      agentReminderSuffix = formatAgentMentionReminder(
+        agentMentions.flatMap((m) => {
+          const decoded = decodeAgentRef(m.value)
+          if (!decoded) return []
+          return [{ displayName: m.displayName || decoded.providerId, providerId: decoded.providerId }]
+        }),
+      )
+    }
+
     let miniAppReminderSuffix = ''
     const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
     if (miniAppMentions.length > 0) {
@@ -432,6 +449,7 @@ export async function sendMessageImpl(
       quoteSuffix +
       miniAppReminderSuffix +
       sessionReminderSuffix +
+      agentReminderSuffix +
       capabilityReminderSuffix +
       desktopAppReminderSuffix +
       annotationSuffix
@@ -746,6 +764,23 @@ export async function sendMessageImpl(
       ? preferredProvider
       : 'claude'
   const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
+  // @codex / @grok — the agent id is already decided, so the reminder pins it
+  // and tells the model to skip session_collab_list_agents entirely.
+  let agentReminderSuffix = ''
+  const agentMentions = mentions.filter((m) => m.kind === 'agent-profile' && m.value)
+  if (agentMentions.length > 0) {
+    const { decodeAgentRef, formatAgentMentionReminder } = await import(
+      '@superone/shared/agent-mention-tags'
+    )
+    agentReminderSuffix = formatAgentMentionReminder(
+      agentMentions.flatMap((m) => {
+        const decoded = decodeAgentRef(m.value)
+        if (!decoded) return []
+        return [{ displayName: m.displayName || decoded.providerId, providerId: decoded.providerId }]
+      }),
+    )
+  }
+
   let miniAppReminderSuffix = ''
   const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
   if (miniAppMentions.length > 0) {
@@ -864,6 +899,7 @@ export async function sendMessageImpl(
     quoteSuffix +
     miniAppReminderSuffix +
     sessionReminderSuffix +
+    agentReminderSuffix +
     capabilityReminderSuffix +
     annotationSuffix
   const codexCommand = parseCodexCommand(rawContent)

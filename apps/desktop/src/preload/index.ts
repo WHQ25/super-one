@@ -634,6 +634,10 @@ const environmentAPI = {
       provider,
     ),
 
+  /** Agents the node can launch — the agentIds its session_collab_request accepts. */
+  listRemoteCollabProfiles: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES, connectionId),
+
   /** Node session_providers CRUD (multi-profile). */
   listRemoteSessionProviders: (connectionId: string, harnessId?: string) =>
     ipcRenderer.invoke(
@@ -1443,6 +1447,9 @@ const appAPI = {
   sessionProviders: {
     list: () =>
       ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_LIST),
+    listMentionTargets: () =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_MENTION_TARGETS) as
+        Promise<import('@superone/shared/agent-types').AgentMentionTarget[]>,
     listByHarness: (harnessId: 'claude' | 'codex') =>
       ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS, harnessId),
     get: (id: string) =>

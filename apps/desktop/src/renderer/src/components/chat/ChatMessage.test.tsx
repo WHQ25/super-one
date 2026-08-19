@@ -300,6 +300,31 @@ describe('ChatMessage capability mention bubble', () => {
     expect(chip).toHaveTextContent('Debug')
   })
 
+  it('renders an @agent chip with the agent name, not its provider ref', () => {
+    const text =
+      '<superone-agent><name>Codex</name><ref>codex-base</ref></superone-agent> 帮我审一下'
+    const { container } = render(
+      <ChatMessage message={createUserMessage(text)} sessionStatus="idle" isLastAssistant={false} />,
+    )
+    const chip = container.querySelector('[data-mention-kind="agent-profile"]')
+    expect(chip).not.toBeNull()
+    expect(chip).toHaveTextContent('Codex')
+    expect(chip).not.toHaveTextContent('codex-base')
+    // The harness mark is the point of naming an agent — assert it actually renders.
+    expect(chip!.querySelector('.mention-chip__icon svg')).not.toBeNull()
+  })
+
+  it('keeps the agent name on an ACP ref, whose value carries a second id', () => {
+    const text = '<superone-agent><name>Grok</name><ref>acp-base:grok-build</ref></superone-agent> hi'
+    const { container } = render(
+      <ChatMessage message={createUserMessage(text)} sessionStatus="idle" isLastAssistant={false} />,
+    )
+    const chip = container.querySelector('[data-mention-kind="agent-profile"]')
+    expect(chip).toHaveTextContent('Grok')
+    expect(chip).not.toHaveTextContent('acp-base')
+    expect(chip!.querySelector('.mention-chip__icon svg')).not.toBeNull()
+  })
+
   it('renders session chip with title, not raw sessionId', () => {
     const sid = 'a9382a53-7d35-4a01-9e13-411bcbc8e850'
     const text =

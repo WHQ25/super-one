@@ -1,9 +1,13 @@
 import {
   CAPABILITY_REMINDER_REGEX,
   CAPABILITY_TAG_REGEX,
-  isBuiltinCapabilityId,
-  type BuiltinCapabilityId,
+  isStoredCapabilityId,
+  type StoredCapabilityId,
 } from '@superone/shared/capability-prompt-tags'
+import {
+  AGENT_REMINDER_REGEX,
+  AGENT_TAG_REGEX,
+} from '@superone/shared/agent-mention-tags'
 import {
   DESKTOP_APP_REMINDER_REGEX,
   DESKTOP_APP_TAG_REGEX,
@@ -21,7 +25,8 @@ export type UserMentionKind =
   | 'miniapp'
   | 'desktop-app'
   | 'session'
-  | BuiltinCapabilityId
+  | 'agent-profile'
+  | StoredCapabilityId
 
 export type UserTextSegment =
   | { type: 'text'; text: string }
@@ -62,7 +67,8 @@ function findCapabilityTags(text: string): TagMatch[] {
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     const id = m[2].trim()
-    if (!isBuiltinCapabilityId(id)) continue
+    // Legacy ids included: an old @collab bubble must still render as a chip.
+    if (!isStoredCapabilityId(id)) continue
     out.push({
       start: m.index,
       end: m.index + m[0].length,
@@ -106,6 +112,22 @@ function findSessionTags(text: string): TagMatch[] {
   return out
 }
 
+function findAgentTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
+  const re = new RegExp(AGENT_TAG_REGEX)
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    out.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      kind: 'agent-profile',
+      displayName: m[1].trim(),
+      value: m[2].trim(),
+    })
+  }
+  return out
+}
+
 function findPathRefTags(text: string): TagMatch[] {
   const out: TagMatch[] = []
   const re = new RegExp(PATH_REF_TAG_REGEX)
@@ -140,6 +162,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     .replace(CAPABILITY_REMINDER_REGEX, '')
     .replace(DESKTOP_APP_REMINDER_REGEX, '')
     .replace(SESSION_REMINDER_REGEX, '')
+    .replace(AGENT_REMINDER_REGEX, '')
 
   // 2. Extract structured tags only (popup-selected mentions).
   const tagMatches = [
@@ -147,6 +170,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     ...findCapabilityTags(withoutReminder),
     ...findDesktopAppTags(withoutReminder),
     ...findSessionTags(withoutReminder),
+    ...findAgentTags(withoutReminder),
     ...findPathRefTags(withoutReminder),
   ].sort((a, b) => a.start - b.start)
 

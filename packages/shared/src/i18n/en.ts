@@ -2155,13 +2155,13 @@ export type Messages = {
       groupSkills: string
     }
     mentionPopup: {
+      groupCollaborators: string
       groupCapabilities: string
       groupSessions: string
       groupDesktopApps: string
       groupAgents: string
       groupMiniApps: string
       groupFiles: string
-      capabilityCollab: string
       capabilityComputer: string
       capabilityBrowser: string
       capabilityWidget: string
@@ -5260,13 +5260,13 @@ export const en: Messages = {
       groupSkills: 'Skills',
     },
     mentionPopup: {
+      groupCollaborators: 'Collaborators',
       groupCapabilities: 'Built-in',
       groupSessions: 'Sessions',
       groupDesktopApps: 'Desktop Apps',
       groupAgents: 'Agents',
       groupMiniApps: 'Mini apps',
       groupFiles: 'Files',
-      capabilityCollab: 'Agents Collaboration',
       capabilityComputer: 'Computer Use',
       capabilityBrowser: 'Super Browser',
       capabilityWidget: 'Widget',

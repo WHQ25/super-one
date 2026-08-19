@@ -181,6 +181,12 @@ export function ensureEnvironmentResourceIpcRegistered(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES,
+    async (_e, connectionId: string) => {
+      return (await host()).listRemoteCollabProfiles(connectionId)
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_LIST,
     async (_e, connectionId: string, harnessId?: string) => {
       return (await host()).listRemoteSessionProviders(connectionId, harnessId)

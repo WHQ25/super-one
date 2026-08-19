@@ -24,6 +24,19 @@ const state = vi.hoisted(() => ({
   providers: [{
     id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
   }],
+  /** Harness catalog rows — the gate for which profiles are offered at all. */
+  harnessStatuses: {
+    claude: { enabled: true, state: 'ready' },
+    codex: { enabled: true, state: 'ready' },
+    'acp-grok': { enabled: true, state: 'ready' },
+    opencode: { enabled: true, state: 'ready' },
+    cursor: { enabled: true, state: 'ready' },
+    dsh: { enabled: true, state: 'ready' },
+  } as Record<string, { enabled: boolean; state: string }>,
+  probeHarness: vi.fn((id: string) => {
+    const row = state.harnessStatuses[id]
+    if (row?.state === 'needs_auth') row.state = 'ready'
+  }),
   credentials: [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai', planId: 'api' }],
   platforms: [{
     id: 'openai',
@@ -68,6 +81,13 @@ vi.mock('../providers/registry', () => ({
 }))
 vi.mock('./session-provider-repo', () => ({
   listSessionProviders: () => state.providers,
+}))
+vi.mock('../harness/service', () => ({
+  getHarnessInstallation: (id: string) => ({
+    id,
+    ...(state.harnessStatuses[id] ?? { enabled: false, state: 'disabled' }),
+  }),
+  probeDesktopHarness: state.probeHarness,
 }))
 vi.mock('../git/worktree-ops', () => ({
   activateWorktree: state.activateWorktree,
@@ -136,6 +156,7 @@ vi.mock('../recent-folders', () => ({
   },
 }))
 
+import { listAgentMentionTargets } from './agent-profiles'
 import {
   requestSessionAgents,
   listSessionAgentProfiles,
@@ -307,6 +328,10 @@ beforeEach(() => {
   state.activateWorktree.mockReset()
   state.mainWorktreeByPath.clear()
   state.resolveMainWorktreeDir.mockClear()
+  state.probeHarness.mockClear()
+  for (const id of ['claude', 'codex', 'acp-grok', 'opencode', 'cursor', 'dsh']) {
+    state.harnessStatuses[id] = { enabled: true, state: 'ready' }
+  }
   state.resourceCache = {
     claude: {
       models: [
@@ -339,13 +364,84 @@ beforeEach(() => {
 })
 
 describe('session collaboration', () => {
-  it('omits profiles that have never been used or lack an initialized model catalog', () => {
-    expect(listSessionAgentProfiles()).toHaveLength(1)
+  it('offers a harness the user just enabled but has never opened a session with', () => {
     state.db!.prepare('UPDATE sessions SET provider_id = NULL').run()
-    expect(listSessionAgentProfiles()).toEqual([])
-    state.db!.prepare('UPDATE sessions SET provider_id = ?').run('claude-base')
+    expect(listSessionAgentProfiles()).toHaveLength(1)
+  })
+
+  it('offers a harness whose model catalog has not been fetched yet', () => {
     state.resourceCache = {}
+    expect(listSessionAgentProfiles()).toEqual([
+      expect.objectContaining({ id: 'claude-base', models: [], defaultConfig: {} }),
+    ])
+  })
+
+  it('omits a harness that is disabled or not installed', () => {
+    state.harnessStatuses.claude = { enabled: false, state: 'disabled' }
     expect(listSessionAgentProfiles()).toEqual([])
+    state.harnessStatuses.claude = { enabled: true, state: 'missing' }
+    expect(listSessionAgentProfiles()).toEqual([])
+  })
+
+  it('re-probes a stale needs_auth row instead of hiding a harness the user just signed into', () => {
+    state.harnessStatuses.claude = { enabled: true, state: 'needs_auth' }
+    expect(listSessionAgentProfiles()).toHaveLength(1)
+    expect(state.probeHarness).toHaveBeenCalledWith('claude')
+  })
+})
+
+describe('@agent mention targets', () => {
+  it('gives a base provider the brand keyword rather than its "(Base)" row name', () => {
+    state.providers = [{
+      id: 'codex-base', harnessId: 'codex', name: 'Codex (Base)', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
+    }]
+    expect(listAgentMentionTargets()).toEqual([
+      expect.objectContaining({
+        ref: 'codex-base',
+        providerId: 'codex-base',
+        slug: 'codex',
+        displayName: 'Codex',
+        brandKey: 'codex',
+        isBase: true,
+      }),
+    ])
+  })
+
+  it('resolves the ACP base provider to the agent behind it', () => {
+    state.providers = [{
+      id: 'acp-base', harnessId: 'acp', name: 'Others (ACP)', isBase: true,
+      config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0,
+    }]
+    expect(listAgentMentionTargets()).toEqual([
+      expect.objectContaining({
+        ref: 'acp-base:grok-build',
+        providerId: 'acp-base',
+        acpAgentId: 'grok-build',
+        slug: 'grok',
+        displayName: 'Grok',
+        brandKey: 'acp-grok',
+      }),
+    ])
+  })
+
+  it('never offers an agent that session_collab_request would reject', () => {
+    state.harnessStatuses.claude = { enabled: false, state: 'disabled' }
+    expect(listAgentMentionTargets()).toEqual([])
+    expect(listSessionAgentProfiles()).toEqual([])
+  })
+
+  // Forward-looking: user-defined run configurations are just extra provider rows.
+  it('names a custom run configuration after itself and keeps the plain keyword on the base row', () => {
+    state.providers = [
+      { id: 'codex-base', harnessId: 'codex', name: 'Codex (Base)', isBase: true, config: {}, createdAt: 0, updatedAt: 0 },
+      { id: 'codex-7f3a', harnessId: 'codex', name: 'Codex', isBase: false, config: {}, createdAt: 1, updatedAt: 1 },
+      { id: 'codex-9b2c', harnessId: 'codex', name: 'High Effort Codex', isBase: false, config: {}, createdAt: 2, updatedAt: 2 },
+    ]
+    expect(listAgentMentionTargets().map((t) => [t.providerId, t.slug, t.displayName])).toEqual([
+      ['codex-base', 'codex', 'Codex'],
+      ['codex-7f3a', 'codex-2', 'Codex'],
+      ['codex-9b2c', 'high-effort-codex', 'High Effort Codex'],
+    ])
   })
 
   it('labels API providers with the platform name and key entry metadata', () => {

@@ -1,6 +1,21 @@
-/** Built-in @-mention capabilities (collab / computer / browser / widget / debug). */
+/** Built-in @-mention capabilities (computer / browser / widget / debug). */
 
-export type BuiltinCapabilityId = 'collab' | 'computer' | 'browser' | 'widget' | 'debug'
+export type BuiltinCapabilityId = 'computer' | 'browser' | 'widget' | 'debug'
+
+/**
+ * Retired capability ids that still exist in stored messages.
+ *
+ * `collab` was replaced by naming the agent directly (`@codex`, `@grok`) — see
+ * `@superone/shared/agent-mention-tags`. It is no longer offered in the popup
+ * and no longer emits a reminder, but old user bubbles must keep rendering it
+ * as a chip instead of leaking the raw tag.
+ */
+export type LegacyCapabilityId = 'collab'
+
+export const LEGACY_CAPABILITY_IDS: readonly LegacyCapabilityId[] = ['collab'] as const
+
+/** Any capability id that can appear in a persisted message. */
+export type StoredCapabilityId = BuiltinCapabilityId | LegacyCapabilityId
 
 export interface BuiltinCapability {
   id: BuiltinCapabilityId
@@ -23,12 +38,6 @@ export interface BuiltinCapability {
 }
 
 export const BUILTIN_CAPABILITIES: readonly BuiltinCapability[] = [
-  {
-    id: 'collab',
-    displayName: 'Agents Collaboration',
-    intent: 'spawn and coordinate child agent sessions via collaboration tools',
-    toolPrefix: 'session_collab_',
-  },
   {
     id: 'computer',
     displayName: 'Computer Use',
@@ -66,6 +75,13 @@ export function getBuiltinCapability(id: string): BuiltinCapability | undefined 
 
 export function isBuiltinCapabilityId(id: string): id is BuiltinCapabilityId {
   return byId.has(id as BuiltinCapabilityId)
+}
+
+const legacyIds = new Set<string>(LEGACY_CAPABILITY_IDS)
+
+/** True for ids the composer can still insert AND ids only old messages carry. */
+export function isStoredCapabilityId(id: string): id is StoredCapabilityId {
+  return byId.has(id as BuiltinCapabilityId) || legacyIds.has(id)
 }
 
 export const CAPABILITY_TAG_REGEX =

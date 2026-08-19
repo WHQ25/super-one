@@ -114,6 +114,11 @@ describe('Phase 4 harness parity + collaboration', () => {
     dirs.push(projectDir)
     writeFileSync(join(projectDir, 'a'), '1')
 
+    // Production-like readiness: a real node runs `superone harness enable claude`.
+    // collaboration.listProfiles only offers agents session.create would accept,
+    // so the catalog row has to say the harness is actually runnable.
+    rt.harnesses.update('claude', { enabled: true, state: 'ready' })
+
     const client = await connectAuthedRpc(rt)
     const project = (await client.rpc('project.open', { path: projectDir })) as { projectId: string }
     // session.create still needs a ready harness; enable simulated overlay only for create.
@@ -130,7 +135,7 @@ describe('Phase 4 harness parity + collaboration', () => {
 
     const profiles = (await client.rpc('collaboration.listProfiles')) as Array<{ id: string }>
     expect(profiles.length).toBeGreaterThan(0)
-    const agentId = profiles.find((p) => p.id === 'claude')?.id ?? profiles[0].id
+    const agentId = profiles.find((p) => p.id === 'claude-base')?.id ?? profiles[0].id
 
     const lease = (await client.rpc('session.acquireControl', {
       sessionId: parent.sessionId,

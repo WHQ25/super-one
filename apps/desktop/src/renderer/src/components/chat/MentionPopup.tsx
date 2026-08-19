@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, type UIEvent } from 'react'
-import { Bot, Bug, Folder, Folders, Globe, LayoutDashboard, MessageSquare, MousePointer2, Users } from 'lucide-react'
+import { Bot, Bug, Folder, Folders, Globe, LayoutDashboard, MessageSquare, MousePointer2 } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -11,8 +11,15 @@ import { isComputerUseSupportedPlatform } from '@/lib/computer-use-platform'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DesktopAppIcon } from './DesktopAppIcon'
 import { useTranslation } from 'react-i18next'
-import type { ListDirEntry, MentionSearchItem, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type {
+  AgentMentionTarget,
+  ListDirEntry,
+  MentionSearchItem,
+  SessionHistoryEntry,
+} from '@superone/shared/agent-types'
 import { BUILTIN_CAPABILITIES, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { listAgentMentionTargets } from '@/lib/agent-mention-targets'
+import { resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import {
   SESSION_MENTION_NAV_PREFIX,
@@ -54,6 +61,16 @@ interface MentionPopupProps {
 type SessionPortalId = typeof SESSION_MENTION_KEYWORD
 
 type FlatItem =
+  | {
+      /** A launchable agent / run configuration — `@codex`, `@grok`. */
+      kind: 'agent-profile'
+      target: AgentMentionTarget
+      /** Highlight on the display label. */
+      matchIndices: number[]
+      /** Highlight on the `@slug` suffix. */
+      keywordMatchIndices: number[]
+      matchRank: BuiltinMentionMatchRank
+    }
   | { kind: 'file'; path: string; displayPath: string; isDirectory: boolean; matchIndices: number[] }
   | { kind: 'dir-entry'; entry: ListDirEntry; prefix: string }
   | { kind: 'agent'; name: string; model: string; matchIndices: number[] }
@@ -139,6 +156,7 @@ function getSelectPath(item: FlatItem): string {
     return item.prefix + name
   }
   if (item.kind === 'file') return item.isDirectory ? item.path + '/' : item.path
+  if (item.kind === 'agent-profile') return item.target.ref
   if (item.kind === 'agent') return item.name
   if (item.kind === 'miniapp') return item.appId
   if (item.kind === 'capability') return item.id
@@ -146,9 +164,10 @@ function getSelectPath(item: FlatItem): string {
   return ''
 }
 
-const MENTION_GROUP_ORDER = ['capability', 'session-project', 'session', 'desktop-app', 'agent', 'miniapp', 'file'] as const
+const MENTION_GROUP_ORDER = ['agent-profile', 'capability', 'session-project', 'session', 'desktop-app', 'agent', 'miniapp', 'file'] as const
 
 function mentionGroupKey(item: FlatItem): string {
+  if (item.kind === 'agent-profile') return 'agent-profile'
   if (item.kind === 'capability' || item.kind === 'session-portal') return 'capability'
   if (item.kind === 'session-project') return 'session-project'
   if (item.kind === 'session') return 'session'
@@ -176,16 +195,6 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
           'size-3.5 shrink-0',
           // Sessions stay neutral; the coloured hues below are capability identities.
           muted ?? 'text-foreground',
-        )}
-      />
-    )
-  }
-  if (id === 'collab') {
-    return (
-      <Users
-        className={cn(
-          'size-3.5 shrink-0',
-          muted ?? 'text-violet-600 dark:text-violet-400',
         )}
       />
     )
@@ -448,9 +457,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       if (isSessionMode) onSetSelectedIndex(0)
     }, [isSessionMode, parsedSessionQuery?.phase, onSetSelectedIndex])
 
-    /** Feature gates for built-in @-capability chips (settings toggles). Collab, widget, and debug are always on. */
+    /** Feature gates for built-in @-capability chips (settings toggles). Widget and debug are always on. */
     const [capabilityEnabled, setCapabilityEnabled] = useState<Record<BuiltinCapabilityId, boolean>>({
-      collab: true,
       computer: false,
       browser: false,
       widget: true,
@@ -466,7 +474,6 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       } | null | undefined) => {
         if (cancelled || !settings) return
         setCapabilityEnabled({
-          collab: true,
           computer:
             isComputerUseSupportedPlatform(window.app.platform)
             && settings.computerUseEnabled === true,
@@ -482,7 +489,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         })
         .catch(() => {
           if (!cancelled) {
-            setCapabilityEnabled({ collab: true, computer: false, browser: false, widget: true, debug: true })
+            setCapabilityEnabled({ computer: false, browser: false, widget: true, debug: true })
             setCapabilitySettingsReady(true)
           }
         })
@@ -559,8 +566,57 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return matches
     }, [miniApps, query, isBrowseMode])
 
+    // Usable agents for THIS project: local desktop rows, or the node's own
+    // profiles for a remote project (their agentIds differ).
+    const [agentTargets, setAgentTargets] = useState<AgentMentionTarget[]>([])
+    useEffect(() => {
+      let cancelled = false
+      void listAgentMentionTargets(activeProject).then((targets) => {
+        if (!cancelled) setAgentTargets(targets)
+      })
+      return () => {
+        cancelled = true
+      }
+    }, [activeProject])
+
+    const matchedAgentTargets = useMemo<FlatItem[]>(() => {
+      if (isSessionMode) return []
+      if (isBrowseMode && query) return []
+      const matches: Array<Extract<FlatItem, { kind: 'agent-profile' }>> = []
+      for (const target of agentTargets) {
+        // Slug first so `@co` prefers Codex; aliases match but never highlight,
+        // because the row shows the slug and highlighting an unshown string lies.
+        let scored = matchBuiltinMention(target.slug, [target.displayName], query)
+        if (!scored) {
+          for (const alias of target.aliases) {
+            const aliasMatch = matchBuiltinMention(alias, [target.displayName], query)
+            if (aliasMatch) {
+              scored = { ...aliasMatch, keywordIndices: [] }
+              break
+            }
+          }
+        }
+        if (!scored) continue
+        matches.push({
+          kind: 'agent-profile',
+          target,
+          matchIndices: scored.labelIndices,
+          keywordMatchIndices: scored.keywordIndices,
+          matchRank: scored.rank,
+        })
+      }
+      if (query.trim()) {
+        matches.sort((a, b) =>
+          compareBuiltinMentionMatches(
+            { rank: a.matchRank, keyword: a.target.slug },
+            { rank: b.matchRank, keyword: b.target.slug },
+          ),
+        )
+      }
+      return matches
+    }, [agentTargets, query, isBrowseMode, isSessionMode])
+
     const capabilityLabel = useCallback((id: BuiltinCapabilityId): string => {
-      if (id === 'collab') return t('chat.mentionPopup.capabilityCollab')
       if (id === 'computer') return t('chat.mentionPopup.capabilityComputer')
       if (id === 'widget') return t('chat.mentionPopup.capabilityWidget')
       if (id === 'debug') return t('chat.mentionPopup.capabilityDebug')
@@ -700,6 +756,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
       if (isBrowseMode) {
         const items: FlatItem[] = [
+          ...matchedAgentTargets,
           ...matchedCapabilities,
           ...matchedDesktopApps,
           ...matchedMiniApps,
@@ -715,6 +772,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
       const prefixLen = scopeDir?.length ?? 0
       const items: FlatItem[] = [
+        ...matchedAgentTargets,
         ...matchedCapabilities,
         ...matchedDesktopApps,
         ...matchedMiniApps,
@@ -729,7 +787,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
       }
       return items
-    }, [isSessionMode, parsedSessionQuery?.phase, matchedSessionProjects, matchedSessions, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedDesktopApps, matchedMiniApps])
+    }, [isSessionMode, parsedSessionQuery?.phase, matchedSessionProjects, matchedSessions, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets])
 
     const mentionGroups = useMemo(
       () => groupItems(flatItems, mentionGroupKey, MENTION_GROUP_ORDER),
@@ -777,6 +835,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
         if (item.kind === 'session') {
           onSelect(item.sessionId, 'select', 'session', item.title)
+          return
+        }
+        if (item.kind === 'agent-profile') {
+          onSelect(item.target.ref, 'select', 'agent-profile', item.target.displayName)
           return
         }
         if (action === 'navigate' && isDirItem(item)) {
@@ -833,6 +895,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const projectName = activeProject?.split('/').pop() || ''
 
     const groupLabel = (key: string): string => {
+      if (key === 'agent-profile') return t('chat.mentionPopup.groupCollaborators')
       if (key === 'capability') return t('chat.mentionPopup.groupCapabilities')
       if (key === 'session-project') return t('chat.mentionPopup.groupSessionProjects')
       if (key === 'session') {
@@ -935,6 +998,39 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             ) : null}
             <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-2xs text-muted-foreground">
               {item.harness}
+            </span>
+          </button>
+        )
+      }
+      if (item.kind === 'agent-profile') {
+        const Icon = resolveSessionIconFromBrandKey(item.target.brandKey)
+        return (
+          <button
+            key={`ag-${item.target.ref}`}
+            ref={setItemRef(i)}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() =>
+              onSelect(item.target.ref, 'select', 'agent-profile', item.target.displayName)
+            }
+            onMouseEnter={() => onSetSelectedIndex(i)}
+            className={rowClass}
+          >
+            {Icon ? (
+              <span className="flex shrink-0">
+                <Icon status="default" renderLevel="compact" />
+              </span>
+            ) : (
+              <Bot className="size-3.5 shrink-0" />
+            )}
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-medium">
+                <HighlightedPath path={item.target.displayName} indices={item.matchIndices} />
+              </span>
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                @
+                <HighlightedPath path={item.target.slug} indices={item.keywordMatchIndices} />
+              </span>
             </span>
           </button>
         )

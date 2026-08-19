@@ -448,6 +448,18 @@ body[data-scroll-locked] {
   height: 100%;
   object-fit: contain;
 }
+/* Harness marks (@codex, @grok) ship as a wrapper <span> around their art, not
+   a bare <svg>, so the rule above misses them and the fixed 14px wrapper gets
+   clipped by the 1em box. Size the wrapper instead and let it centre its own
+   art — that keeps the mark scaling with font size / Cmd+= like every other
+   chip icon, without stretching the inner pixel art. */
+.mention-chip__icon > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
 .mention-chip__label {
   /* Keep as inline text so it owns the chip baseline. */
   white-space: nowrap;

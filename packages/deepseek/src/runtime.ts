@@ -277,6 +277,56 @@ export class DeepseekRuntime {
     }
   }
 
+  /**
+   * Fork a persisted session into a new one, through `boundary` inclusive.
+   *
+   * Copies at the persistence layer rather than through `ctx.sessions.fork`.
+   * That API needs a LIVE source — the usual fork is cold — and it publishes
+   * the child, which then cannot be resumed in the same process ("cannot
+   * prepare session while it is live"). Writing the prefix as a new log leaves
+   * nothing live and lets the child start through the ordinary resume path,
+   * the same shape as Claude's fork.
+   *
+   * @param sourceSessionId - dsh session id of the source.
+   * @param childSessionId - id to mint for the fork.
+   * @param boundary - inclusive source event seq; omitted forks the whole log.
+   */
+  async forkSession(
+    sourceSessionId: string,
+    childSessionId: string,
+    boundary?: number,
+  ): Promise<string> {
+    const persistence = (this.bridge as Context & {
+      get(name: string): unknown
+    }).get('sessionPersistence') as {
+      load(id: unknown): Promise<{ meta: Record<string, unknown>; events: readonly { seq: number }[] }>
+      create(meta: Record<string, unknown>): Promise<void>
+      append(id: unknown, events: readonly unknown[]): Promise<void>
+    } | undefined
+    if (!persistence) {
+      throw new Error('deepseek fork: session persistence is not configured')
+    }
+
+    const source = await persistence.load(SessionId(sourceSessionId))
+    const prefix = boundary === undefined
+      ? source.events
+      : source.events.filter((event) => event.seq <= boundary)
+    if (prefix.length === 0) {
+      throw new Error(`deepseek fork: nothing to fork before seq ${String(boundary)}`)
+    }
+
+    await persistence.create({
+      ...source.meta,
+      id: SessionId(childSessionId),
+      // Lineage dsh reads back: where this branched and how much of it is seed.
+      parentSession: SessionId(sourceSessionId),
+      seedLength: prefix.length,
+      createdAt: Date.now(),
+    })
+    await persistence.append(SessionId(childSessionId), prefix)
+    return childSessionId
+  }
+
   async dispose(): Promise<void> {
     for (const [sessionId, record] of [...this.records]) {
       this.records.delete(sessionId)

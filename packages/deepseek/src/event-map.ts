@@ -133,7 +133,15 @@ export class DeepseekEventMapper {
       }
       case 'step/end': {
         if (this.openMessageId) {
-          this.emit({ type: 'message_complete', messageId: this.openMessageId })
+          this.emit({
+            type: 'message_complete',
+            messageId: this.openMessageId,
+            // dsh forks at an inclusive event seq, so the anchor for "fork from
+            // this message" is the seq that closed its step. Carried on the
+            // shared `forkAnchorId` seam the other harnesses use for their own
+            // native ids.
+            metadata: { forkAnchorId: String(event.seq) },
+          })
           this.openMessageId = null
         }
         break

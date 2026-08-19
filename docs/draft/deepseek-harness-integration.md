@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate) and SuperOne's own tools as native dsh plugins landed; resume / fork / subagents / permission presets still pending
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate) and SuperOne's own tools as native dsh plugins landed; resume + fork landed; subagents / permission presets still pending
 Last updated: 2026-08-19
 
 > Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
@@ -197,8 +197,17 @@ Do not mount `dsh-settings-file` / `dsh-credentials-local` (they own `$DSH_HOME`
 ### D8 — Persistence, resume, fork
 
 - Mount `dsh-session-persistence-jsonl` with `root` under SuperOne's per-project data dir. dsh owns durability of its own log (crash-safe, seq-contiguous); SuperOne's SQLite keeps rendering-oriented persistence exactly as for other harnesses. Dual-write is redundant by design — the JSONL is the *provider-side* thread, ours is the UI cache — same split as Claude's `.jsonl` vs our DB.
-- `provider_session_id` = the dsh `SessionId` we mint at `agents.create`. Cold resume: `agents.resume({resumeSessionId})` replays the log (seed events arrive with `session/end-seed` marking the boundary → map with `isReplay: true`).
-- Fork: `ctx.sessions.fork(source, boundary?, childId?)` — cleaner than Claude's forkSession+relocate dance; wire to the existing fork UX in P4.
+- `provider_session_id` = the dsh `SessionId` we mint at `agents.create`.
+
+**Landed (P4d) — cold resume.** `agents.resume({resumeSessionId})` was already wired; what needed pinning is *why it does not duplicate the transcript*. dsh seeds a resumed session through its **constructor**, and constructor seeds never publish on the `session/event` firehose (`Session.firstLiveSeq` documents exactly this), so our mapper only ever sees live events. A test boots a second tree over the same JSONL root and asserts both halves at once: the model sees the earlier turn, SuperOne's event stream does not.
+
+**Landed (P4d) — fork.** Copies the log prefix at the **persistence layer** (`load` → filter by seq → `create` + `append`), not through `ctx.sessions.fork`. Two facts rule that API out for our shape:
+- it only accepts a **live** source (`SESSION_NOT_LIVE`), while the usual fork is cold — the user forks a session nobody is running;
+- it *publishes* the child, and a published session cannot then be resumed in the same process (`cannot prepare session while it is live`), which is exactly what the desktop does next.
+
+The prefix write keeps nothing live, so the child starts through the ordinary resume path — the same shape as Claude's fork. Lineage (`parentSession`, `seedLength`) is recorded in the child header; `createdAt` is epoch ms, not an ISO string (the persistence coordinator validates it).
+
+**Fork boundary.** dsh forks at an inclusive event seq, so the mapper stamps each `message_complete` with the seq that closed its step, carried on the shared `MessageMetadata.forkAnchorId` seam the other harnesses already use for their native ids. `forkDeepseekTranscript` resolves SuperOne's `forkFromMessageId` to that seq, walking back to the previous completed message when the fork point is a user message (which has no seq of its own). Cutting at a step boundary can leave the turn open at the tail; dsh's cold-load recovery closes it, which is the same path an interrupted session takes.
 
 ### D9 — Runtime plugin hot-swap is a product surface, later
 

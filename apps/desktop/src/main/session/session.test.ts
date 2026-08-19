@@ -1306,6 +1306,23 @@ describe('Session message accumulation', () => {
     expect(msg?.content).toEqual([{ type: 'text', text: 'Hi' }])
   })
 
+  // Regression: dsh speaks the Claude dialect but used to fall through to the
+  // Codex reducer, which drops content_delta and then finalizes the message
+  // with empty text. Live rendering hid it; reopening showed user turns only.
+  it('accumulates content_delta for dsh harness and keeps text on message_complete', () => {
+    const { session, backend } = makeSession({ harnessId: 'dsh', providerId: 'dsh-base' })
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'dsh' },
+    })
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: 'Hi' } })
+    backend.emit({ type: 'message_complete', messageId: 'a1' })
+
+    const msg = session.snapshot.messages.find((m) => m.id === 'a1')
+    expect(msg?.status).toBe('complete')
+    expect(msg?.content).toEqual([{ type: 'text', text: 'Hi' }])
+  })
+
   it('tags emitted events with a monotonic per-session seq and tracks _lastAppliedSeq on streaming message', () => {
     const { session, backend } = makeSession()
     const seen: number[] = []

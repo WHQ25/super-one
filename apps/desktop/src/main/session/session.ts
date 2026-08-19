@@ -43,6 +43,7 @@ import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automa
 import { nextEventSeq } from './event-seq'
 import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
 import { collectChangedMessageIds } from './message-dirty'
+import { messageDialectFor } from './message-dialect'
 import {
   redactTaskNotificationForDisplay,
   taskNotificationRequest,
@@ -1537,97 +1538,113 @@ export class Session implements SessionContract {
     if (opts?.fullPersist) this._forceFullPersist = true
   }
 
+  /**
+   * Materialize the event into `_messages` through the reducer that speaks this
+   * harness's dialect. Dispatch is table-driven (`message-dialect.ts`) so an
+   * unregistered harness is a compile error, never a silent default.
+   */
   private applyReducer(event: AgentEvent): void {
+    const dialect = messageDialectFor(this.harnessId)
+    switch (dialect) {
+      case 'claude':
+        this.applyClaudeDialectEvent(event)
+        return
+      case 'codex':
+        this.applyCodexDialectEvent(event)
+        return
+      default: {
+        const unhandled: never = dialect
+        throw new Error(`Unhandled message dialect: ${String(unhandled)}`)
+      }
+    }
+  }
+
+  private applyClaudeDialectEvent(event: AgentEvent): void {
+    const runtime: ClaudeSessionRuntime = {
+      projectPath: this.projectPath,
+      sessionId: this.id,
+      messages: this._messages,
+      totalCostUsd: this._totalCostUsd,
+      contextTokens: this._contextTokens,
+      session: null,
+      gitBranch: null,
+      worktreePath: null,
+      taskProgress: this._taskProgress,
+    }
+    const next = applyClaudeEventToRuntime(runtime, event)
+    this.replaceMessages(next.messages)
+    this._totalCostUsd = next.totalCostUsd
+    this._contextTokens = next.contextTokens
+    this._taskProgress = next.taskProgress
+  }
+
+  private applyCodexDialectEvent(event: AgentEvent): void {
+    const runtime: CodexSessionRuntime = {
+      projectPath: this.projectPath,
+      sessionId: this.id,
+      messages: this._messages,
+      totalCostUsd: this._totalCostUsd,
+      contextTokens: this._contextTokens,
+      gitBranch: null,
+      worktreePath: null,
+      streamingTokensByMessageId: this._streamingTokensByMessageId,
+      lastUsageByMessageId: this._lastUsageByMessageId,
+    }
+    if (event.type === 'message_start') {
+      const existing = this._messages.find((m) => m.id === event.message.id)
+      if (!existing) this.replaceMessages([...this._messages, event.message])
+      return
+    }
     if (
-      this.harnessId === 'claude'
-      || this.harnessId === 'acp'
-      || this.harnessId === 'opencode'
-      || this.harnessId === 'cursor'
+      event.type === 'message_complete' ||
+      event.type === 'message_interrupted' ||
+      event.type === 'message_error'
     ) {
-      const runtime: ClaudeSessionRuntime = {
-        projectPath: this.projectPath,
-        sessionId: this.id,
-        messages: this._messages,
-        totalCostUsd: this._totalCostUsd,
-        contextTokens: this._contextTokens,
-        session: null,
-        gitBranch: null,
-        worktreePath: null,
-        taskProgress: this._taskProgress,
-      }
-      const next = applyClaudeEventToRuntime(runtime, event)
-      this.replaceMessages(next.messages)
-      this._totalCostUsd = next.totalCostUsd
-      this._contextTokens = next.contextTokens
-      this._taskProgress = next.taskProgress
-    } else {
-      const runtime: CodexSessionRuntime = {
-        projectPath: this.projectPath,
-        sessionId: this.id,
-        messages: this._messages,
-        totalCostUsd: this._totalCostUsd,
-        contextTokens: this._contextTokens,
-        gitBranch: null,
-        worktreePath: null,
-        streamingTokensByMessageId: this._streamingTokensByMessageId,
-        lastUsageByMessageId: this._lastUsageByMessageId,
-      }
-      if (event.type === 'message_start') {
-        const existing = this._messages.find((m) => m.id === event.message.id)
-        if (!existing) this.replaceMessages([...this._messages, event.message])
-        return
-      }
-      if (
-        event.type === 'message_complete' ||
-        event.type === 'message_interrupted' ||
-        event.type === 'message_error'
-      ) {
-        const codexMeta = event.type === 'message_complete'
-          ? (event.metadata as Record<string, unknown> | undefined)?.codex as Record<string, unknown> | undefined
-          : undefined
-        // A failed turn's detail now travels in metadata (the footer error badge
-        // reads it); only fall back to inline text when the harness sent none.
-        const errorInfo = event.type === 'message_error'
-          ? event.errorInfo ?? { raw: event.error }
-          : undefined
-        const finalText = (codexMeta?.finalResponse as string | undefined)
-          ?? (event.type === 'message_interrupted' ? 'Codex run interrupted.' : '')
-        const result = codexMeta ? {
-          threadId: (codexMeta.threadId as string | null) ?? null,
-          finalResponse: (codexMeta.finalResponse as string | undefined) ?? '',
-          usage: (codexMeta.usage as CodexSessionRuntime['lastUsageByMessageId'][string] | null) ?? null,
-          turnUsage: codexMeta.turnUsage as CodexRunResult['turnUsage'],
-          items: (codexMeta.items as never) ?? [],
-        } : undefined
-        const status: 'complete' | 'interrupted' | 'error' = event.type === 'message_complete'
-          ? 'complete'
-          : event.type === 'message_interrupted' ? 'interrupted' : 'error'
-        const next = finalizeCodexAssistantMessage(runtime, {
-          messageId: event.messageId,
-          status,
-          text: finalText,
-          result,
-          durationMs: codexMeta?.durationMs as number | undefined,
-          model: codexMeta?.model as string | undefined,
-        })
-        this.replaceMessages(errorInfo
-          ? next.messages.map((m) => (m.id === event.messageId
-              ? { ...m, metadata: { ...m.metadata, errorInfo } }
-              : m))
-          : next.messages)
-        this._totalCostUsd = next.totalCostUsd
-        this._contextTokens = next.contextTokens
-        this._streamingTokensByMessageId = next.streamingTokensByMessageId
-        this._lastUsageByMessageId = next.lastUsageByMessageId
-        return
-      }
-      const next = applyCodexEventToRuntime(runtime, event)
-      this.replaceMessages(next.messages)
+      const codexMeta = event.type === 'message_complete'
+        ? (event.metadata as Record<string, unknown> | undefined)?.codex as Record<string, unknown> | undefined
+        : undefined
+      // A failed turn's detail now travels in metadata (the footer error badge
+      // reads it); only fall back to inline text when the harness sent none.
+      const errorInfo = event.type === 'message_error'
+        ? event.errorInfo ?? { raw: event.error }
+        : undefined
+      const finalText = (codexMeta?.finalResponse as string | undefined)
+        ?? (event.type === 'message_interrupted' ? 'Codex run interrupted.' : '')
+      const result = codexMeta ? {
+        threadId: (codexMeta.threadId as string | null) ?? null,
+        finalResponse: (codexMeta.finalResponse as string | undefined) ?? '',
+        usage: (codexMeta.usage as CodexSessionRuntime['lastUsageByMessageId'][string] | null) ?? null,
+        turnUsage: codexMeta.turnUsage as CodexRunResult['turnUsage'],
+        items: (codexMeta.items as never) ?? [],
+      } : undefined
+      const status: 'complete' | 'interrupted' | 'error' = event.type === 'message_complete'
+        ? 'complete'
+        : event.type === 'message_interrupted' ? 'interrupted' : 'error'
+      const next = finalizeCodexAssistantMessage(runtime, {
+        messageId: event.messageId,
+        status,
+        text: finalText,
+        result,
+        durationMs: codexMeta?.durationMs as number | undefined,
+        model: codexMeta?.model as string | undefined,
+      })
+      this.replaceMessages(errorInfo
+        ? next.messages.map((m) => (m.id === event.messageId
+            ? { ...m, metadata: { ...m.metadata, errorInfo } }
+            : m))
+        : next.messages)
       this._totalCostUsd = next.totalCostUsd
       this._contextTokens = next.contextTokens
       this._streamingTokensByMessageId = next.streamingTokensByMessageId
       this._lastUsageByMessageId = next.lastUsageByMessageId
+      return
     }
+    const next = applyCodexEventToRuntime(runtime, event)
+    this.replaceMessages(next.messages)
+    this._totalCostUsd = next.totalCostUsd
+    this._contextTokens = next.contextTokens
+    this._streamingTokensByMessageId = next.streamingTokensByMessageId
+    this._lastUsageByMessageId = next.lastUsageByMessageId
   }
 
   private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {
@@ -1784,7 +1801,7 @@ export class Session implements SessionContract {
   private computeTitle(): string | null {
     if (this._title) return this._title
     if (this._messages.length === 0) return null
-    const title = this.harnessId === 'codex'
+    const title = messageDialectFor(this.harnessId) === 'codex'
       ? extractCodexTitle(this._messages)
       : extractClaudeTitle(this._messages)
     return title ?? null

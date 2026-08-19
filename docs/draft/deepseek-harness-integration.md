@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, fork and foreground subagents landed; the subagent Task block, compaction and permission presets still pending
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, session fork and foreground subagents (spawn + fork, rendered as a Task block) landed; background/continuable children, compaction and permission presets still pending
 Last updated: 2026-08-19
 
 > Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
@@ -420,7 +420,7 @@ the actual backlog):
 
 | Group | Rows |
 |---|---|
-| subagents | ~~`subagent`~~ ~~`subagent-spawn-in-process`~~ ~~`tool-subagent`~~ (landed, §17) · still out: `subagent-fork-in-process` + its second `tool-subagent` instance (`subagent_fork`), `tool-subagent-control`(+`/list-agents`), `tool-subagent-report` |
+| subagents | ~~`subagent`~~ ~~`subagent-spawn-in-process`~~ ~~`subagent-fork-in-process`~~ ~~`tool-subagent`×2~~ (landed, §17) · still out: `tool-subagent-control`(+`/list-agents`), `tool-subagent-report` |
 | compaction | `compaction-basic` `compaction-tool-result-pruner` |
 | permission / sandbox | `permission-presets` `sandbox-local` `sandbox-policy` `bash-sandbox` (`pwsh-sandbox` + `tool-pwsh` on Windows) |
 | context & durability | `session-projection` `spill-local` `spill-policy` `token-meter` `tool-call-timeout-policy` |
@@ -691,10 +691,6 @@ would ask twice for one action.
   Task block lands.
 - **Continuable children** (`startContinuable`, `send_message`, `list_agents`)
   — a durable multi-turn child conversation is a product surface, not a mapping.
-- **`subagent_fork`** (`dsh-subagent-fork-in-process`): a second
-  `tool-subagent` instance over the fork provider, whose child inherits the
-  parent's completed turns. Cheap to add once the Task block exists to
-  distinguish the two in the transcript.
 
 ### Known gaps
 
@@ -750,15 +746,25 @@ one store write per token) → `task_notification` with `completed` / `stopped` 
 child transcript in its own JSONL log, which "open full view" cannot read yet,
 and the reducer treats an empty path as absent.
 
+`subagent_fork` is a second `tool-subagent` instance over
+`dsh-subagent-fork-in-process`: one instance binds one provider to one tool
+name, and the tool derives its own description from
+`provider.inheritsParentContext`, so the model is told which of the two it is
+choosing. Fork seeds the child with the parent's contiguous prefix up to the
+last `turn/end` — the completed turns, never the in-flight one that is
+delegating. Both render as the same `Task` block.
+
 Nesting beyond one level needs no extra work — a depth-2 delegation's own
 `Task` block is itself stamped with the depth-1 call id, which is what
 `topAncestorSubagent()` walks.
 
-Tests: 4 more in `subagent.test.ts` — the rename, the `task_started` /
+Tests: 5 more in `subagent.test.ts` — the rename, the `task_started` /
 `task_notification` pair keyed on the delegation call and sharing a run id, a
 child block landing on the parent's message under the right
-`parentToolUseId`, and the negative case (no extra message published, no
-`todos_updated` from the child).
+`parentToolUseId`, the negative case (no extra message published, no
+`todos_updated` from the child), and a fork child reading a secret its parent
+said in an earlier completed turn (mutation-checked: pointing the
+`subagent_fork` row at the spawn provider fails it).
 
 Tests: `subagent.test.ts` (3) — a delegated child writes a file in the parent's
 workspace (the host-plane proof: with per-agent tools the child's registry is

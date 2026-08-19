@@ -12,6 +12,10 @@ const CHILD_MARKER = 'WRITE-THE-FILE'
 const CHILD_FILE = 'from-the-child.txt'
 const CHILD_TEXT = 'the child wrote this'
 
+/** Said in the parent's first, completed turn — only a fork child can see it. */
+const SECRET = 'xyzzy'
+const RECALL_MARKER = 'RECALL-THE-SECRET'
+
 /**
  * Two-agent script. The parent delegates once; the child writes one file and
  * answers. Which agent is speaking is read off the transcript rather than
@@ -24,6 +28,17 @@ class DelegatingAdapter extends LlmAdapter {
 
     if (!closing && transcript.includes(CHILD_MARKER)) {
       yield* toolCall('write', { file_path: CHILD_FILE, content: CHILD_TEXT })
+      return
+    }
+    // A fork child sees the parent's completed turns but never the in-flight
+    // one, so it reads the secret and not the instruction that delegated it.
+    if (!closing && transcript.includes(RECALL_MARKER) && !transcript.includes('FORK-DELEGATE')) {
+      const content = transcript.includes(SECRET) ? 'inherited' : 'blank'
+      yield* toolCall('write', { file_path: CHILD_FILE, content })
+      return
+    }
+    if (!closing && transcript.includes('FORK-DELEGATE')) {
+      yield* toolCall('subagent_fork', { description: 'recall the secret', prompt: RECALL_MARKER })
       return
     }
     if (!closing && transcript.includes('DELEGATE')) {
@@ -70,7 +85,10 @@ afterEach(async () => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true })
 })
 
-async function delegateOnce(decide: () => ToolApprovalDecision) {
+async function delegateOnce(
+  decide: () => ToolApprovalDecision,
+  prompts: readonly string[] = ['DELEGATE the work'],
+) {
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-subagent-'))
   dirs.push(cwd)
 
@@ -98,9 +116,11 @@ async function delegateOnce(decide: () => ToolApprovalDecision) {
   })
   disposers.push(() => agent.dispose())
 
-  agent.sendText('DELEGATE the work')
-  await new Promise((resolve) => setTimeout(resolve, 50))
-  await agent.whenIdle()
+  for (const prompt of prompts) {
+    agent.sendText(prompt)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await agent.whenIdle()
+  }
 
   return { cwd, sessionId, events, asked, ask }
 }
@@ -155,6 +175,23 @@ describe('deepseek subagents', () => {
     // Attributable to the child, answered by the parent.
     expect(write?.agentSessionId).toBeDefined()
     expect(write?.agentSessionId).not.toBe(sessionId)
+  })
+
+  /**
+   * The second provider exists because one `tool-subagent` instance binds one
+   * provider to one tool name. Fork's whole difference from spawn is the seed:
+   * the parent's completed turns, never the in-flight one.
+   */
+  it('seeds a subagent_fork child with the parent completed turns', async () => {
+    const { cwd, events } = await delegateOnce(() => 'allowed-once', [
+      `REMEMBER the secret is ${SECRET}`,
+      'FORK-DELEGATE the recall',
+    ])
+
+    expect(readFileSync(join(cwd, CHILD_FILE), 'utf8')).toBe('inherited')
+    // Both delegation tools land in the same Task block.
+    expect(toolUse(events, 'Task')?.delta.toolName).toBe('Task')
+    expect(events.some((event) => event.type === 'task_started')).toBe(true)
   })
 
   it('performs no child effect when the user rejects', async () => {

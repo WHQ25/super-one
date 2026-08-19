@@ -278,8 +278,11 @@ const CANONICAL_TOOL_NAMES: Record<string, string> = {
   todo_write: 'TodoWrite',
   // `isSubagentToolName()` matches `Agent`/`Task` exactly — that string is what
   // switches the block from a generic tool row to the collapsible subagent
-  // segment that collects the child's `parentToolUseId`-stamped blocks.
+  // segment that collects the child's `parentToolUseId`-stamped blocks. Both
+  // delegation providers render as the same block; which one ran is visible in
+  // the call's own arguments.
   subagent: 'Task',
+  subagent_fork: 'Task',
 }
 
 export function displayToolName(name: string): string {

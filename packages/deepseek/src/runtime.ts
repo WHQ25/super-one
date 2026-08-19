@@ -100,8 +100,8 @@ interface AgentRecord {
 /** How far up a delegation chain the permission gate will look for an owner. */
 const MAX_DELEGATION_LOOKUP_DEPTH = 8
 
-/** dsh's model-facing delegation tool, before the mapper renames it to `Task`. */
-const DELEGATION_TOOL = 'subagent'
+/** dsh's model-facing delegation tools, before the mapper renames them to `Task`. */
+const DELEGATION_TOOLS = new Set(['subagent', 'subagent_fork'])
 
 /** One live child, rendered inside its parent's `Task` block. */
 interface SubagentRun {
@@ -216,7 +216,7 @@ export class DeepseekRuntime {
       next: () => Promise<unknown>,
     ) => {
       const agentSessionId = exec.agent?.session.header.id
-      if (exec.name !== DELEGATION_TOOL || exec.callId === undefined || agentSessionId === undefined) {
+      if (!DELEGATION_TOOLS.has(exec.name) || exec.callId === undefined || agentSessionId === undefined) {
         return next()
       }
       const args = exec.arguments as { description?: unknown } | undefined

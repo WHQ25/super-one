@@ -46,12 +46,20 @@ export interface DeepseekToolPlaneOptions {
  * SuperOne's popover exists to gate effects, and asking for a `read` is the
  * fastest way to train users to click through the ones that matter.
  *
- * `subagent` is here for a different reason: delegating is not itself an
- * effect, and every effect the child then produces passes this same gate under
- * the child's own call. Prompting for the delegation too would ask twice for
- * one action.
+ * The delegation tools are here for a different reason: delegating is not
+ * itself an effect, and every effect the child then produces passes this same
+ * gate under the child's own call. Prompting for the delegation too would ask
+ * twice for one action.
  */
-const READ_ONLY_TOOLS = new Set(['read', 'read_image', 'glob', 'grep', 'todo_write', 'subagent'])
+const READ_ONLY_TOOLS = new Set([
+  'read',
+  'read_image',
+  'glob',
+  'grep',
+  'todo_write',
+  'subagent',
+  'subagent_fork',
+])
 
 /** Denial reasons the model reads; phrased so it stops instead of retrying. */
 const DENIAL_REASONS: Record<Exclude<ToolApprovalDecision, 'allowed-once'>, (tool: string) => string> = {

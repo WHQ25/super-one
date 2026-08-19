@@ -14,6 +14,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import * as SubagentForkInProcess from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { createCredentialPlugin, type CredentialLookup } from './credentials'
 import { mountHostToolPlane } from './tool-plane'
@@ -98,17 +99,29 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // host plane so delegated children inherit them (see `mountHostToolPlane`).
   await mountHostToolPlane(ctx)
 
-  // Delegation. `subagents` is the provider registry, `spawn` creates a fresh
-  // child Agent in this process, and `tool-subagent` is the one model-facing
-  // row over it. Foreground only for now: the background route registers a
-  // parent-owned Task whose status/collection/kill tools are a separate surface
-  // SuperOne does not render yet, so exposing `run_in_background` would let the
-  // model start work the user cannot see or stop.
+  // Delegation. `subagents` is the provider registry; `spawn` creates a fresh
+  // child Agent in this process and `fork` seeds one with the parent's
+  // completed turns. Each provider needs its own `tool-subagent` instance —
+  // one instance binds one provider to one tool name, and the tool's own
+  // description is derived from `provider.inheritsParentContext`, so the model
+  // is told which of the two it is choosing.
+  //
+  // Foreground only: the background route registers a parent-owned Task whose
+  // status/collection/kill tools are a separate surface SuperOne does not
+  // render, so exposing `run_in_background` would let the model start work the
+  // user can neither see nor stop.
   ctx.plugin(SubagentRuntime)
   ctx.plugin(SubagentSpawnInProcess, { providerName: 'spawn' })
+  ctx.plugin(SubagentForkInProcess, { providerName: 'fork' })
   ctx.plugin(ToolSubagent, {
     provider: 'spawn',
     toolName: 'subagent',
+    enableRunInBackground: false,
+    maxDepth: 3,
+  })
+  ctx.plugin(ToolSubagent, {
+    provider: 'fork',
+    toolName: 'subagent_fork',
     enableRunInBackground: false,
     maxDepth: 3,
   })

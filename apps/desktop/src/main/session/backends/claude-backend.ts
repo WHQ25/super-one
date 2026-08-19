@@ -233,6 +233,14 @@ export class ClaudeBackend implements SessionBackend {
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.bridge) throw new Error('ClaudeBackend already started')
+    // A turn id belongs to the runtime that produced it. `iterateMessages` seeds
+    // its open turn from `getCurrentMessageId()`, so letting a finished turn's id
+    // survive a release/rebuild makes the replacement loop treat that closed
+    // message as the live one — a wake that opens no turn of its own (mailbox
+    // notification after the idle reaper) then streams into the previous bubble
+    // with no `message_start` and no `streaming` status.
+    this.currentMessageId = ''
+    this.currentStartTime = 0
     this._lastStartOpts = opts
     this._spawnedAdditionalDirs = [...(opts.additionalDirectories ?? [])]
     const config = (opts.config ?? {}) as ClaudeConfig

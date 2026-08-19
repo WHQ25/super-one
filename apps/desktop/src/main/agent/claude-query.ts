@@ -354,7 +354,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
       if ((msg.type === 'assistant' || msg.type === 'stream_event')) {
         const parent = (msg as any).parent_tool_use_id ?? null
         if (!parent) {
-          if (resultSeen) {
+          // `resultSeen`: a queued/host message re-opened the stream after the
+          // previous turn settled. `!turnMessageId`: this loop has no turn at all
+          // — a fresh runtime whose first traffic is a wake (mailbox / download
+          // settle) that bypasses `send()` and so never minted one.
+          if (resultSeen || !turnMessageId) {
             const queuedMessageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
             turnMessageId = queuedMessageId
             onQueuedTurnStart?.(queuedMessageId)

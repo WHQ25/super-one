@@ -1056,6 +1056,44 @@ describe('createSessionQuery', () => {
     expect((messageStarts[0].message as Record<string, unknown>).id).toBe(currentId)
   })
 
+  it('opens a turn for a wake that is the first traffic on a fresh runtime (no inherited turn id)', async () => {
+    // Mailbox wake after the idle reaper released the runtime: nothing called
+    // send(), so no turn id exists yet. Without a mint here every delta would
+    // carry the empty id (or, before the id was cleared on rebuild, the id of
+    // the already-completed previous message).
+    state.messages = [
+      { type: 'user', message: { role: 'user', content: 'mailbox ready' }, parent_tool_use_id: null, isSynthetic: true },
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'on it' } } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'on it' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    let currentId = ''
+    const events: Array<Record<string, unknown>> = []
+    const tags = ['task-notify-1']
+    const handle = createSessionQuery(
+      { get consumedTags() { return tags }, drainConsumedTag: () => tags.shift() } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      (id) => { currentId = id },
+    )
+    await handle.iterationDone
+
+    const messageStarts = events.filter((e) => e.type === 'message_start')
+    expect(messageStarts).toHaveLength(1)
+    expect(currentId).not.toBe('')
+    expect((messageStarts[0].message as Record<string, unknown>).id).toBe(currentId)
+    expect(events.filter((e) => e.type === 'status_change').map((e) => e.status)).toEqual(['streaming', 'idle'])
+    const deltas = events.filter((e) => e.type === 'content_delta')
+    expect(deltas.length).toBeGreaterThan(0)
+    expect(deltas.every((d) => d.messageId === currentId)).toBe(true)
+    expect((events.find((e) => e.type === 'message_complete') as Record<string, unknown>).messageId).toBe(currentId)
+  })
+
   it('maps iterator errors to interrupted status when already interrupted', async () => {
     state.error = new Error('aborted')
 

@@ -405,6 +405,39 @@ describe('ClaudeBackend', () => {
     })
   })
 
+  describe('task-notification wake on a rebuilt runtime', () => {
+    /**
+     * The idle reaper releases the runtime between turns. A mailbox wake is the
+     * first traffic on the replacement runtime, and it opens no turn of its own
+     * — `iterateMessages` seeds its turn id from `getCurrentMessageId()`. If the
+     * finished turn's id survives the release, the fresh loop treats that closed
+     * bubble as the open turn: the wake reply streams into the previous message
+     * and no `message_start` / `streaming` is ever emitted.
+     */
+    it('does not carry the completed turn id into the replacement runtime', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+
+      const sendPromise = backend.send({ content: 'turn 1' })
+      await new Promise((r) => setTimeout(r, 0))
+      const startEvt = events.find(
+        (e) => e.type === 'message_start',
+      ) as Extract<AgentEvent, { type: 'message_start' }> | undefined
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: startEvt!.message.id, metadata: {} })
+      await sendPromise
+      expect(hoisted.captured.getCurrentMessageId?.()).toBe(startEvt!.message.id)
+
+      hoisted.captured.iterationDone?.resolve()
+      await backend.releaseRuntime('idle')
+
+      await backend.injectTaskNotification('mailbox ready')
+
+      expect(hoisted.captured.getCurrentMessageId?.()).toBe('')
+    })
+  })
+
   describe('interrupt()', () => {
     it('calls query.interrupt()', async () => {
       const backend = new ClaudeBackend()

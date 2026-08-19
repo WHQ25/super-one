@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -99,6 +100,43 @@ interface AgentRecord {
 /** How far up a delegation chain the permission gate will look for an owner. */
 const MAX_DELEGATION_LOOKUP_DEPTH = 8
 
+/** dsh's model-facing delegation tool, before the mapper renames it to `Task`. */
+const DELEGATION_TOOL = 'subagent'
+
+/** One live child, rendered inside its parent's `Task` block. */
+interface SubagentRun {
+  owner: AgentRecord
+  /** The parent's `subagent` tool call — the key SuperOne's Task state uses. */
+  toolUseId: string
+  runId: string
+  description: string
+  startedAt: number
+  mapper: DeepseekEventMapper
+}
+
+/**
+ * The delegation call a child is being started from.
+ *
+ * `subagent/start` carries the child's id and a run id — and nothing else that
+ * a host can use. Its declared `parent: Agent` argument never reaches a
+ * listener: dsh's contained emitter dispatches with the parent as the scope
+ * *carrier* and then invokes each callback as `callback(info)`. So both halves
+ * of the link have to come from our side.
+ *
+ * A "last delegation wins" variable would not do it either — a parent may run
+ * several delegations in one assistant message. This rides the async context of
+ * the `tools/execute` span, which is exactly the span `provider.start()` is
+ * awaited inside, so sibling delegations each see their own.
+ */
+const delegationSpan = new AsyncLocalStorage<{
+  toolUseId: string
+  description: string
+  agentSessionId: string
+}>()
+
+/** Child-session events worth a Task-chip refresh; the rest are stream noise. */
+const TASK_PROGRESS_EVENTS = new Set(['tool/call', 'tool/result', 'assistant/message', 'step/end'])
+
 /**
  * The embedded dsh runtime: one Cordis tree per app lifetime hosting N agents,
  * driven exclusively through documented seams (`ctx.agents`, `session/event`,
@@ -107,6 +145,8 @@ const MAX_DELEGATION_LOOKUP_DEPTH = 8
  */
 export class DeepseekRuntime {
   private records = new Map<string, AgentRecord>()
+  /** Live delegated children, keyed by the child's own dsh session id. */
+  private subagentRuns = new Map<string, SubagentRun>()
   private adapterFiber: { dispose: () => Promise<void> } | null = null
   private readonly mcpServers: DeepseekMcpServers
 
@@ -148,9 +188,59 @@ export class DeepseekRuntime {
     const runtime = new DeepseekRuntime(root, bridge)
 
     bridge.on('session/event', (session: { header: { id: string } }, event: SessionEvent) => {
-      const record = runtime.records.get(String(session.header.id))
-      record?.mapper.handle(event)
+      const id = String(session.header.id)
+      const record = runtime.records.get(id)
+      if (record) {
+        record.mapper.handle(event)
+        return
+      }
+      // A delegated child has its own session and is absent from `records`; its
+      // events render inside the parent's Task block through a nested mapper.
+      const run = runtime.subagentRuns.get(id)
+      if (!run) return
+      run.mapper.handle(event)
+      // The chip shows tool count, tokens and elapsed time; refreshing it on
+      // every chunk would be one store write per streamed token.
+      if (TASK_PROGRESS_EVENTS.has(event.type)) runtime.emitTaskProgress(run)
     })
+
+    // Carry the delegating call and agent into everything the tool awaits, so
+    // `subagent/start` can name both — it carries neither.
+    bridge.on('tools/execute', ((
+      exec: {
+        name: string
+        arguments?: unknown
+        callId?: unknown
+        agent?: { session: { header: { id: unknown } } }
+      },
+      next: () => Promise<unknown>,
+    ) => {
+      const agentSessionId = exec.agent?.session.header.id
+      if (exec.name !== DELEGATION_TOOL || exec.callId === undefined || agentSessionId === undefined) {
+        return next()
+      }
+      const args = exec.arguments as { description?: unknown } | undefined
+      return delegationSpan.run(
+        {
+          toolUseId: String(exec.callId),
+          description: typeof args?.description === 'string' ? args.description : 'subagent',
+          agentSessionId: String(agentSessionId),
+        },
+        next,
+      )
+    }) as never)
+
+    bridge.on('subagent/start', ((info: { runId: string; id: unknown }) => {
+      runtime.beginSubagentRun(info)
+    }) as never)
+
+    bridge.on('subagent/end', ((info: {
+      runId: string
+      id: unknown
+      stopReason: { kind?: string } | string
+    }) => {
+      runtime.endSubagentRun(info)
+    }) as never)
 
     bridge.on('agent/status', ({ agent, status }: { agent: Agent; status: 'idle' | 'running' }) => {
       const record = runtime.records.get(String(agent.id))
@@ -224,6 +314,104 @@ export class DeepseekRuntime {
     if (!owner) return 'rejected'
     if (!owner.requestPermission) return undefined
     return owner.requestPermission(request)
+  }
+
+  /**
+   * Open a Task block for one delegated child and start routing its session
+   * events into the parent's transcript.
+   *
+   * Both halves of the link come from the delegation span, because the event
+   * carries neither: the tool call id, and the delegating agent — walked to its
+   * owning SuperOne session, since a child may itself delegate. Without the
+   * span there is nothing to attach the child to, so the run is left unrendered
+   * rather than attached to a guess.
+   */
+  private beginSubagentRun(info: { runId: string; id: unknown }): void {
+    const span = delegationSpan.getStore()
+    if (!span) return
+    const owner = this.ownerOf(span.agentSessionId)
+    if (!owner) return
+
+    const childSessionId = String(info.id)
+    const run: SubagentRun = {
+      owner,
+      toolUseId: span.toolUseId,
+      runId: String(info.runId),
+      description: span.description,
+      startedAt: Date.now(),
+      mapper: new DeepseekEventMapper({
+        sessionId: childSessionId,
+        emit: owner.onEvent,
+        nested: {
+          parentToolUseId: span.toolUseId,
+          resolveMessageId: () => owner.mapper.currentMessageId(),
+        },
+      }),
+    }
+    this.subagentRuns.set(childSessionId, run)
+    owner.onEvent({
+      type: 'task_started',
+      taskId: run.runId,
+      toolUseId: run.toolUseId,
+      description: run.description,
+      taskType: 'subagent',
+    })
+  }
+
+  /** Refresh the parent's Task chip from what the child has done so far. */
+  private emitTaskProgress(run: SubagentRun): void {
+    const stats = run.mapper.stats()
+    run.owner.onEvent({
+      type: 'task_progress',
+      taskId: run.runId,
+      toolUseId: run.toolUseId,
+      description: run.description,
+      usage: {
+        totalTokens: stats.totalTokens,
+        toolUses: stats.toolUses,
+        durationMs: Date.now() - run.startedAt,
+      },
+    })
+  }
+
+  /** Close the Task block. dsh's stop reason decides completed vs failed. */
+  private endSubagentRun(info: {
+    runId: string
+    id: unknown
+    stopReason: { kind?: string } | string
+  }): void {
+    const childSessionId = String(info.id)
+    const run = this.subagentRuns.get(childSessionId)
+    if (!run) return
+    this.subagentRuns.delete(childSessionId)
+
+    const kind = typeof info.stopReason === 'string' ? info.stopReason : info.stopReason?.kind
+    const stats = run.mapper.stats()
+    run.owner.onEvent({
+      type: 'task_notification',
+      taskId: run.runId,
+      toolUseId: run.toolUseId,
+      taskStatus: kind === 'completed' ? 'completed' : kind === 'aborted' ? 'stopped' : 'failed',
+      // dsh keeps the child's transcript in its own JSONL session log, which is
+      // not a path SuperOne's "open full view" can read yet. The reducer treats
+      // an empty path as absent and keeps whatever it already had.
+      outputFile: '',
+      usage: {
+        totalTokens: stats.totalTokens,
+        toolUses: stats.toolUses,
+        durationMs: Date.now() - run.startedAt,
+      },
+    })
+  }
+
+  /**
+   * Forget a disposed session's children. Their own teardown is dsh's — this
+   * only stops routing their events into a transcript that is going away.
+   */
+  private dropSubagentRunsOf(owner: AgentRecord): void {
+    for (const [childSessionId, run] of [...this.subagentRuns]) {
+      if (run.owner === owner) this.subagentRuns.delete(childSessionId)
+    }
   }
 
   /** The record for this dsh session, or the nearest ancestor that has one. */
@@ -332,6 +520,7 @@ export class DeepseekRuntime {
       status: () => record.agent.status,
       async dispose() {
         runtime.records.delete(options.sessionId)
+        runtime.dropSubagentRunsOf(record)
         await record.dispose()
       },
     }

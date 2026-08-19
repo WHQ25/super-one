@@ -105,6 +105,16 @@ async function delegateOnce(decide: () => ToolApprovalDecision) {
   return { cwd, sessionId, events, asked, ask }
 }
 
+function blocks(events: AgentEvent[]): Array<{ messageId: string; delta: Record<string, unknown> }> {
+  return events.flatMap((event) => event.type === 'content_delta'
+    ? [{ messageId: event.messageId, delta: event.delta as unknown as Record<string, unknown> }]
+    : [])
+}
+
+function toolUse(events: AgentEvent[], toolName: string) {
+  return blocks(events).find((b) => b.delta.type === 'tool_use' && b.delta.toolName === toolName)
+}
+
 function toolResults(events: AgentEvent[]): string {
   return events
     .filter((event) => event.type === 'content_delta' && event.delta.type === 'tool_result')
@@ -152,5 +162,69 @@ describe('deepseek subagents', () => {
 
     expect(asked.some((request) => request.toolName === 'write')).toBe(true)
     expect(existsSync(join(cwd, CHILD_FILE))).toBe(false)
+  })
+})
+
+describe('deepseek subagent Task block', () => {
+  /**
+   * `isSubagentToolName()` matches `Agent`/`Task` exactly; under dsh's own name
+   * the delegation would render as a generic tool row and collect nothing.
+   */
+  it('renames the delegation call to Task', async () => {
+    const { events } = await delegateOnce(() => 'allowed-once')
+
+    expect(toolUse(events, 'Task')).toBeDefined()
+    expect(toolUse(events, 'subagent')).toBeUndefined()
+  })
+
+  it('opens and closes a task keyed on the delegation call id', async () => {
+    const { events } = await delegateOnce(() => 'allowed-once')
+
+    const task = toolUse(events, 'Task')
+    const started = events.find((event) => event.type === 'task_started')
+    const finished = events.find((event) => event.type === 'task_notification')
+
+    expect(started).toMatchObject({
+      toolUseId: task?.delta.toolUseId,
+      description: 'write one file',
+    })
+    expect(finished).toMatchObject({
+      toolUseId: task?.delta.toolUseId,
+      taskStatus: 'completed',
+    })
+    // Same run id on both edges — that pairing is dsh's own contract.
+    expect(started?.type === 'task_started' && started.taskId)
+      .toBe(finished?.type === 'task_notification' && finished.taskId)
+  })
+
+  /**
+   * The renderer rebuilds the subagent subtree from `parentToolUseId` stamps
+   * within ONE message's content, so a child block addressed to a message of
+   * its own would leak out of the Task block as top-level output.
+   */
+  it('attaches child blocks to the parent message under the delegation call', async () => {
+    const { events } = await delegateOnce(() => 'allowed-once')
+
+    const task = toolUse(events, 'Task')
+    const childWrite = toolUse(events, 'Write')
+    expect(childWrite).toBeDefined()
+    expect(childWrite?.delta.parentToolUseId).toBe(task?.delta.toolUseId)
+    expect(childWrite?.messageId).toBe(task?.messageId)
+  })
+
+  it('publishes no message and no todo panel update for the child', async () => {
+    const { events } = await delegateOnce(() => 'allowed-once')
+
+    const messageIds = new Set(
+      events.flatMap((event) => event.type === 'message_start' ? [event.message.id] : []),
+    )
+    const task = toolUse(events, 'Task')
+    expect(messageIds).toContain(task?.messageId)
+    // The child runs its own turns and steps; none of them may become a
+    // sibling assistant message in the parent's transcript.
+    expect(messageIds.size).toBe(
+      new Set(blocks(events).map((b) => b.messageId)).size,
+    )
+    expect(events.some((event) => event.type === 'todos_updated')).toBe(false)
   })
 })

@@ -12,6 +12,26 @@ export interface DeepseekMapperOptions {
   emit: (event: AgentEvent) => void
   /** Mark mapped events as replay (seed history) so consumers skip side effects. */
   isReplay?: boolean
+  /**
+   * Render this session as a delegated child *inside* its parent's transcript.
+   *
+   * A child has its own dsh session and its own turns, but SuperOne's subagent
+   * renderer rebuilds the tree from `parentToolUseId` stamps on the blocks of
+   * ONE message — the message holding the `Task` tool call. So a nested mapper
+   * publishes no message of its own: it addresses the parent's open message and
+   * stamps every block with the parent's `subagent` call id.
+   */
+  nested?: {
+    parentToolUseId: string
+    /** The parent's currently open message id, read at emit time. */
+    resolveMessageId: () => string | null
+  }
+}
+
+/** What a nested child accumulated, for the parent's Task chip. */
+export interface DeepseekChildStats {
+  toolUses: number
+  totalTokens: number
 }
 
 /**
@@ -33,19 +53,42 @@ export class DeepseekEventMapper {
   private lastMessageId: string | null = null
   private contextWindow: number | undefined
   private model: string | undefined
+  private toolUses = 0
+  private totalTokens = 0
 
   constructor(private readonly opts: DeepseekMapperOptions) {}
+
+  /** Running totals for the parent's Task chip; only meaningful when nested. */
+  stats(): DeepseekChildStats {
+    return { toolUses: this.toolUses, totalTokens: this.totalTokens }
+  }
+
+  /**
+   * The message this session is currently streaming into, if any. A child's
+   * nested mapper reads its parent's, because that is the message its blocks
+   * have to join.
+   */
+  currentMessageId(): string | null {
+    return this.openMessageId ?? this.lastMessageId
+  }
 
   private emit(event: AgentEvent): void {
     this.opts.emit(event)
   }
 
-  private emitDelta(delta: ContentBlock): void {
-    if (!this.openMessageId) return
+  /**
+   * The block kinds this mapper produces. Narrower than `ContentBlock` so the
+   * nested stamp below stays a checked property write: a few Codex-only
+   * variants carry no `parentToolUseId` and could not be nested at all.
+   */
+  private emitDelta(delta: Extract<ContentBlock, { parentToolUseId?: string | null }>): void {
+    const nested = this.opts.nested
+    const messageId = nested ? nested.resolveMessageId() : this.openMessageId
+    if (!messageId) return
     this.emit({
       type: 'content_delta',
-      messageId: this.openMessageId,
-      delta,
+      messageId,
+      delta: nested ? { ...delta, parentToolUseId: nested.parentToolUseId } : delta,
       ...(this.opts.isReplay ? { isReplay: true } : {}),
     })
   }
@@ -53,6 +96,10 @@ export class DeepseekEventMapper {
   handle(event: SessionEvent): void {
     switch (event.type) {
       case 'step/start': {
+        // A nested child contributes blocks to its parent's message, never a
+        // message of its own — publishing one would break the subagent segment
+        // in two and orphan every block after it.
+        if (this.opts.nested) break
         const id = stepMessageId(this.opts.sessionId, event.data.turn, event.data.step)
         this.openMessageId = id
         this.lastMessageId = id
@@ -79,6 +126,7 @@ export class DeepseekEventMapper {
         break
       }
       case 'tool/call': {
+        this.toolUses += 1
         this.emitDelta({
           type: 'tool_use',
           toolName: displayToolName(event.data.name),
@@ -114,7 +162,25 @@ export class DeepseekEventMapper {
       }
       case 'assistant/message': {
         const usage = event.data.usage
-        if (usage && this.openMessageId) {
+        if (!usage) break
+        const nested = this.opts.nested
+        if (nested) {
+          // A child's spend belongs to the parent's Task chip, not to the
+          // session's context ring — its context is its own and disposable.
+          const messageId = nested.resolveMessageId()
+          this.totalTokens += usage.inputTokens + usage.outputTokens
+          if (messageId) {
+            this.emit({
+              type: 'subagent_usage',
+              messageId,
+              parentToolUseId: nested.parentToolUseId,
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+            })
+          }
+          break
+        }
+        if (this.openMessageId) {
           const billedInput = usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
           this.emit({
             type: 'message_usage',
@@ -147,6 +213,10 @@ export class DeepseekEventMapper {
         break
       }
       case 'turn/end': {
+        // A child's abort or error reaches the parent as the delegation tool's
+        // errored result. Surfacing it a second time would mark the parent's
+        // own message interrupted for a failure it recovered from.
+        if (this.opts.nested) break
         const reason = event.data.reason as { kind: string; error?: { message?: string } }
         if (reason.kind === 'aborted') {
           const id = this.openMessageId ?? this.lastMessageId
@@ -163,6 +233,9 @@ export class DeepseekEventMapper {
         break
       }
       case 'todo/write': {
+        // `todos_updated` is session-wide state, so a child writing its own plan
+        // would overwrite the panel the user is watching.
+        if (this.opts.nested) break
         const todos: TodoItem[] = event.data.todos.map((todo, index) => ({
           // dsh todos are whole-list snapshots without identity; a positional id
           // is stable enough because every write replaces the list.
@@ -203,6 +276,10 @@ const CANONICAL_TOOL_NAMES: Record<string, string> = {
   glob: 'Glob',
   grep: 'Grep',
   todo_write: 'TodoWrite',
+  // `isSubagentToolName()` matches `Agent`/`Task` exactly — that string is what
+  // switches the block from a generic tool row to the collapsible subagent
+  // segment that collects the child's `parentToolUseId`-stamped blocks.
+  subagent: 'Task',
 }
 
 export function displayToolName(name: string): string {

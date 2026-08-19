@@ -704,15 +704,61 @@ would ask twice for one action.
   file/search/shell/todo tools alone. Fixing it means a session-resolved
   surface on the host plane, keyed off `exec.agent.session.header.id` and its
   ancestry the same way the permission gate now is.
-- **No Task block.** The child's steps are not aggregated; the parent's
-  transcript shows one `subagent` tool call and its final result. Mapping
-  `subagent/start` / `subagent/end` (both carry a service-minted `runId`) plus
-  the child's own `session/event` stream onto `task_started` / `tool_progress` /
-  `parentToolUseId` is the next piece. `supportsSubagents` is flipped to `true`
-  with that stated in the capability comment.
 - **`session-projection` is unmounted**, so `listChildren()` / `listDescendants()`
   would fail loud. Nothing calls them yet; they become required with
   `list_agents`.
+
+### The Task block (landed)
+
+`subagent` is renamed to `Task` in the mapper's canonical table, because
+`isSubagentToolName()` matches `Agent`/`Task` **exactly** — that string is the
+whole switch between a generic tool row and the collapsible subagent segment.
+
+**Linking a child to its delegation call is the hard part**, and dsh gives you
+almost nothing to do it with. `subagent/start` carries `{runId, provider, id,
+local}` — the child's session, not the tool call that asked for it. Its declared
+second argument, `parent: Agent`, **never reaches a listener**: the contained
+lifecycle emitter dispatches with the parent as the scope *carrier*
+(`ctx.events.dispatch('emit', [carrier(parent), name, info])`) and then invokes
+each callback as `callback(info)`. A listener written to the published signature
+throws on `parent.id`, and the emitter swallows it into a `logger.warn` — which
+is exactly how this failed silently the first time.
+
+So both halves come from our side, through an `AsyncLocalStorage` span opened in
+a `tools/execute` wrapper (dsh's own around-dispatch seam;
+`tool-call-timeout-policy` is the precedent). The span carries the call id, the
+model's `description`, and the delegating agent's session id, and
+`provider.start()` is awaited inside it. A plain "last delegation wins" variable
+would not survive `maxParallelToolCalls` — sibling delegations in one assistant
+message overlap by design.
+
+**Child blocks join the parent's message.** `ChatMessage.tsx` rebuilds the
+subagent subtree by scanning `parentToolUseId` stamps within **one message's**
+`content` array, so a nested mapper publishes no `message_start` of its own; it
+resolves the parent's open message id at emit time and stamps every block. Three
+things are suppressed in nested mode for the same "it is not the parent's" rule:
+`todos_updated` (session-wide — a child's plan would overwrite the panel),
+`turn/end` interrupt/error mapping (the child's failure arrives as the
+delegation tool's errored result), and `message_usage`, which becomes
+`subagent_usage` instead.
+
+Lifecycle maps to `task_started` (on `subagent/start`, `taskId` = the run id,
+`toolUseId` = the delegation call) → `task_progress` (throttled to
+`tool/call`/`tool/result`/`assistant/message`/`step/end`; every chunk would be
+one store write per token) → `task_notification` with `completed` / `stopped` /
+`failed` derived from dsh's stop reason. `outputFile` is `''`: dsh keeps the
+child transcript in its own JSONL log, which "open full view" cannot read yet,
+and the reducer treats an empty path as absent.
+
+Nesting beyond one level needs no extra work — a depth-2 delegation's own
+`Task` block is itself stamped with the depth-1 call id, which is what
+`topAncestorSubagent()` walks.
+
+Tests: 4 more in `subagent.test.ts` — the rename, the `task_started` /
+`task_notification` pair keyed on the delegation call and sharing a run id, a
+child block landing on the parent's message under the right
+`parentToolUseId`, and the negative case (no extra message published, no
+`todos_updated` from the child).
 
 Tests: `subagent.test.ts` (3) — a delegated child writes a file in the parent's
 workspace (the host-plane proof: with per-agent tools the child's registry is

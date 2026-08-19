@@ -85,9 +85,9 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // tool input → tool-call-delta mapping, compact (compaction-basic).
     // `supportsMcp` covers both SuperOne's own tools (native dsh rows) and
     // third-party servers read from dsh's own profile patch layer.
-    // `supportsSubagents`: foreground delegation runs (`dsh-tool-subagent` over
-    // the in-process spawn provider); the child's steps are not aggregated into
-    // a Task block yet, so it renders as one tool call with its result.
+    // `supportsSubagents`: foreground delegation (`dsh-tool-subagent` over the
+    // in-process spawn provider), rendered as a Task block with the child's
+    // steps nested under it. Background and continuable children are not wired.
     supportsMcp: true,
     supportsPlanMode: false,
     supportsTodos: true,

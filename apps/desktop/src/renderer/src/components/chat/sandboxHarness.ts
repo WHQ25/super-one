@@ -3,7 +3,10 @@ import type { HarnessId, SandboxMode } from '@superone/shared/agent-types'
 /**
  * Claude: off / on / auto (auto-allow bash).
  * Cursor SDK only has sandbox on/off — no autoAllowBash equivalent.
- * Codex folds sandbox into permission presets; ACP / OpenCode have no surface.
+ * Codex and dsh fold sandbox into permission presets — dsh's preset IS a
+ * `sandbox/mode` plus an `approval/policy`, so a second toggle here would be a
+ * way to contradict the one the user just picked. ACP / OpenCode have no
+ * surface.
  */
 export function harnessSupportsSandbox(harnessId: HarnessId): boolean {
   return harnessId === 'claude' || harnessId === 'cursor'

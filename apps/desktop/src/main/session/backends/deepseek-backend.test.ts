@@ -7,6 +7,8 @@ const { createAgentMock, approvalRouters } = vi.hoisted(() => ({
   approvalRouters: new Map<string, (request: unknown) => Promise<string>>(),
 }))
 
+const setPermissionPresetMock = vi.fn()
+
 vi.mock('../../logger', () => ({
   default: { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }))
@@ -14,7 +16,7 @@ vi.mock('../../logger', () => ({
 vi.mock('../../deepseek/deepseek-runtime-host', () => ({
   DEEPSEEK_DEFAULT_PROVIDER: 'deepseek-official',
   DEEPSEEK_DEFAULT_MODEL: 'deepseek-v4-pro',
-  getDeepseekRuntime: async () => ({ createAgent: createAgentMock }),
+  getDeepseekRuntime: async () => ({ createAgent: createAgentMock, setPermissionPreset: setPermissionPresetMock }),
   registerApprovalRouter: (sessionId: string, router: (request: unknown) => Promise<string>) => {
     approvalRouters.set(sessionId, router)
     return () => approvalRouters.delete(sessionId)
@@ -140,6 +142,24 @@ describe('DeepseekBackend', () => {
 
     await backend.setPermissionMode('bypassPermissions')
     await expect(router({ toolName: 'bash' })).resolves.toBe('allowed-once')
+  })
+
+  /**
+   * The shared mode is only the carrier. What the user actually selected is a
+   * dsh preset, and a preset that never reaches the tree leaves the sandbox on
+   * whatever the session was created with.
+   */
+  it('translates the shared permission mode into a dsh preset', async () => {
+    installFakeAgent()
+    const backend = new DeepseekBackend()
+    await backend.start(makeOpts())
+    setPermissionPresetMock.mockClear()
+
+    await backend.setPermissionMode('plan')
+    await backend.setPermissionMode('bypassPermissions')
+
+    expect(setPermissionPresetMock.mock.calls.map((call) => call[1]))
+      .toEqual(['read-only', 'danger-full-access'])
   })
 
   it('routes a model change in place instead of rebuilding the agent', async () => {

@@ -1,9 +1,9 @@
 # DeepSeek Harness (dsh) Integration — Route D: In-Process Cordis Embedding (Draft)
 
-Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, session fork and foreground subagents (spawn + fork, rendered as a Task block) landed; compaction and the `tool-cordis` opt-in landed; background/continuable children and permission presets still pending
+Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backend/credentials) + P2 (live model catalog → renderer resources, session defaults) landed; P3 partial (pickers, icon, permission subset, context gauge); P4 started — native tool plane (fs/shell/search/todo + permission gate, host-plane since P4e) and SuperOne's own tools as native dsh plugins landed; third-party MCP, resume, session fork and foreground subagents (spawn + fork, rendered as a Task block) landed; compaction, the `tool-cordis` opt-in and the sandbox + permission presets landed; background/continuable children still pending
 Last updated: 2026-08-19
 
-> Execution note (P2): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. The D5 preset vocabulary therefore lands together with the P4 bash-executor mount, not before. Until then the chat bar shows the shared-mode subset the backend honors (`default` = ask, `bypassPermissions` = auto-allow).
+> Execution note (P2, resolved in P4h): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. That is why the D5 preset vocabulary had to wait for the sandbox tier; both landed together in §20.
 Spike: [`docs/draft/deepseek-harness-spike.mjs`](./deepseek-harness-spike.mjs) (reproducible; see Appendix)
 Related: `.agents/skills/superone-harness/` (new-harness roadmap, event contract, experiences matrix), `docs/design/cursor-sdk-harness.md` (breadth reference: 152 files / 7 commits)
 
@@ -321,7 +321,7 @@ Estimated shape: backend + bridge ≈ Claude-backend-sized (~500–800 lines); t
 
 1. **Persona/system prompt** → **keep dsh's harness identity**, inject SuperOne additions through the `persona` field (matches the Claude/Codex precedent; preserves behavior comparability with upstream dsh).
 2. **Permission vocabulary** → **show dsh's own permission-preset names**; shared `PermissionMode` remains the carrier type across store/wire surfaces, mapped Codex-style (see D5).
-3. **Sandbox** → `ctx.sandbox` backend spike for SuperOne's macOS sandbox is scheduled **after P4**; until then `sandboxHarness.ts` returns `false` (no dead toggle).
+3. **Sandbox** → ✅ Landed — §20. dsh's own `sandbox-local` is mounted rather than SuperOne's macOS sandbox, and `sandboxHarness.ts` still returns `false`: the preset IS the sandbox mode, so a second toggle could only contradict it.
 4. **utilityProcess trigger** (owner: engineering) → revisit D1 when either (a) the bash/PTY executors land in the main process, or (b) the event trace shows dsh-attributed main-process stalls.
 5. **`tool-cordis`** → **user-facing opt-in setting**, default off, lands in P4 (see D9). ✅ Landed — §19.
 
@@ -422,7 +422,7 @@ the actual backlog):
 |---|---|
 | subagents | ~~`subagent`~~ ~~`subagent-spawn-in-process`~~ ~~`subagent-fork-in-process`~~ ~~`tool-subagent`×2~~ (landed, §17) · still out: `tool-subagent-control`(+`/list-agents`), `tool-subagent-report` |
 | compaction | ~~`compaction-basic`~~ ~~`compaction-tool-result-pruner`~~ ~~`token-meter`~~ (landed, §18) |
-| permission / sandbox | `permission-presets` `sandbox-local` `sandbox-policy` `bash-sandbox` (`pwsh-sandbox` + `tool-pwsh` on Windows) |
+| permission / sandbox | ~~`permission-presets`~~ ~~`sandbox-local`~~ ~~`sandbox-policy`~~ ~~`bash-sandbox`~~ ~~`fs-sandbox`~~ (landed, §20) · still out: `pwsh-sandbox` + `tool-pwsh` on Windows |
 | context & durability | `session-projection` `spill-local` `spill-policy` `token-meter` `tool-call-timeout-policy` |
 | model plane | `llm-retry` `llm-pi-ai` (dormant multi-provider adapter) |
 | tools | `tool-str-replace-editor` `tool-jobs` + `jobs-local` `tool-ralph` `tool-workflow` + `workflow-worker-thread` |
@@ -893,3 +893,107 @@ on a running tree, and idempotent because the settings handler calls it on
 every change. Plus an `app-settings-service.test.ts` round trip, since a
 deliberate opt-in that gets re-defaulted on the next save is worse than no
 setting.
+
+---
+
+## 20. Sandbox + permission presets (P4h, 2026-08-19)
+
+The last of §12's open questions (§12.3 scheduled the sandbox spike "after P4";
+this is it). Five rows land together, because none of them is useful alone:
+
+| Row | Owns |
+|---|---|
+| `dsh-sandbox-local` | the platform runner — Seatbelt on macOS, bwrap-then-Landlock on Linux, a restricted token on Windows |
+| `dsh-sandbox-policy` | the one place a mode and a workspace root are resolved, per call |
+| `dsh-bash-sandbox` | **replaces** `bash-local`: wraps the exact argv in the runner |
+| `dsh-fs-sandbox` | **replaces** `fs-local`: a per-call mode fence on `writeText`/`editText` |
+| `dsh-permission-presets` | the user-facing vocabulary, bundling a sandbox mode with an approval policy |
+
+**Both fences or neither.** `bash-sandbox` alone was the tempting cut — it is
+the one the permission-preset service hard-requires (`ctx.shell.sandboxMode`).
+It would also have produced the worst possible state: `bash` blocked from
+writing outside the project while `write` and `edit` walked out unconfined,
+with a UI claiming "workspace write". `fs-sandbox` exists precisely so the two
+families resolve the *same* per-call policy, and dsh's own docs call that
+non-drift the point of a shared `ctx.sandboxPolicy`.
+
+They are not the same kind of fence and the packages say so: the filesystem one
+is a containment check in trusted code over a model-controlled path
+("containment, not a security boundary"), while bash gets kernel confinement.
+Keeping both means the weaker one is never the *only* thing standing between the
+model and a path.
+
+### The preset table
+
+dsh ships two entries; a third is added because SuperOne offers a
+look-but-do-not-touch mode on every other harness and dsh's sandbox vocabulary
+already had the mode — only the preset row was missing.
+
+| Preset | sandbox | approval | Carrier `PermissionMode` |
+|---|---|---|---|
+| `read-only` | `read-only` | ask | `plan` |
+| `workspace-write` (default) | `workspace-write` | ask | `default` |
+| `danger-full-access` | `danger-full-access` | never | `bypassPermissions` |
+
+`plan` carries `read-only` because that is what SuperOne's plan mode enforces
+wherever it exists: look, do not touch. dsh has no plan *approval* round trip
+and nothing claims otherwise — `permissionMode === 'plan'` on its own drives no
+plan UI, and `supportsPlanMode` stays false.
+
+`PRESET_BY_MODE` is an **exhaustive** `Record<PermissionMode, …>` on purpose.
+`PermissionMode` is shared across every harness, so a new member should force a
+dsh decision rather than fall through a default — the one seam here a compiler
+can hold. Four members (`acceptEdits`, `dontAsk`, `auto`, `agent`) are not
+offered in the picker and map to the default; auto-approval *without* dropping
+confinement is simply not a bundle dsh's preset table can express.
+
+**Two halves, deliberately.** `packages/deepseek/src/permission-presets.ts` owns
+the knob bundle and the mode map; `deepseekPermissionModes.ts` owns the labels.
+The renderer must not pull dsh's runtime into its bundle, so the table cannot be
+one module.
+
+**Sandbox stays off the second axis.** `harnessSupportsSandbox()` still returns
+false for dsh, for the Codex reason: the preset *is* a `sandbox/mode`, so a
+separate sandbox toggle would be a way to contradict the choice just made.
+
+### Switching is a durable event, not a flag
+
+`setPermissionMode` translates to a preset and calls
+`ctx.permissionPresets.set()`, which appends `sandbox/mode` + `approval/policy`
+to that session's own log. So the switch survives resume by replay, never leaks
+into a sibling session, and — the part that matters — the *fences* follow it,
+because both read the effective mode per call. A mode that only changed the
+popover would be theatre.
+
+### Risks taken knowingly
+
+- **Fail-closed is dsh's design.** `sandbox-local` reports `SANDBOX_UNAVAILABLE`
+  rather than ever running unconfined, so on a Linux box with neither `bwrap`
+  nor Landlock every `bash` call fails until the user picks
+  `danger-full-access` (which never consults the provider). That is the right
+  default and the wrong error message; a friendlier surface is follow-up work.
+- **Packaging.** `sandbox-local` pulls `@deepseek-ai/node-addon-landlock-run`, a
+  native addon. Unused on macOS, but P5 packaging has to unpack it from the asar
+  for Linux builds.
+- **Seatbelt is deprecated.** Apple still ships `sandbox-exec` on every macOS;
+  the functional probe is what fails closed if that ever stops.
+
+Tests: `sandbox.test.ts` (6) — the fs fence allows a write inside the project,
+refuses the same write under `read-only`, refuses one outside the project under
+`workspace-write`, and allows it under `danger-full-access`; then the kernel
+fence, with a real `bash` redirect blocked under `workspace-write` and let
+through under `danger-full-access`. Plus a backend test that the shared mode is
+actually translated into a preset.
+
+**A vacuous green worth recording.** The first cut of both bash tests passed —
+and proved nothing. `bash` requires a `description` argument, so dsh rejected
+the call with `invalid arguments` before the sandbox was consulted, and "the
+file was not created" was true for the wrong reason. It only surfaced because
+the *positive* control (full access should let the write through) failed. Both
+tests now assert the call actually ran. A negative sandbox assertion needs a
+positive twin, or it tests nothing.
+
+The test's "outside" directory is under `homedir()`, not `tmpdir()`:
+`workspace-write` grants the platform temp areas as writable roots — the same
+set the Seatbelt profile grants — so a sibling temp directory would have been
+allowed and the test would have been vacuous a second way.

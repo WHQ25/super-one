@@ -18,10 +18,12 @@ import * as SubagentForkInProcess from '@deepseek-ai/dsh-subagent-fork-in-proces
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import DynamicCordisRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
+import PermissionPresets from '@deepseek-ai/dsh-permission-presets'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 import { createCredentialPlugin, type CredentialLookup } from './credentials'
+import { DEFAULT_DSH_PERMISSION_PRESET, DSH_PERMISSION_PRESETS } from './permission-presets'
 import { mountHostToolPlane } from './tool-plane'
 
 export interface DeepseekTreeOptions {
@@ -173,6 +175,21 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
     toolName: 'subagent_fork',
     enableRunInBackground: false,
     maxDepth: 3,
+  })
+
+  // The user-facing permission vocabulary. Each preset bundles the two knobs
+  // dsh actually enforces — the sandbox mode and whether approvals are asked —
+  // and the service pins them into each session at creation, so a later default
+  // change never rewrites a running conversation. It hard-requires a CONFINING
+  // `ctx.shell`, which is why it lands with the sandbox tier and not before.
+  //
+  // Its two optional children stay out: the `/permissionPresets` command
+  // (SuperOne owns slash) and the `permissions` projection unit (nothing reads
+  // it yet). Both activate only when their registry is composed, so not
+  // mounting `commands` / `sessionProjections` is the whole exclusion.
+  ctx.plugin(PermissionPresets, {
+    presets: DSH_PERMISSION_PRESETS,
+    defaultPreset: DEFAULT_DSH_PERMISSION_PRESET,
   })
 
   // Compaction. `token-meter` prices the live request envelope; the basic

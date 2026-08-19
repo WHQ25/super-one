@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   displayToolName,
+  dshPresetForMode,
   type DeepseekAgentHandle,
   type DeepseekMcpServerSpec,
 } from '@superone/deepseek'
@@ -238,6 +239,15 @@ export class DeepseekBackend implements SessionBackend {
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.permissionMode = mode
     if (this.opts) this.opts.permissionMode = mode
+    // The shared mode is the carrier; dsh's preset is the meaning. Switching it
+    // writes a durable `sandbox/mode` + `approval/policy` pair onto the
+    // session's own log, which is what makes the sandbox fence follow the mode
+    // rather than only the popover doing so.
+    const agent = this.agent
+    if (agent) {
+      const runtime = await getDeepseekRuntime()
+      runtime.setPermissionPreset(agent.sessionId, dshPresetForMode(mode))
+    }
     for (const callback of this.permissionModeListeners) callback(mode)
   }
 

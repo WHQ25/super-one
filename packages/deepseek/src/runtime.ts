@@ -15,6 +15,7 @@ import {
   type ToolApprovalDecision,
 } from './tool-plane'
 import { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
+import type { DshPermissionPreset } from './permission-presets'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
@@ -579,6 +580,26 @@ export class DeepseekRuntime {
     })
     await persistence.append(SessionId(childSessionId), prefix)
     return childSessionId
+  }
+
+  /**
+   * Switch one session's permission preset.
+   *
+   * The preset is dsh's own vocabulary — it bundles the sandbox mode the shell
+   * and filesystem run under with whether approval questions are asked at all —
+   * and the switch IS a durable `sandbox/mode` + `approval/policy` pair on that
+   * session's log, so it survives resume by replay and never leaks into a
+   * sibling session. Selecting the effective preset again appends nothing.
+   */
+  setPermissionPreset(sessionId: string, preset: DshPermissionPreset): void {
+    const record = this.records.get(sessionId)
+    if (!record) return
+    const presets = (this.bridge as Context & { get(name: string): unknown })
+      .get('permissionPresets') as {
+        set(session: unknown, name: string): void
+      } | undefined
+    if (!presets) return
+    presets.set((record.agent as unknown as { session: unknown }).session, preset)
   }
 
   /**

@@ -33,3 +33,9 @@ export {
   type SuperoneToolSurface,
 } from './tool-surface'
 export { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
+export {
+  DEFAULT_DSH_PERMISSION_PRESET,
+  DSH_PERMISSION_PRESETS,
+  dshPresetForMode,
+  type DshPermissionPreset,
+} from './permission-presets'

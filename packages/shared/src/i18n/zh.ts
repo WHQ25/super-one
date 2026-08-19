@@ -1048,6 +1048,20 @@ export const zh: Messages = {
     permissionModeTitle: '权限模式',
     sessionModeTitle: '会话模式',
     sandboxModeTitle: '沙盒模式',
+    deepseekPermissionPresets: {
+      readOnly: {
+        label: '只读',
+        description: '任何位置都不可写入，读取和搜索不受限制。',
+      },
+      workspaceWrite: {
+        label: '工作区可写',
+        description: '仅可写入本项目和临时目录，且每次先询问。',
+      },
+      fullAccess: {
+        label: '完全访问',
+        description: '不设沙箱也不询问，shell 能触及的一切都可写。',
+      },
+    },
     permissionModes: {
       default: { label: '普通', description: '危险操作会弹窗询问' },
       acceptEdits: { label: '自动接受编辑', description: '自动接受文件编辑操作' },

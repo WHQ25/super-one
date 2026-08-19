@@ -1002,6 +1002,11 @@ export type Messages = {
     permissionModeTitle: string
     sessionModeTitle: string
     sandboxModeTitle: string
+    deepseekPermissionPresets: {
+      readOnly: { label: string; description: string }
+      workspaceWrite: { label: string; description: string }
+      fullAccess: { label: string; description: string }
+    }
     permissionModes: {
       default: { label: string; description: string }
       acceptEdits: { label: string; description: string }
@@ -3942,6 +3947,20 @@ export const en: Messages = {
     permissionModeTitle: 'Permission Mode',
     sessionModeTitle: 'Session Mode',
     sandboxModeTitle: 'Sandbox Mode',
+    deepseekPermissionPresets: {
+      readOnly: {
+        label: 'Read-only',
+        description: 'No writes anywhere. Reading and searching stay free.',
+      },
+      workspaceWrite: {
+        label: 'Workspace write',
+        description: 'Writes only inside this project and the temp folders, and asks first.',
+      },
+      fullAccess: {
+        label: 'Full access',
+        description: 'No sandbox and no questions. Anything the shell reaches is writable.',
+      },
+    },
     permissionModes: {
       default: { label: 'Normal', description: 'Prompts for dangerous operations' },
       acceptEdits: { label: 'Accept Edits', description: 'Auto-accept file edit operations' },

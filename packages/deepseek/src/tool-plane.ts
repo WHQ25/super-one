@@ -1,7 +1,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
-import LocalBashExecutor from '@deepseek-ai/dsh-bash-local'
+import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
+import SandboxedFileSystem from '@deepseek-ai/dsh-fs-sandbox'
+import SandboxBashExecutor from '@deepseek-ai/dsh-bash-sandbox'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
@@ -9,6 +11,7 @@ import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superone-host-owned-tools'
 import { mountSuperoneTools, type SuperoneToolSurface } from './tool-surface'
+import { DEFAULT_DSH_PERMISSION_PRESET, DSH_PERMISSION_PRESETS } from './permission-presets'
 
 export type ToolApprovalDecision = 'allowed-once' | 'rejected' | 'cancelled'
 
@@ -89,8 +92,20 @@ const DENIAL_REASONS: Record<Exclude<ToolApprovalDecision, 'allowed-once'>, (too
  */
 export async function mountHostToolPlane(ctx: Context): Promise<void> {
   await ctx.plugin(LocalSubprocessRuntime)
-  await ctx.plugin(LocalFileSystem, {})
-  await ctx.plugin(LocalBashExecutor, {})
+  // The confinement tier, mounted before its consumers. `sandbox-local` picks
+  // the platform runner (Seatbelt on macOS, bwrap/Landlock on Linux, a
+  // restricted token on Windows) and fails closed with `SANDBOX_UNAVAILABLE`
+  // rather than ever running a command unconfined. `sandbox-policy` is the one
+  // place a mode and a workspace root are resolved, so the shell fence and the
+  // filesystem fence cannot drift apart.
+  await ctx.plugin(LocalSandboxProvider, {})
+  await ctx.plugin(SandboxPolicy, { mode: DSH_PERMISSION_PRESETS[DEFAULT_DSH_PERMISSION_PRESET].sandbox })
+  // `fs-sandbox` and `bash-sandbox` REPLACE `fs-local` / `bash-local` — they
+  // extend them and add a per-call mode fence. Mounting only the bash half
+  // would leave `write` and `edit` unconfined while `bash` was blocked, which
+  // is worse than either end of the choice.
+  await ctx.plugin(SandboxedFileSystem, {})
+  await ctx.plugin(SandboxBashExecutor, {})
   await ctx.plugin(ShellEnv, {})
 
   await ctx.plugin(ToolFs, {})

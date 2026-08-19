@@ -6,7 +6,7 @@ import type { ForkContext, ForkSource } from '../types'
  * Resolve SuperOne's fork point to a dsh event seq.
  *
  * The mapper stamps each completed assistant message with the seq that closed
- * its step (`metadata.forkAnchorId`), which is the inclusive boundary dsh forks
+ * its turn (`metadata.forkAnchorId`), which is the inclusive boundary dsh forks
  * at. A user message carries no seq of its own, so the fork lands on the last
  * assistant message before it — the branch then continues from exactly where
  * the user was about to speak.

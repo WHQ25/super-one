@@ -9,9 +9,17 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-compaction'
 import type {} from '@deepseek-ai/dsh-user-approval'
 
-/** Message id derivation is deterministic so replay produces identical ids. */
-function stepMessageId(sessionId: string, turn: number, step: number): string {
-  return `dsh:${sessionId}:${turn}:${step}`
+/**
+ * One assistant message per turn, keyed on the turn alone.
+ *
+ * dsh opens a step per model round trip, so a turn that calls three tools has
+ * four of them. A message per step would give every tool call its own bubble
+ * and its own token footer, which is not what the user asked for — the turn is.
+ * Every step of a turn therefore resolves to the same id, and the derivation
+ * stays deterministic so replay produces identical ids.
+ */
+function turnMessageId(sessionId: string, turn: number): string {
+  return `dsh:${sessionId}:${turn}`
 }
 
 export interface DeepseekMapperOptions {
@@ -45,11 +53,13 @@ export interface DeepseekChildStats {
  * Maps the dsh session log (`session/event`) onto SuperOne `AgentEvent`s.
  *
  * One instance per live agent. The dsh log is seq-contiguous and its happy
- * order (`step/start` → chunks → `step/end`) matches the reducer contract
- * (`message_start` → `content_delta`* → `message_complete`), so this stays a
- * stateless-ish transducer: the only carried state is the open step's message
- * id, the last completed one (interrupt/error attribution), and the latest
- * route context window.
+ * order (`turn/start` → steps → `turn/end`) maps onto the reducer contract
+ * (`message_start` → `content_delta`* → `message_complete`) at the TURN
+ * bracket, not the step one: the steps inside a turn are the model working, and
+ * SuperOne renders one bubble with one footer per thing the user asked for.
+ * Carried state is therefore the open turn's message id, the last completed one
+ * (interrupt/error attribution), that turn's running spend, and the latest route
+ * context window.
  *
  * P1 scope: text/thinking streaming, whole tool calls (`tool/call` →
  * `tool/result`; streaming tool-input deltas come with the
@@ -58,6 +68,8 @@ export interface DeepseekChildStats {
 export class DeepseekEventMapper {
   private openMessageId: string | null = null
   private lastMessageId: string | null = null
+  /** The open turn's footer spend, summed across its steps. */
+  private turnUsage = { input: 0, output: 0, cacheRead: 0 }
   private contextWindow: number | undefined
   private model: string | undefined
   private toolUses = 0
@@ -113,9 +125,14 @@ export class DeepseekEventMapper {
         // message of its own — publishing one would break the subagent segment
         // in two and orphan every block after it.
         if (this.opts.nested) break
-        const id = stepMessageId(this.opts.sessionId, event.data.turn, event.data.step)
+        const id = turnMessageId(this.opts.sessionId, event.data.turn)
+        // The turn's later steps join the message its first step opened.
+        // Opening here rather than at `turn/start` means a turn that never
+        // reaches the model leaves no empty bubble behind.
+        if (this.openMessageId === id) break
         this.openMessageId = id
         this.lastMessageId = id
+        this.turnUsage = { input: 0, output: 0, cacheRead: 0 }
         const message: ChatMessage = {
           id,
           role: 'assistant',
@@ -195,33 +212,30 @@ export class DeepseekEventMapper {
         }
         if (this.openMessageId) {
           const billedInput = usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+          // The footer is the turn's spend, and `message_usage` overwrites it
+          // rather than adding, so the running totals are kept here. dsh reports
+          // disjoint counts, so cache reads stay OUT of the input line: they are
+          // the same prompt re-sent each step, and billing them per step would
+          // report a turn that re-read 30k of context four times as 120k spent.
+          // This is the accounting Claude already uses (uncached + cache write).
+          this.turnUsage = {
+            input: this.turnUsage.input + usage.inputTokens + (usage.cacheWriteTokens ?? 0),
+            output: this.turnUsage.output + usage.outputTokens,
+            cacheRead: this.turnUsage.cacheRead + (usage.cacheReadTokens ?? 0),
+          }
           this.emit({
             type: 'message_usage',
             messageId: this.openMessageId,
-            inputTokens: billedInput,
-            outputTokens: usage.outputTokens,
-            ...(usage.cacheReadTokens !== undefined ? { cacheReadTokens: usage.cacheReadTokens } : {}),
+            inputTokens: this.turnUsage.input,
+            outputTokens: this.turnUsage.output,
+            ...(this.turnUsage.cacheRead > 0 ? { cacheReadTokens: this.turnUsage.cacheRead } : {}),
             ...(this.model !== undefined ? { model: this.model } : {}),
-            // The step's full prompt + completion is the session's context
-            // occupancy after this step — that pair drives the context ring.
+            // The ring is occupancy, not spend: the latest step's full prompt +
+            // completion IS the context right now, so it replaces rather than
+            // accumulates.
             contextTokens: billedInput + usage.outputTokens,
             ...(this.contextWindow !== undefined ? { contextWindow: this.contextWindow } : {}),
           })
-        }
-        break
-      }
-      case 'step/end': {
-        if (this.openMessageId) {
-          this.emit({
-            type: 'message_complete',
-            messageId: this.openMessageId,
-            // dsh forks at an inclusive event seq, so the anchor for "fork from
-            // this message" is the seq that closed its step. Carried on the
-            // shared `forkAnchorId` seam the other harnesses use for their own
-            // native ids.
-            metadata: { forkAnchorId: String(event.seq) },
-          })
-          this.openMessageId = null
         }
         break
       }
@@ -231,17 +245,28 @@ export class DeepseekEventMapper {
         // own message interrupted for a failure it recovered from.
         if (this.opts.nested) break
         const reason = event.data.reason as { kind: string; error?: { message?: string } }
+        const id = this.openMessageId ?? this.lastMessageId
+        this.openMessageId = null
+        if (!id) break
         if (reason.kind === 'aborted') {
-          const id = this.openMessageId ?? this.lastMessageId
-          if (id) this.emit({ type: 'message_interrupted', messageId: id })
-          this.openMessageId = null
+          this.emit({ type: 'message_interrupted', messageId: id })
         } else if (reason.kind === 'error') {
-          const id = this.openMessageId ?? this.lastMessageId
-          if (id) {
-            const dshError = reason.error?.message ?? 'model request failed'
-            this.emit({ type: 'message_error', messageId: id, error: dshError, errorInfo: buildAgentErrorInfo(dshError) })
-          }
-          this.openMessageId = null
+          const dshError = reason.error?.message ?? 'model request failed'
+          this.emit({ type: 'message_error', messageId: id, error: dshError, errorInfo: buildAgentErrorInfo(dshError) })
+        } else {
+          // Every other way a turn ends — `completed`, `blocked`, and whatever a
+          // plugin merges into the reason map — still ends the reply, so the
+          // bubble has to stop streaming. Only the two failures above get their
+          // own terminal event.
+          this.emit({
+            type: 'message_complete',
+            messageId: id,
+            // dsh forks at an inclusive event seq, so the anchor for "fork from
+            // this message" is the seq that closed its turn. Carried on the
+            // shared `forkAnchorId` seam the other harnesses use for their own
+            // native ids.
+            metadata: { forkAnchorId: String(event.seq) },
+          })
         }
         break
       }

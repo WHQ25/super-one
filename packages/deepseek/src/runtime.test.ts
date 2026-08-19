@@ -221,6 +221,13 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
     )
     expect(toolUse).toBeDefined()
     expect(toolResult).toBeDefined()
+    // The tool forces a second model round trip, and dsh opens a step for it.
+    // That is invisible to the user: one thing was asked, so one bubble with
+    // one token footer answers it.
+    expect(events.filter((event) => event.type === 'message_start')).toHaveLength(1)
+    expect(events.filter((event) => event.type === 'message_complete')).toHaveLength(1)
+    expect(toolUse?.type === 'content_delta' ? toolUse.messageId : undefined)
+      .toBe(toolResult?.type === 'content_delta' ? toolResult.messageId : 'unmatched')
 
     await agent.dispose()
     await runtime.dispose()

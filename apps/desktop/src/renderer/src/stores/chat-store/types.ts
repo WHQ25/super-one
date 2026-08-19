@@ -118,6 +118,8 @@ export interface PerSessionState {
     status?: 'completed' | 'failed' | 'stopped'
     outputFile?: string
     resultText?: string
+    /** Provider-authored failure detail; never the child's own output. */
+    diagnostic?: string
     retry?: SubagentRetryInfo
     toolHistory: Array<{ toolName: string; description: string }>
     workflowAgents?: Array<{ agentId?: string; label: string; toolCount: number; tokens?: number; state?: string; phase?: string }>

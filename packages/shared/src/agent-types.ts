@@ -1437,6 +1437,12 @@ export type AgentEventBase =
     summary?: string
     usage?: { totalTokens: number; toolUses: number; durationMs: number }
     resultText?: string
+    /**
+     * Provider-authored failure detail for a non-completed run, kept apart from
+     * the child's own output on purpose: it explains why the run ended, and is
+     * not something the agent said. Producers bound it to 4096 UTF-8 bytes.
+     */
+    diagnostic?: string
     toolEntries?: Array<{ toolName: string; description: string }>
     workflowAgents?: WorkflowAgentRow[]
     workflowPhases?: WorkflowPhaseRow[]

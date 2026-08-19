@@ -2132,6 +2132,7 @@ export const zh: Messages = {
       done: '完成',
       failed: '失败',
       stopped: '已停止',
+      diagnostic: '失败详情',
       output: '输出',
       prompt: '提示词',
       title: '子代理',

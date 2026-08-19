@@ -2071,6 +2071,7 @@ export type Messages = {
       done: string
       failed: string
       stopped: string
+      diagnostic: string
       output: string
       prompt: string
       title: string
@@ -5176,6 +5177,7 @@ export const en: Messages = {
       done: 'Done',
       failed: 'Failed',
       stopped: 'Stopped',
+      diagnostic: 'Failure detail',
       output: 'Output',
       prompt: 'Prompt',
       title: 'Subagent',

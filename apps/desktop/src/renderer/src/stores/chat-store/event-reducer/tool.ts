@@ -434,6 +434,10 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         : prevProgress?.workflowPhases
       const currentPhase = event.currentPhase ?? prevProgress?.currentPhase
       const resultText = event.resultText ?? prevProgress?.resultText
+      // A later notification may carry only this — the dsh subagent diagnostic
+      // becomes available after the run has already closed the block — so it
+      // merges rather than replacing what is already there.
+      const diagnostic = event.diagnostic ?? prevProgress?.diagnostic
       const outputPath = file || prevProgress?.outputFile
       const toolPatch = {
         taskUsage: {
@@ -478,6 +482,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         outputFile: file || prevProgress?.outputFile,
         summary: finalSummary,
         ...(resultText ? { resultText } : {}),
+        ...(diagnostic ? { diagnostic } : {}),
         ...(workflowAgents ? { workflowAgents } : {}),
         ...(workflowPhases ? { workflowPhases } : {}),
         ...(currentPhase ? { currentPhase } : {}),

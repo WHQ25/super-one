@@ -227,6 +227,49 @@ describe('reduceTool: task_notification identity share', () => {
     expect(agent.taskUsage?.totalTokens).toBe(99)
     expect(result.outputPath).toBe('/tmp/out.jsonl')
   })
+
+  /**
+   * dsh learns a failed delegation's provider diagnostic only AFTER the run has
+   * already closed the Task block — `subagent/end` carries no diagnostic and the
+   * tool rejects afterwards — so it necessarily arrives as a second, sparse
+   * notification. It has to merge onto the entry that already exists rather than
+   * blanking the usage and summary the first one established.
+   */
+  it('merges a later diagnostic-only notification without losing what was shown', () => {
+    const homeMsg = makeAssistant('m1', [toolUseBlock('agent-1', 'Agent')])
+    const session = createDefaultPerSessionState()
+    session.messages = [homeMsg]
+    session.taskProgress = {
+      'agent-1': { description: 'sub', totalTokens: 1, toolUses: 1, durationMs: 10, toolHistory: [], taskId: 'task-1' },
+    }
+
+    const first = reduceTool(session, {
+      type: 'task_notification',
+      toolUseId: 'agent-1',
+      taskId: 'task-1',
+      taskStatus: 'failed',
+      summary: 'delegation failed',
+      outputFile: '',
+      usage: { totalTokens: 99, toolUses: 5, durationMs: 1200 },
+    } as never)
+    Object.assign(session, first)
+
+    const second = reduceTool(session, {
+      type: 'task_notification',
+      toolUseId: 'agent-1',
+      taskId: 'task-1',
+      taskStatus: 'failed',
+      outputFile: '',
+      diagnostic: 'provider returned HTTP 503 after 5 attempts',
+    } as never)
+
+    const progress = second.taskProgress?.['agent-1']
+    expect(progress?.diagnostic).toBe('provider returned HTTP 503 after 5 attempts')
+    // Everything the first notification established survives the merge.
+    expect(progress?.status).toBe('failed')
+    expect(progress?.summary).toBe('delegation failed')
+    expect(progress?.totalTokens).toBe(99)
+  })
 })
 
 describe('reduceTool: browser_download_update identity share', () => {

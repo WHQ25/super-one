@@ -186,6 +186,11 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
   const resultText = isAsync
     ? (jsonlResultText ?? taskBlock.taskResultText)
     : (jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText) ?? taskBlock.taskResultText)
+  // Provider-authored failure detail, kept out of `resultText` on purpose: it
+  // explains why the run ended and is NOT something the child said. Upstream
+  // draws the same line, and collapsing the two would attribute an
+  // infrastructure message to the agent.
+  const diagnostic = progress?.diagnostic
   const toolCallCount = useMemo(() => {
     let count = 0
     for (const item of childItems) {
@@ -352,6 +357,18 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
                 )}
               </SubagentScrollArea>
             </NestedToolContext.Provider>
+          )}
+
+          {/* Failure detail — above the output, and never merged into it: this
+              is the provider explaining the failure, not the child answering. */}
+          {isFailed && diagnostic && (
+            <div className="border-t border-border/30 px-2.5 py-1.5">
+              <div className="mb-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                <TriangleAlert className="size-3 shrink-0" />
+                <span>{t('chat.subagent.diagnostic')}</span>
+              </div>
+              <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{diagnostic}</p>
+            </div>
           )}
 
           {/* Output — collapsible with line limit */}

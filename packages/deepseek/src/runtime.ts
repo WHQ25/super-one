@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type { AgentEvent, ImageAttachment } from '@superone/shared/agent-types'
 import { admitImageBlocks, encodeComposerImages, modelAcceptsImages } from './images'
+import { extractSubagentDiagnostic } from './subagent-diagnostic'
 import { DeepseekEventMapper } from './event-map'
 import {
   installPermissionGate,
@@ -224,6 +225,14 @@ export class DeepseekRuntime {
   private records = new Map<string, AgentRecord>()
   /** Live delegated children, keyed by the child's own dsh session id. */
   private subagentRuns = new Map<string, SubagentRun>()
+  /**
+   * Task id of a delegation that has already ended, keyed by its `subagent`
+   * call. The run itself is gone from `subagentRuns` by the time the tool
+   * rejects, but the diagnostic that arrives then still has to reach the Task
+   * block it belongs to. Entries are consumed on use, and a run that ends
+   * cleanly has its entry dropped rather than left to accumulate.
+   */
+  private endedSubagentTasks = new Map<string, string>()
   private adapterFiber: { dispose: () => Promise<void> } | null = null
   /** Open trajectory folds, keyed by dsh session id. */
   private readonly folds = new Map<string, { fold: TrajectoryFold; live: boolean }>()
@@ -312,13 +321,28 @@ export class DeepseekRuntime {
         return next()
       }
       const args = exec.arguments as { description?: unknown } | undefined
+      const toolUseId = String(exec.callId)
       return delegationSpan.run(
         {
-          toolUseId: String(exec.callId),
+          toolUseId,
           description: typeof args?.description === 'string' ? args.description : 'subagent',
           agentSessionId: String(agentSessionId),
         },
-        next,
+        // A delegation that ends badly rejects here, and that rejection is the
+        // ONLY place a provider's `SubagentResult.diagnostic` is observable:
+        // `subagent/end`, which is what closes the Task block, does not carry
+        // one. Catching it here — rather than re-reading the rendered tool
+        // result later — keeps the failure detail attached to the exact call it
+        // belongs to. The error is re-thrown untouched, so dsh still turns it
+        // into the model-facing tool error it always did.
+        () => next().catch((error: unknown) => {
+          runtime.reportSubagentDiagnostic(
+            String(agentSessionId),
+            toolUseId,
+            error instanceof Error ? error.message : String(error),
+          )
+          throw error
+        }),
       )
     }) as never)
 
@@ -484,6 +508,10 @@ export class DeepseekRuntime {
     this.subagentRuns.delete(childSessionId)
 
     const kind = typeof info.stopReason === 'string' ? info.stopReason : info.stopReason?.kind
+    // Only a non-clean ending can carry a diagnostic, so only that case leaves
+    // an entry for the tool rejection to find.
+    if (kind === 'completed') this.endedSubagentTasks.delete(run.toolUseId)
+    else this.endedSubagentTasks.set(run.toolUseId, run.runId)
     const stats = run.mapper.stats()
     run.owner.onEvent({
       type: 'task_notification',
@@ -499,6 +527,42 @@ export class DeepseekRuntime {
         toolUses: stats.toolUses,
         durationMs: Date.now() - run.startedAt,
       },
+    })
+  }
+
+  /**
+   * Attach a failed delegation's provider diagnostic to its Task block.
+   *
+   * A second `task_notification` for the same task rather than a field on the
+   * first, because the two facts become available in that order and cannot be
+   * merged at the source: `subagent/end` closes the block and carries no
+   * diagnostic, and the diagnostic only exists once the tool rejects, which
+   * happens after. The reducer merges a later notification onto the entry it
+   * already has — omitted usage and summary keep their previous values — so
+   * this adds detail without disturbing anything already shown.
+   *
+   * Nothing is emitted for a failure that carried no diagnostic, which leaves
+   * the chip exactly as it was rather than replacing a real message with a
+   * blank one.
+   * @param agentSessionId - the DELEGATING agent's session.
+   * @param toolUseId - the `subagent` call this failure belongs to.
+   * @param message - the error text the tool rejected with.
+   */
+  private reportSubagentDiagnostic(agentSessionId: string, toolUseId: string, message: string): void {
+    const taskId = this.endedSubagentTasks.get(toolUseId)
+    if (taskId === undefined) return
+    this.endedSubagentTasks.delete(toolUseId)
+    const diagnostic = extractSubagentDiagnostic(message)
+    if (diagnostic === undefined) return
+    const owner = this.ownerOf(agentSessionId)
+    if (!owner) return
+    owner.onEvent({
+      type: 'task_notification',
+      taskId,
+      toolUseId,
+      taskStatus: 'failed',
+      outputFile: '',
+      diagnostic,
     })
   }
 

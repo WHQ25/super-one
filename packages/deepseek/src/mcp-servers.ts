@@ -1,4 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis'
+// Side-effect type import: merges `loader` onto `Context` so the store read in
+// `loader()` is typed by upstream instead of by a local structural shape.
+import type {} from '@deepseek-ai/cordis-plugin-loader'
+import type { LoaderEntries } from './cordis-loader'
 
 /** The official dsh MCP client. One entry per configured server. */
 export const DSH_MCP_CLIENT_SPECIFIER = '@deepseek-ai/dsh-mcp-client'
@@ -18,14 +22,6 @@ export interface DeepseekMcpServerSpec {
 /** dsh's function-name contract for the namespace segment. */
 const SERVER_NAME_PATTERN = /[^A-Za-z0-9_-]/g
 const MAX_SERVER_NAME_LENGTH = 32
-
-/** The slice of `ctx.loader` this registrar drives. */
-interface LoaderEntries {
-  create(options: { id?: string; name: string; config?: unknown }): Promise<string>
-  update(id: string, options: { config?: unknown }): Promise<void>
-  remove(id: string): Promise<void>
-  await(): Promise<void>
-}
 
 interface Mount {
   entryId: string
@@ -124,9 +120,7 @@ export class DeepseekMcpServers {
   private loader(): LoaderEntries | undefined {
     // `ctx.loader` throws for a consumer that did not declare `inject: ['loader']`;
     // this registrar is constructed against the bare root, so it asks the store.
-    return (this.ctx as Context & { get(name: string): unknown }).get('loader') as
-      | LoaderEntries
-      | undefined
+    return this.ctx.get('loader')
   }
 
   /** One bad server must not stop the rest of the sync. */
@@ -141,8 +135,12 @@ export class DeepseekMcpServers {
   }
 
   private warn(message: string): void {
-    const logger = (this.ctx as Context & { logger?: { warn(message: string): void } }).logger
-    logger?.warn(`superone-mcp: ${message}`)
+    // `ctx.logger(name)` is the documented facade and is typed; the bare
+    // `ctx.logger.warn` this used to reach for works at runtime but is absent
+    // from `LoggerService`'s published type, which is why it needed a cast.
+    // Going through the facade also makes the subsystem name the logger's own
+    // rather than a string prefix baked into every message.
+    this.ctx.logger('superone-mcp').warn(message)
   }
 }
 

@@ -1,10 +1,18 @@
 import type { Context } from '@deepseek-ai/cordis'
+// Side-effect type import: merges `tools` onto `Context`, so the registration
+// below is checked against upstream's `ToolDefinition` rather than against a
+// locally declared `register(definition: unknown)` that would accept anything.
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
 export interface SuperoneToolDescriptor {
   name: string
   description: string
-  /** JSON Schema, passed to dsh verbatim. */
-  inputSchema: unknown
+  /**
+   * JSON Schema, passed to dsh verbatim. Typed as an object rather than
+   * `unknown` because that is what `ToolDefinition.parameters` requires and
+   * what every producer already supplies (`SuperoneMcpToolDescriptor`).
+   */
+  inputSchema: Record<string, unknown>
 }
 
 export interface SuperoneToolResult {
@@ -60,10 +68,6 @@ export function superoneToolName(bareName: string): string {
  * the registry, so add/remove both take effect on the next request.
  */
 export function mountSuperoneTools(agentCtx: Context, surface: SuperoneToolSurface): void {
-  const registry = agentCtx as Context & {
-    tools: { register(definition: unknown): () => void }
-    logger?: { warn(message: string): void }
-  }
   let generation: Array<() => void> = []
 
   const sync = (): void => {
@@ -71,10 +75,10 @@ export function mountSuperoneTools(agentCtx: Context, surface: SuperoneToolSurfa
     generation = []
     for (const tool of surface.list()) {
       try {
-        generation.push(registry.tools.register(defineTool(tool, surface)))
+        generation.push(agentCtx.tools.register(defineTool(tool, surface)))
       } catch (error) {
         // One unusable descriptor must not cost the session the rest of the surface.
-        registry.logger?.warn(`superone-tools: skipped "${tool.name}": ${String(error)}`)
+        agentCtx.logger('superone-tools').warn(`skipped "${tool.name}": ${String(error)}`)
       }
     }
   }
@@ -88,7 +92,7 @@ export function mountSuperoneTools(agentCtx: Context, surface: SuperoneToolSurfa
   })
 }
 
-function defineTool(tool: SuperoneToolDescriptor, surface: SuperoneToolSurface): unknown {
+function defineTool(tool: SuperoneToolDescriptor, surface: SuperoneToolSurface): ToolDefinition {
   return {
     name: superoneToolName(tool.name),
     description: tool.description,

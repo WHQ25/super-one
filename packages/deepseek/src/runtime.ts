@@ -3,8 +3,18 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-// Side-effect type import: declaration-merges the approval waterfall we answer below.
+// Side-effect type imports: each declaration-merges one service onto `Context`,
+// which is what makes `ctx.get('name')` return that service's REAL upstream type
+// instead of `any`. Without them the reads below would need a hand-written
+// structural shape, and TypeScript would then validate our calls against our own
+// declaration rather than upstream's — the exact hole that let rc.8's added
+// `CommandRuntime.execute` parameter through a green typecheck and broke
+// `/compact` at runtime. Keep one line here per service this file resolves.
 import type {} from '@deepseek-ai/dsh-user-approval'
+import type {} from '@deepseek-ai/dsh-commands'
+import { AttachmentId, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-permission-presets'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekEventMapper } from './event-map'
 import {
@@ -496,11 +506,7 @@ export class DeepseekRuntime {
 
   /** The record for this dsh session, or the nearest ancestor that has one. */
   private ownerOf(agentSessionId: string): AgentRecord | undefined {
-    const sessions = (this.bridge as Context & {
-      get(name: string): unknown
-    }).get('sessions') as {
-      get(id: unknown): { header: { parentSession?: unknown } } | undefined
-    } | undefined
+    const sessions = this.bridge.get('sessions')
 
     let id: string | undefined = agentSessionId
     for (let depth = 0; depth < MAX_DELEGATION_LOOKUP_DEPTH && id; depth += 1) {
@@ -525,16 +531,7 @@ export class DeepseekRuntime {
 
   /** Live model catalog for pickers, straight from the adapter registries. */
   async listModels(): Promise<DeepseekCatalogEntry[]> {
-    const llm = (this.bridge as Context & { llm: {
-      listProviders(): Array<{ id: string }>
-      listModels(provider: string): Promise<ReadonlyArray<{ provider: string; id: string; name: string }>>
-      resolveModelInfo(provider: string, model: string): Promise<{
-        reasoning?: {
-          efforts: ReadonlyArray<{ id: string }>
-          defaultEffort?: string
-        }
-      }>
-    } }).llm
+    const llm = this.bridge.llm
     const listed: Array<{ provider: string; id: string; name: string }> = []
     for (const provider of llm.listProviders()) {
       const list = await llm.listModels(provider.id)
@@ -562,10 +559,7 @@ export class DeepseekRuntime {
   }
 
   async createAgent(options: CreateDeepseekAgentOptions): Promise<DeepseekAgentHandle> {
-    const agents = (this.bridge as Context & { agents: {
-      create(opts: unknown): Promise<{ agent: Agent; dispose(): Promise<void> }>
-      resume(opts: unknown): Promise<{ agent: Agent; dispose(): Promise<void> }>
-    } }).agents
+    const agents = this.bridge.agents
 
     const agentOptions = {
       provider: options.provider,
@@ -674,13 +668,7 @@ export class DeepseekRuntime {
     childSessionId: string,
     boundary?: number,
   ): Promise<string> {
-    const persistence = (this.bridge as Context & {
-      get(name: string): unknown
-    }).get('sessionPersistence') as {
-      load(id: unknown): Promise<{ meta: Record<string, unknown>; events: readonly { seq: number }[] }>
-      create(meta: Record<string, unknown>): Promise<void>
-      append(id: unknown, events: readonly unknown[]): Promise<void>
-    } | undefined
+    const persistence = this.bridge.get('sessionPersistence')
     if (!persistence) {
       throw new Error('deepseek fork: session persistence is not configured')
     }
@@ -804,11 +792,25 @@ export class DeepseekRuntime {
    * @returns the media type and bytes, or `null` without an attachment store.
    */
   async trajectoryImage(ref: TrajectoryImageRef): Promise<{ mediaType: string; data: Uint8Array } | null> {
-    const attachments = (this.bridge as Context & {
-      attachments?: { readImage(ref: unknown): Promise<{ data: Uint8Array }> }
-    }).attachments
+    // `get()` rather than the `ctx.attachments` property because the declaration
+    // merge types that property as always-present, while a tree that mounted no
+    // attachment store genuinely has none — the `| undefined` here is the honest
+    // shape and is what keeps the null return below reachable.
+    const attachments = this.bridge.get('attachments')
     if (!attachments) return null
-    const stored = await attachments.readImage(ref)
+    // `TrajectoryImageRef` is SuperOne's neutral, IPC-serializable mirror of the
+    // dsh reference — `packages/shared` must not depend on dsh, so it carries a
+    // plain `string` id and media type. This is the one seam where that mirror
+    // re-enters dsh's branded domain, so the re-branding is explicit and local
+    // rather than hidden behind an `unknown` parameter as it used to be. The
+    // values themselves came from a dsh-produced reference in the first place,
+    // and `readImage` re-verifies the stored bytes against the whole reference,
+    // so a mismatch fails there rather than being trusted here.
+    const stored = await attachments.readImage({
+      ...ref,
+      attachmentId: AttachmentId(ref.attachmentId),
+      mediaType: ref.mediaType as ImageMediaType,
+    })
     return { mediaType: ref.mediaType, data: stored.data }
   }
 
@@ -823,9 +825,7 @@ export class DeepseekRuntime {
    * @returns the entry, or `null` when this session has no dsh log at all.
    */
   private async foldFor(sessionId: string): Promise<{ fold: TrajectoryFold; live: boolean } | null> {
-    const sessions = (this.bridge as Context & { get(name: string): unknown }).get('sessions') as {
-      get(id: unknown): { events: readonly SessionEvent[] } | undefined
-    } | undefined
+    const sessions = this.bridge.get('sessions')
     const liveSession = sessions?.get(SessionId(sessionId))
     const live = liveSession !== undefined
 
@@ -840,10 +840,7 @@ export class DeepseekRuntime {
 
     let events = liveSession?.events
     if (events === undefined) {
-      const persistence = (this.bridge as Context & { get(name: string): unknown }).get('sessionPersistence') as {
-        load(id: unknown): Promise<{ events: readonly SessionEvent[] }>
-        list(signal?: AbortSignal): Promise<readonly { id: unknown }[]>
-      } | undefined
+      const persistence = this.bridge.get('sessionPersistence')
       if (!persistence) throw new Error('deepseek trajectory: session persistence is not configured')
 
       // A SuperOne session exists from the moment the user opens it, but its
@@ -902,8 +899,7 @@ export class DeepseekRuntime {
    * @returns whether no turn has opened; `true` for a session with no agent.
    */
   sessionIsBlank(sessionId: string): boolean {
-    const sessions = (this.bridge as Context & { get(name: string): unknown })
-      .get('sessions') as { get(id: unknown): { events: readonly SessionEvent[] } | undefined } | undefined
+    const sessions = this.bridge.get('sessions')
     const session = sessions?.get(SessionId(sessionId))
     return session === undefined || sessionIsBlank(session.events)
   }
@@ -924,8 +920,7 @@ export class DeepseekRuntime {
     const roster = presetRoster(this.bridge)
     if (!roster) throw new Error('deepseek preset: no roster is composed')
 
-    const sessions = (this.bridge as Context & { get(name: string): unknown })
-      .get('sessions') as { get(id: unknown): { events: readonly SessionEvent[] } | undefined } | undefined
+    const sessions = this.bridge.get('sessions')
     const session = sessions?.get(SessionId(sessionId))
     if (session && !sessionIsBlank(session.events)) {
       throw new Error('deepseek preset: this session has already run a turn')
@@ -946,12 +941,9 @@ export class DeepseekRuntime {
   setPermissionPreset(sessionId: string, preset: DshPermissionPreset): void {
     const record = this.records.get(sessionId)
     if (!record) return
-    const presets = (this.bridge as Context & { get(name: string): unknown })
-      .get('permissionPresets') as {
-        set(session: unknown, name: string): void
-      } | undefined
+    const presets = this.bridge.get('permissionPresets')
     if (!presets) return
-    presets.set((record.agent as unknown as { session: unknown }).session, preset)
+    presets.set(record.agent.session, preset)
   }
 
 
@@ -979,15 +971,11 @@ export class DeepseekRuntime {
     // context that can resolve `ctx.compaction` is one inside that same group —
     // which is exactly where the preset also puts `command-compact`. Reaching
     // for the service from out here resolves the outer realm and finds nothing.
-    const commands = (this.bridge as Context & { get(name: string): unknown })
-      .get('commands') as {
-        execute(
-          agent: Agent,
-          line: string,
-          images: readonly never[],
-          signal: AbortSignal,
-        ): Promise<{ result: { kind: 'success' | 'error'; text?: string } } | undefined>
-      } | undefined
+    // Typed straight off `CommandRuntime`: this is the call rc.8 broke by adding
+    // a positional `images` parameter, and it stayed green only because the old
+    // code re-declared `execute` locally. Bound to the upstream signature, the
+    // same drift is now a compile error rather than a runtime `TypeError`.
+    const commands = this.bridge.get('commands')
     if (!commands) throw new Error('deepseek compact: command registry is not mounted')
 
     const execution = await commands.execute(
@@ -1045,6 +1033,14 @@ export class DeepseekRuntime {
     }
     await this.mcpServers.dispose()
     await this.plugins.dispose()
-    await (this.root as Context & { stop?: () => Promise<void> }).stop?.()
+    // The root FIBER, not a `stop()` on the context. Cordis exposes teardown as
+    // `Fiber.dispose()`; nothing in the pinned tree ever mixes a `stop` onto a
+    // context. The previous `(root as Context & { stop?() }).stop?.()` therefore
+    // never called anything — the hand-written optional member made a method
+    // that does not exist look deliberate, and `?.` swallowed the miss — so the
+    // embedded tree outlived every `dispose()`. Verified by probing the real
+    // tree root: `typeof root.stop === 'undefined'`, while `root.fiber.dispose`
+    // is a function that settles.
+    await this.root.fiber.dispose()
   }
 }

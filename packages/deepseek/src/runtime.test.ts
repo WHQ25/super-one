@@ -266,3 +266,30 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
     await runtime.dispose()
   })
 })
+
+describe('runtime disposal', () => {
+  /**
+   * `dispose()` must actually tear the embedded tree down.
+   *
+   * This is a regression test for a REAL no-op, not a hypothetical one: the
+   * teardown used to read `(root as Context & { stop?(): Promise<void> }).stop?.()`,
+   * and nothing in the pinned tree ever mixes a `stop` onto a context. The
+   * hand-written optional member made a method that does not exist look
+   * deliberate and `?.` swallowed the miss, so every `dispose()` left the whole
+   * tree — timers, loader entries, sessions — running.
+   *
+   * The assertion is deliberately behavioural rather than a spy on
+   * `fiber.dispose`: a disposed Cordis context refuses to resolve its required
+   * services, so a call that goes through the bridge is the observable that
+   * distinguishes a torn-down tree from a live one. With the old no-op this
+   * resolves `[]` instead of rejecting.
+   */
+  it('releases the tree, so bridge-backed calls no longer resolve services', async () => {
+    const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent' })
+    await expect(runtime.listModels()).resolves.toEqual([])
+
+    await runtime.dispose()
+
+    await expect(runtime.listModels()).rejects.toThrow(/inactive context/)
+  }, 30000)
+})

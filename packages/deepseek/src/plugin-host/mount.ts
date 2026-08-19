@@ -22,6 +22,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+// Side-effect type import: merges `loader` onto `Context` so the store read in
+// `loader()` is typed by upstream instead of by a local structural shape.
+import type {} from '@deepseek-ai/cordis-plugin-loader'
+import type { LoaderEntries } from '../cordis-loader'
 import { enabledPlugins, readPluginRegistry, resolvePluginEntryUrl, type DshPluginRow } from './registry'
 import { registerDshPluginRoot } from './resolver'
 
@@ -41,14 +45,6 @@ export interface MountReport {
   outcomes: PluginMountOutcome[]
   /** Carried through from the registry read, so a bad file is not swallowed. */
   registryProblem?: string
-}
-
-/** The slice of `ctx.loader` this registrar drives. */
-interface LoaderEntries {
-  create(options: { id?: string; name: string; config?: unknown }): Promise<string>
-  update(id: string, options: { config?: unknown }): Promise<void>
-  remove(id: string): Promise<void>
-  await(): Promise<void>
 }
 
 /** One live mount, and the config fingerprint that decides whether it must restart. */
@@ -172,8 +168,6 @@ export class DeepseekPlugins {
    * this registrar is constructed against a bare context, so it asks the store.
    */
   private loader(): LoaderEntries | undefined {
-    return (this.ctx as Context & { get(name: string): unknown }).get('loader') as
-      | LoaderEntries
-      | undefined
+    return this.ctx.get('loader')
   }
 }

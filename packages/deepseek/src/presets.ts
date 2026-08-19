@@ -13,6 +13,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentPreset, AgentPresets } from '@deepseek-ai/dsh-agent-presets'
+// Side-effect type import: merges `sessionPersistence` onto `Context` so the
+// read below is typed by upstream rather than by a local structural shape.
+import type {} from '@deepseek-ai/dsh-session-persistence'
 // The root re-exports the session reader, and with it the module augmentation
 // that merges `agent-preset/selected` into `SessionEventMap`; the package
 // publishes no `./session` subpath.
@@ -20,7 +23,7 @@ import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 
 /** The header shape the session reader requires, taken from its own signature. */
 type PresetSessionHeader = Parameters<typeof resolveSessionPreset>[0]['header']
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { DeepseekPresetInfo } from '@superone/shared/agent-types'
 
 export { resolveSessionPreset }
@@ -39,9 +42,7 @@ export type DeepseekPresetRoster = Pick<
 
 /** Read the roster off a context, or `undefined` when none is mounted. */
 export function presetRoster(ctx: Context): DeepseekPresetRoster | undefined {
-  return (ctx as Context & { get(name: string): unknown }).get('agentPresets') as
-    | DeepseekPresetRoster
-    | undefined
+  return ctx.get('agentPresets')
 }
 
 /**
@@ -101,13 +102,14 @@ export async function storedSessionPreset(
   ctx: Context,
   sessionId: string,
 ): Promise<string | undefined> {
-  const persistence = (ctx as Context & { get(name: string): unknown })
-    .get('sessionPersistence') as {
-      load(id: unknown): Promise<{ meta: PresetSessionHeader; events: readonly SessionEvent[] }>
-    } | undefined
+  const persistence = ctx.get('sessionPersistence')
   if (!persistence) return undefined
-  const stored = await persistence.load(sessionId as never)
-  return resolveSessionPreset({ header: stored.meta, events: stored.events })
+  const stored = await persistence.load(SessionId(sessionId))
+  // `load` types its metadata as the generic durable record; the preset reader
+  // wants the narrower header it documents. Asserting only here keeps the shape
+  // requirement attached to `resolveSessionPreset`'s own signature — it is
+  // derived from it via `Parameters<>` — rather than restating the service.
+  return resolveSessionPreset({ header: stored.meta as PresetSessionHeader, events: stored.events })
 }
 
 /**

@@ -127,7 +127,7 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // workspace could never resolve `@deepseek-ai/cordis-plugin-group` by name.
   // Without this registration every grouped row in a preset resolves to
   // `undefined` and the whole composition fails to apply.
-  ;(ctx as Context & { loader: { builtins: Record<string, unknown> } }).loader.builtins.group = Group
+  ctx.loader.builtins.group = Group
   ctx.plugin(LlmRuntime)
   ctx.plugin(SessionStore)
   ctx.plugin(SystemPrompt, {

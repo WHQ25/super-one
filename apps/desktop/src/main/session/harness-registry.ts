@@ -122,6 +122,11 @@ const deepseekConfigSchema = z.object({
   maxTokens: z.number().positive().optional(),
   /** dsh permission preset id (displayed mode vocabulary for this harness). */
   permissionPreset: z.string().optional(),
+  /**
+   * dsh agent preset — the composition this session's tools and prompt come
+   * from. Read at creation only; a resumed session recomposes from its own log.
+   */
+  agentPreset: z.string().optional(),
 }).passthrough()
 
 const deepseekHarness: Harness = {

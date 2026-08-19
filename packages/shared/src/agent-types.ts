@@ -2242,6 +2242,34 @@ export interface AcpResources {
   configByAgentId?: Record<string, AcpAgentConfigCatalog>
 }
 
+/**
+ * One dsh agent preset — a "mode" the user picks before a session starts.
+ *
+ * A preset is a whole agent composition, so switching one changes the tool
+ * catalog and the system prompt. `broken` carries a discovery-reported reason
+ * verbatim: such a preset stays on the roster (hiding it would leave its
+ * directory blocking the id with nothing to see or delete) but refuses to mount.
+ */
+export interface DeepseekPresetInfo {
+  id: string
+  /** Display name from `preset.yml`, falling back to the id. */
+  name: string
+  description: string | null
+  /** `user` trust carries the same privilege as shell access — a preset IS a composition. */
+  trust: 'system' | 'user'
+  order: number | null
+  broken: string | null
+}
+
+/** The roster plus which preset one session currently composes from. */
+export interface DeepseekPresetRoster {
+  presets: DeepseekPresetInfo[]
+  /** The live session's preset, or `null` when it has no agent yet. */
+  current: string | null
+  /** Whether the session may still switch (it has produced nothing). */
+  switchable: boolean
+}
+
 export interface HarnessResourcesMap {
   claude: ClaudeResources
   codex: CodexResources
@@ -2749,6 +2777,9 @@ export const AgentIpcChannels = {
   CONNECT_OPENCODE: 'app:connect-opencode',
   CONNECT_CURSOR: 'app:connect-cursor',
   CONNECT_DEEPSEEK: 'app:connect-deepseek',
+  DEEPSEEK_TRAJECTORY: 'app:deepseek-trajectory',
+  DEEPSEEK_PRESETS: 'app:deepseek-presets',
+  DEEPSEEK_SET_PRESET: 'app:deepseek-set-preset',
   SET_CURSOR_API_KEY: 'app:set-cursor-api-key',
   GET_CURSOR_AUTH_STATUS: 'app:get-cursor-auth-status',
   CURSOR_LIST_AGENTS: 'app:cursor-list-agents',
@@ -3684,13 +3715,6 @@ export interface AppSettings {
   mermaidDarkTheme: string | null
   uiFontFamily: string | null
   liquidGlass: boolean
-  /**
-   * Let the DeepSeek harness's model rewrite this process's own plugin tree
-   * (`dsh-tool-cordis`). Off by default: its sandbox is explicitly "not a
-   * security boundary" and a dynamic package lives in shared process memory,
-   * so it reaches every dsh session — not just the one that defined it.
-   */
-  dshToolCordis: boolean
   cdpEnabled: boolean
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
@@ -3822,7 +3846,6 @@ export interface AppSettingsPatch {
   mermaidDarkTheme?: string | null
   uiFontFamily?: string | null
   liquidGlass?: boolean
-  dshToolCordis?: boolean
   cdpEnabled?: boolean
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean

@@ -613,14 +613,6 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   if (patch?.cdpEnabled === false) {
     detachAllCdp()
   }
-  if (patch?.dshToolCordis !== undefined) {
-    // Reaches the next turn of every live dsh session, without a restart. The
-    // off switch has to be immediate: what it withdraws is the model's ability
-    // to run code in this process. `peek` so toggling never boots a tree.
-    const { peekDeepseekRuntime } = await import('./deepseek/deepseek-runtime-host')
-    const runtime = await peekDeepseekRuntime()
-    await runtime?.setToolCordisEnabled(result.dshToolCordis)
-  }
   if (patch?.experimentalClaudeOpenAiChatEnabled !== undefined) {
     sessionManager.markAllNeedsRebuild('claude')
   }
@@ -4074,21 +4066,81 @@ function registerIpcHandlers(): void {
     // paid here is the same boot the first DeepSeek session needs anyway.
     try {
       const { getDeepseekRuntime, DEEPSEEK_DEFAULT_MODEL } = await import('./deepseek/deepseek-runtime-host')
+      const { superoneEffortsFromDsh } = await import('@superone/deepseek/reasoning-effort')
       const runtime = await getDeepseekRuntime()
       const models = await runtime.listModels()
       log.info('[CONNECT_DEEPSEEK] %d models', models.length)
       return {
-        models: models.map((model) => ({
-          id: model.id,
-          name: model.name,
-          description: model.provider,
-          isDefault: model.id === DEEPSEEK_DEFAULT_MODEL,
-        })),
+        models: models.map((model) => {
+          // dsh's effort ids only partly overlap SuperOne's vocabulary, so the
+          // picker is offered the intersection — an empty one collapses it to a
+          // model-only list, which is exactly right for a `thinking: disabled`
+          // deployment (it advertises `off` and nothing else).
+          const supportedEffortLevels = superoneEffortsFromDsh(model.reasoningEfforts)
+          return {
+            id: model.id,
+            name: model.name,
+            description: model.provider,
+            isDefault: model.id === DEEPSEEK_DEFAULT_MODEL,
+            ...(supportedEffortLevels.length > 0
+              ? { supportsEffort: true, supportedEffortLevels }
+              : {}),
+          }
+        }),
         probing: false,
       }
     } catch (error) {
       log.warn('[CONNECT_DEEPSEEK] failed: %s', error instanceof Error ? error.message : String(error))
       return { models: [] }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.DEEPSEEK_PRESETS, async (_event, sessionId?: string) => {
+    // The roster re-reads its roots on every call, so a preset authored while
+    // the app runs shows up without a restart.
+    try {
+      const { getDeepseekRuntime } = await import('./deepseek/deepseek-runtime-host')
+      const { listDeepseekPresets } = await import('@superone/deepseek/presets')
+      const runtime = await getDeepseekRuntime()
+      const presets = await listDeepseekPresets(runtime.context)
+      const current = sessionId ? runtime.sessionPreset(sessionId) ?? null : null
+      // A session that has no live agent yet has produced nothing by
+      // definition, so its pick is still a draft the next creation reads.
+      const switchable = sessionId === undefined || current === null || runtime.sessionIsBlank(sessionId)
+      return { presets, current, switchable }
+    } catch (error) {
+      log.warn('[DEEPSEEK_PRESETS] failed: %s', error instanceof Error ? error.message : String(error))
+      return { presets: [], current: null, switchable: false }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.DEEPSEEK_SET_PRESET, async (_event, sessionId: string, presetId: string) => {
+    try {
+      const { getDeepseekRuntime } = await import('./deepseek/deepseek-runtime-host')
+      const runtime = await getDeepseekRuntime()
+      await runtime.switchPreset(sessionId, presetId)
+      return { ok: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log.warn('[DEEPSEEK_SET_PRESET] %s → %s failed: %s', sessionId, presetId, message)
+      return { ok: false, error: message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.DEEPSEEK_TRAJECTORY, async (_event, sessionId: string) => {
+    // The fold runs here, not in the renderer: a real session's log is mostly
+    // `assistant/chunk` frames, and none of them survive the projection.
+    try {
+      const { getDeepseekRuntime } = await import('./deepseek/deepseek-runtime-host')
+      const runtime = await getDeepseekRuntime()
+      const trajectory = await runtime.trajectory(sessionId)
+      // A session that has never run a turn has no dsh log — that is a state,
+      // not a failure, and the panel says so in its own words.
+      return trajectory === null ? { ok: false, reason: 'absent' } : { ok: true, trajectory }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log.warn('[DEEPSEEK_TRAJECTORY] %s failed: %s', sessionId, message)
+      return { ok: false, reason: 'error', error: message }
     }
   })
 

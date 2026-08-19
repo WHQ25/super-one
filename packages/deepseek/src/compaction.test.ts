@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 const SUMMARY_TEXT = 'the conversation so far, in brief'
 
@@ -50,7 +51,7 @@ async function session(turns: number) {
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-compaction-'))
   dirs.push(cwd)
 
-  const runtime = await DeepseekRuntime.create({ persona: 'test agent' })
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent' })
   disposers.push(() => runtime.dispose())
   ;(runtime.context as unknown as {
     llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }

@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Group from '@deepseek-ai/cordis-plugin-group'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -15,13 +16,19 @@ import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentForkInProcess from '@deepseek-ai/dsh-subagent-fork-in-process'
-import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import DynamicCordisRunner from '@deepseek-ai/dsh-cordis-host-runner'
-import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 import PermissionPresets from '@deepseek-ai/dsh-permission-presets'
+import AgentPresets from '@deepseek-ai/dsh-agent-presets'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import GoalService from '@deepseek-ai/dsh-goal'
+import * as GoalRoundDriver from '@deepseek-ai/dsh-goal-round-driver'
+import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
+import WebRuntime from '@deepseek-ai/dsh-web'
+import * as DeepSeekWebSearch from '@deepseek-ai/dsh-web-search-deepseek'
+import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+import * as ToolSubagentReport from '@deepseek-ai/dsh-tool-subagent-report'
+import CommandRuntime from '@deepseek-ai/dsh-commands'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
-import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
-import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 import { createCredentialPlugin, type CredentialLookup } from './credentials'
 import { DEFAULT_DSH_PERMISSION_PRESET, DSH_PERMISSION_PRESETS } from './permission-presets'
 import { mountHostToolPlane } from './tool-plane'
@@ -34,6 +41,19 @@ export interface DeepseekTreeOptions {
   persona?: string
   /** JSONL session-log root; omit to run without durable persistence (tests). */
   persistenceRoot?: string
+  /**
+   * Read-only preset roots, in precedence order — the compositions shipped with
+   * the app. `dsh-agent-presets` appends `<dshHome>/.agent-presets` as the
+   * writable one on top, so a person's own presets are found without the
+   * deployment naming that path.
+   *
+   * Omit to run without a roster: every agent then reaches the model with the
+   * host plane's tools alone, which is the shape every test that does not care
+   * about compositions wants.
+   */
+  presetRoots?: readonly string[]
+  /** Preset mounted when a session names none. */
+  defaultPreset?: string
   /**
    * Serve dsh credential references from SuperOne's credential store instead of
    * `dsh-credentials-local` or the process environment (D7).
@@ -57,39 +77,6 @@ export interface DisposableFiber {
   dispose(): Promise<void>
 }
 
-/**
- * Mount the self-referential toolset: five tools that let the model inspect,
- * define, run and stop plugins **inside the running dsh process**.
- *
- * Behind a user opt-in (`AppSettings.dshToolCordis`, default off) for two
- * reasons its own README states plainly. Its sandbox "is not a security
- * boundary" — "treat this toolset like bash access" — and a dynamic package
- * lives in shared process memory, so it "may affect other sessions in that
- * process". Neither fits SuperOne's per-tool permission model: the gate can
- * refuse `cordis_run`, but it cannot scope what a package does once running.
- *
- * Both rows travel together: the runner (`ctx.dynamicCordisRunner`) owns the vm
- * and the package registry, and the toolset alone never activates without it.
- * Mounted on the host plane like every other model-facing row, and reversible —
- * turning the setting off withdraws the tools from the next request's schema.
- */
-export async function mountToolCordis(ctx: Context): Promise<DisposableFiber> {
-  // Awaited, not fired: the toolset injects the runner's service, so an
-  // unawaited pair leaves the tools dormant and the registry unchanged —
-  // indistinguishable from the switch not working.
-  const runner = await ctx.plugin(DynamicCordisRunner, {}) as DisposableFiber
-  // The toolset takes no config at all — its vm and broadcast bounds live on
-  // the runner, which is why only that row is configurable.
-  const tools = await ctx.plugin(ToolCordis) as DisposableFiber
-  return {
-    async dispose() {
-      // Tools first: the runner is what they inject, and unmounting a service
-      // out from under a live consumer is the noisier of the two orders.
-      await tools.dispose()
-      await runner.dispose()
-    },
-  }
-}
 
 export interface DeepseekAdapterOptions {
   models: readonly DeepSeekCatalogModel[]
@@ -133,7 +120,14 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // addon). What is left is exactly the part we want: create/update/remove a
   // plugin row while the tree is running. Its `write()` is a no-op — nothing
   // this loader holds is ever persisted to disk.
-  ctx.plugin(Loader, { baseUrl: import.meta.url })
+  await ctx.plugin(Loader, { baseUrl: import.meta.url })
+  // `cordis:group` is a HOST-registered builtin, not something the loader
+  // carries: a group row is how a composition hands one `isolate` realm to a
+  // provider and its consumers together, and a preset living outside this
+  // workspace could never resolve `@deepseek-ai/cordis-plugin-group` by name.
+  // Without this registration every grouped row in a preset resolves to
+  // `undefined` and the whole composition fails to apply.
+  ;(ctx as Context & { loader: { builtins: Record<string, unknown> } }).loader.builtins.group = Group
   ctx.plugin(LlmRuntime)
   ctx.plugin(SessionStore)
   ctx.plugin(SystemPrompt, {
@@ -164,18 +158,37 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   ctx.plugin(SubagentRuntime)
   ctx.plugin(SubagentSpawnInProcess, { providerName: 'spawn' })
   ctx.plugin(SubagentForkInProcess, { providerName: 'fork' })
-  ctx.plugin(ToolSubagent, {
-    provider: 'spawn',
-    toolName: 'subagent',
-    enableRunInBackground: false,
-    maxDepth: 3,
-  })
-  ctx.plugin(ToolSubagent, {
-    provider: 'fork',
-    toolName: 'subagent_fork',
-    enableRunInBackground: false,
-    maxDepth: 3,
-  })
+  // `report` is host-plane for a mechanical reason, not a product one: it
+  // registers a continuable SETUP on the subagent registry rather than a tool
+  // this agent calls, and that setup list is not scope-aware — one copy per
+  // mounted preset would register `report` once per live session and throw on
+  // the second.
+  ctx.plugin(ToolSubagentReport)
+
+  // The registries the preset rows resolve. Each is a process singleton with
+  // cross-session queries, which is dsh's own criterion for host-plane
+  // ownership: a service a row outside the realm reads belongs to the plane
+  // both can see. Their model-facing tools live in the preset.
+  ctx.plugin(SkillRegistry)
+  ctx.plugin(GoalService)
+  ctx.plugin(GoalRoundDriver)
+  ctx.plugin(LocalJobRegistry)
+  ctx.plugin(WebRuntime)
+  ctx.plugin(DeepSeekWebSearch)
+  ctx.plugin(UserQuestionService)
+  // The command REGISTRY, mounted even though SuperOne owns the slash surface
+  // and renders none of its entries. `standard` names `command-compact`, and a
+  // row still waiting on a service the deployment never supplies is exactly
+  // what `mount()` refuses — it would take the whole preset down. Registering
+  // the registry keeps the shipped composition a verbatim copy; the alternative
+  // was editing a vendored file, which forks it forever.
+  ctx.plugin(CommandRuntime)
+  // The dynamic-Cordis RUNNER and its inspect registry, mounted for the whole
+  // tree because they are services, not tools: nothing here reaches the model.
+  // The row that does — `tool-cordis` — belongs to the `cordis` preset, and two
+  // instances cannot coexist (the second collides on the inspect provider), so
+  // the preset is the one and only way an agent gets those tools.
+  ctx.plugin(DynamicCordisRunner, {})
 
   // The user-facing permission vocabulary. Each preset bundles the two knobs
   // dsh actually enforces — the sandbox mode and whether approvals are asked —
@@ -192,19 +205,32 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
     defaultPreset: DEFAULT_DSH_PERMISSION_PRESET,
   })
 
-  // Compaction. `token-meter` prices the live request envelope; the basic
-  // engine reads that pressure, prunes oversized tool results first, then
-  // summarizes the oldest balanced span through a direct `llm.stream()` call.
-  //
-  // `auto` stays on (its default): the step-boundary pressure listener and the
-  // provider-overflow recovery path are the whole reason a long dsh session
-  // survives, and a harness that only compacts when asked is one that dies at
-  // the context wall. `dsh-command-compact` is NOT mounted — SuperOne owns the
-  // slash surface, so `/compact` reaches `ctx.compaction.compactNow()` through
-  // the backend instead.
+  // `token-meter` prices the live request envelope and stays host-plane: it
+  // takes no configuration, keys every fold by Session, and owns the projection
+  // units a context ring reads for every session. Behind a preset realm those
+  // units would come and go with whichever presets happen to be mounted. The
+  // compaction ENGINE and its tool-result pruner are the preset's choice and
+  // live in its own realm — which is why `compactSession` resolves them through
+  // the agent's context rather than the bridge's.
   ctx.plugin(TokenMeter)
-  ctx.plugin(ToolResultPruner, {})
-  ctx.plugin(BasicCompactionEngine, {})
+
+  // The preset roster. A preset is an agent-plane composition mounted ONCE per
+  // process under a standing scope; each session joins by having its agent
+  // scope parented to that mount, so one instance of every tool and prompt
+  // section covers every session that named it. This is why the model-facing
+  // rows left the host plane above: they are a preset's choice, not the
+  // deployment's.
+  if (options.presetRoots?.length) {
+    ctx.plugin(AgentPresets, {
+      default: options.defaultPreset ?? 'standard',
+      roots: options.presetRoots.map((path) => ({ path, trust: 'system' as const })),
+      // `<dshHome>/.agent-presets` is where a person's own presets live, the
+      // way `<dshHome>/skills` holds their own skills. It is appended AFTER the
+      // shipped roots, so a shipped id still shadows a home directory that
+      // claimed the same name.
+      includeUserRoot: true,
+    })
+  }
 
   if (options.credentialLookup) {
     ctx.plugin(createCredentialPlugin(options.credentialLookup))

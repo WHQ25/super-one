@@ -316,6 +316,12 @@ export interface SessionBackend {
 }
 
 export interface Session {
+  /**
+   * Record the dsh agent preset this session composes from. A no-op on every
+   * other harness — the concept is dsh's own.
+   */
+  setAgentPreset(presetId: string | null): void
+
   readonly id: string
   readonly projectPath: string
   readonly cwd: string

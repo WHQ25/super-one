@@ -71,24 +71,21 @@ const DENIAL_REASONS: Record<Exclude<ToolApprovalDecision, 'allowed-once'>, (too
 }
 
 /**
- * Mount dsh's own executors and model-facing tool rows on the HOST plane —
- * once for the whole tree, covering every agent in it.
+ * Mount dsh's EXECUTORS on the host plane — once for the whole tree.
  *
- * This used to live on each agent's scope, isolated per session. Delegation is
- * what ruled that out. dsh composes a child agent by joining its parent's
- * *preset* composition (`applyChildComposition`); a deployment that runs no
- * preset roster — ours, by D3 — joins nothing, so anything registered on the
- * parent's agent scope is invisible to its children and a child would reach the
- * model with an empty tool registry. dsh's own rosterless shape puts the
- * model-facing rows in the host composition instead, where the child resolves
- * them through the tool registry's global layer.
+ * Only the confinement tier and the services a model-facing row resolves live
+ * here. The rows themselves (`tool-fs`, `tool-bash`, `tool-todo`, …) moved to
+ * the preset plane, matching dsh's own split: a service a row outside the realm
+ * reads belongs to the plane both can see, and a tool the model calls is the
+ * preset's choice.
  *
- * Per-session correctness survives the move because dsh resolves the workspace
- * at the *tool* boundary, not at mount time: `tool-fs` passes the calling
- * agent's `session.header.cwd` into `ctx.fs.resolve()`, and `tool-bash`
- * defaults `workdir` the same way. `config.cwd` is only the fallback for a
- * non-agent caller. (Covered by the "keeps each session rooted in its own cwd"
- * test, which is why it kept passing across this change.)
+ * A delegated child still reaches them, because it joins its parent's standing
+ * preset composition through `applyChildComposition` → `composeFrom()` rather
+ * than inheriting the parent's own agent scope.
+ *
+ * Per-session correctness comes from the tool boundary, not from mount time:
+ * `tool-fs` passes the calling agent's `session.header.cwd` into
+ * `ctx.fs.resolve()`, and `tool-bash` defaults `workdir` the same way.
  */
 export async function mountHostToolPlane(ctx: Context): Promise<void> {
   await ctx.plugin(LocalSubprocessRuntime)
@@ -107,14 +104,6 @@ export async function mountHostToolPlane(ctx: Context): Promise<void> {
   await ctx.plugin(SandboxedFileSystem, {})
   await ctx.plugin(SandboxBashExecutor, {})
   await ctx.plugin(ShellEnv, {})
-
-  await ctx.plugin(ToolFs, {})
-  // Sampling keeps an over-cap glob honest about what it dropped instead of
-  // silently returning the first N directory entries.
-  await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true })
-  await ctx.plugin(ToolBash, {})
-  // One in-progress todo at a time mirrors every other SuperOne harness's panel.
-  await ctx.plugin(ToolTodo, { allowParallelInProgress: false })
 }
 
 /**

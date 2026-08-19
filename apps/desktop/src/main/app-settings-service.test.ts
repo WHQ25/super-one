@@ -72,7 +72,6 @@ describe('app-settings-service', () => {
     mermaidDarkTheme: null,
     uiFontFamily: null,
     liquidGlass: false,
-    dshToolCordis: false,
     miniAppOrder: {},
     customAppIconPath: null,
     browserBookmarks: [],
@@ -142,7 +141,6 @@ describe('app-settings-service', () => {
         mermaidDarkTheme: null,
         uiFontFamily: null,
         liquidGlass: false,
-        dshToolCordis: false,
         miniAppOrder: {},
         customAppIconPath: null,
         browserBookmarks: [],
@@ -261,7 +259,6 @@ describe('app-settings-service', () => {
         mermaidDarkTheme: null,
         uiFontFamily: null,
         liquidGlass: false,
-        dshToolCordis: false,
         miniAppOrder: {},
         customAppIconPath: null,
         browserBookmarks: [],
@@ -487,13 +484,6 @@ describe('app-settings-service', () => {
     // The dsh self-referential toolset is an opt-in the user has to make
     // deliberately, so it has to survive a round trip rather than being
     // re-defaulted on the next save.
-    it('round-trips the dsh self-modifying plugin opt-in', () => {
-      mocks.readFileSync.mockReturnValue(JSON.stringify({ dshToolCordis: true }))
-
-      expect(readAppSettings().dshToolCordis).toBe(true)
-      expect(saveAppSettings({}).dshToolCordis).toBe(true)
-      expect(saveAppSettings({ dshToolCordis: false }).dshToolCordis).toBe(false)
-    })
 
     it('persists disabledSkills round-trip', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)

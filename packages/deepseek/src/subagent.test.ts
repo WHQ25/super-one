@@ -7,6 +7,7 @@ import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
 import type { DeepseekToolPermissionRequest, ToolApprovalDecision } from './tool-plane'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 const CHILD_MARKER = 'WRITE-THE-FILE'
 const CHILD_FILE = 'from-the-child.txt'
@@ -92,7 +93,7 @@ async function delegateOnce(
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-subagent-'))
   dirs.push(cwd)
 
-  const runtime = await DeepseekRuntime.create({ persona: 'test agent' })
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent' })
   disposers.push(() => runtime.dispose())
   ;(runtime.context as unknown as {
     llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }

@@ -52,7 +52,6 @@ import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { AgentsPage } from './AgentsPage'
 import { SkillsPage } from './SkillsPage'
 import { McpPage } from './McpPage'
-import { DshPreferencesPage } from './DshPreferencesPage'
 import { HooksPage } from './HooksPage'
 import { PluginsPage } from './PluginsPage'
 import { PreferencesPage } from './PreferencesPage'
@@ -196,7 +195,7 @@ const CURSOR_CONFIG_TABS: HarnessConfigSection[] = [
   'cloud',
 ]
 
-const DSH_CONFIG_TABS: HarnessConfigSection[] = ['preferences', 'mcp']
+const DSH_CONFIG_TABS: HarnessConfigSection[] = ['mcp']
 
 function configTabsFor(provider: SettingsProvider | undefined): HarnessConfigSection[] | null {
   if (provider === 'claude') return CLAUDE_CONFIG_TABS
@@ -937,11 +936,7 @@ function HarnessDetail({
           ) : (
             configTabs.map((section) => (
               <TabsContent key={section} value={section} className="mt-0 min-h-0 outline-none">
-                {section === 'preferences' && (
-                  // `PreferencesPage` edits `~/.claude/settings.json`; dsh keeps
-                  // its own preferences in SuperOne's app settings.
-                  item.provider === 'dsh' ? <DshPreferencesPage /> : <PreferencesPage />
-                )}
+                {section === 'preferences' && <PreferencesPage />}
                 {section === 'agents' && <AgentsPage />}
                 {section === 'skills' && <SkillsPage />}
                 {section === 'mcp' && <McpPage />}

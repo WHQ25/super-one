@@ -508,6 +508,17 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   // setSelectedCodexModel / setSelectedCodexReasoningEffort / setSelectedCodexPermissionPreset /
   // setSelectedCodexCollaborationMode / refreshCodexModels / refreshCodexSkills now provided by createCodexSlice
 
+  setDshPreset: (preset) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    // Held per session and never persisted: once the session has an agent,
+    // dsh's own durable log is authoritative and the picker reads that instead.
+    set((s) => updateActivePerSession(s, () => ({ dshPreset: preset })))
+    // Folded into the session's provider config on the main side, which is what
+    // the backend reads when it creates the dsh agent.
+    void window.agent.setSessionSettings(activeProject, { agentPreset: preset })
+  },
+
   setPreferredProvider: (provider) => setPreferredProviderImpl(set, get, provider),
   setAcpAgentId: (agentId) => setAcpAgentIdImpl(set, get, agentId),
   ensureAcpSlashCommands: () => ensureAcpSlashCommandsImpl(set, get),

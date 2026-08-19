@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 /** Records every transcript it is asked to complete, then answers plainly. */
 class RecordingAdapter extends LlmAdapter {
@@ -44,7 +45,7 @@ const dirs: string[] = []
 const runtimes: DeepseekRuntime[] = []
 
 async function bootRuntime(persistenceRoot: string) {
-  const runtime = await DeepseekRuntime.create({ persona: 'test agent', persistenceRoot })
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent', persistenceRoot })
   runtimes.push(runtime)
   const adapter = new RecordingAdapter()
   ;(runtime.context as unknown as {
@@ -98,7 +99,10 @@ describe('deepseek cold resume', () => {
     await runTurn(resumed, 'what was the codeword?')
 
     // The model sees the earlier turn...
-    expect(second.adapter.transcripts.at(-1)).toContain('the codeword is banana')
+    // Asserted over every request rather than the last one: the standard
+    // preset composes auto-compaction, whose summarize call is also an
+    // `llm.stream()` and can therefore be the most recent transcript.
+    expect(second.adapter.transcripts.some((t) => t.includes('the codeword is banana'))).toBe(true)
     // ...while SuperOne's transcript only receives the new one. A replayed seed
     // here would duplicate the whole conversation in the chat view.
     const userTurns = events.filter(

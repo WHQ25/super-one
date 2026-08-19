@@ -1894,11 +1894,12 @@ export class AgentService {
       return session.setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }) => {
+    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null }) => {
       if (this.isRemoteLockedSession(projectPath)) return
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return
       session.setSelectedSettings(settings)
+      if (settings.agentPreset !== undefined) session.setAgentPreset(settings.agentPreset)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SESSION_API_PROVIDER, (_event, sessionId: string, apiProviderId: string | null) => {

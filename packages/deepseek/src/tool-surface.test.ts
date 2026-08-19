@@ -4,6 +4,7 @@ import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
 import { superoneToolName, type SuperoneToolSurface } from './tool-surface'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 /** `CALL <tool> <json>` in the prompt emits exactly that tool call. */
 class ToolCallAdapter extends LlmAdapter {
@@ -82,7 +83,7 @@ function fakeSurface(): SuperoneToolSurface & {
 }
 
 async function startAgent(surface: SuperoneToolSurface, ask: () => Promise<'allowed-once'>) {
-  const runtime = await DeepseekRuntime.create({ persona: 'test agent' })
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent' })
   cleanups.push(() => runtime.dispose())
   ;(runtime.context as unknown as {
     llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime, type DeepseekAgentHandle } from './runtime'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 /**
  * Scripted adapter keyed on the whole message list — not the last message:
@@ -53,7 +54,7 @@ class MockAdapter extends LlmAdapter {
 }
 
 async function bootRuntime(opts?: { onApproval?: () => Promise<'allowed-once' | 'rejected' | 'cancelled'> }) {
-  const runtime = await DeepseekRuntime.create({
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS,
     persona: 'test agent',
     ...(opts?.onApproval ? { onApproval: opts.onApproval } : {}),
   })
@@ -88,7 +89,7 @@ async function runTurn(
 
 describe('deepseek runtime end-to-end (mock adapter)', () => {
   it('preserves configured model display names in the live catalog', async () => {
-    const runtime = await DeepseekRuntime.create({
+    const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS,
       persona: 'test agent',
       deepseekAdapter: {
         models: [
@@ -101,6 +102,54 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
     await expect(runtime.listModels()).resolves.toEqual([
       expect.objectContaining({ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }),
       expect.objectContaining({ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }),
+    ])
+
+    await runtime.dispose()
+  })
+
+  it('carries each model’s reasoning efforts, which the advisory listing omits', async () => {
+    const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS,
+      persona: 'test agent',
+      deepseekAdapter: { models: [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }] },
+    })
+
+    const [model] = await runtime.listModels()
+    // `ctx.llm.listModels` never carries these — they only exist on the exact
+    // route resolved by the owning adapter, which is the whole point of the
+    // second call this method makes.
+    expect(model.reasoningEfforts).toEqual(['off', 'low', 'high', 'max'])
+    expect(model.defaultReasoningEffort).toBe('high')
+
+    await runtime.dispose()
+  })
+
+  it('advertises only `off` when the deployment disables thinking', async () => {
+    const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS,
+      persona: 'test agent',
+      deepseekAdapter: {
+        models: [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }],
+        thinking: 'disabled',
+      },
+    })
+
+    const [model] = await runtime.listModels()
+    expect(model.reasoningEfforts).toEqual(['off'])
+
+    await runtime.dispose()
+  })
+
+  it('keeps a model whose route will not resolve, minus its efforts', async () => {
+    const { runtime, ctx } = await bootRuntime()
+    // The mock adapter lists `mock-1` but this stub refuses to resolve it —
+    // an unknown capability must cost the model its efforts, not its seat in
+    // the picker.
+    const llm = ctx.llm as unknown as {
+      resolveModelInfo(provider: string, model: string): Promise<unknown>
+    }
+    llm.resolveModelInfo = () => Promise.reject(new Error('adapter offline'))
+
+    await expect(runtime.listModels()).resolves.toEqual([
+      expect.objectContaining({ id: 'mock-1', reasoningEfforts: [] }),
     ])
 
     await runtime.dispose()

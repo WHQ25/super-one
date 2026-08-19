@@ -39,7 +39,7 @@ import {
   updateProjectState,
 } from './store-helpers'
 import { resolveProvider } from './provider-routing'
-import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool } from '../defaults'
+import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool, getDefaultEffortForModel } from '../defaults'
 import { CURSOR_DEFAULT_PERMISSION_MODE } from '@/components/chat/cursorPermissionModes'
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
@@ -1005,8 +1005,18 @@ export function setPreferredProviderImpl(
       const models = get().harnessResources.dsh?.models ?? []
       const selected = models.find((model) => model.id === session.selectedModel)
       const fallback = selected ?? models.find((model) => model.isDefault) ?? models[0]
-      if (fallback && fallback.id !== session.selectedModel) {
-        set((state) => updateActivePerSession(state, () => ({ selectedModel: fallback.id })))
+      // Model and effort reconcile together: a pick carried over from another
+      // harness can name a level this model never offers, and dropping it here
+      // is what keeps the picker's label and the route in agreement.
+      const levels = fallback?.supportedEffortLevels ?? []
+      const effort = session.selectedEffort && levels.includes(session.selectedEffort)
+        ? session.selectedEffort
+        : getDefaultEffortForModel(fallback)
+      if (fallback && (fallback.id !== session.selectedModel || effort !== session.selectedEffort)) {
+        set((state) => updateActivePerSession(state, () => ({
+          selectedModel: fallback.id,
+          selectedEffort: effort,
+        })))
       }
       await disposePriorMain
       triggerPrewarm(get())

@@ -14,6 +14,7 @@ export {
   DeepseekRuntime,
   type ApprovalDecision,
   type CreateDeepseekAgentOptions,
+  type DeepseekCatalogEntry,
   type DeepseekAgentHandle,
   type DeepseekApprovalRequest,
   type DeepseekRuntimeOptions,
@@ -33,6 +34,7 @@ export {
   type SuperoneToolSurface,
 } from './tool-surface'
 export { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
+export { dshEffortFromSuperone, superoneEffortsFromDsh } from './reasoning-effort'
 export {
   DEFAULT_DSH_PERMISSION_PRESET,
   DSH_PERMISSION_PRESETS,

@@ -55,7 +55,7 @@ const agentAPI = {
   setSandboxMode: (projectPath: string, mode: SandboxMode) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode),
 
-  setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }) =>
+  setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null }) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings),
 
   setSessionApiProvider: (sessionId: string, apiProviderId: string | null) =>
@@ -737,6 +737,15 @@ const appAPI = {
 
   connectDeepseek: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_DEEPSEEK),
+
+  readDeepseekTrajectory: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_TRAJECTORY, sessionId),
+
+  listDeepseekPresets: (sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_PRESETS, sessionId),
+
+  setDeepseekPreset: (sessionId: string, presetId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_SET_PRESET, sessionId, presetId),
 
   setCursorApiKey: (apiKey: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_CURSOR_API_KEY, apiKey),

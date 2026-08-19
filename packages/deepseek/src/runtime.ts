@@ -16,10 +16,17 @@ import {
 } from './tool-plane'
 import { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
 import type { DshPermissionPreset } from './permission-presets'
+import { projectTrajectory } from './trajectory/project'
+import type { TrajectoryProjection } from '@superone/shared/trajectory-types'
+import {
+  presetRoster,
+  sessionIsBlank,
+  storedSessionPreset,
+  type DeepseekPresetRoster,
+} from './presets'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
-  mountToolCordis,
   type DeepseekAdapterOptions,
   type DeepseekTreeOptions,
   type DisposableFiber,
@@ -47,6 +54,11 @@ export interface DeepseekRuntimeOptions extends DeepseekTreeOptions {
 
 export interface CreateDeepseekAgentOptions {
   sessionId: string
+  /**
+   * The preset composing this agent's tools and prompt. Omitted takes the
+   * roster's default; ignored entirely when no roster is mounted.
+   */
+  agentPreset?: string
   cwd: string
   provider: string
   model: string
@@ -82,6 +94,21 @@ export interface DeepseekAgentHandle {
   whenIdle(): Promise<void>
   status(): 'idle' | 'running'
   dispose(): Promise<void>
+}
+
+/**
+ * One picker-facing catalog row. Effort ids stay in dsh's own opaque
+ * vocabulary; translating them to SuperOne's `EffortLevel` is the boundary's
+ * job (`./reasoning-effort`), not this seam's.
+ */
+export interface DeepseekCatalogEntry {
+  provider: string
+  id: string
+  name: string
+  /** Adapter-advertised effort ids in adapter display order; empty when none. */
+  reasoningEfforts: string[]
+  /** The effort the adapter materializes when a request omits one. */
+  defaultReasoningEffort?: string
 }
 
 interface RouteOverride {
@@ -151,7 +178,6 @@ export class DeepseekRuntime {
   /** Live delegated children, keyed by the child's own dsh session id. */
   private subagentRuns = new Map<string, SubagentRun>()
   private adapterFiber: { dispose: () => Promise<void> } | null = null
-  private toolCordisFiber: DisposableFiber | null = null
   private readonly mcpServers: DeepseekMcpServers
 
   private constructor(
@@ -293,7 +319,6 @@ export class DeepseekRuntime {
     // per-session answerer is looked up per call, not captured per mount.
     installPermissionGate(bridge, (request) => runtime.answerPermission(request))
 
-    if (options.toolCordis) await runtime.setToolCordisEnabled(true)
 
     return runtime
   }
@@ -450,17 +475,41 @@ export class DeepseekRuntime {
   }
 
   /** Live model catalog for pickers, straight from the adapter registries. */
-  async listModels(): Promise<Array<{ provider: string; id: string; name: string }>> {
+  async listModels(): Promise<DeepseekCatalogEntry[]> {
     const llm = (this.bridge as Context & { llm: {
       listProviders(): Array<{ id: string }>
       listModels(provider: string): Promise<ReadonlyArray<{ provider: string; id: string; name: string }>>
+      resolveModelInfo(provider: string, model: string): Promise<{
+        reasoning?: {
+          efforts: ReadonlyArray<{ id: string }>
+          defaultEffort?: string
+        }
+      }>
     } }).llm
-    const models: Array<{ provider: string; id: string; name: string }> = []
+    const listed: Array<{ provider: string; id: string; name: string }> = []
     for (const provider of llm.listProviders()) {
       const list = await llm.listModels(provider.id)
-      models.push(...list.map((m) => ({ provider: m.provider, id: m.id, name: m.name })))
+      listed.push(...list.map((m) => ({ provider: m.provider, id: m.id, name: m.name })))
     }
-    return models
+    // `listModels` is the *advisory* catalog and carries no reasoning metadata
+    // by design — only `resolveModelInfo` asks the adapter that owns one exact
+    // route what that route can actually do. Hence one resolve per model, run
+    // concurrently. A model whose resolve fails still belongs in the picker; it
+    // just offers no efforts, which is what an unknown capability means here.
+    return Promise.all(listed.map(async (model) => {
+      try {
+        const info = await llm.resolveModelInfo(model.provider, model.id)
+        return {
+          ...model,
+          reasoningEfforts: info.reasoning?.efforts.map((effort) => effort.id) ?? [],
+          ...(info.reasoning?.defaultEffort !== undefined
+            ? { defaultReasoningEffort: info.reasoning.defaultEffort }
+            : {}),
+        }
+      } catch {
+        return { ...model, reasoningEfforts: [] }
+      }
+    }))
   }
 
   async createAgent(options: CreateDeepseekAgentOptions): Promise<DeepseekAgentHandle> {
@@ -482,14 +531,39 @@ export class DeepseekRuntime {
     // Creation-time composition: everything `setup` mounts exists before the
     // first prompt assembly, and it unwinds with the agent.
     const toolPlane = options.toolPlane
-    const setup = toolPlane
-      ? { setup: (agentCtx: Context) => mountToolPlane(agentCtx, toolPlane) }
-      : {}
+    const presets = presetRoster(this.bridge)
+    // A resumed session recomposes with the preset its history was PRODUCED
+    // under, read from its own log — never the caller's pick and never the
+    // roster default. Restoring a different composition would replay tool calls
+    // the new catalog cannot make, which is the hazard the blank-only switch
+    // lock exists to prevent in the first place.
+    const preset = options.resume && presets
+      ? await storedSessionPreset(this.bridge, options.sessionId) ?? options.agentPreset
+      : options.agentPreset
+    // Resolved to its canonical id BEFORE creation, because the header is a
+    // creation fact: `mount()` runs inside `setup`, by which point the header
+    // is already frozen. `mount()` returning the preset "for the caller to
+    // record" is exactly this — without it a resumed session has nothing to
+    // read and silently falls back to the roster default.
+    const createdPreset = presets && !options.resume
+      ? (await presets.resolve(preset)).id
+      : undefined
+    // `setup` is the one supported call site for a preset mount: only here is
+    // the join installed while the agent is still unpublished, so a rejected
+    // composition rolls the whole creation back instead of leaving a session
+    // half-composed. SuperOne's own tools go on the agent's scope after it, so
+    // a preset can never shadow them.
+    const setup = {
+      setup: async (agentCtx: Context) => {
+        if (presets) await presets.mount(agentCtx, preset)
+        if (toolPlane) await mountToolPlane(agentCtx, toolPlane)
+      },
+    }
     const handle = options.resume
       ? await agents.resume({ resumeSessionId: SessionId(options.sessionId), agentOptions, ...setup })
       : await agents.create({
           sessionId: SessionId(options.sessionId),
-          meta: { cwd: options.cwd },
+          meta: { cwd: options.cwd, ...(createdPreset ? { agentPreset: createdPreset } : {}) },
           agentOptions,
           ...setup,
         })
@@ -583,6 +657,100 @@ export class DeepseekRuntime {
   }
 
   /**
+   * Project one session's raw dsh log onto the trajectory wire model.
+   *
+   * A live session answers from `session.events`: the in-memory log is
+   * authoritative and already holds work the persistence backend has not
+   * flushed. Everything else loads the durable transcript, which is the same
+   * log — `assistant/chunk` frames included — so a closed session projects
+   * identically to how it looked while it ran.
+   *
+   * The projection is what crosses the process boundary, never the raw events:
+   * a real session's chunk frames outnumber its records by three orders of
+   * magnitude, and none of them survive the fold.
+   * @param sessionId - the dsh session to project.
+   * @returns the projection, or `null` when this session has no dsh log at all.
+   */
+  async trajectory(sessionId: string): Promise<TrajectoryProjection | null> {
+    const bridge = this.bridge as Context & { get(name: string): unknown }
+    const sessions = bridge.get('sessions') as {
+      get(id: unknown): { events: readonly SessionEvent[] } | undefined
+    } | undefined
+    const live = sessions?.get(SessionId(sessionId))
+    if (live) return projectTrajectory(sessionId, live.events, true)
+
+    const persistence = bridge.get('sessionPersistence') as {
+      load(id: unknown): Promise<{ events: readonly SessionEvent[] }>
+      list(signal?: AbortSignal): Promise<readonly { id: unknown }[]>
+    } | undefined
+    if (!persistence) {
+      throw new Error('deepseek trajectory: session persistence is not configured')
+    }
+
+    // A SuperOne session exists from the moment the user opens it, but its dsh
+    // session only exists once a turn has run. `list` omits a
+    // created-but-never-appended session, so this separates "nothing has
+    // happened yet" from "the log is there and unreadable" without matching on
+    // a backend error string.
+    const known = await persistence.list()
+    if (!known.some((header) => String(header.id) === sessionId)) return null
+
+    const stored = await persistence.load(SessionId(sessionId))
+    return projectTrajectory(sessionId, stored.events, false)
+  }
+
+  /**
+   * The preset one LIVE session is composed from.
+   * @param sessionId - the session to read.
+   * @returns the preset id, or `undefined` without a roster or a live agent.
+   */
+  sessionPreset(sessionId: string): string | undefined {
+    const record = this.records.get(sessionId)
+    if (!record) return undefined
+    // Read off the agent's scope chain rather than its session: this is the
+    // only answer available while a durable header is still being built.
+    return presetRoster(this.bridge)?.composedPreset(record.agent.ctx)
+  }
+
+  /**
+   * Whether one live session has produced nothing yet.
+   * @param sessionId - the session to check.
+   * @returns whether no turn has opened; `true` for a session with no agent.
+   */
+  sessionIsBlank(sessionId: string): boolean {
+    const sessions = (this.bridge as Context & { get(name: string): unknown })
+      .get('sessions') as { get(id: unknown): { events: readonly SessionEvent[] } | undefined } | undefined
+    const session = sessions?.get(SessionId(sessionId))
+    return session === undefined || sessionIsBlank(session.events)
+  }
+
+  /**
+   * Re-link a blank session to a different preset's standing composition.
+   *
+   * Refused once the session has produced anything. That is a product rule, not
+   * a mechanical one — swapping the tool catalog mid-conversation would leave
+   * logged tool calls the new composition cannot make — and dsh leaves the
+   * check to the caller, so it lives here.
+   * @param sessionId - the session to switch.
+   * @param presetId - the preset to compose it from.
+   */
+  async switchPreset(sessionId: string, presetId: string): Promise<void> {
+    const record = this.records.get(sessionId)
+    if (!record) throw new Error(`deepseek preset: no live agent for session ${sessionId}`)
+    const roster = presetRoster(this.bridge)
+    if (!roster) throw new Error('deepseek preset: no roster is composed')
+
+    const sessions = (this.bridge as Context & { get(name: string): unknown })
+      .get('sessions') as { get(id: unknown): { events: readonly SessionEvent[] } | undefined } | undefined
+    const session = sessions?.get(SessionId(sessionId))
+    if (session && !sessionIsBlank(session.events)) {
+      throw new Error('deepseek preset: this session has already run a turn')
+    }
+
+    await roster.recompose(record.agent.ctx, presetId)
+  }
+
+  /**
    * Switch one session's permission preset.
    *
    * The preset is dsh's own vocabulary — it bundles the sandbox mode the shell
@@ -602,33 +770,6 @@ export class DeepseekRuntime {
     presets.set((record.agent as unknown as { session: unknown }).session, preset)
   }
 
-  /**
-   * Turn the self-referential Cordis toolset on or off while the tree runs.
-   *
-   * Cordis registrations are reversible effects and dsh re-assembles the prompt
-   * from the tool registry on every request, so this takes effect on the next
-   * turn of every session — no restart, no "reopen the app to apply". That
-   * matters more here than for most settings: the thing being toggled is the
-   * model's ability to run code in this process, so the off switch has to be
-   * immediate rather than eventual.
-   *
-   * Idempotent — the desktop calls it on every settings change.
-   */
-  async setToolCordisEnabled(enabled: boolean): Promise<void> {
-    if (enabled === (this.toolCordisFiber !== null)) return
-    if (!enabled) {
-      const fiber = this.toolCordisFiber
-      this.toolCordisFiber = null
-      await fiber?.dispose()
-      return
-    }
-    this.toolCordisFiber = await mountToolCordis(this.bridge)
-  }
-
-  /** Whether the model can currently rewrite this process's plugin tree. */
-  get toolCordisEnabled(): boolean {
-    return this.toolCordisFiber !== null
-  }
 
   /**
    * Compact one session's history now, on the user's explicit request.
@@ -648,12 +789,37 @@ export class DeepseekRuntime {
   async compactSession(sessionId: string, signal?: AbortSignal): Promise<void> {
     const record = this.records.get(sessionId)
     if (!record) throw new Error(`deepseek compact: no live agent for session ${sessionId}`)
-    const compaction = (this.bridge as Context & { get(name: string): unknown })
-      .get('compaction') as {
-        compactNow(agent: Agent, signal: AbortSignal): Promise<unknown>
+
+    // Through the command registry, not the engine directly. A preset puts its
+    // compaction engine behind an entry-local `isolate` realm, so the ONLY
+    // context that can resolve `ctx.compaction` is one inside that same group —
+    // which is exactly where the preset also puts `command-compact`. Reaching
+    // for the service from out here resolves the outer realm and finds nothing.
+    const commands = (this.bridge as Context & { get(name: string): unknown })
+      .get('commands') as {
+        execute(agent: Agent, line: string, signal: AbortSignal): Promise<{
+          result: { kind: 'success' | 'error'; text?: string }
+        } | undefined>
       } | undefined
-    if (!compaction) throw new Error('deepseek compact: compaction engine is not mounted')
-    await compaction.compactNow(record.agent, signal ?? new AbortController().signal)
+    if (!commands) throw new Error('deepseek compact: command registry is not mounted')
+
+    const execution = await commands.execute(
+      record.agent,
+      '/compact',
+      signal ?? new AbortController().signal,
+    )
+    // `execute` answers `undefined` for a line no composed command claims —
+    // which for `/compact` means this session's preset composes no compaction
+    // engine at all, not that the compaction failed.
+    if (execution === undefined) {
+      throw new Error('deepseek compact: this session\'s preset composes no compaction engine')
+    }
+    // A command handler normalizes its failure into the result rather than
+    // throwing — a second compaction racing the first comes back as `error`,
+    // not a rejection — so the caller's contract is restored here.
+    if (execution.result.kind === 'error') {
+      throw new Error(`deepseek compact: ${execution.result.text ?? 'compaction failed'}`)
+    }
   }
 
   /**
@@ -673,7 +839,6 @@ export class DeepseekRuntime {
       await record.dispose()
     }
     await this.mcpServers.dispose()
-    await this.setToolCordisEnabled(false)
     await (this.root as Context & { stop?: () => Promise<void> }).stop?.()
   }
 }

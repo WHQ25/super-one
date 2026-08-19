@@ -997,3 +997,236 @@ The test's "outside" directory is under `homedir()`, not `tmpdir()`:
 `workspace-write` grants the platform temp areas as writable roots — the same
 set the Seatbelt profile grants — so a sibling temp directory would have been
 allowed and the test would have been vacuous a second way.
+
+## 21. Trajectory (2026-08-19)
+
+dsh's Web GUI carries a second conversation view beside Chat, labelled `轨迹`
+(`packages/client/ui-trajectory`, ~10.5k lines): a turn-aware ledger over the
+raw session log with a local inspector. It is not a skin over the transcript —
+it exists because dsh's log is an append-only, seq-contiguous, lossless-JSON
+record of *44* event types, and the ledger is the only surface that reads more
+than the handful the chat needs.
+
+Our mapper (`packages/deepseek/src/event-map.ts`) consumes 12 of those 44. That
+is the right budget for a chat transcript and the wrong one for the harness:
+everything that distinguishes dsh from a generic streaming backend —
+`request/header` (the exact prompt and tool catalog each request was built
+from), `user/message.source` (human prompt vs injected context), `approval/*` —
+was landing on the floor. Projecting dsh onto `AgentEvent` alone makes it
+another Claude with different weights.
+
+### What landed
+
+A SuperOne-native ledger rather than an embed. `@deepseek-ai/dsh-client-ui-trajectory`
+is published and version-matched, but it peers React 18 against our 19 and
+requires the whole dsh client runtime (cordis client tree, locale, ui-primitives,
+ui-conversation, slot ring) plus its theme — a visual and dependency enclave
+inside the app, coupled to a client contract that is a generated artifact.
+
+| Layer | Where |
+|---|---|
+| Wire model | `packages/shared/src/trajectory-types.ts` — no `@deepseek-ai/*` type crosses into the renderer, so a dsh bump cannot reach the panel and a second producer (a Codex rollout log) can fill the same shapes later |
+| Fold | `packages/deepseek/src/trajectory/{project,header,payload}.ts` — one forward pass; associations come from explicit ids (`callId`, approval `id`) or open brackets, never from wall-clock order |
+| Read | `DeepseekRuntime.trajectory(sessionId)` — live sessions answer from `session.events`, closed ones load the durable JSONL |
+| IPC | `AgentIpcChannels.DEEPSEEK_TRAJECTORY` → `window.app.readDeepseekTrajectory` |
+| UI | `apps/desktop/src/renderer/src/components/trajectory/` — toolbar, virtualized ledger, inspector |
+| Mount | `activityPanelComponents['trajectory']` + `openTrajectoryTab`; the launcher entry is gated to sessions whose harness resolves to `dsh` |
+
+Records: `system | user | context | message | tool | compacted | approval`.
+`subtool` (code-mode dispatch) and `retry` (`dsh-llm-retry`) are deliberately
+absent — those plugins are not in our tree, and a record kind with no producer
+is dead UI.
+
+The fold runs in the main process and only the projection crosses IPC. A real
+session's log is mostly `assistant/chunk` frames; none survive the fold, and
+shipping them would move three orders of magnitude more data than the panel
+renders. Inspector payloads are individually bounded at 512k chars with the
+truncation declared, so one `Read` of a huge file cannot stall the channel.
+
+### Two facts the live test corrected
+
+`live.test.ts` projects the log a real runtime actually produced, and disagreed
+with the documentation twice:
+
+- **`request/header` is appended *inside* its step, after `step/start`.** The
+  doc's "appended inside its step before dispatch" means the header a request
+  used does not exist when that request opens. Reading it at `step/start`
+  yields `header: null` on every request, forever. The open request adopts the
+  snapshot when it arrives instead.
+- **Turns and steps are 1-based.**
+
+Neither was reachable from synthetic fixtures, because the fixtures encoded the
+same wrong assumption as the code. The disk round-trip in the same file
+(`fromDisk` must equal `fromMemory` on records, totals, and headers) also pins
+that zstd-packed chunk rows decode back to identical timing.
+
+### Absence is not failure
+
+A SuperOne session exists the moment the user opens it; its dsh session only
+exists once a turn has run. The first cut reported that gap as a read failure,
+so opening the ledger on a fresh session showed the raw backend string
+`session "<uuid>" not found`. `SessionPersistence.list` omits a
+created-but-never-appended session, which separates the two cases without
+matching on a backend error string, and `TrajectoryResult` carries `absent` as
+a first-class answer beside `error`. The panel gives absence, emptiness, and
+failure the same layout but only paints failure with the destructive accent,
+and every one of them offers a retry.
+
+### Deferred
+
+The Overview timeline (TTFT/decode split, wheel zoom, drag-to-filter), backward
+paging with prepend anchoring, and the projection of `hook/*`, `command/*`,
+`tool-workflow/*`, and `tool/code-dispatch*`. The ledger currently ships the
+tail 2000 records and says how many it dropped.
+
+## 22. Agent presets — the roster adopted (2026-08-19)
+
+dsh's Web GUI carries a mode selector — 标准模式 / PTC 模式 / 极简模式 / 创造模式 —
+and it is not a prompt picker. A **preset** is a directory holding one
+`agent.cordis.yml`: an agent-plane composition that decides which tools the
+model gets and what its prompt says. The roster mounts each one ONCE per process
+under a standing scope, and a session joins by having its agent scope parented
+to that mount, so one instance of every tool and prompt section covers every
+session that named it.
+
+### Where each half lives now
+
+`dsh-web-app` disables 24 model-facing rows from `dsh-base` and re-mounts them
+behind `dsh-agent-presets`. We now have the same shape:
+
+| Plane | Rows |
+|---|---|
+| Host | executors (`subprocess-local`, `sandbox-local`, `sandbox-policy`, `fs-sandbox`, `bash-sandbox`, `shell-env`), registries (`subagents` + spawn/fork + `tool-subagent-report`, `skill`, `goal` + round driver, `jobs-local`, `web` + `web-search-deepseek`, `user-questions`, `commands`), `permission-presets`, `token-meter`, persistence, the model route |
+| Preset | every tool the model calls, the persona, `agent-instructions`, `plan-mode`, the compaction engine and its pruner, the delegation tools |
+
+The criterion is dsh's own and worth restating: **a service a row outside the
+realm reads belongs to the plane both can see.**
+
+### What the compositions are, and where they come from
+
+The four shipped presets are vendored into `apps/desktop/resources/agent-presets`
+and shipped through `extraResources`, rather than read out of
+`@deepseek-ai/dsh`'s own `config/`. That package is 117 KB but pulls 61
+dependencies including the whole `dsh-client-ui-*` browser surface, and a preset
+**is** a composition — its rows run with shell-level trust and its YAML may carry
+`!!js` expressions — so the exact text that composes an agent belongs somewhere
+a reviewer reads. Adopting them added 30 npm packages at `0.1.0-rc.7`.
+
+### Four things the mount refused before it worked
+
+Each one was a host contract the compositions assume and our tree did not meet.
+None were visible from reading; the empirical loop (mount all four, read the
+failure, add the host row) found them in order.
+
+- **`cordis:group` resolved to `undefined`.** A grouped row is how a composition
+  hands one `isolate` realm to a provider and its consumers together, and
+  `loader.builtins.group` is registered by the HOST, not carried by the loader —
+  dsh's `app-boot` does it. Without it every grouped row in every preset fails.
+- **`ctx.loader` is not published synchronously.** `ctx.plugin(Loader, …)` has to
+  be awaited before the builtin can be registered on it.
+- **`command-compact` waited forever for `commands`.** SuperOne owns the slash
+  surface and mounted no command registry, and a row still waiting on a service
+  the deployment never supplies is exactly what `mount()` refuses — it would
+  take the whole preset down. The registry is now mounted and renders nothing;
+  that keeps the shipped composition a copy rather than a fork.
+- **`compactSession` could no longer resolve the engine.** The preset puts
+  compaction behind an entry-local `isolate` realm, so the only context that can
+  see `ctx.compaction` is one inside that same group — which is where the preset
+  also puts `command-compact`. Compaction now runs through
+  `ctx.commands.execute(agent, '/compact')`, the officially supported path, and
+  a handler's normalized `{kind: 'error'}` is re-thrown so the caller's contract
+  survives.
+
+### The one deviation from upstream
+
+`standard`, `code`, and `cordis` ship their delegation rows with
+`backgroundMode: continuable`, which **defaults every delegation to the
+background**. dsh renders a parent-owned Task with status/collect/kill controls
+for that; SuperOne renders none of them, so a background child would be work the
+user can neither see nor stop — the same reasoning that kept `run_in_background`
+off when the delegation tools were ours. All three vendored files pin the rows
+to the foreground behind a `SuperOne deviation` banner, and
+`subagent.test.ts` fails loudly if a re-copy drops it.
+
+### Consequences worth knowing
+
+- **A rosterless tree now has no dsh tools at all.** That is not a shape SuperOne
+  ships — desktop always points the roster at the packaged root — so every test
+  composes the same way production does (`src/test-presets.ts`).
+- **A delegated child inherits its parent's preset**, verified rather than
+  assumed: `applyChildComposition` calls `composeFrom()` behind a `?.`, so it was
+  a silent no-op before the roster existed and starts working the moment one is
+  mounted. Parent and child request the identical 24-tool catalog.
+- **Event vocabulary rides runtime imports.** Dropping the `compaction-basic`
+  import deleted `compaction/*` from the `SessionEventMap` union, because dsh
+  merges each plugin's events from that plugin's own package. Consumers now name
+  the packages they read with explicit `import type {}` lines.
+- **A preset's `persona` row shadows the deployment persona.** A session on
+  `standard` gets dsh's stock coding-agent identity, not SuperOne's — the
+  earlier "keep dsh identity, append SuperOne persona" decision needs re-deciding
+  at the preset layer.
+
+### Session identity and the picker (P3/P4)
+
+**Which preset a session runs is dsh's fact, not ours.** No SQLite column was
+added: `SessionHeader.agentPreset` is durable, a blank-session switch appends
+`agent-preset/selected`, and `resolveSessionPreset(header, events)` folds the
+two. `createAgent` resolves the canonical id BEFORE creation and passes it as
+`meta.agentPreset` — `mount()` runs inside `setup`, by which point the header is
+already frozen, which is exactly what "returning the preset for the caller to
+record" means. Without that record a resumed session read nothing and silently
+fell back to the roster default; the resume test pins it by asserting the
+resumed catalog is `minimal`'s two tools.
+
+`switchPreset` refuses a session that has opened a turn. dsh leaves that check
+to the caller because it is a product rule, not a mechanical one, and the
+boundary is a turn having opened at all — not having finished.
+
+The picker sits beside the model selector, gated to dsh sessions. With no live
+agent the pick is a draft folded into the session's provider config (the
+backend reads it at creation); with one, it is a real `recompose()`. The live
+composition wins over the draft when both exist, because a resumed session
+recomposes from its own log and the store's pick may name a preset it never ran.
+A broken preset stays in the menu with its reason rather than being hidden —
+hiding it would leave its directory occupying the id with nothing to delete.
+
+`agent-preset/selected` also became a trajectory record kind. The
+`request/header` that follows a switch carries the resulting prompt and tool
+diff; the `preset` record is the reason that diff exists.
+
+### 创造模式 needed the plane split applied to itself
+
+The `cordis` preset would not mount at all, in either state of the
+`dshToolCordis` opt-in:
+
+- **Opt-in off** (the default): `tool-cordis` waited forever on
+  `dynamicCordisRunner` and `cordisInspect`, because our tree only mounted
+  `dsh-cordis-host-runner` inside that opt-in.
+- **Opt-in on**: the preset's own `tool-cordis` row collided with the
+  host-plane copy — *"Host Cordis inspect provider is already registered"*.
+
+Two gates were competing for one capability, which is the same mistake the
+plane split exists to prevent. Resolved by applying that rule here too: the
+**runner and its inspect registry are host-plane services** (nothing about them
+reaches the model) and mount unconditionally, while **`tool-cordis` is the
+preset's row** and mounts nowhere else. Two instances cannot coexist, so the
+preset is now the one and only way an agent gets those tools.
+
+The `dshToolCordis` setting is **retired**. It offered a second way to say "give
+this agent the self-modifying toolset" — a global toggle beside a per-session
+picker that covers it strictly better — and two ways to express one thing is
+what produced the collision above. Its whole surface is gone: the toggle, the
+`agent-dsh` settings domain, the `AppSettings` key, and the dsh preferences tab
+(dsh now shows only its MCP tab, since `PreferencesPage` edits
+`~/.claude/settings.json` and never applied to it). A stale key left in an
+existing `app-settings.json` is simply ignored — that file is not schema-bound
+the way the SQLite tables are.
+
+The tools also renamed in the move (`cordis_run`/`cordis_inspect_self` rather
+than `cordis_start`/`cordis_inspect_runs`) — the names depend on how the
+composition configures the row, which a bare `ctx.plugin(ToolCordis)` did not.
+
+**The test that should have caught it now exists.** Discovery health is a shape
+check — it proves the YAML parses and holds named rows, not that every row's
+host service exists — so `cordis` listed as healthy while being unmountable.
+`presets.test.ts` now mounts all four.

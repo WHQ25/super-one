@@ -28,7 +28,7 @@ interface AgentAPI {
   respondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): Promise<boolean>
   setPermissionMode(projectPath: string, sessionId: string, mode: PermissionMode): Promise<boolean>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>
-  setSessionSettings(projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }): Promise<void>
+  setSessionSettings(projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null }): Promise<void>
   setSessionApiProvider(sessionId: string, apiProviderId: string | null): Promise<void>
   broadcastSessionSetting(sessionId: string, patch: SessionSettingsPatch): Promise<void>
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
@@ -73,6 +73,13 @@ interface AppAPI {
   connectOpenCode(force?: boolean): Promise<OpenCodeResources>
   connectCursor(force?: boolean): Promise<import('@superone/shared/agent-types').CursorResources>
   connectDeepseek(): Promise<import('@superone/shared/agent-types').DeepseekResources>
+  readDeepseekTrajectory(
+    sessionId: string,
+  ): Promise<import('@superone/shared/trajectory-types').TrajectoryResult>
+  listDeepseekPresets(
+    sessionId?: string,
+  ): Promise<import('@superone/shared/agent-types').DeepseekPresetRoster>
+  setDeepseekPreset(sessionId: string, presetId: string): Promise<{ ok: boolean; error?: string }>
   setCursorApiKey(apiKey: string): Promise<{ ok: true; providerId: string }>
   getCursorAuthStatus(): Promise<{ configured: boolean; apiKeyName: string | null; userEmail: string | null }>
   updateCursorBaseConfig(patch: Record<string, unknown>): Promise<{ ok: true; config: Record<string, unknown> }>

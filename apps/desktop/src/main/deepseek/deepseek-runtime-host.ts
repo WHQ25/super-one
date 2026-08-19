@@ -5,11 +5,15 @@ import {
   type DeepseekApprovalRequest,
 } from '@superone/deepseek'
 import { app } from 'electron'
+import { is } from '@electron-toolkit/utils'
 import { join } from 'node:path'
 import log from '../logger'
 import { readAppSettings } from '../app-settings-service'
 import { DEEPSEEK_CREDENTIAL_REF, resolveDeepseekApiKey } from './deepseek-credentials'
 import { stopTrackingDshMcpConfig } from './deepseek-mcp-sync'
+
+/** The preset a session composes with when the user has not picked one. */
+export const DEFAULT_DSH_AGENT_PRESET = 'standard'
 
 /**
  * Credential reference the embedded adapter asks for. It is a *name*, never a
@@ -53,6 +57,20 @@ export async function peekDeepseekRuntime(): Promise<DeepseekRuntime | null> {
   return runtimePromise ? await runtimePromise.catch(() => null) : null
 }
 
+/**
+ * The shipped agent-preset root — the `system`-trust half of the roster.
+ *
+ * Not optional in production: since the model-facing tool rows live in the
+ * preset compositions, a tree booted without this root reaches the model with
+ * no dsh tools at all. `dsh-agent-presets` appends `<dshHome>/.agent-presets`
+ * as the writable root on top of it.
+ */
+function shippedPresetRoot(): string {
+  return is.dev
+    ? join(app.getAppPath(), 'resources', 'agent-presets')
+    : join(process.resourcesPath, 'agent-presets')
+}
+
 export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
   if (!runtimePromise) {
     runtimePromise = DeepseekRuntime.create({
@@ -60,6 +78,8 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
       // (docs/draft/deepseek-harness-integration.md §12.1).
       persona: '',
       persistenceRoot: join(app.getPath('userData'), 'deepseek-sessions'),
+      presetRoots: [shippedPresetRoot()],
+      defaultPreset: DEFAULT_DSH_AGENT_PRESET,
       // Resolved per request, so re-binding a key in SuperOne settings reaches
       // the next turn without a restart — and no secret enters process.env.
       credentialLookup: (ref) => (ref === DEEPSEEK_CREDENTIAL_REF ? resolveDeepseekApiKey() : undefined),
@@ -67,9 +87,6 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
         apiKeyEnv: DEEPSEEK_CREDENTIAL_REF,
         models: DEEPSEEK_MODEL_CATALOG,
       },
-      // Read at boot; later changes ride `setToolCordisEnabled` from the
-      // settings handler, so the tree is never rebuilt for it.
-      toolCordis: readAppSettings().dshToolCordis,
       onApproval: async (request) => {
         const decision = approvalRouters.get(request.sessionId)?.(request)
         // No owner (session closed mid-question) fails closed.

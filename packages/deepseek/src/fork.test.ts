@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 class RecordingAdapter extends LlmAdapter {
   readonly transcripts: string[] = []
@@ -43,7 +44,7 @@ const dirs: string[] = []
 const runtimes: DeepseekRuntime[] = []
 
 async function bootRuntime(persistenceRoot: string) {
-  const runtime = await DeepseekRuntime.create({ persona: 'test agent', persistenceRoot })
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent', persistenceRoot })
   runtimes.push(runtime)
   const adapter = new RecordingAdapter()
   ;(runtime.context as unknown as {
@@ -131,7 +132,10 @@ describe('deepseek fork', () => {
     })
     await runTurn(child, 'continue')
 
-    const transcript = second.adapter.transcripts.at(-1) ?? ''
+    // Joined across every request, not just the last: the standard preset
+    // composes auto-compaction, and its summarize call is an `llm.stream()`
+    // too — so the most recent transcript is not necessarily the model turn.
+    const transcript = second.adapter.transcripts.join('\n')
     expect(transcript).toContain('keep this one')
     // The boundary is inclusive of the first turn only: everything the user
     // forked away from must be absent from the child's history.
@@ -167,7 +171,10 @@ describe('deepseek fork', () => {
     })
     await runTurn(child, 'continue')
 
-    const transcript = adapter.transcripts.at(-1) ?? ''
+    // Joined across every request, not just the last: the standard preset
+    // composes auto-compaction, and its summarize call is an `llm.stream()`
+    // too — so the most recent transcript is not necessarily the model turn.
+    const transcript = adapter.transcripts.join('\n')
     expect(transcript).toContain('alpha')
     expect(transcript).toContain('omega')
   })

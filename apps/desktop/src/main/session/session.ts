@@ -965,6 +965,25 @@ export class Session implements SessionContract {
     }
   }
 
+  /**
+   * Record the dsh agent preset this session composes from.
+   *
+   * It lands in `providerConfig` rather than on a field of its own because that
+   * is what the backend reads at creation — and creation is the only moment it
+   * matters: a resumed session recomposes from its own durable log, and a live
+   * one switches through the roster.
+   * @param presetId - the preset to compose from, or `null` to take the default.
+   */
+  setAgentPreset(presetId: string | null): void {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'dsh') return
+    const current = (this.providerConfig as { agentPreset?: string } | null)?.agentPreset ?? null
+    if (current === presetId) return
+    this.providerConfig = { ...(this.providerConfig ?? {}), agentPreset: presetId ?? undefined }
+    this._needsRebuild = true
+    this.notifyStateChange()
+  }
+
   private applyAcpAgentToConfig(): void {
     if (this.harnessId !== 'acp' || !this._acpAgentId) return
     this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)

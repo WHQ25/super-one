@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   displayToolName,
+  dshEffortFromSuperone,
   dshPresetForMode,
   type DeepseekAgentHandle,
   type DeepseekMcpServerSpec,
@@ -32,11 +33,18 @@ interface DeepseekConfig {
   provider?: string
   model?: string
   maxTokens?: number
+  /**
+   * The agent preset — dsh's "mode" — this session composes from. Only read at
+   * creation: a resumed session recomposes from its own durable log instead,
+   * and a live one switches through `switchPreset`.
+   */
+  agentPreset?: string
 }
 
 function readConfig(config: unknown): DeepseekConfig {
   return (config && typeof config === 'object' ? config : {}) as DeepseekConfig
 }
+
 
 interface PendingApproval {
   request: PermissionRequest
@@ -114,6 +122,10 @@ export class DeepseekBackend implements SessionBackend {
       const agent = await runtime.createAgent({
         sessionId: providerSessionId,
         cwd: opts.cwd,
+        // Absent takes the roster default. Creation is the only moment this
+        // matters: a resumed session recomposes from its own durable log, and a
+        // blank live one switches through the roster.
+        ...(config.agentPreset ? { agentPreset: config.agentPreset } : {}),
         // dsh's file/shell/search/todo rows are mounted for the whole tree (a
         // delegated child has to inherit them); each still resolves the calling
         // agent's own session cwd. What is per session is below.
@@ -187,7 +199,12 @@ export class DeepseekBackend implements SessionBackend {
       return
     }
     if (request.model) agent.setRoute({ model: request.model })
-    if (request.effort) agent.setRoute({ reasoningEffort: request.effort })
+    // An effort DeepSeek does not implement is dropped rather than aliased: the
+    // adapter rejects an unsupported id with `UNSUPPORTED_REASONING_EFFORT`
+    // before any provider I/O, so a stale `medium` off another harness would
+    // otherwise fail the whole turn.
+    const reasoningEffort = dshEffortFromSuperone(request.effort)
+    if (reasoningEffort) agent.setRoute({ reasoningEffort })
     agent.sendText(request.content)
   }
 

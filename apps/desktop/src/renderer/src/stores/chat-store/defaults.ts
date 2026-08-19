@@ -26,6 +26,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     awaitingAssistantReply: false,
     session: null,
     _providerSessionId: null,
+    dshPreset: null,
     sessionProvider: null,
     totalCostUsd: 0,
     contextTokens: 0,

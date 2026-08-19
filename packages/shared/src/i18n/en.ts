@@ -5,6 +5,101 @@ export type Messages = {
       terminal: string
     }
   }
+  chatDshPreset: {
+    label: string
+    locked: string
+  }
+  trajectory: {
+    title: string
+    toolbarAria: string
+    search: string
+    searchPlaceholder: string
+    refresh: string
+    noMatches: string
+    expandTurns: string
+    collapseTurns: string
+    expandCalls: string
+    collapseCalls: string
+    turn: string
+    turnCounts: string
+    betweenTurns: string
+    droppedPrefix: string
+    request: string
+    requestCount: string
+    tokenTotals: string
+    notice: {
+      loadingTitle: string
+      loadingDetail: string
+      absentTitle: string
+      absentDetail: string
+      emptyTitle: string
+      emptyDetail: string
+      errorTitle: string
+      errorDetail: string
+      retry: string
+    }
+    kind: {
+      system: string
+      user: string
+      context: string
+      message: string
+      tool: string
+      compacted: string
+      approval: string
+      preset: string
+    }
+    inspector: {
+      changes: string
+      prompt: string
+      tools: string
+      content: string
+      sections: string
+      source: string
+      text: string
+      thinking: string
+      metrics: string
+      arguments: string
+      result: string
+      schema: string
+      summary: string
+      noChanges: string
+      configChanged: string
+      toolsChanged: string
+      toolsAdded: string
+      toolsRemoved: string
+      toolsRetitled: string
+      promptChanged: string
+      noPrompt: string
+      noTools: string
+      noContent: string
+      noSchema: string
+      stillRunning: string
+      truncated: string
+      producer: string
+      form: string
+      notice: string
+      provider: string
+      model: string
+      ttft: string
+      duration: string
+      input: string
+      output: string
+      cacheRead: string
+      cacheWrite: string
+      reasoning: string
+      trigger: string
+      preTokens: string
+      postTokens: string
+      toolName: string
+      callId: string
+      reason: string
+      outcome: string
+      purpose: string
+      route: string
+      contextWindow: string
+      preset: string
+    }
+  }
   common: {
     cancel: string
     confirm: string
@@ -572,13 +667,6 @@ export type Messages = {
         system: string
         light: string
         dark: string
-      }
-    }
-    dsh: {
-      toolCordis: {
-        label: string
-        description: string
-        warning: string
       }
     }
     browser: {
@@ -2891,6 +2979,101 @@ export const en: Messages = {
       terminal: 'Terminal',
     },
   },
+  chatDshPreset: {
+    label: 'Mode',
+    locked: 'The mode is fixed once a session has run a turn.',
+  },
+  trajectory: {
+    title: 'Trajectory',
+    toolbarAria: 'Trajectory toolbar',
+    search: 'Search Trajectory',
+    searchPlaceholder: 'Search',
+    refresh: 'Reload the Log',
+    noMatches: 'No records match this search.',
+    expandTurns: 'Expand Turns',
+    collapseTurns: 'Collapse Turns',
+    expandCalls: 'Expand Calls',
+    collapseCalls: 'Collapse Calls',
+    turn: 'Turn {{turn}}',
+    turnCounts: '{{steps}} steps · {{calls}} calls',
+    betweenTurns: 'Between Turns',
+    droppedPrefix: '{{count}} earlier records are outside the loaded window.',
+    request: 'Request #{{ordinal}}',
+    requestCount: '{{count}} requests',
+    tokenTotals: 'in {{input}} · out {{output}}',
+    notice: {
+      loadingTitle: 'Reading the session log',
+      loadingDetail: 'Projecting the records this session recorded.',
+      absentTitle: 'No Trajectory Yet',
+      absentDetail: 'A trajectory appears once this session has run its first turn.',
+      emptyTitle: 'Nothing Recorded',
+      emptyDetail: 'The session log exists but has produced no records yet.',
+      errorTitle: 'Could Not Read the Session Log',
+      errorDetail: 'The log is there but could not be projected. The backend reported:',
+      retry: 'Try Again',
+    },
+    kind: {
+      system: 'System',
+      user: 'User',
+      context: 'Context',
+      message: 'Model',
+      tool: 'Tool',
+      compacted: 'Compact',
+      approval: 'Approval',
+      preset: 'Preset',
+    },
+    inspector: {
+      changes: 'Changes',
+      prompt: 'Prompt',
+      tools: 'Tools',
+      content: 'Content',
+      sections: 'Sections',
+      source: 'Source',
+      text: 'Text',
+      thinking: 'Thinking',
+      metrics: 'Metrics',
+      arguments: 'Arguments',
+      result: 'Result',
+      schema: 'Schema',
+      summary: 'Summary',
+      noChanges: 'This snapshot changed nothing.',
+      configChanged: 'Configuration',
+      toolsChanged: 'Tool Catalog',
+      toolsAdded: 'Added',
+      toolsRemoved: 'Removed',
+      toolsRetitled: 'Changed',
+      promptChanged: 'System Prompt',
+      noPrompt: 'This request carried no system prompt.',
+      noTools: 'This request carried no tools.',
+      noContent: 'No content.',
+      noSchema: 'This tool was not in the catalog when it was called.',
+      stillRunning: 'Still running.',
+      truncated: '{{count}} more characters are not shown.',
+      producer: 'Producer',
+      form: 'Form',
+      notice: 'Notice',
+      provider: 'Provider',
+      model: 'Model',
+      ttft: 'Time to First Token',
+      duration: 'Duration',
+      input: 'Input Tokens',
+      output: 'Output Tokens',
+      cacheRead: 'Cache Read',
+      cacheWrite: 'Cache Write',
+      reasoning: 'Reasoning Tokens',
+      trigger: 'Trigger',
+      preTokens: 'Tokens Before',
+      postTokens: 'Tokens After',
+      toolName: 'Tool',
+      callId: 'Call Id',
+      reason: 'Reason',
+      outcome: 'Outcome',
+      purpose: 'Purpose',
+      route: 'Route',
+      contextWindow: 'Context Window',
+      preset: 'Preset',
+    },
+  },
   common: {
     cancel: 'Cancel',
     confirm: 'Confirm',
@@ -3506,13 +3689,6 @@ export const en: Messages = {
         system: 'System',
         light: 'Light',
         dark: 'Dark',
-      },
-    },
-    dsh: {
-      toolCordis: {
-        label: 'Self-modifying plugins',
-        description: 'Let DeepSeek define and run plugins inside SuperOne while it works — it can inspect the live runtime, write a plugin, start it, and stop it again.',
-        warning: 'Experimental. The sandbox is not a security boundary — treat this like giving the model shell access. A running plugin is shared by every DeepSeek session in this process, and none of it survives a restart.',
       },
     },
     browser: {

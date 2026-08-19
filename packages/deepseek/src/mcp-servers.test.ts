@@ -14,6 +14,7 @@ import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
 import { DeepseekMcpServers, DSH_MCP_CLIENT_SPECIFIER, type DeepseekMcpServerSpec } from './mcp-servers'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 class ToolCallAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -81,7 +82,7 @@ const fakeServerPlugin = {
 const cleanups: Array<() => Promise<void> | void> = []
 
 async function bootRuntime() {
-  const runtime = await DeepseekRuntime.create({ persona: 'test agent' })
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent' })
   cleanups.push(() => runtime.dispose())
   ;(runtime.context as unknown as {
     llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }

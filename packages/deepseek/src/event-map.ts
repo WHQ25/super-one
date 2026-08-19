@@ -1,6 +1,13 @@
 import type { AgentEvent, ChatMessage, ContentBlock, TodoItem } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+// Side-effect type imports: dsh merges each plugin's event vocabulary into
+// `SessionEventMap` from the plugin's own package, so a consumer that reads an
+// event has to name that package itself. Relying on some other file's runtime
+// import to carry the augmentation is how `compaction/*` silently vanished from
+// the union when the engine moved to the preset plane.
+import type {} from '@deepseek-ai/dsh-compaction'
+import type {} from '@deepseek-ai/dsh-user-approval'
 
 /** Message id derivation is deterministic so replay produces identical ids. */
 function stepMessageId(sessionId: string, turn: number, step: number): string {

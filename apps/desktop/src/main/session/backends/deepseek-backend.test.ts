@@ -9,6 +9,7 @@ const { createAgentMock, approvalRouters } = vi.hoisted(() => ({
 
 const setPermissionPresetMock = vi.fn()
 
+
 vi.mock('../../logger', () => ({
   default: { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }))
@@ -174,6 +175,21 @@ describe('DeepseekBackend', () => {
     expect(agent.disposed).toBe(0)
   })
 
+  it('routes an effort DeepSeek implements and drops one it does not', async () => {
+    const agent = installFakeAgent()
+    const backend = new DeepseekBackend()
+    await backend.start(makeOpts())
+
+    await backend.send({ sessionId: 's1', content: 'a', effort: 'max' } as never)
+    // `medium` only reaches here from a pref carried over from another harness.
+    // Forwarding it would fail the whole turn with UNSUPPORTED_REASONING_EFFORT
+    // before any provider I/O, so the route is left on the adapter's default.
+    await backend.send({ sessionId: 's1', content: 'b', effort: 'medium' } as never)
+
+    expect(agent.routes).toEqual([{ reasoningEffort: 'max' }])
+    expect(agent.sent).toEqual(['a', 'b'])
+  })
+
   it('cancels the live agent on interrupt and drops pending approvals on close', async () => {
     const agent = installFakeAgent()
     const backend = new DeepseekBackend()
@@ -192,5 +208,25 @@ describe('DeepseekBackend', () => {
     expect(outcome).toBe('rejected')
     expect(agent.disposed).toBe(1)
     expect(backend.hasActiveRuntime()).toBe(false)
+  })
+})
+
+describe('dsh agent preset selection', () => {
+  it("passes the session's own pick through to the runtime", async () => {
+    installFakeAgent()
+
+    await new DeepseekBackend().start(makeOpts({ config: { agentPreset: 'minimal' } }))
+
+    expect(createAgentMock).toHaveBeenCalledWith(expect.objectContaining({ agentPreset: 'minimal' }))
+  })
+
+  it('takes the roster default when the session named none', async () => {
+    installFakeAgent()
+
+    await new DeepseekBackend().start(makeOpts())
+
+    expect(createAgentMock).toHaveBeenCalledWith(
+      expect.not.objectContaining({ agentPreset: expect.anything() }),
+    )
   })
 })

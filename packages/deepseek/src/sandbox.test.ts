@@ -7,6 +7,7 @@ import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
 import type { DshPermissionPreset } from './permission-presets'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 /** `CALL <tool> <json>` in the prompt emits exactly that call, once. */
 class ToolCallAdapter extends LlmAdapter {
@@ -75,7 +76,7 @@ async function session(preset?: DshPermissionPreset) {
   const cwd = workspace()
   writeFileSync(join(cwd, 'seed.txt'), 'seed')
 
-  const runtime = await DeepseekRuntime.create({ persona: 'test agent' })
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent' })
   disposers.push(() => runtime.dispose())
   ;(runtime.context as unknown as {
     llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }

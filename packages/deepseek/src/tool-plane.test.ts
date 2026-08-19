@@ -7,6 +7,7 @@ import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
 import type { ToolApprovalDecision } from './tool-plane'
+import { TEST_PRESET_OPTIONS } from './test-presets'
 
 /**
  * Scripted adapter driven by sentinels in the prompt: `CALL <tool> <json>` emits
@@ -62,7 +63,7 @@ function workspace(files: Record<string, string>): string {
 }
 
 async function bootRuntime() {
-  const runtime = await DeepseekRuntime.create({ persona: 'test agent' })
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent' })
   disposers.push(() => runtime.dispose())
   const ctx = runtime.context as unknown as {
     llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }

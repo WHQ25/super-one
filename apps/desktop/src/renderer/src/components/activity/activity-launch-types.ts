@@ -1,9 +1,10 @@
 import type { ComponentType } from 'react'
-import { Globe, Terminal as TerminalIcon } from 'lucide-react'
+import { Globe, Route, Terminal as TerminalIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
-import { openBrowserTab, openTerminalTab } from './activity-panel-api'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
+import { openBrowserTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
 
 export interface ActivityLaunchType {
   id: string
@@ -21,6 +22,15 @@ const isMac = window.app.platform === 'darwin'
 export function useActivityLaunchTypes(): ActivityLaunchType[] {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
+  // Trajectory reads a dsh session log, so it is offered only where one exists.
+  // Other harnesses keep their own native transcripts; projecting those onto
+  // this ledger is separate work, not a fallback.
+  const trajectorySessionId = useChatStore((s) => {
+    const project = s.activeProject ? s.projectSessions[s.activeProject] : undefined
+    const sessionId = project?._activeSessionId
+    const session = sessionId ? project?._sessions[sessionId] : undefined
+    return session && resolveProvider(session) === 'dsh' ? sessionId ?? null : null
+  })
 
   return [
     {
@@ -44,5 +54,16 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
         void openTerminalTab(projectPath, sessionId)
       },
     },
+    // Absent rather than disabled on every other harness: a greyed-out row
+    // reads as "you could enable this", and nothing a user does on a Claude or
+    // Codex session will ever produce a dsh log to project.
+    ...(trajectorySessionId === null
+      ? []
+      : [{
+        id: 'trajectory',
+        icon: Route,
+        label: t('trajectory.title'),
+        onOpen: () => openTrajectoryTab(trajectorySessionId, t('trajectory.title')),
+      }]),
   ]
 }

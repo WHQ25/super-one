@@ -86,6 +86,12 @@ export interface PerSessionState {
   session: SessionInfo | null
   /** Provider-side session id (Claude SDK / ACP agent). Survives harnesses with no SessionInfo. */
   _providerSessionId: string | null
+  /**
+   * The dsh agent preset this session composes from — a draft until the session
+   * has an agent, after which dsh's own log is authoritative and the picker
+   * reads the live value instead.
+   */
+  dshPreset: string | null
   sessionProvider: ChatProvider | null
   totalCostUsd: number
   contextTokens: number
@@ -408,6 +414,7 @@ export interface ChatStore {
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
+  setDshPreset: (preset: string) => void
   setAcpAgentId: (agentId: string | null) => void
   setOpenCodeAgentId: (agentId: string | null) => void
   setSelectedAcpMode: (modeId: string) => void

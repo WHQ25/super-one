@@ -18,6 +18,11 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  # The dsh agent presets. They are read with `readdir` by the preset roster and
+  # their rows are dynamically imported by the Loader, so they ship unpacked
+  # beside the app rather than inside the asar bundle.
+  - from: resources/agent-presets
+    to: agent-presets
 
 afterPack: "./build/afterPack.cjs"
 

@@ -199,6 +199,41 @@ export function openMiniAppTab(instanceKey: string, appId: string, label: string
   })
 }
 
+/**
+ * Open (or reveal) the Trajectory ledger for one dsh session.
+ *
+ * Keyed by session so a second open reveals the existing panel: the ledger is
+ * a view of that session's log, and two of them would only compete to refresh.
+ */
+export function openTrajectoryTab(sessionId: string, label: string) {
+  ensureVisible()
+  const panelId = `trajectory-${sessionId}`
+  recordMosaicOpen(panelId, () => openTrajectoryTab(sessionId, label))
+  execOrDefer(() => {
+    if (!dockApi) return
+    const existing = dockApi.panels.find((p) => p.id === panelId)
+    if (existing) {
+      activateInMaximizedGroup(existing)
+      return
+    }
+    const position = positionInMaximizedGroup()
+    dockApi.addPanel({
+      id: panelId,
+      component: 'trajectory',
+      tabComponent: 'trajectory-tab',
+      title: label,
+      params: { sessionId },
+      ...(position ? { position } : {}),
+    })
+  })
+}
+
+export function closeTrajectoryTab(sessionId: string) {
+  const panelId = `trajectory-${sessionId}`
+  removeMosaicOpen(panelId)
+  dockApi?.panels.find((p) => p.id === panelId)?.api.close()
+}
+
 export function closeMiniAppTab(instanceKey: string) {
   const panelId = `miniapp-${instanceKey}`
   removeMosaicOpen(panelId)

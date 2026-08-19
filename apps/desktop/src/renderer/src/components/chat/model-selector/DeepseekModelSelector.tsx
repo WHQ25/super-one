@@ -1,9 +1,16 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { EffortLevel } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import {
+  deepseekPresetCopy,
+  deepseekPresetIcon,
+  useDeepseekPresetSelection,
+} from '../DeepseekPresetSelector'
+import {
   GroupedModelEffortSelector,
   type SelectorEffortOption,
+  type SelectorModeOption,
   type SelectorModelOption,
 } from './GroupedModelEffortSelector'
 
@@ -18,11 +25,13 @@ const EFFORT_LABELS: Record<EffortLevel, string> = {
 }
 
 export function DeepseekModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
+  const { t } = useTranslation()
   const resources = useChatStore((state) => state.harnessResources.dsh)
   const selectedModel = useActiveSession((state) => state.selectedModel)
   const selectedEffort = useActiveSession((state) => state.selectedEffort)
   const setSelectedModel = useChatStore((state) => state.setSelectedModel)
   const setSelectedEffort = useChatStore((state) => state.setSelectedEffort)
+  const { presets, selectedId: selectedModeId, switchable, choose } = useDeepseekPresetSelection()
 
   const effectiveSelectedModel = selectedModel || DEFAULT_MODEL
   const current = resources?.models.find((model) => model.id === effectiveSelectedModel)
@@ -45,8 +54,29 @@ export function DeepseekModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
     [current],
   )
 
+  const modes = useMemo<SelectorModeOption[]>(
+    () => presets.map((preset) => {
+      const copy = deepseekPresetCopy(preset, t)
+      return {
+        id: preset.id,
+        name: copy.name,
+        description: copy.description ?? undefined,
+        icon: deepseekPresetIcon(preset.id),
+        disabled: preset.broken !== null,
+      }
+    }),
+    [presets, t],
+  )
+
+  const SelectedModeIcon = deepseekPresetIcon(selectedModeId)
+
   if (models.length === 0) {
-    return <span className="rounded-lg px-2 py-1 text-xs text-muted-foreground">DeepSeek</span>
+    return (
+      <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground">
+        <SelectedModeIcon className="size-3.5 shrink-0" />
+        DeepSeek
+      </span>
+    )
   }
 
   return (
@@ -62,6 +92,15 @@ export function DeepseekModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
       effortOptions={effortOptions}
       selectedEffort={selectedEffort ?? null}
       onSelectEffort={(value) => setSelectedEffort(value as EffortLevel)}
+      modes={modes}
+      modeLabel={t('chatDshPreset.label')}
+      selectedModeId={selectedModeId}
+      onSelectMode={(id) => {
+        const preset = presets.find((entry) => entry.id === id)
+        if (preset) void choose(preset)
+      }}
+      modesDisabled={!switchable}
+      modesDisabledReason={t('chatDshPreset.locked')}
       onCloseAutoFocus={onCloseAutoFocus}
     />
   )

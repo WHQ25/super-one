@@ -8,6 +8,12 @@ export type Messages = {
   chatDshPreset: {
     label: string
     locked: string
+    presets: {
+      standard: { name: string; description: string }
+      code: { name: string; description: string }
+      minimal: { name: string; description: string }
+      cordis: { name: string; description: string }
+    }
   }
   trajectory: {
     title: string
@@ -3048,6 +3054,28 @@ export const en: Messages = {
   chatDshPreset: {
     label: 'Mode',
     locked: 'The mode is fixed once a session has run a turn.',
+    presets: {
+      standard: {
+        name: 'Standard',
+        description:
+          'Full-featured coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.',
+      },
+      code: {
+        name: 'PTC',
+        description:
+          'All Standard capabilities, with tools exposed through Code Mode SDK so the model can compose multi-step operations in one TypeScript program.',
+      },
+      minimal: {
+        name: 'Minimal',
+        description:
+          'Minimal coding agent with only persistent Bash and str_replace_editor tools.',
+      },
+      cordis: {
+        name: 'Creator',
+        description:
+          'Create custom agent presets with all Standard capabilities plus runtime inspection, plugin experimentation, and preset authoring guidance.',
+      },
+    },
   },
   trajectory: {
     title: 'Trajectory',

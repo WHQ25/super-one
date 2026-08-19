@@ -1,12 +1,18 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, ChevronDown, ChevronRight, RefreshCw, Search, Settings2, X, Zap } from 'lucide-react'
 import { Command, CommandInput } from '@superone/ui/components/ui/command'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -46,6 +52,14 @@ export interface SelectorAgentOption {
   description?: string
 }
 
+export interface SelectorModeOption {
+  id: string
+  name: string
+  description?: string
+  icon: LucideIcon
+  disabled?: boolean
+}
+
 /** Non-effort catalog param shown under Options (toggle or multi-choice). */
 export interface SelectorCatalogParam {
   id: string
@@ -66,6 +80,13 @@ interface GroupedModelEffortSelectorProps {
   selectedEffort: string | null
   selectedEffortLabel?: string | null
   onSelectEffort: (value: string) => void
+  /** Optional session mode shown as an icon in the trigger and a submenu in the catalog. */
+  modes?: SelectorModeOption[]
+  modeLabel?: string
+  selectedModeId?: string | null
+  onSelectMode?: (id: string) => void
+  modesDisabled?: boolean
+  modesDisabledReason?: string
   /** Optional primary-agent list (e.g. OpenCode build/plan/general). */
   agents?: SelectorAgentOption[]
   selectedAgentId?: string | null
@@ -366,6 +387,12 @@ export function GroupedModelEffortSelector({
   selectedEffort,
   selectedEffortLabel,
   onSelectEffort,
+  modes = [],
+  modeLabel = 'Mode',
+  selectedModeId,
+  onSelectMode,
+  modesDisabled = false,
+  modesDisabledReason,
   agents = [],
   selectedAgentId,
   selectedAgentLabel,
@@ -404,11 +431,14 @@ export function GroupedModelEffortSelector({
     [allModels, selectedModelId],
   )
   const selectedEffortOption = effortOptions.find((option) => option.value === selectedEffort)
+  const selectedMode = modes.find((mode) => mode.id === selectedModeId) ?? modes[0]
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId)
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId)
   const agentLabel = selectedAgentLabel ?? selectedAgent?.name ?? selectedAgentId ?? 'Agent'
   const modelLabel = selectedModelLabel ?? selectedModel?.name ?? selectedModelId ?? 'Model'
   const effortLabel = selectedEffortLabel ?? selectedEffortOption?.label ?? 'Effort'
+  const SelectedModeIcon = selectedMode?.icon
+  const hasModes = modes.length > 0 && Boolean(onSelectMode)
   const canSelectEffort = hasSelectableEffort(effortOptions)
   const showOptionParams = optionParams.length > 0 && Boolean(onOptionParamChange)
   const toggleParams = optionParams.filter((param) => param.kind === 'toggle')
@@ -448,6 +478,7 @@ export function GroupedModelEffortSelector({
               ? undefined
               : [
                   hasAgents ? agentLabel : null,
+                  selectedMode?.name ?? null,
                   fastEnabled ? `Fast · ${modelLabel}` : modelLabel,
                   canSelectEffort ? effortLabel : null,
                   ...optionSummary,
@@ -466,6 +497,7 @@ export function GroupedModelEffortSelector({
           ) : (
             // Truncation priority via flex-shrink: model last, agent middle, effort first.
             <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+              {SelectedModeIcon && <SelectedModeIcon className="size-3.5 shrink-0" />}
               {hasAgents && (
                 <>
                   <span className="min-w-0 shrink-[8] truncate">{agentLabel}</span>
@@ -492,6 +524,58 @@ export function GroupedModelEffortSelector({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-[70vh] w-72 overflow-hidden p-1" onCloseAutoFocus={onCloseAutoFocus}>
+        {hasModes && selectedMode && SelectedModeIcon && (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{modeLabel}</DropdownMenuLabel>
+              {modesDisabled ? (
+                <DropdownMenuItem
+                  disabled
+                  aria-label={[selectedMode.name, modesDisabledReason].filter(Boolean).join('. ')}
+                >
+                  <SelectedModeIcon />
+                  <span className="min-w-0 flex-1 truncate">{selectedMode.name}</span>
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <SelectedModeIcon />
+                    <span className="min-w-0 flex-1 truncate">{selectedMode.name}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-72">
+                    <DropdownMenuGroup>
+                      {modes.map((mode) => {
+                        const ModeIcon = mode.icon
+                        const selected = mode.id === selectedMode.id
+                        return (
+                          <DropdownMenuItem
+                            key={mode.id}
+                            disabled={mode.disabled}
+                            onSelect={() => onSelectMode?.(mode.id)}
+                            className={cn('items-start', selected && 'bg-muted')}
+                          >
+                            <ModeIcon />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium leading-tight">{mode.name}</div>
+                              {mode.description && (
+                                <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">
+                                  {mode.description}
+                                </div>
+                              )}
+                            </div>
+                            {selected && <Check />}
+                          </DropdownMenuItem>
+                        )
+                      })}
+                    </DropdownMenuGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
+
         {hasAgents && (
           <>
             <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">Agent</div>

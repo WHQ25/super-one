@@ -40,7 +40,6 @@ import { buildImageAttachment } from './image-compress'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
-import { DeepseekPresetSelector } from './DeepseekPresetSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { WorkflowSlashPopup, type WorkflowSlashPopupHandle, type WorkflowApplyPayload } from './WorkflowSlashPopup'
 import { parseWorkflowSlashLine } from './workflow-slash-suggest'
@@ -1745,9 +1744,6 @@ export function ChatInput() {
             </IconButton>
 
             <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
-            {activeProviderForResources === 'dsh' && (
-              <DeepseekPresetSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
-            )}
             {activeProviderForResources === 'codex' && displayedSessionId && codexThreadId && codexGoal && (
               <CodexGoalIndicator
                 sessionId={displayedSessionId}

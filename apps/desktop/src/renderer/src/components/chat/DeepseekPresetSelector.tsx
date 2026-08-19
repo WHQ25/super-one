@@ -28,23 +28,46 @@ const PRESET_ICONS: Record<string, LucideIcon> = {
   cordis: Puzzle,
 }
 
-function presetIcon(id: string | null): LucideIcon {
+const SHIPPED_PRESET_COPY = {
+  standard: {
+    name: 'chatDshPreset.presets.standard.name',
+    description: 'chatDshPreset.presets.standard.description',
+  },
+  code: {
+    name: 'chatDshPreset.presets.code.name',
+    description: 'chatDshPreset.presets.code.description',
+  },
+  minimal: {
+    name: 'chatDshPreset.presets.minimal.name',
+    description: 'chatDshPreset.presets.minimal.description',
+  },
+  cordis: {
+    name: 'chatDshPreset.presets.cordis.name',
+    description: 'chatDshPreset.presets.cordis.description',
+  },
+} as const
+
+export function deepseekPresetCopy(
+  preset: DeepseekPresetInfo,
+  t: ReturnType<typeof useTranslation>['t'],
+): { name: string; description: string | null } {
+  const keys = preset.trust === 'system'
+    ? SHIPPED_PRESET_COPY[preset.id as keyof typeof SHIPPED_PRESET_COPY]
+    : undefined
+  return keys
+    ? { name: t(keys.name), description: t(keys.description) }
+    : { name: preset.name, description: preset.description }
+}
+
+export function deepseekPresetIcon(id: string | null): LucideIcon {
   return (id !== null ? PRESET_ICONS[id] : undefined) ?? Boxes
 }
 
-/**
- * The dsh agent-preset picker — the harness's own "mode" vocabulary.
- *
- * A preset is a whole agent composition, so choosing one changes the tool
- * catalog and the system prompt. dsh allows the change only while a session has
- * produced nothing, because swapping the catalog mid-conversation would strand
- * tool calls already in the log; the roster answers `switchable` and this
- * control goes read-only once that is false.
- */
-export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
+export function useDeepseekPresetSelection() {
   const { t } = useTranslation()
   const sessionId = useActiveSession((state) => state._providerSessionId)
   const draft = useActiveSession((state) => state.dshPreset)
+  const hasStarted = useActiveSession((state) => state.messages.length > 0)
   const setPreset = useChatStore((state) => state.setDshPreset)
 
   const [presets, setPresets] = useState<DeepseekPresetInfo[]>([])
@@ -66,7 +89,7 @@ export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?
   // its own log, so the store's pick may name a preset this session never ran.
   const selectedId = current ?? draft ?? presets[0]?.id ?? null
   const selected = presets.find((preset) => preset.id === selectedId)
-  const SelectedIcon = presetIcon(selectedId)
+  const selectedCopy = selected ? deepseekPresetCopy(selected, t) : null
 
   const choose = useCallback(async (preset: DeepseekPresetInfo) => {
     if (preset.id === selectedId) return
@@ -78,6 +101,23 @@ export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?
     }
     await load()
   }, [selectedId, sessionId, current, setPreset, load])
+
+  return { presets, selectedId, selectedCopy, switchable: switchable && !hasStarted, choose }
+}
+
+/**
+ * The dsh agent-preset picker — the harness's own "mode" vocabulary.
+ *
+ * A preset is a whole agent composition, so choosing one changes the tool
+ * catalog and the system prompt. dsh allows the change only while a session has
+ * produced nothing, because swapping the catalog mid-conversation would strand
+ * tool calls already in the log; the roster answers `switchable` and this
+ * control goes read-only once that is false.
+ */
+export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
+  const { t } = useTranslation()
+  const { presets, selectedId, selectedCopy, switchable, choose } = useDeepseekPresetSelection()
+  const SelectedIcon = deepseekPresetIcon(selectedId)
 
   if (presets.length === 0) return null
 
@@ -92,7 +132,7 @@ export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?
         title={switchable ? undefined : t('chatDshPreset.locked')}
       >
         <SelectedIcon className="size-3.5 shrink-0" />
-        <span className="truncate">{selected?.name ?? t('chatDshPreset.label')}</span>
+        <span className="truncate">{selectedCopy?.name ?? t('chatDshPreset.label')}</span>
         {/* Radix stamps `data-state` on the trigger, so the caret follows the
             menu without this component tracking its open state. */}
         {switchable && (
@@ -101,7 +141,8 @@ export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-w-sm" onCloseAutoFocus={onCloseAutoFocus}>
         {presets.map((preset) => {
-          const Icon = presetIcon(preset.id)
+          const Icon = deepseekPresetIcon(preset.id)
+          const copy = deepseekPresetCopy(preset, t)
           return (
             <DropdownMenuItem
               key={preset.id}
@@ -112,13 +153,13 @@ export function DeepseekPresetSelector({ onCloseAutoFocus }: { onCloseAutoFocus?
               <Icon className="mt-0.5 size-3.5 shrink-0" />
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="flex w-full items-center gap-2 text-xs font-medium">
-                  {preset.name}
+                  {copy.name}
                   {preset.id === selectedId && <Check className="ml-auto size-3.5 shrink-0" />}
                 </span>
                 {/* A broken preset stays listed with its reason: hiding it would
                     leave its directory blocking the id with nothing to see. */}
                 <span className={cn('text-2xs', preset.broken !== null ? 'text-destructive' : 'text-muted-foreground')}>
-                  {preset.broken ?? preset.description}
+                  {preset.broken ?? copy.description}
                 </span>
               </div>
             </DropdownMenuItem>

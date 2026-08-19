@@ -8,17 +8,13 @@ import { DeepseekPresetSelector } from './DeepseekPresetSelector'
 
 const hoisted = vi.hoisted(() => ({
   setDshPreset: vi.fn(),
-  session: { _providerSessionId: null as string | null, dshPreset: null as string | null },
+  session: { _providerSessionId: null as string | null, dshPreset: null as string | null, messages: [] as unknown[] },
 }))
 
 vi.mock('@/stores/chat', () => ({
   useActiveSession: (selector: (s: typeof hoisted.session) => unknown) => selector(hoisted.session),
   useChatStore: (selector: (s: { setDshPreset: unknown }) => unknown) =>
     selector({ setDshPreset: hoisted.setDshPreset }),
-}))
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
 }))
 
 const ROSTER: DeepseekPresetRoster = {
@@ -39,6 +35,7 @@ beforeEach(() => {
   hoisted.setDshPreset.mockReset()
   hoisted.session._providerSessionId = null
   hoisted.session.dshPreset = null
+  hoisted.session.messages = []
   listPresets.mockReset().mockResolvedValue(ROSTER)
   setPreset.mockReset().mockResolvedValue({ ok: true })
   Object.assign(window, {
@@ -54,8 +51,8 @@ describe('DeepseekPresetSelector', () => {
 
     // Scoped to the menu: the selected preset's name also labels the trigger.
     const menu = within(screen.getByRole('menu'))
-    expect(menu.getByText('标准模式')).toBeInTheDocument()
-    expect(menu.getByText('双工具编码 Agent')).toBeInTheDocument()
+    expect(menu.getByText('Standard')).toBeInTheDocument()
+    expect(menu.getByText('Minimal coding agent with only persistent Bash and str_replace_editor tools.')).toBeInTheDocument()
     // A broken preset stays listed: hiding it would leave its directory
     // occupying the id with nothing on screen to delete.
     expect(menu.getByText('composition is unparsable')).toBeInTheDocument()
@@ -64,7 +61,7 @@ describe('DeepseekPresetSelector', () => {
   it('records a pick as a draft when the session has no agent yet', async () => {
     render(<DeepseekPresetSelector />)
     await userEvent.click(await screen.findByRole('button'))
-    await userEvent.click(screen.getByText('极简模式'))
+    await userEvent.click(screen.getByText('Minimal'))
 
     expect(hoisted.setDshPreset).toHaveBeenCalledWith('minimal')
     // No live composition to re-link, so nothing is switched — the next
@@ -77,7 +74,7 @@ describe('DeepseekPresetSelector', () => {
     listPresets.mockResolvedValue({ ...ROSTER, current: 'standard' })
     render(<DeepseekPresetSelector />)
     await userEvent.click(await screen.findByRole('button'))
-    await userEvent.click(screen.getByText('极简模式'))
+    await userEvent.click(screen.getByText('Minimal'))
 
     expect(setPreset).toHaveBeenCalledWith('dsh-1', 'minimal')
   })
@@ -91,6 +88,6 @@ describe('DeepseekPresetSelector', () => {
     // the control shows the composition and refuses to change it.
     const trigger = await screen.findByRole('button')
     expect(trigger).toBeDisabled()
-    expect(trigger).toHaveTextContent('标准模式')
+    expect(trigger).toHaveTextContent('Standard')
   })
 })

@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { ModelOption } from '@superone/shared/agent-types'
+import type { DeepseekPresetRoster, ModelOption } from '@superone/shared/agent-types'
 
 interface SelectorProps {
   models: Array<{ id: string; name: string; description?: string }>
@@ -12,6 +12,10 @@ interface SelectorProps {
   effortOptions: Array<{ value: string; label: string }>
   selectedEffort: string | null
   onSelectEffort: (value: string) => void
+  modes: Array<{ id: string; name: string; description?: string }>
+  selectedModeId: string | null
+  onSelectMode: (id: string) => void
+  modesDisabled: boolean
 }
 
 const { groupedSelectorSpy } = vi.hoisted(() => ({
@@ -31,6 +35,11 @@ vi.mock('./GroupedModelEffortSelector', () => ({
         {props.effortOptions.map((effort) => (
           <button key={effort.value} onClick={() => props.onSelectEffort(effort.value)}>
             {effort.label}
+          </button>
+        ))}
+        {props.modes.map((mode) => (
+          <button key={mode.id} onClick={() => props.onSelectMode(mode.id)}>
+            {mode.name}
           </button>
         ))}
       </div>
@@ -53,6 +62,18 @@ const MODELS: ModelOption[] = [
     supportedEffortLevels: ['low', 'high'],
   },
 ]
+
+const PRESETS: DeepseekPresetRoster = {
+  presets: [
+    { id: 'standard', name: '标准模式', description: '标准模式说明', trust: 'system', order: 1, broken: null },
+    { id: 'minimal', name: '极简模式', description: '极简模式说明', trust: 'system', order: 2, broken: null },
+  ],
+  current: null,
+  switchable: true,
+}
+
+const listPresets = vi.fn<() => Promise<DeepseekPresetRoster>>()
+const setPreset = vi.fn<() => Promise<{ ok: boolean }>>()
 
 function seedStore(resources: { models: ModelOption[] } | null): void {
   useChatStore.setState({
@@ -77,6 +98,27 @@ function latestSelectorProps(): SelectorProps {
   return groupedSelectorSpy.mock.calls.at(-1)?.[0] as SelectorProps
 }
 
+function markActiveSessionStarted(): void {
+  const state = useChatStore.getState()
+  const project = state.projectSessions['/deepseek']
+  const sessionId = project._activeSessionId!
+  useChatStore.setState({
+    projectSessions: {
+      ...state.projectSessions,
+      '/deepseek': {
+        ...project,
+        _sessions: {
+          ...project._sessions,
+          [sessionId]: {
+            ...project._sessions[sessionId],
+            messages: [{ id: 'user-1' } as never],
+          },
+        },
+      },
+    },
+  })
+}
+
 async function settle(rounds = 30): Promise<void> {
   for (let i = 0; i < rounds; i++) {
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -85,6 +127,15 @@ async function settle(rounds = 30): Promise<void> {
 
 beforeEach(() => {
   groupedSelectorSpy.mockClear()
+  listPresets.mockReset().mockResolvedValue(PRESETS)
+  setPreset.mockReset().mockResolvedValue({ ok: true })
+  Object.assign(window, {
+    app: {
+      ...window.app,
+      listDeepseekPresets: listPresets,
+      setDeepseekPreset: setPreset,
+    },
+  })
 })
 
 afterEach(() => {
@@ -167,5 +218,32 @@ describe('DeepseekModelSelector', () => {
     await settle()
 
     expect(setSelectedModel.mock.calls.length).toBeLessThanOrEqual(1)
+  })
+
+  it('merges translated preset modes into the selector and records a draft pick', async () => {
+    seedStore({ models: MODELS })
+    render(<DeepseekModelSelector />)
+    await settle()
+
+    expect(latestSelectorProps().modes.map((mode) => mode.name)).toEqual(['Standard', 'Minimal'])
+    expect(latestSelectorProps().selectedModeId).toBe('standard')
+    expect(latestSelectorProps().modesDisabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Minimal' }))
+
+    const state = useChatStore.getState()
+    const project = state.projectSessions['/deepseek']
+    expect(project._sessions[project._activeSessionId!].dshPreset).toBe('minimal')
+    expect(setPreset).not.toHaveBeenCalled()
+  })
+
+  it('exposes the current preset as fixed after the first turn starts', async () => {
+    seedStore({ models: MODELS })
+    markActiveSessionStarted()
+    render(<DeepseekModelSelector />)
+    await settle()
+
+    expect(latestSelectorProps().selectedModeId).toBe('standard')
+    expect(latestSelectorProps().modesDisabled).toBe(true)
   })
 })

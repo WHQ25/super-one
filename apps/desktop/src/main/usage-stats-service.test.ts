@@ -402,6 +402,27 @@ describe('usage-stats-service: recordCodexFromUsage', () => {
     recordCodexFromUsage(makeCodexUsage(), undefined, new Date(2026, 4, 4, 10))
     expect(queryUsage().rows[0].model).toBe('codex')
   })
+
+  it('records exact usage accumulated across a whole turn', async () => {
+    const { recordCodexFromTurnUsage, queryUsage } = await import('./usage-stats-service')
+    recordCodexFromTurnUsage(
+      {
+        inputTokens: 120,
+        outputTokens: 300,
+        cacheReadInputTokens: 900,
+        cacheCreationInputTokens: 40,
+      },
+      makeCodexUsage(80, 10, 70),
+      'gpt-5-codex',
+      new Date(2026, 4, 4, 10),
+    )
+    expect(queryUsage().rows[0]).toMatchObject({
+      input_tokens: 120,
+      output_tokens: 300,
+      cache_read_tokens: 900,
+      cache_creation_tokens: 40,
+    })
+  })
 })
 
 describe('usage-stats-service: recordGrokFromUsage', () => {
@@ -459,8 +480,8 @@ describe('usage-stats-service: activity counts', () => {
 })
 
 describe('usage-stats-service: backfill', () => {
-  it('reruns backfill after the Grok mid-turn double-count revision', async () => {
-    state.meta.set('usage_backfill_done', 'v4')
+  it('reruns backfill after the Codex multi-response undercount revision', async () => {
+    state.meta.set('usage_backfill_done', 'v5')
     const { getBackfillStatus } = await import('./usage-stats-service')
     expect(getBackfillStatus()).toBe('pending')
   })
@@ -511,17 +532,62 @@ describe('usage-stats-service: backfill', () => {
     expect(claudeRow.output_tokens).toBe(600)
   })
 
-  it('aggregates Codex usage as sum-of-step (already per-step in metadata)', async () => {
+  it('derives Codex turn usage from cumulative thread totals', async () => {
     state.sessions.push({ id: 's1', created_at: new Date(2026, 4, 4, 10).toISOString(), provider: 'codex', usage_counted_at: null })
+    const first = makeCodexUsage(80, 150, 20)
+    const second = {
+      ...makeCodexUsage(100, 80, 50),
+      totalInputTokens: 180,
+      totalCachedInputTokens: 70,
+      totalOutputTokens: 230,
+    }
     state.messages.push(
-      { id: 'c1', session_id: 's1', metadata_json: JSON.stringify({ codex: { threadId: 't1', usage: makeCodexUsage(80, 150, 20), items: [], model: 'gpt-5-codex' } }), created_at: new Date(2026, 4, 4, 10).toISOString(), provider_id: 'codex', role: 'assistant', status: 'complete', usage_counted_at: null },
-      { id: 'c2', session_id: 's1', metadata_json: JSON.stringify({ codex: { threadId: 't1', usage: makeCodexUsage(40, 80, 10), items: [], model: 'gpt-5-codex' } }), created_at: new Date(2026, 4, 4, 11).toISOString(), provider_id: 'codex', role: 'assistant', status: 'complete', usage_counted_at: null },
+      { id: 'c1', session_id: 's1', metadata_json: JSON.stringify({ codex: { threadId: 't1', usage: first, items: [], model: 'gpt-5-codex' } }), created_at: new Date(2026, 4, 4, 10).toISOString(), provider_id: 'codex', role: 'assistant', status: 'complete', usage_counted_at: null },
+      { id: 'c2', session_id: 's1', metadata_json: JSON.stringify({ codex: { threadId: 't1', usage: second, items: [], model: 'gpt-5-codex' } }), created_at: new Date(2026, 4, 4, 11).toISOString(), provider_id: 'codex', role: 'assistant', status: 'complete', usage_counted_at: null },
     )
     const { backfillFromHistory, queryUsage } = await import('./usage-stats-service')
     backfillFromHistory()
     const codexRow = queryUsage().rows.find((r) => r.harness === 'codex')!
-    expect(codexRow.input_tokens).toBe((80 - 20) + (40 - 10))
+    expect(codexRow.input_tokens).toBe((80 - 20) + (100 - 50))
     expect(codexRow.output_tokens).toBe(150 + 80)
+    expect(codexRow.cache_read_tokens).toBe(20 + 50)
+  })
+
+  it('prefers persisted Codex turn usage over the final response snapshot', async () => {
+    state.sessions.push({ id: 's1', created_at: new Date(2026, 4, 4, 10).toISOString(), provider: 'codex', usage_counted_at: null })
+    state.messages.push({
+      id: 'c1',
+      session_id: 's1',
+      metadata_json: JSON.stringify({
+        codex: {
+          threadId: 't1',
+          usage: makeCodexUsage(80, 10, 70),
+          turnUsage: {
+            inputTokens: 120,
+            outputTokens: 300,
+            cacheReadInputTokens: 900,
+            cacheCreationInputTokens: 40,
+          },
+          items: [],
+          model: 'gpt-5-codex',
+        },
+      }),
+      created_at: new Date(2026, 4, 4, 10).toISOString(),
+      provider_id: 'codex',
+      role: 'assistant',
+      status: 'complete',
+      usage_counted_at: null,
+    })
+
+    const { backfillFromHistory, queryUsage } = await import('./usage-stats-service')
+    backfillFromHistory()
+
+    expect(queryUsage().rows[0]).toMatchObject({
+      input_tokens: 120,
+      output_tokens: 300,
+      cache_read_tokens: 900,
+      cache_creation_tokens: 40,
+    })
   })
 
   it('backfills Grok activity and per-message model usage', async () => {

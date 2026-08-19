@@ -95,7 +95,9 @@ describe('fork listener lifecycle', () => {
     session.notificationDispatcher = createNotificationDispatcher(connection)
 
     const collabUpdates: CodexCollabToolCallItem[] = []
+    const onUsageAccounted = vi.fn()
     const callbacks: CodexRunStreamCallbacks = {
+      onUsageAccounted,
       onItemDelta: (_phase, item) => {
         if (item.type === 'collab_tool_call' && item.id === 'collab-fork') {
           collabUpdates.push(item as CodexCollabToolCallItem)
@@ -112,6 +114,16 @@ describe('fork listener lifecycle', () => {
     expect(session.forkListeners.has('fork-thread')).toBe(true)
 
     // Now push fork-thread events; dispatcher should route to forkInbox.
+    push({
+      method: 'thread/tokenUsage/updated',
+      params: {
+        threadId: 'fork-thread',
+        tokenUsage: {
+          last: { inputTokens: 100, cachedInputTokens: 80, outputTokens: 10 },
+          total: { inputTokens: 100, cachedInputTokens: 80, outputTokens: 10 },
+        },
+      },
+    })
     push({
       method: 'item/started',
       params: {
@@ -135,6 +147,11 @@ describe('fork listener lifecycle', () => {
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r))
 
     const latest = collabUpdates[collabUpdates.length - 1]
+    expect(onUsageAccounted).toHaveBeenCalledWith('fork-thread', expect.objectContaining({
+      lastInputTokens: 100,
+      lastCachedInputTokens: 80,
+      lastOutputTokens: 10,
+    }))
     expect(latest).toBeDefined()
     const forkChildItems: CodexThreadItem[] = latest.childItems?.['fork-thread'] ?? []
     const forkMsg = forkChildItems.find((i) => i.id === 'fork-msg-1')

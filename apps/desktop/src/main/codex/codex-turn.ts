@@ -51,6 +51,7 @@ import type {
   CodexUsageInfo,
   ElicitationFormField,
   PermissionRequest,
+  UsageInfo,
 } from '@superone/shared/agent-types'
 import { parseElicitationSchema } from '../agent/elicitation-schema'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
@@ -67,6 +68,7 @@ import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment-store'
 import { buildCodexWorkspaceWriteSandboxPolicy } from '@superone/codex'
+import { CodexTurnUsageAccumulator } from './codex-usage-accumulator'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 
@@ -95,6 +97,7 @@ export interface CodexRunStreamCallbacks {
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   emitForkItem?: (forkThreadId: string, phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
+  onUsageAccounted?: (threadId: string, usage: CodexUsageInfo) => void
   onCompactionStarted?: (trigger: 'manual' | 'auto') => void
   onCompactionCompleted?: (info: {
     trigger: 'manual' | 'auto'
@@ -1506,7 +1509,7 @@ export async function streamTurnEvents(
     connectionId?: string | null
     compactionTrigger?: 'manual' | 'auto'
   },
-): Promise<{ threadId: string | null; turnId?: string; usage: CodexUsageInfo | null; items: CodexThreadItem[] }> {
+): Promise<{ threadId: string | null; turnId?: string; usage: CodexUsageInfo | null; turnUsage: UsageInfo; items: CodexThreadItem[] }> {
   const streamStartedAt = Date.now()
   let observedTurnId = activeTurnId
   let threadStartedEmitted = false
@@ -1524,6 +1527,7 @@ export async function streamTurnEvents(
   const itemMap = new Map<string, CodexThreadItem>()
   const mcpServerStatus = new Map<string, { status: CodexMcpServerStartup['status']; failureReason?: 'reauthenticationRequired' }>()
   let usage: CodexUsageInfo | null = null
+  const turnUsage = new CodexTurnUsageAccumulator()
   let turnCompleted = false
   let lastTurnItemCompletedAt = Date.now()
   let activeCompaction: { turnId: string | null; startedAt: number; preTokens: number } | null = null
@@ -1947,6 +1951,8 @@ export async function streamTurnEvents(
         case 'thread/tokenUsage/updated': {
           const usage = mapUsageFromTokenUsage(params.tokenUsage ?? params)
           if (!usage) break
+          turnUsage.add(notifThreadId, usage)
+          callbacks?.onUsageAccounted?.(notifThreadId, usage)
           const collab = itemMap.get(collabId)
           if (!collab || collab.type !== 'collab_tool_call') break
           const prev = collab.agentsStates[notifThreadId] ?? { status: 'pendingInit' as CodexCollabAgentStatus }
@@ -2178,6 +2184,9 @@ export async function streamTurnEvents(
         const nextUsage = mapUsageFromTokenUsage(params.tokenUsage ?? params)
         if (nextUsage) {
           usage = nextUsage
+          const usageThreadId = notifThreadId ?? session.threadId ?? 'main'
+          turnUsage.add(usageThreadId, nextUsage)
+          callbacks?.onUsageAccounted?.(usageThreadId, nextUsage)
           callbacks?.onUsageDelta?.(nextUsage)
         }
         break
@@ -2280,6 +2289,7 @@ export async function streamTurnEvents(
     threadId: session.threadId,
     ...(observedTurnId ? { turnId: observedTurnId } : {}),
     usage,
+    turnUsage: turnUsage.snapshot(),
     items,
   }
 }
@@ -2403,6 +2413,7 @@ export async function runCodexTurn(
       ...(streamed.turnId ? { turnId: streamed.turnId } : {}),
       finalResponse: deriveFinalResponse(streamed.items),
       usage: streamed.usage,
+      turnUsage: streamed.turnUsage,
       items: streamed.items,
     }
   } catch (error) {
@@ -2471,6 +2482,7 @@ export async function reviewCodexTurn(
       ...(streamed.turnId ? { turnId: streamed.turnId } : {}),
       finalResponse: deriveFinalResponse(streamed.items),
       usage: streamed.usage,
+      turnUsage: streamed.turnUsage,
       items: streamed.items,
     }
   } catch (error) {
@@ -2529,6 +2541,7 @@ export async function compactCodexTurn(
       ...(streamed.turnId ? { turnId: streamed.turnId } : {}),
       finalResponse: deriveFinalResponse(streamed.items),
       usage: streamed.usage,
+      turnUsage: streamed.turnUsage,
       items: streamed.items,
     }
   } catch (error) {

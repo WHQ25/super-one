@@ -23,6 +23,13 @@ vi.mock('../../database', () => ({
   getActiveProviderRaw: vi.fn(() => null),
 }))
 
+const usageStatsMocks = vi.hoisted(() => ({
+  recordCodexFromTurnUsage: vi.fn(),
+  recordCodexFromUsage: vi.fn(),
+}))
+
+vi.mock('../../usage-stats-service', () => usageStatsMocks)
+
 const turnMocks = vi.hoisted(() => {
   const state = {
     capturedCallbacks: undefined as unknown,
@@ -423,6 +430,8 @@ describe('CodexBackend send()', () => {
   let events: AgentEvent[]
 
   beforeEach(async () => {
+    usageStatsMocks.recordCodexFromTurnUsage.mockClear()
+    usageStatsMocks.recordCodexFromUsage.mockClear()
     service = makeFakeService()
     backend = new CodexBackend(service)
     events = []
@@ -673,6 +682,56 @@ describe('CodexBackend send()', () => {
     const startupEvt = events.find((e) => e.type === 'codex_mcp_startup') as Extract<AgentEvent, { type: 'codex_mcp_startup' }> | undefined
     expect(startupEvt?.servers).toEqual([{ name: 'superone', status: 'ready' }, { name: 'linear', status: 'starting' }])
     expect(backend.getCurrentProviderSessionId()).toBe('thread-99')
+  })
+
+  it('records the whole turn usage instead of only the final response snapshot', async () => {
+    const pending = backend.send({ content: 'x' })
+    const finalSnapshot = {
+      totalInputTokens: 180,
+      totalCachedInputTokens: 80,
+      totalOutputTokens: 30,
+      lastInputTokens: 80,
+      lastCachedInputTokens: 50,
+      lastOutputTokens: 10,
+      reasoningOutputTokens: 0,
+      contextWindow: 128_000,
+    }
+    service.capturedCallbacks!.onUsageAccounted!('thread-xyz', {
+      ...finalSnapshot,
+      lastInputTokens: 100,
+      lastCachedInputTokens: 30,
+      lastOutputTokens: 20,
+    })
+    service.capturedCallbacks!.onUsageAccounted!('fork-thread', finalSnapshot)
+    const rootTurnUsage = {
+      inputTokens: 70,
+      outputTokens: 20,
+      cacheReadInputTokens: 30,
+      cacheCreationInputTokens: 0,
+    }
+
+    service.resolveRun(makeResult({ usage: finalSnapshot, turnUsage: rootTurnUsage }))
+    await pending
+
+    expect(usageStatsMocks.recordCodexFromTurnUsage).toHaveBeenCalledWith(
+      {
+        inputTokens: 100,
+        outputTokens: 30,
+        cacheReadInputTokens: 80,
+        cacheCreationInputTokens: 0,
+      },
+      finalSnapshot,
+      'gpt-5.4',
+      expect.any(Date),
+    )
+
+    const lateChildUsage = { ...finalSnapshot, totalInputTokens: 260, totalOutputTokens: 40 }
+    service.capturedCallbacks!.onUsageAccounted!('fork-thread', lateChildUsage)
+    expect(usageStatsMocks.recordCodexFromUsage).toHaveBeenCalledWith(
+      lateChildUsage,
+      'gpt-5.4',
+      expect.any(Date),
+    )
   })
 
   it('providerSessionId listeners fire when onThreadStarted resolves a new thread id', async () => {

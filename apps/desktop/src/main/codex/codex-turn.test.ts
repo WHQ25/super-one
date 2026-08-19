@@ -838,6 +838,52 @@ describe('streamTurnEvents mcp startup failure reason', () => {
   })
 })
 
+describe('streamTurnEvents token accounting', () => {
+  it('sums every model response in a turn and ignores duplicate snapshots', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const firstUsage = {
+      last: { inputTokens: 100, cachedInputTokens: 30, cacheWriteInputTokens: 5, outputTokens: 20 },
+      total: { inputTokens: 100, cachedInputTokens: 30, cacheWriteInputTokens: 5, outputTokens: 20 },
+      modelContextWindow: 128_000,
+    }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      { method: 'thread/tokenUsage/updated', params: { threadId: 'main-thread', tokenUsage: firstUsage } },
+      { method: 'thread/tokenUsage/updated', params: { threadId: 'main-thread', tokenUsage: firstUsage } },
+      {
+        method: 'thread/tokenUsage/updated',
+        params: {
+          threadId: 'main-thread',
+          tokenUsage: {
+            last: { inputTokens: 80, cachedInputTokens: 50, cacheWriteInputTokens: 7, outputTokens: 10 },
+            total: { inputTokens: 180, cachedInputTokens: 80, cacheWriteInputTokens: 12, outputTokens: 30 },
+            modelContextWindow: 128_000,
+          },
+        },
+      },
+      { method: 'turn/completed', params: { threadId: 'main-thread', turn: { status: 'completed' } } },
+    ]
+    const connection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const result = await streamTurnEvents(connection, session, null, new AbortController())
+
+    expect(result.turnUsage).toEqual({
+      inputTokens: 100,
+      outputTokens: 30,
+      cacheReadInputTokens: 80,
+      cacheCreationInputTokens: 12,
+    })
+  })
+})
+
 describe('streamTurnEvents compaction lifecycle', () => {
   it('keeps contextCompaction out of Codex items and completes the shared compact UI lifecycle', async () => {
     const session = { ...makeSession(), threadId: 'main-thread' }
@@ -1512,6 +1558,12 @@ describe('streamTurnEvents child-thread routing', () => {
     })
     expect(lastSendInput.agentsStates['child-resume']?.forkedFromId).toBeUndefined()
     expect(lastSendInput.agentsStates['child-resume']?.tokens).toEqual({ input: 29_000, output: 362 })
+    expect(result.turnUsage).toEqual({
+      inputTokens: 29_000,
+      outputTokens: 362,
+      cacheReadInputTokens: 1_000,
+      cacheCreationInputTokens: 0,
+    })
   })
 })
 

@@ -134,6 +134,7 @@ export function startForkListener(opts: ForkListenerOptions): ForkListenerHandle
   const applyTokenUsage = (raw: unknown): void => {
     const usage = mapUsageFromTokenUsage(raw)
     if (!usage) return
+    callbacks.onUsageAccounted?.(forkThreadId, usage)
     const tokens = tokenSnapshotFromUsage(usage)
     const changed = mutateAgentState((prev) =>
       prev.tokens?.input === tokens.input && prev.tokens?.output === tokens.output

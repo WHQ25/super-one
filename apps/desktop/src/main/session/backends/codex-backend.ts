@@ -23,7 +23,7 @@ import type {
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import log from '../../logger'
 import { trace } from '../../agent/event-trace'
-import { recordCodexFromUsage } from '../../usage-stats-service'
+import { recordCodexFromTurnUsage, recordCodexFromUsage } from '../../usage-stats-service'
 import type { CodexSession } from '../../codex/codex-session'
 import {
   createCodexSession,
@@ -45,6 +45,7 @@ import {
   steerCodex,
   type CodexRunStreamCallbacks,
 } from '../../codex/codex-turn'
+import { CodexTurnUsageAccumulator } from '../../codex/codex-usage-accumulator'
 import { CodexGoalController } from '../../codex/codex-goal-controller'
 import {
   TaskNotificationFlush,
@@ -57,6 +58,7 @@ export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
+  onUsageAccounted?: (threadId: string, usage: CodexUsageInfo) => void
   onCompactionStarted?: (trigger: 'manual' | 'auto') => void
   onCompactionCompleted?: (info: { trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number }) => void
   onCompactionFailed?: (error: string) => void
@@ -232,6 +234,8 @@ export class CodexBackend implements SessionBackend {
   private segments = new Map<string, { order: string[]; map: Map<string, CodexThreadItem> }>()
   private finalizedSegments = new Set<string>()
   private lastUsageSnapshot: CodexUsageInfo | null = null
+  private turnUsage = new CodexTurnUsageAccumulator()
+  private turnUsageRecorded = false
 
   private session: CodexSession | null = null
   private authChangedUnsub: (() => void) | null = null
@@ -279,21 +283,20 @@ export class CodexBackend implements SessionBackend {
         this.emit({ type: 'status_change', status: 'streaming' })
       },
       onRunComplete: (messageId, result, startedAt) => {
-        try {
-          recordCodexFromUsage(result.usage, this.session?.model, new Date())
-        } catch (err) {
-          log.warn('[usage-stats] failed to record Codex usage: %s', err instanceof Error ? err.message : String(err))
-        }
+        const turnUsage = this.completedTurnUsage(result.turnUsage)
+        this.recordTurnUsageStats(turnUsage, result.usage, this.session?.model)
         this.finalizeMessage(messageId, {
           finalResponseFallback: result.finalResponse,
           threadId: result.threadId,
           turnId: result.turnId,
           usage: result.usage,
+          turnUsage,
           model: this.session?.model,
           startedAt,
         })
       },
       onRunError: (messageId, error) => {
+        this.recordTurnUsageStats(this.completedTurnUsage(undefined), null, this.session?.model)
         const isInterrupt = /interrupt|abort/i.test(error.message)
         this.emit(isInterrupt
           ? { type: 'message_interrupted', messageId }
@@ -661,7 +664,13 @@ export class CodexBackend implements SessionBackend {
     const runStart = Date.now()
     const finalizeSegment = (
       messageId: string,
-      opts: { finalResponseFallback?: string; threadId: string | null; turnId?: string; usage: CodexUsageInfo | null },
+      opts: {
+        finalResponseFallback?: string
+        threadId: string | null
+        turnId?: string
+        usage: CodexUsageInfo | null
+        turnUsage?: CodexRunResult['turnUsage']
+      },
     ): void => {
       this.finalizeMessage(messageId, { ...opts, model: resolvedModel, startedAt: runStart })
     }
@@ -760,16 +769,14 @@ export class CodexBackend implements SessionBackend {
           itemsLength: result.items.length,
           itemsTail: summarizeCodexItemsForTrace(result.items),
         }, runningAssistantId)
-        try {
-          recordCodexFromUsage(result.usage, resolvedModel, new Date())
-        } catch (err) {
-          log.warn('[usage-stats] failed to record Codex usage: %s', err instanceof Error ? err.message : String(err))
-        }
+        const turnUsage = this.completedTurnUsage(result.turnUsage)
+        this.recordTurnUsageStats(turnUsage, result.usage, resolvedModel)
         finalizeSegment(runningAssistantId, {
           finalResponseFallback: finalText,
           threadId: result.threadId,
           turnId: result.turnId,
           usage: result.usage,
+          turnUsage,
         })
         if (resumePausedGoal && result.threadId && this.goalController.goal?.status === 'paused') {
           try {
@@ -780,6 +787,7 @@ export class CodexBackend implements SessionBackend {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
+        this.recordTurnUsageStats(this.completedTurnUsage(undefined), null, resolvedModel)
         const isInterrupt = /interrupt|abort/i.test(message)
         if (mode === 'compact' && !compactLifecycleSettled) {
           callbacks.onCompactionFailed?.(message)
@@ -1115,6 +1123,15 @@ export class CodexBackend implements SessionBackend {
           codexUsage: usage,
         })
       },
+      onUsageAccounted: (threadId, usage) => {
+        const added = this.turnUsage.add(threadId, usage)
+        if (!added || !this.turnUsageRecorded) return
+        try {
+          recordCodexFromUsage(usage, this.session?.model, new Date())
+        } catch (err) {
+          log.warn('[usage-stats] failed to record late Codex child usage: %s', err instanceof Error ? err.message : String(err))
+        }
+      },
       onCompactionStarted: () => {
         this.emit({ type: 'status_indicator', indicator: 'compacting' })
       },
@@ -1144,7 +1161,33 @@ export class CodexBackend implements SessionBackend {
     this.segments.clear()
     this.finalizedSegments.clear()
     this.lastUsageSnapshot = null
+    this.turnUsage = new CodexTurnUsageAccumulator()
+    this.turnUsageRecorded = false
     this.ensureSegment(firstId)
+  }
+
+  private recordTurnUsageStats(
+    turnUsage: CodexRunResult['turnUsage'],
+    fallbackUsage: CodexUsageInfo | null,
+    model: string | undefined,
+  ): void {
+    if (this.turnUsageRecorded) return
+    try {
+      recordCodexFromTurnUsage(turnUsage, fallbackUsage, model, new Date())
+    } catch (err) {
+      log.warn('[usage-stats] failed to record Codex usage: %s', err instanceof Error ? err.message : String(err))
+    } finally {
+      this.turnUsageRecorded = true
+    }
+  }
+
+  private completedTurnUsage(fallback: CodexRunResult['turnUsage']): CodexRunResult['turnUsage'] {
+    const accounted = this.turnUsage.snapshot()
+    const hasAccountedUsage = accounted.inputTokens > 0
+      || accounted.outputTokens > 0
+      || accounted.cacheReadInputTokens > 0
+      || accounted.cacheCreationInputTokens > 0
+    return hasAccountedUsage ? accounted : fallback
   }
 
   private finalizeMessage(
@@ -1154,6 +1197,7 @@ export class CodexBackend implements SessionBackend {
       threadId: string | null
       turnId?: string
       usage: CodexUsageInfo | null
+      turnUsage?: CodexRunResult['turnUsage']
       model?: string
       startedAt: number
     },
@@ -1176,6 +1220,7 @@ export class CodexBackend implements SessionBackend {
           threadId: opts.threadId,
           ...(opts.turnId ? { turnId: opts.turnId } : {}),
           usage: opts.usage,
+          ...(opts.turnUsage ? { turnUsage: opts.turnUsage } : {}),
           model: opts.model,
         },
       } as Record<string, unknown>,

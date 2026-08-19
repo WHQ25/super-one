@@ -4,6 +4,7 @@ import type {
   HarnessSessionRank,
   MessageMetadata,
   ModelUsageInfo,
+  UsageInfo,
 } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { getDb } from './database'
@@ -45,8 +46,8 @@ export interface UsageQueryResult {
 }
 
 const BACKFILL_KEY = 'usage_backfill_done'
-/** v5: rebuild after Grok mid-turn message_usage was double-counted live. */
-const BACKFILL_VERSION = 'v5'
+/** v6: rebuild after Codex turns with multiple model responses were undercounted. */
+const BACKFILL_VERSION = 'v6'
 
 export function localDay(iso: string | number | Date): string {
   const date = iso instanceof Date ? iso : new Date(iso)
@@ -128,6 +129,24 @@ export function codexUsageStepDelta(usage: CodexUsageInfo): UsageStepDelta {
   }
 }
 
+export function codexUsageTotalDelta(usage: CodexUsageInfo): UsageStepDelta {
+  return {
+    inputTokens: Math.max(0, (usage.totalInputTokens ?? 0) - (usage.totalCachedInputTokens ?? 0)),
+    outputTokens: usage.totalOutputTokens ?? 0,
+    cacheReadTokens: usage.totalCachedInputTokens ?? 0,
+    cacheCreationTokens: usage.totalCacheWriteInputTokens ?? 0,
+  }
+}
+
+function usageInfoToStepDelta(usage: UsageInfo): UsageStepDelta {
+  return {
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    cacheReadTokens: usage.cacheReadInputTokens ?? 0,
+    cacheCreationTokens: usage.cacheCreationInputTokens ?? 0,
+  }
+}
+
 export function recordCodexFromUsage(
   usage: CodexUsageInfo | null | undefined,
   model: string | undefined,
@@ -137,6 +156,21 @@ export function recordCodexFromUsage(
   const day = localDay(createdAt)
   if (!day) return
   upsertUsage(day, 'codex', model || 'codex', codexUsageStepDelta(usage))
+}
+
+export function recordCodexFromTurnUsage(
+  turnUsage: UsageInfo | null | undefined,
+  fallbackUsage: CodexUsageInfo | null | undefined,
+  model: string | undefined,
+  createdAt: string | number | Date,
+): void {
+  const delta = turnUsage
+    ? usageInfoToStepDelta(turnUsage)
+    : fallbackUsage ? codexUsageStepDelta(fallbackUsage) : null
+  if (!delta) return
+  const day = localDay(createdAt)
+  if (!day) return
+  upsertUsage(day, 'codex', model || 'codex', delta)
 }
 
 export function recordGrokFromUsage(
@@ -363,6 +397,24 @@ function sessionHarness(provider: string | null, acpAgentId: string | null): Har
   return 'claude'
 }
 
+function codexLegacyMessageDelta(metadata: MessageMetadata, usage: CodexUsageInfo): UsageStepDelta {
+  const last = codexUsageStepDelta(usage)
+  const consumed = metadata.consumedTokens
+  if (!consumed) return last
+  return {
+    ...last,
+    inputTokens: Math.max(last.inputTokens, consumed.input ?? 0),
+    outputTokens: Math.max(last.outputTokens, consumed.output ?? 0),
+  }
+}
+
+function hasUsageCounterReset(current: UsageStepDelta, previous: UsageStepDelta): boolean {
+  return current.inputTokens < previous.inputTokens
+    || current.outputTokens < previous.outputTokens
+    || current.cacheReadTokens < previous.cacheReadTokens
+    || current.cacheCreationTokens < previous.cacheCreationTokens
+}
+
 export function backfillFromHistory(): BackfillSummary {
   const startedAt = Date.now()
   const db = getDb()
@@ -395,6 +447,7 @@ export function backfillFromHistory(): BackfillSummary {
     const msgRows = db.prepare(`
       SELECT id, session_id, metadata_json, created_at, provider_id, role, status
       FROM chat_messages
+      ORDER BY session_id, created_at, id
     `).all() as Array<BackfillRow & { id: string; status: string }>
 
     let scanned = 0
@@ -405,6 +458,7 @@ export function backfillFromHistory(): BackfillSummary {
 
     const claudeSessionMaxByModel = new Map<string, Map<string, UsageStepDelta>>()
     const claudeSessionLastDayByModel = new Map<string, Map<string, string>>()
+    const codexThreadTotals = new Map<string, UsageStepDelta>()
 
     for (const raw of msgRows) {
       scanned++
@@ -439,7 +493,24 @@ export function backfillFromHistory(): BackfillSummary {
         if (codexUsage) {
           const codexDay = localDay(raw.created_at)
           if (codexDay) {
-            upsertUsage(codexDay, 'codex', metadata.codex?.model || 'codex', codexUsageStepDelta(codexUsage))
+            const persistedTurnUsage = metadata.codex?.turnUsage
+            let delta: UsageStepDelta
+            if (persistedTurnUsage) {
+              delta = usageInfoToStepDelta(persistedTurnUsage)
+            } else {
+              const currentTotal = codexUsageTotalDelta(codexUsage)
+              const threadKey = `${raw.session_id}:${metadata.codex?.threadId || 'unknown'}`
+              const previousTotal = codexThreadTotals.get(threadKey)
+              const cumulativeDelta = previousTotal ? subtractDelta(currentTotal, previousTotal) : null
+              const fallback = codexLegacyMessageDelta(metadata, codexUsage)
+              delta = !previousTotal
+                || hasUsageCounterReset(currentTotal, previousTotal)
+                || (cumulativeDelta && isZeroDelta(cumulativeDelta) && !isZeroDelta(fallback))
+                ? fallback
+                : cumulativeDelta ?? fallback
+              codexThreadTotals.set(threadKey, currentTotal)
+            }
+            upsertUsage(codexDay, 'codex', metadata.codex?.model || 'codex', delta)
             codexRecorded++
           }
         }

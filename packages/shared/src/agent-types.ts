@@ -406,6 +406,8 @@ export interface CodexTurnInfo {
   threadId: string | null
   turnId?: string
   usage: CodexUsageInfo | null
+  /** Full turn usage summed across every model response and child thread. */
+  turnUsage?: UsageInfo
   items: CodexThreadItem[]
   planApproval?: CodexPlanApprovalState
   model?: string
@@ -2544,6 +2546,8 @@ export interface CodexRunResult {
   turnId?: string
   finalResponse: string
   usage: CodexUsageInfo | null
+  /** Full turn usage summed across every model response and child thread. */
+  turnUsage?: UsageInfo
   items: CodexThreadItem[]
 }
 

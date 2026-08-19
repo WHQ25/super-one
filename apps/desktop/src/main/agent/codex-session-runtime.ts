@@ -342,7 +342,10 @@ export function finalizeCodexAssistantMessage(
     model?: string
   },
 ): CodexSessionRuntime {
-  const consumedTokens = runtime.streamingTokensByMessageId[args.messageId]
+  const streamedTokens = runtime.streamingTokensByMessageId[args.messageId]
+  const consumedTokens = args.result?.turnUsage
+    ? { input: args.result.turnUsage.inputTokens, output: args.result.turnUsage.outputTokens }
+    : streamedTokens
   const nextMessages = runtime.messages.map((message) => {
     if (message.id !== args.messageId) return message
     if (args.status !== 'complete' || !args.result) {
@@ -358,16 +361,17 @@ export function finalizeCodexAssistantMessage(
       content: [{ type: 'text' as const, text: args.text }],
       metadata: args.result.usage ? {
         durationMs: args.durationMs,
-        usage: {
-          inputTokens: args.result.usage.lastInputTokens,
+        usage: args.result.turnUsage ?? {
+          inputTokens: Math.max(0, args.result.usage.lastInputTokens - args.result.usage.lastCachedInputTokens),
           outputTokens: args.result.usage.lastOutputTokens,
           cacheReadInputTokens: args.result.usage.lastCachedInputTokens,
-          cacheCreationInputTokens: 0,
+          cacheCreationInputTokens: args.result.usage.lastCacheWriteInputTokens ?? 0,
         },
         ...(consumedTokens && (consumedTokens.input > 0 || consumedTokens.output > 0) ? { consumedTokens } : {}),
         codex: {
           threadId: args.result.threadId,
           usage: args.result.usage,
+          ...(args.result.turnUsage ? { turnUsage: args.result.turnUsage } : {}),
           items: args.result.items,
           ...(args.model ? { model: args.model } : {}),
         },

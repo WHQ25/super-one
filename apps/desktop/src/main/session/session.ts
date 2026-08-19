@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   CodexGoal,
   CodexGoalStatus,
+  CodexRunResult,
   CodexUsageInfo,
   ContextUsageInfo,
   ProviderRateLimits,
@@ -1574,6 +1575,7 @@ export class Session implements SessionContract {
           threadId: (codexMeta.threadId as string | null) ?? null,
           finalResponse: (codexMeta.finalResponse as string | undefined) ?? '',
           usage: (codexMeta.usage as CodexSessionRuntime['lastUsageByMessageId'][string] | null) ?? null,
+          turnUsage: codexMeta.turnUsage as CodexRunResult['turnUsage'],
           items: (codexMeta.items as never) ?? [],
         } : undefined
         const status: 'complete' | 'interrupted' | 'error' = event.type === 'message_complete'

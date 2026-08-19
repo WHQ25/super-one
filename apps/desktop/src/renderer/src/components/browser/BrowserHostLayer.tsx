@@ -16,10 +16,7 @@ import { useBrowserContextMenu } from './browser-context-menu'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { ACTIVITY_PANEL_TRANSITION } from '@/lib/layout-constants'
 import { BrowserPictureInPicture } from './BrowserPictureInPicture'
-
-// Fallback viewport used only while capturing a slotless tab (a background session's
-// tab has no dock geometry). Width matches the screenshot cap so no downscale needed.
-const CAPTURE_VIEWPORT = { width: 1280, height: 800 }
+import { BROWSER_FALLBACK_VIEWPORT, resolveBrowserPipViewport } from './browser-pip-layout'
 
 export function BrowserHostLayer() {
   const ids = useBrowserStore(useShallow((s) => Object.keys(s.tabs)))
@@ -242,13 +239,9 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
     : activitySide === 'left'
       ? 'inset(0 100% 0 0)'
       : 'inset(0 0 0 100%)'
-  const width = hasSlot ? restingSlot!.width : CAPTURE_VIEWPORT.width
-  const height = hasSlot ? restingSlot!.height : CAPTURE_VIEWPORT.height
-  const pipViewport = emulation ?? (
-    panelSlot && panelSlot.width > 0 && panelSlot.height > 0
-      ? panelSlot
-      : CAPTURE_VIEWPORT
-  )
+  const width = hasSlot ? restingSlot!.width : BROWSER_FALLBACK_VIEWPORT.width
+  const height = hasSlot ? restingSlot!.height : BROWSER_FALLBACK_VIEWPORT.height
+  const pipViewport = resolveBrowserPipViewport(emulation, panelSlot)
   const webviewStyle = slot?.mode === 'pip'
     ? {
         width: pipViewport.width,

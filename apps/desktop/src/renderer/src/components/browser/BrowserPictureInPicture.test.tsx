@@ -108,7 +108,7 @@ describe('browser picture in picture', () => {
     render(<BrowserPictureInPicture />)
 
     const pip = await screen.findByLabelText('Browser picture in picture')
-    expect(pip).toHaveStyle({ left: '728px', top: '62px', width: '360px', height: '240px' })
+    expect(pip).toHaveStyle({ left: '728px', top: '62px', width: '360px', height: '225px' })
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-mode', 'pip')
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-interactive', 'false')
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-show-chrome', 'false')
@@ -167,13 +167,39 @@ describe('browser picture in picture', () => {
     fireEvent.pointerMove(window, { clientX: -500, clientY: 1000 })
     fireEvent.pointerUp(window)
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-track-bounds-continuously', 'false')
-    expect(pip).toHaveStyle({ left: '112px', top: '498px' })
+    expect(pip).toHaveStyle({ left: '112px', top: '513px' })
 
     const resize = pip.querySelector('[data-browser-pip-resize="se"]') as HTMLElement
     fireEvent.pointerDown(resize, { button: 0, clientX: 592, clientY: 738 })
     fireEvent.pointerMove(window, { clientX: 2000, clientY: 2000 })
     fireEvent.pointerUp(window)
-    expect(pip).toHaveStyle({ width: '800px', height: '676px' })
+    expect(pip).toHaveStyle({ width: '800px', height: '500px' })
+  })
+
+  it('matches the open tab viewport instead of a fixed 3:2 frame', async () => {
+    act(() => {
+      startReadyAutomation()
+      useBrowserStore.getState().updateSlot('browser-a', 'panel', {
+        left: 120,
+        top: 44,
+        width: 1280,
+        height: 720,
+      } as DOMRectReadOnly)
+    })
+    render(<BrowserPictureInPicture />)
+
+    const pip = await screen.findByLabelText('Browser picture in picture')
+    expect(pip).toHaveStyle({ width: '360px', height: '202.5px' })
+
+    act(() => {
+      useBrowserStore.getState().updateSlot('browser-a', 'panel', {
+        left: 120,
+        top: 44,
+        width: 560,
+        height: 800,
+      } as DOMRectReadOnly)
+    })
+    expect(pip).toHaveStyle({ width: `${315 * 560 / 800}px`, height: '315px' })
   })
 
   it('waits for page readiness, stays between tool calls, and closes when the turn ends', async () => {

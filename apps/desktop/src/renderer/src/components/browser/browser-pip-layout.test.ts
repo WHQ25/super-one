@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { clampBrowserPipLayout, createDefaultBrowserPipLayout } from './browser-pip-layout'
+import {
+  BROWSER_FALLBACK_VIEWPORT,
+  browserPipAspect,
+  clampBrowserPipLayout,
+  createDefaultBrowserPipLayout,
+  resolveBrowserPipViewport,
+} from './browser-pip-layout'
 
 const BOUNDS = { left: 100, top: 50, width: 1000, height: 700 }
 
@@ -11,6 +17,30 @@ describe('browser picture-in-picture layout', () => {
       width: 360,
       height: 240,
     })
+  })
+
+  it('sizes the default frame to the tab viewport aspect ratio', () => {
+    const wide = createDefaultBrowserPipLayout(BOUNDS, 16 / 9)
+    expect(wide).toEqual({
+      left: 728,
+      top: 62,
+      width: 360,
+      height: 202.5,
+    })
+
+    const tall = createDefaultBrowserPipLayout(BOUNDS, 560 / 800)
+    expect(tall.height).toBe(315)
+    expect(tall.width).toBeCloseTo(315 * 560 / 800)
+    expect(tall.top).toBe(62)
+    expect(tall.width / tall.height).toBeCloseTo(560 / 800)
+  })
+
+  it('caps a portrait default below 45% of the chat height', () => {
+    const mobile = createDefaultBrowserPipLayout(BOUNDS, 375 / 812)
+    expect(mobile.height).toBe(315)
+    expect(mobile.width).toBeCloseTo(315 * 375 / 812)
+    expect(mobile.width / mobile.height).toBeCloseTo(375 / 812)
+    expect(mobile.height).toBeLessThan(BOUNDS.height * 0.5)
   })
 
   it('caps width at 80% and keeps the frame inside chat bounds', () => {
@@ -25,6 +55,19 @@ describe('browser picture-in-picture layout', () => {
     })
   })
 
+  it('keeps the tab aspect ratio when clamping to the chat bounds', () => {
+    const layout = clampBrowserPipLayout(
+      { left: -100, top: 900, width: 950, height: 200 },
+      BOUNDS,
+      16 / 9,
+    )
+    expect(layout.width).toBe(800)
+    expect(layout.height).toBeCloseTo(450)
+    expect(layout.left).toBe(112)
+    expect(layout.top).toBe(288)
+    expect(layout.width / layout.height).toBeCloseTo(16 / 9)
+  })
+
   it('shrinks below the normal minimum when the chat area is narrow', () => {
     const narrow = { left: 0, top: 0, width: 300, height: 260 }
     const layout = clampBrowserPipLayout(
@@ -35,5 +78,14 @@ describe('browser picture-in-picture layout', () => {
     expect(layout.height).toBe(236)
     expect(layout.left).toBe(12)
     expect(layout.top).toBe(12)
+  })
+
+  it('prefers emulation, then the panel slot, then the capture fallback', () => {
+    expect(resolveBrowserPipViewport({ width: 390, height: 844 }, { width: 560, height: 800 }))
+      .toEqual({ width: 390, height: 844 })
+    expect(resolveBrowserPipViewport(null, { width: 560, height: 800 }))
+      .toEqual({ width: 560, height: 800 })
+    expect(resolveBrowserPipViewport(null, null)).toEqual(BROWSER_FALLBACK_VIEWPORT)
+    expect(browserPipAspect(BROWSER_FALLBACK_VIEWPORT)).toBeCloseTo(1280 / 800)
   })
 })

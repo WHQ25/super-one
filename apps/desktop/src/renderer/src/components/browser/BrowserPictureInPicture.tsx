@@ -13,8 +13,11 @@ import { createDragCapture } from '@/lib/drag-capture'
 import { getDockApi } from '@/components/activity/activity-panel-api'
 import { BrowserView } from './BrowserView'
 import {
+  browserPipAspect,
   clampBrowserPipLayout,
   createDefaultBrowserPipLayout,
+  defaultBrowserPipMaxHeight,
+  resolveBrowserPipViewport,
   type BrowserPipBounds,
   type BrowserPipLayout,
 } from './browser-pip-layout'
@@ -56,6 +59,9 @@ export function BrowserPictureInPicture() {
   const browserId = expandedBrowserId ?? pinnedPipBrowserId ?? automaticPreviewId
   const expanded = browserId != null && expandedBrowserId === browserId
   const owner = useBrowserStore((state) => browserId ? state.tabs[browserId]?.owner ?? null : null)
+  const panelSlot = useBrowserStore((state) => browserId ? state.slots[browserId] : undefined)
+  const emulation = useBrowserStore((state) => browserId ? state.emulations[browserId] : undefined)
+  const pipAspect = browserPipAspect(resolveBrowserPipViewport(emulation, panelSlot))
   const currentSessionId = useChatStore(activeSessionId)
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const mosaicMode = useMosaicStore((state) => state.mode)
@@ -70,6 +76,7 @@ export function BrowserPictureInPicture() {
   const [layout, setLayout] = useState<BrowserPipLayout | null>(null)
   const [interacting, setInteracting] = useState(false)
   const interactionCleanupRef = useRef<(() => void) | null>(null)
+  const pipAspectRef = useRef(pipAspect)
 
   useOnTurnCompleted(() => useBrowserStore.getState().clearAutomationPreview())
 
@@ -95,10 +102,17 @@ export function BrowserPictureInPicture() {
     const measure = () => {
       const rect = boundary.getBoundingClientRect()
       const nextBounds = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+      const aspectChanged = pipAspectRef.current !== pipAspect
+      pipAspectRef.current = pipAspect
       setBounds(nextBounds)
       setLayout((current) => current
-        ? clampBrowserPipLayout(current, nextBounds)
-        : createDefaultBrowserPipLayout(nextBounds))
+        ? clampBrowserPipLayout(
+          current,
+          nextBounds,
+          pipAspect,
+          aspectChanged ? { maxHeight: defaultBrowserPipMaxHeight(nextBounds) } : undefined,
+        )
+        : createDefaultBrowserPipLayout(nextBounds, pipAspect))
     }
     measure()
     const observer = new ResizeObserver(measure)
@@ -108,7 +122,7 @@ export function BrowserPictureInPicture() {
       observer.disconnect()
       window.removeEventListener('resize', measure)
     }
-  }, [showPip, currentSessionId])
+  }, [showPip, currentSessionId, pipAspect])
 
   useLayoutEffect(() => {
     if (!showPip) interactionCleanupRef.current?.()
@@ -148,9 +162,9 @@ export function BrowserPictureInPicture() {
         ...start,
         left: start.left + move.clientX - startX,
         top: start.top + move.clientY - startY,
-      }, bounds))
+      }, bounds, pipAspect))
     })
-  }, [bounds, layout, startInteraction])
+  }, [bounds, layout, pipAspect, startInteraction])
 
   const startResize = useCallback((corner: ResizeCorner, event: React.PointerEvent<HTMLDivElement>) => {
     if (!bounds || !layout || event.button !== 0) return
@@ -165,14 +179,24 @@ export function BrowserPictureInPicture() {
     startInteraction(cursor, (move) => {
       const dx = move.clientX - startX
       const dy = move.clientY - startY
+      const fromWidth = start.width + (west ? -dx : dx)
+      const fromHeight = (start.height + (north ? -dy : dy)) * pipAspect
+      const width = Math.abs(fromWidth - start.width) >= Math.abs(fromHeight - start.width)
+        ? fromWidth
+        : fromHeight
+      const fitted = clampBrowserPipLayout({
+        left: start.left,
+        top: start.top,
+        width,
+        height: width / pipAspect,
+      }, bounds, pipAspect)
       setLayout(clampBrowserPipLayout({
-        left: west ? start.left + dx : start.left,
-        top: north ? start.top + dy : start.top,
-        width: start.width + (west ? -dx : dx),
-        height: start.height + (north ? -dy : dy),
-      }, bounds))
+        ...fitted,
+        left: west ? start.left + start.width - fitted.width : start.left,
+        top: north ? start.top + start.height - fitted.height : start.top,
+      }, bounds, pipAspect))
     })
-  }, [bounds, layout, startInteraction])
+  }, [bounds, layout, pipAspect, startInteraction])
 
   const hidePreview = useCallback(() => {
     if (browserId) useBrowserStore.getState().hidePreview(browserId)

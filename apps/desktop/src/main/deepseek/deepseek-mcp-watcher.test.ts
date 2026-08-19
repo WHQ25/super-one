@@ -13,7 +13,11 @@ import { watchDshMcpConfig } from './deepseek-mcp-watcher'
 
 const dirs: string[] = []
 const stops: Array<() => void> = []
-const SETTLE_MS = 20
+// The debounce window doubles as the burst boundary. 20ms held in isolation
+// but not under the full suite, where 600+ concurrent files stretch FSEvents
+// delivery past it and a single burst arrives as two — so `coalesces` failed
+// on a claim that was never about timing.
+const SETTLE_MS = 100
 
 function dshHome(): { dshHome: string; settleMs: number } {
   const home = mkdtempSync(join(tmpdir(), 'dsh-watch-'))
@@ -43,15 +47,15 @@ async function arm(opts: { dshHome: string; settleMs: number }) {
  * watch that works.
  */
 async function fires(onChange: { mock: { calls: unknown[] } }): Promise<void> {
-  const deadline = Date.now() + 2000
+  const deadline = Date.now() + 5000
   while (onChange.mock.calls.length === 0 && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
+    await new Promise((resolve) => setTimeout(resolve, 20))
   }
 }
 
 /** For the negative assertions, where only elapsed time can prove a silence. */
 function settled(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, SETTLE_MS * 10))
+  return new Promise((resolve) => setTimeout(resolve, SETTLE_MS * 3))
 }
 
 afterEach(() => {

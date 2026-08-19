@@ -2,7 +2,7 @@
 
 import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 
 let sessionsByFolder: Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; parentSessionId?: string }>> = {}
@@ -171,53 +171,12 @@ vi.mock('@/components/sidebar/AnimatedSessionTitle', () => ({
   useSessionTitleByAgent: (_sessionId: string | null | undefined, fallback: string | null | undefined) => fallback ?? '',
 }))
 
-vi.mock('@/components/ui/button', () => ({
-  Button: ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
-}))
-
-vi.mock('@/components/ui/tooltip', () => ({
-  TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
-  TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
-  TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}))
-
-vi.mock('@/components/ui/command', () => ({
-  CommandShortcut: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-}))
-
-vi.mock('@/components/ui/scroll-area', () => ({
-  ScrollArea: ({ children, className }: { children: ReactNode; className?: string }) => <div className={className}>{children}</div>,
-}))
-
-vi.mock('@/components/ui/dropdown-menu', () => ({
-  DropdownMenu: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DropdownMenuContent: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DropdownMenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>,
-}))
-
 vi.mock('@superone/ui/components/ui/context-menu', () => ({
   ContextMenu: ({ children }: { children: ReactNode }) => <>{children}</>,
   ContextMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
   ContextMenuContent: ({ children }: { children: ReactNode }) => <>{children}</>,
   ContextMenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>,
   ContextMenuSeparator: () => <hr />,
-}))
-
-vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DialogContent: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DialogDescription: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DialogFooter: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DialogHeader: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DialogTitle: ({ children }: { children: ReactNode }) => <>{children}</>,
-}))
-
-vi.mock('@/components/ui/tabs', () => ({
-  Tabs: ({ children }: { children: ReactNode }) => <>{children}</>,
-  TabsList: ({ children }: { children: ReactNode }) => <>{children}</>,
-  TabsTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 
 vi.mock('@/components/sidebar/add-project/AddProjectDialog', () => ({
@@ -253,11 +212,14 @@ vi.mock('@/components/mosaic/mosaic-store', () => ({
   }),
 }))
 
-// Cold-start transform of AppSidebar + its graph is multi-second on this
-// suite; warm once so individual cases stay under the default 5s timeout.
+// AppSidebar pulls the real @superone/ui (radix) graph, so a cold-start
+// transform is multi-second; warm once so individual cases stay under the
+// default 5s timeout. The budget is generous because the full suite runs 600+
+// files concurrently and this import competes for CPU with every other jsdom
+// environment — 15s was tight enough to flake there while passing in isolation.
 beforeAll(async () => {
   await import('./AppSidebar')
-}, 15_000)
+}, 60_000)
 
 beforeEach(() => {
   vi.clearAllMocks()

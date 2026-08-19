@@ -70,7 +70,14 @@ describe('lan-file-token', () => {
 
   it('rejects token with tampered signature', async () => {
     const token = await signerA.sign('/x.png')
-    const tampered = token.slice(0, -1) + (token.endsWith('a') ? 'b' : 'a')
+    // Mutate the signature's FIRST base64url char, not its last: HMAC-SHA256 is
+    // 32 bytes, so the trailing char carries only 4 significant bits and its
+    // low 2 padding bits decode to nothing. Flipping those yields the same HMAC
+    // bytes and still verifies — a ~1/16 flake depending on the random nonce.
+    const sigStart = token.lastIndexOf('.') + 1
+    const tampered =
+      token.slice(0, sigStart) + (token[sigStart] === 'A' ? 'B' : 'A') + token.slice(sigStart + 1)
+    expect(tampered).not.toBe(token)
     expect(await signerA.verify(tampered)).toBeNull()
   })
 

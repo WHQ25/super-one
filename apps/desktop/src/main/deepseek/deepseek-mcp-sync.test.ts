@@ -22,7 +22,10 @@ const { readDshMcpServerSpecs, stopTrackingDshMcpConfig, trackDshMcpConfig } = a
 )
 
 const dirs: string[] = []
-const SETTLE_MS = 20
+// Doubles as the debounce window the watch coalesces on. 20ms held in
+// isolation but not under the full suite, where 600+ concurrent files stretch
+// FSEvents delivery past it.
+const SETTLE_MS = 100
 const CWD = '/projects/demo'
 
 function dshHome() {
@@ -31,8 +34,35 @@ function dshHome() {
   return { dshHome: home, settleMs: SETTLE_MS }
 }
 
+/**
+ * `fs.watch` returns before the platform watch is necessarily live — on macOS
+ * the FSEvents stream starts asynchronously — so a write issued in the same
+ * tick can be missed. Production never races this (the watch is armed when the
+ * session starts and the user edits much later), but a test does.
+ *
+ * Clearing after the wait also drops any event from a write made *before*
+ * tracking began, which FSEvents may deliver once the stream comes up.
+ */
+async function armed(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, SETTLE_MS * 2))
+  syncMcpServers.mockClear()
+}
+
+/**
+ * Wait for the sync to land, polling rather than sleeping a fixed span. The
+ * debounce is bounded but the FSEvents delivery before it is not, so a fixed
+ * wait made every positive assertion hostage to machine load.
+ */
+async function synced(): Promise<void> {
+  const deadline = Date.now() + 5000
+  while (syncMcpServers.mock.calls.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
+
+/** For the negative assertions, where only elapsed time can prove a silence. */
 function settled(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, SETTLE_MS * 6))
+  return new Promise((resolve) => setTimeout(resolve, SETTLE_MS * 3))
 }
 
 beforeEach(() => {
@@ -49,8 +79,11 @@ describe('dsh MCP live config sync', () => {
   it('re-mounts servers when the config file gains one', async () => {
     const opts = dshHome()
     trackDshMcpConfig(CWD, opts)
+    await armed()
 
     saveDshMcpConfig('linear', { type: 'http', url: 'https://mcp.linear.app' }, 'user', CWD, opts)
+    await synced()
+    // The debounce window has to close before the count is meaningful.
     await settled()
 
     expect(syncMcpServers).toHaveBeenCalledTimes(1)
@@ -65,9 +98,10 @@ describe('dsh MCP live config sync', () => {
     const opts = dshHome()
     saveDshMcpConfig('linear', { type: 'http', url: 'https://mcp.linear.app' }, 'user', CWD, opts)
     trackDshMcpConfig(CWD, opts)
+    await armed()
 
     toggleDshMcpConfig('linear', true, 'user', CWD, opts)
-    await settled()
+    await synced()
 
     expect(syncMcpServers).toHaveBeenCalledWith([])
   })
@@ -76,6 +110,7 @@ describe('dsh MCP live config sync', () => {
     const opts = dshHome()
     running = false
     trackDshMcpConfig(CWD, opts)
+    await armed()
 
     saveDshMcpConfig('linear', { type: 'http', url: 'https://mcp.linear.app' }, 'user', CWD, opts)
     await settled()
@@ -86,6 +121,7 @@ describe('dsh MCP live config sync', () => {
   it('stops watching once tracking is torn down', async () => {
     const opts = dshHome()
     trackDshMcpConfig(CWD, opts)
+    await armed()
     stopTrackingDshMcpConfig()
 
     saveDshMcpConfig('linear', { type: 'http', url: 'https://mcp.linear.app' }, 'user', CWD, opts)

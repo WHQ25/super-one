@@ -31,6 +31,18 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 vi.mock('../../main/logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('../../main/agent/event-trace', () => ({ trace: vi.fn() }))
 vi.mock('../../main/mcp/superone-mcp-server', () => ({ createSuperoneMcpServer: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })) }))
+// buildClaudeOptions hard-gates on a resolvable harness binary, which reaches
+// HarnessManager -> better-sqlite3. This suite replays a recording and never
+// spawns, so stub the gate rather than stand up a real database.
+vi.mock('../../main/harness/resolve-runtime', () => ({
+  resolveHarnessRuntime: () => '/mock/claude',
+  tryResolveHarnessRuntime: () => '/mock/claude',
+  HarnessNotReadyError: class HarnessNotReadyError extends Error {
+    code = 'HARNESS_NOT_READY' as const
+  },
+  isHarnessNotReadyError: (err: unknown) =>
+    typeof err === 'object' && err !== null && (err as { code?: string }).code === 'HARNESS_NOT_READY',
+}))
 
 const { createSessionQuery } = await import('../../main/agent/claude-query')
 

@@ -8,6 +8,7 @@ import { app } from 'electron'
 import { join } from 'node:path'
 import log from '../logger'
 import { DEEPSEEK_CREDENTIAL_REF, resolveDeepseekApiKey } from './deepseek-credentials'
+import { stopTrackingDshMcpConfig } from './deepseek-mcp-sync'
 
 /**
  * Credential reference the embedded adapter asks for. It is a *name*, never a
@@ -40,6 +41,17 @@ export function registerApprovalRouter(sessionId: string, router: ApprovalRouter
   return () => approvalRouters.delete(sessionId)
 }
 
+/**
+ * The running tree, or `null` when none was ever booted.
+ *
+ * Callers that react to *ambient* events (a config file changed) use this
+ * instead of `getDeepseekRuntime()`, so a background signal never boots a tree
+ * the user has not asked for.
+ */
+export async function peekDeepseekRuntime(): Promise<DeepseekRuntime | null> {
+  return runtimePromise ? await runtimePromise.catch(() => null) : null
+}
+
 export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
   if (!runtimePromise) {
     runtimePromise = DeepseekRuntime.create({
@@ -69,6 +81,7 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
 }
 
 export async function disposeDeepseekRuntime(): Promise<void> {
+  stopTrackingDshMcpConfig()
   const pending = runtimePromise
   if (!pending) return
   runtimePromise = null

@@ -340,3 +340,282 @@ node deepseek-harness-spike.mjs             # or: bun deepseek-harness-spike.mjs
 ```
 
 Expected tail: `[E5b] tools with hot plugin: [extra,ping] | after dispose: [ping]` and a summary counting `turn/start:5 … tool/call:1 approval/asked:1 tool/result:1`.
+
+---
+
+## 13. Official composition inventory (`dsh-base`, 2026-08-19)
+
+Product principle (aligned with the user, 2026-08-19): **integrate the official
+harness first; where an official plugin conflicts with a SuperOne surface — UI,
+transport, identity — use ours.** "Not integrated yet" is not the same as
+"replaced by ours", and D3 blurred the two.
+
+### 13.1 Where the official composition lives
+
+The official deployment composes from **bundles**, not hand-written plugin lists:
+
+```jsonc
+// $DSH_HOME/profiles/web/package.json
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] } }
+```
+
+Each bundle ships a `cordis.patch.yml` — `dsh-base` inserts 79 rows, `dsh-web-app`
+overrides some and inserts the browser/host plane. The user's own
+`$DSH_HOME/profiles/<p>/cordis.patch.yml` is the last layer (this is the file our
+MCP CRUD writes, §D6).
+
+`dsh-base` carries **no `dsh-mcp-client` row**. Third-party MCP is a user-profile
+concern in the official design too, which is exactly where we put it.
+
+### 13.2 Version trap — `latest` is stale, use `next`
+
+| dist-tag | version | published |
+|---|---|---|
+| `latest` | `0.0.1-rc.1` | 2026-08-10 (first publish, never moved) |
+| `next` | `0.1.0-rc.7` | 2026-08-17 (our pinned line) |
+
+`npm add @deepseek-ai/dsh-<x>` with no version resolves to the **oldest** release,
+and that release uses **different package names** for the same capability:
+
+| 0.0.1-rc.1 | 0.1.0-rc.7 (ours) |
+|---|---|
+| `dsh-permission` | `dsh-permission-presets` |
+| `dsh-compact-basic` | `dsh-compaction-basic` |
+| `dsh-subagent-spawn` | `dsh-subagent-spawn-in-process` |
+| `dsh-user-interaction` | `dsh-user-questions` |
+| `dsh-tasks-local` / `dsh-tool-tasks` | `dsh-jobs-local` / `dsh-tool-jobs` |
+| `dsh-bash-env` | `dsh-shell-env` |
+| `dsh-settings-local` | `dsh-settings-file` |
+| `dsh-fs-policy` | `dsh-fs-observation-policy` |
+| `dsh-timeout-policy` | `dsh-tool-call-timeout-policy` |
+| `dsh-repeat-tool-guard` | `dsh-repeat-tool-reminder` |
+| `dsh-workflow-workerthread` | `dsh-workflow-worker-thread` |
+| `dsh-compact-tool-result-prune` | `dsh-compaction-tool-result-pruner` |
+
+Always pin `0.1.0-rc.7` explicitly. A bare install silently gives a different
+harness whose rows do not match anything written here.
+
+### 13.3 The gap: 21 of 79 rows mounted
+
+**Mounted today** — tree (12): `timer` `llm` `session` `system-prompt` `tools`
+`agent` `agent-loop` `user-approval` `llm-deepseek` `session-persistence-jsonl`
+`session-checkpoint-policy` + our credential plugin. Per-agent tool plane (8):
+`subprocess-local` `fs-local` `bash-local` `shell-env` `tool-fs` `tool-fs-search`
+`tool-bash` `tool-todo`. Deployment (1): `mcp-client`.
+
+**Conflicts — keep ours, exclude theirs:**
+
+| Official row(s) | Why ours wins |
+|---|---|
+| the whole `dsh-client-ui-*` roster (21 rows) | SuperOne is the UI |
+| `host-webserver` `host-apiproxy` `client-connection` `client-modules` `api-remotes` `web-app` `web-startup` `client-hmr` `host-directory-picker-auto` | browser transport; we use Electron IPC |
+| `typert-registry` `typert-loader` `api-gateway` | RPC gateway for that transport |
+| `hmr` | we are embedded in Electron main |
+| `session-title` + `session-title-first-prompt-llm` | SuperOne titles sessions via `session_rename` |
+| `agent-default-model` | SuperOne owns model selection (D7) |
+| `commands` `command-feedback` `command-goal` `command-compact` | SuperOne owns the slash surface |
+| `settings-file` `credentials-local` | currently ours (D7) — worth re-deciding under the "respect the harness's own config" principle |
+| **`session-telemetry-otel`** | **must exclude** — mounted on by default, mirrors *every* session-log event to `harness-telemetry.deepseeksvc.com`. Disable the row (config cannot turn it off). |
+
+**Capability rows we simply have not integrated yet** (no UI conflict — this is
+the actual backlog):
+
+| Group | Rows |
+|---|---|
+| subagents | `subagent` `subagent-spawn-in-process` `subagent-fork-in-process` `tool-subagent`(×2: `subagent`/`subagent_fork`) `tool-subagent-control`(+`/list-agents`) `tool-subagent-report` |
+| compaction | `compaction-basic` `compaction-tool-result-pruner` |
+| permission / sandbox | `permission-presets` `sandbox-local` `sandbox-policy` `bash-sandbox` (`pwsh-sandbox` + `tool-pwsh` on Windows) |
+| context & durability | `session-projection` `spill-local` `spill-policy` `token-meter` `tool-call-timeout-policy` |
+| model plane | `llm-retry` `llm-pi-ai` (dormant multi-provider adapter) |
+| tools | `tool-str-replace-editor` `tool-jobs` + `jobs-local` `tool-ralph` `tool-workflow` + `workflow-worker-thread` |
+| HITL & modes | `user-questions` `plan-mode` |
+| content | `attachment-local` `session-query-sqlite` `web` + `web-search-deepseek` + `tool-web` |
+| prompt & policy | `agent-instructions` `fs-observation-policy` `repeat-tool-reminder` |
+| skills / goals | `skill` `skill-filesystem` `skill-badge` `tool-skill` · `goal` `goal-round-driver` `tool-goal` |
+
+### 13.4 `agent-presets` confirms the tool-plane shape
+
+`dsh-web-app` disables every per-agent row from `dsh-base` (`tool-bash`, `tool-fs`,
+`tool-todo`, `tool-subagent*`, `plan-mode`, `token-meter`, `compaction-basic`, …)
+and re-mounts them behind **`dsh-agent-presets`**, one composition per session,
+while the *registries* (`subagents`, `jobs`, `skill`, `goals`, `shell-env`) stay on
+the host plane because they are process singletons with cross-session queries.
+
+That is the same split we arrived at independently in `tool-plane.ts`
+(`agentCtx.isolate(...)` per agent, deployment-level MCP mounts). The official
+criterion is sharper and worth adopting verbatim: **a service a row outside the
+realm reads belongs to the plane both can see.** Our `mcp-servers.ts` placement
+follows it; `subagents` will require it (the registry is a process singleton with
+`listChildren`/`followup`).
+
+---
+
+## 14. Loader feasibility: asar dynamic-import probe (verified 2026-08-19)
+
+**Question.** `@deepseek-ai/cordis-plugin-loader` resolves plugins with a bare
+specifier held in a *runtime variable* (`await import(name)`) plus
+`createRequire().resolve(name)`. Does that survive an Electron asar package?
+A literal specifier would be statically analyzable and would not answer it.
+
+**Method.** A temporary main entry (`src/main/dsh-asar-probe.ts`, since deleted)
+built through electron-vite, packaged with `electron-builder --dir --mac`
+(unsigned), then run two ways against the same 654 MB `app.asar`: once as
+`ELECTRON_RUN_AS_NODE=1` (fork-node context, how `llm-proxy-entry` runs) and once
+in the **real Electron main process** behind `SO_DSH_ASAR_PROBE=1`.
+
+**Result — both contexts, all green.** `import.meta.url` confirmed inside
+`app.asar`; every resolution landed on
+`.../app.asar/node_modules/@deepseek-ai/<pkg>/lib/index.js`.
+
+| Package | `await import(runtimeVar)` | `require.resolve` |
+|---|---|---|
+| `@deepseek-ai/cordis` | ok (`Context`, …) | ok, inside asar |
+| `@deepseek-ai/dsh-tool-bash` | ok (`Config`, `apply`, `inject`) | ok, inside asar |
+| `@deepseek-ai/dsh-tool-todo` | ok | ok, inside asar |
+| `@deepseek-ai/dsh-session` | ok | ok, inside asar |
+
+Module identity also holds: `(await import(name)).default === staticImport` and
+the two namespaces are `===`. A dynamically loaded plugin is the *same module
+record* a static import gets, so nothing about Loader-mounted plugins differs
+from the tree we hand-write today.
+
+**One false alarm, recorded so it is not re-investigated.** The probe also tried
+mounting a dynamically imported `dsh-tools` on a bare `new Context()` and
+reported `FAIL service missing`. That reproduces **identically outside the
+package** (plain `node` against `node_modules`): `dsh-tools` declares injects and
+stays dormant until the spine services exist, so a bare Context never gets
+`ctx.tools`. Not an asar finding.
+
+**Conclusion.** The asar risk that gated adopting the Loader is **cleared**.
+`cordis-plugin-loader` is 25 KB, its only `dependency` is `cosmokit` (already
+installed) and its peers are `cordis` (installed) + `node-addon-require-builtin`,
+which is **optional**: `loader.internal` (Node's internal ESM ModuleLoader, used
+only for HMR cache eviction) is `ModuleLoader | undefined`, and the loader falls
+back to plain `await import(name)` when absent. Adopting the Loader without HMR
+therefore introduces **no native module**.
+
+Remaining caveats for whoever implements it:
+
+- Anything the Loader may mount must stay a **declared dependency** of
+  `apps/desktop`, or electron-builder will not pack it. Externalization already
+  works this way (`mainExternal` = every non-`@superone/*` dep), and the probe
+  confirmed all 409 `@deepseek-ai` asar entries are present.
+- HMR (`cordis-plugin-hmr`) needs the native addon and Node ESM internals —
+  skip it. File-watch reload is better served by our own `fs.watch` +
+  `loader.update()`.
+- Runtime *download* of a not-yet-installed plugin is a separate problem
+  (asar is read-only) and belongs with the harness hot-swap work, not here.
+
+---
+
+## 15. Adopted: `ctx.loader` as the runtime entry tree (2026-08-19)
+
+D3 said "no Loader" and meant "no YAML/profile/bundle machinery". That reading
+still holds, but it over-reached: the Loader **service** is separable from its
+file-backed half, and it is the right home for any row that changes while the
+tree runs. `packages/deepseek/src/tree.ts` now mounts:
+
+```ts
+ctx.plugin(Loader, { baseUrl: import.meta.url })
+```
+
+Deliberately **not** mounted: `cordis-plugin-include` (YAML-backed trees) and
+`cordis-plugin-hmr` (needs Node ESM internals via a native addon). `Loader.write()`
+is a no-op, so nothing this tree holds is ever persisted.
+
+### What it replaced
+
+`DeepseekMcpServers` was a hand-rolled loader: identity = the whole connection
+tuple, and any field change meant `dispose()` then `ctx.plugin()` again. Now
+identity is the **sanitized server name** and a config change is
+`loader.update(entryId, { config })` — an in-place restart of that row. This
+matters because `dsh-mcp-client` reserves `serverName` **process-wide**: the old
+dispose-then-remount briefly released that reservation. Entry ids are
+`mcp-<serverName>`, matching dsh's own patch-file convention, so a running tree
+reads like the file the user edits.
+
+`sync()` and `dispose()` became async; both call sites in `runtime.ts` await them.
+
+### Cordis footgun, hit twice
+
+`ctx.loader` **throws** (`cannot get property "loader" without inject`) for a
+consumer that did not declare `inject: ['loader']` — it does not return
+`undefined`. Anything optionally depending on a service must use
+`ctx.get('name')`. This bit production code and test code in the same change,
+and is the same rule that forced `ctx.get('sessionPersistence')` in §D8.
+
+A second face of it: a service obtained through `ctx.get()` is a **tracked proxy
+bound to the caller's context**, so inside its methods `this.ctx` is the
+consumer's context, not the service's. Calling `loader.import(specifier)`
+directly from a test therefore throws, while `loader.create({ name })` is fine —
+the entry resolves the module through the tree's own context. Test the create
+path, not the import primitive.
+
+### Test seam
+
+`loader.import()` treats a `cordis:<key>` specifier as a lookup in
+`loader.builtins`, so tests register a fake server plugin there and construct
+the registrar with `cordis:<key>`. The loader path under test is then the
+production one; only the module behind the specifier differs. One test
+deliberately uses the **real** `@deepseek-ai/dsh-mcp-client` specifier against an
+unreachable endpoint, because a builtin-only suite would keep passing if the
+real package were renamed or dropped from the manifest (mutation-checked: it
+fails with `expected [] to include 'mcp-probe'`).
+
+### Follow-ups this unlocks
+
+- **B — config edits take effect live.** `fs.watch` on the profile patch file +
+  `loader.update()`; no `include`/`hmr` needed. Today a settings-page MCP edit
+  waits for the next session.
+- **C — `dsh-tool-cordis`** (model edits its own plugin tree) stays out: its
+  README calls its sandbox "not a security boundary" and says to treat it like
+  bash access, and its dynamic packages are process-wide, which crosses
+  SuperOne's Layer-A tool-identity model. Opt-in, default off, if ever.
+- Harness hot-swap (memory: `project_harness_hot_swap`) now has its mount
+  mechanism; only the *download* half (asar is read-only) remains open.
+
+---
+
+## 16. Live config reload (B, 2026-08-19)
+
+SuperOne keeps no copy of dsh's MCP list — the harness's profile patch layer is
+the only source (§D6) — so an edit made *anywhere* has to reach a running tree
+the same way. Before this, an edit waited for the next session to start.
+
+`apps/desktop/src/main/deepseek/`:
+
+| Module | Role |
+|---|---|
+| `deepseek-mcp-watcher.ts` | `watchDshMcpConfig(onChange, opts)` — debounced (150 ms) notification that the patch file changed |
+| `deepseek-mcp-sync.ts` | `readDshMcpServerSpecs(cwd)` (moved out of `deepseek-backend.ts`) + `trackDshMcpConfig(cwd)` / `stopTrackingDshMcpConfig()` |
+| `deepseek-runtime-host.ts` | new `peekDeepseekRuntime()`; `disposeDeepseekRuntime()` stops the watch |
+
+`DeepseekRuntime.syncMcpServers(specs)` is the new public seam. Creating an agent
+still syncs from a fresh read; the watch covers only the other case. Both funnel
+into the same fingerprint-diffing registrar, so a redundant call is free.
+
+Three decisions worth keeping:
+
+- **Watch the directory, not the file.** Our own `saveDshMcpConfig` writes in
+  place, but vim/VS Code save by writing a temp file and renaming over the
+  target — that replaces the inode and a file watch silently follows the dead
+  one. Pinned by a `renameSync` test.
+- **`peekDeepseekRuntime()`, not `getDeepseekRuntime()`.** A file change is an
+  *ambient* signal, not user intent. The eager accessor would boot a whole dsh
+  tree because someone added a server in Settings without ever opening a
+  DeepSeek session. Worth copying wherever else a singleton reacts to ambient
+  events.
+- **`mkdirSync` the profile directory before watching.** It is the same
+  directory `saveDshMcpConfig` creates on first write. Without it, a user
+  adding their *first* server is exactly the edit that goes unnoticed.
+
+`cwd` is the newest session's. It only decorates stdio servers, and the mounts
+are deployment-level, so last-session-wins — the same rule that already applied
+before the watch existed. Not a new inconsistency, but a real one: two projects
+with different cwds share one mount.
+
+Tests: `deepseek-mcp-watcher.test.ts` (6, real fs incl. atomic-rename save,
+event coalescing, arming before the directory exists) and
+`deepseek-mcp-sync.test.ts` (5, real `saveDshMcpConfig`/`toggleDshMcpConfig`
+writes; only the tree is stubbed, because booting one needs Electron's userData
+path).

@@ -16,8 +16,8 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
-import { listDshMcpConfigs } from '@superone/runtime/fs'
 import { addToolsChangedListener } from '../../mcp/superone-mcp-server'
+import { readDshMcpServerSpecs, trackDshMcpConfig } from '../../deepseek/deepseek-mcp-sync'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from '../../mcp/superone-mcp-tool-surface'
 import {
   DEEPSEEK_DEFAULT_MODEL as DEFAULT_MODEL,
@@ -35,45 +35,6 @@ interface DeepseekConfig {
 
 function readConfig(config: unknown): DeepseekConfig {
   return (config && typeof config === 'object' ? config : {}) as DeepseekConfig
-}
-
-/**
- * dsh's own MCP servers, from its own file.
- *
- * SuperOne extends a harness rather than centralizing it, so this reads
- * `~/.dsh/profiles/<profile>/cordis.patch.yml` — the entries the user's own dsh
- * CLI writes — not the Claude-shaped config other harnesses share. dsh composes
- * per deployment, so every server is user scope; SSE is dropped because
- * `dsh-mcp-client` speaks stdio and Streamable HTTP only.
- */
-function readMcpServerSpecs(cwd: string): DeepseekMcpServerSpec[] {
-  const specs: DeepseekMcpServerSpec[] = []
-  for (const config of listDshMcpConfigs(cwd)) {
-    if (config.disabled) continue
-    const name = config.name?.trim()
-    if (!name) continue
-    if (config.type === 'stdio') {
-      const command = config.command?.trim()
-      if (!command) continue
-      specs.push({
-        name,
-        transport: 'stdio',
-        command,
-        args: config.args ?? [],
-        env: config.env ?? {},
-        cwd,
-      })
-      continue
-    }
-    if (config.type !== 'http') {
-      log.info('[deepseek] skipping MCP server %s: %s transport is not supported', name, config.type)
-      continue
-    }
-    const url = config.url?.trim()
-    if (!url) continue
-    specs.push({ name, transport: 'streamable-http', url, headers: config.headers ?? {} })
-  }
-  return specs
 }
 
 interface PendingApproval {
@@ -179,9 +140,12 @@ export class DeepseekBackend implements SessionBackend {
         model: opts.model ?? config.model ?? DEFAULT_MODEL,
         ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
         resume: Boolean(opts.providerSessionId),
-        mcpServers: readMcpServerSpecs(opts.cwd),
+        mcpServers: readDshMcpServerSpecs(opts.cwd),
         onEvent: (event) => this.emit(event),
       })
+      // Creation synced from a fresh read; the watch covers the other case —
+      // a config edit that lands while this session is already running.
+      trackDshMcpConfig(opts.cwd)
 
       this.agent = agent
       this.emit({ type: 'provider_session_id', providerSessionId })

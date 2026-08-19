@@ -327,6 +327,17 @@ export class DeepseekRuntime {
     return childSessionId
   }
 
+  /**
+   * Re-mount third-party MCP servers from a fresh read of dsh's config.
+   *
+   * Sessions already sync at creation; this is the seam for a config edit that
+   * lands while sessions are running. The registrar diffs by server name, so
+   * calling this with unchanged specs is free.
+   */
+  async syncMcpServers(specs: readonly DeepseekMcpServerSpec[]): Promise<void> {
+    await this.mcpServers.sync(specs)
+  }
+
   async dispose(): Promise<void> {
     for (const [sessionId, record] of [...this.records]) {
       this.records.delete(sessionId)

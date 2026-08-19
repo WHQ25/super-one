@@ -475,19 +475,24 @@ export function McpPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
-  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, mcpbInstalled, codexMcpConfigs, codexMcpStatus, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, fetchCodexMcpStatus, selectMcp, toggleMcpConfig } = useSettingsStore()
+  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, mcpbInstalled, codexMcpConfigs, codexMcpStatus, dshMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, fetchCodexMcpStatus, fetchDshMcpConfigs, selectMcp, toggleMcpConfig } = useSettingsStore()
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
   const [refreshing, setRefreshing] = useState(false)
   const [checking, setChecking] = useState(false)
   const [scope, setScope] = useState<ResourceScopeView>('user')
   const isCodex = settingsProvider === 'codex'
+  const isDsh = settingsProvider === 'dsh'
+  const isManaged = isCodex || isDsh
 
   useEffect(() => {
     selectMcp(null)
     setAddView('none')
     fetchMcpbInstalled()
     fetchMcpLibrary()
-    if (isCodex) {
+    if (isDsh) {
+      setScope('user')
+      fetchDshMcpConfigs()
+    } else if (isCodex) {
       fetchCodexMcpConfigs()
       fetchCodexMcpStatus()
     } else {
@@ -495,12 +500,14 @@ export function McpPage() {
       setChecking(true)
       checkMcpServers().finally(() => setChecking(false))
     }
-  }, [currentFolder, isCodex, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, fetchCodexMcpStatus, selectMcp])
+  }, [currentFolder, isCodex, isDsh, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, fetchCodexMcpStatus, fetchDshMcpConfigs, selectMcp])
 
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      if (isCodex) {
+      if (isDsh) {
+        await fetchDshMcpConfigs()
+      } else if (isCodex) {
         await fetchCodexMcpConfigs()
         await fetchCodexMcpStatus()
       } else {
@@ -514,14 +521,14 @@ export function McpPage() {
     }
   }
 
-  const claudeaiServers = isCodex ? [] : mcpStatus.filter((s) => s.scope === 'claudeai')
+  const claudeaiServers = isManaged ? [] : mcpStatus.filter((s) => s.scope === 'claudeai')
 
-  const currentConfigs = isCodex ? codexMcpConfigs : mcpConfigs
+  const currentConfigs = isDsh ? dshMcpConfigs : isCodex ? codexMcpConfigs : mcpConfigs
   const userConfigs = currentConfigs.filter((c) => c.scope === 'user')
   const projectConfigs = currentConfigs.filter((c) => c.scope === 'project')
   const scopedConfigs = scope === 'user' ? userConfigs : projectConfigs
-  const codexCardStatus = currentConfigs.map((config) =>
-    codexMcpStatus.find((status) => status.name === config.name) ?? {
+  const managedCardStatus = currentConfigs.map((config) =>
+    (isCodex ? codexMcpStatus.find((status) => status.name === config.name) : undefined) ?? {
       name: config.name,
       scope: config.scope,
       status: config.disabled ? 'disabled' : 'pending',
@@ -532,23 +539,23 @@ export function McpPage() {
   ) as McpServerInfo[]
 
   if (selectedMcpName) {
-    if (!isCodex) {
+    if (!isManaged) {
       const claudeaiServer = claudeaiServers.find((s) => s.name === selectedMcpName)
       if (claudeaiServer) return <ClaudeAiDetailPage server={claudeaiServer} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
     }
     const config = currentConfigs.find((c) => c.name === selectedMcpName)
-    const status = (isCodex ? codexCardStatus : mcpStatus).find((s) => s.name === selectedMcpName)
-    if (config) return <McpDetailPage config={config} status={status} meta={isCodex ? undefined : mcpMeta[config.name]} />
+    const status = (isManaged ? managedCardStatus : mcpStatus).find((s) => s.name === selectedMcpName)
+    if (config) return <McpDetailPage config={config} status={status} meta={isManaged ? undefined : mcpMeta[config.name]} />
   }
 
-  const showClaudeAi = scope === 'user' && !isCodex
+  const showClaudeAi = scope === 'user' && !isManaged
   const hasScopedContent =
     scopedConfigs.length > 0 || (showClaudeAi && (claudeaiServers.length > 0 || checking))
 
-  const bundleProvider = isCodex ? 'codex' : 'claude'
+  const bundleProvider = isDsh ? null : isCodex ? 'codex' : 'claude'
   const bundlesByName: Record<string, McpbInstalledEntry> = {}
   for (const entry of mcpbInstalled) {
-    if (entry.meta.provider === bundleProvider) bundlesByName[entry.meta.name] = entry
+    if (bundleProvider && entry.meta.provider === bundleProvider) bundlesByName[entry.meta.name] = entry
   }
 
   return (
@@ -556,13 +563,14 @@ export function McpPage() {
       <ResourceScopeToolbar
         scope={scope}
         onScopeChange={setScope}
+        availableScopes={isDsh ? ['user'] : undefined}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
               <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
               {t('resources.mcp.refresh')}
             </Button>
-            {mcpLibrary.length > 0 && (
+            {!isDsh && mcpLibrary.length > 0 && (
               <Button
                 variant="outline"
                 size="sm"
@@ -587,7 +595,7 @@ export function McpPage() {
       {addView === 'form' && (
         <div className="mb-4">
           <AddServerPanel
-            provider={isCodex ? 'codex' : 'claude'}
+            provider={isDsh ? 'dsh' : isCodex ? 'codex' : 'claude'}
             cwd={currentFolder}
             onClose={() => setAddView('none')}
             onInstalled={(name) => toast.success(t('resources.mcp.bundle.installed', { name }))}
@@ -606,7 +614,7 @@ export function McpPage() {
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">{t('resources.mcp.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {isCodex ? t('resources.mcp.emptyHintCodex') : t('resources.mcp.emptyHintClaude')}
+            {isDsh ? t('resources.mcp.emptyHintDsh') : isCodex ? t('resources.mcp.emptyHintCodex') : t('resources.mcp.emptyHintClaude')}
           </p>
         </div>
       ) : (
@@ -621,10 +629,10 @@ export function McpPage() {
           {scopedConfigs.length > 0 && (
             <ServerSection
               configs={scopedConfigs}
-              mcpStatus={isCodex ? codexCardStatus : mcpStatus}
-              mcpMeta={isCodex ? {} : mcpMeta}
+              mcpStatus={isManaged ? managedCardStatus : mcpStatus}
+              mcpMeta={isManaged ? {} : mcpMeta}
               bundlesByName={bundlesByName}
-              statusMode={isCodex ? 'managed' : 'live'}
+              statusMode={isManaged ? 'managed' : 'live'}
             />
           )}
         </div>

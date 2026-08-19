@@ -211,7 +211,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     onClose()
     // Open the MCP settings for THIS session's harness (codex vs claude). Set the
     // provider first — it resets the active tab — then force the mcp tab.
-    setSettingsProvider(harness === 'codex' ? 'codex' : 'claude')
+    setSettingsProvider(harness === 'codex' || harness === 'dsh' ? harness : 'claude')
     setSettingsTab('mcp')
     navigateTo('settings')
   }, [onClose, setSettingsProvider, setSettingsTab, navigateTo, harness])

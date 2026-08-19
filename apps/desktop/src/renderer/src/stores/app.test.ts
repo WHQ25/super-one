@@ -790,7 +790,7 @@ describe('settings harness config navigation', () => {
     resetStore({
       settingsProvider: 'claude',
       settingsTab: 'providers',
-      settingsProviderTabs: { claude: 'providers', codex: 'providers', cursor: 'providers' },
+      settingsProviderTabs: { claude: 'providers', codex: 'providers', cursor: 'providers', dsh: 'mcp' },
       harnessConfigSection: null,
       ...overrides,
     })
@@ -841,5 +841,15 @@ describe('settings harness config navigation', () => {
     expect(useAppStore.getState().settingsTab).toBe('harnesses')
     expect(useAppStore.getState().settingsProvider).toBe('cursor')
     expect(useAppStore.getState().harnessListFocusKey).toBe('cursor')
+  })
+
+  it('openHarnessSettings aligns settingsProvider for dsh', () => {
+    seedSettings({ settingsProvider: 'claude' })
+
+    useAppStore.getState().openHarnessSettings('dsh')
+
+    expect(useAppStore.getState().settingsTab).toBe('harnesses')
+    expect(useAppStore.getState().settingsProvider).toBe('dsh')
+    expect(useAppStore.getState().harnessListFocusKey).toBe('dsh')
   })
 })

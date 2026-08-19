@@ -652,6 +652,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     claude: FIRST_PROVIDER_TAB,
     codex: FIRST_PROVIDER_TAB,
     cursor: FIRST_PROVIDER_TAB,
+    dsh: 'mcp',
   },
   harnessConfigSection: null,
   sidebarTab: 'sessions',
@@ -1079,7 +1080,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       view: 'settings',
     }
     // Nested config panes key off settingsProvider — keep them aligned.
-    if (listKey === 'claude' || listKey === 'codex' || listKey === 'cursor') {
+    if (listKey === 'claude' || listKey === 'codex' || listKey === 'cursor' || listKey === 'dsh') {
       patch.settingsProvider = listKey
     }
     set(patch)

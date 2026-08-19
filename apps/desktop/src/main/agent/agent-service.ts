@@ -67,7 +67,12 @@ function getGitRoot(cwd: string): string {
 import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
-import { listDshMcpConfigs } from '@superone/runtime/fs'
+import {
+  deleteDshMcpConfig,
+  listDshMcpConfigs,
+  saveDshMcpConfig,
+  toggleDshMcpConfig,
+} from '@superone/runtime/fs'
 import { listHooks, saveHook, deleteHook } from '../hooks-config-service'
 import { checkMcpServers, readMcpMetaCache } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
@@ -2521,6 +2526,75 @@ export class AgentService {
       return listCodexMcpConfigs(projectPath)
     })
 
+    // --- dsh MCP config ---
+
+    ipcMain.handle(AgentIpcChannels.DSH_MCP_LIST_CONFIG, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteManagedMcp } = await import('../environment/remote-resources')
+          return (await listRemoteManagedMcp(getEnvironmentHost(), projectPath, 'dsh')) ?? []
+        } catch {
+          return []
+        }
+      }
+      return listDshMcpConfigs(projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.DSH_MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
+      if (scope !== 'user') throw new Error('dsh MCP save only supports user scope')
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { saveRemoteManagedMcp } = await import('../environment/remote-resources')
+        const ok = await saveRemoteManagedMcp(getEnvironmentHost(), projectPath, {
+          provider: 'dsh',
+          name,
+          scope,
+          config,
+        })
+        if (!ok) throw new Error('Remote dsh MCP save failed')
+        return
+      }
+      saveDshMcpConfig(name, config, scope, projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.DSH_MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
+      if (scope !== 'user') throw new Error('dsh MCP delete only supports user scope')
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { deleteRemoteManagedMcp } = await import('../environment/remote-resources')
+        const ok = await deleteRemoteManagedMcp(getEnvironmentHost(), projectPath, {
+          provider: 'dsh',
+          name,
+          scope,
+        })
+        if (!ok) throw new Error('Remote dsh MCP delete failed')
+        return
+      }
+      deleteDshMcpConfig(name, scope, projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
+      if (scope !== 'user') throw new Error('dsh MCP toggle only supports user scope')
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { toggleRemoteManagedMcp } = await import('../environment/remote-resources')
+        const ok = await toggleRemoteManagedMcp(getEnvironmentHost(), projectPath, {
+          provider: 'dsh',
+          name,
+          scope,
+          disabled,
+        })
+        if (!ok) throw new Error('Remote dsh MCP toggle failed')
+        return
+      }
+      toggleDshMcpConfig(name, disabled, scope, projectPath)
+    })
+
     // --- Agents (read-only) ---
 
     ipcMain.handle(AgentIpcChannels.AGENTS_LIST, async (_event, projectPath: string) => {
@@ -3050,6 +3124,10 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_LIST_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_MCP_LIST_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_MCP_SAVE_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_MCP_DELETE_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_CONFIG)

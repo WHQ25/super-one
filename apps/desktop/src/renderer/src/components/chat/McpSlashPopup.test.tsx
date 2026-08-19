@@ -166,6 +166,19 @@ describe('McpSlashPopup', () => {
     expect(navigateToMock).toHaveBeenCalledWith('settings')
   })
 
+  it('opens the dsh MCP settings when the session is dsh', async () => {
+    setChat({ sessionProvider: 'dsh' })
+    mockWindow([], [])
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    const settingsBtn = await screen.findByTitle('Manage in Settings')
+    fireEvent.click(settingsBtn)
+
+    expect(setSettingsProviderMock).toHaveBeenCalledWith('dsh')
+    expect(setSettingsTabMock).toHaveBeenCalledWith('mcp')
+    expect(navigateToMock).toHaveBeenCalledWith('settings')
+  })
+
   it('calls onClose when X button clicked', async () => {
     mockWindow([], [])
     const onClose = vi.fn()

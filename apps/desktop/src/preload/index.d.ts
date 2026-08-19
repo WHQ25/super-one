@@ -323,6 +323,12 @@ interface AppAPI {
   codexDeleteMcpConfig(projectPath: string, name: string, scope: ResourceScope): Promise<void>
   codexToggleMcpConfig(projectPath: string, name: string, disabled: boolean, scope: ResourceScope): Promise<void>
 
+  // dsh MCP config
+  dshListMcpConfigs(projectPath: string): Promise<McpServerConfig[]>
+  dshSaveMcpConfig(projectPath: string, name: string, config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>, scope: ResourceScope): Promise<void>
+  dshDeleteMcpConfig(projectPath: string, name: string, scope: ResourceScope): Promise<void>
+  dshToggleMcpConfig(projectPath: string, name: string, disabled: boolean, scope: ResourceScope): Promise<void>
+
   // MCP config
   listMcpConfigs(projectPath: string): Promise<McpServerConfig[]>
   saveMcpConfig(projectPath: string, name: string, config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>, scope: ResourceScope): Promise<void>

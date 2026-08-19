@@ -10,6 +10,7 @@ vi.mock('./app', () => ({
 const mockWindowApp = {
   toggleMcpConfig: vi.fn().mockResolvedValue(undefined),
   codexToggleMcpConfig: vi.fn().mockResolvedValue(undefined),
+  dshToggleMcpConfig: vi.fn().mockResolvedValue(undefined),
   checkMcpServers: vi.fn().mockResolvedValue({ status: [], meta: {} }),
   listMcpLibrary: vi.fn().mockResolvedValue([]),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
@@ -18,10 +19,13 @@ const mockWindowApp = {
   codexListSkills: vi.fn().mockResolvedValue([]),
   listMcpConfigs: vi.fn().mockResolvedValue([]),
   codexListMcpConfigs: vi.fn().mockResolvedValue([]),
+  dshListMcpConfigs: vi.fn().mockResolvedValue([]),
   saveMcpConfig: vi.fn().mockResolvedValue(undefined),
   codexSaveMcpConfig: vi.fn().mockResolvedValue(undefined),
+  dshSaveMcpConfig: vi.fn().mockResolvedValue(undefined),
   deleteMcpConfig: vi.fn().mockResolvedValue(undefined),
   codexDeleteMcpConfig: vi.fn().mockResolvedValue(undefined),
+  dshDeleteMcpConfig: vi.fn().mockResolvedValue(undefined),
   deleteMcpLibraryEntry: vi.fn().mockResolvedValue(undefined),
   installSkill: vi.fn().mockResolvedValue(undefined),
   deletePlugin: vi.fn().mockResolvedValue(undefined),
@@ -142,6 +146,20 @@ describe('toggleMcpConfig', () => {
     expect(mockWindowApp.toggleMcpConfig).not.toHaveBeenCalled()
   })
 
+  it('uses dsh IPC and refreshes dsh configs when provider is dsh', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'dsh',
+    } as ReturnType<typeof useAppStore.getState>)
+    resetStore({ dshMcpConfigs: [{ name: 'srv', disabled: false }] })
+
+    await store.getState().toggleMcpConfig('srv', true, 'user')
+
+    expect(mockWindowApp.dshToggleMcpConfig).toHaveBeenCalledWith('/project', 'srv', true, 'user')
+    expect(mockWindowApp.dshListMcpConfigs).toHaveBeenCalledWith('/project')
+    expect(mockWindowApp.toggleMcpConfig).not.toHaveBeenCalled()
+  })
+
   it('should only update the matching server in configs and status', async () => {
     resetStore({
       mcpConfigs: [
@@ -249,6 +267,18 @@ describe('deleteMcpConfig', () => {
     expect(mockWindowApp.codexDeleteMcpConfig).toHaveBeenCalledWith('/project', 'srv', 'user')
     expect(mockWindowApp.deleteMcpConfig).not.toHaveBeenCalled()
   })
+
+  it('uses dsh delete path when provider is dsh', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'dsh',
+    } as ReturnType<typeof useAppStore.getState>)
+
+    await store.getState().deleteMcpConfig('srv', 'user')
+
+    expect(mockWindowApp.dshDeleteMcpConfig).toHaveBeenCalledWith('/project', 'srv', 'user')
+    expect(mockWindowApp.dshListMcpConfigs).toHaveBeenCalledWith('/project')
+  })
 })
 
 describe('saveMcpConfig', () => {
@@ -274,6 +304,20 @@ describe('saveMcpConfig', () => {
     expect(mockWindowApp.codexSaveMcpConfig).toHaveBeenCalledWith('/project', 'new-srv', config, 'user')
     expect(mockWindowApp.saveMcpConfig).not.toHaveBeenCalled()
     expect(mockWindowApp.codexListMcpConfigs).toHaveBeenCalled()
+  })
+
+  it('uses dsh save path and refuses project scope when provider is dsh', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'dsh',
+    } as ReturnType<typeof useAppStore.getState>)
+
+    const config = { type: 'stdio' as const, command: 'node' }
+    await store.getState().saveMcpConfig('new-srv', config, 'user')
+
+    expect(mockWindowApp.dshSaveMcpConfig).toHaveBeenCalledWith('/project', 'new-srv', config, 'user')
+    expect(mockWindowApp.dshListMcpConfigs).toHaveBeenCalledWith('/project')
+    await expect(store.getState().saveMcpConfig('new-srv', config, 'project')).rejects.toThrow('only support user scope')
   })
 })
 

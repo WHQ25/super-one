@@ -1282,6 +1282,28 @@ const appAPI = {
   codexToggleMcpConfig: (projectPath: string, name: string, disabled: boolean, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_TOGGLE_CONFIG, projectPath, name, disabled, scope),
 
+  // dsh MCP config
+  dshListMcpConfigs: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DSH_MCP_LIST_CONFIG, projectPath),
+  dshSaveMcpConfig: (
+    projectPath: string,
+    name: string,
+    config: {
+      type?: 'stdio' | 'http'
+      command?: string
+      args?: string[]
+      env?: Record<string, string>
+      url?: string
+      headers?: Record<string, string>
+    },
+    scope: string
+  ) =>
+    ipcRenderer.invoke(AgentIpcChannels.DSH_MCP_SAVE_CONFIG, projectPath, name, config, scope),
+  dshDeleteMcpConfig: (projectPath: string, name: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DSH_MCP_DELETE_CONFIG, projectPath, name, scope),
+  dshToggleMcpConfig: (projectPath: string, name: string, disabled: boolean, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG, projectPath, name, disabled, scope),
+
   // MCP config
   listMcpConfigs: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_LIST_CONFIG, projectPath),

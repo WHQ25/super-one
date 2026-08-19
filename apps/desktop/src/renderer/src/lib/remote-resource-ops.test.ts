@@ -60,6 +60,7 @@ describe('fetchSkillsForProject / fetchMcpConfigsForProject', () => {
         throw new Error('must not use local FS')
       }),
       localListCodexMcp: vi.fn(async () => []),
+      localListDshMcp: vi.fn(async () => []),
     })
     expect(listRemoteMcpConfigs).toHaveBeenCalledWith('conn-1', 'p1', 'claude')
     expect(mcps[0]?.name).toBe('github')
@@ -79,6 +80,9 @@ describe('fetchSkillsForProject / fetchMcpConfigsForProject', () => {
         throw new Error('local')
       }),
       localCodexSave: vi.fn(async () => {
+        throw new Error('local')
+      }),
+      localDshSave: vi.fn(async () => {
         throw new Error('local')
       }),
     })
@@ -112,6 +116,7 @@ describe('fetchSkillsForProject / fetchMcpConfigsForProject', () => {
         throw new Error('local')
       }),
       localListCodexMcp: vi.fn(async () => []),
+      localListDshMcp: vi.fn(async () => []),
     })
     expect(mcps[0]?.name).toBe('via-ipc')
     expect(invoke).toHaveBeenCalledWith(
@@ -132,6 +137,9 @@ describe('fetchSkillsForProject / fetchMcpConfigsForProject', () => {
         throw new Error('local')
       }),
       localCodexSave: vi.fn(async () => {
+        throw new Error('local')
+      }),
+      localDshSave: vi.fn(async () => {
         throw new Error('local')
       }),
     })

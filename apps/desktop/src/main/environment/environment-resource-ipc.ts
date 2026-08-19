@@ -8,10 +8,9 @@
 
 import { ipcMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
+import type { ResourceProvider } from '@superone/shared/environment'
 
 let registered = false
-
-type ResourceProvider = 'claude' | 'codex'
 
 export function isEnvironmentResourceIpcRegistered(): boolean {
   return registered

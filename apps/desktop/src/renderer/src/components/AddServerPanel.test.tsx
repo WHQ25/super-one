@@ -201,6 +201,30 @@ describe('AddServerPanel — bundle tab', () => {
 })
 
 describe('AddServerPanel — manual tab', () => {
+  it('limits dsh to user scope and stdio/HTTP, and validates its server namespace', async () => {
+    render(
+      <AddServerPanel
+        provider="dsh"
+        cwd="/some/project"
+        onClose={() => {}}
+        onInstalled={() => {}}
+        onError={() => {}}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: 'Bundle (.mcpb)' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'project' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'sse' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'http' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('my-server'), { target: { value: 'bad.name' } })
+    fireEvent.change(screen.getByPlaceholderText('npx'), { target: { value: 'node' } })
+
+    expect(screen.getByText(/letters, numbers, underscores, or hyphens/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
+    expect(settingsState.saveMcpConfig).not.toHaveBeenCalled()
+  })
+
   it('saves a stdio config via saveMcpConfig and closes the panel on submit', async () => {
     const onClose = vi.fn()
     render(

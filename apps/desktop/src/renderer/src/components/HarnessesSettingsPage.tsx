@@ -152,6 +152,7 @@ const CATALOG_HARNESS_META = {
     labelKey: 'settings.harnesses.ids.deepseek',
     descriptionKey: 'settings.harnesses.desc.deepseek',
     experimental: true,
+    configProvider: 'dsh',
   },
 } satisfies Record<NodeHarnessId, CatalogHarnessMeta>
 
@@ -194,10 +195,13 @@ const CURSOR_CONFIG_TABS: HarnessConfigSection[] = [
   'cloud',
 ]
 
+const DSH_CONFIG_TABS: HarnessConfigSection[] = ['mcp']
+
 function configTabsFor(provider: SettingsProvider | undefined): HarnessConfigSection[] | null {
   if (provider === 'claude') return CLAUDE_CONFIG_TABS
   if (provider === 'codex') return CODEX_CONFIG_TABS
   if (provider === 'cursor') return CURSOR_CONFIG_TABS
+  if (provider === 'dsh') return DSH_CONFIG_TABS
   return null
 }
 
@@ -391,6 +395,7 @@ export function HarnessesSettingsPage() {
     if (!harnessConfigSection) return
     if (settingsProvider === 'codex') setSelectedKey('codex')
     else if (settingsProvider === 'cursor') setSelectedKey('cursor')
+    else if (settingsProvider === 'dsh') setSelectedKey('dsh')
     else setSelectedKey('claude')
   }, [harnessConfigSection, settingsProvider])
 

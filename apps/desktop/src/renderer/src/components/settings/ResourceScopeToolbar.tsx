@@ -15,6 +15,7 @@ export type ResourceScopeView = 'user' | 'project'
 interface ResourceScopeToolbarProps {
   scope: ResourceScopeView
   onScopeChange: (scope: ResourceScopeView) => void
+  availableScopes?: readonly ResourceScopeView[]
   /** Page-specific actions rendered on the right (Refresh, Add, …). */
   actions?: ReactNode
   className?: string
@@ -23,6 +24,7 @@ interface ResourceScopeToolbarProps {
 export function ResourceScopeToolbar({
   scope,
   onScopeChange,
+  availableScopes = ['user', 'project'],
   actions,
   className,
 }: ResourceScopeToolbarProps) {
@@ -35,12 +37,11 @@ export function ResourceScopeToolbar({
         onValueChange={(v) => onScopeChange(v as ResourceScopeView)}
       >
         <TabsList className="h-auto min-h-10 w-auto p-1">
-          <TabsTrigger value="user" className="px-3 py-2 text-xs">
-            {t('resources.sectionUser')}
-          </TabsTrigger>
-          <TabsTrigger value="project" className="px-3 py-2 text-xs">
-            {t('resources.sectionProject')}
-          </TabsTrigger>
+          {availableScopes.map((availableScope) => (
+            <TabsTrigger key={availableScope} value={availableScope} className="px-3 py-2 text-xs">
+              {t(availableScope === 'user' ? 'resources.sectionUser' : 'resources.sectionProject')}
+            </TabsTrigger>
+          ))}
         </TabsList>
       </Tabs>
 

@@ -13,8 +13,10 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
   const { t } = useTranslation()
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const { selectMcp, saveMcpConfig, deleteMcpConfig, checkMcpServers, mcpbInstalled, uninstallMcpb, revealMcpb } = useSettingsStore()
-  const bundleProvider = settingsProvider === 'codex' ? 'codex' : 'claude'
-  const bundle = mcpbInstalled.find((b) => b.meta.name === config.name && b.meta.provider === bundleProvider)
+  const bundleProvider = settingsProvider === 'dsh' ? null : settingsProvider === 'codex' ? 'codex' : 'claude'
+  const bundle = bundleProvider
+    ? mcpbInstalled.find((b) => b.meta.name === config.name && b.meta.provider === bundleProvider)
+    : undefined
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [authorizing, setAuthorizing] = useState(false)

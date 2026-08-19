@@ -23,6 +23,21 @@ const codexAdditionalDirMocks = vi.hoisted(() => ({
   remove: vi.fn(),
 }))
 
+const dshMcpMocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  save: vi.fn(),
+  toggle: vi.fn(),
+  delete: vi.fn(),
+}))
+
+const remoteDshMcpMocks = vi.hoisted(() => ({
+  host: {} as object,
+  list: vi.fn(),
+  save: vi.fn(),
+  toggle: vi.fn(),
+  delete: vi.fn(),
+}))
+
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
 }))
@@ -96,6 +111,24 @@ vi.mock('../codex-config-service', () => ({
   readCodexScopedAdditionalDirs: codexAdditionalDirMocks.read,
   addCodexProjectAdditionalDir: codexAdditionalDirMocks.add,
   removeCodexProjectAdditionalDir: codexAdditionalDirMocks.remove,
+}))
+
+vi.mock('@superone/runtime/fs', () => ({
+  listDshMcpConfigs: dshMcpMocks.list,
+  saveDshMcpConfig: dshMcpMocks.save,
+  toggleDshMcpConfig: dshMcpMocks.toggle,
+  deleteDshMcpConfig: dshMcpMocks.delete,
+}))
+
+vi.mock('../environment', () => ({
+  getEnvironmentHost: () => remoteDshMcpMocks.host,
+}))
+
+vi.mock('../environment/remote-resources', () => ({
+  listRemoteManagedMcp: remoteDshMcpMocks.list,
+  saveRemoteManagedMcp: remoteDshMcpMocks.save,
+  toggleRemoteManagedMcp: remoteDshMcpMocks.toggle,
+  deleteRemoteManagedMcp: remoteDshMcpMocks.delete,
 }))
 
 vi.mock('./discover-resources', () => ({
@@ -280,6 +313,83 @@ function getRegisteredIpcHandler(channel: string) {
   const call = handleMock.mock.calls.find(([registered]) => registered === channel)
   return call?.[1] as ((event: unknown, ...args: unknown[]) => unknown) | undefined
 }
+
+describe('dsh MCP config IPC', () => {
+  function setupHandlers() {
+    const service = new AgentService()
+    service.setup()
+    return service
+  }
+
+  it('delegates local list, save, toggle, and delete to the dsh patch layer', async () => {
+    dshMcpMocks.list.mockReturnValue([{ name: 'files', scope: 'user', type: 'stdio' }])
+    setupHandlers()
+
+    const list = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_LIST_CONFIG)!
+    const save = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_SAVE_CONFIG)!
+    const toggle = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG)!
+    const remove = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_DELETE_CONFIG)!
+
+    await expect(list(null, '/project')).resolves.toEqual([
+      { name: 'files', scope: 'user', type: 'stdio' },
+    ])
+    await save(null, '/project', 'files', { type: 'stdio', command: 'node' }, 'user')
+    await toggle(null, '/project', 'files', true, 'user')
+    await remove(null, '/project', 'files', 'user')
+
+    expect(dshMcpMocks.list).toHaveBeenCalledWith('/project')
+    expect(dshMcpMocks.save).toHaveBeenCalledWith('files', { type: 'stdio', command: 'node' }, 'user', '/project')
+    expect(dshMcpMocks.toggle).toHaveBeenCalledWith('files', true, 'user', '/project')
+    expect(dshMcpMocks.delete).toHaveBeenCalledWith('files', 'user', '/project')
+  })
+
+  it('routes remote projects through the environment facade with provider dsh', async () => {
+    remoteDshMcpMocks.list.mockResolvedValue([{ name: 'remote', scope: 'user' }])
+    remoteDshMcpMocks.save.mockResolvedValue(true)
+    remoteDshMcpMocks.toggle.mockResolvedValue(true)
+    remoteDshMcpMocks.delete.mockResolvedValue(true)
+    setupHandlers()
+
+    const projectPath = 'remote:conn-1:/work/app'
+    const list = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_LIST_CONFIG)!
+    const save = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_SAVE_CONFIG)!
+    const toggle = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG)!
+    const remove = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_DELETE_CONFIG)!
+
+    await expect(list(null, projectPath)).resolves.toEqual([{ name: 'remote', scope: 'user' }])
+    await save(null, projectPath, 'remote', { type: 'http', url: 'https://example.com/mcp' }, 'user')
+    await toggle(null, projectPath, 'remote', false, 'user')
+    await remove(null, projectPath, 'remote', 'user')
+
+    expect(remoteDshMcpMocks.list).toHaveBeenCalledWith(remoteDshMcpMocks.host, projectPath, 'dsh')
+    expect(remoteDshMcpMocks.save).toHaveBeenCalledWith(remoteDshMcpMocks.host, projectPath, {
+      provider: 'dsh',
+      name: 'remote',
+      scope: 'user',
+      config: { type: 'http', url: 'https://example.com/mcp' },
+    })
+    expect(remoteDshMcpMocks.toggle).toHaveBeenCalledWith(remoteDshMcpMocks.host, projectPath, {
+      provider: 'dsh', name: 'remote', scope: 'user', disabled: false,
+    })
+    expect(remoteDshMcpMocks.delete).toHaveBeenCalledWith(remoteDshMcpMocks.host, projectPath, {
+      provider: 'dsh', name: 'remote', scope: 'user',
+    })
+  })
+
+  it('rejects project-scope writes before touching local or remote storage', async () => {
+    setupHandlers()
+    const save = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_SAVE_CONFIG)!
+    const toggle = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG)!
+    const remove = getRegisteredIpcHandler(AgentIpcChannels.DSH_MCP_DELETE_CONFIG)!
+
+    await expect(save(null, '/project', 'files', { type: 'stdio', command: 'node' }, 'project')).rejects.toThrow('only supports user scope')
+    await expect(toggle(null, '/project', 'files', true, 'project')).rejects.toThrow('only supports user scope')
+    await expect(remove(null, '/project', 'files', 'project')).rejects.toThrow('only supports user scope')
+    expect(dshMcpMocks.save).not.toHaveBeenCalled()
+    expect(dshMcpMocks.toggle).not.toHaveBeenCalled()
+    expect(dshMcpMocks.delete).not.toHaveBeenCalled()
+  })
+})
 
 describe('AgentService prewarm', () => {
   it('creates a Codex session for Codex prewarm hints instead of reusing an empty Claude draft', async () => {

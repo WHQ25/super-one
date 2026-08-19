@@ -22,8 +22,9 @@ function getProjectPath(): string {
   return useAppStore.getState().currentFolder ?? ''
 }
 
-function settingsProvider(): 'claude' | 'codex' {
-  return useAppStore.getState().settingsProvider === 'codex' ? 'codex' : 'claude'
+function settingsProvider(): 'claude' | 'codex' | 'dsh' {
+  const provider = useAppStore.getState().settingsProvider
+  return provider === 'codex' || provider === 'dsh' ? provider : 'claude'
 }
 
 interface SettingsState {
@@ -72,6 +73,10 @@ interface SettingsState {
   codexMcpStatus: McpServerInfo[]
   fetchCodexMcpConfigs: () => Promise<void>
   fetchCodexMcpStatus: (serverName?: string) => Promise<void>
+
+  // dsh MCP config
+  dshMcpConfigs: McpServerConfig[]
+  fetchDshMcpConfigs: () => Promise<void>
 
   // MCP library
   mcpLibrary: McpLibraryEntry[]
@@ -170,6 +175,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   selectedMcpName: null,
   codexMcpConfigs: [],
   codexMcpStatus: [],
+  dshMcpConfigs: [],
   mcpLibrary: [],
   mcpbInstalled: [],
   platforms: [],
@@ -332,6 +338,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       env: getWindowEnvironmentApi(),
       localListMcp: (path) => window.app.listMcpConfigs(path),
       localListCodexMcp: (path) => window.app.codexListMcpConfigs(path),
+      localListDshMcp: (path) => window.app.dshListMcpConfigs(path),
     })
     set({ mcpConfigs: configs })
   },
@@ -350,6 +357,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   saveMcpConfig: async (name, config, scope) => {
     const pp = getProjectPath()
     const provider = settingsProvider()
+    if (provider === 'dsh' && scope !== 'user') {
+      throw new Error('dsh MCP servers only support user scope')
+    }
     if (scope !== 'user' && scope !== 'project') {
       // claudeai / other scopes stay local desktop-only
       if (provider === 'codex') {
@@ -371,9 +381,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       env: getWindowEnvironmentApi(),
       localSave: (path, n, c, s) => window.app.saveMcpConfig(path, n, c, s),
       localCodexSave: (path, n, c, s) => window.app.codexSaveMcpConfig(path, n, c, s),
+      localDshSave: (path, n, c, s) => window.app.dshSaveMcpConfig(path, n, c, s),
     })
     if (provider === 'codex') {
       await get().fetchCodexMcpConfigs()
+      return
+    }
+    if (provider === 'dsh') {
+      await get().fetchDshMcpConfigs()
       return
     }
     await get().fetchMcpConfigs()
@@ -383,6 +398,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   deleteMcpConfig: async (name, scope) => {
     const pp = getProjectPath()
     const provider = settingsProvider()
+    if (provider === 'dsh' && scope !== 'user') {
+      throw new Error('dsh MCP servers only support user scope')
+    }
     if (scope !== 'user' && scope !== 'project') {
       if (provider === 'codex') {
         await window.app.codexDeleteMcpConfig(pp, name, scope)
@@ -404,10 +422,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       env: getWindowEnvironmentApi(),
       localDelete: (path, n, s) => window.app.deleteMcpConfig(path, n, s),
       localCodexDelete: (path, n, s) => window.app.codexDeleteMcpConfig(path, n, s),
+      localDshDelete: (path, n, s) => window.app.dshDeleteMcpConfig(path, n, s),
     })
     set({ selectedMcpName: null })
     if (provider === 'codex') {
       await get().fetchCodexMcpConfigs()
+      return
+    }
+    if (provider === 'dsh') {
+      await get().fetchDshMcpConfigs()
       return
     }
     await get().fetchMcpConfigs()
@@ -416,28 +439,41 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   toggleMcpConfig: async (name, disabled, scope) => {
     const provider = settingsProvider()
-    if (provider === 'codex') {
-      set((state) => ({
-        codexMcpConfigs: state.codexMcpConfigs.map((c) =>
-          c.name === name ? { ...c, disabled } : c
-        ),
-      }))
+    if (provider === 'dsh' && scope !== 'user') {
+      throw new Error('dsh MCP servers only support user scope')
+    }
+    if (provider === 'codex' || provider === 'dsh') {
+      set((state) => provider === 'codex'
+        ? {
+            codexMcpConfigs: state.codexMcpConfigs.map((c) =>
+              c.name === name ? { ...c, disabled } : c
+            ),
+          }
+        : {
+            dshMcpConfigs: state.dshMcpConfigs.map((c) =>
+              c.name === name ? { ...c, disabled } : c
+            ),
+          })
       const pp = getProjectPath()
       if (scope === 'user' || scope === 'project') {
         await toggleMcpConfigForProject({
           projectPath: pp,
-          provider: 'codex',
+          provider,
           name,
           disabled,
           scope,
           env: getWindowEnvironmentApi(),
           localToggle: (path, n, d, s) => window.app.toggleMcpConfig(path, n, d, s),
           localCodexToggle: (path, n, d, s) => window.app.codexToggleMcpConfig(path, n, d, s),
+          localDshToggle: (path, n, d, s) => window.app.dshToggleMcpConfig(path, n, d, s),
         })
-      } else {
+      } else if (provider === 'codex') {
         await window.app.codexToggleMcpConfig(pp, name, disabled, scope)
+      } else {
+        await window.app.dshToggleMcpConfig(pp, name, disabled, scope)
       }
-      await get().fetchCodexMcpConfigs()
+      if (provider === 'codex') await get().fetchCodexMcpConfigs()
+      else await get().fetchDshMcpConfigs()
       return
     }
     // Optimistic update: flip config + set pending status immediately
@@ -464,6 +500,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         env: getWindowEnvironmentApi(),
         localToggle: (path, n, d, s) => window.app.toggleMcpConfig(path, n, d, s),
         localCodexToggle: (path, n, d, s) => window.app.codexToggleMcpConfig(path, n, d, s),
+        localDshToggle: (path, n, d, s) => window.app.dshToggleMcpConfig(path, n, d, s),
       })
     } else {
       await window.app.toggleMcpConfig(pp, name, disabled, scope)
@@ -482,8 +519,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       env: getWindowEnvironmentApi(),
       localListMcp: (path) => window.app.listMcpConfigs(path),
       localListCodexMcp: (path) => window.app.codexListMcpConfigs(path),
+      localListDshMcp: (path) => window.app.dshListMcpConfigs(path),
     })
     set({ codexMcpConfigs })
+  },
+
+  fetchDshMcpConfigs: async () => {
+    const pp = getProjectPath()
+    const dshMcpConfigs = await fetchMcpConfigsForProject({
+      projectPath: pp,
+      provider: 'dsh',
+      env: getWindowEnvironmentApi(),
+      localListMcp: (path) => window.app.listMcpConfigs(path),
+      localListCodexMcp: (path) => window.app.codexListMcpConfigs(path),
+      localListDshMcp: (path) => window.app.dshListMcpConfigs(path),
+    })
+    set({ dshMcpConfigs })
   },
 
   fetchCodexMcpStatus: async (serverName) => {

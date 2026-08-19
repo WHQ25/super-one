@@ -120,4 +120,13 @@ describe('first-party harness settings entries', () => {
       })
     },
   )
+
+  it('opens the dsh MCP configuration tab', async () => {
+    const user = userEvent.setup()
+    render(<HarnessesSettingsPage />)
+
+    await user.click(await screen.findByRole('button', { name: HARNESS_LABELS.dsh }))
+
+    expect(screen.getByRole('tab', { name: /MCP/i })).toBeInTheDocument()
+  })
 })

@@ -11,6 +11,7 @@ import { cn } from '@superone/ui/lib/utils'
 import type { McpbPreview, McpbProvider, McpbUserConfigField, McpbUserConfigValues } from '@superone/shared/mcpb-types'
 
 const MCPB_EXT = '.mcpb'
+const DSH_MCP_NAME_PATTERN = /^[A-Za-z0-9_-]+$/
 
 interface KvRow {
   key: string
@@ -250,7 +251,7 @@ function getMcpbDropPath(e: DragEvent): string | null {
 }
 
 interface AddServerPanelProps {
-  provider: McpbProvider
+  provider: McpbProvider | 'dsh'
   cwd: string | null
   onClose: () => void
   onInstalled: (name: string) => void
@@ -261,7 +262,8 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
   const { t } = useTranslation()
   const { saveMcpConfig, fetchMcpConfigs, fetchCodexMcpConfigs, checkMcpServers, fetchMcpbInstalled } = useSettingsStore()
 
-  const [tab, setTab] = useState<'manual' | 'bundle'>('bundle')
+  const supportsBundles = provider !== 'dsh'
+  const [tab, setTab] = useState<'manual' | 'bundle'>(supportsBundles ? 'bundle' : 'manual')
   const [scope, setScope] = useState<'user' | 'project'>('user')
   const [error, setError] = useState('')
 
@@ -371,7 +373,7 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
         return
       }
       if (parsed.name) setName(parsed.name)
-      if (parsed.type) setType(parsed.type)
+      if (parsed.type) setType(provider === 'dsh' && parsed.type === 'sse' ? 'http' : parsed.type)
       if (parsed.command) setCommand(parsed.command)
       if (parsed.args) setArgs(parsed.args)
       if (parsed.env) setEnv(parsed.env)
@@ -391,7 +393,11 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
     return result
   }
 
-  const manualValid = name.trim() && (type !== 'stdio' ? url.trim() : command.trim())
+  const trimmedName = name.trim()
+  const dshNameError = provider === 'dsh'
+    && trimmedName.length > 0
+    && (trimmedName.length > 32 || !DSH_MCP_NAME_PATTERN.test(trimmedName))
+  const manualValid = trimmedName && !dshNameError && (type !== 'stdio' ? url.trim() : command.trim())
   const bundleValid = useMemo(() => {
     if (!preview) return false
     if (scope === 'project' && !cwd) return false
@@ -411,33 +417,39 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
   const busy = authorizing || adding || installing
 
   const handleManualSubmit = async () => {
-    if (type === 'http' || type === 'sse') {
-      if (!url.trim()) return
-      setAuthorizing(true)
-      setVerified(false)
-      let verifiedHeaders: Record<string, string>
-      try {
-        verifiedHeaders = await window.app.oauthAuthorize(url.trim(), kvToRecord(headers), type)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : t('resources.mcp.form.verificationFailed'))
-        setAuthorizing(false)
-        return
+    try {
+      if (type === 'http' || type === 'sse') {
+        if (!url.trim()) return
+        setAuthorizing(true)
+        setVerified(false)
+        let verifiedHeaders: Record<string, string>
+        try {
+          verifiedHeaders = await window.app.oauthAuthorize(url.trim(), kvToRecord(headers), type)
+        } catch (e) {
+          setError(e instanceof Error ? e.message : t('resources.mcp.form.verificationFailed'))
+          return
+        } finally {
+          setAuthorizing(false)
+        }
+        setVerified(true)
+        setAdding(true)
+        await saveMcpConfig(trimmedName, { type, url: url.trim(), headers: verifiedHeaders }, scope)
+      } else {
+        if (!command.trim()) return
+        setAdding(true)
+        const parsedArgs = args.trim() ? args.trim().split(/\s+/) : []
+        await saveMcpConfig(trimmedName, { type: 'stdio', command: command.trim(), args: parsedArgs, env: kvToRecord(env) }, scope)
       }
-      setAuthorizing(false)
-      setVerified(true)
-      setAdding(true)
-      await saveMcpConfig(name.trim(), { type, url: url.trim(), headers: verifiedHeaders }, scope)
-    } else {
-      if (!command.trim()) return
-      setAdding(true)
-      const parsedArgs = args.trim() ? args.trim().split(/\s+/) : []
-      await saveMcpConfig(name.trim(), { type: 'stdio', command: command.trim(), args: parsedArgs, env: kvToRecord(env) }, scope)
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('resources.mcp.form.addFailed'))
+    } finally {
+      setAdding(false)
     }
-    onClose()
   }
 
   const handleBundleSubmit = async () => {
-    if (!preview || !bundlePath) return
+    if (provider === 'dsh' || !preview || !bundlePath) return
     setInstalling(true)
     try {
       await window.app.installMcpb({
@@ -499,8 +511,9 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
               </Tooltip>
             </TooltipProvider>
           )}
-          <div className="flex gap-0.5 rounded-md bg-muted/50 p-0.5">
-            {(['manual', 'bundle'] as const).map((key) => (
+          {supportsBundles && (
+            <div className="flex gap-0.5 rounded-md bg-muted/50 p-0.5">
+              {(['manual', 'bundle'] as const).map((key) => (
               <button
                 key={key}
                 type="button"
@@ -514,8 +527,9 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
               >
                 {key === 'manual' ? t('resources.mcp.form.tabManual') : t('resources.mcp.form.tabBundle')}
               </button>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -524,11 +538,14 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.name')}</label>
             <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder={t('resources.mcp.form.namePlaceholder')} />
+            {dshNameError && (
+              <p className="mt-1 text-xs text-destructive">{t('resources.mcp.form.dshNameInvalid')}</p>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.type')}</label>
             <div className="flex gap-2">
-              {(['stdio', 'http', 'sse'] as const).map((tt) => (
+              {(provider === 'dsh' ? ['stdio', 'http'] as const : ['stdio', 'http', 'sse'] as const).map((tt) => (
                 <button key={tt} type="button" onClick={() => setType(tt)} className={cn('rounded-md px-3 py-1 text-xs transition-colors', type === tt ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}>
                   {tt}
                 </button>
@@ -598,7 +615,7 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
 
         <div className="flex items-center justify-between gap-2">
           <div className="flex gap-2">
-            {(['user', 'project'] as const).map((s) => {
+            {(provider === 'dsh' ? ['user'] as const : ['user', 'project'] as const).map((s) => {
               const disabled = s === 'project' && !cwd
               return (
                 <button

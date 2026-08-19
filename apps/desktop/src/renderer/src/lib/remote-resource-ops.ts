@@ -18,9 +18,10 @@ import type {
   SkillDetail,
   SkillInfo,
 } from '@superone/shared/agent-types'
+import type { ResourceProvider } from '@superone/shared/environment'
 import { parseRemoteProjectKey } from './remote-project-key'
 
-export type ResourceProviderId = 'claude' | 'codex'
+export type ResourceProviderId = ResourceProvider
 
 /** Injectable environment surface for tests (window.environment subset). */
 export interface RemoteResourceEnvironmentApi {
@@ -305,12 +306,13 @@ export async function fetchMcpConfigsForProject(opts: {
   env?: RemoteResourceEnvironmentApi | null
   localListMcp: (projectPath: string) => Promise<McpServerConfig[]>
   localListCodexMcp: (projectPath: string) => Promise<McpServerConfig[]>
+  localListDshMcp: (projectPath: string) => Promise<McpServerConfig[]>
 }): Promise<McpServerConfig[]> {
   const transport = selectResourceTransport(opts.projectPath, opts.env)
   if (transport === 'local-fs') {
-    return opts.provider === 'codex'
-      ? opts.localListCodexMcp(opts.projectPath)
-      : opts.localListMcp(opts.projectPath)
+    if (opts.provider === 'codex') return opts.localListCodexMcp(opts.projectPath)
+    if (opts.provider === 'dsh') return opts.localListDshMcp(opts.projectPath)
+    return opts.localListMcp(opts.projectPath)
   }
 
   const remote = parseRemoteProjectKey(opts.projectPath)!
@@ -345,11 +347,19 @@ export async function saveMcpConfigForProject(opts: {
     config: Record<string, unknown>,
     scope: Extract<ResourceScope, 'user' | 'project'>,
   ) => Promise<void>
+  localDshSave: (
+    projectPath: string,
+    name: string,
+    config: Record<string, unknown>,
+    scope: Extract<ResourceScope, 'user' | 'project'>,
+  ) => Promise<void>
 }): Promise<'remote-rpc' | 'local-fs'> {
   const transport = selectResourceTransport(opts.projectPath, opts.env)
   if (transport === 'local-fs') {
     if (opts.provider === 'codex') {
       await opts.localCodexSave(opts.projectPath, opts.name, opts.config, opts.scope)
+    } else if (opts.provider === 'dsh') {
+      await opts.localDshSave(opts.projectPath, opts.name, opts.config, opts.scope)
     } else {
       await opts.localSave(opts.projectPath, opts.name, opts.config, opts.scope)
     }
@@ -391,11 +401,19 @@ export async function toggleMcpConfigForProject(opts: {
     disabled: boolean,
     scope: Extract<ResourceScope, 'user' | 'project'>,
   ) => Promise<void>
+  localDshToggle: (
+    projectPath: string,
+    name: string,
+    disabled: boolean,
+    scope: Extract<ResourceScope, 'user' | 'project'>,
+  ) => Promise<void>
 }): Promise<'remote-rpc' | 'local-fs'> {
   const transport = selectResourceTransport(opts.projectPath, opts.env)
   if (transport === 'local-fs') {
     if (opts.provider === 'codex') {
       await opts.localCodexToggle(opts.projectPath, opts.name, opts.disabled, opts.scope)
+    } else if (opts.provider === 'dsh') {
+      await opts.localDshToggle(opts.projectPath, opts.name, opts.disabled, opts.scope)
     } else {
       await opts.localToggle(opts.projectPath, opts.name, opts.disabled, opts.scope)
     }
@@ -434,11 +452,18 @@ export async function deleteMcpConfigForProject(opts: {
     name: string,
     scope: Extract<ResourceScope, 'user' | 'project'>,
   ) => Promise<void>
+  localDshDelete: (
+    projectPath: string,
+    name: string,
+    scope: Extract<ResourceScope, 'user' | 'project'>,
+  ) => Promise<void>
 }): Promise<'remote-rpc' | 'local-fs'> {
   const transport = selectResourceTransport(opts.projectPath, opts.env)
   if (transport === 'local-fs') {
     if (opts.provider === 'codex') {
       await opts.localCodexDelete(opts.projectPath, opts.name, opts.scope)
+    } else if (opts.provider === 'dsh') {
+      await opts.localDshDelete(opts.projectPath, opts.name, opts.scope)
     } else {
       await opts.localDelete(opts.projectPath, opts.name, opts.scope)
     }

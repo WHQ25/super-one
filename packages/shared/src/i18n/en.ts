@@ -2346,6 +2346,7 @@ export type Messages = {
       empty: string
       emptyHintClaude: string
       emptyHintCodex: string
+      emptyHintDsh: string
       claudeAiTitle: string
       claudeAiFetching: string
       claudeAiEmpty: string
@@ -2376,6 +2377,8 @@ export type Messages = {
         add: string
         verified: string
         verificationFailed: string
+        addFailed: string
+        dshNameInvalid: string
         clipboardInvalid: string
         clipboardFailed: string
         tabManual: string
@@ -5282,6 +5285,7 @@ export const en: Messages = {
       empty: 'No MCP servers configured',
       emptyHintClaude: 'User: ~/.claude.json | Project: .claude/settings.json, .mcp.json',
       emptyHintCodex: 'User: ~/.codex/config.toml | Project: .codex/config.toml',
+      emptyHintDsh: 'User: ~/.dsh/profiles/web/cordis.patch.yml',
       claudeAiTitle: 'Claude.ai',
       claudeAiFetching: 'Fetching claude.ai servers...',
       claudeAiEmpty: 'No claude.ai MCP servers found',
@@ -5312,6 +5316,8 @@ export const en: Messages = {
         add: 'Add',
         verified: 'Verified',
         verificationFailed: 'Connection verification failed',
+        addFailed: 'Failed to add MCP server',
+        dshNameInvalid: 'Use only letters, numbers, underscores, or hyphens (32 characters maximum)',
         clipboardInvalid: 'Clipboard does not contain a recognized MCP config',
         clipboardFailed: 'Failed to read clipboard',
         tabManual: 'Manual',

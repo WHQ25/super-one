@@ -1733,7 +1733,7 @@ export type ResourceScope = 'user' | 'project' | 'claudeai'
 
 // --- Settings provider ---
 
-export type SettingsProvider = 'claude' | 'codex' | 'cursor'
+export type SettingsProvider = 'claude' | 'codex' | 'cursor' | 'dsh'
 
 // ─── Agent Run Config (automation / unattended runs — all harnesses) ───
 //
@@ -2910,6 +2910,12 @@ export const AgentIpcChannels = {
   CODEX_MCP_SAVE_CONFIG: 'codex:mcp-save-config',
   CODEX_MCP_DELETE_CONFIG: 'codex:mcp-delete-config',
   CODEX_MCP_TOGGLE_CONFIG: 'codex:mcp-toggle-config',
+
+  // dsh MCP config
+  DSH_MCP_LIST_CONFIG: 'dsh:mcp-list-config',
+  DSH_MCP_SAVE_CONFIG: 'dsh:mcp-save-config',
+  DSH_MCP_DELETE_CONFIG: 'dsh:mcp-delete-config',
+  DSH_MCP_TOGGLE_CONFIG: 'dsh:mcp-toggle-config',
 
   // MCP config
   MCP_LIST_CONFIG: 'mcp:list-config',

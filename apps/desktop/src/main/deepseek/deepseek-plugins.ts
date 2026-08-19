@@ -12,6 +12,7 @@ import {
   installPluginFromDirectory,
   installPluginFromNpm,
   installPluginFromTarball,
+  listBundledDshPlugins,
   readPluginRegistry,
   setPluginDisabled,
   uninstallPlugin,
@@ -23,7 +24,7 @@ import type {
   DshPluginInstallSource,
   DshPluginList,
 } from '@superone/shared/agent-types'
-import { dshPluginRoot, peekDeepseekRuntime } from './deepseek-runtime-host'
+import { dshPluginRoot, peekDeepseekRuntime, shippedPresetRoot } from './deepseek-runtime-host'
 
 /**
  * List installed plugins, annotated with their live state.
@@ -35,7 +36,10 @@ import { dshPluginRoot, peekDeepseekRuntime } from './deepseek-runtime-host'
  */
 export async function listDshPlugins(): Promise<DshPluginList> {
   const root = dshPluginRoot()
-  const registry = await readPluginRegistry(root)
+  const [registry, bundled] = await Promise.all([
+    readPluginRegistry(root),
+    listBundledDshPlugins(shippedPresetRoot()),
+  ])
 
   // `syncPlugins` is idempotent — an unchanged row matches its fingerprint and
   // is not remounted — so asking for fresh status costs nothing.
@@ -56,7 +60,9 @@ export async function listDshPlugins(): Promise<DshPluginList> {
   })
 
   const problem = registry.problem ?? report?.registryProblem
-  return problem === undefined ? { plugins, root } : { plugins, root, problem }
+  return problem === undefined
+    ? { bundled, plugins, root }
+    : { bundled, plugins, root, problem }
 }
 
 /** Push the registry into the running tree, when one exists. */

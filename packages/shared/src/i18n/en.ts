@@ -446,6 +446,9 @@ export type Messages = {
       }
     }
     dshPlugins: {
+      bundledTitle: string
+      bundledDescription: string
+      thirdPartyTitle: string
       trustTitle: string
       trustBody: string
       npmPlaceholder: string
@@ -454,8 +457,16 @@ export type Messages = {
       installed: string
       unmetDeps: string
       empty: string
+      refresh: string
       uninstall: string
       rootPath: string
+      scope: {
+        core: string
+        standard: string
+        code: string
+        minimal: string
+        cordis: string
+      }
       status: {
         mounted: string
         unresolved: string
@@ -3485,6 +3496,10 @@ export const en: Messages = {
       },
     },
     dshPlugins: {
+      bundledTitle: 'Built-in official plugins',
+      bundledDescription:
+        'Bundled with SuperOne and composed automatically by the core runtime or the selected agent preset. These plugins are read-only.',
+      thirdPartyTitle: 'Installed third-party plugins',
       trustTitle: 'Plugins run with full access',
       trustBody:
         'A dsh plugin runs inside SuperOne with the same privileges as the app itself \u2014 it can read your files, run commands, and reach the network. There is no sandbox. Install one only if you trust its author, the way you would an editor extension.',
@@ -3493,9 +3508,17 @@ export const en: Messages = {
       installFromFolder: 'From folder\u2026',
       installed: 'Installed {{name}} {{version}}.',
       unmetDeps: 'It declares dependencies that were not installed ({{deps}}); it only works if it bundled them.',
-      empty: 'No plugins installed.',
+      empty: 'No third-party plugins installed.',
+      refresh: 'Refresh plugins',
       uninstall: 'Uninstall',
       rootPath: 'Plugins live in {{path}}',
+      scope: {
+        core: 'Core',
+        standard: 'Standard',
+        code: 'PTC',
+        minimal: 'Minimal',
+        cordis: 'Creator',
+      },
       status: {
         mounted: 'Active',
         unresolved: 'Missing files',

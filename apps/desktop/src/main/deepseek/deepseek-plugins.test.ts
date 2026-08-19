@@ -6,6 +6,7 @@ const installPluginFromNpm = vi.fn()
 const installPluginFromTarball = vi.fn()
 const setPluginDisabled = vi.fn()
 const uninstallPlugin = vi.fn()
+const listBundledDshPlugins = vi.fn()
 const syncPlugins = vi.fn()
 const peekDeepseekRuntime = vi.fn()
 
@@ -16,10 +17,12 @@ vi.mock('@superone/deepseek', () => ({
   installPluginFromTarball: (...args: unknown[]) => installPluginFromTarball(...args),
   setPluginDisabled: (...args: unknown[]) => setPluginDisabled(...args),
   uninstallPlugin: (...args: unknown[]) => uninstallPlugin(...args),
+  listBundledDshPlugins: (...args: unknown[]) => listBundledDshPlugins(...args),
 }))
 
 vi.mock('./deepseek-runtime-host', () => ({
   dshPluginRoot: () => '/plugins',
+  shippedPresetRoot: () => '/presets',
   peekDeepseekRuntime: () => peekDeepseekRuntime(),
 }))
 
@@ -38,6 +41,13 @@ beforeEach(() => {
   installPluginFromTarball.mockResolvedValue(INSTALL_RESULT)
   setPluginDisabled.mockResolvedValue(true)
   uninstallPlugin.mockResolvedValue(INSTALL_RESULT.row)
+  listBundledDshPlugins.mockResolvedValue([
+    {
+      name: '@deepseek-ai/dsh-agent-loop',
+      version: '0.1.0-rc.8',
+      scopes: ['core'],
+    },
+  ])
   syncPlugins.mockResolvedValue({ outcomes: [] })
 })
 
@@ -54,6 +64,22 @@ describe('listDshPlugins', () => {
     // users their plugin is broken when they simply have no dsh session open.
     expect(list.plugins[0]!.status).toBeNull()
     expect(syncPlugins).not.toHaveBeenCalled()
+  })
+
+  it('returns bundled official plugins when the user registry is empty', async () => {
+    const { listDshPlugins } = await import('./deepseek-plugins')
+
+    await expect(listDshPlugins()).resolves.toMatchObject({
+      bundled: [
+        {
+          name: '@deepseek-ai/dsh-agent-loop',
+          version: '0.1.0-rc.8',
+          scopes: ['core'],
+        },
+      ],
+      plugins: [],
+    })
+    expect(listBundledDshPlugins).toHaveBeenCalledWith('/presets')
   })
 
   it('annotates rows with live status when a runtime is already up', async () => {

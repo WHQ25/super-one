@@ -112,7 +112,7 @@ export async function reconcileDshPlugins(): Promise<void> {
  * no dsh tools at all. `dsh-agent-presets` appends `<dshHome>/.agent-presets`
  * as the writable root on top of it.
  */
-function shippedPresetRoot(): string {
+export function shippedPresetRoot(): string {
   return is.dev
     ? join(app.getAppPath(), 'resources', 'agent-presets')
     : join(process.resourcesPath, 'agent-presets')

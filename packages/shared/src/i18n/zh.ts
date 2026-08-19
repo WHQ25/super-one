@@ -455,6 +455,9 @@ export const zh: Messages = {
       },
     },
     dshPlugins: {
+      bundledTitle: '内置官方插件',
+      bundledDescription: '这些插件随 SuperOne 提供，由核心运行时或当前 Agent 模式自动组合，只读且无需单独安装。',
+      thirdPartyTitle: '已安装的第三方插件',
       trustTitle: '\u63d2\u4ef6\u4ee5\u5b8c\u6574\u6743\u9650\u8fd0\u884c',
       trustBody:
         'dsh \u63d2\u4ef6\u5728 SuperOne \u5185\u90e8\u8fd0\u884c\uff0c\u62e5\u6709\u4e0e\u5e94\u7528\u672c\u8eab\u76f8\u540c\u7684\u6743\u9650 \u2014\u2014 \u53ef\u4ee5\u8bfb\u53d6\u4f60\u7684\u6587\u4ef6\u3001\u6267\u884c\u547d\u4ee4\u3001\u8bbf\u95ee\u7f51\u7edc\uff0c\u6ca1\u6709\u6c99\u7bb1\u3002\u8bf7\u50cf\u5bf9\u5f85\u7f16\u8f91\u5668\u6269\u5c55\u4e00\u6837\uff0c\u53ea\u5b89\u88c5\u4f60\u4fe1\u4efb\u7684\u4f5c\u8005\u7684\u63d2\u4ef6\u3002',
@@ -463,9 +466,17 @@ export const zh: Messages = {
       installFromFolder: '\u4ece\u6587\u4ef6\u5939\u2026',
       installed: '\u5df2\u5b89\u88c5 {{name}} {{version}}\u3002',
       unmetDeps: '\u5b83\u58f0\u660e\u4e86\u672a\u88ab\u5b89\u88c5\u7684\u4f9d\u8d56\uff08{{deps}}\uff09\uff0c\u53ea\u6709\u5728\u5b83\u81ea\u5e26\u8fd9\u4e9b\u4f9d\u8d56\u65f6\u624d\u80fd\u5de5\u4f5c\u3002',
-      empty: '\u5c1a\u672a\u5b89\u88c5\u4efb\u4f55\u63d2\u4ef6\u3002',
+      empty: '尚未安装第三方插件。',
+      refresh: '刷新插件',
       uninstall: '\u5378\u8f7d',
       rootPath: '\u63d2\u4ef6\u4f4d\u4e8e {{path}}',
+      scope: {
+        core: '核心',
+        standard: '标准模式',
+        code: 'PTC 模式',
+        minimal: '极简模式',
+        cordis: '创造模式',
+      },
       status: {
         mounted: '\u5df2\u542f\u7528',
         unresolved: '\u6587\u4ef6\u7f3a\u5931',

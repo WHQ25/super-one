@@ -3966,8 +3966,21 @@ export interface DshPluginInfo {
   reason?: string
 }
 
+/** One official plugin compiled into the dsh runtime or a shipped preset. */
+export interface DshBundledPluginInfo {
+  /** Cordis module specifier, including an optional plugin subpath. */
+  name: string
+  /** Version shipped with this SuperOne build. */
+  version: string
+  /** `core` or the ids of shipped presets that compose this plugin. */
+  scopes: string[]
+}
+
 /** The settings page's whole view of the plugin root. */
 export interface DshPluginList {
+  /** Read-only official plugins supplied by this build. */
+  bundled: DshBundledPluginInfo[]
+  /** Third-party plugins installed into the user-owned plugin root. */
   plugins: DshPluginInfo[]
   /** Set when `registry.json` itself could not be used. */
   problem?: string

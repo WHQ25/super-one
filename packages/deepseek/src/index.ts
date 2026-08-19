@@ -78,3 +78,7 @@ export {
   type MountStatus,
   type PluginMountOutcome,
 } from './plugin-host/mount'
+export {
+  listBundledDshPlugins,
+  type BundledDshPlugin,
+} from './bundled-plugins'

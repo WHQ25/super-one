@@ -39,7 +39,9 @@ export function resolveSessionIconFromBrandKey(
   if (brandKey === 'codex') return CodexSessionIcon
   if (brandKey === 'opencode' || brandKey === 'acp-opencode') return OpenCodeSessionIcon
   if (brandKey === 'cursor') return CursorSessionIcon
-  if (brandKey === 'deepseek') return DeepseekSessionIcon
+  // `dsh` is what resolveHarnessBrandKey actually emits (brandKey defaults to the
+  // harness id for everything non-ACP); `deepseek` is kept as a display alias.
+  if (brandKey === 'dsh' || brandKey === 'deepseek') return DeepseekSessionIcon
   if (brandKey === 'acp-grok' || brandKey.includes('grok')) return GrokSessionIcon
   if (brandKey === 'acp' || brandKey.startsWith('acp')) return AcpSessionIcon
   return null

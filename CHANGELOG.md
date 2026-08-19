@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.55.1-alpha] - 2026-08-19
+
+### Added
+
+- DeepSeek: each agent preset now carries its own icon, and the preset picker's caret rotates with the menu.
+
+### Fixed
+
+- DeepSeek: packaged builds crashed on launch with `ERR_MODULE_NOT_FOUND` for `@deepseek-ai/dsh-settings`. The dsh packages declare each other as peer dependencies, and twelve of them were never declared in the desktop manifest, so they were neither bundled nor shipped inside the asar.
+- DeepSeek: a turn that called several tools published one assistant message per model round trip, each with its own token footer. A turn is now a single message, and its footer accumulates spend across every step (excluding cache reads, matching how Claude reports it).
+- DeepSeek: the trajectory panel reported "no trajectory yet" for sessions whose log was on disk. The ledger addressed dsh with the SuperOne session id instead of the harness-side id it keys everything by.
+
 ## [0.55.0-alpha] - 2026-08-19
 
 ### Added

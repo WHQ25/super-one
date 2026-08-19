@@ -1264,8 +1264,9 @@ recording the row — is the part we own, and `registry.json` is that record.
 assume; and `@deepseek-ai/dsh` pulls the whole official deployment —
 `dsh-base`, `dsh-web-app`, `dsh-headless`, `dsh-terminal` — as dependencies.
 `@deepseek-ai/dsh-app-boot` is the reusable half, published separately with only
-`js-yaml`, but it is at **rc.6 while the family is rc.8**, so lockstep is already
-broken there and it needs verification before adoption.)
+`js-yaml`. It lagged the family at rc.6 through the rc.7 line; as of **rc.8 it
+publishes in lockstep**, so that particular blocker is gone and only the
+`spawnSync`/dependency-weight objections above still stand.)
 
 ### The dual-package hazard is the whole problem
 

@@ -1,3 +1,7 @@
+export { PROCESSED_SEQ_CAP, SeqAckTracker, TransportAckRegistry } from './ack'
+export { BUFFER_FIRST_ORDER, EventBuffer } from './buffer'
+export { handleInboundFrame, makeDecrypt } from './frames'
+export type { FrameDecrypt, FrameEffect, InboundFrame, TransportKind } from './frames'
 export {
   FILE_CHUNK_SIZE,
   FILE_ENVELOPE_FORMAT_CHUNKED,

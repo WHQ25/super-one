@@ -3,20 +3,13 @@ import { BellRing, ChevronDown } from 'lucide-react'
 import { Collapsible as CollapsiblePrimitive } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { cn } from '@superone/ui/lib/utils'
-import { formatCompactDuration, formatCompactTokens } from './ChatMessage'
+import { formatCompactDuration } from './ChatMessage'
 
 const STATUS_TONE: Record<TaskNotificationMeta['status'], string> = {
   completed: 'text-success',
   failed: 'text-error',
   stopped: 'text-warning',
-}
-
-/** Trailing path segment — the full path lives in the tooltip. */
-function basename(path: string): string {
-  const parts = path.split(/[\\/]/)
-  return parts[parts.length - 1] || path
 }
 
 export interface TaskNotificationItem {
@@ -79,21 +72,6 @@ export function TaskNotificationRow({ meta }: { meta: TaskNotificationMeta }) {
           )}
           {usage && usage.durationMs > 0 && (
             <span className="shrink-0 text-muted-foreground/70">· {formatCompactDuration(usage.durationMs)}</span>
-          )}
-          {usage && usage.totalTokens > 0 && (
-            <span className="shrink-0 text-muted-foreground/70">· {formatCompactTokens(usage.totalTokens)}</span>
-          )}
-          {meta.outputFile && (
-            <TooltipProvider delayDuration={200}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="shrink-0 truncate text-muted-foreground/70">· {basename(meta.outputFile)}</span>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <span className="font-mono text-xs">{meta.outputFile}</span>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
           )}
         </div>
       </div>

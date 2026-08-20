@@ -48,10 +48,11 @@ describe('background task notification row', () => {
     expect(screen.getByText('Background task stopped')).toBeInTheDocument()
     expect(screen.getByText('gh run watch --exit-status')).toBeInTheDocument()
     expect(screen.queryByText('watcher exited before the run finished')).not.toBeInTheDocument()
-    // Duration / tokens / log file are compact suffixes, not full paths.
+    // Duration is the only suffix: token counts and the harness transcript path
+    // are internal bookkeeping, not something the user acts on.
     expect(screen.getByText('· 2m 14s')).toBeInTheDocument()
-    expect(screen.getByText('· 1.2k')).toBeInTheDocument()
-    expect(screen.getByText('· watcher-4821.log')).toBeInTheDocument()
+    expect(screen.queryByText('· 1.2k')).not.toBeInTheDocument()
+    expect(screen.queryByText('· watcher-4821.log')).not.toBeInTheDocument()
   })
 
   it('tones the row by outcome so a failure is not mistaken for a clean finish', () => {

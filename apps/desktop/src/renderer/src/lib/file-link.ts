@@ -29,6 +29,12 @@ export function isAbsoluteLocalPath(filePath: string): boolean {
     || /^[A-Za-z]:[\\/]/.test(filePath)
 }
 
+const HTML_FILE_RE = /\.(?:html?)$/i
+
+export function isHtmlFilePath(filePath: string): boolean {
+  return HTML_FILE_RE.test(filePath)
+}
+
 /**
  * Expand `~/…` using an explicit home dir, or a heuristic from projectRoot / cwd.
  * Grok often cites paths under `~/.grok/…` — those must open as absolute paths.

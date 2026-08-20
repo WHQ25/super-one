@@ -1,23 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useIsCodeFenceIncomplete } from 'streamdown'
-import { AtSign, FolderOpen, Globe } from 'lucide-react'
+import { Globe } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useIsDark } from '@/hooks/use-is-dark'
-import { useTranslation } from 'react-i18next'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
-import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { openFileTab, openBrowserTab } from '@/components/activity/activity-panel-api'
-import { chatInputAPI } from '@/components/chat/chat-input-api'
-import { toMentionPath } from '@/components/chat/chat-input-utils'
 import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
+import { useFileChipContextMenu } from '@/components/chat/file-chip-context-menu'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { clickReleasedOnSelection, resolveProjectFileHref } from '@/lib/file-link'
 import { requestOpenExternalLink } from '@/lib/external-link'
 
 export function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
-  const { t } = useTranslation()
   const dragEndRef = useRef(0)
+  const menuItems = useFileChipContextMenu(filePath, name)
   /** Path to open/select: project-relative when under root, otherwise absolute. */
   const pathForOpen = (projectPath: string | null | undefined): string => {
     if (projectPath && filePath.startsWith(projectPath + '/')) {
@@ -38,25 +35,6 @@ export function InlineFileChip({ name, filePath, lineNumber }: { name: string; f
     }
     openFileTab(openPath)
   }
-  const handleOpenFolder = (): void => {
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-    const openPath = pathForOpen(projectRoot)
-    // Absolute openPath is revealed as-is; relative paths still need project root.
-    if (openPath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(openPath)) {
-      void window.app.showInFolder(projectRoot ?? openPath, openPath)
-      return
-    }
-    if (!projectRoot) return
-    void window.app.showInFolder(projectRoot, openPath)
-  }
-  const handleAddToChat = (): void => {
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-    chatInputAPI.insertMention?.('file', toMentionPath(filePath, projectRoot), name)
-  }
-  const menuItems: AdaptiveMenuEntry[] = [
-    { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: handleOpenFolder },
-    { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: handleAddToChat },
-  ]
   return (
     <AdaptiveContextMenu items={menuItems}>
         <span

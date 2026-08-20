@@ -4,10 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useAppStore } from '@/stores/app'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
+import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { fileLinkComponents } from './chat-markdown-components'
 
 vi.mock('@/components/chat/chat-input-api', () => ({
   chatInputAPI: { insertMention: vi.fn() },
+}))
+
+vi.mock('@/components/activity/activity-panel-api', () => ({
+  openBrowserTab: vi.fn(),
+  openFileTab: vi.fn(),
 }))
 
 const PROJECT = '/Users/me/proj'
@@ -15,6 +21,7 @@ const FileLink = fileLinkComponents.a
 
 beforeEach(() => {
   vi.mocked(chatInputAPI.insertMention!).mockClear()
+  vi.mocked(openBrowserTab).mockClear()
   // DOM context menu (not native liquid-glass) so Add to Chat is clickable in jsdom.
   useAppStore.setState({ liquidGlass: false })
 })
@@ -132,5 +139,29 @@ describe('FileLink chip rendering', () => {
     )
     const mentionPath = vi.mocked(chatInputAPI.insertMention!).mock.calls[0]![1]
     expect(mentionPath).not.toContain('%E8')
+  })
+
+  it('shows Preview in Browser for HTML chips and opens a local-file URL', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    render(<FileLink href={`${PROJECT}/docs/index.html`}>index.html</FileLink>)
+    fireEvent.contextMenu(screen.getByRole('button'))
+    fireEvent.click(screen.getByText('Preview in Browser'))
+    expect(openBrowserTab).toHaveBeenCalledWith(`local-file://${PROJECT}/docs/index.html`)
+  })
+
+  it('shows Preview in Browser when the chip label is not the html filename', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    render(<FileLink href={`${PROJECT}/docs/page.htm`}>homepage</FileLink>)
+    fireEvent.contextMenu(screen.getByRole('button'))
+    fireEvent.click(screen.getByText('Preview in Browser'))
+    expect(openBrowserTab).toHaveBeenCalledWith(`local-file://${PROJECT}/docs/page.htm`)
+  })
+
+  it('does not show Preview in Browser for non-HTML files', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    render(<FileLink href={`${PROJECT}/src/app.ts`}>app.ts</FileLink>)
+    fireEvent.contextMenu(screen.getByRole('button'))
+    expect(screen.getByText('Add to Chat')).toBeInTheDocument()
+    expect(screen.queryByText('Preview in Browser')).toBeNull()
   })
 })

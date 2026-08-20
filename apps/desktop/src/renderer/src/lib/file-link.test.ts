@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isHtmlFilePath,
   normalizeFileLinkTarget,
   parseFileLinkTarget,
   resolveProjectFileHref,
@@ -29,6 +30,19 @@ describe('parseFileLinkTarget', () => {
 describe('normalizeFileLinkTarget', () => {
   it('strips the line suffix from a file target', () => {
     expect(normalizeFileLinkTarget('/tmp/app.ts:12')).toBe('/tmp/app.ts')
+  })
+})
+
+describe('isHtmlFilePath', () => {
+  it('matches html and htm extensions on basename or full path', () => {
+    expect(isHtmlFilePath('index.html')).toBe(true)
+    expect(isHtmlFilePath('docs/page.HTM')).toBe(true)
+    expect(isHtmlFilePath('/Users/me/proj/docs/index.html')).toBe(true)
+  })
+
+  it('rejects non-html files', () => {
+    expect(isHtmlFilePath('app.ts')).toBe(false)
+    expect(isHtmlFilePath('index.html.bak')).toBe(false)
   })
 })
 

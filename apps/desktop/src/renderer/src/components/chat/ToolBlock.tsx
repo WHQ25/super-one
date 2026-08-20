@@ -8,12 +8,10 @@ import { diffConfigFieldValue, formatConfigFieldValue } from '@/lib/config-field
 import { inferLanguage, useHighlightedTokens, useIncrementalHighlightedLines, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
 import { useChatStore, useActiveSession, useBashOutput, useShareProgress } from '@/stores/chat'
-import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useSettingsStore } from '@/stores/settings'
-import { useSourceControlStore } from '@/stores/source-control'
 import { useAppStore } from '@/stores/app'
 import { ToolIcon } from './ToolIcon'
-import { DraggableFileIcon } from './DraggableFileIcon'
+import { FileChip } from './FileChip'
 import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
@@ -38,7 +36,6 @@ import { StandaloneToolBlock } from './StandaloneToolBlock'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
-import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { MarkdownView } from '@/components/MarkdownPreview'
 import {
@@ -1631,36 +1628,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
   )
 })
 
-export function FileChip({ name, title, filePath, lineNumber, className }: { name: string; title: string; filePath?: string; lineNumber?: number; className?: string }) {
-  const parsed = filePath ? parseFileLinkTarget(filePath) : null
-  const targetPath = parsed?.filePath
-  const targetLineNumber = lineNumber ?? parsed?.lineNumber
-  const dragEndRef = useRef(0)
-
-  const handleClick = (e: React.MouseEvent): void => {
-    if (Date.now() - dragEndRef.current < 200) return
-    if (clickReleasedOnSelection(e.currentTarget)) return
-    e.stopPropagation()
-    if (!targetPath) return
-    const projectPath = useChatStore.getState().activeProject
-    if (!projectPath) return
-    const relative = targetPath.startsWith(projectPath + '/') ? targetPath.slice(projectPath.length + 1) : targetPath
-    useSourceControlStore.getState().selectFile(projectPath, relative, targetLineNumber)
-    openFileTab(relative)
-  }
-  return (
-    <span
-      role="button"
-      onClick={handleClick}
-      title={title}
-      className="inline-flex min-w-0 cursor-pointer items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground hover:bg-muted/80 transition-colors"
-    >
-      <DraggableFileIcon name={name} filePath={targetPath} dragEndRef={dragEndRef} className="shrink-0" />
-      <span className={cn('truncate', className)}>{name}</span>
-      {targetLineNumber != null && <span className="text-muted-foreground text-xs">#L{targetLineNumber}</span>}
-    </span>
-  )
-}
+export { FileChip }
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`

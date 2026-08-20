@@ -10,9 +10,8 @@ import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import { openFileTab, openNewFileTab, openBrowserTab } from '@/components/activity/activity-panel-api'
 import { toLocalFileUrl } from '@/lib/path-utils'
+import { isHtmlFilePath } from '@/lib/file-link'
 import type { GitFileStatus } from '@superone/shared/agent-types'
-
-const HTML_FILE_RE = /\.(?:html?)$/i
 
 const STATUS_COLOR: Record<GitFileStatus, string> = {
   M: 'text-amber-700 dark:text-amber-400',
@@ -313,7 +312,7 @@ export const TreeRow = memo(function TreeRow({
         item.name,
       )
     } },
-    ...(!item.isDirectory && HTML_FILE_RE.test(item.name)
+    ...(!item.isDirectory && isHtmlFilePath(item.name)
       ? [{
           kind: 'item' as const,
           id: 'previewInBrowser',

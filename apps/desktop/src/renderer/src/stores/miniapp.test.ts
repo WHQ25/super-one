@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
+import { LAYOUT } from '@/lib/layout-constants'
 
 type MockChatState = {
   projectSessions: Record<string, { _activeSessionId: string | null; _sessions: Record<string, unknown> }>
@@ -428,14 +429,20 @@ describe('miniapp store preferWidth', () => {
   })
 
   it('clamps preferWidth to available space when room is tight', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1100 })
-    appStateRef.sidebarWidth = 320
-    const app = entry('panel-app', 800)
+    // Derived, not hand-computed: the numbers move whenever a LAYOUT floor does.
+    const sidebarWidth = 320
+    const available = LAYOUT.MIN_AP + 68
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: sidebarWidth + LAYOUT.MIN_MAIN + LAYOUT.CARD_GUTTER + available,
+    })
+    appStateRef.sidebarWidth = sidebarWidth
+    const app = entry('panel-app', available + 400)
 
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
 
     expect(mockSetPanelWidth).toHaveBeenCalledTimes(1)
-    expect(mockSetPanelWidth).toHaveBeenCalledWith(368)
+    expect(mockSetPanelWidth).toHaveBeenCalledWith(available)
   })
 
   it('skips applying when there is no room (max < MIN_AP)', async () => {

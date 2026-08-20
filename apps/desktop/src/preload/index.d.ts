@@ -17,6 +17,7 @@ import type {
   ProjectSnapshot,
   SupervisorSnapshot,
 } from '@superone/shared/environment'
+import type { IosSimulatorCapture, IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorFrame, IosSimulatorInput, IosSimulatorInputResult, IosSimulatorPreviewMode, IosSimulatorPreviewQuality, IosSimulatorRuntimeOption, IosSimulatorSessionState, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
@@ -751,6 +752,31 @@ interface TerminalAPI {
 export interface EnvironmentAPI {
   list(): Promise<unknown[]>
   getLocalId(): Promise<string>
+  iosSimulatorStatus(force?: boolean): Promise<IosSimulatorStatus>
+  iosSimulatorList(): Promise<IosSimulatorDevice[]>
+  iosSimulatorRuntimes(): Promise<IosSimulatorRuntimeOption[]>
+  iosSimulatorCreate(request: IosSimulatorCreateRequest): Promise<IosSimulatorDevice>
+  iosSimulatorChrome(udid: string): Promise<IosSimulatorChrome | null>
+  iosSimulatorBind(sessionId: string, udid: string): Promise<IosSimulatorSessionState>
+  iosSimulatorBoot(sessionId: string, udid: string): Promise<IosSimulatorSessionState>
+  /** Closes the preview but leaves the simulator running and unowned. */
+  iosSimulatorDetach(sessionId: string): Promise<IosSimulatorSessionState>
+  /** Shuts the simulator down and unbinds the session. */
+  iosSimulatorShutdown(sessionId: string): Promise<IosSimulatorSessionState>
+  iosSimulatorRelease(sessionId: string): Promise<void>
+  iosSimulatorScreenshot(sessionId: string): Promise<IosSimulatorCapture>
+  iosSimulatorRecordStart(sessionId: string): Promise<IosSimulatorCapture>
+  /** Resolves to null when this session was not recording. */
+  iosSimulatorRecordStop(sessionId: string): Promise<IosSimulatorCapture | null>
+  iosSimulatorInput(sessionId: string, input: IosSimulatorInput): Promise<IosSimulatorInputResult>
+  openIosSimulatorStream(
+    sessionId: string,
+    preferredMode?: IosSimulatorPreviewMode,
+    quality?: IosSimulatorPreviewQuality,
+  ): void
+  closeIosSimulatorStream(sessionId: string): void
+  onIosSimulatorFrame(sessionId: string, callback: (frame: IosSimulatorFrame) => void): () => void
+  onIosSimulatorRotateGesture(callback: (rotation: number) => void): () => void
   workspaceListDir(
     project: { environmentId: string; projectId: string },
     relativePath: string,

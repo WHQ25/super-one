@@ -4,6 +4,7 @@ import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hoisted = vi.hoisted(() => ({
+  openIosSimulatorTab: vi.fn(),
   openTrajectoryTab: vi.fn(),
   chatState: {
     activeProject: '/repo',
@@ -18,6 +19,7 @@ const hoisted = vi.hoisted(() => ({
 
 vi.mock('./activity-panel-api', () => ({
   openBrowserTab: vi.fn(),
+  openIosSimulatorTab: hoisted.openIosSimulatorTab,
   openTerminalTab: vi.fn(),
   openTrajectoryTab: hoisted.openTrajectoryTab,
 }))
@@ -59,13 +61,18 @@ async function launchIds() {
 }
 
 beforeEach(() => {
+  Object.defineProperty(window, 'app', {
+    configurable: true,
+    value: { platform: 'darwin' },
+  })
+  hoisted.openIosSimulatorTab.mockReset()
   hoisted.openTrajectoryTab.mockReset()
   activeHarness('dsh')
 })
 
 describe('activity launcher entries', () => {
   it('offers Trajectory on a dsh session', async () => {
-    expect(await launchIds()).toEqual(['browser', 'terminal', 'trajectory'])
+    expect(await launchIds()).toEqual(['browser', 'terminal', 'ios-simulator', 'trajectory'])
   })
 
   it.each(['claude', 'codex', 'acp', 'opencode', 'cursor'])(
@@ -75,7 +82,7 @@ describe('activity launcher entries', () => {
 
       // Absent, not disabled: a greyed-out row would imply the user could turn
       // it on, and no other harness writes a dsh log to project.
-      expect(await launchIds()).toEqual(['browser', 'terminal'])
+      expect(await launchIds()).toEqual(['browser', 'terminal', 'ios-simulator'])
     },
   )
 
@@ -92,5 +99,24 @@ describe('activity launcher entries', () => {
     result.current.find((type) => type.id === 'trajectory')?.onOpen()
 
     expect(hoisted.openTrajectoryTab).toHaveBeenCalledWith('s1', 'trajectory.title')
+  })
+
+  it('opens iOS Simulator for the active session', async () => {
+    const { useActivityLaunchTypes } = await import('./activity-launch-types')
+    const { result } = renderHook(() => useActivityLaunchTypes())
+
+    result.current.find((type) => type.id === 'ios-simulator')?.onOpen()
+
+    expect(hoisted.openIosSimulatorTab).toHaveBeenCalledWith('s1', 'activity.iosSimulator.title')
+  })
+
+  it('hides iOS Simulator outside macOS', async () => {
+    Object.defineProperty(window, 'app', {
+      configurable: true,
+      value: { platform: 'linux' },
+    })
+    vi.resetModules()
+
+    expect(await launchIds()).toEqual(['browser', 'terminal', 'trajectory'])
   })
 })

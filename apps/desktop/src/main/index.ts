@@ -163,6 +163,9 @@ import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
 import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
 import { registerHarnessIpcHandlers } from './harness/ipc'
+import { registerIosSimulatorIpc, closeIosSimulatorPorts } from './ios-simulator/ipc'
+import { disposeIosSimulatorManager } from './ios-simulator'
+import { attachIosSimulatorGestureEvents } from './ios-simulator/gesture-events'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { connectWithHarnessResourceCache, getFreshHarnessResources } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
@@ -813,6 +816,8 @@ function createWindow(): void {
     if (url !== mainWindow?.webContents.getURL()) e.preventDefault()
   })
 
+  attachIosSimulatorGestureEvents(mainWindow)
+
   mainWindow.webContents.on('before-input-event', (_e, input) => {
     if (input.control || input.meta) {
       if (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0') {
@@ -909,6 +914,8 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
       additionalArguments: [roleArg(WindowRole.Mini), ...glassBootArgs(isGlassEnabled())],
     },
   })
+
+  attachIosSimulatorGestureEvents(win)
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
@@ -1211,6 +1218,7 @@ function registerIpcHandlers(): void {
   // Local harness catalog (Settings → Harnesses). Register before createWindow
   // so continueToMain's needsHarnessAlign invoke cannot race a dynamic import.
   registerHarnessIpcHandlers()
+  registerIosSimulatorIpc(app.getPath('userData'))
 
   // Environment / remote-node product path (gateway + workspace router).
   // Lazy import keeps main boot light when environments unused.
@@ -5279,6 +5287,7 @@ function performQuit(): void {
   destroyComputerUsePermissionFloat()
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopComputerUseHelper()
+  closeIosSimulatorPorts()
   shutdownAllProxies()
   terminalManager.killAll()
   remoteTerminalController.dispose()
@@ -5292,6 +5301,7 @@ function performQuit(): void {
   ]).catch(() => {})
   Promise.allSettled([
     remoteStop,
+    disposeIosSimulatorManager(),
     disposeAgentSessions(),
     closeAllOpenCodeServers(),
     // Unwinds the embedded dsh Cordis tree so JSONL persistence flushes;
@@ -5319,11 +5329,13 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   log.info(`[main] received ${sig}, shutting down`)
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopComputerUseHelper()
+  closeIosSimulatorPorts()
   terminalManager.killAll()
   remoteTerminalController.dispose()
   closeAllDbConnections()
   Promise.allSettled([
     remoteControlService.stop(),
+    disposeIosSimulatorManager(),
     disposeAgentSessions(),
     closeAllOpenCodeServers(),
   ]).finally(() => process.exit(0))

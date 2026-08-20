@@ -3480,6 +3480,26 @@ export const AgentIpcChannels = {
   ENVIRONMENT_HARNESS_DISABLE: 'environment:harnessDisable',
   ENVIRONMENT_HARNESS_PROBE: 'environment:harnessProbe',
 
+  // Local macOS iOS Simulator foundation (remote environments report unsupported).
+  ENVIRONMENT_IOS_SIMULATOR_STATUS: 'environment:iosSimulatorStatus',
+  ENVIRONMENT_IOS_SIMULATOR_LIST: 'environment:iosSimulatorList',
+  ENVIRONMENT_IOS_SIMULATOR_RUNTIMES: 'environment:iosSimulatorRuntimes',
+  ENVIRONMENT_IOS_SIMULATOR_CHROME: 'environment:iosSimulatorChrome',
+  ENVIRONMENT_IOS_SIMULATOR_CREATE: 'environment:iosSimulatorCreate',
+  ENVIRONMENT_IOS_SIMULATOR_BIND: 'environment:iosSimulatorBind',
+  ENVIRONMENT_IOS_SIMULATOR_BOOT: 'environment:iosSimulatorBoot',
+  ENVIRONMENT_IOS_SIMULATOR_DETACH: 'environment:iosSimulatorDetach',
+  ENVIRONMENT_IOS_SIMULATOR_SHUTDOWN: 'environment:iosSimulatorShutdown',
+  ENVIRONMENT_IOS_SIMULATOR_RELEASE: 'environment:iosSimulatorRelease',
+  ENVIRONMENT_IOS_SIMULATOR_INPUT: 'environment:iosSimulatorInput',
+  ENVIRONMENT_IOS_SIMULATOR_SCREENSHOT: 'environment:iosSimulatorScreenshot',
+  ENVIRONMENT_IOS_SIMULATOR_RECORD_START: 'environment:iosSimulatorRecordStart',
+  ENVIRONMENT_IOS_SIMULATOR_RECORD_STOP: 'environment:iosSimulatorRecordStop',
+  ENVIRONMENT_IOS_SIMULATOR_STREAM_OPEN: 'environment:iosSimulatorStreamOpen',
+  ENVIRONMENT_IOS_SIMULATOR_STREAM_CLOSE: 'environment:iosSimulatorStreamClose',
+  ENVIRONMENT_IOS_SIMULATOR_STREAM_PORT: 'environment:iosSimulatorStreamPort',
+  ENVIRONMENT_IOS_SIMULATOR_ROTATE_GESTURE: 'environment:iosSimulatorRotateGesture',
+
   // Local desktop harness installation catalog (Settings → Harnesses)
   HARNESS_LIST: 'harness:list',
   HARNESS_ENABLE: 'harness:enable',

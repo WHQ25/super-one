@@ -1,10 +1,10 @@
 import type { ComponentType } from 'react'
-import { Globe, Route, Terminal as TerminalIcon } from 'lucide-react'
+import { Globe, Route, Smartphone, Terminal as TerminalIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { openBrowserTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
+import { openBrowserTab, openIosSimulatorTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
 
 export interface ActivityLaunchType {
   id: string
@@ -31,6 +31,10 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
     const session = sessionId ? project?._sessions[sessionId] : undefined
     return session && resolveProvider(session) === 'dsh' ? sessionId ?? null : null
   })
+  const activeSessionId = useChatStore((s) => {
+    const project = s.activeProject ? s.projectSessions[s.activeProject] : undefined
+    return project?._activeSessionId ?? null
+  })
 
   return [
     {
@@ -54,6 +58,14 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
         void openTerminalTab(projectPath, sessionId)
       },
     },
+    ...(isMac && activeSessionId
+      ? [{
+        id: 'ios-simulator',
+        icon: Smartphone,
+        label: t('activity.launcher.iosSimulator'),
+        onOpen: () => openIosSimulatorTab(activeSessionId, t('activity.iosSimulator.title')),
+      }]
+      : []),
     // Absent rather than disabled on every other harness: a greyed-out row
     // reads as "you could enable this", and nothing a user does on a Claude or
     // Codex session will ever produce a dsh log to project.

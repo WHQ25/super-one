@@ -18,6 +18,14 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  # iOS Simulator private APIs move with Xcode. Ship source and compile the
+  # small helper into userData against the user's selected toolchain.
+  - from: native/ios-simulator-helper
+    to: ios-simulator-helper
+    filter:
+      - "build.sh"
+      - "Sources/**"
+      - "README.md"
   # The dsh agent presets. They are read with `readdir` by the preset roster and
   # their rows are dynamically imported by the Loader, so they ship unpacked
   # beside the app rather than inside the asar bundle.

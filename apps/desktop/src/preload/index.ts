@@ -5,6 +5,7 @@ import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { DshPluginInstallSource } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
+import type { IosSimulatorCapture, IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorFrame, IosSimulatorInput, IosSimulatorInputResult, IosSimulatorPreviewMode, IosSimulatorPreviewQuality, IosSimulatorRuntimeOption, IosSimulatorSessionState, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import { forEachAgentEventPayload } from './agent-event-payload'
 import { isGlassPlatformSupported } from '../main/window-glass'
 
@@ -168,10 +169,90 @@ const agentAPI = {
 }
 
 /** Multi-environment / remote node — product path is Main EnvironmentHost. */
+// Keyed by session, not one flat set: a window can hold a simulator panel per
+// session, and a shared set handed every panel every other panel's frames for it to
+// discard — four panels at 60fps meant 720 dispatches a second, 3/4 of them wasted.
+const iosSimulatorFrameListeners = new Map<string, Set<(frame: IosSimulatorFrame) => void>>()
+const iosSimulatorPorts = new Map<string, MessagePort>()
+
+ipcRenderer.on(
+  AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_STREAM_PORT,
+  (event, payload: { sessionId: string }) => {
+    const port = event.ports[0]
+    if (!port) return
+    iosSimulatorPorts.get(payload.sessionId)?.close()
+    iosSimulatorPorts.set(payload.sessionId, port)
+    port.onmessage = (message) => {
+      const frame = message.data as IosSimulatorFrame
+      const listeners = iosSimulatorFrameListeners.get(payload.sessionId)
+      if (listeners) for (const listener of listeners) listener(frame)
+    }
+    port.start()
+  },
+)
+
 const environmentAPI = {
   list: () => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST),
   getLocalId: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_GET_LOCAL_ID) as Promise<string>,
+  iosSimulatorStatus: (force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_STATUS, force) as Promise<IosSimulatorStatus>,
+  iosSimulatorList: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_LIST) as Promise<IosSimulatorDevice[]>,
+  iosSimulatorRuntimes: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_RUNTIMES) as Promise<IosSimulatorRuntimeOption[]>,
+  iosSimulatorCreate: (request: IosSimulatorCreateRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_CREATE, request) as Promise<IosSimulatorDevice>,
+  iosSimulatorChrome: (udid: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_CHROME, udid) as Promise<IosSimulatorChrome | null>,
+  iosSimulatorBind: (sessionId: string, udid: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_BIND, sessionId, udid) as Promise<IosSimulatorSessionState>,
+  iosSimulatorBoot: (sessionId: string, udid: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_BOOT, sessionId, udid) as Promise<IosSimulatorSessionState>,
+  iosSimulatorDetach: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_DETACH, sessionId) as Promise<IosSimulatorSessionState>,
+  iosSimulatorShutdown: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_SHUTDOWN, sessionId) as Promise<IosSimulatorSessionState>,
+  iosSimulatorRelease: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_RELEASE, sessionId) as Promise<void>,
+  iosSimulatorScreenshot: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_SCREENSHOT, sessionId) as Promise<IosSimulatorCapture>,
+  iosSimulatorRecordStart: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_RECORD_START, sessionId) as Promise<IosSimulatorCapture>,
+  iosSimulatorRecordStop: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_RECORD_STOP, sessionId) as Promise<IosSimulatorCapture | null>,
+  iosSimulatorInput: (sessionId: string, input: IosSimulatorInput) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_INPUT, sessionId, input) as Promise<IosSimulatorInputResult>,
+  openIosSimulatorStream: (sessionId: string, preferredMode?: IosSimulatorPreviewMode, quality?: IosSimulatorPreviewQuality) =>
+    ipcRenderer.send(
+      AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_STREAM_OPEN,
+      sessionId,
+      preferredMode,
+      quality,
+    ),
+  closeIosSimulatorStream: (sessionId: string) => {
+    iosSimulatorPorts.get(sessionId)?.close()
+    iosSimulatorPorts.delete(sessionId)
+    ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_STREAM_CLOSE, sessionId)
+  },
+  onIosSimulatorFrame: (sessionId: string, callback: (frame: IosSimulatorFrame) => void) => {
+    const listeners = iosSimulatorFrameListeners.get(sessionId) ?? new Set()
+    iosSimulatorFrameListeners.set(sessionId, listeners)
+    listeners.add(callback)
+    return () => {
+      listeners.delete(callback)
+      if (listeners.size === 0) iosSimulatorFrameListeners.delete(sessionId)
+    }
+  },
+  onIosSimulatorRotateGesture: (callback: (rotation: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, rotation: number): void => {
+      callback(rotation)
+    }
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_ROTATE_GESTURE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_ROTATE_GESTURE, handler)
+    }
+  },
   workspaceListDir: (
     project: { environmentId: string; projectId: string },
     relativePath: string,

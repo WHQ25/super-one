@@ -3,6 +3,60 @@ export type Messages = {
     launcher: {
       browser: string
       terminal: string
+      iosSimulator: string
+    }
+    iosSimulator: {
+      title: string
+      refresh: string
+      checking: string
+      unsupportedTitle: string
+      unsupportedDetail: string
+      waitingForFrame: string
+      home: string
+      lock: string
+      volumeDown: string
+      volumeUp: string
+      rotateLeft: string
+      rotateRight: string
+      showSoftwareKeyboard: string
+      hideSoftwareKeyboard: string
+      keyboardInput: string
+      detach: string
+      terminate: string
+      detached: string
+      terminated: string
+      screenshot: string
+      recordStart: string
+      recordStop: string
+      recording: string
+      captureSaved: string
+      showInFinder: string
+      preview: {
+        title: string
+        resolution: string
+        frameRate: string
+        native: string
+        unlimited: string
+        captureNote: string
+      }
+      picker: {
+        placeholder: string
+        launch: string
+        attach: string
+        running: string
+        recent: string
+        busy: string
+        empty: string
+        launching: string
+        stepModel: string
+        stepVersion: string
+        create: string
+        createName: string
+        createConfirm: string
+        creating: string
+        createEmpty: string
+        cancel: string
+      }
     }
   }
   chatDshPreset: {
@@ -3069,6 +3123,60 @@ export const en: Messages = {
     launcher: {
       browser: 'Browser',
       terminal: 'Terminal',
+      iosSimulator: 'iOS Simulator',
+    },
+    iosSimulator: {
+      title: 'iOS Simulator',
+      refresh: 'Refresh',
+      checking: 'Checking the local iOS Simulator environment…',
+      unsupportedTitle: 'iOS Simulator Is Unavailable',
+      unsupportedDetail: 'Install Xcode and select its developer directory to use this panel.',
+      waitingForFrame: 'Waiting for the simulator preview…',
+      home: 'Home',
+      lock: 'Lock',
+      volumeDown: 'Volume Down',
+      volumeUp: 'Volume Up',
+      showSoftwareKeyboard: 'Show Software Keyboard',
+      hideSoftwareKeyboard: 'Hide Software Keyboard',
+      rotateLeft: 'Rotate Left',
+      rotateRight: 'Rotate Right',
+      keyboardInput: 'Simulator keyboard input',
+      detach: 'Disconnect Preview',
+      terminate: 'Shut Down Simulator',
+      detached: 'Preview disconnected. The simulator is still running.',
+      terminated: 'The simulator has been shut down.',
+      screenshot: 'Screenshot',
+      recordStart: 'Record Screen',
+      recordStop: 'Stop Recording',
+      recording: 'Recording…',
+      captureSaved: 'Saved {{name}}.',
+      showInFinder: 'Show in Finder',
+      preview: {
+        title: 'Preview Quality',
+        resolution: 'Resolution',
+        frameRate: 'Frame Rate',
+        native: 'Native',
+        unlimited: 'Unlimited',
+        captureNote: 'Screenshots and recordings always use the native display.',
+      },
+      picker: {
+        placeholder: 'Choose a Simulator',
+        launch: 'Launch',
+        attach: 'Connect',
+        running: 'Running Now',
+        recent: 'Recent',
+        busy: 'In use',
+        empty: 'No simulator is installed. Add a simulator runtime in Xcode.',
+        launching: 'Launching the simulator…',
+        stepModel: 'Model',
+        stepVersion: 'System Version',
+        create: 'New Simulator',
+        createName: 'Name',
+        createConfirm: 'Create',
+        creating: 'Creating…',
+        createEmpty: 'No simulator runtime is installed. Add one in Xcode.',
+        cancel: 'Cancel',
+      },
     },
   },
   chatDshPreset: {

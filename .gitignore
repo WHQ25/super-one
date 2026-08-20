@@ -75,3 +75,6 @@ skills-lock.json
 
 # Temp Docs
 docs/temp
+
+# Compiled output of the iOS Simulator helper (built on demand into userData).
+apps/desktop/native/ios-simulator-helper/build/

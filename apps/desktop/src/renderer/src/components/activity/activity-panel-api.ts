@@ -234,6 +234,36 @@ export function closeTrajectoryTab(sessionId: string) {
   dockApi?.panels.find((p) => p.id === panelId)?.api.close()
 }
 
+export function openIosSimulatorTab(sessionId: string, label: string) {
+  ensureVisible()
+  const panelId = `ios-simulator-${sessionId}`
+  recordMosaicOpen(panelId, () => openIosSimulatorTab(sessionId, label))
+  execOrDefer(() => {
+    if (!dockApi) return
+    const existing = dockApi.panels.find((panel) => panel.id === panelId)
+    if (existing) {
+      activateInMaximizedGroup(existing)
+      return
+    }
+    const position = positionInMaximizedGroup()
+    dockApi.addPanel({
+      id: panelId,
+      component: 'ios-simulator',
+      tabComponent: 'ios-simulator-tab',
+      title: label,
+      params: { sessionId },
+      ...(position ? { position } : {}),
+    })
+  })
+}
+
+export function closeIosSimulatorTab(sessionId: string) {
+  const panelId = `ios-simulator-${sessionId}`
+  removeMosaicOpen(panelId)
+  dockApi?.panels.find((panel) => panel.id === panelId)?.api.close()
+  void window.environment.iosSimulatorRelease(sessionId)
+}
+
 export function closeMiniAppTab(instanceKey: string) {
   const panelId = `miniapp-${instanceKey}`
   removeMosaicOpen(panelId)

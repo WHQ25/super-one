@@ -29,8 +29,8 @@ import {
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '@superone/shared/agent-types'
-import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { DEFAULT_PROVIDER } from './event-reducer/transformers'
 
 import type {
   ActiveSessionView,
@@ -61,7 +61,7 @@ export type {
 } from './types'
 export { SUBAGENT_COLOR_POOL } from './types'
 export type { BrowserAnnotation } from './helpers/browser-annotation'
-export const DEFAULT_PROVIDER: ChatProvider = 'claude'
+export { DEFAULT_PROVIDER }
 export const SESSIONS_PAGE_SIZE = 30
 const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'
 export const CODEX_REJECT_PLAN_PLACEHOLDER = 'Tell Codex what to do differently'
@@ -98,28 +98,7 @@ export async function runClaudeInterceptedCommand(name: string): Promise<void> {
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool, getDefaultEffortForModel } from './defaults'
 export { createDefaultPerSessionState, createDefaultProjectState, createSessionId, getDefaultEffortForModel } from './defaults'
 export { applyEventToSession } from './event-reducer'
-
-export function markMessageEventApplied(messages: ChatMessage[], messageId: string, event: AgentEvent): ChatMessage[] | null {
-  if (event.seq === undefined) return null
-  return messages.map((msg) => (
-    msg.id === messageId ? { ...msg, ...applySeqToMessage(event) } : msg
-  ))
-}
-
-export function persistStreamingToolInput(messages: ChatMessage[], messageId: string, toolUseId: string, input: string | undefined): ChatMessage[] {
-  if (input === undefined) return messages
-  return messages.map((msg) => {
-    if (msg.id !== messageId) return msg
-    return {
-      ...msg,
-      content: msg.content.map((block) => (
-        block.type === 'tool_use' && block.toolUseId === toolUseId && block.input !== input
-          ? { ...block, input }
-          : block
-      )),
-    }
-  })
-}
+export { markMessageEventApplied, persistStreamingToolInput } from './event-reducer/transformers'
 
 // PerSessionState / ProjectState / ActiveSessionView are now defined in ./types
 // createSessionId / createDefaultPerSessionState / getDefaultEffortForModel moved to ./defaults

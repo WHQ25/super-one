@@ -1,6 +1,6 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage } from '@superone/shared/event-seq-utils'
-import { DEFAULT_PROVIDER } from '../index'
+import { DEFAULT_PROVIDER } from './transformers'
 import type { PerSessionState } from '../types'
 import { sealCodexMetadata, sealStreamingTools } from './shared'
 

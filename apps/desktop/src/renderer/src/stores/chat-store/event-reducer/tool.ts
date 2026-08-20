@@ -1,7 +1,7 @@
 import type { AgentEvent, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
-import { markMessageEventApplied } from '../index'
+import { markMessageEventApplied } from './transformers'
 import type { PerSessionState } from '../types'
 import {
   _patchTaskToolBlock,

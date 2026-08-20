@@ -3,7 +3,7 @@ import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/e
 import { resolveDeltaHomeMessageId } from '@superone/shared/subagent-routing'
 import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from '@/components/chat/media-generation'
 import { applyDelta } from '../helpers/event-helpers'
-import { persistStreamingToolInput } from '../index'
+import { persistStreamingToolInput } from './transformers'
 import type { PerSessionState } from '../types'
 import { clearStreamingToolInput, dropStreamingToolInputPreview, isTerminalMessageStatus, streamingToolInputRaw } from './shared'
 

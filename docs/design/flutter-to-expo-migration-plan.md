@@ -199,7 +199,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 |----|---------|---------|
 | **C0.1** | confirmed | mDNS: Flutter `nsd` + `_superone._tcp`; desktop `lan-advertiser.ts`; no RN client. Fallback relay-only + manual host:port. **Do not block P2 pairing on mDNS.** |
 | **C0.2** | needs_spike | Wire shape matches desktop `remote-control-crypto.ts` ↔ Flutter `crypto.dart` (HKDF `channel-key`/`aes-key`, IV\|\|ciphertext base64). **No cross-language golden vectors in monorepo.** |
-| **C0.5** | needs_spike | Seam `applyEventToSession` exists; 3 `../index` imports real; **also** `@/components`, `window`, module Maps, `Date.now`. Fallback = narrow family for **proof only**, never forked production reducer. |
+| **C0.5** | **spike_done** (2026-08-14) | `../index` inverted: three symbols live in `event-reducer/transformers.ts` (barrel re-exports). Lifecycle family has no `@/components` / `window` / Maps. Remaining: component predicates, `window.app.trace`, module Maps, `Date.now`, `defaults`↔`index` cycle. Notes: `docs/design/chat-core-extraction-spike.md`. No package cutover. |
 | **C0.6** | partial | Only fat `PerSessionState`; contracts not typed. Write-set includes `awaitingAssistantReply`, `lastEventAt`, `promptSuggestion`, `session`, `permissionMode`, `modelFallback`, etc. |
 | **C-seq** | confirmed | Never conflate relay envelope seq with `AgentEvent.seq` (relay-session enqueue; session `nextEventSeq`; Flutter never stamps seq on events). |
 | **C-reconnect** | partial | Flutter reconnect buffer-first at `chat_page.dart:485-513`; open path races — **normalize buffer-first**. |
@@ -214,7 +214,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 
 ### Must-do-before-code (P0 gates)
 
-- **0.5** chat-core boundary proof + compile-time boundary sketch  
+- **0.5** chat-core boundary proof + compile-time boundary sketch — **done** (`docs/design/chat-core-extraction-spike.md`)
 - **0.6** freeze contracts + host protocol + dual-transport + buffer-first  
 - **0.2** golden AES-GCM/HKDF (+ chunked file) vectors  
 - **0.3** Metro `@superone/shared` under bun hoisted workspaces  
@@ -268,7 +268,7 @@ Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path,
 | **0.2** | AES-256-GCM + HKDF wire parity | Golden vectors desktop↔Dart; `@noble/ciphers` (+ hashes) decode unmodified desktop frames | `react-native-quick-crypto` | **needs_spike** |
 | **0.3** | Metro + bun hoisted workspaces | `resolver.unstable_enableSymlinks` + `watchFolders`; import `@superone/shared` leaf | Explicit per-package alias map | **needs_spike** |
 | **0.4** | WebView streaming perf + RSS | Stress corpus (≥200 turns code+mermaid) + longest recording; sample paint intervals; RSS | Coarser DOM window; tighter RN envelope | **needs_spike** (fail-closed budgets) |
-| **0.5** | chat-core cut | Invert `../index` + relocate component predicates + ports for clock/trace/Maps; no slice drag | Narrow **first family for proof only**; never fork production | **needs_spike** |
+| **0.5** | chat-core cut | Invert `../index` + relocate component predicates + ports for clock/trace/Maps; no slice drag | Narrow **first family for proof only**; never fork production | **spike_done** — `../index` gone; remaining impurities in spike notes (WP-11) |
 | **0.6** | Host protocol + contracts | Freeze ChatCoreSession/Patch, three projections, dual-transport, buffer-first, `applyReductionPatch` | — | **partial** → freeze before renderer work |
 
 **P0 exit:** all six resolved or on fallback, recorded in this doc (or companion spike notes).  
@@ -292,7 +292,7 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | — |
 | **parallel_ok_with** | WP-02, WP-03, WP-04, WP-05, WP-06 |
 | **Goal** | Prove `applyEventToSession` (~1.9k LOC event-reducer) can drop `../index`, `@/components`, `window`, and module-level streaming Maps without dragging slices/Zustand. |
-| **Exit** | Port map documented; prototype ≥1 family builds clean; if overrun: **narrow family for proof only** written; spike outcome recorded |
+| **Exit** | **done 2026-08-14** — port map in `docs/design/chat-core-extraction-spike.md`; lifecycle family clean of `../index` / `@/components` / `window` / Maps; no narrow fallback; no production cutover |
 | **Tests** | Ad-hoc compile of inverted family; no production cutover |
 | **Scope** | `apps/desktop/.../chat-store/event-reducer/`, `index.ts`, `helpers/codex-helpers.ts`, `components/chat/tool-display.ts`, `media-generation.ts` |
 
@@ -839,7 +839,7 @@ bun run dev:mobile
 
 | PR | WP | Action |
 |----|-----|--------|
-| **PR1** | **WP-01** | Spike branch: invert `persistStreamingToolInput` / `markMessageEventApplied` / `DEFAULT_PROVIDER` for one event family; document full impurity map (`@/components`, Maps, clock); no package move. |
+| **PR1** | **WP-01** | **done 2026-08-14** — inverted three `../index` symbols into `event-reducer/transformers.ts`; impurity map + boundary test recorded. |
 | **PR2** | **WP-02** | Freeze doc PR: exhaustive `ChatCorePatch` key list + key→owner + host protocol (`applyReductionPatch`, buffer-first, dual-transport exclusive) committed under `docs/design/`. |
 | **PR3** | **WP-03** | Capture AES-GCM/HKDF (+ chunked) golden vectors from desktop WebCrypto and Flutter; land vectors + harness (pre-`packages/relay-client` or empty package shell). |
 

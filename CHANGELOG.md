@@ -4,6 +4,31 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.55.2-alpha] - 2026-08-20
+
+### Added
+
+- Collaboration: mention a collaborator by name — `@codex`, `@claude`, `@grok` — instead of the generic `@collab`. Availability now means "this harness can launch right now" rather than "this provider has run a session before", so a harness enabled moments ago is offered immediately. Old `@collab` bubbles still render as a chip.
+- DeepSeek: native multimodal image input wired end to end — attachment store, wire-format projection, and image forwarding on send. No published DeepSeek model accepts images yet, so the send path refuses before storing anything; enabling a route later is a one-line catalog change.
+- DeepSeek: a failed subagent's provider-authored diagnostic now renders in the Task chip under its own "Failure detail" heading, instead of a bare "Failed".
+
+### Changed
+
+- Light mode rebuilt as inverted chrome: three decisive neutral surface levels (sunken sidebar, canvas, raised card) replacing six levels the eye could only resolve as three, and one brand hue in two tones — a vivid fill carrying dark text plus an ink tone for icons and rules. Per-harness chroma now resolves against the sRGB gamut ceiling for each hue instead of one global constant, which was out of gamut for four of six harnesses and clipped silently. Contrast on primary fills goes from 2.7–3.5:1 to 5.8–6.7:1. Liquid glass is no longer gated on dark mode.
+- Chat: DeepSeek preset selection moved out of its own composer control and into the model selector, shown as the selector icon and locked once the conversation starts.
+- DeepSeek: the trajectory panel now rebuilds on an incremental fold rather than from scratch.
+- DeepSeek: upgraded `dsh` to `0.1.0-rc.8`.
+
+### Fixed
+
+- Settings: brand hue and token overrides for DeepSeek, Cursor and OpenCode snapped back a moment after being changed. Those three harnesses had no slot in `agentPreference`, so the sanitizer dropped the key on write and the settings broadcast rebuilt the palette from a hard-coded null.
+- Settings: bundled DeepSeek plugins were invisible — only the user plugin registry was exposed. Core and preset plugins are now discovered, with official and third-party catalogs presented separately.
+- DeepSeek: a composer image the model cannot accept was silently dropped — the attachment chip stayed in the transcript and nothing said the model never received it. The batch is now refused, naming what could not be sent.
+- Claude: a host wake (collaboration mailbox, download settle) arriving on a rebuilt runtime streamed its reply into the previous, already-completed assistant bubble and emitted no streaming status, so the UI stayed idle while the agent worked.
+- DeepSeek: the embedded runtime was never torn down on dispose — the teardown call targeted a method nothing in the tree provides.
+- Harness: DeepSeek rendered a generic robot icon in the collaboration launch confirm dialog; the brand-key lookup only matched `deepseek`, but the resolver always emits `dsh`.
+- Git: the branch popup now refreshes git info when it opens.
+
 ## [0.55.1-alpha] - 2026-08-19
 
 ### Added

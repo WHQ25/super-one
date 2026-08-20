@@ -1,18 +1,23 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
-import { accumulateCodexFooterTokens, getCodexContextTokens } from '../helpers/codex-helpers'
+import { accumulateCodexFooterTokens, getCodexContextTokens } from './codex-pure'
 import type { PerSessionState } from '../types'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 
 type UsageEvent = Extract<AgentEvent, {
   type: 'message_usage' | 'status_indicator' | 'rate_limit' | 'api_retry'
 }>
 
-export function reduceUsage(session: PerSessionState, event: UsageEvent): Partial<PerSessionState> {
+export function reduceUsage(
+  session: PerSessionState,
+  event: UsageEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<PerSessionState> {
   switch (event.type) {
     case 'message_usage': {
       const usageTarget = session.messages.find((m) => m.id === event.messageId)
       if (usageTarget && isReplayedEventForMessage(event, usageTarget)) {
-        return { lastEventAt: Date.now() }
+        return { lastEventAt: ports.now() }
       }
       const messagesWithSeq = usageTarget
         ? session.messages.map((m) => (m.id === event.messageId ? { ...m, ...applySeqToMessage(event) } : m))
@@ -20,7 +25,7 @@ export function reduceUsage(session: PerSessionState, event: UsageEvent): Partia
       if (event.codexUsage) {
         const nextStreamingTokens = accumulateCodexFooterTokens(session.streamingTokens, event.codexUsage, session.codexTurnLastUsage)
         return {
-          lastEventAt: Date.now(),
+          lastEventAt: ports.now(),
           streamingTokens: nextStreamingTokens,
           contextTokens: (() => {
             const total = getCodexContextTokens(event.codexUsage)
@@ -33,7 +38,7 @@ export function reduceUsage(session: PerSessionState, event: UsageEvent): Partia
         }
       }
       const patch: Partial<PerSessionState> = {
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
         messages: messagesWithSeq,
       }
       // Context-only updates (input/output both 0) must not wipe footer turn tokens.

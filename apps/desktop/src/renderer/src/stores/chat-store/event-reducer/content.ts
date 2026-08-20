@@ -1,18 +1,23 @@
 import type { AgentEvent, TodoItem } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { resolveDeltaHomeMessageId } from '@superone/shared/subagent-routing'
-import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from '@/components/chat/media-generation'
 import { applyDelta } from '../helpers/event-helpers'
 import { persistStreamingToolInput } from './transformers'
 import type { PerSessionState } from '../types'
-import { clearStreamingToolInput, dropStreamingToolInputPreview, isTerminalMessageStatus, streamingToolInputRaw } from './shared'
+import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from './media-predicates'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
+import { dropStreamingToolInputPreview, isTerminalMessageStatus } from './shared'
 
 type ContentDeltaEvent = Extract<AgentEvent, { type: 'content_delta' }>
 
-export function reduceContentDelta(session: PerSessionState, event: ContentDeltaEvent): Partial<PerSessionState> {
+export function reduceContentDelta(
+  session: PerSessionState,
+  event: ContentDeltaEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<PerSessionState> {
   const sourceMsg = session.messages.find((m) => m.id === event.messageId)
   if (sourceMsg && isReplayedEventForMessage(event, sourceMsg)) {
-    return { lastEventAt: Date.now() }
+    return { lastEventAt: ports.now() }
   }
   // A resumed sub-agent streams into a NEW message tagged with its original
   // Agent toolUseId; re-home it under that Agent block's message so per-message
@@ -56,16 +61,16 @@ export function reduceContentDelta(session: PerSessionState, event: ContentDelta
   }
 
   if (event.delta.type === 'tool_use' && event.delta.toolUseId && event.delta.input) {
-    clearStreamingToolInput(event.delta.toolUseId)
+    ports.streaming.clear(event.delta.toolUseId)
     const restPreviews = dropStreamingToolInputPreview(session._streamingToolInputPreviews, event.delta.toolUseId)
     if (restPreviews) extraUpdates._streamingToolInputPreviews = restPreviews
   }
 
   if (event.delta.type === 'tool_result') {
     const resultDelta = event.delta
-    const streamingInput = streamingToolInputRaw.get(resultDelta.toolUseId)
+    const streamingInput = ports.streaming.getRaw(resultDelta.toolUseId)
     updatedMessages = persistStreamingToolInput(updatedMessages, event.messageId, resultDelta.toolUseId, streamingInput)
-    clearStreamingToolInput(resultDelta.toolUseId)
+    ports.streaming.clear(resultDelta.toolUseId)
     const restPreviews = dropStreamingToolInputPreview(session._streamingToolInputPreviews, resultDelta.toolUseId)
     if (restPreviews) extraUpdates._streamingToolInputPreviews = restPreviews
     const msg = updatedMessages.find((m) => m.id === event.messageId)
@@ -217,5 +222,5 @@ export function reduceContentDelta(session: PerSessionState, event: ContentDelta
     }
   }
 
-  return { messages: updatedMessages, lastEventAt: Date.now(), ...extraUpdates }
+  return { messages: updatedMessages, lastEventAt: ports.now(), ...extraUpdates }
 }

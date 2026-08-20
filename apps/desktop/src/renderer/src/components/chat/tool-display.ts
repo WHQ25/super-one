@@ -1,7 +1,7 @@
 import { shortenPath } from '@/lib/path-utils'
-import { extractJsonStringValue } from '@superone/shared/partial-json'
 import { isAlwaysHiddenToolName } from '@superone/shared/tool-ui'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
+import { extractPartialToolInput } from '@/stores/chat-store/event-reducer/partial-tool-input'
 import {
   isGrokVideoGenTool,
   isMediaGenerateImageTool,
@@ -14,13 +14,6 @@ import {
 } from './media-generation'
 import { topFindingSummary } from './report-findings-display'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
-
-const PARTIAL_STRING_FIELDS: Record<string, string[]> = {
-  Edit: ['file_path', 'old_string', 'new_string'],
-  Write: ['file_path', 'content'],
-  FileChange: ['file_path', 'kind', 'diff'],
-  NotebookEdit: ['notebook_path', 'new_source', 'old_source'],
-}
 
 const TOOL_VERBS: Record<string, string> = {
   Bash: 'Running command',
@@ -362,20 +355,4 @@ export function parseToolInput(input: string, toolName?: string): Record<string,
   }
 }
 
-export function extractPartialToolInput(input: string, toolName?: string): Record<string, unknown> {
-  if (toolName === 'Bash' && input.trim()) return { command: input }
-  const partial: Record<string, unknown> = {}
-  const fields = toolName && PARTIAL_STRING_FIELDS[toolName]
-  if (fields) {
-    for (const key of fields) {
-      const v = extractJsonStringValue(input, key)
-      if (v !== undefined) partial[key] = v
-    }
-    return partial
-  }
-  const pathMatch = input.match(/"file_path"\s*:\s*"([^"]*)"/)
-  if (pathMatch) partial.file_path = pathMatch[1]
-  const nbMatch = input.match(/"notebook_path"\s*:\s*"([^"]*)"/)
-  if (nbMatch) partial.notebook_path = nbMatch[1]
-  return partial
-}
+export { extractPartialToolInput }

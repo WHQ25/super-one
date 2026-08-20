@@ -157,10 +157,3 @@ export function getDefaultEffortForModel(model?: ModelOption): EffortLevel | und
   return levels[0]
 }
 
-// Cache-dependent invalidators stay re-exported from index.ts (they read
-// module-level cache state populated by _loadDefaultSessionPrefs).
-export {
-  invalidateDefaultPermissionModeCache,
-  invalidateDefaultClaudePreferencesCache,
-  invalidateDefaultCodexPreferencesCache,
-} from './index'

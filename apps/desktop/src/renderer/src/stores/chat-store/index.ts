@@ -27,7 +27,7 @@ import {
   resolveProvider,
 } from './helpers/provider-routing'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
-import { extractPartialToolInput } from '@/components/chat/tool-display'
+import { extractPartialToolInput } from './event-reducer/partial-tool-input'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '@superone/shared/agent-types'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { DEFAULT_PROVIDER } from './event-reducer/transformers'

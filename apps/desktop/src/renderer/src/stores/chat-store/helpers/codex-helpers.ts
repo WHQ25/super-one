@@ -26,51 +26,16 @@ export type CodexCommand =
   | { kind: 'compact' }
   | { kind: 'plan' }
 
-export function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): CodexThreadItem[] {
-  const idx = items.findIndex((item) => item.id === next.id)
-  if (idx === -1) return [...items, next]
-  const cloned = [...items]
-  cloned[idx] = next
-  return cloned
-}
+export {
+  accumulateCodexFooterTokens,
+  getCodexCompletionEventMeta,
+  getCodexContextTokens,
+  getCodexUsageStepTokens,
+  upsertCodexItem,
+} from '../event-reducer/codex-pure'
 
 export function removeCodexItem(items: CodexThreadItem[], itemId: string): CodexThreadItem[] {
   return items.filter((item) => item.id !== itemId)
-}
-
-export function getCodexUsageStepTokens(usage: CodexUsageInfo): { input: number; output: number } {
-  return {
-    input: Math.max(0, usage.lastInputTokens - usage.lastCachedInputTokens),
-    output: usage.lastOutputTokens,
-  }
-}
-
-function isSameCodexUsageSnapshot(a: CodexUsageInfo | null, b: CodexUsageInfo | null): boolean {
-  return Boolean(
-    hasValidCodexUsageSnapshot(a)
-      && hasValidCodexUsageSnapshot(b)
-      && a.totalInputTokens === b.totalInputTokens
-      && a.totalCachedInputTokens === b.totalCachedInputTokens
-      && a.totalOutputTokens === b.totalOutputTokens
-      && a.lastInputTokens === b.lastInputTokens
-      && a.lastCachedInputTokens === b.lastCachedInputTokens
-      && a.lastOutputTokens === b.lastOutputTokens
-  )
-}
-
-export function accumulateCodexFooterTokens(
-  current: { input: number; output: number },
-  usage: CodexUsageInfo,
-  previous: CodexUsageInfo | null,
-): { input: number; output: number } {
-  if (!hasValidCodexUsageSnapshot(usage) || isSameCodexUsageSnapshot(usage, previous)) {
-    return current
-  }
-  const step = getCodexUsageStepTokens(usage)
-  return {
-    input: current.input + step.input,
-    output: current.output + step.output,
-  }
 }
 
 export function parseCodexCommand(input: string): CodexCommand | null {
@@ -193,29 +158,6 @@ export function getCodexTraceItems(message: ChatMessage | undefined | null): {
   return {
     length: items.length,
     tail: items.slice(-3).map(summarizeCodexTraceItem),
-  }
-}
-
-export function getCodexContextTokens(usage: CodexUsageInfo): number {
-  return usage.lastInputTokens
-}
-
-export function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): {
-  finalResponse?: string
-  durationMs?: number
-  threadId: string | null
-  usage: CodexUsageInfo | null
-  items: CodexThreadItem[]
-} | null {
-  const rawCodex = metadata?.codex
-  if (!rawCodex || typeof rawCodex !== 'object') return null
-  const codex = rawCodex as unknown as Record<string, unknown>
-  return {
-    finalResponse: typeof codex.finalResponse === 'string' ? codex.finalResponse : undefined,
-    durationMs: typeof codex.durationMs === 'number' && Number.isFinite(codex.durationMs) ? codex.durationMs : undefined,
-    threadId: typeof codex.threadId === 'string' || codex.threadId === null ? codex.threadId : null,
-    usage: hasValidCodexUsageSnapshot(codex.usage as CodexUsageInfo | null) ? codex.usage as CodexUsageInfo : null,
-    items: Array.isArray(codex.items) ? codex.items as CodexThreadItem[] : [],
   }
 }
 

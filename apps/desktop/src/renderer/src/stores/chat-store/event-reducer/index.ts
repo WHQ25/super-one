@@ -1,5 +1,8 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { PerSessionState } from '../types'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
+export type { ChatCorePorts }
+export { defaultChatCorePorts }
 import { reduceCodex } from './codex'
 import { reduceContentDelta } from './content'
 import { reduceLifecycle } from './lifecycle'
@@ -18,7 +21,11 @@ import { reduceUsage } from './usage'
  * own their own event-type groups; this dispatcher delegates and falls through
  * to `{}` for events the renderer doesn't care about (hooks, auth, files, stream).
  */
-export function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
+export function applyEventToSession(
+  session: PerSessionState,
+  event: AgentEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<PerSessionState> {
   switch (event.type) {
     case 'queued_message_consumed':
     case 'queued_messages_restored':
@@ -33,16 +40,16 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'provider_session_id':
     case 'init_ready':
     case 'worktree_missing':
-      return reduceLifecycle(session, event)
+      return reduceLifecycle(session, event, ports)
 
     case 'content_delta':
-      return reduceContentDelta(session, event)
+      return reduceContentDelta(session, event, ports)
 
     case 'todos_updated':
       return reduceTodosUpdated(session, event)
 
     case 'message_complete':
-      return reduceMessageComplete(session, event)
+      return reduceMessageComplete(session, event, ports)
 
     case 'tool_input_delta':
     case 'tool_progress':
@@ -51,7 +58,7 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'task_progress':
     case 'task_notification':
     case 'browser_download_update':
-      return reduceTool(session, event)
+      return reduceTool(session, event, ports)
 
     case 'permission_request':
     case 'permission_mode_change':
@@ -71,19 +78,19 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'turn_summary':
     case 'session_recap':
     case 'session_recap_unavailable':
-      return reduceSlash(session, event)
+      return reduceSlash(session, event, ports)
 
     case 'codex_thread_started':
     case 'codex_item_delta':
     case 'codex_item_patch':
     case 'codex_mcp_startup':
-      return reduceCodex(session, event)
+      return reduceCodex(session, event, ports)
 
     case 'message_usage':
     case 'status_indicator':
     case 'rate_limit':
     case 'api_retry':
-      return reduceUsage(session, event)
+      return reduceUsage(session, event, ports)
 
     case 'hook_started':
     case 'hook_complete':

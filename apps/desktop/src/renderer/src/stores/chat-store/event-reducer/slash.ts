@@ -1,6 +1,7 @@
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { findCheckpointTarget } from '../helpers/chat-helpers'
 import type { PerSessionState } from '../types'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 
 /**
  * System-message marker payload (`providerId: 'system'`).
@@ -56,13 +57,14 @@ function appendSystemTurnMeta(
   session: PerSessionState,
   payload: TurnMetaPayload,
   idPrefix: string,
+  ports: ChatCorePorts,
 ): Partial<PerSessionState> {
   const msg: ChatMessage = {
-    id: `${idPrefix}_${Date.now().toString(36)}`,
+    id: ports.id(`${idPrefix}_`),
     role: 'assistant',
     status: 'complete',
     content: [{ type: 'text', text: encodeTurnMeta(payload) }],
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(ports.now()).toISOString(),
     providerId: 'system',
   }
   return { messages: [...session.messages, msg] }
@@ -150,7 +152,11 @@ type SlashEvent = Extract<AgentEvent, {
     | 'session_recap_unavailable'
 }>
 
-export function reduceSlash(session: PerSessionState, event: SlashEvent): Partial<PerSessionState> {
+export function reduceSlash(
+  session: PerSessionState,
+  event: SlashEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<PerSessionState> {
   switch (event.type) {
     case 'prompt_suggestion':
       return { promptSuggestion: event.suggestion }
@@ -169,7 +175,7 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
           kind: 'recap',
           text: summary,
           ...(event.auto != null ? { auto: event.auto } : {}),
-        }, 'session_recap'),
+        }, 'session_recap', ports),
         isRecapping: false,
       }
     }
@@ -193,11 +199,11 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
         insertIdx = liveIdx !== -1 ? liveIdx : msgs.length
       }
       msgs.splice(insertIdx, 0, {
-        id: `compact_${Date.now()}`,
+        id: ports.id('compact_'),
         role: 'assistant' as const,
         status: 'complete' as const,
         content: [{ type: 'text' as const, text: `__compact__:${event.trigger}:${event.preTokens}:${event.postTokens ?? ''}:${event.durationMs ?? ''}` }],
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(ports.now()).toISOString(),
         providerId: 'system',
       })
       return {
@@ -250,21 +256,21 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
       if (import.meta.env.DEV && import.meta.env.RENDERER_VITE_DEBUG_SLASH_OUTPUT === '1') {
         const debugText = `\`\`\`\n/${cmd}\n\n${event.content}\n\`\`\``
         const debugMsg: ChatMessage = {
-          id: `slash-debug-${Date.now()}`,
+          id: ports.id('slash-debug-'),
           role: 'assistant',
           content: [{ type: 'text', text: debugText }],
           status: 'complete',
-          createdAt: new Date().toISOString(),
+          createdAt: new Date(ports.now()).toISOString(),
           providerId: 'claude',
         }
         return { _pendingSlashCommand: '', messages: [...filtered, debugMsg] }
       }
       const hintMsg: ChatMessage = {
-        id: `slash-hint-${Date.now()}`,
+        id: ports.id('slash-hint-'),
         role: 'assistant',
         content: [{ type: 'text', text: `Command /${cmd} executed.` }],
         status: 'complete',
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(ports.now()).toISOString(),
         providerId: 'claude',
       }
       return {

@@ -15,13 +15,10 @@ function sourceOf(name: string): string {
   return readFileSync(join(DIR, name), 'utf8')
 }
 
-/** Imports that still exist after WP-01. WP-11 must shrink this set; do not add rows. */
-const REMAINING_COMPONENT_IMPORTS: Record<string, string> = {
-  'content.ts': '@/components/chat/media-generation',
-  'tool.ts': '@/components/chat/tool-display',
-}
+/** WP-11 relocated component predicates and injected window via ports. */
+const REMAINING_COMPONENT_IMPORTS: Record<string, string> = {}
 
-const WINDOW_FILES = new Set(['tool.ts'])
+const WINDOW_FILES = new Set<string>()
 
 describe('event-reducer extraction boundary (WP-01)', () => {
   it('does not import the Zustand barrel via ../index', () => {

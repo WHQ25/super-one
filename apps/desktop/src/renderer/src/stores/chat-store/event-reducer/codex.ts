@@ -1,8 +1,9 @@
 import type { AgentEvent, CodexItemPatch, CodexThreadItem } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { codexTodoListFromItem } from '../helpers/codex-todo'
-import { upsertCodexItem } from '../helpers/codex-helpers'
+import { upsertCodexItem } from './codex-pure'
 import type { PerSessionState } from '../types'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 
 type CodexEvent = Extract<AgentEvent, { type: 'codex_thread_started' | 'codex_item_delta' | 'codex_item_patch' | 'codex_mcp_startup' }>
 
@@ -35,11 +36,15 @@ function applyCodexItemPatch(item: CodexThreadItem, patch: CodexItemPatch): Code
   }
 }
 
-export function reduceCodex(session: PerSessionState, event: CodexEvent): Partial<PerSessionState> {
+export function reduceCodex(
+  session: PerSessionState,
+  event: CodexEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<PerSessionState> {
   switch (event.type) {
     case 'codex_mcp_startup': {
       return {
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           const prevCodex = msg.metadata?.codex ?? { threadId: null, usage: null, items: [] }
@@ -54,10 +59,10 @@ export function reduceCodex(session: PerSessionState, event: CodexEvent): Partia
     case 'codex_thread_started': {
       const target = session.messages.find((m) => m.id === event.messageId)
       if (target && isReplayedEventForMessage(event, target)) {
-        return { lastEventAt: Date.now() }
+        return { lastEventAt: ports.now() }
       }
       return {
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           const prevCodex = msg.metadata?.codex ?? { threadId: null, usage: null, items: [] }
@@ -79,11 +84,11 @@ export function reduceCodex(session: PerSessionState, event: CodexEvent): Partia
     case 'codex_item_delta': {
       const target = session.messages.find((m) => m.id === event.messageId)
       if (target && isReplayedEventForMessage(event, target)) {
-        return { lastEventAt: Date.now() }
+        return { lastEventAt: ports.now() }
       }
       const todoUpdate = codexTodoListFromItem(event.item)
       return {
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
         ...(todoUpdate !== undefined ? { _latestCodexTodoList: todoUpdate } : {}),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
@@ -107,17 +112,17 @@ export function reduceCodex(session: PerSessionState, event: CodexEvent): Partia
     case 'codex_item_patch': {
       const target = session.messages.find((m) => m.id === event.messageId)
       if (!target || isReplayedEventForMessage(event, target)) {
-        return { lastEventAt: Date.now() }
+        return { lastEventAt: ports.now() }
       }
       const prevCodex = target.metadata?.codex
       const itemIndex = prevCodex?.items.findIndex((item) => item.id === event.itemId) ?? -1
-      if (!prevCodex || itemIndex < 0) return { lastEventAt: Date.now() }
+      if (!prevCodex || itemIndex < 0) return { lastEventAt: ports.now() }
       const nextItem = applyCodexItemPatch(prevCodex.items[itemIndex], event.patch)
-      if (!nextItem) return { lastEventAt: Date.now() }
+      if (!nextItem) return { lastEventAt: ports.now() }
       const nextItems = [...prevCodex.items]
       nextItems[itemIndex] = nextItem
       return {
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
         messages: session.messages.map((msg) => {
           if (msg !== target) return msg
           return {

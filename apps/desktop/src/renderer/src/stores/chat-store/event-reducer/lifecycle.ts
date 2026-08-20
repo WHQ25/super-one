@@ -2,6 +2,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage } from '@superone/shared/event-seq-utils'
 import { DEFAULT_PROVIDER } from './transformers'
 import type { PerSessionState } from '../types'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 import { sealCodexMetadata, sealStreamingTools } from './shared'
 
 type LifecycleEvent = Extract<AgentEvent, {
@@ -21,7 +22,11 @@ type LifecycleEvent = Extract<AgentEvent, {
     | 'worktree_missing'
 }>
 
-export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent): Partial<PerSessionState> {
+export function reduceLifecycle(
+  session: PerSessionState,
+  event: LifecycleEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<PerSessionState> {
   switch (event.type) {
     case 'queued_messages_restored':
       return {
@@ -43,7 +48,7 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
         ...(alreadyInTranscript ? {} : { messages: [...session.messages, consumed] }),
         queuedMessages: session.queuedMessages.filter((_, i) => i !== idx),
         awaitingAssistantReply: true,
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
       }
     }
 
@@ -72,7 +77,7 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
         messages: nextMessages,
         promptSuggestion: null,
         awaitingAssistantReply: false,
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
         ...(event.message.role === 'assistant'
           ? { lastAssistantMessageId: event.message.id, streamingTokens: { input: 0, output: 0 } }
           : {}),
@@ -93,7 +98,7 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
       if (session.messages.some((m) => m.id === event.message.id)) return {}
       return {
         messages: [...session.messages, event.message],
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
       }
     }
 
@@ -102,7 +107,7 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
       const messages = session.messages.filter((m) => !dropped.has(m.id))
       // Idempotent by contract: an already-evicted id must not churn identity.
       if (messages.length === session.messages.length) return {}
-      return { messages, lastEventAt: Date.now() }
+      return { messages, lastEventAt: ports.now() }
     }
 
     case 'message_interrupted': {
@@ -174,7 +179,7 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
       }
 
     case 'session_init':
-      console.log('[applyEvent] session_init', { sessionId: event.session?.sessionId, outputStyle: event.session?.outputStyle, availableOutputStyles: event.session?.availableOutputStyles })
+      ports.trace?.('chat.store', 'session_init', { sessionId: event.session?.sessionId, outputStyle: event.session?.outputStyle, availableOutputStyles: event.session?.availableOutputStyles })
       return {
         session: event.session,
         _providerSessionId: event.session?.sessionId ?? session._providerSessionId,

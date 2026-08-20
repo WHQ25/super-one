@@ -1,9 +1,10 @@
 import type { ChatMessage, ImageGenerationItem, VideoGenerationItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
+import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from '@/stores/chat-store/event-reducer/media-predicates'
+
+export { isMediaGenerateVideoTool, isMediaVideoStatusTool }
 
 const MEDIA_GENERATE_IMAGE_TOOL = 'mcp__superone__media_generate_image'
-const MEDIA_GENERATE_VIDEO_TOOL = 'mcp__superone__media_generate_video'
-const MEDIA_VIDEO_STATUS_TOOL = 'mcp__superone__media_video_status'
 const WIDGET_SHOW_TOOL = 'mcp__superone__widget_show'
 
 /** Grok Build native Imagine tools (ACP title / resolved toolName). */
@@ -34,17 +35,9 @@ export function isMediaGenerateImageTool(toolName: string): boolean {
   return toolName === MEDIA_GENERATE_IMAGE_TOOL || GROK_IMAGE_GEN_TOOLS.has(toolName)
 }
 
-export function isMediaGenerateVideoTool(toolName: string): boolean {
-  return toolName === MEDIA_GENERATE_VIDEO_TOOL
-}
-
 /** Grok native video tools return a finished path (no SuperOne status poll). */
 export function isGrokVideoGenTool(toolName: string): boolean {
   return GROK_VIDEO_GEN_TOOLS.has(toolName)
-}
-
-export function isMediaVideoStatusTool(toolName: string): boolean {
-  return toolName === MEDIA_VIDEO_STATUS_TOOL
 }
 
 export function isWidgetShowTool(toolName: string): boolean {

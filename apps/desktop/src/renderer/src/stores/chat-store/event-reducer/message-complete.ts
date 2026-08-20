@@ -1,12 +1,17 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
-import { getCodexCompletionEventMeta, getCodexContextTokens } from '../helpers/codex-helpers'
+import { getCodexCompletionEventMeta, getCodexContextTokens } from './codex-pure'
 import type { PerSessionState } from '../types'
-import { clearStreamingToolInput, sealCodexMetadata, sealStreamingTools } from './shared'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
+import { sealCodexMetadata, sealStreamingTools } from './shared'
 
 type MessageCompleteEvent = Extract<AgentEvent, { type: 'message_complete' }>
 
-export function reduceMessageComplete(session: PerSessionState, event: MessageCompleteEvent): Partial<PerSessionState> {
+export function reduceMessageComplete(
+  session: PerSessionState,
+  event: MessageCompleteEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<PerSessionState> {
   const newCost = event.metadata?.costUsd ?? session.totalCostUsd
   const lastAssistantId = session.messages.findLast((m) => m.role === 'assistant' && m.providerId !== 'system')?.id
   const isCurrentTurn = event.messageId === lastAssistantId
@@ -24,7 +29,7 @@ export function reduceMessageComplete(session: PerSessionState, event: MessageCo
       if (b.type === 'tool_use') {
         if (isSubagentToolName(b.toolName)) agentToolIds.add(b.toolUseId)
         // Drop any leftover partial Edit/Write buffers for tools on this message.
-        clearStreamingToolInput(b.toolUseId)
+        ports.streaming.clear(b.toolUseId)
         if (nextPreviews[b.toolUseId]) {
           const { [b.toolUseId]: _, ...rest } = nextPreviews
           nextPreviews = rest

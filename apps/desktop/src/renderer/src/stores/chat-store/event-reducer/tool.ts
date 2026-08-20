@@ -1,16 +1,14 @@
 import type { AgentEvent, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
-import { extractPartialToolInput } from '@/components/chat/tool-display'
 import { markMessageEventApplied } from './transformers'
 import type { PerSessionState } from '../types'
+import { extractPartialToolInput } from './partial-tool-input'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 import {
   _patchTaskToolBlock,
   mapMessagesStructural,
-  noteStreamingToolInputOwner,
   STREAMING_INPUT_TOOLS,
   STREAMING_PREVIEW_THROTTLE_MS,
-  streamingPreviewLastUpdate,
-  streamingToolInputRaw,
 } from './shared'
 
 type TaskProgressMap = PerSessionState['taskProgress']
@@ -213,17 +211,21 @@ function patchBrowserDownloadToolResult(
   })
 }
 
-export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<PerSessionState> {
+export function reduceTool(
+  session: PerSessionState,
+  event: ToolEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<PerSessionState> {
   switch (event.type) {
     case 'tool_input_delta': {
       const targetMsg = session.messages.find((m) => m.id === event.messageId)
       if (targetMsg && isReplayedEventForMessage(event, targetMsg)) {
-        return { lastEventAt: Date.now() }
+        return { lastEventAt: ports.now() }
       }
       const targetBlock = targetMsg?.content.find(
         (b) => b.type === 'tool_use' && b.toolUseId === event.toolUseId
       )
-      window.app?.trace?.('widget.store', 'tool_input_delta', {
+      ports.trace?.('widget.store', 'tool_input_delta', {
         toolUseId: event.toolUseId,
         toolName: targetBlock?.type === 'tool_use' ? targetBlock.toolName : null,
         partialLen: event.partialJson.length,
@@ -235,18 +237,18 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       )
       if (shouldAccumulate) {
         if (targetBlock?.type === 'tool_use' && STREAMING_INPUT_TOOLS.has(targetBlock.toolName)) {
-          const nextRaw = (streamingToolInputRaw.get(event.toolUseId) ?? '') + event.partialJson
-          streamingToolInputRaw.set(event.toolUseId, nextRaw)
-          noteStreamingToolInputOwner(event.toolUseId, event.projectPath, event.sessionId)
-          const now = Date.now()
+          const nextRaw = (ports.streaming.getRaw(event.toolUseId) ?? '') + event.partialJson
+          ports.streaming.setRaw(event.toolUseId, nextRaw)
+          ports.streaming.noteOwner(event.toolUseId, event.projectPath, event.sessionId)
+          const now = ports.now()
           const hasPrev = !!session._streamingToolInputPreviews[event.toolUseId]
-          const lastUpdate = streamingPreviewLastUpdate.get(event.toolUseId) ?? 0
+          const lastUpdate = ports.streaming.getLastUpdate(event.toolUseId) ?? 0
           const shouldExtract = !hasPrev || (now - lastUpdate) >= STREAMING_PREVIEW_THROTTLE_MS
           const appliedMessages = markMessageEventApplied(session.messages, event.messageId, event)
           if (!shouldExtract) {
             return { lastEventAt: now, ...(appliedMessages ? { messages: appliedMessages } : {}) }
           }
-          streamingPreviewLastUpdate.set(event.toolUseId, now)
+          ports.streaming.setLastUpdate(event.toolUseId, now)
           const nextPreview = extractPartialToolInput(nextRaw, targetBlock.toolName)
           return {
             lastEventAt: now,
@@ -258,7 +260,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
           }
         }
         return {
-          lastEventAt: Date.now(),
+          lastEventAt: ports.now(),
           messages: session.messages.map((msg) => {
             if (msg.id !== event.messageId) return msg
             return {
@@ -273,7 +275,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
           }),
         }
       }
-      return { lastEventAt: Date.now() }
+      return { lastEventAt: ports.now() }
     }
 
     case 'tool_progress': {
@@ -285,7 +287,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       // badge while the subagent is still backing off.
       const touchRetry = !!event.subagentRetry || (!!prevTask?.retry && !event.heartbeat)
       return {
-        lastEventAt: Date.now(),
+        lastEventAt: ports.now(),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           return {

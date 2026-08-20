@@ -1,6 +1,8 @@
 export { PROCESSED_SEQ_CAP, SeqAckTracker, TransportAckRegistry } from './ack'
 export { BUFFER_FIRST_ORDER, EventBuffer } from './buffer'
 export { handleInboundFrame, makeDecrypt } from './frames'
+export { buildLanWsUrl, buildRelayWsUrl } from './connect'
+export { RpcInbox } from './rpc'
 export type { FrameDecrypt, FrameEffect, InboundFrame, TransportKind } from './frames'
 export {
   FILE_CHUNK_SIZE,

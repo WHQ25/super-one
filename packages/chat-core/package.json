@@ -1,0 +1,21 @@
+{
+  "name": "@superone/chat-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure applyEventToSession for desktop and Expo. Implementation lives in the desktop event-reducer until the remaining helper files move.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "vitest run"
+  },
+  "dependencies": {
+    "@superone/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.0"
+  }
+}

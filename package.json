@@ -48,6 +48,7 @@
     "publish:cli": "bun --filter @superone/cli publish:npm",
     "test:runtime": "bun --filter @superone/runtime test",
     "test:relay-client": "bun --filter @superone/relay-client test",
+    "test:chat-core": "bun --filter @superone/chat-core test",
     "test:mobile": "bun --filter @superone/mobile test",
     "publish:harness": "bun scripts/publish-harness-artifacts.ts",
     "write:app-harness-pins": "bun scripts/write-app-harness-pins.ts",

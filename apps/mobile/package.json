@@ -12,6 +12,8 @@
     "test": "bun scripts/assert-shared-resolution.ts && bunx vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@superone/chat-core": "workspace:*",
+    "@superone/relay-client": "workspace:*",
     "@superone/shared": "workspace:*",
     "expo": "~54.0.26",
     "expo-dev-client": "~6.0.21",

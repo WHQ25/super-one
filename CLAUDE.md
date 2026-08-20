@@ -41,7 +41,9 @@ super-one/
     relay/           — Cloudflare Workers (Durable Objects) — mobile↔desktop relay protocol
   packages/
     shared/          — Neutral types, harness-brand, i18n, miniapp runtime (no Electron deps)
-    relay-client/    — Pure-TS relay/LAN crypto (Expo + tests; ACK/RPC later)
+    relay-client/    — Pure-TS relay/LAN crypto, ACK, buffer-first, RPC
+    chat-core/       — applyEventToSession re-export for Expo
+    chat-view/       — WebView DOM chat renderer (pre-reduced patches)
     ui/              — shadcn primitives + OKLch theme CSS, shared by desktop + web
     runtime/         — @superone/runtime — session/fs/git/lease/spawn-env/crypto (always needed)
     claude/          — @superone/claude — Claude harness (opt-in)

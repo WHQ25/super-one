@@ -847,7 +847,7 @@ bun run dev:mobile
 
 After PR1–3 green, run WP-04/05/06 in parallel, then **WP-07 scaffold** once Metro (WP-04) and P0-complete are recorded.
 
-**2026-08-21:** P0 complete; WP-04–08 scaffold/crypto landed. Next: WP-11 (chat-core decouple) ∥ WP-09 (ACK). Hardware `expo run:*` when a device is available.
+**2026-08-21:** P0 complete; WP-04–13/18/20 scaffold landed on `feat/migrate-to-expo` (ACK, ports, chat-core re-export, chat-view host, pairing form). Remaining: live WS session, ToolBlock presenters, EAS.
 
 ---
 

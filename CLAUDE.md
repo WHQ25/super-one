@@ -35,22 +35,24 @@ This repo is a **bun workspaces monorepo** (no turborepo/nx). Linker is hoisted 
 super-one/
   apps/
     desktop/         — Electron app (was the entire repo pre-monorepo)
+    mobile/          — Expo dev-client Remote Control app (`@superone/mobile`; not Expo Go)
     cli/             — `superone` headless environment CLI / remote backend (no Electron)
     web/             — Next.js 16 marketing/docs/demos site (App Router + Turbopack)
     relay/           — Cloudflare Workers (Durable Objects) — mobile↔desktop relay protocol
   packages/
     shared/          — Neutral types, harness-brand, i18n, miniapp runtime (no Electron deps)
+    relay-client/    — Pure-TS relay/LAN crypto (Expo + tests; ACK/RPC later)
     ui/              — shadcn primitives + OKLch theme CSS, shared by desktop + web
     runtime/         — @superone/runtime — session/fs/git/lease/spawn-env/crypto (always needed)
     claude/          — @superone/claude — Claude harness (opt-in)
     codex/           — @superone/codex — Codex harness (opt-in)
     acp/             — @superone/acp — ACP harness (opt-in)
     opencode/        — @superone/opencode — OpenCode harness (opt-in)
-    tsconfig/        — Shared base/react-library/electron-{node,renderer}/nextjs configs
+    tsconfig/        — Shared base/react-library/electron-{node,renderer}/react-native/nextjs configs
 ```
 
 Workspace package names: `@superone/desktop`, `@superone/cli`, `@superone/web`,
-`@superone/relay`, `@superone/ui`, `@superone/shared`, `@superone/runtime`,
+`@superone/relay`, `@superone/mobile`, `@superone/ui`, `@superone/shared`, `@superone/relay-client`, `@superone/runtime`,
 `@superone/claude`, `@superone/codex`, `@superone/acp`, `@superone/opencode`,
 `@superone/tsconfig`. All `private: true`.
 
@@ -83,6 +85,7 @@ Each workspace carries its own `CLAUDE.md` with architecture, conventions, and r
 | `apps/desktop/` | `apps/desktop/CLAUDE.md` | Electron 3-process architecture, Zustand stores, IPC API, Remote Control (mobile), Codex, auto-update, build/release, styling/brand theming, debugging (event-trace), testing (TDD), **Mini-App platform** (⚠️ recurring two-runtime footgun) |
 | `apps/cli/` | `apps/cli/CLAUDE.md` | Headless node RPC, workspace/git, pairing; harness packages under `@superone/*`; **local lab UI test** (`dev:cli:lab` + Other Devices → Local lab); labs do not hot-reload |
 | `apps/web/` | `apps/web/CLAUDE.md` | Next.js 16 marketing/docs/demos site |
+| `apps/mobile/` | `apps/mobile/CLAUDE.md` | Expo dev-client Remote Control (RN / chat WebView / terminal WebView) |
 | `apps/video/` | `apps/video/CLAUDE.md` | Remotion video compositions / offline render |
 
 `apps/relay/` and most `packages/*` currently have no local `CLAUDE.md`; the relay protocol is summarized in `apps/desktop/CLAUDE.md` → "Remote Control (Mobile) Architecture".
@@ -94,6 +97,7 @@ All root scripts proxy to a workspace via `bun --filter`. Run them from the repo
 ```bash
 bun run dev              # Start Electron app with hot reload (→ @superone/desktop)
 bun run dev:web          # Start Next.js dev server on :3000 (→ @superone/web)
+bun run dev:mobile       # Expo dev-client Metro (→ @superone/mobile; not Expo Go)
 bun run dev:cli          # Start superone CLI in foreground (→ @superone/cli)
 bun run dev:cli:lab      # Local remote-node lab on :7789 (host process; prefer for harness/creds)
 # Manual UI test: Terminal A `dev:cli:lab` + Terminal B `dev` → Remote Control →

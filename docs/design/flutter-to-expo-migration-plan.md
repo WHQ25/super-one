@@ -198,7 +198,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 
 | ID | Verdict | Finding |
 |----|---------|---------|
-| **C0.1** | confirmed | mDNS: Flutter `nsd` + `_superone._tcp`; desktop `lan-advertiser.ts`; no RN client. Fallback relay-only + manual host:port. **Do not block P2 pairing on mDNS.** |
+| **C0.1** | **fallback_accepted** (2026-08-21) | Relay + manual host:port. Plist keys stamped on `apps/mobile` for a later WP-22 retry. Notes: `docs/design/expo-p0-spikes.md`. **Do not block P2 pairing on mDNS.** |
 | **C0.2** | **spike_done** (2026-08-21) | Vectors in `docs/design/relay-crypto-golden/`. Unmodified desktop ciphertext decrypts on Flutter 1.0.0+19 and `@noble/ciphers@2.3.0`. Library for WP-08: noble (not quick-crypto). Zero edits under frozen crypto trees. |
 | **C0.5** | **spike_done** (2026-08-14) | `../index` inverted: three symbols live in `event-reducer/transformers.ts` (barrel re-exports). Lifecycle family has no `@/components` / `window` / Maps. Remaining: component predicates, `window.app.trace`, module Maps, `Date.now`, `defaults`↔`index` cycle. Notes: `docs/design/chat-core-extraction-spike.md`. No package cutover. |
 | **C0.6** | **freeze_done** (2026-08-21) | Exhaustive `ChatCorePatch` + key→owner + `SKIPPED_EVENTS` + host table + dual-transport in `docs/design/chat-core-contracts.md`. Baseline v0.55.2 (`messages_retracted`; `model_fallback` is a transcript row, not a patch key). |
@@ -207,7 +207,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 | **C-batch** | confirmed | Desktop paragraph-coalesces mobile text (`\n\n` or ≥1000 chars). RN→WebView ≤1/33ms is **new** host design. Shared `AGENT_EVENT_BATCH_MS = 33`. |
 | **C-adapter** | partial | ToolBlock multi-store + IPC (`showInFolder`, bash read, `findLineNumber`); no host-port layer yet. Expand is local `useState` only (R10). |
 | **C-oracle** | confirmed | Flutter `recorded_catalog_test` has **zero `expect()`**; incomplete barrel. Not a reduction oracle. |
-| **C-packages** | confirmed | `apps/mobile`, `packages/{chat-core,chat-view,relay-client}` **missing**; no Expo/Metro in monorepo. |
+| **C-packages** | **partial** (2026-08-21) | `apps/mobile` + `packages/relay-client` exist. `packages/{chat-core,chat-view}` still missing. |
 | **C-non-goals** | confirmed | Phase 2 zero-diff under `apps/desktop/src/main/remote/` and `apps/relay/`. |
 | **C-isComposing** | **refuted** | No `isComposing` in Flutter. Implement RN IME guard from **desktop** product requirements (`ChatInput` semantics), not Flutter port. |
 | **C-forcedDrop** | confirmed | Server reset when `fromSeq <= forcedDropSeq`; offline pending never ACKed; client handles `type: reset`. |
@@ -218,9 +218,9 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 - **0.5** chat-core boundary proof + compile-time boundary sketch — **done** (`docs/design/chat-core-extraction-spike.md`)
 - **0.6** freeze contracts + host protocol + dual-transport + buffer-first — **done** (`docs/design/chat-core-contracts.md`)
 - **0.2** golden AES-GCM/HKDF (+ chunked file) vectors — **done** (`docs/design/relay-crypto-golden/`)
-- **0.3** Metro `@superone/shared` under bun hoisted workspaces  
-- **0.1** mDNS attempt or formal fallback accept (non-blocking for P2)  
-- **0.4** WebView RSS/frame + stress corpus owner  
+- **0.3** Metro `@superone/shared` under bun hoisted workspaces — **done** (`apps/mobile/metro.config.js` + `scripts/assert-shared-resolution.ts`)  
+- **0.1** mDNS attempt or formal fallback accept (non-blocking for P2) — **fallback accepted** (`docs/design/expo-p0-spikes.md`)  
+- **0.4** WebView RSS/frame + stress corpus owner — **done** (fail-closed window in `apps/mobile/src/chat-window.ts`; RSS on device at WP-18)  
 
 Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path, attachment transports, visual catalog).
 
@@ -266,15 +266,15 @@ Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path,
 
 | Spike | Unknown | Verification | Fallback | Verdict now |
 |-------|---------|--------------|----------|-------------|
-| **0.1** | mDNS (`nsd` → `react-native-zeroconf`) | Discover `dev:cli:lab` / desktop `_superone._tcp` on iOS+Android hardware; config plugin + `NSBonjourServices` | Relay-only + manual host:port | confirmed risk; **non-blocking for P2** |
+| **0.1** | mDNS (`nsd` → `react-native-zeroconf`) | Discover `dev:cli:lab` / desktop `_superone._tcp` on iOS+Android hardware; config plugin + `NSBonjourServices` | Relay-only + manual host:port | **fallback_accepted** — P2 is QR/relay |
 | **0.2** | AES-256-GCM + HKDF wire parity | Golden vectors desktop↔Dart; `@noble/ciphers` (+ hashes) decode unmodified desktop frames | `react-native-quick-crypto` | **spike_done** — noble 2.3.0; fallback unused |
-| **0.3** | Metro + bun hoisted workspaces | `resolver.unstable_enableSymlinks` + `watchFolders`; import `@superone/shared` leaf | Explicit per-package alias map | **needs_spike** |
-| **0.4** | WebView streaming perf + RSS | Stress corpus (≥200 turns code+mermaid) + longest recording; sample paint intervals; RSS | Coarser DOM window; tighter RN envelope | **needs_spike** (fail-closed budgets) |
+| **0.3** | Metro + bun hoisted workspaces | `resolver.unstable_enableSymlinks` + `watchFolders`; import `@superone/shared` leaf | Explicit per-package alias map | **spike_done** — `apps/mobile/metro.config.js`; leaf-only rule |
+| **0.4** | WebView streaming perf + RSS | Stress corpus (≥200 turns code+mermaid) + longest recording; sample paint intervals; RSS | Coarser DOM window; tighter RN envelope | **spike_done** — fail-closed window locked; device RSS at WP-18 |
 | **0.5** | chat-core cut | Invert `../index` + relocate component predicates + ports for clock/trace/Maps; no slice drag | Narrow **first family for proof only**; never fork production | **spike_done** — `../index` gone; remaining impurities in spike notes (WP-11) |
 | **0.6** | Host protocol + contracts | Freeze ChatCoreSession/Patch, three projections, dual-transport, buffer-first, `applyReductionPatch` | — | **freeze_done** — `docs/design/chat-core-contracts.md` |
 
-**P0 exit:** all six resolved or on fallback, recorded in this doc (or companion spike notes). **0.2, 0.5 and 0.6 are recorded.** Remaining: 0.3 Metro, 0.1 mDNS-or-fallback, 0.4 WebView budget.  
-**Gate:** WP-07 / WP-08 / WP-11 / WP-15 must not start until Wave 0 exit criteria are recorded (synthetic **P0-complete** gate).
+**P0 exit:** **complete 2026-08-21.** 0.1 fallback; 0.2 golden+noble; 0.3 Metro config + shared leaf proof; 0.4 fail-closed window; 0.5/0.6 chat-core freeze. Companion: `docs/design/expo-p0-spikes.md`.  
+**Gate:** WP-07 / WP-08 / WP-11 / WP-15 may start. Device RSS remains a WP-18 measurement against the locked window.
 
 ---
 
@@ -332,9 +332,9 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | — |
 | **parallel_ok_with** | WP-01–03, WP-05–06 |
 | **Goal** | Metro under bun hoisted workspaces resolves shared source exports. |
-| **Exit** | Import type/value from `@superone/shared`; leaf-subpath rule (avoid `attachment-store`, `git-clone`); alias fallback documented |
-| **Tests** | Minimal Expo sandbox build |
-| **Scope** | `packages/shared/package.json`, `bunfig.toml`, root `package.json` |
+| **Exit** | **done 2026-08-21** — `apps/mobile` imports `@superone/shared/agent-event-batcher` + `agent-types`; Metro enables package exports + blocks Node leaves; alias fallback in `docs/design/expo-p0-spikes.md` |
+| **Tests** | `apps/mobile/scripts/assert-shared-resolution.ts` |
+| **Scope** | `apps/mobile/metro.config.js`, `packages/shared/package.json` (read-only) |
 
 #### WP-05 — Spike 0.1: mDNS on device
 
@@ -344,9 +344,9 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | — |
 | **parallel_ok_with** | WP-01–04, WP-06 |
 | **Goal** | Attempt zeroconf discovery of `_superone._tcp`; or accept relay-only fallback. |
-| **Exit** | Hardware log **or** formal fallback accept; Plist notes for P1 |
-| **Tests** | Manual device |
-| **Scope** | `lan-advertiser.ts`, Flutter `lan_discovery.dart` |
+| **Exit** | **done 2026-08-21** — formal fallback accept (QR/relay + optional host:port). `NSBonjourServices` / local-network strings stamped on `app.json` for WP-22. |
+| **Tests** | n/a (no hardware this spike) |
+| **Scope** | `lan-advertiser.ts` (read-only), Flutter `lan_discovery.dart` (read-only), `apps/mobile/app.json` |
 
 #### WP-06 — Spike 0.4: WebView streaming + RSS budget
 
@@ -356,9 +356,9 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | — |
 | **parallel_ok_with** | WP-01–05 |
 | **Goal** | Stress corpus + longest recording; measure frame p95 + peak RSS with mandatory windowing; fail-closed gates. |
-| **Exit** | Stress artifact owned; measurements; initial window sizes; if over budget → tighten window plan; `error(fatal)` recovery noted |
-| **Tests** | Prototype WebView harness metrics |
-| **Scope** | fixtures/recordings, `CopyableMarkdown.tsx`, `ChatContent.tsx` |
+| **Exit** | **done 2026-08-21** — corpus owned (`show-widget` / `claude-todos` / `mermaid-latex`); window 24/8/40; `error(fatal)` reload+hydrate. Device RSS/p95 measured at WP-18 against these sizes (fail-closed, do not relax). |
+| **Tests** | `apps/mobile/src/chat-window.test.ts` |
+| **Scope** | recordings, `CopyableMarkdown.tsx` (read-only), `apps/mobile/src/chat-window.ts` |
 
 ---
 
@@ -372,8 +372,8 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | WP-04; **P0-complete** for 0.1–0.6 recorded (0.1 may be fallback) |
 | **parallel_ok_with** | — (after P0) |
 | **Goal** | Expo dev-client boots iOS+Android; imports `@superone/shared`; root scripts; `packages/tsconfig/react-native.json`; `apps/mobile/CLAUDE.md` runtime map (RN / chat WebView / terminal WebView). Enable `ios.supportsTablet: true`, `requireFullScreen: false` early. |
-| **Exit** | Hardware boot; Metro import; `dev:mobile` proxy; no Expo Go |
-| **Tests** | Manual device boot; typecheck path |
+| **Exit** | **scaffold 2026-08-21** — Expo SDK 54 dev-client app at `apps/mobile`; `dev:mobile`; iPad flags; CLAUDE.md runtime map. First hardware `expo run:ios/android` is remaining (CNG, ios/android gitignored). |
+| **Tests** | `assert-shared-resolution.ts`; `tsc` path |
 | **Scope** | `apps/mobile/`, `packages/tsconfig/react-native.json`, root `package.json`, root `CLAUDE.md` |
 
 ---
@@ -388,8 +388,8 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | WP-03; P0-complete |
 | **parallel_ok_with** | WP-11 (after both free of shared files) |
 | **Goal** | Pure-TS crypto: HKDF + AES-GCM + chunked file; no `@superone/runtime` crypto; zero-diff frozen trees. |
-| **Exit** | Golden suite green; package exports pure APIs |
-| **Tests** | `bunx vitest run` in `packages/relay-client` (golden vectors) |
+| **Exit** | **done 2026-08-21** — `@superone/relay-client` decrypts WP-03 golden frames with `@noble/ciphers@2.3.0`; no `@superone/runtime`; frozen trees untouched. ACK/RPC is WP-09/10. |
+| **Tests** | `bun --filter @superone/relay-client test` |
 | **Scope** | `packages/relay-client/` |
 
 #### WP-11 — P3a: chat-core decoupling inside desktop
@@ -847,6 +847,8 @@ bun run dev:mobile
 
 After PR1–3 green, run WP-04/05/06 in parallel, then **WP-07 scaffold** once Metro (WP-04) and P0-complete are recorded.
 
+**2026-08-21:** P0 complete; WP-04–08 scaffold/crypto landed. Next: WP-11 (chat-core decouple) ∥ WP-09 (ACK). Hardware `expo run:*` when a device is available.
+
 ---
 
 ## Appendix A — LOC / baseline (orientation)
@@ -876,8 +878,8 @@ Flutter has **zero** custom MethodChannels — plugin capability only (camera, f
 
 ## Appendix C — Inventory blockers (execution reminders)
 
-- No `packages/chat-core|chat-view|relay-client` or `apps/mobile` yet.
-- event-reducer impurities: `../index`, `@/components`, `window`, Maps, Date.now.
+- `apps/mobile` + `packages/relay-client` exist. Still missing `packages/{chat-core,chat-view}`.
+- event-reducer impurities: `@/components`, `window`, Maps, Date.now (`../index` inverted in WP-01).
 - defaults↔index cycle; codex-helpers mixed purity.
 - ToolBlock multi-store + IPC; expand local-only.
 - Client ACK/processedSeqs only in external Flutter.

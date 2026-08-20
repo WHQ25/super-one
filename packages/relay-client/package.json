@@ -1,0 +1,26 @@
+{
+  "name": "@superone/relay-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure-TS relay/LAN crypto and (later) ACK/RPC for Expo and tests.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./crypto": "./src/crypto.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@noble/ciphers": "2.3.0",
+    "@noble/hashes": "2.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

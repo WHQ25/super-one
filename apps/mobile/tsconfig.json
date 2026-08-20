@@ -1,0 +1,7 @@
+{
+  "extends": "@superone/tsconfig/react-native.json",
+  "compilerOptions": {
+    "strict": true
+  },
+  "include": ["**/*.ts", "**/*.tsx", "expo-env.d.ts"]
+}

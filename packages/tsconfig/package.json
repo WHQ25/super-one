@@ -7,6 +7,7 @@
     "react-library.json",
     "electron-renderer.json",
     "electron-node.json",
-    "nextjs.json"
+    "nextjs.json",
+    "react-native.json"
   ]
 }

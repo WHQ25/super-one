@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "SuperOne",
+    "slug": "superone",
+    "scheme": "superone",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#111111"
+    },
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "requireFullScreen": false,
+      "bundleIdentifier": "com.superone.superone-remote",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "SuperOne can connect to your desktop on the local network.",
+        "NSBonjourServices": ["_superone._tcp."]
+      }
+    },
+    "android": {
+      "package": "com.superone.superone_remote",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#111111"
+      }
+    },
+    "plugins": ["expo-dev-client"],
+    "extra": {
+      "supportsExpoGo": false
+    }
+  }
+}

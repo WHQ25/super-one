@@ -1,0 +1,29 @@
+{
+  "name": "@superone/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "dev": "expo start --dev-client",
+    "start": "expo start --dev-client",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun scripts/assert-shared-resolution.ts && bunx vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@superone/shared": "workspace:*",
+    "expo": "~54.0.26",
+    "expo-dev-client": "~6.0.21",
+    "expo-status-bar": "~3.0.8",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  },
+  "devDependencies": {
+    "@superone/tsconfig": "workspace:*",
+    "@types/react": "~19.1.0",
+    "babel-preset-expo": "~54.0.0",
+    "typescript": "~5.9.2",
+    "vitest": "^4.0.0"
+  }
+}

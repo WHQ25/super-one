@@ -55,12 +55,27 @@ function IconButton({
   tooltipSideOffset = 6,
   tooltipDelayDuration = 300,
   type = "button",
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
   ...props
 }: IconButtonProps) {
+  // An icon button has no text node to name it, so without this every caller has to
+  // pass the tooltip string twice — and the ones that forget ship a button that
+  // assistive tech announces as just "button". The tooltip is already the human name
+  // for the action; a plain-string one is mirrored into `aria-label` unless the
+  // caller named the button some other way. Non-string tooltips (rich content, a
+  // shortcut hint beside the label) are left alone: flattening them would produce a
+  // worse name than none, and those callers still owe an explicit `aria-label`.
+  const label =
+    ariaLabel ??
+    (ariaLabelledBy == null && typeof tooltip === "string" ? tooltip : undefined)
+
   const button = (
     <button
       type={type}
       data-slot="icon-button"
+      aria-label={label}
+      aria-labelledby={ariaLabelledBy}
       className={cn(iconButtonVariants({ variant, size }), className)}
       {...props}
     />

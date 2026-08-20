@@ -822,7 +822,6 @@ export const AppSidebar = memo(function AppSidebar() {
           <IconButton
             size="sm"
             tooltip={t('sidebar.addProject.title')}
-            aria-label={t('sidebar.addProject.title')}
             onClick={() => setOpenProjectDialogOpen(true)}
           >
             <Plus />
@@ -832,7 +831,6 @@ export const AppSidebar = memo(function AppSidebar() {
               <IconButton
                 size="sm"
                 tooltip={t('sidebar.sort.title')}
-                aria-label={t('sidebar.sort.title')}
               >
                 <ArrowDownUp className="size-3" />
               </IconButton>
@@ -850,7 +848,6 @@ export const AppSidebar = memo(function AppSidebar() {
             <IconButton
               size="sm"
               tooltip={t('common.refresh')}
-              aria-label={t('common.refresh')}
               disabled={hostProjectsLoading}
               onClick={refreshHostProjects}
             >

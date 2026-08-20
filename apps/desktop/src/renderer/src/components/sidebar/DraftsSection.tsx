@@ -85,7 +85,6 @@ const DraftRow = memo(function DraftRow({
         size="xs"
         variant="nested"
         tooltip={t('common.delete')}
-        aria-label={t('common.delete')}
         onClick={(e) => {
           e.stopPropagation()
           discardDeletedDraft(draft.id)

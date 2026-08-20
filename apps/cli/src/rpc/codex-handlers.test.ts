@@ -217,6 +217,82 @@ describe('dispatchCodexRpc', () => {
     })
   })
 
+  it('codex.getAccountStatus reports the actual ChatGPT account', async () => {
+    const spawnFn: CodexSpawnFn = vi.fn(() => {
+      const child = createFakeChild()
+      attachAutoResponder(child, {
+        'account/read': (params) => {
+          expect(params).toEqual({ refreshToken: false })
+          return {
+            account: { type: 'chatgpt', email: 'dev@example.com', planType: 'pro' },
+            requiresOpenaiAuth: true,
+          }
+        },
+      })
+      return child as unknown as ChildProcessWithoutNullStreams
+    })
+    const ctx: CodexRpcContext = {
+      client: fakeClient(['environment:read']),
+      projects: fakeProjects(dir),
+      harnesses: fakeHarnesses(bin),
+      providers: null as never,
+      spawnFn,
+    }
+
+    const res = await dispatchCodexRpc('codex.getAccountStatus', { projectId: 'p1' }, ctx)
+
+    expect(res?.error).toBeUndefined()
+    expect(res?.result).toEqual({
+      signedIn: true,
+      authMode: 'chatgpt',
+      email: 'dev@example.com',
+      planType: 'pro',
+      requiresOpenaiAuth: true,
+    })
+  })
+
+  it('codex.accountLoginStart uses device-code login on a remote node', async () => {
+    const spawnFn: CodexSpawnFn = vi.fn(() => {
+      const child = createFakeChild()
+      attachAutoResponder(child, {
+        'account/login/start': (params) => {
+          expect(params).toEqual({ type: 'chatgptDeviceCode' })
+          setTimeout(() => {
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'account/login/completed',
+              params: { loginId: 'login-1', success: true },
+            })}\n`)
+          }, 10)
+          return {
+            type: 'chatgptDeviceCode',
+            loginId: 'login-1',
+            verificationUrl: 'https://auth.openai.com/device',
+            userCode: 'ABCD-EFGH',
+          }
+        },
+      })
+      return child as unknown as ChildProcessWithoutNullStreams
+    })
+    const ctx: CodexRpcContext = {
+      client: fakeClient(['node:admin']),
+      projects: fakeProjects(dir),
+      harnesses: fakeHarnesses(bin),
+      providers: null as never,
+      spawnFn,
+    }
+
+    const res = await dispatchCodexRpc('codex.accountLoginStart', { projectId: 'p1' }, ctx)
+
+    expect(res?.error).toBeUndefined()
+    expect(res?.result).toMatchObject({
+      type: 'chatgptDeviceCode',
+      loginId: 'login-1',
+      userCode: 'ABCD-EFGH',
+    })
+    await pump()
+  })
+
   it('codex.plugins.list|install smoke with mocked app-server', async () => {
     let installed = false
     const spawnFn: CodexSpawnFn = vi.fn(() => {

@@ -139,6 +139,57 @@ describe('CodexExperimentService auth state', () => {
     expect(service.getProjectAuth('/unknown').mode).toBe('auto')
   })
 
+  it('reads the actual ChatGPT account on an official disposable connection', async () => {
+    const handle = makeModelHandle()
+    vi.mocked(handle.connection.request).mockResolvedValueOnce({
+      account: { type: 'chatgpt', email: 'dev@example.com', planType: 'plus' },
+      requiresOpenaiAuth: true,
+    })
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+
+    await expect(service.getAccountStatus()).resolves.toEqual({
+      signedIn: true,
+      authMode: 'chatgpt',
+      email: 'dev@example.com',
+      planType: 'plus',
+      requiresOpenaiAuth: true,
+    })
+    expect(handle.connection.request).toHaveBeenCalledWith('account/read', { refreshToken: false })
+    expect(createHandleMock.mock.calls[0]?.[3]).toEqual([])
+    expect(handle.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the browser login connection alive until Codex reports completion', async () => {
+    const handle = makeModelHandle()
+    let completeLogin!: () => void
+    const loginCompleted = new Promise<void>((resolve) => { completeLogin = resolve })
+    vi.mocked(handle.connection.request).mockResolvedValueOnce({
+      type: 'chatgpt',
+      loginId: 'login-1',
+      authUrl: 'https://auth.openai.com/login',
+    })
+    handle.connection.pollNotification = vi.fn(async () => {
+      await loginCompleted
+      return {
+        method: 'account/login/completed',
+        params: { loginId: 'login-1', success: true },
+      }
+    })
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    const listener = vi.fn()
+    service.onAuthChanged('/project', listener)
+
+    const result = await service.startAccountLogin('/project')
+
+    expect(result).toMatchObject({ loginId: 'login-1', type: 'chatgpt' })
+    expect(handle.close).not.toHaveBeenCalled()
+    completeLogin()
+    await vi.waitFor(() => expect(handle.close).toHaveBeenCalledTimes(1))
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
   it('closeProject clears listeners and emits one final auth-changed event', () => {
     const service = new CodexExperimentService()
     const listener = vi.fn()

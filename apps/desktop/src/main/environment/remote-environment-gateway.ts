@@ -805,6 +805,22 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('codex.setAuth', { projectId, ...request })
   }
 
+  async codexGetAccountStatus(projectId: string): Promise<unknown> {
+    return this.client.rpc('codex.getAccountStatus', { projectId })
+  }
+
+  async codexAccountLoginStart(projectId: string): Promise<unknown> {
+    return this.client.rpc('codex.accountLoginStart', { projectId })
+  }
+
+  async codexAccountLoginCancel(loginId: string): Promise<unknown> {
+    return this.client.rpc('codex.accountLoginCancel', { loginId })
+  }
+
+  async codexAccountLogout(projectId: string): Promise<unknown> {
+    return this.client.rpc('codex.accountLogout', { projectId })
+  }
+
   async codexGetRateLimits(
     projectId: string,
     apiProviderId?: string | null,

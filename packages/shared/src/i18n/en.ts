@@ -523,6 +523,26 @@ export type Messages = {
         cursor: string
         'acp-grok': string
       }
+      codexAccount: {
+        title: string
+        description: string
+        email: string
+        plan: string
+        signIn: string
+        signOut: string
+        signingIn: string
+        signInOpened: string
+        signInComplete: string
+        signOutComplete: string
+        cancel: string
+        deviceCodeTitle: string
+        deviceCodeDescription: string
+        copyCode: string
+        openPage: string
+        codeCopied: string
+        noProject: string
+        refresh: string
+      }
       cursor: {
         apiKeyTitle: string
         apiKeyDescription: string
@@ -3597,6 +3617,26 @@ export const en: Messages = {
         opencode: 'OpenCode',
         cursor: 'Cursor',
         'acp-grok': 'Grok (ACP)',
+      },
+      codexAccount: {
+        title: 'ChatGPT account',
+        description: 'Sign in through the official Codex flow. Codex stores the credentials; SuperOne never reads or saves your tokens.',
+        email: 'Email',
+        plan: 'Plan',
+        signIn: 'Sign in with ChatGPT',
+        signOut: 'Sign out',
+        signingIn: 'Waiting for sign-in…',
+        signInOpened: 'Continue signing in in your browser',
+        signInComplete: 'ChatGPT sign-in complete',
+        signOutComplete: 'Signed out of ChatGPT',
+        cancel: 'Cancel',
+        deviceCodeTitle: 'Enter this one-time code',
+        deviceCodeDescription: 'The verification page opened in your browser. Enter the code there to sign in to the remote node.',
+        copyCode: 'Copy code',
+        openPage: 'Open sign-in page',
+        codeCopied: 'Code copied',
+        noProject: 'Open a project before managing the Codex account.',
+        refresh: 'Refresh account status',
       },
       cursor: {
         apiKeyTitle: 'Cursor User API Key',

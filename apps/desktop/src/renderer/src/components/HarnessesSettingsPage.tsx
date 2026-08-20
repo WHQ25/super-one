@@ -57,6 +57,7 @@ import { PluginsPage } from './PluginsPage'
 import { DshPluginsPage } from './DshPluginsPage'
 import { PreferencesPage } from './PreferencesPage'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
+import { CodexAuthSettings } from './CodexAuthSettings'
 
 interface CatalogRow {
   id: string
@@ -182,6 +183,7 @@ const CLAUDE_CONFIG_TABS: HarnessConfigSection[] = [
 ]
 
 const CODEX_CONFIG_TABS: HarnessConfigSection[] = [
+  'account',
   'preferences',
   'skills',
   'mcp',
@@ -937,6 +939,9 @@ function HarnessDetail({
           ) : (
             configTabs.map((section) => (
               <TabsContent key={section} value={section} className="mt-0 min-h-0 outline-none">
+                {section === 'account' && item.provider === 'codex' && (
+                  <CodexAuthSettings onAuthChanged={onRefresh} />
+                )}
                 {section === 'preferences' && <PreferencesPage />}
                 {section === 'agents' && <AgentsPage />}
                 {section === 'skills' && <SkillsPage />}

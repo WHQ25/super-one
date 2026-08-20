@@ -479,6 +479,43 @@ export async function remoteCodexSetAuth(
   return pair.gw.codexSetAuth(pair.ctx.projectId, request)
 }
 
+export async function remoteCodexGetAccountStatus(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  if (!pair) return null
+  return pair.gw.codexGetAccountStatus(pair.ctx.projectId)
+}
+
+export async function remoteCodexAccountLoginStart(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  if (!pair) return null
+  return pair.gw.codexAccountLoginStart(pair.ctx.projectId)
+}
+
+export async function remoteCodexAccountLoginCancel(
+  host: EnvironmentHost,
+  folderPath: string,
+  loginId: string,
+): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  if (!pair) return null
+  return pair.gw.codexAccountLoginCancel(loginId)
+}
+
+export async function remoteCodexAccountLogout(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  if (!pair) return null
+  return pair.gw.codexAccountLogout(pair.ctx.projectId)
+}
+
 export async function remoteCodexGetRateLimits(
   host: EnvironmentHost,
   folderPath: string,

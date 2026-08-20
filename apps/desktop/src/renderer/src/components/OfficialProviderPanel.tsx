@@ -5,7 +5,7 @@ import type { TFunction } from 'i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useChatStore } from '@/stores/chat'
-import type { ClaudeRateLimits, CodexAccountUsage, CodexAuthStatus, CodexRateLimits } from '@superone/shared/agent-types'
+import type { ClaudeRateLimits, CodexAccountStatus, CodexAccountUsage, CodexAuthStatus, CodexRateLimits } from '@superone/shared/agent-types'
 import { ProviderLabel } from './ProviderLabel'
 
 function formatTokens(value: number): string {
@@ -132,6 +132,7 @@ function ClaudeAccount() {
 function CodexAccount() {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
+  const [account, setAccount] = useState<CodexAccountStatus | null>(null)
   const [auth, setAuth] = useState<CodexAuthStatus | null>(null)
   const [limits, setLimits] = useState<CodexRateLimits | null>(null)
   const [usage, setUsage] = useState<CodexAccountUsage | null>(null)
@@ -141,6 +142,7 @@ function CodexAccount() {
     if (!projectPath) return
     setLoading(true)
     Promise.allSettled([
+      window.app.codexGetAccountStatus(projectPath).then(setAccount),
       window.app.codexGetAuthStatus(projectPath).then(setAuth),
       window.app.codexGetRateLimits(projectPath, null).then(setLimits),
       window.app.codexGetAccountUsage(projectPath, null).then(setUsage),
@@ -160,9 +162,13 @@ function CodexAccount() {
   return (
     <PanelShell brandKey="openai" onRefresh={fetchAll} refreshing={loading}>
       <Section>
-        {auth ? <InfoRow label={t('resources.providers.accountSignIn')} value={auth.resolvedMode === 'chatgpt' ? 'ChatGPT' : 'API Key'} /> : null}
-        {limits?.planType ? <InfoRow label={t('resources.providers.accountPlan')} value={limits.planType} /> : null}
-        {!auth && !limits?.planType && (
+        {account?.signedIn ? <InfoRow label={t('resources.providers.accountSignIn')} value={account.authMode === 'chatgpt' ? 'ChatGPT' : (account.authMode ?? 'Codex')} /> : null}
+        {!account?.signedIn && auth?.resolvedMode === 'apiKey' && (auth.hasEnvApiKey || auth.hasSessionApiKey) ? (
+          <InfoRow label={t('resources.providers.accountSignIn')} value="API Key" />
+        ) : null}
+        {account?.email ? <InfoRow label={t('resources.providers.accountEmail')} value={account.email} /> : null}
+        {(account?.planType || limits?.planType) ? <InfoRow label={t('resources.providers.accountPlan')} value={account?.planType || limits?.planType} /> : null}
+        {!account?.signedIn && !(auth?.resolvedMode === 'apiKey' && (auth.hasEnvApiKey || auth.hasSessionApiKey)) && (
           <span className="text-sm text-muted-foreground">{loading ? t('resources.providers.accountLoading') : t('resources.providers.accountNotSignedIn')}</span>
         )}
       </Section>
@@ -179,7 +185,7 @@ function CodexAccount() {
           {usage.currentStreakDays != null && <InfoRow label={t('usageGauge.streak')} value={`${usage.currentStreakDays}d`} />}
         </Section>
       )}
-      {loading && !auth && !limits && (
+      {loading && !account && !limits && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> {t('resources.providers.accountLoading')}</div>
       )}
     </PanelShell>

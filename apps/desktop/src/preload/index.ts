@@ -1063,6 +1063,18 @@ const appAPI = {
   codexGetAuthStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_AUTH_STATUS, projectPath),
 
+  codexGetAccountStatus: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_STATUS, projectPath),
+
+  codexStartAccountLogin: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGIN_START, projectPath),
+
+  codexCancelAccountLogin: (projectPath: string, loginId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGIN_CANCEL, projectPath, loginId),
+
+  codexLogoutAccount: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGOUT, projectPath),
+
   codexGetRateLimits: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_RATE_LIMITS, projectPath, apiProviderId),
 

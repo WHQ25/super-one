@@ -203,6 +203,27 @@ describe('RemoteEnvironmentGateway codex.* admin surface', () => {
     expect(limits).toMatchObject({ primary: null })
   })
 
+  it('rpc Codex account login lifecycle to the remote node', async () => {
+    const rpc = vi.fn(async (method: string) => {
+      if (method === 'codex.getAccountStatus') return { signedIn: false }
+      if (method === 'codex.accountLoginStart') {
+        return { type: 'chatgptDeviceCode', loginId: 'login-1', userCode: 'ABCD-EFGH' }
+      }
+      return { ok: true }
+    })
+    const gw = new RemoteEnvironmentGateway({ rpc } as unknown as NodeRpcClient)
+
+    await gw.codexGetAccountStatus('p1')
+    await gw.codexAccountLoginStart('p1')
+    await gw.codexAccountLoginCancel('login-1')
+    await gw.codexAccountLogout('p1')
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'codex.getAccountStatus', { projectId: 'p1' })
+    expect(rpc).toHaveBeenNthCalledWith(2, 'codex.accountLoginStart', { projectId: 'p1' })
+    expect(rpc).toHaveBeenNthCalledWith(3, 'codex.accountLoginCancel', { loginId: 'login-1' })
+    expect(rpc).toHaveBeenNthCalledWith(4, 'codex.accountLogout', { projectId: 'p1' })
+  })
+
   it('rpc codex.plugins.list', async () => {
     const rpc = vi.fn(async (method: string) => {
       if (method === 'codex.plugins.list') {

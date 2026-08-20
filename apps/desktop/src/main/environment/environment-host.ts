@@ -1071,6 +1071,22 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).codexSetAuth(projectId, request)
   }
 
+  async codexGetAccountStatus(connectionId: string, projectId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexGetAccountStatus(projectId)
+  }
+
+  async codexAccountLoginStart(connectionId: string, projectId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexAccountLoginStart(projectId)
+  }
+
+  async codexAccountLoginCancel(connectionId: string, loginId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexAccountLoginCancel(loginId)
+  }
+
+  async codexAccountLogout(connectionId: string, projectId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexAccountLogout(projectId)
+  }
+
   async codexGetRateLimits(
     connectionId: string,
     projectId: string,

@@ -2397,6 +2397,33 @@ export interface CodexAuthStatus {
   isRunning: boolean
 }
 
+export type CodexAccountAuthMode =
+  | 'apiKey'
+  | 'chatgpt'
+  | 'chatgptAuthTokens'
+  | 'agentIdentity'
+  | 'personalAccessToken'
+  | 'amazonBedrock'
+  | 'bedrockApiKey'
+  | null
+
+/** Actual Codex app-server account state; distinct from the preferred auth mode. */
+export interface CodexAccountStatus {
+  signedIn: boolean
+  authMode: CodexAccountAuthMode
+  email: string | null
+  planType: string | null
+  requiresOpenaiAuth: boolean
+}
+
+export interface CodexAccountLoginStartResult {
+  type: 'chatgpt' | 'chatgptDeviceCode'
+  loginId: string
+  authUrl?: string
+  verificationUrl?: string
+  userCode?: string
+}
+
 export interface CodexRateLimitWindow {
   usedPercent: number
   windowDurationMins: number | null
@@ -2874,6 +2901,10 @@ export const AgentIpcChannels = {
   CODEX_COLLABORATION_MODE_CHANGE: 'codex:collaboration-mode-change',
   CODEX_GET_AUTH_STATUS: 'codex:get-auth-status',
   CODEX_SET_AUTH: 'codex:set-auth',
+  CODEX_GET_ACCOUNT_STATUS: 'codex:get-account-status',
+  CODEX_ACCOUNT_LOGIN_START: 'codex:account-login-start',
+  CODEX_ACCOUNT_LOGIN_CANCEL: 'codex:account-login-cancel',
+  CODEX_ACCOUNT_LOGOUT: 'codex:account-logout',
   CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
   CODEX_GET_ACCOUNT_USAGE: 'codex:get-account-usage',
   CODEX_CONSUME_RATE_LIMIT_RESET: 'codex:consume-rate-limit-reset',

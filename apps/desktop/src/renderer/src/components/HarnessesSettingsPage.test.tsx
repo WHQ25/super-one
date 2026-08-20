@@ -54,6 +54,7 @@ vi.mock('./HooksPage', () => ({ HooksPage: () => null }))
 vi.mock('./PluginsPage', () => ({ PluginsPage: () => null }))
 vi.mock('./PreferencesPage', () => ({ PreferencesPage: () => null }))
 vi.mock('./CursorAuthSettings', () => ({ CursorAuthSettings: () => null }))
+vi.mock('./CodexAuthSettings', () => ({ CodexAuthSettings: () => <div>Codex account settings</div> }))
 
 const HARNESS_LABELS = {
   claude: /Claude Code/i,
@@ -128,5 +129,15 @@ describe('first-party harness settings entries', () => {
     await user.click(await screen.findByRole('button', { name: HARNESS_LABELS.dsh }))
 
     expect(screen.getByRole('tab', { name: /MCP/i })).toBeInTheDocument()
+  })
+
+  it('opens Codex on the account tab', async () => {
+    const user = userEvent.setup()
+    render(<HarnessesSettingsPage />)
+
+    await user.click(await screen.findByRole('button', { name: HARNESS_LABELS.codex }))
+
+    expect(screen.getByRole('tab', { name: /Account|账号/i })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByText('Codex account settings')).toBeInTheDocument()
   })
 })

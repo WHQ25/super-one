@@ -1,6 +1,7 @@
 /**
  * Codex admin RPC surface on the node:
- *   codex.getAuthStatus | setAuth | getRateLimits | getAccountUsage
+ *   codex.getAuthStatus | setAuth | getAccountStatus | accountLogin* | accountLogout
+ *   codex.getRateLimits | getAccountUsage
  *   codex.consumeRateLimitReset
  *   codex.loginMcpOauth | detectExternalAgent | importExternalAgent
  *   codex.plugins.list | install | uninstall
@@ -80,6 +81,14 @@ export async function dispatchCodexRpc(
       return handleGetAuthStatus(payload, ctx)
     case 'codex.setAuth':
       return handleSetAuth(payload, ctx)
+    case 'codex.getAccountStatus':
+      return handleGetAccountStatus(payload, ctx)
+    case 'codex.accountLoginStart':
+      return handleAccountLoginStart(payload, ctx)
+    case 'codex.accountLoginCancel':
+      return handleAccountLoginCancel(payload, ctx)
+    case 'codex.accountLogout':
+      return handleAccountLogout(payload, ctx)
     case 'codex.getRateLimits':
       return handleGetRateLimits(payload, ctx)
     case 'codex.getAccountUsage':
@@ -113,6 +122,9 @@ export async function dispatchCodexRpc(
 
 export const CODEX_MUTATING_METHODS = [
   'codex.setAuth',
+  'codex.accountLoginStart',
+  'codex.accountLoginCancel',
+  'codex.accountLogout',
   'codex.consumeRateLimitReset',
   'codex.loginMcpOauth',
   'codex.importExternalAgent',
@@ -158,6 +170,74 @@ function handleSetAuth(payload: unknown, ctx: CodexRpcContext): CodexRpcResult {
       ...(typeof p.apiKey === 'string' ? { apiKey: p.apiKey } : {}),
     }
     return { result: admin(ctx).setAuth(projectId, request) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGetAccountStatus(
+  payload: unknown,
+  ctx: CodexRpcContext,
+): Promise<CodexRpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const projectId = projectIdOf(p)
+  if (!projectId) return { error: { code: 'invalid_argument', message: 'projectId required' } }
+  if (!ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
+  try {
+    return { result: await admin(ctx).getAccountStatus() }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleAccountLoginStart(
+  payload: unknown,
+  ctx: CodexRpcContext,
+): Promise<CodexRpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const projectId = projectIdOf(p)
+  if (!projectId) return { error: { code: 'invalid_argument', message: 'projectId required' } }
+  if (!ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
+  try {
+    return { result: await admin(ctx).startAccountLogin(projectId) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleAccountLoginCancel(
+  payload: unknown,
+  ctx: CodexRpcContext,
+): Promise<CodexRpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const loginId = typeof p.loginId === 'string' ? p.loginId.trim() : ''
+  if (!loginId) return { error: { code: 'invalid_argument', message: 'loginId required' } }
+  try {
+    await admin(ctx).cancelAccountLogin(loginId)
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleAccountLogout(
+  payload: unknown,
+  ctx: CodexRpcContext,
+): Promise<CodexRpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const projectId = projectIdOf(p)
+  if (!projectId) return { error: { code: 'invalid_argument', message: 'projectId required' } }
+  if (!ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
+  try {
+    return { result: await admin(ctx).logoutAccount() }
   } catch (err) {
     return mapThrown(err)
   }

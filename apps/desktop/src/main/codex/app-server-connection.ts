@@ -49,6 +49,7 @@ export const APP_SERVER_BACKPRESSURE_MAX_ATTEMPTS = 3
 export const APP_SERVER_BACKPRESSURE_BASE_DELAY_MS = 100
 
 export const APP_SERVER_IDEMPOTENT_METHODS = new Set<string>([
+  'account/read',
   'model/list',
   'permissionProfile/list',
   'experimentalFeature/list',
@@ -441,6 +442,14 @@ export function buildAppServerEnv(auth: CodexProjectAuth, apiProviderId?: string
   }
   const apiKey = resolveApiKey(auth.mode, auth.apiKey)
   if (apiKey) env.CODEX_API_KEY = apiKey
+  return env
+}
+
+/** Official OpenAI account operations must never inherit a custom provider or API key. */
+export function buildCodexAccountEnv(): NodeJS.ProcessEnv {
+  const env = buildSafeEnv()
+  if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1'
+  delete env.CODEX_API_KEY
   return env
 }
 

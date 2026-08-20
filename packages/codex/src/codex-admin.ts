@@ -5,6 +5,8 @@
 
 import { randomUUID } from 'node:crypto'
 import type {
+  CodexAccountLoginStartResult,
+  CodexAccountStatus,
   CodexAccountUsage,
   CodexAuthStatus,
   CodexExternalAgentImportResult,
@@ -83,6 +85,50 @@ function readString(value: unknown): string | null {
 
 function readBoolean(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null
+}
+
+function parseAccountAuthMode(value: unknown): CodexAccountStatus['authMode'] {
+  switch (value) {
+    case 'apiKey':
+    case 'chatgpt':
+    case 'chatgptAuthTokens':
+    case 'agentIdentity':
+    case 'personalAccessToken':
+    case 'amazonBedrock':
+    case 'bedrockApiKey':
+      return value
+    default:
+      return null
+  }
+}
+
+export function parseAccountStatus(raw: Record<string, unknown>): CodexAccountStatus {
+  const account = asRecord(raw.account)
+  return {
+    signedIn: account !== null,
+    authMode: parseAccountAuthMode(account?.type),
+    email: readString(account?.email),
+    planType: readString(account?.planType),
+    requiresOpenaiAuth: readBoolean(raw.requiresOpenaiAuth) ?? false,
+  }
+}
+
+export function parseAccountLoginStart(
+  raw: Record<string, unknown>,
+): CodexAccountLoginStartResult {
+  const loginId = readString(raw.loginId)
+  const type = readString(raw.type)
+  if (!loginId || (type !== 'chatgpt' && type !== 'chatgptDeviceCode')) {
+    throw new Error('Codex returned an invalid account login response')
+  }
+  const result: CodexAccountLoginStartResult = { type, loginId }
+  const authUrl = readString(raw.authUrl)
+  const verificationUrl = readString(raw.verificationUrl)
+  const userCode = readString(raw.userCode)
+  if (authUrl) result.authUrl = authUrl
+  if (verificationUrl) result.verificationUrl = verificationUrl
+  if (userCode) result.userCode = userCode
+  return result
 }
 
 function readFiniteNumber(value: unknown): number | null {
@@ -207,6 +253,52 @@ export async function readRateLimits(
     return parseRateLimits(result)
   } catch (err) {
     throw safePublicError('account/rateLimits/read failed', err)
+  }
+}
+
+export async function readAccountStatus(
+  client: CodexAppServerHandle,
+  refreshToken = false,
+): Promise<CodexAccountStatus> {
+  try {
+    return parseAccountStatus(await client.request('account/read', { refreshToken }))
+  } catch (err) {
+    throw safePublicError('account/read failed', err)
+  }
+}
+
+export async function startAccountLogin(
+  client: CodexAppServerHandle,
+  type: CodexAccountLoginStartResult['type'],
+): Promise<CodexAccountLoginStartResult> {
+  try {
+    return parseAccountLoginStart(await client.request(
+      'account/login/start',
+      type === 'chatgpt'
+        ? { type, useHostedLoginSuccessPage: true, appBrand: 'chatgpt' }
+        : { type },
+    ))
+  } catch (err) {
+    throw safePublicError('account/login/start failed', err)
+  }
+}
+
+export async function cancelAccountLogin(
+  client: CodexAppServerHandle,
+  loginId: string,
+): Promise<void> {
+  try {
+    await client.request('account/login/cancel', { loginId })
+  } catch (err) {
+    throw safePublicError('account/login/cancel failed', err)
+  }
+}
+
+export async function logoutAccount(client: CodexAppServerHandle): Promise<void> {
+  try {
+    await client.request('account/logout')
+  } catch (err) {
+    throw safePublicError('account/logout failed', err)
   }
 }
 

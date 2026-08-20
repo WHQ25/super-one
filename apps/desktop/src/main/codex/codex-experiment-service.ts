@@ -2,7 +2,9 @@ import { createHash, randomUUID } from 'crypto'
 import log from '../logger'
 import { authHeaders, modelsUrl } from '../providers/endpoint-test'
 import { parseOpenAiModelsList } from '@superone/shared/platform-registry'
+import { parseAccountLoginStart, parseAccountStatus } from '@superone/codex'
 import {
+  buildCodexAccountEnv,
   buildCodexProviderCliOverridesFor,
   compactRecord,
   createAppServerConnection,
@@ -21,6 +23,8 @@ import { clearCodexProxyCache } from '../providers/llm-proxy-manager'
 import { resolveChatService } from '../providers/resolver'
 import { codexReasoningOptions, resolveCodexChatReasoning } from '../providers/codex-responses/reasoning'
 import type {
+  CodexAccountLoginStartResult,
+  CodexAccountStatus,
   CodexAuthStatus,
   CodexAccountUsage,
   CodexExternalAgentItem,
@@ -304,11 +308,17 @@ interface CachedAppServerConnection {
   claimed: boolean
 }
 
+interface PendingAccountLogin {
+  projectPath: string
+  handle: AppServerConnectionHandle
+}
+
 export class CodexExperimentService {
   private projectAuth = new Map<string, CodexProjectAuth>()
   private authChangedListeners = new Map<string, Set<() => void>>()
   private appServerConnections = new Map<string, CachedAppServerConnection>()
   private modelCacheByProvider = new Map<string, CachedModelList>()
+  private pendingAccountLogins = new Map<string, PendingAccountLogin>()
 
   getProjectAuth(projectPath: string): CodexProjectAuth {
     let auth = this.projectAuth.get(projectPath)
@@ -334,6 +344,122 @@ export class CodexExperimentService {
     if (!set) return
     for (const cb of set) {
       try { cb() } catch (err) { log.warn('[codex] auth-changed listener error:', err) }
+    }
+  }
+
+  private async createAccountConnection(): Promise<AppServerConnectionHandle> {
+    return createAppServerConnection(
+      { mode: 'chatgpt' },
+      undefined,
+      buildCodexAccountEnv(),
+      [],
+    )
+  }
+
+  private invalidateAccountConsumers(): void {
+    const projects = new Set([
+      ...this.projectAuth.keys(),
+      ...this.authChangedListeners.keys(),
+      ...this.appServerConnections.keys(),
+    ])
+    for (const projectPath of [...this.appServerConnections.keys()]) {
+      void this.closeAppServerConnection(projectPath)
+    }
+    for (const projectPath of projects) this.emitAuthChanged(projectPath)
+  }
+
+  private async waitForAccountLogin(
+    loginId: string,
+    pending: PendingAccountLogin,
+  ): Promise<void> {
+    const deadline = Date.now() + 15 * 60_000
+    try {
+      while (Date.now() < deadline && this.pendingAccountLogins.get(loginId) === pending) {
+        const notification = pending.handle.connection.pollNotification
+          ? await pending.handle.connection.pollNotification(Math.min(1_000, deadline - Date.now()))
+          : await pending.handle.connection.nextNotification()
+        if (!notification) continue
+        if (
+          notification.method === 'account/login/completed'
+          && readString(notification.params.loginId) === loginId
+        ) {
+          if (readBoolean(notification.params.success) === true) {
+            this.invalidateAccountConsumers()
+          } else {
+            log.info(
+              '[codex] ChatGPT login failed project=%s: %s',
+              pending.projectPath,
+              readString(notification.params.error) ?? 'unknown error',
+            )
+          }
+          return
+        }
+      }
+      log.info('[codex] ChatGPT login timed out project=%s', pending.projectPath)
+    } catch (error) {
+      log.info(
+        '[codex] ChatGPT login listener failed project=%s: %s',
+        pending.projectPath,
+        error instanceof Error ? error.message : String(error),
+      )
+    } finally {
+      if (this.pendingAccountLogins.get(loginId) === pending) {
+        this.pendingAccountLogins.delete(loginId)
+      }
+      await pending.handle.close().catch(() => {})
+    }
+  }
+
+  async getAccountStatus(): Promise<CodexAccountStatus> {
+    const handle = await this.createAccountConnection()
+    try {
+      return parseAccountStatus(await handle.connection.request('account/read', { refreshToken: false }))
+    } finally {
+      await handle.close().catch(() => {})
+    }
+  }
+
+  async startAccountLogin(projectPath: string): Promise<CodexAccountLoginStartResult> {
+    const handle = await this.createAccountConnection()
+    try {
+      const result = parseAccountLoginStart(await handle.connection.request('account/login/start', {
+        type: 'chatgpt',
+        useHostedLoginSuccessPage: true,
+        appBrand: 'chatgpt',
+      }))
+      const pending = { projectPath, handle }
+      this.pendingAccountLogins.set(result.loginId, pending)
+      void this.waitForAccountLogin(result.loginId, pending)
+      return result
+    } catch (error) {
+      await handle.close().catch(() => {})
+      throw error
+    }
+  }
+
+  async cancelAccountLogin(loginId: string): Promise<void> {
+    const pending = this.pendingAccountLogins.get(loginId)
+    if (!pending) return
+    this.pendingAccountLogins.delete(loginId)
+    try {
+      await pending.handle.connection.request('account/login/cancel', { loginId })
+    } finally {
+      await pending.handle.close().catch(() => {})
+    }
+  }
+
+  async logoutAccount(): Promise<CodexAccountStatus> {
+    for (const loginId of [...this.pendingAccountLogins.keys()]) {
+      await this.cancelAccountLogin(loginId)
+    }
+    const handle = await this.createAccountConnection()
+    try {
+      await handle.connection.request('account/logout')
+      const status = parseAccountStatus(await handle.connection.request('account/read', { refreshToken: false }))
+      this.invalidateAccountConsumers()
+      return status
+    } finally {
+      await handle.close().catch(() => {})
     }
   }
 
@@ -780,6 +906,10 @@ export class CodexExperimentService {
     }
     this.projectAuth.clear()
     this.authChangedListeners.clear()
+    for (const pending of this.pendingAccountLogins.values()) {
+      void pending.handle.close().catch(() => {})
+    }
+    this.pendingAccountLogins.clear()
   }
 }
 

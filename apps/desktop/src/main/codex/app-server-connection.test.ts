@@ -104,6 +104,7 @@ const {
   createAppServerConnection,
   resolvePermissionProfile,
   buildAppServerEnv,
+  buildCodexAccountEnv,
   getCodexProviderOverride,
   getCodexProviderOverrideFor,
   buildCodexProviderCliOverrides,
@@ -581,6 +582,17 @@ describe('buildAppServerEnv custom Codex provider', () => {
     expect(parts).toContain('localhost')
     expect(parts).toContain('::1')
     expect(env.no_proxy).toBe(env.NO_PROXY)
+  })
+
+  it('removes CODEX_API_KEY from official account operations', () => {
+    const previous = process.env.CODEX_API_KEY
+    process.env.CODEX_API_KEY = 'sk-custom-provider'
+    try {
+      expect(buildCodexAccountEnv().CODEX_API_KEY).toBeUndefined()
+    } finally {
+      if (previous === undefined) delete process.env.CODEX_API_KEY
+      else process.env.CODEX_API_KEY = previous
+    }
   })
 })
 

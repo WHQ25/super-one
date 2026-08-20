@@ -11,6 +11,9 @@ import {
 } from './chat-shared'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { tryCopy } from './clipboard'
+import { splitByInsightBlocks } from '@superone/shared/insight-markers'
+
+export { splitByInsightBlocks }
 
 export function splitByCodeFences(text: string): { content: string; isCode: boolean }[] {
   const segments: { content: string; isCode: boolean }[] = []
@@ -78,70 +81,6 @@ export function normalizeCodeFences(text: string): string {
     if (isClosed) result.push(newTicks)
     return result.join('\n')
   }).join('\n')
-}
-
-const INSIGHT_HEADER_LINE = /^(.*?)(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{3,}`?\s*$/
-const INSIGHT_FOOTER_LINE = /^`?─{3,}`?\s*$/
-const INSIGHT_INLINE_FOOTER_LINE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
-const FENCE_LINE = /^`{3,}[\w-]*\s*$/
-
-type TextSegment = { type: 'text'; content: string } | { type: 'insight'; title: string; content: string }
-
-export function splitByInsightBlocks(text: string): TextSegment[] {
-  const lines = text.split('\n')
-  const segments: TextSegment[] = []
-  let textBuf: string[] = []
-
-  const flushText = () => {
-    if (textBuf.length > 0) {
-      segments.push({ type: 'text', content: textBuf.join('\n') })
-      textBuf = []
-    }
-  }
-
-  let i = 0
-  while (i < lines.length) {
-    const headerMatch = lines[i].match(INSIGHT_HEADER_LINE)
-    if (!headerMatch) {
-      textBuf.push(lines[i])
-      i++
-      continue
-    }
-    const leading = headerMatch[1].trimEnd()
-    const title = headerMatch[2].trim()
-    if (leading) textBuf.push(leading)
-    let footerIdx = -1
-    let inlineFooterContent: string | null = null
-    for (let j = i + 1; j < lines.length; j++) {
-      if (INSIGHT_FOOTER_LINE.test(lines[j])) { footerIdx = j; inlineFooterContent = null; break }
-      const inlineMatch = lines[j].match(INSIGHT_INLINE_FOOTER_LINE)
-      if (inlineMatch) { footerIdx = j; inlineFooterContent = inlineMatch[1]; break }
-    }
-    if (footerIdx === -1) {
-      flushText()
-      textBuf.push(`\`★ ${title} ${'─'.repeat(37)}\``)
-      for (let j = i + 1; j < lines.length; j++) textBuf.push(lines[j])
-      i = lines.length
-      break
-    }
-    const prevIsFence = !leading && textBuf.length > 0 && FENCE_LINE.test(textBuf[textBuf.length - 1])
-    const nextIsFence = inlineFooterContent === null
-      && footerIdx + 1 < lines.length
-      && FENCE_LINE.test(lines[footerIdx + 1])
-    const stripFences = prevIsFence && nextIsFence
-    if (stripFences) textBuf.pop()
-    flushText()
-    const innerLines = lines.slice(i + 1, footerIdx)
-    if (inlineFooterContent !== null) innerLines.push(inlineFooterContent)
-    segments.push({
-      type: 'insight',
-      title,
-      content: innerLines.join('\n'),
-    })
-    i = footerIdx + 1 + (stripFences ? 1 : 0)
-  }
-  flushText()
-  return segments
 }
 
 function InsightBlock({ title, content, isStreaming, components }: { title: string; content: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
@@ -229,7 +168,7 @@ function MarkdownRenderer({ text, isStreaming, components }: { text: string; isS
 }
 
 export function CopyableMarkdown({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
-  const segments = useMemo(() => splitByInsightBlocks(text), [text])
+  const segments = useMemo(() => splitByInsightBlocks(text, !isStreaming), [text, isStreaming])
   const hasInsight = segments.some((s) => s.type === 'insight')
 
   if (!hasInsight) {

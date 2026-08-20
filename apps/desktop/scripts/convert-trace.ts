@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { diffLines } from 'diff'
+import { INSIGHT_HEADER_LINE, INSIGHT_FOOTER_LINE } from '@superone/shared/insight-markers'
 
 const DB_PATH = process.argv[2] || 'event-trace.db'
 
@@ -168,8 +169,8 @@ function computeToolMeta(block: Record<string, unknown>) {
   } catch { return {} }
 }
 
-const INSIGHT_HEADER_RE = /^(.*?)`★\s+(.+?)\s+─{3,}`$/m
-const INSIGHT_FOOTER_RE = /^`─{3,}`$/
+const INSIGHT_HEADER_RE = INSIGHT_HEADER_LINE
+const INSIGHT_FOOTER_RE = INSIGHT_FOOTER_LINE
 
 function splitTextIntoBlocks(text: string): Array<{ type: string; text?: string; title?: string; content?: string }> {
   if (!text.trim()) return []

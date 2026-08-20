@@ -1,17 +1,9 @@
-const INSIGHT_HEADER_RE = /^(.*?)(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{3,}`?\s*$/m
-const INSIGHT_FOOTER_RE = /^`?─{3,}`?\s*$/
-const INSIGHT_INLINE_FOOTER_RE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
-const INSIGHT_BLOCK_PREFIX = /^[>\s]+$/
-
-function stripBlockPrefix(line: string, prefix: string): string {
-  if (!prefix) return line
-  if (line.startsWith(prefix)) return line.slice(prefix.length)
-  if (prefix.includes('>')) {
-    const m = line.match(/^\s*>\s?/)
-    if (m) return line.slice(m[0].length)
-  }
-  return line
-}
+import {
+  INSIGHT_HEADER_LINE,
+  INSIGHT_BLOCK_PREFIX,
+  stripBlockPrefix,
+  findInsightBodyEnd,
+} from '@superone/shared/insight-markers'
 
 export interface TextSegment { type: 'text' | 'insight'; text: string; title?: string; content?: string }
 export interface SplitResult { segments: TextSegment[]; remainder: string }
@@ -27,9 +19,7 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
   let codeLang = ''
   let inTable = false
   let tableLines: string[] = []
-  let insightTitle: string | null = null
-  let insightLines: string[] = []
-  let insightPrefix = ''
+  let openInsight: { title: string; body: string[] } | null = null
 
   function flushCurrent() {
     const t = current.join('\n').trim()
@@ -45,29 +35,8 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
     inTable = false
   }
 
-  for (const line of lines) {
-    if (insightTitle !== null) {
-      const stripped = stripBlockPrefix(line, insightPrefix)
-      if (INSIGHT_FOOTER_RE.test(stripped)) {
-        segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
-        insightTitle = null
-        insightLines = []
-        insightPrefix = ''
-      } else {
-        const inlineMatch = stripped.match(INSIGHT_INLINE_FOOTER_RE)
-        if (inlineMatch) {
-          insightLines.push(inlineMatch[1])
-          segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
-          insightTitle = null
-          insightLines = []
-          insightPrefix = ''
-        } else {
-          insightLines.push(stripped)
-        }
-      }
-      continue
-    }
-
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li]
     if (inCodeFence) {
       if (line.trimEnd() === fenceTicks) {
         segments.push({ type: 'text', text: `${fenceTicks}${codeLang}\n${codeLines.join('\n')}\n${fenceTicks}` })
@@ -92,16 +61,29 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
       continue
     }
 
-    const insightMatch = line.match(INSIGHT_HEADER_RE)
+    const insightMatch = line.match(INSIGHT_HEADER_LINE)
     if (insightMatch) {
       if (inTable) flushTable()
       const rawLeading = insightMatch[1]
-      insightPrefix = INSIGHT_BLOCK_PREFIX.test(rawLeading) ? rawLeading : ''
-      const leading = insightPrefix ? '' : rawLeading.trimEnd()
+      const prefix = INSIGHT_BLOCK_PREFIX.test(rawLeading) ? rawLeading : ''
+      const leading = prefix ? '' : rawLeading.trimEnd()
       if (leading) current.push(leading)
       flushCurrent()
-      insightTitle = insightMatch[2].trim()
-      insightLines = []
+      const title = insightMatch[2].trim()
+      const body = lines.slice(li + 1).map((l) => stripBlockPrefix(l, prefix))
+      const found = findInsightBodyEnd(body, !streaming)
+      if (found.kind === 'none') {
+        // Still open at the end of the text: hold it back while streaming so the
+        // footer can still arrive, and close it at EOF once the turn is final.
+        openInsight = { title, body }
+        li = lines.length
+        break
+      }
+      const content = found.kind === 'footer' && found.inlineContent !== null
+        ? [...body.slice(0, found.end), found.inlineContent]
+        : body.slice(0, found.end)
+      segments.push({ type: 'insight', text: '', title, content: content.join('\n') })
+      li = li + found.next
       continue
     }
 
@@ -124,10 +106,10 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
   }
 
   if (streaming) {
-    if (insightTitle !== null) {
+    if (openInsight) {
       if (inTable) flushTable()
       flushCurrent()
-      const remainder = `\`★ ${insightTitle} ${'─'.repeat(37)}\`\n${insightLines.join('\n')}`
+      const remainder = `\`★ ${openInsight.title} ${'─'.repeat(37)}\`\n${openInsight.body.join('\n')}`
       return { segments, remainder }
     }
     if (inCodeFence) {
@@ -152,10 +134,10 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
     return { segments, remainder: tail }
   }
 
-  if (insightTitle !== null) {
+  if (openInsight) {
     if (inTable) flushTable()
     flushCurrent()
-    segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
+    segments.push({ type: 'insight', text: '', title: openInsight.title, content: openInsight.body.join('\n') })
     return { segments, remainder: '' }
   }
   if (inCodeFence) {

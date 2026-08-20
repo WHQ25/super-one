@@ -350,6 +350,41 @@ describe('splitTextIntoBlocks', () => {
       expect(remainder).toBe('| # | name |\n|---|---|\n| 1 | a |\n| 2')
     })
 
+    it('extracts an insight block whose markers are wrapped in bold', () => {
+      const { segments } = splitTextIntoBlocks(
+        'Before\n**\u2605 Insight \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500**\nBody line\n**\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500**\nAfter',
+      )
+      expect(segments).toEqual([
+        { type: 'text', text: 'Before' },
+        { type: 'insight', text: '', title: 'Insight', content: 'Body line' },
+        { type: 'text', text: 'After' },
+      ])
+    })
+
+    it('does not let a footerless insight block claim the next block\'s footer', () => {
+      const H = '**\u2605 Insight ─────────────────────────────**'
+      const { segments } = splitTextIntoBlocks(
+        `${H}\nFirst point.\n\nProse between.\n\n${H}\nSecond point.\n**─────────────────────────────────**\n\n## After`,
+      )
+      expect(segments).toEqual([
+        { type: 'insight', text: '', title: 'Insight', content: 'First point.' },
+        { type: 'text', text: 'Prose between.' },
+        { type: 'insight', text: '', title: 'Insight', content: 'Second point.' },
+        { type: 'text', text: '## After' },
+      ])
+    })
+
+    it('closes a footerless insight block at the paragraph break instead of swallowing the message', () => {
+      const { segments } = splitTextIntoBlocks(
+        '**\u2605 Insight \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500**\nBody line\n\nNext paragraph.\n\n| a |\n|---|\n| 1 |',
+      )
+      expect(segments).toEqual([
+        { type: 'insight', text: '', title: 'Insight', content: 'Body line' },
+        { type: 'text', text: 'Next paragraph.' },
+        { type: 'text', text: '| a |\n|---|\n| 1 |' },
+      ])
+    })
+
     it('does not fragment a table from its header when force-finalized on an incomplete row', () => {
       const { segments } = splitTextIntoBlocks(
         '| # | name | owner |\n|---|---|---|\n| 1 | design | alice |\n| 2',

@@ -2,6 +2,9 @@ import { useState, useRef, useMemo, useCallback, useEffect, memo } from 'react'
 import { Streamdown } from 'streamdown'
 import { Check, Copy } from 'lucide-react'
 import { loadMathPlugin, getMathPluginSync } from './chat-shared'
+import { splitByInsightBlocks } from '@superone/shared/insight-markers'
+
+export { splitByInsightBlocks }
 
 const MATH_TRIGGER_RE = /\$\$|\\\(|\\\[|\\begin\{/
 
@@ -133,84 +136,6 @@ export function normalizeCodeFences(text: string): string {
   }).join('\n')
 }
 
-const INSIGHT_HEADER_LINE = /^(.*?)(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{1,}`?\s*$/
-const INSIGHT_FOOTER_LINE = /^`?─{3,}`?\s*$/
-const INSIGHT_INLINE_FOOTER_LINE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
-const FENCE_LINE = /^`{3,}[\w-]*\s*$/
-const INSIGHT_BLOCK_PREFIX = /^[>\s]+$/
-
-function stripBlockPrefix(line: string, prefix: string): string {
-  if (!prefix) return line
-  if (line.startsWith(prefix)) return line.slice(prefix.length)
-  if (prefix.includes('>')) {
-    const m = line.match(/^\s*>\s?/)
-    if (m) return line.slice(m[0].length)
-  }
-  return line
-}
-
-type TextSegment = { type: 'text'; content: string } | { type: 'insight'; title: string; content: string }
-
-export function splitByInsightBlocks(text: string): TextSegment[] {
-  const lines = text.split('\n')
-  const segments: TextSegment[] = []
-  let textBuf: string[] = []
-
-  const flushText = () => {
-    if (textBuf.length > 0) {
-      segments.push({ type: 'text', content: textBuf.join('\n') })
-      textBuf = []
-    }
-  }
-
-  let i = 0
-  while (i < lines.length) {
-    const headerMatch = lines[i].match(INSIGHT_HEADER_LINE)
-    if (!headerMatch) {
-      textBuf.push(lines[i])
-      i++
-      continue
-    }
-    const rawLeading = headerMatch[1]
-    const blockPrefix = INSIGHT_BLOCK_PREFIX.test(rawLeading) ? rawLeading : ''
-    const leading = blockPrefix ? '' : rawLeading.trimEnd()
-    const title = headerMatch[2].trim()
-    if (leading) textBuf.push(leading)
-    let footerIdx = -1
-    let inlineFooterContent: string | null = null
-    for (let j = i + 1; j < lines.length; j++) {
-      const stripped = stripBlockPrefix(lines[j], blockPrefix)
-      if (INSIGHT_FOOTER_LINE.test(stripped)) { footerIdx = j; inlineFooterContent = null; break }
-      const inlineMatch = stripped.match(INSIGHT_INLINE_FOOTER_LINE)
-      if (inlineMatch) { footerIdx = j; inlineFooterContent = inlineMatch[1]; break }
-    }
-    if (footerIdx === -1) {
-      flushText()
-      textBuf.push(`\`★ ${title} ${'─'.repeat(37)}\``)
-      for (let j = i + 1; j < lines.length; j++) textBuf.push(lines[j])
-      i = lines.length
-      break
-    }
-    const prevIsFence = !leading && textBuf.length > 0 && FENCE_LINE.test(textBuf[textBuf.length - 1])
-    const nextIsFence = inlineFooterContent === null
-      && footerIdx + 1 < lines.length
-      && FENCE_LINE.test(lines[footerIdx + 1])
-    const stripFences = prevIsFence && nextIsFence
-    if (stripFences) textBuf.pop()
-    flushText()
-    const innerLines = lines.slice(i + 1, footerIdx).map((l) => stripBlockPrefix(l, blockPrefix))
-    if (inlineFooterContent !== null) innerLines.push(inlineFooterContent)
-    segments.push({
-      type: 'insight',
-      title,
-      content: innerLines.join('\n'),
-    })
-    i = footerIdx + 1 + (stripFences ? 1 : 0)
-  }
-  flushText()
-  return segments
-}
-
 const InsightBlock = memo(function InsightBlock({ title, content, isStreaming, components }: { title: string; content: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const [copied, setCopied] = useState(false)
   const normalized = useMemo(() => normalizeCodeFences(content), [content])
@@ -291,7 +216,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
 
 export const CopyableMarkdown = memo(function CopyableMarkdown({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const renderText = useThrottledStreamingText(text, isStreaming)
-  const segments = useMemo(() => splitByInsightBlocks(renderText), [renderText])
+  const segments = useMemo(() => splitByInsightBlocks(renderText, !isStreaming), [renderText, isStreaming])
   const hasInsight = segments.some((s) => s.type === 'insight')
 
   if (!hasInsight) {

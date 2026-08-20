@@ -359,7 +359,7 @@ Follow **Test-Driven Development** with an **integration-first** philosophy — 
 - **Mock only at true boundaries**: real `Session`, real Zustand stores, real reducers, real IPC-handler logic. Mock only the Claude SDK subprocess (via `FakeBackend`), `window.agent`/`window.app` in renderer, `fs`, `child_process`, and network. If you're reaching for `vi.mock` on an internal module, stop and re-scope the test one layer up.
 - **Regression test = scenario test**: every bug fix gets an integration test that reproduces the bug scenario at the layer where it lived — not a narrow function test of the fix site.
 - **Skip trivial forwarding**: don't test `foo.bar(x)` → `api.bar(x)` passthroughs. Test the scenario across the forwarding, not the forwarding itself.
-- **Run tests after changes**: always `bun run test` after implementing.
+- **Run the smallest sufficient suite**: after implementing, run only what the change can affect — `bunx vitest run <file.test.ts>`, `bunx vitest related <changed-source.ts>`, or `bunx vitest run --changed HEAD` (all from `apps/desktop`). Full `bun run test` is the **pre-commit** gate, not a per-edit one — see the test-scope rules in the root `CLAUDE.md`.
 
 ### Good examples to follow
 

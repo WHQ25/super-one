@@ -99,6 +99,20 @@ bun run storybook        # Start Storybook (collects stories from desktop + pack
 
 To run a single test file: `bunx vitest run apps/desktop/src/path/to/file.test.ts` (vitest runs from `apps/desktop` cwd, so paths are relative to that workspace).
 
+**Test scope — do not run the full suite after every edit.** The desktop suite is ~650 files and takes minutes; running it per change is the single biggest time sink in a long session. Default to the narrowest run that can catch the regression (all from the `apps/desktop` cwd):
+
+```bash
+bunx vitest run src/path/to/file.test.ts       # known target test file(s)
+bunx vitest related src/main/session/session.ts # tests that import a changed source file
+bunx vitest run --changed HEAD                  # everything affected by uncommitted changes
+bunx vitest list --changed HEAD --filesOnly     # preview that set without running it
+```
+
+Run the **full** suite (`bun run test`, plus `test:cli` / `test:runtime` / `test:relay` when those workspaces changed) at two moments only:
+
+1. **Before committing** — the pre-commit gate. Never commit on a scoped run alone.
+2. **When the change is suite-wide by nature** — `apps/desktop/vitest.setup.ts`, `vitest.config.ts`, `src/test/fixtures/`, `packages/shared`, `packages/ui`, or anything imported nearly everywhere. Scoping there buys nothing because the blast radius is the whole suite.
+
 **Sandbox note**: `bun run test` (full suite) and any LAN/mDNS tests (`apps/desktop/src/main/lan-server.test.ts`, `apps/desktop/src/main/lan-advertiser.test.ts`) bind to `0.0.0.0:5353` / `127.0.0.1` and will fail with `EPERM` under the default sandbox. Run them with `dangerouslyDisableSandbox: true` (Bash tool) or outside the sandbox.
 
 ## Cross-Package Resolution & TypeScript

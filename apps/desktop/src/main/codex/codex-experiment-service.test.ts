@@ -225,6 +225,36 @@ describe('CodexExperimentService auth state', () => {
     expect(handle.close).toHaveBeenCalledTimes(1)
   })
 
+  it('closes an ephemeral app-server request before returning so thread writers are released', async () => {
+    let signalExit: () => void = () => {}
+    const handle = {
+      ...makeModelHandle(),
+      onClosed: vi.fn((callback: (info: { code: number | null; signal: NodeJS.Signals | null; stderr: string }) => void) => {
+        signalExit = () => callback({ code: null, signal: 'SIGTERM', stderr: '' })
+        return () => {}
+      }),
+    }
+    vi.mocked(handle.connection.request).mockResolvedValueOnce({ thread: { id: 'thread-forked' } })
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+
+    let settled = false
+    const threadIdPromise = service.withEphemeralAppServerRequest('/project', async (request) => {
+      const result = await request('thread/fork', { threadId: 'thread-source' })
+      expect(handle.close).not.toHaveBeenCalled()
+      return (result.thread as { id: string }).id
+    })
+    void threadIdPromise.finally(() => { settled = true })
+
+    await vi.waitFor(() => expect(handle.close).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(settled).toBe(false)
+    signalExit()
+
+    expect(await threadIdPromise).toBe('thread-forked')
+    expect(await service.takeAppServerConnection('/project', { mode: 'auto' })).toBeNull()
+  })
+
   it('preserves the model-advertised order of supportedReasoningEfforts', async () => {
     const handle = {
       connection: {

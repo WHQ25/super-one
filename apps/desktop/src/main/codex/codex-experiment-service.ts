@@ -41,6 +41,7 @@ import type {
 } from '@superone/shared/agent-types'
 
 const APP_SERVER_METADATA_IDLE_MS = 5 * 60_000
+const APP_SERVER_EPHEMERAL_CLOSE_TIMEOUT_MS = 5_000
 const MODEL_CACHE_TTL_MS = 3 * 60_000
 const CUSTOM_PROVIDER_MODELS_TIMEOUT_MS = 10_000
 
@@ -311,6 +312,34 @@ interface CachedAppServerConnection {
 interface PendingAccountLogin {
   projectPath: string
   handle: AppServerConnectionHandle
+}
+
+function throwAppServerRequestError(error: unknown, stderr: string): never {
+  log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
+  log.error('[codex] app-server stderr:', stderr)
+  const message = error instanceof Error ? error.message : String(error)
+  const debugLogPath = String(log.transports.file.getFile().path)
+  throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
+}
+
+async function closeEphemeralAppServer(handle: AppServerConnectionHandle): Promise<void> {
+  let unsubscribe = () => {}
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  const exited = new Promise<void>((resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error('Codex ephemeral app-server did not exit after close'))
+    }, APP_SERVER_EPHEMERAL_CLOSE_TIMEOUT_MS)
+    timeout.unref?.()
+    unsubscribe = handle.onClosed(() => resolve())
+  })
+
+  try {
+    await handle.close()
+    await exited
+  } finally {
+    if (timeout) clearTimeout(timeout)
+    unsubscribe()
+  }
 }
 
 export class CodexExperimentService {
@@ -623,12 +652,8 @@ export class CodexExperimentService {
     } catch (error) {
       const stderr = handle?.getStderr().trim() ?? ''
       if (stderr) {
-        log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
-        log.error('[codex] app-server stderr:', stderr)
         await this.closeAppServerConnection(projectPath)
-        const message = error instanceof Error ? error.message : String(error)
-        const debugLogPath = String(log.transports.file.getFile().path)
-        throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
+        throwAppServerRequestError(error, stderr)
       }
       throw error
     } finally {
@@ -740,6 +765,31 @@ export class CodexExperimentService {
   ): Promise<T> {
     const auth = this.getProjectAuth(projectPath)
     return this.withAppServerConnection(projectPath, auth, undefined, async (connection) => fn(connection.request))
+  }
+
+  /**
+   * Run a stateful app-server operation on a disposable connection.
+   *
+   * Some RPCs such as `thread/fork` attach the returned thread to the serving
+   * process and retain its persistence writer. Keeping that process in the
+   * metadata pool prevents the forked session from resuming on its own
+   * app-server until the pool's idle timeout expires.
+   */
+  async withEphemeralAppServerRequest<T>(
+    projectPath: string,
+    fn: (request: AppServerConnection['request']) => Promise<T>,
+  ): Promise<T> {
+    const auth = this.getProjectAuth(projectPath)
+    const handle = await createAppServerConnection(auth)
+    try {
+      return await fn(handle.connection.request)
+    } catch (error) {
+      const stderr = handle.getStderr().trim()
+      if (!stderr) throw error
+      throwAppServerRequestError(error, stderr)
+    } finally {
+      await closeEphemeralAppServer(handle)
+    }
   }
 
   async getRateLimits(projectPath: string, apiProviderId: string | null = null): Promise<CodexRateLimits | null> {

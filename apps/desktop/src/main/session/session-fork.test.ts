@@ -5,13 +5,13 @@ import { join } from 'node:path'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import type { SessionRecord } from './session-repo'
 
-const { getSessionRecordMock, loadSessionStateBySidMock, forkSessionRecordMock, getSessionProviderMock, sdkForkSessionMock, withAppServerRequestMock, forkOpenCodeSessionMock, activateWorktreeMock } = vi.hoisted(() => ({
+const { getSessionRecordMock, loadSessionStateBySidMock, forkSessionRecordMock, getSessionProviderMock, sdkForkSessionMock, withEphemeralAppServerRequestMock, forkOpenCodeSessionMock, activateWorktreeMock } = vi.hoisted(() => ({
   getSessionRecordMock: vi.fn(),
   loadSessionStateBySidMock: vi.fn(),
   forkSessionRecordMock: vi.fn(),
   getSessionProviderMock: vi.fn(),
   sdkForkSessionMock: vi.fn(),
-  withAppServerRequestMock: vi.fn(),
+  withEphemeralAppServerRequestMock: vi.fn(),
   forkOpenCodeSessionMock: vi.fn(async () => 'opencode-forked'),
   activateWorktreeMock: vi.fn(),
 }))
@@ -21,7 +21,7 @@ vi.mock('../logger', () => ({
 }))
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ forkSession: sdkForkSessionMock }))
 vi.mock('../codex/codex-experiment-service', () => ({
-  getSharedCodexService: () => ({ withAppServerRequest: withAppServerRequestMock }),
+  getSharedCodexService: () => ({ withEphemeralAppServerRequest: withEphemeralAppServerRequestMock }),
 }))
 vi.mock('./session-repo', () => ({
   getSessionRecord: getSessionRecordMock,
@@ -147,7 +147,7 @@ describe('forkSession harness dispatch', () => {
       msg('u3', 'user'), msg('a3', 'assistant'),
     ])
     const calls: Array<[string, unknown]> = []
-    withAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
+    withEphemeralAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
       const request = vi.fn(async (method: string, params: unknown) => {
         calls.push([method, params])
         return method === 'thread/fork' ? { thread: { id: 'thread-forked' } } : {}
@@ -161,6 +161,7 @@ describe('forkSession harness dispatch', () => {
     expect(calls).toEqual([
       ['thread/fork', { threadId: 'thread-src', lastTurnId: 'turn-a1' }],
     ])
+    expect(withEphemeralAppServerRequestMock).toHaveBeenCalledTimes(1)
     expect(forkSessionRecordMock).toHaveBeenCalledWith(
       expect.objectContaining({ providerSessionId: 'thread-forked', forkFromMessageId: 'a1' }),
     )
@@ -173,7 +174,7 @@ describe('forkSession harness dispatch', () => {
       msg('u3', 'user'), msg('a3', 'assistant'),
     ])
     const calls: Array<[string, unknown]> = []
-    withAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
+    withEphemeralAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
       const request = vi.fn(async (method: string, params: unknown) => {
         calls.push([method, params])
         return method === 'thread/fork' ? { thread: { id: 'thread-forked' } } : {}
@@ -196,7 +197,7 @@ describe('forkSession harness dispatch', () => {
   it('full-copies a Codex session without loading the transcript when no fork message is given', async () => {
     setupSource(makeRecord({ harnessId: 'codex', providerId: 'codex-base', providerSessionId: 'thread-src' }), [])
     const methods: string[] = []
-    withAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
+    withEphemeralAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
       const request = vi.fn(async (method: string) => {
         methods.push(method)
         return method === 'thread/fork' ? { thread: { id: 'thread-forked' } } : {}

@@ -1,6 +1,7 @@
 /**
  * Desktop adapter over shared `@superone/codex` thread fork.
- * Uses the desktop app-server pool so fork + optional rollback share one connection.
+ * Uses one disposable app-server so fork + optional rollback share a connection,
+ * then releases Codex's writer for the new thread before the session can resume it.
  */
 import { forkCodexThread as coreForkCodexThread } from '@superone/codex'
 import { getSharedCodexService } from '../../codex/codex-experiment-service'
@@ -31,7 +32,7 @@ export async function forkCodexThread(
 ): Promise<string> {
   const lastTurnId = resolveLastTurnId(ctx)
   const dropTrailingTurns = lastTurnId ? 0 : resolveDropTrailingTurns(ctx)
-  return getSharedCodexService().withAppServerRequest(source.projectPath, async (request) =>
+  return getSharedCodexService().withEphemeralAppServerRequest(source.projectPath, async (request) =>
     coreForkCodexThread({
       request: (method, params) => request(method, params ?? {}),
       threadId: source.providerSessionId,

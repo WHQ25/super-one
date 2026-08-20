@@ -1108,17 +1108,17 @@ export const useAppStore = create<AppState>((set, get) => ({
           claude: settings.agentPreference.claude.brandHue,
           codex: settings.agentPreference.codex.brandHue,
           acp: settings.agentPreference.acp?.brandHue ?? null,
-          opencode: null,
-          cursor: null,
-          dsh: null,
+          cursor: settings.agentPreference.cursor?.brandHue ?? null,
+          dsh: settings.agentPreference.dsh?.brandHue ?? null,
+          opencode: settings.agentPreference.opencode?.brandHue ?? null,
         },
         tokenOverrides: {
           claude: settings.agentPreference.claude.tokenOverrides ?? {},
           codex: settings.agentPreference.codex.tokenOverrides ?? {},
           acp: settings.agentPreference.acp?.tokenOverrides ?? {},
-          opencode: {},
-          cursor: {},
-          dsh: {},
+          cursor: settings.agentPreference.cursor?.tokenOverrides ?? {},
+          dsh: settings.agentPreference.dsh?.tokenOverrides ?? {},
+          opencode: settings.agentPreference.opencode?.tokenOverrides ?? {},
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
         enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
@@ -1298,7 +1298,6 @@ function schedulePersist(harness: HarnessId, getState: () => AppState): void {
   persistTimers[harness] = setTimeout(() => {
     delete persistTimers[harness]
     const state = getState()
-    if (harness === 'opencode') return
     void window.app.saveAppSettings({
       agentPreference: {
         [harness]: {
@@ -1347,17 +1346,17 @@ if (typeof window !== 'undefined') {
         claude: claude.brandHue,
         codex: codex.brandHue,
         acp: acp?.brandHue ?? null,
-        opencode: null,
-        cursor: null,
-        dsh: null,
+        cursor: settings.agentPreference.cursor?.brandHue ?? null,
+        dsh: settings.agentPreference.dsh?.brandHue ?? null,
+        opencode: settings.agentPreference.opencode?.brandHue ?? null,
       },
       tokenOverrides: {
         claude: claude.tokenOverrides ?? {},
         codex: codex.tokenOverrides ?? {},
         acp: acp?.tokenOverrides ?? {},
-        opencode: {},
-        cursor: {},
-        dsh: {},
+        cursor: settings.agentPreference.cursor?.tokenOverrides ?? {},
+        dsh: settings.agentPreference.dsh?.tokenOverrides ?? {},
+        opencode: settings.agentPreference.opencode?.tokenOverrides ?? {},
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],

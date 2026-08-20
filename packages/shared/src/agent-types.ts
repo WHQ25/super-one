@@ -3720,6 +3720,18 @@ export interface BrowserOpenTabRequest {
   background: boolean
 }
 
+/**
+ * A harness whose only app-level preference is brand theming. EVERY harness
+ * needs a slot here even when it has nothing else to store: the renderer
+ * persists hue/token edits per harness, and a missing slot means the write is
+ * dropped by the sanitizer and then stomped by the settings broadcast — the
+ * slider snaps back instead of failing loudly.
+ */
+export interface BrandOnlyAgentPreference {
+  brandHue: number | null
+  tokenOverrides: TokenOverrides
+}
+
 export interface AppSettings {
   analyticsEnabled: boolean
   /**
@@ -3870,6 +3882,9 @@ export interface AppSettings {
       tokenOverrides: TokenOverrides
       selectedAgentId: string | null
     }
+    cursor: BrandOnlyAgentPreference
+    dsh: BrandOnlyAgentPreference
+    opencode: BrandOnlyAgentPreference
   }
 }
 
@@ -3946,6 +3961,9 @@ export interface AppSettingsPatch {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>
     acp?: Partial<AppSettings['agentPreference']['acp']>
+    cursor?: Partial<BrandOnlyAgentPreference>
+    dsh?: Partial<BrandOnlyAgentPreference>
+    opencode?: Partial<BrandOnlyAgentPreference>
   }
 }
 

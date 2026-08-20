@@ -47,16 +47,17 @@ Do this in one commit and let type errors drive you. Start with `HarnessResource
 | `packages/shared/src/session-provider-definitions.ts` | base `SessionProvider` entry; its exhaustive `Record<HarnessId, …>` must stay compiler-complete |
 | `packages/shared/src/harness/harness-capabilities.ts` | entry in `HARNESS_CAPABILITIES` — **all false** except `displayName` until each is actually wired |
 | `packages/shared/src/harness/harness-brand.ts` | `HARNESS_DEFAULT_BRAND_HUE` + `HARNESS_DEFAULT_TOKENS` entries |
+| `packages/shared/src/agent-types.ts` | **`AppSettings['agentPreference'].<harness>` slot** — `BrandOnlyAgentPreference` when the harness stores nothing else — plus the matching optional key on `SaveAppSettings`. Every harness needs one; see the trap in `SKILL.md` |
 | `apps/desktop/src/main/session/harness-registry.ts` | config zod schema + `Harness` object + registry map entry |
 | `apps/desktop/src/main/session/backends/xxx-backend.ts` | `SessionBackend` skeleton — required members only, throw/no-op bodies |
 | `apps/desktop/src/main/session/backends/xxx-fork.ts` | `forkTranscript` stub (can throw "not supported" initially) |
 | `apps/desktop/src/main/session/session-repo.ts`, `db-sessions.ts`, `database-migrations.ts` | seed/read the base provider, persist its id, and derive the Harness id; migrate aliases when renaming an id |
-| `apps/desktop/src/renderer/src/stores/app.ts` | `brandHues` / `tokenOverrides` records |
+| `apps/desktop/src/renderer/src/stores/app.ts` | `brandHues` / `tokenOverrides` records — in the initial state, in `loadBrandHues`, **and in the `onAppSettingsChange` handler**. The last one is the trap: it rebuilds both records wholesale, so a harness left at a hard-coded `null` there is reset on every settings broadcast |
 | `apps/desktop/src/renderer/src/stores/chat-store/helpers/agent-defaults.ts` | default model/effort branch |
 | `apps/desktop/src/renderer/src/stores/chat-store/harness/xxx-handler.ts` + `harness/index.ts` + `chat-store/index.ts` | `HarnessHandler` — `connect()` may return an empty bundle |
 | `apps/desktop/src/renderer/src/components/sidebar/BrandColorPopover.tsx` | `HARNESS_LABEL` entry |
 | `apps/desktop/src/renderer/src/lib/session-menu-items.ts` | menu entry so a session can be created at all |
-| `apps/desktop/src/main/app-settings-service.ts` | accept the id in suggestion/default/secondary parsing and `harnessOrder` validation; these are hard-coded allowlists and do not fail typecheck |
+| `apps/desktop/src/main/app-settings-service.ts` | `defaults.agentPreference.<harness>`, a `readBrandOnlyPreference(data, '<harness>')` call in **both** assembly sites, and a spread in the save-merge branch; plus accept the id in suggestion/default/secondary parsing and `harnessOrder` validation — those are hard-coded allowlists and do not fail typecheck |
 | `apps/cli/src/session/harness-runners.ts` | `createHarnessRunner` case — a simulated runner is fine and satisfies the `never` guard |
 
 **Acceptance:** `bun run typecheck` is green, both desktop and runtime/CLI databases contain the
@@ -149,6 +150,7 @@ showing another harness's vocabulary.
 | Install catalog / enable-disable | `packages/shared/src/environment/harness-installation.ts` (`NodeHarnessId`, `NODE_HARNESS_DEFINITIONS`), `apps/desktop/src/main/harness/{host,scan-cli,resolve-runtime,resource-cache}.ts`, `packages/runtime/src/harness/{enable,runtime-ready}.ts` |
 | Settings pages | `HarnessesSettingsPage.tsx` (`CATALOG_HARNESS_META` must cover every `NodeHarnessId`), `AppSettingsPage.tsx`, a `<Harness>AuthSettings.tsx` if auth is non-trivial |
 | Ordering persistence | `apps/desktop/src/main/app-settings-service.ts` (`HARNESS_IDS`, `parseSuggestionHarnessKey`, `readHarnessOrder`) + `app-settings-service.test.ts`; verify save/read preserves the new key |
+| Brand persistence | Covered by the `it.each(Object.keys(HARNESS_DEFAULT_BRAND_HUE))` invariant in `app-settings-service.test.ts` — it fails the moment a harness id has no `agentPreference` slot, so adding the id to `HARNESS_DEFAULT_BRAND_HUE` is enough to be told |
 | Visibility gating | `renderer/src/lib/harness-visibility.ts` — **fails closed**, so this is what makes the harness appear at all |
 | Usage & cost | `apps/desktop/src/main/usage-stats-service.ts` (`HarnessKind`, provider→kind mapping), `UsagePage.tsx`, `usage-model-presentation.ts` |
 | i18n | `packages/shared/src/i18n/{en,zh}.ts` — both, always |

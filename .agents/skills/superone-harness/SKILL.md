@@ -212,6 +212,18 @@ These have each cost a real debugging session. They are ordered by how often the
   but not in the session profile" bug. Before drawing a placeholder, check `@lobehub/icons` for the
   official mono/color/text assets. If `packages/ui` imports it, declare the dependency in that
   package; wrap the official static mark with `HarnessIconFallback` for session status chrome.
+- **Every harness needs an `agentPreference` slot, even with nothing to store.** The palette
+  popover writes `brandHue` / `tokenOverrides` per harness, but `AppSettings['agentPreference']`
+  used to list only the harnesses that had *other* settings. For the rest the failure was silent
+  and looked like the feature was broken rather than missing: the store updated and the theme
+  visibly changed, the sanitizer then dropped the unknown key on write, and the
+  `APP_SETTINGS_CHANGED` broadcast rebuilt `brandHues` with a hard-coded `null` — so the slider
+  snapped back a moment after you moved it. Add a `BrandOnlyAgentPreference` slot in
+  `agent-types.ts` (plus the optional key on `SaveAppSettings`), defaults + both assembly sites +
+  the save-merge branch in `app-settings-service.ts`, and read it in **both** `loadBrandHues` and
+  the `onAppSettingsChange` handler in `stores/app.ts`. DeepSeek, Cursor and OpenCode all shipped
+  without one. The `it.each` invariant in `app-settings-service.test.ts` now fails loudly instead.
+
 - **Ordering has a second, main-process allowlist.** The renderer can display and drag a new harness
   while `app-settings-service.ts` still rejects its key in `HARNESS_IDS`,
   `parseSuggestionHarnessKey`, `isHarnessOrderKey`, or `readHarnessOrder`. The save result and

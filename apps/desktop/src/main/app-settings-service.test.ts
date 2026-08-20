@@ -16,6 +16,7 @@ vi.mock('electron', () => ({
 }))
 
 import { dropMiniAppOrderBucket, readAppSettings, saveAppSettings } from './app-settings-service'
+import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
 
 function fileNotFound() {
   const err = new Error('ENOENT') as NodeJS.ErrnoException
@@ -52,6 +53,8 @@ describe('app-settings-service', () => {
     tokenOverrides: {},
     selectedAgentId: null,
   }
+  /** Harnesses whose only preference is brand theming. */
+  const defaultBrandOnly = { brandHue: null, tokenOverrides: {} }
   const defaultSettings = {
     analyticsEnabled: true,
     experimentalAgentsEnabled: false,
@@ -97,6 +100,9 @@ describe('app-settings-service', () => {
       claude: defaultClaude,
       codex: defaultCodex,
       acp: defaultAcp,
+      cursor: defaultBrandOnly,
+      dsh: defaultBrandOnly,
+      opencode: defaultBrandOnly,
     },
   }
 
@@ -183,6 +189,9 @@ describe('app-settings-service', () => {
             tokenOverrides: {},
           },
           acp: defaultAcp,
+          cursor: defaultBrandOnly,
+          dsh: defaultBrandOnly,
+          opencode: defaultBrandOnly,
         },
       })
     })
@@ -294,6 +303,9 @@ describe('app-settings-service', () => {
             tokenOverrides: {},
           },
           acp: defaultAcp,
+          cursor: defaultBrandOnly,
+          dsh: defaultBrandOnly,
+          opencode: defaultBrandOnly,
         },
       })
     })
@@ -429,6 +441,46 @@ describe('app-settings-service', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)
       const result = saveAppSettings({ agentPreference: { acp: { enabled: true } } })
       expect(result.experimentalAgentsEnabled).toBe(true)
+    })
+
+    it.each(Object.keys(HARNESS_DEFAULT_BRAND_HUE))(
+      'persists a brand hue for every harness — %s',
+      (harness) => {
+        // Every HarnessId needs its own agentPreference slot. Without one the
+        // sanitizer drops the write and APP_SETTINGS_CHANGED then resets the
+        // store, so the palette slider snaps back instead of failing loudly.
+        mocks.readFileSync.mockImplementation(fileNotFound)
+        const saved = saveAppSettings({ agentPreference: { [harness]: { brandHue: 123 } } })
+        const slot = (saved.agentPreference as Record<string, { brandHue: number | null }>)[harness]
+        expect(slot, `agentPreference.${harness} is missing`).toBeDefined()
+        expect(slot.brandHue, `agentPreference.${harness}.brandHue was dropped`).toBe(123)
+
+        mocks.readFileSync.mockReturnValue(JSON.stringify(saved))
+        const reread = (readAppSettings().agentPreference as Record<string, { brandHue: number | null }>)[harness]
+        expect(reread.brandHue, `agentPreference.${harness}.brandHue did not survive a reload`).toBe(123)
+      },
+    )
+
+    it('round-trips brand theming for harnesses that store nothing else', () => {
+      // dsh and cursor have no other app-level preference, so they had no slot
+      // at all: the sanitizer dropped the write and the settings broadcast then
+      // reset the store, which read to the user as "the colour will not change".
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      const saved = saveAppSettings({
+        agentPreference: {
+          dsh: { brandHue: 312, tokenOverrides: { '--primary': { h: 312 } } },
+          cursor: { brandHue: 96 },
+        },
+      })
+      expect(saved.agentPreference.dsh.brandHue).toBe(312)
+      expect(saved.agentPreference.dsh.tokenOverrides).toEqual({ '--primary': { h: 312 } })
+      expect(saved.agentPreference.cursor.brandHue).toBe(96)
+
+      // and survives a read back from disk
+      mocks.readFileSync.mockReturnValue(JSON.stringify(saved))
+      const reread = readAppSettings()
+      expect(reread.agentPreference.dsh.brandHue).toBe(312)
+      expect(reread.agentPreference.cursor.brandHue).toBe(96)
     })
 
     it('merges claude patch with existing settings', () => {

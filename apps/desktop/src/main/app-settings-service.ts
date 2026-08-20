@@ -26,6 +26,7 @@ export type { AppSettings, AppSettingsPatch }
 type ClaudePref = AppSettings['agentPreference']['claude']
 type CodexPref = AppSettings['agentPreference']['codex']
 type AcpPref = AppSettings['agentPreference']['acp']
+type BrandOnlyPref = AppSettings['agentPreference']['dsh']
 
 function readEnabledExperimentalAgents(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
@@ -112,6 +113,9 @@ const defaults: AppSettings = {
       tokenOverrides: {},
       selectedAgentId: null,
     },
+    cursor: { brandHue: null, tokenOverrides: {} },
+    dsh: { brandHue: null, tokenOverrides: {} },
+    opencode: { brandHue: null, tokenOverrides: {} },
   },
 }
 
@@ -418,6 +422,20 @@ function readAcpPreference(data: Record<string, unknown>): AcpPref {
   }
 }
 
+/** Harnesses that store nothing but brand theming (`cursor`, `dsh`, `opencode`). */
+function readBrandOnlyPreference(data: Record<string, unknown>, key: 'cursor' | 'dsh' | 'opencode'): BrandOnlyPref {
+  const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
+    ? data.agentPreference as Record<string, unknown>
+    : undefined
+  const pref = agentPreference?.[key] && typeof agentPreference[key] === 'object'
+    ? agentPreference[key] as Record<string, unknown>
+    : undefined
+  return {
+    brandHue: readBrandHue(pref?.brandHue),
+    tokenOverrides: sanitizeOverrides(pref?.tokenOverrides),
+  }
+}
+
 function getSettingsPath(): string {
   return join(app.getPath('userData'), 'app-settings.json')
 }
@@ -507,6 +525,9 @@ export function readAppSettings(): AppSettings {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
         acp: readAcpPreference(data),
+        cursor: readBrandOnlyPreference(data, 'cursor'),
+        dsh: readBrandOnlyPreference(data, 'dsh'),
+        opencode: readBrandOnlyPreference(data, 'opencode'),
       },
     }
   } catch {
@@ -555,6 +576,9 @@ export function readAppSettings(): AppSettings {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
         acp: { ...defaults.agentPreference.acp },
+        cursor: { ...defaults.agentPreference.cursor },
+        dsh: { ...defaults.agentPreference.dsh },
+        opencode: { ...defaults.agentPreference.opencode },
       },
     }
   }
@@ -693,6 +717,18 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       acp: {
         ...current.agentPreference.acp,
         ...patch.agentPreference?.acp,
+      },
+      cursor: {
+        ...current.agentPreference.cursor,
+        ...patch.agentPreference?.cursor,
+      },
+      dsh: {
+        ...current.agentPreference.dsh,
+        ...patch.agentPreference?.dsh,
+      },
+      opencode: {
+        ...current.agentPreference.opencode,
+        ...patch.agentPreference?.opencode,
       },
     },
   }

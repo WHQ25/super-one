@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { ClaudeLiveSession } from './claude-live-session'
 import type { ClaudeQueryFn } from './types'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import { ROOT_SAFE_PERMISSION_MODE, isRootWithoutSandboxOptIn } from './root-permission-guard'
 
 /**
@@ -243,6 +244,72 @@ describe('ClaudeLiveSession', () => {
     await live.dispose()
     rmSync(dir, { recursive: true, force: true })
   })
+  it('re-emits the answered AskUserQuestion tool_use so the tool card can render the preview', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cls-answered-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const questionInput = {
+      questions: [{
+        question: 'Pick one',
+        multiSelect: false,
+        options: [{ label: 'A', preview: 'preview-A' }, { label: 'B', preview: 'preview-B' }],
+      }],
+    }
+    let permissionResult: any
+    let capturedOptions: Options | undefined
+    const queryFn: ClaudeQueryFn = ({ prompt, options }) =>
+      (async function* () {
+        capturedOptions = options
+        for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+          permissionResult = await options?.canUseTool?.(
+            'AskUserQuestion',
+            questionInput,
+            { signal: new AbortController().signal, toolUseID: 'toolu_q1' } as never,
+          )
+          yield* successTurn('s', 'ok') as SDKMessage[]
+        }
+      })() as ReturnType<ClaudeQueryFn>
+    const agentEvents: AgentEvent[] = []
+    const questionRequests: any[] = []
+    const live = ClaudeLiveSession.open({
+      cwd: dir,
+      binaryPath: bin,
+      queryFn,
+      askUserQuestionPreviewFormat: 'html',
+    })
+    await live.sendTurn({
+      content: 'go',
+      messageId: 'msg-1',
+      onAgentEvent: (e) => agentEvents.push(e),
+      onQuestion: async (request) => {
+        questionRequests.push(request)
+        return { answers: { 'Pick one': 'B' } }
+      },
+    })
+
+    // Node-local toolConfig drives the model AND tells the answering client the format.
+    expect(capturedOptions?.toolConfig).toEqual({ askUserQuestion: { previewFormat: 'html' } })
+    expect(questionRequests[0].input.previewFormat).toBe('html')
+
+    // Selected option preview is folded into annotations for both the SDK and the UI.
+    expect(permissionResult.updatedInput).toMatchObject({
+      answers: { 'Pick one': 'B' },
+      annotations: { 'Pick one': { preview: 'preview-B' } },
+    })
+    const delta = agentEvents.find(
+      (e) => e.type === 'content_delta' && e.delta.type === 'tool_use' && e.delta.toolUseId === 'toolu_q1',
+    )
+    expect(delta).toMatchObject({ messageId: 'msg-1' })
+    expect(JSON.parse((delta as any).delta.input)).toMatchObject({
+      answers: { 'Pick one': 'B' },
+      annotations: { 'Pick one': { preview: 'preview-B' } },
+      previewFormat: 'html',
+    })
+    await live.dispose()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('relaxes permission-skipping options exactly when the host would refuse them', async () => {
     // Claude Code exits during spawn if it would skip permission prompts under
     // root, so the flag has to follow the host instead of being pinned on.

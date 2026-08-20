@@ -7,6 +7,7 @@ import type {
   SessionAgentRequestPayload,
   UserQuestion,
 } from '@superone/shared/agent-types'
+import { asQuestionPreviewFormat } from '@superone/shared/ask-user-question'
 
 export type NodeTranscriptBlock = {
   id?: string
@@ -142,7 +143,18 @@ export function nodePendingToQuestionRequest(
       multiSelect: false,
     })
   }
-  return { requestId: pending.interactionId, questions }
+  // The node stamps its own toolConfig format onto the tool input (it is what the
+  // model was asked to produce) — the desktop's local preference does not apply here.
+  const previewFormat = asQuestionPreviewFormat(
+    typeof (input as { previewFormat?: unknown }).previewFormat === 'string'
+      ? (input as { previewFormat: string }).previewFormat
+      : undefined,
+  )
+  return {
+    requestId: pending.interactionId,
+    questions,
+    ...(previewFormat ? { previewFormat } : {}),
+  }
 }
 
 /** @deprecated Use {@link nodePendingToQuestionRequest}. */

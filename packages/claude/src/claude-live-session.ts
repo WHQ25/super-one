@@ -16,6 +16,8 @@ import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
+import { resolveAskUserQuestion } from './ask-user-question-bridge'
+import { asQuestionPreviewFormat } from '@superone/shared/ask-user-question'
 import type {
   ClaudePermissionHandler,
   ClaudePlanHandler,
@@ -76,6 +78,8 @@ export interface ClaudeLiveSessionOptions {
   sandboxMode?: string
   additionalDirectories?: string[]
   enabledSkills?: string[]
+  /** SDK toolConfig.askUserQuestion.previewFormat — node-local, empty = SDK default. */
+  askUserQuestionPreviewFormat?: string
   env?: NodeJS.ProcessEnv
   systemPromptAppend?: string
   options?: Partial<Options>
@@ -113,6 +117,11 @@ function buildLiveOptions(
   onPlan: ClaudePlanHandler | undefined,
   signal: AbortSignal,
   timing: { pausedMs: number },
+  /** Live handles on the in-flight turn — needed to re-emit an answered tool_use. */
+  turn: {
+    emitAgentEvent: (event: AgentEvent) => void
+    getMessageId: () => string | undefined
+  },
 ): Options {
   const abortController = new AbortController()
   if (signal.aborted) abortController.abort()
@@ -130,26 +139,16 @@ function buildLiveOptions(
       (typeof toolOpts.toolUseID === 'string' && toolOpts.toolUseID) ||
       `interaction_${Date.now()}`
     if (toolName === 'AskUserQuestion') {
-      if (!onQuestion) {
-        return { behavior: 'deny', message: 'Question denied by SuperOne node (no question handler)' }
-      }
-      const answer = await onQuestion({
+      return resolveAskUserQuestion({
+        onQuestion,
         interactionId,
-        kind: 'question',
         toolName,
         toolUseId: typeof toolOpts.toolUseID === 'string' ? toolOpts.toolUseID : undefined,
-        input: input && typeof input === 'object' ? (input as Record<string, unknown>) : undefined,
+        input,
+        previewFormat: opts.askUserQuestionPreviewFormat,
+        emitAgentEvent: turn.emitAgentEvent,
+        getMessageId: turn.getMessageId,
       })
-      const record = answer && typeof answer === 'object' ? (answer as Record<string, unknown>) : null
-      const answers = record && 'answers' in record ? record.answers : answer
-      return {
-        behavior: 'allow',
-        updatedInput: {
-          ...(input && typeof input === 'object' ? input : {}),
-          answers,
-          ...(record && record.annotations !== undefined ? { annotations: record.annotations } : {}),
-        },
-      }
     }
     if (toolName === 'ExitPlanMode') {
       if (!onPlan) {
@@ -244,6 +243,9 @@ function buildLiveOptions(
     ...(opts.enabledSkills && opts.enabledSkills.length > 0
       ? { skills: opts.enabledSkills }
       : {}),
+    ...(asQuestionPreviewFormat(opts.askUserQuestionPreviewFormat)
+      ? { toolConfig: { askUserQuestion: { previewFormat: asQuestionPreviewFormat(opts.askUserQuestionPreviewFormat) } } }
+      : {}),
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
@@ -318,6 +320,10 @@ export class ClaudeLiveSession {
       },
       this.processAbort.signal,
       this.timing,
+      {
+        emitAgentEvent: (e) => this.active?.input.onAgentEvent?.(e),
+        getMessageId: () => this.active?.messageId,
+      },
     )
     const q = queryFn({ prompt: this.bridge, options })
     this.iterationDone = this.iterate(q)

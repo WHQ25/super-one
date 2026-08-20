@@ -58,6 +58,20 @@ describe('node-agent-settings', () => {
     expect(next.experimentalClaudeOpenAiChatEnabled).toBe(true)
   })
 
+  it('keeps askUserQuestionPreviewFormat node-local and rejects unknown values', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'nas-')), 'c.json')
+    expect(loadNodeAgentSettings(path).claude.askUserQuestionPreviewFormat).toBe('')
+    expect(
+      patchNodeAgentSettings(path, { claude: { askUserQuestionPreviewFormat: 'html' } })
+        .claude.askUserQuestionPreviewFormat,
+    ).toBe('html')
+    // Unknown value must not clobber the stored one.
+    expect(
+      patchNodeAgentSettings(path, { claude: { askUserQuestionPreviewFormat: 'pdf' } })
+        .claude.askUserQuestionPreviewFormat,
+    ).toBe('html')
+  })
+
   it('resolveAgentTurnDefaults maps claude defaults for send fallback', () => {
     const settings = saveNodeAgentSettings(join(mkdtempSync(join(tmpdir(), 'nas-')), 'c.json'), {
       ...DEFAULT_NODE_AGENT_SETTINGS,
@@ -67,6 +81,7 @@ describe('node-agent-settings', () => {
         permissionMode: 'acceptEdits',
         sandboxMode: 'auto',
         disabledSkills: ['x'],
+        askUserQuestionPreviewFormat: '',
       },
       codex: { ...DEFAULT_NODE_AGENT_SETTINGS.codex },
     })

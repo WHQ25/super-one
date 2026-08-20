@@ -7,6 +7,7 @@ import { isMainThreadOnlySuperoneTool, superoneBareToolName } from '@superone/sh
 import { readAppSettings } from '../app-settings-service'
 import type { ElicitationRequest, ElicitationResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, PermissionMode, QuestionAnnotations } from '@superone/shared/agent-types'
+import { answeredQuestionDelta, buildAnsweredQuestionInput } from '@superone/shared/ask-user-question'
 import { parseElicitationSchema } from './elicitation-schema'
 import { trace } from './event-trace'
 
@@ -130,6 +131,7 @@ export function createCanUseTool(
   pendingPlanApprovals: Map<string, PendingPlanApproval>,
   emit: (event: AgentEvent) => void,
   onPermissionModeApplied?: (mode: PermissionMode) => void,
+  getMessageId?: () => string,
 ) {
   const plansDir = join(homedir(), '.claude', 'plans')
   let trackedPlanFilePath: string | null = null
@@ -183,7 +185,7 @@ export function createCanUseTool(
 
     // AskUserQuestion — different flow: emit question, wait for answers
     if (toolName === 'AskUserQuestion') {
-      return handleAskUserQuestion(input, context, pendingQuestions, emit)
+      return handleAskUserQuestion(input, context, pendingQuestions, emit, getMessageId)
     }
 
     // ExitPlanMode — show plan approval UI
@@ -272,7 +274,8 @@ async function handleAskUserQuestion(
   input: Record<string, unknown>,
   context: { toolUseID: string; signal: AbortSignal },
   pendingQuestions: Map<string, PendingQuestion>,
-  emit: (event: AgentEvent) => void
+  emit: (event: AgentEvent) => void,
+  getMessageId?: () => string
 ) {
   const requestId = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -302,27 +305,20 @@ async function handleAskUserQuestion(
 
   const { answers, annotations: userAnnotations } = response
 
-  const annotations: QuestionAnnotations = { ...userAnnotations }
-  for (const q of questions) {
-    const answer = answers[q.question]
-    if (!answer) continue
-    // For multiSelect, the answer is a ", "-joined list of labels — mirror the live
-    // preview panel, which shows the LAST selected option's preview.
-    const lastLabel = q.multiSelect ? answer.split(', ').pop() : answer
-    const selected = q.options?.find((o: { label: string }) => o.label === lastLabel)
-    if (selected?.preview) {
-      annotations[q.question] = { ...annotations[q.question], preview: selected.preview }
-    }
-  }
+  const updatedInput = buildAnsweredQuestionInput({
+    questions,
+    answers,
+    annotations: userAnnotations,
+    previewFormat,
+  })
+
+  // updatedInput reaches the tool executor but not the UI — back-fill the block.
+  const messageId = getMessageId?.()
+  if (messageId) emit(answeredQuestionDelta(messageId, context.toolUseID, updatedInput))
 
   return {
     behavior: 'allow' as const,
-    updatedInput: {
-      questions,
-      answers,
-      ...(Object.keys(annotations).length > 0 && { annotations }),
-      ...(previewFormat && { previewFormat }),
-    },
+    updatedInput,
     toolUseID: context.toolUseID,
   }
 }

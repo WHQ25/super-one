@@ -68,6 +68,24 @@ describe('node pending question/plan + live drain helpers', () => {
     )
   })
 
+  it("carries the node's own previewFormat so an HTML option preview renders", () => {
+    const base = {
+      interactionId: 'q1',
+      kind: 'question' as const,
+      input: {
+        questions: [{ question: 'Go?', header: 'Confirm', options: [{ label: 'Yes', preview: '<b>hi</b>' }] }],
+      },
+    }
+    // Absent → undefined (markdown default), unknown value → dropped, 'html' → kept.
+    expect(nodePendingToQuestionRequest(base)?.previewFormat).toBeUndefined()
+    expect(
+      nodePendingToQuestionRequest({ ...base, input: { ...base.input, previewFormat: 'pdf' } })?.previewFormat,
+    ).toBeUndefined()
+    expect(
+      nodePendingToQuestionRequest({ ...base, input: { ...base.input, previewFormat: 'html' } })?.previewFormat,
+    ).toBe('html')
+  })
+
   it('builds interaction fields and live-drain flags', () => {
     const fields = nodePendingInteractionFields({
       interactionId: 'q1',

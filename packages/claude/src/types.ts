@@ -105,6 +105,11 @@ export interface RunClaudeSdkTurnOptions {
    * Hosts map this to SessionRuntime.onPermission / desktop permission UI.
    */
   onPermission?: ClaudePermissionHandler
+  /**
+   * SDK toolConfig.askUserQuestion.previewFormat (markdown | html).
+   * Node-local rendering preference; empty/absent keeps the SDK default.
+   */
+  askUserQuestionPreviewFormat?: string
   /** AskUserQuestion bridge; absent means the tool is denied fail-closed. */
   onQuestion?: ClaudeQuestionHandler
   /** ExitPlanMode bridge; absent means the tool is denied fail-closed. */

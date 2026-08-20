@@ -16,6 +16,7 @@ import type {
 
 const CODEX_PRESETS = new Set(['', 'read-only', 'default', 'full-access'])
 const SANDBOX_MODES = new Set(['', 'off', 'on', 'auto'])
+const QUESTION_PREVIEW_FORMATS = new Set(['', 'markdown', 'html'])
 
 export const DEFAULT_NODE_AGENT_SETTINGS: NodeAgentSettings = {
   claude: {
@@ -24,6 +25,7 @@ export const DEFAULT_NODE_AGENT_SETTINGS: NodeAgentSettings = {
     permissionMode: '',
     sandboxMode: '',
     disabledSkills: [],
+    askUserQuestionPreviewFormat: '',
   },
   codex: {
     defaultModel: '',
@@ -56,12 +58,14 @@ function normalizeClaude(raw: unknown): NodeClaudeAgentDefaults {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const sandboxMode = asString(r.sandboxMode ?? r.defaultSandboxMode, '')
   const permissionMode = asString(r.permissionMode ?? r.defaultPermissionMode, '')
+  const previewFormat = asString(r.askUserQuestionPreviewFormat, '')
   return {
     defaultModel: asString(r.defaultModel, ''),
     defaultEffort: asString(r.defaultEffort, ''),
     permissionMode,
     sandboxMode: SANDBOX_MODES.has(sandboxMode) ? sandboxMode : '',
     disabledSkills: asStringArray(r.disabledSkills, []),
+    askUserQuestionPreviewFormat: QUESTION_PREVIEW_FORMATS.has(previewFormat) ? previewFormat : '',
   }
 }
 
@@ -120,6 +124,10 @@ export function mergeNodeAgentSettings(
     if (typeof patch.claude.sandboxMode === 'string') {
       const m = patch.claude.sandboxMode
       next.claude.sandboxMode = SANDBOX_MODES.has(m) ? m : next.claude.sandboxMode
+    }
+    if (typeof patch.claude.askUserQuestionPreviewFormat === 'string') {
+      const f = patch.claude.askUserQuestionPreviewFormat
+      if (QUESTION_PREVIEW_FORMATS.has(f)) next.claude.askUserQuestionPreviewFormat = f
     }
     if (Array.isArray(patch.claude.disabledSkills)) {
       next.claude.disabledSkills = patch.claude.disabledSkills

@@ -57,6 +57,13 @@ export interface NodeClaudeRunnerOptions {
   /** Re-read per turn so settings.patch takes effect without restarting the node. */
   experimentalClaudeOpenAiChatEnabled?: () => boolean
   /**
+   * Node-local AskUserQuestion option-preview format (markdown | html), read from
+   * this node's config.json — the controlling client does not push its own value.
+   * Read when a live session is created; an existing live process keeps the format
+   * it was opened with until it is rebuilt (cwd change / error).
+   */
+  askUserQuestionPreviewFormat?: () => string
+  /**
    * Host Action MCP for this session.
    * Prefer in-process SDK MCP (type: 'sdk'). Bound to the long-lived
    * ClaudeLiveSession — dispose only when the live process is torn down
@@ -310,6 +317,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
           input.sandboxMode && input.sandboxMode.trim()
             ? input.sandboxMode.trim()
             : undefined,
+        askUserQuestionPreviewFormat: opts.askUserQuestionPreviewFormat?.(),
         additionalDirectories: input.additionalDirectories?.filter(Boolean),
         enabledSkills: resolveEnabledSkills(cwd, input.enabledSkills, input.disabledSkills),
         env: authEnv,

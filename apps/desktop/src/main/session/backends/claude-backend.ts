@@ -115,6 +115,7 @@ export class ClaudeBackend implements SessionBackend {
         this.pendingPlanApprovals,
         (e) => this.emit(e),
         (mode) => this.emitPermissionModeApplied(mode),
+        () => this.currentMessageId,
       )
       this.canUseToolHandle = handles.canUseTool
       this.trackPlanFileHandle = handles.trackPlanFile

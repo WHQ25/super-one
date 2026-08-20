@@ -16,6 +16,9 @@ import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
+import { resolveAskUserQuestion } from './ask-user-question-bridge'
+import { asQuestionPreviewFormat } from '@superone/shared/ask-user-question'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import type {
   ClaudePermissionHandler,
   ClaudePlanHandler,
@@ -32,6 +35,9 @@ function buildCanUseTool(
   onPlan: ClaudePlanHandler | undefined,
   signal: AbortSignal,
   timing: { pausedMs: number },
+  previewFormat: string | undefined,
+  emitAgentEvent: ((event: AgentEvent) => void) | undefined,
+  getMessageId: () => string,
 ): CanUseTool {
   return async (toolName, input, options) => {
     if (signal.aborted || options.signal.aborted) {
@@ -49,26 +55,16 @@ function buildCanUseTool(
       (typeof options.toolUseID === 'string' && options.toolUseID) ||
       `interaction_${Date.now()}`
     if (toolName === 'AskUserQuestion') {
-      if (!onQuestion) {
-        return { behavior: 'deny', message: 'Question denied by SuperOne node (no question handler)' }
-      }
-      const answer = await onQuestion({
+      return resolveAskUserQuestion({
+        onQuestion,
         interactionId,
-        kind: 'question',
         toolName,
         toolUseId: typeof options.toolUseID === 'string' ? options.toolUseID : undefined,
-        input: input && typeof input === 'object' ? input : undefined,
+        input,
+        previewFormat,
+        emitAgentEvent,
+        getMessageId,
       })
-      const record = answer && typeof answer === 'object' ? (answer as Record<string, unknown>) : null
-      const answers = record && 'answers' in record ? record.answers : answer
-      return {
-        behavior: 'allow',
-        updatedInput: {
-          ...(input && typeof input === 'object' ? input : {}),
-          answers,
-          ...(record && record.annotations !== undefined ? { annotations: record.annotations } : {}),
-        },
-      }
     }
     if (toolName === 'ExitPlanMode') {
       if (!onPlan) {
@@ -168,6 +164,9 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
       opts.onPlan,
       opts.signal,
       timing,
+      opts.askUserQuestionPreviewFormat,
+      opts.onAgentEvent,
+      () => opts.messageId ?? opts.defaultTextBlockId ?? DEFAULT_TEXT_BLOCK_ID,
     ),
     abortController,
     settingSources: ['user', 'project', 'local'],
@@ -176,6 +175,9 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
       : {}),
     ...(opts.enabledSkills && opts.enabledSkills.length > 0
       ? { skills: opts.enabledSkills }
+      : {}),
+    ...(asQuestionPreviewFormat(opts.askUserQuestionPreviewFormat)
+      ? { toolConfig: { askUserQuestion: { previewFormat: asQuestionPreviewFormat(opts.askUserQuestionPreviewFormat) } } }
       : {}),
     systemPrompt: {
       type: 'preset',

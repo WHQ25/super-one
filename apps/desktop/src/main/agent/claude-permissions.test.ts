@@ -401,6 +401,28 @@ describe('createCanUseTool', () => {
     })
   })
 
+  it('re-emits the tool_use block with answers so the tool card can render the preview', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit, undefined, () => 'msg-1')
+    const questionList = [{ question: 'Pick one', options: [{ label: 'A' }, { label: 'B', preview: '<b>B</b>' }] }]
+
+    const promise = canUseTool('AskUserQuestion', { questions: questionList }, makeContext())
+    const [id] = [...questions.keys()]
+    respondToQuestion(questions, id, { 'Pick one': 'B' })
+    await promise
+
+    const delta = events.find((e) => e.type === 'content_delta')
+    expect(delta).toBeDefined()
+    expect(delta).toMatchObject({ messageId: 'msg-1', delta: { type: 'tool_use', toolName: 'AskUserQuestion' } })
+    // parentToolUseId must stay absent so the merge keeps a sub-agent block homed.
+    expect('parentToolUseId' in (delta as { delta: object }).delta).toBe(false)
+    expect(JSON.parse((delta as { delta: { input: string } }).delta.input)).toEqual({
+      questions: questionList,
+      answers: { 'Pick one': 'B' },
+      annotations: { 'Pick one': { preview: '<b>B</b>' } },
+      previewFormat: 'markdown',
+    })
+  })
+
   it('captures the last-selected option preview for a multiSelect question', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
     const questionList = [{

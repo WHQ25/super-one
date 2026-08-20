@@ -199,6 +199,8 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
           providers,
           experimentalClaudeOpenAiChatEnabled: () =>
             loadNodeAgentSettings(paths.configJson).experimentalClaudeOpenAiChatEnabled,
+          askUserQuestionPreviewFormat: () =>
+            loadNodeAgentSettings(paths.configJson).claude.askUserQuestionPreviewFormat,
           // Claude: in-process SDK MCP (same core tools as HTTP).
           createHostActionClaudeMcp: (sessionId) => hostActionMcp.createClaudeSdkMcp(sessionId),
           // Codex / ACP / OpenCode: loopback HTTP with per-session HMAC.

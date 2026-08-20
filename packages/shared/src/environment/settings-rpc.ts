@@ -22,6 +22,13 @@ export interface NodeClaudeAgentDefaults {
   /** off | on | auto; empty = unset (use platform default). */
   sandboxMode: string
   disabledSkills: string[]
+  /**
+   * AskUserQuestion option-preview format the node asks the model for
+   * (SDK `toolConfig.askUserQuestion.previewFormat`): markdown | html.
+   * Empty = unset (SDK default). Node-local rendering preference — the
+   * controlling client does not push its own value down.
+   */
+  askUserQuestionPreviewFormat: string
 }
 
 export interface NodeCodexAgentDefaults {

@@ -6,6 +6,10 @@ export type StallLevel = 'normal' | 'warning' | 'critical'
 const STALL_WARNING_MS = 60_000
 const STALL_CRITICAL_MS = 120_000
 
+/** Mirrors the `transition-colors duration-500` the stall titles carry, plus a
+ *  frame of slack, so the repaint remount lands after the color has settled. */
+const STALL_COLOR_SETTLE_MS = 560
+
 export function getStallLevel(lastEventAt: number): StallLevel {
   if (!lastEventAt) return 'normal'
   const gap = Date.now() - lastEventAt
@@ -31,9 +35,24 @@ export function getStallColor(level: StallLevel, normalColor = 'text-muted-foreg
  * node is recreated whenever the stall color changes. A fresh layout object is
  * always painted from scratch, which is the only fix that does not depend on
  * Blink's paint-invalidation heuristics.
+ *
+ * The delayed half matters when the color is *animated*: the stall title carries
+ * `transition-colors duration-500`, so at the instant the class changes the
+ * painted color is still the old one. Remounting only then re-paints the "…"
+ * red again and the transition slides the rest of the text to white behind it —
+ * the original bug, one repaint later. So the key also flips once the transition
+ * has settled, when the computed color has actually reached its target.
  */
-export function ellipsisRepaintKey(colorClassName: string): string {
-  return colorClassName
+export function useEllipsisRepaintKey(colorClassName: string): string {
+  const [settled, setSettled] = useState(colorClassName)
+
+  useEffect(() => {
+    if (settled === colorClassName) return
+    const id = setTimeout(() => setSettled(colorClassName), STALL_COLOR_SETTLE_MS)
+    return () => clearTimeout(id)
+  }, [colorClassName, settled])
+
+  return `${colorClassName}|${settled}`
 }
 
 function readActiveLastEventAt(): number {

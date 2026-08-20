@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@superone/ui/lib/utils'
-import { ellipsisRepaintKey } from '@/lib/stall-utils'
+import { useEllipsisRepaintKey } from '@/lib/stall-utils'
 import { useChatStore } from '@/stores/chat'
 import { resolveSessionTitle } from './session-state-utils'
 
@@ -74,15 +74,17 @@ export function SessionTitleAnimated({ sessionId, fallback, className }: Session
 
   const chars = [...displayTitle]
   const isWriting = phase === 'in'
+  // The color class lives on the wrap; `.animated-title-inner` is what actually
+  // truncates, so it is the node that has to be recreated — after the wrap's
+  // color transition has landed. See `useEllipsisRepaintKey`.
+  const repaintKey = useEllipsisRepaintKey(className ?? '')
 
   return (
     <span
       className={cn('animated-title-wrap relative inline-block min-w-0 max-w-full align-middle', className)}
       data-phase={phase}
     >
-      {/* Keyed on `className` so a stall-color swap recreates the truncating
-          element — see `ellipsisRepaintKey`. */}
-      <span key={ellipsisRepaintKey(className ?? '')} className="animated-title-inner">
+      <span key={repaintKey} className="animated-title-inner">
         {chars.map((ch, i) => (
           <span
             key={`${writeKey}-${i}`}

@@ -72,7 +72,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
           ref={rowRef}
           {...dragHandlers}
           onClick={() => onSwitchSession(session.folderPath, session.sessionId)}
-          className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent/80"
+          className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-hover"
         >
           {HarnessIcon && (
             <span className="shrink-0">
@@ -88,7 +88,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
               e.stopPropagation()
               onPinSession(session.sessionId, false, session.folderPath)
             }}
-            className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100"
+            className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-foreground group-hover/pin:w-3 group-hover/pin:opacity-100"
           >
             <Pin className="size-3" />
           </button>

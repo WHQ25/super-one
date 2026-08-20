@@ -171,7 +171,7 @@ body[data-scroll-locked] {
   padding-right: 0 !important;
 }
 
-.liquid-glass.dark body {
+.liquid-glass body {
   background-color: transparent;
 }
 
@@ -194,6 +194,76 @@ body[data-scroll-locked] {
 .liquid-glass.dark .canvas-chat-panel {
   --card: oklch(0.205 0 0 / 0.92);
   border-color: color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+
+/* The window shell (App.tsx root) and the sidebar panel both paint --sidebar.
+   While it is opaque that double paint is invisible; once glass makes it
+   translucent the two layers compound and the sidebar reads darker than the
+   gutter around the content card. Let the shell carry it alone. Dark glass is
+   unaffected — --sidebar is fully transparent there, so both layers are no-ops. */
+.liquid-glass:not(.dark) [data-sidebar-inner] > * {
+  background-color: transparent;
+}
+
+/* --- Dark sidebar in light mode -------------------------------------------
+   `--sidebar` runs dark in light mode, but two things inside it still resolve
+   against the LIGHT palette and have to be re-pointed. Both are scoped to the
+   sidebar subtree, so overlays that portal out to <body> (popovers, dialogs,
+   context menus opened from the sidebar) keep the light palette — which is what
+   they want, since they paint on --popover. */
+
+/* A row filled with --sidebar-accent (the vivid SELECTED fill) has to flip its
+   text to the dark on-accent foreground: descendants set their own
+   `text-sidebar-foreground/NN`, which would otherwise sit light-on-vivid at
+   ~1.9:1. Match ONLY those — a blanket descendant rule would also erase colors
+   that carry meaning rather than identity (TreeRow's git-status ambers,
+   --destructive), which stay hardcoded by convention. */
+.sidebar-selected,
+.sidebar-selected [class*="text-sidebar-foreground"] {
+  color: var(--sidebar-accent-foreground);
+}
+
+/* The sidebar is a dark island, so remap the generic surface tokens for its
+   whole subtree. Everything inside it — the tab strip (`bg-muted` track,
+   `bg-card` pill), the scroll thumb (`bg-border`), every IconButton
+   (`text-muted-foreground` / `hover:bg-muted`) — is authored against the light
+   palette, and on a dark ground each reads as a bright slab or an illegible
+   label. Patching them component by component never converges; one scope does.
+
+   Light mode only: dark mode already resolves these to dark values. Overlays
+   portal out to <body> and keep the light palette, which is correct — they
+   paint on --popover, not on the sidebar. */
+html:not(.dark) [data-sidebar-inner] {
+  --foreground: var(--sidebar-foreground);
+  /* 74% is the floor that still clears 4.5:1 on the raised --card surface,
+     which is the worst ground a muted label lands on in here. */
+  --muted-foreground: color-mix(in oklab, var(--sidebar-foreground) 74%, transparent);
+  --muted: var(--sidebar-hover);
+  --secondary: var(--sidebar-hover);
+  --secondary-foreground: var(--sidebar-foreground);
+  --accent: var(--sidebar-hover);
+  --accent-foreground: var(--sidebar-foreground);
+  /* Raised above --muted so the active tab pill reads as lifted — but only
+     just. A white overlay lifts luminance fast against a dark ground: at 0.16
+     the pill was bright enough to drop its own label to 3.8:1. */
+  --card: oklch(1 0 0 / 0.08);
+  --card-foreground: var(--sidebar-foreground);
+  --border: oklch(1 0 0 / 0.10);
+  --input: oklch(1 0 0 / 0.10);
+}
+
+/* Scroll thumbs read as --border, which on a dark ground is a brighter jump
+   than anything else in the sidebar — a bar you notice before the content.
+   They should be findable, not present, so drop them well below border weight. */
+html:not(.dark) [data-sidebar-inner] [data-slot="scroll-area-thumb"] {
+  background-color: oklch(1 0 0 / 0.055);
+}
+html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb {
+  background: oklch(1 0 0 / 0.09);
+}
+html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hover {
+  background: oklch(1 0 0 / 0.18);
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -274,30 +344,32 @@ body[data-scroll-locked] {
    materials (macOS vibrancy / Windows acrylic), which can leave ghost frames
    across the transparent window. Disable them for every glass-mode surface,
    including portals and pseudo-elements. */
-.liquid-glass.dark,
-.liquid-glass.dark::before,
-.liquid-glass.dark::after,
-.liquid-glass.dark *,
-.liquid-glass.dark *::before,
-.liquid-glass.dark *::after {
+.liquid-glass,
+.liquid-glass::before,
+.liquid-glass::after,
+.liquid-glass *,
+.liquid-glass *::before,
+.liquid-glass *::after {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
 
-/* Keep fullscreen zoom panels opaque when their backdrop filter is disabled. */
-.liquid-glass.dark .fullscreen-glass-content {
-  background-color: oklch(0.205 0 0);
+/* Keep fullscreen zoom panels opaque when their backdrop filter is disabled.
+   --popover stays opaque in both glass themes, and in dark it resolves to the
+   same oklch(0.205 0 0) this rule used to hardcode. */
+.liquid-glass .fullscreen-glass-content {
+  background-color: var(--popover);
 }
 
 /* Popovers and context menus also need an opaque fallback in glass mode. */
-.liquid-glass.dark [data-slot="popover-content"],
-.liquid-glass.dark [data-slot="context-menu-content"] {
+.liquid-glass [data-slot="popover-content"],
+.liquid-glass [data-slot="context-menu-content"] {
   background-color: var(--popover);
 }
 
 /* The drag chip floats detached from window vibrancy, so the glass-mode
    `--sidebar: transparent` would make it disappear. Force an opaque surface. */
-.liquid-glass.dark .session-drag-chip {
+.liquid-glass .session-drag-chip {
   background-color: var(--popover);
 }
 

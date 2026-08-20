@@ -280,10 +280,10 @@ export const TreeRow = memo(function TreeRow({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={cn(
-        'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors hover:bg-sidebar-accent/80',
-        !item.isDirectory && isSelected && 'bg-sidebar-accent',
-        isDropTarget && 'bg-sidebar-accent',
-        isRevealed && 'bg-sidebar-accent ring-1 ring-inset ring-primary/40',
+        'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors hover:bg-sidebar-hover',
+        !item.isDirectory && isSelected && 'bg-sidebar-accent sidebar-selected',
+        isDropTarget && 'bg-sidebar-accent sidebar-selected',
+        isRevealed && 'bg-sidebar-accent sidebar-selected ring-1 ring-inset ring-primary/40',
       )}
       style={{ paddingLeft: `${item.depth * 8 + 8}px` }}
     >

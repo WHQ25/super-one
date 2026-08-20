@@ -130,8 +130,8 @@ export function FileTreeSearch({
               className={cn(
                 'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors',
                 i === selectedIndex
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+                  ? 'bg-sidebar-accent sidebar-selected'
+                  : 'text-sidebar-foreground hover:bg-sidebar-hover',
               )}
             >
               {node.isDirectory ? (

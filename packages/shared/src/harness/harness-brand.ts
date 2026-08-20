@@ -11,7 +11,9 @@ export const HARNESS_DEFAULT_BRAND_HUE: Record<HarnessId, number> = {
   dsh: 265,
 }
 
-export const BRAND_HUE_LIGHTNESS = 0.65
+/** Lightness of the vivid fill tone. Pairs with DARK text, not white. */
+export const BRAND_HUE_LIGHTNESS = 0.68
+/** Nominal only — real chroma is `maxChromaInSRGB(l, hue) * 0.95`, which is hue-dependent. */
 export const BRAND_HUE_CHROMA = 0.20
 
 export type LCH = { l: number; c: number; h: number; a: number }
@@ -29,6 +31,7 @@ export const DESIGN_TOKENS = [
   '--border',
   '--input',
   '--sidebar',
+  '--sidebar-hover',
   '--sidebar-accent',
   '--sidebar-border',
   '--foreground',
@@ -59,6 +62,7 @@ export const TOKEN_GROUP: Record<DesignToken, TokenGroup> = {
   '--border': 'surface',
   '--input': 'surface',
   '--sidebar': 'surface',
+  '--sidebar-hover': 'surface',
   '--sidebar-accent': 'surface',
   '--sidebar-border': 'surface',
   '--foreground': 'foreground',
@@ -77,33 +81,91 @@ export const TOKEN_GROUP: Record<DesignToken, TokenGroup> = {
 
 export type TokenOverrides = Partial<Record<DesignToken, LCHPartial>>
 
+/**
+ * Largest chroma that stays inside sRGB for a given OKLCh lightness + hue.
+ *
+ * sRGB's gamut narrows sharply toward white: at L 0.99 no hue can carry more
+ * than ~0.005 chroma, and the ceiling is hue-dependent even at mid lightness
+ * (cyan tops out near 0.11 where orange reaches 0.20). Asking for more than
+ * this makes the browser clip silently, which shifts hue AND lightness — so
+ * every chroma below is expressed as a fraction of this ceiling rather than as
+ * one global constant.
+ */
+export function maxChromaInSRGB(l: number, hue: number): number {
+  const rad = (hue * Math.PI) / 180
+  const ca = Math.cos(rad)
+  const cb = Math.sin(rad)
+  const inGamut = (c: number): boolean => {
+    const a = c * ca
+    const b = c * cb
+    const lp = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3
+    const mp = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3
+    const sp = (l - 0.0894841775 * a - 1.2914855480 * b) ** 3
+    const r = 4.0767416621 * lp - 3.3077115913 * mp + 0.2309699292 * sp
+    const g = -1.2684380046 * lp + 2.6097574011 * mp - 0.3413193965 * sp
+    const bl = -0.0041960863 * lp - 0.7034186147 * mp + 1.7076147010 * sp
+    return r >= -0.0005 && r <= 1.0005 && g >= -0.0005 && g <= 1.0005 && bl >= -0.0005 && bl <= 1.0005
+  }
+  let lo = 0
+  let hi = 0.4
+  for (let i = 0; i < 32; i++) {
+    const mid = (lo + hi) / 2
+    if (inGamut(mid)) lo = mid
+    else hi = mid
+  }
+  return lo
+}
+
+/**
+ * Light-mode palette — "inverted chrome".
+ *
+ * Three decisive neutral surfaces (sunken sidebar / canvas / raised card) with
+ * 0.03-0.04 lightness steps, plus exactly one hue in two tones: a vivid fill at
+ * L 0.68 that carries DARK text, and an ink tone at L 0.52 for icons and rules
+ * on light surfaces. Everything else is near-achromatic on purpose — a tinted
+ * ground would rob the one saturated colour of the contrast it needs to read as
+ * vivid.
+ */
 function buildHarnessDefaults(harness: HarnessId): Record<DesignToken, LCH> {
   const h = HARNESS_DEFAULT_BRAND_HUE[harness]
   const a = 1
+  /** As saturated as sRGB allows at this lightness, with headroom against clipping. */
+  const vivid = (l: number): LCH => ({ l, c: maxChromaInSRGB(l, h) * 0.95, h, a })
+  /** A whisper of the brand hue — enough to warm the neutral, never enough to tint it. */
+  const tinted = (l: number, c: number): LCH => ({ l, c: Math.min(c, maxChromaInSRGB(l, h) * 0.9), h, a })
+
   return {
-    '--background': { l: 0.97, c: 0, h, a },
-    '--card': { l: 0.99, c: 0, h, a },
-    '--popover': { l: 0.99, c: 0, h, a },
-    '--secondary': { l: 0.93, c: 0, h, a },
-    '--muted': { l: 0.93, c: 0, h, a },
-    '--accent': { l: 0.91, c: 0, h, a },
-    '--border': { l: 0.88, c: 0, h, a },
-    '--input': { l: 0.88, c: 0, h, a },
-    '--sidebar': { l: 0.99, c: 0, h, a },
-    '--sidebar-accent': { l: 0.94, c: 0, h, a },
-    '--sidebar-border': { l: 0.92, c: 0, h, a },
-    '--foreground': { l: 0.18, c: 0.012, h, a },
-    '--card-foreground': { l: 0.18, c: 0.012, h, a },
-    '--popover-foreground': { l: 0.18, c: 0.012, h, a },
-    '--secondary-foreground': { l: 0.22, c: 0.012, h, a },
-    '--muted-foreground': { l: 0.52, c: 0.025, h, a },
-    '--accent-foreground': { l: 0.22, c: 0.015, h, a },
-    '--sidebar-foreground': { l: 0.18, c: 0.012, h, a },
-    '--sidebar-accent-foreground': { l: 0.22, c: 0.015, h, a },
-    '--primary': { l: BRAND_HUE_LIGHTNESS, c: BRAND_HUE_CHROMA, h, a },
-    '--ring': { l: BRAND_HUE_LIGHTNESS, c: BRAND_HUE_CHROMA, h, a },
-    '--sidebar-primary': { l: BRAND_HUE_LIGHTNESS, c: BRAND_HUE_CHROMA, h, a },
-    '--sidebar-ring': { l: BRAND_HUE_LIGHTNESS, c: BRAND_HUE_CHROMA, h, a },
+    // Light content surfaces — three levels, wide apart.
+    '--background': tinted(0.975, 0.002),
+    '--card': tinted(0.995, 0.0015),
+    '--popover': tinted(0.995, 0.0015),
+    '--secondary': tinted(0.905, 0.004),
+    '--muted': tinted(0.905, 0.004),
+    '--accent': tinted(0.905, 0.004),
+    '--border': tinted(0.888, 0.003),
+    '--input': tinted(0.888, 0.003),
+
+    // Sidebar runs dark so the content area can stay clean without dividers.
+    '--sidebar': tinted(0.26, 0.020),
+    '--sidebar-hover': tinted(0.34, 0.022),
+    '--sidebar-accent': vivid(0.68),
+    '--sidebar-border': tinted(0.34, 0.018),
+
+    // Foregrounds.
+    '--foreground': tinted(0.20, 0.006),
+    '--card-foreground': tinted(0.20, 0.006),
+    '--popover-foreground': tinted(0.20, 0.006),
+    '--secondary-foreground': tinted(0.20, 0.006),
+    '--muted-foreground': tinted(0.50, 0.010),
+    '--accent-foreground': tinted(0.20, 0.006),
+    '--sidebar-foreground': tinted(0.93, 0.006),
+    '--sidebar-accent-foreground': tinted(0.20, 0.006),
+
+    // The one hue, two tones.
+    '--primary': vivid(0.68),
+    '--sidebar-primary': vivid(0.68),
+    '--ring': vivid(0.52),
+    '--sidebar-ring': vivid(0.52),
   }
 }
 
@@ -144,7 +206,8 @@ export function clampA(a: number): number {
 }
 
 export function brandHueToOklch(hue: number): string {
-  return `oklch(${BRAND_HUE_LIGHTNESS} ${BRAND_HUE_CHROMA} ${clampBrandHue(hue)})`
+  const h = clampBrandHue(hue)
+  return `oklch(${BRAND_HUE_LIGHTNESS} ${(maxChromaInSRGB(BRAND_HUE_LIGHTNESS, h) * 0.95).toFixed(4)} ${h})`
 }
 
 export function resolveTokenLCH(

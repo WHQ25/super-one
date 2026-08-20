@@ -595,14 +595,13 @@ function isGlassEnabled(): boolean {
 function glassWindowOptions(): Electron.BrowserWindowConstructorOptions {
   return glassConstructorOptions({
     enabled: isGlassEnabled(),
-    dark: currentDarkTheme,
     platform: process.platform,
     release: osRelease(),
   })
 }
 
 function applyLiquidGlass(): void {
-  const active = isGlassEnabled() && currentDarkTheme
+  const active = isGlassEnabled()
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     if (process.platform === 'darwin') {
@@ -735,7 +734,7 @@ function windowChromeColors(): { backgroundColor: string; symbolColor: string } 
 function windowsChromeOptions(overlayHeight: number): Electron.BrowserWindowConstructorOptions {
   const { backgroundColor, symbolColor } = windowChromeColors()
   const chromeBg = windowsChromeBackground({
-    glassActive: isGlassEnabled() && currentDarkTheme,
+    glassActive: isGlassEnabled(),
     backgroundColor,
   })
   return {
@@ -753,7 +752,7 @@ function applyWindowsChrome(): void {
   if (process.platform !== 'win32') return
   const { backgroundColor, symbolColor } = windowChromeColors()
   const chromeBg = windowsChromeBackground({
-    glassActive: isGlassEnabled() && currentDarkTheme,
+    glassActive: isGlassEnabled(),
     backgroundColor,
   })
   for (const win of BrowserWindow.getAllWindows()) {

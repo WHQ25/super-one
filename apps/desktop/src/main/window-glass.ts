@@ -21,18 +21,25 @@ export function isGlassPlatformSupported(platform: string, release: string): boo
   return platform === 'darwin' || isWindowsGlassSupported(platform, release)
 }
 
+/**
+ * Glass no longer requires dark mode. It was gated that way because the old
+ * light theme was a warm near-white — the one frosted material macOS 26 offers
+ * washed it into grey fog. Light mode now runs a dark sidebar, which is exactly
+ * the surface that reads well over frost, so the gate is the setting plus the
+ * platform. The light/dark difference lives entirely in the CSS surface colours
+ * (`.liquid-glass` vs `.liquid-glass.dark`); the native material is the same
+ * either way, and follows the appearance pinned by `syncNativeAppearance()`.
+ */
 export function isGlassEffectActive(opts: {
   enabled: boolean
-  dark: boolean
   platform: string
   release: string
 }): boolean {
-  return opts.enabled && opts.dark && isGlassPlatformSupported(opts.platform, opts.release)
+  return opts.enabled && isGlassPlatformSupported(opts.platform, opts.release)
 }
 
 export function glassConstructorOptions(opts: {
   enabled: boolean
-  dark: boolean
   platform: string
   release: string
 }): {

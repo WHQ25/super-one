@@ -14,7 +14,7 @@ export function DragPreviewCard({ title }: { title: string }) {
   const { t } = useTranslation()
   return (
     <div className="session-drag-chip w-[180px] overflow-hidden rounded-lg border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-2xl">
-      <div className="flex items-center gap-1.5 border-b border-sidebar-border/60 bg-sidebar-accent/40 px-2.5 py-1.5">
+      <div className="flex items-center gap-1.5 border-b border-sidebar-border/60 bg-sidebar-hover px-2.5 py-1.5">
         <span className="size-2 rounded-full bg-red-400" />
         <span className="size-2 rounded-full bg-yellow-400" />
         <span className="size-2 rounded-full bg-green-400" />

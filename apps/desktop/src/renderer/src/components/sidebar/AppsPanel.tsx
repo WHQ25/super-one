@@ -144,7 +144,7 @@ export function AppsPanel() {
                   onClick={() => {
                     openAppInPanel(app, currentFolder ?? '')
                   }}
-                  className="group/app flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent/80"
+                  className="group/app flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-hover"
                 >
                   <MiniAppIcon appId={app.id} className="size-7 shrink-0" />
                   <div className="flex min-w-0 flex-1 flex-col">

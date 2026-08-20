@@ -137,7 +137,7 @@ export const SessionRow = memo(function SessionRow({
             onClick={() => onSwitchSession(folderPath, session.sessionId)}
             className={cn(
               'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
-              isSessionActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent/80',
+              isSessionActive ? 'bg-sidebar-accent sidebar-selected' : 'hover:bg-sidebar-hover',
               session.isHidden && 'opacity-50',
             )}
           >
@@ -148,7 +148,7 @@ export const SessionRow = memo(function SessionRow({
                   e.stopPropagation()
                   onHideSession(session.sessionId, !session.isHidden, folderPath)
                 }}
-                className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
+                className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-foreground group-hover/session:opacity-100"
               >
                 {session.isHidden ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
               </button>
@@ -175,7 +175,7 @@ export const SessionRow = memo(function SessionRow({
                     onToggleChildren()
                   }}
                   title={childrenCollapsed ? t('sidebar.contextMenu.expandChildren') : t('sidebar.contextMenu.collapseChildren')}
-                  className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100"
+                  className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:opacity-100"
                 >
                   {childrenCollapsed
                     ? <ChevronRight className="size-3" />
@@ -187,7 +187,7 @@ export const SessionRow = memo(function SessionRow({
                   e.stopPropagation()
                   onPinSession(session.sessionId, !session.isPinned, folderPath)
                 }}
-                className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100"
+                className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:opacity-100"
               >
                 <Pin className="size-3" />
               </button>

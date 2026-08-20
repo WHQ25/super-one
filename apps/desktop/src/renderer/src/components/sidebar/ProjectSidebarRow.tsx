@@ -308,7 +308,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             }}
             className={cn(
               'group flex h-9 items-center overflow-hidden rounded-md px-2.5 transition-colors',
-              folder.missing ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-accent/80'
+              folder.missing ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-hover'
             )}
           >
             <ChevronRight className={cn(
@@ -325,7 +325,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             <TooltipProvider delayDuration={500}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className={cn('ml-2 min-w-0 truncate text-md', folder.missing && 'text-muted-foreground line-through')}>{folder.name}</span>
+                  <span className={cn('ml-2 min-w-0 truncate text-md', folder.missing && 'text-sidebar-foreground/50 line-through')}>{folder.name}</span>
                 </TooltipTrigger>
                 <TooltipContent side="top" sideOffset={8}>
                   <span className="text-xs">{folder.missing ? t('tooltips.folderNotFound', { path: folder.path }) : derived.displayPath}</span>
@@ -367,7 +367,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         <div className="overflow-hidden pl-2.5">
           <button
             onClick={() => setAutomationsExpanded((v) => !v)}
-            className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground/70"
+            className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
           >
             <ChevronRight className={cn(
               'hidden size-3.5 shrink-0 transition-transform duration-200 group-hover/auto:block',
@@ -390,7 +390,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 <AdaptiveContextMenu key={automation.id} items={automationMenuItems}>
                     <button
                       onClick={() => openEditDialog(automation)}
-                      className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent/80"
+                      className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-hover"
                     >
                       <span className="flex items-center gap-1.5 truncate">
                         <CalendarClock className="size-3 shrink-0 text-sidebar-foreground/50" />
@@ -475,7 +475,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             {isExpanded && expandLevel < maxSessions && derived.hasMoreThanInitial && (
               <button
                 onClick={() => setExpandLevel(maxSessions)}
-                className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground/70"
+                className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
               >
                 <ChevronDown className="size-3.5 shrink-0" />
                 <span>{t('sidebar.contextMenu.showMore')}</span>
@@ -485,7 +485,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setExpandLevel(INITIAL_EXPAND_LEVEL)}
-                  className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground/70"
+                  className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
                 >
                   <ChevronUp className="size-3.5 shrink-0" />
                   <span>{t('sidebar.contextMenu.showLess')}</span>

@@ -49,7 +49,6 @@ describe('glassConstructorOptions', () => {
   it('uses under-window vibrancy on macOS when glass is active', () => {
     expect(glassConstructorOptions({
       enabled: true,
-      dark: true,
       platform: 'darwin',
       release: '24.0.0',
     })).toEqual({
@@ -62,7 +61,6 @@ describe('glassConstructorOptions', () => {
   it('uses acrylic on Windows 11 when glass is active', () => {
     expect(glassConstructorOptions({
       enabled: true,
-      dark: true,
       platform: 'win32',
       release: '10.0.22621',
     })).toEqual({
@@ -71,22 +69,14 @@ describe('glassConstructorOptions', () => {
     })
   })
 
-  it('is empty when glass is off, in light theme, or on unsupported Windows', () => {
+  it('is empty when glass is off or on unsupported Windows', () => {
     expect(glassConstructorOptions({
       enabled: false,
-      dark: true,
       platform: 'win32',
       release: '10.0.22621',
     })).toEqual({})
     expect(glassConstructorOptions({
       enabled: true,
-      dark: false,
-      platform: 'win32',
-      release: '10.0.22621',
-    })).toEqual({})
-    expect(glassConstructorOptions({
-      enabled: true,
-      dark: true,
       platform: 'win32',
       release: '10.0.19045',
     })).toEqual({})
@@ -94,19 +84,23 @@ describe('glassConstructorOptions', () => {
 })
 
 describe('isGlassEffectActive / windowsChromeBackground', () => {
-  it('only treats dark + supported + enabled as active', () => {
+  it('treats enabled + supported as active, in either theme', () => {
     expect(isGlassEffectActive({
       enabled: true,
-      dark: true,
       platform: 'win32',
       release: '10.0.22621',
     })).toBe(true)
     expect(isGlassEffectActive({
-      enabled: true,
-      dark: false,
+      enabled: false,
       platform: 'win32',
       release: '10.0.22621',
     })).toBe(false)
+    // macOS needs no build check, and light mode is no longer excluded.
+    expect(isGlassEffectActive({
+      enabled: true,
+      platform: 'darwin',
+      release: '24.0.0',
+    })).toBe(true)
   })
 
   it('makes the Windows title-bar overlay transparent while glass is active', () => {

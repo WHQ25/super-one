@@ -70,7 +70,7 @@ const DraftRow = memo(function DraftRow({
         }
       }}
       style={{ height: DRAFT_ROW_HEIGHT }}
-      className="group/draft flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 transition-colors hover:bg-sidebar-accent/80"
+      className="group/draft flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 transition-colors hover:bg-sidebar-hover"
     >
       <PencilLine className="size-3.5 shrink-0 text-sidebar-foreground/45" aria-hidden />
       <span className="min-w-0 flex-1 truncate text-md text-sidebar-foreground">

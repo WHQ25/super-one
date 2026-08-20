@@ -50,7 +50,7 @@ function SortableAppRow({ app, index, onClick, onOpenMaximized }: { app: MiniApp
       {...attributes}
       {...listeners}
       className={cn(
-        'group/sapp flex cursor-grab items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent/80 active:cursor-grabbing',
+        'group/sapp flex cursor-grab items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-hover active:cursor-grabbing',
         isDragging && 'z-10 opacity-80 shadow-sm',
       )}
       onClick={onClick}
@@ -62,7 +62,7 @@ function SortableAppRow({ app, index, onClick, onOpenMaximized }: { app: MiniApp
         <span className="flex items-center gap-1.5 text-[13px]">
           <span className="truncate">{app.manifest.name}</span>
           {app.manifest.isDev && <span className="inline-flex h-4 shrink-0 items-center rounded bg-orange-500/15 px-1 text-[10px] leading-none text-orange-500">Dev</span>}
-          {index <= 9 && <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sidebar-accent text-[10px] leading-none text-sidebar-foreground/60">{index < 9 ? index + 1 : 0}</span>}
+          {index <= 9 && <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sidebar-hover text-[10px] leading-none text-sidebar-foreground/60">{index < 9 ? index + 1 : 0}</span>}
         </span>
         {app.manifest.description && (
           <MarqueeText className="text-[11px] text-sidebar-foreground/50" hovered={hovered}>{app.manifest.description}</MarqueeText>
@@ -321,14 +321,14 @@ export function AppDrawer() {
 
                 <div className="flex gap-1 px-1 pb-1">
                   <button
-                    className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground/70"
+                    className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
                   >
                     <Store className="size-3" />
                     {t('sidebar.appDrawer.marketplace')}
                   </button>
                   <button
                     onClick={handleBuildApp}
-                    className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground/70"
+                    className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
                   >
                     <Plus className="size-3" />
                     {t('sidebar.appDrawer.buildYourOwn')}

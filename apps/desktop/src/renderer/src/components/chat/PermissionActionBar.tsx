@@ -15,7 +15,7 @@ export type PermissionActionTone = 'approve' | 'reject' | 'primary' | 'neutral'
 const TONE_CLASS: Record<PermissionActionTone, string> = {
   approve: 'bg-success text-success-foreground hover:bg-success/90 focus:ring-success',
   reject: 'bg-destructive text-destructive-foreground hover:bg-destructive/90 focus:ring-destructive',
-  primary: 'bg-primary text-white text-xs hover:bg-primary/90 focus:ring-ring',
+  primary: 'bg-primary text-primary-foreground text-xs hover:bg-primary/90 focus:ring-ring',
   neutral: 'border border-border bg-background/70 text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-ring',
 }
 

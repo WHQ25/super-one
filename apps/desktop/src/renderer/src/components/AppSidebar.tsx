@@ -776,7 +776,7 @@ export const AppSidebar = memo(function AppSidebar() {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  className="flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
                 >
                   <span className="truncate">{selectedHostLabel}</span>
                   <ChevronDown className="size-3.5 shrink-0 opacity-70" />
@@ -867,7 +867,7 @@ export const AppSidebar = memo(function AppSidebar() {
             <Button
               variant="outline"
               size="sm"
-              className="h-7 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent"
+              className="h-7 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-hover"
               onClick={refreshHostProjects}
             >
               {t('common.retry')}

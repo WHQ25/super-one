@@ -16,20 +16,22 @@
   --radius: 0.625rem;
   /* Default brand hue — both harnesses */
   --brand-hue: 240;
-  --background: oklch(var(--background-l, 0.97) var(--background-c, 0) var(--background-h, var(--brand-hue, 240)) / var(--background-a, 1));
-  --foreground: oklch(var(--foreground-l, 0.18) var(--foreground-c, 0.012) var(--foreground-h, var(--brand-hue, 240)) / var(--foreground-a, 1));
-  --card: oklch(var(--card-l, 0.975) var(--card-c, 0) var(--card-h, var(--brand-hue, 240)) / var(--card-a, 1));
-  --card-foreground: oklch(var(--card-foreground-l, 0.18) var(--card-foreground-c, 0.012) var(--card-foreground-h, var(--brand-hue, 240)) / var(--card-foreground-a, 1));
-  --popover: oklch(var(--popover-l, 0.99) var(--popover-c, 0) var(--popover-h, var(--brand-hue, 240)) / var(--popover-a, 1));
-  --popover-foreground: oklch(var(--popover-foreground-l, 0.18) var(--popover-foreground-c, 0.012) var(--popover-foreground-h, var(--brand-hue, 240)) / var(--popover-foreground-a, 1));
-  --primary: oklch(var(--primary-l, 0.65) var(--primary-c, 0.20) var(--primary-h, var(--brand-hue, 240)) / var(--primary-a, 1));
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(var(--secondary-l, 0.93) var(--secondary-c, 0.05) var(--secondary-h, calc(var(--brand-hue, 240) + 180)) / var(--secondary-a, 1));
-  --secondary-foreground: oklch(var(--secondary-foreground-l, 0.22) var(--secondary-foreground-c, 0.012) var(--secondary-foreground-h, var(--brand-hue, 240)) / var(--secondary-foreground-a, 1));
-  --muted: oklch(var(--muted-l, 0.93) var(--muted-c, 0) var(--muted-h, var(--brand-hue, 240)) / var(--muted-a, 1));
-  --muted-foreground: oklch(var(--muted-foreground-l, 0.52) var(--muted-foreground-c, 0.025) var(--muted-foreground-h, var(--brand-hue, 240)) / var(--muted-foreground-a, 1));
-  --accent: oklch(var(--accent-l, 0.91) var(--accent-c, 0.08) var(--accent-h, var(--brand-hue, 240)) / var(--accent-a, 1));
-  --accent-foreground: oklch(var(--accent-foreground-l, 0.22) var(--accent-foreground-c, 0.015) var(--accent-foreground-h, var(--brand-hue, 240)) / var(--accent-foreground-a, 1));
+  --background: oklch(var(--background-l, 0.975) var(--background-c, 0.002) var(--background-h, var(--brand-hue, 240)) / var(--background-a, 1));
+  --foreground: oklch(var(--foreground-l, 0.2) var(--foreground-c, 0.006) var(--foreground-h, var(--brand-hue, 240)) / var(--foreground-a, 1));
+  --card: oklch(var(--card-l, 0.995) var(--card-c, 0.0015) var(--card-h, var(--brand-hue, 240)) / var(--card-a, 1));
+  --card-foreground: oklch(var(--card-foreground-l, 0.2) var(--card-foreground-c, 0.006) var(--card-foreground-h, var(--brand-hue, 240)) / var(--card-foreground-a, 1));
+  --popover: oklch(var(--popover-l, 0.995) var(--popover-c, 0.0015) var(--popover-h, var(--brand-hue, 240)) / var(--popover-a, 1));
+  --popover-foreground: oklch(var(--popover-foreground-l, 0.2) var(--popover-foreground-c, 0.006) var(--popover-foreground-h, var(--brand-hue, 240)) / var(--popover-foreground-a, 1));
+  --primary: oklch(var(--primary-l, 0.68) var(--primary-c, 0.14) var(--primary-h, var(--brand-hue, 240)) / var(--primary-a, 1));
+  /* The light-mode brand fill is a high-lightness vivid tone, so its text is DARK,
+     not white. Dark mode keeps a light foreground — see `.dark` below. */
+  --primary-foreground: oklch(0.20 0.006 var(--brand-hue, 240));
+  --secondary: oklch(var(--secondary-l, 0.905) var(--secondary-c, 0.004) var(--secondary-h, var(--brand-hue, 240)) / var(--secondary-a, 1));
+  --secondary-foreground: oklch(var(--secondary-foreground-l, 0.2) var(--secondary-foreground-c, 0.006) var(--secondary-foreground-h, var(--brand-hue, 240)) / var(--secondary-foreground-a, 1));
+  --muted: oklch(var(--muted-l, 0.905) var(--muted-c, 0.004) var(--muted-h, var(--brand-hue, 240)) / var(--muted-a, 1));
+  --muted-foreground: oklch(var(--muted-foreground-l, 0.5) var(--muted-foreground-c, 0.01) var(--muted-foreground-h, var(--brand-hue, 240)) / var(--muted-foreground-a, 1));
+  --accent: oklch(var(--accent-l, 0.905) var(--accent-c, 0.004) var(--accent-h, var(--brand-hue, 240)) / var(--accent-a, 1));
+  --accent-foreground: oklch(var(--accent-foreground-l, 0.2) var(--accent-foreground-c, 0.006) var(--accent-foreground-h, var(--brand-hue, 240)) / var(--accent-foreground-a, 1));
   --destructive: oklch(0.55 0.25 27);
   --destructive-foreground: oklch(0.99 0 0);
   --success: oklch(0.6 0.15 150);
@@ -38,22 +40,30 @@
   --warning-foreground: oklch(0.99 0 0);
   --error: oklch(0.55 0.22 27);
   --error-foreground: oklch(0.99 0 0);
-  --border: oklch(var(--border-l, 0.88) var(--border-c, 0) var(--border-h, var(--brand-hue, 240)) / var(--border-a, 1));
-  --input: oklch(var(--input-l, 0.88) var(--input-c, 0) var(--input-h, var(--brand-hue, 240)) / var(--input-a, 1));
-  --ring: oklch(var(--ring-l, 0.65) var(--ring-c, 0.20) var(--ring-h, var(--brand-hue, 240)) / var(--ring-a, 1));
+  --border: oklch(var(--border-l, 0.888) var(--border-c, 0.003) var(--border-h, var(--brand-hue, 240)) / var(--border-a, 1));
+  --input: oklch(var(--input-l, 0.888) var(--input-c, 0.003) var(--input-h, var(--brand-hue, 240)) / var(--input-a, 1));
+  --ring: oklch(var(--ring-l, 0.52) var(--ring-c, 0.14) var(--ring-h, var(--brand-hue, 240)) / var(--ring-a, 1));
   --chart-1: oklch(0.65 0.22 42);
   --chart-2: oklch(0.6 0.18 30);
   --chart-3: oklch(0.72 0.15 75);
   --chart-4: oklch(0.55 0.12 150);
   --chart-5: oklch(0.68 0.2 15);
-  --sidebar: var(--background);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-primary: var(--primary);
+  /* Every sidebar token reads its OWN `--sidebar-*-{l,c,h,a}` channels. They used
+     to alias --background / --accent, which silently discarded the per-channel
+     values `useHarnessTheme` writes inline for them — harmless while the sidebar
+     merely echoed the content surface, fatal now that it runs dark. */
+  --sidebar: oklch(var(--sidebar-l, 0.26) var(--sidebar-c, 0.02) var(--sidebar-h, var(--brand-hue, 240)) / var(--sidebar-a, 1));
+  --sidebar-foreground: oklch(var(--sidebar-foreground-l, 0.93) var(--sidebar-foreground-c, 0.006) var(--sidebar-foreground-h, var(--brand-hue, 240)) / var(--sidebar-foreground-a, 1));
+  --sidebar-primary: oklch(var(--sidebar-primary-l, 0.68) var(--sidebar-primary-c, 0.14) var(--sidebar-primary-h, var(--brand-hue, 240)) / var(--sidebar-primary-a, 1));
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(from var(--accent) l c h / 0.5);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
+  /* Neutral hover inside the sidebar. Split out from --sidebar-accent, which now
+     carries the vivid SELECTED fill — one token could serve both only while the
+     sidebar was a pale grey. */
+  --sidebar-hover: oklch(var(--sidebar-hover-l, 0.34) var(--sidebar-hover-c, 0.02) var(--sidebar-hover-h, var(--brand-hue, 240)) / var(--sidebar-hover-a, 1));
+  --sidebar-accent: oklch(var(--sidebar-accent-l, 0.68) var(--sidebar-accent-c, 0.14) var(--sidebar-accent-h, var(--brand-hue, 240)) / var(--sidebar-accent-a, 1));
+  --sidebar-accent-foreground: oklch(var(--sidebar-accent-foreground-l, 0.20) var(--sidebar-accent-foreground-c, 0.006) var(--sidebar-accent-foreground-h, var(--brand-hue, 240)) / var(--sidebar-accent-foreground-a, 1));
+  --sidebar-border: oklch(var(--sidebar-border-l, 0.34) var(--sidebar-border-c, 0.018) var(--sidebar-border-h, var(--brand-hue, 240)) / var(--sidebar-border-a, 1));
+  --sidebar-ring: oklch(var(--sidebar-ring-l, 0.52) var(--sidebar-ring-c, 0.14) var(--sidebar-ring-h, var(--brand-hue, 240)) / var(--sidebar-ring-a, 1));
   --highlighted: var(--primary);
   --insight-border: oklch(0.55 0.18 280);
   --insight-bg: oklch(0.5 0.18 280 / 0.12);
@@ -102,7 +112,8 @@
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(0.26 0 0);
+  --sidebar-hover: oklch(0.26 0 0);
+  --sidebar-accent: oklch(0.30 0 0);
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
@@ -115,8 +126,28 @@
 .liquid-glass.dark {
   --card: oklch(0.205 0 0 / 0.72);
   --sidebar: transparent;
+  --sidebar-hover: oklch(1 0 0 / 0.08);
   --border: oklch(1 0 0 / 0.15);
   --sidebar-border: oklch(1 0 0 / 0.1);
+}
+
+/*
+ * Light glass. The native frost follows the appearance pinned by
+ * `syncNativeAppearance()`, so in light mode it is a PALE frost — the sidebar
+ * therefore cannot go fully transparent the way it does in dark mode, or the
+ * dark chrome this theme is built around would dissolve into it. It gets a dark
+ * scrim instead: still translucent, still clearly the recessed surface.
+ *
+ * Alpha is forced while L/C/H keep reading their channel vars, so a user's
+ * palette override survives and only the opacity is claimed by glass.
+ */
+.liquid-glass:not(.dark) {
+  /* Chrome only. --card deliberately stays OPAQUE here: the frost is pale in
+     light mode, so a translucent content card puts the wallpaper straight
+     behind chat text. Dark mode can afford 0.72 because its frost is dark. */
+  --sidebar: oklch(var(--sidebar-l, 0.26) var(--sidebar-c, 0.02) var(--sidebar-h, var(--brand-hue, 240)) / 0.80);
+  --sidebar-hover: oklch(1 0 0 / 0.12);
+  --sidebar-border: oklch(1 0 0 / 0.12);
 }
 
 @theme inline {
@@ -154,6 +185,7 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-hover: var(--sidebar-hover);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);

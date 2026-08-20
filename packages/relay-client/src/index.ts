@@ -3,6 +3,18 @@ export { BUFFER_FIRST_ORDER, EventBuffer } from './buffer'
 export { handleInboundFrame, makeDecrypt } from './frames'
 export { buildLanWsUrl, buildRelayWsUrl } from './connect'
 export { RpcInbox } from './rpc'
+export { RelayClient } from './client'
+export type { OpenSocket, SocketLike } from './client'
+export { restoreSession } from './restore'
+export {
+  decryptPairResponse,
+  encryptPairRequest,
+  generatePairCode,
+  pairWsUrl,
+  parsePairQr,
+  startPairingHandshake,
+} from './pair'
+export type { PairQr, PairResult } from './pair'
 export type { FrameDecrypt, FrameEffect, InboundFrame, TransportKind } from './frames'
 export {
   FILE_CHUNK_SIZE,

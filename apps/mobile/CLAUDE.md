@@ -30,4 +30,6 @@ bun --filter @superone/mobile test
 
 Needs a **dev client** (`expo run:ios` / `expo run:android`), not Expo Go.
 
+Pairing: paste a `superone://pair?…` QR (shows a 6-digit code to confirm on desktop) or JSON `{ "relayUrl", "secret" }`. Then projects → sessions → chat WebView.
+
 mDNS is **not** required this cycle (QR / relay + optional manual host:port).

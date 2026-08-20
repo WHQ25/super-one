@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@superone/chat-core": "workspace:*",
+    "@superone/chat-view": "workspace:*",
     "@superone/relay-client": "workspace:*",
     "@superone/shared": "workspace:*",
+    "react-native-webview": "13.15.0",
     "expo": "~54.0.26",
     "expo-dev-client": "~6.0.21",
     "expo-status-bar": "~3.0.8",

@@ -220,7 +220,7 @@ export function reduceSlash(
       // The wire message carries no command name; _pendingSlashCommand already
       // holds it, parsed from the input the user actually sent.
       const cmd = session._pendingSlashCommand
-      return cmd ? { runningSlashCommand: { command: cmd, startedAt: Date.now() } } : {}
+      return cmd ? { runningSlashCommand: { command: cmd, startedAt: ports.now() } } : {}
     }
 
     case 'slash_command_output': {
@@ -244,16 +244,17 @@ export function reduceSlash(
       // their own panel (/doctor), but it silently swallows a review.
       if (REPORT_OUTPUT_COMMANDS.has(cmd) && event.content.trim()) {
         const reportMsg: ChatMessage = {
-          id: `slash-report-${Date.now()}`,
+          id: ports.id('slash-report-'),
           role: 'assistant',
           content: [{ type: 'text', text: event.content }],
           status: 'complete',
-          createdAt: new Date().toISOString(),
+          createdAt: new Date(ports.now()).toISOString(),
           providerId: 'claude',
         }
         return { _pendingSlashCommand: '', messages: [...filtered, reportMsg] }
       }
-      if (import.meta.env.DEV && import.meta.env.RENDERER_VITE_DEBUG_SLASH_OUTPUT === '1') {
+      const viteEnv = (import.meta as { env?: { DEV?: boolean; RENDERER_VITE_DEBUG_SLASH_OUTPUT?: string } }).env
+      if (viteEnv?.DEV && viteEnv.RENDERER_VITE_DEBUG_SLASH_OUTPUT === '1') {
         const debugText = `\`\`\`\n/${cmd}\n\n${event.content}\n\`\`\``
         const debugMsg: ChatMessage = {
           id: ports.id('slash-debug-'),

@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "description": "React DOM chat renderer hosted in a mobile WebView. Receives pre-reduced patches only.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./host-html": "./src/host-html.ts"
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite",

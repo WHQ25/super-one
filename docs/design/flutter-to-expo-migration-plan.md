@@ -199,7 +199,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 | ID | Verdict | Finding |
 |----|---------|---------|
 | **C0.1** | confirmed | mDNS: Flutter `nsd` + `_superone._tcp`; desktop `lan-advertiser.ts`; no RN client. Fallback relay-only + manual host:port. **Do not block P2 pairing on mDNS.** |
-| **C0.2** | needs_spike | Wire shape matches desktop `remote-control-crypto.ts` ↔ Flutter `crypto.dart` (HKDF `channel-key`/`aes-key`, IV\|\|ciphertext base64). **No cross-language golden vectors in monorepo.** |
+| **C0.2** | **spike_done** (2026-08-21) | Vectors in `docs/design/relay-crypto-golden/`. Unmodified desktop ciphertext decrypts on Flutter 1.0.0+19 and `@noble/ciphers@2.3.0`. Library for WP-08: noble (not quick-crypto). Zero edits under frozen crypto trees. |
 | **C0.5** | **spike_done** (2026-08-14) | `../index` inverted: three symbols live in `event-reducer/transformers.ts` (barrel re-exports). Lifecycle family has no `@/components` / `window` / Maps. Remaining: component predicates, `window.app.trace`, module Maps, `Date.now`, `defaults`↔`index` cycle. Notes: `docs/design/chat-core-extraction-spike.md`. No package cutover. |
 | **C0.6** | **freeze_done** (2026-08-21) | Exhaustive `ChatCorePatch` + key→owner + `SKIPPED_EVENTS` + host table + dual-transport in `docs/design/chat-core-contracts.md`. Baseline v0.55.2 (`messages_retracted`; `model_fallback` is a transcript row, not a patch key). |
 | **C-seq** | confirmed | Never conflate relay envelope seq with `AgentEvent.seq` (relay-session enqueue; session `nextEventSeq`; Flutter never stamps seq on events). |
@@ -217,7 +217,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 
 - **0.5** chat-core boundary proof + compile-time boundary sketch — **done** (`docs/design/chat-core-extraction-spike.md`)
 - **0.6** freeze contracts + host protocol + dual-transport + buffer-first — **done** (`docs/design/chat-core-contracts.md`)
-- **0.2** golden AES-GCM/HKDF (+ chunked file) vectors  
+- **0.2** golden AES-GCM/HKDF (+ chunked file) vectors — **done** (`docs/design/relay-crypto-golden/`)
 - **0.3** Metro `@superone/shared` under bun hoisted workspaces  
 - **0.1** mDNS attempt or formal fallback accept (non-blocking for P2)  
 - **0.4** WebView RSS/frame + stress corpus owner  
@@ -267,13 +267,13 @@ Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path,
 | Spike | Unknown | Verification | Fallback | Verdict now |
 |-------|---------|--------------|----------|-------------|
 | **0.1** | mDNS (`nsd` → `react-native-zeroconf`) | Discover `dev:cli:lab` / desktop `_superone._tcp` on iOS+Android hardware; config plugin + `NSBonjourServices` | Relay-only + manual host:port | confirmed risk; **non-blocking for P2** |
-| **0.2** | AES-256-GCM + HKDF wire parity | Golden vectors desktop↔Dart; `@noble/ciphers` (+ hashes) decode unmodified desktop frames | `react-native-quick-crypto` | **needs_spike** |
+| **0.2** | AES-256-GCM + HKDF wire parity | Golden vectors desktop↔Dart; `@noble/ciphers` (+ hashes) decode unmodified desktop frames | `react-native-quick-crypto` | **spike_done** — noble 2.3.0; fallback unused |
 | **0.3** | Metro + bun hoisted workspaces | `resolver.unstable_enableSymlinks` + `watchFolders`; import `@superone/shared` leaf | Explicit per-package alias map | **needs_spike** |
 | **0.4** | WebView streaming perf + RSS | Stress corpus (≥200 turns code+mermaid) + longest recording; sample paint intervals; RSS | Coarser DOM window; tighter RN envelope | **needs_spike** (fail-closed budgets) |
 | **0.5** | chat-core cut | Invert `../index` + relocate component predicates + ports for clock/trace/Maps; no slice drag | Narrow **first family for proof only**; never fork production | **spike_done** — `../index` gone; remaining impurities in spike notes (WP-11) |
 | **0.6** | Host protocol + contracts | Freeze ChatCoreSession/Patch, three projections, dual-transport, buffer-first, `applyReductionPatch` | — | **freeze_done** — `docs/design/chat-core-contracts.md` |
 
-**P0 exit:** all six resolved or on fallback, recorded in this doc (or companion spike notes). **0.5 and 0.6 are recorded.** Remaining: 0.2 crypto golden, 0.3 Metro, 0.1 mDNS-or-fallback, 0.4 WebView budget.  
+**P0 exit:** all six resolved or on fallback, recorded in this doc (or companion spike notes). **0.2, 0.5 and 0.6 are recorded.** Remaining: 0.3 Metro, 0.1 mDNS-or-fallback, 0.4 WebView budget.  
 **Gate:** WP-07 / WP-08 / WP-11 / WP-15 must not start until Wave 0 exit criteria are recorded (synthetic **P0-complete** gate).
 
 ---
@@ -320,9 +320,9 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | — |
 | **parallel_ok_with** | WP-01–02, WP-04–06 |
 | **Goal** | Capture desktop↔Dart golden vectors for payload + chunked file envelopes; prove @noble (or quick-crypto) decode with **zero** edits under frozen trees. |
-| **Exit** | Vectors committed; live frame decode; library choice recorded |
-| **Tests** | Golden vector harness (pre-package) |
-| **Scope** | `remote-control-crypto.ts`, Flutter `crypto.dart`, tests |
+| **Exit** | **done 2026-08-21** — `docs/design/relay-crypto-golden/`; desktop golden test; Flutter + `@noble/ciphers@2.3.0` decrypt unmodified frames; WP-08 library = noble |
+| **Tests** | `remote-control-crypto.golden.test.ts` |
+| **Scope** | `remote-control-crypto.ts` (read-only), Flutter `crypto.dart` (read-only), tests |
 
 #### WP-04 — Spike 0.3: Metro resolves `@superone/shared`
 
@@ -843,7 +843,7 @@ bun run dev:mobile
 |----|-----|--------|
 | **PR1** | **WP-01** | **done 2026-08-14** — inverted three `../index` symbols into `event-reducer/transformers.ts`; impurity map + boundary test recorded. |
 | **PR2** | **WP-02** | **done 2026-08-21** — `docs/design/chat-core-contracts.md` freeze on v0.55.2 (keys, owner, skipped events, host protocol, Remote Control scope). |
-| **PR3** | **WP-03** | Capture AES-GCM/HKDF (+ chunked) golden vectors from desktop WebCrypto and Flutter; land vectors + harness (pre-`packages/relay-client` or empty package shell). |
+| **PR3** | **WP-03** | **done 2026-08-21** — golden vectors + desktop decrypt harness; noble 2.3.0 chosen for WP-08. |
 
 After PR1–3 green, run WP-04/05/06 in parallel, then **WP-07 scaffold** once Metro (WP-04) and P0-complete are recorded.
 

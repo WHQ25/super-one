@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "comment": "Captured 2026-08-21 from desktop remote-control-crypto.ts (WebCrypto). IV lives inside each ciphertext. Do not regenerate unless the algorithm changes. Unmodified frames decrypt on Flutter 1.0.0+19 crypto.dart and @noble/ciphers@2.3.0 + @noble/hashes@2.3.0.",
+  "masterSecretHex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "r2Key": "files/abcdef0123456789abcdef0123456789/deadbeefcafe0001000200030004beef.bin",
+  "derived": {
+    "channelKeyHex": "9b39e0f9b7e4369357e8928313b4eeab5f9d935eecfa31364905e6d92e194509"
+  },
+  "hmac": {
+    "role": "mobile",
+    "timestamp": "1700000000",
+    "tokenHex": "66cd5810f33017da05134c9fa4d79924ba08d5067286c10e127748b9ad535885"
+  },
+  "roomId": "5568e74582cf06a5afd92a019ef419aa",
+  "payload": {
+    "plaintext": {
+      "type": "event",
+      "events": [
+        {
+          "type": "status_change",
+          "status": "idle",
+          "sessionId": "s1"
+        }
+      ]
+    },
+    "ciphertextB64": "HeTaKxmRCx2E8QRNzqLp2VFbRVuZr8KNE6F0aKY6jP3S7pAxoilUJFAy9FGyOK+Cdi0q+t34dYEdKhCp0gXdrBfD9WhFnh5DCKaAfF5qmHeceOpeA/BVwGyfogmyfXqe3LxAEz46h0aa/3/1RAOE+UM="
+  },
+  "file": {
+    "plaintextUtf8": "superone-golden-file-v1",
+    "envelopeB64": "AQIAAEAAAQAAAAAAAAAAABBM9+6SiQpQCScvItbBEVpKKk8dmaeKuFEnpvrZj3IognjGdUt5e0OCN5padHF/2qeYKA=="
+  }
+}

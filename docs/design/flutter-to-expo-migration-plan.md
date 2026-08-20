@@ -1,9 +1,9 @@
 # Flutter → Expo Mobile Migration Plan
 
 Status: **executable plan** — supersedes `docs/draft/flutter-to-expo-migration.md` for scheduling and gates  
-Last updated: 2026-08-10  
-Sources: draft migration, monorepo inventory, validation, work-package catalog, adversarial review (ordering / extraction / protocol / delivery)  
-Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/shared`, external repo `super-one-flutter`
+Last updated: 2026-08-21  
+Sources: draft migration, monorepo inventory, validation, work-package catalog, adversarial review (ordering / extraction / protocol / delivery), v0.55.2 remote-parity freeze  
+Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/shared`, external repo `super-one-flutter`, `docs/design/chat-core-contracts.md`
 
 ---
 
@@ -16,6 +16,7 @@ Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/sha
 - **Reduction** lives in pure TS (`@superone/chat-core`), extracted from desktop `applyEventToSession`.
 - **Wire** lives in pure TS (`@superone/relay-client`): crypto, relay/LAN transport, remote RPC.
 - **No production users** — no data migration, staged rollout, or rollback obligation.
+- **Product scope:** Remote Control parity with desktop **v0.55.2-alpha** (chat / composer / pairing / terminal / permission sheets). Not a desktop IDE clone — see `docs/design/chat-core-contracts.md` §1.
 
 ### Why (priority order)
 
@@ -36,7 +37,7 @@ Draft §7 “9–12 weeks single-implementer” is **rejected** as under-scoped.
 
 ### Branch base
 
-`feat/expo-mobile` — all package work lands here; desktop adapterization may use short-lived sub-branches (esp. ToolBlock, R8).
+`feat/migrate-to-expo` — merged tag `v0.55.2-alpha` (2026-08-21). All package work lands here; desktop adapterization may use short-lived sub-branches (esp. ToolBlock, R8). Extract chat-core / chat-view from this snapshot so v0.55.2 transcript chrome (sandbox chip, error badge, Task diagnostic, `@native/*` galleries) comes along for free.
 
 ---
 
@@ -200,7 +201,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 | **C0.1** | confirmed | mDNS: Flutter `nsd` + `_superone._tcp`; desktop `lan-advertiser.ts`; no RN client. Fallback relay-only + manual host:port. **Do not block P2 pairing on mDNS.** |
 | **C0.2** | needs_spike | Wire shape matches desktop `remote-control-crypto.ts` ↔ Flutter `crypto.dart` (HKDF `channel-key`/`aes-key`, IV\|\|ciphertext base64). **No cross-language golden vectors in monorepo.** |
 | **C0.5** | **spike_done** (2026-08-14) | `../index` inverted: three symbols live in `event-reducer/transformers.ts` (barrel re-exports). Lifecycle family has no `@/components` / `window` / Maps. Remaining: component predicates, `window.app.trace`, module Maps, `Date.now`, `defaults`↔`index` cycle. Notes: `docs/design/chat-core-extraction-spike.md`. No package cutover. |
-| **C0.6** | partial | Only fat `PerSessionState`; contracts not typed. Write-set includes `awaitingAssistantReply`, `lastEventAt`, `promptSuggestion`, `session`, `permissionMode`, `modelFallback`, etc. |
+| **C0.6** | **freeze_done** (2026-08-21) | Exhaustive `ChatCorePatch` + key→owner + `SKIPPED_EVENTS` + host table + dual-transport in `docs/design/chat-core-contracts.md`. Baseline v0.55.2 (`messages_retracted`; `model_fallback` is a transcript row, not a patch key). |
 | **C-seq** | confirmed | Never conflate relay envelope seq with `AgentEvent.seq` (relay-session enqueue; session `nextEventSeq`; Flutter never stamps seq on events). |
 | **C-reconnect** | partial | Flutter reconnect buffer-first at `chat_page.dart:485-513`; open path races — **normalize buffer-first**. |
 | **C-batch** | confirmed | Desktop paragraph-coalesces mobile text (`\n\n` or ≥1000 chars). RN→WebView ≤1/33ms is **new** host design. Shared `AGENT_EVENT_BATCH_MS = 33`. |
@@ -215,7 +216,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 ### Must-do-before-code (P0 gates)
 
 - **0.5** chat-core boundary proof + compile-time boundary sketch — **done** (`docs/design/chat-core-extraction-spike.md`)
-- **0.6** freeze contracts + host protocol + dual-transport + buffer-first  
+- **0.6** freeze contracts + host protocol + dual-transport + buffer-first — **done** (`docs/design/chat-core-contracts.md`)
 - **0.2** golden AES-GCM/HKDF (+ chunked file) vectors  
 - **0.3** Metro `@superone/shared` under bun hoisted workspaces  
 - **0.1** mDNS attempt or formal fallback accept (non-blocking for P2)  
@@ -257,6 +258,7 @@ Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path,
 - Data migration / staged rollout / rollback plans.
 - Finer-grained streaming vs paragraph-chunked text (desktop already coalesces; § out of scope).
 - Replacing desktop-side relay host code with relay-client this cycle (package is standalone for either later).
+- Desktop-only surfaces as of v0.55.2: DeepSeek in-process runtime / trajectory / plugin host, Computer Use workspace, agent-browser PiP, CDP perf, Liquid Glass, `.ipynb` preview, custom-provider settings UI. Expo renders remote `AgentEvent`s from those harnesses; it does not host them.
 
 ---
 
@@ -269,9 +271,9 @@ Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path,
 | **0.3** | Metro + bun hoisted workspaces | `resolver.unstable_enableSymlinks` + `watchFolders`; import `@superone/shared` leaf | Explicit per-package alias map | **needs_spike** |
 | **0.4** | WebView streaming perf + RSS | Stress corpus (≥200 turns code+mermaid) + longest recording; sample paint intervals; RSS | Coarser DOM window; tighter RN envelope | **needs_spike** (fail-closed budgets) |
 | **0.5** | chat-core cut | Invert `../index` + relocate component predicates + ports for clock/trace/Maps; no slice drag | Narrow **first family for proof only**; never fork production | **spike_done** — `../index` gone; remaining impurities in spike notes (WP-11) |
-| **0.6** | Host protocol + contracts | Freeze ChatCoreSession/Patch, three projections, dual-transport, buffer-first, `applyReductionPatch` | — | **partial** → freeze before renderer work |
+| **0.6** | Host protocol + contracts | Freeze ChatCoreSession/Patch, three projections, dual-transport, buffer-first, `applyReductionPatch` | — | **freeze_done** — `docs/design/chat-core-contracts.md` |
 
-**P0 exit:** all six resolved or on fallback, recorded in this doc (or companion spike notes).  
+**P0 exit:** all six resolved or on fallback, recorded in this doc (or companion spike notes). **0.5 and 0.6 are recorded.** Remaining: 0.2 crypto golden, 0.3 Metro, 0.1 mDNS-or-fallback, 0.4 WebView budget.  
 **Gate:** WP-07 / WP-08 / WP-11 / WP-15 must not start until Wave 0 exit criteria are recorded (synthetic **P0-complete** gate).
 
 ---
@@ -306,7 +308,7 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | — |
 | **parallel_ok_with** | WP-01, WP-03–06 |
 | **Goal** | Freeze `ChatCoreSession` / exhaustive `ChatCorePatch` / three projections / key→owner; host table; dual-transport; buffer-first open+reconnect; `applyReductionPatch` naming. |
-| **Exit** | (1) Exhaustive patch keys from all families (2) ChatCoreSession read union (3) key→owner (4) remote-omitted event list (5) dual-transport + reconnect composition (6) host message table |
+| **Exit** | **done 2026-08-21** — `docs/design/chat-core-contracts.md`: exhaustive patch keys from all families on v0.55.2; read union; key→owner; `SKIPPED_EVENTS`; dual-transport + reconnect; host table; Remote Control vs desktop-only split |
 | **Tests** | Contract fixtures as markdown/TS types sketch (implementation later) |
 | **Scope** | `chat-store/types.ts`, event-reducer, `remote-control-service.ts` (read-only), `packages/shared/src/agent-types.ts` |
 
@@ -830,7 +832,7 @@ bun run dev:mobile
 2. Does relay-client replace desktop-side relay host code later? Built standalone so either is possible.
 3. Should Phase 4 introduce finer-grained streaming (vs paragraph-chunked)? **Currently out of scope.**
 4. Mini-app iframe-in-WebView policy for mobile (R6): defer, native host, or limited allowlist?
-5. Exact remote-relevant family set for first production chat-core cutover (if 0.5 narrows) — document after WP-01.
+5. Exact remote-relevant family set for first production chat-core cutover (if 0.5 narrows) — **closed in WP-02**: all families in `applyEventToSession` except skipped-event no-ops. Includes ACP inline cases and `messages_retracted`.
 6. Staffing: confirm 1 vs 2 FTE for calendar commitment.
 
 ---
@@ -840,7 +842,7 @@ bun run dev:mobile
 | PR | WP | Action |
 |----|-----|--------|
 | **PR1** | **WP-01** | **done 2026-08-14** — inverted three `../index` symbols into `event-reducer/transformers.ts`; impurity map + boundary test recorded. |
-| **PR2** | **WP-02** | Freeze doc PR: exhaustive `ChatCorePatch` key list + key→owner + host protocol (`applyReductionPatch`, buffer-first, dual-transport exclusive) committed under `docs/design/`. |
+| **PR2** | **WP-02** | **done 2026-08-21** — `docs/design/chat-core-contracts.md` freeze on v0.55.2 (keys, owner, skipped events, host protocol, Remote Control scope). |
 | **PR3** | **WP-03** | Capture AES-GCM/HKDF (+ chunked) golden vectors from desktop WebCrypto and Flutter; land vectors + harness (pre-`packages/relay-client` or empty package shell). |
 
 After PR1–3 green, run WP-04/05/06 in parallel, then **WP-07 scaffold** once Metro (WP-04) and P0-complete are recorded.
@@ -884,4 +886,16 @@ Flutter has **zero** custom MethodChannels — plugin capability only (camera, f
 
 ---
 
-*End of plan. Execute Wave 0 before any production package cutover.*
+## Appendix D — v0.55.2 Remote Control parity (Expo must / must not)
+
+Frozen with WP-02. Source of truth: `docs/design/chat-core-contracts.md` §1.
+
+**Must (transcript comes with chat-view extract from this baseline):** sandbox chip; model-fallback notice row; structured error badge; grouped / background task notifications; unified tool status; `@native/*` galleries; DeepSeek Task + `diagnostic`; Cursor nested subagents; Codex Fast / Approve for Me; `messages_retracted`.
+
+**Must (RN shell / composer, WP-20–21):** `@widget` `@debug`; `@codex`/`@claude`/`@grok` mentions; collab `handoff`; additional-dirs `provider` field; IME from desktop ChatInput; `setTheme` from inverted light chrome.
+
+**Must not:** dsh runtime, trajectory panel, Computer Use workspace, browser PiP, Liquid Glass, notebook preview, custom-provider settings.
+
+---
+
+*End of plan. Execute remaining Wave 0 (0.2 / 0.3 / 0.1 / 0.4) before any production package cutover. 0.5 and 0.6 are recorded.*

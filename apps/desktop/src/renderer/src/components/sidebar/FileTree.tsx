@@ -1,10 +1,11 @@
 import { useEffect, useCallback, useRef, useState, useMemo, type DragEvent, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search } from 'lucide-react'
+import { RefreshCw, Search } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { TreeRow, autoExpandedDirs } from './TreeRow'
 import { FileTreeSearch } from './FileTreeSearch'
 import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay, isWithinFolder, internalDragSource } from './drag-drop-utils'
@@ -76,6 +77,7 @@ export function FileTree() {
   const loading = useFileTreeStore((s) => s.loading)
   const visibleList = useFileTreeStore((s) => s._visibleList)
   const fetchTree = useFileTreeStore((s) => s.fetchTree)
+  const refreshTree = useFileTreeStore((s) => s.refreshTree)
   const renamingPath = useFileTreeStore((s) => s.renamingPath)
   const toggleDir = useFileTreeStore((s) => s.toggleDir)
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
@@ -87,6 +89,9 @@ export function FileTree() {
   const clearRevealed = useFileTreeStore((s) => s.clearRevealed)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
   const folderName = currentFolder?.split('/').pop() ?? 'Project'
+  // Remote projects have no file watcher (fs.watch cannot follow a `remote:` key),
+  // so the tree only refreshes when a turn ends — offer a manual refresh there.
+  const isRemote = !!fileRoot && parseRemoteProjectKey(fileRoot) !== null
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragCounterRef = useRef(0)
@@ -94,6 +99,7 @@ export function FileTree() {
   const [altKeyHeld, setAltKeyHeld] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [searching, setSearching] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const autoScroll = useAutoScroll(scrollRef)
 
   const virtualizer = useVirtualizer({
@@ -225,6 +231,16 @@ export function FileTree() {
     setDeleteTarget(null)
   }, [fileRoot, deleteTarget, deleteFile])
 
+  const handleRefresh = useCallback(async () => {
+    if (!fileRoot) return
+    setRefreshing(true)
+    try {
+      await refreshTree(fileRoot)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [fileRoot, refreshTree])
+
   const isEmpty = visibleList.length === 0 && !loading
 
   if (searching && fileRoot) {
@@ -237,6 +253,16 @@ export function FileTree() {
         <span className="min-w-0 flex-1 truncate text-md font-medium text-sidebar-foreground/70">
           {folderName}
         </span>
+        {isRemote && (
+          <IconButton
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            tooltip={t('sidebar.refreshFiles')}
+          >
+            <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
+          </IconButton>
+        )}
         {fileRoot && (
           <IconButton size="sm" onClick={() => setSearching(true)} tooltip={t('sidebar.search.placeholder')}>
             <Search />

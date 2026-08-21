@@ -302,6 +302,7 @@ export type Messages = {
     }
     empty: string
     noFiles: string
+    refreshFiles: string
     search: {
       placeholder: string
       noResults: string
@@ -3498,6 +3499,7 @@ export const en: Messages = {
     },
     empty: 'No projects yet',
     noFiles: 'No files',
+    refreshFiles: 'Refresh file tree',
     search: {
       placeholder: 'Search files...',
       noResults: 'No matching files',

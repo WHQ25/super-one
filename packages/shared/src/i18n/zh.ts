@@ -313,6 +313,7 @@ export const zh: Messages = {
     },
     empty: '还没有项目',
     noFiles: '没有文件',
+    refreshFiles: '刷新文件树',
     search: {
       placeholder: '搜索文件...',
       noResults: '没有匹配的文件',

@@ -33,6 +33,17 @@ export interface DeviceUiNode {
   enabled?: boolean
   focused?: boolean
   bounds?: DeviceUiBounds
+  /**
+   * Set only when the node was read off the pixels rather than the accessibility
+   * tree, because the two are not interchangeable and the difference is not visible
+   * from the outside.
+   *
+   * An OCR node has a box and a label and nothing else: it cannot be pressed through
+   * accessibility (only tapped at its centre), its role is always `text`, and it has
+   * no identifier to prefer over that label. Absent means it came from the app's own
+   * accessibility tree and the full contract holds.
+   */
+  source?: 'ocr'
   children?: DeviceUiNode[]
   /** Children dropped by the node budget. Present only when something was cut. */
   truncatedChildren?: number

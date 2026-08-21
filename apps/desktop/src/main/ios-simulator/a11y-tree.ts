@@ -33,6 +33,13 @@ export interface NormalizedAccessibilityTree {
   refs: Map<string, number>
   /** The guest's own screen size in points, taken from the root frame. */
   screenPoints: { width: number; height: number }
+  /**
+   * Set when the tree was recovered from pixels because the app exposed no usable
+   * accessibility tree. Carried on the tree rather than inferred from an empty
+   * `refs` map, so a backend can refuse `press` with a reason instead of reporting
+   * every ref as unknown.
+   */
+  source?: 'ocr'
 }
 
 /**
@@ -143,6 +150,26 @@ export function fingerprintTree(root: DeviceUiNode): string {
   }
   walk(root)
   return parts.join('\n')
+}
+
+/**
+ * Whether this tree describes anything an agent could act on.
+ *
+ * The check that decides between reading the app's own semantics and falling back to
+ * the pixels. A WebView, a game canvas, or a framework that only builds its
+ * accessibility tree when a screen reader is running all return a structurally valid
+ * tree with nothing named in it -- which is indistinguishable from a blank screen
+ * unless someone asks this question.
+ *
+ * Deliberately strict: one named node is enough to keep the real tree, because OCR
+ * costs an order of magnitude more and gives back strictly less (no identifiers, no
+ * roles, no state, and nothing at all for icon-only controls).
+ */
+export function hasUsableSemantics(root: DeviceUiNode): boolean {
+  const named = (node: DeviceUiNode): boolean =>
+    Boolean(node.label || node.identifier || node.value)
+      || (node.children ?? []).some(named)
+  return named(root)
 }
 
 /** Depth-first search over a normalized tree. Used by `device_query`. */

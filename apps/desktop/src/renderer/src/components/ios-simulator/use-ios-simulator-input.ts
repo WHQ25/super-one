@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { IosSimulatorTouchContact } from '@superone/shared/ios-simulator'
 import {
   IosSimulatorSyntheticGesture,
@@ -35,18 +35,7 @@ function wheelPixels(event: WheelEvent, pageSize: number): { deltaX: number; del
 }
 
 export interface IosSimulatorInputApi {
-  /**
-   * Callback ref for the `<canvas>` frames are painted into. It is a ref callback
-   * backed by state, not a plain ref: the device shell swaps component type when
-   * Apple's artwork resolves, which destroys and recreates the canvas. A plain ref
-   * hides that from React, so every effect bound to the old element — the wheel
-   * listener here, the frame renderer in the stage — keeps writing to a node that
-   * is no longer in the document.
-   */
-  setCanvas: (element: HTMLCanvasElement | null) => void
-  /** The canvas currently mounted, for effects that must rebind when it changes. */
-  canvas: HTMLCanvasElement | null
-  /** Attach to the device shell wrapping that canvas. */
+  /** Attach to the device shell wrapping the canvas. */
   shellRef: React.RefObject<HTMLDivElement | null>
   /**
    * The real keyboard focus target, mounted inside the shell.
@@ -67,13 +56,21 @@ export interface IosSimulatorInputApi {
     }
   }
   sendInput: (input: SimulatorInput) => Promise<void>
+  /**
+   * Bound to the element HOSTING the canvas rather than the canvas itself: the
+   * canvas is created outside React by the surface registry, so React's synthetic
+   * event system cannot reach it. Pointer events bubble up from it to the host, and
+   * every coordinate below is measured against `canvas` explicitly rather than
+   * `event.currentTarget` — the host is only guaranteed to CONTAIN the picture, not
+   * to have its exact rect, and the guest's touch point comes from the picture.
+   */
   canvasHandlers: {
-    onPointerDown: React.PointerEventHandler<HTMLCanvasElement>
-    onPointerMove: React.PointerEventHandler<HTMLCanvasElement>
-    onPointerUp: React.PointerEventHandler<HTMLCanvasElement>
-    onPointerCancel: React.PointerEventHandler<HTMLCanvasElement>
-    onLostPointerCapture: React.PointerEventHandler<HTMLCanvasElement>
-    onPointerEnter: React.PointerEventHandler<HTMLCanvasElement>
+    onPointerDown: React.PointerEventHandler<HTMLElement>
+    onPointerMove: React.PointerEventHandler<HTMLElement>
+    onPointerUp: React.PointerEventHandler<HTMLElement>
+    onPointerCancel: React.PointerEventHandler<HTMLElement>
+    onLostPointerCapture: React.PointerEventHandler<HTMLElement>
+    onPointerEnter: React.PointerEventHandler<HTMLElement>
   }
 }
 
@@ -90,13 +87,14 @@ export interface IosSimulatorInputApi {
  * before the sample means anything to the guest.
  */
 export function useIosSimulatorInput(
-  { sessionId, enabled, rotationDegrees = 0 }: {
+  { sessionId, enabled, rotationDegrees = 0, canvas }: {
     sessionId: string
     enabled: boolean
+    /** Owned by `ios-simulator-surface`; null until a view has attached it. */
+    canvas: HTMLCanvasElement | null
     rotationDegrees?: number
   },
 ): IosSimulatorInputApi {
-  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null)
   const shellRef = useRef<HTMLDivElement | null>(null)
   const keyboardRef = useRef<HTMLTextAreaElement | null>(null)
   const touchTracker = useRef(new IosSimulatorTouchTracker())
@@ -113,10 +111,10 @@ export function useIosSimulatorInput(
     if (!result.ok) reportIosSimulatorError(result.error ?? 'iOS Simulator input failed.')
   }, [sessionId])
 
-  const pointerRatio = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect()
+  const pointerRatio = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const bounds = (canvas ?? event.currentTarget).getBoundingClientRect()
     return normalizeFramePoint(bounds, event.clientX, event.clientY, rotationDegrees)
-  }, [rotationDegrees])
+  }, [canvas, rotationDegrees])
 
   const cancelScheduledTouchMove = useCallback(() => {
     if (touchMoveTimer.current !== null) clearTimeout(touchMoveTimer.current)
@@ -183,7 +181,7 @@ export function useIosSimulatorInput(
     }, delay)
   }, [clearSyntheticGestureEndTimer, finishSyntheticGesture])
 
-  const onPointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (!enabled || (event.pointerType === 'mouse' && event.button !== 0)) return
     finishSyntheticGesture(true)
     const contacts = touchTracker.current.begin({
@@ -199,14 +197,14 @@ export function useIosSimulatorInput(
     keyboardRef.current?.focus()
   }, [enabled, finishSyntheticGesture, pointerRatio, sendInput])
 
-  const onPointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (!enabled) return
     // The dispatched event already reports the newest position — the last entry of
     // `getCoalescedEvents()` is that same sample, so materialising the array (2-10
     // synthetic PointerEvents per move, ~1000/s at 120Hz) only to read its tail was
     // allocation for nothing. Intermediate samples are deliberately not replayed:
     // the helper's 16ms motion gate would drop them anyway.
-    const bounds = event.currentTarget.getBoundingClientRect()
+    const bounds = (canvas ?? event.currentTarget).getBoundingClientRect()
     const point = normalizeFramePoint(bounds, event.clientX, event.clientY, rotationDegrees)
     lastGestureCenter.current = point
     const contacts = touchTracker.current.move({
@@ -222,7 +220,7 @@ export function useIosSimulatorInput(
   // Not gated on `enabled`: a release has to reach the guest even if the panel went
   // non-interactive mid-gesture, or the device is left holding a stuck contact.
   const endPointer = useCallback((
-    event: React.PointerEvent<HTMLCanvasElement>,
+    event: React.PointerEvent<HTMLElement>,
     phase: 'ended' | 'cancelled',
   ) => {
     const contacts = touchTracker.current.end(event.pointerId, pointerRatio(event), phase)
@@ -231,15 +229,15 @@ export function useIosSimulatorInput(
     void sendInput({ type: 'touch.update', contacts })
   }, [cancelScheduledTouchMove, pointerRatio, sendInput])
 
-  const onPointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerUp = useCallback((event: React.PointerEvent<HTMLElement>) => {
     endPointer(event, 'ended')
   }, [endPointer])
 
-  const onPointerCancel = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerCancel = useCallback((event: React.PointerEvent<HTMLElement>) => {
     endPointer(event, 'cancelled')
   }, [endPointer])
 
-  const onPointerEnter = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerEnter = useCallback((event: React.PointerEvent<HTMLElement>) => {
     lastGestureCenter.current = pointerRatio(event)
   }, [pointerRatio])
 
@@ -393,8 +391,6 @@ export function useIosSimulatorInput(
   }, [])
 
   return {
-    setCanvas,
-    canvas,
     shellRef,
     sendInput,
     canvasHandlers: {

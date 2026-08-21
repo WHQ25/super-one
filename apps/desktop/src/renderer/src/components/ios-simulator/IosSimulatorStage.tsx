@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, Home, Keyboard, KeyboardOff, Loader2, LockKeyhole, Play, Plug, Power, RotateCcw, RotateCw, Smartphone, Unplug, Volume1, Volume2 } from 'lucide-react'
 import type {
@@ -8,7 +8,6 @@ import type {
   IosSimulatorOrientation,
   IosSimulatorPreviewQuality,
   IosSimulatorDevice,
-  IosSimulatorFrame,
   IosSimulatorSessionState,
 } from '@superone/shared/ios-simulator'
 import {
@@ -26,11 +25,7 @@ import { IosSimulatorDeviceMenu } from './IosSimulatorDeviceMenu'
 import { IosSimulatorTouchPointer, useIosSimulatorTouchPointer } from './IosSimulatorTouchPointer'
 import { classifyIosSimulatorFamily } from './ios-simulator-catalog'
 import { readPreviewQuality, writePreviewQuality } from './ios-simulator-preview-quality'
-import { messageOf, reportIosSimulatorError } from './ios-simulator-report'
-import {
-  IosSimulatorFrameRenderer,
-  preferredIosSimulatorPreviewMode,
-} from './ios-simulator-video'
+import { attachIosSimulatorSurface } from './ios-simulator-surface'
 import { useIosSimulatorInput } from './use-ios-simulator-input'
 
 /** The keys a device body can carry, as both shells spell them. */
@@ -173,6 +168,19 @@ interface IosSimulatorStageProps {
   checking: boolean
   /** True while a chosen device is booting, so the stage can say so instead of going blank. */
   launching: boolean
+  /**
+   * `preview` is the floating picture-in-picture: the device body and its glass, with
+   * no header, no toolbar, no gutter and no input. Everything this drops is a control,
+   * and the preview is not a place to operate the device from — it is a place to see
+   * it from, which is why the box around it is the device's own outline.
+   *
+   * `overlay` is that preview expanded: the device becomes operable and the toolbar
+   * comes back, but as a bar the width of the device rather than of the window, and
+   * the header stays gone. What the header carried is management — pick a device,
+   * change quality, disconnect, shut down — which belongs to the Activity panel; the
+   * overlay is for working the device that is already in front of you.
+   */
+  variant?: 'panel' | 'preview' | 'overlay'
   /** Points the panel at another device. Draws it; does not start it. */
   onSelectDevice: (udid: string) => void
   /** Boots the drawn device, or attaches to it when it is already running. */
@@ -202,32 +210,59 @@ export function IosSimulatorStage({
   onLaunchDevice,
   onDetach,
   onTerminate,
+  variant = 'panel',
 }: IosSimulatorStageProps) {
   const { t } = useTranslation()
+  const preview = variant === 'preview'
+  const overlay = variant === 'overlay'
   const [hasFrame, setHasFrame] = useState(false)
-  // Apple's own artwork for this exact model, when the local Xcode ships it.
-  // `undefined` means the lookup has not answered yet, which is not the same as the
-  // `null` that means this model has no artwork.
-  const [chrome, setChrome] = useState<IosSimulatorChrome | null | undefined>(undefined)
+  // Apple's own artwork for this exact model, when the local Xcode ships it — tagged
+  // with the device it was read for, because WHICH device it describes is the whole
+  // question. `chrome` below derives from it: `undefined` there means the lookup for
+  // the device currently on screen has not answered, which is not the same as the
+  // `null` that means this model ships no artwork.
+  const [artwork, setArtwork] = useState<{ udid: string; chrome: IosSimulatorChrome | null } | null>(null)
   const [quality, setQuality] = useState<IosSimulatorPreviewQuality>(readPreviewQuality)
   const [orientation, setOrientation] = useState<IosSimulatorOrientation>('portrait')
   // The guest keeps a keyboard plugged or unplugged across a remount, and
   // CoreSimulator has a setter but no getter, so the host state IS the reading.
   const [keyboardConnected, setKeyboardConnected] = useState(true)
   const ready = sessionState?.phase === 'ready'
-  const interactive = ready && sessionState?.interactive === true
+  // The preview is look-only, and the input pipeline has to know it: a hidden keyboard
+  // sink that can still take focus, or a touch pointer drawn over a device nobody can
+  // reach, are both worse than not wiring them up at all.
+  const interactive = !preview && ready && sessionState?.interactive === true
   const rotationDegrees = IOS_SIMULATOR_ROTATION_DEGREES[orientation]
-  const { setCanvas, canvas, shellRef, sendInput, canvasHandlers, keyboard } = useIosSimulatorInput({
+  // Handed over by `attachIosSimulatorSurface` below rather than created here: the
+  // picture outlives this component, so the element is borrowed, not owned.
+  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null)
+  const canvasHostRef = useRef<HTMLDivElement | null>(null)
+  const { shellRef, sendInput, canvasHandlers, keyboard } = useIosSimulatorInput({
     sessionId,
     enabled: interactive,
     rotationDegrees,
+    canvas,
   })
   const touchPointer = useIosSimulatorTouchPointer({
     enabled: interactive,
     rotationDegrees,
     handlers: canvasHandlers,
+    canvas,
   })
   const udid = device?.udid ?? ''
+  /**
+   * Derived, not stored, so it can never describe the PREVIOUS device.
+   *
+   * Held as state, the answer for the device being left stayed on screen through the
+   * first render of the next one. That is a real window, not a theoretical one: when
+   * `bind` answers in the same batch that names the device — a warm simulator, or a
+   * fast host — `ready` went true while `chrome` still held the last device's `null`,
+   * so the canvas mounted inside the fallback shell, the stream opened against it,
+   * and the artwork arriving a tick later swapped the shell, replaced the canvas, and
+   * made main tear the helper's encoder down and renegotiate it. Comparing the udid
+   * collapses that window to nothing and saves the extra render a reset effect cost.
+   */
+  const chrome = artwork?.udid === udid ? artwork.chrome : undefined
   // A generic phone silhouette stands in while there is no device to classify — the
   // environment probe runs before the list is even read.
   const family = device ? classifyIosSimulatorFamily(device) : 'iphone'
@@ -278,34 +313,27 @@ export function IosSimulatorStage({
     })
   }, [boundUdid, sessionId])
 
-  // Keyed on the canvas element, not just on readiness: the renderer paints into
-  // the exact node it was built with, so a replaced canvas needs a new renderer.
-  useEffect(() => {
-    if (!ready || !canvas) return
-    setHasFrame(false)
-    const preferredMode = preferredIosSimulatorPreviewMode()
-    const renderer = new IosSimulatorFrameRenderer(
-      canvas,
-      () => setHasFrame(true),
-      (cause) => reportIosSimulatorError(messageOf(cause)),
-    )
-    // The subscription is session-scoped in preload, so nothing else's frames can
-    // arrive here and there is no sessionId to re-check.
-    const removeFrameListener = window.environment.onIosSimulatorFrame(
+  /**
+   * Take the session's decoded picture and put it in this view's host element.
+   *
+   * A layout effect, not an effect: the canvas is moved by `appendChild`, and doing
+   * that after paint shows one frame of empty glass on every handover.
+   *
+   * `quality` and `udid` are dependencies because both are settled in `stream.start`
+   * — but the registry renegotiates around the SAME canvas, so unlike the old effect
+   * this no longer means the picture disappears while it happens.
+   */
+  useLayoutEffect(() => {
+    const host = canvasHostRef.current
+    if (!live || !host) return
+    return attachIosSimulatorSurface(
       sessionId,
-      (frame: IosSimulatorFrame) => renderer.push(frame),
+      host,
+      { udid, quality, framed: chrome != null },
+      setHasFrame,
+      setCanvas,
     )
-    window.environment.openIosSimulatorStream(sessionId, preferredMode, quality)
-    return () => {
-      removeFrameListener()
-      window.environment.closeIosSimulatorStream(sessionId)
-      renderer.close()
-      setHasFrame(false)
-    }
-    // `quality` is a dependency on purpose: scale and frame rate are negotiated in
-    // `stream.start`, so changing either one means tearing the stream down and
-    // opening a new one.
-  }, [canvas, quality, ready, sessionId, udid])
+  }, [chrome, live, quality, sessionId, udid])
 
   // `chrome` is `undefined` while the artwork lookup is still out and `null` when
   // the model has none; both mean nothing is covered yet, so the toolbar stays whole.
@@ -313,6 +341,34 @@ export function IosSimulatorStage({
     () => new Set((chrome?.buttons ?? []).map((button) => button.input).filter(Boolean)),
     [chrome],
   )
+
+  /**
+   * How wide the device is drawn, so the overlay's toolbar can be that wide too.
+   *
+   * `offsetWidth`, not `getBoundingClientRect()`: the shell is turned with a 300ms CSS
+   * transform, and a rect read the moment the rotation is requested still describes the
+   * old angle. The layout box ignores transforms, so swapping it by hand on a quarter
+   * turn is both exact and immediate.
+   *
+   * The observer alone is not enough either — a quarter turn does change the layout box
+   * (the wrapper swaps its container-query axes), but nothing tells it which way the
+   * result is then rotated, which is what `rotationDegrees` is doing in the deps.
+   */
+  const [shellWidth, setShellWidth] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    if (!overlay) return
+    const element = shellRef.current
+    if (!element) return
+    const measure = () => {
+      const { offsetWidth, offsetHeight } = element
+      setShellWidth(rotationDegrees % 180 === 0 ? offsetWidth : offsetHeight)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+    // `chrome` and `live` both swap the shell element out from under the ref.
+  }, [overlay, rotationDegrees, chrome, live, shellRef])
 
   const rotate = useCallback((direction: 'left' | 'right') => {
     const next = stepIosSimulatorOrientation(orientation, direction)
@@ -336,20 +392,25 @@ export function IosSimulatorStage({
   }, [])
 
   useEffect(() => {
-    if (!udid) { setChrome(null); return }
+    // No device is its own settled answer: the empty stage draws the bare shell.
+    if (!udid) { setArtwork({ udid: '', chrome: null }); return }
     let cancelled = false
-    setChrome(undefined)
     void window.environment.iosSimulatorChrome(udid)
-      .then((next) => { if (!cancelled) setChrome(next) })
+      .then((next) => { if (!cancelled) setArtwork({ udid, chrome: next }) })
       // Missing artwork is not an error worth a toast — the CSS shell covers it.
-      .catch(() => { if (!cancelled) setChrome(null) })
+      .catch(() => { if (!cancelled) setArtwork({ udid, chrome: null }) })
     return () => { cancelled = true }
   }, [udid])
 
   return (
     // Inherit the dockview group surface, do not repaint it.
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+    <div className={cn(
+      'flex h-full min-h-0 flex-col',
+      // The bar is a separate object under the device, not a strip welded to the
+      // bottom edge of a panel, so it gets air above it and centres on the device.
+      overlay && 'items-center gap-3 pb-4',
+    )}>
+      {variant === 'panel' && <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         {/* The device name IS the picker. There is no launcher page behind this panel
             any more, so the one label that always says which simulator you are looking
             at is also the one control that changes it. */}
@@ -394,7 +455,7 @@ export function IosSimulatorStage({
         >
           <Power />
         </IconButton>
-      </div>
+      </div>}
 
       {/* Unpainted, like the header and the toolbar: the dockview group surface runs
           edge to edge behind all three, so the device sits on one continuous ground
@@ -412,7 +473,15 @@ export function IosSimulatorStage({
           resolve against the panel's width on all four sides, and `min()` keeps the
           roomy 1rem once there is width to spend (from ~640px up). Container query
           units are not an option here: this element is itself the size container. */}
-      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-[min(1rem,2.5%)] [container-type:size]">
+      <div
+        className={cn(
+          'relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden [container-type:size]',
+          // The preview's box IS the device's outline, so a gutter there is not
+          // breathing room — it is the amount by which the device fails to fill the
+          // window the user sized for it.
+          preview ? 'p-0' : 'p-[min(1rem,2.5%)]',
+        )}
+      >
         {!device && !checking && !launching ? (
           // Only reachable with nothing to restore — no session binding and no
           // remembered simulator. The one state with no device to draw a body for,
@@ -458,7 +527,7 @@ export function IosSimulatorStage({
               // replaced, which `live` below is what guards.
               chrome={chrome ?? null}
               family={family}
-              {...(ready ? { onButton: (button: HardwareButton) => { void sendInput({ type: 'button', button }) } } : {})}
+              {...(ready && !preview ? { onButton: (button: HardwareButton) => { void sendInput({ type: 'button', button }) } } : {})}
             >
               {live ? (
                 <>
@@ -480,13 +549,17 @@ export function IosSimulatorStage({
                     className="pointer-events-none absolute left-1/2 top-1/2 size-px resize-none border-0 bg-transparent p-0 text-transparent caret-transparent opacity-0 outline-none"
                     {...keyboard.handlers}
                   />
-                  <canvas
-                    ref={setCanvas}
+                  {/* Where the session's canvas is parked while this view is the one
+                      showing it. The element inside is created and owned by
+                      `ios-simulator-surface`, so everything React still controls —
+                      the fade-in, the cursor, the pointer handlers — lives out here
+                      on the host instead. Sizing stays on the canvas itself, since
+                      the drawn fallback shell measures itself against the picture. */}
+                  <div
+                    ref={canvasHostRef}
                     aria-label={device?.name ?? t('activity.iosSimulator.title')}
                     className={cn(
-                      'max-h-full max-w-full select-none object-contain',
-                      // Apple's artwork gives the screen an exact rect to fill; the CSS
-                      // shell instead sizes itself from the canvas, so width stays auto.
+                      'flex max-h-full max-w-full items-center justify-center',
                       chrome ? 'h-full w-full' : 'h-full w-auto',
                       !hasFrame && 'opacity-0',
                       // The dot IS the cursor here — leaving the host arrow on top of it
@@ -537,7 +610,18 @@ export function IosSimulatorStage({
           Always mounted, greyed until the guest can hear it: the bar is part of the
           panel's shape, and having it appear on boot moved the device up by its own
           height at the exact moment the user was watching the screen come on. */}
-      <div className="flex flex-wrap items-center justify-center gap-1 border-t px-3 py-2">
+      {!preview && <div
+        className={cn(
+          'flex items-center justify-center gap-1',
+          overlay
+            // Never wraps. A wrapping bar would grow taller, shrink the device area,
+            // narrow the device, narrow the bar, and wrap again — the width of this
+            // bar is derived from a box whose height this bar takes away from.
+            ? 'w-auto max-w-full shrink-0 flex-nowrap overflow-x-auto rounded-xl border border-border bg-card px-2 py-1.5 shadow-sm'
+            : 'flex-wrap border-t px-3 py-2',
+        )}
+        {...(overlay && shellWidth ? { style: { width: shellWidth } } : {})}
+      >
         {HARDWARE_KEYS.filter((key) => !shellInputs.has(key.input)).map(({ input, icon: Icon, label }) => (
           <IconButton
             key={input}
@@ -581,7 +665,7 @@ export function IosSimulatorStage({
         {/* Capture only needs the device booted, not interactive: `simctl io` reads
             the display without going through HID. */}
         <IosSimulatorCaptureControls sessionId={sessionId} disabled={!ready} />
-      </div>
+      </div>}
     </div>
   )
 }

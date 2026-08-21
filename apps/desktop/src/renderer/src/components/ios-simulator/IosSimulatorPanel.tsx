@@ -14,9 +14,11 @@ import { messageOf, notifyIosSimulator, reportIosSimulatorError } from './ios-si
 
 interface IosSimulatorPanelProps {
   sessionId: string
+  /** `preview` / `overlay` reshape the stage around the device — see `IosSimulatorStage`. */
+  variant?: 'panel' | 'preview' | 'overlay'
 }
 
-export function IosSimulatorPanel({ sessionId }: IosSimulatorPanelProps) {
+export function IosSimulatorPanel({ sessionId, variant }: IosSimulatorPanelProps) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<IosSimulatorStatus | null>(null)
   const [devices, setDevices] = useState<IosSimulatorDevice[]>([])
@@ -190,6 +192,7 @@ export function IosSimulatorPanel({ sessionId }: IosSimulatorPanelProps) {
   return (
     <IosSimulatorStage
       sessionId={sessionId}
+      variant={variant}
       devices={devices}
       device={selectedDevice}
       sessionState={sessionState}

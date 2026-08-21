@@ -3,7 +3,7 @@ import { normalizeFramePoint, unrotateFrameSize } from './ios-simulator-input'
 import type { IosSimulatorInputApi } from './use-ios-simulator-input'
 
 type CanvasHandlers = IosSimulatorInputApi['canvasHandlers'] & {
-  onPointerLeave?: React.PointerEventHandler<HTMLCanvasElement>
+  onPointerLeave?: React.PointerEventHandler<HTMLElement>
 }
 
 /** Where the simulated finger is: away, resting on the glass, or pressing it. */
@@ -28,17 +28,20 @@ export function useIosSimulatorTouchPointer({
   enabled,
   rotationDegrees,
   handlers,
+  canvas,
 }: {
   enabled: boolean
   rotationDegrees: number
   handlers: IosSimulatorInputApi['canvasHandlers']
+  /** The picture itself, which the dot is positioned within — see `canvasHandlers`. */
+  canvas: HTMLCanvasElement | null
 }): IosSimulatorTouchPointerApi {
   const ref = useRef<HTMLDivElement | null>(null)
 
-  const place = useCallback((event: PointerEvent<HTMLCanvasElement>, state?: TouchPointerState) => {
+  const place = useCallback((event: PointerEvent<HTMLElement>, state?: TouchPointerState) => {
     const dot = ref.current
     if (!dot) return
-    const bounds = event.currentTarget.getBoundingClientRect()
+    const bounds = (canvas ?? event.currentTarget).getBoundingClientRect()
     // Same conversion the touch pipeline runs: the shell is rotated about its own
     // centre, so screen coordinates mean nothing until they are turned back into the
     // device's space — which is also the space this overlay is laid out in.
@@ -46,7 +49,7 @@ export function useIosSimulatorTouchPointer({
     const size = unrotateFrameSize(bounds, rotationDegrees)
     dot.style.transform = `translate3d(${xRatio * size.width}px, ${yRatio * size.height}px, 0)`
     if (state) dot.dataset.state = state
-  }, [rotationDegrees])
+  }, [canvas, rotationDegrees])
 
   const canvasHandlers = useMemo<CanvasHandlers>(() => {
     if (!enabled) return handlers

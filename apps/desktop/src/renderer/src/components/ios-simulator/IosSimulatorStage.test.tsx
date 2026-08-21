@@ -22,6 +22,7 @@ vi.mock('./ios-simulator-video', () => ({
   },
 }))
 
+import { resetIosSimulatorSurfaces } from './ios-simulator-surface'
 import { IosSimulatorStage } from './IosSimulatorStage'
 
 const DEVICE: IosSimulatorDevice = {
@@ -154,6 +155,14 @@ function renderStage(
     settleSession: (next: IosSimulatorSessionState) => view.rerender(stage(next)),
   })
 }
+
+// The surface registry is module-level on purpose — it has to outlive the React
+// tree — so it also outlives each test. Every case builds its own from cold.
+beforeEach(() => {
+  resetIosSimulatorSurfaces()
+  video.builtWith.length = 0
+  video.closed = 0
+})
 
 describe('iOS Simulator stage preview binding', () => {
   beforeEach(() => {
@@ -342,33 +351,37 @@ describe('iOS Simulator touch pointer', () => {
 
   beforeEach(() => {
     // jsdom ships no pointer capture, and the input pipeline captures on every
-    // contact so a drag off the glass keeps reporting.
-    HTMLCanvasElement.prototype.setPointerCapture = vi.fn()
-    HTMLCanvasElement.prototype.releasePointerCapture = vi.fn()
+    // contact so a drag off the glass keeps reporting. On `Element` rather than
+    // `HTMLCanvasElement`: the handlers hang off the div HOSTING the canvas now,
+    // because the canvas itself is created outside React by the surface registry.
+    Element.prototype.setPointerCapture = vi.fn()
+    Element.prototype.releasePointerCapture = vi.fn()
   })
 
   it('trades the hover tooltip for a contact dot that tracks the finger', async () => {
     stubEnvironment(async () => CHROME)
 
     renderStage()
-    const canvas = await screen.findByLabelText('iPhone 17 Pro')
+    // The device's visible surface — the element the pointer pipeline is bound to,
+    // which is the canvas's host rather than the canvas itself.
+    const glass = await screen.findByLabelText('iPhone 17 Pro')
 
     // The regression this guards: the shell carried a native `title`, so every trip
     // across the device dropped a black OS label over the picture.
-    expect(canvas.closest('[title]')).toBeNull()
+    expect(glass.closest('[title]')).toBeNull()
 
     expect(dot()).toHaveAttribute('data-state', 'idle')
     // React synthesises enter/leave out of over/out, so those are the events to send.
-    fireEvent.pointerOver(canvas, { clientX: 20, clientY: 40 })
+    fireEvent.pointerOver(glass, { clientX: 20, clientY: 40 })
     expect(dot()).toHaveAttribute('data-state', 'hover')
 
-    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, clientX: 20, clientY: 40 })
+    fireEvent.pointerDown(glass, { pointerId: 1, button: 0, clientX: 20, clientY: 40 })
     expect(dot()).toHaveAttribute('data-state', 'press')
 
-    fireEvent.pointerUp(canvas, { pointerId: 1, button: 0, clientX: 20, clientY: 40 })
+    fireEvent.pointerUp(glass, { pointerId: 1, button: 0, clientX: 20, clientY: 40 })
     expect(dot()).toHaveAttribute('data-state', 'hover')
 
-    fireEvent.pointerOut(canvas, { clientX: 20, clientY: 40 })
+    fireEvent.pointerOut(glass, { clientX: 20, clientY: 40 })
     expect(dot()).toHaveAttribute('data-state', 'idle')
   })
 
@@ -525,5 +538,46 @@ describe('iOS Simulator stage before a device is streaming', () => {
 
     await userEvent.click(launch)
     expect(onLaunchDevice).not.toHaveBeenCalled()
+  })
+
+  it('gives the expanded overlay a toolbar but no header', async () => {
+    // The header's buttons sat exactly where the overlay floated its own, so one of
+    // the two had to move. The header went: picking a device, changing quality,
+    // disconnecting and shutting down are management, and management is the panel's.
+    stubEnvironment(async () => CHROME)
+
+    renderStage(READY, { variant: 'overlay' })
+
+    // Gone with the header.
+    expect(await screen.findByRole('button', { name: 'Rotate Left' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Disconnect Preview' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Shut Down Simulator' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /iPhone 17 Pro · iOS 26.5/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Preview Quality' })).toBeNull()
+
+    // Unlike the shrunk preview, the device here can actually be driven.
+    expect(screen.getByLabelText('Simulator keyboard input')).toHaveAttribute('tabindex', '0')
+  })
+
+  it('strips the floating preview down to the device, with no way to drive it', async () => {
+    stubEnvironment(async () => CHROME)
+
+    renderStage(READY, { variant: 'preview' })
+
+    // The device is all that is left, and it is still live: the preview exists to
+    // watch a running simulator, so the canvas and its stream stay.
+    await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
+    expect(screen.getByLabelText('iPhone 17 Pro')).toBeInTheDocument()
+
+    // Everything else belongs to the expanded panel. A control small enough to miss
+    // is worse than one the user has to open the device to reach.
+    expect(screen.queryByRole('button', { name: 'Disconnect Preview' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Shut Down Simulator' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rotate Left' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /iPhone 17 Pro · iOS 26.5/ })).toBeNull()
+
+    // Look-only: a keyboard sink that could still take focus would swallow the
+    // host's typing on behalf of a device nobody can see the caret on.
+    expect(screen.getByLabelText('Simulator keyboard input')).toHaveAttribute('tabindex', '-1')
   })
 })

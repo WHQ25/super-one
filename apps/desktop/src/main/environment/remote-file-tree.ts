@@ -128,6 +128,22 @@ export function hostPathsEqual(a: string, b: string): boolean {
   return normalizeHostPath(a) === normalizeHostPath(b)
 }
 
+/**
+ * Project-relative path for a remote file op.
+ *
+ * Callers may hand us a host-absolute path — chat file chips cite the path the
+ * agent wrote (`/root/workspace/proj/a.md`), and the renderer cannot always
+ * relativize it. Stripping only the leading slash would resolve it against the
+ * project root a second time (`/root/workspace/proj/root/workspace/proj/a.md`),
+ * so strip the project's host path first.
+ */
+export function toRemoteRelativePath(hostPath: string, filePath: string): string {
+  const p = filePath.replace(/\\/g, '/')
+  const root = normalizeHostPath(hostPath)
+  if (root !== '/' && p.startsWith(root + '/')) return p.slice(root.length + 1)
+  return p.replace(/^\/+/, '')
+}
+
 export interface RemoteProjectContext {
   connectionId: string
   environmentId: string
@@ -583,7 +599,7 @@ export async function readRemoteProjectFile(
 ): Promise<GitFileContent | null> {
   const ctx = await resolveRemoteProjectContext(host, folderPath)
   if (!ctx) return null
-  const rel = filePath.replace(/\\/g, '/').replace(/^\//, '')
+  const rel = toRemoteRelativePath(ctx.hostPath, filePath)
   const ext = extname(rel).toLowerCase()
   try {
     const raw = await host.workspace().readFile({
@@ -636,10 +652,14 @@ export async function readRemoteProjectFile(
     if (ext === '.svg') return { path: filePath, content: text, language: 'svg' }
     return { path: filePath, content: text, language: REMOTE_EXT_LANG[ext] ?? 'text' }
   } catch (err) {
+    // An unreadable remote file used to fall through as empty text, which the
+    // preview renders as a blank editor — indistinguishable from an empty file.
+    console.warn(`[remote-file] read failed: ${folderPath} :: ${filePath}`, err)
     return {
       path: filePath,
       content: '',
       language: 'text',
+      error: (err as Error).message || 'remote read failed',
     }
   }
 }
@@ -653,7 +673,7 @@ export async function saveRemoteProjectFile(
   const ctx = await resolveRemoteProjectContext(host, folderPath)
   if (!ctx) return null
   try {
-    const rel = filePath.replace(/\\/g, '/').replace(/^\//, '')
+    const rel = toRemoteRelativePath(ctx.hostPath, filePath)
     const bytes = Buffer.byteLength(content, 'utf8')
     if (bytes > MAX_TRANSFER_BYTES) {
       return { ok: false, error: `file too large to save (max ${MAX_TRANSFER_BYTES} bytes)` }
@@ -878,7 +898,7 @@ export async function getRemoteGitDiffFile(
     }
     const result = (await gw.gitDiff(ctx.projectId, {
       staged,
-      path: filePath.replace(/\\/g, '/').replace(/^\//, ''),
+      path: toRemoteRelativePath(ctx.hostPath, filePath),
     })) as { diff?: string }
     return { path: filePath, diff: result.diff ?? '' }
   } catch {

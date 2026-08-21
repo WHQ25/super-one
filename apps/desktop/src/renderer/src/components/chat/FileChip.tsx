@@ -6,7 +6,7 @@ import { DraggableFileIcon } from './DraggableFileIcon'
 import { useFileChipContextMenu } from './file-chip-context-menu'
 import { useChatStore } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
-import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
+import { clickReleasedOnSelection, parseFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
 
 export function FileChip({ name, title, filePath, lineNumber, className }: {
   name: string
@@ -28,7 +28,7 @@ export function FileChip({ name, title, filePath, lineNumber, className }: {
     if (!targetPath) return
     const projectPath = useChatStore.getState().activeProject
     if (!projectPath) return
-    const relative = targetPath.startsWith(projectPath + '/') ? targetPath.slice(projectPath.length + 1) : targetPath
+    const relative = toProjectRelativePath(targetPath, projectPath)
     useSourceControlStore.getState().selectFile(projectPath, relative, targetLineNumber)
     openFileTab(relative)
   }

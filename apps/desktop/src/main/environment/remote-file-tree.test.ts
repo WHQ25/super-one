@@ -17,6 +17,7 @@ import {
   getRemoteGitBranches,
   getRemoteWorktreeInfo,
   invalidateRemoteGitStatusCache,
+  toRemoteRelativePath,
 } from './remote-file-tree'
 import type { WorkspaceEntry } from '@superone/shared/environment'
 import type { EnvironmentHost } from './environment-host'
@@ -27,6 +28,23 @@ describe('normalizeHostPath / hostPathsEqual', () => {
     expect(normalizeHostPath('/work/app/')).toBe('/work/app')
     expect(hostPathsEqual('/work/app', '/work/app/')).toBe(true)
     expect(hostPathsEqual('/work/app', '/work/other')).toBe(false)
+  })
+})
+
+describe('toRemoteRelativePath', () => {
+  it('strips the project host path from an absolute path', () => {
+    expect(toRemoteRelativePath('/root/workspace/测试', '/root/workspace/测试/台账/取证.md'))
+      .toBe('台账/取证.md')
+    expect(toRemoteRelativePath('/work/app/', '/work/app/src/a.ts')).toBe('src/a.ts')
+  })
+
+  it('keeps relative paths as-is', () => {
+    expect(toRemoteRelativePath('/work/app', 'src/a.ts')).toBe('src/a.ts')
+    expect(toRemoteRelativePath('/work/app', 'src\\a.ts')).toBe('src/a.ts')
+  })
+
+  it('falls back to leading-slash stripping outside the project', () => {
+    expect(toRemoteRelativePath('/work/app', '/etc/hosts')).toBe('etc/hosts')
   })
 })
 
@@ -310,6 +328,27 @@ describe('readRemoteProjectFile / saveRemoteProjectFile', () => {
     expect(readFile).toHaveBeenCalledWith({
       project: { environmentId: 'env-1', projectId: 'proj-1' },
       relativePath: 'src/a.ts',
+    })
+  })
+
+  it('surfaces a read failure instead of returning it as empty text', async () => {
+    const readFile = vi.fn().mockRejectedValue(new Error('node unreachable'))
+    const host = mockHost({ workspace: () => ({ readFile }) })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', 'src/a.ts')
+    expect(result).toMatchObject({ content: '', error: 'node unreachable' })
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('relativizes a host-absolute path against the project root', async () => {
+    // Chat file chips cite the agent's absolute path; it must not be resolved
+    // against the project root a second time.
+    const readFile = vi.fn().mockResolvedValue({ content: Buffer.from('# hi\n') })
+    const host = mockHost({ workspace: () => ({ readFile }) })
+    await readRemoteProjectFile(host, 'remote:conn-1:/work/app', '/work/app/docs/a.md')
+    expect(readFile).toHaveBeenCalledWith({
+      project: { environmentId: 'env-1', projectId: 'proj-1' },
+      relativePath: 'docs/a.md',
     })
   })
 

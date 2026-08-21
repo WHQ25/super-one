@@ -1,3 +1,5 @@
+import { displayHostPath } from '@superone/shared/remote-resource-key'
+
 export function parseFileLinkTarget(target: string): { filePath: string; lineNumber?: number } {
   const hashMatch = target.match(/^(.*)#L(\d+)$/)
   if (hashMatch) {
@@ -166,4 +168,23 @@ export function clickReleasedOnSelection(target: EventTarget | null): boolean {
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false
   if (sel.toString().trim().length === 0) return false
   return sel.getRangeAt(0).intersectsNode(target)
+}
+
+/**
+ * Project-relative path for opening / selecting a file, or the input unchanged
+ * when it does not live under the project root.
+ *
+ * Remote projects are keyed in the stores as `remote:<connectionId>:<hostPath>`,
+ * so the prefix must be compared against the host path — comparing against the
+ * raw key never matches and leaks a host-absolute path into IPC that expects a
+ * project-relative one.
+ */
+export function toProjectRelativePath(
+  filePath: string,
+  projectPath: string | null | undefined,
+): string {
+  if (!filePath || !projectPath) return filePath
+  const root = displayHostPath(projectPath).replace(/[/\\]+$/, '')
+  if (!root) return filePath
+  return filePath.startsWith(root + '/') ? filePath.slice(root.length + 1) : filePath
 }

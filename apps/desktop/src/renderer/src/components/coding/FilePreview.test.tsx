@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '@/stores/app'
 import { FilePreview } from './FilePreview'
@@ -119,5 +119,53 @@ describe('FilePreview tab derivation', () => {
     expect(tabLabels()).toEqual(['Editor', 'File'])
     expect(screen.getByRole('tab', { name: 'File' })).toHaveAttribute('data-state', 'active')
     expect(screen.queryByRole('tab', { name: 'Preview' })).not.toBeInTheDocument()
+  })
+})
+
+describe('FilePreview read failures', () => {
+  beforeEach(() => {
+    useAppStore.setState({ currentFolder: '/proj' })
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows the error and hides tabs instead of rendering a blank editor', async () => {
+    const w = globalThis.window as unknown as Record<string, unknown>
+    w.app = {
+      getGitDiffFile: () => Promise.resolve({ path: 'f', diff: '' }),
+      readProjectFile: () => Promise.resolve({ path: 'f', content: '', language: 'text', error: 'ENOENT: no such file' }),
+      onContentZoom: () => () => {},
+      setUnsavedEditorBuffer: vi.fn(() => Promise.resolve()),
+      saveFile: vi.fn(() => Promise.resolve({ ok: true })),
+    }
+    render(<FilePreview filePath="docs/readme.md" />)
+    await waitFor(() => expect(screen.getByText('Could not read this file')).toBeInTheDocument())
+    expect(screen.getByText('ENOENT: no such file')).toBeInTheDocument()
+    expect(screen.queryByTestId('markdown-editor')).not.toBeInTheDocument()
+    expect(tabLabels()).toEqual([])
+  })
+
+  it('re-reads on Retry and derives the markdown default tab from the fresh read', async () => {
+    const readProjectFile = vi.fn()
+      .mockResolvedValueOnce({ path: 'f', content: '', language: 'text', error: 'remote node unreachable' })
+      .mockResolvedValue({ path: 'f', content: '# hi', language: 'markdown' })
+    const w = globalThis.window as unknown as Record<string, unknown>
+    w.app = {
+      getGitDiffFile: () => Promise.resolve({ path: 'f', diff: '' }),
+      readProjectFile,
+      onContentZoom: () => () => {},
+      setUnsavedEditorBuffer: vi.fn(() => Promise.resolve()),
+      saveFile: vi.fn(() => Promise.resolve({ ok: true })),
+    }
+    render(<FilePreview filePath="docs/readme.md" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /Retry/ }))
+
+    await waitFor(() => expect(screen.getByTestId('markdown-editor')).toBeInTheDocument())
+    expect(readProjectFile).toHaveBeenCalledTimes(2)
+    expect(tabLabels()).toEqual(['Preview', 'File'])
+    expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active')
   })
 })

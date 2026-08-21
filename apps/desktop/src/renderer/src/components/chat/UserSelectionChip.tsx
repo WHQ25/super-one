@@ -8,6 +8,7 @@ import { getHighlightCache } from '@/lib/highlight-cache'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { parseFilePrefix, parseDiffBody, expandLineRanges, type ParsedFilePrefix } from '@/lib/file-quote-prefix'
 import { mergeQuoteTokens } from '@/lib/quote-tokens'
+import { toProjectRelativePath } from '@/lib/file-link'
 import { cn } from '@superone/ui/lib/utils'
 
 interface UserSelectionChipProps {
@@ -56,10 +57,9 @@ function useFullFileContent(filePath: string, fileRoot: string | null): string |
   const [content, setContent] = useState<string | null>(null)
   useEffect(() => {
     if (!fileRoot || !filePath) return
-    const relPath = filePath.startsWith(fileRoot + '/')
-      ? filePath.slice(fileRoot.length + 1)
-      : null
-    if (!relPath) return
+    const relPath = toProjectRelativePath(filePath, fileRoot)
+    // Outside the project root — nothing readable through readProjectFile.
+    if (relPath === filePath) return
     let cancelled = false
     window.app.readProjectFile?.(fileRoot, relPath).then((r) => {
       if (!cancelled && r?.content != null) setContent(r.content)

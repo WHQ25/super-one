@@ -3165,6 +3165,12 @@ export const zh: Messages = {
       failed: '保存模板失败：{{error}}',
     },
   },
+  filePreview: {
+    loadFailed: '无法读取该文件',
+    loadFailedHint: '文件可能已被移动或删除，也可能是远程节点不可达。',
+    tooLarge: '文件过大，无法预览',
+    binary: '二进制文件，暂不支持预览',
+  },
   tooltips: {
     toggleSidebar: '切换侧边栏',
     moveChatLeft: '将对话移至左侧',

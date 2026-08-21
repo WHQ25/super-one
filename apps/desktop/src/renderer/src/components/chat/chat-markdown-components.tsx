@@ -9,25 +9,18 @@ import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
 import { useFileChipContextMenu } from '@/components/chat/file-chip-context-menu'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
-import { clickReleasedOnSelection, resolveProjectFileHref } from '@/lib/file-link'
+import { clickReleasedOnSelection, resolveProjectFileHref, toProjectRelativePath } from '@/lib/file-link'
 import { requestOpenExternalLink } from '@/lib/external-link'
 
 export function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
   const dragEndRef = useRef(0)
   const menuItems = useFileChipContextMenu(filePath, name)
-  /** Path to open/select: project-relative when under root, otherwise absolute. */
-  const pathForOpen = (projectPath: string | null | undefined): string => {
-    if (projectPath && filePath.startsWith(projectPath + '/')) {
-      return filePath.slice(projectPath.length + 1)
-    }
-    return filePath
-  }
   const handleClick = (e: React.MouseEvent): void => {
     if (Date.now() - dragEndRef.current < 200) return
     if (clickReleasedOnSelection(e.currentTarget)) return
     e.stopPropagation()
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-    const openPath = pathForOpen(projectRoot)
+    const openPath = toProjectRelativePath(filePath, projectRoot)
     // selectFile needs a project root for git/diff IPC; absolute external paths
     // still read via readProjectFile when the path is absolute.
     if (projectRoot) {

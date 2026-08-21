@@ -2828,8 +2828,8 @@ function registerIpcHandlers(): void {
       if (ext === '.svg') return { path: filePath, content, language: 'svg' }
       const language = EXT_LANG[ext] ?? 'text'
       return { path: filePath, content, language }
-    } catch {
-      return { path: filePath, content: '', language: 'text' }
+    } catch (err) {
+      return { path: filePath, content: '', language: 'text', error: (err as Error).message }
     }
   })
 

@@ -5,6 +5,7 @@ import {
   parseFileLinkTarget,
   resolveProjectFileHref,
   safeDecodeFilePath,
+  toProjectRelativePath,
 } from './file-link'
 
 const PROJECT = '/Users/me/proj'
@@ -226,5 +227,31 @@ describe('safeDecodeFilePath', () => {
     // A file actually named `file%20name.md` round-trips through encodeURI and
     // is decoded to a space — known limitation; not common for CJK workflows.
     expect(safeDecodeFilePath('/tmp/file%20name.md')).toBe('/tmp/file name.md')
+  })
+})
+
+describe('toProjectRelativePath', () => {
+  it('strips a local project root', () => {
+    expect(toProjectRelativePath(`${PROJECT}/src/a.ts`, PROJECT)).toBe('src/a.ts')
+  })
+
+  it('strips the host path of a remote project key', () => {
+    const key = 'remote:node-1:/root/workspace/测试'
+    expect(toProjectRelativePath('/root/workspace/测试/台账/执行记录/取证.md', key))
+      .toBe('台账/执行记录/取证.md')
+  })
+
+  it('keeps paths outside the project root untouched', () => {
+    expect(toProjectRelativePath('/etc/hosts', PROJECT)).toBe('/etc/hosts')
+    expect(toProjectRelativePath('/root/other/a.md', 'remote:node-1:/root/workspace')).toBe('/root/other/a.md')
+  })
+
+  it('keeps already-relative paths and tolerates a trailing slash on the root', () => {
+    expect(toProjectRelativePath('src/a.ts', PROJECT)).toBe('src/a.ts')
+    expect(toProjectRelativePath(`${PROJECT}/src/a.ts`, `${PROJECT}/`)).toBe('src/a.ts')
+  })
+
+  it('returns the input when there is no project', () => {
+    expect(toProjectRelativePath('/root/a.md', null)).toBe('/root/a.md')
   })
 })

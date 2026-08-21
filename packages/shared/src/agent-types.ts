@@ -1315,6 +1315,8 @@ export interface GitFileContent {
   path: string
   content: string
   language: string
+  /** Set when the read failed; content is empty and must not be shown as a file. */
+  error?: string
 }
 
 export interface WorktreeEntry {

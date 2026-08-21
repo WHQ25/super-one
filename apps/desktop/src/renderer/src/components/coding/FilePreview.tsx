@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FileX2, ChevronRight } from 'lucide-react'
+import { FileX2, ChevronRight, RefreshCw } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
+import { Button } from '@superone/ui/components/ui/button'
+import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { isAbsoluteLocalPath } from '@/lib/file-link'
@@ -46,6 +48,9 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
       if (cancelled) return
       setDiff(d)
       setContent(c)
+      // A failed read carries no language signal — leave the tab unpicked so a
+      // successful retry still derives the right default (Preview for markdown).
+      if (c.error) return
       if (pickedTabForPathRef.current === filePath) return
       pickedTabForPathRef.current = filePath
       const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio'
@@ -79,9 +84,18 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const fileRoot = useEffectiveProjectRoot()
   const [isDirty, setIsDirty] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [retrying, setRetrying] = useState(false)
   const liveContentRef = useRef<string | null>(null)
   const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath, refreshKey)
   const selectedFile = filePath
+  // A failed read yields empty content — without this the preview would render
+  // a blank editor, indistinguishable from an empty file.
+  const loadError = fileContent?.error
+  useEffect(() => { setRetrying(false) }, [fileContent])
+  const handleRetry = useCallback(() => {
+    setRetrying(true)
+    setRefreshKey((k) => k + 1)
+  }, [])
 
   const fileName = selectedFile?.split('/').pop() ?? ''
   const ext = getFileExt(fileName)
@@ -101,7 +115,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const fullFilePath = isAbsoluteLocalPath(selectedFile) ? selectedFile : `${fileRoot}/${selectedFile}`
 
   const tabs = (() => {
-    if (isUnpreviewable) return []
+    if (loadError || isUnpreviewable) return []
     if (isBinaryPreview) return [{ key: 'preview' as TabKey, label: 'Preview' }]
     const items: { key: TabKey; label: string }[] = []
     if (hasDiff) items.push({ key: 'changes', label: 'Changes' })
@@ -242,11 +256,22 @@ export function FilePreview({ filePath }: FilePreviewProps) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto" style={zoom !== 1 ? { zoom } : undefined}>
-        {isUnpreviewable ? (
+        {loadError ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+            <FileX2 className="size-8 opacity-30" />
+            <span className="text-xs">{t('filePreview.loadFailed')}</span>
+            <span className="max-w-[36ch] text-center text-[11px] opacity-70">{t('filePreview.loadFailedHint')}</span>
+            <span className="max-w-[48ch] truncate font-mono text-[10px] opacity-60" title={loadError}>{loadError}</span>
+            <Button variant="outline" size="sm" onClick={handleRetry} disabled={retrying} className="mt-1">
+              <RefreshCw className={cn('size-3', retrying && 'animate-spin')} />
+              {t('common.retry')}
+            </Button>
+          </div>
+        ) : isUnpreviewable ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
             <FileX2 className="size-8 opacity-30" />
             <span className="text-xs">
-              {fileContent?.language === 'too-large' ? 'File too large to preview' : 'Binary file — preview not supported'}
+              {fileContent?.language === 'too-large' ? t('filePreview.tooLarge') : t('filePreview.binary')}
             </span>
           </div>
         ) : (

@@ -5,15 +5,8 @@ import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { toMentionPath } from '@/components/chat/chat-input-utils'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
-import { isAbsoluteLocalPath, isHtmlFilePath } from '@/lib/file-link'
+import { isAbsoluteLocalPath, isHtmlFilePath, toProjectRelativePath } from '@/lib/file-link'
 import { toLocalFileUrl } from '@/lib/path-utils'
-
-function pathForOpen(filePath: string, projectPath: string | null | undefined): string {
-  if (projectPath && filePath.startsWith(projectPath + '/')) {
-    return filePath.slice(projectPath.length + 1)
-  }
-  return filePath
-}
 
 function absoluteFilePath(filePath: string, projectRoot: string | null | undefined): string {
   if (isAbsoluteLocalPath(filePath)) return filePath
@@ -26,7 +19,7 @@ export function useFileChipContextMenu(filePath: string | undefined, name: strin
 
   const handleOpenFolder = (): void => {
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-    const openPath = pathForOpen(filePath, projectRoot)
+    const openPath = toProjectRelativePath(filePath, projectRoot)
     if (openPath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(openPath)) {
       void window.app.showInFolder(projectRoot ?? openPath, openPath)
       return

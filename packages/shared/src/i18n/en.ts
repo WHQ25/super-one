@@ -3092,6 +3092,12 @@ export type Messages = {
       failed: string
     }
   }
+  filePreview: {
+    loadFailed: string
+    loadFailedHint: string
+    tooLarge: string
+    binary: string
+  }
   tooltips: {
     toggleSidebar: string
     moveChatLeft: string
@@ -6359,6 +6365,12 @@ export const en: Messages = {
       saved: 'Saved template "{{id}}"',
       failed: 'Could not save template: {{error}}',
     },
+  },
+  filePreview: {
+    loadFailed: 'Could not read this file',
+    loadFailedHint: 'It may have been moved or deleted, or the remote node is unreachable.',
+    tooLarge: 'File too large to preview',
+    binary: 'Binary file — preview not supported',
   },
   tooltips: {
     toggleSidebar: 'Toggle Sidebar',

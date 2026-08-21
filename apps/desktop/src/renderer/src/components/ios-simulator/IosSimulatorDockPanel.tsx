@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { IDockviewPanelProps } from 'dockview-core'
 import { LAYOUT } from '@/lib/layout-constants'
-import { IosSimulatorPanel } from './IosSimulatorPanel'
+import { IosSimulatorView } from './IosSimulatorView'
 
 /**
  * Same floor as the activity panel (`LAYOUT.MIN_AP`). A group that demands more
@@ -67,5 +67,9 @@ export function IosSimulatorDockPanel(props: IDockviewPanelProps<{ sessionId: st
     }
   }, [api, containerApi])
 
-  return <IosSimulatorPanel sessionId={props.params.sessionId} />
+  // A hole, not the panel. `IosSimulatorHostLayer` holds the one real panel for this
+  // session and positions it over whichever slot is winning, so the tab and the
+  // floating preview can hand the device back and forth without either of them
+  // owning — and so being able to destroy — the frame stream.
+  return <IosSimulatorView sessionId={props.params.sessionId} mode="panel" />
 }

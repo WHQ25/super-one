@@ -6,6 +6,7 @@ import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-
 import { LAYOUT } from '@/lib/layout-constants'
 import { NO_PROJECT_KEY } from '@superone/shared/miniapp-host'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult, MiniAppWorkerInfo } from '@superone/shared/miniapp-types'
+import { withoutKey } from '@/lib/record'
 
 function activeSessionId(projectDir: string): string {
   const chat = useChatStore.getState()
@@ -119,13 +120,6 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       await get().openAppInPanel(entry, projectDir)
       window.app.trace?.('miniapp.lazyopen', 'renderer-openAppInPanel-done', { appId, projectDir })
     })
-  }
-
-  function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
-    if (!(key in record)) return record
-    const next = { ...record }
-    delete next[key]
-    return next
   }
 
   return {

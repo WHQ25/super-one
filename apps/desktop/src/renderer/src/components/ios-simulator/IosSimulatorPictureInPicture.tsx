@@ -3,18 +3,14 @@ import { AnimatePresence, motion } from 'motion/react'
 import { EyeOff, Minimize2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { IosSimulatorChrome } from '@superone/shared/ios-simulator'
-import { isIosSimulatorLandscape } from '@superone/shared/ios-simulator'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import { useActivityPanelStore } from '@/stores/activity-panel'
-import { useChatStore } from '@/stores/chat'
-import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
 import { useIosSimulatorPipStore } from '@/stores/ios-simulator-pip'
-import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { createDragCapture } from '@/lib/drag-capture'
-import { hasIosSimulatorTab, openIosSimulatorTab } from '@/components/activity/activity-panel-api'
 import type { PipBounds, PipLayout } from '@/lib/pip-layout'
-import { IosSimulatorPanel } from './IosSimulatorPanel'
+import { IosSimulatorView } from './IosSimulatorView'
+import { IOS_SIMULATOR_EXPANDED_BOX } from './IosSimulatorOverlaySurface'
+import { useIosSimulatorPreview } from './use-ios-simulator-preview'
 import {
   clampIosSimulatorPipLayout,
   createDefaultIosSimulatorPipLayout,
@@ -59,18 +55,6 @@ const RESIZE_CURSORS: Record<ResizeEdge, string> = {
   e: 'ew-resize', w: 'ew-resize',
 }
 
-/** The expanded box: a fixed inset, so the backdrop panes below can be fixed too. */
-const EXPANDED_BOX: React.CSSProperties = {
-  left: '5vw', top: '5vh', width: '90vw', height: '90vh', zIndex: 51,
-}
-
-const OVERLAY_BACKDROP_PANES: Array<{ key: string; style: React.CSSProperties }> = [
-  { key: 'top', style: { left: 0, top: 0, width: '100vw', height: '5vh' } },
-  { key: 'bottom', style: { left: 0, bottom: 0, width: '100vw', height: '5vh' } },
-  { key: 'left', style: { left: 0, top: '5vh', width: '5vw', height: '90vh' } },
-  { key: 'right', style: { right: 0, top: '5vh', width: '5vw', height: '90vh' } },
-]
-
 /**
  * How far the pointer may travel before a press stops counting as a tap.
  *
@@ -82,74 +66,6 @@ const CLICK_SLOP = 4
 
 function pipBoundary(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-chat-root]')
-}
-
-/**
- * Hand the bound device the Activity tab, unless it already has somewhere to be.
- *
- * The invariant both callers serve: a device that is bound and ready is ALWAYS on
- * some visible surface — the floating preview, or a tab. The preview and the panel
- * are mutually exclusive by design, so every moment one of them goes away is a
- * moment the other has to take over, and there are two of them: the grant can land
- * while the panel is already open, or the panel can open onto an already-bound
- * device. Only the first was wired, so opening the panel over a running simulator
- * dropped the preview and left the launcher looking like nothing was running.
- *
- * Two things it deliberately will NOT do. A dismissed preview stays dismissed:
- * hiding is about this device, not about this surface. And an existing tab is left
- * exactly where it is — the user may have opened the panel for a terminal, and
- * re-activating the simulator every time the panel is shown would fight them for it.
- */
-function revealIosSimulatorTab(sessionId: string, label: string): void {
-  if (useIosSimulatorPipStore.getState().hiddenSessionId === sessionId) return
-  if (hasIosSimulatorTab(sessionId)) return
-  openIosSimulatorTab(sessionId, label)
-}
-
-/**
- * Watch the active session's simulator so the preview can appear on its own.
- *
- * Mounted unconditionally, above the visibility test: the whole point is to notice the
- * moment `device_request_launch` is approved, and a hook that only ran while the
- * preview was already showing could never see it.
- *
- * Main pushes state on change only, so a window opened onto an already-bound session
- * shows nothing until something moves. That is deliberate — the preview is a reaction
- * to a grant, not a permanent second copy of the Activity panel.
- */
-function useIosSimulatorPresence(sessionId: string | null): void {
-  const openTabLabel = useTranslation().t('activity.iosSimulator.title')
-  useEffect(() => {
-    if (!sessionId) {
-      useIosSimulatorPipStore.getState().setReady(null)
-      return
-    }
-    return window.environment.onIosSimulatorSessionState(sessionId, (state) => {
-      const bound = state.phase === 'ready' ? state.device : null
-      const store = useIosSimulatorPipStore.getState()
-      if (!bound) {
-        if (store.readySessionId === sessionId) store.setReady(null)
-        return
-      }
-      // Only the transition into ready, never a republish: rotation and the hardware
-      // keyboard push state through this same channel, and reacting to those would
-      // yank the dock to the simulator tab every time the agent turned the device.
-      const arriving = store.readySessionId !== sessionId
-      // A republish IS how a rotation arrives, though, and the preview box is the
-      // device's outline — so the shape is read every time. The framebuffer never
-      // turns with the guest, so a device on its side is the same numbers swapped.
-      const turned = isIosSimulatorLandscape(state.orientation)
-      const width = (turned ? state.pixelHeight : state.pixelWidth) ?? 0
-      const height = (turned ? state.pixelWidth : state.pixelHeight) ?? 0
-      store.setReady(sessionId, { udid: bound.udid, width, height })
-      // The preview is suppressed while the Activity panel is up, so a grant that
-      // lands then would show the user nothing at all. Give it the tab instead —
-      // whichever surface is available, approving a device has to reveal one.
-      if (arriving && useActivityPanelStore.getState().showPanel) {
-        revealIosSimulatorTab(sessionId, openTabLabel)
-      }
-    })
-  }, [sessionId, openTabLabel])
 }
 
 /**
@@ -179,60 +95,33 @@ function useIosSimulatorChrome(udid: string | null): IosSimulatorChrome | null {
 }
 
 /**
- * The simulator as a floating preview over the chat, mirroring the browser's.
+ * The chrome of the floating preview: where the box is, how it is grabbed, and the
+ * buttons on it. Not the device — that is drawn by `IosSimulatorHostLayer`, over the
+ * hole this component measures out with `IosSimulatorView`.
  *
- * Renders `IosSimulatorPanel` rather than a device view of its own, because the frame
- * stream is owned per session by whichever stage is mounted: two stages would fight
- * over `openIosSimulatorStream`, and the one that unmounted first would close the
- * stream out from under the other. Showing this only while the Activity panel is
- * hidden keeps exactly one stage alive at any moment.
+ * That separation is what makes the preview free to appear and vanish. It used to
+ * render `IosSimulatorPanel` itself, which meant the panel died with it: switching to
+ * the Activity tab unmounted the only owner of the frame stream, and the tab's fresh
+ * panel then spent half a second re-reading the device list before it could draw. Now
+ * neither surface owns anything, so a switch is a change of coordinates.
  *
- * Shrunk, it is the device and nothing else — no panel chrome, no controls, no card
- * behind it: a phone lying on the chat, which can be moved, resized and clicked to
- * open. Every control the panel has lives in the expanded overlay, where there is
+ * Shrunk, the box is the device and nothing else — no panel chrome, no controls, no
+ * card behind it: a phone lying on the chat, which can be moved, resized and clicked
+ * to open. Every control the panel has lives in the expanded overlay, where there is
  * room to hit them.
  */
 export function IosSimulatorPictureInPicture() {
   const { t } = useTranslation()
-  const currentSessionId = useChatStore(selectActiveChatSessionId)
-  useIosSimulatorPresence(currentSessionId)
-
-  const readySessionId = useIosSimulatorPipStore((state) => state.readySessionId)
-  const expandedSessionId = useIosSimulatorPipStore((state) => state.expandedSessionId)
-  const hiddenSessionId = useIosSimulatorPipStore((state) => state.hiddenSessionId)
+  const { sessionId, shouldShow, expanded, showPip } = useIosSimulatorPreview()
   const device = useIosSimulatorPipStore((state) => state.device)
-  const activityShown = useActivityPanelStore((state) => state.showPanel)
-  const mosaicMode = useMosaicStore((state) => state.mode)
-
-  const sessionId = readySessionId
-  // Bound, belonging to the conversation on screen, and not dismissed: the conditions
-  // under which the device has earned a surface. WHICH surface is the next two lines'
-  // business — the preview when there is room for it, the Activity tab otherwise.
-  const deviceOnScreen = sessionId != null
-    && sessionId === currentSessionId
-    && sessionId !== hiddenSessionId
-  const shouldShow = deviceOnScreen
-    && !activityShown
-    && mosaicMode === 'single'
-  const expanded = shouldShow && expandedSessionId === sessionId
-  const showPip = shouldShow && !expanded
   const chrome = useIosSimulatorChrome(device?.udid ?? null)
   const aspect = iosSimulatorPipAspect(device, chrome)
 
   const [bounds, setBounds] = useState<PipBounds | null>(null)
   const [layout, setLayout] = useState<PipLayout | null>(null)
+  const [interacting, setInteracting] = useState(false)
   const interactionCleanupRef = useRef<(() => void) | null>(null)
   const aspectRef = useRef(aspect)
-
-  // Opening the Activity panel takes the device back to its tab; the preview exists
-  // only for the case where there is nowhere else to watch it. Which means the tab
-  // has to actually be there — the shrink below is what makes the preview go away,
-  // so without the reveal beside it the device goes away with it.
-  useEffect(() => {
-    if (!activityShown) return
-    useIosSimulatorPipStore.getState().shrinkPreview()
-    if (deviceOnScreen && sessionId) revealIosSimulatorTab(sessionId, t('activity.iosSimulator.title'))
-  }, [activityShown, deviceOnScreen, sessionId, t])
 
   useLayoutEffect(() => {
     if (!showPip) return
@@ -265,7 +154,7 @@ export function IosSimulatorPictureInPicture() {
       observer.disconnect()
       window.removeEventListener('resize', measure)
     }
-  }, [showPip, currentSessionId, aspect])
+  }, [showPip, sessionId, aspect])
 
   useLayoutEffect(() => {
     if (!showPip) interactionCleanupRef.current?.()
@@ -278,6 +167,7 @@ export function IosSimulatorPictureInPicture() {
     onEnd?: () => void,
   ) => {
     interactionCleanupRef.current?.()
+    setInteracting(true)
     const capture = createDragCapture(cursor)
     capture.acquire()
     const cleanup = () => {
@@ -286,6 +176,7 @@ export function IosSimulatorPictureInPicture() {
       window.removeEventListener('pointercancel', cleanup)
       capture.release()
       interactionCleanupRef.current = null
+      setInteracting(false)
       onEnd?.()
     }
     interactionCleanupRef.current = cleanup
@@ -374,25 +265,18 @@ export function IosSimulatorPictureInPicture() {
 
   // Hoisted so the shrunk box's rect is read where `layout` is still known to exist.
   const boxStyle: React.CSSProperties | undefined = layout
-    ? { left: layout.left, top: layout.top, width: layout.width, height: layout.height, zIndex: 40 }
+    ? { left: layout.left, top: layout.top, width: layout.width, height: layout.height }
     : undefined
 
   return (
     <AnimatePresence>
       {/*
         ONE element for both sizes, deliberately — shrunk and expanded are the same
-        device moved and resized, not two views of it.
-        Splitting them into two branches (or two keys) made React unmount the whole
-        panel on every expand and shrink, and the panel is the owner of a native
-        media pipeline: a remount re-ran the `simctl` round trips, refetched the
-        chrome artwork, built a fresh `<canvas>`, and so tore the frame stream down
-        and renegotiated it with the helper — seconds of grey glass for what is
-        visually a box changing size. Main can hand a running stream from one
-        subscriber to the next, but only if their lifetimes OVERLAP, and the new
-        panel could not subscribe until it had finished booting itself.
-        So: same key, same tree position, same `IosSimulatorPanel` instance. The
-        canvas element survives, `IosSimulatorStage`'s stream effect never re-fires,
-        and expanding costs a re-render.
+        device moved and resized, not two views of it. The device survives either way
+        now that the host layer owns it, but the SLOT still has to be continuous: two
+        keys would unmount one `IosSimulatorView` and mount another, and for the beat
+        in between neither the pip nor the overlay slot would exist, leaving the host
+        with nowhere to be.
       */}
       {shouldShow && sessionId && (expanded || layout) && (
         <motion.div
@@ -412,44 +296,37 @@ export function IosSimulatorPictureInPicture() {
               'data-device-pip': '',
               'aria-label': t('chat.devicePreview.label'),
             })}
-          // The shrunk preview's `z-40` is load-bearing, not decoration. The main area
-          // wrapper in `App.tsx` is `relative z-20`, and a positive z-index paints in a
-          // LATER step than a `fixed` element with `z-index: auto` — DOM order does not
-          // enter into it. So without this the preview renders behind that wrapper: seen
-          // through its `bg-card`, which liquid glass makes 72% opaque, and unable to
-          // receive a single pointer event because the wrapper is on top of the drag
-          // handle. Below the 50/51 the expanded overlay and the floating chat panel use.
-          //
-          // Shrunk it has no card of its own: no border, no surface, no radius. The
-          // device's body is the only edge there should be, so the shadow follows its
-          // silhouette rather than a rectangle drawn around it.
-          className={cn(
-            'fixed',
-            expanded
-              ? 'overflow-hidden border border-border bg-background shadow-2xl'
-              : 'group/device-pip [filter:drop-shadow(0_10px_24px_rgb(0_0_0/0.45))]',
-          )}
-          style={expanded ? EXPANDED_BOX : boxStyle}
+          // No surface of its own in either size. Expanded, the card behind the device
+          // is painted by `IosSimulatorOverlaySurface`, UNDER the host layer's device;
+          // shrunk there is no card at all, and the device's own silhouette carries the
+          // shadow. What is left here is a frame around a hole: the measured slot, the
+          // gesture surface, and the buttons.
+          className={cn('fixed', !expanded && 'group/device-pip')}
+          style={expanded ? IOS_SIMULATOR_EXPANDED_BOX : boxStyle}
         >
           {expanded && (
             <h2 id="expanded-device-preview-title" className="sr-only">
               {t('chat.devicePreview.expandedLabel')}
             </h2>
           )}
-          {/* Shrunk, look but do not touch: the whole surface belongs to the gesture
-              below, and the device becomes operable only once it is expanded. Both
-              states render the SAME element in the SAME slot — a className swap, so
-              the panel underneath keeps its identity. */}
-          <div className={cn('h-full', !expanded && 'pointer-events-none')}>
-            <IosSimulatorPanel sessionId={sessionId} variant={expanded ? 'overlay' : 'preview'} />
-          </div>
+          {/* The hole the device is drawn over. Shrunk, look but do not touch: the
+              whole surface belongs to the gesture below, and the device becomes
+              operable only once it is expanded — which the host layer enforces by
+              refusing pointer events to a `pip` slot. */}
+          <IosSimulatorView
+            sessionId={sessionId}
+            mode={expanded ? 'overlay' : 'pip'}
+            // While the box is being dragged or resized its rect changes every frame,
+            // and the device has to travel with it rather than lag and catch up.
+            trackBoundsContinuously={interacting}
+          />
           {!expanded && (
             <div
               data-device-pip-drag-handle=""
               role="button"
               tabIndex={0}
               aria-label={t('chat.devicePreview.expand')}
-              className="absolute inset-0 cursor-grab rounded-xl outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
+              className="pointer-events-auto absolute inset-0 cursor-grab rounded-xl outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
               onPointerDown={onPreviewPointerDown}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
@@ -492,7 +369,7 @@ export function IosSimulatorPictureInPicture() {
               key={edge}
               data-device-pip-resize={edge}
               className={cn(
-                'absolute',
+                'pointer-events-auto absolute',
                 edge.length === 2 ? 'z-30' : 'z-20',
                 className,
               )}
@@ -505,7 +382,7 @@ export function IosSimulatorPictureInPicture() {
           {expanded && (
             <div
               data-device-preview-actions=""
-              className="absolute right-2 top-2 z-10 flex items-center gap-0.5 rounded-md bg-background/70 p-0.5 shadow-sm backdrop-blur-sm"
+              className="pointer-events-auto absolute right-2 top-2 z-10 flex items-center gap-0.5 rounded-md bg-background/70 p-0.5 shadow-sm backdrop-blur-sm"
             >
               <IconButton
                 aria-label={t('chat.devicePreview.shrink')}
@@ -531,18 +408,6 @@ export function IosSimulatorPictureInPicture() {
           )}
         </motion.div>
       )}
-      {expanded && OVERLAY_BACKDROP_PANES.map((pane) => (
-        <motion.div
-          key={`device-overlay-backdrop:${pane.key}`}
-          aria-hidden="true"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.16 }}
-          className="fixed bg-background/80 backdrop-blur-sm"
-          style={{ ...pane.style, zIndex: 50 }}
-        />
-      ))}
     </AnimatePresence>
   )
 }

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { withoutKey } from '@/lib/record'
 
 export interface BrowserTabState {
   url: string
@@ -76,13 +77,6 @@ const DEFAULT_TAB: BrowserTabState = {
   canGoForward: false,
   owner: null,
   certError: null,
-}
-
-function withoutKey<T extends Record<string, unknown>>(obj: T, key: string): T {
-  if (!(key in obj)) return obj
-  const next = { ...obj }
-  delete next[key]
-  return next
 }
 
 export const useBrowserStore = create<BrowserStore>((set) => ({

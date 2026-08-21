@@ -10,15 +10,23 @@
  * preview is reconnecting" actually looks like.
  *
  * So the canvas moves instead of being rebuilt. `appendChild` re-parents it into
- * whichever view is showing the device now; the bitmap already painted on it
- * survives the move, the decoder never notices, and the handover costs nothing.
+ * whichever host is showing the device now; the bitmap already painted on it
+ * survives the move, the decoder never notices, and the move costs nothing.
  * This works only because the renderer draws through a plain 2D context — a canvas
  * handed to `transferControlToOffscreen` is welded to its element and could not be
  * moved. Anything that pushes decoding into a worker has to revisit this file.
  *
- * Registry rather than a React context because the whole point is to outlive the
- * tree: the dock panel and the floating preview are in different branches, and the
- * gap between one unmounting and the other mounting is exactly what this bridges.
+ * What still moves the canvas, now that `IosSimulatorHostLayer` keeps ONE permanent
+ * panel per session rather than one per view: the shell is replaced under it. The
+ * canvas hangs inside Apple's device artwork, and the artwork shell and the drawn
+ * fallback are different elements — so a device change, or the artwork lookup simply
+ * answering, swaps the host out. Both are an unmount and a mount inside one commit,
+ * which the grace period below is what carries the picture across.
+ *
+ * The other reason this is not just a `useRef` in the component: scale and frame rate
+ * are settled in `stream.start`, so changing either needs a new stream and a new
+ * decoder around the SAME canvas. Renegotiating here is what keeps the old resolution
+ * on screen until the first frame at the new one lands.
  */
 
 import type { IosSimulatorPreviewQuality } from '@superone/shared/ios-simulator'
@@ -28,11 +36,12 @@ import { messageOf, reportIosSimulatorError } from './ios-simulator-report'
 /**
  * How long the surface outlives the last view that was showing it.
  *
- * Sized for the gap in a tab↔preview handover, which is not instant: the arriving
- * panel has to re-read the device list and rebind before it has anything to attach
- * to. Generous on purpose — nothing depends on this firing promptly, because every
+ * Long enough to carry a shell swap, which happens inside a single commit, and then
+ * some. Generous on purpose — nothing depends on this firing promptly, because every
  * deliberate ending (detach, shut down, session release) tears the stream down from
- * main instead of waiting for it.
+ * main instead of waiting for it. What it is NOT sized for any more is a surface
+ * handover: the host layer keeps one panel mounted across those, so there is no gap
+ * to cover. It IS what disposes a session whose device the user dismissed.
  */
 const HANDOVER_GRACE_MS = 5_000
 
@@ -50,13 +59,13 @@ interface Surface {
   /**
    * Every view that currently wants the picture, oldest first — the last one holds it.
    *
-   * A stack rather than a single host because the two views OVERLAP: the floating
-   * preview animates out while the tab is already mounting, so for a moment both are
-   * alive and both have asked. Whoever asked last gets the canvas, and when they
-   * leave it goes back to whoever is still waiting underneath rather than to the
-   * grace timer. Tracking only "the current host" lost that: the tab took the canvas,
-   * the preview's effect had no reason to re-run when the tab closed, and the picture
-   * stayed parked in a host that was no longer in the document.
+   * A stack rather than a single host because attaches can INTERLEAVE. Tracking only
+   * "the current host" lost the picture whenever they did: the second host took the
+   * canvas, the first one's effect had no reason to re-run when the second left, and
+   * the picture stayed parked in an element that was no longer in the document.
+   * Keeping the order means a host that leaves hands the canvas back to whoever is
+   * still waiting underneath, rather than starting the grace countdown over a picture
+   * somebody still wants.
    */
   hosts: { el: HTMLElement; framed: boolean }[]
   watchers: Set<(hasFrame: boolean) => void>

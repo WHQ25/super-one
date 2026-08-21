@@ -108,10 +108,15 @@ bunx vitest run --changed HEAD                  # everything affected by uncommi
 bunx vitest list --changed HEAD --filesOnly     # preview that set without running it
 ```
 
-Run the **full** suite (`bun run test`, plus `test:cli` / `test:runtime` / `test:relay` when those workspaces changed) at two moments only:
+Run the **full** suite (`bun run test`, plus `test:cli` / `test:runtime` / `test:relay` when those workspaces changed) **only when explicitly asked to**. It is not a pre-commit gate — do not start it on your own initiative, not even before a commit.
 
-1. **Before committing** — the pre-commit gate. Never commit on a scoped run alone.
-2. **When the change is suite-wide by nature** — `apps/desktop/vitest.setup.ts`, `vitest.config.ts`, `src/test/fixtures/`, `packages/shared`, `packages/ui`, or anything imported nearly everywhere. Scoping there buys nothing because the blast radius is the whole suite.
+Before committing, run the scoped set instead:
+
+```bash
+bunx vitest run --changed HEAD   # everything the staged/uncommitted change affects
+```
+
+One case is worth saying out loud rather than silently scoping: when the change is suite-wide by nature — `apps/desktop/vitest.setup.ts`, `vitest.config.ts`, `src/test/fixtures/`, `packages/shared`, `packages/ui`, or anything imported nearly everywhere — a scoped run proves little. Flag that and let the human decide whether the full run is worth the minutes.
 
 **Sandbox note**: `bun run test` (full suite) and any LAN/mDNS tests (`apps/desktop/src/main/lan-server.test.ts`, `apps/desktop/src/main/lan-advertiser.test.ts`) bind to `0.0.0.0:5353` / `127.0.0.1` and will fail with `EPERM` under the default sandbox. Run them with `dangerouslyDisableSandbox: true` (Bash tool) or outside the sandbox.
 

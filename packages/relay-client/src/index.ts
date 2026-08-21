@@ -6,6 +6,21 @@ export { RpcInbox } from './rpc'
 export { RelayClient } from './client'
 export type { OpenSocket, SocketLike } from './client'
 export { restoreSession } from './restore'
+export { classifyUpload, finishUpload } from './attachments'
+export type { HttpPut } from './attachments'
+export { TerminalAssembler } from './terminal'
+export type { TerminalPaint } from './terminal'
+export {
+  PAIRINGS_KEY,
+  MOBILE_ID_KEY,
+  loadPairings,
+  savePairings,
+  parsePairings,
+  serializePairings,
+  upsertPairing,
+  memoryKv,
+} from './pairings'
+export type { SavedPairing, Kv } from './pairings'
 export {
   decryptPairResponse,
   encryptPairRequest,

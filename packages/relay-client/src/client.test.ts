@@ -81,4 +81,25 @@ describe('RelayClient', () => {
     expect(restored.messages).toHaveLength(1)
     expect(restored.snapshot.status).toBe('idle')
   })
+
+  it('send() is fire-and-forget and onTerminal skips ACK', async () => {
+    let sock: MockSocket | null = null
+    const terms: unknown[] = []
+    const client = new RelayClient({
+      openSocket: () => {
+        sock = new MockSocket()
+        queueMicrotask(() => sock?.onopen?.())
+        return sock
+      },
+      onTerminal: (p) => terms.push(p),
+    })
+    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    const before = sock!.sent.length
+    client.send({ type: 'terminal_input', terminalId: 't1', data: 'ls\n' })
+    expect(sock!.sent.length).toBe(before + 1)
+    expect(sock!.sent.at(-1)).toContain('"command"')
+    const keys = deriveKeys(MASTER)
+    sock!.emit({ type: 'terminal', data: encryptPayload(keys.aesKeyBytes, { type: 'terminal_output', data: 'ok' }) })
+    expect(terms).toEqual([{ type: 'terminal_output', data: 'ok' }])
+  })
 })

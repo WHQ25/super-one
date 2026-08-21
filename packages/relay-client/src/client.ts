@@ -2,7 +2,7 @@ import type { RemoteCommand } from '@superone/shared/agent-types'
 import { SeqAckTracker } from './ack'
 import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
-import { decryptPayload, deriveKeys } from './crypto'
+import { decryptPayload, deriveKeys, encryptPayload } from './crypto'
 import { handleInboundFrame, makeDecrypt, type InboundFrame } from './frames'
 import { RpcInbox } from './rpc'
 
@@ -29,6 +29,10 @@ export class RelayClient {
   private ackTimer: ReturnType<typeof setTimeout> | null = null
   private kind: TransportKind = 'relay'
   private closed = false
+  private last:
+    | { kind: 'relay'; relayUrl: string; masterSecret: string; deviceId?: string }
+    | { kind: 'lan'; host: string; port: number; masterSecret: string }
+    | null = null
 
   constructor(
     private readonly hooks: {
@@ -66,6 +70,7 @@ export class RelayClient {
     masterSecret: string
     deviceId?: string
   }): Promise<void> {
+    this.last = { kind: 'relay', ...opts }
     this.kind = 'relay'
     const built = await buildRelayWsUrl({
       relayUrl: opts.relayUrl,
@@ -77,6 +82,7 @@ export class RelayClient {
   }
 
   async connectLan(host: string, port: number, masterSecret: string): Promise<void> {
+    this.last = { kind: 'lan', host, port, masterSecret }
     this.kind = 'lan'
     const keys = deriveKeys(masterSecret)
     this.tracker.clear()
@@ -96,6 +102,20 @@ export class RelayClient {
     if (!this.ws || !this.aesKeyBytes) return Promise.reject(new Error('not connected'))
     const ws = this.ws
     return this.rpc.begin(command, (frame) => ws.send(JSON.stringify(frame)), this.aesKeyBytes)
+  }
+
+  /** Fire-and-forget encrypted command. Terminal I/O uses this — results arrive on the terminal channel. */
+  send(command: RemoteCommand): void {
+    if (!this.ws || !this.aesKeyBytes) throw new Error('not connected')
+    const data = encryptPayload(this.aesKeyBytes, command)
+    this.ws.send(JSON.stringify({ type: 'command', data }))
+  }
+
+  reconnect(): Promise<void> {
+    const last = this.last
+    if (!last) return Promise.reject(new Error('never connected'))
+    if (last.kind === 'relay') return this.connectRelay(last)
+    return this.connectLan(last.host, last.port, last.masterSecret)
   }
 
   private async open(url: string, aesKeyBytes: Uint8Array, replay: boolean): Promise<void> {

@@ -4,6 +4,42 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.56.0-alpha] - 2026-08-21
+
+### Added
+
+- iOS Simulator: a session-scoped Activity panel that previews and drives a booted simulator — multi-touch, trackpad scroll/pinch/rotate, hardware keys, orientation, IME text, screenshots and screen recording, rendered with Apple's own DeviceKit artwork (drawn CSS shell for models Xcode ships no chrome for). The private CoreSimulator/SimulatorKit surface lives in a helper shipped as source and compiled on demand against the user's Xcode, so a toolchain upgrade degrades the capability probe instead of breaking the app. Frames stream over a MessagePort as H.264 through WebCodecs where VideoToolbox is available, PNG otherwise. Untypable text (Chinese, emoji) is written to the device pasteboard and replayed as Command-V; rotation rides the workspace port, so it works even where HID refuses to bind.
+- Agent tools for the iOS Simulator across the local and remote MCP surfaces: stable accessibility snapshots, ref-based actions, waits and gesture synthesis, with device state scoped per chat session and cancellation propagated through polling and in-flight gestures.
+- Device agent: when an app exposes no usable accessibility tree, on-screen text recovered by OCR is presented as a normal UI tree, so refs, queries, `textContains`, waits and centre-of-bounds tapping work on WebViews, game canvases and screen-reader-only trees. Settling now fingerprints both the tree and the framebuffer, so a label change nothing moved for and a crossfade with no tree change are both detected.
+- Codex: ChatGPT account management — browser and device-code sign-in plus logout, on local and remote nodes. Actual app-server account state is reported separately from the preferred auth mode, so settings no longer present a default preference as an active login.
+- Grok: `/goal` now has host chrome — a goal dialog, a status indicator, and pause/resume/clear from the chat bar, instead of a passthrough prompt that looked like a no-op.
+- Chat: an artifact can now be opened from its tool row. Each Artifact action names itself and the published URL rides a clickable chip beside it — previously every call rendered as a bare "Artifact" and the URL was buried in the monospace result body. The link is live while the call is still streaming, and modifier-click opens it in an in-app browser tab.
+- Chat: a running local slash command is now visible in the footer while it produces no output, and the stall heuristic is suspended for its duration, so a long `/code-review` no longer turns the footer and sidebar amber then red.
+- Chat: report-producing slash commands (`/code-review`, `/security-review`) keep their output in the transcript as markdown instead of being replaced by "Command executed." with the text stashed in a popup.
+- Chat: a subagent launched by a slash command now gets a Task block to render into, so its progress is visible instead of the run appearing frozen for minutes.
+- Chat: file chips and tool-row file chips gain a "Preview in browser" action that opens the file in the in-app browser.
+- Files: remote project trees gain a manual refresh button — remote roots have no file watcher, so files created mid-turn used to stay invisible until the session went idle. Expansion and selection survive the refresh.
+
+### Changed
+
+- Claude: upgraded the Agent SDK to `0.3.238`. The task-tracking tools that fill the todo list are no longer offered on Claude's current models (Opus 4.8, Sonnet 5 and newer); SuperOne follows that default, so a turn on those models keeps no todo list. Nothing was removed on SuperOne's side — the list renders again wherever the tools are still offered.
+
+### Fixed
+
+- Files: clicking a file chip on a remote project opened a blank editor. The project-relative path was derived by stripping the store key (`remote:<connectionId>:<hostPath>`) as a plain prefix, so a host-absolute path reached the node and was resolved against the project root a second time. All four call sites now share one resolver, and remote file saves are normalized the same way. A failed read now shows the error with a Retry button instead of rendering as an empty file.
+- Grok: the host-context block was prepended to the opening turn, which hid `/goal` and every other slash command from Grok's parser. It is now appended after the user text, and deferred entirely when the prompt starts with `/`.
+- Windows: caption buttons showed as a white patch with near-invisible symbols in light mode. The overlay was tinted from `--background`, but it sits on the title strip (`--sidebar` in the main window, `--card` in the session window); the renderer now reports the strip's computed colour and the main process tints from it.
+- Claude: the warmup key omitted the session id, so switching chats could reuse a warm process bound to another session's MCP servers and permission callbacks.
+- Claude: a slash command the receive-side policy refused left the "running" marker standing until the end of the turn, because the new `refused` terminal state was dropped instead of forwarded.
+- Claude: an account-on-hold error rendered as a generic unknown failure instead of a billing one.
+- Codex: `thread/fork` ran on the metadata pool, which attached the forked thread to that process and left the new session unable to resume on its own app-server until the idle timeout. Forks now run on an ephemeral app-server.
+- Chat: insight blocks whose markers were emitted in bold fell through to plain markdown. Block extent is now explicitly bounded, so a block with a dropped footer no longer swallows the next one; the three marker regexes were deduplicated into `@superone/shared/insight-markers` after drifting across four copies.
+- Chat: the answered option preview of an `AskUserQuestion` tool call now renders.
+- Chat: task notifications drop token counts and the harness transcript path, keeping duration as the only suffix.
+- Sidebar: the stall ellipsis kept its old colour because the remount that repaints it fired before the 500ms colour transition settled.
+- Device agent: a condition naming none of ref/label/identifier is now rejected — it matched no node, so `notExists` answered "yes, it is gone" about a screen it never inspected.
+- UI: an icon-only button now derives its `aria-label` from a plain string tooltip instead of requiring the caller to pass the same string twice.
+
 ## [0.55.2-alpha] - 2026-08-20
 
 ### Added

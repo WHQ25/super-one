@@ -1,7 +1,7 @@
 {
   "extends": "../tsconfig/react-library.json",
   "compilerOptions": {
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
     "noEmit": true
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]

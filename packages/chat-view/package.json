@@ -6,11 +6,14 @@
   "description": "React DOM chat renderer hosted in a mobile WebView. Receives pre-reduced patches only.",
   "exports": {
     ".": "./src/index.ts",
-    "./host-html": "./src/host-html.ts"
+    "./host-html": "./src/host-html.ts",
+    "./terminal-html": "./src/terminal-html.ts",
+    "./markdown": "./src/markdown.ts"
   },
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -23,6 +26,7 @@
     "@types/react-dom": "~19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "^5.8.3",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "vitest": "^4.0.0"
   }
 }

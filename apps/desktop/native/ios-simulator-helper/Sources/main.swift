@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import IOSurface
 
-private let protocolVersion = 8
+private let protocolVersion = 9
 private let writeLock = NSLock()
 
 private func emit(_ value: Any) {
@@ -85,6 +85,9 @@ private final class HelperSession {
   private var orientation: S1OrientationBridge?
   private var accessibility: S1AccessibilityBridge?
   private var stream: FramebufferStream?
+  /// Held for the session, not per request: it owns a `CIContext` whose setup cost
+  /// dwarfs the renders it performs, and the settle loop calls in every 150ms.
+  private let frameAnalyzer = FrameAnalyzer()
 
   init(deviceSet: SimulatorDeviceSet) { self.deviceSet = deviceSet }
 
@@ -185,6 +188,24 @@ private final class HelperSession {
 
   func cancelTouch() {
     hid?.cancelTouch()
+  }
+
+  /**
+   The framebuffer as it looks right now.
+
+   Re-read on every call rather than cached from `attach`: CoreSimulator swaps the
+   surface out from under a display on rotation and on some app launches, and a
+   retained one keeps returning the last picture it held -- which reads as a screen
+   that never changes, the exact conclusion the hash exists to prevent.
+   */
+  func currentSurface() throws -> IOSurfaceRef {
+    guard let display else {
+      throw RequestError.unavailable("Attach before reading the framebuffer.")
+    }
+    guard let surface = display.framebufferSurface() else {
+      throw RequestError.unavailable("Framebuffer is not ready.")
+    }
+    return surface
   }
 
   func requireOrientation() throws -> S1OrientationBridge {
@@ -343,6 +364,45 @@ private final class HelperSession {
       hid.tapButton(button)
       try ensureDelivered(hid, before)
       return ["ok": true]
+    case "frame.hash":
+      let surface = try currentSurface()
+      guard let hash = frameAnalyzer.perceptualHash(surface) else {
+        throw RequestError.unavailable("The framebuffer could not be sampled.")
+      }
+      return [
+        "hash": hash,
+        "pixelWidth": IOSurfaceGetWidth(surface),
+        "pixelHeight": IOSurfaceGetHeight(surface),
+      ]
+    case "frame.ocr":
+      let surface = try currentSurface()
+      // Clamped and defaulted here for the same reason the other knobs are: a bad
+      // value would degrade every reading of the session with nothing in the result
+      // to show why.
+      let rotationDegrees = (params["rotationDegrees"] as? NSNumber)?.intValue ?? 0
+      guard rotationDegrees % 90 == 0 else {
+        throw RequestError.invalid("frame.ocr.rotationDegrees must be a multiple of 90.")
+      }
+      let languages = (params["languages"] as? [String])?.filter { !$0.isEmpty } ?? []
+      let fast = params["fast"] as? Bool ?? false
+      let minimumConfidence = Float(
+        min(max((params["minimumConfidence"] as? NSNumber)?.doubleValue ?? 0.3, 0), 1))
+      do {
+        let lines = try frameAnalyzer.recognizeText(
+          surface,
+          rotationDegrees: rotationDegrees,
+          languages: languages.isEmpty ? ["zh-Hans", "en-US"] : languages,
+          fast: fast,
+          minimumConfidence: minimumConfidence)
+        return [
+          "lines": lines,
+          "rotationDegrees": rotationDegrees,
+          "pixelWidth": IOSurfaceGetWidth(surface),
+          "pixelHeight": IOSurfaceGetHeight(surface),
+        ]
+      } catch {
+        throw RequestError.unavailable((error as NSError).localizedDescription)
+      }
     case "accessibility.dump":
       let accessibility = try requireAccessibility()
       // Clamped rather than trusted, for the same reason stream.start clamps its

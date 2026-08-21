@@ -28,6 +28,38 @@ export interface NativeFramePacket {
   data: Buffer
 }
 
+export interface IosSimulatorFrameHash {
+  /** 64-bit dHash as 16 hex characters. Compare with `frameHashesMatch`, not `===`. */
+  hash: string
+  pixelWidth: number
+  pixelHeight: number
+}
+
+export interface IosSimulatorFrameOcrOptions {
+  /** How far clockwise the framebuffer must turn to be read upright. */
+  rotationDegrees: number
+  /** BCP-47 tags. Unsupported ones are dropped by the helper rather than throwing. */
+  languages?: string[]
+  /** `.fast` recognizes Latin script only -- never set this for a CJK screen. */
+  fast?: boolean
+  minimumConfidence?: number
+}
+
+export interface IosSimulatorFrameOcr {
+  /** Boxes are normalized against the UPRIGHT screen, top-left origin. */
+  lines: Array<{
+    text: string
+    confidence: number
+    x: number
+    y: number
+    width: number
+    height: number
+  }>
+  rotationDegrees: number
+  pixelWidth: number
+  pixelHeight: number
+}
+
 export interface IosSimulatorNativeStreamInfo {
   codec: 'png' | 'h264'
   pixelWidth: number
@@ -356,6 +388,31 @@ export class IosSimulatorHelperRuntime {
    */
   async performAccessibility(action: string, generation: number, uid: number): Promise<void> {
     await this.request('accessibility.perform', { action, generation, uid })
+  }
+
+  /**
+   * A perceptual fingerprint of the current framebuffer.
+   *
+   * Computed in the helper rather than here: this is called at settle-loop
+   * frequency, and the alternative -- ask for a PNG, decode it, downsample it --
+   * costs an encode and a copy per sample for a value that is eight bytes wide.
+   */
+  async frameHash(): Promise<IosSimulatorFrameHash> {
+    return await this.request('frame.hash') as IosSimulatorFrameHash
+  }
+
+  /**
+   * Read the text on screen, for apps that expose no usable accessibility tree.
+   *
+   * `rotationDegrees` is how far the framebuffer has to turn to read upright; the
+   * helper turns the image before recognizing, because text lying on its side is
+   * text Vision does not find.
+   */
+  async frameOcr(options: IosSimulatorFrameOcrOptions): Promise<IosSimulatorFrameOcr> {
+    const startedAt = Date.now()
+    const result = await this.request('frame.ocr', { ...options }) as IosSimulatorFrameOcr
+    trace('ios.helper', 'frame.ocr', { ms: Date.now() - startedAt, lines: result.lines.length })
+    return result
   }
 
   async startFrames(

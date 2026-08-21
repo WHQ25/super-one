@@ -24,9 +24,11 @@ xcrun swiftc \
   -import-objc-header "$ROOT/Sources/BridgingHeader.h" \
   -framework Foundation -framework CoreGraphics -framework CoreImage -framework CoreMedia \
   -framework CoreVideo -framework IOSurface -framework VideoToolbox -framework AppKit \
+  -framework Vision \
   "$OUT_DIR/HIDBridge.o" "$OUT_DIR/OrientationBridge.o" "$OUT_DIR/AccessibilityBridge.o" \
   "$ROOT/Sources/CoreSimulatorBridge.swift" \
   "$ROOT/Sources/H264Encoder.swift" \
+  "$ROOT/Sources/FrameAnalysis.swift" \
   "$ROOT/Sources/FramebufferStream.swift" \
   "$ROOT/Sources/main.swift" \
   -o "$TMP"

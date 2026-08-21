@@ -25,6 +25,9 @@ import type { IosSimulatorAccessibilityDump, IosSimulatorRawNode } from './a11y-
 import type {
   IosSimulatorNativeAttachment,
   IosSimulatorNativeStreamInfo,
+  IosSimulatorFrameHash,
+  IosSimulatorFrameOcr,
+  IosSimulatorFrameOcrOptions,
   NativeFramePacket,
 } from './helper-client'
 import {
@@ -64,6 +67,8 @@ export interface IosSimulatorNativePort {
   dumpAccessibility(options?: { maxDepth?: number; maxNodes?: number })
     : Promise<IosSimulatorAccessibilityDump>
   hitTestAccessibility(x: number, y: number): Promise<IosSimulatorRawNode>
+  frameHash(): Promise<IosSimulatorFrameHash>
+  frameOcr(options: IosSimulatorFrameOcrOptions): Promise<IosSimulatorFrameOcr>
   performAccessibility(action: string, generation: number, uid: number): Promise<void>
   dispose(): Promise<void>
 }
@@ -472,6 +477,27 @@ export class IosSimulatorManager {
   ): Promise<IosSimulatorAccessibilityDump> {
     const native = await this.requireNativeSession(sessionId)
     return native.client.dumpAccessibility(options)
+  }
+
+  /**
+   * A perceptual fingerprint of what the screen shows right now.
+   *
+   * The second source for "did anything change", and the only one for an app with no
+   * accessibility tree. Unlike `accessibilityDump` this cannot be refused by the
+   * guest -- it reads the same pixels the user is looking at.
+   */
+  async frameHash(sessionId: string): Promise<IosSimulatorFrameHash> {
+    const native = await this.requireNativeSession(sessionId)
+    return native.client.frameHash()
+  }
+
+  /** Recognized text with boxes, for screens the accessibility tree does not describe. */
+  async frameOcr(
+    sessionId: string,
+    options: IosSimulatorFrameOcrOptions,
+  ): Promise<IosSimulatorFrameOcr> {
+    const native = await this.requireNativeSession(sessionId)
+    return native.client.frameOcr(options)
   }
 
   /**

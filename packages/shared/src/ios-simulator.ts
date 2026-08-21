@@ -1,4 +1,4 @@
-export const IOS_SIMULATOR_PROTOCOL_VERSION = 8 as const
+export const IOS_SIMULATOR_PROTOCOL_VERSION = 9 as const
 export const IOS_SIMULATOR_MAX_TOUCH_CONTACTS = 2 as const
 
 /**

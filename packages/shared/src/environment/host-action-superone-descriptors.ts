@@ -3555,6 +3555,22 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
     }
   },
   {
+    "name": "device_request_launch",
+    "description": "Ask the user to hand this session a device, and wait for their answer. Every other device_* tool needs one and fails with NO_DEVICE until this succeeds — call it first, not after a failure. The user picks which device and approves it; you cannot choose for them. Returns the device once it is bound and ready, booting it if it was not running. Calling it again while a device is already bound returns that device without prompting again. Only simulators can be offered today. Installing and launching a build is not part of this — do that with `xcrun simctl install <udid> <app>` / `simctl launch <udid> <bundle-id>` once you have the udid.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": deviceDescriptionProperty,
+        "device": {
+          "description": "Which device to preselect, e.g. \"iPhone 17 Pro Max\" or a udid. Say what the user asked for; matched loosely against the catalog. Omit to let the host suggest one.",
+          "type": "string"
+        }
+      },
+      "required": ["description"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "device_snapshot",
     "description": "Capture the screen and return a stateId later calls must quote. mode=semantic (default) returns the accessibility tree with @eN refs, labels, identifiers and bounds — prefer it: refs survive animation and rotation, coordinates do not. mode=visual saves a PNG and returns image.path (not pixels); Read it only if you need to look. mode=fused returns both. Waits for animation to stop first; settled=false means it was still moving, so treat geometry as approximate. A screen with no accessibility tree falls back to text read from pixels; the reply says source=ocr. Re-snapshot after anything that changes the screen — refs are positional and a stale stateId is rejected by device_act.",
     "inputSchema": {

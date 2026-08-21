@@ -21,7 +21,11 @@ import {
 import { registerWidgetTools } from '../generative-ui/mcp-server'
 import { clearBrowserToolHandlers, registerBrowserTools } from './browser-mcp-tools'
 import { registerComputerUseTools } from '../computer-use/tools'
-import { executeDeviceAgentTool, registerDeviceAgentTools } from '../device-agent'
+import {
+  executeDeviceAgentTool,
+  registerDeviceAgentTools,
+  setDeviceAgentHostEventResolver,
+} from '../device-agent'
 import { computerUseQualifiedNames } from '../computer-use/harness-surface'
 import { isBuiltInSuperoneToolQualified, MCP_SUPERONE_TOOL_PREFIX } from './superone-host-owned-tools'
 import {
@@ -256,6 +260,14 @@ let sessionHostProvider: (() => SessionTitleHost | null) | null = null
 
 export function setSessionHostProvider(provider: (() => SessionTitleHost | null) | null): void {
   sessionHostProvider = provider
+  // device_request_launch prompts the user from inside its executor, which lives a
+  // layer below this one. Handing it the resolver here — rather than letting it
+  // import getSessionHost — keeps that dependency pointing one way.
+  setDeviceAgentHostEventResolver((sessionId) => {
+    const session = sessionHostProvider?.()?.getSession(sessionId)
+    if (!session?.emitHostEvent) return null
+    return (event) => session.emitHostEvent!(event)
+  })
 }
 
 export function getSessionHost(): SessionTitleHost | null {

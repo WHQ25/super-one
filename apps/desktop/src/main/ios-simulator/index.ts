@@ -3,6 +3,7 @@ import log from '../logger'
 import { IosSimulatorChromeLoader } from './device-chrome'
 import { IosSimulatorManager } from './ios-simulator-manager'
 import { createIosSimulatorHelperRuntime, probeIosSimulatorHelper } from './helper-client'
+import { watchExternalSimulator } from './external-simulator'
 
 let manager: IosSimulatorManager | null = null
 
@@ -18,6 +19,7 @@ export function getIosSimulatorManager(userDataPath: string): IosSimulatorManage
     captureRoot: join(userDataPath, 'ios-simulator', 'captures'),
     helperProbe: () => probeIosSimulatorHelper(cacheRoot),
     nativeFactory: () => createIosSimulatorHelperRuntime(cacheRoot),
+    watchExternalSimulator: () => watchExternalSimulator(cacheRoot),
     // Without this the panel just sits on its loading spinner forever: a stream that
     // never starts looks exactly like a stream that has not produced a frame yet.
     onStreamError: (sessionId, error) =>

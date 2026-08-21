@@ -84,6 +84,7 @@ export const BROWSER_TOOL_NAMES = [
  * permission and registration cannot disagree about what exists.
  */
 export const DEVICE_AGENT_TOOL_NAMES = [
+  'device_request_launch',
   'device_snapshot',
   'device_query',
   'device_act',

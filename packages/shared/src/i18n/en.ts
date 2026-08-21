@@ -1637,6 +1637,25 @@ export type Messages = {
       automationEnabledOff: string
       automationChangeFromTo: string
     }
+    devicePreview: {
+      label: string
+      expandedLabel: string
+      hide: string
+      expand: string
+      shrink: string
+    }
+    deviceLaunch: {
+      badge: string
+      title: string
+      description: string
+      collapsed: string
+      running: string
+      willBoot: string
+      busy: string
+      busyWarning: string
+      approve: string
+      deny: string
+    }
     computerUseGrant: {
       badge: string
       title: string
@@ -4938,6 +4957,25 @@ export const en: Messages = {
       automationEnabledOn: 'on',
       automationEnabledOff: 'off',
       automationChangeFromTo: '{{from}} → {{to}}',
+    },
+    devicePreview: {
+      label: 'Device picture in picture',
+      expandedLabel: 'Expanded device preview',
+      hide: 'Hide device preview',
+      expand: 'Expand device preview',
+      shrink: 'Shrink device preview',
+    },
+    deviceLaunch: {
+      badge: 'Device',
+      title: 'Let the agent use a device?',
+      description: 'The agent can see the screen and tap, type and swipe on the device you pick. It stays connected until you disconnect the preview.',
+      collapsed: 'Let the agent use {{device}}?',
+      running: 'Running',
+      willBoot: 'Will boot',
+      busy: 'In use',
+      busyWarning: 'This device is bound to another chat. Approving it moves it here.',
+      approve: 'Approve',
+      deny: 'Deny',
     },
     computerUseGrant: {
       badge: 'Computer Use',

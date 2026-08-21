@@ -437,4 +437,4 @@ export class DeviceAgentSession {
   }
 }
 
-export { errorReply, matchNode }
+export { errorReply, reply, matchNode }

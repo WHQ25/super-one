@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import IOSurface
@@ -67,6 +68,74 @@ private func probe() -> [String: Any] {
 if CommandLine.arguments.contains("--probe") {
   emit(probe())
   exit(EXIT_SUCCESS)
+}
+
+private let simulatorAppBundleIdentifier = "com.apple.iphonesimulator"
+
+private func runningSimulatorApps() -> [NSRunningApplication] {
+  NSRunningApplication.runningApplications(withBundleIdentifier: simulatorAppBundleIdentifier)
+}
+
+/**
+ * Put Apple's Simulator.app out of sight.
+ *
+ * `simctl boot` is headless, but a Simulator.app that is ALREADY up watches
+ * CoreSimulator's device notifications and opens a window for anything that boots --
+ * including the device this app just took for its own preview. Closing that window is
+ * not an option: Simulator.app reads a close as "done with this device" and shuts the
+ * guest down underneath us. Hiding is the only move that leaves the device running.
+ *
+ * `hide()` reports `false` even when it works, so its return value is not a reading;
+ * `isHidden` after a runloop turn is.
+ */
+private func hideSimulatorApps() {
+  for app in runningSimulatorApps() where !app.isHidden { app.hide() }
+}
+
+/**
+ * Hide Apple's Simulator.app now, and again every time one launches.
+ *
+ * Launch only, deliberately. Hiding on unhide or activate as well would mean the user
+ * could never look at Simulator.app at all while this app held a device -- every
+ * Cmd-Tab to it would be undone. Launch is the one signal that is unambiguously not
+ * the user asking for it: something else (Xcode, `flutter run`, `expo run:ios`)
+ * started the app on their behalf.
+ *
+ * Launch is also the whole remaining surface. Measured: `open -n -a Simulator`, which
+ * is exactly what flutter_tools runs, does NOT unhide an instance that is already
+ * running and hidden -- macOS refuses the second instance and the first stays put. So
+ * once it is hidden it stays hidden until the user says otherwise.
+ */
+if CommandLine.arguments.contains("--watch-simulator-app") {
+  hideSimulatorApps()
+
+  NSWorkspace.shared.notificationCenter.addObserver(
+    forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
+  ) { note in
+    guard
+      let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+      app.bundleIdentifier == simulatorAppBundleIdentifier
+    else { return }
+    // An app still finishing its launch can swallow a hide, and its device window
+    // arrives later again, so the first attempt is retried rather than trusted.
+    app.hide()
+    for delay in [0.4, 1.0, 2.0] {
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        if !app.isTerminated && !app.isHidden { app.hide() }
+      }
+    }
+    emit(["event": "hidden", "pid": app.processIdentifier])
+  }
+
+  emit(["event": "watching", "running": !runningSimulatorApps().isEmpty])
+
+  // The same stop signal the session helper uses: the parent closing stdin. That
+  // covers the parent dying too, so this can never outlive the app that started it.
+  DispatchQueue(label: "app.superone.ios-simulator.simulator-watch").async {
+    while readLine() != nil {}
+    exit(EXIT_SUCCESS)
+  }
+  RunLoop.main.run()
 }
 
 private enum RequestError: Error, CustomStringConvertible {

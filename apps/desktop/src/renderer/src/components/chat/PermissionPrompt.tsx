@@ -21,6 +21,7 @@ import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromp
 import { SessionCleanupConfirmPromptContainer } from './SessionCleanupConfirmPrompt'
 import { AutomationConfirmPromptContainer } from './AutomationConfirmPrompt'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
+import { DeviceLaunchConfirmPrompt } from './DeviceLaunchConfirmPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
@@ -141,6 +142,7 @@ export function PermissionPrompt() {
   const isComputerUseGrant = pendingPermission?.requestKind === 'computer_use_grant'
   const isSessionCleanupConfirm = pendingPermission?.requestKind === 'session_cleanup_confirm'
   const isAutomationConfirm = pendingPermission?.requestKind === 'automation_confirm'
+  const isDeviceLaunchConfirm = pendingPermission?.requestKind === 'device_launch_confirm'
   const isSelfManagedConfirm =
     isVideoGenConfirm
     || isConfigConfirm
@@ -148,6 +150,7 @@ export function PermissionPrompt() {
     || isComputerUseGrant
     || isSessionCleanupConfirm
     || isAutomationConfirm
+    || isDeviceLaunchConfirm
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
@@ -404,6 +407,22 @@ export function PermissionPrompt() {
         onAlwaysAllow={() => {
           if (!requestId) return
           respondToPermission(requestId, true, true)
+        }}
+        onDeny={() => {
+          if (!requestId) return
+          respondToPermission(requestId, false)
+        }}
+      />
+    )
+  }
+
+  if (isDeviceLaunchConfirm && pendingPermission) {
+    return (
+      <DeviceLaunchConfirmPrompt
+        request={pendingPermission}
+        onApprove={(deviceId) => {
+          if (!requestId) return
+          respondToPermission(requestId, true, undefined, undefined, undefined, undefined, { deviceId })
         }}
         onDeny={() => {
           if (!requestId) return

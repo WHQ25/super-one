@@ -93,6 +93,13 @@ interface ManagerOptions {
    * to show, so the reason has to leave this class somehow.
    */
   onStreamError?: (sessionId: string, error: unknown) => void
+  /**
+   * Suppresses Apple's Simulator.app for as long as this app holds a device it booted
+   * itself, returning the stop. See `external-simulator.ts` — a running Simulator.app
+   * opens a window for anything that boots, and `flutter run` / `expo run:ios` /
+   * Xcode launch it again mid-session, so one hide at boot time is not enough.
+   */
+  watchExternalSimulator?: () => () => void
   /** How long to wait for the guest to actually turn before calling it a refusal. */
   rotationConfirmMs?: number
   rotationPollMs?: number
@@ -156,6 +163,9 @@ export class IosSimulatorManager {
   private readonly streamFlights = new Map<string, Promise<void>>()
   private readonly recordings = new Map<string, RecordingSession>()
   private readonly onStreamError: (sessionId: string, error: unknown) => void
+  private readonly watchExternalSimulator: () => () => void
+  /** Non-null exactly while the watcher is running, so it is started only once. */
+  private stopExternalSimulatorWatch: (() => void) | null = null
   private readonly rotationConfirmMs: number
   private readonly rotationPollMs: number
   // Host-owned state changes reach the renderer through here. Without it a rotation
@@ -174,6 +184,7 @@ export class IosSimulatorManager {
     this.attachAttempts = options.attachAttempts ?? 20
     this.attachRetryMs = options.attachRetryMs ?? 250
     this.onStreamError = options.onStreamError ?? (() => undefined)
+    this.watchExternalSimulator = options.watchExternalSimulator ?? (() => () => undefined)
     this.rotationConfirmMs = options.rotationConfirmMs ?? 1_500
     this.rotationPollMs = options.rotationPollMs ?? 100
   }
@@ -223,13 +234,22 @@ export class IosSimulatorManager {
 
   async listDevices(): Promise<IosSimulatorDevice[]> {
     const devices = await this.simctl.listDevices()
-    return devices.map((device) => ({
-      ...device,
+    return devices.map((device) => this.withOwnership(device))
+  }
+
+  /**
+   * Stamp host-owned facts onto a simctl row. Ownership lives here, not in simctl,
+   * so a row read a moment before a binding changed has to be stamped again rather
+   * than re-fetched — which is why the old value is dropped rather than spread over.
+   */
+  private withOwnership(device: IosSimulatorDevice): IosSimulatorDevice {
+    const owner = this.deviceOwners.get(device.udid)
+    const { boundSessionId: _previous, ...rest } = device
+    return {
+      ...rest,
       ownedBySuperOne: this.superOneBooted.has(device.udid),
-      ...(this.deviceOwners.get(device.udid)
-        ? { boundSessionId: this.deviceOwners.get(device.udid)! }
-        : {}),
-    }))
+      ...(owner ? { boundSessionId: owner } : {}),
+    }
   }
 
   listRuntimes(): Promise<IosSimulatorRuntimeOption[]> {
@@ -275,7 +295,10 @@ export class IosSimulatorManager {
     this.sessionBindings.set(sessionId, udid)
     this.deviceOwners.set(udid, sessionId)
     if (device.booted) await this.ensureNativeSession(sessionId, udid)
-    return this.getSessionState(sessionId)
+    // The row read above, not a fresh one: nothing between here and there changes what
+    // simctl would say about this device — attaching the helper does not boot it — and
+    // the only field that DID change is the ownership this session just took.
+    return this.announce(this.sessionStateFor(sessionId, udid, this.withOwnership(device)))
   }
 
   async boot(sessionId: string, udid: string): Promise<IosSimulatorSessionState> {
@@ -285,9 +308,10 @@ export class IosSimulatorManager {
     if (!before.booted) {
       await this.simctl.boot(udid)
       this.superOneBooted.add(udid)
+      this.syncExternalSimulatorWatch()
       await this.ensureNativeSession(sessionId, udid)
     }
-    return this.getSessionState(sessionId)
+    return this.announce(await this.getSessionState(sessionId))
   }
 
   /**
@@ -300,7 +324,8 @@ export class IosSimulatorManager {
     await this.teardownSession(sessionId)
     this.unbind(sessionId, udid)
     if (udid) this.superOneBooted.delete(udid)
-    return this.emptyState(sessionId)
+    this.syncExternalSimulatorWatch()
+    return this.announce(this.emptyState(sessionId))
   }
 
   /** Shuts the device down for real, whoever booted it, and unbinds the session. */
@@ -310,10 +335,11 @@ export class IosSimulatorManager {
     await this.teardownSession(sessionId)
     await this.simctl.shutdown(udid)
     this.superOneBooted.delete(udid)
+    this.syncExternalSimulatorWatch()
     this.orientations.delete(udid)
     this.hardwareKeyboards.delete(udid)
     this.unbind(sessionId, udid)
-    return this.emptyState(sessionId)
+    return this.announce(this.emptyState(sessionId))
   }
 
   async releaseSession(sessionId: string): Promise<void> {
@@ -324,16 +350,36 @@ export class IosSimulatorManager {
     // what we booted, leave an externally booted simulator running.
     if (udid && this.superOneBooted.has(udid)) {
       this.superOneBooted.delete(udid)
+      this.syncExternalSimulatorWatch()
       this.orientations.delete(udid)
       this.hardwareKeyboards.delete(udid)
       await this.simctl.shutdown(udid)
     }
+    this.announce(this.emptyState(sessionId))
   }
 
   async getSessionState(sessionId: string): Promise<IosSimulatorSessionState> {
     const udid = this.sessionBindings.get(sessionId)
     if (!udid) return this.emptyState(sessionId)
     const device = (await this.listDevices()).find((candidate) => candidate.udid === udid) ?? null
+    return this.sessionStateFor(sessionId, udid, device)
+  }
+
+  /**
+   * The same reading, from a device row the caller has ALREADY read.
+   *
+   * `simctl list devices --json` is a process spawn that talks to CoreSimulatorService
+   * — a quarter of a second on an idle Mac and worse with a simulator running. `bind`
+   * used to read the list for its own checks and then call `getSessionState`, which
+   * read it again, so opening the panel cost three of these back to back before the
+   * preview could show anything. Everything below this line is synchronous; the list
+   * was the only reason the reading had to be awaited at all.
+   */
+  private sessionStateFor(
+    sessionId: string,
+    udid: string,
+    device: IosSimulatorDevice | null,
+  ): IosSimulatorSessionState {
     const attachment = this.nativeSessions.get(sessionId)?.client.attachment
     return {
       sessionId,
@@ -454,11 +500,23 @@ export class IosSimulatorManager {
     }
   }
 
+  /**
+   * Hand the state back to the caller and tell every renderer about it at once.
+   *
+   * Lifecycle transitions used to answer only their caller, which was enough while
+   * every bind and boot came from the panel that made the IPC call. `device_request_launch`
+   * broke that: the agent boots a device no renderer asked for, so a window with no
+   * return value to read has no other way to learn it now has something to show.
+   */
+  private announce(state: IosSimulatorSessionState): IosSimulatorSessionState {
+    for (const listener of this.stateListeners) listener(state)
+    return state
+  }
+
   private async publishSessionState(sessionId: string): Promise<void> {
     if (this.stateListeners.size === 0) return
     try {
-      const state = await this.getSessionState(sessionId)
-      for (const listener of this.stateListeners) listener(state)
+      this.announce(await this.getSessionState(sessionId))
     } catch (error) {
       log.warn('[ios-simulator] could not publish session state', sessionId, error)
     }
@@ -598,8 +656,28 @@ export class IosSimulatorManager {
     await Promise.allSettled([...this.nativeSessions.keys()].map((id) => this.disposeNativeSession(id)))
     await Promise.allSettled([...this.superOneBooted].map((udid) => this.simctl.shutdown(udid)))
     this.superOneBooted.clear()
+    this.syncExternalSimulatorWatch()
     this.sessionBindings.clear()
     this.deviceOwners.clear()
+  }
+
+  /**
+   * Run the external-Simulator watcher exactly while this app owns a device it booted.
+   *
+   * Keyed on `superOneBooted` rather than on bindings: a simulator the USER already
+   * had running is one they were plausibly watching in Simulator.app on purpose, and
+   * taking over its preview here is not a reason to pull their window out from under
+   * them. Idempotent, so every caller can just say "resync" after touching the ledger.
+   */
+  private syncExternalSimulatorWatch(): void {
+    const wanted = this.superOneBooted.size > 0
+    if (wanted === (this.stopExternalSimulatorWatch !== null)) return
+    if (wanted) {
+      this.stopExternalSimulatorWatch = this.watchExternalSimulator()
+      return
+    }
+    this.stopExternalSimulatorWatch?.()
+    this.stopExternalSimulatorWatch = null
   }
 
   /**

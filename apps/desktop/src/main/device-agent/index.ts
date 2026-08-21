@@ -1,7 +1,9 @@
 import { app } from 'electron'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import { getIosSimulatorManager } from '../ios-simulator'
-import { DeviceAgentSession, errorReply, type DeviceToolReply } from './execute'
+import { DeviceAgentSession, errorReply, reply, type DeviceToolReply } from './execute'
 import { IosSimulatorBackend } from './ios-backend'
+import { requestDeviceLaunch, type DeviceLaunchPort } from './launch'
 import type { DeviceAgentToolName } from './tools'
 import type { TouchDeviceBackend } from './types'
 
@@ -24,6 +26,27 @@ export function setDeviceAgentBackendFactory(
   factory: (sessionId: string) => TouchDeviceBackend,
 ): void {
   backendFactory = factory
+}
+
+/** The manager, as the launch flow sees it. Swapped by tests alongside the backend. */
+let launchPortFactory: () => DeviceLaunchPort = () => getIosSimulatorManager(app.getPath('userData'))
+
+export function setDeviceAgentLaunchPortFactory(factory: () => DeviceLaunchPort): void {
+  launchPortFactory = factory
+}
+
+/**
+ * How the launch prompt reaches the user.
+ *
+ * Injected rather than imported: the resolver lives in the MCP layer, which imports
+ * this module, and the tool executor must not import it back.
+ */
+let emitHostEventFor: (sessionId: string) => ((event: AgentEvent) => void) | null = () => null
+
+export function setDeviceAgentHostEventResolver(
+  resolver: (sessionId: string) => ((event: AgentEvent) => void) | null,
+): void {
+  emitHostEventFor = resolver
 }
 
 function sessionFor(sessionId: string): DeviceAgentSession {
@@ -53,6 +76,19 @@ export async function executeDeviceAgentTool(
   signal?: AbortSignal,
 ): Promise<DeviceToolReply> {
   try {
+    if (name === 'device_request_launch') {
+      const { description, device } = args as { description?: string; device?: string }
+      return reply(await requestDeviceLaunch({
+        sessionId,
+        port: launchPortFactory(),
+        emitHostEvent: emitHostEventFor(sessionId),
+        request: {
+          ...(description ? { reason: description } : {}),
+          ...(device ? { device } : {}),
+        },
+        ...(signal ? { signal } : {}),
+      }))
+    }
     const session = sessionFor(sessionId)
     switch (name) {
       case 'device_snapshot':

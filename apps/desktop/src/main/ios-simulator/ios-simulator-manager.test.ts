@@ -156,6 +156,93 @@ describe('IosSimulatorManager', () => {
     }))
   })
 
+  it('announces a device the renderer never asked for', async () => {
+    // The agent's device_request_launch boots through this manager, so the panel and
+    // the floating preview learn about the binding only from this event -- there is no
+    // IPC return value to read when the renderer did not make the call.
+    const { simctl, nativeFactory } = setup()
+    const manager = new IosSimulatorManager({
+      simctl, nativeFactory, helperProbe: async () => null, attachAttempts: 1,
+    })
+    const seen: Array<{ sessionId: string; phase: string; udid: string | undefined }> = []
+    manager.onSessionState((state) => {
+      seen.push({ sessionId: state.sessionId, phase: state.phase, udid: state.device?.udid })
+    })
+
+    await manager.boot('session-a', 'device-a')
+
+    expect(seen.at(-1)).toEqual({ sessionId: 'session-a', phase: 'ready', udid: 'device-a' })
+  })
+
+  it('announces the device going away again', async () => {
+    const { simctl, nativeFactory } = setup(device({ state: 'Booted', booted: true }))
+    const manager = new IosSimulatorManager({
+      simctl, nativeFactory, helperProbe: async () => null, attachAttempts: 1,
+    })
+    await manager.bind('session-a', 'device-a')
+    const seen: string[] = []
+    manager.onSessionState((state) => { seen.push(state.phase) })
+
+    await manager.detach('session-a')
+
+    expect(seen.at(-1)).toBe('idle')
+  })
+
+  it("suppresses Apple's Simulator for as long as it holds a device it booted", async () => {
+    // simctl boot is headless, but a Simulator.app that is already running opens a
+    // window for anything that boots -- so the preview would always arrive beside an
+    // uninvited second copy of the same screen. It also gets relaunched mid-session by
+    // `flutter run` and friends, which is why this is a watch and not one hide.
+    const { simctl, nativeFactory } = setup()
+    const stop = vi.fn()
+    const watchExternalSimulator = vi.fn(() => stop)
+    const manager = new IosSimulatorManager({
+      simctl, nativeFactory, watchExternalSimulator, helperProbe: async () => null, attachAttempts: 1,
+    })
+
+    await manager.boot('session-a', 'device-a')
+    expect(watchExternalSimulator).toHaveBeenCalledTimes(1)
+    expect(stop).not.toHaveBeenCalled()
+
+    // Giving the device back is the end of any claim on the user's window manager.
+    await manager.releaseSession('session-a')
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops suppressing the external Simulator once the device is shut down', async () => {
+    // The other way a booted device goes away. A watcher left running would keep
+    // hiding an app the user is now entitled to open for its own sake.
+    const { simctl, nativeFactory } = setup()
+    const stop = vi.fn()
+    const watchExternalSimulator = vi.fn(() => stop)
+    const manager = new IosSimulatorManager({
+      simctl, nativeFactory, watchExternalSimulator, helperProbe: async () => null, attachAttempts: 1,
+    })
+    await manager.boot('session-a', 'device-a')
+
+    await manager.shutdown('session-a')
+
+    expect(stop).toHaveBeenCalledTimes(1)
+    // Idempotent: a second pass over an empty ledger must not stop it twice.
+    await manager.dispose()
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the external Simulator alone when it only attaches to a running device', async () => {
+    // The user was plausibly watching that device in Simulator.app on purpose. Taking
+    // over the preview is not a reason to pull their window out from under them.
+    const { simctl, nativeFactory } = setup(device({ state: 'Booted', booted: true }))
+    const watchExternalSimulator = vi.fn(() => vi.fn())
+    const manager = new IosSimulatorManager({
+      simctl, nativeFactory, watchExternalSimulator, helperProbe: async () => null, attachAttempts: 1,
+    })
+
+    await manager.boot('session-a', 'device-a')
+
+    expect(simctl.boot).not.toHaveBeenCalled()
+    expect(watchExternalSimulator).not.toHaveBeenCalled()
+  })
+
   it('prevents another session from taking the same device', async () => {
     const { simctl, nativeFactory } = setup(device({ state: 'Booted', booted: true }))
     const manager = new IosSimulatorManager({

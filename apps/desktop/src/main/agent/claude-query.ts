@@ -586,6 +586,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               toolUseId: sys.tool_use_id,
               description: sys.description ?? '',
               taskType: sys.task_type,
+              skipTranscript: sys.skip_transcript === true,
             })
           } else if (sys.subtype === 'task_updated') {
             const patchStatus = sys.patch?.status as string | undefined

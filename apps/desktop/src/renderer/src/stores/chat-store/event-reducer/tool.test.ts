@@ -365,6 +365,122 @@ describe('reduceTool: task_started', () => {
   })
 })
 
+/**
+ * Subagents launched by a slash command (`/code-review`) have no Task tool_use to
+ * hang off: the SDK reports them through task_* events with `tool_use_id` unset.
+ * Without a host block the whole run is invisible — taskProgress is written but
+ * nothing reads it — so synthesize the block the renderer expects.
+ */
+describe('reduceTool: subagent with no launching tool_use', () => {
+  it('synthesizes a host Task block keyed by taskId', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceTool(session, {
+      type: 'task_started', taskId: 'task_abc', description: 'Review the diff', taskType: 'local_agent',
+    } as never)
+    const blocks = patch.messages?.[0].content as ContentBlock[]
+    expect(blocks.find((b) => b.type === 'tool_use' && b.toolUseId === 'task_abc'))
+      .toMatchObject({ type: 'tool_use', toolName: 'Task', toolUseId: 'task_abc' })
+  })
+
+  it('carries the description into the block input so the card has a title', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceTool(session, {
+      type: 'task_started', taskId: 'task_abc', description: 'Review the diff', taskType: 'local_agent',
+    } as never)
+    const blocks = patch.messages?.[0].content as ContentBlock[]
+    const synth = blocks.find((b) => b.type === 'tool_use' && b.toolUseId === 'task_abc')
+    expect(JSON.parse((synth as { input: string }).input)).toMatchObject({ description: 'Review the diff' })
+  })
+
+  it('leaves ambient housekeeping agents out of the transcript', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceTool(session, {
+      type: 'task_started', taskId: 'task_amb', description: 'housekeeping',
+      taskType: 'local_agent', skipTranscript: true,
+    } as never)
+    expect(patch.messages).toBeUndefined()
+  })
+
+  it('leaves shell background tasks out of the transcript', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceTool(session, {
+      type: 'task_started', taskId: 'task_sh', description: 'Run full typecheck', taskType: 'local_bash',
+    } as never)
+    expect(patch.messages).toBeUndefined()
+  })
+
+  it('does not synthesize when the launching tool_use is present', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1', [toolUseBlock('tu-1', 'Task')])]
+    const patch = reduceTool(session, {
+      type: 'task_started', toolUseId: 'tu-1', taskId: 'task_abc', description: 'x', taskType: 'local_agent',
+    } as never)
+    expect(patch.messages).toBeUndefined()
+  })
+
+  /**
+   * The real slash-command shape, confirmed by event-trace: task_started *does*
+   * carry a toolUseId, but the turn emits no content_delta at all, so the Task
+   * block it names never reaches messages. Keying off "toolUseId is absent"
+   * misses this entirely — the test is whether the block exists.
+   */
+  it('synthesizes under toolUseId when the launching block never arrived', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceTool(session, {
+      type: 'task_started', toolUseId: 'toolu_018oRz', taskId: 'aab81d1ac',
+      description: 'Code review - correctness scan', taskType: 'local_agent',
+    } as never)
+    const blocks = patch.messages?.[0].content as ContentBlock[]
+    expect(blocks.find((b) => b.type === 'tool_use' && b.toolUseId === 'toolu_018oRz'))
+      .toMatchObject({ type: 'tool_use', toolName: 'Task', toolUseId: 'toolu_018oRz' })
+  })
+
+  it('keys the synthesized block by toolUseId so task_progress lands on it', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const started = reduceTool(session, {
+      type: 'task_started', toolUseId: 'toolu_018oRz', taskId: 'aab81d1ac',
+      description: 'scan', taskType: 'local_agent',
+    } as never)
+    session.messages = started.messages!
+    session.taskProgress = started.taskProgress!
+    const progressed = reduceTool(session, {
+      type: 'task_progress', toolUseId: 'toolu_018oRz', taskId: 'aab81d1ac',
+      description: 'Reading pi-event-map.ts', lastToolName: 'Read',
+      usage: { totalTokens: 59581, toolUses: 12, durationMs: 108044 },
+    } as never)
+    expect(progressed.taskProgress?.['toolu_018oRz']).toMatchObject({
+      description: 'Reading pi-event-map.ts', lastToolName: 'Read', totalTokens: 59581,
+    })
+  })
+
+  it('does not synthesize twice for a restarted task', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1', [toolUseBlock('task_abc', 'Task')])]
+    const patch = reduceTool(session, {
+      type: 'task_started', taskId: 'task_abc', description: 'again', taskType: 'local_agent',
+    } as never)
+    expect(patch.messages).toBeUndefined()
+  })
+
+  it('persists outputFile onto the block so the transcript can replay', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1', [toolUseBlock('task_abc', 'Task')])]
+    const patch = reduceTool(session, {
+      type: 'task_notification', taskId: 'task_abc', taskStatus: 'completed',
+      outputFile: '/p/agent-x.jsonl', summary: 'done',
+    } as never)
+    const blocks = patch.messages?.[0].content as ContentBlock[]
+    expect(blocks.find((b) => b.type === 'tool_use' && b.toolUseId === 'task_abc'))
+      .toMatchObject({ taskOutputFile: '/p/agent-x.jsonl' })
+  })
+})
+
 describe('reduceTool: task_progress', () => {
   it('pushes the previous description onto toolHistory when description changes', () => {
     const session = createDefaultPerSessionState()

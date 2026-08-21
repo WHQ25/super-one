@@ -1412,7 +1412,7 @@ export type AgentEventBase =
   | { type: 'hook_complete'; hook: HookEvent }
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number; messageId?: string }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
-  | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string; outputFile?: string }
+  | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string; outputFile?: string; skipTranscript?: boolean }
   | {
     type: 'task_progress'
     taskId: string

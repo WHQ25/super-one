@@ -1,4 +1,4 @@
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
 import { markMessageEventApplied } from '../index'
@@ -143,6 +143,44 @@ function commitTaskProgress(
     delete out[write.dropKey]
   }
   return out
+}
+
+/**
+ * A subagent launched by a slash command (`/code-review`) drives its whole run
+ * through task_* events: the turn emits no content_delta, so the Task block those
+ * events name never reaches messages. SubagentBlock has nothing to hang off and
+ * the run stays invisible for minutes while taskProgress updates unread.
+ *
+ * Synthesize the block the renderer expects. The trigger is the block being
+ * *absent*, not `tool_use_id` being unset — a slash-command turn does supply an
+ * id, it just never ships the block. Keyed identically to taskProgress so every
+ * later task_* event resolves onto it; a no-op once the real block exists.
+ *
+ * Only for task types that own a subagent transcript: shell/monitor tasks already
+ * surface as their own notification rows and must not become agent cards.
+ */
+function synthesizeTaskBlock(
+  messages: ChatMessage[],
+  blockId: string,
+  description: string,
+): ChatMessage[] | null {
+  const idx = messages.findLastIndex((m) => m.role === 'assistant')
+  if (idx < 0) return null
+  if (messages.some((m) => m.content.some((b) => b.type === 'tool_use' && b.toolUseId === blockId))) {
+    return null
+  }
+  const block = {
+    type: 'tool_use',
+    toolName: 'Task',
+    toolUseId: blockId,
+    input: JSON.stringify({ description }),
+    // Running state is driven by taskProgress.completed, not block status; leaving
+    // this 'streaming' would spin forever if the terminal notification is missed.
+    status: 'complete',
+  } as ContentBlock
+  const next = [...messages]
+  next[idx] = { ...next[idx], content: [...next[idx].content, block] }
+  return next
 }
 
 type ToolEvent = Extract<AgentEvent, {
@@ -290,7 +328,15 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         completed: prev?.completed === true ? true : false,
         ...(event.outputFile ? { outputFile: event.outputFile } : {}),
       }
-      return { taskProgress: commitTaskProgress(session.taskProgress, write, next) }
+      const patch = { taskProgress: commitTaskProgress(session.taskProgress, write, next) }
+      if (event.taskType !== 'local_agent' || event.skipTranscript) return patch
+      // Key the block the same way taskProgress is keyed, so every later task_*
+      // event lands on it. A toolUseId being present does not mean the block
+      // arrived: a slash-command turn names one but emits no content at all.
+      const blockId = event.toolUseId ?? event.taskId
+      if (!blockId) return patch
+      const messages = synthesizeTaskBlock(session.messages, blockId, event.description)
+      return messages ? { ...patch, messages } : patch
     }
 
     case 'task_progress': {
@@ -453,10 +499,11 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         ...(workflowPhases ? { workflowPhases } : {}),
         ...(currentPhase ? { workflowCurrentPhase: currentPhase } : {}),
       }
-      // Patch under the resolved canonical write key (never provisional taskId-only key).
-      const patchToolId = event.taskId != null && write.key === event.taskId
-        ? undefined
-        : write.key
+      // Patch under the resolved canonical write key. A taskId-only key used to be
+      // skipped because it named no real block; a slash-command subagent now has a
+      // synthesized block under exactly that id, so match on the block instead —
+      // mapMessagesStructural is a no-op when nothing carries the id.
+      const patchToolId = write.key
       if (patchToolId) {
         msgs = mapMessagesStructural(msgs, (block) => {
           if (

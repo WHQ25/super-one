@@ -9,6 +9,14 @@ import type { PerSessionState } from '../types'
  */
 export const TURN_META_PREFIX = '__turn_meta__:'
 
+/**
+ * Slash commands whose stdout is a report meant for the user, not a side effect.
+ * They run for minutes and return everything at once through
+ * `<local-command-stdout>`, so hiding it behind the popup loses the entire result.
+ * Add a command here when its output is the deliverable.
+ */
+const REPORT_OUTPUT_COMMANDS = new Set(['code-review', 'security-review'])
+
 export type TurnMetaPayload =
   | { kind: 'summary'; text: string; promptId?: string }
   | { kind: 'recap'; text: string; auto?: boolean }
@@ -212,6 +220,23 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
           if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
         }
         return { _pendingSlashCommand: '', _pendingCompactUserId: '', messages: filtered }
+      }
+      // These commands return their whole deliverable as local-command stdout —
+      // the report *is* the answer the user asked for, so it belongs in the
+      // transcript as plain markdown. The default treatment below (drop the
+      // message, leave "Command /x executed.", stash the text in a popup) is
+      // right for commands whose output is noise (/compact) or that render in
+      // their own panel (/doctor), but it silently swallows a review.
+      if (REPORT_OUTPUT_COMMANDS.has(cmd) && event.content.trim()) {
+        const reportMsg: ChatMessage = {
+          id: `slash-report-${Date.now()}`,
+          role: 'assistant',
+          content: [{ type: 'text', text: event.content }],
+          status: 'complete',
+          createdAt: new Date().toISOString(),
+          providerId: 'claude',
+        }
+        return { _pendingSlashCommand: '', messages: [...filtered, reportMsg] }
       }
       if (import.meta.env.DEV && import.meta.env.RENDERER_VITE_DEBUG_SLASH_OUTPUT === '1') {
         const debugText = `\`\`\`\n/${cmd}\n\n${event.content}\n\`\`\``

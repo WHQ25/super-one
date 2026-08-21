@@ -286,6 +286,64 @@ describe('reduceSlash: slash_command_output', () => {
     expect(patch.messages?.some((m) => m.id === 'source')).toBe(false)
     expect(patch.messages?.some((m) => (m.content[0] as { text: string }).text.includes('/doctor'))).toBe(true)
   })
+
+  /**
+   * `/code-review` returns its whole report as local-command stdout. The default
+   * treatment drops the message and leaves only "Command /code-review executed.",
+   * so the review the user waited minutes for never reaches the transcript.
+   */
+  it('keeps the report in the transcript for a report-producing command', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = 'code-review'
+    session.messages = [makeMessage('source', { role: 'assistant' })]
+
+    const patch = reduceSlash(session, {
+      type: 'slash_command_output',
+      messageId: 'source',
+      content: '**Findings**\n\n- `execute.ts:330` falls back to screen centre',
+    } as never)
+
+    const texts = patch.messages!.map((m) => (m.content[0] as { text: string }).text)
+    expect(texts.some((t) => t.includes('`execute.ts:330` falls back to screen centre'))).toBe(true)
+    expect(texts.some((t) => t.includes('executed'))).toBe(false)
+  })
+
+  it('leaves the report as plain markdown so it renders, not as a fenced block', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = 'security-review'
+    session.messages = [makeMessage('source', { role: 'assistant' })]
+
+    const patch = reduceSlash(session, {
+      type: 'slash_command_output', messageId: 'source', content: '**Findings**\n\n- one',
+    } as never)
+
+    const report = patch.messages!.at(-1)!
+    expect((report.content[0] as { text: string }).text).toBe('**Findings**\n\n- one')
+  })
+
+  it('still hides output for commands that render elsewhere', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = 'doctor'
+    session.messages = [makeMessage('source', { role: 'assistant' })]
+
+    const patch = reduceSlash(session, {
+      type: 'slash_command_output', messageId: 'source', content: 'all good',
+    } as never)
+
+    expect(patch.slashCommandOutput).toEqual({ command: 'doctor', content: 'all good' })
+  })
+
+  it('does not mint an empty report message when stdout is blank', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = 'code-review'
+    session.messages = [makeMessage('source', { role: 'assistant' })]
+
+    const patch = reduceSlash(session, {
+      type: 'slash_command_output', messageId: 'source', content: '   ',
+    } as never)
+
+    expect(patch.messages?.some((m) => (m.content[0] as { text: string }).text.trim() === '')).toBe(false)
+  })
 })
 
 describe('reduceSlash: checkpoint_captured', () => {

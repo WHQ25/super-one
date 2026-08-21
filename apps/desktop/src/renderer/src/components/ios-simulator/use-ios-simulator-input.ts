@@ -50,6 +50,7 @@ export interface IosSimulatorInputApi {
     ref: React.RefObject<HTMLTextAreaElement | null>
     handlers: {
       onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>
+      onCompositionStart: React.CompositionEventHandler<HTMLTextAreaElement>
       onCompositionEnd: React.CompositionEventHandler<HTMLTextAreaElement>
       onPaste: React.ClipboardEventHandler<HTMLTextAreaElement>
       onInput: React.FormEventHandler<HTMLTextAreaElement>
@@ -105,6 +106,14 @@ export function useIosSimulatorInput(
   const syntheticGestureEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastGestureCenter = useRef({ xRatio: 0.5, yRatio: 0.5 })
   const nativeRotationWheelGuardUntil = useRef(0)
+  /**
+   * Whether an input method is mid-composition.
+   *
+   * Tracked here rather than read off the `input` event's own `isComposing`, because
+   * engines disagree on whether the committing `input` lands before or after
+   * `compositionend`. Owning the flag makes the moment the box is emptied ours.
+   */
+  const composing = useRef(false)
 
   const sendInput = useCallback(async (input: SimulatorInput) => {
     const result = await window.environment.iosSimulatorInput(sessionId, input)
@@ -355,19 +364,34 @@ export function useIosSimulatorInput(
     // Left alone so the browser can raise its own paste event, which is where the
     // host clipboard is actually readable.
     if (event.metaKey || event.ctrlKey || event.altKey) return
+    // Only the keys that produce no text of their own. A printable character cannot
+    // be judged here: the keystroke that STARTS a composition arrives with
+    // `isComposing` still false — `compositionstart` is dispatched after this
+    // handler returns — so forwarding it typed the first letter of every pinyin
+    // word into the device. `onInput` sends those instead, once the browser has
+    // decided the keystroke was literal text rather than the IME's.
     const text = event.key === 'Enter'
       ? '\n'
       : event.key === 'Backspace'
         ? '\b'
         : event.key === 'Tab'
           ? '\t'
-          : event.key.length === 1 ? event.key : null
+          : null
     if (text === null) return
     event.preventDefault()
     void sendInput({ type: 'text', text })
   }, [cancelScheduledTouchMove, enabled, finishSyntheticGesture, sendInput])
 
+  const onCompositionStart = useCallback(() => {
+    composing.current = true
+  }, [])
+
   const onCompositionEnd = useCallback((event: React.CompositionEvent<HTMLTextAreaElement>) => {
+    composing.current = false
+    // Emptied here rather than left to `onInput`: the committed text is already in
+    // hand, and this is the last moment guaranteed to run after the IME is done
+    // with the box.
+    event.currentTarget.value = ''
     if (!enabled || !event.data) return
     // The whole committed string at once. Main routes anything the simulated
     // keyboard cannot spell through the device pasteboard.
@@ -382,13 +406,30 @@ export function useIosSimulatorInput(
   }, [enabled, sendInput])
 
   /**
-   * The textarea is a keyboard socket, never a document. Everything worth sending has
-   * already gone out by the time text lands in it, so this only empties it — left to
-   * fill up, the next composition would commit against stale content.
+   * Where ordinary typed characters are picked up, and where the box is emptied.
+   *
+   * The textarea is a keyboard socket, never a document: it is drained on every
+   * event, since letting it fill up would leave the next composition committing
+   * against stale content.
+   *
+   * Nothing is touched while an IME is composing. Chromium fires an `input` per
+   * keystroke of a composition (`inputType: 'insertCompositionText'`), and what sits
+   * in the box then is the pre-edit the user is still choosing characters for —
+   * emptying it there tears the composition down mid-word, which is why Chinese
+   * could be started but never finished. `onCompositionEnd` handles that path.
    */
   const onInput = useCallback((event: React.FormEvent<HTMLTextAreaElement>) => {
+    if (composing.current) return
+    // `insertText` is the browser's verdict that this keystroke was literal text and
+    // not IME input — the composed path arrives as `insertCompositionText` /
+    // `insertFromComposition` and is sent by `onCompositionEnd` instead. Anything
+    // else (deletions, line breaks the key handler already sent) carries no data.
+    const native = event.nativeEvent as InputEvent
+    if (enabled && native.inputType === 'insertText' && native.data) {
+      void sendInput({ type: 'text', text: native.data })
+    }
     event.currentTarget.value = ''
-  }, [])
+  }, [enabled, sendInput])
 
   return {
     shellRef,
@@ -403,7 +444,7 @@ export function useIosSimulatorInput(
     },
     keyboard: {
       ref: keyboardRef,
-      handlers: { onKeyDown, onCompositionEnd, onPaste, onInput },
+      handlers: { onKeyDown, onCompositionStart, onCompositionEnd, onPaste, onInput },
     },
   }
 }

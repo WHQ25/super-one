@@ -2201,6 +2201,51 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
     })
   })
 
+  it('stays attached when a failed turn is followed by a durable queued turn', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const mockConnection = makeStreamingConnection([
+      {
+        method: 'turn/completed',
+        params: { threadId: 'main-thread', turn: { id: 'turn-1', status: 'failed', error: { message: 'boom' } } },
+      },
+      {
+        method: 'turn/started',
+        params: { threadId: 'main-thread', turn: { id: 'turn-2' } },
+      },
+      {
+        method: 'item/started',
+        params: { threadId: 'main-thread', item: { id: 'user-2', type: 'userMessage', clientId: 'u2' } },
+      },
+      {
+        method: 'item/completed',
+        params: { threadId: 'main-thread', item: { id: 'answer-2', type: 'agentMessage', text: 'queued ok' } },
+      },
+      {
+        method: 'turn/completed',
+        params: { threadId: 'main-thread', turn: { id: 'turn-2', status: 'completed' } },
+      },
+    ])
+    let queued = true
+    const onTurnFailed = vi.fn()
+    const onQueuedMessageConsumed = vi.fn(() => { queued = false })
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      'turn-1',
+      new AbortController(),
+      {
+        hasQueuedMessages: () => queued,
+        onTurnFailed,
+        onQueuedMessageConsumed,
+      },
+    )
+
+    expect(onTurnFailed).toHaveBeenCalledWith(expect.objectContaining({ message: 'boom' }), 'turn-1')
+    expect(onQueuedMessageConsumed).toHaveBeenCalledWith('u2')
+    expect(result.turnId).toBe('turn-2')
+  })
+
   it('finalizes mcp_tool_call stuck in_progress when item/completed never arrives', async () => {
     const session = { ...makeSession(), threadId: 'main-thread' }
     const mockConnection = makeStreamingConnection([

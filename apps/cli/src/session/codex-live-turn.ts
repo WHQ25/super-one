@@ -72,7 +72,7 @@ export async function openTurnAndStream(opts: {
   additionalDirectories?: string[]
   threadId: string
   model?: string
-  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
   collaborationMode?: Record<string, unknown> | string | null
   messageId?: string
   onAgentEvent?: (event: AgentEvent) => void

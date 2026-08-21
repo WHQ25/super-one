@@ -1349,6 +1349,11 @@ export const zh: Messages = {
       },
     },
     dropToAttach: '拖入图片或 PDF 以添加附件',
+    queuedActions: {
+      start: '开始处理排队消息',
+      edit: '编辑排队消息',
+      delete: '删除排队消息',
+    },
     contextUsage: {
       usedOfMax: '{{used}} / {{max}}',
       percent: '{{percent}}%',
@@ -3367,6 +3372,8 @@ export const zh: Messages = {
     lifetimeTokens: '累计 Token',
     peakDaily: '单日峰值',
     streak: '连续天数',
+    threadTokens: '当前线程 Token',
+    estimatedCredits: '预估 Credits',
     updating: '更新中…',
     updatedJustNow: '刚刚更新',
     updatedMinutesAgo: '{{n}} 分钟前更新',

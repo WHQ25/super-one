@@ -26,6 +26,7 @@ export interface SessionSlice {
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
+  startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
   setDraftText: (text: string, target?: SessionWriteTarget) => void
   setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
   assignSubagentColor: (toolUseId: string) => void
@@ -61,7 +62,7 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
   rewindConversation: async (userMessageId: string) => {
     const { activeProject } = get()
     if (!activeProject) throw new Error('No active project')
-    const result = await window.agent.rewindConversation(activeProject)
+    const result = await window.agent.rewindConversation(activeProject, userMessageId)
     if (result.canRewind !== false) {
       _truncateAtCheckpoint(set, get, activeProject, userMessageId)
     }
@@ -100,6 +101,12 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     set((s) => commitPerSession(s, target, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
     })))
+  },
+
+  startQueuedMessages: async (target) => {
+    const projectPath = target?.projectPath ?? get().activeProject
+    if (!projectPath) return false
+    return window.agent.startQueuedMessages(projectPath, target?.sessionId)
   },
 
   setDraftText: (text, target) => {

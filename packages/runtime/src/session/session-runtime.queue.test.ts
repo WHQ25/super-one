@@ -141,7 +141,7 @@ describe('SessionRuntime send queue', () => {
     expect(users).toEqual(['first', 'second'])
   })
 
-  it('codex mid-stream send live-injects as concurrent steer', async () => {
+  it('codex normal mid-stream send serializes through the FIFO queue', async () => {
     let active = 0
     let maxActive = 0
     const order: string[] = []
@@ -176,9 +176,10 @@ describe('SessionRuntime send queue', () => {
 
     const done = await waitIdle(runtime, session.sessionId)
     expect(done.status).toBe('idle')
-    expect(maxActive).toBe(2)
+    expect(maxActive).toBe(1)
     expect(order[0]).toBe('start:first:null')
-    expect(order[1]).toMatch(/^start:second:steer$/)
+    expect(order[1]).toBe('end:first')
+    expect(order[2]).toBe('start:second:null')
     const users = done.transcript.filter((t) => t.role === 'user').map((t) => t.text)
     expect(users).toEqual(['first', 'second'])
   })

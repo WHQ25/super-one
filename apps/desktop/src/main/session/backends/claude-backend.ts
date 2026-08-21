@@ -618,7 +618,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     trace('permission.flow', 'backend_setMode_sdk_call', { mode })
     try {
-      await this.query.setPermissionMode(mode)
+      await this.query.setPermissionMode(mode === 'agent' ? 'default' : mode)
       trace('permission.flow', 'backend_setMode_sdk_done', { mode })
     } catch (err) {
       trace('permission.flow', 'backend_setMode_sdk_error', { mode, err: (err as Error)?.message })

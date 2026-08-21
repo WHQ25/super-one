@@ -106,6 +106,7 @@ import {
   type CodexReviewTarget,
   type CodexRunResult,
   type CodexExternalAgentItem,
+  type CodexMcpOauthLoginOptions,
   type AgentEvent,
   type CodexThreadItem,
   type CodexUsageInfo,
@@ -2128,12 +2129,28 @@ function registerIpcHandlers(): void {
     return codexService.getRateLimits(projectPath, apiProviderId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, async (_event, projectPath: string, apiProviderId?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, async (_event, projectPath: string, apiProviderId?: string | null, threadId?: string | null) => {
     if (parseRemoteProjectKey(projectPath)) {
       const { getEnvironmentHost, remoteCodexGetAccountUsage } = await import('./environment')
-      return remoteCodexGetAccountUsage(getEnvironmentHost(), projectPath, apiProviderId ?? null)
+      return remoteCodexGetAccountUsage(getEnvironmentHost(), projectPath, apiProviderId ?? null, threadId ?? null)
     }
-    return codexService.getAccountUsage(projectPath, apiProviderId ?? null)
+    return codexService.getAccountUsage(projectPath, apiProviderId ?? null, threadId ?? null)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_GET_SERVER_DIAGNOSTICS, async (_event, projectPath: string, apiProviderId?: string | null) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexGetServerDiagnostics } = await import('./environment')
+      return remoteCodexGetServerDiagnostics(getEnvironmentHost(), projectPath, apiProviderId ?? null)
+    }
+    return codexService.getServerDiagnostics(projectPath, apiProviderId ?? null)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_GET_CONFIG_REQUIREMENTS, async (_event, projectPath: string, apiProviderId?: string | null) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexGetConfigRequirements } = await import('./environment')
+      return remoteCodexGetConfigRequirements(getEnvironmentHost(), projectPath, apiProviderId ?? null)
+    }
+    return codexService.getConfigRequirements(projectPath, apiProviderId ?? null)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_CONSUME_RATE_LIMIT_RESET, async (_event, projectPath: string, apiProviderId?: string | null, creditId?: string | null) => {
@@ -2149,7 +2166,13 @@ function registerIpcHandlers(): void {
     return codexService.consumeRateLimitReset(projectPath, apiProviderId ?? null, creditId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, async (_event, projectPath: string, serverName: string, apiProviderId?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, async (
+    _event,
+    projectPath: string,
+    serverName: string,
+    apiProviderId?: string | null,
+    options?: CodexMcpOauthLoginOptions,
+  ) => {
     if (parseRemoteProjectKey(projectPath)) {
       // Node starts OAuth; browser open stays on desktop (result may include URL later via host_action).
       const { getEnvironmentHost, remoteCodexLoginMcpOauth } = await import('./environment')
@@ -2158,9 +2181,16 @@ function registerIpcHandlers(): void {
         projectPath,
         serverName,
         apiProviderId ?? null,
+        options,
       )
     }
-    return codexService.loginMcpServerOauth(projectPath, serverName, apiProviderId ?? null, (url) => shell.openExternal(url))
+    return codexService.loginMcpServerOauth(
+      projectPath,
+      serverName,
+      apiProviderId ?? null,
+      (url) => shell.openExternal(url),
+      options,
+    )
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_EXTERNAL_AGENT_DETECT, async (_event, projectPath: string, apiProviderId?: string | null) => {

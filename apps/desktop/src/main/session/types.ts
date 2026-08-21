@@ -315,11 +315,14 @@ export interface SessionBackend {
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp?(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
+  rewindConversation?(beforeTurnId: string): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
   reloadMcpServers(): Promise<void>
   reloadPlugins(): Promise<boolean>
-  dequeueMessage(clientMessageId: string): boolean
+  /** Resume Codex's durable queue after an interrupted turn. */
+  startQueuedMessages?(): Promise<boolean>
+  dequeueMessage(clientMessageId: string): boolean | Promise<boolean>
   getPendingInteractions(): AgentEvent[]
   handleCommand?(cmd: BackendCommand): Promise<void>
   onEvent(handler: (event: BackendEvent) => void): () => void
@@ -396,14 +399,17 @@ export interface Session {
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
+  rewindConversation(userMessageId: string): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
   reloadMcpServers(): Promise<void>
   reloadPlugins(): Promise<boolean>
+  /** Resume Codex's durable queue after an interrupted turn. */
+  startQueuedMessages(): Promise<boolean>
   /** Cursor local: expire wedged run via LocalSendOptions.force. Optional on other harnesses. */
   forceRecoverRun?(message?: string): Promise<void>
   prewarm(hint?: PrewarmHint): void
-  dequeueMessage(clientMessageId: string): boolean
+  dequeueMessage(clientMessageId: string): Promise<boolean>
   getPendingInteractions(): AgentEvent[]
   getCodexGoal(threadId: string): Promise<CodexGoal | null>
   setCodexGoal(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>

@@ -421,7 +421,7 @@ const PERMISSION_MODES = new Set([
 ])
 const SANDBOX_MODES = new Set(['off', 'on', 'auto'])
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
-const CODEX_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh'])
+const CODEX_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
 const CODEX_PRESETS = new Set(['default', 'full-access', 'read-only'])
 
 function parseAgentConfig(raw: unknown): AgentRunConfig | { error: string } {

@@ -503,9 +503,6 @@ export async function sendMessageImpl(
       } else if (cmd?.kind === 'review') {
         remoteTurnKind = 'review'
         remoteReviewTarget = cmd.target
-      } else if (writeSess.status === 'streaming') {
-        // Desktop: concurrent send while streaming steers the active turn.
-        remoteTurnKind = 'steer'
       } else {
         remoteTurnKind = 'run'
       }
@@ -914,7 +911,15 @@ export async function sendMessageImpl(
   )
   const resolvedCodexModel = resolvedCodexSelection.modelId || undefined
   const resolvedCodexReasoningEffort = resolvedCodexSelection.reasoningEffort
-  const isQueuedSend = (effectiveProvider === 'claude' || effectiveProvider === 'acp' || effectiveProvider === 'opencode') && session.status === 'streaming'
+  const isCodexDurableQueueSend = effectiveProvider === 'codex'
+    && session.status === 'streaming'
+    && resolvedCodexCommand?.kind === 'run'
+  const isQueuedSend = (
+    effectiveProvider === 'claude'
+    || effectiveProvider === 'acp'
+    || effectiveProvider === 'opencode'
+    || isCodexDurableQueueSend
+  ) && session.status === 'streaming'
 
   if (!session.sessionProvider) {
     patchSession(() => ({
@@ -1224,7 +1229,7 @@ export async function sendMessageImpl(
     }
   }
 
-  if (resolvedCodexCommand) {
+  if (resolvedCodexCommand && !isCodexDurableQueueSend) {
     if (!isRunnableCodexCommand(resolvedCodexCommand) || !codexSessionId) return
     await runCodexCommand(set, get, {
       activeProject: projectPath,
@@ -1255,8 +1260,8 @@ export async function sendMessageImpl(
   try {
     await window.agent.sendMessage(projectPath, {
       content: finalContent,
-      model: selectedModel || undefined,
-      effort: selectedEffort,
+      model: effectiveProvider === 'codex' ? resolvedCodexModel : selectedModel || undefined,
+      effort: effectiveProvider === 'codex' ? undefined : selectedEffort,
       ...(effectiveProvider === 'opencode' && liveSession.openCodeAgentId
         ? { agent: liveSession.openCodeAgentId }
         : {}),
@@ -1270,6 +1275,19 @@ export async function sendMessageImpl(
       contexts: messageContexts,
       userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
       provider: effectiveProvider,
+      ...(effectiveProvider === 'codex'
+        ? {
+            codex: {
+              mode: 'run' as const,
+              prompt: finalContent,
+              reasoningEffort: resolvedCodexReasoningEffort,
+              permissionPreset: selectedCodexPermissionPreset,
+              collaborationMode: selectedCodexCollaborationMode,
+              ...(liveSession._providerSessionId ? { threadId: liveSession._providerSessionId } : {}),
+              ...(liveSession.cwd ? { cwd: liveSession.cwd } : {}),
+            },
+          }
+        : {}),
       ...(liveSession.apiProviderId ? { apiProviderId: liveSession.apiProviderId } : {}),
       ...(effectiveProvider === 'acp' && liveSession.acpAgentId
         ? { acpAgentId: liveSession.acpAgentId }
@@ -1282,6 +1300,10 @@ export async function sendMessageImpl(
   } catch (err) {
     if (!isQueuedSend) {
       patchSession(() => ({ awaitingAssistantReply: false }))
+    } else {
+      patchSession((sess) => ({
+        queuedMessages: sess.queuedMessages.filter((message) => message.id !== userMessageId),
+      }))
     }
     toastSendFailure(err)
     throw err

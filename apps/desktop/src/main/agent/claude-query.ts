@@ -87,7 +87,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     promptSuggestions: true,
     includePartialMessages: true,
     forwardSubagentText: true,
-    permissionMode: opts.permissionMode,
+    permissionMode: opts.permissionMode === 'agent' ? 'default' : opts.permissionMode,
     // Match SuperOne's own tools upstream of the harness permission engine. Without
     // this they are unknown tools to the CLI, so `auto` mode routes every one of them
     // through the classifier — paying a model round-trip per call, and letting a

@@ -33,6 +33,7 @@ const MAX_RECONNECT_DELAY_MS = 30_000
 const SKIPPED_EVENTS = new Set([
   'files_persisted', 'elicitation_complete', 'tool_input_delta',
   'subagent_usage', 'checkpoint_captured', 'hook_started', 'hook_complete', 'hook_progress',
+  'queued_messages_restored',
   'slash_command_output', 'stream_message_start', 'stream_message_stop',
 ])
 const THROTTLED_EVENTS = new Set(['tool_progress'])
@@ -340,8 +341,8 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
     }
     if (!summary && block.toolName.endsWith('__session_rename')) summary = p.title ? String(p.title) : undefined
     if (!summary && block.toolName.endsWith('__session_tag')) {
-      const add = Array.isArray(p.add) ? p.add.filter((t): t is string => typeof t === 'string') : []
-      const set = Array.isArray(p.set) ? p.set.filter((t): t is string => typeof t === 'string') : []
+      const add = Array.isArray(p.add) ? p.add.filter((t: unknown): t is string => typeof t === 'string') : []
+      const set = Array.isArray(p.set) ? p.set.filter((t: unknown): t is string => typeof t === 'string') : []
       const bits = add.length ? add : set
       summary = bits.length ? bits.join(', ') : undefined
     }

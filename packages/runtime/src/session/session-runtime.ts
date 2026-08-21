@@ -804,15 +804,7 @@ export class SessionRuntime {
       return stored ?? undefined
     }
 
-    // Streaming Codex run → steer (desktop parity) when client did not set turnKind.
-    let turnKind = input.turnKind ?? null
-    if (
-      !turnKind &&
-      session.status === 'streaming' &&
-      (session.harnessId || 'claude') === 'codex'
-    ) {
-      turnKind = 'steer'
-    }
+    const turnKind = input.turnKind ?? null
 
     const turnOpts: TurnOpts = {
       text: input.text,
@@ -835,19 +827,13 @@ export class SessionRuntime {
     this.appendUserMessage(session, turnOpts)
 
     if (session.status === 'streaming') {
-      // Claude: long-lived SDK session accepts concurrent sendTurn with
-      // priority=next. Codex steer injects into the active app-server turn.
-      // Other kinds (compact/review) still FIFO-queue.
+      // Claude accepts concurrent priority=next sends. Codex only live-injects
+      // an explicit steer; ordinary composer sends serialize through the FIFO.
       const harnessId = session.harnessId || 'claude'
       const liveInject =
         harnessId === 'claude' ||
-        (harnessId === 'codex' &&
-          (turnOpts.turnKind === 'steer' || turnOpts.turnKind === 'run'))
+        (harnessId === 'codex' && turnOpts.turnKind === 'steer')
       if (liveInject) {
-        // Ensure codex mid-stream inject is treated as steer by the runner.
-        if (harnessId === 'codex' && turnOpts.turnKind === 'run') {
-          turnOpts.turnKind = 'steer'
-        }
         this.beginTurn(session, turnOpts)
         return this.clone(session)
       }

@@ -1279,6 +1279,11 @@ export type Messages = {
       }
     }
     dropToAttach: string
+    queuedActions: {
+      start: string
+      edit: string
+      delete: string
+    }
     contextUsage: {
       usedOfMax: string
       percent: string
@@ -3284,6 +3289,8 @@ export type Messages = {
     lifetimeTokens: string
     peakDaily: string
     streak: string
+    threadTokens: string
+    estimatedCredits: string
     updating: string
     updatedJustNow: string
     updatedMinutesAgo: string
@@ -4673,6 +4680,11 @@ export const en: Messages = {
       },
     },
     dropToAttach: 'Drop images or PDFs to attach',
+    queuedActions: {
+      start: 'Start Queued Messages',
+      edit: 'Edit Queued Message',
+      delete: 'Delete Queued Message',
+    },
     contextUsage: {
       usedOfMax: '{{used}} / {{max}}',
       percent: '{{percent}}%',
@@ -6695,6 +6707,8 @@ export const en: Messages = {
     lifetimeTokens: 'Lifetime tokens',
     peakDaily: 'Peak daily',
     streak: 'Streak',
+    threadTokens: 'Thread Tokens',
+    estimatedCredits: 'Estimated Credits',
     updating: 'Updating…',
     updatedJustNow: 'Updated just now',
     updatedMinutesAgo: 'Updated {{n}}m ago',

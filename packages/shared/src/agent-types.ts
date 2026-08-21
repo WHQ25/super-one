@@ -196,7 +196,7 @@ export interface ModelUsageInfo {
   provider?: string
 }
 
-export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 export type CodexCollaborationMode = 'default' | 'plan'
 
 export interface ReasoningEffortOption {
@@ -228,6 +228,8 @@ export interface CodexAgentMessageItem {
   id: string
   type: 'agent_message'
   text: string
+  /** Background delivery does not terminate or replace the inline final response. */
+  delivery?: 'async'
 }
 
 export interface CodexReasoningItem {
@@ -333,6 +335,11 @@ export interface ImageGenerationItem {
   generationMs?: number
   params?: { key: string; value: string }[]
   warnings?: string[]
+  failure?: {
+    type: 'usageLimitExceeded'
+    limitId: string
+    resetsAt: number | null
+  }
 }
 
 /**
@@ -1081,6 +1088,7 @@ export interface McpToolInfo {
 
 export interface McpServerInfo {
   name: string
+  pluginId?: string
   status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
   error?: string
   scope?: string
@@ -1524,6 +1532,7 @@ export type AgentEventBase =
    */
   | { type: 'messages_retracted'; messageIds: string[] }
   | { type: 'queued_message_consumed'; clientMessageId: string }
+  | { type: 'queued_messages_restored'; messages: Array<{ clientMessageId: string; content: string }> }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
   /**
@@ -1694,6 +1703,10 @@ export interface ModelOption {
   supportsAutoMode?: boolean
   supportedReasoningEfforts?: ReasoningEffortOption[]
   defaultReasoningEffort?: CodexReasoningEffort
+  /** Multi-agent runtime advertised by Codex 149. */
+  multiAgentVersion?: 'disabled' | 'v1' | 'v2' | null
+  /** Informational retirement timestamp from the model upgrade catalog. */
+  retirementAt?: number | null
   /** App-server service tiers available for this model (for example `fast`). */
   serviceTiers?: Array<{ id: string; name: string; description: string }>
   defaultServiceTier?: string | null
@@ -2475,6 +2488,22 @@ export interface CodexMcpOauthLoginResult {
   authorizationUrl?: string
 }
 
+export type CodexMcpOauthClientRegistration = 'auto' | 'cimd' | 'dcr'
+
+export interface CodexMcpOauthLoginOptions {
+  clientRegistration?: CodexMcpOauthClientRegistration
+  threadId?: string | null
+  scopes?: string[] | null
+  timeoutSecs?: number | null
+}
+
+export interface CodexMcpResourceReadResult {
+  server: string
+  uri: string
+  contents: unknown[]
+  originCallId: string | null
+}
+
 export interface CodexExternalAgentItem {
   itemType: string
   description: string
@@ -2511,6 +2540,56 @@ export interface CodexAccountUsage {
   longestRunningTurnSec: number | null
   currentStreakDays: number | null
   longestStreakDays: number | null
+  threadUsage?: CodexThreadUsage | null
+}
+
+export interface CodexThreadUsageBreakdownGroup {
+  model: string | null
+  reasoningEffort: string | null
+  speed: string | null
+  estimatedUsageCreditsMicros: number
+  netNewInputTokens: number | null
+  cachedInputTokens: number | null
+  inputTokens: number | null
+  outputTokens: number | null
+  totalTokens: number | null
+}
+
+export interface CodexThreadUsage {
+  threadId: string
+  estimatedUsageCreditsMicros: number
+  estimatedUsageUsdMicros: number | null
+  groups: CodexThreadUsageBreakdownGroup[]
+}
+
+export interface CodexServerDiagnostics {
+  process: {
+    id: number
+    residentMemoryBytes: number | null
+    physicalFootprintBytes: number | null
+  }
+  gauges: Array<{ name: string; value: number }>
+}
+
+/** Selected managed settings from configRequirements/read; unknown 149+ fields stay available. */
+export interface CodexConfigRequirements {
+  [key: string]: unknown
+  additionalDeveloperInstructions?: string | null
+  allowedApprovalPolicies?: string[] | null
+  allowedSandboxModes?: string[] | null
+  allowedWebSearchModes?: string[] | null
+  allowedPermissionProfiles?: Record<string, boolean> | null
+  defaultPermissions?: string | null
+  allowManagedHooksOnly?: boolean | null
+  allowRemoteControl?: boolean | null
+  featureRequirements?: Record<string, boolean> | null
+  models?: {
+    newThread?: {
+      model?: string | null
+      modelReasoningEffort?: string | null
+      serviceTier?: string | null
+    } | null
+  } | null
 }
 
 export interface ClaudeRateLimitWindow {
@@ -2548,7 +2627,7 @@ export type CodexHookEventName =
   | 'userPromptSubmit'
   | 'stop'
 
-export type CodexHookHandlerType = 'command' | 'prompt' | 'agent'
+export type CodexHookHandlerType = 'command' | 'mcpTool' | 'prompt' | 'agent'
 
 export type CodexHookSource = 'user' | 'project' | 'managed' | 'plugin' | 'unknown'
 
@@ -2560,6 +2639,10 @@ export interface CodexHookInfo {
   handlerType: CodexHookHandlerType
   matcher: string | null
   command: string | null
+  async: boolean | null
+  server: string | null
+  tool: string | null
+  additionalContextLimit: number | null
   timeoutSec: number
   statusMessage: string | null
   sourcePath: string
@@ -2947,6 +3030,8 @@ export const AgentIpcChannels = {
   CODEX_ACCOUNT_LOGOUT: 'codex:account-logout',
   CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
   CODEX_GET_ACCOUNT_USAGE: 'codex:get-account-usage',
+  CODEX_GET_SERVER_DIAGNOSTICS: 'codex:get-server-diagnostics',
+  CODEX_GET_CONFIG_REQUIREMENTS: 'codex:get-config-requirements',
   CODEX_CONSUME_RATE_LIMIT_RESET: 'codex:consume-rate-limit-reset',
   CODEX_MCP_OAUTH_LOGIN: 'codex:mcp-oauth-login',
   CODEX_EXTERNAL_AGENT_DETECT: 'codex:external-agent-detect',
@@ -2962,6 +3047,7 @@ export const AgentIpcChannels = {
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',
   DEQUEUE_MESSAGE: 'agent:dequeue-message',
+  START_QUEUED_MESSAGES: 'agent:start-queued-messages',
   PREWARM: 'agent:prewarm',
   INTERRUPT: 'agent:interrupt',
   STOP_TASK: 'agent:stop-task',

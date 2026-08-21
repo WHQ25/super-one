@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { DshPluginInstallSource } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
@@ -40,6 +40,9 @@ const agentAPI = {
 
   dequeueMessage: (projectPath: string, clientMessageId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DEQUEUE_MESSAGE, projectPath, clientMessageId) as Promise<boolean>,
+
+  startQueuedMessages: (projectPath: string, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.START_QUEUED_MESSAGES, projectPath, sessionId) as Promise<boolean>,
 
   prewarm: (projectPath: string, hint?: AgentPrewarmHint) =>
     ipcRenderer.invoke(AgentIpcChannels.PREWARM, projectPath, hint),
@@ -111,8 +114,8 @@ const agentAPI = {
   rewindCodeAndChat: (projectPath: string, userMessageId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REWIND_CODE_AND_CHAT, projectPath, userMessageId),
 
-  rewindConversation: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.REWIND_CONVERSATION, projectPath),
+  rewindConversation: (projectPath: string, userMessageId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REWIND_CONVERSATION, projectPath, userMessageId),
 
   getSessionId: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GET_SESSION_ID, projectPath),
@@ -1192,14 +1195,20 @@ const appAPI = {
   codexGetRateLimits: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_RATE_LIMITS, projectPath, apiProviderId),
 
-  codexGetAccountUsage: (projectPath: string, apiProviderId?: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, projectPath, apiProviderId),
+  codexGetAccountUsage: (projectPath: string, apiProviderId?: string | null, threadId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, projectPath, apiProviderId, threadId),
+
+  codexGetServerDiagnostics: (projectPath: string, apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_SERVER_DIAGNOSTICS, projectPath, apiProviderId),
+
+  codexGetConfigRequirements: (projectPath: string, apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_CONFIG_REQUIREMENTS, projectPath, apiProviderId),
 
   codexConsumeRateLimitReset: (projectPath: string, apiProviderId?: string | null, creditId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_CONSUME_RATE_LIMIT_RESET, projectPath, apiProviderId, creditId),
 
-  codexMcpServerOauthLogin: (projectPath: string, serverName: string, apiProviderId?: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, projectPath, serverName, apiProviderId),
+  codexMcpServerOauthLogin: (projectPath: string, serverName: string, apiProviderId?: string | null, options?: CodexMcpOauthLoginOptions) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, projectPath, serverName, apiProviderId, options),
 
   codexDetectExternalAgentConfig: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_EXTERNAL_AGENT_DETECT, projectPath, apiProviderId),

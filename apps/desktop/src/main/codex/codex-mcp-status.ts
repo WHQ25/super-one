@@ -37,6 +37,7 @@ export function mapCodexMcpStatusForIpc(raw: unknown): McpServerInfo | null {
     : []
   return {
     name,
+    ...(readString(rec?.pluginId) ? { pluginId: readString(rec?.pluginId)! } : {}),
     status,
     toolCount: tools.length,
     tools,

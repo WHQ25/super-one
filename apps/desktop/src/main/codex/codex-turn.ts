@@ -68,6 +68,11 @@ import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment-store'
 import { buildCodexWorkspaceWriteSandboxPolicy } from '@superone/codex'
+import {
+  readCodexAgentMessageDelivery,
+  readCodexErrorOverrides,
+  readCodexImageGenerationFailure,
+} from '@superone/codex'
 import { CodexTurnUsageAccumulator } from './codex-usage-accumulator'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
@@ -109,6 +114,14 @@ export interface CodexRunStreamCallbacks {
   onPermissionRequest?: (request: PermissionRequest) => void
   onAskUserQuestion?: (request: AskUserQuestionRequest) => void
   onMcpServerStatus?: (servers: CodexMcpServerStartup[]) => void
+  /** Durable queue entry accepted by Core and promoted to a turn. */
+  onQueuedMessageConsumed?: (clientMessageId: string) => void
+  /** Keep the notification stream attached while Core automatically drains its queue. */
+  hasQueuedMessages?: () => boolean
+  /** A single Core turn completed while the stream may remain attached for queued turns. */
+  onTurnCompleted?: (info: { turnId?: string }) => void
+  /** A single Core turn failed while Core is about to continue with queued work. */
+  onTurnFailed?: (error: Error, turnId?: string) => void
 }
 
 export type ParsedApprovalRequest =
@@ -327,7 +340,9 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
     case 'agent_message':
     case 'agentMessage': {
       const text = readString(rec.text) ?? (previous?.type === 'agent_message' ? previous.text : '')
-      return { id, type: 'agent_message', text }
+      const delivery = readCodexAgentMessageDelivery(rec.delivery)
+        ?? (previous?.type === 'agent_message' ? previous.delivery : undefined)
+      return { id, type: 'agent_message', text, ...(delivery ? { delivery } : {}) }
     }
 
     case 'reasoning': {
@@ -448,6 +463,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
       const revisedPrompt = readString(rec.revisedPrompt ?? rec.revised_prompt) ?? prev?.revisedPrompt
       const savedPath = readString(rec.savedPath ?? rec.saved_path) ?? prev?.savedPath
       const generationMs = prev?.generationMs
+      const failure = readCodexImageGenerationFailure(rec.failure) ?? prev?.failure
       return {
         id,
         type: 'image_generation',
@@ -455,6 +471,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
         ...(revisedPrompt ? { revisedPrompt } : {}),
         ...(savedPath ? { savedPath } : {}),
         ...(generationMs !== undefined ? { generationMs } : {}),
+        ...(failure ? { failure } : {}),
       }
     }
 
@@ -616,9 +633,22 @@ export function tokenSnapshotFromUsage(usage: CodexUsageInfo): { input: number; 
 export function deriveFinalResponse(items: CodexThreadItem[]): string {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i]
-    if (item.type === 'agent_message') return item.text
+    if (item.type === 'agent_message' && item.delivery !== 'async') return item.text
   }
   return ''
+}
+
+export function buildCodexQueuedInput(
+  prompt: string,
+  images?: import('@superone/shared/agent-types').ImageAttachment[],
+): Array<Record<string, unknown>> {
+  const attachedFiles = persistAttachments(images)
+  const attachmentNote = buildAttachmentPathNote(attachedFiles)
+  const normalized = attachmentNote
+    ? (prompt.trim() ? `${prompt.trim()}\n\n${attachmentNote}` : attachmentNote)
+    : prompt.trim()
+  if (!normalized) throw new Error('Codex prompt is empty')
+  return [{ type: 'text', text: normalized, text_elements: [] }]
 }
 
 function extractTurnErrorMessage(raw: unknown): string {
@@ -630,6 +660,12 @@ function extractTurnErrorMessage(raw: unknown): string {
 
   const nested = asRecord(rec.error)
   return readString(nested?.message) ?? 'Codex turn failed'
+}
+
+function codexTurnError(message: string, raw: unknown): Error {
+  return Object.assign(new Error(message), {
+    codexErrorInfo: readCodexErrorOverrides(raw),
+  })
 }
 
 const POSITIVE_OPTION_PATTERN = /\b(accept|allow|yes|continue|proceed|approve|ok|confirm|run)\b/i
@@ -1065,6 +1101,7 @@ export async function withSessionConnection<T>(
       session.connectionAuth = pendingAuth
       session.notificationDispatcher = createNotificationDispatcher(handle.connection, {
         onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
+        onQueueChanged: (threadId) => session.queueChangedFn?.(threadId),
       })
       log.info(
         '[codex] connection attached sid=%s thread=%s conn=%s',
@@ -1090,6 +1127,7 @@ export async function withSessionConnection<T>(
   } else if (!session.notificationDispatcher) {
     session.notificationDispatcher = createNotificationDispatcher(session.connectionHandle.connection, {
       onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
+      onQueueChanged: (threadId) => session.queueChangedFn?.(threadId),
     })
   }
 
@@ -1313,6 +1351,7 @@ export async function resolveThread(
         approvalsReviewer: permissionProfile.approvalsReviewer,
         sandbox: permissionProfile.sandboxMode,
         config: threadConfig,
+        historyMode: 'paginated',
         experimentalRawEvents: false,
       }),
     )
@@ -1529,6 +1568,7 @@ export async function streamTurnEvents(
   let usage: CodexUsageInfo | null = null
   const turnUsage = new CodexTurnUsageAccumulator()
   let turnCompleted = false
+  let pendingTurnError: Error | null = null
   let lastTurnItemCompletedAt = Date.now()
   let activeCompaction: { turnId: string | null; startedAt: number; preTokens: number } | null = null
   const completedCompactionTurns = new Set<string>()
@@ -1845,7 +1885,10 @@ export async function streamTurnEvents(
       continue
     }
 
-    if (!isRelevantEvent(params)) {
+    const isQueuedTurnStart = method === 'turn/started'
+      && callbacks?.hasQueuedMessages?.() === true
+      && (!readNotificationThreadId(params) || readNotificationThreadId(params) === session.threadId)
+    if (!isQueuedTurnStart && !isRelevantEvent(params)) {
       continue
     }
 
@@ -1977,7 +2020,7 @@ export async function streamTurnEvents(
       case 'turn/started': {
         const startedTurn = asRecord(params.turn)
         const startedTurnId = readString(startedTurn?.id) ?? readNotificationTurnId(params)
-        if (!observedTurnId && startedTurnId) {
+        if (startedTurnId) {
           observedTurnId = startedTurnId
           session.activeTurnId = startedTurnId
           session.steerFn = async (text: string) => {
@@ -2001,6 +2044,14 @@ export async function streamTurnEvents(
       case 'item/completed': {
         const rawItem = asRecord(params.item)
         if (!rawItem) break
+
+        if (readString(rawItem.type) === 'userMessage') {
+          const clientMessageId = readString(rawItem.clientId)
+          if (clientMessageId && method === 'item/started') {
+            callbacks?.onQueuedMessageConsumed?.(clientMessageId)
+          }
+          break
+        }
 
         if (readString(rawItem.type) === 'contextCompaction') {
           if (method === 'item/started') startCompaction(params)
@@ -2080,9 +2131,22 @@ export async function streamTurnEvents(
           id: itemId,
           type: 'agent_message',
           text: `${previousText}${delta}`,
+          ...(previous?.type === 'agent_message' && previous.delivery === 'async' ? { delivery: 'async' } : {}),
         }
         upsertItem(itemOrder, itemMap, updated)
         callbacks?.onItemDelta?.('updated', updated)
+        break
+      }
+
+      case 'autoApprovalReview/strictReviewRequired': {
+        const turnId = readNotificationTurnId(params) ?? observedTurnId ?? 'current'
+        const item: CodexThreadItem = {
+          id: `strict_review_${turnId}`,
+          type: 'error',
+          message: 'Codex requires strict safety review for this turn.',
+        }
+        upsertItem(itemOrder, itemMap, item)
+        callbacks?.onItemDelta?.('completed', item)
         break
       }
 
@@ -2215,22 +2279,35 @@ export async function streamTurnEvents(
         if (willRetry) break
         const message = extractTurnErrorMessage(params)
         failCompaction(message)
-        throw new Error(message)
+        const error = codexTurnError(message, params)
+        if (callbacks?.hasQueuedMessages?.() === true) {
+          pendingTurnError = error
+          break
+        }
+        throw error
       }
 
       case 'turn/completed': {
         const completedTurn = asRecord(params.turn)
         const status = readString(completedTurn?.status) ?? 'completed'
+        const completedTurnId = readString(completedTurn?.id) ?? observedTurnId ?? undefined
         if (status === 'failed') {
           const message = extractTurnErrorMessage(completedTurn?.error ?? params)
           failCompaction(message)
-          throw new Error(message)
+          const error = pendingTurnError ?? codexTurnError(message, completedTurn?.error ?? params)
+          pendingTurnError = null
+          if (callbacks?.hasQueuedMessages?.() === true) {
+            callbacks.onTurnFailed?.(error, completedTurnId)
+            break
+          }
+          throw error
         }
         if (status === 'interrupted') {
           failCompaction('Codex run interrupted')
           throw new Error('Codex run interrupted')
         }
         if (activeCompaction) completeCompaction(params)
+        pendingTurnError = null
         for (const id of itemOrder) {
           const item = itemMap.get(id)
           if (!item) continue
@@ -2254,7 +2331,9 @@ export async function streamTurnEvents(
             callbacks?.onItemDelta?.('completed', finalized)
           }
         }
-        turnCompleted = true
+        const hasQueuedMessages = callbacks?.hasQueuedMessages?.() === true
+        if (hasQueuedMessages) callbacks?.onTurnCompleted?.({ turnId: completedTurnId })
+        turnCompleted = !hasQueuedMessages
         break
       }
 
@@ -2309,14 +2388,7 @@ export async function runCodexTurn(
   request: CodexRunRequest,
   callbacks?: CodexRunStreamCallbacks,
 ): Promise<CodexRunResult> {
-  const prompt = request.prompt.trim()
-  // Unified SuperOne attachments dir (same as Claude / remote node).
-  const attachedFiles = persistAttachments(request.images)
-  const attachmentNote = buildAttachmentPathNote(attachedFiles)
-  const normalizedPrompt = attachmentNote ? (prompt ? `${prompt}\n\n${attachmentNote}` : attachmentNote) : prompt
-  if (!normalizedPrompt) {
-    throw new Error('Codex prompt is empty')
-  }
+  const input = buildCodexQueuedInput(request.prompt, request.images)
 
   if (session.runningController) {
     throw new Error('Codex is already running for this project')
@@ -2355,13 +2427,7 @@ export async function runCodexTurn(
           'turn/start',
           compactRecord({
             threadId: resolvedThreadId,
-            input: [
-              {
-                type: 'text',
-                text: normalizedPrompt,
-                text_elements: [],
-              },
-            ],
+            input,
             model: session.model,
             serviceTier: session.serviceTier,
             effort: session.modelReasoningEffort,
@@ -2426,6 +2492,64 @@ export async function runCodexTurn(
     if (session.runningController === controller) {
       session.runningController = null
     }
+  }
+}
+
+/** Resume a durable queue that Codex intentionally paused after interruption. */
+export async function startCodexQueuedTurn(
+  session: CodexSession,
+  auth: CodexProjectAuth,
+  projectPath: string,
+  cwd: string,
+  callbacks?: CodexRunStreamCallbacks,
+): Promise<CodexRunResult> {
+  if (session.runningController) throw new Error('Codex is already running for this project')
+  const controller = new AbortController()
+  session.runningController = controller
+  try {
+    const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+    const effectiveCwd = resolveCwd(session, projectPath, cwd)
+    const streamed = await withThreadConnection(
+      session,
+      auth,
+      controller.signal,
+      projectPath,
+      effectiveCwd,
+      permissionProfile,
+      async ({ connection, notificationInbox, connectionId, threadId, markMutationStarted }) => {
+        markMutationStarted()
+        const result = await connection.request('thread/queue/start', { threadId })
+        const turnId = readString(asRecord(result.turn)?.id)
+        session.activeTurnId = turnId
+        session.interruptFn = turnId ? async () => {
+          await connection.request('turn/interrupt', { threadId, turnId })
+        } : null
+        try {
+          return await streamTurnEvents(connection, session, turnId, controller, callbacks, {
+            notificationInbox,
+            connectionId,
+          })
+        } finally {
+          session.activeTurnId = null
+          session.interruptFn = null
+          session.steerFn = null
+        }
+      },
+    )
+    return {
+      threadId: streamed.threadId,
+      ...(streamed.turnId ? { turnId: streamed.turnId } : {}),
+      finalResponse: deriveFinalResponse(streamed.items),
+      usage: streamed.usage,
+      turnUsage: streamed.turnUsage,
+      items: streamed.items,
+    }
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Codex run interrupted')
+    throw error
+  } finally {
+    rejectPendingApprovals(session, 'Codex run interrupted')
+    if (session.runningController === controller) session.runningController = null
   }
 }
 

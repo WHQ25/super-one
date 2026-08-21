@@ -384,7 +384,7 @@ export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
     acpAgentId: { type: 'string', description: 'ACP only: agent id (e.g. grok-build).' },
     reasoningEffort: {
       type: 'string',
-      enum: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+      enum: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
       description: 'Codex legacy alias for effort.',
     },
     permissionPreset: {

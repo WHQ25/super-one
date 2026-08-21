@@ -335,7 +335,7 @@ function readBookmarkGroups(value: unknown): BrowserBookmarkGroup[] {
 }
 
 function isCodexReasoningEffort(value: unknown): value is CodexPref['defaultReasoningEffort'] {
-  return value === '' || value === 'minimal' || value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh'
+  return value === '' || value === 'minimal' || value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max' || value === 'ultra'
 }
 
 function isCodexPermissionPreset(value: unknown): value is CodexPermissionPreset {

@@ -303,7 +303,7 @@ export function agentViewToRunConfig(
       ...(effort
         ? {
             effort,
-            reasoningEffort: effort as 'minimal' | 'low' | 'medium' | 'high' | 'xhigh',
+            reasoningEffort: effort as 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra',
           }
         : {}),
       permissionMode: permissionMode ?? (permissionPreset === 'full-access' ? 'bypassPermissions' : permissionPreset === 'auto-review' ? 'auto' : 'default'),

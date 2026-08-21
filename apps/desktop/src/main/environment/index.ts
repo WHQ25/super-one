@@ -50,6 +50,8 @@ export {
   remoteCodexAccountLogout,
   remoteCodexGetRateLimits,
   remoteCodexGetAccountUsage,
+  remoteCodexGetServerDiagnostics,
+  remoteCodexGetConfigRequirements,
   remoteCodexConsumeRateLimitReset,
   remoteCodexLoginMcpOauth,
   remoteCodexDetectExternalAgent,

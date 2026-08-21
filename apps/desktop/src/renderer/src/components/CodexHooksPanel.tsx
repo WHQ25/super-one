@@ -18,12 +18,14 @@ const EVENT_ORDER: CodexHookEventName[] = [
   'preCompact',
   'postCompact',
   'sessionStart',
+  'sessionEnd',
   'userPromptSubmit',
   'stop',
 ]
 
 const HANDLER_ICON: Record<CodexHookHandlerType, typeof Terminal> = {
   command: Terminal,
+  mcpTool: Webhook,
   prompt: MessageSquare,
   agent: Bot,
 }
@@ -41,7 +43,9 @@ function compareEvents(a: CodexHookEventName, b: CodexHookEventName): number {
 }
 
 function summaryFor(hook: CodexHookInfo): string {
-  const text = hook.command ?? hook.statusMessage ?? hook.matcher ?? ''
+  const text = hook.handlerType === 'mcpTool'
+    ? `${hook.server ?? ''}/${hook.tool ?? ''}`
+    : hook.command ?? hook.statusMessage ?? hook.matcher ?? ''
   return text.split('\n')[0].slice(0, 120)
 }
 

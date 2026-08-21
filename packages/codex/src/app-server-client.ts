@@ -492,7 +492,7 @@ export async function runCodexAppServerTurn(opts: {
   threadId?: string | null
   model?: string
   /** Codex model reasoning effort (desktop parity). */
-  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
   /**
    * Turn kind: run (default), steer, review, compact.
    * steer requires an existing thread + expectedTurnId when possible.

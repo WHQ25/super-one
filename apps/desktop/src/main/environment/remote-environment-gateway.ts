@@ -43,6 +43,7 @@ import type {
   ResourceProvider,
 } from '@superone/shared/environment'
 import type { NodeRpcClient } from './node-rpc-client'
+import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 
 /**
  * Environment gateway that delegates to an authenticated node RPC session.
@@ -834,8 +835,30 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async codexGetAccountUsage(
     projectId: string,
     apiProviderId?: string | null,
+    threadId?: string | null,
   ): Promise<unknown> {
     return this.client.rpc('codex.getAccountUsage', {
+      projectId,
+      apiProviderId: apiProviderId ?? null,
+      threadId: threadId ?? null,
+    })
+  }
+
+  async codexGetServerDiagnostics(
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.getServerDiagnostics', {
+      projectId,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexGetConfigRequirements(
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.getConfigRequirements', {
       projectId,
       apiProviderId: apiProviderId ?? null,
     })
@@ -857,11 +880,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     projectId: string,
     serverName: string,
     apiProviderId?: string | null,
+    options?: CodexMcpOauthLoginOptions,
   ): Promise<unknown> {
     return this.client.rpc('codex.loginMcpOauth', {
       projectId,
       serverName,
       apiProviderId: apiProviderId ?? null,
+      options,
     })
   }
 

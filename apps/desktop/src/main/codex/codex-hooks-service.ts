@@ -20,7 +20,7 @@ const HOOK_EVENT_NAMES: readonly CodexHookEventName[] = [
   'stop',
 ]
 
-const HOOK_HANDLER_TYPES: readonly CodexHookHandlerType[] = ['command', 'prompt', 'agent']
+const HOOK_HANDLER_TYPES: readonly CodexHookHandlerType[] = ['command', 'mcpTool', 'prompt', 'agent']
 
 const HOOK_SOURCES: readonly CodexHookSource[] = ['user', 'project', 'managed', 'plugin']
 
@@ -74,6 +74,10 @@ function mapHook(raw: unknown): CodexHookInfo | null {
     handlerType,
     matcher: readString(rec.matcher),
     command: readString(rec.command),
+    async: handlerType === 'command' ? readBoolean(rec.async) ?? false : null,
+    server: handlerType === 'mcpTool' ? readString(rec.server) : null,
+    tool: handlerType === 'mcpTool' ? readString(rec.tool) : null,
+    additionalContextLimit: readNumber(rec.additionalContextLimit),
     timeoutSec: readNumber(rec.timeoutSec) ?? 0,
     statusMessage: readString(rec.statusMessage),
     sourcePath,

@@ -55,6 +55,7 @@ class FakeBackend implements SessionBackend {
   sendCalls: SendMessageRequest[] = []
   interruptCalls = 0
   startShouldFail: Error | null = null
+  sendShouldFail: Error | null = null
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -90,6 +91,11 @@ class FakeBackend implements SessionBackend {
   }
 
   dequeueMessage(_clientMessageId: string): boolean { return false }
+  startQueuedMessagesCalls = 0
+  async startQueuedMessages(): Promise<boolean> {
+    this.startQueuedMessagesCalls += 1
+    return true
+  }
   pendingInteractions: AgentEvent[] = []
   getPendingInteractions(): AgentEvent[] { return this.pendingInteractions }
 
@@ -100,6 +106,7 @@ class FakeBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     this.sendCalls.push(request)
+    if (this.sendShouldFail) throw this.sendShouldFail
     await new Promise<void>((resolve) => { this.resolveSend = resolve })
   }
 
@@ -997,6 +1004,64 @@ describe('Session state machine', () => {
 
     b.resolveSend?.()
     await queued
+  })
+
+  it('rolls back pending queued state when the backend rejects queue insertion', async () => {
+    const { session: s, backend: b } = makeSession({ harnessId: 'codex' })
+    const first = s.send({ content: 'first', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    b.emit({ type: 'status_change', status: 'streaming' })
+    b.sendShouldFail = new Error('queue add failed')
+
+    await expect(s.send({
+      content: 'queued',
+      clientMessageId: 'u2',
+      priority: 'next',
+    })).rejects.toThrow('queue add failed')
+
+    b.sendShouldFail = null
+    b.resolveSend?.()
+    await first
+    expect(s.isRuntimeIdle(Number.MAX_SAFE_INTEGER, 0)).toBe(true)
+  })
+
+  it('blocks cwd changes while Codex durable queue entries are pending', async () => {
+    const { session: s } = makeSession({ harnessId: 'codex' })
+    const internals = s as unknown as {
+      _pendingQueuedRequests: Map<string, { request: SendMessageRequest; providerOrigin: 'local' }>
+    }
+    internals._pendingQueuedRequests.set('u2', {
+      request: { content: 'queued', clientMessageId: 'u2', priority: 'next' },
+      providerOrigin: 'local',
+    })
+
+    await expect(s.switchCwd('/tmp/proj/.worktrees/next')).rejects.toThrow(/queued messages are pending/)
+    expect(s.snapshot.cwd).toBe('/tmp/proj')
+  })
+
+  it('replaces pending queue state when Core reports an empty durable queue', () => {
+    const { session: s, backend: b } = makeSession({ harnessId: 'codex' })
+    const internals = s as unknown as {
+      _pendingQueuedRequests: Map<string, { request: SendMessageRequest; providerOrigin: 'local' }>
+    }
+    internals._pendingQueuedRequests.set('stale', {
+      request: { content: 'stale', clientMessageId: 'stale', priority: 'next' },
+      providerOrigin: 'local',
+    })
+
+    b.emit({ type: 'queued_messages_restored', messages: [] })
+
+    expect(internals._pendingQueuedRequests.size).toBe(0)
+  })
+
+  it('starts an interrupted Codex durable queue through the session state machine', async () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+
+    await expect(session.startQueuedMessages()).resolves.toBe(true)
+
+    expect(backend.started).toBe(true)
+    expect(backend.startQueuedMessagesCalls).toBe(1)
+    expect(session.snapshot.status).toBe('ended')
   })
 
   it('snap rebuilds backend if the global default has shifted since session construction (prewarm-then-default-changed)', async () => {

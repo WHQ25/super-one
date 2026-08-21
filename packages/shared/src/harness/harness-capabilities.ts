@@ -40,7 +40,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     displayName: 'Claude',
   },
   codex: {
-    supportsMcp: false,
+    supportsMcp: true,
     supportsPlanMode: true,
     supportsTodos: false,
     supportsSubagents: false,

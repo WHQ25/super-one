@@ -162,6 +162,18 @@ describe('NotificationDispatcher', () => {
     dispatcher.close()
   })
 
+  it('notifies the queue owner when thread/queue/changed arrives', async () => {
+    const { connection } = makeQueueConnection([
+      { method: 'thread/queue/changed', params: { threadId: 'thread-1' } },
+    ])
+    const onQueueChanged = vi.fn()
+    const dispatcher = createNotificationDispatcher(connection, { onQueueChanged })
+
+    await dispatcher.mainInbox.next()
+    expect(onQueueChanged).toHaveBeenCalledWith('thread-1')
+    dispatcher.close()
+  })
+
   it('logs thread/status/changed and thread/settings/updated for observation while still routing them to inboxes', async () => {
     const log = (await import('../logger')).default
     const infoSpy = vi.mocked(log.info)

@@ -91,11 +91,10 @@ export interface NodeProductionRunnerOptions extends NodeCodexRunnerOptions {
 /** Map SuperOne effort levels onto Codex app-server reasoning effort. */
 export function mapCodexReasoningEffort(
   effort: string | null | undefined,
-): 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | undefined {
+): 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | undefined {
   if (!effort) return undefined
   const e = effort.trim().toLowerCase()
-  if (e === 'max') return 'xhigh'
-  if (e === 'minimal' || e === 'low' || e === 'medium' || e === 'high' || e === 'xhigh') {
+  if (e === 'minimal' || e === 'low' || e === 'medium' || e === 'high' || e === 'xhigh' || e === 'max' || e === 'ultra') {
     return e
   }
   return undefined

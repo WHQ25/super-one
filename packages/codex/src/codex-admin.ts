@@ -12,6 +12,7 @@ import type {
   CodexExternalAgentImportResult,
   CodexExternalAgentItem,
   CodexMcpOauthLoginResult,
+  CodexMcpOauthLoginOptions,
   CodexRateLimitResetCredit,
   CodexRateLimitResetOutcome,
   CodexRateLimits,
@@ -208,15 +209,46 @@ export function parseAccountUsage(raw: Record<string, unknown>): CodexAccountUsa
     raw.summary && typeof raw.summary === 'object'
       ? (raw.summary as Record<string, unknown>)
       : raw
+  const threadUsage = parseThreadUsage(raw.threadUsage)
   const usage: CodexAccountUsage = {
     lifetimeTokens: readNumericLike(summary.lifetimeTokens),
     peakDailyTokens: readNumericLike(summary.peakDailyTokens),
     longestRunningTurnSec: readNumericLike(summary.longestRunningTurnSec),
     currentStreakDays: readNumericLike(summary.currentStreakDays),
     longestStreakDays: readNumericLike(summary.longestStreakDays),
+    ...(threadUsage ? { threadUsage } : {}),
   }
-  const hasAny = Object.values(usage).some((v) => v !== null)
+  const hasAny = Object.values(usage).some((v) => v !== null && v !== undefined)
   return hasAny ? usage : null
+}
+
+function parseThreadUsage(raw: unknown): CodexAccountUsage['threadUsage'] {
+  const rec = asRecord(raw)
+  const threadId = readString(rec?.threadId)
+  const credits = readNumericLike(rec?.estimatedUsageCreditsMicros)
+  if (!threadId || credits === null) return null
+  const groups = Array.isArray(rec?.groups) ? rec.groups.flatMap((value) => {
+    const group = asRecord(value)
+    const groupCredits = readNumericLike(group?.estimatedUsageCreditsMicros)
+    if (!group || groupCredits === null) return []
+    return [{
+      model: readString(group.model),
+      reasoningEffort: readString(group.reasoningEffort),
+      speed: readString(group.speed),
+      estimatedUsageCreditsMicros: groupCredits,
+      netNewInputTokens: readNumericLike(group.netNewInputTokens),
+      cachedInputTokens: readNumericLike(group.cachedInputTokens),
+      inputTokens: readNumericLike(group.inputTokens),
+      outputTokens: readNumericLike(group.outputTokens),
+      totalTokens: readNumericLike(group.totalTokens),
+    }]
+  }) : []
+  return {
+    threadId,
+    estimatedUsageCreditsMicros: credits,
+    estimatedUsageUsdMicros: readNumericLike(rec?.estimatedUsageUsdMicros),
+    groups,
+  }
 }
 
 export function parseExternalAgentItem(raw: unknown): CodexExternalAgentItem | null {
@@ -304,9 +336,10 @@ export async function logoutAccount(client: CodexAppServerHandle): Promise<void>
 
 export async function readAccountUsage(
   client: CodexAppServerHandle,
+  threadId?: string | null,
 ): Promise<CodexAccountUsage | null> {
   try {
-    const result = await client.request('account/usage/read')
+    const result = await client.request('account/usage/read', threadId ? { threadId } : {})
     return parseAccountUsage(result)
   } catch (err) {
     throw safePublicError('account/usage/read failed', err)
@@ -349,21 +382,32 @@ export async function loginMcpServerOauth(
   serverName: string,
   openUrl?: (url: string) => void,
   timeoutMs = 180_000,
+  options?: CodexMcpOauthLoginOptions,
 ): Promise<CodexMcpOauthLoginResult> {
   try {
-    const res = await client.request('mcpServer/oauth/login', { name: serverName })
+    const res = await client.request('mcpServer/oauth/login', compactRecord({
+      name: serverName,
+      clientRegistration: options?.clientRegistration,
+      threadId: options?.threadId,
+      scopes: options?.scopes,
+      timeoutSecs: options?.timeoutSecs,
+    }))
     const authorizationUrl = readString(res.authorizationUrl)
     if (!authorizationUrl) return { success: false, error: 'Codex returned no authorization URL' }
     // Always return the URL so headless/CLI callers can surface it when openUrl
     // is not provided (desktop may open a browser via host-action).
     openUrl?.(authorizationUrl)
-    const deadline = Date.now() + timeoutMs
+    const effectiveTimeoutMs = typeof options?.timeoutSecs === 'number' && options.timeoutSecs > 0
+      ? options.timeoutSecs * 1_000
+      : timeoutMs
+    const deadline = Date.now() + effectiveTimeoutMs
     while (Date.now() < deadline) {
       const notif = await client.nextNotification(Math.min(1_000, deadline - Date.now()))
       if (!notif) continue
       if (
         notif.method === 'mcpServer/oauthLogin/completed' &&
-        readString(notif.params.name) === serverName
+        readString(notif.params.name) === serverName &&
+        (!options?.threadId || readString(notif.params.threadId) === options.threadId)
       ) {
         return {
           success: readBoolean(notif.params.success) ?? false,

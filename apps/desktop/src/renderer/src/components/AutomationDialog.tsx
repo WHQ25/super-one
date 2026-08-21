@@ -270,7 +270,7 @@ export function AutomationDialog({
 
   const codexReasoningOptions = [
     { id: '', label: t('resources.automation.defaultValue') },
-    ...(['minimal', 'low', 'medium', 'high', 'xhigh'] as const).map((v) => ({
+    ...(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const).map((v) => ({
       id: v,
       label: formatReasoningEffortLabel(v),
     })),

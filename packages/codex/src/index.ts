@@ -72,3 +72,11 @@ export {
   type CodexAppServerNotification,
   type CodexNotificationApplyResult,
 } from './agent-event-mapper'
+export {
+  readCodexAgentMessageDelivery,
+  readCodexConfigRequirements,
+  readCodexErrorOverrides,
+  readCodexImageGenerationFailure,
+  readCodexMcpResource,
+  readCodexServerDiagnostics,
+} from './protocol-v149'

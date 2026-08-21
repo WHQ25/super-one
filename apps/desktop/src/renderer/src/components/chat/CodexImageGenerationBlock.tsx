@@ -28,11 +28,14 @@ export function CodexImageGenerationBlock({ item }: Props) {
   const { src, loadError, onError, onLoad } = useImageMediaSrc(thumbPath, isFailed)
 
   if (isFailed) {
+    const failureDetail = item.failure?.type === 'usageLimitExceeded'
+      ? `${item.failure.limitId}${item.failure.resetsAt ? ` · ${new Date(item.failure.resetsAt * 1000).toLocaleString()}` : ''}`
+      : null
     return (
       <CompactLabeledToolRow
         icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
         label={t('chat.toolBlock.generateImage')}
-        summary={t('chat.codex.imageGenerationFailed')}
+        summary={failureDetail ? `${t('chat.codex.imageGenerationFailed')} · ${failureDetail}` : t('chat.codex.imageGenerationFailed')}
         tone="error"
       />
     )

@@ -134,6 +134,8 @@ export interface CodexAppServerModel {
   isDefault: boolean
   supportedReasoningEfforts: ReasoningEffortOption[]
   defaultReasoningEffort?: CodexReasoningEffort
+  multiAgentVersion?: 'disabled' | 'v1' | 'v2' | null
+  retirementAt?: number | null
   serviceTiers: Array<{ id: string; name: string; description: string }>
   defaultServiceTier?: string | null
 }
@@ -461,6 +463,8 @@ export function mapAppServerModel(m: CodexAppServerModel): ModelOption {
     isDefault: m.isDefault,
     supportedReasoningEfforts: m.supportedReasoningEfforts,
     defaultReasoningEffort: m.defaultReasoningEffort,
+    multiAgentVersion: m.multiAgentVersion,
+    retirementAt: m.retirementAt,
     serviceTiers: m.serviceTiers,
     defaultServiceTier: m.defaultServiceTier,
   }

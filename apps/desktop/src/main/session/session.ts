@@ -554,7 +554,7 @@ export class Session implements SessionContract {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertCanSend(providerOrigin)
     this.touchRuntimeActivity()
-    const isQueued = request.priority === 'next' && this.isStreaming()
+    const isQueued = (request.priority === 'next' || request.priority === 'later') && this.isStreaming()
     if (isQueued) {
       this.assertNotDisposed()
       if (!this.backendStarted) {
@@ -565,7 +565,12 @@ export class Session implements SessionContract {
         if (request.clientMessageId) {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin })
         }
-        await this.backend.send(request)
+        try {
+          await this.backend.send(request)
+        } catch (error) {
+          if (request.clientMessageId) this._pendingQueuedRequests.delete(request.clientMessageId)
+          throw error
+        }
         return
       }
     }
@@ -624,7 +629,9 @@ export class Session implements SessionContract {
     this.touchRuntimeActivity()
     const prev = this._status
     this._status = 'interrupting'
-    this._pendingQueuedRequests.clear()
+    // Codex 149 persists queued submissions and pauses them after interruption.
+    // Keep the host-side transcript entries so the user can resume or delete them.
+    if (this.harnessId !== 'codex') this._pendingQueuedRequests.clear()
     try {
       this.onBeforeInterrupt?.()
     } catch (err) {
@@ -893,6 +900,21 @@ export class Session implements SessionContract {
     return this.backend.rewindFiles(userMessageId, opts)
   }
 
+  async rewindConversation(userMessageId: string): Promise<RewindFilesResult> {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex') return { canRewind: true }
+    const userIndex = this._messages.findIndex((message) => message.id === userMessageId)
+    const turnId = userIndex >= 0
+      ? this._messages.slice(userIndex + 1).find((message) => message.role === 'assistant')?.metadata?.codex?.turnId
+      : undefined
+    if (!turnId) return { canRewind: false, error: 'Codex turn boundary not found' }
+    await this.ensureStarted()
+    if (!this.backend.rewindConversation) {
+      return { canRewind: false, error: 'Conversation rewind is not supported by Codex' }
+    }
+    return this.backend.rewindConversation(turnId)
+  }
+
   async reconnectMcp(serverName: string): Promise<void> {
     this.assertStarted()
     this.touchRuntimeActivity()
@@ -919,6 +941,20 @@ export class Session implements SessionContract {
     if (!this.backendStarted) return false
     this.touchRuntimeActivity()
     return this.backend.reloadPlugins()
+  }
+
+  async startQueuedMessages(): Promise<boolean> {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex' || this.isStreaming()) return false
+    await this.ensureStarted()
+    if (!this.backend.startQueuedMessages) return false
+    this.touchRuntimeActivity()
+    this._status = 'streaming'
+    try {
+      return await this.backend.startQueuedMessages()
+    } finally {
+      if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
+    }
   }
 
   /** Cursor local: expire wedged run via LocalSendOptions.force. */
@@ -1011,10 +1047,11 @@ export class Session implements SessionContract {
     this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)
   }
 
-  dequeueMessage(clientMessageId: string): boolean {
-    this._pendingQueuedRequests.delete(clientMessageId)
+  async dequeueMessage(clientMessageId: string): Promise<boolean> {
     if (!this.backendStarted) return false
-    return this.backend.dequeueMessage(clientMessageId)
+    const removed = await this.backend.dequeueMessage(clientMessageId)
+    if (removed) this._pendingQueuedRequests.delete(clientMessageId)
+    return removed
   }
 
   getPendingInteractions(): AgentEvent[] {
@@ -1347,6 +1384,9 @@ export class Session implements SessionContract {
     this.touchRuntimeActivity()
     const branchChanged = gitBranch !== undefined && gitBranch !== this._gitBranch
     if (this._cwd === nextCwd && !branchChanged) return
+    if (this._pendingQueuedRequests.size > 0) {
+      throw new Error('Cannot switch worktree while Codex queued messages are pending')
+    }
     this._cwd = nextCwd
     if (gitBranch !== undefined) this._gitBranch = gitBranch
     this.emitInitReady()
@@ -1415,6 +1455,21 @@ export class Session implements SessionContract {
         this.appendUserMessage(pending.request, pending.providerOrigin)
         this._pendingQueuedRequests.delete(event.clientMessageId)
       }
+    } else if (event.type === 'queued_messages_restored') {
+      const nextPending = new Map<string, { request: SendMessageRequest; providerOrigin: SendProviderOrigin }>()
+      for (const message of event.messages) {
+        const existing = this._pendingQueuedRequests.get(message.clientMessageId)
+        nextPending.set(message.clientMessageId, existing ?? {
+          request: {
+            content: message.content,
+            clientMessageId: message.clientMessageId,
+            assistantMessageId: `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            priority: 'next',
+          },
+          providerOrigin: 'local',
+        })
+      }
+      this._pendingQueuedRequests = nextPending
     } else if (event.type === 'message_start') {
       this._currentMessageId = event.message.id
       // Scope the swap dedup to one turn: the same fallback recurring in a later

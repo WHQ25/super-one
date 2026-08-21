@@ -651,7 +651,7 @@ export class AgentService {
       case 'dequeue_message': {
         if (!command.projectPath) break
         const session = this.findSessionBySid(command.projectPath, command.sessionId)
-        session?.dequeueMessage(command.clientMessageId)
+        if (session) await session.dequeueMessage(command.clientMessageId)
         break
       }
       case 'interrupt': {
@@ -1803,10 +1803,19 @@ export class AgentService {
       await session.send(request)
     })
 
-    ipcMain.handle(AgentIpcChannels.DEQUEUE_MESSAGE, (_event, projectPath: string, clientMessageId: string) => {
+    ipcMain.handle(AgentIpcChannels.DEQUEUE_MESSAGE, async (_event, projectPath: string, clientMessageId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return false
       return session.dequeueMessage(clientMessageId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.START_QUEUED_MESSAGES, async (_event, projectPath: string, sessionId?: string) => {
+      this.throwIfRemoteLocked(projectPath)
+      const session = sessionId
+        ? this.sessionManager?.getSession(sessionId)
+        : this.sessionManager?.getActiveSession(projectPath)
+      if (!session || session.snapshot.projectPath !== projectPath) return false
+      return session.startQueuedMessages()
     })
 
     ipcMain.handle(AgentIpcChannels.PREWARM, async (_event, projectPath: string, hint?: AgentPrewarmHint) => {
@@ -2000,8 +2009,10 @@ export class AgentService {
       return session.rewindFiles(userMessageId)
     })
 
-    ipcMain.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, _projectPath: string) => {
-      return { canRewind: true }
+    ipcMain.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, projectPath: string, userMessageId: string) => {
+      const session = this.sessionManager?.getActiveSession(projectPath)
+      if (!session) return { canRewind: false, error: 'No active session' }
+      return session.rewindConversation(userMessageId)
     })
 
     ipcMain.handle(AgentIpcChannels.GET_SESSION_ID, (_event, projectPath: string) => {
@@ -2352,6 +2363,9 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.PLUGINS_REMOVE_MARKETPLACE, async (_event, name: string, scope: 'user' | 'project' | 'local' | 'official', projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
+        if (scope !== 'user' && scope !== 'project') {
+          throw new Error('Remote marketplace remove only supports user or project scope')
+        }
         const { getEnvironmentHost } = await import('../environment')
         const { removeRemoteMarketplace } = await import('../environment/remote-resources')
         const ok = await removeRemoteMarketplace(getEnvironmentHost(), projectPath, name, scope)
@@ -3141,6 +3155,7 @@ export class AgentService {
 
     ipcMain.removeHandler(AgentIpcChannels.SEND_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.DEQUEUE_MESSAGE)
+    ipcMain.removeHandler(AgentIpcChannels.START_QUEUED_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
     ipcMain.removeHandler(AgentIpcChannels.STOP_TASK)

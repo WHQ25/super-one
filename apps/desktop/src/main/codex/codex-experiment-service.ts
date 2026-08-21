@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'crypto'
 import log from '../logger'
 import { authHeaders, modelsUrl } from '../providers/endpoint-test'
 import { parseOpenAiModelsList } from '@superone/shared/platform-registry'
-import { parseAccountLoginStart, parseAccountStatus } from '@superone/codex'
+import { parseAccountLoginStart, parseAccountStatus, parseAccountUsage, readCodexConfigRequirements, readCodexServerDiagnostics } from '@superone/codex'
 import {
   buildCodexAccountEnv,
   buildCodexProviderCliOverridesFor,
@@ -27,15 +27,18 @@ import type {
   CodexAccountStatus,
   CodexAuthStatus,
   CodexAccountUsage,
+  CodexConfigRequirements,
   CodexExternalAgentItem,
   CodexExternalAgentImportResult,
   CodexMcpOauthLoginResult,
+  CodexMcpOauthLoginOptions,
   CodexRateLimits,
   CodexRateLimitResetCredit,
   CodexRateLimitResetOutcome,
   CodexRateLimitWindow,
   CodexReasoningEffort,
   CodexSetAuthRequest,
+  CodexServerDiagnostics,
   ModelOption,
   ReasoningEffortOption,
 } from '@superone/shared/agent-types'
@@ -67,6 +70,8 @@ function toReasoningEffort(value: unknown): CodexReasoningEffort | null {
     || value === 'medium'
     || value === 'high'
     || value === 'xhigh'
+    || value === 'max'
+    || value === 'ultra'
     ? value
     : null
 }
@@ -131,6 +136,16 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
           .filter((entry): entry is ReasoningEffortOption => Boolean(entry))
       : [],
     defaultReasoningEffort: toReasoningEffort(rec.defaultReasoningEffort) ?? undefined,
+    multiAgentVersion: rec.multiAgentVersion === 'disabled'
+      || rec.multiAgentVersion === 'v1'
+      || rec.multiAgentVersion === 'v2'
+      ? rec.multiAgentVersion
+      : null,
+    retirementAt: readFiniteNumber(
+      rec.upgradeInfo && typeof rec.upgradeInfo === 'object'
+        ? (rec.upgradeInfo as Record<string, unknown>).retirementAt
+        : null,
+    ),
     serviceTiers,
     defaultServiceTier: readString(rec.defaultServiceTier),
   }
@@ -238,21 +253,6 @@ function readNumericLike(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null
   }
   return null
-}
-
-function parseAccountUsage(raw: Record<string, unknown>): CodexAccountUsage | null {
-  const summary = raw.summary && typeof raw.summary === 'object'
-    ? (raw.summary as Record<string, unknown>)
-    : raw
-  const usage: CodexAccountUsage = {
-    lifetimeTokens: readNumericLike(summary.lifetimeTokens),
-    peakDailyTokens: readNumericLike(summary.peakDailyTokens),
-    longestRunningTurnSec: readNumericLike(summary.longestRunningTurnSec),
-    currentStreakDays: readNumericLike(summary.currentStreakDays),
-    longestStreakDays: readNumericLike(summary.longestStreakDays),
-  }
-  const hasAny = Object.values(usage).some((v) => v !== null)
-  return hasAny ? usage : null
 }
 
 function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
@@ -762,9 +762,16 @@ export class CodexExperimentService {
   async withAppServerRequest<T>(
     projectPath: string,
     fn: (request: AppServerConnection['request']) => Promise<T>,
+    apiProviderId: string | null = null,
   ): Promise<T> {
     const auth = this.getProjectAuth(projectPath)
-    return this.withAppServerConnection(projectPath, auth, undefined, async (connection) => fn(connection.request))
+    return this.withAppServerConnection(
+      projectPath,
+      auth,
+      undefined,
+      async (connection) => fn(connection.request),
+      apiProviderId,
+    )
   }
 
   /**
@@ -830,21 +837,35 @@ export class CodexExperimentService {
     serverName: string,
     apiProviderId: string | null = null,
     openUrl?: (url: string) => void,
+    options?: CodexMcpOauthLoginOptions,
   ): Promise<CodexMcpOauthLoginResult> {
     const auth = this.getProjectAuth(projectPath)
     try {
       return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
-        const res = await connection.request('mcpServer/oauth/login', { name: serverName })
+        const res = await connection.request('mcpServer/oauth/login', compactRecord({
+          name: serverName,
+          clientRegistration: options?.clientRegistration,
+          threadId: options?.threadId,
+          scopes: options?.scopes,
+          timeoutSecs: options?.timeoutSecs,
+        }))
         const authorizationUrl = readString(res.authorizationUrl)
         if (!authorizationUrl) return { success: false, error: 'Codex returned no authorization URL' }
         openUrl?.(authorizationUrl)
-        const deadline = Date.now() + 180_000
+        const timeoutMs = typeof options?.timeoutSecs === 'number' && options.timeoutSecs > 0
+          ? options.timeoutSecs * 1_000
+          : 180_000
+        const deadline = Date.now() + timeoutMs
         while (Date.now() < deadline) {
           const notif = connection.pollNotification
             ? await connection.pollNotification(Math.min(1_000, deadline - Date.now()))
             : await connection.nextNotification()
           if (!notif) continue
-          if (notif.method === 'mcpServer/oauthLogin/completed' && readString(notif.params.name) === serverName) {
+          if (
+            notif.method === 'mcpServer/oauthLogin/completed'
+            && readString(notif.params.name) === serverName
+            && (!options?.threadId || readString(notif.params.threadId) === options.threadId)
+          ) {
             return { success: readBoolean(notif.params.success) ?? false, error: readString(notif.params.error) ?? undefined }
           }
         }
@@ -900,17 +921,35 @@ export class CodexExperimentService {
     }
   }
 
-  async getAccountUsage(projectPath: string, apiProviderId: string | null = null): Promise<CodexAccountUsage | null> {
+  async getAccountUsage(projectPath: string, apiProviderId: string | null = null, threadId?: string | null): Promise<CodexAccountUsage | null> {
     const auth = this.getProjectAuth(projectPath)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     if (getCodexProviderOverrideFor(apiProviderId)) return null
     try {
       return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
-        const result = await connection.request('account/usage/read')
+        const result = await connection.request('account/usage/read', threadId ? { threadId } : {})
         return parseAccountUsage(result)
       }, apiProviderId)
     } catch (error) {
       log.info('[codex] getAccountUsage failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
+      return null
+    }
+  }
+
+  async getServerDiagnostics(projectPath: string, apiProviderId: string | null = null): Promise<CodexServerDiagnostics | null> {
+    try {
+      return await this.withAppServerRequest(projectPath, async (request) => readCodexServerDiagnostics({ request }), apiProviderId)
+    } catch (error) {
+      log.info('[codex] server/diagnostics failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
+      return null
+    }
+  }
+
+  async getConfigRequirements(projectPath: string, apiProviderId: string | null = null): Promise<CodexConfigRequirements | null> {
+    try {
+      return await this.withAppServerRequest(projectPath, async (request) => readCodexConfigRequirements({ request }), apiProviderId)
+    } catch (error) {
+      log.info('[codex] configRequirements/read failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
       return null
     }
   }

@@ -1,7 +1,7 @@
 /**
  * Codex admin RPC surface on the node:
  *   codex.getAuthStatus | setAuth | getAccountStatus | accountLogin* | accountLogout
- *   codex.getRateLimits | getAccountUsage
+ *   codex.getRateLimits | getAccountUsage | getServerDiagnostics | getConfigRequirements
  *   codex.consumeRateLimitReset
  *   codex.loginMcpOauth | detectExternalAgent | importExternalAgent
  *   codex.plugins.list | install | uninstall
@@ -93,6 +93,10 @@ export async function dispatchCodexRpc(
       return handleGetRateLimits(payload, ctx)
     case 'codex.getAccountUsage':
       return handleGetAccountUsage(payload, ctx)
+    case 'codex.getServerDiagnostics':
+      return handleGetServerDiagnostics(payload, ctx)
+    case 'codex.getConfigRequirements':
+      return handleGetConfigRequirements(payload, ctx)
     case 'codex.consumeRateLimitReset':
       return handleConsumeRateLimitReset(payload, ctx)
     case 'codex.loginMcpOauth':
@@ -301,7 +305,52 @@ async function handleGetAccountUsage(
     }
     const apiProviderId =
       typeof p.apiProviderId === 'string' ? p.apiProviderId : null
-    return { result: await svc.getAccountUsage(projectId, apiProviderId) }
+    const threadId = typeof p.threadId === 'string' ? p.threadId : null
+    return { result: await svc.getAccountUsage(projectId, apiProviderId, threadId) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGetServerDiagnostics(
+  payload: unknown,
+  ctx: CodexRpcContext,
+): Promise<CodexRpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const projectId = projectIdOf(p)
+  if (!projectId) return { error: { code: 'invalid_argument', message: 'projectId required' } }
+  if (!ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
+  try {
+    const svc = admin(ctx)
+    if (!svc.isBinaryReady()) {
+      return { error: { code: 'failed_precondition', message: 'Codex binary not ready' } }
+    }
+    const apiProviderId = typeof p.apiProviderId === 'string' ? p.apiProviderId : null
+    return { result: await svc.getServerDiagnostics(projectId, apiProviderId) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGetConfigRequirements(
+  payload: unknown,
+  ctx: CodexRpcContext,
+): Promise<CodexRpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const projectId = projectIdOf(p)
+  if (!projectId) return { error: { code: 'invalid_argument', message: 'projectId required' } }
+  if (!ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
+  try {
+    const svc = admin(ctx)
+    if (!svc.isBinaryReady()) {
+      return { error: { code: 'failed_precondition', message: 'Codex binary not ready' } }
+    }
+    const apiProviderId = typeof p.apiProviderId === 'string' ? p.apiProviderId : null
+    return { result: await svc.getConfigRequirements(projectId, apiProviderId) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -359,8 +408,23 @@ async function handleLoginMcpOauth(
   try {
     const apiProviderId =
       typeof p.apiProviderId === 'string' ? p.apiProviderId : null
+    const rawOptions = asRecord(p.options)
+    const options = {
+      ...(rawOptions.clientRegistration === 'auto' || rawOptions.clientRegistration === 'cimd' || rawOptions.clientRegistration === 'dcr'
+        ? { clientRegistration: rawOptions.clientRegistration }
+        : {}),
+      ...(typeof rawOptions.threadId === 'string' || rawOptions.threadId === null
+        ? { threadId: rawOptions.threadId }
+        : {}),
+      ...(Array.isArray(rawOptions.scopes) && rawOptions.scopes.every((scope) => typeof scope === 'string')
+        ? { scopes: rawOptions.scopes as string[] }
+        : {}),
+      ...(typeof rawOptions.timeoutSecs === 'number' && Number.isFinite(rawOptions.timeoutSecs) && rawOptions.timeoutSecs > 0
+        ? { timeoutSecs: rawOptions.timeoutSecs }
+        : {}),
+    }
     return {
-      result: await admin(ctx).loginMcpOauth(projectId, serverName, apiProviderId),
+      result: await admin(ctx).loginMcpOauth(projectId, serverName, apiProviderId, options),
     }
   } catch (err) {
     return mapThrown(err)

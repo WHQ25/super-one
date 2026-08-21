@@ -564,7 +564,7 @@ describe('CodexExperimentService auth state', () => {
   it('loginMcpServerOauth opens the authorization url then resolves on the completed notification', async () => {
     const request = vi.fn(async (method: string) =>
       method === 'mcpServer/oauth/login' ? { authorizationUrl: 'https://auth.example.com/go' } : {})
-    let polled = false
+    let polled = 0
     const handle = {
       connection: {
         request,
@@ -572,9 +572,10 @@ describe('CodexExperimentService auth state', () => {
         notify: vi.fn(),
         nextNotification: vi.fn(),
         pollNotification: vi.fn(async () => {
-          if (polled) return null
-          polled = true
-          return { method: 'mcpServer/oauthLogin/completed', params: { name: 'linear', threadId: null, success: true } }
+          polled += 1
+          return polled === 1
+            ? { method: 'mcpServer/oauthLogin/completed', params: { name: 'linear', threadId: 'other', success: true } }
+            : { method: 'mcpServer/oauthLogin/completed', params: { name: 'linear', threadId: 'thread-1', success: true } }
         }),
       },
       close: vi.fn(async () => {}), getStderr: () => '', onClosed: vi.fn(() => () => {}),
@@ -584,9 +585,20 @@ describe('CodexExperimentService auth state', () => {
     service.setAuth('/project', { mode: 'chatgpt' })
     const openUrl = vi.fn()
 
-    const result = await service.loginMcpServerOauth('/project', 'linear', null, openUrl)
+    const result = await service.loginMcpServerOauth('/project', 'linear', null, openUrl, {
+      clientRegistration: 'cimd',
+      threadId: 'thread-1',
+      scopes: ['read'],
+      timeoutSecs: 60,
+    })
 
-    expect(request).toHaveBeenCalledWith('mcpServer/oauth/login', { name: 'linear' })
+    expect(request).toHaveBeenCalledWith('mcpServer/oauth/login', {
+      name: 'linear',
+      clientRegistration: 'cimd',
+      threadId: 'thread-1',
+      scopes: ['read'],
+      timeoutSecs: 60,
+    })
     expect(openUrl).toHaveBeenCalledWith('https://auth.example.com/go')
     expect(result).toEqual({ success: true, error: undefined })
   })
@@ -747,7 +759,7 @@ describe('CodexExperimentService auth state', () => {
 
     const usage = await service.getAccountUsage('/project')
 
-    expect(handle.connection.request).toHaveBeenCalledWith('account/usage/read')
+    expect(handle.connection.request).toHaveBeenCalledWith('account/usage/read', {})
     expect(usage).toEqual({
       lifetimeTokens: 1_250_000,
       peakDailyTokens: 84_000,
@@ -818,5 +830,54 @@ describe('CodexExperimentService auth state', () => {
     expect(claimed).toBe(handle)
     expect(createHandleMock).not.toHaveBeenCalled()
     expect(handle.close).not.toHaveBeenCalled()
+  })
+
+  it('preserves max/ultra order and 149 multi-agent retirement metadata', async () => {
+    const handle = makeModelHandle()
+    vi.mocked(handle.connection.request).mockResolvedValueOnce({ data: [{
+      id: 'gpt-next', model: 'gpt-next', displayName: 'GPT Next',
+      supportedReasoningEfforts: [
+        { reasoningEffort: 'ultra', description: 'proactive multi-agent' },
+        { reasoningEffort: 'max', description: 'maximum' },
+      ],
+      multiAgentVersion: 'v2',
+      upgradeInfo: { retirementAt: 1_800_000_000 },
+    }] })
+    createHandleMock.mockResolvedValue(handle)
+    const models = await new CodexExperimentService().listModels('/project')
+    expect(models[0]).toMatchObject({ multiAgentVersion: 'v2', retirementAt: 1_800_000_000 })
+    expect(models[0].supportedReasoningEfforts?.map((entry) => entry.value)).toEqual(['ultra', 'max'])
+  })
+
+  it('parses per-thread account usage and exposes server diagnostics', async () => {
+    const handle = makeModelHandle()
+    vi.mocked(handle.connection.request).mockImplementation(async (method: string) => {
+      if (method === 'account/usage/read') return {
+        threadUsage: {
+          threadId: 'thread-1', estimatedUsageCreditsMicros: '12', estimatedUsageUsdMicros: '34',
+          groups: [{ model: 'gpt-next', reasoningEffort: 'ultra', speed: 'fast', estimatedUsageCreditsMicros: '12', totalTokens: '56' }],
+        },
+      }
+      if (method === 'server/diagnostics') return {
+        process: { id: 9, residentMemoryBytes: 2048, physicalFootprintBytes: null },
+        gauges: [{ name: 'loaded_threads', value: 1 }],
+      }
+      if (method === 'configRequirements/read') return {
+        requirements: { allowedSandboxModes: ['workspace-write'], allowManagedHooksOnly: true },
+      }
+      return {}
+    })
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+    await expect(service.getAccountUsage('/project', null, 'thread-1')).resolves.toMatchObject({
+      threadUsage: { threadId: 'thread-1', estimatedUsageCreditsMicros: 12, groups: [{ totalTokens: 56 }] },
+    })
+    await expect(service.getServerDiagnostics('/project')).resolves.toMatchObject({
+      process: { id: 9, residentMemoryBytes: 2048 }, gauges: [{ name: 'loaded_threads', value: 1 }],
+    })
+    await expect(service.getConfigRequirements('/project')).resolves.toEqual({
+      allowedSandboxModes: ['workspace-write'], allowManagedHooksOnly: true,
+    })
   })
 })

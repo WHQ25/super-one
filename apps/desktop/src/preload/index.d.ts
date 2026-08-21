@@ -3,7 +3,7 @@ import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
 import type { ComputerUseDisplayInfo } from '@superone/shared/agent-types'
 import type { OpenCodeResources } from '@superone/shared/agent-types'
 import type { DshPluginList, DshPluginInstallResult, DshPluginInstallSource } from '@superone/shared/agent-types'
-import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexCollaborationMode, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, ProviderEndpointTestResponse, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexCollaborationMode, CodexConfigRequirements, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, ProviderEndpointTestResponse, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { LiveSessionSnapshot } from '@superone/shared/session-types'
@@ -27,6 +27,7 @@ export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
   dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
+  startQueuedMessages(projectPath: string, sessionId?: string): Promise<boolean>
   prewarm(projectPath: string, hint?: AgentPrewarmHint): Promise<void>
   interrupt(sessionId: string): Promise<boolean>
   stopTask(sessionId: string, taskId: string): Promise<boolean>
@@ -51,7 +52,7 @@ interface AgentAPI {
   rewindFiles(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
   previewRewind(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
   rewindCodeAndChat(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
-  rewindConversation(projectPath: string): Promise<RewindFilesResult>
+  rewindConversation(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
   getSessionId(projectPath: string): Promise<string>
   getMcpServerStatus(projectPath: string): Promise<McpServerInfo[]>
   authenticateMcpServer(projectPath: string, serverName: string): Promise<void>
@@ -226,9 +227,11 @@ interface AppAPI {
   codexCancelAccountLogin(projectPath: string, loginId: string): Promise<void>
   codexLogoutAccount(projectPath: string): Promise<CodexAccountStatus>
   codexGetRateLimits(projectPath: string, apiProviderId?: string | null): Promise<CodexRateLimits | null>
-  codexGetAccountUsage(projectPath: string, apiProviderId?: string | null): Promise<CodexAccountUsage | null>
+  codexGetAccountUsage(projectPath: string, apiProviderId?: string | null, threadId?: string | null): Promise<CodexAccountUsage | null>
+  codexGetServerDiagnostics(projectPath: string, apiProviderId?: string | null): Promise<CodexServerDiagnostics | null>
+  codexGetConfigRequirements(projectPath: string, apiProviderId?: string | null): Promise<CodexConfigRequirements | null>
   codexConsumeRateLimitReset(projectPath: string, apiProviderId?: string | null, creditId?: string | null): Promise<CodexRateLimitResetOutcome | null>
-  codexMcpServerOauthLogin(projectPath: string, serverName: string, apiProviderId?: string | null): Promise<CodexMcpOauthLoginResult>
+  codexMcpServerOauthLogin(projectPath: string, serverName: string, apiProviderId?: string | null, options?: CodexMcpOauthLoginOptions): Promise<CodexMcpOauthLoginResult>
   codexDetectExternalAgentConfig(projectPath: string, apiProviderId?: string | null): Promise<CodexExternalAgentItem[]>
   codexImportExternalAgentConfig(projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null): Promise<CodexExternalAgentImportResult | null>
   claudeGetRateLimits(force?: boolean): Promise<ClaudeRateLimits | null>

@@ -39,6 +39,7 @@ const mockWindowAgent = {
   previewRewind: vi.fn().mockResolvedValue({ canRewind: true } as const),
   truncateAtCheckpoint: vi.fn().mockResolvedValue(undefined),
   dequeueMessage: vi.fn().mockResolvedValue(true),
+  startQueuedMessages: vi.fn().mockResolvedValue(true),
   readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
   parkSession: vi.fn().mockResolvedValue(undefined),
 }
@@ -459,7 +460,7 @@ describe('session-slice: rewindCodeAndChat / rewindConversation', () => {
     expect(activeSession().messages.map((m) => m.id)).toEqual(['m1'])
   })
 
-  it('rewindConversation truncates by user-message id (IPC argument is project-only)', async () => {
+  it('rewindConversation sends the user-message boundary and truncates locally', async () => {
     setupProject()
     patchSession({
       messages: [
@@ -469,7 +470,7 @@ describe('session-slice: rewindCodeAndChat / rewindConversation', () => {
     })
 
     await useChatStore.getState().rewindConversation('cp-2')
-    expect(mockWindowAgent.rewindConversation).toHaveBeenCalledWith(PATH)
+    expect(mockWindowAgent.rewindConversation).toHaveBeenCalledWith(PATH, 'cp-2')
     expect(activeSession().messages.map((m) => m.id)).toEqual(['m1'])
   })
 
@@ -558,6 +559,15 @@ describe('session-slice: queued-message edit/delete', () => {
 
     await useChatStore.getState().deleteQueuedMessage('q1')
     expect(activeSession().queuedMessages.map((m) => m.id)).toEqual(['q1'])
+  })
+
+  it('starts the durable queue for the scoped session', async () => {
+    setupProject()
+    const sessionId = activeProjectState()._activeSessionId!
+
+    await expect(useChatStore.getState().startQueuedMessages({ projectPath: PATH, sessionId })).resolves.toBe(true)
+
+    expect(mockWindowAgent.startQueuedMessages).toHaveBeenCalledWith(PATH, sessionId)
   })
 })
 

@@ -26,6 +26,8 @@ import {
   normalizeApiKey,
   readAccountUsage,
   readAccountStatus,
+  readCodexConfigRequirements,
+  readCodexServerDiagnostics,
   readRateLimits,
   resolveMode,
   startAccountLogin,
@@ -36,12 +38,15 @@ import type {
   CodexAccountLoginStartResult,
   CodexAccountStatus,
   CodexAccountUsage,
+  CodexConfigRequirements,
   CodexAuthStatus,
   CodexExternalAgentImportResult,
   CodexExternalAgentItem,
   CodexMcpOauthLoginResult,
+  CodexMcpOauthLoginOptions,
   CodexRateLimitResetOutcome,
   CodexRateLimits,
+  CodexServerDiagnostics,
   CodexSetAuthRequest,
 } from '@superone/shared/agent-types'
 import type { HarnessManager } from './harness-manager'
@@ -262,11 +267,34 @@ export class CodexAdminService {
   async getAccountUsage(
     projectId: string,
     apiProviderId?: string | null,
+    threadId?: string | null,
   ): Promise<CodexAccountUsage | null> {
     const auth = this.getProjectAuth(projectId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     try {
-      return await this.withClient(projectId, apiProviderId, (client) => readAccountUsage(client))
+      return await this.withClient(projectId, apiProviderId, (client) => readAccountUsage(client, threadId))
+    } catch {
+      return null
+    }
+  }
+
+  async getServerDiagnostics(
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<CodexServerDiagnostics | null> {
+    try {
+      return await this.withClient(projectId, apiProviderId, (client) => readCodexServerDiagnostics(client))
+    } catch {
+      return null
+    }
+  }
+
+  async getConfigRequirements(
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<CodexConfigRequirements | null> {
+    try {
+      return await this.withClient(projectId, apiProviderId, (client) => readCodexConfigRequirements(client))
     } catch {
       return null
     }
@@ -292,9 +320,10 @@ export class CodexAdminService {
     projectId: string,
     serverName: string,
     apiProviderId?: string | null,
+    options?: CodexMcpOauthLoginOptions,
   ): Promise<CodexMcpOauthLoginResult> {
     return this.withClient(projectId, apiProviderId, (client) =>
-      loginMcpServerOauth(client, serverName),
+      loginMcpServerOauth(client, serverName, undefined, 180_000, options),
     )
   }
 

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 interface FakeSessionState {
   messages: unknown[]
@@ -59,7 +59,7 @@ const hoisted = vi.hoisted(() => {
       scrollMounts.count++
     }
   }
-  return { sessionState, isRemoteLocked: { value: false }, scope, scrollMounts, contentZoom, onScrollMount }
+  return { sessionState, isRemoteLocked: { value: false }, scope, scrollMounts, contentZoom, onScrollMount, startQueuedMessages: vi.fn() }
 })
 
 vi.mock('@/stores/chat', () => ({
@@ -67,9 +67,10 @@ vi.mock('@/stores/chat', () => ({
     (selector: (s: unknown) => unknown) => selector({
       editQueuedMessage: vi.fn(),
       deleteQueuedMessage: vi.fn(),
+      startQueuedMessages: hoisted.startQueuedMessages,
       disconnectRemoteSession: vi.fn(),
       // Read by selectClaudeModels for model-fallback display names.
-      activeProject: null,
+      activeProject: '/tmp/project',
       projectSessions: {},
       harnessResources: {},
     }),
@@ -99,6 +100,12 @@ vi.mock('@superone/ui/components/ui/scroll-area', () => ({
     >
       {children}
     </div>
+  ),
+}))
+
+vi.mock('@superone/ui/components/ui/icon-button', () => ({
+  IconButton: ({ children, tooltip, size: _size, variant: _variant, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { tooltip?: string; size?: string; variant?: string }) => (
+    <button type="button" aria-label={tooltip} {...props}>{children}</button>
   ),
 }))
 
@@ -203,6 +210,13 @@ function renderContent() {
   const ref = createRef<HTMLDivElement>()
   return render(<ChatContent scrollViewportRef={ref} />)
 }
+
+afterEach(() => {
+  hoisted.sessionState.queuedMessages = []
+  hoisted.sessionState.sessionProvider = 'claude'
+  hoisted.sessionState.preferredProvider = 'claude'
+  hoisted.sessionState.status = 'idle'
+})
 
 // Disabling a harness keeps its binary on disk, so sessions on it stay openable.
 // They must be read-only until the user re-enables it — same shape as the
@@ -362,6 +376,24 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
     expect(screen.getByTestId('chat-message')).toBeInTheDocument()
+  })
+})
+
+describe('ChatContent Codex durable queue', () => {
+  it('offers manual resume after an interrupted queued turn', () => {
+    hoisted.startQueuedMessages.mockClear()
+    hoisted.sessionState.messages = [{ id: 'm1' }]
+    hoisted.sessionState.queuedMessages = [{
+      id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'queued' }], createdAt: '', providerId: 'codex',
+    }]
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    hoisted.sessionState.status = 'idle'
+
+    renderContent()
+    fireEvent.click(screen.getByRole('button', { name: 'Start Queued Messages' }))
+
+    expect(hoisted.startQueuedMessages).toHaveBeenCalledWith(undefined)
   })
 })
 

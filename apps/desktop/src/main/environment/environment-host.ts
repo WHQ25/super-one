@@ -34,6 +34,7 @@ import { NodeCredentialStore } from './node-credential-store'
 import { WorkspaceRouter } from './workspace-router'
 import { probeEndpointHealth, discoverTailscaleHost } from './endpoint-probes'
 import type { KnownEnvironmentRecord } from './node-connection-manager'
+import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
@@ -229,7 +230,7 @@ export class EnvironmentHost {
         get: () => null,
         list: (projectId, options) => {
           if (!projectId) return []
-          return listSessionsForProjectId(projectId, options.limit, options.offset)
+          return listSessionsForProjectId(projectId, options?.limit, options?.offset)
         },
         send: async () => {
           throw new Error(
@@ -1099,8 +1100,25 @@ export class EnvironmentHost {
     connectionId: string,
     projectId: string,
     apiProviderId?: string | null,
+    threadId?: string | null,
   ): Promise<unknown> {
-    return this.asRemoteProviderGw(connectionId).codexGetAccountUsage(projectId, apiProviderId)
+    return this.asRemoteProviderGw(connectionId).codexGetAccountUsage(projectId, apiProviderId, threadId)
+  }
+
+  async codexGetServerDiagnostics(
+    connectionId: string,
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexGetServerDiagnostics(projectId, apiProviderId)
+  }
+
+  async codexGetConfigRequirements(
+    connectionId: string,
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexGetConfigRequirements(projectId, apiProviderId)
   }
 
   async codexConsumeRateLimitReset(
@@ -1121,11 +1139,13 @@ export class EnvironmentHost {
     projectId: string,
     serverName: string,
     apiProviderId?: string | null,
+    options?: CodexMcpOauthLoginOptions,
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).codexLoginMcpOauth(
       projectId,
       serverName,
       apiProviderId,
+      options,
     )
   }
 

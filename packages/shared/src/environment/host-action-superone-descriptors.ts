@@ -3505,7 +3505,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
             },
             "reasoningEffort": {
               "type": "string",
-              "enum": ["minimal", "low", "medium", "high", "xhigh"],
+              "enum": ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
               "description": "Codex legacy alias for effort."
             },
             "permissionPreset": {

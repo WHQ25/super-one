@@ -21,6 +21,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
+import { readCodexErrorOverrides } from '@superone/codex'
 import log from '../../logger'
 import { trace } from '../../agent/event-trace'
 import { recordCodexFromTurnUsage, recordCodexFromUsage } from '../../usage-stats-service'
@@ -31,6 +32,7 @@ import {
 } from '../../codex/codex-session'
 import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
 import {
+  buildCodexQueuedInput,
   compactCodexTurn,
   deriveFinalResponse,
   dismissCodexQuestion,
@@ -42,6 +44,7 @@ import {
   respondToCodexQuestion,
   reviewCodexTurn,
   runCodexTurn,
+  startCodexQueuedTurn,
   steerCodex,
   type CodexRunStreamCallbacks,
 } from '../../codex/codex-turn'
@@ -64,6 +67,10 @@ export interface CodexRunStreamCallbacksDeps {
   onCompactionFailed?: (error: string) => void
   onPermissionRequest?: (request: PermissionRequest) => void
   onAskUserQuestion?: (request: AskUserQuestionRequest) => void
+  onQueuedMessageConsumed?: (clientMessageId: string) => void
+  hasQueuedMessages?: () => boolean
+  onTurnCompleted?: (info: { turnId?: string }) => void
+  onTurnFailed?: (error: Error, turnId?: string) => void
 }
 
 export interface CodexServiceDeps {
@@ -101,7 +108,6 @@ function mapPermissionMode(mode: PermissionMode | undefined): CodexPermissionPre
 
 function mapEffort(effort: EffortLevel | undefined): CodexReasoningEffort | undefined {
   if (!effort) return undefined
-  if (effort === 'max') return 'xhigh'
   return effort
 }
 
@@ -142,7 +148,7 @@ export function setCodexServiceFactory(factory: (() => CodexServiceDeps) | null)
 
 function mapCodexMcpServerStatus(raw: unknown): McpServerInfo | null {
   if (!raw || typeof raw !== 'object') return null
-  const entry = raw as { name?: unknown; serverInfo?: unknown; tools?: unknown; resources?: unknown; authStatus?: unknown }
+  const entry = raw as { name?: unknown; serverInfo?: unknown; tools?: unknown; resources?: unknown; authStatus?: unknown; pluginId?: unknown }
   const name = typeof entry.name === 'string' ? entry.name : ''
   if (!name) return null
   // Codex authStatus: 'unsupported' (no auth concept — the normal state for plain
@@ -185,6 +191,7 @@ function mapCodexMcpServerStatus(raw: unknown): McpServerInfo | null {
     .filter((resource) => resource.uri)
   return {
     name,
+    ...(typeof entry.pluginId === 'string' && entry.pluginId ? { pluginId: entry.pluginId } : {}),
     status,
     toolCount: tools.length,
     tools,
@@ -236,6 +243,12 @@ export class CodexBackend implements SessionBackend {
   private lastUsageSnapshot: CodexUsageInfo | null = null
   private turnUsage = new CodexTurnUsageAccumulator()
   private turnUsageRecorded = false
+  private readonly durableQueue = new Map<string, {
+    submissionId: string | null
+    request: SendMessageRequest
+  }>()
+  private queueRefreshPromise: Promise<void> | null = null
+  private queueRefreshRequested = false
 
   private session: CodexSession | null = null
   private authChangedUnsub: (() => void) | null = null
@@ -366,11 +379,13 @@ export class CodexBackend implements SessionBackend {
       opts.apiProviderId ?? null,
       opts.systemPromptAppend,
     )
+    this.session.queueChangedFn = (threadId) => this.scheduleDurableQueueRefresh(threadId)
     await this.adoptWarmHandle()
     this.authChangedUnsub = this.service.onAuthChanged(opts.projectPath, () => {
       this.handleAuthChanged()
     })
     this.started = true
+    if (opts.providerSessionId) await this.restoreDurableQueue()
   }
 
   prewarm(opts: BackendStartOptions): void {
@@ -617,6 +632,10 @@ export class CodexBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     this.assertStarted()
+    if ((request.priority === 'next' || request.priority === 'later') && this.isTurnBusy()) {
+      await this.enqueueDurableMessage(request)
+      return
+    }
     const sessionThreadId = this.session?.threadId
     if (!this.goalController.goal && sessionThreadId) {
       try {
@@ -698,9 +717,22 @@ export class CodexBackend implements SessionBackend {
     this.emit({ type: 'status_change', status: 'streaming' })
     const baseCallbacks = this.buildCallbacks()
     let compactLifecycleSettled = false
+    const turnBoundaryCallbacks: CodexRunStreamCallbacks = {
+      ...baseCallbacks,
+      onTurnCompleted: ({ turnId }) => {
+        finalizeSegment(runningAssistantId, {
+          threadId: this.providerSessionId,
+          turnId,
+          usage: this.lastUsageSnapshot,
+        })
+      },
+      onTurnFailed: (error) => {
+        this.failMessage(runningAssistantId, error)
+      },
+    }
     const callbacks: CodexRunStreamCallbacks = mode === 'compact'
       ? {
-          ...baseCallbacks,
+          ...turnBoundaryCallbacks,
           onCompactionCompleted: (info) => {
             compactLifecycleSettled = true
             baseCallbacks.onCompactionCompleted?.(info)
@@ -710,7 +742,7 @@ export class CodexBackend implements SessionBackend {
             baseCallbacks.onCompactionFailed?.(error)
           },
         }
-      : baseCallbacks
+      : turnBoundaryCallbacks
 
     const task = (async () => {
       try {
@@ -795,7 +827,12 @@ export class CodexBackend implements SessionBackend {
         if (isInterrupt) {
           this.emit({ type: 'message_interrupted', messageId: runningAssistantId })
         } else {
-          this.emit({ type: 'message_error', messageId: runningAssistantId, error: message, errorInfo: buildAgentErrorInfo(message) })
+          this.emit({
+            type: 'message_error',
+            messageId: runningAssistantId,
+            error: message,
+            errorInfo: buildAgentErrorInfo(message, readCodexErrorOverrides(error)),
+          })
         }
         throw error
       } finally {
@@ -938,7 +975,22 @@ export class CodexBackend implements SessionBackend {
   }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
-    return null
+    const usage = this.lastUsageSnapshot
+    if (!usage) return null
+    const promptTokens = Math.max(0, usage.lastInputTokens)
+    const cachedTokens = Math.min(promptTokens, Math.max(0, usage.lastCachedInputTokens))
+    const inputTokens = Math.max(0, promptTokens - cachedTokens)
+    const maxTokens = Math.max(0, usage.contextWindow)
+    return {
+      categories: [
+        ...(inputTokens > 0 ? [{ name: 'input', tokens: inputTokens, color: '#3b82f6' }] : []),
+        ...(cachedTokens > 0 ? [{ name: 'cacheRead', tokens: cachedTokens, color: '#8b5cf6' }] : []),
+      ],
+      totalTokens: promptTokens,
+      maxTokens,
+      percentage: maxTokens > 0 ? Math.min(100, Math.round((promptTokens / maxTokens) * 1000) / 10) : 0,
+      model: this.session?.model ?? '',
+    }
   }
 
   hasActiveBackgroundTasks(): boolean {
@@ -985,6 +1037,53 @@ export class CodexBackend implements SessionBackend {
     return { canRewind: false, error: 'rewindFiles not supported by Codex' }
   }
 
+  async rewindConversation(beforeTurnId: string): Promise<RewindFilesResult> {
+    this.assertStarted()
+    if (this.isTurnBusy()) return { canRewind: false, error: 'Cannot rewind an active Codex turn' }
+    const session = this.session
+    const threadId = session?.threadId ?? this.providerSessionId
+    if (!session || !threadId) return { canRewind: false, error: 'No Codex thread to rewind' }
+    if (this.durableQueue.size > 0) {
+      return { canRewind: false, error: 'Cannot rewind while Codex queued messages are pending' }
+    }
+    try {
+      const connection = await this.ensureManagementConnection()
+      try {
+        await connection.request('thread/revert', { threadId, beforeTurnId })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!/only supports paginated threads/i.test(message)) throw error
+        const result = await connection.request('thread/fork', { threadId, beforeTurnId })
+        const forkedThreadId = result.thread && typeof result.thread === 'object'
+          ? (result.thread as { id?: unknown }).id
+          : undefined
+        if (typeof forkedThreadId !== 'string' || !forkedThreadId) {
+          throw new Error('Codex returned no forked thread id')
+        }
+        session.threadId = forkedThreadId
+        session.threadReady = true
+        this.fireProviderSessionId(forkedThreadId)
+      }
+      this.lastUsageSnapshot = null
+      return { canRewind: true, supportsCodeOnly: false }
+    } catch (err) {
+      return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  private async ensureManagementConnection(): Promise<AppServerConnectionHandle['connection']> {
+    const existing = this.session?.connectionHandle
+    if (existing) return existing.connection
+    const opts = this.startOpts
+    if (!opts) throw new Error('CodexBackend missing startOpts')
+    const auth = this.service.getProjectAuth(opts.projectPath)
+    this.warmHandlePromise = this.prepareWarmHandle(opts, auth)
+    await this.adoptWarmHandle()
+    const handle = this.session?.connectionHandle
+    if (!handle) throw new Error('Failed to restore Codex app-server connection')
+    return handle.connection
+  }
+
   async reloadMcpServers(): Promise<void> {
     const session = this.session
     const handle = session?.connectionHandle
@@ -1013,8 +1112,204 @@ export class CodexBackend implements SessionBackend {
     return false
   }
 
-  dequeueMessage(_clientMessageId: string): boolean {
-    return false
+  async startQueuedMessages(): Promise<boolean> {
+    this.assertStarted()
+    if (this.isTurnBusy() || this.durableQueue.size === 0) return false
+    const session = this.session
+    const opts = this.startOpts
+    if (!session || !opts) return false
+    const startedAt = Date.now()
+    let runningAssistantId: string | null = null
+    const finalizeSegment = (
+      messageId: string,
+      result: Pick<CodexRunResult, 'threadId' | 'turnId' | 'usage' | 'turnUsage'>,
+      finalResponseFallback?: string,
+    ): void => {
+      this.finalizeMessage(messageId, {
+        ...(finalResponseFallback ? { finalResponseFallback } : {}),
+        threadId: result.threadId,
+        turnId: result.turnId,
+        usage: result.usage,
+        turnUsage: result.turnUsage,
+        model: session.model,
+        startedAt,
+      })
+    }
+    this.swapRunAssistantId = (nextId: string) => {
+      if (runningAssistantId) {
+        finalizeSegment(runningAssistantId, {
+          threadId: this.providerSessionId,
+          usage: this.lastUsageSnapshot,
+        })
+      } else {
+        this.resetSegments(nextId)
+      }
+      runningAssistantId = nextId
+      this.currentMessageId = nextId
+      this.ensureSegment(nextId)
+    }
+    const baseCallbacks = this.buildCallbacks()
+    const callbacks: CodexRunStreamCallbacks = {
+      ...baseCallbacks,
+      onTurnCompleted: ({ turnId }) => {
+        if (!runningAssistantId) return
+        finalizeSegment(runningAssistantId, {
+          threadId: this.providerSessionId,
+          turnId,
+          usage: this.lastUsageSnapshot,
+        })
+      },
+      onTurnFailed: (error) => {
+        if (runningAssistantId) this.failMessage(runningAssistantId, error)
+      },
+    }
+    this.activeRun = (async () => {
+      try {
+        const result = await startCodexQueuedTurn(
+          session,
+          this.service.getProjectAuth(opts.projectPath),
+          opts.projectPath,
+          opts.cwd,
+          callbacks,
+        )
+        const turnUsage = this.completedTurnUsage(result.turnUsage)
+        this.recordTurnUsageStats(turnUsage, result.usage, session.model)
+        if (runningAssistantId) finalizeSegment(runningAssistantId, { ...result, turnUsage }, result.finalResponse)
+      } catch (error) {
+        this.recordTurnUsageStats(this.completedTurnUsage(undefined), null, session.model)
+        if (runningAssistantId) this.failMessage(runningAssistantId, error)
+        throw error
+      } finally {
+        this.emit({ type: 'status_change', status: 'idle' })
+        if (this.currentMessageId === runningAssistantId) this.currentMessageId = null
+        this.swapRunAssistantId = null
+      }
+    })()
+    await this.activeRun.finally(() => { this.activeRun = null })
+    return true
+  }
+
+  private async enqueueDurableMessage(request: SendMessageRequest): Promise<void> {
+    const clientMessageId = request.clientMessageId
+    const session = this.session
+    const handle = session?.connectionHandle
+    const threadId = session?.threadId
+    if (!clientMessageId || !session || !handle || !threadId) {
+      throw new Error('Codex durable queue requires an active thread and client message id')
+    }
+    this.durableQueue.set(clientMessageId, { submissionId: null, request })
+    try {
+      const result = await handle.connection.request('thread/queue/add', {
+        threadId,
+        input: buildCodexQueuedInput(request.content, request.images),
+        clientUserMessageId: clientMessageId,
+      })
+      const submission = result.queuedSubmission && typeof result.queuedSubmission === 'object'
+        ? result.queuedSubmission as Record<string, unknown>
+        : null
+      const submissionId = typeof submission?.id === 'string' ? submission.id : null
+      if (!submissionId) throw new Error('Codex returned no durable queue submission id')
+      const queued = this.durableQueue.get(clientMessageId)
+      if (queued) queued.submissionId = submissionId
+    } catch (err) {
+      this.durableQueue.delete(clientMessageId)
+      throw err
+    }
+  }
+
+  private async restoreDurableQueue(): Promise<void> {
+    const threadId = this.session?.threadId ?? this.providerSessionId
+    if (!threadId) return
+    try {
+      const connection = await this.ensureManagementConnection()
+      let cursor: string | null = null
+      const restored: Array<{ clientMessageId: string; content: string }> = []
+      const nextQueue = new Map<string, { submissionId: string | null; request: SendMessageRequest }>()
+      do {
+        const result = await connection.request('thread/queue/list', {
+          threadId,
+          ...(cursor ? { cursor } : {}),
+          limit: 100,
+        })
+        const data = Array.isArray(result.data) ? result.data : []
+        for (const value of data) {
+          if (!value || typeof value !== 'object') continue
+          const submission = value as Record<string, unknown>
+          const submissionId = typeof submission.id === 'string' ? submission.id : null
+          const clientMessageId = typeof submission.clientUserMessageId === 'string'
+            ? submission.clientUserMessageId
+            : null
+          if (!submissionId || !clientMessageId) continue
+          const input = Array.isArray(submission.input) ? submission.input : []
+          const content = input.flatMap((entry) => {
+            if (!entry || typeof entry !== 'object') return []
+            const rec = entry as Record<string, unknown>
+            return rec.type === 'text' && typeof rec.text === 'string' ? [rec.text] : []
+          }).join('\n\n')
+          const existing = this.durableQueue.get(clientMessageId)
+          const request: SendMessageRequest = existing?.request ?? {
+            content,
+            clientMessageId,
+            assistantMessageId: `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            priority: 'next',
+          }
+          nextQueue.set(clientMessageId, { submissionId, request })
+          restored.push({ clientMessageId, content })
+        }
+        cursor = typeof result.nextCursor === 'string' ? result.nextCursor : null
+      } while (cursor)
+      // Core removes a submission from thread/queue/list as soon as it promotes
+      // it to a turn, before the corresponding userMessage item necessarily
+      // reaches this client. Keep that local mapping during a live drain so the
+      // item event can still atomically move the queued bubble into transcript.
+      if (this.isTurnBusy()) {
+        for (const [clientMessageId, queued] of this.durableQueue) {
+          if (!nextQueue.has(clientMessageId)) nextQueue.set(clientMessageId, queued)
+        }
+      }
+      this.durableQueue.clear()
+      for (const [clientMessageId, queued] of nextQueue) this.durableQueue.set(clientMessageId, queued)
+      const restoredById = new Map(restored.map((message) => [message.clientMessageId, message]))
+      for (const [clientMessageId, queued] of nextQueue) {
+        if (!restoredById.has(clientMessageId)) {
+          restoredById.set(clientMessageId, { clientMessageId, content: queued.request.content })
+        }
+      }
+      this.emit({ type: 'queued_messages_restored', messages: [...restoredById.values()] })
+    } catch (err) {
+      log.warn('[CodexBackend] durable queue restore failed: %s', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  private scheduleDurableQueueRefresh(threadId: string): void {
+    if (threadId !== (this.session?.threadId ?? this.providerSessionId)) return
+    this.queueRefreshRequested = true
+    if (this.queueRefreshPromise) return
+    this.queueRefreshPromise = (async () => {
+      while (this.queueRefreshRequested) {
+        this.queueRefreshRequested = false
+        await this.restoreDurableQueue()
+      }
+    })().finally(() => { this.queueRefreshPromise = null })
+  }
+
+  async dequeueMessage(_clientMessageId: string): Promise<boolean> {
+    const queued = this.durableQueue.get(_clientMessageId)
+    if (!queued) return false
+    const handle = this.session?.connectionHandle
+    const threadId = this.session?.threadId
+    if (!handle || !threadId || !queued.submissionId) return false
+    try {
+      await handle.connection.request('thread/queue/delete', {
+        threadId,
+        queuedSubmissionId: queued.submissionId,
+      })
+      this.durableQueue.delete(_clientMessageId)
+      return true
+    } catch (err) {
+      log.warn('[CodexBackend] durable queue delete failed: %s', err instanceof Error ? err.message : String(err))
+      return false
+    }
   }
 
   getPendingInteractions(): AgentEvent[] {
@@ -1075,6 +1370,33 @@ export class CodexBackend implements SessionBackend {
 
   private buildCallbacks(): CodexRunStreamCallbacks {
     return {
+      hasQueuedMessages: () => this.durableQueue.size > 0,
+      onQueuedMessageConsumed: (clientMessageId) => {
+        const queued = this.durableQueue.get(clientMessageId)
+        if (!queued) return
+        this.durableQueue.delete(clientMessageId)
+        this.emit({ type: 'queued_message_consumed', clientMessageId })
+        const nextMessageId = queued.request.assistantMessageId
+          ?? `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+        this.emit({
+          type: 'message_start',
+          message: {
+            id: nextMessageId,
+            role: 'assistant',
+            status: 'streaming',
+            content: [],
+            createdAt: new Date().toISOString(),
+            providerId: 'codex',
+          },
+        })
+        if (this.swapRunAssistantId) {
+          this.swapRunAssistantId(nextMessageId)
+        } else {
+          this.resetSegments(nextMessageId)
+          this.currentMessageId = nextMessageId
+          this.emit({ type: 'status_change', status: 'streaming' })
+        }
+      },
       onThreadStarted: (threadId: string) => {
         this.fireProviderSessionId(threadId)
         const messageId = this.currentMessageId
@@ -1224,6 +1546,18 @@ export class CodexBackend implements SessionBackend {
           model: opts.model,
         },
       } as Record<string, unknown>,
+    })
+  }
+
+  private failMessage(messageId: string, error: unknown): void {
+    if (this.finalizedSegments.has(messageId)) return
+    this.finalizedSegments.add(messageId)
+    const message = error instanceof Error ? error.message : String(error)
+    this.emit({
+      type: 'message_error',
+      messageId,
+      error: message,
+      errorInfo: buildAgentErrorInfo(message, readCodexErrorOverrides(error)),
     })
   }
 

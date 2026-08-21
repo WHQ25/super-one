@@ -8,7 +8,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@superon
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { getLatestCodexThreadId, useActiveSession, useChatStore } from '@/stores/chat'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 
@@ -261,6 +261,15 @@ function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
   if (usage.lifetimeTokens != null) rows.push(<StatRow key="lifetime" label={t('usageGauge.lifetimeTokens')} value={formatTokens(usage.lifetimeTokens)} />)
   if (usage.peakDailyTokens != null) rows.push(<StatRow key="peak" label={t('usageGauge.peakDaily')} value={formatTokens(usage.peakDailyTokens)} />)
   if (usage.currentStreakDays != null) rows.push(<StatRow key="streak" label={t('usageGauge.streak')} value={`${usage.currentStreakDays}d`} />)
+  if (usage.threadUsage) {
+    const threadTokens = usage.threadUsage.groups.reduce((total, group) => total + (group.totalTokens ?? 0), 0)
+    if (threadTokens > 0) rows.push(<StatRow key="thread-tokens" label={t('usageGauge.threadTokens')} value={formatTokens(threadTokens)} />)
+    rows.push(<StatRow
+      key="thread-credits"
+      label={t('usageGauge.estimatedCredits')}
+      value={(usage.threadUsage.estimatedUsageCreditsMicros / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+    />)
+  }
   if (rows.length === 0) return null
   return (
     <div className="flex flex-col gap-1 border-t border-border/60 pt-2">{rows}</div>
@@ -407,20 +416,20 @@ function useRefetchOnTurnEnd(status: string, fetchLimits: () => void) {
   }, [status, fetchLimits])
 }
 
-function CodexRateLimitIcon({ projectPath, apiProviderId, status, tip, highlight }: { projectPath: string; apiProviderId: string | null; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
+function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip, highlight }: { projectPath: string; apiProviderId: string | null; threadId: string | null; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
   const { t } = useTranslation()
   const [limits, setLimits] = useState<CodexRateLimits | null>(null)
   const [usage, setUsage] = useState<CodexAccountUsage | null>(null)
 
   const fetchLimits = useCallback(() => {
     window.app.codexGetRateLimits(projectPath, apiProviderId).then(setLimits).catch(() => {})
-    window.app.codexGetAccountUsage(projectPath, apiProviderId).then(setUsage).catch(() => {})
-  }, [projectPath, apiProviderId])
+    window.app.codexGetAccountUsage(projectPath, apiProviderId, threadId).then(setUsage).catch(() => {})
+  }, [projectPath, apiProviderId, threadId])
 
   useEffect(() => {
     setLimits(null)
     setUsage(null)
-  }, [projectPath, apiProviderId])
+  }, [projectPath, apiProviderId, threadId])
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
@@ -639,6 +648,7 @@ export function UsageStatusIcon() {
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const apiProviderId = useActiveSession((s) => s.apiProviderId)
+  const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages) ?? null)
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const status = useActiveSession((s) => s.status)
   const rateLimitInfo = useActiveSession((s) => s.rateLimitInfo)
@@ -653,7 +663,7 @@ export function UsageStatusIcon() {
   if (!activeProject) return null
 
   if (activeProvider === 'codex') {
-    return <CodexRateLimitIcon projectPath={activeProject} apiProviderId={apiProviderId ?? null} status={status} tip={tip} highlight={highlight} />
+    return <CodexRateLimitIcon projectPath={activeProject} apiProviderId={apiProviderId ?? null} threadId={codexThreadId} status={status} tip={tip} highlight={highlight} />
   }
 
   if (activeProvider === 'claude' && claudeApiProvider === 'firstParty' && !apiProviderId) {
@@ -666,7 +676,7 @@ export function UsageStatusIcon() {
 
   // Grok is the only ACP agent with a billing surface; asking the others would
   // just be a round-trip to `method not found` on every turn end.
-  if (activeProvider === 'acp' && isGrokAcpAgent(acpAgentId)) {
+  if (activeProvider === 'acp' && acpAgentId && isGrokAcpAgent(acpAgentId)) {
     return <AcpRateLimitIcon projectPath={activeProject} agentId={acpAgentId} status={status} tip={tip} highlight={highlight} />
   }
 

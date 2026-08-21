@@ -68,6 +68,7 @@ export interface CodexSession {
   connectionPromiseAuth: CodexProjectAuth | null
   apiProviderId: string | null
   notificationDispatcher: NotificationDispatcher | null
+  queueChangedFn: ((threadId: string) => void) | null
   forkListeners: Map<string, ForkListenerHandle>
   forkCallbacks: CodexRunStreamCallbacks | null
   systemPromptAppend?: string
@@ -111,6 +112,7 @@ export function createCodexSession(
     connectionPromiseAuth: null,
     apiProviderId: apiProviderId ?? null,
     notificationDispatcher: null,
+    queueChangedFn: null,
     forkListeners: new Map(),
     forkCallbacks: null,
     systemPromptAppend,

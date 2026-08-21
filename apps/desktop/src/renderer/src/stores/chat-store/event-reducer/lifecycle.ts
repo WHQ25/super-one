@@ -6,6 +6,7 @@ import { sealStreamingTools } from './shared'
 type LifecycleEvent = Extract<AgentEvent, {
   type:
     | 'queued_message_consumed'
+    | 'queued_messages_restored'
     | 'message_start'
     | 'message_timestamp'
     | 'messages_retracted'
@@ -21,6 +22,17 @@ type LifecycleEvent = Extract<AgentEvent, {
 
 export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent): Partial<PerSessionState> {
   switch (event.type) {
+    case 'queued_messages_restored':
+      return {
+        queuedMessages: event.messages.map((message) => ({
+          id: message.clientMessageId,
+          role: 'user' as const,
+          status: 'complete' as const,
+          content: [{ type: 'text' as const, text: message.content }],
+          createdAt: new Date().toISOString(),
+          providerId: 'local',
+        })),
+      }
     case 'queued_message_consumed': {
       const idx = session.queuedMessages.findIndex((m) => m.id === event.clientMessageId)
       if (idx === -1) return {}

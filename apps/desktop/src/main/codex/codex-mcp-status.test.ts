@@ -5,12 +5,14 @@ describe('mapCodexMcpStatusForIpc', () => {
   it('maps connected tools and resources', () => {
     expect(mapCodexMcpStatusForIpc({
       name: 'docs',
+      pluginId: 'docs@openai-curated',
       serverInfo: { name: 'docs', version: '1' },
       authStatus: 'unsupported',
       tools: { search: { name: 'search', description: 'Find docs' } },
       resources: [{ uri: 'docs://guide', name: 'Guide', mimeType: 'text/markdown' }],
     })).toMatchObject({
       name: 'docs',
+      pluginId: 'docs@openai-curated',
       status: 'connected',
       toolCount: 1,
       tools: [{ name: 'search', description: 'Find docs' }],

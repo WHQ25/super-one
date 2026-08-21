@@ -53,7 +53,7 @@ export type HostArch = 'arm64' | 'x64'
 /** Fixed payload name inside a versioned install directory. Never from manifest. */
 export const MANAGED_PAYLOAD_BASENAME = 'payload.bin'
 export const MANAGED_META_BASENAME = 'artifact.json'
-export const MANAGED_CURRENT_BASENAME = 'current'
+const MANAGED_CURRENT_BASENAME = 'current'
 
 /** Max length for a single path segment used under releases/. */
 const MAX_SEGMENT_LEN = 64

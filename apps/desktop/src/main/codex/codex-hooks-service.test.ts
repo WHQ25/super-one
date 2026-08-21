@@ -170,4 +170,18 @@ describe('CodexHooksService.list', () => {
     expect(result[0].hooks[0].source).toBe('unknown')
     expect(result[0].hooks[0].trustStatus).toBe('unknown')
   })
+
+  it('maps command async metadata and MCP tool handlers from Codex 149', async () => {
+    const service = makeService(async () => ({
+      data: [{
+        cwd: '/c', warnings: [], errors: [], hooks: [
+          { key: 'async', eventName: 'stop', handlerType: 'command', command: 'notify', async: true, sourcePath: '/a', source: 'user', trustStatus: 'trusted', enabled: true, isManaged: false },
+          { key: 'mcp', eventName: 'preToolUse', handlerType: 'mcpTool', server: 'policy', tool: 'review', additionalContextLimit: 500, sourcePath: '/b', source: 'managed', trustStatus: 'trusted', enabled: true, isManaged: true },
+        ],
+      }],
+    }))
+    const hooks = (await service.list('/c'))[0].hooks
+    expect(hooks[0]).toMatchObject({ handlerType: 'command', command: 'notify', async: true })
+    expect(hooks[1]).toMatchObject({ handlerType: 'mcpTool', server: 'policy', tool: 'review', additionalContextLimit: 500 })
+  })
 })

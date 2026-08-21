@@ -699,7 +699,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     apiProviderId: z.string().nullable().optional().describe('Optional third-party AI provider credential id.'),
     acpAgentId: z.string().optional().describe('ACP only: agent id (e.g. grok-build).'),
     reasoningEffort: z
-      .enum(['minimal', 'low', 'medium', 'high', 'xhigh'])
+      .enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
       .optional()
       .describe('Codex legacy alias for effort.'),
     permissionPreset: z
@@ -737,10 +737,10 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         agentConfig: agentConfigSchema.optional(),
       },
     },
-    (args, extra) => automationApplyHandler(args as AutomationApplyArgs, {
+    async (args, extra) => (await automationApplyHandler(args as AutomationApplyArgs, {
       ...deps,
       signal: extra?.signal ?? deps.signal,
-    }),
+    })) ?? { content: [{ type: 'text' as const, text: 'Automation change cancelled.' }], isError: true },
   )
 
   server.registerTool(
@@ -751,10 +751,10 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         ids: z.array(z.string()).min(1).max(20).describe('Automation ids from automation_list to delete (current project only).'),
       },
     },
-    (args, extra) => automationDeleteHandler(args, {
+    async (args, extra) => (await automationDeleteHandler(args, {
       ...deps,
       signal: extra?.signal ?? deps.signal,
-    }),
+    })) ?? { content: [{ type: 'text' as const, text: 'Automation deletion cancelled.' }], isError: true },
   )
 
   registerMediaTools(server, deps)

@@ -20,6 +20,7 @@ const hoisted = vi.hoisted(() => {
     },
   }
   return {
+    codexThreadId: null as string | null,
     sessionState,
     chatState: {
       activeProject: '/tmp/project',
@@ -29,6 +30,7 @@ const hoisted = vi.hoisted(() => {
 })
 
 vi.mock('@/stores/chat', () => ({
+  getLatestCodexThreadId: () => hoisted.codexThreadId ?? undefined,
   useChatStore: (selector: (s: typeof hoisted.chatState) => unknown) => selector(hoisted.chatState),
   useActiveSession: (selector: (s: typeof hoisted.sessionState) => unknown) => selector(hoisted.sessionState),
 }))
@@ -46,6 +48,8 @@ vi.mock('react-i18next', () => ({
       if (key === 'usageGauge.resetsSoon') return 'resets soon'
       if (key === 'usageGauge.updatedJustNow') return 'Updated just now'
       if (key === 'usageGauge.updating') return 'Updating…'
+      if (key === 'usageGauge.threadTokens') return 'Thread Tokens'
+      if (key === 'usageGauge.estimatedCredits') return 'Estimated Credits'
       return key
     },
   }),
@@ -109,6 +113,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     hoisted.sessionState.acpAgentId = null
     hoisted.sessionState._activeSessionId = 'session-a'
     hoisted.sessionState.session = null
+    hoisted.codexThreadId = null
     vi.stubGlobal('app', {
       acpGetRateLimits: vi.fn(async () => null),
       claudeGetRateLimits: vi.fn(async () => ({
@@ -325,5 +330,38 @@ describe('UsageStatusIcon rate-limit tip', () => {
     })
 
     expect(screen.getByRole('status')).toHaveTextContent('Rate limited')
+  })
+
+  it('requests and renders per-thread Codex usage', async () => {
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    hoisted.codexThreadId = 'thread-1'
+    const codexGetAccountUsage = vi.fn(async () => ({
+      lifetimeTokens: null,
+      peakDailyTokens: null,
+      longestRunningTurnSec: null,
+      currentStreakDays: null,
+      longestStreakDays: null,
+      threadUsage: {
+        threadId: 'thread-1',
+        estimatedUsageCreditsMicros: 12,
+        estimatedUsageUsdMicros: null,
+        groups: [{ model: 'gpt-next', reasoningEffort: 'ultra', speed: 'fast', estimatedUsageCreditsMicros: 12, netNewInputTokens: null, cachedInputTokens: null, inputTokens: null, outputTokens: null, totalTokens: 56 }],
+      },
+    }))
+    vi.stubGlobal('app', {
+      ...window.app,
+      codexGetRateLimits: vi.fn(async () => ({
+        title: 'Codex', planType: 'pro', primary: { usedPercent: 1, windowDurationMins: 300, resetsAt: null }, secondary: null,
+      })),
+      codexGetAccountUsage,
+    })
+
+    render(<UsageStatusIcon />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+
+    expect(codexGetAccountUsage).toHaveBeenCalledWith('/tmp/project', null, 'thread-1')
+    expect(screen.getByText('Thread Tokens')).toBeInTheDocument()
+    expect(screen.getByText('Estimated Credits')).toBeInTheDocument()
   })
 })

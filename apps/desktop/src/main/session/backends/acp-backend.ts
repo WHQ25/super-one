@@ -628,7 +628,7 @@ export class AcpBackend implements SessionBackend {
       this.emitConfigFromRuntime(runtime, agentId, epoch)
       // Billing rides this connection. Ask now so the sidebar gauge is filled
       // before the first turn ends — the renderer often fetches during prewarm.
-      if (isGrokAcpAgent(agentId)) void this.prefetchRateLimits(agentId)
+      if (agentId && isGrokAcpAgent(agentId)) void this.prefetchRateLimits(agentId)
       return runtime
     })()
     this.ensureRuntimePromise = promise

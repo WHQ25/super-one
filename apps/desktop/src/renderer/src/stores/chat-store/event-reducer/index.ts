@@ -21,6 +21,7 @@ import { reduceUsage } from './usage'
 export function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
   switch (event.type) {
     case 'queued_message_consumed':
+    case 'queued_messages_restored':
     case 'message_start':
     case 'message_timestamp':
     case 'messages_retracted':

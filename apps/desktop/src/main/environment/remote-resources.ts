@@ -8,6 +8,7 @@
 import type {
   HookConfig,
   HookSavePayload,
+  CodexMcpOauthLoginOptions,
   McpServerConfig,
   PluginInfo,
   ResourceScope,
@@ -530,10 +531,31 @@ export async function remoteCodexGetAccountUsage(
   host: EnvironmentHost,
   folderPath: string,
   apiProviderId?: string | null,
+  threadId?: string | null,
 ): Promise<unknown | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   if (!pair) return null
-  return pair.gw.codexGetAccountUsage(pair.ctx.projectId, apiProviderId)
+  return pair.gw.codexGetAccountUsage(pair.ctx.projectId, apiProviderId, threadId)
+}
+
+export async function remoteCodexGetServerDiagnostics(
+  host: EnvironmentHost,
+  folderPath: string,
+  apiProviderId?: string | null,
+): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  if (!pair) return null
+  return pair.gw.codexGetServerDiagnostics(pair.ctx.projectId, apiProviderId)
+}
+
+export async function remoteCodexGetConfigRequirements(
+  host: EnvironmentHost,
+  folderPath: string,
+  apiProviderId?: string | null,
+): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  if (!pair) return null
+  return pair.gw.codexGetConfigRequirements(pair.ctx.projectId, apiProviderId)
 }
 
 export async function remoteCodexConsumeRateLimitReset(
@@ -552,10 +574,11 @@ export async function remoteCodexLoginMcpOauth(
   folderPath: string,
   serverName: string,
   apiProviderId?: string | null,
+  options?: CodexMcpOauthLoginOptions,
 ): Promise<unknown | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   if (!pair) return null
-  return pair.gw.codexLoginMcpOauth(pair.ctx.projectId, serverName, apiProviderId)
+  return pair.gw.codexLoginMcpOauth(pair.ctx.projectId, serverName, apiProviderId, options)
 }
 
 export async function remoteCodexDetectExternalAgent(

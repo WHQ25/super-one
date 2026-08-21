@@ -28,7 +28,7 @@ const codexConfigSchema = z.object({
   extraEnv: z.record(z.string(), z.string()).optional(),
   initializeTimeoutMs: z.number().positive().optional(),
   permissionPreset: z.enum(['read-only', 'default', 'auto-review', 'full-access']).optional(),
-  reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
+  reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
 }).passthrough()
 
 const acpConfigSchema = z.object({

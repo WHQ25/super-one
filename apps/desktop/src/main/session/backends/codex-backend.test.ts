@@ -52,6 +52,16 @@ const turnMocks = vi.hoisted(() => {
   return {
     state,
     runCodexTurn: vi.fn(captureImpl),
+    startCodexQueuedTurn: vi.fn(async (
+      _session: unknown,
+      _auth: unknown,
+      _projectPath: string,
+      _cwd: string,
+      callbacks?: { onQueuedMessageConsumed?: (clientMessageId: string) => void },
+    ) => {
+      callbacks?.onQueuedMessageConsumed?.('u2')
+      return { threadId: 'thread-1', turnId: 'turn-2', finalResponse: 'queued done', usage: null, turnUsage: [], items: [] }
+    }),
     reviewCodexTurn: vi.fn(captureImpl),
     compactCodexTurn: vi.fn(captureImpl),
     steerCodex: vi.fn(async () => {}),
@@ -66,6 +76,7 @@ const turnMocks = vi.hoisted(() => {
     respondToCodexPermission: vi.fn(() => true),
     respondToCodexQuestion: vi.fn(() => true),
     dismissCodexQuestion: vi.fn(() => true),
+    buildCodexQueuedInput: (prompt: string) => [{ type: 'text', text: prompt, text_elements: [] }],
     prewarmCodexConnection: vi.fn(async () => null),
     prewarmCodexSession: vi.fn(async (_handle: unknown, session: { threadId: string | null; threadReady: boolean }) => {
       session.threadId = 'thread-prewarmed'
@@ -77,6 +88,7 @@ const turnMocks = vi.hoisted(() => {
 
 vi.mock('../../codex/codex-turn', () => ({
   runCodexTurn: turnMocks.runCodexTurn,
+  startCodexQueuedTurn: turnMocks.startCodexQueuedTurn,
   reviewCodexTurn: turnMocks.reviewCodexTurn,
   compactCodexTurn: turnMocks.compactCodexTurn,
   steerCodex: turnMocks.steerCodex,
@@ -88,6 +100,7 @@ vi.mock('../../codex/codex-turn', () => ({
   dismissCodexQuestion: turnMocks.dismissCodexQuestion,
   prewarmCodexConnection: turnMocks.prewarmCodexConnection,
   prewarmCodexSession: turnMocks.prewarmCodexSession,
+  buildCodexQueuedInput: turnMocks.buildCodexQueuedInput,
 }))
 
 vi.mock('../../codex/codex-session', () => ({
@@ -192,6 +205,7 @@ function makeFakeService(): CodexServiceDeps & {
   rejectRun: (err: Error) => void
 } {
   turnMocks.runCodexTurn.mockClear()
+  turnMocks.startCodexQueuedTurn.mockClear()
   turnMocks.reviewCodexTurn.mockClear()
   turnMocks.compactCodexTurn.mockClear()
   turnMocks.steerCodex.mockClear()
@@ -460,7 +474,7 @@ describe('CodexBackend send()', () => {
     expect(projectPath).toBe('/tmp/proj')
     expect(request.prompt).toBe('hello')
     expect(request.model).toBe('gpt-5-max')
-    expect(request.reasoningEffort).toBe('xhigh')
+    expect(request.reasoningEffort).toBe('max')
     expect(request.permissionPreset).toBe('default')
     expect(request.cwd).toBe('/tmp/proj')
     expect(request.messageId).toMatch(/^codex_/)
@@ -682,6 +696,143 @@ describe('CodexBackend send()', () => {
     const startupEvt = events.find((e) => e.type === 'codex_mcp_startup') as Extract<AgentEvent, { type: 'codex_mcp_startup' }> | undefined
     expect(startupEvt?.servers).toEqual([{ name: 'superone', status: 'ready' }, { name: 'linear', status: 'starting' }])
     expect(backend.getCurrentProviderSessionId()).toBe('thread-99')
+  })
+
+  it('persists queued sends and swaps bubbles when Core consumes the client message id', async () => {
+    const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
+    const request = vi.fn(async (method: string) => method === 'thread/queue/add'
+      ? { queuedSubmission: { id: 'submission-2' } }
+      : {})
+    const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-1'
+
+    await backend.send({ content: 'second', priority: 'next', clientMessageId: 'u2', assistantMessageId: 'a2' })
+    expect(request).toHaveBeenCalledWith('thread/queue/add', expect.objectContaining({
+      threadId: 'thread-1', clientUserMessageId: 'u2',
+    }))
+    expect(service.capturedCallbacks?.hasQueuedMessages?.()).toBe(true)
+    service.capturedCallbacks?.onQueuedMessageConsumed?.('u2')
+    expect(events).toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'u2' })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'message_start', message: expect.objectContaining({ id: 'a2' }) }))
+    expect(service.capturedCallbacks?.hasQueuedMessages?.()).toBe(false)
+
+    service.resolveRun(makeResult())
+    await pending
+  })
+
+  it('waits for Core to confirm durable queue deletion before removing it locally', async () => {
+    const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
+    const request = vi.fn(async (method: string) => method === 'thread/queue/add'
+      ? { queuedSubmission: { id: 'submission-2' } }
+      : {})
+    const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-1'
+    await backend.send({ content: 'second', priority: 'next', clientMessageId: 'u2', assistantMessageId: 'a2' })
+
+    await expect(backend.dequeueMessage('u2')).resolves.toBe(true)
+    expect(request).toHaveBeenCalledWith('thread/queue/delete', {
+      threadId: 'thread-1', queuedSubmissionId: 'submission-2',
+    })
+    expect(service.capturedCallbacks?.hasQueuedMessages?.()).toBe(false)
+
+    service.resolveRun(makeResult())
+    await pending
+  })
+
+  it('keeps a promoted queue entry until its userMessage item is observed', async () => {
+    const request = vi.fn(async (method: string) => method === 'thread/queue/list'
+      ? { data: [], nextCursor: null }
+      : {})
+    const internals = backend as unknown as {
+      activeRun: Promise<void> | null
+      durableQueue: Map<string, { submissionId: string; request: { content: string; assistantMessageId: string } }>
+      restoreDurableQueue(): Promise<void>
+      session: { connectionHandle: unknown; threadId: string | null }
+    }
+    internals.session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    internals.session.threadId = 'thread-1'
+    internals.activeRun = Promise.resolve()
+    internals.durableQueue.set('u2', {
+      submissionId: 'submission-2',
+      request: { content: 'second', assistantMessageId: 'a2' },
+    })
+
+    await internals.restoreDurableQueue()
+
+    expect(internals.durableQueue.has('u2')).toBe(true)
+    expect(events).toContainEqual({
+      type: 'queued_messages_restored',
+      messages: [{ clientMessageId: 'u2', content: 'second' }],
+    })
+  })
+
+  it('resumes an interrupted durable queue and consumes its first message', async () => {
+    const internals = backend as unknown as {
+      durableQueue: Map<string, { submissionId: string; request: { content: string; assistantMessageId: string } }>
+    }
+    internals.durableQueue.set('u2', {
+      submissionId: 'submission-2',
+      request: { content: 'second', assistantMessageId: 'a2' },
+    })
+
+    await expect(backend.startQueuedMessages()).resolves.toBe(true)
+
+    expect(turnMocks.startCodexQueuedTurn).toHaveBeenCalled()
+    expect(events).toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'u2' })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'message_complete', messageId: 'a2' }))
+  })
+
+  it('finalizes each assistant segment while manually draining multiple queued messages', async () => {
+    const internals = backend as unknown as {
+      durableQueue: Map<string, { submissionId: string; request: { content: string; assistantMessageId: string } }>
+    }
+    internals.durableQueue.set('u2', {
+      submissionId: 'submission-2',
+      request: { content: 'second', assistantMessageId: 'a2' },
+    })
+    internals.durableQueue.set('u3', {
+      submissionId: 'submission-3',
+      request: { content: 'third', assistantMessageId: 'a3' },
+    })
+    turnMocks.startCodexQueuedTurn.mockImplementationOnce(async (
+      _session: unknown,
+      _auth: unknown,
+      _projectPath: string,
+      _cwd: string,
+      callbacks?: {
+        onQueuedMessageConsumed?: (clientMessageId: string) => void
+        onTurnCompleted?: (info: { turnId?: string }) => void
+      },
+    ) => {
+      callbacks?.onQueuedMessageConsumed?.('u2')
+      callbacks?.onTurnCompleted?.({ turnId: 'turn-2' })
+      callbacks?.onQueuedMessageConsumed?.('u3')
+      return { threadId: 'thread-1', turnId: 'turn-3', finalResponse: 'third done', usage: null, turnUsage: [], items: [] }
+    })
+
+    await expect(backend.startQueuedMessages()).resolves.toBe(true)
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_complete',
+      messageId: 'a2',
+      metadata: expect.objectContaining({ codex: expect.objectContaining({ turnId: 'turn-2' }) }),
+    }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'message_complete', messageId: 'a3' }))
+  })
+
+  it('rejects when manual durable queue draining fails', async () => {
+    const internals = backend as unknown as {
+      durableQueue: Map<string, { submissionId: string; request: { content: string; assistantMessageId: string } }>
+    }
+    internals.durableQueue.set('u2', {
+      submissionId: 'submission-2',
+      request: { content: 'second', assistantMessageId: 'a2' },
+    })
+    turnMocks.startCodexQueuedTurn.mockRejectedValueOnce(new Error('queue drain failed'))
+
+    await expect(backend.startQueuedMessages()).rejects.toThrow('queue drain failed')
   })
 
   it('records the whole turn usage instead of only the final response snapshot', async () => {
@@ -1071,6 +1222,61 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
 
   it('getContextUsage returns null', async () => {
     expect(await backend.getContextUsage()).toBeNull()
+  })
+
+  it('maps the latest Codex token snapshot into detailed context usage', async () => {
+    const internals = backend as unknown as { lastUsageSnapshot: CodexUsageInfo; session: { model?: string } }
+    internals.session.model = 'gpt-next'
+    internals.lastUsageSnapshot = {
+      totalInputTokens: 90, totalCachedInputTokens: 30, totalOutputTokens: 8,
+      lastInputTokens: 90, lastCachedInputTokens: 30, lastOutputTokens: 8,
+      reasoningOutputTokens: 0, contextWindow: 120,
+    }
+    expect(await backend.getContextUsage()).toMatchObject({
+      totalTokens: 90, maxTokens: 120, percentage: 75, model: 'gpt-next',
+    })
+  })
+
+  it('reverts paginated conversation history without claiming file rewind', async () => {
+    const request = vi.fn(async () => ({ thread: { id: 'thread-1' } }))
+    const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-1'
+    await expect(backend.rewindConversation('turn-2')).resolves.toEqual({ canRewind: true, supportsCodeOnly: false })
+    expect(request).toHaveBeenCalledWith('thread/revert', { threadId: 'thread-1', beforeTurnId: 'turn-2' })
+  })
+
+  it('refuses to rewind while durable queued messages are pending', async () => {
+    const request = vi.fn(async () => ({}))
+    const internals = backend as unknown as {
+      session: { connectionHandle: unknown; threadId: string | null }
+      durableQueue: Map<string, { submissionId: string; request: { content: string } }>
+    }
+    internals.session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    internals.session.threadId = 'thread-1'
+    internals.durableQueue.set('u2', { submissionId: 'submission-2', request: { content: 'queued' } })
+
+    await expect(backend.rewindConversation('turn-2')).resolves.toEqual({
+      canRewind: false,
+      error: 'Cannot rewind while Codex queued messages are pending',
+    })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('forks before the target turn when reverting a legacy thread', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'thread/revert') throw new Error('thread/revert only supports paginated threads')
+      if (method === 'thread/fork') return { thread: { id: 'thread-forked' } }
+      return {}
+    })
+    const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-legacy'
+
+    await expect(backend.rewindConversation('turn-2')).resolves.toEqual({ canRewind: true, supportsCodeOnly: false })
+    expect(request).toHaveBeenNthCalledWith(1, 'thread/revert', { threadId: 'thread-legacy', beforeTurnId: 'turn-2' })
+    expect(request).toHaveBeenNthCalledWith(2, 'thread/fork', { threadId: 'thread-legacy', beforeTurnId: 'turn-2' })
+    expect(backend.getCurrentProviderSessionId()).toBe('thread-forked')
   })
 
   it('reloadPlugins returns false', async () => {

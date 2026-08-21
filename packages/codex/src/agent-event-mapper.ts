@@ -5,6 +5,11 @@
  * and process lifecycle; this mapper owns item state and message projection.
  */
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
+import {
+  readCodexAgentMessageDelivery,
+  readCodexErrorOverrides,
+  readCodexImageGenerationFailure,
+} from './protocol-v149'
 import type {
   AgentEvent,
   CodexCollabAgentState,
@@ -235,6 +240,10 @@ export function mapCodexThreadItem(
         id,
         type: 'agent_message',
         text: readString(rec.text) ?? (previous?.type === 'agent_message' ? previous.text : ''),
+        ...(readCodexAgentMessageDelivery(rec.delivery)
+          ?? (previous?.type === 'agent_message' ? previous.delivery : undefined)
+          ? { delivery: 'async' as const }
+          : {}),
       }
     case 'reasoning': {
       const text = readString(rec.text)
@@ -326,12 +335,14 @@ export function mapCodexThreadItem(
       const prev = previous?.type === 'image_generation' ? previous : null
       const revisedPrompt = readString(rec.revisedPrompt ?? rec.revised_prompt) ?? prev?.revisedPrompt
       const savedPath = readString(rec.savedPath ?? rec.saved_path) ?? prev?.savedPath
+      const failure = readCodexImageGenerationFailure(rec.failure) ?? prev?.failure
       return {
         id,
         type: 'image_generation',
         status: readString(rec.status) ?? prev?.status ?? 'in_progress',
         ...(revisedPrompt ? { revisedPrompt } : {}),
         ...(savedPath ? { savedPath } : {}),
+        ...(failure ? { failure } : {}),
         ...(prev?.generationMs !== undefined ? { generationMs: prev.generationMs } : {}),
       }
     }
@@ -459,7 +470,7 @@ function extractError(raw: unknown): string {
 export function deriveCodexFinalResponse(items: CodexThreadItem[]): string {
   for (let index = items.length - 1; index >= 0; index--) {
     const item = items[index]
-    if (item?.type === 'agent_message') return item.text
+    if (item?.type === 'agent_message' && item.delivery !== 'async') return item.text
   }
   return ''
 }
@@ -538,7 +549,11 @@ export function createCodexAgentEventMapper(
     if (completedTurnId) completedCompactionTurns.add(completedTurnId)
     activeCompaction = null
   }
-  const fail = (error: string, interrupted = false) => {
+  const fail = (
+    error: string,
+    interrupted = false,
+    errorOverrides: Omit<Partial<import('@superone/shared/agent-types').AgentErrorInfo>, 'raw'> = {},
+  ) => {
     if (terminal) return
     terminal = true
     if (activeCompaction) {
@@ -551,9 +566,10 @@ export function createCodexAgentEventMapper(
           type: 'message_error',
           messageId: options.messageId,
           error,
-          errorInfo: buildAgentErrorInfo(error, retriedErrors.length > 0
-            ? { retries: { attempts: retriedErrors.length } }
-            : {}),
+          errorInfo: buildAgentErrorInfo(error, {
+            ...(retriedErrors.length > 0 ? { retries: { attempts: retriedErrors.length } } : {}),
+            ...errorOverrides,
+          }),
         })
     finishStatus()
   }
@@ -623,14 +639,26 @@ export function createCodexAgentEventMapper(
         case 'item/agentMessage/delta':
         case 'item/agentMessageDelta': {
           const delta = readCodexDeltaText(params)
-          result.textDelta = delta || null
           const itemId = readCodexItemId(params)
           if (!itemId) break
           const previous = itemMap.get(itemId)
+          if (previous?.type !== 'agent_message' || previous.delivery !== 'async') {
+            result.textDelta = delta || null
+          }
           emitItem('updated', {
             id: itemId,
             type: 'agent_message',
             text: `${previous?.type === 'agent_message' ? previous.text : ''}${delta}`,
+            ...(previous?.type === 'agent_message' && previous.delivery === 'async' ? { delivery: 'async' } : {}),
+          })
+          break
+        }
+        case 'autoApprovalReview/strictReviewRequired': {
+          const turnId = readString(params.turnId) ?? currentTurnId ?? 'current'
+          emitItem('completed', {
+            id: `strict_review_${turnId}`,
+            type: 'error',
+            message: 'Codex requires strict safety review for this turn.',
           })
           break
         }
@@ -738,7 +766,7 @@ export function createCodexAgentEventMapper(
             break
           }
           result.error = extractError(params)
-          fail(result.error)
+          fail(result.error, false, readCodexErrorOverrides(params))
           break
         }
         case 'turn/completed':
@@ -748,7 +776,7 @@ export function createCodexAgentEventMapper(
           const status = readString(turn?.status) ?? readString(params.status) ?? 'completed'
           if (status === 'failed' || status === 'error') {
             result.error = extractError(turn?.error ?? params)
-            fail(result.error)
+            fail(result.error, false, readCodexErrorOverrides(turn?.error ?? params))
             break
           }
           if (status === 'interrupted' || status === 'cancelled') {

@@ -10,6 +10,8 @@ export function formatReasoningEffortLabel(value: string): string {
     case 'medium': return 'Medium'
     case 'high': return 'High'
     case 'xhigh': return 'Extra High'
+    case 'max': return 'Max'
+    case 'ultra': return 'Ultra'
     default: return value
   }
 }

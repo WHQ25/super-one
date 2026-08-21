@@ -3,8 +3,9 @@ import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } fr
 import { useAppStore } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useTranslation } from 'react-i18next'
-import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
+import { ArrowDown, GitFork, PenLine, Play, Smartphone, Trash2 } from 'lucide-react'
 import {
   catalogIdForSessionProvider,
   isCatalogHarnessDisabled,
@@ -42,6 +43,7 @@ import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -182,12 +184,15 @@ function ChatTranscript({
   liquidGlass,
 }: ChatTranscriptProps) {
   const scope = useSessionScope()
+  const { t } = useTranslation()
+  const activeProject = useChatStore((s) => s.activeProject)
   // Model ids arrive raw on the wire; display names live in the harness catalogs.
   const claudeModels = useChatStore(selectClaudeModels)
   const {
     messages, isCompacting, isRecapping, compactError, apiRetry,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
+    sessionProvider, preferredProvider,
     draftId,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -203,13 +208,20 @@ function ChatTranscript({
     awaitingAssistantReply: s.awaitingAssistantReply,
     acpModels: s.acpModels,
     draftId: s.draftId,
+    sessionProvider: s.sessionProvider,
+    preferredProvider: s.preferredProvider,
   })))
 
-  const { editQueuedMessage, deleteQueuedMessage, dismissCompactError } = useChatStore(useShallow((s) => ({
+  const { editQueuedMessage, deleteQueuedMessage, startQueuedMessages, dismissCompactError } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,
     deleteQueuedMessage: s.deleteQueuedMessage,
+    startQueuedMessages: s.startQueuedMessages,
     dismissCompactError: s.dismissCompactError,
   })))
+  const queueTarget = scope ?? undefined
+  const canStartCodexQueue = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
+    && sessionStatus !== 'streaming'
+    && !parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')
 
   const prevScrollHeightRef = useRef(0)
   const [expandLevel, setExpandLevel] = useState(0)
@@ -402,17 +414,22 @@ function ChatTranscript({
                 </div>
               )
             })}
-            {queuedMessages.map((msg) => (
+            {queuedMessages.map((msg, index) => (
               <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
                 <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
                 <div className="flex justify-end pr-1">
                   <div className="-mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/queued:opacity-100">
-                    <button onClick={() => editQueuedMessage(msg.id)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
+                    {index === 0 && canStartCodexQueue && (
+                      <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.start')} onClick={() => void startQueuedMessages(queueTarget)}>
+                        <Play className="size-3" />
+                      </IconButton>
+                    )}
+                    <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.edit')} onClick={() => editQueuedMessage(msg.id, queueTarget)}>
                       <PenLine className="size-3" />
-                    </button>
-                    <button onClick={() => deleteQueuedMessage(msg.id)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
+                    </IconButton>
+                    <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.delete')} onClick={() => deleteQueuedMessage(msg.id, queueTarget)}>
                       <Trash2 className="size-3" />
-                    </button>
+                    </IconButton>
                   </div>
                 </div>
               </div>

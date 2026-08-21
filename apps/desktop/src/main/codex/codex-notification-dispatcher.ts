@@ -103,6 +103,7 @@ export interface NotificationDispatcher {
 
 export interface NotificationDispatcherOptions {
   onSkillsChanged?: () => void
+  onQueueChanged?: (threadId: string) => void
 }
 
 export function createNotificationDispatcher(
@@ -193,6 +194,11 @@ export function createNotificationDispatcher(
         }
       }
       const threadId = extractThreadId(notif.params)
+      if (notif.method === 'thread/queue/changed' && threadId && options.onQueueChanged) {
+        try { options.onQueueChanged(threadId) } catch (err) {
+          log.warn('[codex] onQueueChanged callback threw:', err)
+        }
+      }
       const forkState = threadId ? forkStates.get(threadId) : undefined
       if (process.env.NODE_ENV === 'development' && (notif.method === 'mcpServer/elicitation/request' || notif.method.startsWith('applyExecApproval') || notif.method.startsWith('applyPatchApproval'))) {
         trace('codex.dispatch', 'approval_route', {

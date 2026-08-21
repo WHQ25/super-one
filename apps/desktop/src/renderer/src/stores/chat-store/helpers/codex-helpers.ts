@@ -279,7 +279,7 @@ export function getCodexHelpText(): string {
     '',
     'Notes:',
     '- Type a message directly to send it as a prompt',
-    '- During a running turn, new messages are sent as steered input (no need to wait)',
+    '- During a running turn, new messages are queued and run automatically (no need to wait)',
   ].join('\n')
 }
 

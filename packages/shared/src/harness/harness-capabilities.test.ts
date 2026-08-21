@@ -19,4 +19,13 @@ describe('HARNESS_CAPABILITIES', () => {
     expect(c.supportsTodos).toBe(true)
     expect(c.supportsSubagents).toBe(true)
   })
+
+  it('advertises the Codex experiences wired through app-server', () => {
+    const codex = HARNESS_CAPABILITIES.codex
+    expect(codex.supportsMcp).toBe(true)
+    expect(codex.supportsPlanMode).toBe(true)
+    expect(codex.supportsTodos).toBe(false)
+    expect(codex.supportsSubagents).toBe(false)
+    expect(codex.supportsCompact).toBe(true)
+  })
 })

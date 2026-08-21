@@ -188,7 +188,9 @@ describe('dispatchCodexRpc', () => {
     const spawnFn: CodexSpawnFn = vi.fn(() => {
       const child = createFakeChild()
       attachAutoResponder(child, {
-        'account/usage/read': () => ({
+        'account/usage/read': (params) => {
+          expect(params).toEqual({ threadId: 'thread-1' })
+          return {
           summary: {
             lifetimeTokens: 42,
             peakDailyTokens: 7,
@@ -196,7 +198,8 @@ describe('dispatchCodexRpc', () => {
             currentStreakDays: 1,
             longestStreakDays: 2,
           },
-        }),
+          }
+        },
       })
       return child as unknown as ChildProcessWithoutNullStreams
     })
@@ -209,12 +212,64 @@ describe('dispatchCodexRpc', () => {
       spawnFn,
     }
     await dispatchCodexRpc('codex.setAuth', { projectId: 'p1', mode: 'chatgpt' }, ctx)
-    const res = await dispatchCodexRpc('codex.getAccountUsage', { projectId: 'p1' }, ctx)
+    const res = await dispatchCodexRpc('codex.getAccountUsage', { projectId: 'p1', threadId: 'thread-1' }, ctx)
     expect(res?.error).toBeUndefined()
     expect(res?.result).toMatchObject({
       lifetimeTokens: 42,
       peakDailyTokens: 7,
     })
+  })
+
+  it('codex.getServerDiagnostics exposes app-server process gauges', async () => {
+    const spawnFn: CodexSpawnFn = vi.fn(() => {
+      const child = createFakeChild()
+      attachAutoResponder(child, {
+        'server/diagnostics': () => ({
+          process: { id: 42, residentMemoryBytes: 1024, physicalFootprintBytes: 2048 },
+          gauges: [{ name: 'threads', value: 3 }],
+        }),
+      })
+      return child as unknown as ChildProcessWithoutNullStreams
+    })
+    const ctx: CodexRpcContext = {
+      client: fakeClient(['environment:read']),
+      projects: fakeProjects(dir),
+      harnesses: fakeHarnesses(bin),
+      providers: null as never,
+      spawnFn,
+    }
+
+    const res = await dispatchCodexRpc('codex.getServerDiagnostics', { projectId: 'p1' }, ctx)
+
+    expect(res?.error).toBeUndefined()
+    expect(res?.result).toEqual({
+      process: { id: 42, residentMemoryBytes: 1024, physicalFootprintBytes: 2048 },
+      gauges: [{ name: 'threads', value: 3 }],
+    })
+  })
+
+  it('codex.getConfigRequirements exposes managed policy without dropping future fields', async () => {
+    const spawnFn: CodexSpawnFn = vi.fn(() => {
+      const child = createFakeChild()
+      attachAutoResponder(child, {
+        'configRequirements/read': () => ({
+          requirements: { allowManagedHooksOnly: true, futurePolicy: { enabled: true } },
+        }),
+      })
+      return child as unknown as ChildProcessWithoutNullStreams
+    })
+    const ctx: CodexRpcContext = {
+      client: fakeClient(['environment:read']),
+      projects: fakeProjects(dir),
+      harnesses: fakeHarnesses(bin),
+      providers: null as never,
+      spawnFn,
+    }
+
+    const res = await dispatchCodexRpc('codex.getConfigRequirements', { projectId: 'p1' }, ctx)
+
+    expect(res?.error).toBeUndefined()
+    expect(res?.result).toEqual({ allowManagedHooksOnly: true, futurePolicy: { enabled: true } })
   })
 
   it('codex.getAccountStatus reports the actual ChatGPT account', async () => {

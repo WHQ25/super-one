@@ -181,4 +181,38 @@ describe('Codex AgentEvent mapper', () => {
     ])
     expect(mapper.items()).toEqual([])
   })
+
+  it('keeps async agent delivery out of the inline final response', () => {
+    const events: AgentEvent[] = []
+    const mapper = createCodexAgentEventMapper({ messageId: 'm', emit: (event) => events.push(event) })
+    mapper.start('t')
+    mapper.apply({ method: 'item/started', params: { item: { id: 'bg', type: 'agentMessage', text: '', delivery: 'async' } } })
+    expect(mapper.apply({ method: 'item/agentMessage/delta', params: { itemId: 'bg', delta: 'background' } }).textDelta).toBeNull()
+    mapper.apply({ method: 'item/completed', params: { item: { id: 'bg', type: 'agentMessage', text: 'background', delivery: 'async' } } })
+    mapper.apply({ method: 'item/completed', params: { item: { id: 'inline', type: 'agentMessage', text: 'answer' } } })
+    mapper.apply({ method: 'turn/completed', params: { turn: { id: 'turn', status: 'completed' } } })
+    const complete = events.find((event) => event.type === 'message_complete')
+    expect(complete?.metadata?.codex?.finalResponse).toBe('answer')
+    expect(mapper.items()[0]).toMatchObject({ delivery: 'async', text: 'background' })
+  })
+
+  it('preserves 149 image failures and structured safety errors', () => {
+    expect(mapCodexThreadItem({
+      id: 'image',
+      type: 'imageGeneration',
+      status: 'failed',
+      failure: { type: 'usageLimitExceeded', limitId: 'images', resetsAt: 42 },
+    })).toMatchObject({ failure: { type: 'usageLimitExceeded', limitId: 'images', resetsAt: 42 } })
+
+    const events: AgentEvent[] = []
+    const mapper = createCodexAgentEventMapper({ messageId: 'm', emit: (event) => events.push(event) })
+    mapper.start('t')
+    mapper.apply({
+      method: 'error',
+      params: { message: 'review denied', codexErrorInfo: 'misalignmentPolicyViolation' },
+    })
+    expect(events.find((event) => event.type === 'message_error')).toMatchObject({
+      errorInfo: { code: 'misalignmentPolicyViolation' },
+    })
+  })
 })

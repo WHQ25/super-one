@@ -762,7 +762,7 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 })
 
 describe('sendMessageImpl: queued send (streaming)', () => {
-  it('queues the message with priority=next and does not rollback awaitingAssistantReply on failure', async () => {
+  it('removes the optimistic queued bubble when queue insertion fails', async () => {
     seedProject('/proj', 'sid-1', {
       status: 'streaming',
       awaitingAssistantReply: true,
@@ -776,8 +776,50 @@ describe('sendMessageImpl: queued send (streaming)', () => {
     expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({ priority: 'next' }))
     const sess = getActiveSession('/proj')
     expect(sess.awaitingAssistantReply).toBe(true)
-    expect(sess.queuedMessages).toHaveLength(1)
+    expect(sess.queuedMessages).toHaveLength(0)
     expect(sess.messages).toHaveLength(0)
+  })
+
+  it('routes a normal Codex mid-stream send through the durable queue', async () => {
+    seedProject('/proj', 'sid-1', {
+      status: 'streaming',
+      awaitingAssistantReply: true,
+      sessionProvider: 'codex',
+      preferredProvider: 'codex',
+      selectedCodexModel: 'gpt-5.6',
+      selectedCodexReasoningEffort: 'max',
+      selectedCodexPermissionPreset: 'auto-review',
+      _providerSessionId: 'thread-1',
+    })
+    useChatStore.setState((state) => ({
+      projectSessions: {
+        ...state.projectSessions,
+        '/proj': {
+          ...state.projectSessions['/proj'],
+          codexModels: [{
+            id: 'gpt-5.6',
+            name: 'GPT-5.6',
+            description: '',
+            supportedReasoningEfforts: [{ value: 'max', description: '' }],
+          }],
+        },
+      },
+    }))
+
+    await useChatStore.getState().sendMessage('queued codex')
+
+    expect(mockRunCodexCommand).not.toHaveBeenCalled()
+    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
+      provider: 'codex',
+      model: 'gpt-5.6',
+      priority: 'next',
+      codex: expect.objectContaining({
+        mode: 'run',
+        prompt: 'queued codex',
+        threadId: 'thread-1',
+      }),
+    }))
+    expect(getActiveSession('/proj').queuedMessages).toHaveLength(1)
   })
 })
 

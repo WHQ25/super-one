@@ -9,6 +9,7 @@ import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay, getToolLabel, parseMcpToolName } from './tool-display'
+import { deviceToolVerbKey } from './device-tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
@@ -21,7 +22,6 @@ import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromp
 import { SessionCleanupConfirmPromptContainer } from './SessionCleanupConfirmPrompt'
 import { AutomationConfirmPromptContainer } from './AutomationConfirmPrompt'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
-import { DeviceLaunchConfirmPrompt } from './DeviceLaunchConfirmPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
@@ -142,7 +142,6 @@ export function PermissionPrompt() {
   const isComputerUseGrant = pendingPermission?.requestKind === 'computer_use_grant'
   const isSessionCleanupConfirm = pendingPermission?.requestKind === 'session_cleanup_confirm'
   const isAutomationConfirm = pendingPermission?.requestKind === 'automation_confirm'
-  const isDeviceLaunchConfirm = pendingPermission?.requestKind === 'device_launch_confirm'
   const isSelfManagedConfirm =
     isVideoGenConfirm
     || isConfigConfirm
@@ -150,7 +149,6 @@ export function PermissionPrompt() {
     || isComputerUseGrant
     || isSessionCleanupConfirm
     || isAutomationConfirm
-    || isDeviceLaunchConfirm
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
@@ -416,22 +414,6 @@ export function PermissionPrompt() {
     )
   }
 
-  if (isDeviceLaunchConfirm && pendingPermission) {
-    return (
-      <DeviceLaunchConfirmPrompt
-        request={pendingPermission}
-        onApprove={(deviceId) => {
-          if (!requestId) return
-          respondToPermission(requestId, true, undefined, undefined, undefined, undefined, { deviceId })
-        }}
-        onDeny={() => {
-          if (!requestId) return
-          respondToPermission(requestId, false)
-        }}
-      />
-    )
-  }
-
   if (isElicitation) {
     const message = pendingPermission.message ?? `Allow ${pendingPermission.serverName ?? 'tool'}?`
     const subtitle = pendingPermission.subtitle
@@ -503,6 +485,12 @@ export function PermissionPrompt() {
     ? suggestions?.map((s) => (s.type === 'setMode' && s.mode === 'acceptEdits' ? { ...s, mode: 'auto' } : s))
     : suggestions
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
+  // A first-party tool keeps the words its own chat row uses. Only the generic
+  // fallback is shared with third-party MCP servers.
+  const deviceLabelKey = deviceToolVerbKey(toolName ?? '', input)
+  const toolLabel = deviceLabelKey
+    ? t(`chat.toolBlock.device.${deviceLabelKey}`)
+    : getToolLabel(toolName ?? '')
   const isBash = toolName === 'Bash'
   const isSandboxNetwork = toolName === 'SandboxNetworkAccess'
   const hasSuggestionRow = !isCodexDecisionPrompt && !!suggestions && suggestions.length > 0
@@ -534,7 +522,7 @@ export function PermissionPrompt() {
           ) : miniAppInfo ? (
             <MiniAppToolLabel info={miniAppInfo} />
           ) : (
-            <span className="text-xs font-medium text-foreground">{getToolLabel(toolName ?? '')}</span>
+            <span className="text-xs font-medium text-foreground">{toolLabel}</span>
           )}
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {collapsedSummary}
@@ -586,7 +574,7 @@ export function PermissionPrompt() {
                             {miniAppInfo ? (
                               <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
                             ) : (
-                              <span className="font-medium text-foreground">{getToolLabel(toolName ?? '')}</span>
+                              <span className="font-medium text-foreground">{toolLabel}</span>
                             )}
                             {isBash && typeof input.description === 'string' && input.description && (
                               <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>

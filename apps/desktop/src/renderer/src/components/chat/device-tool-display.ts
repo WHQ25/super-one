@@ -6,9 +6,13 @@
  * chrome only.
  */
 
-export type DeviceOp = 'snapshot' | 'query' | 'act' | 'wait_for'
+import { parseMcpToolName } from './tool-display'
 
-const DEVICE_OPS = new Set<DeviceOp>(['snapshot', 'query', 'act', 'wait_for'])
+export type DeviceOp = 'list' | 'request_control' | 'snapshot' | 'query' | 'act' | 'wait_for'
+
+const DEVICE_OPS = new Set<DeviceOp>([
+  'list', 'request_control', 'snapshot', 'query', 'act', 'wait_for',
+])
 
 export type DeviceActOutcome = 'worked' | 'didnt' | 'unknown'
 export type DeviceWaitStatus = 'preexisting' | 'verified' | 'timeout'
@@ -18,8 +22,29 @@ export type DeviceOrientation =
   | 'portrait-upside-down'
   | 'landscape-right'
 
+/** One device as the catalog row renders it. */
+export interface DeviceListEntry {
+  id: string
+  name: string
+  platform?: string
+  running?: boolean
+  busy?: boolean
+  controlled?: boolean
+}
+
+export interface DeviceListGroup {
+  id: string
+  name: string
+  devices: DeviceListEntry[]
+}
+
 export interface DeviceResultInfo {
-  status: 'ok' | 'error' | 'neutral'
+  /**
+   * `denied` is a user decision, not a fault. The device tools report it as an error
+   * on the wire because the agent must stop and read the feedback, but the row has to
+   * say "you said no" rather than "something broke".
+   */
+  status: 'ok' | 'error' | 'denied' | 'neutral'
   errorText?: string
   /** Only `mode=visual|fused` returns one; the row shows a thumbnail affordance. */
   imagePath?: string
@@ -36,6 +61,36 @@ export interface DeviceResultInfo {
   /** False when the screen was still animating, so the geometry is approximate. */
   settled?: boolean
   truncated?: boolean
+  /** `device_list` only — the catalog, as offered. */
+  groups?: DeviceListGroup[]
+  deviceCount?: number
+  runningCount?: number
+  /** `device_request_control` only — the session already held this device. */
+  alreadyControlled?: boolean
+}
+
+/**
+ * The same label key from a qualified tool name, for surfaces outside the block.
+ *
+ * The permission prompt has to name these tools too, and its generic path would give
+ * it the third-party MCP fallback — `device request control`, the wire name with its
+ * underscores swapped out. That reads as an identifier, not a title, and says
+ * something different from the row the same call draws a moment later.
+ *
+ * Null for anything that is not one of ours, which leaves that fallback in place
+ * where it belongs.
+ */
+export function deviceToolVerbKey(
+  toolName: string,
+  params: Record<string, unknown>,
+  streaming = false,
+): string | null {
+  const mcp = parseMcpToolName(toolName)
+  // Server-scoped on purpose: a third-party MCP server may ship its own device_* tool
+  // and it is not this one.
+  if (!mcp || mcp.serverName !== 'superone') return null
+  const op = getDeviceOp(mcp.mcpToolName)
+  return op ? deviceVerbKey(op, params, streaming) : null
 }
 
 export function getDeviceOp(mcpToolName: string): DeviceOp | null {
@@ -84,6 +139,9 @@ export function deviceVerbKey(
   params: Record<string, unknown>,
   streaming = false,
 ): string {
+  if (op === 'list') return streaming ? 'listing' : 'list'
+  if (op === 'request_control') return streaming ? 'requestingControl' : 'requestControl'
+
   if (op === 'query') {
     const queryOp = params.op === 'search' || params.op === 'inspect' ? params.op : 'query'
     return streaming
@@ -195,6 +253,10 @@ export function formatDeviceCondition(value: unknown): string {
  */
 export function deviceInputSummary(op: DeviceOp, params: Record<string, unknown>): string {
   switch (op) {
+    case 'list':
+      return ''
+    case 'request_control':
+      return stringValue(params.device)
     case 'snapshot':
       return params.mode != null && params.mode !== 'semantic' ? stringValue(params.mode) : ''
     case 'query': {
@@ -213,6 +275,16 @@ export function deviceInputSummary(op: DeviceOp, params: Record<string, unknown>
     case 'wait_for':
       return formatDeviceCondition(params.condition)
   }
+}
+
+/**
+ * The machine code an error result leads with, before `cleanError` strips it.
+ *
+ * Read rather than pattern-matched on the message, because the message is the one
+ * part of an error that is meant to be rewritten.
+ */
+function errorCode(result: string | undefined): string | undefined {
+  return /^\[Error\]\s*([A-Z_]+):/.exec(result ?? '')?.[1]
 }
 
 function cleanError(result: string | undefined): string | undefined {
@@ -244,7 +316,12 @@ export function parseDeviceResult(
   result: string | undefined,
   isError: boolean,
 ): DeviceResultInfo {
-  if (isError) return { status: 'error', errorText: cleanError(result) }
+  if (isError) {
+    return {
+      status: errorCode(result) === 'DECLINED' ? 'denied' : 'error',
+      errorText: cleanError(result),
+    }
+  }
   if (!result) return { status: 'neutral' }
 
   let parsed: unknown
@@ -261,6 +338,30 @@ export function parseDeviceResult(
     ...(orientationOf(obj.orientation) ? { orientation: orientationOf(obj.orientation)! } : {}),
     ...(obj.settled === false ? { settled: false } : {}),
     ...(obj.truncated === true ? { truncated: true } : {}),
+  }
+
+  if (op === 'list') {
+    const controlled = asRecord(obj.controlled)
+    const groups = deviceListGroups(obj)
+    const devices = groups.flatMap((group) => group.devices)
+    return {
+      status: 'ok',
+      groups,
+      // The machine-wide total when the reply is the overview, otherwise what this
+      // tier actually holds — the row's job is to say how big the answer was.
+      deviceCount: typeof obj.total === 'number' ? obj.total : devices.length,
+      runningCount: devices.filter((device) => device.running).length,
+      ...(typeof controlled?.name === 'string' ? { device: controlled.name } : {}),
+    }
+  }
+
+  if (op === 'request_control') {
+    const device = asRecord(obj.device)
+    return {
+      status: 'ok',
+      ...(typeof device?.name === 'string' ? { device: device.name } : {}),
+      ...(obj.alreadyControlled === true ? { alreadyControlled: true } : {}),
+    }
   }
 
   if (op === 'snapshot') {
@@ -298,6 +399,68 @@ export function parseDeviceResult(
     ...common,
     ...(waitStatus ? { waitStatus } : {}),
     ...(typeof obj.waitedMs === 'number' ? { waitedMs: obj.waitedMs } : {}),
+  }
+}
+
+function toDeviceEntries(value: unknown, fallbackName?: string): DeviceListEntry[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => toDeviceEntry(entry, fallbackName))
+    .filter((device): device is DeviceListEntry => device !== null)
+}
+
+/**
+ * The tiers `device_list` can answer with, as one list of groups to draw.
+ *
+ * Which tier came back is read off the payload rather than the request: the row only
+ * ever sees the result, and each tier names its own shape — `running`/`recent` for
+ * the overview, `models` for a kind, `devices` for a model.
+ */
+function deviceListGroups(obj: Record<string, unknown>): DeviceListGroup[] {
+  if (Array.isArray(obj.models)) {
+    const models = (obj.models as unknown[])
+      .map((entry) => {
+        const model = asRecord(entry)
+        if (!model || typeof model.model !== 'string') return null
+        return {
+          id: model.model,
+          name: model.model,
+          // The newest runtime stands in for the platform column: it is what a bare
+          // model name resolves to, so it is the one the user is really choosing.
+          ...(typeof model.latest === 'string' ? { platform: model.latest } : {}),
+          ...(typeof model.running === 'number' && model.running > 0 ? { running: true } : {}),
+        }
+      })
+      .filter((entry): entry is DeviceListEntry => entry !== null)
+    const name = stringValue(obj.name) || stringValue(obj.kind)
+    return models.length > 0 ? [{ id: 'models', name, devices: models }] : []
+  }
+
+  if (Array.isArray(obj.devices)) {
+    const model = stringValue(obj.model)
+    const devices = toDeviceEntries(obj.devices, model)
+    return devices.length > 0 ? [{ id: 'devices', name: model, devices }] : []
+  }
+
+  return [
+    { id: 'running', name: '', devices: toDeviceEntries(obj.running) },
+    { id: 'recent', name: '', devices: toDeviceEntries(obj.recent) },
+  ].filter((group) => group.devices.length > 0)
+}
+
+function toDeviceEntry(value: unknown, fallbackName?: string): DeviceListEntry | null {
+  const device = asRecord(value)
+  if (!device) return null
+  // A model tier drops the name from every row — it is the heading — so the heading
+  // is what those rows are called here.
+  const name = typeof device.name === 'string' ? device.name : fallbackName
+  if (!name) return null
+  return {
+    id: stringValue(device.id) || name,
+    name,
+    ...(typeof device.platform === 'string' ? { platform: device.platform } : {}),
+    ...(device.running === true ? { running: true } : {}),
+    ...(device.busy === true ? { busy: true } : {}),
+    ...(device.controlled === true ? { controlled: true } : {}),
   }
 }
 

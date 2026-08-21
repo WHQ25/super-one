@@ -264,3 +264,30 @@ describe('getToolLabel', () => {
     expect(getToolLabel('SomeCustomTool')).toBe('Some Custom Tool')
   })
 })
+
+describe('getToolDisplay for device tools', () => {
+  it('summarises a control request with the device and the agent\'s reason', () => {
+    // device_request_control has no bespoke prompt component — this summary is the
+    // only thing telling the user which device they are about to hand over.
+    expect(getToolDisplay('mcp__superone__device_request_control', {
+      device: 'iPhone 17 Pro Max',
+      platform: 'iOS 26.4',
+      description: 'Drive the dev build',
+    })).toEqual({
+      icon: 'smartphone',
+      // The runtime is not decoration: this machine has the same model on five of
+      // them, so the name alone asks the user to approve blind.
+      summary: 'iPhone 17 Pro Max · iOS 26.4 · Drive the dev build',
+    })
+  })
+
+  it('stays quiet while the input is still streaming in', () => {
+    expect(getToolDisplay('mcp__superone__device_snapshot', {}))
+      .toEqual({ icon: 'smartphone', summary: '' })
+  })
+
+  it('leaves a third-party device_* tool on the generic MCP row', () => {
+    expect(getToolDisplay('mcp__other__device_request_control', { device: 'x' }))
+      .toEqual({ icon: 'plug', summary: '' })
+  })
+})

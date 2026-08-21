@@ -40,7 +40,7 @@ import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mcp/session-archive-tools'
 import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automation-tools'
-import { resolveDeviceLaunchConfirm, rejectDeviceLaunchConfirm } from '../device-agent/launch-confirm'
+import { resolveDeviceControlConfirm, rejectDeviceControlConfirm } from '../device-agent/control-confirm'
 import { nextEventSeq } from './event-seq'
 import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
 import { asEffortLevel } from '../acp/acp-config'
@@ -803,7 +803,7 @@ export class Session implements SessionContract {
       if (rejectVideoConfirm(requestId, 'User cancelled')) return true
       if (rejectSessionCleanupConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectAutomationConfirm(requestId, reason ?? 'User cancelled')) return true
-      if (rejectDeviceLaunchConfirm(requestId, reason ?? 'User cancelled')) return true
+      if (rejectDeviceControlConfirm(requestId, reason ?? 'User cancelled')) return true
     } else if (resolveSessionAgentsConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveMiniappCallConfirm(
@@ -821,12 +821,7 @@ export class Session implements SessionContract {
       return true
     } else if (resolveAutomationConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
-    } else if (resolveDeviceLaunchConfirm(
-      requestId,
-      allow ? 'accept' : 'decline',
-      formAnswers,
-      reason,
-    )) {
+    } else if (resolveDeviceControlConfirm(requestId, allow ? 'accept' : 'decline', reason)) {
       return true
     }
     return this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)

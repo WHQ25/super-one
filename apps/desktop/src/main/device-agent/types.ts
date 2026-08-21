@@ -128,6 +128,13 @@ export class DeviceAgentError extends Error {
 
 export type DeviceAgentErrorCode =
   | 'ABORTED'
+  /**
+   * The user was asked and said no. Its own code rather than a NO_DEVICE variant so
+   * the transcript can show it as a decision the user made instead of as a fault,
+   * which is the difference between a row the user recognizes and one that looks
+   * like the app broke.
+   */
+  | 'DECLINED'
   | 'NO_DEVICE'
   | 'STALE_STATE'
   | 'UNKNOWN_REF'

@@ -8,6 +8,7 @@ import {
   deviceNeedsAttention,
   deviceVerbKey,
   parseDeviceResult,
+  type DeviceListGroup,
   type DeviceOp,
   type DeviceResultInfo,
 } from './device-tool-display'
@@ -99,9 +100,10 @@ export function DeviceToolBlock({
     [op, result, isError],
   )
 
-  const failed = info.status === 'error' || !!isDenied
+  const declined = isDenied || info.status === 'denied'
+  const failed = info.status === 'error' || declined
   const needsAttention = !failed && deviceNeedsAttention(info)
-  const tone: ToolRowTone = isDenied ? 'denied' : info.status === 'error' ? 'error'
+  const tone: ToolRowTone = declined ? 'denied' : info.status === 'error' ? 'error'
     : needsAttention ? 'warning' : 'default'
   const label = t(`chat.toolBlock.device.${deviceVerbKey(op, params, isStreaming)}`)
 
@@ -121,15 +123,23 @@ export function DeviceToolBlock({
   // agent that skipped it, not the primary reading.
   const description = typeof params.description === 'string' ? params.description.trim() : ''
   const primary = failed
-    ? (isDenied ? description : info.errorText || description)
+    ? (info.errorText || description)
     : description || deviceInputSummary(op, params)
 
   const status = !isStreaming && !failed ? statusText(op, info, t) : null
   const hasScreenshot = !!info.imagePath && !isStreaming && !failed
+  const hasCatalog = op === 'list' && !isStreaming && !failed && (info.groups?.length ?? 0) > 0
+  // A rendered body is the reading; the raw JSON stays one more click away rather
+  // than competing with it.
+  const rich = hasScreenshot || hasCatalog
   const hasResultJson = !isStreaming && !!result
   // `reason` explains a didnt; without it the user sees a warning row and no cause.
   const explanation = info.failure || (info.outcome === 'didnt' ? info.reason : undefined)
-  const expandable = !isStreaming && !!result
+  // The control request's whole story is its header -- the permission prompt already
+  // showed the user what they were approving, and the result body is prose written
+  // for the agent. A refusal is the exception: its reason has to be readable
+  // somewhere, and the header truncates.
+  const expandable = !isStreaming && !!result && (op !== 'request_control' || failed)
 
   return (
     <ToolRow
@@ -146,6 +156,7 @@ export function DeviceToolBlock({
               {explanation}
             </span>
           )}
+          {expanded && hasCatalog && info.groups && <DeviceCatalog groups={info.groups} />}
           {expanded && hasScreenshot && info.imagePath && (
             <ToolScreenshotView
               path={info.imagePath}
@@ -153,7 +164,7 @@ export function DeviceToolBlock({
               unavailableLabel={t('chat.toolBlock.device.screenshotUnavailable')}
             />
           )}
-          {expanded && hasScreenshot && hasResultJson && result && (
+          {expanded && rich && hasResultJson && result && (
             <div className="rounded bg-muted/30">
               <CollapsedJsonRow
                 expanded={jsonExpanded}
@@ -167,7 +178,7 @@ export function DeviceToolBlock({
               )}
             </div>
           )}
-          {expanded && !hasScreenshot && result && <PrettyJSONCodeBlock text={result} />}
+          {expanded && !rich && result && <PrettyJSONCodeBlock text={result} />}
         </div>
       ) : undefined}
       trailing={(
@@ -199,7 +210,7 @@ export function DeviceToolBlock({
         </div>
       )}
     >
-      <ToolName streaming={isStreaming && !isDenied} tone={tone}>
+      <ToolName streaming={isStreaming && !declined} tone={tone}>
         {isStreaming ? `${label}…` : label}
       </ToolName>
       {primary ? <ToolSummary>{primary}</ToolSummary> : null}
@@ -208,6 +219,63 @@ export function DeviceToolBlock({
           status mid-row. */}
       <span className="flex-1" />
     </ToolRow>
+  )
+}
+
+/**
+ * The catalog `device_list` returned, as something a person can pick from.
+ *
+ * Running comes first from the tool and stays first here, because attaching to a
+ * booted simulator is instant while a cold one costs a ~20s boot -- so the order is
+ * information, not decoration, and re-sorting it in the UI would throw that away.
+ */
+/**
+ * Headings the tool does not send.
+ *
+ * The kind and model tiers head their group with a name from the payload — "iPhone",
+ * "iPhone 17 Pro Max" — which is already the right word in any language. The overview
+ * groups things by why they are worth offering, and that has to be translated.
+ */
+const GROUP_LABEL_KEYS: Record<string, string | undefined> = {
+  running: 'chat.toolBlock.device.running',
+  recent: 'chat.toolBlock.device.recentlyUsed',
+}
+
+function DeviceCatalog({ groups }: { groups: DeviceListGroup[] }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-col gap-2">
+      {groups.map((group) => (
+        <div key={group.id} className="flex flex-col gap-1">
+          <span className="font-medium uppercase tracking-wide text-muted-foreground/70">
+            {GROUP_LABEL_KEYS[group.id] ? t(GROUP_LABEL_KEYS[group.id]!) : group.name}
+          </span>
+          {group.devices.map((device) => (
+            <div key={device.id} className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  device.running ? 'bg-success' : 'bg-muted-foreground/30',
+                )}
+                aria-label={t(device.running
+                  ? 'chat.toolBlock.device.running'
+                  : 'chat.toolBlock.device.stopped')}
+              />
+              <span className="min-w-0 truncate text-foreground">{device.name}</span>
+              {device.platform && (
+                <span className="shrink-0 text-muted-foreground/70">{device.platform}</span>
+              )}
+              {device.controlled && (
+                <span className="shrink-0 text-primary">{t('chat.toolBlock.device.controlled')}</span>
+              )}
+              {device.busy && (
+                <span className="shrink-0 text-warning">{t('chat.toolBlock.device.busy')}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -224,6 +292,20 @@ function statusText(
   info: DeviceResultInfo,
   t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
+  if (op === 'list') {
+    if (info.deviceCount == null) return ''
+    return info.deviceCount === 0
+      ? t('chat.toolBlock.device.noDevices')
+      : t('chat.toolBlock.device.deviceCount', { count: info.deviceCount })
+  }
+  if (op === 'request_control') {
+    // The device name, not a word about the outcome: which device was handed over is
+    // the one thing the label cannot say and the user cannot infer.
+    return [
+      info.device,
+      info.alreadyControlled ? t('chat.toolBlock.device.alreadyControlled') : '',
+    ].filter(Boolean).join(' · ')
+  }
   if (op === 'act') {
     return info.outcome && info.outcome !== 'worked'
       ? t(`chat.toolBlock.device.outcome.${info.outcome}`)

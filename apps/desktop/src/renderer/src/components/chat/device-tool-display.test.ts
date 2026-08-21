@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   deviceInputSummary,
+  deviceToolVerbKey,
   deviceNeedsAttention,
   deviceVerbKey,
   formatDeviceCondition,
@@ -8,10 +9,31 @@ import {
   parseDeviceResult,
 } from './device-tool-display'
 
+describe('deviceToolVerbKey', () => {
+  it('names our own device tools so the permission prompt can too', () => {
+    expect(deviceToolVerbKey('mcp__superone__device_request_control', {})).toBe('requestControl')
+    expect(deviceToolVerbKey('mcp__superone__device_list', {})).toBe('list')
+    expect(deviceToolVerbKey('mcp__superone__device_act', {
+      actions: [{ type: 'tap', x: 0.5, y: 0.5 }],
+    })).toBe('tap')
+  })
+
+  it('leaves everything else on the generic MCP label', () => {
+    // Same bare name, different server: not ours to title.
+    expect(deviceToolVerbKey('mcp__other__device_request_control', {})).toBeNull()
+    expect(deviceToolVerbKey('mcp__superone__browser_navigate', {})).toBeNull()
+    expect(deviceToolVerbKey('Bash', {})).toBeNull()
+  })
+})
+
 describe('device tool op routing', () => {
-  it('claims the four device tools and nothing that merely starts the same way', () => {
+  it('claims every device tool and nothing that merely starts the same way', () => {
     expect(getDeviceOp('device_snapshot')).toBe('snapshot')
     expect(getDeviceOp('device_wait_for')).toBe('wait_for')
+    // Both halves of the discovery/redeem pair. Missing either drops it onto the
+    // generic MCP row, which says "superone · device list" and nothing else.
+    expect(getDeviceOp('device_list')).toBe('list')
+    expect(getDeviceOp('device_request_control')).toBe('request_control')
     // A future `device_*` tool must not silently inherit this family's row.
     expect(getDeviceOp('device_install_app')).toBeNull()
     expect(getDeviceOp('computer_snapshot')).toBeNull()
@@ -160,5 +182,125 @@ describe('device tool result parsing', () => {
     const info = parseDeviceResult('act', JSON.stringify({ outcome: 'maybe' }), false)
     expect(info.outcome).toBeUndefined()
     expect(deviceNeedsAttention(info)).toBe(false)
+  })
+})
+
+describe('device catalog rows', () => {
+  it('draws the overview as running-then-recent, and reports the machine-wide total', () => {
+    const info = parseDeviceResult('list', JSON.stringify({
+      controlled: { id: 'a', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+      running: [
+        { id: 'a', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4', running: true, controlled: true },
+        { id: 'b', name: 'iPhone 17', platform: 'iOS 26.4', running: true, busy: true },
+      ],
+      recent: [{ id: 'c', name: 'iPad Pro 13-inch', platform: 'iOS 18.0' }],
+      kinds: [{ kind: 'iphone', name: 'iPhone', models: 8, devices: 74 }],
+      total: 117,
+      note: 'ready',
+    }), false)
+
+    expect(info.groups?.map((group) => group.id)).toEqual(['running', 'recent'])
+    // The count is the machine, not the rows: three devices are drawn, 117 exist, and
+    // the row saying "3" would misreport what the agent is choosing from.
+    expect(info.deviceCount).toBe(117)
+    expect(info.runningCount).toBe(2)
+    expect(info.device).toBe('iPhone 17 Pro Max')
+    expect(info.groups?.[0]?.devices[1]).toMatchObject({ name: 'iPhone 17', busy: true })
+    // Absent flags stay absent rather than becoming `false`, so the row can tell
+    // "not running" from "the tool did not say".
+    expect(info.groups?.[1]?.devices[0]).not.toHaveProperty('running')
+  })
+
+  it('drops an overview section that has nothing in it', () => {
+    const info = parseDeviceResult('list', JSON.stringify({
+      controlled: null,
+      running: [],
+      kinds: [{ kind: 'iphone', name: 'iPhone', models: 8, devices: 74 }],
+      total: 74,
+    }), false)
+
+    expect(info.groups).toEqual([])
+    expect(info.deviceCount).toBe(74)
+  })
+
+  it('draws the kind tier as models, headed by the kind and labelled with the newest runtime', () => {
+    const info = parseDeviceResult('list', JSON.stringify({
+      kind: 'iphone',
+      name: 'iPhone',
+      models: [
+        { model: 'iPhone 17 Pro Max', devices: 5, latest: 'iOS 26.5', running: 1 },
+        { model: 'iPhone 16', devices: 3, latest: 'iOS 18.0' },
+      ],
+    }), false)
+
+    expect(info.groups?.[0]).toMatchObject({ id: 'models', name: 'iPhone' })
+    expect(info.groups?.[0]?.devices[0]).toMatchObject({
+      id: 'iPhone 17 Pro Max', name: 'iPhone 17 Pro Max', platform: 'iOS 26.5', running: true,
+    })
+    // A model nobody is running must not light the dot.
+    expect(info.groups?.[0]?.devices[1]).not.toHaveProperty('running')
+  })
+
+  it('names the model tier rows after their heading, since the tool drops the repeat', () => {
+    const info = parseDeviceResult('list', JSON.stringify({
+      model: 'iPhone 17 Pro Max',
+      devices: [
+        { id: 'newest', platform: 'iOS 26.5', running: true },
+        { id: 'renamed', platform: 'iOS 18.0', name: 'checkout rig' },
+      ],
+    }), false)
+
+    expect(info.groups?.[0]).toMatchObject({ id: 'devices', name: 'iPhone 17 Pro Max' })
+    expect(info.groups?.[0]?.devices[0]).toMatchObject({ id: 'newest', name: 'iPhone 17 Pro Max' })
+    expect(info.groups?.[0]?.devices[1]).toMatchObject({ id: 'renamed', name: 'checkout rig' })
+    expect(info.deviceCount).toBe(2)
+  })
+
+  it('survives a catalog whose sections are missing or malformed', () => {
+    expect(parseDeviceResult('list', JSON.stringify({ running: null }), false).deviceCount).toBe(0)
+    expect(parseDeviceResult('list', JSON.stringify({
+      running: [null, 'nope', { platform: 'iOS 26.4' }],
+    }), false).groups).toEqual([])
+    expect(parseDeviceResult('list', JSON.stringify({
+      models: [null, { devices: 2 }],
+    }), false).groups).toEqual([])
+  })
+
+  it('reads back which device a control request bound, and whether it had to ask', () => {
+    const granted = parseDeviceResult('request_control', JSON.stringify({
+      controlled: true,
+      alreadyControlled: true,
+      device: { id: 'a', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+    }), false)
+
+    expect(granted.device).toBe('iPhone 17 Pro Max')
+    expect(granted.alreadyControlled).toBe(true)
+  })
+
+  it('shows a refused request as the user\'s decision, not as a fault', () => {
+    // DECLINED and NO_DEVICE both arrive as errors on the wire; only the code says
+    // which one the user is looking at.
+    const declined = parseDeviceResult(
+      'request_control',
+      '[Error] DECLINED: The user declined to hand over iPhone 17 Pro Max. They said: use the iPad.',
+      true,
+    )
+    expect(declined.status).toBe('denied')
+    expect(declined.errorText).toMatch(/use the iPad/)
+
+    const broken = parseDeviceResult('request_control', '[Error] NO_DEVICE: No simulators exist.', true)
+    expect(broken.status).toBe('error')
+  })
+
+  it('falls back to the device the agent asked for while the request is still open', () => {
+    expect(deviceInputSummary('request_control', { device: '427A175E' })).toBe('427A175E')
+    expect(deviceInputSummary('list', {})).toBe('')
+  })
+
+  it('uses the discovery verbs so the row does not read as an action on the device', () => {
+    expect(deviceVerbKey('list', {})).toBe('list')
+    expect(deviceVerbKey('list', {}, true)).toBe('listing')
+    expect(deviceVerbKey('request_control', {})).toBe('requestControl')
+    expect(deviceVerbKey('request_control', {}, true)).toBe('requestingControl')
   })
 })

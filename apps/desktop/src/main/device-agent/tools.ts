@@ -89,20 +89,37 @@ const descriptionField = {
 
 const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: Record<string, ZodTypeAny> }> = [
   {
-    name: 'device_request_launch',
+    name: 'device_list',
     description:
-      'Ask the user to hand this session a device, and wait for their answer. '
-      + 'Every other device_* tool needs one and fails with NO_DEVICE until this succeeds — call it first, '
-      + 'not after a failure. The user picks which device and approves it; you cannot choose for them. '
+      'Browse the devices this machine can offer, one tier at a time — a dev machine holds '
+      + 'over a hundred simulators, so this never dumps them all. No arguments: what is running '
+      + '(attaching is instant; a cold boot costs ~20s), what this project used before, and which '
+      + 'kinds exist. kind: that kind\'s models. model: that model\'s devices, one per runtime, '
+      + 'with the ids. Prefer a running or recent device; ids only matter when you need a specific '
+      + 'runtime, since device_request_control also takes a model name and picks its newest. '
+      + 'Free and side-effect-free — it grants nothing and boots nothing.',
+    shape: {
+      kind: z.string().optional()
+        .describe('Narrow to one family: "iphone", "ipad", "watch", "tv", "vision". Returns its models.'),
+      model: z.string().optional()
+        .describe('A model name from the kind tier ("iPhone 17 Pro Max"). Returns one entry per runtime, with ids.'),
+    },
+  },
+  {
+    name: 'device_request_control',
+    description:
+      'Ask the user to let this session control one specific device, and wait for their answer. '
+      + 'Every other device_* tool needs that grant and fails with NO_DEVICE until this succeeds — call it first, '
+      + 'not after a failure. Pick the device from device_list yourself; the user only approves or declines, '
+      + 'and a decline carries their feedback (often naming a different device — read it before retrying). '
       + 'Returns the device once it is bound and ready, booting it if it was not running. '
-      + 'Calling it again while a device is already bound returns that device without prompting again. '
-      + 'Only simulators can be offered today. Installing and launching a build is not part of this — '
-      + 'do that with `xcrun simctl install <udid> <app>` / `simctl launch <udid> <bundle-id>` once you have the udid.',
+      + 'Calling it again for a device this session already controls returns it without prompting. '
+      + 'Installing and launching a build is not part of this — use `xcrun simctl install/launch <udid>` afterwards.',
     shape: {
       ...descriptionField,
-      device: z.string().optional()
-        .describe('Which device to preselect, e.g. "iPhone 17 Pro Max" or a udid. Say what the user asked for; '
-          + 'matched loosely against the catalog. Omit to let the host suggest one.'),
+      device: z.string()
+        .describe('The id from device_list. A device name ("iPhone 17 Pro Max") is matched loosely against the '
+          + 'catalog as a fallback, but the id is what makes the approved device the one you meant.'),
     },
   },
   {
@@ -111,10 +128,11 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
       'Capture the screen and return a stateId later calls must quote. '
       + 'mode=semantic (default) returns the accessibility tree with @eN refs, labels, identifiers and bounds — '
       + 'prefer it: refs survive animation and rotation, coordinates do not. '
-      + 'mode=visual saves a PNG and returns image.path (not pixels); Read it only if you need to look. mode=fused returns both. '
-      + 'Waits for animation to stop first; settled=false means it was still moving, so treat geometry as approximate. '
-      + 'A screen with no accessibility tree falls back to text read from pixels; the reply says source=ocr. '
-      + 'Re-snapshot after anything that changes the screen — refs are positional and a stale stateId is rejected by device_act.',
+      + 'mode=visual saves a PNG and returns image.path (not pixels); Read it to look. fused returns both. '
+      + 'Waits for animation to stop; settled=false means geometry is approximate. '
+      + 'A region with no accessibility tree — a WebView, a canvas — has its text read from pixels and merged in, '
+      + 'marked (ocr): tap those, never press. The reply says source=ocr or hybrid. '
+      + 'Re-snapshot after anything that changes the screen — refs are positional and device_act rejects a stale stateId.',
     shape: {
       ...descriptionField,
       mode: z.enum(['semantic', 'visual', 'fused']).optional().describe('Default semantic'),

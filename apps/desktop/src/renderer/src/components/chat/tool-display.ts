@@ -1,6 +1,7 @@
 import { shortenPath } from '@/lib/path-utils'
 import { extractJsonStringValue } from '@superone/shared/partial-json'
 import { isAlwaysHiddenToolName } from '@superone/shared/tool-ui'
+import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import {
   isGrokVideoGenTool,
   isMediaGenerateImageTool,
@@ -63,7 +64,7 @@ export function getToolVerb(toolName: string): string {
 
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
-export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image'
+export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -170,8 +171,30 @@ export function getToolLabel(toolName: string): string {
   return formatToolLabel(toolName)
 }
 
+const DEVICE_TOOL_NAMES = new Set<string>(DEVICE_AGENT_TOOL_NAMES)
+
+function deviceToolSummary(toolName: string, input: Record<string, unknown>): string | null {
+  const mcp = parseMcpToolName(toolName)
+  // Matched against the shared name set, not a `device_` prefix: a third-party MCP
+  // server is free to ship its own device_* tool, and this row is not about it.
+  if (!mcp || mcp.serverName !== 'superone' || !DEVICE_TOOL_NAMES.has(mcp.mcpToolName)) return null
+  const description = typeof input.description === 'string' ? input.description.trim() : ''
+  const device = typeof input.device === 'string' ? input.device.trim() : ''
+  // The runtime rides along on the control request, where the same model exists on
+  // every installed one and the name alone does not say which is being handed over.
+  const platform = typeof input.platform === 'string' ? input.platform.trim() : ''
+  return [device, platform, description].filter(Boolean).join(' · ')
+}
+
 export function getToolDisplay(toolName: string, input: Record<string, unknown>, cwd?: string, homedir?: string): ToolDisplay {
   const sp = (p: string): string => shortenPath(p, cwd, homedir)
+
+  // Device tools all carry a `description` written for the person watching, which is
+  // exactly the summary this row wants — and it is what makes the *standard*
+  // permission prompt readable for device_request_control, which has no bespoke
+  // dialog of its own.
+  const deviceSummary = deviceToolSummary(toolName, input)
+  if (deviceSummary !== null) return { icon: 'smartphone', summary: deviceSummary }
 
   // MCP tools: mcp__{serverName}__{toolName}
   if (toolName.startsWith('mcp__')) {

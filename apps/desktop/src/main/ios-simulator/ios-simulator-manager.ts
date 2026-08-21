@@ -358,10 +358,20 @@ export class IosSimulatorManager {
     this.announce(this.emptyState(sessionId))
   }
 
-  async getSessionState(sessionId: string): Promise<IosSimulatorSessionState> {
+  /**
+   * `devices` is an already-read catalog. `simctl list devices --json` is a process
+   * spawn against CoreSimulatorService — a quarter of a second on an idle Mac — and a
+   * caller that has just listed them (`device_list`, `device_request_control`) would
+   * otherwise pay for a second identical one.
+   */
+  async getSessionState(
+    sessionId: string,
+    devices?: IosSimulatorDevice[],
+  ): Promise<IosSimulatorSessionState> {
     const udid = this.sessionBindings.get(sessionId)
     if (!udid) return this.emptyState(sessionId)
-    const device = (await this.listDevices()).find((candidate) => candidate.udid === udid) ?? null
+    const catalog = devices ?? await this.listDevices()
+    const device = catalog.find((candidate) => candidate.udid === udid) ?? null
     return this.sessionStateFor(sessionId, udid, device)
   }
 
@@ -504,7 +514,7 @@ export class IosSimulatorManager {
    * Hand the state back to the caller and tell every renderer about it at once.
    *
    * Lifecycle transitions used to answer only their caller, which was enough while
-   * every bind and boot came from the panel that made the IPC call. `device_request_launch`
+   * every bind and boot came from the panel that made the IPC call. `device_request_control`
    * broke that: the agent boots a device no renderer asked for, so a window with no
    * return value to read has no other way to learn it now has something to show.
    */

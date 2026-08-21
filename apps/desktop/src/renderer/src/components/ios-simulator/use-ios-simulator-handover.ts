@@ -35,7 +35,7 @@ function revealIosSimulatorTab(sessionId: string, label: string): void {
  * host layer, which is the thing that needs the answer.
  *
  * Above any visibility test on purpose: the whole point is to notice the moment
- * `device_request_launch` is approved, and a hook that only ran while the preview was
+ * `device_request_control` is approved, and a hook that only ran while the preview was
  * already showing could never see it.
  *
  * Main pushes state on change only, so a window opened onto an already-bound session

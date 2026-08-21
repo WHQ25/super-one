@@ -157,7 +157,7 @@ describe('IosSimulatorManager', () => {
   })
 
   it('announces a device the renderer never asked for', async () => {
-    // The agent's device_request_launch boots through this manager, so the panel and
+    // The agent's device_request_control boots through this manager, so the panel and
     // the floating preview learn about the binding only from this event -- there is no
     // IPC return value to read when the renderer did not make the call.
     const { simctl, nativeFactory } = setup()

@@ -260,7 +260,7 @@ let sessionHostProvider: (() => SessionTitleHost | null) | null = null
 
 export function setSessionHostProvider(provider: (() => SessionTitleHost | null) | null): void {
   sessionHostProvider = provider
-  // device_request_launch prompts the user from inside its executor, which lives a
+  // device_request_control prompts the user from inside its executor, which lives a
   // layer below this one. Handing it the resolver here — rather than letting it
   // import getSessionHost — keeps that dependency pointing one way.
   setDeviceAgentHostEventResolver((sessionId) => {

@@ -2197,6 +2197,19 @@ export type Messages = {
         }
       }
       device: {
+        list: string
+        listing: string
+        requestControl: string
+        requestingControl: string
+        deviceCount_one: string
+        deviceCount_other: string
+        noDevices: string
+        recentlyUsed: string
+        alreadyControlled: string
+        controlled: string
+        busy: string
+        running: string
+        stopped: string
         snapshot: string
         snapshotting: string
         query: string
@@ -2248,6 +2261,31 @@ export type Messages = {
           preexisting: string
           verified: string
           timeout: string
+        }
+      }
+      reportFindings: {
+        title: string
+        reporting: string
+        findingCount_one: string
+        findingCount_other: string
+        noFindings: string
+        failureScenario: string
+        levelHint: string
+        level: {
+          low: string
+          medium: string
+          high: string
+          xhigh: string
+          max: string
+        }
+        verdict: {
+          confirmed: string
+          plausible: string
+        }
+        outcome: {
+          fixed: string
+          skipped: string
+          noChangeNeeded: string
         }
       }
     }
@@ -5513,6 +5551,19 @@ export const en: Messages = {
         },
       },
       device: {
+        list: 'List Devices',
+        listing: 'Listing devices',
+        requestControl: 'Request Device',
+        requestingControl: 'Requesting device',
+        deviceCount_one: '{{count}} device',
+        deviceCount_other: '{{count}} devices',
+        noDevices: 'None available',
+        recentlyUsed: 'Recently Used',
+        alreadyControlled: 'Already Controlled',
+        controlled: 'Controlling',
+        busy: 'In Use',
+        running: 'Running',
+        stopped: 'Not Running',
         snapshot: 'Snapshot',
         snapshotting: 'Taking snapshot',
         query: 'Query',
@@ -5564,6 +5615,31 @@ export const en: Messages = {
           preexisting: 'Already Matched',
           verified: 'Matched',
           timeout: 'Timed Out',
+        },
+      },
+      reportFindings: {
+        title: 'Code Review',
+        reporting: 'Reporting findings',
+        findingCount_one: '{{count}} finding',
+        findingCount_other: '{{count}} findings',
+        noFindings: 'Nothing to flag',
+        failureScenario: 'Fails when',
+        levelHint: 'Review effort',
+        level: {
+          low: 'low',
+          medium: 'medium',
+          high: 'high',
+          xhigh: 'xhigh',
+          max: 'max',
+        },
+        verdict: {
+          confirmed: 'Confirmed',
+          plausible: 'Plausible',
+        },
+        outcome: {
+          fixed: 'Fixed',
+          skipped: 'Skipped',
+          noChangeNeeded: 'No change needed',
         },
       },
     },

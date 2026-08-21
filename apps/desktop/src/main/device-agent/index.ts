@@ -3,7 +3,9 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { getIosSimulatorManager } from '../ios-simulator'
 import { DeviceAgentSession, errorReply, reply, type DeviceToolReply } from './execute'
 import { IosSimulatorBackend } from './ios-backend'
-import { requestDeviceLaunch, type DeviceLaunchPort } from './launch'
+import { requestDeviceControl } from './control'
+import { listDeviceCatalog, type DeviceCatalogPort } from './device-catalog'
+import { createDeviceRecents, type DeviceRecentsPort } from './device-recents'
 import type { DeviceAgentToolName } from './tools'
 import type { TouchDeviceBackend } from './types'
 
@@ -28,15 +30,22 @@ export function setDeviceAgentBackendFactory(
   backendFactory = factory
 }
 
-/** The manager, as the launch flow sees it. Swapped by tests alongside the backend. */
-let launchPortFactory: () => DeviceLaunchPort = () => getIosSimulatorManager(app.getPath('userData'))
+/** The manager, as the catalog and control flows see it. Swapped by tests alongside the backend. */
+let catalogPortFactory: () => DeviceCatalogPort = () => getIosSimulatorManager(app.getPath('userData'))
 
-export function setDeviceAgentLaunchPortFactory(factory: () => DeviceLaunchPort): void {
-  launchPortFactory = factory
+export function setDeviceAgentCatalogPortFactory(factory: () => DeviceCatalogPort): void {
+  catalogPortFactory = factory
+}
+
+/** Project-scoped device history, swapped by tests so no database is needed. */
+let recentsFactory: (sessionId: string) => DeviceRecentsPort = (sessionId) => createDeviceRecents(sessionId)
+
+export function setDeviceAgentRecentsFactory(factory: (sessionId: string) => DeviceRecentsPort): void {
+  recentsFactory = factory
 }
 
 /**
- * How the launch prompt reaches the user.
+ * How the control prompt reaches the user.
  *
  * Injected rather than imported: the resolver lives in the MCP layer, which imports
  * this module, and the tool executor must not import it back.
@@ -76,15 +85,25 @@ export async function executeDeviceAgentTool(
   signal?: AbortSignal,
 ): Promise<DeviceToolReply> {
   try {
-    if (name === 'device_request_launch') {
-      const { description, device } = args as { description?: string; device?: string }
-      return reply(await requestDeviceLaunch({
+    if (name === 'device_list') {
+      const { kind, model } = args as { kind?: string; model?: string }
+      return reply(await listDeviceCatalog({
         sessionId,
-        port: launchPortFactory(),
+        port: catalogPortFactory(),
+        recents: recentsFactory(sessionId),
+        request: { ...(kind ? { kind } : {}), ...(model ? { model } : {}) },
+      }))
+    }
+    if (name === 'device_request_control') {
+      const { description, device } = args as { description?: string; device?: string }
+      return reply(await requestDeviceControl({
+        sessionId,
+        port: catalogPortFactory(),
         emitHostEvent: emitHostEventFor(sessionId),
+        recents: recentsFactory(sessionId),
         request: {
+          device: device ?? '',
           ...(description ? { reason: description } : {}),
-          ...(device ? { device } : {}),
         },
         ...(signal ? { signal } : {}),
       }))

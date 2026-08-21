@@ -911,7 +911,6 @@ export interface PermissionRequest {
     | 'computer_use_grant'
     | 'session_cleanup_confirm'
     | 'automation_confirm'
-    | 'device_launch_confirm'
   serverName?: string
   message?: string
   subtitle?: string
@@ -930,8 +929,6 @@ export interface PermissionRequest {
   sessionCleanupConfirm?: SessionCleanupConfirmPayload
   /** Present only when requestKind === 'automation_confirm'. */
   automationConfirm?: AutomationConfirmPayload
-  /** Present only when requestKind === 'device_launch_confirm'. */
-  deviceLaunchConfirm?: DeviceLaunchConfirmPayload
 }
 
 /** HITL payload for automation create / update / delete (structured confirm UI). */
@@ -1022,36 +1019,6 @@ export interface ComputerUseGrantPayload {
 export interface ComputerUseAlwaysAllowApp {
   app: string
   bundleId: string
-}
-
-/**
- * One device the user may hand to the agent.
- *
- * Deliberately not `IosSimulatorDevice`: this payload crosses to mobile and to the
- * node protocol, where the simulator types do not exist, and the surface is meant to
- * grow to real phones — so it carries only what the prompt draws.
- */
-export interface DeviceLaunchCandidate {
-  /** Stable device handle. A simulator UDID today. */
-  id: string
-  name: string
-  /** Platform version as shown to the user, e.g. "iOS 26.4". */
-  platform: string
-  /** Already running — approving it attaches rather than boots. */
-  running: boolean
-  /** Bound to another chat session; approving it would take it away from there. */
-  busy?: boolean
-}
-
-/** HITL payload for `device_request_launch` — pick a device, then approve. */
-export interface DeviceLaunchConfirmPayload {
-  /** What the agent said it needs the device for. */
-  reason?: string
-  candidates: DeviceLaunchCandidate[]
-  /** Preselected in the picker — the agent's ask, resolved against the catalog. */
-  suggestedId?: string
-  /** No device could be offered; the prompt explains instead of listing. */
-  unavailableReason?: string
 }
 
 /** Connected macOS display exposed to the Computer Use settings UI. */

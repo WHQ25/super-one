@@ -116,6 +116,42 @@ const WAIT_TIMEOUT = JSON.stringify({
   hint: 'The condition never held. Take a device_snapshot to see what is actually on screen.',
 })
 
+// Shaped exactly like `listDeviceGroups` returns it, so the row is exercised against
+// the real payload rather than a convenient one.
+const DEVICE_LIST = JSON.stringify({
+  groups: [{
+    id: 'ios-simulator',
+    name: 'iOS Simulator',
+    devices: [
+      { id: '427A175E', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4', running: true, controlled: true },
+      { id: 'B3C1', name: 'iPhone 17', platform: 'iOS 26.4', running: true, busy: true },
+      { id: 'D9F2', name: 'iPad Pro 13-inch (M4)', platform: 'iPadOS 26.4', running: false },
+    ],
+  }],
+  controlled: { id: '427A175E', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+  note: 'This session already controls a device; the other device tools are ready.',
+})
+
+const DEVICE_LIST_EMPTY = JSON.stringify({
+  groups: [],
+  controlled: null,
+  note: 'No simulators exist on this machine. Create one in Xcode (or the Activity panel) first.',
+})
+
+const CONTROL_GRANTED = JSON.stringify({
+  controlled: true,
+  alreadyControlled: false,
+  device: { id: '427A175E', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+  note: 'This session now controls the device. Install a build with `xcrun simctl install <udid> <path>`.',
+})
+
+const CONTROL_ALREADY = JSON.stringify({
+  controlled: true,
+  alreadyControlled: true,
+  device: { id: '427A175E', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+  note: 'This session now controls the device.',
+})
+
 const meta: Meta = {
   title: 'SuperOne/MCP Tools/Device',
   parameters: { layout: 'padded' },
@@ -124,6 +160,33 @@ const meta: Meta = {
 
 export default meta
 type Story = StoryObj
+
+/** How a run starts: read the catalog, then ask for one device by name. */
+export const DiscoveryAndControl: Story = {
+  render: () => (
+    <>
+      {tool('list', { description: '', result: DEVICE_LIST })}
+      {tool('list', { description: '', result: DEVICE_LIST_EMPTY })}
+      {tool('request_control', {
+        description: 'Drive the app on the simulator',
+        input: { device: '427A175E' },
+        result: CONTROL_GRANTED,
+      })}
+      {tool('request_control', {
+        description: 'Keep using the simulator already attached',
+        input: { device: '427A175E' },
+        result: CONTROL_ALREADY,
+      })}
+      {tool('list', { description: '', status: 'streaming' })}
+      {tool('request_control', {
+        description: 'Drive the app on the simulator',
+        input: { device: 'iPhone 17 Pro Max' },
+        status: 'streaming',
+        elapsedSeconds: 6,
+      })}
+    </>
+  ),
+}
 
 export const Snapshot: Story = {
   render: () => (
@@ -275,6 +338,20 @@ export const Failures: Story = {
         input: { stateId: 's2', actions: [{ type: 'rotate', orientation: 'landscape-left' }] },
         result: '[denied] User declined the action.',
       })}
+      {/* A refusal, not a fault: DECLINED carries the user's own words, so the row
+          reads as a decision and stays expandable enough to show them. */}
+      {tool('request_control', {
+        description: 'Drive the app on the simulator',
+        input: { device: 'iPhone 17 Pro Max' },
+        result: '[Error] DECLINED: The user declined to hand over iPhone 17 Pro Max. '
+          + 'They said: use the iPad instead. Do not ask again unless they bring it up.',
+        isError: true,
+      })}
+      {tool('list', {
+        description: '',
+        result: '[Error] NO_DEVICE: The device catalog could not be read.',
+        isError: true,
+      })}
     </>
   ),
 }
@@ -308,6 +385,22 @@ export const InsideSubagent: Story = {
         op="wait_for"
         params={{ description: 'Wait for the Wi-Fi row' }}
         result={WAIT_TIMEOUT}
+        isStreaming={false}
+        stallLevel="normal"
+        allowExpand={false}
+      />
+      <DeviceToolBlock
+        op="list"
+        params={{}}
+        result={DEVICE_LIST}
+        isStreaming={false}
+        stallLevel="normal"
+        allowExpand={false}
+      />
+      <DeviceToolBlock
+        op="request_control"
+        params={{ description: 'Drive the app on the simulator', device: '427A175E' }}
+        result={CONTROL_GRANTED}
         isStreaming={false}
         stallLevel="normal"
         allowExpand={false}

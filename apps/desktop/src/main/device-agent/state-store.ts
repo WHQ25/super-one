@@ -38,6 +38,18 @@ export class DeviceStateStore {
     return state
   }
 
+  /**
+   * Attach the screenshot to a snapshot already on record.
+   *
+   * Separate from `put` because the observation has to be recorded the instant it
+   * exists: the device has moved by then, and a screenshot that fails afterwards
+   * must not leave an older snapshot standing as the current one.
+   */
+  attachImage(stateId: string, image: DeviceImage): void {
+    const state = this.states.get(stateId)
+    if (state) state.image = image
+  }
+
   get latest(): DeviceState | undefined {
     return this.latestId ? this.states.get(this.latestId) : undefined
   }

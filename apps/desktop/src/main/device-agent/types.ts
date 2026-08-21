@@ -29,12 +29,24 @@ export interface TouchDeviceBackend {
   capture(): Promise<DeviceImage>
 
   /**
-   * Apply one already-resolved action.
+   * Apply one already-resolved action against the observation it was aimed at.
    *
    * Refs are resolved to whatever the backend actually addresses (a uid, a native
    * handle) inside the backend, so no identifier from one platform leaks upward.
+   * The observation is passed rather than remembered because "the last thing I
+   * observed" and "the snapshot the agent quoted" are not the same thing: an
+   * observation can succeed and still never reach the state store, and a backend
+   * addressing through its own latest read would then press a control the caller
+   * never saw. Tying the lookup to the observation makes that divergence
+   * unrepresentable.
    */
-  perform(action: ResolvedAction, signal?: AbortSignal): Promise<void>
+  perform(action: ResolvedAction, context: PerformContext): Promise<void>
+}
+
+export interface PerformContext {
+  /** The snapshot this action was resolved against. */
+  observation: DeviceObservation
+  signal?: AbortSignal
 }
 
 export interface ObserveOptions {
@@ -53,6 +65,13 @@ export interface DeviceObservation {
   screen: { width: number; height: number }
   settled: boolean
   truncated?: boolean
+  /**
+   * Perceptual fingerprint of the pixels behind this observation, when they could be
+   * read. Kept so judging whether an action changed anything can consult the screen
+   * as well as the tree -- the tree misses a crossfade, and on an app with no tree it
+   * is the only evidence there is.
+   */
+  frameHash?: string
 }
 
 export interface DeviceImage {

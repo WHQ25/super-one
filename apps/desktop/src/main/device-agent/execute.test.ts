@@ -5,6 +5,7 @@ import type {
   DeviceImage,
   DeviceObservation,
   ObserveOptions,
+  PerformContext,
   ResolvedAction,
   TouchDeviceBackend,
 } from './types'
@@ -20,6 +21,10 @@ function screen(children: DeviceUiNode[]): DeviceUiNode {
 class FakeBackend implements TouchDeviceBackend {
   readonly label = 'Fake Phone'
   readonly performed: ResolvedAction[] = []
+  /** Every observation this backend has handed out, newest last. */
+  readonly observations: DeviceObservation[] = []
+  /** Which observation each performed action was addressed through. */
+  readonly addressed: Array<DeviceObservation | undefined> = []
   /** Each observe() consumes the next screen, repeating the last one forever. */
   private index = 0
 
@@ -27,15 +32,23 @@ class FakeBackend implements TouchDeviceBackend {
 
   async observe(_options?: ObserveOptions): Promise<DeviceObservation> {
     const root = this.screens[Math.min(this.index++, this.screens.length - 1)]!
-    return { root, orientation: 'portrait', screen: { width: 1320, height: 2868 }, settled: this.settled }
+    const observation: DeviceObservation = {
+      root,
+      orientation: 'portrait',
+      screen: { width: 1320, height: 2868 },
+      settled: this.settled,
+    }
+    this.observations.push(observation)
+    return observation
   }
 
   async capture(): Promise<DeviceImage> {
     return { path: '/tmp/shot.png', width: 1320, height: 2868 }
   }
 
-  async perform(action: ResolvedAction): Promise<void> {
+  async perform(action: ResolvedAction, context?: PerformContext): Promise<void> {
     this.performed.push(action)
+    this.addressed.push(context?.observation)
   }
 }
 
@@ -168,6 +181,62 @@ describe('action resolution', () => {
     expect(backend.performed).toHaveLength(0)
   })
 
+  it('addresses each action through the snapshot the caller quoted', async () => {
+    // Not "the newest observation": the two diverge whenever an observe() succeeds
+    // and the call carrying it fails before the state store hears about it.
+    const backend = new FakeBackend([screen([node('@e1')])])
+    const session = new DeviceAgentSession(backend)
+    const snap = parse(await session.snapshot({}))
+    await session.act({ stateId: String(snap.stateId), actions: [{ type: 'press', ref: '@e1' }] })
+
+    expect(backend.addressed[0]).toBe(backend.observations[0])
+  })
+
+  it('refuses a ref-targeted action queued after a rotate, before anything runs', async () => {
+    // rotate relayouts the screen and rebuilds the guest's accessibility elements,
+    // so every ref and coordinate from this snapshot stops naming what it named.
+    // Refusing up front keeps device_act's "the full batch is validated first"
+    // promise instead of half-applying and reporting an internal staleness message.
+    const backend = new FakeBackend([screen([node('@e1')])])
+    const session = new DeviceAgentSession(backend)
+    const snap = parse(await session.snapshot({}))
+    const result = await session.act({
+      stateId: String(snap.stateId),
+      actions: [{ type: 'rotate', orientation: 'landscape-left' }, { type: 'press', ref: '@e1' }],
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('INVALID_ACTION')
+    expect(result.content[0]!.text).toContain('rotate')
+    expect(backend.performed).toHaveLength(0)
+  })
+
+  it('refuses raw coordinates after a rotate too, since the content turned under them', async () => {
+    const backend = new FakeBackend([screen([node('@e1')])])
+    const session = new DeviceAgentSession(backend)
+    const snap = parse(await session.snapshot({}))
+    const result = await session.act({
+      stateId: String(snap.stateId),
+      actions: [{ type: 'rotate', orientation: 'landscape-left' }, { type: 'tap', x: 0.5, y: 0.5 }],
+    })
+
+    expect(result.isError).toBe(true)
+    expect(backend.performed).toHaveLength(0)
+  })
+
+  it('still allows a rotate followed by input that does not read the snapshot', async () => {
+    const backend = new FakeBackend([screen([node('@e1')])])
+    const session = new DeviceAgentSession(backend)
+    const snap = parse(await session.snapshot({}))
+    const result = await session.act({
+      stateId: String(snap.stateId),
+      actions: [{ type: 'rotate', orientation: 'landscape-left' }, { type: 'type', text: 'hello' }],
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(backend.performed).toHaveLength(2)
+  })
+
   it('stops between actions when the request is aborted', async () => {
     const backend = new FakeBackend([screen([node('@e1'), node('@e2')])])
     const controller = new AbortController()
@@ -230,6 +299,74 @@ describe('device_wait_for', () => {
     const result = await waiting
     expect(result.isError).toBe(true)
     expect(result.content[0]!.text).toContain('ABORTED')
+  })
+})
+
+describe('snapshot bookkeeping', () => {
+  it('does not keep handing out a stateId after a later observation reached the device', async () => {
+    // device_snapshot mode=fused: observe() lands, the screenshot after it throws.
+    // If the store never hears about that observation it keeps naming the previous
+    // one as current, so device_act accepts refs the device has already renumbered.
+    const backend = new FakeBackend([
+      screen([node('@e1', { label: 'One' })]),
+      screen([node('@e1', { label: 'Two' })]),
+    ])
+    backend.capture = async () => { throw new Error('simctl io screenshot failed') }
+    const session = new DeviceAgentSession(backend)
+    const first = parse(await session.snapshot({}))
+
+    const failed = await session.snapshot({ mode: 'fused' })
+    expect(failed.isError).toBe(true)
+
+    const result = await session.act({
+      stateId: String(first.stateId),
+      actions: [{ type: 'press', ref: '@e1' }],
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('STALE_STATE')
+    expect(backend.performed).toHaveLength(0)
+  })
+})
+
+describe('condition validation', () => {
+  it('refuses a condition that names no element instead of reporting it already true', async () => {
+    // `text` is a sibling of `label` in the schema, so this is the shape a model
+    // reaches for. Matching nothing must not read as "the spinner is gone" on a
+    // screen device_wait_for never inspected.
+    const session = new DeviceAgentSession(new FakeBackend([screen([node('@e1', { label: 'Loading' })])]))
+    const result = await session.waitFor({
+      condition: { kind: 'notExists', text: 'Loading' } as never,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('INVALID_ACTION')
+  })
+
+  it('refuses textContains with no text rather than searching for the string "undefined"', async () => {
+    const session = new DeviceAgentSession(
+      new FakeBackend([screen([node('@e1', { label: 'Total undefined' })])]),
+    )
+    const result = await session.waitFor({
+      condition: { kind: 'textContains', label: 'Total undefined' } as never,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('INVALID_ACTION')
+  })
+
+  it('refuses an unsatisfiable expect before the batch runs, not after', async () => {
+    const backend = new FakeBackend([screen([node('@e1', { label: 'One' })])])
+    const session = new DeviceAgentSession(backend)
+    const snap = parse(await session.snapshot({}))
+    const result = await session.act({
+      stateId: String(snap.stateId),
+      actions: [{ type: 'tap', ref: '@e1' }],
+      expect: { kind: 'exists' } as never,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('INVALID_ACTION')
+    expect(backend.performed).toHaveLength(0)
   })
 })
 

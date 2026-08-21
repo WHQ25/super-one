@@ -1068,15 +1068,28 @@ describe('ACP host integration (MCP + system prompt)', () => {
     })
   })
 
-  it('prepends the host-context block to the first prompt only', async () => {
+  it('appends the host-context block after the first non-slash prompt only', async () => {
     const captured: CapturedRequests = { newSession: null, prompts: [] }
     await run({ captured, superoneSessionId: 'sid-42', prompts: ['first', 'second'] })
 
     expect(captured.prompts).toHaveLength(2)
-    expect(captured.prompts[0][0]).toEqual({ type: 'text', text: ACP_SYSTEM_PROMPT_BLOCK })
-    expect(captured.prompts[0].some((b) => b.text === 'first')).toBe(true)
+    expect(captured.prompts[0][0]).toEqual({ type: 'text', text: 'first' })
+    expect(captured.prompts[0].at(-1)).toEqual({ type: 'text', text: ACP_SYSTEM_PROMPT_BLOCK })
     expect(captured.prompts[1].some((b) => b.text === ACP_SYSTEM_PROMPT_BLOCK)).toBe(false)
     expect(captured.prompts[1][0]).toEqual({ type: 'text', text: 'second' })
+  })
+
+  it('defers host-context when the first prompt is a slash command', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [] }
+    await run({
+      captured,
+      superoneSessionId: 'sid-42',
+      prompts: ['/goal Ship the login flow', 'hello'],
+    })
+
+    expect(captured.prompts[0]).toEqual([{ type: 'text', text: '/goal Ship the login flow' }])
+    expect(captured.prompts[1][0]).toEqual({ type: 'text', text: 'hello' })
+    expect(captured.prompts[1].at(-1)).toEqual({ type: 'text', text: ACP_SYSTEM_PROMPT_BLOCK })
   })
 
   it('omits the host-context block when no MCP server is attached', async () => {

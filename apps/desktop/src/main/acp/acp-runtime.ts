@@ -43,7 +43,7 @@ import {
   noteAcpTaskLifecycle,
 } from '../mcp/main-thread-session-guard'
 import { buildAcpSessionMcpServers } from './acp-mcp'
-import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
+import { acpHostContextText, isLeadingSlashPrompt } from './acp-host-context'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
 import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
 import { AcpTerminalManager } from './acp-terminals'
@@ -1153,13 +1153,14 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         cwd: launch.cwd,
         getUnsaved: (abs) => opts.getUnsaved?.(abs) ?? getUnsavedBuffer(abs),
       })
-      // ACP carries no system-prompt field; ride the first prompt instead. Gated on
-      // mcpAttached — without the tools it names, the text would be instructions to nowhere.
-      if (!systemPromptSent && mcpAttached) {
+      // ACP has no system-prompt field. Append (never prepend) so Grok's
+      // slash parser still sees `/goal` as the first text block. Defer on a
+      // leading slash: GoalSet replaces the whole prompt and would drop it.
+      if (!systemPromptSent && mcpAttached && !isLeadingSlashPrompt(text)) {
         systemPromptSent = true
-        promptBlocks.unshift({
+        promptBlocks.push({
           type: 'text',
-          text: [ACP_SYSTEM_PROMPT_BLOCK, opts.systemPromptAppend].filter(Boolean).join('\n\n'),
+          text: acpHostContextText(opts.systemPromptAppend),
         })
       }
       const promptPromise = activeSession.prompt(promptBlocks as never)

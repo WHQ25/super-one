@@ -1,5 +1,6 @@
 import type {
   AccountInfo,
+  AcpGoal,
   AcpResources,
   AgentEvent,
   AgentInfo,
@@ -190,6 +191,8 @@ export interface PerSessionState {
   /** Slash commands from ACP available_commands_update (lazy-loaded on / popup). */
   acpSlashCommands: SlashCommandInfo[]
   acpSlashCommandsStatus: 'idle' | 'loading' | 'ready' | 'error'
+  /** Live Grok `/goal` snapshot from `goal_updated`. Null when none / cleared. */
+  acpGoal: AcpGoal | null
   draftText: string
   /** Editor JSON snapshot (Tiptap doc) — preserves chip nodes & their inline positions across session switches, unlike the plain-text draft. */
   draftJson: object | null

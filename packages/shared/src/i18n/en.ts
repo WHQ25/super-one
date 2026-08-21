@@ -1210,6 +1210,27 @@ export type Messages = {
       updating: string
       loadingHint: string
     }
+    acpGoal: {
+      label: string
+      title: string
+      description: string
+      argumentHint: string
+      placeholder: string
+      save: string
+      edit: string
+      pause: string
+      resume: string
+      clear: string
+      status: string
+      statuses: {
+        active: string
+        paused: string
+        blocked: string
+        budgetLimited: string
+        complete: string
+        cleared: string
+      }
+    }
     dropToAttach: string
     contextUsage: {
       usedOfMax: string
@@ -4468,6 +4489,27 @@ export const en: Messages = {
       loading: 'Loading slash commands…',
       updating: 'Updating slash commands…',
       loadingHint: 'Fetching slash commands from the agent',
+    },
+    acpGoal: {
+      label: 'Goal',
+      title: 'Grok Goal',
+      description: 'Set an objective Grok will pursue until it is complete. Pause, resume, or clear it from the Goal control.',
+      argumentHint: '<objective>',
+      placeholder: 'e.g. Migrate the auth module to the new API and land the tests',
+      save: 'Save goal',
+      edit: 'Edit',
+      pause: 'Pause',
+      resume: 'Resume',
+      clear: 'Clear goal',
+      status: 'Status: {{status}}',
+      statuses: {
+        active: 'Active',
+        paused: 'Paused',
+        blocked: 'Blocked',
+        budgetLimited: 'Budget limited',
+        complete: 'Complete',
+        cleared: 'Cleared',
+      },
     },
     dropToAttach: 'Drop images or PDFs to attach',
     contextUsage: {

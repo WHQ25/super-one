@@ -175,6 +175,9 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
         acpSlashCommandsStatus: 'ready' as const,
       }
     }
+
+    case 'acp_goal':
+      return { acpGoal: event.goal }
   }
   return {}
 }

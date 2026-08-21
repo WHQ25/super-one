@@ -69,6 +69,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     acpModesStatus: 'idle',
     acpSlashCommands: [],
     acpSlashCommandsStatus: 'idle',
+    acpGoal: null,
     draftText: '',
     draftJson: null,
     draftId: null,

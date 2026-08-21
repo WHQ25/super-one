@@ -32,6 +32,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     acpSlashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
     acpSlashCommandsStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
     acpAgentId: null as string | null,
+    acpGoal: null as { goalId: string; objective: string; status: string; tokensUsed: number; elapsedMs: number } | null,
     agents: [] as Array<{ name: string }>,
     selectedCodexCollaborationMode: 'default' as const,
     codexPlanRejectHintActive: false,
@@ -320,6 +321,22 @@ vi.mock('./CodexGoalIndicator', () => ({
   ),
 }))
 
+vi.mock('./GrokGoalIndicator', () => ({
+  GrokGoalIndicator: ({ goal }: { goal: { objective: string } }) => (
+    <div data-testid="grok-goal-indicator">{goal.objective}</div>
+  ),
+}))
+
+vi.mock('./GrokGoalDialog', () => ({
+  GrokGoalDialog: ({
+    open,
+    prefill,
+  }: {
+    open: boolean
+    prefill?: string
+  }) => (open ? <div data-testid="grok-goal-dialog" data-prefill={prefill ?? ''} /> : null),
+}))
+
 vi.mock('./ProviderSlashPopup', () => ({
   ProviderSlashPopup: () => null,
 }))
@@ -355,6 +372,8 @@ beforeEach(() => {
   activeSessionState.mentions = []
   activeSessionState.preferredProvider = 'claude'
   activeSessionState.sessionProvider = null
+  activeSessionState.acpAgentId = null
+  activeSessionState.acpGoal = null
   chatActions._cursorSlashItems = []
   activeSessionState.showDirManager = false
   activeSessionState.showReviewPanel = false
@@ -458,6 +477,56 @@ describe('ChatInput', () => {
       expect(goalState.getGoal).toHaveBeenCalledWith('session-1', 'thread-1')
     })
     expect(screen.getByTestId('codex-goal-indicator')).toHaveTextContent('Ship the goal UX')
+  })
+
+  it('opens the Grok goal dialog instead of sending /goal', () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.draftText = '/goal Ship login'
+    editorState.text = '/goal Ship login'
+
+    render(<ChatInput />)
+
+    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
+    expect(send).toBeTruthy()
+    fireEvent.click(send!)
+
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+    expect(screen.getByTestId('grok-goal-dialog')).toHaveAttribute('data-prefill', 'Ship login')
+  })
+
+  it('sends Grok /goal pause through as a prompt', () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.draftText = '/goal pause'
+    editorState.text = '/goal pause'
+
+    render(<ChatInput />)
+
+    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
+    fireEvent.click(send!)
+
+    expect(chatActions.sendMessage).toHaveBeenCalled()
+    expect(screen.queryByTestId('grok-goal-dialog')).toBeNull()
+  })
+
+  it('shows a live Grok goal next to the model controls', () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.acpGoal = {
+      goalId: 'g1',
+      objective: 'Ship login',
+      status: 'active',
+      tokensUsed: 0,
+      elapsedMs: 0,
+    }
+
+    render(<ChatInput />)
+
+    expect(screen.getByTestId('grok-goal-indicator')).toHaveTextContent('Ship login')
   })
 
   it('passes the mosaic session scope as the sendMessage target', () => {

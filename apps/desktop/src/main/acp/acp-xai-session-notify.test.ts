@@ -753,8 +753,12 @@ describe('mapXaiStandaloneNotification', () => {
         elapsed_ms: 1000,
       },
     }, state)
-    expect(mid[0]).toMatchObject({ type: 'task_started', taskId: 'g1', taskType: 'goal' })
-    expect(mid[1]).toMatchObject({ type: 'task_progress', taskId: 'g1' })
+    expect(mid[0]).toMatchObject({
+      type: 'acp_goal',
+      goal: { goalId: 'g1', objective: 'Ship feature', status: 'active' },
+    })
+    expect(mid[1]).toMatchObject({ type: 'task_started', taskId: 'g1', taskType: 'goal' })
+    expect(mid[2]).toMatchObject({ type: 'task_progress', taskId: 'g1' })
 
     const done = mapXaiSessionUpdate({
       sessionUpdate: 'goal_updated',
@@ -765,7 +769,11 @@ describe('mapXaiStandaloneNotification', () => {
       tokens_used: 200,
       elapsed_ms: 5000,
     }, state)
-    expect(done[0]).toMatchObject({ type: 'task_notification', taskStatus: 'completed' })
+    expect(done[0]).toMatchObject({
+      type: 'acp_goal',
+      goal: { goalId: 'g1', status: 'complete' },
+    })
+    expect(done[1]).toMatchObject({ type: 'task_notification', taskStatus: 'completed' })
   })
 })
 

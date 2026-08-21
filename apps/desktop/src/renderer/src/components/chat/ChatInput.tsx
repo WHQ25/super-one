@@ -26,6 +26,7 @@ import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
 import type { CodexGoal, SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
+import { grokGoalComposerAction } from '@superone/shared/acp-goal'
 import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { InputSegment } from '@/stores/chat-store/types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
@@ -56,6 +57,8 @@ import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashComman
 import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
 import { CodexGoalDialog } from './CodexGoalDialog'
 import { CodexGoalIndicator } from './CodexGoalIndicator'
+import { GrokGoalDialog } from './GrokGoalDialog'
+import { GrokGoalIndicator } from './GrokGoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
 import { wrapPathRefMention } from './user-mention-parser'
@@ -314,6 +317,7 @@ export function ChatInput() {
     const acpSlashCommandsFromAgent = useActiveSession((s) => s.acpSlashCommands)
     const acpSlashCommandsStatus = useActiveSession((s) => s.acpSlashCommandsStatus)
     const acpAgentId = useActiveSession((s) => s.acpAgentId)
+    const acpGoal = useActiveSession((s) => s.acpGoal)
     const acpAgents = useChatStore((s) => s.harnessResources?.acp?.agents)
     const ensureAcpSlashCommands = useChatStore((s) => s.ensureAcpSlashCommands)
     // Catalog may be empty in a fresh mini-window; fall back to id-derived brand name.
@@ -335,6 +339,12 @@ export function ChatInput() {
           name: 'recap',
           description: t('chat.acpCommands.recapDesc'),
           argumentHint: '',
+          isSkill: false,
+        })
+        local.push({
+          name: 'goal',
+          description: t('chat.acpGoal.description'),
+          argumentHint: t('chat.acpGoal.argumentHint'),
           isSkill: false,
         })
       }
@@ -820,15 +830,33 @@ export function ChatInput() {
       return { segments, mentions: collectedMentions, attachments: orderedAttachments }
     }, [text])
 
+    const sendGrokGoalSlash = useCallback(async (line: string) => {
+      await sendMessage(
+        line,
+        [{ text: line, isPaste: false }],
+        [],
+        [],
+        sessionScope ?? undefined,
+      )
+    }, [sendMessage, sessionScope])
+
     const handleSend = useCallback(() => {
       if (!canSend) return
+      const trimmed = text.trim()
       if (activeProviderForResources === 'codex') {
-        const trimmed = text.trim()
         const goalMatch = /^\/goal(?:\s+([\s\S]*))?$/i.exec(trimmed)
         if (goalMatch) {
           const prefill = goalMatch[1]?.trim() ?? ''
           serializeAndClear()
           setGoalDialogState({ open: true, prefill })
+          return
+        }
+      }
+      if (isGrokAcpAgent(acpAgentId)) {
+        const action = grokGoalComposerAction(trimmed)
+        if (action?.type === 'dialog') {
+          serializeAndClear()
+          setGoalDialogState({ open: true, prefill: action.prefill })
           return
         }
       }
@@ -847,7 +875,7 @@ export function ChatInput() {
       ).catch((err) => {
         console.error('[ChatInput] sendMessage failed:', err)
       })
-    }, [activeProviderForResources, canSend, sendMessage, serializeAndClear, sessionScope, text])
+    }, [activeProviderForResources, acpAgentId, canSend, sendMessage, serializeAndClear, sessionScope, text])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
@@ -1753,6 +1781,15 @@ export function ChatInput() {
                 onEdit={() => setGoalDialogState({ open: true, prefill: codexGoal.objective })}
               />
             )}
+            {activeProviderForResources === 'acp' && isGrokAcpAgent(acpAgentId) && acpGoal && (
+              <GrokGoalIndicator
+                goal={acpGoal}
+                onEdit={() => setGoalDialogState({ open: true, prefill: acpGoal.objective })}
+                onPause={() => sendGrokGoalSlash('/goal pause')}
+                onResume={() => sendGrokGoalSlash('/goal resume')}
+                onClear={() => sendGrokGoalSlash('/goal clear')}
+              />
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -1779,7 +1816,7 @@ export function ChatInput() {
             <span className="text-xs font-medium text-primary">{t('chat.dropToAttach')}</span>
           </div>
         )}
-        {activeProject && (
+        {activeProject && activeProviderForResources === 'codex' && (
           <CodexGoalDialog
             open={goalDialogState.open}
             onOpenChange={(open) => setGoalDialogState((s) => ({ ...s, open }))}
@@ -1787,6 +1824,16 @@ export function ChatInput() {
             threadId={codexThreadId ?? null}
             prefill={goalDialogState.prefill}
             onGoalChange={setCodexGoal}
+          />
+        )}
+        {activeProject && isGrokAcpAgent(acpAgentId) && (
+          <GrokGoalDialog
+            open={goalDialogState.open}
+            onOpenChange={(open) => setGoalDialogState((s) => ({ ...s, open }))}
+            existing={acpGoal}
+            prefill={goalDialogState.prefill}
+            onSave={(objective) => sendGrokGoalSlash(`/goal ${objective}`)}
+            onClear={() => sendGrokGoalSlash('/goal clear')}
           />
         )}
         </div>

@@ -1,6 +1,7 @@
 // Unified message format used across IPC. Zero SDK imports.
 
 import type { TokenOverrides } from './harness-brand'
+import type { AcpGoal } from './acp-goal'
 
 // --- Image attachments ---
 
@@ -1538,6 +1539,11 @@ export type AgentEventBase =
       commands: SlashCommandInfo[]
       agentId?: string | null
     }
+  /**
+   * Grok `goal_updated` (and equivalent ACP goal snapshots).
+   * `goal: null` means the agent cleared the goal.
+   */
+  | { type: 'acp_goal'; goal: AcpGoal | null }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 
@@ -2566,6 +2572,8 @@ export interface CodexMarketplaceUpgradeResult {
   upgradedRoots: string[]
   errors: CodexMarketplaceUpgradeError[]
 }
+
+export type { AcpGoal, AcpGoalStatus } from './acp-goal'
 
 export type CodexGoalStatus = 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
 

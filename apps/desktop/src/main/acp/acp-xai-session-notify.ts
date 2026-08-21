@@ -13,6 +13,7 @@ import type {
   ContextUsageInfo,
   EffortLevel,
 } from '@superone/shared/agent-types'
+import { normalizeAcpGoalStatus, type AcpGoal } from '@superone/shared/acp-goal'
 import { asEffortLevel } from './acp-config'
 import log from '../logger'
 
@@ -1049,6 +1050,16 @@ function mapGoalUpdated(u: Record<string, unknown>, state: XaiCorrelationState):
   ].filter(Boolean).join(' · ')
 
   const events: AgentEvent[] = []
+  const goal: AcpGoal = {
+    goalId,
+    objective,
+    status: normalizeAcpGoalStatus(status),
+    tokensUsed,
+    elapsedMs,
+    ...(pauseMessage ? { pauseMessage } : {}),
+    ...(phase ? { phase } : {}),
+  }
+  events.push({ type: 'acp_goal', goal: goal.status === 'cleared' ? null : goal })
   if (!state.goalStarted.has(goalId)) {
     state.goalStarted.add(goalId)
     events.push({

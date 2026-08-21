@@ -753,6 +753,7 @@ export function setPreferredProviderImpl(
     acpModesStatus: 'idle' as const,
     acpSlashCommands: [] as import('@superone/shared/agent-types').SlashCommandInfo[],
     acpSlashCommandsStatus: 'idle' as const,
+    acpGoal: null,
   }
   /** Shared resets when leaving any harness on an empty draft. */
   const emptyDraftHarnessReset = {
@@ -1145,6 +1146,7 @@ export function setAcpAgentIdImpl(
     acpModesStatus: 'idle' as const,
     acpSlashCommands: [],
     acpSlashCommandsStatus: 'idle' as const,
+    acpGoal: null,
     ...(catalog
       ? sessionPatchFromAcpCatalog(catalog)
       : {

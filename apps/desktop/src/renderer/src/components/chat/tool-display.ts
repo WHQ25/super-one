@@ -12,6 +12,7 @@ import {
   nativeWidgetVideos,
   isVideoStatusStillRunning,
 } from './media-generation'
+import { topFindingSummary } from './report-findings-display'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
 
 const PARTIAL_STRING_FIELDS: Record<string, string[]> = {
@@ -42,6 +43,7 @@ const TOOL_VERBS: Record<string, string> = {
   AskUserQuestion: 'Asking questions',
   EnterPlanMode: 'Planning',
   ExitPlanMode: 'Reviewing',
+  ReportFindings: 'Reporting findings',
   KillTask: 'Stopping task',
   ImageGen: 'Generating image',
   ImageEdit: 'Editing image',
@@ -139,6 +141,7 @@ const TOOL_LABELS: Record<string, string> = {
   SandboxNetworkAccess: 'Network Access',
   EnterPlanMode: 'Enter Plan Mode',
   ExitPlanMode: 'Exit Plan Mode',
+  ReportFindings: 'Code Review',
   KillTask: 'Kill Task',
   ImageGen: 'Image Gen',
   ImageEdit: 'Image Edit',
@@ -204,6 +207,10 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
   switch (toolName) {
     case 'Bash':
       return { icon: 'terminal', summary: String(input.command ?? '') }
+    case 'ReportFindings':
+      // Compact surfaces get the top finding — the list is ranked most-severe first,
+      // so the first entry is the one worth the single line they have room for.
+      return { icon: 'clipboard-list', summary: topFindingSummary(input) }
     case 'Read': {
       const readPath = sp(String(input.file_path ?? ''))
       const readMeta = formatReadMeta(input)

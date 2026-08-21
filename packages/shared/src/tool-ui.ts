@@ -96,6 +96,8 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   deploy_app: 'DeployApp',
   deployapp: 'DeployApp',
   lsp: 'Lsp',
+  report_findings: 'ReportFindings',
+  reportfindings: 'ReportFindings',
 }
 
 export function normalizeToolIdKey(id: string): string {

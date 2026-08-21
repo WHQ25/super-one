@@ -20,6 +20,7 @@ import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
 import { DeviceToolBlock } from './DeviceToolBlock'
+import { ReportFindingsToolBlock } from './ReportFindingsToolBlock'
 import { getDeviceOp } from './device-tool-display'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
@@ -1019,6 +1020,21 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
   }
   if (toolName === 'ExitPlanMode') {
     return <ExitPlanModeBlock result={result} />
+  }
+  // The review's findings live entirely in the input — the result is a bare ack — so
+  // this dispatches on the params and never waits for a result to render.
+  if (toolName === 'ReportFindings') {
+    return (
+      <ReportFindingsToolBlock
+        params={params}
+        isStreaming={isStreaming}
+        isError={isError}
+        isDenied={isDenied}
+        elapsedSeconds={elapsedSeconds}
+        stallLevel={stallLevel}
+        allowExpand={allowExpand}
+      />
+    )
   }
   const hasResult = !!cleanResult && !isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed

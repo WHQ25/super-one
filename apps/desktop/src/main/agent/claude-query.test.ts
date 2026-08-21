@@ -197,6 +197,27 @@ describe('buildUserMessage', () => {
 })
 
 describe('createSessionQuery', () => {
+  it('scopes warmup consumption to the originating SuperOne session', async () => {
+    const consume = vi.fn(() => null)
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      {
+        superoneSessionId: 'superone-session-a',
+        projectPath: '/repo',
+        cwd: '/repo',
+        permissionMode: 'default',
+        warmupManager: { consume } as never,
+      },
+      vi.fn(),
+      () => '',
+      () => Date.now(),
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(consume).toHaveBeenCalledWith(expect.any(Object), 'superone-session-a')
+  })
+
   it('maps mixed sdk events into agent events and completes successfully', async () => {
     state.messages = [
       {

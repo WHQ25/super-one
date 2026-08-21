@@ -70,11 +70,15 @@ export class WarmupManager {
     }, STALE_TTL_MS)
   }
 
-  static keyOf(opts: Options): string {
+  static keyOf(opts: Options, sessionScope = ''): string {
     const envEntries = opts.env
       ? Object.entries(opts.env).filter(([, v]) => v !== undefined).sort(([a], [b]) => a.localeCompare(b))
       : []
     return JSON.stringify({
+      // A WarmQuery captures MCP servers and permission callbacks at startup.
+      // Those objects are bound to one SuperOne Session even when every SDK
+      // option below is otherwise identical.
+      sessionScope,
       cwd: opts.cwd ?? '',
       model: opts.model ?? '',
       effort: opts.effort ?? '',
@@ -93,9 +97,9 @@ export class WarmupManager {
     })
   }
 
-  prewarm(options: Options): void {
+  prewarm(options: Options, sessionScope = ''): void {
     if (this.disposed) return
-    const key = WarmupManager.keyOf(options)
+    const key = WarmupManager.keyOf(options, sessionScope)
 
     if (this.slot && this.slot.key === key) {
       const age = Date.now() - this.slot.createdAt
@@ -158,9 +162,9 @@ export class WarmupManager {
     })
   }
 
-  consume(options: Options): { warm: WarmQuery; abortController: AbortController } | null {
+  consume(options: Options, sessionScope = ''): { warm: WarmQuery; abortController: AbortController } | null {
     if (this.disposed) return null
-    const key = WarmupManager.keyOf(options)
+    const key = WarmupManager.keyOf(options, sessionScope)
     if (!this.slot || this.slot.key !== key) {
       trace('warmup', 'miss', { key, hasSlot: !!this.slot, slotKey: this.slot?.key })
       return null

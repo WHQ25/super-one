@@ -646,6 +646,10 @@ describe('ClaudeBackend', () => {
       })
       expect(hoisted.captured.buildClaudeOptionsMock).toHaveBeenCalledOnce()
       expect(hoisted.captured.warmupPrewarm).toHaveBeenCalledOnce()
+      expect(hoisted.captured.warmupPrewarm).toHaveBeenCalledWith(
+        expect.any(Object),
+        'sess-prewarm',
+      )
       const builtOpts = hoisted.captured.buildClaudeOptionsMock.mock.calls[0]![0] as {
         cwd: string
         model: string

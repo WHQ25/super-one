@@ -289,7 +289,10 @@ export class ClaudeBackend implements SessionBackend {
     this.iterationDone = handle.iterationDone
     this.spawnAbortController = handle.spawnAbortController
     this.activeBackgroundTasks = handle.activeBackgroundTasks ?? null
-    this._activeRuntimeKey = WarmupManager.keyOf(buildClaudeOptions(queryOptions))
+    this._activeRuntimeKey = WarmupManager.keyOf(
+      buildClaudeOptions(queryOptions),
+      queryOptions.superoneSessionId,
+    )
   }
 
   /**
@@ -578,8 +581,8 @@ export class ClaudeBackend implements SessionBackend {
     if (config.proxy) return
     try {
       const options = buildClaudeOptions(this.buildQueryOptions(opts))
-      if (this.query && this._activeRuntimeKey === WarmupManager.keyOf(options)) return
-      this.warmupManager.prewarm(options)
+      if (this.query && this._activeRuntimeKey === WarmupManager.keyOf(options, opts.sessionId)) return
+      this.warmupManager.prewarm(options, opts.sessionId)
     } catch (err) {
       log.debug('[ClaudeBackend] prewarm failed:', err)
     }

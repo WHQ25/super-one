@@ -101,6 +101,17 @@ describe('WarmupManager prewarm/consume — session isolation', () => {
     const result = m.consume(baseOpts({ resume: 'old-session-id' } as Partial<Options>))
     expect(result).toBeNull()
   })
+
+  it('does NOT consume a slot prepared for another SuperOne session', async () => {
+    const warm = fakeWarm()
+    startupMock.mockResolvedValue(warm)
+    const m = new WarmupManager()
+    m.prewarm(baseOpts(), 'superone-session-a')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(m.consume(baseOpts(), 'superone-session-b')).toBeNull()
+    expect(m.consume(baseOpts(), 'superone-session-a')?.warm).toBe(warm)
+  })
 })
 
 describe('WarmupManager prewarm/consume', () => {

@@ -178,7 +178,7 @@ export function createSessionQuery(
 
   let q: Query
   let spawnAbortController: AbortController
-  const warm = options.warmupManager?.consume(sdkOptions)
+  const warm = options.warmupManager?.consume(sdkOptions, options.superoneSessionId)
   if (warm) {
     log.info('[claude-query] using prewarmed subprocess')
     q = warm.warm.query(bridge)

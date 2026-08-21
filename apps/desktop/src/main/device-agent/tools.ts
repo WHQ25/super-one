@@ -123,14 +123,13 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
   {
     name: 'device_act',
     description:
-      'Run 1-10 touch actions against a snapshot, then re-observe to judge whether they worked. '
+      'Run 1-10 touch actions against a snapshot, then re-observe to judge if they worked. '
       + 'Actions: tap, doubleTap, longPress, swipe(direction|toX/toY), pinch(scale), press(ref), type, key, rotate, keyboard. '
-      + 'Prefer press for a ref-backed control; it uses accessibility and is immune to animation, rotation and scale '
-      + '(not on a source=ocr snapshot — tap there). '
-      + 'Aim touch actions at refs too; raw x/y is a last resort. The full batch is validated before any action runs. '
-      + 'rotate ends the snapshot it is in — put it last, then re-snapshot; a ref or coordinate after it is refused. '
-      + 'Returns worked|didnt|unknown after re-observing; unknown means input landed but no visible change. '
-      + 'Pass expect to define success. A stale stateId is refused before anything happens.',
+      + 'Prefer press for a ref-backed control; it goes through accessibility, immune to animation, rotation and scale '
+      + '(not on a source=ocr snapshot — tap there). Aim touch actions at refs too; raw x/y is a last resort. '
+      + 'The whole batch, stale stateId included, is validated up front. '
+      + 'rotate ends the snapshot it is in: put it last, then re-snapshot — a later ref or coordinate is refused. '
+      + 'Returns worked|didnt|unknown; unknown means input landed but nothing visibly changed. Pass expect to define success.',
     shape: {
       ...descriptionField,
       stateId: z.string(),

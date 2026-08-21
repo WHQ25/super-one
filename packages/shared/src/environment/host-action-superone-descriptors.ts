@@ -27,7 +27,11 @@ const deviceConditionSchema = {
       description: "Developer-assigned id. Survives copy changes and translation — the most durable target.",
       type: "string"
     },
-    text: { description: "Required by textEquals and textContains.", type: "string" }
+    text: {
+      description: "The string textEquals/textContains compares against. Required by those two kinds, and NOT a way to name an element — use label for that.",
+      type: "string",
+      minLength: 1
+    }
   },
   required: ["kind"],
   additionalProperties: false
@@ -3587,7 +3591,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "device_act",
-    "description": "Run 1-10 touch actions against a snapshot, then re-observe to judge whether they worked. Actions: tap, doubleTap, longPress, swipe(direction|toX/toY), pinch(scale), press(ref), type, key, rotate, keyboard. Prefer press for a ref-backed control; it uses accessibility and is immune to animation, rotation and scale (not on a source=ocr snapshot — tap there). Aim touch actions at refs too; raw x/y is a last resort. The full batch is validated before any action runs. Returns worked|didnt|unknown after re-observing; unknown means input landed but no visible change. Pass expect to define success. A stale stateId is refused before anything happens.",
+    "description": "Run 1-10 touch actions against a snapshot, then re-observe to judge if they worked. Actions: tap, doubleTap, longPress, swipe(direction|toX/toY), pinch(scale), press(ref), type, key, rotate, keyboard. Prefer press for a ref-backed control; it goes through accessibility, immune to animation, rotation and scale (not on a source=ocr snapshot — tap there). Aim touch actions at refs too; raw x/y is a last resort. The whole batch, stale stateId included, is validated up front. rotate ends the snapshot it is in: put it last, then re-snapshot — a later ref or coordinate is refused. Returns worked|didnt|unknown; unknown means input landed but nothing visibly changed. Pass expect to define success.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3602,7 +3606,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "device_wait_for",
-    "description": "Wait until the screen satisfies a condition. Use this instead of snapshotting in a loop. Distinguishes preexisting (already true when asked) from verified (became true while waiting), so you can tell a real transition from a check that was never going to fail. Returns a fresh settled stateId and matching tree when successful. Target the element by label or identifier, not by ref: refs belong to one snapshot, and what you are waiting for usually does not exist yet.",
+    "description": "Wait until the screen satisfies a condition. Use this instead of snapshotting in a loop. Distinguishes preexisting (already true when asked) from verified (became true while waiting), so you can tell a real transition from a check that was never going to fail. Returns a fresh settled stateId and matching tree when successful. Target the element by label or identifier, not by ref: refs belong to one snapshot, and what you are waiting for usually does not exist yet. Every condition must name an element that way — text only says what to compare, it never selects.",
     "inputSchema": {
       "type": "object",
       "properties": {

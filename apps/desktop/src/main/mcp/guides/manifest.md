@@ -20,7 +20,7 @@ Start with the scaffold from `miniapp_dev_setup` (or register an existing source
 | `version` | Semver (required for packaging as `.s1app`) |
 | `author` | `{ name, email?, url? }` |
 | `logo` | App icon (PNG). See `icon` topic. |
-| `preferWidth` | Preferred activity panel width in pixels (360–2000). Applied when the app is opened, if there's enough room; otherwise clamped to fit. The user can resize freely afterwards — preferWidth only sets the initial size. |
+| `preferWidth` | Preferred activity panel width in pixels (400–2000). Applied when the app is opened, if there's enough room; otherwise clamped to fit. The user can resize freely afterwards — preferWidth only sets the initial size. |
 | `description` | Short description shown in app catalog |
 | `toolSlug` | Namespace prefix for tools. Required when `tools[]` is non-empty. Lowercase alphanumeric + underscores. See `tools` topic. |
 | `tools` | Array of agent-facing tool definitions. See `tools` topic. |

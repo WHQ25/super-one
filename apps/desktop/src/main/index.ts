@@ -830,7 +830,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1080,
+    minWidth: 1120, // MIN_MAIN + MIN_SIDEBAR + MIN_AP
     minHeight: 700,
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 }, ...glassWindowOptions() }

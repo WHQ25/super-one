@@ -128,8 +128,8 @@ describe('parseManifest', () => {
     expect(result.ok).toBe(true)
   })
 
-  it('should reject preferWidth below MIN_AP (360)', () => {
-    const result = parseManifest({ ...validManifest, preferWidth: 200 })
+  it('should reject preferWidth below MIN_AP (400)', () => {
+    const result = parseManifest({ ...validManifest, preferWidth: 360 })
     expect(result.ok).toBe(false)
   })
 

@@ -97,7 +97,7 @@ export const manifestSchema = z.object({
   description: z.string().optional(),
   logo: z.string().optional(),
   isDev: z.boolean().optional(),
-  preferWidth: z.number().int().min(360).max(2000).optional(),
+  preferWidth: z.number().int().min(400).max(2000).optional(),
   permissions: permissionsSchema.optional(),
   background: backgroundSchema.optional(),
   toolSlug: z.string().min(1).regex(TOOL_NAME_RE, { message: 'toolSlug must be lowercase alphanumeric with underscores' }).optional(),

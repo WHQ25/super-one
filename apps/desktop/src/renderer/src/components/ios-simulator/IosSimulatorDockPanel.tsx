@@ -1,20 +1,14 @@
 import { useEffect } from 'react'
 import type { IDockviewPanelProps } from 'dockview-core'
+import { LAYOUT } from '@/lib/layout-constants'
 import { IosSimulatorPanel } from './IosSimulatorPanel'
 
 /**
- * The device keeps its proportions at any size, so a narrow panel only makes it
- * smaller — never squashed. It does become too small to aim at, though: this leaves
- * a full-height phone comfortably clear of the stage padding, with room for the
- * header's title and five buttons on one line.
- *
- * This panel's own number, not `LAYOUT.MIN_AP`. That constant sets the app's minimum
- * window width and validates mini-app `preferWidth`, so raising it to suit one panel
- * charges every window and every mini-app for elbow room only a phone wants. Asking
- * for more than the dock can afford is already handled below — the request is
- * clamped, and the device simply draws smaller.
+ * Same floor as the activity panel (`LAYOUT.MIN_AP`). A group that demands more
+ * than the dock is laid out oversized and clipped — taking the right of the
+ * device with it — so the request is still clamped to what the dock can afford.
  */
-export const IOS_SIMULATOR_MIN_PANEL_WIDTH = 400
+export const IOS_SIMULATOR_MIN_PANEL_WIDTH = LAYOUT.MIN_AP
 
 /** dockview's own floor, restored when this panel lets go of the group. */
 const DOCKVIEW_DEFAULT_MIN_WIDTH = 100

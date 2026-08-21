@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { LAYOUT } from '@/lib/layout-constants'
 
 export type ActivityPanelSide = 'left' | 'right'
 
@@ -56,6 +57,14 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
     {
       name: 'activity-panel',
       partialize: ({ side, panelWidth }) => ({ side, panelWidth }),
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<ActivityPanelState>
+        return {
+          ...current,
+          ...saved,
+          panelWidth: Math.max(LAYOUT.MIN_AP, saved.panelWidth ?? current.panelWidth),
+        }
+      },
     },
   ),
 )

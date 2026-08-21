@@ -3,15 +3,13 @@ export const LAYOUT = {
   MIN_SIDEBAR: 320,
   MAX_SIDEBAR: 500,
   /**
-   * Also the ceiling for any dockview group minimum inside the panel: a group that
-   * demands more is laid out oversized and clipped by the panel rather than shrunk.
+   * Floor for the activity panel and for dockview group minima inside it. A group
+   * that demands more is laid out oversized and clipped by the panel.
    *
-   * Load-bearing well beyond the panel — it sets the app's own minimum window width
-   * (`App.tsx`) and mini-app manifests are validated against it
-   * (`miniapp-schema.ts` `preferWidth`). A panel that wants more elbow room declares
-   * its own floor and clamps to what the dock can afford; it does not raise this.
+   * Also the app window's activity-panel reservation (`App.tsx`) and the mini-app
+   * `preferWidth` minimum (`miniapp-schema.ts`).
    */
-  MIN_AP: 360,
+  MIN_AP: 400,
   CARD_GUTTER: 12,
 } as const
 

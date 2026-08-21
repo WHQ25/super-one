@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import { useActiveSession, extractSessionTitle } from '@/stores/chat'
 import { SessionPane } from '@/components/chat/SessionPane'
 import { useStandaloneSessionBoot } from '@/hooks/useStandaloneSessionBoot'
+import { useWindowChromeSync } from '@/hooks/useWindowChromeSync'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { SessionTitleAnimated, useSessionTitleByAgent } from '@/components/sidebar/AnimatedSessionTitle'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
@@ -37,6 +38,11 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
   const matchesTarget = activeSessionId === sessionId
 
   const [pinnedOnTop, setPinnedOnTop] = useState(false)
+  // Windows draws its caption buttons over the right end of this strip — it is
+  // `bg-card` here, not the `bg-sidebar` of the main window.
+  const titleBarRef = useRef<HTMLDivElement>(null)
+  useWindowChromeSync(titleBarRef)
+
   const togglePinned = useCallback(async () => {
     const next = !pinnedOnTop
     try {
@@ -50,6 +56,7 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
   return (
     <div className="flex h-screen flex-col bg-card text-foreground">
       <div
+        ref={titleBarRef}
         className="flex h-9 shrink-0 select-none items-center gap-2 bg-card px-3"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >

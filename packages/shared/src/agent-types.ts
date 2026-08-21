@@ -3116,6 +3116,7 @@ export const AgentIpcChannels = {
   DRAG_PREVIEW_UPDATE: 'app:drag-preview-update',
   DRAG_PREVIEW_ZONE: 'app:drag-preview-zone',
   SET_WINDOW_ALWAYS_ON_TOP: 'app:set-window-always-on-top',
+  SET_WINDOW_CHROME_COLORS: 'app:set-window-chrome-colors',
   GET_THEME: 'app:get-theme',
   SET_THEME: 'app:set-theme',
   THEME_CHANGED: 'app:theme-changed',

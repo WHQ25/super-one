@@ -1946,6 +1946,8 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.FULLSCREEN_CHANGED, handler)
     }
   },
+  setWindowChromeColors: (colors: { backgroundColor: string; symbolColor: string }) =>
+    ipcRenderer.send(AgentIpcChannels.SET_WINDOW_CHROME_COLORS, colors),
   setMinWindowSize: (width: number, height: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_MIN_WINDOW_SIZE, width, height) as Promise<void>,
   openSessionWindow: (projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }) =>

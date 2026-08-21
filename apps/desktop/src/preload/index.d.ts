@@ -597,6 +597,8 @@ interface AppAPI {
   getFullscreen(): Promise<boolean>
   onFullscreenChanged(callback: (isFullscreen: boolean) => void): () => void
   setMinWindowSize(width: number, height: number): Promise<void>
+  /** Windows only — tint the native caption-button overlay to match the title strip. */
+  setWindowChromeColors(colors: { backgroundColor: string; symbolColor: string }): void
   openSessionWindow(projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }): Promise<void>
   startDragPreview(title: string): Promise<void>
   endDragPreview(): Promise<void>

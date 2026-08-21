@@ -728,15 +728,56 @@ function setThemeMode(mode: ThemeMode): void {
   broadcastTheme()
 }
 
-/** Matches `--background` in theme.css: light oklch(0.97) / dark oklch(0.145). */
-function windowChromeColors(): { backgroundColor: string; symbolColor: string } {
+/**
+ * Boot-time fallback only. The strip the caption buttons sit on is a themed
+ * surface — `--sidebar` in the main window, `--card` in the session window — and
+ * both resolve through `--brand-hue` plus any palette override, so no constant
+ * here can be exact. These are the default-hue (240) values from theme.css; once
+ * a renderer paints, `SET_WINDOW_CHROME_COLORS` replaces them with the colour that
+ * window actually renders. Light mode runs a DARK sidebar — do not "fix" the light
+ * branch back to `--background`, that is what left a white patch behind the buttons.
+ */
+type ChromeSurface = 'sidebar' | 'card'
+
+function windowChromeColors(surface: ChromeSurface): { backgroundColor: string; symbolColor: string } {
+  if (surface === 'card') {
+    return currentDarkTheme
+      ? { backgroundColor: '#171717', symbolColor: '#c8c8c8' }
+      : { backgroundColor: '#fcfefe', symbolColor: '#555555' }
+  }
   return currentDarkTheme
     ? { backgroundColor: '#0a0a0a', symbolColor: '#c8c8c8' }
-    : { backgroundColor: '#f5f5f5', symbolColor: '#555555' }
+    : { backgroundColor: '#1b252d', symbolColor: '#e4e8eb' }
 }
 
-function windowsChromeOptions(overlayHeight: number): Electron.BrowserWindowConstructorOptions {
-  const { backgroundColor, symbolColor } = windowChromeColors()
+/** `#rrggbb` / `#rrggbbaa` — anything else is rejected rather than fed to Electron. */
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/
+
+function isSessionWindow(win: BrowserWindow): boolean {
+  for (const w of sessionWindows.values()) {
+    if (w === win) return true
+  }
+  return false
+}
+
+function applyWindowChromeColors(
+  win: BrowserWindow,
+  colors: { backgroundColor: string; symbolColor: string },
+): void {
+  const chromeBg = windowsChromeBackground({
+    glassActive: isGlassEnabled(),
+    backgroundColor: colors.backgroundColor,
+  })
+  win.setBackgroundColor(chromeBg)
+  try {
+    win.setTitleBarOverlay({ color: chromeBg, symbolColor: colors.symbolColor })
+  } catch {
+    // Frameless windows (drag preview, permission float) have no overlay.
+  }
+}
+
+function windowsChromeOptions(overlayHeight: number, surface: ChromeSurface): Electron.BrowserWindowConstructorOptions {
+  const { backgroundColor, symbolColor } = windowChromeColors(surface)
   const chromeBg = windowsChromeBackground({
     glassActive: isGlassEnabled(),
     backgroundColor,
@@ -752,21 +793,18 @@ function windowsChromeOptions(overlayHeight: number): Electron.BrowserWindowCons
   }
 }
 
+/**
+ * Repaint on theme/glass change. Every window with a renderer re-reports its own
+ * colour right after (the `dark` class flip is what the renderer observes), so this
+ * only has to be close enough to cover that one frame.
+ */
 function applyWindowsChrome(): void {
   if (process.platform !== 'win32') return
-  const { backgroundColor, symbolColor } = windowChromeColors()
-  const chromeBg = windowsChromeBackground({
-    glassActive: isGlassEnabled(),
-    backgroundColor,
-  })
+  const mainColors = windowChromeColors('sidebar')
+  const cardColors = windowChromeColors('card')
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
-    win.setBackgroundColor(chromeBg)
-    try {
-      win.setTitleBarOverlay({ color: chromeBg, symbolColor })
-    } catch {
-      // Frameless windows (drag preview, permission float) have no overlay.
-    }
+    applyWindowChromeColors(win, isSessionWindow(win) ? cardColors : mainColors)
   }
 }
 
@@ -796,7 +834,7 @@ function createWindow(): void {
     minHeight: 700,
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 }, ...glassWindowOptions() }
-      : { ...windowsChromeOptions(40), ...glassWindowOptions() }),
+      : { ...windowsChromeOptions(40, 'sidebar'), ...glassWindowOptions() }),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -905,7 +943,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     title: title ?? 'Session',
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 12 }, ...glassWindowOptions() }
-      : { ...windowsChromeOptions(36), ...glassWindowOptions() }),
+      : { ...windowsChromeOptions(36, 'card'), ...glassWindowOptions() }),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -3931,6 +3969,14 @@ function registerIpcHandlers(): void {
     if (!win || win.isDestroyed()) return false
     win.setAlwaysOnTop(value)
     return win.isAlwaysOnTop()
+  })
+
+  ipcMain.on(AgentIpcChannels.SET_WINDOW_CHROME_COLORS, (_e, colors: { backgroundColor: string; symbolColor: string }): void => {
+    if (process.platform !== 'win32') return
+    if (!HEX_COLOR_RE.test(colors?.backgroundColor ?? '') || !HEX_COLOR_RE.test(colors?.symbolColor ?? '')) return
+    const win = BrowserWindow.fromWebContents(_e.sender)
+    if (!win || win.isDestroyed()) return
+    applyWindowChromeColors(win, colors)
   })
 
   ipcMain.handle(AgentIpcChannels.GET_THEME, () => ({ mode: currentThemeMode, dark: currentDarkTheme }))

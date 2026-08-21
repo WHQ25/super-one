@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
   IosSimulatorChrome,
@@ -92,6 +92,7 @@ const CHROME_WITH_KEYS: IosSimulatorChrome = {
 function stubEnvironment(chrome: () => Promise<IosSimulatorChrome | null>) {
   const openIosSimulatorStream = vi.fn()
   const closeIosSimulatorStream = vi.fn()
+  const stateListeners = new Set<(state: IosSimulatorSessionState) => void>()
   // The setup file installs a get-trap Proxy that ignores its target, so stubs
   // have to replace the whole object rather than be assigned onto it.
   Object.defineProperty(window, 'environment', {
@@ -101,6 +102,13 @@ function stubEnvironment(chrome: () => Promise<IosSimulatorChrome | null>) {
       iosSimulatorInput: vi.fn(async () => ({ ok: true })),
       onIosSimulatorFrame: vi.fn(() => () => {}),
       onIosSimulatorRotateGesture: vi.fn(() => () => {}),
+      onIosSimulatorSessionState: vi.fn((
+        _sessionId: string,
+        callback: (state: IosSimulatorSessionState) => void,
+      ) => {
+        stateListeners.add(callback)
+        return () => { stateListeners.delete(callback) }
+      }),
       openIosSimulatorStream,
       closeIosSimulatorStream,
     },
@@ -109,6 +117,10 @@ function stubEnvironment(chrome: () => Promise<IosSimulatorChrome | null>) {
     openIosSimulatorStream,
     closeIosSimulatorStream,
     iosSimulatorInput: window.environment.iosSimulatorInput as ReturnType<typeof vi.fn>,
+    /** What main pushes when something other than this panel drives the device. */
+    pushSessionState: (state: IosSimulatorSessionState) => {
+      act(() => { for (const listener of stateListeners) listener(state) })
+    },
   }
 }
 
@@ -290,6 +302,38 @@ describe('iOS Simulator stage rotation', () => {
     })
     expect(video.builtWith.at(-1)!.closest('[style*="rotate"]'))
       .toHaveStyle({ transform: 'rotate(90deg)' })
+  })
+
+  it('turns with a rotation the agent performed, not just its own button', async () => {
+    const { pushSessionState } = stubEnvironment(async () => CHROME)
+
+    // `device_act` rotates through the main process, which this panel never hears
+    // about by polling — orientation has no getter to poll. Without the push the
+    // shell stayed upright over a guest lying on its side, and every touch the user
+    // aimed after that was mapped a quarter turn out.
+    renderStage(READY)
+    await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
+    pushSessionState({ ...READY, orientation: 'landscape-left', hardwareKeyboardConnected: false })
+
+    expect(video.builtWith.at(-1)!.closest('[style*="rotate"]'))
+      .toHaveStyle({ transform: 'rotate(270deg)' })
+    expect(screen.getByRole('button', { name: 'Hide Software Keyboard' }))
+      .toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('turns back when the host reports the guest refused the turn', async () => {
+    const { pushSessionState } = stubEnvironment(async () => CHROME)
+    const user = userEvent.setup()
+
+    renderStage(READY)
+    await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
+    // The button turns the shell straight away, so a guest that pins itself upright
+    // — the home screen, Spotlight — used to leave the panel lying down alone.
+    await user.click(screen.getByRole('button', { name: 'Rotate Right' }))
+    pushSessionState(READY)
+
+    expect(video.builtWith.at(-1)!.closest('[style*="rotate"]'))
+      .toHaveStyle({ transform: 'rotate(0deg)' })
   })
 })
 

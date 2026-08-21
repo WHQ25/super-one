@@ -64,6 +64,7 @@ function stubEnvironment(devices: IosSimulatorDevice[]) {
       iosSimulatorInput: vi.fn(async () => ({ ok: true })),
       onIosSimulatorFrame: vi.fn(() => () => {}),
       onIosSimulatorRotateGesture: vi.fn(() => () => {}),
+      onIosSimulatorSessionState: vi.fn(() => () => {}),
       openIosSimulatorStream: vi.fn(),
       closeIosSimulatorStream: vi.fn(),
     },

@@ -7,6 +7,100 @@ export interface HostActionSuperoneToolDescriptor {
   _meta?: Record<string, unknown>
 }
 
+const deviceDescriptionProperty = {
+  type: "string",
+  minLength: 1,
+  maxLength: 160,
+  description: "A short human-friendly explanation of what this step accomplishes, phrased for the user watching (e.g. 'Open the profile tab', 'Check the order total'). Shown in the UI in place of refs and coordinates. Write it in the conversation's language."
+}
+
+const deviceConditionSchema = {
+  type: "object",
+  properties: {
+    kind: { type: "string", enum: ["exists", "notExists", "textEquals", "textContains"] },
+    ref: {
+      description: "Only valid within the snapshot it came from; prefer label or identifier when waiting.",
+      type: "string"
+    },
+    label: { description: "Visible name of the element.", type: "string" },
+    identifier: {
+      description: "Developer-assigned id. Survives copy changes and translation — the most durable target.",
+      type: "string"
+    },
+    text: { description: "Required by textEquals and textContains.", type: "string" }
+  },
+  required: ["kind"],
+  additionalProperties: false
+}
+
+const deviceActionSchema = {
+  type: "object",
+  properties: {
+    type: {
+      type: "string",
+      enum: ["tap", "doubleTap", "longPress", "swipe", "pinch", "press", "type", "key", "rotate", "keyboard"]
+    },
+    ref: { description: "Element ref from the snapshot, e.g. \"@e12\". Preferred over coordinates.", type: "string" },
+    x: {
+      description: "Horizontal position as a fraction of the screen (0-1). Only when no ref fits.",
+      type: "number",
+      minimum: 0,
+      maximum: 1
+    },
+    y: {
+      description: "Vertical position as a fraction of the screen (0-1).",
+      type: "number",
+      minimum: 0,
+      maximum: 1
+    },
+    direction: {
+      description: "swipe: which way the finger travels. Content moves the opposite way, so \"up\" scrolls down a list.",
+      type: "string",
+      enum: ["up", "down", "left", "right"]
+    },
+    distance: {
+      description: "swipe: travel as a fraction of the screen. Default 0.6.",
+      type: "number",
+      minimum: 0.05,
+      maximum: 1
+    },
+    toX: {
+      description: "swipe: explicit destination instead of direction.",
+      type: "number",
+      minimum: 0,
+      maximum: 1
+    },
+    toY: { type: "number", minimum: 0, maximum: 1 },
+    scale: {
+      description: "pinch: final separation factor. Below 1 pinches in (zoom out), above 1 spreads.",
+      type: "number",
+      minimum: 0.1,
+      maximum: 5
+    },
+    durationMs: {
+      description: "How long the gesture takes. Short swipes flick and coast; long ones drag and stop.",
+      type: "integer",
+      minimum: 16,
+      maximum: 10000
+    },
+    text: {
+      description: "type: text to enter. Anything the simulated keyboard cannot spell (Chinese, emoji) is pasted automatically.",
+      type: "string"
+    },
+    button: { type: "string", enum: ["home", "lock", "side", "volume-up", "volume-down"] },
+    orientation: {
+      type: "string",
+      enum: ["portrait", "landscape-left", "portrait-upside-down", "landscape-right"]
+    },
+    connected: {
+      description: "keyboard: attach or detach the hardware keyboard. Detach it to make the on-screen keyboard appear.",
+      type: "boolean"
+    }
+  },
+  required: ["type"],
+  additionalProperties: false
+}
+
 export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
   {
     "name": "session_collab_list_agents",
@@ -3453,6 +3547,75 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "required": [
         "path"
       ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "device_snapshot",
+    "description": "Capture the phone/tablet screen and return a stateId that later calls must quote. mode=semantic (default) returns the accessibility tree with @eN refs, labels, identifiers and bounds — prefer it: refs survive animation and rotation, coordinates do not. mode=visual saves a PNG and returns image.path (not pixels); call Read on that path only if you need to look. mode=fused returns both. Waits for the screen to stop animating first; settled=false means it was still moving, so treat the geometry as approximate. Re-snapshot after anything that changes the screen — refs are positional and a stale stateId is rejected by device_act.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": deviceDescriptionProperty,
+        "mode": { "description": "Default semantic", "type": "string", "enum": ["semantic", "visual", "fused"] },
+        "maxNodes": {
+          "description": "Ceiling on tree size. Default 500; truncated=true means the screen has more.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      },
+      "required": ["description"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "device_query",
+    "description": "Search or inspect an existing snapshot without re-capturing the device. Use this instead of taking another snapshot when you only need to find an element or read its details — it costs no device round trip and cannot race an animation. op=search matches text against labels, values and identifiers. op=inspect returns one element and its children.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": deviceDescriptionProperty,
+        "stateId": { "type": "string", "description": "From a prior device_snapshot." },
+        "op": { "type": "string", "enum": ["search", "inspect"] },
+        "text": { "description": "For search.", "type": "string" },
+        "ref": { "description": "For inspect, e.g. \"@e12\".", "type": "string" }
+      },
+      "required": ["description", "stateId", "op"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "device_act",
+    "description": "Run 1-10 touch actions against a snapshot, then re-observe to judge whether they worked. Actions: tap, doubleTap, longPress, swipe(direction|toX/toY), pinch(scale), press(ref), type, key, rotate, keyboard. Prefer press for a ref-backed control; it uses accessibility and is immune to animation, rotation and scale. Aim touch actions at refs too; raw x/y is a last resort. The full batch is validated before any action runs. Returns worked|didnt|unknown after re-observing; unknown means input landed but no visible change. Pass expect to define success. A stale stateId is refused before anything happens.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": deviceDescriptionProperty,
+        "stateId": { "type": "string" },
+        "actions": { "minItems": 1, "maxItems": 10, "type": "array", "items": deviceActionSchema },
+        "expect": { "description": "Postcondition checked after the actions run.", ...deviceConditionSchema }
+      },
+      "required": ["description", "stateId", "actions"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "device_wait_for",
+    "description": "Wait until the screen satisfies a condition. Use this instead of snapshotting in a loop. Distinguishes preexisting (already true when asked) from verified (became true while waiting), so you can tell a real transition from a check that was never going to fail. Returns a fresh settled stateId and matching tree when successful. Target the element by label or identifier, not by ref: refs belong to one snapshot, and what you are waiting for usually does not exist yet.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": deviceDescriptionProperty,
+        "condition": deviceConditionSchema,
+        "timeoutMs": {
+          "description": "Default 5000",
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        }
+      },
+      "required": ["description", "condition"],
       "additionalProperties": false
     }
   }

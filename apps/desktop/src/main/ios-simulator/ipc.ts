@@ -1,4 +1,4 @@
-import { ipcMain, MessageChannelMain, type MessagePortMain } from 'electron'
+import { BrowserWindow, ipcMain, MessageChannelMain, type MessagePortMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import type {
   IosSimulatorCreateRequest,
@@ -24,6 +24,17 @@ function closePort(key: string): void {
 
 export function registerIosSimulatorIpc(userDataPath: string): void {
   const manager = getIosSimulatorManager(userDataPath)
+
+  // Orientation and hardware-keyboard live only in the main process, and an agent
+  // driving the device changes them behind the panel's back. Broadcast rather than
+  // target a window: a session can be open in more than one, and the payload names
+  // the session it describes so a renderer can drop what is not its own.
+  manager.onSessionState((state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue
+      win.webContents.send(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_STATE, state)
+    }
+  })
 
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_STATUS, (_event, force?: boolean) =>
     manager.status(force === true))

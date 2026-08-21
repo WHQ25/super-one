@@ -2154,6 +2154,60 @@ export type Messages = {
           failed: string
         }
       }
+      device: {
+        snapshot: string
+        snapshotting: string
+        query: string
+        querying: string
+        search: string
+        searching: string
+        inspect: string
+        inspecting: string
+        act: string
+        acting: string
+        tap: string
+        tapping: string
+        doubleTap: string
+        doubleTapping: string
+        longPress: string
+        longPressing: string
+        swipe: string
+        swiping: string
+        pinch: string
+        pinching: string
+        press: string
+        pressing: string
+        type: string
+        typing: string
+        pressKey: string
+        pressingKey: string
+        rotate: string
+        rotating: string
+        showKeyboard: string
+        showingKeyboard: string
+        hideKeyboard: string
+        hidingKeyboard: string
+        waitFor: string
+        waitingFor: string
+        screenshot: string
+        screenshotUnavailable: string
+        json: string
+        moving: string
+        movingHint: string
+        truncated: string
+        matchesCount_one: string
+        matchesCount_other: string
+        outcome: {
+          worked: string
+          didnt: string
+          unknown: string
+        }
+        waitStatus: {
+          preexisting: string
+          verified: string
+          timeout: string
+        }
+      }
     }
     subagent: {
       spawning: string
@@ -5366,6 +5420,60 @@ export const en: Messages = {
           preexisting: 'Already Matched',
           verified: 'Matched',
           failed: 'Not Matched',
+        },
+      },
+      device: {
+        snapshot: 'Snapshot',
+        snapshotting: 'Taking snapshot',
+        query: 'Query',
+        querying: 'Querying',
+        search: 'Search',
+        searching: 'Searching',
+        inspect: 'Inspect',
+        inspecting: 'Inspecting',
+        act: 'Control',
+        acting: 'Controlling',
+        tap: 'Tap',
+        tapping: 'Tapping',
+        doubleTap: 'Double Tap',
+        doubleTapping: 'Double Tapping',
+        longPress: 'Long Press',
+        longPressing: 'Long Pressing',
+        swipe: 'Swipe',
+        swiping: 'Swiping',
+        pinch: 'Pinch',
+        pinching: 'Pinching',
+        press: 'Press Control',
+        pressing: 'Pressing Control',
+        type: 'Type',
+        typing: 'Typing',
+        pressKey: 'Press Key',
+        pressingKey: 'Pressing Key',
+        rotate: 'Rotate',
+        rotating: 'Rotating',
+        showKeyboard: 'Show Keyboard',
+        showingKeyboard: 'Showing Keyboard',
+        hideKeyboard: 'Hide Keyboard',
+        hidingKeyboard: 'Hiding Keyboard',
+        waitFor: 'Wait For',
+        waitingFor: 'Waiting For',
+        screenshot: 'Device Screenshot',
+        screenshotUnavailable: 'Screenshot No Longer Available',
+        json: 'JSON',
+        moving: 'Unsettled',
+        movingHint: 'The screen was still animating, so positions are approximate.',
+        truncated: 'Truncated',
+        matchesCount_one: '{{count}} match',
+        matchesCount_other: '{{count}} matches',
+        outcome: {
+          worked: 'Worked',
+          didnt: 'No Effect',
+          unknown: 'Unverified',
+        },
+        waitStatus: {
+          preexisting: 'Already Matched',
+          verified: 'Matched',
+          timeout: 'Timed Out',
         },
       },
     },

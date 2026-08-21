@@ -1,4 +1,4 @@
-export const IOS_SIMULATOR_PROTOCOL_VERSION = 7 as const
+export const IOS_SIMULATOR_PROTOCOL_VERSION = 8 as const
 export const IOS_SIMULATOR_MAX_TOUCH_CONTACTS = 2 as const
 
 /**
@@ -32,6 +32,16 @@ export const IOS_SIMULATOR_ROTATION_DEGREES: Record<IosSimulatorOrientation, num
   'landscape-right': 90,
   'portrait-upside-down': 180,
   'landscape-left': 270,
+}
+
+/**
+ * Whether the device is lying on its side, which is the only part of an orientation
+ * the host can actually verify: accessibility frames come back in the rotated
+ * screen's own point space, so the guest's root frame swaps width and height on a
+ * quarter turn and looks identical across the two portraits and the two landscapes.
+ */
+export function isIosSimulatorLandscape(orientation: IosSimulatorOrientation): boolean {
+  return IOS_SIMULATOR_ROTATION_DEGREES[orientation] % 180 !== 0
 }
 
 /** Clockwise order, so stepping forward turns the device to the right. */
@@ -130,7 +140,11 @@ export interface IosSimulatorSessionState {
   phase: 'idle' | 'booting' | 'ready' | 'stopping' | 'error'
   previewMode: IosSimulatorPreviewMode
   interactive: boolean
-  /** What the host last told the guest. A guest-driven rotation is not observable. */
+  /**
+   * Which way up the guest is lying. Set only once a rotation the host asked for
+   * was seen to land — apps that pin themselves upright never turn — so this is a
+   * reading, not a request. A rotation the guest starts on its own stays invisible.
+   */
   orientation: IosSimulatorOrientation
   /**
    * Whether the guest thinks a hardware keyboard is plugged in -- and so, inversely,

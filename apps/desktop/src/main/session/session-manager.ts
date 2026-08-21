@@ -415,6 +415,12 @@ export class SessionManagerImpl implements SessionManagerContract {
       log.debug('[SessionManager] dispose error:', err)
     }
     await closeSuperoneMcpHttpSessions(sessionId)
+    try {
+      const { disposeDeviceAgentSession } = await import('../device-agent')
+      disposeDeviceAgentSession(sessionId)
+    } catch (err) {
+      log.debug('[SessionManager] device agent cleanup failed:', err)
+    }
     const projectPath = this.sessionProjects.get(sessionId)
     this.sessions.delete(sessionId)
     this.runtimeReleases.delete(sessionId)

@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import IOSurface
 
-private let protocolVersion = 7
+private let protocolVersion = 8
 private let writeLock = NSLock()
 
 private func emit(_ value: Any) {
@@ -55,7 +55,9 @@ private func probe() -> [String: Any] {
       "framebuffer": NSProtocolFromString("SimDisplayIOSurfaceRenderable") != nil,
       "hid": hasHID && hidClass,
       "rotation": rotation,
-      "accessibility": accessibility != nil && NSClassFromString("AXPTranslator") != nil,
+      // Not just "is the class there": the translator is useless without the guest
+      // channel CoreSimulator has to expose, and the two version independently.
+      "accessibility": accessibility != nil && S1AccessibilityBridge.supported,
       "videoEncoder": videoToolbox != nil && dlsym(videoToolbox, "VTCompressionSessionCreate") != nil,
     ],
     "missingSymbols": missing,
@@ -81,6 +83,7 @@ private final class HelperSession {
   private var display: NSObject?
   private var hid: S1HIDBridge?
   private var orientation: S1OrientationBridge?
+  private var accessibility: S1AccessibilityBridge?
   private var stream: FramebufferStream?
 
   init(deviceSet: SimulatorDeviceSet) { self.deviceSet = deviceSet }
@@ -124,10 +127,24 @@ private final class HelperSession {
       rotationError = error as NSError
       rotationAvailable = false
     }
+    // Accessibility rides a third channel -- CoreSimulator's own XPC service -- so it
+    // is attached separately again: it stays available on a device whose HID client
+    // and workspace port both refused to bind.
+    let accessibility = S1AccessibilityBridge()
+    var accessibilityError: NSError?
+    let accessibilityAvailable: Bool
+    do {
+      try accessibility.attach(toDevice: device.object)
+      accessibilityAvailable = true
+    } catch {
+      accessibilityError = error as NSError
+      accessibilityAvailable = false
+    }
     self.device = device
     self.display = display
     self.hid = inputAvailable ? hid : nil
     self.orientation = rotationAvailable ? orientation : nil
+    self.accessibility = accessibilityAvailable ? accessibility : nil
     return [
       "udid": device.udid,
       "pixelWidth": IOSurfaceGetWidth(surface),
@@ -137,6 +154,8 @@ private final class HelperSession {
       "keyboardAvailable": keyboardConnected,
       "rotationAvailable": rotationAvailable,
       "rotationError": rotationError?.localizedDescription as Any? ?? NSNull(),
+      "accessibilityAvailable": accessibilityAvailable,
+      "accessibilityError": accessibilityError?.localizedDescription as Any? ?? NSNull(),
     ]
   }
 
@@ -176,6 +195,13 @@ private final class HelperSession {
   func requireHID() throws -> S1HIDBridge {
     guard let hid else { throw RequestError.unavailable("HID input is unavailable.") }
     return hid
+  }
+
+  func requireAccessibility() throws -> S1AccessibilityBridge {
+    guard let accessibility else {
+      throw RequestError.unavailable("Guest accessibility is unavailable.")
+    }
+    return accessibility
   }
 
   func perform(method: String, params: [String: Any]) throws -> Any {
@@ -316,6 +342,48 @@ private final class HelperSession {
       let before = hid.failedEventCount
       hid.tapButton(button)
       try ensureDelivered(hid, before)
+      return ["ok": true]
+    case "accessibility.dump":
+      let accessibility = try requireAccessibility()
+      // Clamped rather than trusted, for the same reason stream.start clamps its
+      // knobs: a bad ceiling here would quietly truncate every snapshot of the
+      // session, and a truncated tree looks exactly like a shallow screen.
+      let maxDepth = min(max((params["maxDepth"] as? NSNumber)?.intValue ?? 24, 1), 64)
+      let maxNodes = min(max((params["maxNodes"] as? NSNumber)?.intValue ?? 500, 1), 5000)
+      do {
+        return try accessibility.dumpTree(maxDepth: maxDepth, maxNodes: maxNodes)
+      } catch {
+        throw RequestError.unavailable((error as NSError).localizedDescription)
+      }
+    case "accessibility.hitTest":
+      let accessibility = try requireAccessibility()
+      // Guest POINTS, not framebuffer ratios: this is the space the tree reports its
+      // frames in, so a caller holding a node can hit-test around it directly.
+      guard let x = (params["x"] as? NSNumber)?.doubleValue,
+        let y = (params["y"] as? NSNumber)?.doubleValue
+      else {
+        throw RequestError.invalid("accessibility.hitTest.x and .y are required, in guest points.")
+      }
+      do {
+        return try accessibility.hitTest(x: x, y: y)
+      } catch {
+        throw RequestError.unavailable((error as NSError).localizedDescription)
+      }
+    case "accessibility.perform":
+      let accessibility = try requireAccessibility()
+      guard let action = params["action"] as? String else {
+        throw RequestError.invalid("accessibility.perform.action is required.")
+      }
+      guard let generation = (params["generation"] as? NSNumber)?.intValue,
+        let uid = (params["uid"] as? NSNumber)?.intValue
+      else {
+        throw RequestError.invalid("accessibility.perform.generation and .uid are required.")
+      }
+      do {
+        try accessibility.perform(action: action, generation: generation, uid: uid)
+      } catch {
+        throw RequestError.unavailable((error as NSError).localizedDescription)
+      }
       return ["ok": true]
     default: throw RequestError.invalid("Unknown method \(method).")
     }

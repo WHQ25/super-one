@@ -189,6 +189,24 @@ describe('stripProjectPath', () => {
 })
 
 describe('computeToolMeta', () => {
+  describe('touch-device tools', () => {
+    it('carries the agent description over as the summary the phone shows', () => {
+      // `input` is blanked before a tool_use reaches the phone, so without this the
+      // mobile row is a bare verb with nothing saying which step it was.
+      const block = toolUseBlock('mcp__superone__device_act', {
+        description: 'Open the Settings app',
+        stateId: 's2',
+        actions: [{ type: 'tap', ref: '@e4' }],
+      })
+      expect(computeToolMeta(block, '/proj').toolSummary).toBe('Open the Settings app')
+    })
+
+    it('leaves the summary empty rather than inventing one from refs', () => {
+      const block = toolUseBlock('mcp__superone__device_snapshot', { mode: 'semantic' })
+      expect(computeToolMeta(block, '/proj').toolSummary).toBeUndefined()
+    })
+  })
+
   describe('Read', () => {
     it('should extract file name as summary', () => {
       const block = toolUseBlock('Read', { file_path: '/proj/src/main.ts' })

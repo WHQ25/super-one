@@ -776,6 +776,11 @@ export interface EnvironmentAPI {
   ): void
   closeIosSimulatorStream(sessionId: string): void
   onIosSimulatorFrame(sessionId: string, callback: (frame: IosSimulatorFrame) => void): () => void
+  /** Host-owned state the panel cannot poll for: orientation and hardware keyboard. */
+  onIosSimulatorSessionState(
+    sessionId: string,
+    callback: (state: IosSimulatorSessionState) => void,
+  ): () => void
   onIosSimulatorRotateGesture(callback: (rotation: number) => void): () => void
   workspaceListDir(
     project: { environmentId: string; projectId: string },

@@ -17,6 +17,8 @@ import { isWorkflowSmokeCheck } from './workflow-utils'
 import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
+import { DeviceToolBlock } from './DeviceToolBlock'
+import { getDeviceOp } from './device-tool-display'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
 import { ImageGenToolBlock } from './ImageGenToolBlock'
@@ -1051,6 +1053,22 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       return (
         <ComputerUseToolBlock
           op={computerOp}
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          elapsedSeconds={elapsedSeconds}
+          stallLevel={stallLevel}
+          allowExpand={allowExpand}
+        />
+      )
+    }
+    const deviceOp = getDeviceOp(mcpInfo.mcpToolName)
+    if (deviceOp) {
+      return (
+        <DeviceToolBlock
+          op={deviceOp}
           params={params}
           result={cleanResult}
           isStreaming={isStreaming}

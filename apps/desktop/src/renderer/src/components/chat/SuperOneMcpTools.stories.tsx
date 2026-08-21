@@ -15,7 +15,7 @@ import { ToolBlock } from './ToolBlock'
  * Catalog of every SuperOne MCP tool row as ToolBlock renders it.
  *
  * Detailed expand galleries stay in sibling stories under this same title:
- * Archive, Automation, Collab, Browser, Computer, Widget, Video, Miniapp.
+ * Archive, Automation, Collab, Browser, Computer, Device, Widget, Video, Miniapp.
  */
 const HIDDEN_TOOLS = new Set([
   'session_rename',
@@ -31,6 +31,13 @@ const COMPUTER_TOOLS = [
   'computer_query',
   'computer_act',
   'computer_wait_for',
+] as const
+
+const DEVICE_TOOLS = [
+  'device_snapshot',
+  'device_query',
+  'device_act',
+  'device_wait_for',
 ] as const
 
 function q(bare: string): string {
@@ -461,6 +468,27 @@ export const Computer: Story = {
           tool={tool}
           input={tool === 'computer_act' ? { actions: [{ type: 'click' }] } : {}}
           result={JSON.stringify({ status: 'ok' })}
+        />
+      ))}
+    </StoryShell>
+  ),
+}
+
+export const Device: Story = {
+  name: 'Touch device',
+  render: () => (
+    <StoryShell>
+      <Note>Op-level galleries live in SuperOne/MCP Tools/Device.</Note>
+      {DEVICE_TOOLS.map((tool) => (
+        <Pair
+          key={tool}
+          tool={tool}
+          input={
+            tool === 'device_act'
+              ? { description: 'Open the Settings app', actions: [{ type: 'tap', ref: '@e4' }] }
+              : { description: 'Look at the screen' }
+          }
+          result={JSON.stringify({ stateId: 's1', orientation: 'portrait', settled: true })}
         />
       ))}
     </StoryShell>

@@ -76,6 +76,21 @@ export const BROWSER_TOOL_NAMES = [
 ] as const
 
 /**
+ * Touch-device control (phones / tablets). Host-owned like the browser tools rather
+ * than feature-gated like `computer_*`: these drive a simulator, which is a sandbox
+ * the user opened on purpose, not the user's own desktop.
+ *
+ * The desktop side additionally hides them off macOS, but the name set is shared so
+ * permission and registration cannot disagree about what exists.
+ */
+export const DEVICE_AGENT_TOOL_NAMES = [
+  'device_snapshot',
+  'device_query',
+  'device_act',
+  'device_wait_for',
+] as const
+
+/**
  * Bare tool names registered as SuperOne MCP builtins (desktop surface).
  * Keep in sync with tools registered on the SuperOne MCP surface.
  */
@@ -110,6 +125,7 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'automation_apply',
   'automation_delete',
   ...BROWSER_TOOL_NAMES,
+  ...DEVICE_AGENT_TOOL_NAMES,
 ] as const
 
 export type BuiltInSuperoneToolName = (typeof BUILT_IN_SUPERONE_TOOL_NAMES)[number]

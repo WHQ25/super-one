@@ -7,6 +7,7 @@ const hoisted = vi.hoisted(() => ({
   backendsCreated: [] as SessionBackend[],
   existsSyncMock: vi.fn<(path: string) => boolean>(() => true),
   closeMcpHttpSessions: vi.fn(async (_sessionId: string) => undefined),
+  disposeDeviceAgentSession: vi.fn((_sessionId: string) => undefined),
 }))
 
 vi.mock('../logger', () => ({
@@ -24,6 +25,10 @@ vi.mock('./session-provider-repo', () => ({
 
 vi.mock('../mcp/superone-mcp-http-state', () => ({
   closeSuperoneMcpHttpSessions: hoisted.closeMcpHttpSessions,
+}))
+
+vi.mock('../device-agent', () => ({
+  disposeDeviceAgentSession: hoisted.disposeDeviceAgentSession,
 }))
 
 vi.mock('../agent/discover-resources', () => ({
@@ -151,6 +156,7 @@ describe('SessionManager', () => {
     hoisted.existsSyncMock.mockReset()
     hoisted.existsSyncMock.mockReturnValue(true)
     hoisted.closeMcpHttpSessions.mockClear()
+    hoisted.disposeDeviceAgentSession.mockClear()
     seedProvider('claude-base', 'claude')
     seedProvider('codex-base', 'codex')
     mgr = new SessionManagerImpl()
@@ -357,6 +363,7 @@ describe('SessionManager', () => {
       await mgr.disposeSession(s.snapshot.id)
       expect(mgr.getSession(s.snapshot.id)).toBeNull()
       expect(backend.disposed).toBe(true)
+      expect(hoisted.disposeDeviceAgentSession).toHaveBeenCalledWith(s.snapshot.id)
     })
 
     it('disposeSession on unstarted session still closes the backend', async () => {

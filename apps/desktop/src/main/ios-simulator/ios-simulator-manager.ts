@@ -19,7 +19,9 @@ import type {
 import {
   canTypeIosSimulatorText,
   DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
+  isIosSimulatorLandscape,
 } from '@superone/shared/ios-simulator'
+import type { IosSimulatorAccessibilityDump, IosSimulatorRawNode } from './a11y-tree'
 import type {
   IosSimulatorNativeAttachment,
   IosSimulatorNativeStreamInfo,
@@ -32,6 +34,7 @@ import {
   type IosSimulatorRecording,
 } from './capture'
 import { SimctlClient } from './simctl'
+import log from '../logger'
 
 export interface IosSimulatorPort {
   status(): Promise<Omit<IosSimulatorStatus, 'helper' | 'previewMode'>>
@@ -58,6 +61,10 @@ export interface IosSimulatorNativePort {
   ): Promise<IosSimulatorNativeStreamInfo>
   closeFrames(): Promise<void>
   input(input: IosSimulatorInput): Promise<IosSimulatorInputResult>
+  dumpAccessibility(options?: { maxDepth?: number; maxNodes?: number })
+    : Promise<IosSimulatorAccessibilityDump>
+  hitTestAccessibility(x: number, y: number): Promise<IosSimulatorRawNode>
+  performAccessibility(action: string, generation: number, uid: number): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -81,6 +88,9 @@ interface ManagerOptions {
    * to show, so the reason has to leave this class somehow.
    */
   onStreamError?: (sessionId: string, error: unknown) => void
+  /** How long to wait for the guest to actually turn before calling it a refusal. */
+  rotationConfirmMs?: number
+  rotationPollMs?: number
 }
 
 interface NativeSession {
@@ -141,6 +151,12 @@ export class IosSimulatorManager {
   private readonly streamFlights = new Map<string, Promise<void>>()
   private readonly recordings = new Map<string, RecordingSession>()
   private readonly onStreamError: (sessionId: string, error: unknown) => void
+  private readonly rotationConfirmMs: number
+  private readonly rotationPollMs: number
+  // Host-owned state changes reach the renderer through here. Without it a rotation
+  // the agent asked for never left the main process, so the panel kept drawing the
+  // device upright around a guest that had turned.
+  private readonly stateListeners = new Set<(state: IosSimulatorSessionState) => void>()
   private statusFlight: Promise<IosSimulatorStatus> | null = null
 
   constructor(options: ManagerOptions) {
@@ -153,6 +169,21 @@ export class IosSimulatorManager {
     this.attachAttempts = options.attachAttempts ?? 20
     this.attachRetryMs = options.attachRetryMs ?? 250
     this.onStreamError = options.onStreamError ?? (() => undefined)
+    this.rotationConfirmMs = options.rotationConfirmMs ?? 1_500
+    this.rotationPollMs = options.rotationPollMs ?? 100
+  }
+
+  /**
+   * Watch host-owned session state — the two readings CoreSimulator has no getter
+   * for, orientation and hardware keyboard, which only this process knows.
+   *
+   * Everything else the panel shows is pulled on demand, but these change under the
+   * renderer's feet whenever an agent drives the device, and a panel that missed the
+   * change draws the shell at the wrong angle and maps the user's next touch with it.
+   */
+  onSessionState(listener: (state: IosSimulatorSessionState) => void): () => void {
+    this.stateListeners.add(listener)
+    return () => { this.stateListeners.delete(listener) }
   }
 
   status(force = false): Promise<IosSimulatorStatus> {
@@ -331,14 +362,138 @@ export class IosSimulatorManager {
         return native.client.input({ type: 'paste' })
       }
       const result = await native.client.input(input)
-      // Remembered only once the guest has accepted it, so a rejected rotation does
-      // not leave the panel drawing the device at an angle it never reached.
-      if (input.type === 'rotate' && result.ok) this.orientations.set(udid, input.orientation)
-      if (input.type === 'keyboard' && result.ok) this.hardwareKeyboards.set(udid, input.connected)
+      if (input.type === 'rotate') return this.settleRotation(sessionId, udid, input.orientation, result)
+      if (input.type === 'keyboard' && result.ok) {
+        this.hardwareKeyboards.set(udid, input.connected)
+        await this.publishSessionState(sessionId)
+      }
       return result
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  /**
+   * Turn a delivered rotation into a reading of the guest.
+   *
+   * The send succeeding means the orientation event reached the guest workspace, not
+   * that anything acted on it: SpringBoard on iPhone, Spotlight, and any app that
+   * pins itself upright ignore it silently. Trusting the send is what let `device_act`
+   * report a rotation that never happened, and what let the panel draw a landscape
+   * shell around a device still standing up.
+   */
+  private async settleRotation(
+    sessionId: string,
+    udid: string,
+    orientation: IosSimulatorOrientation,
+    result: IosSimulatorInputResult,
+  ): Promise<IosSimulatorInputResult> {
+    const previous = this.orientations.get(udid) ?? 'portrait'
+    const turned = result.ok && await this.confirmRotation(sessionId, orientation, previous)
+    if (turned) this.orientations.set(udid, orientation)
+    // Published on refusal too: the panel turns its shell the moment the user clicks
+    // the button, so something has to be able to turn it back. Awaited rather than
+    // fired off, so a caller that reads the state back cannot beat its own event.
+    await this.publishSessionState(sessionId)
+    if (!result.ok || turned) return result
+    return {
+      ok: false,
+      error: 'The rotation reached the guest but the foreground app kept its own '
+        + 'orientation. Apps that lock themselves upright — the home screen, Spotlight '
+        + '— never turn; try one that supports both, such as Safari.',
+    }
+  }
+
+  /**
+   * Ask the guest, rather than the host, which way up it is.
+   *
+   * Accessibility is the only channel that answers for the guest: its frames come
+   * back in the rotated screen's own point space, so the root frame swaps width and
+   * height exactly when the guest really turned. Nothing on the display port carries
+   * orientation — the framebuffer keeps its portrait shape either way.
+   *
+   * It can only see quarter turns. The two portraits look alike to it, as do the two
+   * landscapes, so a half turn is still taken on trust.
+   */
+  private async confirmRotation(
+    sessionId: string,
+    target: IosSimulatorOrientation,
+    previous: IosSimulatorOrientation,
+  ): Promise<boolean> {
+    const wantLandscape = isIosSimulatorLandscape(target)
+    if (wantLandscape === isIosSimulatorLandscape(previous)) return true
+
+    const deadline = Date.now() + this.rotationConfirmMs
+    for (;;) {
+      // Only the root frame is read, so the dump is kept to it.
+      const frame = await this.rootAccessibilityFrame(sessionId)
+      // `null` means this helper cannot see the guest at all. Verifying is a bonus,
+      // not a precondition — refusing here would take away a control that works.
+      if (frame === null) return true
+      const [, , width, height] = frame
+      // A guest mid-launch reports a zero-sized root; that is not a portrait reading.
+      if (width > 0 && height > 0 && width > height === wantLandscape) return true
+      if (Date.now() >= deadline) return false
+      await delay(this.rotationPollMs)
+    }
+  }
+
+  private async rootAccessibilityFrame(
+    sessionId: string,
+  ): Promise<[number, number, number, number] | null> {
+    try {
+      const dump = await this.accessibilityDump(sessionId, { maxDepth: 1, maxNodes: 1 })
+      return dump.tree.frame ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private async publishSessionState(sessionId: string): Promise<void> {
+    if (this.stateListeners.size === 0) return
+    try {
+      const state = await this.getSessionState(sessionId)
+      for (const listener of this.stateListeners) listener(state)
+    } catch (error) {
+      log.warn('[ios-simulator] could not publish session state', sessionId, error)
+    }
+  }
+
+  /**
+   * Read the guest's semantic tree.
+   *
+   * Unlike `input` this has no fallback path. A device whose accessibility channel
+   * refused to bind cannot be observed semantically, and returning an empty tree
+   * would read to a caller as "the screen is blank" rather than "I cannot see".
+   */
+  async accessibilityDump(
+    sessionId: string,
+    options: { maxDepth?: number; maxNodes?: number } = {},
+  ): Promise<IosSimulatorAccessibilityDump> {
+    const native = await this.requireNativeSession(sessionId)
+    return native.client.dumpAccessibility(options)
+  }
+
+  /**
+   * Drive a control through accessibility rather than touch.
+   *
+   * `generation` is the dump the uid came from; the helper refuses a mismatch
+   * instead of acting on whatever now occupies that slot.
+   */
+  async accessibilityPerform(
+    sessionId: string,
+    action: string,
+    generation: number,
+    uid: number,
+  ): Promise<void> {
+    const native = await this.requireNativeSession(sessionId)
+    await native.client.performAccessibility(action, generation, uid)
+  }
+
+  private async requireNativeSession(sessionId: string) {
+    const udid = this.sessionBindings.get(sessionId)
+    if (!udid) throw new Error('No simulator is bound to this session.')
+    return this.ensureNativeSession(sessionId, udid)
   }
 
   /** Writes a PNG of the device's own display, at its native resolution. */

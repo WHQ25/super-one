@@ -11,7 +11,7 @@ mkdir -p "$OUT_DIR/module-cache" "$OUT_DIR/tmp"
 trap 'rm -f "$TMP"' EXIT
 export TMPDIR="$OUT_DIR/tmp"
 
-for unit in HIDBridge OrientationBridge; do
+for unit in HIDBridge OrientationBridge AccessibilityBridge; do
   xcrun clang \
     -c -fobjc-arc -O2 -fmodules -fmodules-cache-path="$OUT_DIR/module-cache" -target "$TARGET" \
     "$ROOT/Sources/$unit.m" \
@@ -23,8 +23,8 @@ xcrun swiftc \
   -module-cache-path "$OUT_DIR/module-cache" \
   -import-objc-header "$ROOT/Sources/BridgingHeader.h" \
   -framework Foundation -framework CoreGraphics -framework CoreImage -framework CoreMedia \
-  -framework CoreVideo -framework IOSurface -framework VideoToolbox \
-  "$OUT_DIR/HIDBridge.o" "$OUT_DIR/OrientationBridge.o" \
+  -framework CoreVideo -framework IOSurface -framework VideoToolbox -framework AppKit \
+  "$OUT_DIR/HIDBridge.o" "$OUT_DIR/OrientationBridge.o" "$OUT_DIR/AccessibilityBridge.o" \
   "$ROOT/Sources/CoreSimulatorBridge.swift" \
   "$ROOT/Sources/H264Encoder.swift" \
   "$ROOT/Sources/FramebufferStream.swift" \

@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   IosSimulatorDevice,
   IosSimulatorFrame,
+  IosSimulatorInput,
   IosSimulatorPreviewQuality,
   IosSimulatorStatus,
 } from '@superone/shared/ios-simulator'
+import { isIosSimulatorLandscape } from '@superone/shared/ios-simulator'
 import type {
   IosSimulatorNativeAttachment,
   IosSimulatorNativeStreamInfo,
@@ -53,6 +55,8 @@ function setup(initial = device()) {
   }
   let streamInfo: IosSimulatorNativeStreamInfo | null = null
   let alive = true
+  let guestLandscape = false
+  let guestFollowsRotation = true
   const native = {
     get attachment() { return attachment },
     get streamInfo() { return streamInfo },
@@ -81,7 +85,28 @@ function setup(initial = device()) {
       return streamInfo
     }),
     closeFrames: vi.fn(async () => { frameListener = null; streamInfo = null }),
-    input: vi.fn(async () => ({ ok: true })),
+    input: vi.fn(async (input: IosSimulatorInput) => {
+      // Models an app that follows the device, which is what most of them do. The
+      // guest is what the manager now reads back, so the fake has to have one.
+      if (input.type === 'rotate' && guestFollowsRotation) {
+        guestLandscape = isIosSimulatorLandscape(input.orientation)
+      }
+      return { ok: true }
+    }),
+    // Guest POINT space, so the root frame turns with the device -- this is the only
+    // reading that says whether the guest acted on the orientation event.
+    dumpAccessibility: vi.fn(async () => ({
+      generation: 1,
+      nodes: 1,
+      complete: true,
+      tree: {
+        uid: 1,
+        role: 'application',
+        frame: (guestLandscape ? [0, 0, 956, 440] : [0, 0, 440, 956]) as [number, number, number, number],
+      },
+    })),
+    hitTestAccessibility: vi.fn(async () => ({ uid: 1 })),
+    performAccessibility: vi.fn(async () => {}),
     dispose: vi.fn(async () => { attachment = null; frameListener = null; streamInfo = null }),
   }
   const nativeFactory = vi.fn(async () => native)
@@ -98,6 +123,8 @@ function setup(initial = device()) {
     stopped,
     native,
     nativeFactory,
+    /** An app that pins itself upright -- the home screen, Spotlight, most modals. */
+    lockGuestUpright: () => { guestFollowsRotation = false },
     /** The helper process going away underneath a session that still holds it. */
     crashHelper: () => {
       alive = false
@@ -572,15 +599,22 @@ describe('IosSimulatorManager text input', () => {
   })
 })
 
+function rotationManager(harness: ReturnType<typeof setup>) {
+  return new IosSimulatorManager({
+    simctl: harness.simctl,
+    nativeFactory: harness.nativeFactory,
+    helperProbe: async () => null,
+    attachAttempts: 1,
+    // Real guests take a few hundred milliseconds to turn; the fake turns at once.
+    rotationConfirmMs: 50,
+    rotationPollMs: 5,
+  })
+}
+
 describe('IosSimulatorManager rotation', () => {
   it('reports the orientation the guest accepted, and forgets it on shutdown', async () => {
     const harness = setup()
-    const manager = new IosSimulatorManager({
-      simctl: harness.simctl,
-      nativeFactory: harness.nativeFactory,
-      helperProbe: async () => null,
-      attachAttempts: 1,
-    })
+    const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
 
     await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
@@ -689,16 +723,98 @@ describe('IosSimulatorManager rotation (refusals)', () => {
   it('leaves the panel upright when the guest refuses the rotation', async () => {
     const harness = setup()
     harness.native.input.mockResolvedValue({ ok: false, error: 'Rotation was rejected.' })
-    const manager = new IosSimulatorManager({
-      simctl: harness.simctl,
-      nativeFactory: harness.nativeFactory,
-      helperProbe: async () => null,
-      attachAttempts: 1,
-    })
+    const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
 
     await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
 
     expect((await manager.getSessionState('session-a')).orientation).toBe('portrait')
+  })
+
+  it('fails the rotation when the event lands but the foreground app stays upright', async () => {
+    const harness = setup()
+    harness.lockGuestUpright()
+    const manager = rotationManager(harness)
+    await manager.boot('session-a', 'device-a')
+
+    const result = await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+
+    // Delivering the event is not performing the rotation: reporting the send made
+    // `device_act` claim a turn that never happened.
+    expect(result.ok).toBe(false)
+    expect(result.error).toMatch(/kept its own orientation/i)
+    expect((await manager.getSessionState('session-a')).orientation).toBe('portrait')
+  })
+
+  it('takes a half turn on trust, because the screen keeps its shape through one', async () => {
+    const harness = setup()
+    harness.lockGuestUpright()
+    const manager = rotationManager(harness)
+    await manager.boot('session-a', 'device-a')
+
+    const result = await manager.input('session-a', {
+      type: 'rotate', orientation: 'portrait-upside-down',
+    })
+
+    expect(result.ok).toBe(true)
+    expect((await manager.getSessionState('session-a')).orientation).toBe('portrait-upside-down')
+  })
+
+  it('still rotates when the helper cannot see the guest at all', async () => {
+    const harness = setup()
+    harness.lockGuestUpright()
+    harness.native.dumpAccessibility.mockRejectedValue(new Error('Accessibility is unavailable.'))
+    const manager = rotationManager(harness)
+    await manager.boot('session-a', 'device-a')
+
+    const result = await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+
+    // Verification is a bonus. A helper build without accessibility would otherwise
+    // lose a control that works perfectly well.
+    expect(result.ok).toBe(true)
+    expect((await manager.getSessionState('session-a')).orientation).toBe('landscape-left')
+  })
+})
+
+describe('IosSimulatorManager session state pushes', () => {
+  it('announces a rotation the panel did not ask for', async () => {
+    const harness = setup()
+    const manager = rotationManager(harness)
+    await manager.boot('session-a', 'device-a')
+    const seen: string[] = []
+    manager.onSessionState((state) => { seen.push(state.orientation) })
+
+    // What `device_act` does: the renderer never sees this call, so without a push
+    // the panel keeps drawing the device upright around a guest that has turned.
+    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+
+    expect(seen).toEqual(['landscape-left'])
+  })
+
+  it('announces a refused rotation too, so an optimistic panel can turn back', async () => {
+    const harness = setup()
+    harness.lockGuestUpright()
+    const manager = rotationManager(harness)
+    await manager.boot('session-a', 'device-a')
+    const seen: string[] = []
+    manager.onSessionState((state) => { seen.push(state.orientation) })
+
+    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+
+    expect(seen).toEqual(['portrait'])
+  })
+
+  it('stops announcing once the listener unsubscribes', async () => {
+    const harness = setup()
+    const manager = rotationManager(harness)
+    await manager.boot('session-a', 'device-a')
+    const seen: string[] = []
+    const stop = manager.onSessionState((state) => { seen.push(state.orientation) })
+
+    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+    stop()
+    await manager.input('session-a', { type: 'rotate', orientation: 'portrait' })
+
+    expect(seen).toEqual(['landscape-left'])
   })
 })

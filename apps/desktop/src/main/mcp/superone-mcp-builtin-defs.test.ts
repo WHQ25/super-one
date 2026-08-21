@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { getDeviceAgentToolDescriptors } from '../device-agent/tools'
 import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment/host-action-superone-descriptors'
+import { classifyHostActionTool } from '@superone/shared/environment/host-action-browser-catalog'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
@@ -31,7 +33,10 @@ import {
  * `McpServer`, bypassing the `registeredTools` map that `refreshTools()` reconciles against — so they
  * also survive every subsequent tool-list refresh.
  */
-const SEPARATELY_DESCRIBED = ['browser_', 'widget_']
+// These carry their own descriptors (generated from zod, or hand-built) rather than
+// living in BUILT_IN_SUPERONE_TOOL_DEFS. Listed explicitly so "forgot the descriptor"
+// still fails for everything else.
+const SEPARATELY_DESCRIBED = ['browser_', 'widget_', 'device_']
 
 describe('built-in superone tool registration surfaces', () => {
   const describedNames = new Set(BUILT_IN_SUPERONE_TOOL_DEFS.map((def) => def.name))
@@ -43,6 +48,30 @@ describe('built-in superone tool registration surfaces', () => {
       (name) => !SEPARATELY_DESCRIBED.some((prefix) => name.startsWith(prefix)) && !describedNames.has(name),
     )
     expect(missing).toEqual([])
+  })
+
+  it('keeps device tools on their own descriptor path rather than silently dropping them', () => {
+    // The failure this guards is invisible: a device_* name that is host-owned but
+    // has no descriptor anywhere is simply missing in Codex / ACP, while Claude
+    // keeps working, so nothing crashes and nobody notices.
+    const deviceTools = BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name.startsWith('device_'))
+    expect(deviceTools.length).toBeGreaterThan(0)
+    const described = new Set(getDeviceAgentToolDescriptors().map((def) => def.name))
+    expect(deviceTools.filter((name) => !described.has(name))).toEqual([])
+  })
+
+  it('keeps remote device descriptors aligned with desktop discovery', () => {
+    const desktopDescriptors = getDeviceAgentToolDescriptors()
+    for (const desktop of desktopDescriptors) {
+      const hostAction = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === desktop.name)
+      expect(hostAction?.description, `${desktop.name} description`).toBe(desktop.description)
+      expect(hostAction?.inputSchema, `${desktop.name} input schema`).toEqual(desktop.inputSchema)
+      expect(desktop.description.length, `${desktop.name} description length`).toBeLessThanOrEqual(700)
+    }
+    expect(classifyHostActionTool('device_snapshot').replayPolicy).toBe('safe')
+    expect(classifyHostActionTool('device_query').replayPolicy).toBe('safe')
+    expect(classifyHostActionTool('device_wait_for').replayPolicy).toBe('safe')
+    expect(classifyHostActionTool('device_act').replayPolicy).toBe('unsafe')
   })
 
   it('does not describe a tool that is absent from the name allowlist', () => {

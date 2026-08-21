@@ -11,6 +11,7 @@ import type {
 } from '@superone/shared/ios-simulator'
 import { IOS_SIMULATOR_PROTOCOL_VERSION } from '@superone/shared/ios-simulator'
 import { trace } from '../agent/event-trace'
+import type { IosSimulatorAccessibilityDump, IosSimulatorRawNode } from './a11y-tree'
 import { ensureIosSimulatorHelper } from './helper-build'
 import { LatestValueQueue } from './latest-value-queue'
 
@@ -47,6 +48,13 @@ export interface IosSimulatorNativeAttachment {
    * CoreSimulator exposes a setter and no getter.
    */
   keyboardAvailable: boolean
+  /**
+   * Whether the guest's accessibility channel bound. It rides CoreSimulator's own
+   * XPC service rather than HID or the workspace port, so it can be the one thing
+   * that works on a device where the other two refused -- and vice versa.
+   */
+  accessibilityAvailable: boolean
+  accessibilityError?: string
 }
 
 export function isCoalescibleTouchUpdate(
@@ -307,10 +315,47 @@ export class IosSimulatorHelperRuntime {
       pixelHeight: Number(result.pixelHeight) || 0,
       inputAvailable: result.inputAvailable === true,
       keyboardAvailable: result.keyboardAvailable === true,
+      accessibilityAvailable: result.accessibilityAvailable === true,
       ...(typeof result.inputError === 'string' ? { inputError: result.inputError } : {}),
+      ...(typeof result.accessibilityError === 'string'
+        ? { accessibilityError: result.accessibilityError }
+        : {}),
     }
     this.attached = attachment
     return attachment
+  }
+
+  /**
+   * Snapshot the guest's semantic tree. Frames come back in guest POINTS, which is
+   * not the space touch input speaks -- see `a11y-tree.ts` for the conversion.
+   */
+  async dumpAccessibility(
+    options: { maxDepth?: number; maxNodes?: number } = {},
+  ): Promise<IosSimulatorAccessibilityDump> {
+    const startedAt = Date.now()
+    const result = await this.request('accessibility.dump', options) as IosSimulatorAccessibilityDump
+    trace('ios.helper', 'accessibility.dump', {
+      ms: Date.now() - startedAt,
+      nodes: result.nodes,
+      complete: result.complete,
+    })
+    return result
+  }
+
+  /** Frontmost element under a point, in guest points. */
+  async hitTestAccessibility(x: number, y: number): Promise<IosSimulatorRawNode> {
+    return await this.request('accessibility.hitTest', { x, y }) as IosSimulatorRawNode
+  }
+
+  /**
+   * Drive a control through accessibility instead of HID.
+   *
+   * Immune to animation, rotation and display scale, because it addresses the
+   * element rather than a place on the glass. `generation` is the dump this uid came
+   * from: a mismatch is refused rather than landing on whatever now sits there.
+   */
+  async performAccessibility(action: string, generation: number, uid: number): Promise<void> {
+    await this.request('accessibility.perform', { action, generation, uid })
   }
 
   async startFrames(

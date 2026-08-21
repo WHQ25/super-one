@@ -244,6 +244,18 @@ const environmentAPI = {
       if (listeners.size === 0) iosSimulatorFrameListeners.delete(sessionId)
     }
   },
+  onIosSimulatorSessionState: (
+    sessionId: string,
+    callback: (state: IosSimulatorSessionState) => void,
+  ) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: IosSimulatorSessionState): void => {
+      if (state.sessionId === sessionId) callback(state)
+    }
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_STATE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_IOS_SIMULATOR_STATE, handler)
+    }
+  },
   onIosSimulatorRotateGesture: (callback: (rotation: number) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, rotation: number): void => {
       callback(rotation)

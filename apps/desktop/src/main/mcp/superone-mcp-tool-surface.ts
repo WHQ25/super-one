@@ -21,6 +21,12 @@ import {
   isComputerUseToolName,
 } from '../computer-use/tools'
 import {
+  executeDeviceAgentTool,
+  getDeviceAgentToolDescriptors,
+  isDeviceAgentEnabled,
+  isDeviceAgentToolName,
+} from '../device-agent'
+import {
   executeMobileShareFileTool,
   getSessionHost,
   getAppSettingsApplier,
@@ -85,6 +91,12 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
   if (isComputerUseEnabled()) {
     tools.push(...getComputerUseToolDescriptors())
   }
+  // Gated on the platform, not on whether a device is booted: Codex snapshots
+  // tools/list once per session, so a surface that appeared when a simulator boots
+  // would stay missing for any session that started without one.
+  if (isDeviceAgentEnabled()) {
+    tools.push(...getDeviceAgentToolDescriptors())
+  }
   // Match in-process MCP: only advertise mobile share while a phone is subscribed.
   if (isMobileShareToolEnabled(sessionId)) {
     tools.push({
@@ -116,6 +128,16 @@ export async function executeSuperoneMcpTool(
       }
     }
     return executeComputerUseTool(sessionId, toolName, args)
+  }
+
+  if (isDeviceAgentToolName(toolName)) {
+    if (!isDeviceAgentEnabled()) {
+      return {
+        content: [{ type: 'text' as const, text: '[Error] Touch-device control needs macOS with Xcode installed.' }],
+        isError: true,
+      }
+    }
+    return executeDeviceAgentTool(sessionId, toolName, args, signal)
   }
 
   if (toolName === MOBILE_SHARE_FILE_TOOL_NAME) {

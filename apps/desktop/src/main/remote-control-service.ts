@@ -330,6 +330,14 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         summary = String(p.query ?? '')
         break
     }
+    // The phone gets `input` blanked, so a tool whose whole human story lives in an
+    // argument arrives with nothing to show. `device_*` asks the agent for a
+    // conversation-language `description` precisely to be that story — carry it over.
+    if (!summary && /__device_[a-z_]+$/.test(block.toolName)) {
+      summary = typeof p.description === 'string' && p.description.trim()
+        ? p.description.trim()
+        : undefined
+    }
     if (!summary && block.toolName.endsWith('__session_rename')) summary = p.title ? String(p.title) : undefined
     if (!summary && block.toolName.endsWith('__session_tag')) {
       const add = Array.isArray(p.add) ? p.add.filter((t): t is string => typeof t === 'string') : []

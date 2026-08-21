@@ -21,6 +21,7 @@ import {
 import { registerWidgetTools } from '../generative-ui/mcp-server'
 import { clearBrowserToolHandlers, registerBrowserTools } from './browser-mcp-tools'
 import { registerComputerUseTools } from '../computer-use/tools'
+import { executeDeviceAgentTool, registerDeviceAgentTools } from '../device-agent'
 import { computerUseQualifiedNames } from '../computer-use/harness-surface'
 import { isBuiltInSuperoneToolQualified, MCP_SUPERONE_TOOL_PREFIX } from './superone-host-owned-tools'
 import {
@@ -302,6 +303,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   registerBrowserTools(server, sessionId)
   // Opt-in desktop Computer Use (coordinate/AX fallback tier). Gated by settings.
   registerComputerUseTools(server, sessionId)
+  registerDeviceAgentTools(server, sessionId, executeDeviceAgentTool)
   // Fixed mini-app surface — no per-app dynamic MCP tools.
   registerMiniappTools(server, sessionId, miniappToolDepsForSurface())
   const state: ProjectServerState = { server, registeredTools: new Map() }

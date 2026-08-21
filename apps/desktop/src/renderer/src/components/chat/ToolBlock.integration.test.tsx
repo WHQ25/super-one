@@ -237,6 +237,89 @@ describe('ToolBlock Computer Use routing', () => {
   })
 })
 
+describe('ToolBlock touch-device routing', () => {
+  it('names the gesture and keeps typed text out of the transcript', () => {
+    render(
+      <ToolBlock
+        toolName="mcp__superone__device_act"
+        input={JSON.stringify({
+          description: 'Enter the passcode',
+          stateId: 's2',
+          actions: [{ type: 'type', text: 'hunter2' }],
+        })}
+        result={JSON.stringify({ outcome: 'worked', reason: 'the screen changed', stateId: 's3' })}
+        status="complete"
+      />,
+    )
+
+    // The description the schema asks for is the summary; the row must not fall
+    // through to the generic `superone · device act` plumbing.
+    expect(screen.getByText('Enter the passcode')).not.toBeNull()
+    expect(screen.getByText('Type')).not.toBeNull()
+    expect(screen.queryByText(/hunter2/)).toBeNull()
+    expect(screen.queryByText(/superone · device act/i)).toBeNull()
+  })
+
+  it('flags an action that landed without doing anything', () => {
+    render(
+      <ToolBlock
+        toolName="mcp__superone__device_act"
+        input={JSON.stringify({
+          description: 'Open the Wi-Fi settings',
+          stateId: 's2',
+          actions: [{ type: 'tap', ref: '@e9' }],
+        })}
+        result={JSON.stringify({
+          outcome: 'didnt',
+          reason: 'the expected condition did not hold afterwards',
+          stateId: 's3',
+        })}
+        status="complete"
+      />,
+    )
+
+    // `didnt` is a successful call reporting a failed intent — the row has to say so
+    // without the user expanding it, or a whole failed run reads as a working one.
+    expect(screen.getByText('No Effect')).not.toBeNull()
+    expect(screen.getByText('Open the Wi-Fi settings')).not.toBeNull()
+  })
+
+  it('separates a wait that transitioned from one that timed out', () => {
+    const { unmount } = render(
+      <ToolBlock
+        toolName="mcp__superone__device_wait_for"
+        input={JSON.stringify({ description: 'Wait for the list', condition: { kind: 'exists' } })}
+        result={JSON.stringify({ status: 'verified', waitedMs: 620, stateId: 's4' })}
+        status="complete"
+      />,
+    )
+    expect(screen.getByText('Matched')).not.toBeNull()
+    unmount()
+
+    render(
+      <ToolBlock
+        toolName="mcp__superone__device_wait_for"
+        input={JSON.stringify({ description: 'Wait for Wi-Fi', condition: { kind: 'exists' } })}
+        result={JSON.stringify({ status: 'timeout', waitedMs: 8000, stateId: 's5' })}
+        status="complete"
+      />,
+    )
+    expect(screen.getByText('Timed Out')).not.toBeNull()
+  })
+
+  it('reads the running form while the call is still in flight', () => {
+    render(
+      <ToolBlock
+        toolName="mcp__superone__device_snapshot"
+        input={JSON.stringify({ description: 'Look at the screen' })}
+        status="streaming"
+      />,
+    )
+
+    expect(screen.getByText('Taking snapshot…')).not.toBeNull()
+  })
+})
+
 describe('ToolBlock error auto-collapse', () => {
   it('collapses an expanded edit tool when the result arrives with isError=true', async () => {
     const { rerender } = render(

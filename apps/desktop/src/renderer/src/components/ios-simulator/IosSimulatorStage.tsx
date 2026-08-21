@@ -262,6 +262,22 @@ export function IosSimulatorStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boundUdid])
 
+  /**
+   * Follow the host once it starts changing these underneath us.
+   *
+   * The seed above deliberately fires only on a rebind, so it cannot carry a
+   * rotation an agent performed while the panel was already open. Main pushes those
+   * as they happen, and only as they happen, so adopting them here cannot fight a
+   * rotation the user is in the middle of.
+   */
+  useEffect(() => {
+    if (!boundUdid) return
+    return window.environment.onIosSimulatorSessionState(sessionId, (state) => {
+      setOrientation(state.orientation)
+      setKeyboardConnected(state.hardwareKeyboardConnected)
+    })
+  }, [boundUdid, sessionId])
+
   // Keyed on the canvas element, not just on readiness: the renderer paints into
   // the exact node it was built with, so a replaced canvas needs a new renderer.
   useEffect(() => {

@@ -3499,6 +3499,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_IOS_SIMULATOR_STREAM_CLOSE: 'environment:iosSimulatorStreamClose',
   ENVIRONMENT_IOS_SIMULATOR_STREAM_PORT: 'environment:iosSimulatorStreamPort',
   ENVIRONMENT_IOS_SIMULATOR_ROTATE_GESTURE: 'environment:iosSimulatorRotateGesture',
+  ENVIRONMENT_IOS_SIMULATOR_STATE: 'environment:iosSimulatorState',
 
   // Local desktop harness installation catalog (Settings → Harnesses)
   HARNESS_LIST: 'harness:list',

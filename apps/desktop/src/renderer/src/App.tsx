@@ -24,6 +24,7 @@ import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
 import { MiniAppHostLayer } from '@/components/miniapp/MiniAppHostLayer'
 import { BrowserHostLayer } from '@/components/browser/BrowserHostLayer'
+import { IosSimulatorPictureInPicture } from '@/components/ios-simulator/IosSimulatorPictureInPicture'
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
@@ -482,6 +483,7 @@ function App(): React.JSX.Element {
         </div>
         <MiniAppHostLayer />
         <BrowserHostLayer />
+        <IosSimulatorPictureInPicture />
       </>
     )
   }
@@ -519,6 +521,7 @@ function App(): React.JSX.Element {
         </div>
         <MiniAppHostLayer />
         <BrowserHostLayer />
+        <IosSimulatorPictureInPicture />
       </>
     )
   }
@@ -676,6 +679,7 @@ function App(): React.JSX.Element {
     </div>
     <MiniAppHostLayer />
     <BrowserHostLayer />
+    <IosSimulatorPictureInPicture />
     {draggingSession && mosaicMode !== 'mosaic' && (
       <MosaicSingleDropOverlay wrapperRef={mainWrapperRef} canRestoreMosaic={canRestoreMosaic} />
     )}

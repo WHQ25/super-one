@@ -257,6 +257,16 @@ export function openIosSimulatorTab(sessionId: string, label: string) {
   })
 }
 
+/**
+ * Whether this session's simulator already has a tab — NOT whether it is the active
+ * one. A device that is somewhere in the tab strip has a home the user can find; a
+ * caller that only wants to guarantee the device is reachable must not steal focus
+ * from whatever the user actually came to the panel to look at.
+ */
+export function hasIosSimulatorTab(sessionId: string): boolean {
+  return dockApi?.panels.some((panel) => panel.id === `ios-simulator-${sessionId}`) ?? false
+}
+
 export function closeIosSimulatorTab(sessionId: string) {
   const panelId = `ios-simulator-${sessionId}`
   removeMosaicOpen(panelId)

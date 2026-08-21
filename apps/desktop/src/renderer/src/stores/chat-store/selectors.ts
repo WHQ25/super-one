@@ -123,3 +123,15 @@ export const selectClaudeSkills = (s: ChatStore): SlashCommandInfo[] => s.harnes
 export const selectClaudeCommands = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.commands ?? EMPTY_SLASH_COMMANDS
 export const selectClaudeAgents = (s: ChatStore): AgentInfo[] => s.harnessResources.claude?.agents ?? EMPTY_AGENTS
 export const selectClaudeOutputStyles = (s: ChatStore): string[] => s.harnessResources.claude?.outputStyles ?? EMPTY_OUTPUT_STYLES
+
+/**
+ * The window's active session, ignoring mosaic pane scope.
+ *
+ * Chat-root-level overlays (the browser and simulator previews) hang outside any
+ * pane and only render in single-pane mode, so they want the window's answer rather
+ * than `useActiveSession`'s scoped one.
+ */
+export const selectActiveChatSessionId = (s: ChatStore): string | null => {
+  const project = s.activeProject
+  return project ? s.projectSessions[project]?._activeSessionId ?? null : null
+}

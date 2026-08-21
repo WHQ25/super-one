@@ -7,6 +7,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
+import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { createDragCapture } from '@/lib/drag-capture'
@@ -38,11 +39,6 @@ const OVERLAY_BACKDROP_PANES: Array<{ key: string; style: React.CSSProperties }>
   { key: 'right', style: { right: 0, top: '5vh', width: '5vw', height: '90vh' } },
 ]
 
-function activeSessionId(state: ReturnType<typeof useChatStore.getState>): string | null {
-  const project = state.activeProject
-  return project ? state.projectSessions[project]?._activeSessionId ?? null : null
-}
-
 function browserPipBoundary(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-chat-root]')
 }
@@ -62,7 +58,7 @@ export function BrowserPictureInPicture() {
   const panelSlot = useBrowserStore((state) => browserId ? state.slots[browserId] : undefined)
   const emulation = useBrowserStore((state) => browserId ? state.emulations[browserId] : undefined)
   const pipAspect = browserPipAspect(resolveBrowserPipViewport(emulation, panelSlot))
-  const currentSessionId = useChatStore(activeSessionId)
+  const currentSessionId = useChatStore(selectActiveChatSessionId)
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const mosaicMode = useMosaicStore((state) => state.mode)
   const shouldShow = browserId != null

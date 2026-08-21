@@ -3,6 +3,9 @@
 Use this when a harness needs to catch up on **one** capability. Find the row, do every cell in it.
 Paths are relative to repo root; `R/` = `apps/desktop/src/renderer/src/`, `M/` = `apps/desktop/src/main/`.
 
+The completeness bar is **Claude / Codex / Grok** (`SKILL.md`). Matrix columns for those three
+are the spec; OpenCode / Cursor / dsh are gap audits against that spec, not models to copy.
+
 The support column reflects what was true when this was written — **verify before quoting it**, and
 update this file when you change it. `HARNESS_CAPABILITIES` is the machine-readable version of the
 same claim, and the two drift.
@@ -189,16 +192,22 @@ deep agents' output into the parent. Running-state is decided solely by
 <a id="mcp"></a>
 ## 7. MCP
 
+Host SuperOne tools are required at P2 for a complete harness. Injection recipes (Claude SDK
+server / Codex HTTP `mcp_servers.superone` / Grok `session/new`) live in `SKILL.md` — do not
+fork a fourth shape without a reason.
+
 | Cell | File |
 |---|---|
 | Panel data | `SessionBackend.getMcpServerStatus()` |
 | Controls | `reconnectMcp` / `toggleMcpServer` / `reloadMcpServers` / `authenticateMcp?` |
-| Host MCP injection | `M/mcp/superone-mcp-server.ts`; per-harness wiring e.g. `M/cursor/cursor-mcp.ts`, ACP injects on `session/new` |
+| Host MCP injection | `M/mcp/superone-mcp-server.ts`; Claude: `M/agent/claude-query.ts`; Codex: thread `mcp_servers`; Grok: `M/acp/acp-mcp.ts` `session/new` |
+| Tool kind → existing ToolBlock | event mapper + `packages/shared/src/tool-ui.ts` (ACP: `M/acp/acp-event-map.ts`) |
 | Settings registry | `M/mcp/settings-registry.ts` |
 
 Two things that have burned time: Codex snapshots `tools/list` **once** and ignores
 `list_changed`, so everything must be registered before its handshake; and Codex elicitation carries
-no tool arguments, so the tool name is scraped from prompt text.
+no tool arguments, so the tool name is scraped from prompt text. A successful call that still
+renders as generic `use tool` is not done.
 
 ---
 

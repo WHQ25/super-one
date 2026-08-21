@@ -293,7 +293,9 @@ Expand rules in `ToolBlock`:
 `apps/desktop/src/renderer/src/components/chat/ToolBlock.tsx` — inside
 `if (mcpInfo?.serverName === SUPERONE_SERVER) { … }`, a chain of `if (mcpInfo.mcpToolName === '…')`
 branches. Order matters only where prefixes overlap (browser/computer matched by helper predicates
-first).
+first). `mcpInfo` comes from `parseMcpToolName`, which only matches `mcp__{server}__{bare}`.
+Grok's wire id `superone__bare` must already have been unwrapped in `acp-event-map.ts` or this
+whole SuperOne branch is skipped and the user sees generic `use tool`.
 
 Supporting pieces:
 
@@ -486,3 +488,6 @@ RENDERER_VITE_DEBUG_TOOL_NAMES=note_pin,media_generate_video bun run dev
 Dev-only, case-insensitive partial match. Matching tools render raw prettified input/output instead of
 their normal UI, which answers "is the block wrong or is the result wrong" in one step. `DebugToolBlock`
 takes priority over every other branch, including hiding.
+
+If the debug flag never fires on Grok, the chat `toolName` is not the canonical `mcp__superone__…`
+form — fix the event mapper, not the block. Symptom table: `SKILL.md` Step 6.

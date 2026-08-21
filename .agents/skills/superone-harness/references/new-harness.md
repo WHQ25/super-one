@@ -1,14 +1,15 @@
 # Adding a New Harness — Phased Roadmap
 
-Read `SKILL.md` first. This file is the ordered plan; `experiences.md` is the per-feature detail you
-pull in during P3–P4.
+Read `SKILL.md` first — Claude / Codex / Grok are the completeness bar, and host SuperOne
+tools are required at P2. This file is the ordered file list; `experiences.md` is the
+per-feature detail you pull in during P3–P4.
 
 ## Contents
 
 - [Gate 0: is this actually a new harness?](#gate-0)
 - [P0 — Identity (contract layer)](#p0)
 - [P1 — One turn end-to-end (runtime layer)](#p1)
-- [P2 — Interaction loop (HITL)](#p2)
+- [P2 — Interaction loop (HITL) + host SuperOne tools](#p2)
 - [P3 — Chat bar parity (presentation layer)](#p3)
 - [P4 — Settings, install, ops](#p4)
 - [P5 — Periphery: remote node, packaging, mobile](#p5)
@@ -76,10 +77,10 @@ mirroring `codex/`, `cursor/`, `acp/`. Keep the backend a thin state machine ove
 
 | Module | Responsibility | Model to copy |
 |---|---|---|
-| `<harness>-runtime.ts` | resolve binary / construct SDK client, spawn or connect, lifecycle | `cursor-runtime.ts`, `codex/app-server-client.ts` |
-| `<harness>-auth.ts` | credentials, keychain read/write, auth status | `cursor-auth.ts` |
-| `<harness>-event-map.ts` | **provider payload → `AgentEvent`** — the single highest-value module | `cursor-event-map.ts`, `packages/claude/src/agent-event-mapper.ts` |
-| `xxx-backend.ts` | implement `SessionBackend`: `start/rebuild/send/interrupt/close`, emit via `onEvent` | `claude-backend.ts` (most complete) |
+| `<harness>-runtime.ts` | resolve binary / construct SDK client, spawn or connect, lifecycle | Claude SDK path, `codex/app-server-client.ts`, or `M/acp/acp-runtime.ts` |
+| `<harness>-auth.ts` | credentials, keychain read/write, auth status | matching one of the three |
+| `<harness>-event-map.ts` | **provider payload → `AgentEvent`** — the single highest-value module | `packages/claude/src/agent-event-mapper.ts` (spec), Codex mapper, `M/acp/acp-event-map.ts` |
+| `xxx-backend.ts` | implement `SessionBackend`: `start/rebuild/send/interrupt/close`, emit via `onEvent` | `claude-backend.ts` (most complete optional members) |
 
 Write the event mapper **test-first**, table-driven over real recorded provider payloads. It is the
 one place where a table test genuinely beats an integration test, because the input is a fixed wire
@@ -96,12 +97,13 @@ persists and resumes after restart.
 ---
 
 <a id="p2"></a>
-## P2 — Interaction loop (HITL)
+## P2 — Interaction loop (HITL) + host SuperOne tools
 
-**Goal:** the agent can ask for something and the user can answer.
+**Goal:** the agent can ask for something and the user can answer, **and** SuperOne's own tools
+are callable and render as existing ToolBlocks. A harness that only chats is not at P2.
 
-Everything here is `SessionBackend` members plus event mapping — no new UI, because the chat already
-renders these once the events arrive. That's the payoff of the shared `AgentEvent` union.
+HITL is `SessionBackend` members plus event mapping — no new UI, because the chat already
+renders these once the events arrive.
 
 - `permission_request` → `respondToPermission()` round trip
 - `plan_approval` → `respondToPlanApproval()`
@@ -113,8 +115,12 @@ If the provider has no native permission protocol, decide deliberately whether t
 to report `supportsPlanMode: false` — a fake approval prompt that doesn't actually gate the tool call
 is worse than no prompt.
 
-**Acceptance:** a tool call triggers the permission popover, approving it continues the turn,
-denying it stops it, and interrupt mid-stream leaves a clean transcript.
+Host SuperOne tools (inject + admit + ToolBlock map) follow the three recipes in `SKILL.md`
+**Host SuperOne tools**. Copy Claude, Codex, or Grok — not a later harness.
+
+**Acceptance:** a provider tool call triggers the permission popover (approve continues, deny
+stops); interrupt mid-stream leaves a clean transcript; a SuperOne host tool runs and paints
+its real ToolBlock, not a generic `use tool` row.
 
 ---
 
@@ -135,8 +141,9 @@ fallback for either surface.
 
 Flip `HARNESS_CAPABILITIES` flags to `true` **as each one lands**, not up front.
 
-**Acceptance:** walk the chat bar left to right on the new harness; nothing is missing, inert, or
-showing another harness's vocabulary.
+**Acceptance:** walk the chat bar left to right against the required list in `SKILL.md`
+(Completeness standard). Nothing missing, inert, or showing another harness's vocabulary.
+Sandbox/todos/subagents may be explicitly off, as Codex and Grok already are.
 
 ---
 

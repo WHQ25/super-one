@@ -7,6 +7,7 @@ each step compiles on its own, and the last step is the test that proves the fir
 
 - [Agent-facing progressive disclosure](#agent-facing-progressive-disclosure)
 - [Saving tokens](#saving-tokens)
+- [Wire names on Claude / Codex / Grok](#wire-names)
 - [1. Handler + test](#1-handler--test)
 - [2. Description + JSON-Schema descriptor](#2-description--json-schema-descriptor)
 - [3. Name allowlist (permission)](#3-name-allowlist-permission)
@@ -66,6 +67,30 @@ happened). Do not confuse the two when shaping descriptions and results.
 Registration (sections below) makes the tool *exist* on every harness. The rules above make the tool
 *usable* without burning the session's context budget. Encoding and spill tactics below cut tokens
 *within* a single result when the progressive ladder still needs to return data.
+
+<a id="wire-names"></a>
+## Wire names on Claude / Codex / Grok
+
+The bare name (`session_list`) is the source of truth in `BUILT_IN_SUPERONE_TOOL_NAMES`. Each
+complete harness wraps it differently. Chat UI (`parseMcpToolName`) only accepts
+`mcp__{server}__{bare}`. Event mappers must emit that canonical string.
+
+| Harness | Attach | Identity the model / permission layer sees | Must land in chat as |
+|---|---|---|---|
+| Claude | In-process MCP SDK (`mcpServers.superone`) | `mcp__superone__{bare}` | same |
+| Codex | HTTP `mcp_servers.superone` (snapshots `tools/list` once) | server `superone` + bare `{bare}`; some prompts say `mcp__superone.{bare}` (dot) | `mcp__superone__{bare}` |
+| Grok | ACP `session/new` MCP server | `superone__{bare}` (`server__bare`) | ACP mapper unwraps to `mcp__superone__{bare}` (`M/acp/acp-event-map.ts`, tests in `acp-event-map.test.ts`) |
+
+Permission helpers must recognize **all three spellings** when deciding host-owned admission
+(`isBuiltInSuperoneTool`, `isBuiltInFromGrokName` in the Grok permission design). Adding a tool
+means adding the **bare** name once; do not special-case a fourth spelling.
+
+`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES` (`session_rename`, `session_tag`): parent sessions call
+them as ordinary host-owned tools; each harness's child path denies them without a permission
+card (`codex-turn.ts` `CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS`, ACP backend child deny test).
+
+Attach recipes: `superone-harness` → Host SuperOne tools. This file is how the tool gets a
+descriptor and a handler.
 
 ## Saving tokens
 
@@ -248,6 +273,10 @@ This one list drives, on all harnesses at once:
 It lives in `packages/shared` (not desktop) so a remote CLI node can make the same judgement without
 Electron. The desktop module of the same name re-exports it and layers computer-use feature gating on
 top — add feature-gated names there, static ones in shared.
+
+Main-thread-only names are a second list in the same file (`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES`).
+They stay in the static admission set for the parent; child sessions are denied in the harness
+callback, not by omitting them from the set.
 
 ## 4. Zod registration + execute switch
 

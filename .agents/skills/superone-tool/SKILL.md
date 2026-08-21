@@ -11,6 +11,9 @@ mobile event stream. Every recurring bug in this area is one surface drifting fr
 because a missing surface fails *silently* (the tool just doesn't appear, in one harness only), the
 drift is usually found by a user, not by a crash.
 
+The completeness bar is the same as `superone-harness`: **Claude, Codex, and Grok**. A tool that
+works on Claude only is not done. Cursor / OpenCode / DeepSeek are extra; they are not the bar.
+
 So the work is less "write a handler" and more "keep five copies of one truth in sync, and let tests
 hold that invariant instead of your memory."
 
@@ -100,6 +103,26 @@ descriptors and need an explicit branch there.
 
 Read `references/backend.md` for the file-by-file code, in the order to write it.
 
+### Wire names — same tool, three strings
+
+Chat UI parses `mcp__{server}__{bare}` (`parseMcpToolName`). Event mappers must emit that
+canonical form. The *model* and the *harness permission layer* often see a different spelling.
+
+| | Model / permission sees | Chat `toolName` must be |
+|---|---|---|
+| **Claude** | `mcp__superone__session_list` | `mcp__superone__session_list` |
+| **Codex** | server `superone` + bare `session_list` (prompts sometimes write `mcp__superone.session_list` with a **dot**) | still `mcp__superone__session_list` |
+| **Grok** | `superone__session_list` (`server__bare`, one `__`) | ACP mapper unwraps to `mcp__superone__session_list` (`M/acp/acp-event-map.ts`) |
+
+If Grok paints a generic `use tool` row, the mapper left the ACP id on the wire. If Codex never
+calls the tool, the stdio descriptor (surface 2) or HTTP MCP injection is missing — not the Claude
+Zod server. How each of the three *injects* the `superone` server is `superone-harness` → **Host
+SuperOne tools**; this skill owns the descriptor, handler, executor confirm, and ToolBlock.
+
+`session_rename` and `session_tag` are **main-thread only**
+(`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES`). A child / subagent must get a direct denial, even when
+it inherited the parent's MCP connection. Do not "fix" that by pre-allowing the child.
+
 ## Step 1 — Design the contract before writing the handler
 
 Design for the **agent** first: what does it need to decide and act, and what should stay behind a
@@ -123,6 +146,10 @@ admitted by every harness so their executors are reachable, but their sensitive 
 gated inside those executors. Never omit a host-owned name from the admission set as a substitute
 for implementing the product confirmation: auto modes may deny it before SuperOne can show the
 correct prompt, while bypass modes may remove the harness prompt entirely.
+
+Harness-side injection and Layer A recipes (Claude `allowedTools`, Codex per-tool `approval_mode`,
+Grok preapprove) live in `superone-harness`. Do not fork a fourth admission shape when adding a
+tool — add the **bare name** to the shared set and the three harnesses pick it up.
 
 Write tests for the chosen policy before the handler: admission-set membership (or deliberate
 absence), feature-off behavior, and no-effect decline/cancel/abort cases for executor confirmation.
@@ -231,6 +258,9 @@ It feeds upstream rules such as Claude `allowedTools` and Codex per-tool `approv
 predicates remain the downstream fallback for Claude `canUseTool`, Codex elicitation, ACP, and other
 permission callbacks. Feature-gated `computer_*` stays outside the static set. Dynamic mini-app
 tools (`slug__tool`) are never made host-owned merely because they use the `superone` MCP server.
+`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES` (`session_rename`, `session_tag`) stay in the static
+admission set so the *parent* can call them without a harness prompt, and are denied in each
+harness's child-session path before any auto-allow.
 
 ### Mandatory confirm — sensitive effects must ask a human, unbypassably
 
@@ -354,8 +384,22 @@ cd ../.. && bun run typecheck
 bun run storybook   # if you added a block
 ```
 
-Then exercise it live in at least **two harnesses** (Claude + one of Codex/ACP/OpenCode). The whole
-point of the five-surface discipline is cross-harness parity, and only a real session proves it.
+Then exercise it live on the completeness bar: **Claude, Codex, and Grok**. Each failure maps to a
+different surface:
+
+| Symptom | Look at |
+|---|---|
+| Model never calls it (Claude) | Description / Zod registration (surfaces 3) / `alwaysLoad` |
+| Works in Claude, invisible in Codex / Grok | JSON-Schema def (surface 2) or host MCP not injected (`superone-harness`) |
+| Codex permission-prompts every call | Bare name missing from `STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES` |
+| Grok row is generic `use tool` | ACP event map did not unwrap `superone__bare` → `mcp__superone__bare` |
+| Allow on Grok hangs until timeout | Confirm resolved in a backend, not `Session.respondToPermission` |
+| Subagent renamed/tagged the parent chat | Main-thread-only deny missing on that harness |
+| Desktop row fine, phone blank | Mobile strip allowlist / `toolSummary` |
+| Designed Storybook, generic row in chat | `ToolBlock` branch keys `mcpInfo.mcpToolName` (bare); name never parsed |
+
+OpenCode / Cursor / DeepSeek are extra after the three work. Cursor often uses custom tools, not
+this MCP surface — do not assume a SuperOne MCP tool appears there.
 
 ## Anti-patterns
 
@@ -389,11 +433,15 @@ point of the five-surface discipline is cross-harness parity, and only a real se
 | Hardcoded EN strings in a ToolBlock | ZH UI falls back; copy drifts | `t('chat.toolBlock.<family>.*')` both locales |
 | Hiding a tool row "to reduce noise" | Output disappears entirely if nothing else renders it | Better summary / Compact row; hide only when owned elsewhere |
 | Runtime-varying tool list | Codex snapshots `tools/list` once | Fixed dispatcher tool with a `name` parameter |
+| Only tested on Claude | Codex/Grok use a different wire name and a different MCP attach | Verify Claude + Codex + Grok |
+| Chat branch matches `superone__bare` (Grok id) | `parseMcpToolName` only accepts `mcp__server__bare` | Canonicalize in the event mapper |
+| Letting a subagent call `session_rename` / `session_tag` | Child inherits MCP and rewrites the parent's title/tags | Deny via `MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES` |
+| Duplicating Claude/Codex/Grok admission recipes in the tool PR | Drift across harnesses | Add the bare name to the shared set; recipes stay in `superone-harness` |
 
 ## Reference files
 
-- `references/backend.md` — agent progressive disclosure, token-saving (TOON, spill-to-file),
-  registration walkthrough, human-in-the-loop confirmation (destructive / paid tools),
+- `references/backend.md` — wire names on Claude / Codex / Grok, agent progressive disclosure,
+  token-saving (TOON, spill-to-file), registration walkthrough, human-in-the-loop confirmation,
   own-descriptor path, manuals.
 - `references/tool-ui.md` — Tool UI philosophy, label grammar (streaming / done / denied-error),
   status chrome, shared `tool-row` primitives, summary, base template, result-as-UI, routing,

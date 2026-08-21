@@ -294,6 +294,7 @@ export function createClaudeAgentEventMapper(
             outputStyle: system.output_style,
             availableOutputStyles: system.available_output_styles,
             plugins: system.plugins,
+            ...(system.effort !== undefined ? { appliedEffort: system.effort } : {}),
             fastModeState: system.fast_mode_state,
             fastModeDisabledReason: system.fast_mode_disabled_reason,
           },

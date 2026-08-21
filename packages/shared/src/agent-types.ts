@@ -156,6 +156,13 @@ export interface SessionInfo {
   outputStyle?: string
   availableOutputStyles?: string[]
   plugins?: { name: string; path: string }[]
+  /**
+   * Effort the session will send on its next request — after env overrides,
+   * org caps and model-support downgrades. `null` means no effort parameter is
+   * sent at all; absent on CLIs/harnesses that do not publish it. This is what
+   * is *applied*, not what SuperOne asked for.
+   */
+  appliedEffort?: EffortLevel | null
   fastModeState?: 'off' | 'cooldown' | 'on'
   /** Present when fast mode is not active; mirrors SDK system/init + result. */
   fastModeDisabledReason?: FastModeDisabledReason
@@ -1413,7 +1420,24 @@ export type AgentEventBase =
   | { type: 'hook_complete'; hook: HookEvent }
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number; messageId?: string }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
-  | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string; outputFile?: string; skipTranscript?: boolean }
+  | {
+    type: 'task_started'
+    taskId: string
+    toolUseId?: string
+    description: string
+    taskType?: string
+    outputFile?: string
+    skipTranscript?: boolean
+    /**
+     * Registered in the background (true) or with the spawning tool call
+     * blocking on it (false). A resumed subagent is always background. A later
+     * move to the background arrives as a `task_updated` patch. Absent on
+     * harnesses/CLIs that do not report it.
+     */
+    isBackgrounded?: boolean
+    /** Subagent nesting depth: 1 for a top-level spawn, N+1 inside a depth-N agent. */
+    spawnDepth?: number
+  }
   | {
     type: 'task_progress'
     taskId: string
@@ -1455,8 +1479,12 @@ export type AgentEventBase =
   | { type: 'browser_download_update'; taskId: string; status: 'progressing' | 'completed' | 'failed'; path?: string; filename?: string; bytes?: number; totalBytes?: number; mimeType?: string; url?: string; error?: string }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
-  /** Undeclared SDK wire message: a local slash command's only progress signal. */
-  | { type: 'slash_command_lifecycle'; state: 'started' | 'completed' | 'cancelled' }
+  /**
+   * Undeclared SDK wire message: a local slash command's only progress signal.
+   * `refused` (SDK 0.3.238) is a terminal state like completed/cancelled — a
+   * cross-session peer message the receive-side policy declined.
+   */
+  | { type: 'slash_command_lifecycle'; state: 'started' | 'completed' | 'cancelled' | 'refused' }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
   | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; model?: string; codexUsage?: CodexUsageInfo; contextTokens?: number; contextWindow?: number; costUsd?: number }
   | { type: 'todos_updated'; todos: TodoItem[] }

@@ -39,6 +39,7 @@ const BY_TERMINAL_REASON: Record<string, AgentErrorKind> = {
 const BY_CODE: Record<string, AgentErrorKind> = {
   authentication_failed: 'auth',
   oauth_org_not_allowed: 'orgNotAllowed',
+  account_on_hold: 'billing',
   billing_error: 'billing',
   rate_limit: 'rateLimit',
   overloaded: 'overloaded',

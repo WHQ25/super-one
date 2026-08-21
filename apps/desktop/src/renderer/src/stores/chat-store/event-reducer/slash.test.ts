@@ -380,6 +380,16 @@ describe('reduceSlash: slash_command_lifecycle', () => {
       .runningSlashCommand).toBeNull()
   })
 
+  it('clears the running marker when the command is refused', () => {
+    // SDK 0.3.238 terminal state: the receive-side policy declined a peer
+    // message. Without it the marker survives to the turn-end fallback.
+    const session = createDefaultPerSessionState()
+    session.runningSlashCommand = { command: 'code-review', startedAt: 1 }
+
+    expect(reduceSlash(session, { type: 'slash_command_lifecycle', state: 'refused' } as never)
+      .runningSlashCommand).toBeNull()
+  })
+
   it('does not mark anything running for a plain prompt', () => {
     const session = createDefaultPerSessionState()
     session._pendingSlashCommand = ''

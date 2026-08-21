@@ -357,7 +357,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
       // traffic at all, so it is what keeps the UI from looking hung.
       if ((msg as any).type === 'command_lifecycle') {
         const state = (msg as any).state
-        if (state === 'started' || state === 'completed' || state === 'cancelled') {
+        if (state === 'started' || state === 'completed' || state === 'cancelled' || state === 'refused') {
           emit({ type: 'slash_command_lifecycle', state })
         }
         continue
@@ -528,6 +528,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 outputStyle: sys.output_style,
                 availableOutputStyles: sys.available_output_styles,
                 plugins: sys.plugins,
+                ...(sys.effort !== undefined ? { appliedEffort: sys.effort } : {}),
                 fastModeState: sys.fast_mode_state,
                 fastModeDisabledReason: sys.fast_mode_disabled_reason,
               },
@@ -587,6 +588,8 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               description: sys.description ?? '',
               taskType: sys.task_type,
               skipTranscript: sys.skip_transcript === true,
+              ...(typeof sys.is_backgrounded === 'boolean' ? { isBackgrounded: sys.is_backgrounded } : {}),
+              ...(typeof sys.spawn_depth === 'number' ? { spawnDepth: sys.spawn_depth } : {}),
             })
           } else if (sys.subtype === 'task_updated') {
             const patchStatus = sys.patch?.status as string | undefined

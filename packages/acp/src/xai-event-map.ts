@@ -1,6 +1,10 @@
 import type { AgentEvent, EffortLevel } from '@superone/shared/agent-types'
 import { normalizeAcpGoalStatus, type AcpGoal } from '@superone/shared/acp-goal'
 import {
+  isAlwaysHiddenToolName,
+  resolveGrokStreamingToolName,
+} from '@superone/shared/tool-ui'
+import {
   XAI_FOLLOW_UPS,
   XAI_MONITOR_EVENT,
   XAI_SCHEDULED_TASK_CREATED,
@@ -128,6 +132,16 @@ export function mapXaiStandaloneNotification(
       const env = parseXaiSessionNotificationEnvelope(params)
       if (!env) {
         log.debug('[acp-xai] bad session_notification envelope')
+        return []
+      }
+      // Child sessions stream tool_call_delta_chunk on their own sessionId.
+      // Painting those onto the parent transcript leaks Running chips into
+      // the main chat; the SubagentBlock tails child chat_history.jsonl.
+      if (
+        env.sessionId
+        && state.parentSessionId
+        && env.sessionId !== state.parentSessionId
+      ) {
         return []
       }
       // Dedup non-workflow / non-subagent-lifecycle by eventSeq (Grok TUI pattern).
@@ -732,13 +746,23 @@ function mapToolCallDeltaChunk(
 ): AgentEvent[] {
   const toolCallId = strField(u, 'tool_call_id', 'toolCallId')
   const index = numField(u, 'tool_index', 'toolIndex')
-  const id = toolCallId ?? (index != null ? `acp_delta_${index}` : null)
+  if (index != null && toolCallId) state.deltaToolIdByIndex.set(index, toolCallId)
+  const id = toolCallId
+    ?? (index != null ? state.deltaToolIdByIndex.get(index) : undefined)
+    ?? (index != null ? `acp_delta_${index}` : null)
   const messageId = ctx.messageId ?? state.lastMessageId
   if (!id || !messageId) return []
   const name = strField(u, 'name')
   const delta = strField(u, 'arguments_delta', 'argumentsDelta') ?? ''
+  if (name) state.deltaToolWireName.set(id, name)
+  if (delta) state.deltaToolArgs.set(id, (state.deltaToolArgs.get(id) ?? '') + delta)
+  const resolved = resolveGrokStreamingToolName(
+    name ?? state.deltaToolWireName.get(id),
+    state.deltaToolArgs.get(id),
+  )
   const events: AgentEvent[] = []
-  if (name && !state.deltaToolStarted.has(id)) {
+  const hidden = resolved ? isAlwaysHiddenToolName(resolved) : false
+  if (resolved && !hidden && !state.deltaToolStarted.has(id)) {
     state.deltaToolStarted.add(id)
     events.push({
       type: 'content_delta',
@@ -746,19 +770,31 @@ function mapToolCallDeltaChunk(
       delta: {
         type: 'tool_use',
         toolUseId: id,
-        toolName: name,
+        toolName: resolved,
         input: '',
         status: 'streaming',
       },
     })
-  }
-  if (delta) {
+    const acc = state.deltaToolArgs.get(id)
+    if (acc) {
+      events.push({
+        type: 'tool_input_delta',
+        messageId,
+        toolUseId: id,
+        partialJson: acc,
+      })
+    }
+    state.deltaToolArgs.delete(id)
+  } else if (delta && state.deltaToolStarted.has(id)) {
     events.push({
       type: 'tool_input_delta',
       messageId,
       toolUseId: id,
       partialJson: delta,
     })
+  }
+  if (resolved && hidden && resolved !== 'UseTool') {
+    state.deltaToolArgs.delete(id)
   }
   return events
 }

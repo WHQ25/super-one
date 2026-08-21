@@ -3,7 +3,9 @@ import {
   applyDescriptionPersonaLabel,
   formatAgentToolOutput,
   formatTranscriptToolResult,
+  isAlwaysHiddenToolName,
   normalizeTranscriptTool,
+  resolveGrokStreamingToolName,
   truncateTranscriptToolResult,
   uiToolNameFromId,
 } from './tool-ui'
@@ -43,11 +45,57 @@ describe('uiToolNameFromId', () => {
     expect(uiToolNameFromId('read_file')).toBe('Read')
     expect(uiToolNameFromId('run_terminal_command')).toBe('Bash')
     expect(uiToolNameFromId('search_replace')).toBe('Edit')
+    expect(uiToolNameFromId('hashline_edit')).toBe('Edit')
+    expect(uiToolNameFromId('memory_get')).toBe('MemoryGet')
+    expect(uiToolNameFromId('deploy_app')).toBe('DeployApp')
+    expect(uiToolNameFromId('lsp')).toBe('Lsp')
+    expect(uiToolNameFromId('x_search')).toBe('XSearch')
   })
 
   it('rejects human titles', () => {
     expect(uiToolNameFromId('Web search:')).toBeNull()
     expect(uiToolNameFromId('List `/tmp`')).toBeNull()
+  })
+})
+
+describe('resolveGrokStreamingToolName', () => {
+  it('maps wire names before the canonical tool_call lands', () => {
+    expect(resolveGrokStreamingToolName('search_replace')).toBe('Edit')
+    expect(resolveGrokStreamingToolName('todo_write')).toBe('TodoWrite')
+    expect(resolveGrokStreamingToolName('use_tool')).toBe('UseTool')
+  })
+
+  it('unwraps use_tool once tool_name is in the streamed JSON', () => {
+    expect(resolveGrokStreamingToolName(
+      'use_tool',
+      '{"tool_name":"GitHub__list_issues","tool_input":{',
+    )).toBe('mcp__GitHub__list_issues')
+    expect(resolveGrokStreamingToolName(
+      'use_tool',
+      '{"tool_name":"superone__session_rename"',
+    )).toBe('mcp__superone__session_rename')
+  })
+
+  it('does not unwrap an unclosed tool_name fragment', () => {
+    expect(resolveGrokStreamingToolName('use_tool', '{"tool_name":"GitHub__')).toBe('UseTool')
+    expect(resolveGrokStreamingToolName('use_tool', '{"tool_name":"superone__sess')).toBe('UseTool')
+  })
+})
+
+describe('isAlwaysHiddenToolName', () => {
+  it('hides Grok wire names on the first streaming chunk', () => {
+    expect(isAlwaysHiddenToolName('todo_write')).toBe(true)
+    expect(isAlwaysHiddenToolName('TodoWrite')).toBe(true)
+    expect(isAlwaysHiddenToolName('use_tool')).toBe(true)
+    expect(isAlwaysHiddenToolName('UseTool')).toBe(true)
+    expect(isAlwaysHiddenToolName('search_tool')).toBe(true)
+    expect(isAlwaysHiddenToolName('mcp__superone__session_rename')).toBe(true)
+  })
+
+  it('does not hide ordinary file tools', () => {
+    expect(isAlwaysHiddenToolName('read_file')).toBe(false)
+    expect(isAlwaysHiddenToolName('Read')).toBe(false)
+    expect(isAlwaysHiddenToolName('mcp__GitHub__list_issues')).toBe(false)
   })
 })
 

@@ -60,6 +60,12 @@ describe('isAlwaysHiddenToolBlock', () => {
     }
   })
 
+  it('hides Grok wire names and the use_tool envelope before they refine', () => {
+    expect(isAlwaysHiddenToolBlock('todo_write')).toBe(true)
+    expect(isAlwaysHiddenToolBlock('use_tool')).toBe(true)
+    expect(isAlwaysHiddenToolBlock('UseTool')).toBe(true)
+  })
+
   it('hides miniapp_list (agent discovery, not human-facing)', () => {
     expect(isAlwaysHiddenToolBlock('mcp__superone__miniapp_list')).toBe(true)
   })

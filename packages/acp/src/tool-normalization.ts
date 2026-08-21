@@ -123,6 +123,11 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
     if (variant === 'ExitPlanMode') return 'ExitPlanMode'
     if (variant === 'KillTask') return 'KillTask'
     if (variant === 'Skill') return 'Skill'
+    if (variant === 'HashlineEdit') return 'Edit'
+    if (variant === 'MemoryGet') return 'MemoryGet'
+    if (variant === 'DeployApp') return 'DeployApp'
+    if (variant === 'Lsp') return 'Lsp'
+    if (variant === 'XSearch') return 'XSearch'
   }
   if (Array.isArray(raw.questions) && raw.questions.length > 0) return 'AskUserQuestion'
   if (Array.isArray(raw.task_ids) || raw.task_id != null || raw.taskId != null) {
@@ -542,9 +547,14 @@ function normalizeInput(
  * rawInput.tool_input. Rebuild the canonical `mcp__<server>__<tool>` the renderer's
  * parseMcpToolName expects — grok's tool_name is already `<server>__<tool>`.
  */
+function isUseToolEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): boolean {
+  return nameFromGrokMeta(tool) === 'UseTool'
+    || raw.variant === 'UseTool'
+    || uiToolNameFromId(typeof tool.title === 'string' ? tool.title : null) === 'UseTool'
+}
+
 function unwrapMcpEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): NormalizedAcpTool | null {
-  const isEnvelope = nameFromGrokMeta(tool) === 'UseTool' || raw.variant === 'UseTool'
-  if (!isEnvelope) return null
+  if (!isUseToolEnvelope(tool, raw)) return null
   const id = raw.tool_name
   if (typeof id !== 'string' || !id.includes('__')) return null
   return { toolName: `mcp__${id}`, input: asRecord(raw.tool_input) }
@@ -556,8 +566,12 @@ export function normalizeAcpTool(
 ): NormalizedAcpTool | null {
   // Meta projection first; rawInput wins on key conflict (full args, not sparse projection).
   const raw = { ...grokMetaInput(tool), ...asRecord(tool.rawInput) }
-  const mcp = unwrapMcpEnvelope(tool, asRecord(tool.rawInput))
+  const rawInput = asRecord(tool.rawInput)
+  const mcp = unwrapMcpEnvelope(tool, rawInput)
   if (mcp) return mcp
+  // Sparse use_tool (no tool_name yet) must not paint a fallback chip or
+  // overwrite a delta-chunk that already unwrapped the inner MCP name.
+  if (isUseToolEnvelope(tool, rawInput) && typeof rawInput.tool_name !== 'string') return null
   const diffs = extractDiffs(tool.content)
   const terminalId = extractEmbeddedTerminalId(tool.content)
   const toolName = resolveToolName(tool, raw, diffs, !!terminalId)

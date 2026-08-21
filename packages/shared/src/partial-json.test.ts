@@ -29,6 +29,11 @@ describe('extractJsonStringValue', () => {
       expect(extractJsonStringValue(`{"x":"abc`, 'x')).toBe('abc')
     })
 
+    it('requireClosed refuses an unclosed value', () => {
+      expect(extractJsonStringValue(`{"x":"abc`, 'x', { requireClosed: true })).toBeUndefined()
+      expect(extractJsonStringValue(`{"x":"abc"}`, 'x', { requireClosed: true })).toBe('abc')
+    })
+
     it('does not hang when the stream ends on a lone backslash', () => {
       // regression: prior O(n²)→O(n) rewrite hit an infinite loop here because
       // the else-branch inner scan could not advance past `\` without a partner.

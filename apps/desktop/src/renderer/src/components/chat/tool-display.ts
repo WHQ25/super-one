@@ -1,5 +1,6 @@
 import { shortenPath } from '@/lib/path-utils'
 import { extractJsonStringValue } from '@superone/shared/partial-json'
+import { isAlwaysHiddenToolName } from '@superone/shared/tool-ui'
 import {
   isGrokVideoGenTool,
   isMediaGenerateImageTool,
@@ -49,6 +50,10 @@ const TOOL_VERBS: Record<string, string> = {
   SearchTools: 'Searching tools',
   UseTool: 'Calling tool',
   MemorySearch: 'Searching memory',
+  MemoryGet: 'Reading memory',
+  Lsp: 'Querying language server',
+  DeployApp: 'Deploying',
+  XSearch: 'Searching X',
 }
 
 export function getToolVerb(toolName: string): string {
@@ -74,33 +79,8 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
   return { serverName: match[1], mcpToolName: match[2] }
 }
 
-/** Tools whose chat block is suppressed entirely (meta-operations the model runs
- * mid-turn, not conversational content). Shared by ToolBlock (renders null) and
- * groupContent (emits no segment, so surrounding thinking blocks stay adjacent). */
-const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
-
-/** Harness-native tool discovery calls are implementation detail. Providers use
- * several spellings for the same operation, so compare a separator-free key. */
-const HIDDEN_HARNESS_TOOL_KEYS = new Set(['toolsearch', 'searchtool', 'searchtools'])
-
-/** SuperOne MCP tools that are agent-internal discovery/meta — never useful as chat UI.
- * Session archive (project_list/list/search/read/cleanup) is user-visible via SessionArchiveToolBlock —
- * do not hide those names here. session_tag_list is agent discovery only. */
-const HIDDEN_SUPERONE_MCP_TOOLS = new Set([
-  'session_rename',
-  'session_tag_list',
-  'session_collab_list_agents',
-  'session_list_agents',
-  // Fixed mini-app catalog: discovery only; miniapp_call rows keep the per-app feel.
-  'miniapp_list',
-])
-
 export function isAlwaysHiddenToolBlock(toolName: string): boolean {
-  if (HIDDEN_TASK_TOOLS.has(toolName)) return true
-  const harnessToolKey = toolName.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
-  if (HIDDEN_HARNESS_TOOL_KEYS.has(harnessToolKey)) return true
-  const mcp = parseMcpToolName(toolName)
-  return mcp?.serverName === 'superone' && HIDDEN_SUPERONE_MCP_TOOLS.has(mcp.mcpToolName)
+  return isAlwaysHiddenToolName(toolName)
 }
 
 export function isHiddenToolBlock(toolName: string, result?: string): boolean {
@@ -141,6 +121,10 @@ const TOOL_LABELS: Record<string, string> = {
   SearchTools: 'Search Tools',
   UseTool: 'Use Tool',
   MemorySearch: 'Memory Search',
+  MemoryGet: 'Memory Read',
+  Lsp: 'LSP',
+  DeployApp: 'Deploy App',
+  XSearch: 'X Search',
   Skill: 'Skill',
   Task: 'Task',
   TaskOutput: 'Task Output',
@@ -306,6 +290,14 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     }
     case 'MemorySearch':
       return { icon: 'book-open', summary: String(input.query ?? input.text ?? '') }
+    case 'MemoryGet':
+      return { icon: 'book-open', summary: sp(String(input.path ?? input.file_path ?? '')) }
+    case 'XSearch':
+      return { icon: 'globe', summary: String(input.query ?? '') }
+    case 'Lsp':
+      return { icon: 'wrench', summary: String(input.operation ?? input.method ?? '') }
+    case 'DeployApp':
+      return { icon: 'package', summary: String(input.name ?? input.url ?? '') }
     case 'EnterPlanMode':
       return { icon: 'wrench', summary: 'Entered plan mode' }
     case 'ExitPlanMode':

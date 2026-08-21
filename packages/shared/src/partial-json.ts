@@ -1,4 +1,8 @@
-export function extractJsonStringValue(json: string, key: string): string | undefined {
+export function extractJsonStringValue(
+  json: string,
+  key: string,
+  opts?: { requireClosed?: boolean },
+): string | undefined {
   const re = new RegExp(`"${key}":\\s*"`)
   const match = re.exec(json)
   if (!match) return undefined
@@ -9,7 +13,7 @@ export function extractJsonStringValue(json: string, key: string): string | unde
     if (c === 0x5c /* \ */ || c === 0x22 /* " */) break
     i++
   }
-  if (i >= json.length) return json.slice(start)
+  if (i >= json.length) return opts?.requireClosed ? undefined : json.slice(start)
   if (json.charCodeAt(i) === 0x22 /* " */) return json.slice(start, i)
 
   const parts: string[] = [json.slice(start, i)]
@@ -43,7 +47,7 @@ export function extractJsonStringValue(json: string, key: string): string | unde
       parts.push(json.slice(runStart, i))
     }
   }
-  return parts.join('')
+  return opts?.requireClosed ? undefined : parts.join('')
 }
 
 export function extractJsonNumberValue(json: string, key: string): number | undefined {

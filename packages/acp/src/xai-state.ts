@@ -64,6 +64,8 @@ export interface XaiCorrelationState {
    * transcripts at ~/.grok/sessions/<urlencode(cwd)>/<child_id>/chat_history.jsonl.
    */
   cwd?: string
+  /** Parent ACP session id. Child-session x.ai notifications must not paint here. */
+  parentSessionId?: string
   /** workflow run_id → launch tool_use_id */
   workflowToolByRunId: Map<string, string>
   /** last applied revision per run_id */
@@ -92,6 +94,12 @@ export interface XaiCorrelationState {
   deferredSubagentFinishes: Map<string, Record<string, unknown>>
   /** tool_call_id values that already opened a streaming tool_use chip. */
   deltaToolStarted: Set<string>
+  /** Wire name from the first `tool_call_delta_chunk` (later chunks omit it). */
+  deltaToolWireName: Map<string, string>
+  /** Accumulated `arguments_delta` JSON fragments, keyed by tool_call_id. */
+  deltaToolArgs: Map<string, string>
+  /** First-chunk `tool_index` → real `tool_call_id` (later chunks omit the id). */
+  deltaToolIdByIndex: Map<number, string>
   /** task_id → bg task info */
   bgTaskById: Map<string, BgTaskInfo>
   /** goal_ids that already emitted task_started */
@@ -116,9 +124,10 @@ export interface XaiCorrelationState {
   rateLimited: boolean
 }
 
-export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelationState {
+export function createXaiCorrelationState(opts?: { cwd?: string; parentSessionId?: string }): XaiCorrelationState {
   return {
     ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    ...(opts?.parentSessionId ? { parentSessionId: opts.parentSessionId } : {}),
     workflowToolByRunId: new Map(),
     workflowRevision: new Map(),
     workflowStarted: new Set(),
@@ -130,6 +139,9 @@ export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelati
     subagentStarted: new Set(),
     deferredSubagentFinishes: new Map(),
     deltaToolStarted: new Set(),
+    deltaToolWireName: new Map(),
+    deltaToolArgs: new Map(),
+    deltaToolIdByIndex: new Map(),
     bgTaskById: new Map(),
     goalStarted: new Set(),
     lastEventSeq: null,

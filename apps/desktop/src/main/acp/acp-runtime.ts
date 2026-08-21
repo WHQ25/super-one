@@ -645,6 +645,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     }
     if (!session) throw new Error('ACP session not established')
+    xaiCorrelation.parentSessionId = session.sessionId
 
     sessionModels = extractModelsFromNewSessionResult(session.newSessionResponse)
     const resolvedModels = coalesceModelConfig(sessionModels, initModels)

@@ -552,7 +552,94 @@ describe('ACP xAI AgentEvent mapping', () => {
     }, state, { messageId: 'msg-1' })[0]).toMatchObject({
       type: 'content_delta',
       messageId: 'msg-1',
-      delta: { type: 'tool_use', toolName: 'grep', toolUseId: 'call_1' },
+      delta: { type: 'tool_use', toolName: 'Grep', toolUseId: 'call_1' },
+    })
+  })
+
+  it('does not open a chip for hidden Grok tools while arguments stream', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'todo_1',
+      name: 'todo_write',
+      arguments_delta: '{"todos":[',
+    }, state, { messageId: 'msg-1' })).toEqual([])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'env_1',
+      name: 'use_tool',
+    }, state, { messageId: 'msg-1' })).toEqual([])
+  })
+
+  it('unwraps use_tool onto the inner MCP name once tool_name streams in', () => {
+    const state = createXaiCorrelationState()
+    mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'mcp_1',
+      name: 'use_tool',
+    }, state, { messageId: 'msg-1' })
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'mcp_1',
+      arguments_delta: '{"tool_name":"GitHub__list_issues"}',
+    }, state, { messageId: 'msg-1' })[0]).toMatchObject({
+      type: 'content_delta',
+      delta: { type: 'tool_use', toolName: 'mcp__GitHub__list_issues', toolUseId: 'mcp_1' },
+    })
+  })
+
+  it('correlates later chunks that omit tool_call_id via tool_index', () => {
+    const state = createXaiCorrelationState()
+    const first = mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'call_2',
+      tool_index: 3,
+      name: 'search_replace',
+    }, state, { messageId: 'msg-1' })
+    expect(first[0]).toMatchObject({
+      delta: { type: 'tool_use', toolName: 'Edit', toolUseId: 'call_2' },
+    })
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_index: 3,
+      arguments_delta: '{"path":"a.ts"}',
+    }, state, { messageId: 'msg-1' })).toEqual([{
+      type: 'tool_input_delta',
+      messageId: 'msg-1',
+      toolUseId: 'call_2',
+      partialJson: '{"path":"a.ts"}',
+    }])
+  })
+
+  it('does not unwrap use_tool from an unclosed tool_name fragment', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'env_2',
+      name: 'use_tool',
+      arguments_delta: '{"tool_name":"GitHub__',
+    }, state, { messageId: 'msg-1' })).toEqual([])
+  })
+
+  it('drops child-session x.ai updates so subagent tools stay off the parent transcript', () => {
+    const state = createXaiCorrelationState({ parentSessionId: 'parent-session' })
+    expect(mapXaiStandaloneNotification(XAI_SESSION_NOTIFICATION, {
+      sessionId: 'child-session',
+      update: {
+        sessionUpdate: 'tool_call_delta_chunk',
+        tool_call_id: 'child_1',
+        name: 'read_file',
+      },
+    }, state, { messageId: 'msg-1' })).toEqual([])
+    expect(mapXaiStandaloneNotification(XAI_SESSION_NOTIFICATION, {
+      sessionId: 'parent-session',
+      update: {
+        sessionUpdate: 'tool_call_delta_chunk',
+        tool_call_id: 'parent_1',
+        name: 'read_file',
+      },
+    }, state, { messageId: 'msg-1' })[0]).toMatchObject({
+      delta: { type: 'tool_use', toolName: 'Read', toolUseId: 'parent_1' },
     })
   })
 

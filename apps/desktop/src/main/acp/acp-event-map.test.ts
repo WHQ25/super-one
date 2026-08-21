@@ -1063,6 +1063,16 @@ describe('Grok use_tool MCP envelope', () => {
       _meta: useToolMeta,
     } as never)?.toolName).toBe('UseTool')
   })
+
+  it('skips a sparse use_tool until tool_name arrives', () => {
+    expect(normalizeAcpTool({
+      toolCallId: 'call-pending',
+      title: 'use_tool',
+      status: 'pending',
+      kind: 'other',
+      _meta: useToolMeta,
+    } as never)).toBeNull()
+  })
 })
 
 describe('Grok full tool set mapping', () => {
@@ -1073,6 +1083,7 @@ describe('Grok full tool set mapping', () => {
   it.each([
     ['read_file', 'read', 'Read', { target_file: '/a.ts' }, 'Read'],
     ['search_replace', 'edit', 'Edit', { file_path: '/a.ts', old_string: 'a', new_string: 'b' }, 'Edit'],
+    ['hashline_edit', 'edit', 'Edit', { file_path: '/a.ts', old_string: 'a', new_string: 'b' }, 'Edit'],
     ['grep', 'search', 'Search', { pattern: 'foo', path: '/proj' }, 'Grep'],
     ['list_dir', 'list', 'List Files', { target_directory: '/proj' }, 'LS'],
     ['run_terminal_command', 'execute', 'Run Command', { command: 'pwd' }, 'Bash'],
@@ -1083,6 +1094,10 @@ describe('Grok full tool set mapping', () => {
     ['use_tool', 'other', 'Use Tool', { tool_name: 'GitHub__list_issues' }, 'mcp__GitHub__list_issues'],
     ['spawn_subagent', 'other', 'Spawn', { description: 'explore' }, 'Agent'],
     ['memory_search', 'search', 'Memory', { query: 'prior decision' }, 'MemorySearch'],
+    ['memory_get', 'read', 'Memory Read', { path: 'MEMORY.md' }, 'MemoryGet'],
+    ['deploy_app', 'other', 'Deploy App', { name: 'app' }, 'DeployApp'],
+    ['lsp', 'other', 'Code Intelligence', { operation: 'hover' }, 'Lsp'],
+    ['x_search', 'search', 'X Search', { query: 'grok' }, 'XSearch'],
     ['ask_user_question', 'ask_user', 'Ask User', { questions: [{ question: 'Pick?', options: [{ label: 'A' }] }] }, 'AskUserQuestion'],
     ['get_command_or_subagent_output', 'other', 'Task Output', { task_ids: ['t1'], timeout_ms: 60000 }, 'TaskOutput'],
     ['get_task_output', 'other', 'Task Output', { task_id: 't2' }, 'TaskOutput'],

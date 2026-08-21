@@ -413,6 +413,7 @@ export function createAcpAgentEventMapper(
     start(providerSessionId) {
       if (started) return
       started = true
+      if (providerSessionId) xaiCorrelation.parentSessionId = providerSessionId
       emitMessageStart(options.messageId)
       options.emit({ type: 'status_change', status: 'streaming' })
       if (providerSessionId) {

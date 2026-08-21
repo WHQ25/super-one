@@ -14,6 +14,10 @@ import type {
   EffortLevel,
 } from '@superone/shared/agent-types'
 import { normalizeAcpGoalStatus, type AcpGoal } from '@superone/shared/acp-goal'
+import {
+  isAlwaysHiddenToolName,
+  resolveGrokStreamingToolName,
+} from '@superone/shared/tool-ui'
 import { asEffortLevel } from './acp-config'
 import log from '../logger'
 
@@ -71,6 +75,8 @@ export interface XaiCorrelationState {
    * transcripts at ~/.grok/sessions/<urlencode(cwd)>/<child_id>/chat_history.jsonl.
    */
   cwd?: string
+  /** Parent ACP session id. Child-session x.ai notifications must not paint here. */
+  parentSessionId?: string
   /** workflow run_id → launch tool_use_id */
   workflowToolByRunId: Map<string, string>
   /** last applied revision per run_id */
@@ -99,6 +105,12 @@ export interface XaiCorrelationState {
   deferredSubagentFinishes: Map<string, Record<string, unknown>>
   /** tool_call_id values that already opened a streaming tool_use chip. */
   deltaToolStarted: Set<string>
+  /** Wire name from the first `tool_call_delta_chunk` (later chunks omit it). */
+  deltaToolWireName: Map<string, string>
+  /** Accumulated `arguments_delta` JSON fragments, keyed by tool_call_id. */
+  deltaToolArgs: Map<string, string>
+  /** First-chunk `tool_index` → real `tool_call_id` (later chunks omit the id). */
+  deltaToolIdByIndex: Map<number, string>
   /** task_id → bg task info */
   bgTaskById: Map<string, BgTaskInfo>
   /** goal_ids that already emitted task_started */
@@ -123,9 +135,10 @@ export interface XaiCorrelationState {
   rateLimited: boolean
 }
 
-export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelationState {
+export function createXaiCorrelationState(opts?: { cwd?: string; parentSessionId?: string }): XaiCorrelationState {
   return {
     ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    ...(opts?.parentSessionId ? { parentSessionId: opts.parentSessionId } : {}),
     workflowToolByRunId: new Map(),
     workflowRevision: new Map(),
     workflowStarted: new Set(),
@@ -137,6 +150,9 @@ export function createXaiCorrelationState(opts?: { cwd?: string }): XaiCorrelati
     subagentStarted: new Set(),
     deferredSubagentFinishes: new Map(),
     deltaToolStarted: new Set(),
+    deltaToolWireName: new Map(),
+    deltaToolArgs: new Map(),
+    deltaToolIdByIndex: new Map(),
     bgTaskById: new Map(),
     goalStarted: new Set(),
     lastEventSeq: null,
@@ -570,6 +586,16 @@ export function mapXaiStandaloneNotification(
       const env = parseXaiSessionNotificationEnvelope(params)
       if (!env) {
         log.debug('[acp-xai] bad session_notification envelope')
+        return []
+      }
+      // Child sessions stream tool_call_delta_chunk on their own sessionId.
+      // Painting those onto the parent transcript leaks Running chips into
+      // the main chat; the SubagentBlock tails child chat_history.jsonl.
+      if (
+        env.sessionId
+        && state.parentSessionId
+        && env.sessionId !== state.parentSessionId
+      ) {
         return []
       }
       // Dedup non-workflow / non-subagent-lifecycle by eventSeq (Grok TUI pattern).
@@ -1166,13 +1192,23 @@ function mapToolCallDeltaChunk(
 ): AgentEvent[] {
   const toolCallId = strField(u, 'tool_call_id', 'toolCallId')
   const index = numField(u, 'tool_index', 'toolIndex')
-  const id = toolCallId ?? (index != null ? `acp_delta_${index}` : null)
+  if (index != null && toolCallId) state.deltaToolIdByIndex.set(index, toolCallId)
+  const id = toolCallId
+    ?? (index != null ? state.deltaToolIdByIndex.get(index) : undefined)
+    ?? (index != null ? `acp_delta_${index}` : null)
   const messageId = ctx.messageId ?? state.lastMessageId
   if (!id || !messageId) return []
   const name = strField(u, 'name')
   const delta = strField(u, 'arguments_delta', 'argumentsDelta') ?? ''
+  if (name) state.deltaToolWireName.set(id, name)
+  if (delta) state.deltaToolArgs.set(id, (state.deltaToolArgs.get(id) ?? '') + delta)
+  const resolved = resolveGrokStreamingToolName(
+    name ?? state.deltaToolWireName.get(id),
+    state.deltaToolArgs.get(id),
+  )
   const events: AgentEvent[] = []
-  if (name && !state.deltaToolStarted.has(id)) {
+  const hidden = resolved ? isAlwaysHiddenToolName(resolved) : false
+  if (resolved && !hidden && !state.deltaToolStarted.has(id)) {
     state.deltaToolStarted.add(id)
     events.push({
       type: 'content_delta',
@@ -1180,19 +1216,31 @@ function mapToolCallDeltaChunk(
       delta: {
         type: 'tool_use',
         toolUseId: id,
-        toolName: name,
+        toolName: resolved,
         input: '',
         status: 'streaming',
       },
     })
-  }
-  if (delta) {
+    const acc = state.deltaToolArgs.get(id)
+    if (acc) {
+      events.push({
+        type: 'tool_input_delta',
+        messageId,
+        toolUseId: id,
+        partialJson: acc,
+      })
+    }
+    state.deltaToolArgs.delete(id)
+  } else if (delta && state.deltaToolStarted.has(id)) {
     events.push({
       type: 'tool_input_delta',
       messageId,
       toolUseId: id,
       partialJson: delta,
     })
+  }
+  if (resolved && hidden && resolved !== 'UseTool') {
+    state.deltaToolArgs.delete(id)
   }
   return events
 }

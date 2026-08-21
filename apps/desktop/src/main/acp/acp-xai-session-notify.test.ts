@@ -628,7 +628,7 @@ describe('mapXaiStandaloneNotification', () => {
         delta: {
           type: 'tool_use',
           toolUseId: 'call_1',
-          toolName: 'search_replace',
+          toolName: 'Edit',
           input: '',
           status: 'streaming',
         },
@@ -652,6 +652,54 @@ describe('mapXaiStandaloneNotification', () => {
       toolUseId: 'call_1',
       partialJson: '"a.ts"}',
     }])
+  })
+
+  it('does not open a running chip for hidden Grok tools while arguments stream', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'todo_1',
+      name: 'todo_write',
+      arguments_delta: '{"todos":[',
+    }, state, { messageId: 'msg-1' })).toEqual([])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'rename_1',
+      name: 'use_tool',
+      arguments_delta: '{"tool_name":"superone__session_rename"}',
+    }, state, { messageId: 'msg-1' })).toEqual([])
+  })
+
+  it('correlates later chunks that omit tool_call_id via tool_index', () => {
+    const state = createXaiCorrelationState()
+    mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'call_2',
+      tool_index: 3,
+      name: 'search_replace',
+    }, state, { messageId: 'msg-1' })
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_index: 3,
+      arguments_delta: '{"path":"a.ts"}',
+    }, state, { messageId: 'msg-1' })).toEqual([{
+      type: 'tool_input_delta',
+      messageId: 'msg-1',
+      toolUseId: 'call_2',
+      partialJson: '{"path":"a.ts"}',
+    }])
+  })
+
+  it('drops child-session x.ai tool deltas off the parent transcript', () => {
+    const state = createXaiCorrelationState({ parentSessionId: 'parent-session' })
+    expect(mapXaiStandaloneNotification(XAI_SESSION_NOTIFICATION, {
+      sessionId: 'child-session',
+      update: {
+        sessionUpdate: 'tool_call_delta_chunk',
+        tool_call_id: 'child_1',
+        name: 'read_file',
+      },
+    }, state, { messageId: 'msg-1' })).toEqual([])
   })
 
   it('includes scheduled-task deletion reason when present', () => {

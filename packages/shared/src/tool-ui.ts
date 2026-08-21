@@ -5,6 +5,8 @@
  * Keep this free of Node-only APIs (no Buffer) so the renderer can import it.
  */
 
+import { extractJsonStringValue } from './partial-json'
+
 /** Map agent-native / Grok tool ids → Claude-shaped UI names for ToolBlock. */
 export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   read: 'Read',
@@ -14,6 +16,8 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   search_replace: 'Edit',
   str_replace: 'Edit',
   apply_patch: 'Edit',
+  hashline_edit: 'Edit',
+  hashlineedit: 'Edit',
   write: 'Write',
   write_file: 'Write',
   writefile: 'Write',
@@ -40,6 +44,8 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   open_page_with_find: 'WebFetch',
   web_search: 'WebSearch',
   websearch: 'WebSearch',
+  x_search: 'XSearch',
+  xsearch: 'XSearch',
   todo_write: 'TodoWrite',
   todowrite: 'TodoWrite',
   todo: 'TodoWrite',
@@ -59,16 +65,21 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   memory_search: 'MemorySearch',
   memorysearch: 'MemorySearch',
   search_memory: 'MemorySearch',
+  memory_get: 'MemoryGet',
+  memoryget: 'MemoryGet',
   ask_user_question: 'AskUserQuestion',
   askuserquestion: 'AskUserQuestion',
   get_task_output: 'TaskOutput',
   get_command_or_subagent_output: 'TaskOutput',
   get_terminal_command_output: 'TaskOutput',
+  get_task_or_subagent_output: 'TaskOutput',
   wait_tasks: 'TaskOutput',
   wait_commands_or_subagents: 'TaskOutput',
+  wait_tasks_or_subagents: 'TaskOutput',
   kill_task: 'KillTask',
   kill_command_or_subagent: 'KillTask',
   kill_terminal_command: 'KillTask',
+  kill_task_or_subagent: 'KillTask',
   enter_plan_mode: 'EnterPlanMode',
   exit_plan_mode: 'ExitPlanMode',
   skill: 'Skill',
@@ -82,6 +93,9 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   scheduler_create: 'SchedulerCreate',
   scheduler_delete: 'SchedulerDelete',
   scheduler_list: 'SchedulerList',
+  deploy_app: 'DeployApp',
+  deployapp: 'DeployApp',
+  lsp: 'Lsp',
 }
 
 export function normalizeToolIdKey(id: string): string {
@@ -132,6 +146,60 @@ export function uiToolNameFromId(id: string | undefined | null): string | null {
   if (/[\s`/:]/.test(id) && !TOOL_ID_TO_UI_NAME[normalizeToolIdKey(id)]) return null
   const key = normalizeToolIdKey(id)
   return TOOL_ID_TO_UI_NAME[key] ?? null
+}
+
+/** Tools whose chat row is never useful (meta / discovery / MCP envelope). */
+const HIDDEN_UI_TOOL_NAMES = new Set([
+  'TodoWrite',
+  'TaskCreate',
+  'TaskUpdate',
+  'UseTool',
+  'SearchTools',
+  'ToolSearch',
+])
+
+const HIDDEN_HARNESS_TOOL_KEYS = new Set(['toolsearch', 'searchtool', 'searchtools'])
+
+const HIDDEN_SUPERONE_MCP_TOOLS = new Set([
+  'session_rename',
+  'session_tag_list',
+  'session_collab_list_agents',
+  'session_list_agents',
+  'miniapp_list',
+])
+
+/**
+ * Name-only hide rule for chat ToolBlocks. Accepts wire ids (`todo_write`) and
+ * UI names (`TodoWrite`). Grok streams `tool_call_delta_chunk` with the wire
+ * name before `_meta` arrives — callers must hide at that first name, not wait
+ * for the refined tool_call.
+ */
+export function isAlwaysHiddenToolName(toolName: string): boolean {
+  const ui = uiToolNameFromId(toolName) ?? toolName
+  if (HIDDEN_UI_TOOL_NAMES.has(ui)) return true
+  const harnessKey = ui.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (HIDDEN_HARNESS_TOOL_KEYS.has(harnessKey)) return true
+  const mcp = ui.match(/^mcp__(.+?)__(.+)$/) ?? toolName.match(/^mcp__(.+?)__(.+)$/)
+  return mcp?.[1] === 'superone' && HIDDEN_SUPERONE_MCP_TOOLS.has(mcp[2])
+}
+
+/**
+ * Resolve the ToolBlock name while Grok is still streaming arguments.
+ * `use_tool` stays the envelope until `tool_name` is visible in the JSON.
+ */
+export function resolveGrokStreamingToolName(
+  wireName: string | null | undefined,
+  argumentsJson?: string,
+): string | null {
+  if (!wireName) return null
+  const ui = uiToolNameFromId(wireName) ?? wireName
+  if (ui === 'UseTool' && argumentsJson) {
+    // requireClosed: an unclosed `"tool_name":"GitHub__` would otherwise unwrap
+    // early and freeze the chip (or flash a hidden superone__sess* MCP name).
+    const id = extractJsonStringValue(argumentsJson, 'tool_name', { requireClosed: true })
+    if (id && id.includes('__')) return `mcp__${id}`
+  }
+  return ui
 }
 
 /**

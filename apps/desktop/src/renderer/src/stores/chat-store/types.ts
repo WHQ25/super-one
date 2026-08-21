@@ -208,6 +208,8 @@ export interface PerSessionState {
   pendingPlanApproval: PlanApprovalRequest | null
   planApprovalOutcome: { approved: boolean; feedback?: string } | null
   slashCommandOutput: { command: string; content: string } | null
+  /** Set while a local slash command runs, so the UI can show it instead of nothing. */
+  runningSlashCommand: { command: string; startedAt: number } | null
   _streamingToolInputPreviews: Record<string, Record<string, unknown>>
   /**
    * Latest open Codex todo_list item for the session (null when none / all done).

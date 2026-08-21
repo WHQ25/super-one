@@ -142,6 +142,7 @@ type SlashEvent = Extract<AgentEvent, {
   type:
     | 'prompt_suggestion'
     | 'slash_command_output'
+    | 'slash_command_lifecycle'
     | 'compact_boundary'
     | 'checkpoint_captured'
     | 'turn_summary'
@@ -206,6 +207,14 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
         _pendingCompactUserId: '',
         ...(compactUserId ? { _pendingSlashCommand: '' } : {}),
       }
+    }
+
+    case 'slash_command_lifecycle': {
+      if (event.state !== 'started') return { runningSlashCommand: null }
+      // The wire message carries no command name; _pendingSlashCommand already
+      // holds it, parsed from the input the user actually sent.
+      const cmd = session._pendingSlashCommand
+      return cmd ? { runningSlashCommand: { command: cmd, startedAt: Date.now() } } : {}
     }
 
     case 'slash_command_output': {

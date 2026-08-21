@@ -132,6 +132,9 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
       return {
         status: event.status,
         ...(event.status === 'idle' ? { apiRetry: null } : {}),
+        // Terminal state of an undeclared wire message can go missing; clearing on
+        // any turn end guarantees the running indicator cannot get stranded.
+        ...(event.status !== 'streaming' ? { runningSlashCommand: null } : {}),
       }
 
     case 'session_init':

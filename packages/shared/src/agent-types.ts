@@ -1454,6 +1454,8 @@ export type AgentEventBase =
   | { type: 'browser_download_update'; taskId: string; status: 'progressing' | 'completed' | 'failed'; path?: string; filename?: string; bytes?: number; totalBytes?: number; mimeType?: string; url?: string; error?: string }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
+  /** Undeclared SDK wire message: a local slash command's only progress signal. */
+  | { type: 'slash_command_lifecycle'; state: 'started' | 'completed' | 'cancelled' }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
   | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; model?: string; codexUsage?: CodexUsageInfo; contextTokens?: number; contextWindow?: number; costUsd?: number }
   | { type: 'todos_updated'; todos: TodoItem[] }

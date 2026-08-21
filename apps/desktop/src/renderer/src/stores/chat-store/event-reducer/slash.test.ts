@@ -346,6 +346,50 @@ describe('reduceSlash: slash_command_output', () => {
   })
 })
 
+/**
+ * A long local command (`/code-review`) emits no content for minutes, so the
+ * transcript and the status bar are both empty and the app looks hung.
+ * `command_lifecycle` is the only signal that something is running.
+ */
+describe('reduceSlash: slash_command_lifecycle', () => {
+  it('marks the pending command as running when it starts', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = 'code-review'
+
+    const patch = reduceSlash(session, {
+      type: 'slash_command_lifecycle', state: 'started',
+    } as never)
+
+    expect(patch.runningSlashCommand).toMatchObject({ command: 'code-review' })
+    expect(patch.runningSlashCommand!.startedAt).toBeGreaterThan(0)
+  })
+
+  it('clears the running marker when the command completes', () => {
+    const session = createDefaultPerSessionState()
+    session.runningSlashCommand = { command: 'code-review', startedAt: 1 }
+
+    expect(reduceSlash(session, { type: 'slash_command_lifecycle', state: 'completed' } as never)
+      .runningSlashCommand).toBeNull()
+  })
+
+  it('clears the running marker when the command is cancelled', () => {
+    const session = createDefaultPerSessionState()
+    session.runningSlashCommand = { command: 'code-review', startedAt: 1 }
+
+    expect(reduceSlash(session, { type: 'slash_command_lifecycle', state: 'cancelled' } as never)
+      .runningSlashCommand).toBeNull()
+  })
+
+  it('does not mark anything running for a plain prompt', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = ''
+
+    expect(reduceSlash(session, { type: 'slash_command_lifecycle', state: 'started' } as never)
+      .runningSlashCommand).toBeUndefined()
+  })
+
+})
+
 describe('reduceSlash: checkpoint_captured', () => {
   it('writes checkpointId + resumePointId onto the target user message', () => {
     const session = createDefaultPerSessionState()

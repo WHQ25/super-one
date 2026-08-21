@@ -351,6 +351,18 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         }
       }
 
+      // `command_lifecycle` is absent from sdk.d.ts — an undeclared wire message
+      // reporting queued → started → completed|cancelled for a local slash command.
+      // It carries no command name, but during a long /code-review it is the only
+      // traffic at all, so it is what keeps the UI from looking hung.
+      if ((msg as any).type === 'command_lifecycle') {
+        const state = (msg as any).state
+        if (state === 'started' || state === 'completed' || state === 'cancelled') {
+          emit({ type: 'slash_command_lifecycle', state })
+        }
+        continue
+      }
+
       if ((msg.type === 'assistant' || msg.type === 'stream_event')) {
         const parent = (msg as any).parent_tool_use_id ?? null
         if (!parent) {

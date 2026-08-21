@@ -34,7 +34,11 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
     () => useChatStore.getState().projectSessions[session.folderPath]?._sessions?.[session.sessionId]?.lastEventAt ?? 0,
     [session.folderPath, session.sessionId],
   )
-  const stallLevel = useStallLevel(isRunning, readLastEventAt)
+  // Not stalled, just a long local slash command emitting nothing — see SessionRow.
+  const inSlashCommand = useChatStore(
+    (s) => !!s.projectSessions[session.folderPath]?._sessions?.[session.sessionId]?.runningSlashCommand,
+  )
+  const stallLevel = useStallLevel(isRunning && !inSlashCommand, readLastEventAt)
   const titleClassName = cn(
     'text-[13px]',
     isRunning && 'transition-colors duration-500',

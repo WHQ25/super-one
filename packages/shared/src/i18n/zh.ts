@@ -1523,6 +1523,7 @@ export const zh: Messages = {
         unknown: '这轮在完成前失败了。具体信息见下面的错误细节,报告问题时可以直接复制。',
       },
     },
+    runningCommand: '正在执行 /{{command}}…',
     codex: {
       statusRunning: '执行中',
       statusReading: '读取中',

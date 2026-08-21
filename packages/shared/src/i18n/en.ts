@@ -1440,6 +1440,7 @@ export type Messages = {
         unknown: string
       }
     }
+    runningCommand: string
     codex: {
       statusRunning: string
       statusReading: string
@@ -4722,6 +4723,7 @@ export const en: Messages = {
         unknown: 'The turn failed before it finished. See the error details below, or copy them when reporting the problem.',
       },
     },
+    runningCommand: 'Running /{{command}}…',
     codex: {
       statusRunning: 'Running',
       statusReading: 'Reading',

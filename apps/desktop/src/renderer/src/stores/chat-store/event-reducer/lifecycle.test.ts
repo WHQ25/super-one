@@ -71,6 +71,37 @@ describe('reduceLifecycle: Grok queued-turn handoff', () => {
   })
 })
 
+/**
+ * `command_lifecycle` is an undeclared SDK wire message, so its terminal state may
+ * silently stop arriving. Clearing on the turn ending too means a dropped
+ * completed/cancelled can never strand a permanent "running /x" indicator.
+ */
+describe('reduceLifecycle: running slash command is cleared when the turn ends', () => {
+  it('clears the running marker once the turn goes idle', () => {
+    const session = createDefaultPerSessionState()
+    session.runningSlashCommand = { command: 'code-review', startedAt: 1 }
+
+    expect(reduceLifecycle(session, { type: 'status_change', status: 'idle' } as never)
+      .runningSlashCommand).toBeNull()
+  })
+
+  it('clears the running marker when the turn errors out', () => {
+    const session = createDefaultPerSessionState()
+    session.runningSlashCommand = { command: 'code-review', startedAt: 1 }
+
+    expect(reduceLifecycle(session, { type: 'status_change', status: 'error' } as never)
+      .runningSlashCommand).toBeNull()
+  })
+
+  it('leaves the marker alone while the turn is still streaming', () => {
+    const session = createDefaultPerSessionState()
+    session.runningSlashCommand = { command: 'code-review', startedAt: 1 }
+
+    expect(reduceLifecycle(session, { type: 'status_change', status: 'streaming' } as never)
+      .runningSlashCommand).toBeUndefined()
+  })
+})
+
 describe('reduceLifecycle: messages_retracted', () => {
   it('evicts the refused partial so it does not linger above the retry', () => {
     const session = createDefaultPerSessionState()

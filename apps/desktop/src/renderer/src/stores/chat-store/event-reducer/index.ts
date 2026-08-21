@@ -64,6 +64,7 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
 
     case 'prompt_suggestion':
     case 'slash_command_output':
+    case 'slash_command_lifecycle':
     case 'compact_boundary':
     case 'checkpoint_captured':
     case 'turn_summary':

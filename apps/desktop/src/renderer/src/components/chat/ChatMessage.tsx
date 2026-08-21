@@ -1195,6 +1195,7 @@ function DurationFooter({
   const { t } = useTranslation()
   const activeProject = useChatStore((s) => s.activeProject)
   const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
+  const runningSlashCommand = useActiveSession((s) => s.runningSlashCommand)
   const [reauthBusy, setReauthBusy] = useState(false)
   const handleReauth = useCallback(async (names: string[]) => {
     if (!activeProject) return
@@ -1223,7 +1224,11 @@ function DurationFooter({
   if (isStreaming && (streamingTokens.input > 0 || streamingTokens.output > 0)) {
     frozenTokensRef.current = streamingTokens
   }
-  const stallLevel = useStallLevel(isStreaming)
+  // Stall means "should be streaming but isn't" — its 60s/120s thresholds are
+  // calibrated for a turn that produces output. A local slash command legitimately
+  // emits nothing for minutes, so leaving the heuristic on paints the footer amber
+  // then red and tells the user it broke, which is worse than showing nothing.
+  const stallLevel = useStallLevel(isStreaming && !runningSlashCommand)
   const pausedMsRef = useRef(0)
   const pauseStartRef = useRef(0)
   const startTimeRef = useRef(() => {
@@ -1307,7 +1312,12 @@ function DurationFooter({
   const mcpReadyCount = showMcpStartup ? mcpServers.filter((s) => s.status === 'ready').length : 0
   const failedMcp = mcpServers.filter((s) => s.status === 'failed')
   const showMcpFailure = !isStreaming && failedMcp.length > 0
-  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !showMcpStartup && !showMcpFailure) return null
+  // A local slash command (/code-review) can run for minutes emitting nothing at
+  // all — no text, no tools — so without this the turn is indistinguishable from
+  // a hang. The footer already owns this "nothing to show yet, but work is
+  // happening" slot for MCP startup.
+  const showSlashCommand = isStreaming && !!runningSlashCommand
+  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !showMcpStartup && !showMcpFailure && !showSlashCommand) return null
 
   const seconds = durationMs ? Math.round(durationMs / 1000) : 0
   const display = seconds < 60
@@ -1336,6 +1346,13 @@ function DurationFooter({
             : <Clock className="size-3" />
           }
           <span>{display}</span>
+        </>
+      )}
+      {showSlashCommand && (
+        <>
+          {!showDuration && <Loader2 className="size-3 animate-spin" />}
+          {showDuration && <span>·</span>}
+          <span>{t('chat.runningCommand', { command: runningSlashCommand!.command })}</span>
         </>
       )}
       {showMcpStartup && (

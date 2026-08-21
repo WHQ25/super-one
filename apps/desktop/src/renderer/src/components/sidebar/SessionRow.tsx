@@ -28,7 +28,13 @@ function useSessionLastEventAt(folderPath: string, sessionId: string): () => num
 }
 
 function useSessionStallLevel(folderPath: string, sessionId: string, isRunning: boolean): StallLevel {
-  return useStallLevel(isRunning, useSessionLastEventAt(folderPath, sessionId))
+  // A local slash command (/code-review) runs for minutes without emitting a
+  // single event, which the stall heuristic would read as a hang and paint
+  // amber then red. It is not stalled — suspend the check while it runs.
+  const inSlashCommand = useChatStore(
+    (s) => !!s.projectSessions[folderPath]?._sessions?.[sessionId]?.runningSlashCommand,
+  )
+  return useStallLevel(isRunning && !inSlashCommand, useSessionLastEventAt(folderPath, sessionId))
 }
 
 function SessionStatusSpinner({ stallLevel }: { stallLevel: StallLevel }) {

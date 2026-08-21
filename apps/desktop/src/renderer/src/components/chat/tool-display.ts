@@ -274,6 +274,24 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       const completed = Number(input.completed ?? 0)
       return { icon: 'clipboard-list', summary: total > 0 ? `${completed}/${total} completed` : '' }
     }
+    case 'Artifact': {
+      switch (String(input.action ?? 'publish')) {
+        case 'list':
+          return { icon: 'canvas', summary: input.scope === 'all' ? 'list · all' : 'list' }
+        case 'upload_asset':
+          return { icon: 'canvas', summary: 'upload asset' }
+        case 'list_assets':
+          return { icon: 'canvas', summary: 'list assets' }
+        case 'read_asset':
+          return { icon: 'canvas', summary: 'read asset' }
+        case 'delete_asset':
+          return { icon: 'canvas', summary: 'delete asset' }
+        default:
+          // Publish is the unlabeled action; the title is its only header-worthy
+          // input, and once the call settles the chip carries it instead.
+          return { icon: 'canvas', summary: String(input.title ?? '') }
+      }
+    }
     case 'SandboxNetworkAccess':
       return { icon: 'globe', summary: String(input.host ?? '') }
     case 'LS':

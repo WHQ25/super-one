@@ -143,3 +143,130 @@ export const TodoListComplete: Story = {
     status: 'complete',
   },
 }
+
+// Artifact publishes a page to claude.ai and, since SDK 0.3.238, manages that
+// artifact's asset store. The action lives in the input, so every sub-action
+// shares one header — these stories are what keeps them distinguishable, and
+// they carry real result shapes so the openable link chip renders.
+export const ArtifactPublish: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({ file_path: '/Users/me/projects/super-one/out/q3-report.html', title: 'Q3 Report' }),
+    status: 'complete',
+    result: JSON.stringify({
+      url: 'https://claude.ai/public/artifacts/8f2a1c',
+      path: '/Users/me/projects/super-one/out/q3-report.html',
+      title: 'Q3 Report',
+      version: '3',
+    }),
+  },
+}
+
+export const ArtifactPublishUntitled: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({ file_path: '/Users/me/projects/super-one/out/notes.md' }),
+    status: 'complete',
+    result: JSON.stringify({ url: 'https://claude.ai/public/artifacts/2b7e90', path: '/Users/me/projects/super-one/out/notes.md' }),
+  },
+}
+
+export const ArtifactPublishStreaming: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({ file_path: '/Users/me/projects/super-one/out/q3-report.html' }),
+    status: 'streaming',
+    elapsedSeconds: 2,
+  },
+}
+
+export const ArtifactUploadAsset: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({
+      action: 'upload_asset',
+      url: 'https://claude.ai/public/artifacts/8f2a1c',
+      file_path: '/Users/me/projects/super-one/assets/cover.png',
+    }),
+    status: 'complete',
+    result: JSON.stringify({
+      asset_upload: {
+        id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+        url: 'https://claude.ai/api/artifacts/8f2a1c/assets/a1b2c3d4',
+        size_bytes: 421_888,
+        content_type: 'image/png',
+        file_name: 'cover.png',
+      },
+    }),
+  },
+}
+
+export const ArtifactListAssets: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({ action: 'list_assets', url: 'https://claude.ai/public/artifacts/8f2a1c' }),
+    status: 'complete',
+    result: JSON.stringify({
+      asset_list: {
+        url: 'https://claude.ai/public/artifacts/8f2a1c',
+        assets: [
+          { id: 'a1b2c3d4', url: 'https://claude.ai/api/artifacts/8f2a1c/assets/a1b2c3d4', content_type: 'image/png', size_bytes: 421_888, created_at: '2026-08-21T06:12:00Z' },
+        ],
+        usage: { files: 1, bytes: 421_888, max_files: 100, max_bytes: 52_428_800 },
+      },
+    }),
+  },
+}
+
+export const ArtifactReadAsset: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({
+      action: 'read_asset',
+      url: 'https://claude.ai/public/artifacts/8f2a1c',
+      asset_id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+    }),
+    status: 'complete',
+    result: JSON.stringify({
+      asset_read: { id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', path: './a1b2c3d4e5f60718293a4b5c6d7e8f90.png', size_bytes: 421_888, content_type: 'image/png', sha256: 'e3b0c442' },
+    }),
+  },
+}
+
+export const ArtifactDeleteAsset: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({
+      action: 'delete_asset',
+      url: 'https://claude.ai/public/artifacts/8f2a1c',
+      asset_id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+    }),
+    status: 'complete',
+    result: JSON.stringify({ asset_delete: { id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', deleted: true } }),
+  },
+}
+
+// No single artifact to point at — deliberately renders without a link chip.
+export const ArtifactList: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({ action: 'list', scope: 'all', limit: 20 }),
+    status: 'complete',
+    result: JSON.stringify({
+      artifacts: [
+        { title: 'Q3 Report', url: 'https://claude.ai/public/artifacts/8f2a1c', rel: 'mine' },
+        { title: 'Onboarding Deck', url: 'https://claude.ai/public/artifacts/2b7e90', rel: 'shared' },
+      ],
+      scope: 'all',
+    }),
+  },
+}
+
+export const ArtifactPublishDenied: Story = {
+  args: {
+    toolName: 'Artifact',
+    input: JSON.stringify({ file_path: '/Users/me/secrets/internal.html' }),
+    status: 'complete',
+    result: '[denied] User denied permission',
+  },
+}

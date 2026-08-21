@@ -24,6 +24,22 @@ describe('shortenPath', () => {
   })
 })
 
+describe('getToolDisplay: Artifact', () => {
+  it('summarizes a publish by title only — the local path belongs in the expanded result', () => {
+    expect(getToolDisplay('Artifact', { file_path: '/repo/report.html', title: 'Q3 Report' }, '/repo').summary).toBe('Q3 Report')
+    expect(getToolDisplay('Artifact', { file_path: '/repo/report.html' }, '/repo').summary).toBe('')
+  })
+
+  it('names each asset sub-action, and nothing else — identity comes from the link chip', () => {
+    expect(getToolDisplay('Artifact', { action: 'upload_asset', url: 'https://x/y', file_path: '/repo/logo.png' }, '/repo').summary)
+      .toBe('upload asset')
+    expect(getToolDisplay('Artifact', { action: 'list_assets', url: 'https://x/y' }).summary).toBe('list assets')
+    expect(getToolDisplay('Artifact', { action: 'read_asset', asset_id: 'abc123' }).summary).toBe('read asset')
+    expect(getToolDisplay('Artifact', { action: 'delete_asset', asset_id: 'abc123' }).summary).toBe('delete asset')
+    expect(getToolDisplay('Artifact', { action: 'list', scope: 'all' }).summary).toBe('list · all')
+  })
+})
+
 describe('parseMcpToolName', () => {
   it('parses valid MCP tool names', () => {
     expect(parseMcpToolName('mcp__filesystem__read_file')).toEqual({

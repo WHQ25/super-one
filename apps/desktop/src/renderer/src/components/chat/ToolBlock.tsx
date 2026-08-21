@@ -12,6 +12,8 @@ import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { ToolIcon } from './ToolIcon'
 import { FileChip } from './FileChip'
+import { ArtifactLinkChip } from './ArtifactLinkChip'
+import { resolveArtifactLink } from './artifact-link'
 import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
@@ -917,6 +919,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
 
   const isDenied = !!result && result.startsWith('[denied] ')
   const cleanResult = isDenied ? result.slice('[denied] '.length) : result
+  const artifactLink = useMemo(
+    () => (toolName === 'Artifact' ? resolveArtifactLink(params, isDenied ? null : cleanResult) : null),
+    [toolName, params, isDenied, cleanResult],
+  )
   const deniedFeedback = isDenied && cleanResult !== 'User denied permission' ? cleanResult! : ''
   const feedbackRef = useRef<HTMLSpanElement>(null)
   const [feedbackIsBlock, setFeedbackIsBlock] = useState(false)
@@ -1024,6 +1030,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
     || (!isMcp && display.icon === 'wrench' && input.length > 0
       ? (input.length > 80 ? input.slice(0, 80) + '\u2026' : input)
       : '')
+
+  // A titled publish would otherwise print its title twice — once as the
+  // summary, once as the chip label. One identity per header.
+  const headerSummary = artifactLink && summary === artifactLink.label ? '' : summary
 
   const displayName = mcpInfo
     ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName.replace(/_/g, ' ')}</>
@@ -1567,9 +1577,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
               <span className="shrink-0 whitespace-nowrap text-muted-foreground">{formatReadMeta(params)}</span>
             )}
           </>
-        ) : summary ? (
-          <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
+        ) : headerSummary ? (
+          <span className="min-w-0 truncate text-muted-foreground">{headerSummary}</span>
         ) : null}
+        {!isDenied && !isError && artifactLink && (
+          <ArtifactLinkChip url={artifactLink.url} label={artifactLink.label} />
+        )}
         {lineDelta && (lineDelta.added > 0 || lineDelta.removed > 0) && (
           <span className="shrink-0 font-mono text-xs">
             {lineDelta.added > 0 && (

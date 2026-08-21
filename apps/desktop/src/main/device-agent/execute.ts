@@ -1,5 +1,5 @@
 import type { DeviceOrientation, DeviceUiNode } from '@superone/shared/device-agent'
-import { fingerprintTree } from '../ios-simulator/a11y-tree'
+import { containsRecognizedText, fingerprintTree, withoutRecognizedText } from '../ios-simulator/a11y-tree'
 import {
   encodeObservationFingerprint,
   observationFingerprintsMatch,
@@ -33,14 +33,17 @@ import {
  * what was asked.
  */
 function observationDigest(observation: DeviceObservation): string {
-  // A tree recovered from pixels is excluded on purpose. OCR re-segments between
+  // Anything recovered from pixels is excluded on purpose. OCR re-segments between
   // captures -- "Sign In" comes back as one line or as two, a glyph flips confidence
-  // -- so comparing those trees reports a change on a screen nobody touched. On
-  // those screens the hash is the honest signal, and it is always present, because
-  // reading text and hashing pixels come from the same framebuffer.
-  const treeDigest = observation.root.source === 'ocr'
-    ? null
-    : fingerprintTree(observation.root)
+  // -- so comparing those reports a change on a screen nobody touched. On those the
+  // hash is the honest signal, and it is always present, because reading text and
+  // hashing pixels come from the same framebuffer.
+  //
+  // Pruned rather than tested for, because a merged tree is BOTH: the root stays
+  // native while grafted lines carry `source: 'ocr'`, so asking whether the root is
+  // OCR let every hybrid screen hash its drifting half.
+  const described = withoutRecognizedText(observation.root)
+  const treeDigest = described ? fingerprintTree(described) : null
   return encodeObservationFingerprint(treeDigest, observation.frameHash)
 }
 
@@ -68,13 +71,25 @@ function errorReply(error: unknown): DeviceToolReply {
  * to be discovered by a `press` that fails.
  */
 function sourceNote(root: DeviceUiNode): Record<string, unknown> {
-  if (root.source !== 'ocr') return {}
+  if (root.source === 'ocr') {
+    return {
+      source: 'ocr',
+      note: 'This app exposes no accessibility tree, so these elements were read from the '
+        + 'pixels. They can be tapped but not pressed, they have no identifier, role or '
+        + 'enabled/focused state, and any control without visible text — a back chevron, a '
+        + 'hamburger, a heart — does not appear at all. Match on label, and aim at bounds.',
+    }
+  }
+  if (!containsRecognizedText(root)) return {}
   return {
-    source: 'ocr',
-    note: 'This app exposes no accessibility tree, so these elements were read from the '
-      + 'pixels. They can be tapped but not pressed, they have no identifier, role or '
-      + 'enabled/focused state, and any control without visible text — a back chevron, a '
-      + 'hamburger, a heart — does not appear at all. Match on label, and aim at bounds.',
+    source: 'hybrid',
+    note: 'Part of this screen — a WebView, a canvas, or anything else drawing its own '
+      + 'pixels — exposes no accessibility tree, so its text was read from the pixels '
+      + 'instead. Those nodes are marked (ocr): tap them, do not press them, and expect no '
+      + 'identifier, role or state. Anything there without visible text does not appear at '
+      + 'all, so if you cannot find a control, look at a mode=visual snapshot before '
+      + 'concluding the screen is blank. Everything unmarked is the app\'s own tree and '
+      + 'behaves normally.',
   }
 }
 
@@ -207,7 +222,10 @@ export class DeviceAgentSession {
     if (args.op === 'inspect') {
       if (!args.ref) throw new DeviceAgentError('INVALID_ACTION', 'inspect needs a ref.')
       const node = findByRef(root, args.ref)
-      return reply({ stateId: state.stateId, node: renderTree(node, { maxDepth: 2 }) })
+      return reply({
+        stateId: state.stateId,
+        node: renderTree(node, { maxDepth: 2, markSource: root.source !== 'ocr' }),
+      })
     }
 
     const needle = (args.text ?? '').toLowerCase()
@@ -215,7 +233,7 @@ export class DeviceAgentSession {
     const hits: string[] = []
     const walk = (node: DeviceUiNode) => {
       const haystack = [node.label, node.value, node.identifier].filter(Boolean).join(' ').toLowerCase()
-      if (haystack.includes(needle)) hits.push(renderNode(node))
+      if (haystack.includes(needle)) hits.push(renderNode(node, root.source !== 'ocr'))
       for (const child of node.children ?? []) walk(child)
     }
     walk(root)

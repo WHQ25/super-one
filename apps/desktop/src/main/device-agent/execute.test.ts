@@ -28,7 +28,12 @@ class FakeBackend implements TouchDeviceBackend {
   /** Each observe() consumes the next screen, repeating the last one forever. */
   private index = 0
 
-  constructor(private readonly screens: DeviceUiNode[], readonly settled = true) {}
+  constructor(
+    private readonly screens: DeviceUiNode[],
+    readonly settled = true,
+    /** Same hash on every observation: the pixels did not move, only the tree did. */
+    private readonly frameHash?: string,
+  ) {}
 
   async observe(_options?: ObserveOptions): Promise<DeviceObservation> {
     const root = this.screens[Math.min(this.index++, this.screens.length - 1)]!
@@ -37,6 +42,7 @@ class FakeBackend implements TouchDeviceBackend {
       orientation: 'portrait',
       screen: { width: 1320, height: 2868 },
       settled: this.settled,
+      ...(this.frameHash ? { frameHash: this.frameHash } : {}),
     }
     this.observations.push(observation)
     return observation
@@ -112,6 +118,48 @@ describe('device_act outcome', () => {
       actions: [{ type: 'tap', ref: '@e1' }],
     }))
     expect(result.outcome).toBe('unknown')
+  })
+
+  it('does not call a hybrid screen changed when only its recognized text re-segmented', async () => {
+    // The merged tree keeps a native root with OCR lines grafted under it, so asking
+    // whether the ROOT came from pixels missed this entirely: "Sign In" coming back
+    // as two lines made an action that did nothing report `worked`.
+    const chrome = node('@e1', { label: 'Back' })
+    const oneLine = screen([chrome, {
+      ref: '@e2', role: 'text', label: 'Sign In', source: 'ocr', bounds: [0.1, 0.4, 0.5, 0.05],
+    }])
+    const twoLines = screen([chrome, {
+      ref: '@e2', role: 'text', label: 'Sign', source: 'ocr', bounds: [0.1, 0.4, 0.2, 0.05],
+    }, {
+      ref: '@e3', role: 'text', label: 'In', source: 'ocr', bounds: [0.32, 0.4, 0.1, 0.05],
+    }])
+    const session = new DeviceAgentSession(new FakeBackend([oneLine, twoLines], true, 'unmoved'))
+
+    const snap = parse(await session.snapshot({}))
+    const result = parse(await session.act({
+      stateId: String(snap.stateId),
+      actions: [{ type: 'tap', ref: '@e1' }],
+    }))
+
+    expect(result.outcome).toBe('unknown')
+  })
+
+  it('still sees a change in the half the app described, on that same hybrid screen', async () => {
+    const ocrLine = {
+      ref: '@e2', role: 'text', label: 'Sign In', source: 'ocr' as const, bounds: [0.1, 0.4, 0.5, 0.05] as const,
+    }
+    const session = new DeviceAgentSession(new FakeBackend([
+      screen([node('@e1', { label: 'Back' }), { ...ocrLine, bounds: [0.1, 0.4, 0.5, 0.05] }]),
+      screen([node('@e1', { label: 'Done' }), { ...ocrLine, bounds: [0.1, 0.4, 0.5, 0.05] }]),
+    ], true, 'unmoved'))
+
+    const snap = parse(await session.snapshot({}))
+    const result = parse(await session.act({
+      stateId: String(snap.stateId),
+      actions: [{ type: 'tap', ref: '@e1' }],
+    }))
+
+    expect(result.outcome).toBe('worked')
   })
 
   it('lets an explicit expect overrule a changed screen', async () => {

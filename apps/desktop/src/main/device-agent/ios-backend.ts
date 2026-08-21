@@ -2,7 +2,10 @@ import type { DeviceOrientation } from '@superone/shared/device-agent'
 import type { IosSimulatorInput } from '@superone/shared/ios-simulator'
 import {
   fingerprintTree,
+  findNode,
+  hasSemanticGap,
   hasUsableSemantics,
+  mergeRecognizedText,
   normalizeAccessibilityTree,
   type NormalizedAccessibilityTree,
 } from '../ios-simulator/a11y-tree'
@@ -62,6 +65,12 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
    */
   private readonly addressing = new WeakMap<DeviceObservation, ObservationAddressing>()
 
+  /** The last text read from pixels, and the frame it was read from. See `readTextTree`. */
+  private lastRecognized: {
+    key: string
+    result: { tree: NormalizedAccessibilityTree; truncated: boolean }
+  } | null = null
+
   private deviceLabel = 'iOS Simulator'
 
   constructor(
@@ -79,7 +88,7 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
     if (!state.device || state.phase !== 'ready') {
       throw new DeviceAgentError(
         'NO_DEVICE',
-        'No simulator is ready for this session. Boot one from the Activity panel first.',
+        'This session controls no device. Call device_list, then device_request_control with an id from it.',
       )
     }
     this.deviceLabel = state.device.name
@@ -136,15 +145,29 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
     let tree = result.value.tree
     let truncated = dump ? !dump.complete : false
 
-    // The fallback runs once, on a settled frame, and only when the app gave us
-    // nothing to work with. OCR costs a few hundred milliseconds — an order of
-    // magnitude more than a tree dump — so it must never be inside the settle loop;
-    // the hash is what earns the right to spend it.
+    // Reading pixels runs once, on a settled frame, and only when the tree left
+    // something unread. OCR costs a few hundred milliseconds — an order of magnitude
+    // more than a tree dump — so it must never be inside the settle loop; the hash is
+    // what earns the right to spend it.
+    //
+    // Two different shapes of "unread", answered differently. A screen that named
+    // nothing at all has no tree worth keeping, so the recognized one replaces it. A
+    // screen that named its chrome and left a hole in the middle — Safari with a page
+    // in it, a game canvas inside a native shell — keeps everything the app described
+    // and gains the text from the hole. Replacing there would trade a working back
+    // button for a readable page.
     if (!tree || !hasUsableSemantics(tree.root)) {
-      const recognized = await this.readTextTree(orientation, options)
+      const recognized = await this.readTextTree(orientation, options, frameHash)
       if (recognized) {
         tree = recognized.tree
         truncated = recognized.truncated
+      }
+    } else if (hasSemanticGap(tree.root, orientation)) {
+      const recognized = await this.readTextTree(orientation, options, frameHash)
+      if (recognized) {
+        const merged = mergeRecognizedText(tree, recognized.tree)
+        tree = merged.tree
+        truncated = truncated || recognized.truncated
       }
     }
 
@@ -178,7 +201,19 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
   private async readTextTree(
     orientation: DeviceOrientation,
     options: ObserveOptions,
+    frameHash?: string,
   ): Promise<{ tree: NormalizedAccessibilityTree; truncated: boolean } | null> {
+    // `device_wait_for` re-observes every 200ms, and each of those observations runs
+    // this. OCR costs a few hundred milliseconds, so a five-second wait on a screen
+    // with a semantic gap -- a map, a photo, a WebView -- paid for it a dozen times
+    // over to read the very same unchanged pixels.
+    //
+    // Keyed on the frame hash, which is what makes it safe: identical pixels can only
+    // produce identical text, and the first frame that differs pays again.
+    const cacheKey = `${frameHash ?? ''}:${options.maxNodes ?? ''}`
+    if (frameHash && this.lastRecognized?.key === cacheKey) {
+      return this.lastRecognized.result
+    }
     try {
       const result = await this.manager.frameOcr(this.sessionId, {
         rotationDegrees: IOS_SIMULATOR_ROTATION_DEGREES[orientation],
@@ -187,7 +222,12 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
       const tree = ocrToTree(result.lines, orientation, {
         ...(options.maxNodes ? { maxNodes: options.maxNodes } : {}),
       })
-      return { tree, truncated: Boolean(tree.root.truncatedChildren) }
+      const recognized = { tree, truncated: Boolean(tree.root.truncatedChildren) }
+      // Only a real frame is cacheable: without a hash there is nothing to prove the
+      // pixels are the same ones. A failure is never cached — the next call should be
+      // free to find a helper that answers.
+      if (frameHash) this.lastRecognized = { key: cacheKey, result: recognized }
+      return recognized
     } catch (error) {
       if (error instanceof DeviceAgentError && error.code === 'ABORTED') throw error
       // A helper too old to recognize text, or a framebuffer that went away: the
@@ -240,14 +280,20 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
         + 'Take a fresh device_snapshot before pressing.',
       )
     }
-    // Named rather than reported as an unknown ref. On a screen recovered from
-    // pixels every ref would look unknown, which reads as a stale snapshot and sends
-    // the agent re-snapshotting forever instead of switching to a tap.
-    if (addressing.tree.source === 'ocr') {
+    // Named rather than reported as an unknown ref. A ref read from pixels addresses
+    // no helper element, so `refs` has nothing for it, and reporting that as unknown
+    // reads as a stale snapshot -- which sends the agent re-snapshotting forever
+    // instead of switching to a tap.
+    //
+    // Asked per node, not per tree: on a merged screen the chrome is pressable and
+    // only the recognized text is not, and a tree-wide answer would be wrong for
+    // whichever half it did not describe.
+    const node = findNode(addressing.tree.root, (candidate) => candidate.ref === ref)
+    if (node?.source === 'ocr') {
       throw new DeviceAgentError(
         'UNSUPPORTED',
-        'This screen was read from pixels, so it has no accessibility elements to press. '
-        + 'Use tap, which aims at the element\'s centre.',
+        `${ref} was read from the pixels, so it is not an accessibility element to press. `
+        + 'Use tap, which aims at its centre.',
       )
     }
     const uid = addressing.tree.refs.get(ref)

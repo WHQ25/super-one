@@ -3,18 +3,57 @@ import { IosSimulatorBackend } from './ios-backend'
 import type { IosSimulatorManager } from '../ios-simulator/ios-simulator-manager'
 import type { DeviceObservation } from './types'
 
-/** A dump shaped like the helper's, with one named control in it. */
+type Frame = [number, number, number, number]
+
+/**
+ * A dump shaped like the helper's, from an app that describes its whole screen.
+ *
+ * The controls are spread top to bottom on purpose. Whether pixels are worth reading
+ * is a question about *where* semantics run out, so a fixture with a single label in
+ * one corner would read as a screen that is 70% undescribed -- which is exactly the
+ * WebView case, not the well-behaved one it is meant to stand for.
+ */
 function namedTree() {
   return {
     generation: 7,
-    nodes: 2,
+    nodes: 5,
     complete: true,
     tree: {
       uid: 1,
       role: 'window',
-      frame: [0, 0, 100, 200] as [number, number, number, number],
+      frame: [0, 0, 100, 200] as Frame,
       children: [
-        { uid: 2, role: 'button', label: 'Sign in', frame: [10, 20, 30, 40] as [number, number, number, number] },
+        { uid: 2, role: 'button', label: 'Sign in', frame: [10, 20, 30, 40] as Frame },
+        { uid: 3, role: 'text', label: 'Use your account', frame: [10, 70, 80, 20] as Frame },
+        { uid: 4, role: 'text', label: 'Forgot password?', frame: [10, 110, 80, 20] as Frame },
+        { uid: 5, role: 'button', label: 'Help', frame: [10, 160, 80, 30] as Frame },
+      ],
+    },
+  }
+}
+
+/**
+ * What Safari with a web page in it hands back: named chrome around a dark middle.
+ *
+ * The application root carries a label, and so does every toolbar control, so the
+ * tree passes any "is anything named here" test while the page itself -- the entire
+ * reason the screen is on -- is invisible.
+ */
+function chromeOnlyTree() {
+  return {
+    generation: 7,
+    nodes: 5,
+    complete: true,
+    tree: {
+      uid: 1,
+      role: 'application',
+      label: 'Safari',
+      frame: [0, 0, 100, 200] as Frame,
+      children: [
+        { uid: 2, role: 'textField', label: 'Address', value: 'AI news', frame: [10, 0, 80, 10] as Frame },
+        { uid: 3, role: 'other', frame: [0, 10, 100, 175] as Frame },
+        { uid: 4, role: 'button', label: 'Back', frame: [5, 186, 15, 12] as Frame },
+        { uid: 5, role: 'button', label: 'Tabs', frame: [80, 186, 15, 12] as Frame },
       ],
     },
   }
@@ -158,6 +197,107 @@ describe('IosSimulatorBackend observation sources', () => {
     await expect(backend.perform({ kind: 'press', ref: '@e1' }, { observation })).rejects.toMatchObject({
       code: 'UNSUPPORTED',
     })
+  })
+
+  it('reads the pixels once per frame, not once per observation', async () => {
+    // `device_wait_for` re-observes every 200ms and every one of those hits this
+    // path on a screen with a semantic gap. OCR costs a few hundred milliseconds, so
+    // a five-second wait used to pay for it a dozen times to read identical pixels.
+    const frameOcr = vi.fn(async () => ({
+      lines: [{ text: 'Baidu — AI news results', confidence: 0.9, x: 0.05, y: 0.3, width: 0.9, height: 0.03 }],
+      rotationDegrees: 0,
+      pixelWidth: 1320,
+      pixelHeight: 2868,
+    }))
+    const backend = new IosSimulatorBackend(
+      managerWith({ accessibilityDump: vi.fn(async () => chromeOnlyTree()), frameOcr }),
+      'session-1',
+    )
+
+    await backend.observe({ immediate: true })
+    await backend.observe({ immediate: true })
+    expect(frameOcr).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads them again as soon as the frame differs', async () => {
+    const frameOcr = vi.fn(async () => ({
+      lines: [{ text: 'Baidu — AI news results', confidence: 0.9, x: 0.05, y: 0.3, width: 0.9, height: 0.03 }],
+      rotationDegrees: 0,
+      pixelWidth: 1320,
+      pixelHeight: 2868,
+    }))
+    let hash = 'aaaaaaaaaaaaaaaa'
+    const backend = new IosSimulatorBackend(
+      managerWith({
+        accessibilityDump: vi.fn(async () => chromeOnlyTree()),
+        frameHash: vi.fn(async () => ({ hash, pixelWidth: 1320, pixelHeight: 2868 })),
+        frameOcr,
+      }),
+      'session-1',
+    )
+
+    await backend.observe({ immediate: true })
+    hash = 'bbbbbbbbbbbbbbbb'
+    await backend.observe({ immediate: true })
+    expect(frameOcr).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads the page out of the pixels when the app describes only its chrome', async () => {
+    const frameOcr = vi.fn(async () => ({
+      lines: [
+        { text: 'AI news', confidence: 0.9, x: 0.1, y: 0.01, width: 0.4, height: 0.03 },
+        { text: 'Baidu — AI news results', confidence: 0.9, x: 0.05, y: 0.3, width: 0.9, height: 0.03 },
+      ],
+      rotationDegrees: 0,
+      pixelWidth: 1320,
+      pixelHeight: 2868,
+    }))
+    const backend = new IosSimulatorBackend(
+      managerWith({ accessibilityDump: vi.fn(async () => chromeOnlyTree()), frameOcr }),
+      'session-1',
+    )
+
+    const observation = await backend.observe({ immediate: true })
+    const labels = (observation.root.children ?? []).map((node) => node.label)
+
+    expect(frameOcr).toHaveBeenCalled()
+    // The app's own tree survives. Replacing it would have cost the Back button,
+    // which carries no text and so cannot be recovered from pixels at all.
+    expect(labels).toContain('Back')
+    expect(labels).toContain('Baidu — AI news results')
+    // The address bar already reports "AI news" as its value; recognizing it a
+    // second time would hand the agent two refs for one control.
+    expect(labels.filter((label) => label === 'AI news')).toHaveLength(0)
+    expect(observation.root.source).toBeUndefined()
+    const recognized = observation.root.children?.find((node) => node.label === 'Baidu — AI news results')
+    expect(recognized?.source).toBe('ocr')
+  })
+
+  it('presses the app\'s own controls on a merged screen and refuses only the recognized text', async () => {
+    const accessibilityPerform = vi.fn(async () => {})
+    const backend = new IosSimulatorBackend(
+      managerWith({
+        accessibilityDump: vi.fn(async () => chromeOnlyTree()),
+        accessibilityPerform,
+        frameOcr: vi.fn(async () => ({
+          lines: [{ text: 'Baidu — AI news results', confidence: 0.9, x: 0.05, y: 0.3, width: 0.9, height: 0.03 }],
+          rotationDegrees: 0,
+          pixelWidth: 1320,
+          pixelHeight: 2868,
+        })),
+      }),
+      'session-1',
+    )
+    const observation = await backend.observe({ immediate: true })
+    const recognized = observation.root.children?.find((node) => node.source === 'ocr')
+
+    await backend.perform({ kind: 'press', ref: '@e3' }, { observation })
+    expect(accessibilityPerform).toHaveBeenCalledWith('session-1', 'press', 7, 4)
+
+    // A tree-wide answer would have been wrong for one half of this screen whichever
+    // way it went: the chrome is pressable, the recognized text is not.
+    await expect(backend.perform({ kind: 'press', ref: recognized!.ref }, { observation }))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED' })
   })
 })
 

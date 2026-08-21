@@ -11,24 +11,32 @@ import type { DeviceUiNode } from '@superone/shared/device-agent'
  *
  * Roles arrive as `AXButton`; the prefix is noise once everything has it.
  */
-export function renderTree(root: DeviceUiNode, options: { maxDepth?: number } = {}): string {
+export function renderTree(
+  root: DeviceUiNode,
+  options: { maxDepth?: number; markSource?: boolean } = {},
+): string {
   const maxDepth = options.maxDepth ?? 32
+  // A tree that is entirely recognized text says so once, at the top of the reply.
+  // Repeating it on every one of a few hundred nodes buys nothing and costs tokens;
+  // on a mixed screen the per-node mark is the only way to tell the halves apart.
+  const markSource = options.markSource ?? root.source !== 'ocr'
   const lines: string[] = []
 
   const walk = (node: DeviceUiNode, depth: number) => {
     if (depth > maxDepth) return
-    lines.push('  '.repeat(depth) + renderNode(node))
+    lines.push('  '.repeat(depth) + renderNode(node, markSource))
     for (const child of node.children ?? []) walk(child, depth + 1)
   }
   walk(root, 0)
   return lines.join('\n')
 }
 
-export function renderNode(node: DeviceUiNode): string {
+export function renderNode(node: DeviceUiNode, markSource = true): string {
   const parts = [node.ref, shortRole(node.role)]
   if (node.label) parts.push(JSON.stringify(node.label))
   if (node.identifier && node.identifier !== node.label) parts.push(`#${node.identifier}`)
   if (node.value) parts.push(`=${JSON.stringify(node.value)}`)
+  if (markSource && node.source === 'ocr') parts.push('(ocr)')
   if (node.enabled === false) parts.push('(disabled)')
   if (node.focused) parts.push('(focused)')
   if (node.bounds) {

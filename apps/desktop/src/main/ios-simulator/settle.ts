@@ -19,6 +19,14 @@ export interface SettleOptions {
   intervalMs?: number
   /** How many identical samples in a row count as still. */
   stableSamples?: number
+  /**
+   * How two fingerprints are judged to describe the same screen. Defaults to exact
+   * equality, which is right for a tree digest and wrong for a perceptual hash:
+   * two captures of a still screen can differ by a bit because the scaler landed a
+   * boundary on the other side of a cell, and demanding equality there means the
+   * loop never agrees anything is still.
+   */
+  same?: (a: string, b: string) => boolean
   /** Injectable for tests; defaults to real time. */
   sleep?: (ms: number) => Promise<void>
   now?: () => number
@@ -74,6 +82,7 @@ export async function settle<T>(
   const intervalMs = options.intervalMs ?? 120
   const stableSamples = Math.max(2, options.stableSamples ?? 2)
   const sleep = options.sleep ?? realSleep
+  const same = options.same ?? ((a: string, b: string) => a === b)
   const now = options.now ?? Date.now
   const signal = options.signal
 
@@ -81,7 +90,11 @@ export async function settle<T>(
   throwIfAborted(signal)
   let value = await sample()
   throwIfAborted(signal)
-  let previous = fingerprint(value)
+  // Anchored to the first sample of the current run rather than compared with the
+  // immediately previous one. With a tolerant comparator a sliding window lets the
+  // screen creep arbitrarily far while every adjacent pair stays inside the
+  // tolerance, so a slow scroll would be reported as settled mid-motion.
+  let anchor = fingerprint(value)
   let repeats = 1
   let samples = 1
 
@@ -94,8 +107,12 @@ export async function settle<T>(
     throwIfAborted(signal)
     samples += 1
     const current = fingerprint(value)
-    repeats = current === previous ? repeats + 1 : 1
-    previous = current
+    if (same(current, anchor)) {
+      repeats += 1
+    } else {
+      anchor = current
+      repeats = 1
+    }
   }
   return { value, settled: true, samples }
 }

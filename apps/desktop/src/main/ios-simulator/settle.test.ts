@@ -93,6 +93,56 @@ describe('settle', () => {
     expect(calls).toBeGreaterThanOrEqual(2)
   })
 
+  /**
+   * Perceptual hashes are compared with a tolerance, never with `===`, so the loop
+   * has to accept a comparator. Without one, a pixel fingerprint that drifts by a
+   * bit between two captures of a still screen never settles.
+   */
+  it('accepts a custom comparator so near-identical fingerprints count as still', async () => {
+    const time = clock()
+    const frames = ['1000', '1001', '1002']
+    let index = 0
+    const result = await settle(
+      async () => frames[Math.min(index++, frames.length - 1)]!,
+      (value) => value,
+      {
+        now: time.now,
+        sleep: time.sleep,
+        same: (a, b) => Math.abs(Number(a) - Number(b)) <= 2,
+      },
+    )
+    expect(result.settled).toBe(true)
+    expect(result.samples).toBe(2)
+  })
+
+  /**
+   * The comparison is anchored to the first sample of the current run, not to the
+   * previous one. With a tolerant comparator a sliding window lets a screen creep
+   * arbitrarily far while every adjacent pair stays inside the tolerance -- a slow
+   * scroll would be reported as settled while it is still moving.
+   */
+  it('does not let a slow drift pass as stillness', async () => {
+    const time = clock()
+    let value = 0
+    const result = await settle(
+      async () => { value += 2; return String(value) },
+      (frame) => frame,
+      {
+        now: time.now,
+        sleep: time.sleep,
+        timeoutMs: 500,
+        intervalMs: 100,
+        // Three in a row is what separates the two readings: every adjacent pair is
+        // inside the tolerance, so a sliding comparison would reach three and call
+        // this still, while an anchored one keeps resetting as the screen creeps
+        // past the anchor.
+        stableSamples: 3,
+        same: (a, b) => Math.abs(Number(a) - Number(b)) <= 2,
+      },
+    )
+    expect(result.settled).toBe(false)
+  })
+
   it('interrupts the wait between samples when aborted', async () => {
     const controller = new AbortController()
     const pending = settle(

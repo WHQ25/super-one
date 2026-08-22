@@ -1,8 +1,8 @@
 /**
- * The decoded picture of one session's device, owned OUTSIDE React.
+ * The decoded picture of one DEVICE, owned OUTSIDE React.
  *
  * A `<canvas>`, the `VideoDecoder` feeding it, and the frame subscription behind
- * that are one indivisible resource, and their natural lifetime is the session's —
+ * that are one indivisible resource, and their natural lifetime is the DEVICE's —
  * not any particular view's. Left inside a component they died with it, and the
  * cost of rebuilding them is not the round trip: the helper encodes with
  * `MaxKeyFrameIntervalDuration = 1`, so a fresh decoder waits up to a full second
@@ -17,11 +17,11 @@
  * moved. Anything that pushes decoding into a worker has to revisit this file.
  *
  * What still moves the canvas, now that `DeviceHostLayer` keeps ONE permanent
- * panel per session rather than one per view: the shell is replaced under it. On iOS
+ * panel per device rather than one per view: the shell is replaced under it. On iOS
  * the canvas can hang inside Apple's device artwork, and the artwork shell and the
- * drawn fallback are different elements — so a device change, or the artwork lookup
- * simply answering, swaps the host out. Both are an unmount and a mount inside one commit,
- * which the grace period below is what carries the picture across.
+ * drawn fallback are different elements — so the artwork lookup simply answering swaps
+ * the host out. That is an unmount and a mount inside one commit, which the grace
+ * period below is what carries the picture across.
  *
  * The other reason this is not just a `useRef` in the component: scale and frame rate
  * are settled in `stream.start`, so changing either needs a new stream and a new
@@ -41,7 +41,7 @@ import { messageOf, reportDeviceError } from './device-report'
  * deliberate ending (detach, shut down, session release) tears the stream down from
  * main instead of waiting for it. What it is NOT sized for any more is a surface
  * handover: the host layer keeps one panel mounted across those, so there is no gap
- * to cover. It IS what disposes a session whose device the user dismissed.
+ * to cover. It IS what disposes a device the user dismissed.
  */
 const HANDOVER_GRACE_MS = 5_000
 
@@ -54,7 +54,6 @@ interface Surface {
   /** Sticky: once the device has drawn, moving its picture must not flash a spinner. */
   hasFrame: boolean
   /** What the open stream was negotiated with; a change means renegotiating it. */
-  deviceId: string
   quality: IosSimulatorPreviewQuality
   /**
    * Every view that currently wants the picture, oldest first — the last one holds it.
@@ -72,10 +71,19 @@ interface Surface {
   graceTimer: ReturnType<typeof setTimeout> | null
 }
 
+/**
+ * Keyed by DEVICE, not by the session or the panel showing it.
+ *
+ * That is what makes two devices in one chat session two independent pictures, and it
+ * is also what retires a whole class of bug: a panel that switches device used to
+ * renegotiate the stream around the canvas it already had, so the old device's last
+ * bitmap stayed on screen — indefinitely, on a simulator that only repaints when
+ * something happens — until the new one produced a frame. A different device is now a
+ * different entry, so the new panel starts from nothing and says so.
+ */
 const surfaces = new Map<string, Surface>()
 
 export interface DeviceSurfaceOptions {
-  deviceId: string
   quality: IosSimulatorPreviewQuality
   /**
    * Whether device artwork is framing the picture. With it the shell hands the
@@ -90,7 +98,7 @@ function applyCanvasSize(canvas: HTMLCanvasElement, framed: boolean): void {
   canvas.className = `${CANVAS_CLASS} ${framed ? 'h-full w-full' : 'h-full w-auto'}`
 }
 
-function openStream(sessionId: string, surface: Surface): void {
+function openStream(deviceId: string, surface: Surface): void {
   surface.renderer = new DeviceFrameRenderer(
     surface.canvas,
     () => {
@@ -100,85 +108,66 @@ function openStream(sessionId: string, surface: Surface): void {
     },
     (cause) => reportDeviceError(messageOf(cause)),
   )
-  // Session-scoped in preload, so nothing else's frames can arrive here.
+  // Device-scoped in preload, so nothing else's frames can arrive here.
   surface.removeFrameListener = window.environment.onDeviceFrame(
-    sessionId,
+    deviceId,
     (frame) => surface.renderer.push(frame),
   )
-  window.environment.openDeviceStream(sessionId, {
+  window.environment.openDeviceStream(deviceId, {
     mode: preferredDevicePreviewMode(),
     quality: surface.quality,
   })
 }
 
-function closeStream(sessionId: string, surface: Surface): void {
+function closeStream(deviceId: string, surface: Surface): void {
   surface.removeFrameListener()
-  window.environment.closeDeviceStream(sessionId)
+  window.environment.closeDeviceStream(deviceId)
   surface.renderer.close()
 }
 
 /**
  * Renegotiate the stream around the canvas that is already on screen.
  *
- * Two different reasons land here and they want OPPOSITE things from the picture.
- *
- * A quality change is the same device at a new size: scale and frame rate are settled
- * in `stream.start`, so changing either means a new stream and a new decoder, and
+ * Only ever the same device at a new size: scale and frame rate are settled in
+ * `stream.start`, so changing either means a new stream and a new decoder, and
  * holding the old resolution on screen until the first frame at the new one lands is
- * what keeps it from blanking. `hasFrame` stays true for that.
+ * what keeps it from blanking. `hasFrame` therefore stays true.
  *
- * A DEVICE change is not a new version of what is on screen — it is a different
- * phone. Keeping that picture is not continuity, it is showing the user the wrong
- * device, and on a simulator that only repaints when something happens it can sit
- * there indefinitely. So the picture is dropped and the panel goes back to waiting,
- * which is the honest reading: this device has not shown us anything yet.
+ * A device CHANGE never reaches here — it is a different key, and so a different
+ * surface with its own blank canvas. That is deliberate: keeping the old picture
+ * across a device switch is not continuity, it is showing the user the wrong phone.
  */
-function renegotiate(sessionId: string, surface: Surface, options: DeviceSurfaceOptions): void {
-  const switchedDevice = surface.deviceId !== options.deviceId
-  closeStream(sessionId, surface)
-  surface.deviceId = options.deviceId
-  surface.quality = options.quality
-  if (switchedDevice) discardPicture(surface)
-  openStream(sessionId, surface)
+function renegotiate(deviceId: string, surface: Surface, quality: IosSimulatorPreviewQuality): void {
+  closeStream(deviceId, surface)
+  surface.quality = quality
+  openStream(deviceId, surface)
 }
 
-/** Forget what is drawn, and tell everyone watching that there is nothing to see. */
-function discardPicture(surface: Surface): void {
-  surface.hasFrame = false
-  // The canvas is reused rather than rebuilt — rebuilding it would cost a stream
-  // restart — so the old bitmap has to be wiped by hand. A first frame at a new
-  // size resizes the canvas and clears it anyway; this covers the two devices that
-  // happen to encode at the same one.
-  const context = surface.canvas.getContext('2d', { alpha: false })
-  context?.clearRect(0, 0, surface.canvas.width, surface.canvas.height)
-  for (const watcher of surface.watchers) watcher(false)
-}
-
-function dispose(sessionId: string): void {
-  const surface = surfaces.get(sessionId)
+function dispose(deviceId: string): void {
+  const surface = surfaces.get(deviceId)
   if (!surface) return
-  surfaces.delete(sessionId)
+  surfaces.delete(deviceId)
   if (surface.graceTimer) clearTimeout(surface.graceTimer)
-  closeStream(sessionId, surface)
+  closeStream(deviceId, surface)
   surface.canvas.remove()
 }
 
 /**
- * Show this session's device inside `host`, building the surface if this is the
- * first view to ask for it and adopting the running one if it is not.
+ * Show this device inside `host`, building the surface if this is the first view to
+ * ask for it and adopting the running one if it is not.
  *
  * The returned detach does NOT tear anything down: it starts the grace period, which
  * the next attach cancels. A view that unmounts because another one is taking over
  * therefore hands the picture across intact.
  */
 export function attachDeviceSurface(
-  sessionId: string,
+  deviceId: string,
   host: HTMLElement,
   options: DeviceSurfaceOptions,
   onFrameState: (hasFrame: boolean) => void,
   onCanvas: (canvas: HTMLCanvasElement | null) => void,
 ): () => void {
-  let surface = surfaces.get(sessionId)
+  let surface = surfaces.get(deviceId)
   if (!surface) {
     const canvas = document.createElement('canvas')
     surface = {
@@ -188,17 +177,16 @@ export function attachDeviceSurface(
       renderer: null as unknown as DeviceFrameRenderer,
       removeFrameListener: () => {},
       hasFrame: false,
-      deviceId: options.deviceId,
       quality: options.quality,
       hosts: [],
       watchers: new Set(),
       graceTimer: null,
     }
-    surfaces.set(sessionId, surface)
-    openStream(sessionId, surface)
-  } else if (surface.deviceId !== options.deviceId || surface.quality.scale !== options.quality.scale
+    surfaces.set(deviceId, surface)
+    openStream(deviceId, surface)
+  } else if (surface.quality.scale !== options.quality.scale
     || surface.quality.maxFrameRate !== options.quality.maxFrameRate) {
-    renegotiate(sessionId, surface, options)
+    renegotiate(deviceId, surface, options.quality)
   }
 
   const live = surface
@@ -223,9 +211,9 @@ export function attachDeviceSurface(
     const next = live.hosts[live.hosts.length - 1]
     if (next) { hand(live, next); return }
     live.graceTimer = setTimeout(() => {
-      const current = surfaces.get(sessionId)
+      const current = surfaces.get(deviceId)
       if (current !== live || current.hosts.length > 0) return
-      dispose(sessionId)
+      dispose(deviceId)
     }, HANDOVER_GRACE_MS)
   }
 }
@@ -243,5 +231,5 @@ function hand(surface: Surface, target: { el: HTMLElement; framed: boolean }): v
  * the first one's surface and never builds a renderer at all.
  */
 export function resetDeviceSurfaces(): void {
-  for (const sessionId of [...surfaces.keys()]) dispose(sessionId)
+  for (const deviceId of [...surfaces.keys()]) dispose(deviceId)
 }

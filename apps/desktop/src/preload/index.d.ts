@@ -18,7 +18,7 @@ import type {
   SupervisorSnapshot,
 } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
-import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceSessionState, DeviceStreamOptions } from '@superone/shared/device'
+import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions } from '@superone/shared/device'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
@@ -765,27 +765,30 @@ export interface EnvironmentAPI {
 
   /** Every touch device this machine can offer, both platforms, in catalog order. */
   deviceList(): Promise<DeviceDescriptor[]>
-  deviceBind(sessionId: string, deviceId: string): Promise<DeviceSessionState>
-  deviceBoot(sessionId: string, deviceId: string): Promise<DeviceSessionState>
+  deviceBind(sessionId: string, deviceId: string): Promise<DeviceState>
+  deviceBoot(sessionId: string, deviceId: string): Promise<DeviceState>
   /** Closes the preview but leaves the device running and unowned. */
-  deviceDetach(sessionId: string): Promise<DeviceSessionState>
-  /** Stops the device and unbinds the session. */
-  deviceShutdown(sessionId: string): Promise<DeviceSessionState>
+  deviceDetach(deviceId: string): Promise<DeviceState>
+  /** Stops the device and unbinds whoever held it. */
+  deviceShutdown(deviceId: string): Promise<DeviceState>
+  /** Every device this session still holds, on its way out. The one session-shaped call. */
   deviceRelease(sessionId: string): Promise<void>
-  deviceScreenshot(sessionId: string): Promise<DeviceCapture>
-  /** Rejects on a platform without recording — see `DEVICE_SUPPORTS_RECORDING`. */
-  deviceRecordStart(sessionId: string): Promise<DeviceCapture>
-  /** Resolves to null when this session was not recording. */
-  deviceRecordStop(sessionId: string): Promise<DeviceCapture | null>
-  deviceInput(sessionId: string, input: DeviceInput): Promise<DeviceInputResult>
-  openDeviceStream(sessionId: string, options?: DeviceStreamOptions): void
-  closeDeviceStream(sessionId: string): void
-  onDeviceFrame(sessionId: string, callback: (frame: DeviceFrame) => void): () => void
+  deviceScreenshot(deviceId: string): Promise<DeviceCapture>
+  /** Rejects on a provider without recording — see `DEVICE_CAPABILITIES`. */
+  deviceRecordStart(deviceId: string): Promise<DeviceCapture>
+  /** Resolves to null when this device was not recording. */
+  deviceRecordStop(deviceId: string): Promise<DeviceCapture | null>
+  deviceInput(deviceId: string, input: DeviceInput): Promise<DeviceInputResult>
+  openDeviceStream(deviceId: string, options?: DeviceStreamOptions): void
+  closeDeviceStream(deviceId: string): void
+  onDeviceFrame(deviceId: string, callback: (frame: DeviceFrame) => void): () => void
   /** Host-owned state the panel cannot poll for: orientation and hardware keyboard. */
-  onDeviceSessionState(
-    sessionId: string,
-    callback: (state: DeviceSessionState) => void,
+  onDeviceState(
+    deviceId: string,
+    callback: (state: DeviceState) => void,
   ): () => void
+  /** Every device's state. For readers that do not yet know which device to watch. */
+  onAnyDeviceState(callback: (state: DeviceState) => void): () => void
   /** The host trackpad's two-finger twist, not anything the device reported. */
   onDeviceRotateGesture(callback: (rotation: number) => void): () => void
   workspaceListDir(

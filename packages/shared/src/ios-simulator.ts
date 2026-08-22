@@ -96,6 +96,9 @@ export interface IosSimulatorDevice {
 }
 
 export interface IosSimulatorSessionState {
+  /** The simulator this reading is about. Carried so the adapter can key on it. */
+  udid: string
+  /** The session holding it. Empty when nobody is. */
   sessionId: string
   device: IosSimulatorDevice | null
   phase: 'idle' | 'booting' | 'ready' | 'stopping' | 'error'

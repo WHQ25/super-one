@@ -17,7 +17,7 @@ import type {
   DeviceInput,
   DeviceInputResult,
   DeviceProvider,
-  DeviceSessionState,
+  DeviceState,
   DeviceStreamOptions,
 } from '@superone/shared/device'
 
@@ -35,16 +35,16 @@ export interface DeviceSurface {
    */
   devicesOf(sessionId: string): string[]
 
-  state(deviceId: string): Promise<DeviceSessionState>
+  state(deviceId: string): Promise<DeviceState>
 
   /** Point a session at a device without starting anything. */
-  bind(sessionId: string, deviceId: string): Promise<DeviceSessionState>
+  bind(sessionId: string, deviceId: string): Promise<DeviceState>
   /** Point a session at a device and get it running. */
-  boot(sessionId: string, deviceId: string): Promise<DeviceSessionState>
+  boot(sessionId: string, deviceId: string): Promise<DeviceState>
   /** Let go, leaving the device running for whoever wants it next. */
-  detach(deviceId: string): Promise<DeviceSessionState>
+  detach(deviceId: string): Promise<DeviceState>
   /** Let go AND stop the device. */
-  shutdown(deviceId: string): Promise<DeviceSessionState>
+  shutdown(deviceId: string): Promise<DeviceState>
   /** Drop every device this session held, on its way out. */
   releaseSession(sessionId: string): Promise<void>
 
@@ -74,7 +74,7 @@ export interface DeviceSurface {
    * Orientation and the keyboard switch live in the main process, and an agent driving
    * the device changes them behind the panel's back.
    */
-  onState(listener: (state: DeviceSessionState) => void): () => void
+  onState(listener: (state: DeviceState) => void): () => void
 }
 
 /**

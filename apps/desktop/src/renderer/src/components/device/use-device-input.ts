@@ -88,8 +88,8 @@ export interface DeviceInputApi {
  * before the sample means anything to the guest.
  */
 export function useDeviceInput(
-  { sessionId, enabled, rotationDegrees = 0, canvas }: {
-    sessionId: string
+  { deviceId, enabled, rotationDegrees = 0, canvas }: {
+    deviceId: string
     enabled: boolean
     /** Owned by `device-surface`; null until a view has attached it. */
     canvas: HTMLCanvasElement | null
@@ -116,9 +116,9 @@ export function useDeviceInput(
   const composing = useRef(false)
 
   const sendInput = useCallback(async (input: SimulatorInput) => {
-    const result = await window.environment.deviceInput(sessionId, input)
+    const result = await window.environment.deviceInput(deviceId, input)
     if (!result.ok) reportDeviceError(result.error ?? 'Device input failed.')
-  }, [sessionId])
+  }, [deviceId])
 
   const pointerRatio = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const bounds = (canvas ?? event.currentTarget).getBoundingClientRect()
@@ -343,9 +343,9 @@ export function useDeviceInput(
     cancelScheduledTouchMove()
     const hadSyntheticGesture = syntheticGesture.current.cancel() !== null
     if (touchTracker.current.clear() || hadSyntheticGesture) {
-      void window.environment.deviceInput(sessionId, { type: 'touch.cancel' })
+      void window.environment.deviceInput(deviceId, { type: 'touch.cancel' })
     }
-  }, [cancelScheduledTouchMove, clearSyntheticGestureEndTimer, enabled, sessionId])
+  }, [cancelScheduledTouchMove, clearSyntheticGestureEndTimer, deviceId, enabled])
 
   const onKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!enabled) return

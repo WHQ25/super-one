@@ -12,7 +12,7 @@ import type {
   DeviceFrame,
   DeviceInput,
   DeviceInputResult,
-  DeviceSessionState,
+  DeviceState,
 } from '@superone/shared/device'
 import type { DeviceOrientation } from '@superone/shared/device-agent'
 import { captureFileName } from '../capture-path'
@@ -139,7 +139,7 @@ export function createAndroidSurface(
       return manager.subscribe(deviceId, listener)
     },
 
-    onState(listener: (state: DeviceSessionState) => void) {
+    onState(listener: (state: DeviceState) => void) {
       return manager.onState(listener)
     },
   }

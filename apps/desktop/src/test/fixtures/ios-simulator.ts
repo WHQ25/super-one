@@ -8,7 +8,7 @@
  */
 
 import { vi } from 'vitest'
-import type { DeviceDescriptor, DeviceSessionState } from '@superone/shared/device'
+import type { DeviceDescriptor, DeviceState } from '@superone/shared/device'
 import type {
   IosSimulatorChrome,
   IosSimulatorStatus,
@@ -43,8 +43,9 @@ export const IOS_SIMULATOR_STATUS: IosSimulatorStatus = {
   helper: null,
 }
 
-export const IOS_SIMULATOR_READY: DeviceSessionState = {
-  sessionId: IOS_SIMULATOR_SESSION_ID,
+export const IOS_SIMULATOR_READY: DeviceState = {
+  deviceId: IOS_SIMULATOR_DEVICE.id,
+  owner: IOS_SIMULATOR_SESSION_ID,
   device: IOS_SIMULATOR_DEVICE,
   phase: 'ready',
   interactive: true,
@@ -96,7 +97,8 @@ export function stubIosSimulatorEnvironment() {
       deviceCaptureState: vi.fn(async () => null),
       onDeviceFrame: vi.fn(() => () => {}),
       onDeviceRotateGesture: vi.fn(() => () => {}),
-      onDeviceSessionState: vi.fn(() => () => {}),
+      onDeviceState: vi.fn(() => () => {}),
+      onAnyDeviceState: vi.fn(() => () => {}),
       openDeviceStream,
       closeDeviceStream,
     },

@@ -6,7 +6,7 @@ import type { DshPluginInstallSource } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
-import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceSessionState, DeviceStreamOptions } from '@superone/shared/device'
+import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions } from '@superone/shared/device'
 import { forEachAgentEventPayload } from './agent-event-payload'
 import { isGlassPlatformSupported } from '../main/window-glass'
 
@@ -170,7 +170,7 @@ const agentAPI = {
 }
 
 /** Multi-environment / remote node — product path is Main EnvironmentHost. */
-// Keyed by session, not one flat set: a window can hold a device panel per session,
+// Keyed by device, not one flat set: a window can hold several device panels at once,
 // and a shared set handed every panel every other panel's frames for it to discard —
 // four panels at 60fps meant 720 dispatches a second, 3/4 of them wasted.
 const deviceFrameListeners = new Map<string, Set<(frame: DeviceFrame) => void>>()
@@ -178,14 +178,14 @@ const devicePorts = new Map<string, MessagePort>()
 
 ipcRenderer.on(
   AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_PORT,
-  (event, payload: { sessionId: string }) => {
+  (event, payload: { deviceId: string }) => {
     const port = event.ports[0]
     if (!port) return
-    devicePorts.get(payload.sessionId)?.close()
-    devicePorts.set(payload.sessionId, port)
+    devicePorts.get(payload.deviceId)?.close()
+    devicePorts.set(payload.deviceId, port)
     port.onmessage = (message) => {
       const frame = message.data as DeviceFrame
-      const listeners = deviceFrameListeners.get(payload.sessionId)
+      const listeners = deviceFrameListeners.get(payload.deviceId)
       if (listeners) for (const listener of listeners) listener(frame)
     }
     port.start()
@@ -211,45 +211,61 @@ const environmentAPI = {
   deviceList: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_LIST) as Promise<DeviceDescriptor[]>,
   deviceBind: (sessionId: string, deviceId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_BIND, sessionId, deviceId) as Promise<DeviceSessionState>,
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_BIND, sessionId, deviceId) as Promise<DeviceState>,
   deviceBoot: (sessionId: string, deviceId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_BOOT, sessionId, deviceId) as Promise<DeviceSessionState>,
-  deviceDetach: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_DETACH, sessionId) as Promise<DeviceSessionState>,
-  deviceShutdown: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SHUTDOWN, sessionId) as Promise<DeviceSessionState>,
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_BOOT, sessionId, deviceId) as Promise<DeviceState>,
+  deviceDetach: (deviceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_DETACH, deviceId) as Promise<DeviceState>,
+  deviceShutdown: (deviceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SHUTDOWN, deviceId) as Promise<DeviceState>,
   deviceRelease: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE, sessionId) as Promise<void>,
-  deviceScreenshot: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT, sessionId) as Promise<DeviceCapture>,
-  deviceRecordStart: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_START, sessionId) as Promise<DeviceCapture>,
-  deviceRecordStop: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_STOP, sessionId) as Promise<DeviceCapture | null>,
-  deviceInput: (sessionId: string, input: DeviceInput) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT, sessionId, input) as Promise<DeviceInputResult>,
-  openDeviceStream: (sessionId: string, options?: DeviceStreamOptions) =>
-    ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN, sessionId, options),
-  closeDeviceStream: (sessionId: string) => {
-    devicePorts.get(sessionId)?.close()
-    devicePorts.delete(sessionId)
-    ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_CLOSE, sessionId)
+  deviceScreenshot: (deviceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT, deviceId) as Promise<DeviceCapture>,
+  deviceRecordStart: (deviceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_START, deviceId) as Promise<DeviceCapture>,
+  deviceRecordStop: (deviceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_STOP, deviceId) as Promise<DeviceCapture | null>,
+  deviceInput: (deviceId: string, input: DeviceInput) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT, deviceId, input) as Promise<DeviceInputResult>,
+  openDeviceStream: (deviceId: string, options?: DeviceStreamOptions) =>
+    ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN, deviceId, options),
+  closeDeviceStream: (deviceId: string) => {
+    devicePorts.get(deviceId)?.close()
+    devicePorts.delete(deviceId)
+    ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_CLOSE, deviceId)
   },
-  onDeviceFrame: (sessionId: string, callback: (frame: DeviceFrame) => void) => {
-    const listeners = deviceFrameListeners.get(sessionId) ?? new Set()
-    deviceFrameListeners.set(sessionId, listeners)
+  onDeviceFrame: (deviceId: string, callback: (frame: DeviceFrame) => void) => {
+    const listeners = deviceFrameListeners.get(deviceId) ?? new Set()
+    deviceFrameListeners.set(deviceId, listeners)
     listeners.add(callback)
     return () => {
       listeners.delete(callback)
-      if (listeners.size === 0) deviceFrameListeners.delete(sessionId)
+      if (listeners.size === 0) deviceFrameListeners.delete(deviceId)
     }
   },
-  onDeviceSessionState: (
-    sessionId: string,
-    callback: (state: DeviceSessionState) => void,
+  onDeviceState: (
+    deviceId: string,
+    callback: (state: DeviceState) => void,
   ) => {
-    const handler = (_event: Electron.IpcRendererEvent, state: DeviceSessionState): void => {
-      if (state.sessionId === sessionId) callback(state)
+    const handler = (_event: Electron.IpcRendererEvent, state: DeviceState): void => {
+      if (state.deviceId === deviceId) callback(state)
+    }
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE, handler)
+    }
+  },
+  /**
+   * Every device's state, unfiltered.
+   *
+   * For the one reader that does not know which device it is waiting for: the
+   * handover watches for ANY device becoming this session's, which is precisely the
+   * moment before there is an id to subscribe to.
+   */
+  onAnyDeviceState: (callback: (state: DeviceState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: DeviceState): void => {
+      callback(state)
     }
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE, handler)
     return () => {

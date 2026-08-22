@@ -311,9 +311,23 @@ export interface DeviceInputResult {
   error?: string
 }
 
-/** What a chat session is looking at, whichever platform provides it. */
-export interface DeviceSessionState {
-  sessionId: string
+/**
+ * What one DEVICE is doing, and who has it.
+ *
+ * Keyed by the device rather than by the session that holds it, because the device
+ * is what the reading is ABOUT: a session may hold several at once, and a device
+ * changing hands has to reach both the session taking it and the one losing it.
+ * Addressed to the session, the loser's panel could only be told about its loss by a
+ * second, deviceless message invented for the purpose.
+ *
+ * `owner` is therefore the answer to "is this still mine" — a panel compares it with
+ * its own session id, and a mismatch IS the loss notification.
+ */
+export interface DeviceState {
+  /** The device this describes. Every reader routes on it. */
+  deviceId: string
+  /** The chat session holding it, or null when nobody is. */
+  owner: string | null
   device: DeviceDescriptor | null
   phase: 'idle' | 'booting' | 'ready' | 'stopping' | 'error'
   /** Whether input is accepted. False while booting, or on a device that refused HID. */

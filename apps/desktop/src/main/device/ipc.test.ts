@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import type { DeviceDescriptor, DeviceSessionState } from '@superone/shared/device'
+import type { DeviceDescriptor, DeviceState } from '@superone/shared/device'
 import type { DeviceSurface } from './surface'
 
 const electron = vi.hoisted(() => ({
@@ -48,6 +48,7 @@ import { closeDevicePorts, registerDeviceIpc } from './ipc'
 
 const IOS_DEVICE: DeviceDescriptor = {
   id: 'ios-sim:sim-1',
+  provider: 'ios-sim',
   platform: 'ios',
   name: 'iPhone',
   kind: 'iphone',
@@ -60,9 +61,10 @@ const IOS_DEVICE: DeviceDescriptor = {
   available: true,
 }
 
-function state(device: DeviceDescriptor | null): DeviceSessionState {
+function state(device: DeviceDescriptor | null): DeviceState {
   return {
-    sessionId: 'session-1',
+    deviceId: device?.id ?? 'ios-sim:sim-1',
+    owner: device ? 'session-1' : null,
     device,
     phase: device ? 'ready' : 'idle',
     interactive: Boolean(device),
@@ -111,20 +113,26 @@ describe('device IPC routing', () => {
     expect(ios.bind).not.toHaveBeenCalled()
   })
 
-  it('routes to the surface that holds the session\'s device', async () => {
+  /**
+   * Two devices in one chat session, each driven from its own panel.
+   *
+   * The whole reason these channels name the device: asked which device "session-1"
+   * means, the host has no answer — and the one it used to give (the first device the
+   * session held) sent the merchant app's taps to the client app's phone.
+   */
+  it('sends each panel\'s input to the device that panel named', async () => {
     const ios = surface('ios-sim')
     const android = surface('android')
-    vi.mocked(android.devicesOf).mockReturnValue(['android:emulator-5554'])
     registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
 
-    await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT)!(
-      {},
-      'session-1',
-      { type: 'button', button: 'home' },
-    )
+    const input = electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT)!
+    await input({}, 'android:emulator-5554', { type: 'button', button: 'home' })
+    await input({}, 'ios-sim:sim-1', { type: 'button', button: 'lock' })
 
     expect(android.input).toHaveBeenCalledWith('android:emulator-5554', { type: 'button', button: 'home' })
-    expect(ios.input).not.toHaveBeenCalled()
+    expect(ios.input).toHaveBeenCalledWith('ios-sim:sim-1', { type: 'button', button: 'lock' })
+    expect(android.input).toHaveBeenCalledOnce()
+    expect(ios.input).toHaveBeenCalledOnce()
   })
 
   /**
@@ -135,31 +143,27 @@ describe('device IPC routing', () => {
   it('never reads device state to route, however many surfaces there are', async () => {
     const ios = surface('ios-sim')
     const android = surface('android')
-    vi.mocked(ios.devicesOf).mockReturnValue(['ios-sim:sim-1'])
     registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
 
     const handlers = electron.handlers
-    await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT)!({}, 'session-1', {
+    await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT)!({}, 'ios-sim:sim-1', {
       type: 'button', button: 'home',
     })
-    await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT)!({}, 'session-1')
+    await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT)!({}, 'ios-sim:sim-1')
 
     expect(ios.state).not.toHaveBeenCalled()
     expect(android.state).not.toHaveBeenCalled()
   })
 
-  it('answers for a session holding nothing without asking any surface', async () => {
+  it('refuses a device whose provider no surface is registered for', () => {
     const ios = surface('ios-sim')
-    const android = surface('android')
-    registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
+    registerDeviceIpc({ surfaces: () => [ios], listDevices: async () => [] })
 
-    const answer = await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE)!({}, 'session-1')
-
-    // An empty stage with a picker, which is what an unbound panel shows. Asking a
-    // surface would cost a `simctl list` to be told what the host already knows.
-    expect(answer).toMatchObject({ sessionId: 'session-1', device: null, phase: 'idle' })
-    expect(ios.state).not.toHaveBeenCalled()
-    expect(android.state).not.toHaveBeenCalled()
+    // Android with no SDK: the surface is never built, so the id routes nowhere.
+    // Better a named error than a silent no-op the panel reads as "no frames yet".
+    expect(() => electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT)!(
+      {}, 'android:emulator-5554', { type: 'button', button: 'home' },
+    )).toThrow('android:emulator-5554')
   })
 
   it('releases every device a session held, on every surface', async () => {
@@ -176,15 +180,36 @@ describe('device IPC routing', () => {
 
   it('unsubscribes a stream closed right behind its open', async () => {
     const ios = surface('ios-sim')
-    vi.mocked(ios.devicesOf).mockReturnValue(['ios-sim:sim-1'])
     const unsubscribe = vi.fn()
     vi.mocked(ios.subscribe).mockReturnValue(unsubscribe)
     registerDeviceIpc({ surfaces: () => [ios], listDevices: async () => [] })
 
     const event = { sender: { id: 7, postMessage: vi.fn() }, ports: [] }
-    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN)!(event, 'session-1')
-    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_CLOSE)!(event, 'session-1')
+    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN)!(event, 'ios-sim:sim-1')
+    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_CLOSE)!(event, 'ios-sim:sim-1')
 
     expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+
+  /**
+   * One window, two devices, two streams. Keyed by session these collided: opening
+   * the second closed the first, so the second panel to mount was the only one with
+   * a picture.
+   */
+  it('keeps a stream per device in the same window', async () => {
+    const ios = surface('ios-sim')
+    const android = surface('android')
+    const unsubscribeIos = vi.fn()
+    vi.mocked(ios.subscribe).mockReturnValue(unsubscribeIos)
+    registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
+
+    const event = { sender: { id: 7, postMessage: vi.fn() }, ports: [] }
+    const open = electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN)!
+    open(event, 'ios-sim:sim-1')
+    open(event, 'android:emulator-5554')
+
+    expect(unsubscribeIos).not.toHaveBeenCalled()
+    expect(ios.subscribe).toHaveBeenCalledOnce()
+    expect(android.subscribe).toHaveBeenCalledOnce()
   })
 })

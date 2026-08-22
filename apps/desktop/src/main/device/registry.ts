@@ -6,9 +6,9 @@
  * with the same devices, or approving one in chat would show a different one in the
  * panel. Ports enumerate, surfaces stream — same managers underneath, two audiences.
  *
- * Order is the catalog's: the simulator first, Android after. It is load-bearing in
- * one place only — `surfaceFor` falls back to the first surface for a session holding
- * nothing, which is what makes an empty panel open on the simulator's picker.
+ * Order is the catalog's: the simulator first, Android after. Purely presentational
+ * now — routing reads the provider off the deviceId, so nothing falls back to the
+ * first surface any more — but it is still the order the picker lists devices in.
  *
  * Android is absent, not empty, on a machine with no SDK. `getAndroidDeviceManager`
  * returns null there and the surface is never built, so both the catalog and the

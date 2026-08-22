@@ -11,7 +11,7 @@ import type {
   DeviceFrame,
   DeviceInput,
   DeviceInputResult,
-  DeviceSessionState,
+  DeviceState,
   DeviceStreamOptions,
 } from '@superone/shared/device'
 import type {
@@ -25,9 +25,13 @@ import type { DeviceCapture, DeviceSurface } from '../device/surface'
 import { toDeviceDescriptor } from './device-port'
 import type { IosSimulatorManager } from './ios-simulator-manager'
 
-function toSessionState(state: IosSimulatorSessionState): DeviceSessionState {
+function toSessionState(state: IosSimulatorSessionState): DeviceState {
   return {
-    sessionId: state.sessionId,
+    deviceId: formatDeviceId('ios-sim', state.udid),
+    // The manager spells "nobody" as an empty string, which a reader comparing it
+    // with its own session id would find indistinguishable from a real owner only by
+    // luck. Null is the shape every consumer above tests against.
+    owner: state.sessionId || null,
     device: state.device ? toDeviceDescriptor(state.device) : null,
     phase: state.phase,
     interactive: state.interactive,
@@ -112,7 +116,7 @@ export function createIosSimulatorSurface(manager: IosSimulatorManager): DeviceS
       )
     },
 
-    onState(listener: (state: DeviceSessionState) => void) {
+    onState(listener: (state: DeviceState) => void) {
       return manager.onSessionState((state) => listener(toSessionState(state)))
     },
   }

@@ -54,11 +54,17 @@ export function useDeviceHandover(): void {
       useDevicePipStore.getState().setReady(null)
       return
     }
-    return window.environment.onDeviceSessionState(currentSessionId, (state) => {
-      const bound = state.phase === 'ready' ? state.device : null
+    // Every device, not one: this is the hook that notices a device BECOMING this
+    // session's, which is precisely the moment before there is an id to subscribe to.
+    return window.environment.onAnyDeviceState((state) => {
       const store = useDevicePipStore.getState()
+      const bound = state.owner === currentSessionId && state.phase === 'ready' ? state.device : null
       if (!bound) {
-        if (store.readySessionId === currentSessionId) store.setReady(null)
+        // Only the device the preview is actually showing may clear it. A session may
+        // hold several, and another one going idle says nothing about this one.
+        if (store.readySessionId === currentSessionId && store.device?.id === state.deviceId) {
+          store.setReady(null)
+        }
         return
       }
       // Only the transition into ready, never a republish: rotation and the hardware

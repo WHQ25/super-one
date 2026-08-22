@@ -23,15 +23,21 @@ function stubEnvironment() {
 }
 
 /** Attach, then let go, leaving the surface parked for the next attach to adopt. */
-function show(deviceId: string, quality = QUALITY, onFrameState = () => {}): void {
+function show(
+  deviceId: string,
+  quality = QUALITY,
+  onFrameState: (hasFrame: boolean) => void = () => {},
+): HTMLCanvasElement | null {
   const host = document.createElement('div')
+  let seen: HTMLCanvasElement | null = null
   attachDeviceSurface(
-    'session-1',
+    deviceId,
     host,
-    { deviceId, quality, framed: false },
+    { quality, framed: false },
     onFrameState,
-    () => {},
+    (canvas) => { seen = canvas ?? seen },
   )()
+  return seen
 }
 
 describe('attachDeviceSurface', () => {
@@ -41,38 +47,47 @@ describe('attachDeviceSurface', () => {
   })
   afterEach(() => { resetDeviceSurfaces() })
 
-  it('drops the picture when the session changes device', () => {
-    show('ios:a')
-    clearRect.mockClear()
-    const seen: boolean[] = []
+  /**
+   * A different phone is not a stale version of this one, so it cannot inherit its
+   * picture — a simulator that repaints only when something happens would hold the
+   * wrong device's last frame indefinitely.
+   *
+   * This used to be enforced by wiping the shared canvas on a device switch. It is
+   * now structural: the picture is keyed by device, so a second device is a second
+   * surface with its own blank canvas and its own stream, and there is nothing to
+   * inherit. That is also what lets two devices be watched at once.
+   */
+  it('gives a second device its own canvas and stream rather than the first one\'s', () => {
+    const first = show('ios-sim:a')
+    const started: boolean[] = []
 
-    show('ios:b', QUALITY, () => seen.push(false))
+    const second = show('android:emulator-5554', QUALITY, (hasFrame) => started.push(hasFrame))
 
-    // A different phone is not a stale version of this one. Keeping its last frame
-    // shows the wrong device — and a simulator that repaints only when something
-    // happens can hold that frame indefinitely.
-    expect(clearRect).toHaveBeenCalled()
-    expect(window.environment.closeDeviceStream).toHaveBeenCalledWith('session-1')
+    expect(second).not.toBe(first)
+    expect(started).toEqual([false])
     expect(window.environment.openDeviceStream).toHaveBeenCalledTimes(2)
+    // The first device's stream is untouched: both are being watched.
+    expect(window.environment.closeDeviceStream).not.toHaveBeenCalled()
   })
 
   it('keeps the picture across a quality change, which is the same device resized', () => {
-    show('ios:a')
-    clearRect.mockClear()
+    const first = show('ios-sim:a')
 
-    show('ios:a', { scale: 0.5, maxFrameRate: 30 })
+    const again = show('ios-sim:a', { scale: 0.5, maxFrameRate: 30 })
 
     // Blanking here would flash black every time preview quality changes, and the
     // old resolution on screen is a perfectly good stand-in until the new one lands.
+    expect(again).toBe(first)
     expect(clearRect).not.toHaveBeenCalled()
+    expect(window.environment.closeDeviceStream).toHaveBeenCalledWith('ios-sim:a')
     expect(window.environment.openDeviceStream).toHaveBeenCalledTimes(2)
   })
 
   it('leaves a re-attach of the same device and quality entirely alone', () => {
-    show('ios:a')
+    show('ios-sim:a')
     clearRect.mockClear()
 
-    show('ios:a')
+    show('ios-sim:a')
 
     expect(clearRect).not.toHaveBeenCalled()
     // No renegotiation at all: moving the picture between surfaces must not cost a

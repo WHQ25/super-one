@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { DeviceDescriptor, DeviceSessionState } from '@superone/shared/device'
+import type { DeviceDescriptor, DeviceState } from '@superone/shared/device'
 
 vi.mock('./device-video', () => ({
   preferredDevicePreviewMode: () => 'native-h264',
@@ -35,9 +35,10 @@ function device(overrides: Partial<DeviceDescriptor> & Pick<DeviceDescriptor, 'i
 const RECENT = device({ id: 'ios-sim:p17-26', name: 'iPhone 17 Pro' })
 const OTHER = device({ id: 'ios-sim:air-26', name: 'iPhone Air' })
 
-function ready(target: DeviceDescriptor): DeviceSessionState {
+function ready(target: DeviceDescriptor): DeviceState {
   return {
-    sessionId: 'session-1',
+    deviceId: target.id,
+    owner: 'session-1',
     device: target,
     phase: 'ready',
     interactive: true,
@@ -70,7 +71,8 @@ function stubEnvironment(devices: DeviceDescriptor[]) {
       deviceInput: vi.fn(async () => ({ ok: true })),
       onDeviceFrame: vi.fn(() => () => {}),
       onDeviceRotateGesture: vi.fn(() => () => {}),
-      onDeviceSessionState: vi.fn(() => () => {}),
+      onDeviceState: vi.fn(() => () => {}),
+      onAnyDeviceState: vi.fn(() => () => {}),
       openDeviceStream: vi.fn(),
       closeDeviceStream: vi.fn(),
     },
@@ -115,8 +117,9 @@ describe('iOS Simulator panel device switching', () => {
     await pickFromMenu(user, /iPhone 17 Pro · iOS 26.0/, /iPhone Air · iOS 26.0/)
 
     // Otherwise the panel would draw one device while Disconnect and Shut Down still
-    // pointed at the one it never released.
-    await waitFor(() => expect(deviceDetach).toHaveBeenCalledWith('session-1'))
+    // pointed at the one it never released. Named by DEVICE: the session may be
+    // holding another one in a second tab, and that one is not being let go of.
+    await waitFor(() => expect(deviceDetach).toHaveBeenCalledWith(booted.id))
     expect(await screen.findByRole('button', { name: 'Launch' })).toBeEnabled()
   })
 })

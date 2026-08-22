@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
-import type { DeviceDescriptor, DeviceSessionState } from '@superone/shared/device'
+import type { DeviceDescriptor, DeviceState } from '@superone/shared/device'
 import type { IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import { Button } from '@superone/ui/components/ui/button'
 import { DeviceStage } from './DeviceStage'
@@ -20,7 +20,7 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
   const [status, setStatus] = useState<IosSimulatorStatus | null>(null)
   const [devices, setDevices] = useState<DeviceDescriptor[]>([])
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
-  const [sessionState, setSessionState] = useState<DeviceSessionState | null>(null)
+  const [sessionState, setSessionState] = useState<DeviceState | null>(null)
   // One view, always the stage. Nothing boots until a device is chosen from the
   // header menu, so opening the panel still does not commandeer a simulator — it
   // just shows an empty stage with that menu instead of a page of its own.
@@ -119,7 +119,7 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
     if (deviceId === selectedDeviceId) return
     setOperation('loading')
     try {
-      if (sessionState?.device) await window.environment.deviceDetach(sessionId)
+      if (sessionState?.device) await window.environment.deviceDetach(sessionState.deviceId)
       setSessionState(null)
       const nextDevices = await window.environment.deviceList()
       setDevices(nextDevices)
@@ -155,11 +155,13 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
    * ready. Detach leaves the device running and unowned; terminate takes it down.
    */
   const finish = useCallback(async (mode: 'detach' | 'terminate') => {
+    const held = sessionState?.deviceId
+    if (!held) return
     setOperation('loading')
     try {
       await (mode === 'detach'
-        ? window.environment.deviceDetach(sessionId)
-        : window.environment.deviceShutdown(sessionId))
+        ? window.environment.deviceDetach(held)
+        : window.environment.deviceShutdown(held))
       setSessionState(null)
       setSelectedDeviceId('')
       setDevices(await window.environment.deviceList())
@@ -169,7 +171,7 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
     } finally {
       setOperation(null)
     }
-  }, [sessionId, t])
+  }, [sessionState, t])
 
   // Only when the list is ALSO empty. On a Mac with no Xcode but an Android SDK the
   // panel has real devices to offer, and a page saying iOS is unavailable would be

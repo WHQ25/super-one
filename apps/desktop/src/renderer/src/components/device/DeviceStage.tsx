@@ -5,7 +5,7 @@ import { ChevronDown, ChevronLeft, Circle, Home, Keyboard, KeyboardOff, Loader2,
 import type {
   DeviceDescriptor,
   DeviceOrientation,
-  DeviceSessionState,
+  DeviceState,
 } from '@superone/shared/device'
 import type {
   IosSimulatorChrome,
@@ -186,7 +186,7 @@ interface DeviceStageProps {
   /** The whole catalog, for the header's device menu. */
   devices: DeviceDescriptor[]
   device: DeviceDescriptor | null
-  sessionState: DeviceSessionState | null
+  sessionState: DeviceState | null
   busy: boolean
   /** True while the local Xcode / simctl probe is still out, before any device is known. */
   checking: boolean
@@ -298,7 +298,7 @@ export function DeviceStage({
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null)
   const canvasHostRef = useRef<HTMLDivElement | null>(null)
   const { shellRef, sendInput, canvasHandlers, keyboard } = useDeviceInput({
-    sessionId,
+    deviceId: sessionState?.deviceId ?? '',
     enabled: interactive,
     rotationDegrees: layoutRotation,
     canvas,
@@ -366,11 +366,11 @@ export function DeviceStage({
    */
   useEffect(() => {
     if (!boundDeviceId) return
-    return window.environment.onDeviceSessionState(sessionId, (state) => {
+    return window.environment.onDeviceState(boundDeviceId, (state) => {
       setOrientation(state.orientation)
       if (state.ios) setKeyboardConnected(state.ios.hardwareKeyboardConnected)
     })
-  }, [boundDeviceId, sessionId])
+  }, [boundDeviceId])
 
   /**
    * Take the session's decoded picture and put it in this view's host element.
@@ -386,13 +386,13 @@ export function DeviceStage({
     const host = canvasHostRef.current
     if (!live || !host) return
     return attachDeviceSurface(
-      sessionId,
+      deviceId,
       host,
-      { deviceId, quality, framed: chrome != null },
+      { quality, framed: chrome != null },
       setHasFrame,
       setCanvas,
     )
-  }, [chrome, live, quality, sessionId, deviceId])
+  }, [chrome, live, quality, deviceId])
 
   // `chrome` is `undefined` while the artwork lookup is still out and `null` when
   // the model has none; both mean nothing is covered yet, so the toolbar stays whole.
@@ -751,7 +751,7 @@ export function DeviceStage({
         {/* Capture only needs the device running, not interactive: both platforms
             read the display directly rather than through the input transport. */}
         <DeviceCaptureControls
-          sessionId={sessionId}
+          deviceId={deviceId}
           disabled={!ready}
           canRecord={capabilities.recording}
         />

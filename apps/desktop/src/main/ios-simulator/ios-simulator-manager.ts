@@ -414,6 +414,7 @@ export class IosSimulatorManager {
   ): IosSimulatorSessionState {
     const attachment = this.nativeSessions.get(udid)?.client.attachment
     return {
+      udid,
       sessionId: this.owners.get(udid) ?? '',
       device,
       phase: device?.booted ? 'ready' : 'idle',
@@ -890,6 +891,7 @@ export class IosSimulatorManager {
 
   private emptyState(udid: string): IosSimulatorSessionState {
     return {
+      udid,
       sessionId: this.owners.get(udid) ?? '',
       device: null,
       phase: 'idle',

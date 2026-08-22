@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { DeviceDescriptor, DeviceSessionState } from '@superone/shared/device'
+import type { DeviceDescriptor, DeviceState } from '@superone/shared/device'
 import type { IosSimulatorChrome } from '@superone/shared/ios-simulator'
 
 // The frame renderer is a real browser boundary — VideoDecoder and a 2D context,
@@ -37,8 +37,9 @@ const DEVICE: DeviceDescriptor = {
   available: true,
 }
 
-const READY: DeviceSessionState = {
-  sessionId: 'session-1',
+const READY: DeviceState = {
+  deviceId: DEVICE.id,
+  owner: 'session-1',
   device: DEVICE,
   phase: 'ready',
   interactive: true,
@@ -65,8 +66,9 @@ const ANDROID_DEVICE: DeviceDescriptor = {
   available: true,
 }
 
-const ANDROID_READY: DeviceSessionState = {
-  sessionId: 'session-1',
+const ANDROID_READY: DeviceState = {
+  deviceId: ANDROID_DEVICE.id,
+  owner: 'session-1',
   device: ANDROID_DEVICE,
   phase: 'ready',
   interactive: true,
@@ -120,7 +122,7 @@ const CHROME_WITH_KEYS: IosSimulatorChrome = {
 function stubEnvironment(chrome: () => Promise<IosSimulatorChrome | null>) {
   const openDeviceStream = vi.fn()
   const closeDeviceStream = vi.fn()
-  const stateListeners = new Set<(state: DeviceSessionState) => void>()
+  const stateListeners = new Set<(state: DeviceState) => void>()
   // The setup file installs a get-trap Proxy that ignores its target, so stubs
   // have to replace the whole object rather than be assigned onto it.
   Object.defineProperty(window, 'environment', {
@@ -130,9 +132,9 @@ function stubEnvironment(chrome: () => Promise<IosSimulatorChrome | null>) {
       deviceInput: vi.fn(async () => ({ ok: true })),
       onDeviceFrame: vi.fn(() => () => {}),
       onDeviceRotateGesture: vi.fn(() => () => {}),
-      onDeviceSessionState: vi.fn((
+      onDeviceState: vi.fn((
         _sessionId: string,
-        callback: (state: DeviceSessionState) => void,
+        callback: (state: DeviceState) => void,
       ) => {
         stateListeners.add(callback)
         return () => { stateListeners.delete(callback) }
@@ -146,19 +148,19 @@ function stubEnvironment(chrome: () => Promise<IosSimulatorChrome | null>) {
     closeDeviceStream,
     deviceInput: window.environment.deviceInput as ReturnType<typeof vi.fn>,
     /** What main pushes when something other than this panel drives the device. */
-    pushSessionState: (state: DeviceSessionState) => {
+    pushSessionState: (state: DeviceState) => {
       act(() => { for (const listener of stateListeners) listener(state) })
     },
   }
 }
 
 function renderStage(
-  sessionState: DeviceSessionState | null = READY,
+  sessionState: DeviceState | null = READY,
   overrides: Partial<React.ComponentProps<typeof DeviceStage>> = {},
 ) {
   const onSelectDevice = vi.fn()
   const onLaunchDevice = vi.fn()
-  const stage = (next: DeviceSessionState | null) => (
+  const stage = (next: DeviceState | null) => (
     <DeviceStage
       sessionId="session-1"
       devices={[DEVICE]}
@@ -179,7 +181,7 @@ function renderStage(
     onSelectDevice,
     onLaunchDevice,
     /** The panel fills the session in after `bind` answers; this is that second pass. */
-    settleSession: (next: DeviceSessionState) => view.rerender(stage(next)),
+    settleSession: (next: DeviceState) => view.rerender(stage(next)),
   })
 }
 
@@ -250,7 +252,7 @@ describe('iOS Simulator stage rotation', () => {
     // A quarter turn clockwise is `landscapeRight`, not `landscapeLeft`: Apple's
     // name says where the home button lands, not which way the device went, and
     // reading it as a direction puts the guest picture 180deg out.
-    expect(deviceInput).toHaveBeenCalledWith('session-1', {
+    expect(deviceInput).toHaveBeenCalledWith(DEVICE.id, {
       type: 'rotate',
       orientation: 'landscape-right',
     })
@@ -266,7 +268,7 @@ describe('iOS Simulator stage rotation', () => {
 
     await user.click(screen.getByRole('button', { name: 'Rotate Left' }))
 
-    expect(deviceInput).toHaveBeenCalledWith('session-1', {
+    expect(deviceInput).toHaveBeenCalledWith(DEVICE.id, {
       type: 'rotate',
       orientation: 'landscape-left',
     })
@@ -337,7 +339,7 @@ describe('iOS Simulator stage rotation', () => {
     // yet. Syncing on every `sessionState` would snap the device back under the user.
     settleSession({ ...READY, orientation: 'portrait' })
 
-    expect(deviceInput).toHaveBeenCalledWith('session-1', {
+    expect(deviceInput).toHaveBeenCalledWith(DEVICE.id, {
       type: 'rotate', orientation: 'landscape-right',
     })
     expect(video.builtWith.at(-1)!.closest('[style*="rotate"]'))
@@ -513,7 +515,7 @@ describe('iOS Simulator stage software keyboard', () => {
     // get: iOS only shows its on-screen keyboard when no hardware one is attached.
     await user.click(await screen.findByRole('button', { name: 'Show Software Keyboard' }))
 
-    expect(deviceInput).toHaveBeenCalledWith('session-1', {
+    expect(deviceInput).toHaveBeenCalledWith(DEVICE.id, {
       type: 'keyboard',
       connected: false,
     })
@@ -521,7 +523,7 @@ describe('iOS Simulator stage software keyboard', () => {
     expect(back).toHaveAttribute('aria-pressed', 'true')
 
     await user.click(back)
-    expect(deviceInput).toHaveBeenCalledWith('session-1', { type: 'keyboard', connected: true })
+    expect(deviceInput).toHaveBeenCalledWith(DEVICE.id, { type: 'keyboard', connected: true })
   })
 
   it('offers no switch where CoreSimulator has none', async () => {

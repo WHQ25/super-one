@@ -39,11 +39,11 @@ describe('iOS Simulator capture controls', () => {
   it('saves a screenshot and offers a way to find the file', async () => {
     toasts.success.mockClear()
     const api = stubEnvironment()
-    render(<DeviceCaptureControls sessionId="session-1" />)
+    render(<DeviceCaptureControls deviceId="ios-sim:sim-1" />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Screenshot' }))
 
-    expect(api.deviceScreenshot).toHaveBeenCalledWith('session-1')
+    expect(api.deviceScreenshot).toHaveBeenCalledWith('ios-sim:sim-1')
     await waitFor(() => expect(toasts.success).toHaveBeenCalled())
     const [message, options] = toasts.success.mock.calls.at(-1)!
     expect(message).toContain('shot.png')
@@ -52,7 +52,7 @@ describe('iOS Simulator capture controls', () => {
 
   it('disables recording without disabling screenshots when the platform cannot record', () => {
     stubEnvironment()
-    render(<DeviceCaptureControls sessionId="session-1" canRecord={false} />)
+    render(<DeviceCaptureControls deviceId="ios-sim:sim-1" canRecord={false} />)
 
     expect(screen.getByRole('button', { name: 'Screenshot' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Record Screen' })).toBeDisabled()
@@ -60,7 +60,7 @@ describe('iOS Simulator capture controls', () => {
 
   it('flips the record button into a stop button and back', async () => {
     const api = stubEnvironment()
-    render(<DeviceCaptureControls sessionId="session-1" />)
+    render(<DeviceCaptureControls deviceId="ios-sim:sim-1" />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Record Screen' }))
 
@@ -69,7 +69,7 @@ describe('iOS Simulator capture controls', () => {
 
     await userEvent.click(stop)
 
-    expect(api.deviceRecordStop).toHaveBeenCalledWith('session-1')
+    expect(api.deviceRecordStop).toHaveBeenCalledWith('ios-sim:sim-1')
     await screen.findByRole('button', { name: 'Record Screen' })
   })
 
@@ -78,7 +78,7 @@ describe('iOS Simulator capture controls', () => {
     stubEnvironment({
       deviceRecordStart: vi.fn(async () => { throw new Error('Recording failed.') }),
     })
-    render(<DeviceCaptureControls sessionId="session-1" />)
+    render(<DeviceCaptureControls deviceId="ios-sim:sim-1" />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Record Screen' }))
 
@@ -91,7 +91,7 @@ describe('iOS Simulator capture controls', () => {
   it('counts the recording up on a clock while it runs', async () => {
     vi.useFakeTimers()
     stubEnvironment()
-    render(<DeviceCaptureControls sessionId="session-1" />)
+    render(<DeviceCaptureControls deviceId="ios-sim:sim-1" />)
 
     // `fireEvent`, not `userEvent`, and `act`, not `findBy*`/`waitFor`. Both of the
     // ergonomic ones wait on real timers that `useFakeTimers` has frozen, and
@@ -114,7 +114,7 @@ describe('iOS Simulator capture controls', () => {
 
   it('ends an open recording when the stage goes away', async () => {
     const api = stubEnvironment()
-    const view = render(<DeviceCaptureControls sessionId="session-1" />)
+    const view = render(<DeviceCaptureControls deviceId="ios-sim:sim-1" />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Record Screen' }))
     await screen.findByRole('button', { name: 'Stop Recording' })
@@ -122,6 +122,6 @@ describe('iOS Simulator capture controls', () => {
 
     // Unmounting takes the stop button with it, so an unattended recording would
     // otherwise run until the session detached.
-    expect(api.deviceRecordStop).toHaveBeenCalledWith('session-1')
+    expect(api.deviceRecordStop).toHaveBeenCalledWith('ios-sim:sim-1')
   })
 })

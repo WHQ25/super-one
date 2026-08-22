@@ -15,7 +15,7 @@ beforeEach(() => {
 
 function mountKeyboard() {
   const { result } = renderHook(() => useDeviceInput({
-    sessionId: 'session-a',
+    deviceId: 'ios-sim:sim-a',
     enabled: true,
     canvas: null,
   }))
@@ -48,7 +48,7 @@ describe('useDeviceInput keyboard', () => {
     handlers.onCompositionEnd({ currentTarget: box, data: '你好' } as never)
 
     expect(deviceInput).toHaveBeenCalledTimes(1)
-    expect(deviceInput).toHaveBeenCalledWith('session-a', { type: 'text', text: '你好' })
+    expect(deviceInput).toHaveBeenCalledWith('ios-sim:sim-a', { type: 'text', text: '你好' })
     expect(box.value).toBe('')
   })
 
@@ -70,7 +70,7 @@ describe('useDeviceInput keyboard', () => {
       nativeEvent: { inputType: 'insertText', data: 'a' },
     } as never)
 
-    expect(deviceInput).toHaveBeenCalledExactlyOnceWith('session-a', { type: 'text', text: 'a' })
+    expect(deviceInput).toHaveBeenCalledExactlyOnceWith('ios-sim:sim-a', { type: 'text', text: 'a' })
     expect(box.value).toBe('')
   })
 
@@ -86,7 +86,7 @@ describe('useDeviceInput keyboard', () => {
       nativeEvent: { inputType: 'insertFromComposition', data: '你好' },
     } as never)
 
-    expect(deviceInput).toHaveBeenCalledExactlyOnceWith('session-a', { type: 'text', text: '你好' })
+    expect(deviceInput).toHaveBeenCalledExactlyOnceWith('ios-sim:sim-a', { type: 'text', text: '你好' })
     expect(box.value).toBe('')
   })
 
@@ -99,7 +99,7 @@ describe('useDeviceInput keyboard', () => {
     } as never)
 
     expect(preventDefault).toHaveBeenCalled()
-    expect(deviceInput).toHaveBeenCalledExactlyOnceWith('session-a', { type: 'text', text: '\n' })
+    expect(deviceInput).toHaveBeenCalledExactlyOnceWith('ios-sim:sim-a', { type: 'text', text: '\n' })
   })
 
   it('drops keystrokes that belong to the IME', () => {

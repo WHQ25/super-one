@@ -18,7 +18,7 @@ function formatRecordingClock(seconds: number): string {
 }
 
 interface DeviceCaptureControlsProps {
-  sessionId: string
+  deviceId: string
   /** Set while no device is streaming — the buttons stay in place, just unusable. */
   disabled?: boolean
   /** Android capture currently supports screenshots but not recording. */
@@ -30,7 +30,7 @@ interface DeviceCaptureControlsProps {
  * own display through the main process rather than the preview canvas, so the file
  * is at native resolution and carries no device chrome.
  */
-export function DeviceCaptureControls({ sessionId, disabled, canRecord = true }: DeviceCaptureControlsProps) {
+export function DeviceCaptureControls({ deviceId, disabled, canRecord = true }: DeviceCaptureControlsProps) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   // When simctl confirmed frames were flowing, so the clock counts the recording
@@ -66,19 +66,19 @@ export function DeviceCaptureControls({ sessionId, disabled, canRecord = true }:
   const screenshot = useCallback(async () => {
     setBusy(true)
     try {
-      announce(await window.environment.deviceScreenshot(sessionId))
+      announce(await window.environment.deviceScreenshot(deviceId))
     } catch (cause) {
       reportDeviceError(messageOf(cause))
     } finally {
       setBusy(false)
     }
-  }, [announce, sessionId])
+  }, [announce, deviceId])
 
   const toggleRecording = useCallback(async () => {
     setBusy(true)
     try {
       if (recordingRef.current) {
-        const capture = await window.environment.deviceRecordStop(sessionId)
+        const capture = await window.environment.deviceRecordStop(deviceId)
         recordingRef.current = false
         setStartedAt(null)
         if (capture) announce(capture)
@@ -86,7 +86,7 @@ export function DeviceCaptureControls({ sessionId, disabled, canRecord = true }:
       }
       // Resolves only once simctl confirms frames are flowing, so the button never
       // claims to be recording a stream that failed to start.
-      await window.environment.deviceRecordStart(sessionId)
+      await window.environment.deviceRecordStart(deviceId)
       recordingRef.current = true
       setStartedAt(Date.now())
     } catch (cause) {
@@ -96,15 +96,15 @@ export function DeviceCaptureControls({ sessionId, disabled, canRecord = true }:
     } finally {
       setBusy(false)
     }
-  }, [announce, sessionId])
+  }, [announce, deviceId])
 
   // Leaving the stage takes the stop button with it. Ending the recording here
   // keeps it from running on unattended until the session detaches.
   useEffect(() => () => {
     if (!recordingRef.current) return
     recordingRef.current = false
-    void window.environment.deviceRecordStop(sessionId)
-  }, [sessionId])
+    void window.environment.deviceRecordStop(deviceId)
+  }, [deviceId])
 
   return (
     <>

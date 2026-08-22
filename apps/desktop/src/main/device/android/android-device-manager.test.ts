@@ -258,12 +258,21 @@ describe('rebinding a session', () => {
     expect(android.devicesOf('session-1')).toEqual([])
   })
 
-  it('tells the displaced session it lost the device', async () => {
+  /**
+   * How a displaced session finds out, now that state is keyed by device.
+   *
+   * There is no message addressed to the loser any more, and there does not need to
+   * be: both panels subscribe to this DEVICE, so both are handed the same reading,
+   * and the one whose session id is no longer `owner` has been told. A message aimed
+   * at the loser was only ever needed while a panel could not hear about a device it
+   * did not already believe was its own.
+   */
+  it('names the new owner in the device\'s own state, which is what tells the old one', async () => {
     const android = manager()
     await android.boot('session-1', AVD_DEVICE_ID)
     await android.connection(AVD_DEVICE_ID)
-    const announced: string[] = []
-    android.onState((state) => { if (!state.device) announced.push(state.sessionId) })
+    const announced: { deviceId: string; owner: string | null }[] = []
+    android.onState((state) => { announced.push({ deviceId: state.deviceId, owner: state.owner }) })
 
     await android.boot('session-2', AVD_DEVICE_ID)
 
@@ -273,6 +282,6 @@ describe('rebinding a session', () => {
     expect(scrcpy.connections[0]!.closed).toBe(false)
     expect(android.devicesOf('session-1')).toEqual([])
     expect(android.devicesOf('session-2')).toEqual([AVD_DEVICE_ID])
-    expect(announced).toContain('session-1')
+    expect(announced).toContainEqual({ deviceId: AVD_DEVICE_ID, owner: 'session-2' })
   })
 })

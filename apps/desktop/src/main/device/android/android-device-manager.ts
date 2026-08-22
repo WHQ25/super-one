@@ -12,7 +12,7 @@
  * appear, ask each new one its AVD name, and only then know which device was started.
  */
 
-import type { DeviceDescriptor, DeviceFrame, DeviceSessionState } from '@superone/shared/device'
+import type { DeviceDescriptor, DeviceFrame, DeviceState } from '@superone/shared/device'
 import type { DeviceOrientation } from '@superone/shared/device-agent'
 import log from '../../logger'
 import { Adb, adbPath, emulatorPath, spawnTool, type AdbDevice } from './adb'
@@ -316,30 +316,12 @@ export class AndroidDeviceManager {
     this.release(deviceId)
   }
 
-  private readonly stateListeners = new Set<(state: DeviceSessionState) => void>()
+  private readonly stateListeners = new Set<(state: DeviceState) => void>()
 
   /** State the panel did not ask for — a rotation the agent made, a stream that died. */
-  onState(listener: (state: DeviceSessionState) => void): () => void {
+  onState(listener: (state: DeviceState) => void): () => void {
     this.stateListeners.add(listener)
     return () => this.stateListeners.delete(listener)
-  }
-
-  /**
-   * Tell one session it is holding nothing, without describing any device.
-   *
-   * The counterpart to `announce`, which describes a DEVICE. A session that just lost
-   * one needs a reading addressed to itself, because that is the only kind its panel
-   * is listening for.
-   */
-  private announceLoss(sessionId: string): void {
-    const state: DeviceSessionState = {
-      sessionId,
-      device: null,
-      phase: 'idle',
-      interactive: false,
-      orientation: 'portrait',
-    }
-    for (const listener of this.stateListeners) listener(state)
   }
 
   private announce(deviceId: string): void {
@@ -348,12 +330,13 @@ export class AndroidDeviceManager {
   }
 
   /** What the panel needs to draw this device, in the shared shape. */
-  deviceState(deviceId: string): DeviceSessionState {
+  deviceState(deviceId: string): DeviceState {
     const owner = this.owners.get(deviceId) ?? null
     const device = owner ? this.descriptorFor(deviceId) : null
     const connection = this.connections.get(deviceId)
     return {
-      sessionId: owner ?? '',
+      deviceId,
+      owner,
       device,
       phase: device ? 'ready' : 'idle',
       interactive: Boolean(device),
@@ -436,17 +419,14 @@ export class AndroidDeviceManager {
    * so giving one up is the caller's decision, made by calling `release`.
    */
   private bind(sessionId: string, deviceId: string): void {
-    const displaced = this.owners.get(deviceId)
+    // The connection belongs to the device, so a takeover does NOT close it: the new
+    // owner wants the same picture, and tearing it down would cost them a reconnect.
+    //
+    // Nothing extra is sent to the session being displaced. The broadcast below
+    // describes the DEVICE and carries its new owner, and every panel subscribes by
+    // device — so the one that just lost it is handed the same reading and sees an
+    // owner that is no longer itself. That IS the loss notification.
     this.owners.set(deviceId, sessionId)
-    if (displaced && displaced !== sessionId) {
-      // The connection belongs to the device, so it is NOT closed: the new owner
-      // wants the same picture, and tearing it down would cost them a reconnect.
-      //
-      // But the previous owner has to hear about it, and it cannot hear it from the
-      // broadcast below -- that one names the NEW owner, and the panel subscribes by
-      // session, so the old one would never be handed it.
-      this.announceLoss(displaced)
-    }
     this.announce(deviceId)
   }
 

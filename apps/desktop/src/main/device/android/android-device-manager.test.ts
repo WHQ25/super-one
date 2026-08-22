@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Adb, type AdbResult, type RunAdb } from './adb'
 import { Avd } from './avd'
 import {
@@ -9,11 +9,44 @@ import {
 
 const AVD_ID = 'Medium_Phone_API_36.1'
 const SERIAL = 'emulator-5554'
+/** A phone, so a second device is reachable without a second AVD to fake. */
+const PHONE_SERIAL = 'R5CT30ABCDE'
 
 const DEVICES_OUTPUT = `List of devices attached
 ${SERIAL}          device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a transport_id:2
 
 `
+
+/** The emulator above plus a phone, for the tests that move a session between two. */
+const TWO_DEVICES_OUTPUT = `List of devices attached
+${SERIAL}          device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a transport_id:2
+${PHONE_SERIAL}          device product:a54x model:SM_A546B device:a54x transport_id:3
+
+`
+
+/**
+ * Stands in for a real scrcpy connection. Every one built here is remembered, so a
+ * test can assert on the one that should have been taken down.
+ */
+const scrcpy = vi.hoisted(() => ({
+  connections: [] as { serial: string; closed: boolean }[],
+}))
+
+vi.mock('./scrcpy-server', () => ({
+  connectScrcpy: vi.fn(async (options: { serial: string }) => {
+    const connection = { serial: options.serial, closed: false }
+    scrcpy.connections.push(connection)
+    return {
+      deviceName: options.serial,
+      screen: { width: 720, height: 1600 },
+      onMedia: () => () => {},
+      onSession: () => () => {},
+      onClosed: () => () => {},
+      send: () => {},
+      close: async () => { connection.closed = true },
+    }
+  }),
+}))
 
 function ok(text: string): AdbResult {
   return { stdout: Buffer.from(text), stderr: '', code: 0 }
@@ -171,5 +204,60 @@ describe('ownership', () => {
     const manager = new AndroidDeviceManager(tools)
 
     expect(await manager.boot('session-1', 'android:no-such-phone')).toBeNull()
+  })
+})
+
+
+describe('rebinding a session', () => {
+  const PHONE_ID = `android:${PHONE_SERIAL}`
+  const AVD_DEVICE_ID = `android:avd:${AVD_ID}`
+
+  function manager() {
+    scrcpy.connections.length = 0
+    return new AndroidDeviceManager(toolchain({ devices: TWO_DEVICES_OUTPUT }).toolchain)
+  }
+
+  it('closes the connection pointing at the device a session just left', async () => {
+    const android = manager()
+    await android.boot('session-1', AVD_DEVICE_ID)
+    await android.connection('session-1')
+    expect(scrcpy.connections[0]!.serial).toBe(SERIAL)
+
+    await android.boot('session-1', PHONE_ID)
+
+    // Left open, the next subscribe would be handed this one back out of the
+    // session-keyed cache and the panel would keep watching the emulator.
+    expect(scrcpy.connections[0]!.closed).toBe(true)
+    await android.connection('session-1')
+    expect(scrcpy.connections[1]!.serial).toBe(PHONE_SERIAL)
+  })
+
+  it('leaves the video alone when a session rebinds the device it already holds', async () => {
+    const android = manager()
+    await android.boot('session-1', AVD_DEVICE_ID)
+    await android.connection('session-1')
+
+    await android.boot('session-1', AVD_DEVICE_ID)
+
+    expect(scrcpy.connections).toHaveLength(1)
+    expect(scrcpy.connections[0]!.closed).toBe(false)
+  })
+
+  it('takes the displaced session down with the grant it lost', async () => {
+    const android = manager()
+    await android.boot('session-1', AVD_DEVICE_ID)
+    await android.connection('session-1')
+    const announced: string[] = []
+    android.onSessionState((state) => {
+      if (!state.device) announced.push(state.sessionId)
+    })
+
+    await android.boot('session-2', AVD_DEVICE_ID)
+
+    // A second encoder on the same guest, feeding a panel that no longer owns it.
+    expect(scrcpy.connections[0]!.closed).toBe(true)
+    expect(android.holdsSession('session-1')).toBe(false)
+    // And its panel hears about it, rather than sitting on its last frame as `ready`.
+    expect(announced).toContain('session-1')
   })
 })

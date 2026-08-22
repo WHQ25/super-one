@@ -391,17 +391,40 @@ export class AndroidDeviceManager {
     const device = devices.find((candidate) => candidate.id === deviceId)
     if (!device) return null
 
-    this.bind(sessionId, deviceId)
+    await this.bind(sessionId, deviceId)
     // Re-read so the descriptor handed back carries the ownership just recorded,
     // rather than the state from a moment before the grant.
     return { ...device, boundSessionId: sessionId }
   }
 
-  private bind(sessionId: string, deviceId: string): void {
+  /**
+   * Move the binding, and take down whatever the move orphaned.
+   *
+   * Both halves close a scrcpy connection, because a connection outlives the grant it
+   * was opened for unless someone ends it. `connection()` is keyed by SESSION and
+   * answers from its cache BEFORE it resolves a serial, so a stale one is not merely
+   * an idle socket — it is the connection the next subscribe and the next touch will
+   * be handed, pointing at a device this session no longer holds.
+   *
+   * Rebinding a session to the device it already has is left alone on purpose: it is
+   * how the panel re-affirms a grant, and tearing the video down for it would black
+   * the preview out for a second every time.
+   */
+  private async bind(sessionId: string, deviceId: string): Promise<void> {
     const previous = this.sessionBindings.get(sessionId)
-    if (previous) this.deviceOwners.delete(previous)
+    if (previous && previous !== deviceId) {
+      this.deviceOwners.delete(previous)
+      await this.closeConnection(sessionId)
+    }
     const displaced = this.deviceOwners.get(deviceId)
-    if (displaced) this.sessionBindings.delete(displaced)
+    if (displaced && displaced !== sessionId) {
+      this.sessionBindings.delete(displaced)
+      // Otherwise the guest is encoding twice, for a panel that no longer owns it.
+      await this.closeConnection(displaced)
+      // And that panel has to be told: it would sit on its last frame reading
+      // `ready`, offering controls whose touches `input` now refuses by name.
+      this.announce(displaced)
+    }
     this.sessionBindings.set(sessionId, deviceId)
     this.deviceOwners.set(deviceId, sessionId)
   }

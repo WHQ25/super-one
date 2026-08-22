@@ -16,12 +16,22 @@ import type { DeviceDescriptor } from '@superone/shared/device'
 import log from '../../logger'
 import { Adb, adbPath, emulatorPath, spawnTool, type AdbDevice } from './adb'
 import { Avd, parseEmuResponse, type AvdLaunch, type AvdSummary } from './avd'
+import { connectScrcpy, type ScrcpyConnection } from './scrcpy-server'
 import {
   avdDeviceId,
   mergeAndroidDevices,
   serialDeviceId,
   type AndroidRuntimeInfo,
 } from './device-discovery'
+
+/**
+ * Longest edge of the encoded video.
+ *
+ * Well under the device's own 2400px: the picture is watched in a panel a few hundred
+ * points wide, and the accessibility tree — which is what the agent actually reads —
+ * is unaffected by it.
+ */
+const SCRCPY_MAX_SIZE = 1280
 
 /** How long a cold emulator gets to appear on adb and finish booting. */
 const BOOT_TIMEOUT_MS = 180_000
@@ -30,6 +40,13 @@ const BOOT_POLL_MS = 1_000
 export interface AndroidToolchain {
   adb: Adb
   avd: Avd
+  /**
+   * Path to the adb binary.
+   *
+   * Carried alongside the client because the scrcpy server is a LONG-LIVED process,
+   * and every method on `Adb` waits for its command to exit.
+   */
+  adbBinary: string
 }
 
 /** Stands in for the emulator binary when only platform-tools is installed. */
@@ -45,7 +62,7 @@ export function detectAndroidToolchain(env?: NodeJS.ProcessEnv): AndroidToolchai
   // to work with physical devices. Everything except the AVD list still works, so it
   // degrades to an empty list rather than reporting no Android at all.
   const avd = new Avd(emulatorBinary ?? '', emulatorBinary ? spawnTool(emulatorBinary, 'emulator') : notInstalled)
-  return { adb, avd }
+  return { adb, avd, adbBinary }
 }
 
 export class AndroidDeviceManager {
@@ -55,9 +72,20 @@ export class AndroidDeviceManager {
   private readonly serials = new Map<string, string>()
   /** AVDs this app started, so it can shut down only what it is responsible for. */
   private readonly launched = new Map<string, AvdLaunch>()
+  private readonly connections = new Map<string, ScrcpyConnection>()
+  private readonly connectionFlights = new Map<string, Promise<ScrcpyConnection>>()
   private lastDevices: DeviceDescriptor[] = []
 
   constructor(private readonly toolchain: AndroidToolchain) {}
+
+  /**
+   * The adb client, for callers that address the device directly.
+   *
+   * The backend reads the screen with `screencap` and the tree with `uiautomator`,
+   * neither of which goes through scrcpy — so it needs adb without also needing a
+   * video connection, which is what keeps an agent-only session cheap.
+   */
+  get adb() { return this.toolchain.adb }
 
   /**
    * Ask a running device who it is.
@@ -150,6 +178,51 @@ export class AndroidDeviceManager {
     return this.serials.get(deviceId) ?? null
   }
 
+  /**
+   * The scrcpy connection driving this session's device, opened on first use.
+   *
+   * One per session, shared by the agent and the preview: they are looking at the same
+   * device, and a second connection would mean a second encoder on the guest and two
+   * sets of touches arriving out of order.
+   *
+   * In-flight connections are tracked as well as finished ones — opening takes a
+   * second or two, and a snapshot racing the panel would otherwise start a second one
+   * before the first had finished announcing itself.
+   */
+  async connection(sessionId: string): Promise<ScrcpyConnection> {
+    const existing = this.connections.get(sessionId)
+    if (existing) return existing
+    const flight = this.connectionFlights.get(sessionId)
+    if (flight) return flight
+
+    const deviceId = this.sessionBindings.get(sessionId)
+    const serial = deviceId ? this.serialFor(deviceId) : null
+    if (!serial) throw new Error('This session controls no running Android device.')
+
+    const opening = connectScrcpy({
+      adb: this.toolchain.adb,
+      adbBinary: this.toolchain.adbBinary,
+      serial,
+      maxSize: SCRCPY_MAX_SIZE,
+    }).then((connection) => {
+      this.connectionFlights.delete(sessionId)
+      this.connections.set(sessionId, connection)
+      connection.onClosed(() => this.connections.delete(sessionId))
+      return connection
+    }).catch((error: unknown) => {
+      this.connectionFlights.delete(sessionId)
+      throw error
+    })
+    this.connectionFlights.set(sessionId, opening)
+    return opening
+  }
+
+  private async closeConnection(sessionId: string): Promise<void> {
+    const connection = this.connections.get(sessionId)
+    this.connections.delete(sessionId)
+    await connection?.close()
+  }
+
   controlled(sessionId: string): DeviceDescriptor | null {
     const id = this.sessionBindings.get(sessionId)
     if (!id) return null
@@ -200,6 +273,9 @@ export class AndroidDeviceManager {
     const deviceId = this.sessionBindings.get(sessionId)
     this.sessionBindings.delete(sessionId)
     if (deviceId) this.deviceOwners.delete(deviceId)
+    // The stream belonged to the grant, not to the device: letting go has to stop the
+    // encoder on the guest, or a released session keeps paying for frames nobody reads.
+    void this.closeConnection(sessionId)
   }
 
   /**
@@ -254,6 +330,7 @@ export class AndroidDeviceManager {
 
   /** Shut down only the emulators this app started. */
   async dispose(): Promise<void> {
+    await Promise.all([...this.connections.keys()].map((id) => this.closeConnection(id)))
     for (const launch of this.launched.values()) launch.stop()
     this.launched.clear()
     this.sessionBindings.clear()

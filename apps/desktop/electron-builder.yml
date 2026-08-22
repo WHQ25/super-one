@@ -26,6 +26,14 @@ extraResources:
       - "build.sh"
       - "Sources/**"
       - "README.md"
+  # The scrcpy server, which is pushed to an Android device and run there via
+  # app_process. Vendored rather than downloaded so a first run works offline, and
+  # because client and server versions must match exactly — a drifting download would
+  # break the protocol implemented beside it. Verified by sha256 before every push.
+  - from: resources/scrcpy
+    to: scrcpy
+    filter:
+      - "*.jar"
   # The dsh agent presets. They are read with `readdir` by the preset roster and
   # their rows are dynamically imported by the Loader, so they ship unpacked
   # beside the app rather than inside the asar bundle.

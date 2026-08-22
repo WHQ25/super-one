@@ -19,7 +19,8 @@ import { listDeviceCatalog, type DeviceEntry } from '../../device-agent/device-c
 import { detectAndroidToolchain, AndroidDeviceManager } from './android-device-manager'
 import { AndroidDevicePort } from './device-port'
 import { uiautomatorToTree } from './uiautomator'
-import { hasUsableSemantics } from '../tree'
+import { collectNodes, hasUsableSemantics } from '../tree'
+import { AndroidBackend } from '../../device-agent/android-backend'
 
 const live = process.env.ANDROID_LIVE === '1'
 
@@ -115,4 +116,73 @@ describe.skipIf(!live)('catalog entries', () => {
       expect(entry.id.startsWith('android:')).toBe(true)
     }
   }, 60_000)
+})
+
+describe.skipIf(!live)('driving a real device through the backend', () => {
+  it('observes, acts, and sees the screen change', async () => {
+    const toolchain = detectAndroidToolchain()
+    const manager = new AndroidDeviceManager(toolchain!)
+    const devices = await manager.listDevices()
+    const running = devices.find((device) => device.running)
+    if (!running) {
+      report('no running device; boot one to exercise this')
+      return
+    }
+    await manager.boot('live-drive', running.id)
+
+    const backend = new AndroidBackend(manager, 'live-drive', '/tmp/claude/live-captures')
+
+    const started = Date.now()
+    const before = await backend.observe()
+    report(`observe took ${Date.now() - started}ms, settled=${before.settled}, `
+      + `screen=${before.screen.width}x${before.screen.height}, `
+      + `orientation=${before.orientation}, nodes=${collectNodes(before.root).length}`)
+    expect(before.frameHash).toMatch(/^[0-9a-f]{64}$/)
+    expect(hasUsableSemantics(before.root)).toBe(true)
+
+    // HOME always changes the screen unless the launcher is already showing, so the
+    // app switcher is opened first to guarantee there is something to leave.
+    await backend.perform({ kind: 'key', button: 'app-switch' }, { observation: before })
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    const middle = await backend.observe()
+    report(`after app-switch: hash changed = ${middle.frameHash !== before.frameHash}`)
+
+    await backend.perform({ kind: 'key', button: 'home' }, { observation: middle })
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    const after = await backend.observe()
+    report(`after home: hash changed = ${after.frameHash !== middle.frameHash}`)
+
+    // At least one of the two navigations must have moved the picture. Asserting on
+    // both would fail on a device that was already on the launcher.
+    expect(middle.frameHash !== before.frameHash || after.frameHash !== middle.frameHash).toBe(true)
+
+    const shot = await backend.capture()
+    report(`capture -> ${shot.path} ${shot.width}x${shot.height}`)
+    expect(shot.width).toBeGreaterThan(0)
+
+    await manager.dispose()
+  }, 180_000)
+
+  it('swipes without leaving a finger held down', async () => {
+    const toolchain = detectAndroidToolchain()
+    const manager = new AndroidDeviceManager(toolchain!)
+    const devices = await manager.listDevices()
+    const running = devices.find((device) => device.running)
+    if (!running) return
+    await manager.boot('live-swipe', running.id)
+    const backend = new AndroidBackend(manager, 'live-swipe', '/tmp/claude/live-captures')
+
+    const before = await backend.observe()
+    const started = Date.now()
+    await backend.perform(
+      { kind: 'swipe', fromX: 0.5, fromY: 0.75, toX: 0.5, toY: 0.3, durationMs: 260 },
+      { observation: before },
+    )
+    report(`swipe took ${Date.now() - started}ms`)
+    // The gesture must have taken roughly its stated duration. Sent back to back it
+    // would return instantly and the guest would read it as a teleport, not a swipe.
+    expect(Date.now() - started).toBeGreaterThan(200)
+
+    await manager.dispose()
+  }, 180_000)
 })

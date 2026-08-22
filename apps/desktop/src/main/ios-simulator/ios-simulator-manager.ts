@@ -31,11 +31,11 @@ import type {
   NativeFramePacket,
 } from './helper-client'
 import {
-  captureFileName,
   SimctlCapture,
   type IosSimulatorCapturePort,
   type IosSimulatorRecording,
 } from './capture'
+import { captureFileName } from '../device/capture-path'
 import { SimctlClient } from './simctl'
 import log from '../logger'
 

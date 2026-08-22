@@ -51,6 +51,7 @@ function toolchain(options: { avds?: string; devices?: string } = {}): {
       // from the id — deterministic, and the same path a machine with a half-written
       // AVD directory takes.
       avd: new Avd('/nonexistent/emulator', respond, '/nonexistent/avd'),
+      adbBinary: '/nonexistent/adb',
     },
   }
 }
@@ -116,6 +117,7 @@ describe('listing devices', () => {
     const devices = await new AndroidDeviceManager({
       adb: new Adb(failing),
       avd: new Avd('/nonexistent/emulator', failing, '/nonexistent/avd'),
+      adbBinary: '/nonexistent/adb',
     }).listDevices()
 
     expect(devices).toHaveLength(1)

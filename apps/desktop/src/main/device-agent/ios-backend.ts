@@ -280,7 +280,18 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
           ...(action.durationMs ? { durationMs: action.durationMs } : {}),
         }), signal)
       case 'type': return this.send({ type: 'text', text: action.text })
-      case 'key': return this.send({ type: 'button', button: action.button })
+      case 'key': {
+        // Android-only buttons. Refused by name rather than silently ignored: an
+        // agent told "iOS has no back button" reaches for the app's own control,
+        // while one whose keypress vanished simply presses it again.
+        if (action.button === 'back' || action.button === 'app-switch') {
+          throw new DeviceAgentError(
+            'UNSUPPORTED',
+            `iOS has no ${action.button} button. Tap the app's own navigation control instead.`,
+          )
+        }
+        return this.send({ type: 'button', button: action.button })
+      }
       case 'rotate': return this.send({ type: 'rotate', orientation: action.orientation })
       case 'keyboard': return this.send({ type: 'keyboard', connected: action.connected })
     }

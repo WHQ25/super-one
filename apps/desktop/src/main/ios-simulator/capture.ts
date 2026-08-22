@@ -24,18 +24,6 @@ const RECORDING_STARTED = 'Recording started'
  */
 const RECORDING_START_TIMEOUT_MS = 15_000
 
-/**
- * `iPhone-17-Pro-20260820-164452.png` — sortable by name, and free of the spaces
- * and punctuation that make a path awkward to paste into a shell.
- */
-export function captureFileName(deviceName: string, extension: string, at: Date): string {
-  const slug = deviceName.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'simulator'
-  const pad = (value: number) => String(value).padStart(2, '0')
-  const stamp = `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}`
-    + `-${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`
-  return `${slug}-${stamp}.${extension}`
-}
-
 export interface SimctlCaptureDeps {
   spawnProcess: typeof spawn
   ensureDir: (path: string) => Promise<void>

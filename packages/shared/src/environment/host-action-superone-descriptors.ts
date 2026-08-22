@@ -91,7 +91,11 @@ const deviceActionSchema = {
       description: "type: text to enter. Anything the simulated keyboard cannot spell (Chinese, emoji) is pasted automatically.",
       type: "string"
     },
-    button: { type: "string", enum: ["home", "lock", "side", "volume-up", "volume-down"] },
+    button: {
+      type: "string",
+      enum: ["home", "lock", "side", "volume-up", "volume-down", "back", "app-switch"],
+      description: "key: a hardware button. `back` and `app-switch` are Android-only and are refused elsewhere.",
+    },
     orientation: {
       type: "string",
       enum: ["portrait", "landscape-left", "portrait-upside-down", "landscape-right"]

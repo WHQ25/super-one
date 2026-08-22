@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { captureFileName, SimctlCapture } from './capture'
+import { SimctlCapture } from './capture'
 
 class FakeChild extends EventEmitter {
   readonly stderr = new EventEmitter()
@@ -31,17 +31,6 @@ function setup() {
   return { capture, children, spawnProcess, ensureDir }
 }
 
-describe('iOS Simulator capture file names', () => {
-  it('slugs the device name and stamps a sortable local timestamp', () => {
-    const name = captureFileName('iPhone 17 Pro Max', 'png', new Date(2026, 7, 20, 16, 44, 52))
-    expect(name).toBe('iPhone-17-Pro-Max-20260820-164452.png')
-  })
-
-  it('falls back to a usable name when the device name has nothing to slug', () => {
-    expect(captureFileName('···', 'mp4', new Date(2026, 0, 2, 3, 4, 5)))
-      .toBe('simulator-20260102-030405.mp4')
-  })
-})
 
 describe('iOS Simulator screen capture', () => {
   it('creates the target directory before asking simctl to write into it', async () => {

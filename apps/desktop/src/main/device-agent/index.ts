@@ -1,8 +1,10 @@
+import { join } from 'node:path'
 import { app } from 'electron'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { getIosSimulatorManager } from '../ios-simulator'
 import { DeviceAgentSession, errorReply, reply, type DeviceToolReply } from './execute'
 import { IosSimulatorBackend } from './ios-backend'
+import { AndroidBackend } from './android-backend'
 import { requestDeviceControl } from './control'
 import { listDeviceCatalog } from './device-catalog'
 import type { DevicePlatformPort } from '../device/platform-port'
@@ -21,16 +23,48 @@ export {
   type DeviceAgentToolName,
 } from './tools'
 
-const sessions = new Map<string, DeviceAgentSession>()
+/**
+ * The live snapshot state per chat session, tagged with the platform it was built for.
+ *
+ * The tag is what makes switching devices safe. Refs and the stateId that guards them
+ * belong to one backend's reading of one screen, so a session that moves from a
+ * simulator to a phone has to start over — and it does, because the entry no longer
+ * matches and a fresh one is built. Keyed by session alone, the agent would keep
+ * quoting refs from a device it no longer holds.
+ */
+const sessions = new Map<string, { session: DeviceAgentSession; platform: string }>()
 
-/** Swapped by tests so the tool layer can run without Electron or a simulator. */
-let backendFactory: (sessionId: string) => TouchDeviceBackend = (sessionId) =>
-  new IosSimulatorBackend(getIosSimulatorManager(app.getPath('userData')), sessionId)
+/** Swapped by tests so the tool layer can run without Electron or a device. */
+let backendFactory: ((sessionId: string) => TouchDeviceBackend) | null = null
 
 export function setDeviceAgentBackendFactory(
   factory: (sessionId: string) => TouchDeviceBackend,
 ): void {
   backendFactory = factory
+  // A different backend invalidates every snapshot taken against the old one.
+  sessions.clear()
+}
+
+/**
+ * Which platform is driving this session right now.
+ *
+ * Android answers from the binding it already holds, so this costs nothing; anything
+ * it does not claim belongs to the simulator, which is also the answer on a machine
+ * with no Android SDK at all.
+ */
+function controllingPlatform(sessionId: string): string {
+  if (backendFactory) return 'injected'
+  return getAndroidDeviceManager()?.controlled(sessionId) ? 'android' : 'ios'
+}
+
+function buildBackend(sessionId: string, platform: string): TouchDeviceBackend {
+  if (backendFactory) return backendFactory(sessionId)
+  const userData = app.getPath('userData')
+  if (platform === 'android') {
+    const android = getAndroidDeviceManager()
+    if (android) return new AndroidBackend(android, sessionId, join(userData, 'android', 'captures'))
+  }
+  return new IosSimulatorBackend(getIosSimulatorManager(userData), sessionId)
 }
 
 /**
@@ -77,11 +111,11 @@ export function setDeviceAgentHostEventResolver(
 }
 
 function sessionFor(sessionId: string): DeviceAgentSession {
-  let session = sessions.get(sessionId)
-  if (!session) {
-    session = new DeviceAgentSession(backendFactory(sessionId))
-    sessions.set(sessionId, session)
-  }
+  const platform = controllingPlatform(sessionId)
+  const existing = sessions.get(sessionId)
+  if (existing && existing.platform === platform) return existing.session
+  const session = new DeviceAgentSession(buildBackend(sessionId, platform))
+  sessions.set(sessionId, { session, platform })
   return session
 }
 

@@ -47,7 +47,9 @@ const actionSchema = z.object({
     .describe('How long the gesture takes. Short swipes flick and coast; long ones drag and stop.'),
   text: z.string().optional()
     .describe('type: text to enter. Anything the simulated keyboard cannot spell (Chinese, emoji) is pasted automatically.'),
-  button: z.enum(['home', 'lock', 'side', 'volume-up', 'volume-down']).optional(),
+  button: z.enum(['home', 'lock', 'side', 'volume-up', 'volume-down', 'back', 'app-switch'])
+    .optional()
+    .describe('key: a hardware button. `back` and `app-switch` are Android-only and are refused elsewhere.'),
   orientation: z.enum(['portrait', 'landscape-left', 'portrait-upside-down', 'landscape-right']).optional(),
   connected: z.boolean().optional()
     .describe('keyboard: attach or detach the hardware keyboard. Detach it to make the on-screen keyboard appear.'),

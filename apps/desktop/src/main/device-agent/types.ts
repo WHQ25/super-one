@@ -112,12 +112,24 @@ export type ResolvedAction =
    */
   | { kind: 'keyboard'; connected: boolean }
 
+/**
+ * Buttons an agent can press.
+ *
+ * The union is the SUPERSET across platforms, not the intersection. `back` and
+ * `app-switch` exist only on Android, and leaving them out to keep the type
+ * symmetrical would cost an agent the only reliable way to leave a screen there — a
+ * capability gap is better reported through `UNSUPPORTED` than designed away.
+ */
 export type DeviceHardwareButton =
   | 'home'
   | 'lock'
   | 'side'
   | 'volume-up'
   | 'volume-down'
+  /** Android only. The system back gesture/button. */
+  | 'back'
+  /** Android only. The recents / overview switcher. */
+  | 'app-switch'
 
 export class DeviceAgentError extends Error {
   constructor(readonly code: DeviceAgentErrorCode, message: string) {

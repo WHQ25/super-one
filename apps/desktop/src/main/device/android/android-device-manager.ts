@@ -12,11 +12,13 @@
  * appear, ask each new one its AVD name, and only then know which device was started.
  */
 
-import type { DeviceDescriptor } from '@superone/shared/device'
+import type { DeviceDescriptor, DeviceFrame, DeviceSessionState } from '@superone/shared/device'
+import type { DeviceOrientation } from '@superone/shared/device-agent'
 import log from '../../logger'
 import { Adb, adbPath, emulatorPath, spawnTool, type AdbDevice } from './adb'
 import { Avd, parseEmuResponse, type AvdLaunch, type AvdSummary } from './avd'
 import { connectScrcpy, type ScrcpyConnection } from './scrcpy-server'
+import { orientationForRotation } from './uiautomator'
 import {
   avdDeviceId,
   mergeAndroidDevices,
@@ -72,6 +74,7 @@ export class AndroidDeviceManager {
   private readonly serials = new Map<string, string>()
   /** AVDs this app started, so it can shut down only what it is responsible for. */
   private readonly launched = new Map<string, AvdLaunch>()
+  private readonly orientations = new Map<string, DeviceOrientation>()
   private readonly connections = new Map<string, ScrcpyConnection>()
   private readonly connectionFlights = new Map<string, Promise<ScrcpyConnection>>()
   private lastDevices: DeviceDescriptor[] = []
@@ -215,6 +218,86 @@ export class AndroidDeviceManager {
     })
     this.connectionFlights.set(sessionId, opening)
     return opening
+  }
+
+  /**
+   * Stream this session's screen as decodable frames.
+   *
+   * The translation is nearly nothing, and deliberately so: scrcpy delivers H.264 with
+   * a separate config packet, which is exactly the shape the simulator's helper
+   * produces, so the renderer decodes both through one path rather than growing a
+   * second one.
+   */
+  subscribe(sessionId: string, listener: (frame: DeviceFrame) => void): () => void {
+    let sequence = 0
+    let disposed = false
+    let stop: (() => void) | null = null
+
+    void this.connection(sessionId).then((connection) => {
+      if (disposed) return
+      const offMedia = connection.onMedia((packet) => {
+        listener({
+          sessionId,
+          sequence: sequence++,
+          timestampMs: Date.now(),
+          timestampUs: packet.timestampUs,
+          mimeType: 'video/avc',
+          keyframe: packet.keyframe,
+          codecConfig: packet.config,
+          codec: 'avc1.640028',
+          codedWidth: connection.screen.width,
+          codedHeight: connection.screen.height,
+          data: packet.data,
+        })
+      })
+      // A rotation re-shapes the framebuffer rather than turning a fixed one, so the
+      // decoder has to be told before the next frame arrives at a new size. Reported
+      // as a config-less keyframe boundary via the geometry on the following frames.
+      const offSession = connection.onSession((session) => {
+        void this.readOrientation(sessionId).catch(() => undefined)
+        log.info('[android] capture resized', session.width, session.height)
+      })
+      stop = () => {
+        offMedia()
+        offSession()
+      }
+    }).catch((error: unknown) => {
+      log.warn('[android] preview stream failed to start', error)
+    })
+
+    return () => {
+      disposed = true
+      stop?.()
+    }
+  }
+
+  /** The device's own idea of which way up it is. Cached for `sessionState`. */
+  private async readOrientation(sessionId: string): Promise<DeviceOrientation> {
+    const deviceId = this.sessionBindings.get(sessionId)
+    const serial = deviceId ? this.serialFor(deviceId) : null
+    if (!serial) return 'portrait'
+    const raw = await this.toolchain.adb
+      .shell(serial, ['settings', 'get', 'system', 'user_rotation'])
+      .catch(() => '0')
+    const orientation = orientationForRotation(Number.parseInt(raw.trim(), 10))
+    this.orientations.set(sessionId, orientation)
+    return orientation
+  }
+
+  /** What the panel needs to draw this session, in the shared shape. */
+  sessionState(sessionId: string): DeviceSessionState {
+    const device = this.controlled(sessionId)
+    const connection = this.connections.get(sessionId)
+    return {
+      sessionId,
+      device,
+      phase: device ? 'ready' : 'idle',
+      interactive: Boolean(device),
+      orientation: this.orientations.get(sessionId) ?? 'portrait',
+      ...(connection && connection.screen.width > 0
+        ? { pixelWidth: connection.screen.width, pixelHeight: connection.screen.height }
+        : {}),
+    }
   }
 
   private async closeConnection(sessionId: string): Promise<void> {

@@ -93,3 +93,103 @@ export const DEVICE_PLATFORM_NAMES: Record<DevicePlatform, string> = {
   ios: 'iOS Simulator',
   android: 'Android',
 }
+
+/**
+ * One frame of a device's screen, on its way to a canvas.
+ *
+ * Already neutral in everything but its old name: both platforms deliver H.264 with
+ * a separate codec-config packet, so the simulator's framebuffer stream and scrcpy's
+ * video socket produce the same shape and the renderer decodes them with one path.
+ */
+export interface DeviceFrame {
+  sessionId: string
+  sequence: number
+  timestampMs: number
+  timestampUs?: number
+  mimeType: 'image/png' | 'video/avc'
+  keyframe: boolean
+  /** SPS/PPS rather than a picture. A decoder needs it before its first frame. */
+  codecConfig: boolean
+  codec?: string
+  codedWidth?: number
+  codedHeight?: number
+  data: Uint8Array
+}
+
+export type DeviceTouchPhase = 'began' | 'moved' | 'ended' | 'cancelled'
+
+export interface DeviceTouchContact {
+  id: number
+  /** Framebuffer ratios, so a contact survives rotation and display scale. */
+  xRatio: number
+  yRatio: number
+  phase: DeviceTouchPhase
+}
+
+/**
+ * What a person's hands and keyboard send to a device.
+ *
+ * Distinct from the agent's `ResolvedAction`: this is the raw stream a pointer
+ * produces, arriving many times a second, while an action is one deliberate
+ * instruction. Each backend translates these into its own transport — HID messages for
+ * the simulator helper, `INJECT_*` for scrcpy.
+ */
+export type DeviceInput =
+  | { type: 'touch.update'; contacts: DeviceTouchContact[] }
+  | { type: 'touch.cancel' }
+  | { type: 'tap'; xRatio: number; yRatio: number }
+  | { type: 'text'; text: string }
+  | { type: 'button'; button: string }
+  | { type: 'rotate'; orientation: DeviceOrientation }
+  /**
+   * Plug the simulated hardware keyboard in or out.
+   *
+   * iOS only, and backwards from the obvious reading: iOS shows its ON-SCREEN keyboard
+   * exactly when a field has focus and NO hardware keyboard is attached. Android has
+   * no such switch and refuses this.
+   */
+  | { type: 'keyboard'; connected: boolean }
+
+export interface DeviceInputResult {
+  ok: boolean
+  skippedCharacters?: number
+  error?: string
+}
+
+/** What a chat session is looking at, whichever platform provides it. */
+export interface DeviceSessionState {
+  sessionId: string
+  device: DeviceDescriptor | null
+  phase: 'idle' | 'booting' | 'ready' | 'stopping' | 'error'
+  /** Whether input is accepted. False while booting, or on a device that refused HID. */
+  interactive: boolean
+  /**
+   * Which way up the device is lying.
+   *
+   * A reading, not a request: an app pinned upright never turns, so this reports what
+   * was observed to land rather than what was asked for.
+   */
+  orientation: DeviceOrientation
+  /** The device's own framebuffer size. Absent until a stream has attached. */
+  pixelWidth?: number
+  pixelHeight?: number
+  error?: string
+  /**
+   * Platform-specific state, present only for the platform in question.
+   *
+   * A deliberate escape hatch rather than a flattened superset: the hardware-keyboard
+   * switch is meaningless on Android and the AVD name is meaningless on iOS, and a
+   * shared shape carrying both would make every reader check which half is real.
+   */
+  ios?: {
+    previewMode: string
+    hardwareKeyboardConnected: boolean
+    hardwareKeyboardAvailable: boolean
+  }
+}
+
+/** Which hardware buttons a platform actually has. */
+export const DEVICE_BUTTONS_IOS = ['home', 'lock', 'side', 'volume-up', 'volume-down'] as const
+export const DEVICE_BUTTONS_ANDROID = [
+  'home', 'back', 'app-switch', 'lock', 'side', 'volume-up', 'volume-down',
+] as const

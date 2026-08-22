@@ -505,6 +505,15 @@ function pushComputerUseDisplaysChanged(): void {
   safeSend(AgentIpcChannels.COMPUTER_USE_DISPLAYS_CHANGED)
 }
 
+// Computer Use's leg of the shared floating preview. It is a native window, so it
+// cannot be positioned by the renderer — it reports when it becomes the newest agent
+// target and is told to stand down when something pinned outranks it.
+void import('./computer-use/viewfinder').then(({ setComputerUseViewfinderClaimSink }) => {
+  setComputerUseViewfinderClaimSink((claim) => {
+    safeSend(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_CLAIM, claim)
+  })
+})
+
 const rendererAgentEventTransport = createRendererAgentEventTransport((events) => {
   safeSend(AgentIpcChannels.EVENT, events)
 })
@@ -3729,6 +3738,24 @@ function registerIpcHandlers(): void {
   })
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_DISPLAYS, () => {
     return listComputerUseDisplays()
+  })
+  /**
+   * The renderer owns the shared viewfinder arbitration, so it is the one that says
+   * when the native window has lost. Hidden immediately rather than only on the next
+   * action: the whole point of yielding is that something else is on screen NOW.
+   */
+  ipcMain.on(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_YIELD, (_event, yielded: boolean) => {
+    void (async () => {
+      const { setComputerUseViewfinderYielded } = await import('./computer-use/viewfinder')
+      if (!setComputerUseViewfinderYielded(yielded === true) || !yielded) return
+      if (process.platform !== 'darwin') return
+      try {
+        const { getSharedHelperClient } = await import('./computer-use/platform/macos-helper-client')
+        await getSharedHelperClient().call('pip_hide', {})
+      } catch {
+        // helper offline or unsupported platform
+      }
+    })()
   })
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS, async () => {
     if (process.platform !== 'darwin') return []

@@ -3243,6 +3243,17 @@ export const AgentIpcChannels = {
   COMPUTER_USE_GRANT_SESSION_APPS: 'computer-use:grant-session-apps',
   /** Best-effort app icon data URI for a bundle id (UI only; cached in main). */
   COMPUTER_USE_RESOLVE_APP_ICON: 'computer-use:resolve-app-icon',
+  /**
+   * Main -> renderer: the native picture-in-picture just became the agent's most
+   * recently touched target, or stopped being one. Feeds the shared viewfinder
+   * arbitration the device and browser previews also report into.
+   */
+  COMPUTER_USE_VIEWFINDER_CLAIM: 'computer-use:viewfinder-claim',
+  /**
+   * Renderer -> main: a pinned device or browser preview outranks Computer Use, so
+   * the native window must stay off screen until this is cleared.
+   */
+  COMPUTER_USE_VIEWFINDER_YIELD: 'computer-use:viewfinder-yield',
   BROWSER_HISTORY_RECORD: 'app:browser-history-record',
   BROWSER_HISTORY_SUGGEST: 'app:browser-history-suggest',
   BROWSER_HISTORY_DELETE: 'app:browser-history-delete',

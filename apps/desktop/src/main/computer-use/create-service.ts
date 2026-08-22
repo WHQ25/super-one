@@ -5,6 +5,7 @@ import { MacosPlatformAdapter } from './platform/macos-adapter'
 import { resolveHelperAppPath } from './platform/macos-helper-client'
 import type { PlatformAdapter } from './platform/types'
 import { readAppSettings } from '../app-settings-service'
+import { claimComputerUseViewfinder, isComputerUseViewfinderYielded } from './viewfinder'
 import { getCurrentLocale } from '../i18n'
 
 export type ComputerUseBackendKind = 'fake' | 'macos' | 'auto'
@@ -52,7 +53,11 @@ export function createComputerUseService(
             return policy.listGranted().map((g) => g.bundleId).filter((id) => id !== '*')
           },
           getAllowAllApps: () => policy.isAllowAllApps(),
+          onViewfinderClaim: () => claimComputerUseViewfinder(options.sessionId ?? ''),
           getPictureInPictureEnabled: () => {
+            // Two independent reasons to stay off screen: the user turned it off, or
+            // a pinned device / browser preview holds the shared viewfinder slot.
+            if (isComputerUseViewfinderYielded()) return false
             try {
               return readAppSettings().computerUsePictureInPicture !== false
             } catch {

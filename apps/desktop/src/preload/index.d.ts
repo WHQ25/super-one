@@ -537,6 +537,12 @@ interface AppAPI {
   >
   listComputerUseDisplays(): Promise<ComputerUseDisplayInfo[]>
   onComputerUseDisplaysChanged(callback: () => void): () => void
+  /** The native picture-in-picture became — or stopped being — the newest agent target. */
+  onComputerUseViewfinderClaim(
+    callback: (claim: { sessionId: string; active: boolean }) => void,
+  ): () => void
+  /** Keep the native picture-in-picture off screen while another preview outranks it. */
+  setComputerUseViewfinderYielded(yielded: boolean): void
   /** Best-effort PNG data URI for a macOS app bundle id; null when lookup fails. */
   listComputerUseInstalledApps(): Promise<
     Array<{ app: string; bundleId: string; aliases: string[] }>

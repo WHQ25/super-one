@@ -10,6 +10,7 @@ import { ComputerUseError, type Condition } from './types'
 import type { SuperoneMcpToolDescriptor } from '../mcp/superone-mcp-types'
 import { readAppSettings } from '../app-settings-service'
 import { persistComputerUseScreenshot, COMPUTER_USE_SCREENSHOT_DIR } from './screenshot-store'
+import { releaseComputerUseViewfinder } from './viewfinder'
 import type { CapturedImage } from './types'
 import { encode as toonEncode } from '@toon-format/toon'
 
@@ -463,6 +464,10 @@ export function clearComputerUseServices(): void {
  *   tool execution so an older turn cannot tear down a newer turn's visuals.
  */
 export async function hideComputerUseVisuals(sessionId?: string): Promise<void> {
+  // The viewfinder is a shared slot, so letting go of it is part of letting go of the
+  // visuals — otherwise the device and browser previews go on standing aside for a
+  // turn that ended.
+  releaseComputerUseViewfinder()
   if (sessionId) {
     const requestedGeneration = activityGenerations.get(sessionId) ?? 0
     await runInComputerUseLifecycle(sessionId, async () => {

@@ -49,6 +49,15 @@ export interface MacosAdapterOptions {
   getAllowAllApps?: () => boolean
   /** Show a native live preview of the current window. */
   getPictureInPictureEnabled?: () => boolean
+  /**
+   * Called when this adapter is about to put its viewfinder on screen.
+   *
+   * Separate from the getter above, and always fired even when the answer turns out
+   * to be no: this is what says Computer Use is the most recently touched target,
+   * and the renderer's arbitration needs that whether or not the native window ends
+   * up being the one that draws.
+   */
+  onViewfinderClaim?: () => void
   /** Connected display used as a temporary workspace; null keeps the current display. */
   getDedicatedDisplayId?: () => string | null
   /**
@@ -72,6 +81,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   private readonly getGrantedBundleIds: () => string[]
   private readonly getAllowAllApps: () => boolean
   private readonly getPictureInPictureEnabled: () => boolean
+  private readonly onViewfinderClaim: () => void
   private readonly getDedicatedDisplayId: () => string | null
   private readonly getLocale: () => Locale
   private readonly sessionId: string
@@ -85,6 +95,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     this.getGrantedBundleIds = options.getGrantedBundleIds ?? (() => [])
     this.getAllowAllApps = options.getAllowAllApps ?? (() => false)
     this.getPictureInPictureEnabled = options.getPictureInPictureEnabled ?? (() => true)
+    this.onViewfinderClaim = options.onViewfinderClaim ?? (() => {})
     this.getDedicatedDisplayId = options.getDedicatedDisplayId ?? (() => null)
     this.getLocale = options.getLocale ?? (() => 'en')
     this.sessionId = options.sessionId ?? ''
@@ -197,6 +208,9 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   }): Promise<void> {
     if (!this.visualOn()) return
     await this.syncIndicatorPref()
+    // Before the pref is read, not after: the claim is what makes this the newest
+    // target, and the pref may already be answering "no" because of an older one.
+    this.onViewfinderClaim()
     const showPictureInPicture = await this.syncPictureInPicturePref()
     try {
       await this.client.call('overlay_show_target', {

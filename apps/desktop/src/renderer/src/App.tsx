@@ -32,6 +32,7 @@ import { useRemoteControl } from '@/hooks/useRemoteControl'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useReactScan } from '@/hooks/useReactScan'
 import { useStandaloneToolCallRouter } from '@/hooks/useStandaloneToolCallRouter'
+import { useAgentViewfinder } from '@/hooks/useAgentViewfinder'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
@@ -66,6 +67,9 @@ function App(): React.JSX.Element {
   useHarnessTheme()
   useMobileUploadToasts()
   useStandaloneToolCallRouter()
+  // The floating preview is one slot shared by the device, the browser and Computer
+  // Use. This is the only leg that cannot report itself — see `useAgentViewfinder`.
+  useAgentViewfinder()
   const devReactScan = useDevToolsStore((s) => s.reactScan)
   useReactScan(devReactScan)
   useTheme()

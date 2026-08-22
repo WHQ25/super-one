@@ -1784,6 +1784,20 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.COMPUTER_USE_DISPLAYS_CHANGED, handler)
     }
   },
+  onComputerUseViewfinderClaim: (
+    callback: (claim: { sessionId: string; active: boolean }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      claim: { sessionId: string; active: boolean },
+    ): void => callback(claim)
+    ipcRenderer.on(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_CLAIM, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_CLAIM, handler)
+    }
+  },
+  setComputerUseViewfinderYielded: (yielded: boolean) =>
+    ipcRenderer.send(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_YIELD, yielded),
   listComputerUseInstalledApps: () =>
     ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS) as Promise<
       Array<{ app: string; bundleId: string; aliases: string[] }>

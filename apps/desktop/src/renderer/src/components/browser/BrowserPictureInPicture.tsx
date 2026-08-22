@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useAgentViewfinderStore, useOwnsViewfinder } from '@/stores/agent-viewfinder'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
@@ -61,11 +62,22 @@ export function BrowserPictureInPicture() {
   const currentSessionId = useChatStore(selectActiveChatSessionId)
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const mosaicMode = useMosaicStore((state) => state.mode)
-  const shouldShow = browserId != null
+  const wanted = browserId != null
     && currentSessionId != null
     && owner === currentSessionId
     && !activityShown
     && mosaicMode === 'single'
+  // One preview on screen, whichever target the agent touched last — see
+  // `stores/agent-viewfinder`. Pinned covers both deliberate states: expanded, and
+  // shrunk back rather than dismissed, which is the user saying "keep this".
+  const report = useAgentViewfinderStore((state) => state.report)
+  const pinned = expanded || (browserId != null && pinnedPipBrowserId === browserId)
+  useEffect(() => {
+    report('browser', { present: wanted, pinned })
+    return () => report('browser', { present: false })
+  }, [pinned, report, wanted])
+  const owns = useOwnsViewfinder('browser')
+  const shouldShow = wanted && owns
   const showPip = shouldShow && !expanded
 
   const [bounds, setBounds] = useState<BrowserPipBounds | null>(null)

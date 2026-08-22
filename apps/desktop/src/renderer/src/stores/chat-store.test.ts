@@ -3200,11 +3200,11 @@ describe('awaitingAssistantReply state machine', () => {
   })
 })
 
-describe('codex steer routing', () => {
-  it('creates a new assistant placeholder for steer and retargets codex events to it', async () => {
+describe('codex concurrent send routing', () => {
+  it('queues a codex prompt sent mid-turn instead of steering the live one', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
-    const codexSid = 'codex_local_steer_test'
+    const codexSid = 'codex_local_queue_test'
 
     useChatStore.setState({
       projectSessions: {
@@ -3234,25 +3234,25 @@ describe('codex steer routing', () => {
       },
     })
 
-    await useChatStore.getState().sendMessage('steer follow-up')
+    await useChatStore.getState().sendMessage('queued follow-up')
 
     const projectState = useChatStore.getState().projectSessions['/test']
     const session = projectState._sessions[projectState._activeSessionId!]
-    const lastMessage = session.messages.at(-1)
-    const steerUserMessage = session.messages.at(-2)
 
-    expect(steerUserMessage?.role).toBe('user')
-    expect(lastMessage?.role).toBe('assistant')
-    expect(lastMessage?.providerId).toBe('codex')
-    expect(lastMessage?.status).toBe('streaming')
-    expect(lastMessage?.id).toBe(session.activeCodexMessageId)
-    expect(session.lastAssistantMessageId).toBe(lastMessage?.id)
-    const call = mockWindowApp.codexSteer.mock.calls.at(-1)
-    expect(call?.[0]).toBe(codexSid)
-    expect(call?.[1]).toBe('steer follow-up')
-    expect(call?.[2]).toBe(lastMessage?.id)
-    expect(call?.[3]).toBeTruthy()
-    expect(call?.[4]).toBe('steer follow-up')
+    // App-server 149 turns a concurrent send into a durable queued turn, so the
+    // transcript keeps only the streaming turn and the prompt waits in the queue.
+    expect(session.messages.map((message) => message.id)).toEqual(['codex-prev'])
+    const queued = session.queuedMessages.at(-1)
+    expect(queued?.role).toBe('user')
+    expect(session.activeCodexMessageId).toBe('codex-prev')
+    expect(mockWindowApp.codexSteer).not.toHaveBeenCalled()
+
+    const payload = mockWindowAgent.sendMessage.mock.calls.at(-1)?.[1]
+    expect(payload?.provider).toBe('codex')
+    expect(payload?.priority).toBe('next')
+    expect(payload?.codex?.mode).toBe('run')
+    expect(payload?.codex?.prompt).toBe('queued follow-up')
+    expect(payload?.clientMessageId).toBe(queued?.id)
   })
 })
 

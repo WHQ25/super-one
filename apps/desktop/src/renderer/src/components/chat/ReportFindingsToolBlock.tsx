@@ -57,7 +57,7 @@ function OutcomeBadge({ finding }: { finding: ReviewFinding }) {
   return (
     <span
       className={cn(
-        'shrink-0 rounded px-1 py-px text-[11px]',
+        'shrink-0 rounded px-1 py-px text-2xs',
         finding.outcome === 'fixed'
           ? 'bg-success/15 text-success'
           : 'bg-muted/60 text-muted-foreground',
@@ -95,7 +95,7 @@ function FindingItem({ finding, index }: { finding: ReviewFinding; index: number
         )}
       >
         {/* Rank, not an ID: the tool contract orders findings most-severe first. */}
-        <span className="w-3 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/60">
+        <span className="w-3 shrink-0 text-right text-2xs tabular-nums text-muted-foreground/60">
           {index + 1}
         </span>
         <VerdictDot finding={finding} />
@@ -123,7 +123,7 @@ function FindingItem({ finding, index }: { finding: ReviewFinding; index: number
           />
         ) : null}
         {finding.category ? (
-          <span className="shrink-0 rounded bg-muted/60 px-1 text-[11px] text-muted-foreground">
+          <span className="shrink-0 rounded bg-muted/60 px-1 text-2xs text-muted-foreground">
             {finding.category}
           </span>
         ) : null}

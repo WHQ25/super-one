@@ -238,7 +238,7 @@ describe('app-settings-service', () => {
         agentPreference: {
           codex: {
             defaultModel: 123,
-            defaultReasoningEffort: 'max',
+            defaultReasoningEffort: 'turbo',
             defaultPermissionPreset: 'unrestricted',
           },
         },

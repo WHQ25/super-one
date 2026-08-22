@@ -37,8 +37,9 @@ apps/desktop/native/computer-use-lab/.build/
 # Dev data (userData isolation)
 .dev-data
 
-# Event trace (dev only)
-event-trace.db*
+# Event trace (dev only). Prefixed too: the LLM proxy writes
+# llm-proxy-event-trace.db, which the bare pattern does not match.
+*event-trace.db*
 
 # Perf sampling artifacts (dev only)
 debug-data/

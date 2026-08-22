@@ -166,6 +166,13 @@ func keypress(
         "left": 0x7B,
         "right": 0x7C,
         "space": 0x31,
+        // Digits by virtual keycode, not as text. The unicode fallback below sets a
+        // character on a keycode-0 event, and an app matching a menu shortcut reads
+        // the KEYCODE — so `cmd+1` typed that way arrives as a keystroke nothing
+        // acts on. iPhone Mirroring's Home / App Switcher / Spotlight are exactly
+        // these shortcuts, and the layout is ANSI-fixed so the codes are literal.
+        "1": 0x12, "2": 0x13, "3": 0x14, "4": 0x15, "5": 0x17,
+        "6": 0x16, "7": 0x1A, "8": 0x1C, "9": 0x19, "0": 0x1D,
     ]
 
     let parts = key.split(separator: "+").map(String.init)

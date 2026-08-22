@@ -3,10 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import type { DeviceDescriptor, DeviceState } from '@superone/shared/device'
-import type { IosSimulatorStatus } from '@superone/shared/ios-simulator'
+import { formatDeviceId } from '@superone/shared/device'
+import type { DeviceSetupOption } from '@superone/shared/device-setup'
+import type { IosSimulatorDevice, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import { Button } from '@superone/ui/components/ui/button'
 import { devicesTakenByOtherInstances, useDeviceInstanceStore } from '@/stores/device-instances'
 import { DeviceStage } from './DeviceStage'
+import { useDeviceSetupChoice } from './DeviceSetupMenu'
+import { labelKey } from './device-setup-copy'
 import { pickDefaultDevice } from './device-default-selection'
 import { useDeviceTabActions } from './device-tab-actions'
 import { messageOf, notifyDevice, reportDeviceError } from './device-report'
@@ -26,6 +30,7 @@ export function DevicePanel({ instanceId, variant }: DevicePanelProps) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<IosSimulatorStatus | null>(null)
   const [devices, setDevices] = useState<DeviceDescriptor[]>([])
+  const [setupOptions, setSetupOptions] = useState<DeviceSetupOption[]>([])
   const [sessionState, setSessionState] = useState<DeviceState | null>(null)
   // Which session this tab belongs to and what it is pointed at both live in the
   // instance store rather than here, because the OTHER tabs need to read them: a
@@ -74,16 +79,21 @@ export function DevicePanel({ instanceId, variant }: DevicePanelProps) {
   const refresh = useCallback(async (force = false, restore = false) => {
     setOperation('loading')
     try {
-      // Both, always, and in parallel. The device list spans platforms, so it is
+      // All three, always, and in parallel. The device list spans platforms, so it is
       // the answer to "is there anything to show"; the Xcode probe only explains an
       // EMPTY list on a Mac without one, and gating the list behind it would hide
-      // every Android device on a machine that has no Xcode at all.
-      const [nextStatus, nextDevices] = await Promise.all([
+      // every Android device on a machine that has no Xcode at all. The setup probe
+      // answers the other question — what could be here and isn't — which is most
+      // needed exactly when the list comes back empty.
+      const [nextStatus, nextDevices, nextSetup] = await Promise.all([
         window.environment.iosSimulatorStatus(force),
         window.environment.deviceList(),
+        // Advice is a nicety; a failed probe must not cost the user their devices.
+        window.environment.deviceSetupOptions().catch(() => [] as DeviceSetupOption[]),
       ])
       setStatus(nextStatus)
       setDevices(nextDevices)
+      setSetupOptions(nextSetup)
 
       // THIS tab's device, not any device the session holds. A session with two tabs
       // open holds two, and picking "whichever one is bound" would have both panels
@@ -119,15 +129,28 @@ export function DevicePanel({ instanceId, variant }: DevicePanelProps) {
   // nothing at all.
   const register = useDeviceTabActions((state) => state.register)
   const unregister = useDeviceTabActions((state) => state.unregister)
-  useEffect(() => {
-    register(instanceId, { refresh: () => { void refresh(true) }, busy: operation === 'loading' })
-    return () => unregister(instanceId)
-  }, [instanceId, operation, refresh, register, unregister])
-
   const selectedDevice = useMemo(
     () => devices.find((device) => device.id === selectedDeviceId) ?? null,
     [devices, selectedDeviceId],
   )
+
+  useEffect(() => {
+    register(instanceId, {
+      refresh: () => { void refresh(true) },
+      busy: operation === 'loading',
+      // Name and shape both, because the tab needs both and only this side has them.
+      // A session can hold two devices at once, and two tabs each labelled "Device"
+      // are two tabs the user has to click to tell apart.
+      device: selectedDevice
+        ? {
+          name: selectedDevice.name,
+          provider: selectedDevice.provider,
+          kind: selectedDevice.kind,
+        }
+        : null,
+    })
+    return () => unregister(instanceId)
+  }, [instanceId, operation, refresh, register, selectedDevice, unregister])
 
   /**
    * Menu pick. Whatever this session held is given up first — it keeps running, just
@@ -192,6 +215,13 @@ export function DevicePanel({ instanceId, variant }: DevicePanelProps) {
     }
   }, [instanceId, point, sessionState, t])
 
+  // Also mounted here, not only inside the picker. The empty state below REPLACES the
+  // whole stage — menu and all — and a machine with no platform at all is precisely
+  // the one that needs to be told where to get one.
+  const setup = useDeviceSetupChoice(useCallback((next: IosSimulatorDevice) => {
+    void select(formatDeviceId('ios-sim', next.udid))
+  }, [select]))
+
   // Only when the list is ALSO empty. On a Mac with no Xcode but an Android SDK the
   // panel has real devices to offer, and a page saying iOS is unavailable would be
   // both true and useless.
@@ -202,11 +232,24 @@ export function DevicePanel({ instanceId, variant }: DevicePanelProps) {
           <AlertTriangle className="size-8 text-amber-500" />
           <h2 className="text-sm font-semibold">{t('activity.device.unsupportedTitle')}</h2>
           <p className="text-xs leading-5 text-muted-foreground">{status.error || t('activity.device.unsupportedDetail')}</p>
-          <Button size="sm" variant="outline" onClick={() => { void refresh(true) }}>
-            <RefreshCw data-icon />
-            {t('activity.device.refresh')}
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {setupOptions.map((option) => (
+              <Button
+                key={option.kind}
+                size="sm"
+                variant="outline"
+                onClick={() => setup.choose(option)}
+              >
+                {t(labelKey(option.kind))}
+              </Button>
+            ))}
+            <Button size="sm" variant="ghost" onClick={() => { void refresh(true) }}>
+              <RefreshCw data-icon />
+              {t('activity.device.refresh')}
+            </Button>
+          </div>
         </div>
+        {setup.dialogs}
       </div>
     )
   }
@@ -224,7 +267,7 @@ export function DevicePanel({ instanceId, variant }: DevicePanelProps) {
       // blank device body around the message rather than a bare centred spinner.
       checking={operation === 'loading' && status === null}
       launching={operation === 'booting'}
-      canCreateSimulator={status?.supported === true}
+      setupOptions={setupOptions}
       onSelectDevice={(deviceId) => { void select(deviceId) }}
       onLaunchDevice={(deviceId) => { void launch(deviceId) }}
       onDetach={() => { void finish('detach') }}

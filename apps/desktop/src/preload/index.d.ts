@@ -19,6 +19,7 @@ import type {
 } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions } from '@superone/shared/device'
+import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
@@ -771,6 +772,15 @@ export interface EnvironmentAPI {
 
   /** Every touch device this machine can offer, both platforms, in catalog order. */
   deviceList(): Promise<DeviceDescriptor[]>
+  /** Every way a device could still be ADDED, and what stands in the way of each. */
+  deviceSetupOptions(): Promise<DeviceSetupOption[]>
+  /**
+   * Continue a setup path outside SuperOne. Resolves false when nothing opened.
+   *
+   * Takes a kind, not a URL — the destination is chosen in the main process from a
+   * fresh probe, so this cannot be pointed anywhere the renderer likes.
+   */
+  deviceSetupOpen(kind: DeviceSetupKind): Promise<boolean>
   deviceBind(sessionId: string, deviceId: string): Promise<DeviceState>
   deviceBoot(sessionId: string, deviceId: string): Promise<DeviceState>
   /** Closes the preview but leaves the device running and unowned. */

@@ -91,6 +91,7 @@ export function stubIosSimulatorEnvironment() {
     value: {
       iosSimulatorStatus: vi.fn(async () => IOS_SIMULATOR_STATUS),
       deviceList: vi.fn(async () => [IOS_SIMULATOR_DEVICE]),
+      deviceSetupOptions: vi.fn(async () => []),
       deviceBind: vi.fn(async () => IOS_SIMULATOR_READY),
       iosSimulatorChrome: vi.fn(async () => IOS_SIMULATOR_CHROME),
       deviceInput: vi.fn(async () => ({ ok: true })),

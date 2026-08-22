@@ -22,6 +22,7 @@ import { createIosSimulatorSurface } from '../ios-simulator/surface'
 import { IosSimulatorDevicePort } from '../ios-simulator/device-port'
 import { getAndroidDeviceManager, AndroidDevicePort } from './android'
 import { createAndroidSurface } from './android/surface'
+import { createMirrorSurface, getMirrorDeviceManager, MirrorDevicePort } from './ios-mirror'
 import { orderDevices, type DevicePlatformPort } from './platform-port'
 import type { DeviceSurface } from './surface'
 
@@ -33,6 +34,10 @@ export function deviceSurfaces(userDataPath: string): DeviceSurface[] {
   if (android) {
     surfaces.push(createAndroidSurface(android, join(userDataPath, 'android', 'captures')))
   }
+  const mirror = getMirrorDeviceManager()
+  if (mirror) {
+    surfaces.push(createMirrorSurface(mirror, join(userDataPath, 'ios-mirror', 'captures')))
+  }
   return surfaces
 }
 
@@ -42,6 +47,10 @@ export function devicePlatformPorts(userDataPath: string): DevicePlatformPort[] 
   ]
   const android = getAndroidDeviceManager()
   if (android) ports.push(new AndroidDevicePort(android))
+  // Last, and that ordering is the catalog's: reaching a real phone is the slowest
+  // and rarest choice, so it does not belong above things that boot on demand.
+  const mirror = getMirrorDeviceManager()
+  if (mirror) ports.push(new MirrorDevicePort(mirror))
   return ports
 }
 

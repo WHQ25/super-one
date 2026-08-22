@@ -1,4 +1,4 @@
-import type { DeviceDescriptor, DevicePlatform } from '@superone/shared/device'
+import type { DeviceDescriptor, DevicePlatform, DeviceProvider } from '@superone/shared/device'
 
 /**
  * The flat device list, rebuilt into the tiers the picker asks for: family, then
@@ -17,8 +17,17 @@ import type { DeviceDescriptor, DevicePlatform } from '@superone/shared/device'
  * branch expresses that — it falls out of how many devices share a `model`.
  */
 
-/** Platform order in the menu, matching the order the ports are registered in. */
-const PLATFORM_ORDER: readonly DevicePlatform[] = ['ios', 'android']
+/**
+ * Provider order in the menu, matching the order the ports are registered in.
+ *
+ * Keyed on PROVIDER rather than platform, because provider is the axis a reader has
+ * to tell apart. Two providers now serve iOS — a simulator and a real phone mirrored
+ * from this Mac — and grouping by platform put both under one "iPhone" heading, where
+ * the only thing distinguishing a real device from a simulator was that its row
+ * happened to be named "iPhone" rather than "iPhone 17 Pro Max". Choosing the wrong
+ * one of those is not a small mistake: one of them belongs to somebody.
+ */
+const PROVIDER_ORDER: readonly DeviceProvider[] = ['ios-sim', 'android', 'ios-mirror']
 
 export interface DeviceCatalogModel {
   name: string
@@ -27,8 +36,9 @@ export interface DeviceCatalogModel {
 }
 
 export interface DeviceCatalogFamily {
-  /** `${platform}:${kind}` — unique across platforms, which `kind` alone is not. */
+  /** `${provider}:${kind}` — unique, which `kind` and `${platform}:${kind}` are not. */
   id: string
+  provider: DeviceProvider
   platform: DevicePlatform
   /** The platform's own slug: `iphone`, `phone`, `tablet`. Drives the icon. */
   kind: string
@@ -36,9 +46,9 @@ export interface DeviceCatalogFamily {
   models: DeviceCatalogModel[]
 }
 
-function platformRank(platform: DevicePlatform): number {
-  const index = PLATFORM_ORDER.indexOf(platform)
-  return index === -1 ? PLATFORM_ORDER.length : index
+function providerRank(provider: DeviceProvider): number {
+  const index = PROVIDER_ORDER.indexOf(provider)
+  return index === -1 ? PROVIDER_ORDER.length : index
 }
 
 /** Newest version first among devices of one model. Ties fall back to the name. */
@@ -57,6 +67,7 @@ function byVersionDescending(a: DeviceDescriptor, b: DeviceDescriptor): number {
  */
 export function buildDeviceCatalog(devices: DeviceDescriptor[]): DeviceCatalogFamily[] {
   const families = new Map<string, {
+    provider: DeviceProvider
     platform: DevicePlatform
     kind: string
     label: string
@@ -66,8 +77,9 @@ export function buildDeviceCatalog(devices: DeviceDescriptor[]): DeviceCatalogFa
 
   for (const device of devices) {
     if (!device.available) continue
-    const id = `${device.platform}:${device.kind}`
+    const id = `${device.provider}:${device.kind}`
     const family = families.get(id) ?? {
+      provider: device.provider,
       platform: device.platform,
       kind: device.kind,
       label: device.kindName,
@@ -80,9 +92,10 @@ export function buildDeviceCatalog(devices: DeviceDescriptor[]): DeviceCatalogFa
 
   return [...families.entries()]
     .sort(([, a], [, b]) =>
-      platformRank(a.platform) - platformRank(b.platform) || a.kindRank - b.kindRank)
+      providerRank(a.provider) - providerRank(b.provider) || a.kindRank - b.kindRank)
     .map(([id, family]) => ({
       id,
+      provider: family.provider,
       platform: family.platform,
       kind: family.kind,
       label: family.label,

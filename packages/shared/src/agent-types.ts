@@ -3544,6 +3544,12 @@ export const AgentIpcChannels = {
   // Devices of any platform — simulators, emulators and phones through one set of
   // channels. Everything the panel does to a device it already has is here; the
   // platform is carried in the device id, and `device/ipc.ts` routes on it.
+  // What this machine could still be given. Neutral on purpose: the menu that offers
+  // "add a device" offers every platform's path in one list, and only one of them —
+  // creating an iOS simulator — is something SuperOne finishes itself.
+  ENVIRONMENT_DEVICE_SETUP_OPTIONS: 'environment:deviceSetupOptions',
+  ENVIRONMENT_DEVICE_SETUP_OPEN: 'environment:deviceSetupOpen',
+
   ENVIRONMENT_DEVICE_LIST: 'environment:deviceList',
   ENVIRONMENT_DEVICE_BIND: 'environment:deviceBind',
   ENVIRONMENT_DEVICE_BOOT: 'environment:deviceBoot',

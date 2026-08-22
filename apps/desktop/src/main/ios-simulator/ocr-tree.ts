@@ -1,4 +1,4 @@
-import type { DeviceUiNode } from '@superone/shared/device-agent'
+import { buildOcrRoot, DEFAULT_OCR_MAX_NODES } from '../device/ocr-nodes'
 import type { IosSimulatorOrientation } from '@superone/shared/ios-simulator'
 import { guestToFramebufferBounds, type NormalizedAccessibilityTree } from './a11y-tree'
 
@@ -18,7 +18,6 @@ export interface OcrToTreeOptions {
   maxNodes?: number
 }
 
-const DEFAULT_MAX_NODES = 500
 
 /**
  * Present recognized text as the same tree an accessibility dump produces.
@@ -44,47 +43,21 @@ export function ocrToTree(
   orientation: IosSimulatorOrientation,
   options: OcrToTreeOptions = {},
 ): NormalizedAccessibilityTree {
-  const maxNodes = Math.max(1, options.maxNodes ?? DEFAULT_MAX_NODES)
-  const root: DeviceUiNode = {
-    ref: '@e0',
-    role: 'screen',
-    bounds: [0, 0, 1, 1],
-    source: 'ocr',
-  }
-
-  const children: DeviceUiNode[] = []
-  let dropped = 0
-  for (const line of lines) {
-    const text = line.text.trim()
-    // The box already lives in the space accessibility frames are converted from --
-    // upright, top-left origin -- so the existing rotation is reused rather than
-    // written a second time. Two copies of a quarter-turn is how one of them ends up
-    // 180 degrees out.
-    const bounds = text
-      ? guestToFramebufferBounds(
-        [line.x, line.y, line.width, line.height],
-        { width: 1, height: 1 },
-        orientation,
-      )
-      : undefined
-    if (!text || !bounds || !(bounds[2] > 0) || !(bounds[3] > 0)) continue
-    // Budget counted against the root too, so `maxNodes` means the same number here
-    // as it does for an accessibility dump.
-    if (children.length + 1 >= maxNodes) { dropped += 1; continue }
-    children.push({
-      ref: `@e${children.length + 1}`,
-      role: 'text',
-      label: text,
-      bounds,
-      source: 'ocr',
-    })
-  }
-
-  if (children.length) root.children = children
-  if (dropped) root.truncatedChildren = dropped
+  // Rotation first, then the shared node builder. The box already lives in the space
+  // accessibility frames are converted from — upright, top-left origin — so the
+  // existing rotation is reused rather than written a second time. Two copies of a
+  // quarter-turn is how one of them ends up 180 degrees out.
+  const entries = lines.map((line) => ({
+    text: line.text,
+    bounds: guestToFramebufferBounds(
+      [line.x, line.y, line.width, line.height],
+      { width: 1, height: 1 },
+      orientation,
+    ),
+  }))
 
   return {
-    root,
+    root: buildOcrRoot(entries, options.maxNodes ?? DEFAULT_OCR_MAX_NODES),
     // Empty on purpose: a ref only earns a uid when there is a real accessibility
     // element behind it, and `press` refusing an OCR ref is the correct outcome.
     refs: new Map(),

@@ -1,3 +1,17 @@
+/**
+ * One device-setup dialog's worth of copy.
+ *
+ * `body` is newline-separated steps rather than an array so a translator sees the
+ * whole instruction as one string and can re-order or merge its sentences — several
+ * of these read very differently once the grammar changes.
+ */
+type SetupAdvice = {
+  title: string
+  body: string
+  /** The one primary button. Every path has exactly one place to send the user. */
+  action: string
+}
+
 export type Messages = {
   activity: {
     launcher: {
@@ -58,6 +72,37 @@ export type Messages = {
         creating: string
         createEmpty: string
         cancel: string
+      }
+      /**
+       * Getting a device onto this machine at all.
+       *
+       * Grouped by kind and then by what is missing, because the advice genuinely
+       * differs: a machine with no Android SDK and one with adb-but-no-emulator need
+       * opposite instructions, and a single "install Android Studio" for both would
+       * be wrong half the time.
+       */
+      setup: {
+        add: string
+        iosSimulator: {
+          label: string
+          xcodeMissing: SetupAdvice
+        }
+        androidEmulator: {
+          label: string
+          ready: SetupAdvice
+          sdkMissing: SetupAdvice
+          emulatorMissing: SetupAdvice
+        }
+        androidPhone: {
+          label: string
+          ready: SetupAdvice
+          sdkMissing: SetupAdvice
+        }
+        iphoneMirroring: {
+          label: string
+          ready: SetupAdvice
+          tooOld: SetupAdvice
+        }
       }
     }
   }
@@ -3320,6 +3365,61 @@ export const en: Messages = {
         creating: 'Creating…',
         createEmpty: 'No simulator runtime is installed. Add one in Xcode.',
         cancel: 'Cancel',
+      },
+      setup: {
+        add: 'Add Device…',
+        iosSimulator: {
+          label: 'iOS Simulator',
+          xcodeMissing: {
+            title: 'Xcode Is Required',
+            body: 'Simulators are created by Xcode’s command line tools, which this machine does not have.\nInstall Xcode and open it once to finish its own setup, then come back and refresh.',
+            action: 'Get Xcode',
+          },
+        },
+        androidEmulator: {
+          label: 'Android Emulator',
+          ready: {
+            title: 'Create an Android Emulator',
+            body: 'SuperOne runs the emulators you already have, but making a new one means choosing a system image and possibly downloading it — that is Android Studio’s job.\nOpen Device Manager, click +, then refresh this panel.',
+            action: 'Open Android Studio',
+          },
+          sdkMissing: {
+            title: 'The Android SDK Is Missing',
+            body: 'No SDK was found in ANDROID_HOME, ANDROID_SDK_ROOT, or the default location.\nInstalling Android Studio installs the SDK along with it.',
+            action: 'Get Android Studio',
+          },
+          emulatorMissing: {
+            title: 'The Emulator Package Is Missing',
+            body: 'This machine has adb but not the emulator, so a connected phone works while emulators cannot start.\nIn Android Studio, open SDK Manager → SDK Tools and tick “Android Emulator”.',
+            action: 'Open Android Studio',
+          },
+        },
+        androidPhone: {
+          label: 'Android Phone',
+          ready: {
+            title: 'Connect an Android Phone',
+            body: 'On the phone: Settings → About phone → tap “Build number” seven times, then Developer options → USB debugging.\nPlug it in, approve the prompt on its screen, and refresh this panel.',
+            action: 'Developer Options Guide',
+          },
+          sdkMissing: {
+            title: 'adb Is Required',
+            body: 'Talking to a phone needs adb, which ships in the Android SDK’s platform-tools.\nInstalling Android Studio installs it along with the SDK.',
+            action: 'Get Android Studio',
+          },
+        },
+        iphoneMirroring: {
+          label: 'iPhone Mirroring',
+          ready: {
+            title: 'Mirror a Real iPhone',
+            body: 'macOS mirrors a nearby iPhone into a window of its own. Keep the phone locked and close by, and approve the pairing once — you only do this the first time.\nOnce it connects, the iPhone appears in this menu like any other device. Its window can then sit out of the way; SuperOne reads it where it is.',
+            action: 'Open iPhone Mirroring',
+          },
+          tooOld: {
+            title: 'iPhone Mirroring Is Not Available',
+            body: 'This feature needs macOS 15 or later on a Mac with Apple silicon or a T2 chip, and the app is not present on this system.',
+            action: 'Read Apple’s Guide',
+          },
+        },
       },
     },
   },

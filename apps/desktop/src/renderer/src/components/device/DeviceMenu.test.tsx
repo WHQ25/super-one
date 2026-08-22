@@ -66,7 +66,7 @@ function renderMenu(overrides: Partial<React.ComponentProps<typeof DeviceMenu>> 
       sessionId="session-1"
       devices={DEVICES}
       currentDeviceId="ios:max-26"
-      canCreateSimulator
+      setupOptions={[{ kind: 'ios-simulator', creatable: true }]}
       onSelect={onSelect}
       {...overrides}
     >
@@ -142,7 +142,10 @@ describe('iOS Simulator device menu', () => {
     }
 
     await user.click(screen.getByRole('button', { name: 'Devices' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'New Simulator' }))
+    // Through the submenu, which is where creating one now lives: the bottom of the
+    // menu offers every way a device can arrive, and only this one finishes here.
+    await user.click(await screen.findByRole('menuitem', { name: /Add Device/ }))
+    await user.click(await screen.findByRole('menuitem', { name: /iOS Simulator/ }))
     createDialog.onCreated!(fresh)
 
     // One pass, deliberately. `onSelect` re-reads the device list on its own, so the

@@ -1,9 +1,10 @@
-import type { ComponentType, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Car, Check, Glasses, Monitor, MonitorSmartphone, Plus, Smartphone, SmartphoneNfc, Tablet, Tv, Watch } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { DeviceDescriptor } from '@superone/shared/device'
 import { formatDeviceId } from '@superone/shared/device'
+import type { DeviceSetupOption } from '@superone/shared/device-setup'
 import type { IosSimulatorDevice } from '@superone/shared/ios-simulator'
 import {
   DropdownMenu,
@@ -18,29 +19,10 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { cn } from '@superone/ui/lib/utils'
-import { IosSimulatorCreateDialog } from './ios/IosSimulatorCreateDialog'
+import { DeviceSetupSubmenu, useDeviceSetupChoice } from './DeviceSetupMenu'
+import { deviceFamilyIcon } from './device-icons'
 import { buildDeviceCatalog } from './device-catalog'
 import { readRecentDeviceIds, rememberRecentDeviceId, resolveRecentDevices } from './device-recents'
-
-/**
- * Keyed by the descriptor's own `kind`, which is each platform's vocabulary rather
- * than a shared enum — so `iphone` and `phone` both appear, and both get a phone.
- * Anything unrecognised falls through to the generic glyph rather than breaking the
- * row, because both platforms classify from free-form hardware strings.
- */
-const KIND_ICONS: Record<string, ComponentType<{ className?: string }>> = {
-  iphone: Smartphone,
-  phone: Smartphone,
-  ipad: Tablet,
-  tablet: Tablet,
-  foldable: SmartphoneNfc,
-  watch: Watch,
-  wear: Watch,
-  tv: Tv,
-  vision: Glasses,
-  auto: Car,
-  desktop: Monitor,
-}
 
 /** A green pip on anything already booted, so attaching reads differently from launching. */
 function RunningDot() {
@@ -100,14 +82,18 @@ interface DeviceMenuProps {
    */
   onSelect: (deviceId: string) => void
   /**
-   * Whether to offer "New Simulator".
+   * Every way a device could still be ADDED, from `device/setup.ts`.
    *
-   * Gated on there being a usable Xcode rather than on any simulator existing —
-   * an empty list is exactly when the user needs to create one. Android has no
-   * counterpart: an AVD is made in Android Studio's Device Manager, and a menu item
-   * that could only tell them that is worse than no menu item.
+   * This used to be a single `canCreateSimulator` boolean gated on Xcode, which meant
+   * a machine with no Xcode and no AVDs offered nothing and explained nothing — the
+   * exact moment a user most needs telling where to go. The reasoning behind the old
+   * shape was that a menu item which could only point at Android Studio is worse than
+   * no menu item; the answer is to make it point *and* say what it will do, which is
+   * what `creatable` on each option carries.
+   *
+   * Empty renders nothing at all, so a platform with no setup paths costs no chrome.
    */
-  canCreateSimulator?: boolean
+  setupOptions?: readonly DeviceSetupOption[]
   /** The trigger. Rendered `asChild`, so it must forward props and a ref. */
   children: ReactNode
 }
@@ -135,12 +121,11 @@ export function DeviceMenu({
   currentDeviceId,
   disabled,
   onSelect,
-  canCreateSimulator = false,
+  setupOptions = [],
   children,
 }: DeviceMenuProps) {
   const { t } = useTranslation()
   const [recentIds, setRecentIds] = useState(readRecentDeviceIds)
-  const [creating, setCreating] = useState(false)
 
   const catalog = useMemo(() => buildDeviceCatalog(devices), [devices])
   const running = useMemo(
@@ -176,6 +161,8 @@ export function DeviceMenu({
     setRecentIds(rememberRecentDeviceId(formatDeviceId('ios-sim', next.udid)))
     onSelect(formatDeviceId('ios-sim', next.udid))
   }, [onSelect])
+
+  const setup = useDeviceSetupChoice(created)
 
   const label = (device: DeviceDescriptor) => `${device.name} · ${device.platformVersion}`
 
@@ -225,7 +212,7 @@ export function DeviceMenu({
               {t('activity.device.picker.empty')}
             </p>
           ) : catalog.map((family) => {
-            const Icon = KIND_ICONS[family.kind] ?? MonitorSmartphone
+            const Icon = deviceFamilyIcon(family.provider, family.kind)
             return (
               <DropdownMenuGroup key={family.id}>
                 <DropdownMenuLabel className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -275,23 +262,12 @@ export function DeviceMenu({
             )
           })}
 
-          {canCreateSimulator && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => setCreating(true)}>
-                <Plus />
-                {t('activity.device.picker.create')}
-              </DropdownMenuItem>
-            </>
-          )}
+          <DeviceSetupSubmenu options={setupOptions} onChoose={setup.choose} />
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Outside the menu on purpose. Mounted under `DropdownMenuContent` it unmounts
-          with the menu the instant the item is chosen, so the dialog never opens. */}
-      {canCreateSimulator && (
-        <IosSimulatorCreateDialog open={creating} onOpenChange={setCreating} onCreated={created} />
-      )}
+      {/* Outside the menu on purpose — see `useDeviceSetupChoice`. */}
+      {setup.dialogs}
     </>
   )
 }

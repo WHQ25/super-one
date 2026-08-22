@@ -7,6 +7,7 @@ import type {
   DeviceOrientation,
   DeviceState,
 } from '@superone/shared/device'
+import type { DeviceSetupOption } from '@superone/shared/device-setup'
 import type {
   IosSimulatorChrome,
   IosSimulatorPreviewQuality,
@@ -194,8 +195,8 @@ interface DeviceStageProps {
   checking: boolean
   /** True while a chosen device is booting, so the stage can say so instead of going blank. */
   launching: boolean
-  /** Whether the picker offers "New Simulator" — see `DeviceMenu`. */
-  canCreateSimulator?: boolean
+  /** Every way a device could still be added — see `DeviceMenu`. */
+  setupOptions?: readonly DeviceSetupOption[]
   /**
    * `preview` is the floating picture-in-picture: the device body and its glass, with
    * no header, no toolbar, no gutter and no input. Everything this drops is a control,
@@ -235,7 +236,7 @@ export function DeviceStage({
   busy,
   checking,
   launching,
-  canCreateSimulator,
+  setupOptions,
   onSelectDevice,
   onLaunchDevice,
   onDetach,
@@ -492,7 +493,7 @@ export function DeviceStage({
           unavailableDeviceIds={unavailableDeviceIds}
           currentDeviceId={deviceId}
           disabled={busy}
-          canCreateSimulator={canCreateSimulator}
+          setupOptions={setupOptions}
           onSelect={onSelectDevice}
         >
           <Button
@@ -574,7 +575,7 @@ export function DeviceStage({
               unavailableDeviceIds={unavailableDeviceIds}
               currentDeviceId={deviceId}
               disabled={busy}
-              canCreateSimulator={canCreateSimulator}
+              setupOptions={setupOptions}
               onSelect={onSelectDevice}
             >
               <Button size="sm" variant="outline">
@@ -657,7 +658,14 @@ export function DeviceStage({
                     {...touchPointer.canvasHandlers}
                   />
                   {interactive && <DeviceTouchPointer ref={touchPointer.ref} />}
-                  {!hasFrame && <GlassOverlay label={t('activity.device.waitingForFrame')} />}
+                  {/* macOS's own sentence when it has one — "iPhone in Use", paused,
+                      locked. Already in the user's language, and far more use than a
+                      generic wait: it names something they can act on. */}
+                  {!hasFrame && (
+                    <GlassOverlay
+                      label={sessionState?.mirror?.reason ?? t('activity.device.waitingForFrame')}
+                    />
+                  )}
                 </>
               ) : (
                 <DeviceScreen
@@ -736,23 +744,28 @@ export function DeviceStage({
             {keyboardConnected ? <Keyboard /> : <KeyboardOff />}
           </IconButton>
         )}
-        {/* Rotation does not go through the input transport on either platform — the
-            simulator takes it on CoreSimulator's workspace port and Android as a
-            setting — so it stays available on a device whose touch channel refused. */}
-        <IconButton
-          tooltip={t('activity.device.rotateLeft')}
-          disabled={!ready}
-          onClick={() => rotate('left')}
-        >
-          <RotateCcw />
-        </IconButton>
-        <IconButton
-          tooltip={t('activity.device.rotateRight')}
-          disabled={!ready}
-          onClick={() => rotate('right')}
-        >
-          <RotateCw />
-        </IconButton>
+        {/* Rotation does not go through the input transport where it exists at all —
+            the simulator takes it on CoreSimulator's workspace port and Android as a
+            setting — so it stays available on a device whose touch channel refused.
+            Absent entirely on a mirrored iPhone: a real phone turns when its owner
+            turns it, so these are not disabled controls, they are controls with
+            nothing behind them. */}
+        {capabilities.rotation && <>
+          <IconButton
+            tooltip={t('activity.device.rotateLeft')}
+            disabled={!ready}
+            onClick={() => rotate('left')}
+          >
+            <RotateCcw />
+          </IconButton>
+          <IconButton
+            tooltip={t('activity.device.rotateRight')}
+            disabled={!ready}
+            onClick={() => rotate('right')}
+          >
+            <RotateCw />
+          </IconButton>
+        </>}
         {/* Capture only needs the device running, not interactive: both platforms
             read the display directly rather than through the input transport. */}
         <DeviceCaptureControls

@@ -56,7 +56,7 @@ describe('device catalog', () => {
     const catalog = buildDeviceCatalog(devices)
 
     expect(catalog.map((family) => family.id))
-      .toEqual(['ios:iphone', 'ios:ipad', 'android:phone'])
+      .toEqual(['ios-sim:iphone', 'ios-sim:ipad', 'android:phone'])
     expect(catalog[0]!.models[0]!.devices.map((entry) => entry.id))
       .toEqual(['ios:p17-265', 'ios:p17-260'])
   })
@@ -84,5 +84,29 @@ describe('device catalog', () => {
     ])
 
     expect(catalog.map((family) => family.id)).not.toContain('ios:tv')
+  })
+
+  it('keeps a mirrored iPhone in its own family rather than among the simulators', () => {
+    // Both are `platform: 'ios'` with `kind: 'iphone'`, so keying on platform merged
+    // them under one heading — and the first family written won the label, so a real
+    // phone appeared as a row under "iPhone" with nothing marking it as real.
+    const catalog = buildDeviceCatalog([
+      device({ id: 'ios-sim:p17', name: 'iPhone 17 Pro', model: 'iPhone 17 Pro' }),
+      device({
+        id: 'ios-mirror:iphone',
+        name: 'iPhone',
+        model: 'iPhone',
+        provider: 'ios-mirror',
+        kindName: 'Mirrored iPhone',
+        kindRank: 50,
+        platformVersion: 'iPhone Mirroring',
+        versionRank: 0,
+      }),
+    ])
+
+    expect(catalog.map((family) => [family.id, family.label])).toEqual([
+      ['ios-sim:iphone', 'iPhone'],
+      ['ios-mirror:iphone', 'Mirrored iPhone'],
+    ])
   })
 })

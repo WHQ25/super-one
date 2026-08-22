@@ -21,6 +21,7 @@ import type {
   DeviceState,
   DeviceStreamOptions,
 } from '@superone/shared/device'
+import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import log from '../logger'
 import type { DeviceSurface } from './surface'
 
@@ -43,6 +44,16 @@ export interface DeviceIpcOptions {
   surfaces: () => DeviceSurface[]
   /** Every platform's devices, merged. Shared with what the agent's `device_list` reads. */
   listDevices: () => Promise<DeviceDescriptor[]>
+  /** What could still be added, and what stands in the way — see `device/setup.ts`. */
+  setupOptions: () => Promise<DeviceSetupOption[]>
+  /**
+   * Send the user wherever this path continues, and say whether anything opened.
+   *
+   * Takes a KIND, never a URL. The destination is resolved in the main process from
+   * a fresh probe, so the renderer cannot name where the user is sent and a menu that
+   * has been open a while cannot send them somewhere that is no longer true.
+   */
+  openSetup: (kind: DeviceSetupKind) => Promise<boolean>
 }
 
 /**
@@ -80,6 +91,11 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
   // already merge every platform into one ordered list for the agent. The picker shows
   // the same list, so it asks the same code.
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_DEVICE_LIST, () => options.listDevices())
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_DEVICE_SETUP_OPTIONS, () => options.setupOptions())
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_DEVICE_SETUP_OPEN,
+    (_event, kind: DeviceSetupKind) => options.openSetup(kind),
+  )
 
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_STATE,

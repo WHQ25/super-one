@@ -30,9 +30,9 @@ export type DevicePlatform = 'ios' | 'android'
  * PROVIDER, so this is what the routing, the capability table, and the id prefix all
  * key on.
  */
-export type DeviceProvider = 'ios-sim' | 'android'
+export type DeviceProvider = 'ios-sim' | 'android' | 'ios-mirror'
 
-export const DEVICE_PROVIDERS = ['ios-sim', 'android'] as const
+export const DEVICE_PROVIDERS = ['ios-sim', 'android', 'ios-mirror'] as const
 
 /**
  * What a provider's devices run. Many providers may map onto one platform.
@@ -43,6 +43,9 @@ export const DEVICE_PROVIDERS = ['ios-sim', 'android'] as const
  */
 export const DEVICE_PROVIDER_PLATFORM: Record<DeviceProvider, DevicePlatform> = {
   'ios-sim': 'ios',
+  // The pair that proves platform and provider are different axes. A mirrored iPhone
+  // runs iOS and is nothing like a simulator to reach — see `DEVICE_CAPABILITIES`.
+  'ios-mirror': 'ios',
   'android': 'android',
 }
 
@@ -89,11 +92,36 @@ export interface DeviceCapabilities {
    * on-screen keyboard is not something the host gets a say in.
    */
   hardwareKeyboard: boolean
+  /**
+   * Whether the HOST can turn the device at all.
+   *
+   * Separate from `rigidRotation`, which only describes what happens to the picture
+   * once it turns. `simctl` and scrcpy both take a rotate command; a mirrored iPhone
+   * turns when its owner physically turns it and there is no API to ask. False means
+   * the rotate controls are not merely inert, they should not be drawn.
+   */
+  rotation: boolean
+  /**
+   * Whether the device yields a real accessibility tree.
+   *
+   * True for a simulator (AXPTranslator) and for Android (`uiautomator dump`), and
+   * false for a mirrored iPhone, where the phone is a video stream and accessibility
+   * genuinely cannot see into it — the agent reads the screen with OCR instead.
+   *
+   * Carried as a capability rather than discovered as an empty tree because the two
+   * look identical at the call site and mean opposite things: "this screen has no
+   * controls" versus "this provider can never tell you what the controls are".
+   */
+  semanticTree: boolean
 }
 
 export const DEVICE_CAPABILITIES: Record<DeviceProvider, DeviceCapabilities> = {
-  'ios-sim': { rigidRotation: true, recording: true, previewQuality: true, hardwareKeyboard: true },
-  'android': { rigidRotation: false, recording: false, previewQuality: false, hardwareKeyboard: false },
+  'ios-sim': { rigidRotation: true, recording: true, previewQuality: true, hardwareKeyboard: true, rotation: true, semanticTree: true },
+  'android': { rigidRotation: false, recording: false, previewQuality: false, hardwareKeyboard: false, rotation: true, semanticTree: true },
+  // Every false here is a property of reaching a phone through somebody else's window.
+  // The picture is whatever size that window happens to be, it turns only when the
+  // phone does, there is no recorder behind it, and no tree inside it.
+  'ios-mirror': { rigidRotation: false, recording: false, previewQuality: false, hardwareKeyboard: false, rotation: false, semanticTree: false },
 }
 
 export interface DeviceDescriptor {
@@ -355,6 +383,19 @@ export interface DeviceState {
     hardwareKeyboardConnected: boolean
     hardwareKeyboardAvailable: boolean
   }
+  /**
+   * Why a mirrored iPhone is not usable right now, in macOS's own words.
+   *
+   * Not `error`, because none of these are errors: "iPhone in Use", paused, locked,
+   * and the initial connect prompt are ordinary states of a feature that belongs to
+   * the user, not failures of ours. Rendering them as errors would put a red banner
+   * on a phone that is simply in somebody's hand.
+   *
+   * Carried verbatim rather than mapped to an enum: the strings come from the screen
+   * macOS drew, so they are already in the user's language and already cover whatever
+   * screen Apple adds next.
+   */
+  mirror?: { reason: string }
 }
 
 /** Which hardware buttons a platform actually has. */

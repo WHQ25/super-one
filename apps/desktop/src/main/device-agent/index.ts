@@ -6,11 +6,13 @@ import { getIosSimulatorManager } from '../ios-simulator'
 import { DeviceAgentSession, errorReply, reply, type DeviceToolReply } from './execute'
 import { IosSimulatorBackend } from './ios-backend'
 import { AndroidBackend } from './android-backend'
+import { MirrorBackend } from './mirror-backend'
 import { requestDeviceControl } from './control'
 import { listDeviceCatalog } from './device-catalog'
 import type { DevicePlatformPort } from '../device/platform-port'
 import { devicePlatformPorts } from '../device/registry'
 import { getAndroidDeviceManager } from '../device/android'
+import { getMirrorDeviceManager } from '../device/ios-mirror'
 import { createDeviceRecents, type DeviceRecentsPort } from './device-recents'
 import { resolveHeldDevice, type HeldDevice } from './target'
 import type { DeviceAgentToolName } from './tools'
@@ -75,6 +77,11 @@ function heldDevicesFor(sessionId: string): HeldDevice[] {
     const name = android?.descriptorFor(deviceId)?.name
     held.push({ id: deviceId, ...(name ? { name } : {}) })
   }
+  // One at most, and its name is fixed: macOS mirrors a single phone and does not tell
+  // us what its owner called it.
+  for (const deviceId of getMirrorDeviceManager()?.devicesOf(sessionId) ?? []) {
+    held.push({ id: deviceId, name: 'iPhone' })
+  }
   return held
 }
 
@@ -91,6 +98,10 @@ function buildBackend(deviceId: string): TouchDeviceBackend {
   if (parsed?.provider === 'android') {
     const android = getAndroidDeviceManager()
     if (android) return new AndroidBackend(android, deviceId, join(userData, 'android', 'captures'))
+  }
+  if (parsed?.provider === 'ios-mirror') {
+    const mirror = getMirrorDeviceManager()
+    if (mirror) return new MirrorBackend(mirror, deviceId, join(userData, 'ios-mirror', 'captures'))
   }
   return new IosSimulatorBackend(getIosSimulatorManager(userData), parsed?.native ?? deviceId)
 }

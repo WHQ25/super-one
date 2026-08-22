@@ -52,7 +52,8 @@ private final class AxWalkState {
     init(limits: AxWalkLimits) { self.limits = limits }
 }
 
-private func axString(_ el: AXUIElement, _ attr: String) -> String? {
+// Not private: `Mirror.swift` reads the same attributes off the mirroring window.
+func axString(_ el: AXUIElement, _ attr: String) -> String? {
     var raw: CFTypeRef?
     guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
           let v = raw else { return nil }
@@ -74,7 +75,8 @@ private func axBool(_ el: AXUIElement, _ attr: String) -> Bool? {
     return nil
 }
 
-private func axCGPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
+// Not private: `Mirror.swift` reads the same attributes off the mirroring window.
+func axCGPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
     var raw: CFTypeRef?
     guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
           let v = raw else { return nil }
@@ -86,7 +88,8 @@ private func axCGPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
     return point
 }
 
-private func axCGSize(_ el: AXUIElement, _ attr: String) -> CGSize? {
+// Not private: `Mirror.swift` reads the same attributes off the mirroring window.
+func axCGSize(_ el: AXUIElement, _ attr: String) -> CGSize? {
     var raw: CFTypeRef?
     guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
           let v = raw else { return nil }
@@ -97,7 +100,8 @@ private func axCGSize(_ el: AXUIElement, _ attr: String) -> CGSize? {
     return size
 }
 
-private func axChildren(_ el: AXUIElement) -> [AXUIElement] {
+// Not private: `Mirror.swift` reads the same attributes off the mirroring window.
+func axChildren(_ el: AXUIElement) -> [AXUIElement] {
     var raw: CFTypeRef?
     guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &raw) == .success,
           let arr = raw as? [AXUIElement] else { return [] }
@@ -111,7 +115,8 @@ private func axActions(_ el: AXUIElement) -> [String] {
     return arr
 }
 
-private func axRole(_ el: AXUIElement) -> String {
+// Not private: `Mirror.swift` reads the same attributes off the mirroring window.
+func axRole(_ el: AXUIElement) -> String {
     axString(el, kAXRoleAttribute as String) ?? "unknown"
 }
 

@@ -922,6 +922,23 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 _ = WindowPlacementController.shared.restore(sessionId: sessionId)
             }
             return .success(id: request.id, result: ["ok": true])
+        // iPhone Mirroring. Separate from `list_windows` / `ax_tree` because the
+        // question is inverted: those ask what UI a window contains, while a mirroring
+        // window is healthy precisely when it contains none — see `Mirror.swift`.
+        case "mirror_state":
+            return .success(id: request.id, result: mirrorState())
+        case "mirror_launch":
+            try launchMirrorApp()
+            return .success(id: request.id, result: mirrorState())
+        case "ocr":
+            guard let encoded = AnyCodable.string(params, "data"),
+                  let png = Data(base64Encoded: encoded) else {
+                throw HelperError(code: "INVALID", message: "base64 png data required")
+            }
+            let minConfidence = AnyCodable.double(params, "minConfidence") ?? 0.3
+            return .success(id: request.id, result: [
+                "texts": try recognizeText(pngData: png, minConfidence: minConfidence),
+            ])
         case "terminate":
             AgentOverlayController.shared.hideImmediately()
             PictureInPictureController.shared.hideImmediately()

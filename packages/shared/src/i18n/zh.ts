@@ -61,6 +61,61 @@ export const zh: Messages = {
         createEmpty: '本机没有已安装的模拟器运行时，请在 Xcode 中添加。',
         cancel: '取消',
       },
+      setup: {
+        add: '添加设备…',
+        iosSimulator: {
+          label: 'iOS 模拟器',
+          xcodeMissing: {
+            title: '需要 Xcode',
+            body: '模拟器由 Xcode 的命令行工具创建，本机没有可用的 Xcode。\n装好 Xcode 并打开一次让它完成自身配置，然后回来刷新。',
+            action: '获取 Xcode',
+          },
+        },
+        androidEmulator: {
+          label: 'Android 模拟器',
+          ready: {
+            title: '创建 Android 模拟器',
+            body: 'SuperOne 能运行你已有的模拟器，但新建一台要挑系统镜像、还可能要下载，这件事归 Android Studio 管。\n打开 Device Manager，点 +，然后回来刷新本面板。',
+            action: '打开 Android Studio',
+          },
+          sdkMissing: {
+            title: '找不到 Android SDK',
+            body: 'ANDROID_HOME、ANDROID_SDK_ROOT 和默认路径下都没有 SDK。\n装 Android Studio 会连 SDK 一起装好。',
+            action: '获取 Android Studio',
+          },
+          emulatorMissing: {
+            title: '缺少 emulator 组件',
+            body: '本机有 adb 但没有 emulator，所以插线的真机能用，模拟器起不来。\n在 Android Studio 里打开 SDK Manager → SDK Tools，勾选 “Android Emulator”。',
+            action: '打开 Android Studio',
+          },
+        },
+        androidPhone: {
+          label: 'Android 真机',
+          ready: {
+            title: '连接 Android 手机',
+            body: '在手机上：设置 → 关于手机 → 连点七次“版本号”，然后进开发者选项打开 USB 调试。\n插上线，在手机屏幕上同意授权，回来刷新本面板。',
+            action: '开发者选项指南',
+          },
+          sdkMissing: {
+            title: '需要 adb',
+            body: '跟手机通信要用 adb，它在 Android SDK 的 platform-tools 里。\n装 Android Studio 会连它一起装好。',
+            action: '获取 Android Studio',
+          },
+        },
+        iphoneMirroring: {
+          label: 'iPhone 镜像',
+          ready: {
+            title: '镜像一台真 iPhone',
+            body: 'macOS 能把附近的 iPhone 映射成一个独立窗口。手机保持锁屏放在旁边，首次需要同意一次配对，之后就不用了。\n连上以后这台 iPhone 会像其它设备一样出现在这个菜单里。那个窗口可以放到一边不管，SuperOne 就地读它。',
+            action: '打开 iPhone 镜像',
+          },
+          tooOld: {
+            title: 'iPhone 镜像不可用',
+            body: '这个功能需要 macOS 15 或更新版本，且 Mac 要是 Apple 芯片或带 T2 芯片，而本机上没有这个 App。',
+            action: '查看 Apple 说明',
+          },
+        },
+      },
     },
   },
   chatDshPreset: {

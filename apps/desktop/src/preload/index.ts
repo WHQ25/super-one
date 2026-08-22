@@ -7,6 +7,7 @@ import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platfor
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions } from '@superone/shared/device'
+import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import { forEachAgentEventPayload } from './agent-event-payload'
 import { isGlassPlatformSupported } from '../main/window-glass'
 
@@ -210,6 +211,10 @@ const environmentAPI = {
 
   deviceList: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_LIST) as Promise<DeviceDescriptor[]>,
+  deviceSetupOptions: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SETUP_OPTIONS) as Promise<DeviceSetupOption[]>,
+  deviceSetupOpen: (kind: DeviceSetupKind) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SETUP_OPEN, kind) as Promise<boolean>,
   deviceBind: (sessionId: string, deviceId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_BIND, sessionId, deviceId) as Promise<DeviceState>,
   deviceBoot: (sessionId: string, deviceId: string) =>

@@ -76,6 +76,7 @@ function stubEnvironment(devices: DeviceDescriptor[]) {
     value: {
       iosSimulatorStatus: vi.fn(async () => ({ supported: true })),
       deviceList: vi.fn(async () => devices),
+      deviceSetupOptions: vi.fn(async () => []),
       deviceBind,
       deviceBoot,
       deviceDetach,
@@ -231,6 +232,21 @@ describe('iOS Simulator panel reopening', () => {
 
     expect(await screen.findByRole('button', { name: /iPhone 17 Pro · iOS 26.0/ })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Launch' })).toBeEnabled()
+  })
+
+  it('tells the tab which device it is showing, so it can be named', async () => {
+    localStorage.setItem('superone.device.recentIds', JSON.stringify([RECENT.id]))
+    stubEnvironment([RECENT, OTHER])
+
+    render(<DevicePanel instanceId={openInstance()} />)
+    // Without this the tab says "Device", and a session holding two of them shows two
+    // tabs the user has to click to tell apart.
+    await waitFor(() =>
+      expect(useDeviceTabActions.getState().byInstance[instanceId]?.device).toEqual({
+        name: RECENT.name,
+        provider: RECENT.provider,
+        kind: RECENT.kind,
+      }))
   })
 
   it('takes its refresh action off the tab when the panel goes away', async () => {

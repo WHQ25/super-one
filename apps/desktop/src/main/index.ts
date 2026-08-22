@@ -165,9 +165,11 @@ import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bo
 import { registerHarnessIpcHandlers } from './harness/ipc'
 import { registerIosSimulatorIpc } from './ios-simulator/ipc'
 import { registerDeviceIpc, closeDevicePorts } from './device/ipc'
+import { openDeviceSetup, probeDeviceSetup } from './device/setup'
 import { deviceSurfaces, listAllDevices } from './device/registry'
 import { disposeIosSimulatorManager } from './ios-simulator'
 import { disposeAndroidDeviceManager } from './device/android'
+import { disposeMirrorDeviceManager } from './device/ios-mirror'
 import { attachDeviceGestureEvents } from './device/gesture-events'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { connectWithHarnessResourceCache, getFreshHarnessResources } from './harness/resource-cache'
@@ -1276,6 +1278,8 @@ function registerIpcHandlers(): void {
   registerDeviceIpc({
     surfaces: () => deviceSurfaces(app.getPath('userData')),
     listDevices: () => listAllDevices(app.getPath('userData')),
+    setupOptions: () => probeDeviceSetup(app.getPath('userData')),
+    openSetup: (kind) => openDeviceSetup(app.getPath('userData'), kind),
   })
 
   // Environment / remote-node product path (gateway + workspace router).
@@ -5390,6 +5394,7 @@ function performQuit(): void {
     // as headless orphans — no window to find them by, and the next launch fights
     // them for the adb port.
     disposeAndroidDeviceManager(),
+    disposeMirrorDeviceManager(),
     disposeAgentSessions(),
     closeAllOpenCodeServers(),
     // Unwinds the embedded dsh Cordis tree so JSONL persistence flushes;
@@ -5428,6 +5433,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
     // as headless orphans — no window to find them by, and the next launch fights
     // them for the adb port.
     disposeAndroidDeviceManager(),
+    disposeMirrorDeviceManager(),
     disposeAgentSessions(),
     closeAllOpenCodeServers(),
   ]).finally(() => process.exit(0))

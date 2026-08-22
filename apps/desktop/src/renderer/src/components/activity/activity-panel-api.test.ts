@@ -6,6 +6,8 @@ import {
   openNewFileTab,
   openBrowserTab,
   openMiniAppTab,
+  openDeviceTab,
+  closeDeviceTab,
   closeBrowserTab,
   beginMosaicRecording,
   replayMosaicOpenedPanels,
@@ -17,6 +19,7 @@ import {
 } from './activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
+import { useDeviceInstanceStore } from '@/stores/device-instances'
 
 afterEach(() => {
   setDockApi(null)
@@ -326,5 +329,64 @@ describe('browser tabs stay confined to their owner session', () => {
     // Idempotent: a second restore does not duplicate the already-present panel.
     materializeOwnedBrowserTabs('sess-hidden')
     expect(dock.panels.map((p) => p.id)).toEqual(['browser-bg'])
+  })
+})
+
+describe('openDeviceTab', () => {
+  beforeEach(() => {
+    useDeviceInstanceStore.setState({ byId: {} })
+    Object.defineProperty(window, 'environment', {
+      configurable: true,
+      value: { deviceRelease: vi.fn() },
+    })
+  })
+
+  /**
+   * The bug this whole model exists for.
+   *
+   * The panel id used to be `ios-simulator-${sessionId}`, so the second "+ → Device"
+   * found the first tab and merely re-activated it. A user testing a client build
+   * against a merchant build could not open the second emulator at all.
+   */
+  it('opens a second tab in the same session rather than re-activating the first', () => {
+    const addPanel = vi.fn()
+    const setActive = vi.fn()
+    const panels: { id: string; api: { setActive: typeof setActive }; group: { id: string } }[] = []
+    setDockApi({
+      panels,
+      activePanel: undefined,
+      addPanel: (options: { id: string }) => {
+        addPanel(options)
+        panels.push({ id: options.id, api: { setActive }, group: { id: 'g1' } })
+      },
+    } as never)
+
+    const first = openDeviceTab('session-1', 'Device')
+    const second = openDeviceTab('session-1', 'Device')
+
+    expect(second).not.toBe(first)
+    expect(addPanel).toHaveBeenCalledTimes(2)
+    expect(setActive).not.toHaveBeenCalled()
+    expect(Object.keys(useDeviceInstanceStore.getState().byId)).toHaveLength(2)
+  })
+
+  it('releases only the closed tab\'s device, leaving the session\'s other one alone', () => {
+    const close = vi.fn()
+    const panels: { id: string; api: { close: typeof close } }[] = []
+    setDockApi({
+      panels,
+      activePanel: undefined,
+      addPanel: (options: { id: string }) => { panels.push({ id: options.id, api: { close } }) },
+    } as never)
+
+    const first = openDeviceTab('session-1', 'Device')
+    const second = openDeviceTab('session-1', 'Device')
+    useDeviceInstanceStore.getState().point(first, 'ios-sim:sim-1')
+    useDeviceInstanceStore.getState().point(second, 'android:emulator-5554')
+
+    closeDeviceTab(first)
+
+    expect(window.environment.deviceRelease).toHaveBeenCalledExactlyOnceWith('ios-sim:sim-1')
+    expect(useDeviceInstanceStore.getState().byId[second]?.deviceId).toBe('android:emulator-5554')
   })
 })

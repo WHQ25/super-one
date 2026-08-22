@@ -26,15 +26,6 @@ export type { DeviceCapture }
 export interface DeviceSurface {
   readonly provider: DeviceProvider
 
-  /**
-   * Every device this session holds here. The only session-shaped question left.
-   *
-   * A session may hold several devices at once — a client build and a merchant build,
-   * an iPhone and an Android — so everything below takes the DEVICE, and this is what
-   * answers "which ones are mine" for release and for the agent's default target.
-   */
-  devicesOf(sessionId: string): string[]
-
   state(deviceId: string): Promise<DeviceState>
 
   /** Point a session at a device without starting anything. */
@@ -45,8 +36,18 @@ export interface DeviceSurface {
   detach(deviceId: string): Promise<DeviceState>
   /** Let go AND stop the device. */
   shutdown(deviceId: string): Promise<DeviceState>
-  /** Drop every device this session held, on its way out. */
-  releaseSession(sessionId: string): Promise<void>
+  /**
+   * Put the device back the way it was found, on the way out of the tab showing it.
+   *
+   * Between `detach` and `shutdown`, and neither: a device SuperOne started is
+   * stopped, one that was already running when we found it is left running. Closing
+   * a panel should not leave a simulator burning CPU that nobody asked for, and
+   * should not take down the emulator the user had open before we arrived.
+   *
+   * Per device rather than per session: a session may have several tabs open, and
+   * closing one of them says nothing about the others.
+   */
+  release(deviceId: string): Promise<void>
 
   input(deviceId: string, input: DeviceInput): Promise<DeviceInputResult>
   screenshot(deviceId: string): Promise<DeviceCapture>

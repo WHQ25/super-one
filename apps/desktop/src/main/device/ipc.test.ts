@@ -75,13 +75,12 @@ function state(device: DeviceDescriptor | null): DeviceState {
 function surface(provider: DeviceSurface['provider']): DeviceSurface {
   return {
     provider,
-    devicesOf: vi.fn(() => [] as string[]),
     state: vi.fn(async () => state(null)),
     bind: vi.fn(async () => state(IOS_DEVICE)),
     boot: vi.fn(async () => state(IOS_DEVICE)),
     detach: vi.fn(async () => state(null)),
     shutdown: vi.fn(async () => state(null)),
-    releaseSession: vi.fn(async () => {}),
+    release: vi.fn(async () => {}),
     input: vi.fn(async () => ({ ok: true })),
     screenshot: vi.fn(async () => ({ kind: 'screenshot', path: '/shot.png', fileName: 'shot.png' })),
     startRecording: vi.fn(async () => ({ kind: 'recording', path: '/clip.mp4', fileName: 'clip.mp4' })),
@@ -166,16 +165,17 @@ describe('device IPC routing', () => {
     )).toThrow('android:emulator-5554')
   })
 
-  it('releases every device a session held, on every surface', async () => {
+  it('releases only the device whose tab was closed', async () => {
     const ios = surface('ios-sim')
     const android = surface('android')
     registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
 
-    await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE)!({}, 'session-1')
+    await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE)!({}, 'android:emulator-5554')
 
-    // Both, not just the owner: a session may hold an emulator and a simulator at once.
-    expect(ios.releaseSession).toHaveBeenCalledWith('session-1')
-    expect(android.releaseSession).toHaveBeenCalledWith('session-1')
+    // Closing one of a session's two device tabs must not take the other one down,
+    // which is exactly what releasing by session did.
+    expect(android.release).toHaveBeenCalledWith('android:emulator-5554')
+    expect(ios.release).not.toHaveBeenCalled()
   })
 
   it('unsubscribes a stream closed right behind its open', async () => {

@@ -5,8 +5,8 @@ import { create } from 'zustand'
  * is the wire between them — the same shape `useMiniAppStore.devControls` uses for
  * the mini-app tab's reload and devtools buttons.
  *
- * Keyed by session because one dock can hold a simulator panel per session, and the
- * tab that draws the button has no way to reach into the panel body's React tree.
+ * Keyed by instance because one session can hold several device panels, and the tab
+ * that draws the button has no way to reach into the panel body's React tree.
  */
 export interface DeviceTabActions {
   refresh: () => void
@@ -15,20 +15,20 @@ export interface DeviceTabActions {
 }
 
 interface DeviceTabActionsState {
-  bySession: Record<string, DeviceTabActions>
-  register: (sessionId: string, actions: DeviceTabActions) => void
-  unregister: (sessionId: string) => void
+  byInstance: Record<string, DeviceTabActions>
+  register: (instanceId: string, actions: DeviceTabActions) => void
+  unregister: (instanceId: string) => void
 }
 
 export const useDeviceTabActions = create<DeviceTabActionsState>((set) => ({
-  bySession: {},
-  register: (sessionId, actions) =>
-    set((state) => ({ bySession: { ...state.bySession, [sessionId]: actions } })),
-  unregister: (sessionId) =>
+  byInstance: {},
+  register: (instanceId, actions) =>
+    set((state) => ({ byInstance: { ...state.byInstance, [instanceId]: actions } })),
+  unregister: (instanceId) =>
     set((state) => {
-      if (!(sessionId in state.bySession)) return state
-      const next = { ...state.bySession }
-      delete next[sessionId]
-      return { bySession: next }
+      if (!(instanceId in state.byInstance)) return state
+      const next = { ...state.byInstance }
+      delete next[instanceId]
+      return { byInstance: next }
     }),
 }))

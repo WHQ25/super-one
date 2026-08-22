@@ -47,7 +47,7 @@ function setup({
 
   const view = render(
     <DeviceDockPanel
-      {...({ api, containerApi, params: { sessionId: 'session-1' } } as unknown as IDockviewPanelProps<{ sessionId: string }>)}
+      {...({ api, containerApi, params: { instanceId: 'instance-1' } } as unknown as IDockviewPanelProps<{ instanceId: string }>)}
     />,
   )
   return {

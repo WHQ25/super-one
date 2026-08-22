@@ -771,8 +771,8 @@ export interface EnvironmentAPI {
   deviceDetach(deviceId: string): Promise<DeviceState>
   /** Stops the device and unbinds whoever held it. */
   deviceShutdown(deviceId: string): Promise<DeviceState>
-  /** Every device this session still holds, on its way out. The one session-shaped call. */
-  deviceRelease(sessionId: string): Promise<void>
+  /** Closing the tab: leaves a device we found running, stops one we started. */
+  deviceRelease(deviceId: string): Promise<void>
   deviceScreenshot(deviceId: string): Promise<DeviceCapture>
   /** Rejects on a provider without recording — see `DEVICE_CAPABILITIES`. */
   deviceRecordStart(deviceId: string): Promise<DeviceCapture>

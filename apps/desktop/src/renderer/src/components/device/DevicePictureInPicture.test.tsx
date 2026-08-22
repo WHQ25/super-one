@@ -9,6 +9,7 @@ import {
   stubIosSimulatorEnvironment,
 } from '../../../../test/fixtures/ios-simulator'
 import { useChatStore } from '@/stores/chat'
+import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
 import { DevicePictureInPicture } from './DevicePictureInPicture'
 
@@ -20,6 +21,9 @@ import { DevicePictureInPicture } from './DevicePictureInPicture'
  * grabbed, and the two buttons on it. The device's own survival across surfaces is
  * `DeviceHostLayer.test.tsx`.
  */
+
+/** The tab the preview stands in for. Keyed on this, not on the session. */
+const INSTANCE_ID = 'instance-1'
 
 /** The element the preview is pinned inside; jsdom reports zeros without this. */
 function mountChatRoot() {
@@ -35,7 +39,7 @@ async function renderPreview() {
     activeProject: '/project',
     projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
   } as unknown as Parameters<typeof useChatStore.setState>[0])
-  useDevicePipStore.getState().setReady(SESSION_ID, {
+  useDevicePipStore.getState().setReady(INSTANCE_ID, {
     id: DEVICE.id, provider: DEVICE.provider, platform: DEVICE.platform, width: 1206, height: 2622,
   })
   const view = render(<DevicePictureInPicture />)
@@ -50,8 +54,11 @@ beforeEach(() => {
   document.body.innerHTML = ''
   stubIosSimulatorEnvironment()
   useDevicePipStore.setState({
-    readySessionId: null, expandedSessionId: null, hiddenSessionId: null, device: null,
+    readyInstanceId: null, expandedInstanceId: null, hiddenInstanceId: null, device: null,
     slots: {}, pipSlots: {}, overlaySlots: {},
+  })
+  useDeviceInstanceStore.setState({
+    byId: { [INSTANCE_ID]: { instanceId: INSTANCE_ID, sessionId: SESSION_ID, deviceId: DEVICE.id } },
   })
 })
 
@@ -116,7 +123,7 @@ describe('iOS Simulator preview box', () => {
     await renderPreview()
     expect(document.querySelector('[data-device-slot="pip"]')).not.toBeNull()
 
-    act(() => { useDevicePipStore.getState().expandPreview(SESSION_ID) })
+    act(() => { useDevicePipStore.getState().expandPreview(INSTANCE_ID) })
     await screen.findByRole('dialog')
 
     // One element, one key, one slot — the mode changes under it. Two branches would
@@ -124,7 +131,7 @@ describe('iOS Simulator preview box', () => {
     // layer would have nowhere at all to put the device.
     expect(document.querySelector('[data-device-slot="pip"]')).toBeNull()
     expect(document.querySelector('[data-device-slot="overlay"]')).not.toBeNull()
-    expect(useDevicePipStore.getState().pipSlots[SESSION_ID]).toBeUndefined()
+    expect(useDevicePipStore.getState().pipSlots[INSTANCE_ID]).toBeUndefined()
   })
 
   it('can be dismissed without expanding it first', async () => {
@@ -135,6 +142,6 @@ describe('iOS Simulator preview box', () => {
     fireEvent.click(screen.getByLabelText('Hide device preview'))
 
     await waitFor(() => expect(document.querySelector('[data-device-pip]')).toBeNull())
-    expect(useDevicePipStore.getState().hiddenSessionId).toBe(SESSION_ID)
+    expect(useDevicePipStore.getState().hiddenInstanceId).toBe(INSTANCE_ID)
   })
 })

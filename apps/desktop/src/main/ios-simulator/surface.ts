@@ -63,10 +63,6 @@ export function createIosSimulatorSurface(manager: IosSimulatorManager): DeviceS
   return {
     provider: 'ios-sim',
 
-    devicesOf(sessionId) {
-      return manager.devicesOf(sessionId).map((udid) => formatDeviceId('ios-sim', udid))
-    },
-
     async state(deviceId) {
       return toSessionState(await manager.getSessionState(udidOf(deviceId)))
     },
@@ -82,8 +78,8 @@ export function createIosSimulatorSurface(manager: IosSimulatorManager): DeviceS
     async shutdown(deviceId) {
       return toSessionState(await manager.shutdown(udidOf(deviceId)))
     },
-    async releaseSession(sessionId) {
-      await manager.releaseSession(sessionId)
+    async release(deviceId) {
+      await manager.releaseDevice(udidOf(deviceId))
     },
 
     async input(deviceId, input: DeviceInput): Promise<DeviceInputResult> {

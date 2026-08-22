@@ -218,8 +218,8 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_DETACH, deviceId) as Promise<DeviceState>,
   deviceShutdown: (deviceId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SHUTDOWN, deviceId) as Promise<DeviceState>,
-  deviceRelease: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE, sessionId) as Promise<void>,
+  deviceRelease: (deviceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE, deviceId) as Promise<void>,
   deviceScreenshot: (deviceId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT, deviceId) as Promise<DeviceCapture>,
   deviceRecordStart: (deviceId: string) =>

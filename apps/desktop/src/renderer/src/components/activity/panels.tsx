@@ -32,5 +32,5 @@ export const activityPanelComponents: Record<string, React.FunctionComponent<IDo
   'browser': BrowserPanel as React.FunctionComponent<IDockviewPanelProps>,
   'terminal': TerminalHostPanel as React.FunctionComponent<IDockviewPanelProps>,
   'trajectory': TrajectoryDockPanel as React.FunctionComponent<IDockviewPanelProps>,
-  'ios-simulator': DeviceDockPanel as React.FunctionComponent<IDockviewPanelProps>,
+  'device': DeviceDockPanel as React.FunctionComponent<IDockviewPanelProps>,
 }

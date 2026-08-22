@@ -1,11 +1,14 @@
 import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 
 export interface DevicePreviewState {
-  /** The session whose device the preview would show, bound and ready. */
+  /** The tab whose device the preview would show, bound and ready. */
+  instanceId: string | null
+  /** Which conversation that tab belongs to. */
   sessionId: string | null
   /** Bound, belonging to the conversation on screen, and not dismissed. */
   deviceOnScreen: boolean
@@ -25,20 +28,29 @@ export interface DevicePreviewState {
  */
 export function useDevicePreview(): DevicePreviewState {
   const currentSessionId = useChatStore(selectActiveChatSessionId)
-  const readySessionId = useDevicePipStore((state) => state.readySessionId)
-  const expandedSessionId = useDevicePipStore((state) => state.expandedSessionId)
-  const hiddenSessionId = useDevicePipStore((state) => state.hiddenSessionId)
+  const instanceId = useDevicePipStore((state) => state.readyInstanceId)
+  const expandedInstanceId = useDevicePipStore((state) => state.expandedInstanceId)
+  const hiddenInstanceId = useDevicePipStore((state) => state.hiddenInstanceId)
+  const sessionId = useDeviceInstanceStore(
+    (state) => (instanceId ? state.byId[instanceId]?.sessionId ?? null : null),
+  )
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const mosaicMode = useMosaicStore((state) => state.mode)
 
-  const sessionId = readySessionId
   // WHICH surface the device gets is the next two lines' business — the preview when
   // there is room for it, the Activity tab otherwise.
-  const deviceOnScreen = sessionId != null
+  const deviceOnScreen = instanceId != null
     && sessionId === currentSessionId
-    && sessionId !== hiddenSessionId
+    && instanceId !== hiddenInstanceId
   const shouldShow = deviceOnScreen && !activityShown && mosaicMode === 'single'
-  const expanded = shouldShow && expandedSessionId === sessionId
+  const expanded = shouldShow && expandedInstanceId === instanceId
 
-  return { sessionId, deviceOnScreen, shouldShow, expanded, showPip: shouldShow && !expanded }
+  return {
+    instanceId,
+    sessionId,
+    deviceOnScreen,
+    shouldShow,
+    expanded,
+    showPip: shouldShow && !expanded,
+  }
 }

@@ -1,8 +1,8 @@
 /**
- * Where each session's device picture should be drawn, and which surface wins.
+ * Where each open device tab's picture should be drawn, and which surface wins.
  *
  * The picture itself is not here and is not in the React tree that shows it: exactly
- * one `DevicePanel` per session lives permanently in `DeviceHostLayer`,
+ * one `DevicePanel` per INSTANCE lives permanently in `DeviceHostLayer`,
  * and the Activity tab and the floating preview only MEASURE themselves and report a
  * rect. This store is the meeting point — the surfaces write slots into it, the host
  * layer reads them and positions the one panel over the winner.
@@ -13,11 +13,12 @@
  * started empty and had to re-read the device list before it could show anything,
  * which is the half-second of black glass the handover used to cost.
  *
- * Keyed by chat session rather than by device: a session owns at most one device,
- * and the preview follows the conversation the user is looking at — switching away
- * hides it without tearing anything down.
+ * Keyed by INSTANCE — the tab, not the session and not the device. A session can
+ * have two devices open at once, so a session key would collide; a device key would
+ * change under a tab whose device the user swapped, taking its slot with it. See
+ * `stores/device-instances`.
  *
- * `hiddenSessionId` is a dismissal, not a teardown. The device stays bound; the user
+ * `hiddenInstanceId` is a dismissal, not a teardown. The device stays bound; the user
  * only said they do not want to watch it. Anything that makes the preview meaningful
  * again (a fresh grant, opening the panel) clears it.
  */
@@ -55,10 +56,10 @@ interface DevicePipState {
   pipSlots: Record<string, DeviceSlot>
   overlaySlots: Record<string, DeviceSlot>
 
-  /** The session whose device is bound and ready — the reason a preview exists at all. */
-  readySessionId: string | null
-  expandedSessionId: string | null
-  hiddenSessionId: string | null
+  /** The instance whose device is bound and ready — the reason a preview exists at all. */
+  readyInstanceId: string | null
+  expandedInstanceId: string | null
+  hiddenInstanceId: string | null
   /**
    * The bound device, as the preview box needs to know it: which simulator to read
    * artwork for, and its glass already turned the way the device is lying. The box is
@@ -66,11 +67,11 @@ interface DevicePipState {
    */
   device: DevicePipDevice | null
 
-  updateSlot: (sessionId: string, mode: DeviceSlotMode, rect: DOMRectReadOnly) => void
-  unregisterSlot: (sessionId: string, mode: DeviceSlotMode) => void
-  setReady: (sessionId: string | null, device?: DevicePipDevice | null) => void
-  hidePreview: (sessionId: string) => void
-  expandPreview: (sessionId: string) => void
+  updateSlot: (instanceId: string, mode: DeviceSlotMode, rect: DOMRectReadOnly) => void
+  unregisterSlot: (instanceId: string, mode: DeviceSlotMode) => void
+  setReady: (instanceId: string | null, device?: DevicePipDevice | null) => void
+  hidePreview: (instanceId: string) => void
+  expandPreview: (instanceId: string) => void
   shrinkPreview: () => void
 }
 
@@ -78,44 +79,44 @@ export const useDevicePipStore = create<DevicePipState>()((set) => ({
   slots: {},
   pipSlots: {},
   overlaySlots: {},
-  readySessionId: null,
-  expandedSessionId: null,
-  hiddenSessionId: null,
+  readyInstanceId: null,
+  expandedInstanceId: null,
+  hiddenInstanceId: null,
   device: null,
 
   // A new grant is a new intent to watch, so it un-dismisses. Losing the device
   // clears the expanded state too, or the overlay would sit over nothing.
-  setReady: (sessionId, device = null) => set((state) => ({
-    readySessionId: sessionId,
-    hiddenSessionId: sessionId && state.hiddenSessionId === sessionId ? null : state.hiddenSessionId,
-    expandedSessionId: sessionId ? state.expandedSessionId : null,
+  setReady: (instanceId, device = null) => set((state) => ({
+    readyInstanceId: instanceId,
+    hiddenInstanceId: instanceId && state.hiddenInstanceId === instanceId ? null : state.hiddenInstanceId,
+    expandedInstanceId: instanceId ? state.expandedInstanceId : null,
     // Same device on a republish must be the same object, or every host push — a
     // rotation, a keyboard toggle — would remeasure the box and fight a drag.
     device: sameDevice(state.device, device) ? state.device : device,
   })),
-  updateSlot: (sessionId, mode, rect) =>
+  updateSlot: (instanceId, mode, rect) =>
     set((state) => {
       const target = slotsFor(state, mode)
-      const prev = target[sessionId]
+      const prev = target[instanceId]
       const left = Math.round(rect.left), top = Math.round(rect.top)
       const width = Math.round(rect.width), height = Math.round(rect.height)
       // A rect is re-read on every animation frame while anything is moving, and an
       // unchanged one must not re-render the host — it would fight a drag.
       if (prev && prev.mode === mode && prev.left === left && prev.top === top
         && prev.width === width && prev.height === height) return state
-      return withSlots(mode, { ...target, [sessionId]: { mode, left, top, width, height } })
+      return withSlots(mode, { ...target, [instanceId]: { mode, left, top, width, height } })
     }),
-  unregisterSlot: (sessionId, mode) =>
+  unregisterSlot: (instanceId, mode) =>
     set((state) => {
       const target = slotsFor(state, mode)
       // Only the surface that owns this mode may drop it. Otherwise a placeholder
       // unmounting after its successor registered would take the successor's slot.
-      if (target[sessionId]?.mode !== mode) return state
-      return withSlots(mode, withoutKey(target, sessionId))
+      if (target[instanceId]?.mode !== mode) return state
+      return withSlots(mode, withoutKey(target, instanceId))
     }),
-  hidePreview: (sessionId) => set({ hiddenSessionId: sessionId, expandedSessionId: null }),
-  expandPreview: (sessionId) => set({ expandedSessionId: sessionId }),
-  shrinkPreview: () => set({ expandedSessionId: null }),
+  hidePreview: (instanceId) => set({ hiddenInstanceId: instanceId, expandedInstanceId: null }),
+  expandPreview: (instanceId) => set({ expandedInstanceId: instanceId }),
+  shrinkPreview: () => set({ expandedInstanceId: null }),
 }))
 
 function sameDevice(a: DevicePipDevice | null, b: DevicePipDevice | null): boolean {
@@ -138,12 +139,12 @@ function withSlots(
 }
 
 /**
- * Every session that needs a live panel — which is NOT the same as every session with
- * something on screen.
+ * Every instance that needs a live panel — which is NOT the same as every instance
+ * with something on screen.
  *
- * A slot means some surface is asking to draw this session's device right now. The
- * ready session is here as well because there are two moments with no slot at all and
- * a device that must survive them: the beat between the preview unregistering and the
+ * A slot means some surface is asking to draw this tab's device right now. The ready
+ * instance is here as well because there are two moments with no slot at all and a
+ * device that must survive them: the beat between the preview unregistering and the
  * Activity tab mounting, and the whole time the user is in Settings, where neither
  * surface exists. Membership is what keeps the panel — and so the decoder — alive
  * across both.
@@ -152,14 +153,14 @@ function withSlots(
  * has said they do not want to watch it, and holding a decoder open to draw nothing
  * costs real CPU.
  */
-export function selectHostedDeviceSessions(state: DevicePipState): string[] {
+export function selectHostedDeviceInstances(state: DevicePipState): string[] {
   const hosted = new Set([
     ...Object.keys(state.slots),
     ...Object.keys(state.pipSlots),
     ...Object.keys(state.overlaySlots),
   ])
-  if (state.readySessionId && state.readySessionId !== state.hiddenSessionId) {
-    hosted.add(state.readySessionId)
+  if (state.readyInstanceId && state.readyInstanceId !== state.hiddenInstanceId) {
+    hosted.add(state.readyInstanceId)
   }
   return [...hosted]
 }

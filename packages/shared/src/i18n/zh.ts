@@ -5,8 +5,7 @@ export const zh: Messages = {
     launcher: {
       browser: '浏览器',
       terminal: '终端',
-      iosSimulator: 'iOS 模拟器',
-      android: 'Android',
+      device: '设备',
     },
     device: {
       title: '设备',

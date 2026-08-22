@@ -188,11 +188,13 @@ describe('ownership', () => {
     expect(manager.devicesOf('session-1')).toEqual([])
   }, 20_000)
 
-  it('frees the device when the session lets go', async () => {
+  it('frees the device when the tab watching it lets go', async () => {
     const { toolchain: tools } = toolchain()
     const manager = new AndroidDeviceManager(tools)
     await manager.boot('session-1', `android:avd:${AVD_ID}`)
-    manager.releaseSession('session-1')
+    // By device, not by session: a session may have a second tab on a second phone,
+    // and closing this one says nothing about that one.
+    manager.release(`android:avd:${AVD_ID}`)
 
     expect(manager.devicesOf('session-1')).toEqual([])
     const devices = await manager.listDevices()

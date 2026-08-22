@@ -24,12 +24,18 @@ import {
 import { setDockApi } from '@/components/activity/activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
+import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
 import { resetDeviceSurfaces } from './device-surface'
 import { DeviceHostLayer } from './DeviceHostLayer'
 import { DeviceView } from './DeviceView'
 
 const SESSION_ID = IOS_SIMULATOR_SESSION_ID
+/**
+ * The TAB the device is being watched from. Everything the host layer keys on is
+ * this, not the session — a session can have two of them open at once.
+ */
+const INSTANCE_ID = 'instance-1'
 
 /** Where each surface claims to be. jsdom measures everything as zero without this. */
 const SLOT_RECTS: Record<string, DOMRect> = {
@@ -60,7 +66,7 @@ function Surfaces() {
       <DeviceHostLayer />
       {activityShown && (
         <div data-fake-dock="">
-          <DeviceView sessionId={SESSION_ID} mode="panel" />
+          <DeviceView instanceId={INSTANCE_ID} mode="panel" />
         </div>
       )}
     </>
@@ -80,7 +86,7 @@ function AppShape({ view }: { view: 'main' | 'settings' }) {
 }
 
 const host = () =>
-  document.querySelector<HTMLElement>(`[data-device-host][data-session-id="${SESSION_ID}"]`)
+  document.querySelector<HTMLElement>(`[data-device-host][data-instance-id="${INSTANCE_ID}"]`)
 
 /** Where the host has settled — which surface it is drawing on, or nowhere. */
 function presentation(): string | null {
@@ -97,7 +103,7 @@ async function renderReady(node: React.ReactElement = <DeviceHostLayer />) {
     activeProject: '/project',
     projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
   } as unknown as Parameters<typeof useChatStore.setState>[0])
-  useDevicePipStore.getState().setReady(SESSION_ID, {
+  useDevicePipStore.getState().setReady(INSTANCE_ID, {
     id: DEVICE.id, provider: DEVICE.provider, platform: DEVICE.platform, width: 1206, height: 2622,
   })
   const view = render(node)
@@ -125,8 +131,11 @@ beforeEach(() => {
   }
   useActivityPanelStore.setState({ showPanel: false, maximized: false, maximizedGroupId: null })
   useDevicePipStore.setState({
-    readySessionId: null, expandedSessionId: null, hiddenSessionId: null, device: null,
+    readyInstanceId: null, expandedInstanceId: null, hiddenInstanceId: null, device: null,
     slots: {}, pipSlots: {}, overlaySlots: {},
+  })
+  useDeviceInstanceStore.setState({
+    byId: { [INSTANCE_ID]: { instanceId: INSTANCE_ID, sessionId: SESSION_ID, deviceId: DEVICE.id } },
   })
 })
 
@@ -229,9 +238,9 @@ describe('iOS Simulator surface handover', () => {
 
     await waitFor(() => expect(document.querySelector('[data-device-pip]')).toBeNull())
     expect(addPanel).toHaveBeenCalledWith(expect.objectContaining({
-      id: `ios-simulator-${SESSION_ID}`,
-      component: 'ios-simulator',
-      params: { sessionId: SESSION_ID },
+      id: `device-${INSTANCE_ID}`,
+      component: 'device',
+      params: { instanceId: INSTANCE_ID },
     }))
   })
 
@@ -240,7 +249,7 @@ describe('iOS Simulator surface handover', () => {
     const addPanel = vi.fn()
     const setActive = vi.fn()
     setDockApi({
-      panels: [{ id: `ios-simulator-${SESSION_ID}`, api: { setActive }, group: { id: 'g1' } }],
+      panels: [{ id: `device-${INSTANCE_ID}`, api: { setActive }, group: { id: 'g1' } }],
       activePanel: undefined,
       addPanel,
     } as never)
@@ -261,7 +270,7 @@ describe('iOS Simulator surface handover', () => {
     setDockApi({ panels: [], activePanel: undefined, addPanel } as never)
 
     await renderReady()
-    act(() => { useDevicePipStore.getState().hidePreview(SESSION_ID) })
+    act(() => { useDevicePipStore.getState().hidePreview(INSTANCE_ID) })
     act(() => { useActivityPanelStore.getState().setShowPanel(true) })
 
     // Hiding is about the device, not about the surface it was on.
@@ -276,8 +285,8 @@ describe('iOS Simulator surface handover', () => {
     // Dismissal is the one case where nothing is meant to survive. The device stays
     // bound, but the user has said they are not watching, and a decoder drawing into
     // a canvas nobody can see costs the same as one on screen — so a dismissed
-    // session is deliberately left out of the host layer's membership.
-    act(() => { useDevicePipStore.getState().hidePreview(SESSION_ID) })
+    // tab is deliberately left out of the host layer's membership.
+    act(() => { useDevicePipStore.getState().hidePreview(INSTANCE_ID) })
 
     await waitFor(() => expect(host()).toBeNull())
     // The stream itself closes on the surface registry's handover grace timer rather
@@ -318,8 +327,8 @@ describe('iOS Simulator host layer placement', () => {
     // it did, the tab would arrive to a torn-down panel and pay the full boot again.
     act(() => { useActivityPanelStore.getState().setShowPanel(true) })
     await waitFor(() => expect(document.querySelector('[data-device-pip]')).toBeNull())
-    expect(useDevicePipStore.getState().pipSlots[SESSION_ID]).toBeUndefined()
-    expect(useDevicePipStore.getState().slots[SESSION_ID]).toBeUndefined()
+    expect(useDevicePipStore.getState().pipSlots[INSTANCE_ID]).toBeUndefined()
+    expect(useDevicePipStore.getState().slots[INSTANCE_ID]).toBeUndefined()
 
     expect(host()).toBe(panel)
     expect(video.builtWith).toEqual([canvas])
@@ -337,7 +346,7 @@ describe('iOS Simulator host layer placement', () => {
     // live and non-zero. Winning on the slot alone would paint the device into a
     // rect the user cannot see.
     act(() => {
-      useDevicePipStore.getState().updateSlot(SESSION_ID, 'panel', RECT)
+      useDevicePipStore.getState().updateSlot(INSTANCE_ID, 'panel', RECT)
       useActivityPanelStore.getState().setShowPanel(false)
     })
 
@@ -349,7 +358,7 @@ describe('iOS Simulator host layer placement', () => {
     await renderReady()
 
     act(() => {
-      useDevicePipStore.getState().updateSlot(SESSION_ID, 'panel', RECT)
+      useDevicePipStore.getState().updateSlot(INSTANCE_ID, 'panel', RECT)
       useActivityPanelStore.getState().setShowPanel(true)
     })
     expect(host()!.style.pointerEvents).toBe('auto')
@@ -384,7 +393,7 @@ describe('iOS Simulator expanded overlay', () => {
     stubEnvironment()
 
     await renderReady()
-    act(() => { useDevicePipStore.getState().expandPreview(SESSION_ID) })
+    act(() => { useDevicePipStore.getState().expandPreview(INSTANCE_ID) })
     await screen.findByRole('dialog')
     await waitFor(() => expect(presentation()).toBe('overlay'))
 
@@ -412,7 +421,7 @@ describe('iOS Simulator expanded overlay', () => {
     const canvas = video.builtWith[0]
     const panel = host()
 
-    act(() => { useDevicePipStore.getState().expandPreview(SESSION_ID) })
+    act(() => { useDevicePipStore.getState().expandPreview(INSTANCE_ID) })
     await screen.findByRole('dialog')
     await waitFor(() => expect(presentation()).toBe('overlay'))
 

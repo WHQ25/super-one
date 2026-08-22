@@ -81,6 +81,15 @@ function DeviceItem({
 interface DeviceMenuProps {
   sessionId: string
   devices: DeviceDescriptor[]
+  /**
+   * Devices another tab of this session is already pointed at.
+   *
+   * Not derivable from `boundSessionId`, which is what the HOST knows: a device that
+   * is merely drawn — chosen but not yet booted — is owned by nobody, and two tabs
+   * showing the same shut-down simulator is a pair the user cannot tell apart. The
+   * tabs are the only thing that knows, so they say so.
+   */
+  unavailableDeviceIds?: readonly string[]
   /** The device this session is bound to, ticked throughout the menu. */
   currentDeviceId: string
   disabled?: boolean
@@ -122,6 +131,7 @@ interface DeviceMenuProps {
 export function DeviceMenu({
   sessionId,
   devices,
+  unavailableDeviceIds,
   currentDeviceId,
   disabled,
   onSelect,
@@ -144,9 +154,14 @@ export function DeviceMenu({
     [recentIds, devices],
   )
 
+  // Two ways a device can already be spoken for, and neither implies the other: held
+  // by another chat session, or open in another tab of this one.
+  const takenElsewhere = useMemo(() => new Set(unavailableDeviceIds ?? []), [unavailableDeviceIds])
   const takenByOther = useCallback(
-    (entry: DeviceDescriptor) => Boolean(entry.boundSessionId && entry.boundSessionId !== sessionId),
-    [sessionId],
+    (entry: DeviceDescriptor) =>
+      Boolean(entry.boundSessionId && entry.boundSessionId !== sessionId)
+      || takenElsewhere.has(entry.id),
+    [sessionId, takenElsewhere],
   )
 
   const pick = useCallback((deviceId: string) => {

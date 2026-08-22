@@ -1,36 +1,53 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useShallow } from 'zustand/react/shallow'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import type { DeviceDescriptor, DeviceState } from '@superone/shared/device'
 import type { IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import { Button } from '@superone/ui/components/ui/button'
+import { devicesTakenByOtherInstances, useDeviceInstanceStore } from '@/stores/device-instances'
 import { DeviceStage } from './DeviceStage'
-import { readRecentDeviceIds, resolveRecentDevices } from './device-recents'
+import { pickDefaultDevice } from './device-default-selection'
 import { useDeviceTabActions } from './device-tab-actions'
 import { messageOf, notifyDevice, reportDeviceError } from './device-report'
 
 interface DevicePanelProps {
-  sessionId: string
+  /**
+   * The TAB, not the device and not the session. It survives the user picking a
+   * different device in this panel, which is what keeps the dock tab in its place
+   * instead of being removed and re-added on every switch.
+   */
+  instanceId: string
   /** `preview` / `overlay` reshape the stage around the device — see `DeviceStage`. */
   variant?: 'panel' | 'preview' | 'overlay'
 }
 
-export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
+export function DevicePanel({ instanceId, variant }: DevicePanelProps) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<IosSimulatorStatus | null>(null)
   const [devices, setDevices] = useState<DeviceDescriptor[]>([])
-  const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [sessionState, setSessionState] = useState<DeviceState | null>(null)
+  // Which session this tab belongs to and what it is pointed at both live in the
+  // instance store rather than here, because the OTHER tabs need to read them: a
+  // second panel in the same session must not offer the device this one is on.
+  const sessionId = useDeviceInstanceStore((state) => state.byId[instanceId]?.sessionId ?? '')
+  const selectedDeviceId = useDeviceInstanceStore((state) => state.byId[instanceId]?.deviceId ?? '')
+  const takenElsewhere = useDeviceInstanceStore(
+    useShallow((state) => devicesTakenByOtherInstances(state.byId, instanceId)),
+  )
+  const point = useDeviceInstanceStore((state) => state.point)
   // One view, always the stage. Nothing boots until a device is chosen from the
   // header menu, so opening the panel still does not commandeer a simulator — it
   // just shows an empty stage with that menu instead of a page of its own.
   const [operation, setOperation] = useState<'loading' | 'booting' | null>('loading')
 
-  // Read by `refresh`, which the mount effect depends on: taking `selectedDeviceId` as a
-  // real dependency there would re-run the panel-open restore pass on every device
-  // switch, and the restore pass fights the user for which device is on screen.
+  // Read by `refresh`, which the mount effect depends on: taking either as a real
+  // dependency there would re-run the panel-open restore pass on every device switch,
+  // and the restore pass fights the user for which device is on screen.
   const selectedIdRef = useRef(selectedDeviceId)
   useEffect(() => { selectedIdRef.current = selectedDeviceId }, [selectedDeviceId])
+  const takenRef = useRef(takenElsewhere)
+  useEffect(() => { takenRef.current = takenElsewhere }, [takenElsewhere])
 
   /**
    * Point the panel at a device without starting it. Booting is always the user's
@@ -38,13 +55,13 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
    * stepping into a device that is already up and unclaimed, which starts nothing.
    */
   const preview = useCallback(async (target: DeviceDescriptor | null) => {
-    setSelectedDeviceId(target?.id ?? '')
+    point(instanceId, target?.id ?? null)
     setSessionState(
       target?.running && !target.boundSessionId
         ? await window.environment.deviceBind(sessionId, target.id)
         : null,
     )
-  }, [sessionId])
+  }, [instanceId, point, sessionId])
 
   /**
    * `restore` is the panel-open pass. It is the only one allowed to reach for the
@@ -68,21 +85,23 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
       setStatus(nextStatus)
       setDevices(nextDevices)
 
-      const bound = nextDevices.find((device) => device.boundSessionId === sessionId)
-      if (!bound) {
-        setSessionState(null)
-        // Whatever is on screen stays on screen, as long as it still exists. Only an
-        // empty panel reaches for the remembered simulator, and only on open: showing
-        // a device is not the same as taking it, so a shut-down one is merely drawn,
-        // with its own Launch button.
-        const held = nextDevices.find((device) => device.id === selectedIdRef.current) ?? null
-        const recent = restore ? resolveRecentDevices(readRecentDeviceIds(), nextDevices)[0] ?? null : null
-        await preview(held ?? recent)
+      // THIS tab's device, not any device the session holds. A session with two tabs
+      // open holds two, and picking "whichever one is bound" would have both panels
+      // race to draw the same one.
+      const held = nextDevices.find((device) => device.id === selectedIdRef.current) ?? null
+      if (held?.boundSessionId === sessionId) {
+        setSessionState(await window.environment.deviceBind(sessionId, held.id))
         return
       }
-      setSelectedDeviceId(bound.id)
-      const state = await window.environment.deviceBind(sessionId, bound.id)
-      setSessionState(state)
+      setSessionState(null)
+      // Whatever is on screen stays on screen, as long as it still exists. Only an
+      // empty panel reaches for a default, and only on open: showing a device is not
+      // the same as taking it, so a shut-down one is merely drawn, with its own
+      // Launch button.
+      const opening = restore
+        ? pickDefaultDevice(nextDevices, sessionId, takenRef.current)
+        : null
+      await preview(held ?? opening)
     } catch (cause) {
       reportDeviceError(messageOf(cause))
     } finally {
@@ -101,9 +120,9 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
   const register = useDeviceTabActions((state) => state.register)
   const unregister = useDeviceTabActions((state) => state.unregister)
   useEffect(() => {
-    register(sessionId, { refresh: () => { void refresh(true) }, busy: operation === 'loading' })
-    return () => unregister(sessionId)
-  }, [operation, refresh, register, sessionId, unregister])
+    register(instanceId, { refresh: () => { void refresh(true) }, busy: operation === 'loading' })
+    return () => unregister(instanceId)
+  }, [instanceId, operation, refresh, register, unregister])
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.id === selectedDeviceId) ?? null,
@@ -136,7 +155,7 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
     // for us, but until it returns `sessionState` still describes the device being
     // left — and the stage would go on streaming and drawing chrome for it.
     if (deviceId !== selectedDeviceId) setSessionState(null)
-    setSelectedDeviceId(deviceId)
+    point(instanceId, deviceId)
     setOperation('booting')
     try {
       // `boot` binds the session to the device itself, so no separate bind call.
@@ -148,7 +167,7 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
     } finally {
       setOperation(null)
     }
-  }, [selectedDeviceId, sessionId])
+  }, [instanceId, point, selectedDeviceId, sessionId])
 
   /**
    * Both endings drop the binding, so both leave the stage empty with its device menu
@@ -163,7 +182,7 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
         ? window.environment.deviceDetach(held)
         : window.environment.deviceShutdown(held))
       setSessionState(null)
-      setSelectedDeviceId('')
+      point(instanceId, null)
       setDevices(await window.environment.deviceList())
       notifyDevice(t(`activity.device.${mode === 'detach' ? 'detached' : 'terminated'}`))
     } catch (cause) {
@@ -171,7 +190,7 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
     } finally {
       setOperation(null)
     }
-  }, [sessionState, t])
+  }, [instanceId, point, sessionState, t])
 
   // Only when the list is ALSO empty. On a Mac with no Xcode but an Android SDK the
   // panel has real devices to offer, and a page saying iOS is unavailable would be
@@ -197,6 +216,7 @@ export function DevicePanel({ sessionId, variant }: DevicePanelProps) {
       sessionId={sessionId}
       variant={variant}
       devices={devices}
+      unavailableDeviceIds={takenElsewhere}
       device={selectedDevice}
       sessionState={sessionState}
       busy={operation !== null}

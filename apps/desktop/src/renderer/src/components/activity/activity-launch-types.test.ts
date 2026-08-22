@@ -72,9 +72,7 @@ beforeEach(() => {
 
 describe('activity launcher entries', () => {
   it('offers Trajectory on a dsh session', async () => {
-    expect(await launchIds()).toEqual([
-      'browser', 'terminal', 'ios-simulator', 'android-device', 'trajectory',
-    ])
+    expect(await launchIds()).toEqual(['browser', 'terminal', 'device', 'trajectory'])
   })
 
   it.each(['claude', 'codex', 'acp', 'opencode', 'cursor'])(
@@ -84,7 +82,7 @@ describe('activity launcher entries', () => {
 
       // Absent, not disabled: a greyed-out row would imply the user could turn
       // it on, and no other harness writes a dsh log to project.
-      expect(await launchIds()).toEqual(['browser', 'terminal', 'ios-simulator', 'android-device'])
+      expect(await launchIds()).toEqual(['browser', 'terminal', 'device'])
     },
   )
 
@@ -103,31 +101,31 @@ describe('activity launcher entries', () => {
     expect(hoisted.openTrajectoryTab).toHaveBeenCalledWith('s1', 'trajectory.title')
   })
 
-  it('opens iOS Simulator for the active session', async () => {
+  it('opens a device tab for the active session', async () => {
     const { useActivityLaunchTypes } = await import('./activity-launch-types')
     const { result } = renderHook(() => useActivityLaunchTypes())
 
-    result.current.find((type) => type.id === 'ios-simulator')?.onOpen()
+    result.current.find((type) => type.id === 'device')?.onOpen()
 
     expect(hoisted.openDeviceTab).toHaveBeenCalledWith('s1', 'activity.device.title')
   })
 
-  it('opens Android for the active session', async () => {
-    const { useActivityLaunchTypes } = await import('./activity-launch-types')
-    const { result } = renderHook(() => useActivityLaunchTypes())
-
-    result.current.find((type) => type.id === 'android-device')?.onOpen()
-
-    expect(hoisted.openDeviceTab).toHaveBeenCalledWith('s1', 'activity.device.title')
-  })
-
-  it('hides iOS Simulator outside macOS', async () => {
+  /**
+   * One entry, not one per platform.
+   *
+   * There used to be two — iOS Simulator (macOS only) and Android — and both opened
+   * the same tab, which then showed a picker listing both platforms anyway. So the
+   * choice out here was one the user had to make again inside, and on a Mac the two
+   * rows raced for the same panel id: clicking either one a second time only
+   * re-activated the first tab, which is why a second device could not be opened.
+   */
+  it('offers the same single entry off macOS, since the picker spans both platforms', async () => {
     Object.defineProperty(window, 'app', {
       configurable: true,
       value: { platform: 'linux' },
     })
     vi.resetModules()
 
-    expect(await launchIds()).toEqual(['browser', 'terminal', 'android-device', 'trajectory'])
+    expect(await launchIds()).toEqual(['browser', 'terminal', 'device', 'trajectory'])
   })
 })

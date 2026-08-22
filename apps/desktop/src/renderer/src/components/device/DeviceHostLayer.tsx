@@ -1,7 +1,7 @@
 import { useShallow } from 'zustand/react/shallow'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import {
-  selectHostedDeviceSessions,
+  selectHostedDeviceInstances,
   useDevicePipStore,
   type DeviceSlot,
 } from '@/stores/device-pip'
@@ -26,8 +26,8 @@ const PARKED_LEFT = -99999
 /**
  * The one place a simulator is ever mounted.
  *
- * Exactly one `DevicePanel` per session with a device, mounted here for as long
- * as the device exists, and moved by absolute position onto whichever surface is
+ * Exactly one `DevicePanel` per open device tab, mounted here for as long as that
+ * tab exists, and moved by absolute position onto whichever surface is
  * showing it. The Activity tab and the floating preview only report a rect (see
  * `DeviceView`), so switching between them repositions a running panel instead
  * of destroying one and booting another — which is what a switch used to cost, and
@@ -44,13 +44,13 @@ const PARKED_LEFT = -99999
  * See `DeviceOverlaySurface`.
  */
 export function DeviceHostLayer() {
-  const sessionIds = useDevicePipStore(useShallow(selectHostedDeviceSessions))
+  const instanceIds = useDevicePipStore(useShallow(selectHostedDeviceInstances))
   // Read separately, then combined: `useSashResizing() || useGlobalDragging()` would
   // short-circuit past a hook call.
   const sashResizing = useSashResizing()
   const globalDragging = useGlobalDragging()
   const yielding = sashResizing || globalDragging
-  const overlayOpen = useDevicePipStore((state) => state.expandedSessionId != null)
+  const overlayOpen = useDevicePipStore((state) => state.expandedInstanceId != null)
   // Mounted here rather than in the preview: this is what decides which sessions get
   // a panel at all, and it has to keep deciding while no preview is on screen.
   useDeviceHandover()
@@ -68,19 +68,19 @@ export function DeviceHostLayer() {
       }}
     >
       <DeviceOverlaySurface />
-      {sessionIds.map((sessionId) => (
-        <PersistentDevice key={sessionId} sessionId={sessionId} yielding={yielding} />
+      {instanceIds.map((instanceId) => (
+        <PersistentDevice key={instanceId} instanceId={instanceId} yielding={yielding} />
       ))}
       <DevicePictureInPicture />
     </div>
   )
 }
 
-function PersistentDevice({ sessionId, yielding }: { sessionId: string; yielding: boolean }) {
-  const panelSlot = useDevicePipStore((state) => state.slots[sessionId])
-  const pipSlot = useDevicePipStore((state) => state.pipSlots[sessionId])
-  const overlaySlot = useDevicePipStore((state) => state.overlaySlots[sessionId])
-  const expanded = useDevicePipStore((state) => state.expandedSessionId === sessionId)
+function PersistentDevice({ instanceId, yielding }: { instanceId: string; yielding: boolean }) {
+  const panelSlot = useDevicePipStore((state) => state.slots[instanceId])
+  const pipSlot = useDevicePipStore((state) => state.pipSlots[instanceId])
+  const overlaySlot = useDevicePipStore((state) => state.overlaySlots[instanceId])
+  const expanded = useDevicePipStore((state) => state.expandedInstanceId === instanceId)
   const activityShown = useActivityPanelStore((state) => state.showPanel)
 
   /**
@@ -110,7 +110,7 @@ function PersistentDevice({ sessionId, yielding }: { sessionId: string; yielding
   return (
     <div
       data-device-host=""
-      data-session-id={sessionId}
+      data-instance-id={instanceId}
       data-device-presentation={mode}
       style={{
         position: 'absolute',
@@ -134,7 +134,7 @@ function PersistentDevice({ sessionId, yielding }: { sessionId: string; yielding
       }}
     >
       <DevicePanel
-        sessionId={sessionId}
+        instanceId={instanceId}
         variant={mode === 'pip' ? 'preview' : mode === 'overlay' ? 'overlay' : 'panel'}
       />
     </div>

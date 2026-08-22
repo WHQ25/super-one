@@ -35,10 +35,6 @@ export function createAndroidSurface(
   return {
     provider: 'android',
 
-    devicesOf(sessionId) {
-      return manager.devicesOf(sessionId)
-    },
-
     async state(deviceId) {
       return manager.deviceState(deviceId)
     },
@@ -77,8 +73,11 @@ export function createAndroidSurface(
       return manager.deviceState(deviceId)
     },
 
-    async releaseSession(sessionId) {
-      manager.releaseSession(sessionId)
+    async release(deviceId) {
+      // Same as `detach` here: nothing SuperOne starts on Android is stopped when a
+      // panel closes. An AVD takes tens of seconds to boot and a plugged-in phone is
+      // not ours to switch off, so both are left running for whoever wants them next.
+      manager.release(deviceId)
     },
 
     async input(deviceId, input: DeviceInput): Promise<DeviceInputResult> {

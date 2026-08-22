@@ -4,6 +4,7 @@ import { DEVICE_CAPABILITIES, isDeviceLandscape } from '@superone/shared/device'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
+import { instanceHolding, useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
 import { hasDeviceTab, openDeviceTab } from '@/components/activity/activity-panel-api'
 import { useDevicePreview } from './use-device-preview'
@@ -24,14 +25,17 @@ import { useDevicePreview } from './use-device-preview'
  * exactly where it is — the user may have opened the panel for a terminal, and
  * re-activating the simulator every time the panel is shown would fight them for it.
  */
-function revealDeviceTab(sessionId: string, label: string): void {
-  if (useDevicePipStore.getState().hiddenSessionId === sessionId) return
-  if (hasDeviceTab(sessionId)) return
-  openDeviceTab(sessionId, label)
+function revealDeviceTab(instanceId: string, sessionId: string, label: string): void {
+  if (useDevicePipStore.getState().hiddenInstanceId === instanceId) return
+  if (hasDeviceTab(instanceId)) return
+  // The instance already exists — it was created the moment the device became this
+  // session's — so this gives that tab a home rather than opening a second one onto
+  // the same device.
+  openDeviceTab(sessionId, label, instanceId)
 }
 
 /**
- * Keep `readySessionId` and the surface arbitration current. Mounted once, by the
+ * Keep `readyInstanceId` and the surface arbitration current. Mounted once, by the
  * host layer, which is the thing that needs the answer.
  *
  * Above any visibility test on purpose: the whole point is to notice the moment
@@ -47,7 +51,7 @@ export function useDeviceHandover(): void {
   const openTabLabel = t('activity.device.title')
   const currentSessionId = useChatStore(selectActiveChatSessionId)
   const activityShown = useActivityPanelStore((state) => state.showPanel)
-  const { sessionId, deviceOnScreen } = useDevicePreview()
+  const { instanceId, sessionId, deviceOnScreen } = useDevicePreview()
 
   useEffect(() => {
     if (!currentSessionId) {
@@ -58,19 +62,27 @@ export function useDeviceHandover(): void {
     // session's, which is precisely the moment before there is an id to subscribe to.
     return window.environment.onAnyDeviceState((state) => {
       const store = useDevicePipStore.getState()
+      const instances = useDeviceInstanceStore.getState()
+      const watching = instanceHolding(instances.byId, state.deviceId)
       const bound = state.owner === currentSessionId && state.phase === 'ready' ? state.device : null
       if (!bound) {
-        // Only the device the preview is actually showing may clear it. A session may
-        // hold several, and another one going idle says nothing about this one.
-        if (store.readySessionId === currentSessionId && store.device?.id === state.deviceId) {
-          store.setReady(null)
-        }
+        if (!watching) return
+        // Only the tab the preview is actually showing may clear it. A session may
+        // hold several devices, and another one going idle says nothing about this.
+        if (store.readyInstanceId === watching.instanceId) store.setReady(null)
+        // A tab in the dock keeps its picker; one that only ever existed to carry
+        // the floating preview has nothing left to be.
+        if (!hasDeviceTab(watching.instanceId)) instances.close(watching.instanceId)
         return
       }
+      // A grant that arrives from chat has no tab yet — `device_request_control` was
+      // approved in the conversation, not in the dock — so the instance is opened
+      // here, and `revealDeviceTab` below gives it a tab only if it needs one.
+      const instanceId = watching?.instanceId ?? instances.open(currentSessionId, bound.id)
       // Only the transition into ready, never a republish: rotation and the hardware
       // keyboard push state through this same channel, and reacting to those would
       // yank the dock to the simulator tab every time the agent turned the device.
-      const arriving = store.readySessionId !== currentSessionId
+      const arriving = store.readyInstanceId !== instanceId
       // A republish IS how a rotation arrives, though, and the preview box is the
       // device's outline — so the shape is read every time.
       //
@@ -82,7 +94,7 @@ export function useDeviceHandover(): void {
       const swap = DEVICE_CAPABILITIES[bound.provider].rigidRotation && isDeviceLandscape(state.orientation)
       const width = (swap ? state.pixelHeight : state.pixelWidth) ?? 0
       const height = (swap ? state.pixelWidth : state.pixelHeight) ?? 0
-      store.setReady(currentSessionId, {
+      store.setReady(instanceId, {
         id: bound.id,
         provider: bound.provider,
         platform: bound.platform,
@@ -93,7 +105,7 @@ export function useDeviceHandover(): void {
       // lands then would show the user nothing at all. Give it the tab instead —
       // whichever surface is available, approving a device has to reveal one.
       if (arriving && useActivityPanelStore.getState().showPanel) {
-        revealDeviceTab(currentSessionId, openTabLabel)
+        revealDeviceTab(instanceId, currentSessionId, openTabLabel)
       }
     })
   }, [currentSessionId, openTabLabel])
@@ -105,6 +117,6 @@ export function useDeviceHandover(): void {
   useEffect(() => {
     if (!activityShown) return
     useDevicePipStore.getState().shrinkPreview()
-    if (deviceOnScreen && sessionId) revealDeviceTab(sessionId, openTabLabel)
-  }, [activityShown, deviceOnScreen, sessionId, openTabLabel])
+    if (deviceOnScreen && instanceId && sessionId) revealDeviceTab(instanceId, sessionId, openTabLabel)
+  }, [activityShown, deviceOnScreen, instanceId, sessionId, openTabLabel])
 }

@@ -3,8 +3,7 @@ export type Messages = {
     launcher: {
       browser: string
       terminal: string
-      iosSimulator: string
-      android: string
+      device: string
     }
     device: {
       title: string
@@ -3266,8 +3265,7 @@ export const en: Messages = {
     launcher: {
       browser: 'Browser',
       terminal: 'Terminal',
-      iosSimulator: 'iOS Simulator',
-      android: 'Android',
+      device: 'Device',
     },
     device: {
       title: 'Device',

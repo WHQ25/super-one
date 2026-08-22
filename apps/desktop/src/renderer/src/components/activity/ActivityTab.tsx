@@ -208,16 +208,16 @@ export function TrajectoryTab(props: IDockviewPanelHeaderProps<{ sessionId: stri
   )
 }
 
-export function DeviceTab(props: IDockviewPanelHeaderProps<{ sessionId: string }>) {
+export function DeviceTab(props: IDockviewPanelHeaderProps<{ instanceId: string }>) {
   const { t } = useTranslation()
   const active = useIsActive(props.api)
   const title = usePanelTitle(props.api)
   // Absent until the panel body mounts and registers itself, which is also exactly
   // when there is a device list worth re-reading.
-  const actions = useDeviceTabActions((s) => s.bySession[props.params.sessionId])
+  const actions = useDeviceTabActions((s) => s.byInstance[props.params.instanceId])
   return (
     <div className={tabChipClass(active)}>
-      <HoverCloseSlot onClose={() => closeDeviceTab(props.params.sessionId)}>
+      <HoverCloseSlot onClose={() => closeDeviceTab(props.params.instanceId)}>
         <Smartphone className="size-3.5 shrink-0" />
       </HoverCloseSlot>
       <span className="min-w-0 truncate text-xs">{title || t('activity.device.title')}</span>
@@ -241,5 +241,5 @@ export const activityTabComponents: Record<string, React.FunctionComponent<IDock
   'browser-tab': BrowserTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'terminal-tab': TerminalTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'trajectory-tab': TrajectoryTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
-  'ios-simulator-tab': DeviceTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'device-tab': DeviceTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
 }

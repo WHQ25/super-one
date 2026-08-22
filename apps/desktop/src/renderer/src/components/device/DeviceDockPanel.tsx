@@ -32,7 +32,7 @@ export function resolveDeviceMinWidth(dockWidth: number, otherGroups = 0): numbe
   )
 }
 
-export function DeviceDockPanel(props: IDockviewPanelProps<{ sessionId: string }>) {
+export function DeviceDockPanel(props: IDockviewPanelProps<{ instanceId: string }>) {
   const { api, containerApi } = props
 
   useEffect(() => {
@@ -68,8 +68,8 @@ export function DeviceDockPanel(props: IDockviewPanelProps<{ sessionId: string }
   }, [api, containerApi])
 
   // A hole, not the panel. `DeviceHostLayer` holds the one real panel for this
-  // session and positions it over whichever slot is winning, so the tab and the
+  // instance and positions it over whichever slot is winning, so the tab and the
   // floating preview can hand the device back and forth without either of them
   // owning — and so being able to destroy — the frame stream.
-  return <DeviceView sessionId={props.params.sessionId} mode="panel" />
+  return <DeviceView instanceId={props.params.instanceId} mode="panel" />
 }

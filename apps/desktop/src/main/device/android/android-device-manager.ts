@@ -438,11 +438,6 @@ export class AndroidDeviceManager {
     this.orientations.delete(deviceId)
   }
 
-  /** Everything this session held, on its way out. */
-  releaseSession(sessionId: string): void {
-    for (const deviceId of this.devicesOf(sessionId)) this.release(deviceId)
-  }
-
   /**
    * Start an AVD and work out which serial it landed on.
    *

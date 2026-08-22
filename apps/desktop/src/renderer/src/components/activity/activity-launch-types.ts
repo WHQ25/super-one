@@ -58,20 +58,17 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
         void openTerminalTab(projectPath, sessionId)
       },
     },
-    ...(isMac && activeSessionId
-      ? [{
-        id: 'ios-simulator',
-        icon: Smartphone,
-        label: t('activity.launcher.iosSimulator'),
-        onOpen: () => openDeviceTab(activeSessionId, t('activity.device.title')),
-      }]
-      : []),
+    // One entry, not one per platform. Both used to open the same tab, and since
+    // that tab shows its own picker — iOS simulators and Android devices in one
+    // list — choosing the platform out here was a decision the user then had to
+    // make again inside. Every click opens a NEW tab, which is what lets one session
+    // drive two devices at once.
     ...(activeSessionId
       ? [{
-        id: 'android-device',
+        id: 'device',
         icon: Smartphone,
-        label: t('activity.launcher.android'),
-        onOpen: () => openDeviceTab(activeSessionId, t('activity.device.title')),
+        label: t('activity.launcher.device'),
+        onOpen: () => { openDeviceTab(activeSessionId, t('activity.device.title')) },
       }]
       : []),
     // Absent rather than disabled on every other harness: a greyed-out row

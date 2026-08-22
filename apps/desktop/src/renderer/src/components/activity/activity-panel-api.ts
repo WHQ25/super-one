@@ -1,6 +1,7 @@
 import type { DockviewApi, AddPanelPositionOptions, IDockviewPanel, SerializedDockview } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
+import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { normalizeUrl } from '@/components/browser/browser-url'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
 import { disposeActivityTermInstance } from './activity-terminal'
@@ -234,10 +235,22 @@ export function closeTrajectoryTab(sessionId: string) {
   dockApi?.panels.find((p) => p.id === panelId)?.api.close()
 }
 
-export function openDeviceTab(sessionId: string, label: string) {
+/**
+ * A place to watch a device from. Every call opens a NEW one unless handed an
+ * instance that already exists.
+ *
+ * The instance, not the session, is the tab's identity — which is what lets one chat
+ * session hold two devices at once (a client build and a merchant build, side by
+ * side) and what lets a tab keep its place in the strip when the user picks a
+ * different device inside it. Keyed by session, the second "+ → Device" only
+ * re-activated the first tab, and there was no way to open a second device at all.
+ */
+export function openDeviceTab(sessionId: string, label: string, existingInstanceId?: string) {
+  const instanceId = existingInstanceId
+    ?? useDeviceInstanceStore.getState().open(sessionId)
   ensureVisible()
-  const panelId = `ios-simulator-${sessionId}`
-  recordMosaicOpen(panelId, () => openDeviceTab(sessionId, label))
+  const panelId = `device-${instanceId}`
+  recordMosaicOpen(panelId, () => openDeviceTab(sessionId, label, instanceId))
   execOrDefer(() => {
     if (!dockApi) return
     const existing = dockApi.panels.find((panel) => panel.id === panelId)
@@ -248,30 +261,35 @@ export function openDeviceTab(sessionId: string, label: string) {
     const position = positionInMaximizedGroup()
     dockApi.addPanel({
       id: panelId,
-      component: 'ios-simulator',
-      tabComponent: 'ios-simulator-tab',
+      component: 'device',
+      tabComponent: 'device-tab',
       title: label,
-      params: { sessionId },
+      params: { instanceId },
       ...(position ? { position } : {}),
     })
   })
+  return instanceId
 }
 
 /**
- * Whether this session's simulator already has a tab — NOT whether it is the active
- * one. A device that is somewhere in the tab strip has a home the user can find; a
- * caller that only wants to guarantee the device is reachable must not steal focus
- * from whatever the user actually came to the panel to look at.
+ * Whether this instance already has a tab — NOT whether it is the active one. A
+ * device that is somewhere in the tab strip has a home the user can find; a caller
+ * that only wants to guarantee the device is reachable must not steal focus from
+ * whatever the user actually came to the panel to look at.
  */
-export function hasDeviceTab(sessionId: string): boolean {
-  return dockApi?.panels.some((panel) => panel.id === `ios-simulator-${sessionId}`) ?? false
+export function hasDeviceTab(instanceId: string): boolean {
+  return dockApi?.panels.some((panel) => panel.id === `device-${instanceId}`) ?? false
 }
 
-export function closeDeviceTab(sessionId: string) {
-  const panelId = `ios-simulator-${sessionId}`
+export function closeDeviceTab(instanceId: string) {
+  const panelId = `device-${instanceId}`
   removeMosaicOpen(panelId)
   dockApi?.panels.find((panel) => panel.id === panelId)?.api.close()
-  void window.environment.deviceRelease(sessionId)
+  // Only this tab's device. A second tab in the same session is still watching its
+  // own, and releasing by session would take that one down with this one.
+  const held = useDeviceInstanceStore.getState().byId[instanceId]?.deviceId
+  useDeviceInstanceStore.getState().close(instanceId)
+  if (held) void window.environment.deviceRelease(held)
 }
 
 export function closeMiniAppTab(instanceKey: string) {

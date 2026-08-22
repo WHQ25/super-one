@@ -165,4 +165,24 @@ describe('iOS Simulator device menu', () => {
     await user.click(taken)
     expect(onSelect).not.toHaveBeenCalled()
   })
+
+  /**
+   * The second reason a device can be spoken for, and the one main cannot report.
+   *
+   * A device the other tab is merely POINTED at — chosen but not yet booted — has no
+   * owner, so `boundSessionId` is empty and nothing here would grey it out. Two tabs
+   * of the same session drawing the same shut-down simulator is a pair the user has
+   * no way to tell apart, which defeats the point of opening a second one.
+   */
+  it('disables a simulator another tab of this session is already on', async () => {
+    const user = userEvent.setup()
+    const { onSelect } = renderMenu({ unavailableDeviceIds: [SE.id] })
+
+    await user.click(screen.getByRole('button', { name: 'Devices' }))
+    const held = await screen.findByRole('menuitem', { name: /iPhone SE \(3rd generation\)/ })
+    expect(held).toHaveAttribute('data-disabled')
+
+    await user.click(held)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
 })

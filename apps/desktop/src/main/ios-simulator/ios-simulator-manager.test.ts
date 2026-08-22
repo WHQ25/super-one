@@ -205,7 +205,7 @@ describe('IosSimulatorManager', () => {
     expect(stop).not.toHaveBeenCalled()
 
     // Giving the device back is the end of any claim on the user's window manager.
-    await manager.releaseSession('session-a')
+    await manager.releaseDevice('device-a')
     expect(stop).toHaveBeenCalledTimes(1)
   })
 
@@ -260,7 +260,7 @@ describe('IosSimulatorManager', () => {
     })
     await manager.bind('session-a', 'device-a')
 
-    await manager.releaseSession('session-a')
+    await manager.releaseDevice('device-a')
 
     expect(native.dispose).toHaveBeenCalled()
     expect(simctl.shutdown).not.toHaveBeenCalled()
@@ -273,7 +273,7 @@ describe('IosSimulatorManager', () => {
     })
     await manager.boot('session-a', 'device-a')
 
-    await manager.releaseSession('session-a')
+    await manager.releaseDevice('device-a')
 
     expect(simctl.shutdown).toHaveBeenCalledWith('device-a')
     // The ledger is cleared, so a later dispose cannot shut the same device twice.
@@ -382,7 +382,7 @@ describe('IosSimulatorManager', () => {
 
     const binding = manager.bind('session-a', 'device-a')
     await vi.waitFor(() => expect(native.attach).toHaveBeenCalled())
-    const release = manager.releaseSession('session-a')
+    const release = manager.releaseDevice('device-a')
     finishAttach?.()
     await Promise.all([binding, release])
 
@@ -440,7 +440,7 @@ describe('IosSimulatorManager', () => {
     await manager.boot('session-a', 'device-a')
     await manager.detach('device-a')
 
-    await manager.releaseSession('session-a')
+    await manager.releaseDevice('device-a')
     await manager.dispose()
 
     expect(simctl.shutdown).not.toHaveBeenCalled()

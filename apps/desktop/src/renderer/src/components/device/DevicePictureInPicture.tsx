@@ -116,7 +116,7 @@ function useIosSimulatorChrome(device: DevicePipDevice | null): IosSimulatorChro
  */
 export function DevicePictureInPicture() {
   const { t } = useTranslation()
-  const { sessionId, shouldShow, expanded, showPip } = useDevicePreview()
+  const { instanceId, shouldShow, expanded, showPip } = useDevicePreview()
   const device = useDevicePipStore((state) => state.device)
   const chrome = useIosSimulatorChrome(device)
   const aspect = devicePipAspect(device, chrome)
@@ -158,7 +158,7 @@ export function DevicePictureInPicture() {
       observer.disconnect()
       window.removeEventListener('resize', measure)
     }
-  }, [showPip, sessionId, aspect])
+  }, [showPip, instanceId, aspect])
 
   useLayoutEffect(() => {
     if (!showPip) interactionCleanupRef.current?.()
@@ -190,12 +190,12 @@ export function DevicePictureInPicture() {
   }, [])
 
   const hidePreview = useCallback(() => {
-    if (sessionId) useDevicePipStore.getState().hidePreview(sessionId)
-  }, [sessionId])
+    if (instanceId) useDevicePipStore.getState().hidePreview(instanceId)
+  }, [instanceId])
 
   const expandPreview = useCallback(() => {
-    if (sessionId) useDevicePipStore.getState().expandPreview(sessionId)
-  }, [sessionId])
+    if (instanceId) useDevicePipStore.getState().expandPreview(instanceId)
+  }, [instanceId])
 
   const shrinkPreview = useCallback(() => {
     useDevicePipStore.getState().shrinkPreview()
@@ -282,9 +282,9 @@ export function DevicePictureInPicture() {
         in between neither the pip nor the overlay slot would exist, leaving the host
         with nowhere to be.
       */}
-      {shouldShow && sessionId && (expanded || layout) && (
+      {shouldShow && instanceId && (expanded || layout) && (
         <motion.div
-          key={`device-preview:${sessionId}`}
+          key={`device-preview:${instanceId}`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -318,7 +318,7 @@ export function DevicePictureInPicture() {
               operable only once it is expanded — which the host layer enforces by
               refusing pointer events to a `pip` slot. */}
           <DeviceView
-            sessionId={sessionId}
+            instanceId={instanceId}
             mode={expanded ? 'overlay' : 'pip'}
             // While the box is being dragged or resized its rect changes every frame,
             // and the device has to travel with it rather than lag and catch up.

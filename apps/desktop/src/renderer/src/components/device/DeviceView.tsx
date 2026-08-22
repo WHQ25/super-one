@@ -4,7 +4,7 @@ import { useDevicePipStore, type DeviceSlotMode } from '@/stores/device-pip'
 import { useSlotBounds } from '@/hooks/useSlotBounds'
 
 interface DeviceViewProps {
-  sessionId: string
+  instanceId: string
   mode: DeviceSlotMode
   className?: string
   /**
@@ -19,7 +19,7 @@ interface DeviceViewProps {
  * A hole the size of the simulator, which draws nothing.
  *
  * This is where the device APPEARS but not where it lives — `DeviceHostLayer`
- * holds the one real panel per session and positions it over whichever hole is
+ * holds the one real panel per instance and positions it over whichever hole is
  * winning. Both the Activity tab and the floating preview place one of these, and
  * that is the entire reason switching between them is free: neither of them owns the
  * panel, so neither of them can destroy it.
@@ -27,7 +27,7 @@ interface DeviceViewProps {
  * Same shape as `BrowserView`, for the same reason, against the same problem.
  */
 export function DeviceView({
-  sessionId,
+  instanceId,
   mode,
   className,
   trackBoundsContinuously = false,
@@ -36,9 +36,9 @@ export function DeviceView({
 
   useSlotBounds(
     ref,
-    `${sessionId}:${mode}`,
-    (rect) => useDevicePipStore.getState().updateSlot(sessionId, mode, rect),
-    () => useDevicePipStore.getState().unregisterSlot(sessionId, mode),
+    `${instanceId}:${mode}`,
+    (rect) => useDevicePipStore.getState().updateSlot(instanceId, mode, rect),
+    () => useDevicePipStore.getState().unregisterSlot(instanceId, mode),
     trackBoundsContinuously,
   )
 
@@ -46,7 +46,7 @@ export function DeviceView({
     <div
       ref={ref}
       data-device-slot={mode}
-      data-session-id={sessionId}
+      data-instance-id={instanceId}
       className={cn('h-full w-full', className)}
     />
   )

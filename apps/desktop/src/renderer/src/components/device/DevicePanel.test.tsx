@@ -13,8 +13,20 @@ vi.mock('./device-video', () => ({
   },
 }))
 
+import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { DevicePanel } from './DevicePanel'
 import { useDeviceTabActions } from './device-tab-actions'
+
+/**
+ * A tab of `session-1`, since that is what the panel is now: an instance, not a
+ * session. The id is generated rather than fixed so two of them in one test are two
+ * genuinely separate tabs.
+ */
+let instanceId = ''
+function openInstance(deviceId: string | null = null): string {
+  instanceId = useDeviceInstanceStore.getState().open('session-1', deviceId)
+  return instanceId
+}
 
 function device(overrides: Partial<DeviceDescriptor> & Pick<DeviceDescriptor, 'id' | 'name'>): DeviceDescriptor {
   return {
@@ -83,6 +95,7 @@ function stubEnvironment(devices: DeviceDescriptor[]) {
 describe('iOS Simulator panel device switching', () => {
   beforeEach(() => {
     localStorage.clear()
+    useDeviceInstanceStore.setState({ byId: {} })
   })
 
   async function pickFromMenu(user: ReturnType<typeof userEvent.setup>, trigger: RegExp, item: RegExp) {
@@ -94,7 +107,7 @@ describe('iOS Simulator panel device switching', () => {
     const user = userEvent.setup()
     const { deviceBoot, deviceBind } = stubEnvironment([RECENT, OTHER])
 
-    render(<DevicePanel sessionId="session-1" />)
+    render(<DevicePanel instanceId={openInstance()} />)
     await pickFromMenu(user, /Choose a Device/, /iPhone Air · iOS 26.0/)
 
     // The body and its Launch button, and nothing started behind them: choosing is
@@ -111,7 +124,7 @@ describe('iOS Simulator panel device switching', () => {
     const user = userEvent.setup()
     const { deviceBind, deviceDetach } = stubEnvironment([booted, OTHER])
 
-    render(<DevicePanel sessionId="session-1" />)
+    render(<DevicePanel instanceId={openInstance()} />)
     await waitFor(() => expect(deviceBind).toHaveBeenCalledWith('session-1', booted.id))
 
     await pickFromMenu(user, /iPhone 17 Pro · iOS 26.0/, /iPhone Air · iOS 26.0/)
@@ -127,13 +140,14 @@ describe('iOS Simulator panel device switching', () => {
 describe('iOS Simulator panel reopening', () => {
   beforeEach(() => {
     localStorage.clear()
+    useDeviceInstanceStore.setState({ byId: {} })
   })
 
   it('shows the last simulator this machine launched without booting it', async () => {
     localStorage.setItem('superone.device.recentIds', JSON.stringify([RECENT.id, OTHER.id]))
     const { deviceBind, deviceBoot } = stubEnvironment([RECENT, OTHER])
 
-    render(<DevicePanel sessionId="session-1" />)
+    render(<DevicePanel instanceId={openInstance()} />)
 
     // Named in the header and drawn on the stage, but still shut down: opening the
     // panel is not the same as claiming a simulator.
@@ -148,22 +162,39 @@ describe('iOS Simulator panel reopening', () => {
     localStorage.setItem('superone.device.recentIds', JSON.stringify([booted.id]))
     const { deviceBind, deviceBoot } = stubEnvironment([booted, OTHER])
 
-    render(<DevicePanel sessionId="session-1" />)
+    render(<DevicePanel instanceId={openInstance()} />)
 
     await waitFor(() => expect(deviceBind).toHaveBeenCalledWith('session-1', booted.id))
     // Attaching is free; booting is not. Nothing was started.
     expect(deviceBoot).not.toHaveBeenCalled()
   })
 
-  it('leaves a running simulator alone when another session already holds it', async () => {
+  it('opens on the picker rather than a running simulator another session holds', async () => {
     const taken = { ...RECENT, running: true, boundSessionId: 'session-2' }
     localStorage.setItem('superone.device.recentIds', JSON.stringify([taken.id]))
     const { deviceBind } = stubEnvironment([taken, OTHER])
 
-    render(<DevicePanel sessionId="session-1" />)
+    render(<DevicePanel instanceId={openInstance()} />)
 
-    expect(await screen.findByRole('button', { name: 'Connect' })).toBeDisabled()
+    // Not taken, and not even drawn. A fresh tab landing on a device it can only
+    // offer a disabled Connect for is a dead end the user then has to back out of.
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /Choose a Device/ }).length).toBe(2))
     expect(deviceBind).not.toHaveBeenCalled()
+  })
+
+  it('opens the second tab on a different device from the first', async () => {
+    const running = { ...RECENT, running: true }
+    const alsoRunning = { ...OTHER, running: true }
+    stubEnvironment([running, alsoRunning])
+
+    render(<DevicePanel instanceId={openInstance()} />)
+    await screen.findByRole('button', { name: /iPhone 17 Pro · iOS 26.0/ })
+
+    // The whole point of two tabs: a client build on one device and a merchant build
+    // on the other. Both landing on the same phone would make them indistinguishable.
+    render(<DevicePanel instanceId={openInstance()} />)
+    expect(await screen.findByRole('button', { name: /iPhone Air · iOS 26.0/ })).toBeInTheDocument()
   })
 
   it('frames the environment probe in a device body rather than a bare spinner', async () => {
@@ -173,7 +204,7 @@ describe('iOS Simulator panel reopening', () => {
     const environment = window.environment as unknown as { iosSimulatorStatus: () => Promise<unknown> }
     environment.iosSimulatorStatus = async () => { await held; return { supported: true } }
 
-    render(<DevicePanel sessionId="session-1" />)
+    render(<DevicePanel instanceId={openInstance()} />)
 
     // The drawn shell paints its glass black and its side keys #4a4a54 — a body is
     // on screen before simctl has said a word.
@@ -188,15 +219,15 @@ describe('iOS Simulator panel reopening', () => {
     localStorage.setItem('superone.device.recentIds', JSON.stringify([RECENT.id]))
     stubEnvironment([RECENT, OTHER])
 
-    render(<DevicePanel sessionId="session-1" />)
+    render(<DevicePanel instanceId={openInstance()} />)
     expect(await screen.findByRole('button', { name: /iPhone 17 Pro · iOS 26.0/ })).toBeInTheDocument()
 
     // Through the seam the dockview tab presses, since the tab lives outside this
     // panel. Re-reading the list is how a simulator Xcode just created shows up;
     // losing your place for it — back to "Choose a Simulator" — was the bug.
     await waitFor(() =>
-      expect(useDeviceTabActions.getState().bySession['session-1']).toBeDefined())
-    act(() => { useDeviceTabActions.getState().bySession['session-1']!.refresh() })
+      expect(useDeviceTabActions.getState().byInstance[instanceId]).toBeDefined())
+    act(() => { useDeviceTabActions.getState().byInstance[instanceId]!.refresh() })
 
     expect(await screen.findByRole('button', { name: /iPhone 17 Pro · iOS 26.0/ })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Launch' })).toBeEnabled()
@@ -205,20 +236,20 @@ describe('iOS Simulator panel reopening', () => {
   it('takes its refresh action off the tab when the panel goes away', async () => {
     stubEnvironment([RECENT])
 
-    const view = render(<DevicePanel sessionId="session-1" />)
+    const view = render(<DevicePanel instanceId={openInstance()} />)
     await waitFor(() =>
-      expect(useDeviceTabActions.getState().bySession['session-1']).toBeDefined())
+      expect(useDeviceTabActions.getState().byInstance[instanceId]).toBeDefined())
 
     view.unmount()
 
     // Otherwise a closed panel leaves a live button on a tab that outlives it.
-    expect(useDeviceTabActions.getState().bySession['session-1']).toBeUndefined()
+    expect(useDeviceTabActions.getState().byInstance[instanceId]).toBeUndefined()
   })
 
   it('falls back to the picker when nothing has been launched on this machine', async () => {
     stubEnvironment([RECENT, OTHER])
 
-    render(<DevicePanel sessionId="session-1" />)
+    render(<DevicePanel instanceId={openInstance()} />)
 
     // The header trigger and the one on the empty stage. `waitFor`, not `findAll`:
     // the header's is already there during the environment probe, so a first match

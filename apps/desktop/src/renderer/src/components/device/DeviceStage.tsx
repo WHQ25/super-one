@@ -185,6 +185,8 @@ interface DeviceStageProps {
   sessionId: string
   /** The whole catalog, for the header's device menu. */
   devices: DeviceDescriptor[]
+  /** Devices another tab is already on, greyed out in the menu. See `DeviceMenu`. */
+  unavailableDeviceIds?: readonly string[]
   device: DeviceDescriptor | null
   sessionState: DeviceState | null
   busy: boolean
@@ -227,6 +229,7 @@ interface DeviceStageProps {
 export function DeviceStage({
   sessionId,
   devices,
+  unavailableDeviceIds,
   device,
   sessionState,
   busy,
@@ -486,6 +489,7 @@ export function DeviceStage({
         <DeviceMenu
           sessionId={sessionId}
           devices={devices}
+          unavailableDeviceIds={unavailableDeviceIds}
           currentDeviceId={deviceId}
           disabled={busy}
           canCreateSimulator={canCreateSimulator}
@@ -567,6 +571,7 @@ export function DeviceStage({
             <DeviceMenu
               sessionId={sessionId}
               devices={devices}
+              unavailableDeviceIds={unavailableDeviceIds}
               currentDeviceId={deviceId}
               disabled={busy}
               canCreateSimulator={canCreateSimulator}

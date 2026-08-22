@@ -6,9 +6,6 @@
  * on another — so "which device does this session mean" has no answer for the host to
  * give; the panel that opened the device is the thing that knows.
  *
- * Release is the exception and stays session-shaped: it is cleanup on the way out,
- * and what it means is "everything this session still holds".
- *
  * Four channels stay iOS-specific and live in `ios-simulator/ipc.ts` — the runtime
  * list, DeviceKit artwork, creating a simulator, and the Xcode probe. Those are not
  * shared concepts, and giving Android an empty implementation of each would be a lie
@@ -106,11 +103,7 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE,
-    async (_event, sessionId: string) => {
-      // Every surface, not just one: a session may hold a simulator and a phone at
-      // the same time, and this is the only channel that still means "all of mine".
-      await Promise.all(surfaces().map((surface) => surface.releaseSession(sessionId).catch(() => undefined)))
-    },
+    (_event, deviceId: string) => forDevice(deviceId).release(deviceId),
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT,

@@ -342,11 +342,8 @@ export class IosSimulatorManager {
   }
 
   /** Every simulator this session held, on its way out. */
-  async releaseSession(sessionId: string): Promise<void> {
-    for (const udid of this.devicesOf(sessionId)) await this.releaseDevice(udid)
-  }
-
-  private async releaseDevice(udid: string): Promise<void> {
+  /** Put the device back the way it was found. See `DeviceSurface.release`. */
+  async releaseDevice(udid: string): Promise<void> {
     await this.teardownSession(udid)
     this.unbind(udid)
     // Closing the panel puts the simulator back the way it was found: shut down

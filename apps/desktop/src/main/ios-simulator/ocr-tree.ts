@@ -47,14 +47,16 @@ export function ocrToTree(
   // accessibility frames are converted from — upright, top-left origin — so the
   // existing rotation is reused rather than written a second time. Two copies of a
   // quarter-turn is how one of them ends up 180 degrees out.
-  const entries = lines.map((line) => ({
-    text: line.text,
-    bounds: guestToFramebufferBounds(
+  const entries = lines.flatMap((line) => {
+    const bounds = guestToFramebufferBounds(
       [line.x, line.y, line.width, line.height],
       { width: 1, height: 1 },
       orientation,
-    ),
-  }))
+    )
+    // Only a degenerate screen size makes this undefined, and the size is a literal
+    // here — the guard exists so the entry type stays honest, not to handle a case.
+    return bounds ? [{ text: line.text, bounds }] : []
+  })
 
   return {
     root: buildOcrRoot(entries, options.maxNodes ?? DEFAULT_OCR_MAX_NODES),

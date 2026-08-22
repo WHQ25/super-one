@@ -165,6 +165,7 @@ import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bo
 import { registerHarnessIpcHandlers } from './harness/ipc'
 import { registerIosSimulatorIpc, closeIosSimulatorPorts } from './ios-simulator/ipc'
 import { disposeIosSimulatorManager } from './ios-simulator'
+import { disposeAndroidDeviceManager } from './device/android'
 import { attachIosSimulatorGestureEvents } from './ios-simulator/gesture-events'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { connectWithHarnessResourceCache, getFreshHarnessResources } from './harness/resource-cache'
@@ -5348,6 +5349,10 @@ function performQuit(): void {
   Promise.allSettled([
     remoteStop,
     disposeIosSimulatorManager(),
+    // Shuts down only emulators SuperOne started. Without this they survive the app
+    // as headless orphans — no window to find them by, and the next launch fights
+    // them for the adb port.
+    disposeAndroidDeviceManager(),
     disposeAgentSessions(),
     closeAllOpenCodeServers(),
     // Unwinds the embedded dsh Cordis tree so JSONL persistence flushes;
@@ -5382,6 +5387,10 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   Promise.allSettled([
     remoteControlService.stop(),
     disposeIosSimulatorManager(),
+    // Shuts down only emulators SuperOne started. Without this they survive the app
+    // as headless orphans — no window to find them by, and the next launch fights
+    // them for the adb port.
+    disposeAndroidDeviceManager(),
     disposeAgentSessions(),
     closeAllOpenCodeServers(),
   ]).finally(() => process.exit(0))

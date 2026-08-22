@@ -5,6 +5,12 @@ directories:
 
 files:
   - out/**/*
+  # Third-party sourcemaps. electron-builder includes node_modules implicitly, so
+  # every dependency's .map ships too — 222 MB of the asar, a third of it. Node and
+  # Chromium only read these with devtools open or --enable-source-maps, neither of
+  # which a packaged build does. Scoped to node_modules so enabling sourcemaps for
+  # our own bundles stays a decision this line does not silently override.
+  - "!node_modules/**/*.map"
   - "!node_modules/@img/sharp-*"
   # P5: do not ship managed harness platform binaries (~500MB+). Runtimes
   # install on demand via Settings → Harnesses (R2/npm tarball).

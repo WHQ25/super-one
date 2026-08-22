@@ -837,6 +837,58 @@ function isCollabMailboxWakeText(text: string): boolean {
   return /collaboration mailbox message is ready/i.test(text)
 }
 
+function ClaudeTurnBody({
+  grouped,
+  isStreaming,
+  detailChatMode,
+  projectPath,
+}: {
+  grouped: GroupResult
+  isStreaming: boolean
+  detailChatMode: boolean
+  projectPath: string | null
+}) {
+  const segs = grouped.segments
+  const segOpts = {
+    isStreaming,
+    forceSealed: false as boolean,
+    toolResultMap: grouped.toolResultMap,
+    timedOutToolIds: grouped.timedOutToolIds,
+    errorToolIds: grouped.errorToolIds,
+    outputPathMap: grouped.outputPathMap,
+    projectPath,
+  }
+  if (!detailChatMode && !isStreaming) {
+    const { process, conclusion } = splitTurnForCompactMode(segs, isClaudeConclusionSegment)
+    const processOpts = {
+      toolResultAt: (id: string) => grouped.toolResultMap.get(id),
+      isHiddenTool: isHiddenToolBlock,
+      isErrorTool: (id: string) => grouped.errorToolIds.has(id),
+    }
+    const visibleProcessCount = countVisibleClaudeProcessSegments(process, processOpts)
+    const processStats = summarizeClaudeProcess(process, processOpts)
+    return (
+      <>
+        {visibleProcessCount === 0
+          ? null
+          : visibleProcessCount < MIN_PROCESS_SEGMENTS_TO_COLLAPSE
+            ? (
+              <div className="turn-process">
+                {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
+              </div>
+            )
+            : (
+              <TurnDetailSection stats={processStats}>
+                {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
+              </TurnDetailSection>
+            )}
+        {renderClaudeSegments(conclusion, { ...segOpts, forceSealed: true })}
+      </>
+    )
+  }
+  return renderClaudeSegments(segs, segOpts)
+}
+
 function renderClaudeSegments(
   segs: RenderSegment[],
   opts: {
@@ -1046,47 +1098,14 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
               </TooltipProvider>
           : isCodexMessage
             ? <CodexTurnView message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
-            : (() => {
-              const segs = grouped!.segments
-              const segOpts = {
-                isStreaming,
-                forceSealed: false as boolean,
-                toolResultMap: grouped!.toolResultMap,
-                timedOutToolIds: grouped!.timedOutToolIds,
-                errorToolIds: grouped!.errorToolIds,
-                outputPathMap: grouped!.outputPathMap,
-                projectPath,
-              }
-              if (!detailChatMode && !isStreaming) {
-                const { process, conclusion } = splitTurnForCompactMode(segs, isClaudeConclusionSegment)
-                const processOpts = {
-                  toolResultAt: (id: string) => grouped!.toolResultMap.get(id),
-                  isHiddenTool: isHiddenToolBlock,
-                  isErrorTool: (id: string) => grouped!.errorToolIds.has(id),
-                }
-                const visibleProcessCount = countVisibleClaudeProcessSegments(process, processOpts)
-                const processStats = summarizeClaudeProcess(process, processOpts)
-                return (
-                  <>
-                    {visibleProcessCount === 0
-                      ? null
-                      : visibleProcessCount < MIN_PROCESS_SEGMENTS_TO_COLLAPSE
-                        ? (
-                          <div className="turn-process">
-                            {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
-                          </div>
-                        )
-                        : (
-                          <TurnDetailSection stats={processStats}>
-                            {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
-                          </TurnDetailSection>
-                        )}
-                    {renderClaudeSegments(conclusion, { ...segOpts, forceSealed: true })}
-                  </>
-                )
-              }
-              return renderClaudeSegments(segs, segOpts)
-            })()
+            : (
+              <ClaudeTurnBody
+                grouped={grouped!}
+                isStreaming={isStreaming}
+                detailChatMode={detailChatMode}
+                projectPath={projectPath}
+              />
+            )
         }
         {!isUser && generatedImages.length > 0 && <ImageGalleryBlock items={generatedImages} />}
         {!isUser && generatedVideos.length > 0 && <VideoGalleryBlock items={generatedVideos} />}

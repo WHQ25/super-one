@@ -102,6 +102,44 @@ describe('reduceLifecycle: running slash command is cleared when the turn ends',
   })
 })
 
+describe('reduceLifecycle: message_interrupted seals in-flight tools', () => {
+  it('completes a streaming wait_for so the row cannot keep shimmering', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [{
+      ...msg('a1', 'assistant', 'streaming'),
+      content: [
+        {
+          type: 'tool_use',
+          toolUseId: 'wait-1',
+          toolName: 'mcp__superone__computer_wait_for',
+          input: JSON.stringify({ description: '等待 Grok 生成 Android 测试汇总' }),
+          status: 'streaming',
+        },
+        {
+          type: 'tool_use',
+          toolUseId: 'read-1',
+          toolName: 'Read',
+          input: JSON.stringify({ file_path: '/tmp/a.ts' }),
+          status: 'complete',
+        },
+      ],
+    }]
+
+    const patch = reduceLifecycle(session, {
+      type: 'message_interrupted',
+      messageId: 'a1',
+    } as never)
+
+    const assistant = patch.messages?.[0]
+    expect(assistant?.status).toBe('interrupted')
+    const wait = assistant?.content.find((b) => b.type === 'tool_use' && b.toolUseId === 'wait-1')
+    const read = assistant?.content.find((b) => b.type === 'tool_use' && b.toolUseId === 'read-1')
+    expect(wait).toMatchObject({ type: 'tool_use', status: 'complete' })
+    expect(read).toMatchObject({ type: 'tool_use', status: 'complete' })
+    expect(read).toBe(session.messages[0].content[1])
+  })
+})
+
 describe('reduceLifecycle: messages_retracted', () => {
   it('evicts the refused partial so it does not linger above the retry', () => {
     const session = createDefaultPerSessionState()

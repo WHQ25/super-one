@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
-import { _patchAgentBlock, mapMessagesStructural } from './shared'
+import { _patchAgentBlock, mapMessagesStructural, sealStreamingTools } from './shared'
 
 function toolUse(toolUseId: string, toolName: string, extra: Record<string, unknown> = {}): ContentBlock {
   return { type: 'tool_use', toolUseId, toolName, input: '', ...extra } as ContentBlock
@@ -82,5 +82,21 @@ describe('_patchAgentBlock', () => {
     const next = _patchAgentBlock(messages, 'missing', { taskSummary: 'nope' })
     expect(next).toBe(messages)
     expect(next[0]).toBe(m0)
+  })
+})
+
+describe('sealStreamingTools', () => {
+  it('completes streaming tool_use rows and keeps already-finished refs', () => {
+    const done = toolUse('t-done', 'Read', { status: 'complete' })
+    const live = toolUse('t-live', 'mcp__superone__computer_wait_for', { status: 'streaming' })
+    const next = sealStreamingTools([done, live])
+    expect(next[0]).toBe(done)
+    expect(next[1]).not.toBe(live)
+    expect(next[1]).toMatchObject({ type: 'tool_use', toolUseId: 't-live', status: 'complete' })
+  })
+
+  it('returns the same array when nothing is streaming', () => {
+    const blocks = [toolUse('t1', 'Read', { status: 'complete' })]
+    expect(sealStreamingTools(blocks)).toBe(blocks)
   })
 })

@@ -318,6 +318,30 @@ describe('ToolBlock touch-device routing', () => {
 
     expect(screen.getByText('Taking snapshot…')).not.toBeNull()
   })
+
+  it('drops wait_for shimmer once the call is no longer streaming', () => {
+    const input = JSON.stringify({ description: '等待 Grok 生成 Android 测试汇总' })
+    const { rerender, container } = render(
+      <ToolBlock
+        toolName="mcp__superone__computer_wait_for"
+        input={input}
+        status="streaming"
+      />,
+    )
+    expect(container.querySelector('.animate-shimmer')).not.toBeNull()
+    expect(container.textContent).toContain('Waiting For')
+
+    rerender(
+      <ToolBlock
+        toolName="mcp__superone__computer_wait_for"
+        input={input}
+        status="complete"
+      />,
+    )
+    expect(container.querySelector('.animate-shimmer')).toBeNull()
+    expect(container.textContent).toContain('Wait For')
+    expect(container.textContent).not.toContain('Waiting For')
+  })
 })
 
 describe('ToolBlock error auto-collapse', () => {

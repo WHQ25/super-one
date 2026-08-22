@@ -1,6 +1,7 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DEFAULT_PROVIDER } from '../index'
 import type { PerSessionState } from '../types'
+import { sealStreamingTools } from './shared'
 
 type LifecycleEvent = Extract<AgentEvent, {
   type:
@@ -92,6 +93,11 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
             ...msg,
             status: 'interrupted' as const,
             metadata: nextMeta,
+            // Interrupt only flips message.status. In-flight tool_use rows stay
+            // `streaming`, and React Compiler can reuse the previous tool tree
+            // when content is unchanged — wait_for keeps shimmering under the
+            // Interrupted footer. Seal the tools so the turn body invalidates.
+            content: sealStreamingTools(msg.content),
           }
         }),
         pendingPermissions: [],
@@ -120,6 +126,7 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
               ...msg.metadata,
               errorInfo: event.errorInfo ?? { raw: event.error },
             },
+            content: sealStreamingTools(msg.content),
           }
         }),
       }

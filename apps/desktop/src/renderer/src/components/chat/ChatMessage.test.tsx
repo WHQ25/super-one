@@ -226,6 +226,48 @@ describe('ChatMessage reasoning grouping', () => {
     )
     expect(container.querySelectorAll('.thinking-node')).toHaveLength(2)
   })
+
+  it('stops wait_for shimmer after the turn is interrupted', () => {
+    const waitInput = JSON.stringify({ description: '等待 Grok 生成 Android 测试汇总' })
+    const { rerender, container } = render(
+      <ChatMessage
+        message={{
+          ...createClaudeMessage([{
+            type: 'tool_use',
+            toolName: 'mcp__superone__computer_wait_for',
+            toolUseId: 'wait-1',
+            input: waitInput,
+            status: 'streaming',
+          }]),
+          status: 'streaming',
+        }}
+        sessionStatus="streaming"
+        isLastAssistant
+      />,
+    )
+    expect(container.querySelector('.animate-shimmer')).not.toBeNull()
+    expect(container.textContent).toContain('Waiting For')
+
+    rerender(
+      <ChatMessage
+        message={{
+          ...createClaudeMessage([{
+            type: 'tool_use',
+            toolName: 'mcp__superone__computer_wait_for',
+            toolUseId: 'wait-1',
+            input: waitInput,
+            status: 'complete',
+          }]),
+          status: 'interrupted',
+        }}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+    expect(container.querySelector('.animate-shimmer')).toBeNull()
+    expect(container.textContent).toContain('Wait For')
+    expect(container.textContent).toContain('Interrupted')
+  })
 })
 
 function createUserMessage(text: string, id = 'msg-user-1'): ChatMessageType {

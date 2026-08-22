@@ -56,6 +56,25 @@ export function dropStreamingToolInputPreview(
 }
 
 /**
+ * Stop in-flight tool chrome (wait_for shimmer, running verbs) when the turn
+ * is already over. Returns the same `content` ref when nothing was streaming.
+ */
+export function sealStreamingTools(content: ContentBlock[]): ContentBlock[] {
+  let changed = false
+  const next = content.map((block) => {
+    if (block.type !== 'tool_use' || block.status !== 'streaming') return block
+    changed = true
+    return { ...block, status: 'complete' as const }
+  })
+  return changed ? next : content
+}
+
+/** Terminal turns must not accept a late `status: 'streaming'` tool_use delta. */
+export function isTerminalMessageStatus(status: ChatMessage['status'] | undefined): boolean {
+  return status === 'interrupted' || status === 'error' || status === 'complete'
+}
+
+/**
  * Map messages with structural sharing: only clone a message when one of its
  * content blocks is replaced (by reference); only allocate a new messages array
  * when any message changed. Returns the original `messages` ref when nothing

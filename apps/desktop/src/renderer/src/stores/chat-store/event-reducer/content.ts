@@ -5,7 +5,7 @@ import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from '@/components/c
 import { applyDelta } from '../helpers/event-helpers'
 import { persistStreamingToolInput } from '../index'
 import type { PerSessionState } from '../types'
-import { clearStreamingToolInput, dropStreamingToolInputPreview, streamingToolInputRaw } from './shared'
+import { clearStreamingToolInput, dropStreamingToolInputPreview, isTerminalMessageStatus, streamingToolInputRaw } from './shared'
 
 type ContentDeltaEvent = Extract<AgentEvent, { type: 'content_delta' }>
 
@@ -19,11 +19,20 @@ export function reduceContentDelta(session: PerSessionState, event: ContentDelta
   // grouping can reunite them (else it leaks into the main conversation). Seq
   // tracking stays on the source message — it owns the stream's seq numbers.
   const homeId = resolveDeltaHomeMessageId(session.messages, event.messageId, event.delta)
+  const homeMsg = session.messages.find((m) => m.id === homeId)
+  // Grok wait_for can still emit in_progress after session/cancel. A streaming
+  // status on a turn that already ended would revive the shimmer.
+  const delta =
+    isTerminalMessageStatus(homeMsg?.status)
+    && event.delta.type === 'tool_use'
+    && event.delta.status === 'streaming'
+      ? { ...event.delta, status: 'complete' as const }
+      : event.delta
   let updatedMessages = session.messages.map((msg) => {
     if (msg.id === homeId) {
       return {
         ...msg,
-        content: applyDelta(msg.content, event.delta),
+        content: applyDelta(msg.content, delta),
         ...(homeId === event.messageId ? applySeqToMessage(event) : {}),
       }
     }

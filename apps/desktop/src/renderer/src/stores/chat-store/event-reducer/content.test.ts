@@ -55,6 +55,37 @@ describe('reduceContentDelta: text deltas', () => {
   })
 })
 
+describe('reduceContentDelta: terminal turns ignore late streaming tool_use', () => {
+  it('does not revive wait_for shimmer after the message was interrupted', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [{
+      ...makeAssistant('m1', [{
+        type: 'tool_use',
+        toolUseId: 'wait-1',
+        toolName: 'mcp__superone__computer_wait_for',
+        input: JSON.stringify({ description: '等待 Grok 生成 Android 测试汇总' }),
+        status: 'complete',
+      }]),
+      status: 'interrupted',
+    }]
+
+    const patch = reduceContentDelta(session, {
+      type: 'content_delta',
+      messageId: 'm1',
+      delta: {
+        type: 'tool_use',
+        toolUseId: 'wait-1',
+        toolName: 'mcp__superone__computer_wait_for',
+        input: JSON.stringify({ description: '等待 Grok 生成 Android 测试汇总' }),
+        status: 'streaming',
+      },
+    } as never)
+
+    const wait = patch.messages?.[0].content[0] as { status?: string }
+    expect(wait.status).toBe('complete')
+  })
+})
+
 describe('reduceContentDelta: TodoWrite tool result', () => {
   it('replaces the entire todo list when TodoWrite resolves', () => {
     const session = createDefaultPerSessionState()

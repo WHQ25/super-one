@@ -19,7 +19,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { DeviceOrientation } from '@superone/shared/device-agent'
+import type { DeviceOrientation, DeviceUiNode } from '@superone/shared/device-agent'
 import { captureFileName } from '../device/capture-path'
 import {
   gestureDurationMs,
@@ -35,7 +35,7 @@ import {
   encodeBare,
   encodeCancelTouches,
   encodeKeyPress,
-  encodeText,
+  encodeTextInput,
   encodeTouchStep,
   keycodeForButton,
   SCRCPY_MSG,
@@ -133,10 +133,31 @@ export class AndroidBackend implements TouchDeviceBackend {
       ...(options.maxNodes ? { maxNodes: options.maxNodes } : {}),
     })
     if (!dump) {
+      // A caller that can live without the tree gets the geometry and the pixels,
+      // which is everything it needs to save a screenshot or to describe what an
+      // action did. Only a caller that asked FOR the tree is refused.
+      if (options.tree === 'optional') {
+        const size = screen ?? { width: 0, height: 0 }
+        return {
+          root: blankRoot(),
+          orientation: size.width > size.height ? 'landscape-left' : 'portrait',
+          screen: size,
+          settled: result.settled,
+          frameHash: result.value.hash,
+          treeUnavailable: true,
+        }
+      }
+      // NOT `NO_DEVICE`: the device is present and answering, and saying otherwise
+      // sends the agent off to re-list devices and restart adb — which is exactly
+      // what happened. This is a property of the SCREEN, and the way out is on the
+      // screen too.
       throw new DeviceAgentError(
-        'NO_DEVICE',
-        'The screen could not be read. `uiautomator dump` returned nothing usable — '
-        + 'a device mid-animation or showing a secure window will do this.',
+        'UNSUPPORTED',
+        'This screen has no readable accessibility tree. `uiautomator dump` waits for the UI '
+        + 'to go idle and a screen that never stops moving — a playing video, an infinite '
+        + 'animation — never gets there; a secure window does the same. The device is fine. '
+        + 'Take a device_snapshot with mode=visual and act on coordinates instead, or stop the '
+        + 'motion first (tapping a video usually pauses it) and read the tree then.',
       )
     }
 
@@ -200,11 +221,12 @@ export class AndroidBackend implements TouchDeviceBackend {
           signal,
         )
       case 'type': {
-        // No pasteboard detour and no character budget: scrcpy's text channel is UTF-8
-        // end to end, unlike the simulator's HID channel, which carries usage codes and
-        // therefore cannot spell anything outside ASCII.
+        // Not one INJECT_TEXT: the server reverse-maps every character through the
+        // virtual keyboard's KeyCharacterMap, so Chinese, emoji and backspace all
+        // evaporate on that channel. `encodeTextInput` routes each of those the way
+        // the guest can actually receive it.
         const connection = await this.connection()
-        connection.send(encodeText(action.text))
+        connection.send(encodeTextInput(action.text))
         return
       }
       case 'key': {
@@ -228,8 +250,23 @@ export class AndroidBackend implements TouchDeviceBackend {
     }
   }
 
+  /**
+   * The control channel, or a reason there will not be one.
+   *
+   * Every control message in this file comes through here, which is why the refusal
+   * check belongs here too: a phone that denies the shell user `INJECT_EVENTS` takes
+   * every message and acts on none, so an agent left to discover that empirically taps,
+   * observes an unchanged screen, and tries again — forever. Raising turns a loop into
+   * one sentence the user can act on.
+   */
   private connection() {
-    return this.manager.connection(this.deviceId).catch((error: unknown) => {
+    return this.manager.connection(this.deviceId).then((connection) => {
+      if (connection.controlFault) {
+        throw new DeviceAgentError('UNSUPPORTED', connection.controlFault)
+      }
+      return connection
+    }).catch((error: unknown) => {
+      if (error instanceof DeviceAgentError) throw error
       throw new DeviceAgentError(
         'NO_DEVICE',
         `Could not reach the device to send input: ${error instanceof Error ? error.message : String(error)}`,
@@ -292,6 +329,18 @@ export class AndroidBackend implements TouchDeviceBackend {
       connection.send(encodeBare(SCRCPY_MSG.COLLAPSE_PANELS))
     })
   }
+}
+
+/**
+ * A root that stands for a screen nobody could read.
+ *
+ * Deliberately childless and deliberately still a node: every consumer expects a
+ * `root`, and handing back `null` would push that check into each of them. It carries
+ * `@e0` because that is what a real root is called, so a ref written against it fails
+ * as an unknown ref — which is the true answer — rather than as a malformed one.
+ */
+function blankRoot(): DeviceUiNode {
+  return { ref: '@e0', role: 'other' }
 }
 
 /**

@@ -55,6 +55,20 @@ export interface ObserveOptions {
   immediate?: boolean
   /** Override the backend's normal settle budget, e.g. with a wait_for deadline. */
   settleTimeoutMs?: number
+  /**
+   * Whether a screen whose tree cannot be read is a failure or a thin observation.
+   *
+   * `required` (the default) is right when the tree IS the answer — a semantic
+   * snapshot has nothing to return without one. `optional` is right everywhere the
+   * tree is a bonus: a visual snapshot returns pixels, and the read-back after an
+   * action is there to describe what happened, not to decide whether it happened.
+   *
+   * The distinction is not hypothetical on Android. `uiautomator dump` waits for the
+   * UI to go idle, and a screen playing video never does — so a whole class of screen
+   * has pixels and no tree, permanently. Treating that as a device failure is what
+   * made an action that had already run report as an error.
+   */
+  tree?: 'required' | 'optional'
   signal?: AbortSignal
 }
 
@@ -65,6 +79,14 @@ export interface DeviceObservation {
   screen: { width: number; height: number }
   settled: boolean
   truncated?: boolean
+  /**
+   * The tree could not be read, and the caller said that was survivable.
+   *
+   * `root` is then a bare stand-in for the screen with no children — enough to carry
+   * geometry, and deliberately not enough to resolve a ref against. Set only when
+   * `ObserveOptions.tree` was `optional`; otherwise the read throws instead.
+   */
+  treeUnavailable?: true
   /**
    * Perceptual fingerprint of the pixels behind this observation, when they could be
    * read. Kept so judging whether an action changed anything can consult the screen

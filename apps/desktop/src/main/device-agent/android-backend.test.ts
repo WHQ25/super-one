@@ -48,6 +48,8 @@ async function harness(options: {
   screens?: Buffer[]
   dump?: string
   connectionScreen?: { width: number; height: number }
+  /** A phone that refuses injected input — see `faultFromServerLog`. */
+  controlFault?: string
 } = {}): Promise<Harness> {
   const calls: string[][] = []
   const screens = options.screens ?? [png(1080, 2400)]
@@ -85,6 +87,7 @@ async function harness(options: {
   const connection = {
     deviceName: 'sdk_gphone64_arm64',
     screen: options.connectionScreen ?? { width: 1080, height: 2400 },
+    controlFault: options.controlFault ?? null,
     onMedia: () => () => {},
     onSession: () => () => {},
     onClosed: () => () => {},
@@ -170,10 +173,6 @@ describe('observing a screen', () => {
     expect((await backend.observe()).frameHash).toMatch(/^[0-9a-f]{64}$/)
   })
 
-  it('refuses with a reason when the dump comes back unusable', async () => {
-    const { backend } = await harness({ dump: 'ERROR: could not get idle state.' })
-    await expect(backend.observe()).rejects.toThrow(/could not be read/)
-  })
 })
 
 describe('a session holding no device', () => {
@@ -234,12 +233,16 @@ describe('performing actions', () => {
     expect(pointers).toEqual(new Set([1n, 2n]))
   })
 
-  it('types UTF-8 straight through, with no pasteboard detour', async () => {
+  it('pastes text the virtual keyboard cannot spell', async () => {
+    // INJECT_TEXT reads as a UTF-8 channel and is not one: the server reverse-maps
+    // every character through KeyCharacterMap, so Chinese and emoji are dropped there
+    // and the whole string has to go through the device clipboard instead.
     const { backend, sent } = await harness()
-    await backend.perform({ kind: 'type', text: '中文 🎉' }, { observation: observationOf() })
+    await backend.perform({ kind: 'type', text: 'hi 中文🎉' }, { observation: observationOf() })
 
-    expect(sent[0]!.readUInt8(0)).toBe(SCRCPY_MSG.INJECT_TEXT)
-    expect(sent[0]!.subarray(5).toString('utf8')).toBe('中文 🎉')
+    expect(sent.map((message) => message.readUInt8(0))).toEqual([SCRCPY_MSG.SET_CLIPBOARD])
+    expect(sent[0]!.readUInt8(9)).toBe(1)
+    expect(sent[0]!.subarray(14).toString('utf8')).toBe('hi 中文🎉')
   })
 
   it('presses the Android back button, which iOS does not have', async () => {
@@ -315,5 +318,54 @@ describe('readPngSize', () => {
   it('declines anything that is not a PNG', () => {
     expect(readPngSize(Buffer.alloc(40))).toBeNull()
     expect(readPngSize(Buffer.from('not a png'))).toBeNull()
+  })
+})
+
+describe('an agent driving a phone that refuses injected input', () => {
+  // Without this the agent has no way to find out: the control socket takes every
+  // message, the device throws it away, and the next observation is of a screen that
+  // did not move — which reads as "the tap missed", so it taps again, and again.
+  const FAULT = 'This phone is refusing injected input. Turn on "USB debugging (Security settings)"…'
+
+  it('refuses a tap with the reason instead of sending it into the void', async () => {
+    const { backend, sent } = await harness({ controlFault: FAULT })
+    await expect(backend.perform({ kind: 'tap', x: 0.5, y: 0.5 }, { observation: null as never }))
+      .rejects.toThrow(FAULT)
+    expect(sent).toHaveLength(0)
+  })
+
+  it('refuses a key press the same way', async () => {
+    const { backend, sent } = await harness({ controlFault: FAULT })
+    await expect(backend.perform({ kind: 'key', button: 'home' }, { observation: null as never }))
+      .rejects.toThrow(FAULT)
+    expect(sent).toHaveLength(0)
+  })
+})
+
+describe('a screen uiautomator cannot reach an idle state on', () => {
+  // What a real phone answers on a playing video. `--compressed` does NOT get past
+  // this — it only filters unimportant nodes — so the dump genuinely has no output.
+  const IDLE_ERROR = 'ERROR: could not get idle state.'
+
+  it('refuses a tree the caller required, and does not blame the device', async () => {
+    const { backend } = await harness({ dump: IDLE_ERROR })
+    await expect(backend.observe()).rejects.toMatchObject({
+      // NOT NO_DEVICE: that sent the agent off restarting adb and re-listing devices
+      // while the phone was answering the whole time.
+      code: 'UNSUPPORTED',
+    })
+    await expect(backend.observe()).rejects.toThrow(/device is fine/)
+  })
+
+  it('hands back the pixels when the caller said the tree was optional', async () => {
+    const { backend } = await harness({ dump: IDLE_ERROR })
+    const observation = await backend.observe({ tree: 'optional' })
+
+    expect(observation.treeUnavailable).toBe(true)
+    expect(observation.screen).toEqual({ width: 1080, height: 2400 })
+    expect(observation.frameHash).toMatch(/^[0-9a-f]{64}$/)
+    // Childless on purpose: a ref written against this must fail as unknown rather
+    // than resolve to something invented.
+    expect(observation.root.children).toBeUndefined()
   })
 })

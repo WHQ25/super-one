@@ -70,6 +70,19 @@ function errorReply(error: unknown): DeviceToolReply {
  * differences change what the agent should do next, so it is stated rather than left
  * to be discovered by a `press` that fails.
  */
+/**
+ * What to tell the agent when the screen came back as pixels and nothing else.
+ *
+ * The first sentence is the one that matters: an agent that reads "could not" without
+ * "the device is fine" goes and checks the device, which is a long way from the fix.
+ */
+const TREE_UNAVAILABLE_NOTE =
+  'This screen exposes no readable accessibility tree right now — `uiautomator dump` waits '
+  + 'for the UI to go idle, and a playing video or a secure window never gets there. The '
+  + 'device is fine and the pixels are current. Work from the screenshot and aim at '
+  + 'coordinates; refs will not resolve against this state. Stopping the motion (tapping a '
+  + 'video usually pauses it) brings the tree back.'
+
 function sourceNote(root: DeviceUiNode): Record<string, unknown> {
   if (root.source === 'ocr') {
     return {
@@ -188,6 +201,11 @@ export class DeviceAgentSession {
     const mode = args.mode ?? 'semantic'
     const observation = await this.backend.observe({
       ...(args.maxNodes ? { maxNodes: args.maxNodes } : {}),
+      // A visual snapshot is pixels; it discards the tree at the end of this method
+      // anyway. Failing it because the tree could not be read denied the caller the
+      // one reading that WOULD have worked on exactly the screens where the tree
+      // does not — a playing video, a secure window.
+      ...(mode === 'semantic' ? {} : { tree: 'optional' as const }),
       ...(signal ? { signal } : {}),
     })
     // Recorded before the screenshot, not after. The device has already been read by
@@ -209,9 +227,13 @@ export class DeviceAgentSession {
       ...(observation.truncated ? { truncated: true } : {}),
       ...sourceNote(observation.root),
       ...(image ? { image } : {}),
+      ...(observation.treeUnavailable ? { source: 'pixels-only', note: TREE_UNAVAILABLE_NOTE } : {}),
       // Omitted in visual mode so a caller that asked for pixels does not also pay
-      // for a tree it said it did not want.
-      ...(mode === 'visual' ? {} : { tree: renderTree(observation.root) }),
+      // for a tree it said it did not want — and omitted when there was no tree to
+      // render, so `fused` degrades to the half that worked instead of failing.
+      ...(mode === 'visual' || observation.treeUnavailable
+        ? {}
+        : { tree: renderTree(observation.root) }),
     })
   }
 
@@ -279,13 +301,23 @@ export class DeviceAgentSession {
       failure = error instanceof Error ? error.message : String(error)
     }
 
-    const after = await this.backend.observe({ ...(signal ? { signal } : {}) })
+    // `optional`, because this read happens AFTER the device has already been touched.
+    // The actions ran; this is only how the reply describes them. Letting it throw
+    // turned a tap that landed into a tool error, and an agent reading that error
+    // taps again — which is how a screen with no readable tree got double-tapped.
+    const after = await this.backend.observe({ tree: 'optional', ...(signal ? { signal } : {}) })
     const nextState = this.store.put(after)
     throwIfDeviceOperationAborted(signal)
-    const expectMet = expect ? evaluateCondition(after.root, expect) : undefined
+    // A postcondition is a question about the tree, so a missing tree makes it
+    // unanswerable rather than false. Reporting `false` would say the action failed on
+    // the evidence that we could not look.
+    const expectMet = expect && !after.treeUnavailable
+      ? evaluateCondition(after.root, expect)
+      : undefined
     const judgement = judgeOutcome({
       applied,
       changed: !observationFingerprintsMatch(observationDigest(after), before),
+      ...(after.treeUnavailable ? { readable: false } : {}),
       ...(expectMet === undefined ? {} : { expectMet }),
     })
 
@@ -298,7 +330,9 @@ export class DeviceAgentSession {
       settled: after.settled,
       orientation: after.orientation,
       ...sourceNote(after.root),
-      tree: renderTree(after.root),
+      ...(after.treeUnavailable
+        ? { source: 'pixels-only', note: TREE_UNAVAILABLE_NOTE }
+        : { tree: renderTree(after.root) }),
     })
   }
 

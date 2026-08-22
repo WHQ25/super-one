@@ -130,7 +130,9 @@ describe.skipIf(!live)('driving a real device through the backend', () => {
     }
     await manager.boot('live-drive', running.id)
 
-    const backend = new AndroidBackend(manager, 'live-drive', '/tmp/claude/live-captures')
+    // The DEVICE, not the session — `AndroidBackend` has been addressed by device
+    // since channels stopped being per-session, and a session may hold several.
+    const backend = new AndroidBackend(manager, running.id, '/tmp/claude/live-captures')
 
     const started = Date.now()
     const before = await backend.observe()
@@ -170,7 +172,7 @@ describe.skipIf(!live)('driving a real device through the backend', () => {
     const running = devices.find((device) => device.running)
     if (!running) return
     await manager.boot('live-swipe', running.id)
-    const backend = new AndroidBackend(manager, 'live-swipe', '/tmp/claude/live-captures')
+    const backend = new AndroidBackend(manager, running.id, '/tmp/claude/live-captures')
 
     const initial = await backend.observe()
     await backend.perform({ kind: 'key', button: 'home' }, { observation: initial })

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceUiNode } from '@superone/shared/device-agent'
 import { DeviceAgentSession } from './execute'
+import {
+  DeviceAgentError,
+} from './types'
 import type {
   DeviceImage,
   DeviceObservation,
@@ -451,5 +454,136 @@ describe('device_snapshot', () => {
   it('surfaces settled=false so the agent knows the geometry may be stale', async () => {
     const session = new DeviceAgentSession(new FakeBackend([screen([node('@e1')])], false))
     expect(parse(await session.snapshot({})).settled).toBe(false)
+  })
+})
+
+/**
+ * A device whose tree can be read once and never again.
+ *
+ * The shape of a real screen that starts playing video: the first read gets a tree,
+ * and from then on `uiautomator dump` cannot reach an idle UI, so every later read
+ * comes back as pixels only. `observed` records what each call ASKED for, which is
+ * the thing that used to be wrong.
+ */
+class GoesUnreadable implements TouchDeviceBackend {
+  readonly label = 'Fake Phone'
+  readonly performed: ResolvedAction[] = []
+  readonly asked: Array<ObserveOptions['tree']> = []
+  private reads = 0
+
+  constructor(private readonly hash = 'a'.repeat(64)) {}
+
+  async observe(options: ObserveOptions = {}): Promise<DeviceObservation> {
+    this.asked.push(options.tree)
+    const first = this.reads++ === 0
+    if (first) {
+      return {
+        root: screen([node('@e1', { label: 'One' })]),
+        orientation: 'portrait',
+        screen: { width: 1320, height: 2868 },
+        settled: true,
+        frameHash: this.hash,
+      }
+    }
+    if (options.tree !== 'optional') {
+      throw new DeviceAgentError('UNSUPPORTED', 'This screen has no readable accessibility tree.')
+    }
+    return {
+      root: { ref: '@e0', role: 'other' },
+      orientation: 'portrait',
+      screen: { width: 1320, height: 2868 },
+      settled: false,
+      frameHash: this.hash,
+      treeUnavailable: true,
+    }
+  }
+
+  async capture(): Promise<DeviceImage> {
+    return { path: '/tmp/shot.png', width: 1320, height: 2868 }
+  }
+
+  async perform(action: ResolvedAction): Promise<void> {
+    this.performed.push(action)
+  }
+}
+
+describe('a screen whose accessibility tree cannot be read', () => {
+  // The regression: the read-back AFTER the actions threw, so a tap that had already
+  // landed on the device surfaced as a tool error. An agent reading that taps again.
+  it('does not turn an action that already ran into a failure', async () => {
+    const backend = new GoesUnreadable()
+    const session = new DeviceAgentSession(backend)
+    const first = parse(await session.snapshot({}))
+
+    const result = parse(await session.act({
+      stateId: first.stateId as string,
+      actions: [{ type: 'tap', x: 0.5, y: 0.5 }],
+    }))
+
+    expect(backend.performed).toHaveLength(1)
+    expect(result.isError).toBeUndefined()
+    expect(result.outcome).toBe('unknown')
+    expect(String(result.reason)).toContain('could not be read back')
+    expect(result.note).toContain('The device is fine')
+  })
+
+  // The tree channel dropping out registers as a difference to the fingerprint, so
+  // without the readable check every action on a video feed reported success.
+  it('does not claim the action worked just because the tree vanished', async () => {
+    const session = new DeviceAgentSession(new GoesUnreadable())
+    const first = parse(await session.snapshot({}))
+    const result = parse(await session.act({
+      stateId: first.stateId as string,
+      actions: [{ type: 'tap', x: 0.5, y: 0.5 }],
+    }))
+    expect(result.outcome).not.toBe('worked')
+  })
+
+  // A postcondition asks about the tree. With no tree the honest answer is "could not
+  // tell", not "did not hold" — the latter reads as the action having failed.
+  it('leaves an expect unanswered rather than failing it', async () => {
+    const session = new DeviceAgentSession(new GoesUnreadable())
+    const first = parse(await session.snapshot({}))
+    const result = parse(await session.act({
+      stateId: first.stateId as string,
+      actions: [{ type: 'tap', x: 0.5, y: 0.5 }],
+      expect: { kind: 'exists', label: 'Two' },
+    }))
+    expect(result.expectMet).toBeUndefined()
+    expect(result.outcome).not.toBe('didnt')
+  })
+
+  // A visual snapshot is pixels. It discarded the tree anyway, so requiring one denied
+  // the caller the reading that still worked on exactly these screens.
+  it('still takes a visual snapshot, and asks not to be given a tree', async () => {
+    const backend = new GoesUnreadable()
+    const session = new DeviceAgentSession(backend)
+    await session.snapshot({})
+    const visual = parse(await session.snapshot({ mode: 'visual' }))
+
+    expect(backend.asked.at(-1)).toBe('optional')
+    expect(visual.image).toEqual({ path: '/tmp/shot.png', width: 1320, height: 2868 })
+    expect(visual.tree).toBeUndefined()
+    expect(visual.note).toContain('aim at coordinates')
+  })
+
+  // fused asks for both; the half that can be produced is worth more than an error.
+  it('degrades fused to the half that could be read', async () => {
+    const session = new DeviceAgentSession(new GoesUnreadable())
+    await session.snapshot({})
+    const fused = parse(await session.snapshot({ mode: 'fused' }))
+    expect(fused.image).toBeDefined()
+    expect(fused.tree).toBeUndefined()
+    expect(fused.source).toBe('pixels-only')
+  })
+
+  // …and a semantic snapshot, which genuinely has nothing to return, still refuses.
+  it('still refuses a semantic snapshot, since the tree IS what was asked for', async () => {
+    const backend = new GoesUnreadable()
+    const session = new DeviceAgentSession(backend)
+    await session.snapshot({})
+    const semantic = await session.snapshot({})
+    expect(semantic.isError).toBe(true)
+    expect(backend.asked.at(-1)).toBeUndefined()
   })
 })

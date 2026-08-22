@@ -21,6 +21,15 @@ export interface OutcomeInput {
   expectMet?: boolean
   /** Whether the screen looks different afterwards. */
   changed: boolean
+  /**
+   * False when the screen could not be read back at all — see `treeUnavailable`.
+   *
+   * Its own input rather than folded into `changed`, because the two answers differ
+   * in kind: `changed: false` says we looked and nothing moved, while this says we
+   * could not look. Both land on `unknown`, and the agent needs different advice for
+   * each — one is "say what success looks like", the other is "stop the motion first".
+   */
+  readable?: boolean
 }
 
 export interface OutcomeJudgement {
@@ -37,6 +46,17 @@ export function judgeOutcome(input: OutcomeInput): OutcomeJudgement {
     return { outcome: 'didnt', reason: 'the expected condition did not hold afterwards' }
   }
   if (input.expectMet === true) return { outcome: 'worked', reason: 'the expected condition held' }
+  // Checked BEFORE `changed`, because an unreadable screen makes `changed` meaningless
+  // rather than true: the tree channel vanishing counts as a difference to the
+  // fingerprint, so every action on a video feed would otherwise report `worked`.
+  if (input.readable === false) {
+    return {
+      outcome: 'unknown',
+      reason: 'the input was delivered, but this screen could not be read back — it never '
+        + 'goes idle, which a playing video does. Compare screenshots, or stop the motion '
+        + 'and snapshot again, rather than repeating the action',
+    }
+  }
   if (input.changed) return { outcome: 'worked', reason: 'the screen changed' }
   return {
     outcome: 'unknown',

@@ -13,9 +13,8 @@ import type {
 } from '@superone/shared/ios-simulator'
 import {
   parseDeviceId,
-  DEVICE_RIGID_ROTATION,
+  DEVICE_CAPABILITIES,
   DEVICE_ROTATION_DEGREES,
-  DEVICE_SUPPORTS_RECORDING,
   stepDeviceOrientation,
 } from '@superone/shared/device'
 import { Button } from '@superone/ui/components/ui/button'
@@ -263,6 +262,12 @@ export function DeviceStage({
   const interactive = !preview && ready && sessionState?.interactive === true
   const platform = device?.platform ?? 'ios'
   /**
+   * How this device is reached, which is what its behaviour keys on — not what it
+   * runs. Two iOS devices can differ here; see `DEVICE_CAPABILITIES`.
+   */
+  const provider = device?.provider ?? 'ios-sim'
+  const capabilities = DEVICE_CAPABILITIES[provider]
+  /**
    * How far the device is lying over, as a reading.
    *
    * Always true of the DEVICE. Whether it is also true of the PICTURE is
@@ -284,7 +289,7 @@ export function DeviceStage({
    * and the overlay toolbar's width measurement. On Android all four see zero and
    * the canvas simply changes size when `pixelWidth`/`pixelHeight` swap.
    */
-  const rigidRotation = DEVICE_RIGID_ROTATION[platform]
+  const rigidRotation = capabilities.rigidRotation
   const layoutRotation = rigidRotation ? rotationDegrees : 0
   const hardwareKeys: readonly HardwareKey[] =
     platform === 'android' ? ANDROID_HARDWARE_KEYS : IOS_HARDWARE_KEYS
@@ -501,7 +506,7 @@ export function DeviceStage({
             the simulator's helper takes them — scrcpy fixes its own when its video
             socket opens. Hidden rather than greyed on Android: a control that will
             never become usable is not a disabled control, it is the wrong control. */}
-        {platform === 'ios' && (
+        {capabilities.previewQuality && (
           <DevicePreviewMenu
             quality={quality}
             nativeWidth={sessionState?.pixelWidth ?? 0}
@@ -716,7 +721,7 @@ export function DeviceStage({
             no reading either way, and a key that only appears on some devices is
             better shown greyed than made to pop in on boot; on Android there is never
             going to be one, so it is dropped outright rather than teased. */}
-        {platform === 'ios' && (!ready || sessionState?.ios?.hardwareKeyboardAvailable) && (
+        {capabilities.hardwareKeyboard && (!ready || sessionState?.ios?.hardwareKeyboardAvailable) && (
           <IconButton
             tooltip={t(`activity.device.${keyboardConnected ? 'showSoftwareKeyboard' : 'hideSoftwareKeyboard'}`)}
             aria-pressed={!keyboardConnected}
@@ -748,7 +753,7 @@ export function DeviceStage({
         <DeviceCaptureControls
           sessionId={sessionId}
           disabled={!ready}
-          canRecord={DEVICE_SUPPORTS_RECORDING[platform]}
+          canRecord={capabilities.recording}
         />
       </div>}
     </div>

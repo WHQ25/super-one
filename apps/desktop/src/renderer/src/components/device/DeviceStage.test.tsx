@@ -24,6 +24,7 @@ import { DeviceStage } from './DeviceStage'
 
 const DEVICE: DeviceDescriptor = {
   id: 'ios:p17-265',
+  provider: 'ios-sim',
   platform: 'ios',
   name: 'iPhone 17 Pro',
   kind: 'iphone',
@@ -51,6 +52,7 @@ const READY: DeviceSessionState = {
 
 const ANDROID_DEVICE: DeviceDescriptor = {
   id: 'android:emulator-5554',
+  provider: 'android',
   platform: 'android',
   name: 'Medium Phone API 36',
   kind: 'phone',

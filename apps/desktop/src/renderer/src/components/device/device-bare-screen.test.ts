@@ -5,6 +5,7 @@ import { deviceScreenAspect, deviceScreenRadius } from './DeviceBareScreen'
 function device(kind: string, platform: DeviceDescriptor['platform'] = 'ios'): DeviceDescriptor {
   return {
     id: `${platform}:test`,
+    provider: platform === 'ios' ? 'ios-sim' : 'android',
     platform,
     name: 'Test Device',
     kind,

@@ -18,6 +18,7 @@ export const IOS_SIMULATOR_SESSION_ID = 'session-1'
 
 export const IOS_SIMULATOR_DEVICE: DeviceDescriptor = {
   id: 'ios:p17-265',
+  provider: 'ios-sim',
   platform: 'ios',
   name: 'iPhone 17 Pro',
   kind: 'iphone',

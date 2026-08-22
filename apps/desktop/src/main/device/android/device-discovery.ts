@@ -98,6 +98,7 @@ function descriptorForAvd(
   const apiLevel = running?.apiLevel ?? avd.apiLevel
   return {
     id,
+    provider: 'android',
     platform: 'android',
     name: avd.displayName,
     kind,
@@ -127,6 +128,7 @@ function descriptorForPhysical(
   const apiLevel = info?.apiLevel ?? 0
   return {
     id,
+    provider: 'android',
     platform: 'android',
     // Underscores because adb reports `sdk_gphone64_arm64`; nobody writes it that way.
     name: model.replace(/_/g, ' '),

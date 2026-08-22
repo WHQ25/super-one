@@ -20,6 +20,7 @@ import type {
   IosSimulatorSessionState,
 } from '@superone/shared/ios-simulator'
 import type { DeviceOrientation } from '@superone/shared/device-agent'
+import { parseDeviceId } from '@superone/shared/device'
 import type { DeviceCapture, DeviceSurface } from '../device/surface'
 import { toDeviceDescriptor } from './device-port'
 import type { IosSimulatorManager } from './ios-simulator-manager'
@@ -44,9 +45,9 @@ function toSessionState(state: IosSimulatorSessionState): DeviceSessionState {
   }
 }
 
-/** `ios:UDID` back to the udid the manager addresses. Tolerates a bare one. */
+/** `ios-sim:UDID` back to the udid the manager addresses. Tolerates a bare one. */
 function udidOf(deviceId: string): string {
-  return deviceId.startsWith('ios:') ? deviceId.slice('ios:'.length) : deviceId
+  return parseDeviceId(deviceId)?.native ?? deviceId
 }
 
 export function createIosSimulatorSurface(manager: IosSimulatorManager): DeviceSurface {

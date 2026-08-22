@@ -186,7 +186,7 @@ describe('requestDeviceControl', () => {
     await requestDeviceControl({
       sessionId: 's1', ports: port.ports, recents, emitHostEvent: accepting.emit, request: { device: 'cold' },
     })
-    expect(remembered).toEqual(['ios:cold'])
+    expect(remembered).toEqual(['ios-sim:cold'])
 
     // A separate machine state, so this is a first request rather than a re-grant.
     const refused = new FakePort([device({ udid: 'other', name: 'iPad Pro 13-inch' })])
@@ -194,7 +194,7 @@ describe('requestDeviceControl', () => {
     await expect(requestDeviceControl({
       sessionId: 's2', ports: refused.ports, recents, emitHostEvent: declining.emit, request: { device: 'other' },
     })).rejects.toThrow()
-    expect(remembered).toEqual(['ios:cold'])
+    expect(remembered).toEqual(['ios-sim:cold'])
   })
 
   it('returns the controlled device without prompting again', async () => {

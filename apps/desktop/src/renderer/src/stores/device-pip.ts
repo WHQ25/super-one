@@ -23,12 +23,14 @@
  */
 
 import { create } from 'zustand'
-import type { DevicePlatform } from '@superone/shared/device'
+import type { DeviceProvider, DevicePlatform } from '@superone/shared/device'
 import { withoutKey } from '@/lib/record'
 
 export interface DevicePipDevice {
-  /** Platform-carrying handle, so the preview can tell which artwork to look for. */
+  /** Provider-carrying handle, so the preview can tell which artwork to look for. */
   id: string
+  /** How it is reached — the axis artwork and rotation actually key on. */
+  provider: DeviceProvider
   platform: DevicePlatform
   /** The guest's glass, already turned. Zero when nothing has attached yet. */
   width: number

@@ -27,6 +27,7 @@
  * does, they do not, because a column that always reads `ios` is pure cost.
  */
 
+import { normalizeDeviceId } from '@superone/shared/device'
 import type { DeviceDescriptor, DevicePlatform } from '@superone/shared/device'
 import { offerableDevices, type DevicePlatformPort } from '../device/platform-port'
 import { NO_DEVICE_RECENTS, type DeviceRecentsPort } from './device-recents'
@@ -279,10 +280,6 @@ function overviewTier(
  * failure is one extra tool call. Anything unprefixed predates the change and can
  * only have been a simulator.
  */
-function normalizeRecentId(id: string): string {
-  return id.includes(':') ? id : `ios:${id}`
-}
-
 /** `device_list` — one tier of the catalog, plus what this session already holds. */
 export async function listDeviceCatalog(options: {
   sessionId: string
@@ -318,5 +315,5 @@ export async function listDeviceCatalog(options: {
     }
     return kindTier(read, request.kind)
   }
-  return overviewTier(read, sessionId, recents.read().map(normalizeRecentId))
+  return overviewTier(read, sessionId, recents.read().map(normalizeDeviceId))
 }

@@ -16,6 +16,86 @@ import { isDeviceLandscape, type DeviceOrientation } from './device-agent'
 
 export type DevicePlatform = 'ios' | 'android'
 
+/**
+ * How we REACH a device. The `deviceId` prefix, and the key every registry uses.
+ *
+ * Deliberately not the same axis as `DevicePlatform`, which says what a device RUNS.
+ * Today the two happen to correspond one-to-one, which is exactly why they were a
+ * single field until now — and why the first device that breaks the correspondence
+ * would have broken everything keyed on it.
+ *
+ * A mirrored physical iPhone is that device: iOS by platform, and nothing like a
+ * simulator by provider. It has no framebuffer to attach to, no HID channel, and its
+ * window does not turn when the phone does. Every one of those facts belongs to the
+ * PROVIDER, so this is what the routing, the capability table, and the id prefix all
+ * key on.
+ */
+export type DeviceProvider = 'ios-sim' | 'android'
+
+export const DEVICE_PROVIDERS = ['ios-sim', 'android'] as const
+
+/**
+ * What a provider's devices run. Many providers may map onto one platform.
+ *
+ * The direction is load-bearing: platform is derivable from provider, never the
+ * other way round. Anything that branches on platform to decide BEHAVIOUR is asking
+ * the wrong question — see `DEVICE_CAPABILITIES`.
+ */
+export const DEVICE_PROVIDER_PLATFORM: Record<DeviceProvider, DevicePlatform> = {
+  'ios-sim': 'ios',
+  'android': 'android',
+}
+
+/**
+ * What a provider can actually do, so the UI disables rather than offers-and-refuses.
+ *
+ * Keyed by provider rather than platform because these are properties of the way we
+ * reach a device, not of the OS it runs. Rotation is the clearest case: a simulator
+ * redraws into a fixed-shape surface, scrcpy re-shapes the framebuffer, and a
+ * mirrored phone's window does not rotate at all — three answers, two of them iOS.
+ */
+export interface DeviceCapabilities {
+  /**
+   * Whether turning the device leaves its framebuffer the same shape.
+   *
+   * True means the picture ARRIVES un-rotated and the host turns artwork and picture
+   * together as one rigid CSS rotation, so `DEVICE_ROTATION_DEGREES` is literally the
+   * angle to apply. False means the framebuffer itself is re-shaped — scrcpy re-sends
+   * a session packet with the axes swapped, 360x800 becoming 800x360 — so the picture
+   * already arrives upright and whatever draws it must RESIZE, never rotate.
+   */
+  rigidRotation: boolean
+  /**
+   * Whether the screen can be recorded to a file.
+   *
+   * `simctl io recordVideo` does it directly. Android's `adb shell screenrecord`
+   * could, but it needs a lifecycle of its own — a device-side process, a three-minute
+   * cap to work around, and a pull when it stops — none of it shared with the
+   * simulator's path.
+   */
+  recording: boolean
+  /**
+   * Whether the preview stream's scale and frame rate can be negotiated.
+   *
+   * The simulator's helper settles both when the stream starts and honours what it is
+   * asked for. scrcpy fixes its own when its video socket opens, and a mirrored phone
+   * hands over whatever its window happens to be.
+   */
+  previewQuality: boolean
+  /**
+   * Whether the simulated hardware keyboard can be plugged and unplugged.
+   *
+   * A CoreSimulator setting with no equivalent anywhere else — a real phone's
+   * on-screen keyboard is not something the host gets a say in.
+   */
+  hardwareKeyboard: boolean
+}
+
+export const DEVICE_CAPABILITIES: Record<DeviceProvider, DeviceCapabilities> = {
+  'ios-sim': { rigidRotation: true, recording: true, previewQuality: true, hardwareKeyboard: true },
+  'android': { rigidRotation: false, recording: false, previewQuality: false, hardwareKeyboard: false },
+}
+
 export interface DeviceDescriptor {
   /**
    * Stable handle, platform-prefixed: `ios:<udid>`, `android:<serial>`.
@@ -25,6 +105,14 @@ export interface DeviceDescriptor {
    * carry a platform alongside the id it already has.
    */
   id: string
+  /**
+   * How this device is reached — and the prefix of `id` above.
+   *
+   * The key for routing and for `DEVICE_CAPABILITIES`. Carried rather than parsed
+   * back out of the id at each use: every consumer already holds the descriptor.
+   */
+  provider: DeviceProvider
+  /** What it runs. Derived from `provider`; here so the UI can group without a lookup. */
   platform: DevicePlatform
   /** As the user sees it. Editable on both platforms, so never parse it. */
   name: string
@@ -73,21 +161,41 @@ export interface DeviceDescriptor {
   boundSessionId?: string
 }
 
-/** Split `ios:UDID` back into its parts. Null when the handle is not prefixed. */
+/**
+ * Split `ios-sim:UDID` back into its parts. Null when the handle names no provider.
+ *
+ * A bare `ios:` prefix reads as `ios-sim`, because that is what every id written
+ * before providers existed meant. Ids reach localStorage recents and agent
+ * transcripts, so old ones keep arriving long after nothing writes them.
+ */
 export function parseDeviceId(
   id: string,
-): { platform: DevicePlatform; native: string } | null {
+): { provider: DeviceProvider; native: string } | null {
   const separator = id.indexOf(':')
   if (separator <= 0) return null
-  const platform = id.slice(0, separator)
+  const prefix = id.slice(0, separator)
   const native = id.slice(separator + 1)
   if (!native) return null
-  if (platform !== 'ios' && platform !== 'android') return null
-  return { platform, native }
+  const provider = prefix === 'ios' ? 'ios-sim' : prefix
+  if (!DEVICE_PROVIDERS.includes(provider as DeviceProvider)) return null
+  return { provider: provider as DeviceProvider, native }
 }
 
-export function formatDeviceId(platform: DevicePlatform, native: string): string {
-  return `${platform}:${native}`
+export function formatDeviceId(provider: DeviceProvider, native: string): string {
+  return `${provider}:${native}`
+}
+
+/**
+ * An id read back from storage, in today's shape.
+ *
+ * Two older spellings still arrive: a bare udid, from before ids carried a prefix at
+ * all, and an `ios:` prefix, from before providers existed. Both meant the simulator
+ * — nothing else could write one. Normalising on read is what lets a remembered
+ * device still match a catalog entry, which is the whole point of remembering it.
+ */
+export function normalizeDeviceId(id: string): string {
+  const parsed = parseDeviceId(id)
+  return parsed ? formatDeviceId(parsed.provider, parsed.native) : formatDeviceId('ios-sim', id)
 }
 
 /** Human label for a platform, for prompts and summaries. */
@@ -126,8 +234,8 @@ export interface DeviceFrame {
  * turned, so it is a quarter turn anti-clockwise — 270deg — and `landscape-right`
  * is its mirror. Reading the names as turn directions lands both 180deg out.
  *
- * What this angle MEANS differs by platform, which is what `DEVICE_RIGID_ROTATION`
- * below is for. Read that before using this to lay anything out.
+ * What this angle MEANS differs by provider, which is what `DEVICE_CAPABILITIES`
+ * is for. Read `rigidRotation` there before using this to lay anything out.
  */
 export const DEVICE_ROTATION_DEGREES: Record<DeviceOrientation, number> = {
   'portrait': 0,
@@ -152,42 +260,6 @@ export function stepDeviceOrientation(
   const index = cycle.indexOf(orientation)
   const step = direction === 'right' ? 1 : -1
   return cycle[(index + step + cycle.length) % cycle.length]!
-}
-
-/**
- * Whether turning the device leaves its framebuffer the same shape.
- *
- * The single load-bearing difference between the two platforms as far as anything
- * DRAWING a device is concerned, so it is data here rather than a branch at each
- * of the four places that need it.
- *
- * A simulator draws its rotated UI into a surface that never changes shape, exactly
- * like a real panel — so the host turns artwork and picture together as one rigid
- * CSS rotation, and `DEVICE_ROTATION_DEGREES` is literally the angle to apply.
- *
- * Android re-shapes the framebuffer instead: scrcpy re-sends a session packet with
- * the axes swapped (360x800 becomes 800x360), so the picture ARRIVES upright and
- * turning it again would lay it on its side. There the angle is a reading only —
- * whatever draws it must RESIZE, never rotate. `pixelWidth`/`pixelHeight` on
- * `DeviceSessionState` already carry the swapped values.
- */
-export const DEVICE_RIGID_ROTATION: Record<DevicePlatform, boolean> = {
-  ios: true,
-  android: false,
-}
-
-/**
- * Whether the platform can record its screen to a file.
- *
- * `simctl io recordVideo` does it directly. Android's `adb shell screenrecord` could,
- * but it needs a lifecycle of its own — a device-side process, a three-minute cap to
- * work around, and a pull when it stops — none of which is shared with the
- * simulator's path. Declared here so the button is DISABLED rather than offered and
- * then refused.
- */
-export const DEVICE_SUPPORTS_RECORDING: Record<DevicePlatform, boolean> = {
-  ios: true,
-  android: false,
 }
 
 /**

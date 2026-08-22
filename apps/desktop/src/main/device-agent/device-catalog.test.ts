@@ -80,8 +80,8 @@ describe('listDeviceCatalog overview', () => {
       recents: recents(['iPad Pro 13-inch-18.0']),
     })
 
-    expect((result.running as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios:iPhone 17-26.4'])
-    expect((result.recent as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios:iPad Pro 13-inch-18.0'])
+    expect((result.running as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios-sim:iPhone 17-26.4'])
+    expect((result.recent as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios-sim:iPad Pro 13-inch-18.0'])
     expect(result.total).toBe(9)
     expect(result.groups).toBeUndefined()
   })
@@ -109,7 +109,7 @@ describe('listDeviceCatalog overview', () => {
     })
 
     expect(result.recent).toBeUndefined()
-    expect((result.running as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios:iPhone 17-26.4'])
+    expect((result.running as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios-sim:iPhone 17-26.4'])
   })
 
   it('separates a device another session holds from the one this session controls', async () => {
@@ -123,11 +123,11 @@ describe('listDeviceCatalog overview', () => {
     })
 
     const byId = new Map((result.running as DeviceEntry[]).map((entry) => [entry.id, entry]))
-    expect(byId.get('ios:mine')?.controlled).toBe(true)
-    expect(byId.get('ios:mine')?.busy).toBeUndefined()
-    expect(byId.get('ios:theirs')?.busy).toBe(true)
-    expect(byId.get('ios:theirs')?.controlled).toBeUndefined()
-    expect(result.controlled).toMatchObject({ id: 'ios:mine' })
+    expect(byId.get('ios-sim:mine')?.controlled).toBe(true)
+    expect(byId.get('ios-sim:mine')?.busy).toBeUndefined()
+    expect(byId.get('ios-sim:theirs')?.busy).toBe(true)
+    expect(byId.get('ios-sim:theirs')?.controlled).toBeUndefined()
+    expect(result.controlled).toMatchObject({ id: 'ios-sim:mine' })
   })
 
   it('reads the session state from the catalog it already listed', async () => {
@@ -227,7 +227,7 @@ describe('listDeviceCatalog model tier', () => {
       request: { model: 'iPhone 17 Pro Max' },
     })
 
-    expect((result.devices as DeviceEntry[])[0]).toMatchObject({ id: 'ios:renamed', name: 'checkout rig' })
+    expect((result.devices as DeviceEntry[])[0]).toMatchObject({ id: 'ios-sim:renamed', name: 'checkout rig' })
   })
 
   it('says so rather than returning an empty list for a model that does not exist', async () => {

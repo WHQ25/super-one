@@ -19,6 +19,7 @@ function fakeStorage(initial?: string) {
 function device(id: string, available = true): DeviceDescriptor {
   return {
     id,
+    provider: 'ios-sim',
     platform: 'ios',
     name: `Device ${id}`,
     kind: 'iphone',
@@ -66,7 +67,15 @@ describe('iOS simulator recents', () => {
         : null,
     }
 
-    expect(readRecentDeviceIds(store)).toEqual(['ios:p17-26'])
+    // A bare udid from the oldest spelling, landing on today's provider.
+    expect(readRecentDeviceIds(store)).toEqual(['ios-sim:p17-26'])
+  })
+
+  it('re-spells an id stored before providers existed', () => {
+    // The generation between the two: prefixed, but with the platform where the
+    // provider now goes. Left alone it would match nothing in the catalog and the
+    // device would silently drop off the recents list.
+    expect(readRecentDeviceIds(fakeStorage('["ios:p17-26"]'))).toEqual(['ios-sim:p17-26'])
   })
 
   it('hides simulators that were deleted or turned unavailable', () => {

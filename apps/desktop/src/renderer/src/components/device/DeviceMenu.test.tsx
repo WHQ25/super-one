@@ -22,6 +22,7 @@ vi.mock('./ios/IosSimulatorCreateDialog', () => ({
 
 function device(overrides: Partial<DeviceDescriptor> & Pick<DeviceDescriptor, 'id' | 'name'>): DeviceDescriptor {
   return {
+    provider: 'ios-sim',
     platform: 'ios',
     kind: 'iphone',
     kindName: 'iPhone',
@@ -37,16 +38,16 @@ function device(overrides: Partial<DeviceDescriptor> & Pick<DeviceDescriptor, 'i
 
 // One model on two runtimes, one model on one, one booted iPad, one taken by a
 // neighbouring session — every band the menu can draw, in one list.
-const MAX_26 = device({ id: 'ios:max-26', name: 'iPhone 17 Pro Max' })
+const MAX_26 = device({ id: 'ios-sim:max-26', name: 'iPhone 17 Pro Max' })
 const MAX_18 = device({
-  id: 'ios:max-18',
+  id: 'ios-sim:max-18',
   name: 'iPhone 17 Pro Max',
   platformVersion: 'iOS 18.5',
   versionRank: 18005,
 })
-const SE = device({ id: 'ios:se-26', name: 'iPhone SE (3rd generation)' })
+const SE = device({ id: 'ios-sim:se-26', name: 'iPhone SE (3rd generation)' })
 const IPAD = device({
-  id: 'ios:ipad-26',
+  id: 'ios-sim:ipad-26',
   name: 'iPad Pro 13-inch (M4)',
   kind: 'ipad',
   kindName: 'iPad',
@@ -54,7 +55,7 @@ const IPAD = device({
   platformVersion: 'iPadOS 26.0',
   running: true,
 })
-const TAKEN = device({ id: 'ios:taken-26', name: 'iPhone Air', boundSessionId: 'session-2' })
+const TAKEN = device({ id: 'ios-sim:taken-26', name: 'iPhone Air', boundSessionId: 'session-2' })
 
 const DEVICES = [MAX_26, MAX_18, SE, IPAD, TAKEN]
 
@@ -95,8 +96,8 @@ describe('iOS Simulator device menu', () => {
     // reads as "left the trigger" and closes it before the click lands.
     fireEvent.click(await screen.findByRole('menuitem', { name: /iOS 18.5/ }))
 
-    expect(onSelect).toHaveBeenCalledWith('ios:max-18')
-    expect(JSON.parse(localStorage.getItem('superone.device.recentIds') ?? '[]')).toEqual(['ios:max-18'])
+    expect(onSelect).toHaveBeenCalledWith('ios-sim:max-18')
+    expect(JSON.parse(localStorage.getItem('superone.device.recentIds') ?? '[]')).toEqual(['ios-sim:max-18'])
   })
 
   it('flattens a model that exists on exactly one runtime', async () => {
@@ -106,11 +107,11 @@ describe('iOS Simulator device menu', () => {
     await user.click(screen.getByRole('button', { name: 'Devices' }))
     await user.click(await screen.findByRole('menuitem', { name: /iPhone SE \(3rd generation\) · iOS 26.0/ }))
 
-    expect(onSelect).toHaveBeenCalledWith('ios:se-26')
+    expect(onSelect).toHaveBeenCalledWith('ios-sim:se-26')
   })
 
   it('lists a booted simulator under Running Now and keeps it out of Recent', async () => {
-    localStorage.setItem('superone.device.recentIds', JSON.stringify(['ios:ipad-26', 'ios:se-26']))
+    localStorage.setItem('superone.device.recentIds', JSON.stringify(['ios-sim:ipad-26', 'ios-sim:se-26']))
     const user = userEvent.setup()
     renderMenu()
 
@@ -148,9 +149,9 @@ describe('iOS Simulator device menu', () => {
     // refresh that used to run beside it was a second concurrent reader — both wrote
     // the selection and the list, and whichever landed last decided what was drawn.
     expect(onSelect).toHaveBeenCalledTimes(1)
-    expect(onSelect).toHaveBeenCalledWith('ios:new-26')
+    expect(onSelect).toHaveBeenCalledWith('ios-sim:new-26')
     expect(JSON.parse(localStorage.getItem('superone.device.recentIds') ?? '[]'))
-      .toEqual(['ios:new-26'])
+      .toEqual(['ios-sim:new-26'])
   })
 
   it('disables a simulator another session already holds', async () => {

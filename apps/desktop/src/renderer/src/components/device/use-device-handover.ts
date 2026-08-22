@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DEVICE_RIGID_ROTATION, isDeviceLandscape } from '@superone/shared/device'
+import { DEVICE_CAPABILITIES, isDeviceLandscape } from '@superone/shared/device'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
@@ -73,11 +73,12 @@ export function useDeviceHandover(): void {
       // shape, so a device on its side is the same numbers swapped by hand; Android
       // re-shapes it and scrcpy republishes the swapped pair, so swapping again would
       // hand the preview a portrait box for a landscape phone.
-      const swap = DEVICE_RIGID_ROTATION[bound.platform] && isDeviceLandscape(state.orientation)
+      const swap = DEVICE_CAPABILITIES[bound.provider].rigidRotation && isDeviceLandscape(state.orientation)
       const width = (swap ? state.pixelHeight : state.pixelWidth) ?? 0
       const height = (swap ? state.pixelWidth : state.pixelHeight) ?? 0
       store.setReady(currentSessionId, {
         id: bound.id,
+        provider: bound.provider,
         platform: bound.platform,
         width,
         height,

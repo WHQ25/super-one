@@ -18,6 +18,7 @@ import { useDeviceTabActions } from './device-tab-actions'
 
 function device(overrides: Partial<DeviceDescriptor> & Pick<DeviceDescriptor, 'id' | 'name'>): DeviceDescriptor {
   return {
+    provider: 'ios-sim',
     platform: 'ios',
     kind: 'iphone',
     kindName: 'iPhone',
@@ -31,8 +32,8 @@ function device(overrides: Partial<DeviceDescriptor> & Pick<DeviceDescriptor, 'i
   }
 }
 
-const RECENT = device({ id: 'ios:p17-26', name: 'iPhone 17 Pro' })
-const OTHER = device({ id: 'ios:air-26', name: 'iPhone Air' })
+const RECENT = device({ id: 'ios-sim:p17-26', name: 'iPhone 17 Pro' })
+const OTHER = device({ id: 'ios-sim:air-26', name: 'iPhone Air' })
 
 function ready(target: DeviceDescriptor): DeviceSessionState {
   return {

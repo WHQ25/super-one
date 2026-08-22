@@ -36,7 +36,7 @@ async function renderPreview() {
     projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
   } as unknown as Parameters<typeof useChatStore.setState>[0])
   useDevicePipStore.getState().setReady(SESSION_ID, {
-    id: DEVICE.id, platform: DEVICE.platform, width: 1206, height: 2622,
+    id: DEVICE.id, provider: DEVICE.provider, platform: DEVICE.platform, width: 1206, height: 2622,
   })
   const view = render(<DevicePictureInPicture />)
   // The box cannot be laid out until the chat root has been measured and the device's

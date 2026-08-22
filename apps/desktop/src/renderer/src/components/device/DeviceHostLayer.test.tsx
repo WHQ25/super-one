@@ -98,7 +98,7 @@ async function renderReady(node: React.ReactElement = <DeviceHostLayer />) {
     projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
   } as unknown as Parameters<typeof useChatStore.setState>[0])
   useDevicePipStore.getState().setReady(SESSION_ID, {
-    id: DEVICE.id, platform: DEVICE.platform, width: 1206, height: 2622,
+    id: DEVICE.id, provider: DEVICE.provider, platform: DEVICE.platform, width: 1206, height: 2622,
   })
   const view = render(node)
   // The canvas only mounts once `bind` has answered AND the artwork lookup has

@@ -83,7 +83,8 @@ function pipBoundary(): HTMLElement | null {
  */
 function useIosSimulatorChrome(device: DevicePipDevice | null): IosSimulatorChrome | null {
   const [chrome, setChrome] = useState<IosSimulatorChrome | null>(null)
-  const udid = device?.platform === 'ios' ? parseDeviceId(device.id)?.native ?? null : null
+  // Only the simulator has a udid; a mirrored iPhone would be iOS too and have none.
+  const udid = device?.provider === 'ios-sim' ? parseDeviceId(device.id)?.native ?? null : null
   useEffect(() => {
     setChrome(null)
     if (!udid) return

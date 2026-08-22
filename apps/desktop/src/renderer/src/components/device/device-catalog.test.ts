@@ -6,6 +6,7 @@ function device(
   partial: Partial<DeviceDescriptor> & Pick<DeviceDescriptor, 'id' | 'name' | 'model'>,
 ): DeviceDescriptor {
   return {
+    provider: 'ios-sim',
     platform: 'ios',
     kind: 'iphone',
     kindName: 'iPhone',
@@ -38,6 +39,7 @@ describe('device catalog', () => {
     }),
     device({
       id: 'android:emulator-5554',
+      provider: 'android',
       platform: 'android',
       name: 'Medium Phone API 36',
       model: 'Medium Phone API 36',

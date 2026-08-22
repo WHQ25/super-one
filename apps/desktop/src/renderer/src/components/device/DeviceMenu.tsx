@@ -158,8 +158,8 @@ export function DeviceMenu({
     // Straight to the new simulator — creating one is only ever a prelude to using it.
     // `onSelect` alone, deliberately: it re-reads the device list itself, so pairing
     // it with a refresh raced two passes that both wrote the selection and the list.
-    setRecentIds(rememberRecentDeviceId(formatDeviceId('ios', next.udid)))
-    onSelect(formatDeviceId('ios', next.udid))
+    setRecentIds(rememberRecentDeviceId(formatDeviceId('ios-sim', next.udid)))
+    onSelect(formatDeviceId('ios-sim', next.udid))
   }, [onSelect])
 
   const label = (device: DeviceDescriptor) => `${device.name} · ${device.platformVersion}`

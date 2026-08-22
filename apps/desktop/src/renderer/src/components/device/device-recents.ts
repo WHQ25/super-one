@@ -1,3 +1,4 @@
+import { formatDeviceId, parseDeviceId } from '@superone/shared/device'
 import type { DeviceDescriptor } from '@superone/shared/device'
 
 // Recents are a machine-level convenience, not session state, so they live in
@@ -25,7 +26,15 @@ export function readRecentDeviceIds(storage: ReadableStorage | null = defaultSto
     if (!Array.isArray(parsed)) return []
     return parsed
       .filter((entry): entry is string => typeof entry === 'string')
-      .map((entry) => legacy != null && !entry.includes(':') ? `ios:${entry}` : entry)
+      // Two different migrations, and they must not be confused. The LEGACY key held
+      // bare udids, which could only ever have been simulators. The current key has
+      // always held prefixed ids, so anything there is re-formatted through its
+      // provider — which is what turns a stored `ios:` into today's `ios-sim:`.
+      .map((entry) => {
+        if (legacy != null && !entry.includes(':')) return formatDeviceId('ios-sim', entry)
+        const parsed = parseDeviceId(entry)
+        return parsed ? formatDeviceId(parsed.provider, parsed.native) : entry
+      })
       .slice(0, DEVICE_RECENT_LIMIT)
   } catch {
     return []

@@ -8,7 +8,7 @@
  * learns any of it.
  */
 
-import { formatDeviceId, type DeviceDescriptor } from '@superone/shared/device'
+import { formatDeviceId, parseDeviceId, type DeviceDescriptor } from '@superone/shared/device'
 import type { IosSimulatorDevice } from '@superone/shared/ios-simulator'
 import type { DevicePlatformPort } from '../device/platform-port'
 
@@ -78,7 +78,8 @@ export function runtimeRank(device: IosSimulatorDevice): number {
 export function toDeviceDescriptor(device: IosSimulatorDevice): DeviceDescriptor {
   const { kind, name: kindName, rank: kindRank } = deviceKind(device)
   return {
-    id: formatDeviceId('ios', device.udid),
+    id: formatDeviceId('ios-sim', device.udid),
+    provider: 'ios-sim',
     platform: 'ios',
     name: device.name,
     kind,
@@ -127,13 +128,13 @@ export class IosSimulatorDevicePort implements DevicePlatformPort {
   }
 
   async boot(sessionId: string, deviceId: string): Promise<DeviceDescriptor | null> {
-    const udid = deviceId.startsWith('ios:') ? deviceId.slice('ios:'.length) : deviceId
+    const udid = parseDeviceId(deviceId)?.native ?? deviceId
     const state = await this.source.boot(sessionId, udid)
     return state.phase === 'ready' && state.device ? toDeviceDescriptor(state.device) : null
   }
 
   controlNote(device: DeviceDescriptor): string {
-    const udid = device.id.slice('ios:'.length)
+    const udid = parseDeviceId(device.id)?.native ?? device.id
     return `This session now controls the device. Install a build with \`xcrun simctl install ${udid} <path/to/.app>\` `
       + `and launch it with \`xcrun simctl launch ${udid} <bundle-id>\`, then use device_snapshot to see the screen. `
       // The user is already watching this device here, so a command whose ONLY effect

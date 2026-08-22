@@ -12,6 +12,8 @@
  * `phone`, and the grouping code never has to know that those are the same idea.
  */
 
+import type { DeviceOrientation } from './device-agent'
+
 export type DevicePlatform = 'ios' | 'android'
 
 export interface DeviceDescriptor {

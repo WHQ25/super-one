@@ -3542,6 +3542,26 @@ export const AgentIpcChannels = {
   ENVIRONMENT_IOS_SIMULATOR_ROTATE_GESTURE: 'environment:iosSimulatorRotateGesture',
   ENVIRONMENT_IOS_SIMULATOR_STATE: 'environment:iosSimulatorState',
 
+  // Devices of any platform — simulators, emulators and phones through one set of
+  // channels. The iOS ones above stay: a runtime list, DeviceKit artwork and
+  // creating a simulator have no Android counterpart, and the rest are still what
+  // the panel talks to until it is generalized.
+  ENVIRONMENT_DEVICE_LIST: 'environment:deviceList',
+  ENVIRONMENT_DEVICE_BIND: 'environment:deviceBind',
+  ENVIRONMENT_DEVICE_BOOT: 'environment:deviceBoot',
+  ENVIRONMENT_DEVICE_DETACH: 'environment:deviceDetach',
+  ENVIRONMENT_DEVICE_SHUTDOWN: 'environment:deviceShutdown',
+  ENVIRONMENT_DEVICE_RELEASE: 'environment:deviceRelease',
+  ENVIRONMENT_DEVICE_INPUT: 'environment:deviceInput',
+  ENVIRONMENT_DEVICE_SCREENSHOT: 'environment:deviceScreenshot',
+  ENVIRONMENT_DEVICE_RECORD_START: 'environment:deviceRecordStart',
+  ENVIRONMENT_DEVICE_RECORD_STOP: 'environment:deviceRecordStop',
+  ENVIRONMENT_DEVICE_STREAM_OPEN: 'environment:deviceStreamOpen',
+  ENVIRONMENT_DEVICE_STREAM_CLOSE: 'environment:deviceStreamClose',
+  ENVIRONMENT_DEVICE_STREAM_PORT: 'environment:deviceStreamPort',
+  ENVIRONMENT_DEVICE_STATE: 'environment:deviceState',
+  ENVIRONMENT_DEVICE_ROTATE_GESTURE: 'environment:deviceRotateGesture',
+
   // Local desktop harness installation catalog (Settings → Harnesses)
   HARNESS_LIST: 'harness:list',
   HARNESS_ENABLE: 'harness:enable',

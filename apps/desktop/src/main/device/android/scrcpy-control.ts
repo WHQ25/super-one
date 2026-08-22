@@ -6,6 +6,7 @@
  * make.
  */
 
+import type { DeviceInput } from '@superone/shared/device'
 import type { DeviceHardwareButton } from '../../device-agent/types'
 import type { TouchStep } from '../gesture-synth'
 
@@ -204,4 +205,50 @@ function clamp01(value: number): number {
 
 function clampU16(value: number): number {
   return Math.min(Math.max(Math.round(value), 0), 0xffff)
+}
+
+/**
+ * A person's input, in scrcpy's vocabulary.
+ *
+ * The counterpart to `encodeTouchStep`, which handles the agent's synthesized
+ * gestures. This one handles the raw stream a pointer produces — many contact updates
+ * a second, already in framebuffer ratios.
+ */
+export function encodeDeviceInput(
+  input: DeviceInput,
+  screen: { width: number; height: number },
+): Buffer[] {
+  switch (input.type) {
+    case 'touch.update':
+      return input.contacts.map((contact) => encodeTouch({
+        action: contact.phase === 'began'
+          ? MOTION.DOWN
+          : contact.phase === 'ended'
+            ? MOTION.UP
+            : contact.phase === 'cancelled' ? MOTION.CANCEL : MOTION.MOVE,
+        pointerId: contact.id,
+        target: { xRatio: contact.xRatio, yRatio: contact.yRatio, ...screen },
+      }))
+    case 'touch.cancel':
+      return encodeCancelTouches(screen)
+    case 'tap':
+      return encodeTouchStep(
+        { kind: 'tap', xRatio: input.xRatio, yRatio: input.yRatio, delayMs: 0 },
+        screen,
+      )
+    case 'text':
+      return [encodeText(input.text)]
+    case 'button': {
+      const keycode = keycodeForButton(input.button as never)
+      return keycode === null ? [] : encodeKeyPress(keycode)
+    }
+    case 'rotate':
+      // Deliberately empty: scrcpy's ROTATE_DEVICE cycles to the next orientation and
+      // cannot be told which one to land on. The surface writes `user_rotation`
+      // instead — see `AndroidDeviceManager.rotate`.
+      return []
+    case 'keyboard':
+      // No Android counterpart. The on-screen keyboard follows focus and the IME.
+      return []
+  }
 }

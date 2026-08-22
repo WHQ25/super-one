@@ -254,8 +254,12 @@ export class AndroidDeviceManager {
       // decoder has to be told before the next frame arrives at a new size. Reported
       // as a config-less keyframe boundary via the geometry on the following frames.
       const offSession = connection.onSession((session) => {
-        void this.readOrientation(sessionId).catch(() => undefined)
         log.info('[android] capture resized', session.width, session.height)
+        // A resize IS a rotation on Android, so the panel has to hear about it —
+        // it cannot infer the new shape from a framebuffer that never changed.
+        void this.readOrientation(sessionId)
+          .then(() => this.announce(sessionId))
+          .catch(() => this.announce(sessionId))
       })
       stop = () => {
         offMedia()
@@ -282,6 +286,55 @@ export class AndroidDeviceManager {
     const orientation = orientationForRotation(Number.parseInt(raw.trim(), 10))
     this.orientations.set(sessionId, orientation)
     return orientation
+  }
+
+  /**
+   * Turn the device, and remember which way it went.
+   *
+   * `accelerometer_rotation` goes off first or the sensor immediately undoes it. The
+   * new orientation is announced rather than merely stored: an agent rotating the
+   * device behind the panel's back is exactly the case the broadcast exists for.
+   */
+  async rotate(sessionId: string, rotation: number): Promise<void> {
+    const deviceId = this.sessionBindings.get(sessionId)
+    const serial = deviceId ? this.serialFor(deviceId) : null
+    if (!serial) return
+    await this.toolchain.adb.shell(serial, ['settings', 'put', 'system', 'accelerometer_rotation', '0'])
+    await this.toolchain.adb.shell(serial, ['settings', 'put', 'system', 'user_rotation', String(rotation)])
+    this.orientations.set(sessionId, orientationForRotation(rotation))
+    this.announce(sessionId)
+  }
+
+  /**
+   * Stop the device this session holds — but only if this app started it.
+   *
+   * A phone on someone's desk, or an emulator they launched from Android Studio, is
+   * not ours to turn off. Letting go is the most that can be done there, and it is
+   * what happens.
+   */
+  async stopDevice(sessionId: string): Promise<void> {
+    const deviceId = this.sessionBindings.get(sessionId)
+    const avdId = deviceId ? avdIdFromDeviceId(deviceId) : null
+    const launch = avdId ? this.launched.get(avdId) : null
+    await this.closeConnection(sessionId)
+    if (launch && avdId) {
+      launch.stop()
+      this.launched.delete(avdId)
+    }
+    this.release(sessionId)
+  }
+
+  private readonly stateListeners = new Set<(state: DeviceSessionState) => void>()
+
+  /** State the panel did not ask for — a rotation the agent made, a stream that died. */
+  onSessionState(listener: (state: DeviceSessionState) => void): () => void {
+    this.stateListeners.add(listener)
+    return () => this.stateListeners.delete(listener)
+  }
+
+  private announce(sessionId: string): void {
+    const state = this.sessionState(sessionId)
+    for (const listener of this.stateListeners) listener(state)
   }
 
   /** What the panel needs to draw this session, in the shared shape. */

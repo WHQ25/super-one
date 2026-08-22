@@ -106,12 +106,20 @@ const PRUNE_PARENTS = [
   'node_modules/@anthropic-ai',
   'node_modules/@openai',
   'node_modules/@cursor',
+  'node_modules/@napi-rs',
+  'node_modules/@img',
 ]
 const PRUNE_PREFIXES = [
   'claude-agent-sdk-',
   'codex-',
   'sdk-',
+  'canvas-',
+  'sharp-',
 ]
+// The ABI suffix a platform package may carry after its arch. napi-rs names the
+// Linux builds `-gnu` / `-musl` and the Windows ones `-msvc`, so matching the bare
+// arch would delete the one package this build actually needs.
+const KEEP_ABI_SUFFIXES = ['', '-gnu', '-musl', '-msvc', '-gnueabihf']
 
 module.exports = async function afterPack(context) {
   const archName = ARCH_NAMES[context.arch]
@@ -140,11 +148,14 @@ module.exports = async function afterPack(context) {
     let entries
     try { entries = readdirSync(parentDir) } catch { continue }
 
+    let keptHere = 0
+    let prunedHere = 0
+
     for (const entry of entries) {
       const matchesPrefix = PRUNE_PREFIXES.some((p) => entry.startsWith(p))
       if (!matchesPrefix) continue
       if (!entry.includes('-')) continue
-      if (entry.endsWith(`-${keepSuffix}`) || entry.endsWith(`-${keepSuffix}-musl`)) continue
+      if (KEEP_ABI_SUFFIXES.some((abi) => entry.endsWith(`-${keepSuffix}${abi}`))) { keptHere += 1; continue }
       const looksLikeArchPkg = /-(darwin|win32|linux)-/.test(entry) || /-(darwin|win32|linux)-[a-z0-9_]+$/.test(entry)
       if (!looksLikeArchPkg) continue
 
@@ -154,10 +165,24 @@ module.exports = async function afterPack(context) {
         rmSync(full, { recursive: true, force: true })
         totalFreed += size
         removedCount += 1
+        prunedHere += 1
         console.log(`[afterPack] pruned ${entry} (${(size / 1024 / 1024).toFixed(1)} MB)`)
       } catch (err) {
         console.warn(`[afterPack] failed to prune ${entry}:`, err.message)
       }
+    }
+
+    // Removing every arch-specific package under a parent means either the keep
+    // rule failed to recognise this platform's naming, or the dependency publishes
+    // no build for it at all. The first is a bug that surfaces at runtime as a
+    // missing native module — usually a blank panel rather than a crash — so fail
+    // the build. The second needs a deliberate opt-out here, not a silent pass.
+    if (prunedHere > 0 && keptHere === 0) {
+      throw new Error(
+        `[afterPack] ${parent}: pruned ${prunedHere} package(s) for ${osName}-${archName} and kept none. `
+        + `Either KEEP_ABI_SUFFIXES does not cover this package's platform naming, `
+        + `or it ships no ${osName}-${archName} build and this parent needs an exemption.`,
+      )
     }
   }
 

@@ -4,7 +4,7 @@ import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hoisted = vi.hoisted(() => ({
-  openIosSimulatorTab: vi.fn(),
+  openDeviceTab: vi.fn(),
   openTrajectoryTab: vi.fn(),
   chatState: {
     activeProject: '/repo',
@@ -19,7 +19,7 @@ const hoisted = vi.hoisted(() => ({
 
 vi.mock('./activity-panel-api', () => ({
   openBrowserTab: vi.fn(),
-  openIosSimulatorTab: hoisted.openIosSimulatorTab,
+  openDeviceTab: hoisted.openDeviceTab,
   openTerminalTab: vi.fn(),
   openTrajectoryTab: hoisted.openTrajectoryTab,
 }))
@@ -65,14 +65,16 @@ beforeEach(() => {
     configurable: true,
     value: { platform: 'darwin' },
   })
-  hoisted.openIosSimulatorTab.mockReset()
+  hoisted.openDeviceTab.mockReset()
   hoisted.openTrajectoryTab.mockReset()
   activeHarness('dsh')
 })
 
 describe('activity launcher entries', () => {
   it('offers Trajectory on a dsh session', async () => {
-    expect(await launchIds()).toEqual(['browser', 'terminal', 'ios-simulator', 'trajectory'])
+    expect(await launchIds()).toEqual([
+      'browser', 'terminal', 'ios-simulator', 'android-device', 'trajectory',
+    ])
   })
 
   it.each(['claude', 'codex', 'acp', 'opencode', 'cursor'])(
@@ -82,7 +84,7 @@ describe('activity launcher entries', () => {
 
       // Absent, not disabled: a greyed-out row would imply the user could turn
       // it on, and no other harness writes a dsh log to project.
-      expect(await launchIds()).toEqual(['browser', 'terminal', 'ios-simulator'])
+      expect(await launchIds()).toEqual(['browser', 'terminal', 'ios-simulator', 'android-device'])
     },
   )
 
@@ -107,7 +109,16 @@ describe('activity launcher entries', () => {
 
     result.current.find((type) => type.id === 'ios-simulator')?.onOpen()
 
-    expect(hoisted.openIosSimulatorTab).toHaveBeenCalledWith('s1', 'activity.iosSimulator.title')
+    expect(hoisted.openDeviceTab).toHaveBeenCalledWith('s1', 'activity.device.title')
+  })
+
+  it('opens Android for the active session', async () => {
+    const { useActivityLaunchTypes } = await import('./activity-launch-types')
+    const { result } = renderHook(() => useActivityLaunchTypes())
+
+    result.current.find((type) => type.id === 'android-device')?.onOpen()
+
+    expect(hoisted.openDeviceTab).toHaveBeenCalledWith('s1', 'activity.device.title')
   })
 
   it('hides iOS Simulator outside macOS', async () => {
@@ -117,6 +128,6 @@ describe('activity launcher entries', () => {
     })
     vi.resetModules()
 
-    expect(await launchIds()).toEqual(['browser', 'terminal', 'trajectory'])
+    expect(await launchIds()).toEqual(['browser', 'terminal', 'android-device', 'trajectory'])
   })
 })

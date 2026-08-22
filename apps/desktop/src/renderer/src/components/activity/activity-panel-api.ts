@@ -234,10 +234,10 @@ export function closeTrajectoryTab(sessionId: string) {
   dockApi?.panels.find((p) => p.id === panelId)?.api.close()
 }
 
-export function openIosSimulatorTab(sessionId: string, label: string) {
+export function openDeviceTab(sessionId: string, label: string) {
   ensureVisible()
   const panelId = `ios-simulator-${sessionId}`
-  recordMosaicOpen(panelId, () => openIosSimulatorTab(sessionId, label))
+  recordMosaicOpen(panelId, () => openDeviceTab(sessionId, label))
   execOrDefer(() => {
     if (!dockApi) return
     const existing = dockApi.panels.find((panel) => panel.id === panelId)
@@ -263,15 +263,15 @@ export function openIosSimulatorTab(sessionId: string, label: string) {
  * caller that only wants to guarantee the device is reachable must not steal focus
  * from whatever the user actually came to the panel to look at.
  */
-export function hasIosSimulatorTab(sessionId: string): boolean {
+export function hasDeviceTab(sessionId: string): boolean {
   return dockApi?.panels.some((panel) => panel.id === `ios-simulator-${sessionId}`) ?? false
 }
 
-export function closeIosSimulatorTab(sessionId: string) {
+export function closeDeviceTab(sessionId: string) {
   const panelId = `ios-simulator-${sessionId}`
   removeMosaicOpen(panelId)
   dockApi?.panels.find((panel) => panel.id === panelId)?.api.close()
-  void window.environment.iosSimulatorRelease(sessionId)
+  void window.environment.deviceRelease(sessionId)
 }
 
 export function closeMiniAppTab(instanceKey: string) {

@@ -17,7 +17,8 @@ import type {
   ProjectSnapshot,
   SupervisorSnapshot,
 } from '@superone/shared/environment'
-import type { IosSimulatorCapture, IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorFrame, IosSimulatorInput, IosSimulatorInputResult, IosSimulatorPreviewMode, IosSimulatorPreviewQuality, IosSimulatorRuntimeOption, IosSimulatorSessionState, IosSimulatorStatus } from '@superone/shared/ios-simulator'
+import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
+import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceSessionState, DeviceStreamOptions } from '@superone/shared/device'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
@@ -754,36 +755,39 @@ interface TerminalAPI {
 export interface EnvironmentAPI {
   list(): Promise<unknown[]>
   getLocalId(): Promise<string>
+  /** iOS-only: is there an Xcode with a usable simctl on this machine at all. */
   iosSimulatorStatus(force?: boolean): Promise<IosSimulatorStatus>
-  iosSimulatorList(): Promise<IosSimulatorDevice[]>
+  /** iOS-only: the runtimes Xcode has installed, for the create dialog. */
   iosSimulatorRuntimes(): Promise<IosSimulatorRuntimeOption[]>
   iosSimulatorCreate(request: IosSimulatorCreateRequest): Promise<IosSimulatorDevice>
+  /** iOS-only: Apple's shipped DeviceKit artwork. Null when this model ships none. */
   iosSimulatorChrome(udid: string): Promise<IosSimulatorChrome | null>
-  iosSimulatorBind(sessionId: string, udid: string): Promise<IosSimulatorSessionState>
-  iosSimulatorBoot(sessionId: string, udid: string): Promise<IosSimulatorSessionState>
-  /** Closes the preview but leaves the simulator running and unowned. */
-  iosSimulatorDetach(sessionId: string): Promise<IosSimulatorSessionState>
-  /** Shuts the simulator down and unbinds the session. */
-  iosSimulatorShutdown(sessionId: string): Promise<IosSimulatorSessionState>
-  iosSimulatorRelease(sessionId: string): Promise<void>
-  iosSimulatorScreenshot(sessionId: string): Promise<IosSimulatorCapture>
-  iosSimulatorRecordStart(sessionId: string): Promise<IosSimulatorCapture>
+
+  /** Every touch device this machine can offer, both platforms, in catalog order. */
+  deviceList(): Promise<DeviceDescriptor[]>
+  deviceBind(sessionId: string, deviceId: string): Promise<DeviceSessionState>
+  deviceBoot(sessionId: string, deviceId: string): Promise<DeviceSessionState>
+  /** Closes the preview but leaves the device running and unowned. */
+  deviceDetach(sessionId: string): Promise<DeviceSessionState>
+  /** Stops the device and unbinds the session. */
+  deviceShutdown(sessionId: string): Promise<DeviceSessionState>
+  deviceRelease(sessionId: string): Promise<void>
+  deviceScreenshot(sessionId: string): Promise<DeviceCapture>
+  /** Rejects on a platform without recording — see `DEVICE_SUPPORTS_RECORDING`. */
+  deviceRecordStart(sessionId: string): Promise<DeviceCapture>
   /** Resolves to null when this session was not recording. */
-  iosSimulatorRecordStop(sessionId: string): Promise<IosSimulatorCapture | null>
-  iosSimulatorInput(sessionId: string, input: IosSimulatorInput): Promise<IosSimulatorInputResult>
-  openIosSimulatorStream(
-    sessionId: string,
-    preferredMode?: IosSimulatorPreviewMode,
-    quality?: IosSimulatorPreviewQuality,
-  ): void
-  closeIosSimulatorStream(sessionId: string): void
-  onIosSimulatorFrame(sessionId: string, callback: (frame: IosSimulatorFrame) => void): () => void
+  deviceRecordStop(sessionId: string): Promise<DeviceCapture | null>
+  deviceInput(sessionId: string, input: DeviceInput): Promise<DeviceInputResult>
+  openDeviceStream(sessionId: string, options?: DeviceStreamOptions): void
+  closeDeviceStream(sessionId: string): void
+  onDeviceFrame(sessionId: string, callback: (frame: DeviceFrame) => void): () => void
   /** Host-owned state the panel cannot poll for: orientation and hardware keyboard. */
-  onIosSimulatorSessionState(
+  onDeviceSessionState(
     sessionId: string,
-    callback: (state: IosSimulatorSessionState) => void,
+    callback: (state: DeviceSessionState) => void,
   ): () => void
-  onIosSimulatorRotateGesture(callback: (rotation: number) => void): () => void
+  /** The host trackpad's two-finger twist, not anything the device reported. */
+  onDeviceRotateGesture(callback: (rotation: number) => void): () => void
   workspaceListDir(
     project: { environmentId: string; projectId: string },
     relativePath: string,

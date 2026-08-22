@@ -112,10 +112,11 @@ export function createAndroidSurface(
       if (!serial) throw new Error('This session controls no Android device.')
       const png = await manager.adb.execOut(serial, ['screencap', '-p'])
       const name = manager.controlled(sessionId)?.name ?? 'android'
-      const path = join(captureRoot, sessionId, captureFileName(name, 'png', new Date()))
+      const fileName = captureFileName(name, 'png', new Date())
+      const path = join(captureRoot, sessionId, fileName)
       await mkdir(dirname(path), { recursive: true })
       await writeFile(path, png)
-      return { path, kind: 'screenshot' }
+      return { path, fileName, kind: 'screenshot' }
     },
 
     // Recording is not wired up yet. `adb shell screenrecord` can do it, but it needs

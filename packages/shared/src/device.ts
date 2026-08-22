@@ -12,7 +12,7 @@
  * `phone`, and the grouping code never has to know that those are the same idea.
  */
 
-import type { DeviceOrientation } from './device-agent'
+import { isDeviceLandscape, type DeviceOrientation } from './device-agent'
 
 export type DevicePlatform = 'ios' | 'android'
 
@@ -118,6 +118,87 @@ export interface DeviceFrame {
   data: Uint8Array
 }
 
+/**
+ * How far clockwise the device is lying.
+ *
+ * The landscape pair is the trap, and it is Apple's naming that makes it one:
+ * `landscape-left` says where the HOME BUTTON ends up, not which way the device
+ * turned, so it is a quarter turn anti-clockwise — 270deg — and `landscape-right`
+ * is its mirror. Reading the names as turn directions lands both 180deg out.
+ *
+ * What this angle MEANS differs by platform, which is what `DEVICE_RIGID_ROTATION`
+ * below is for. Read that before using this to lay anything out.
+ */
+export const DEVICE_ROTATION_DEGREES: Record<DeviceOrientation, number> = {
+  'portrait': 0,
+  'landscape-right': 90,
+  'portrait-upside-down': 180,
+  'landscape-left': 270,
+}
+
+/** Clockwise order, so stepping forward turns the device to the right. */
+export const DEVICE_ORIENTATION_CYCLE = [
+  'portrait',
+  'landscape-right',
+  'portrait-upside-down',
+  'landscape-left',
+] as const satisfies readonly DeviceOrientation[]
+
+export function stepDeviceOrientation(
+  orientation: DeviceOrientation,
+  direction: 'left' | 'right',
+): DeviceOrientation {
+  const cycle = DEVICE_ORIENTATION_CYCLE
+  const index = cycle.indexOf(orientation)
+  const step = direction === 'right' ? 1 : -1
+  return cycle[(index + step + cycle.length) % cycle.length]!
+}
+
+/**
+ * Whether turning the device leaves its framebuffer the same shape.
+ *
+ * The single load-bearing difference between the two platforms as far as anything
+ * DRAWING a device is concerned, so it is data here rather than a branch at each
+ * of the four places that need it.
+ *
+ * A simulator draws its rotated UI into a surface that never changes shape, exactly
+ * like a real panel — so the host turns artwork and picture together as one rigid
+ * CSS rotation, and `DEVICE_ROTATION_DEGREES` is literally the angle to apply.
+ *
+ * Android re-shapes the framebuffer instead: scrcpy re-sends a session packet with
+ * the axes swapped (360x800 becomes 800x360), so the picture ARRIVES upright and
+ * turning it again would lay it on its side. There the angle is a reading only —
+ * whatever draws it must RESIZE, never rotate. `pixelWidth`/`pixelHeight` on
+ * `DeviceSessionState` already carry the swapped values.
+ */
+export const DEVICE_RIGID_ROTATION: Record<DevicePlatform, boolean> = {
+  ios: true,
+  android: false,
+}
+
+/**
+ * Whether the platform can record its screen to a file.
+ *
+ * `simctl io recordVideo` does it directly. Android's `adb shell screenrecord` could,
+ * but it needs a lifecycle of its own — a device-side process, a three-minute cap to
+ * work around, and a pull when it stops — none of which is shared with the
+ * simulator's path. Declared here so the button is DISABLED rather than offered and
+ * then refused.
+ */
+export const DEVICE_SUPPORTS_RECORDING: Record<DevicePlatform, boolean> = {
+  ios: true,
+  android: false,
+}
+
+/**
+ * How many simultaneous contacts a host pointer may synthesise.
+ *
+ * Two, on both platforms, because two is what a mouse can express: one finger, or
+ * two mirrored about the centre with the option key held. The transports below
+ * would take more (scrcpy allows ten), but nothing upstream can produce them.
+ */
+export const DEVICE_MAX_TOUCH_CONTACTS = 2 as const
+
 export type DeviceTouchPhase = 'began' | 'moved' | 'ended' | 'cancelled'
 
 export interface DeviceTouchContact {
@@ -195,3 +276,27 @@ export const DEVICE_BUTTONS_IOS = ['home', 'lock', 'side', 'volume-up', 'volume-
 export const DEVICE_BUTTONS_ANDROID = [
   'home', 'back', 'app-switch', 'lock', 'side', 'volume-up', 'volume-down',
 ] as const
+
+/** A file the panel pulled off the device, parked in this session's capture directory. */
+export interface DeviceCapture {
+  kind: 'screenshot' | 'recording'
+  path: string
+  /** Carried separately so a toast can name the file without splitting a path. */
+  fileName: string
+}
+
+/**
+ * What the panel would like of the frame stream, where the platform can honour it.
+ *
+ * Optional and advisory throughout. The simulator settles both in `stream.start`,
+ * so changing either renegotiates; scrcpy's are fixed when its video socket opens
+ * and Android ignores this entirely rather than pretending to accept it.
+ */
+export interface DeviceStreamOptions {
+  /** Platform's own preview-path hint. Meaningless where there is only one path. */
+  mode?: string
+  quality?: { scale: number; maxFrameRate: number }
+}
+
+export { isDeviceLandscape }
+export type { DeviceOrientation }

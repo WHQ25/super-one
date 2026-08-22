@@ -12,9 +12,11 @@ import type {
   DeviceInput,
   DeviceInputResult,
   DeviceSessionState,
+  DeviceStreamOptions,
 } from '@superone/shared/device'
 import type {
   IosSimulatorInput,
+  IosSimulatorPreviewMode,
   IosSimulatorSessionState,
 } from '@superone/shared/ios-simulator'
 import type { DeviceOrientation } from '@superone/shared/device-agent'
@@ -78,22 +80,29 @@ export function createIosSimulatorSurface(manager: IosSimulatorManager): DeviceS
     },
     async screenshot(sessionId): Promise<DeviceCapture> {
       const capture = await manager.screenshot(sessionId)
-      return { path: capture.path, kind: 'screenshot' }
+      return { path: capture.path, fileName: capture.fileName, kind: 'screenshot' }
     },
     async startRecording(sessionId): Promise<DeviceCapture> {
       const capture = await manager.startRecording(sessionId)
-      return { path: capture.path, kind: 'recording' }
+      return { path: capture.path, fileName: capture.fileName, kind: 'recording' }
     },
     async stopRecording(sessionId): Promise<DeviceCapture | null> {
       const capture = await manager.stopRecording(sessionId)
-      return capture ? { path: capture.path, kind: 'recording' } : null
+      return capture ? { path: capture.path, fileName: capture.fileName, kind: 'recording' } : null
     },
     isRecording(sessionId) {
       return manager.isRecording(sessionId)
     },
 
-    subscribe(sessionId, listener) {
-      return manager.subscribe(sessionId, (frame) => listener(frame as DeviceFrame))
+    subscribe(sessionId, listener, options?: DeviceStreamOptions) {
+      // Both settle in `stream.start`, so they have to travel WITH the subscription
+      // rather than be applied to a stream that is already running.
+      return manager.subscribe(
+        sessionId,
+        (frame) => listener(frame as DeviceFrame),
+        options?.mode as IosSimulatorPreviewMode | undefined,
+        options?.quality,
+      )
     },
     onSessionState(listener) {
       return manager.onSessionState((state) => listener(toSessionState(state)))

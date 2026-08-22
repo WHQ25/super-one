@@ -162,7 +162,6 @@ export class AndroidBackend implements TouchDeviceBackend {
   async perform(action: ResolvedAction, context: PerformContext): Promise<void> {
     const { signal } = context
     throwIfDeviceOperationAborted(signal)
-    const screen = context.observation.screen
 
     switch (action.kind) {
       case 'press':
@@ -178,21 +177,18 @@ export class AndroidBackend implements TouchDeviceBackend {
       case 'tap':
         return this.runGesture(
           [{ kind: 'tap', xRatio: action.x, yRatio: action.y, delayMs: 0 }],
-          screen,
           signal,
         )
       case 'doubleTap':
-        return this.runGesture(synthesizeDoubleTap(action.x, action.y), screen, signal)
+        return this.runGesture(synthesizeDoubleTap(action.x, action.y), signal)
       case 'longPress':
         return this.runGesture(
           synthesizeLongPress(action.x, action.y, action.durationMs),
-          screen,
           signal,
         )
       case 'swipe':
         return this.runGesture(
           synthesizeSwipe(action.fromX, action.fromY, action.toX, action.toY, action.durationMs),
-          screen,
           signal,
         )
       case 'pinch':
@@ -200,7 +196,6 @@ export class AndroidBackend implements TouchDeviceBackend {
           synthesizePinch(action.x, action.y, action.scale, {
             ...(action.durationMs ? { durationMs: action.durationMs } : {}),
           }),
-          screen,
           signal,
         )
       case 'type': {
@@ -264,10 +259,13 @@ export class AndroidBackend implements TouchDeviceBackend {
    */
   private async runGesture(
     steps: readonly TouchStep[],
-    screen: { width: number; height: number },
     signal?: AbortSignal,
   ): Promise<void> {
     const connection = await this.connection()
+    // scrcpy rejects positional events whose embedded size differs from the current
+    // video stream. The observation comes from a full-size adb screencap, while the
+    // connection is capped for preview, so only the connection owns this wire size.
+    const screen = { ...connection.screen }
     try {
       for (const step of steps) {
         throwIfDeviceOperationAborted(signal)

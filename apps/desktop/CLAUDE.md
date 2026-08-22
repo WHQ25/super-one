@@ -409,11 +409,11 @@ Two platform differences that are load-bearing rather than cosmetic:
   re-shapes the framebuffer and scrcpy re-sends a session packet with the axes swapped
   — whatever draws it must RESIZE, not rotate.
 
-⚠️ **The renderer has not been generalized yet.** `device:*` IPC channels and both
-surfaces exist, but the panel still uses the `iosSimulator*` channels, because
-`deviceList` answers with `DeviceDescriptor` while the picker/catalog/chrome read
-`IosSimulatorDevice` fields. Renaming the channels without moving those ~48 components
-breaks the panel — they are one change.
+The renderer consumes the neutral `device:*` IPC channels and `DeviceDescriptor`.
+Shared panel, stream, input, PiP and catalog code lives under `components/device/`;
+only simulator creation and DeviceKit artwork stay under `components/device/ios/`.
+The stage uses `DEVICE_RIGID_ROTATION` to keep the iOS shell rotation model while
+letting Android follow the dimensions published by scrcpy.
 
 Live checks against a real device: `src/main/device/android/live.manual.test.ts`,
 skipped unless `ANDROID_LIVE=1`. adb binds a daemon port, so it needs to run outside

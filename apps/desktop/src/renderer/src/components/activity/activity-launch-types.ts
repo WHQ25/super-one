@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { openBrowserTab, openIosSimulatorTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
+import { openBrowserTab, openDeviceTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
 
 export interface ActivityLaunchType {
   id: string
@@ -63,7 +63,15 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
         id: 'ios-simulator',
         icon: Smartphone,
         label: t('activity.launcher.iosSimulator'),
-        onOpen: () => openIosSimulatorTab(activeSessionId, t('activity.iosSimulator.title')),
+        onOpen: () => openDeviceTab(activeSessionId, t('activity.device.title')),
+      }]
+      : []),
+    ...(activeSessionId
+      ? [{
+        id: 'android-device',
+        icon: Smartphone,
+        label: t('activity.launcher.android'),
+        onOpen: () => openDeviceTab(activeSessionId, t('activity.device.title')),
       }]
       : []),
     // Absent rather than disabled on every other harness: a greyed-out row

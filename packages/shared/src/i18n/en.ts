@@ -4,8 +4,9 @@ export type Messages = {
       browser: string
       terminal: string
       iosSimulator: string
+      android: string
     }
-    iosSimulator: {
+    device: {
       title: string
       refresh: string
       checking: string
@@ -13,6 +14,8 @@ export type Messages = {
       unsupportedDetail: string
       waitingForFrame: string
       home: string
+      back: string
+      appSwitch: string
       lock: string
       volumeDown: string
       volumeUp: string
@@ -3264,15 +3267,18 @@ export const en: Messages = {
       browser: 'Browser',
       terminal: 'Terminal',
       iosSimulator: 'iOS Simulator',
+      android: 'Android',
     },
-    iosSimulator: {
-      title: 'iOS Simulator',
+    device: {
+      title: 'Device',
       refresh: 'Refresh',
-      checking: 'Checking the local iOS Simulator environment…',
-      unsupportedTitle: 'iOS Simulator Is Unavailable',
-      unsupportedDetail: 'Install Xcode and select its developer directory to use this panel.',
-      waitingForFrame: 'Waiting for the simulator preview…',
+      checking: 'Checking the local device environment…',
+      unsupportedTitle: 'No Device Platform Is Available',
+      unsupportedDetail: 'Install Xcode or the Android SDK to use this panel.',
+      waitingForFrame: 'Waiting for the device preview…',
       home: 'Home',
+      back: 'Back',
+      appSwitch: 'Recent Apps',
       lock: 'Lock',
       volumeDown: 'Volume Down',
       volumeUp: 'Volume Up',
@@ -3280,11 +3286,11 @@ export const en: Messages = {
       hideSoftwareKeyboard: 'Hide Software Keyboard',
       rotateLeft: 'Rotate Left',
       rotateRight: 'Rotate Right',
-      keyboardInput: 'Simulator keyboard input',
+      keyboardInput: 'Device keyboard input',
       detach: 'Disconnect Preview',
-      terminate: 'Shut Down Simulator',
-      detached: 'Preview disconnected. The simulator is still running.',
-      terminated: 'The simulator has been shut down.',
+      terminate: 'Shut Down Device',
+      detached: 'Preview disconnected. The device is still running.',
+      terminated: 'The device has been shut down.',
       screenshot: 'Screenshot',
       recordStart: 'Record Screen',
       recordStop: 'Stop Recording',
@@ -3300,14 +3306,14 @@ export const en: Messages = {
         captureNote: 'Screenshots and recordings always use the native display.',
       },
       picker: {
-        placeholder: 'Choose a Simulator',
+        placeholder: 'Choose a Device',
         launch: 'Launch',
         attach: 'Connect',
         running: 'Running Now',
         recent: 'Recent',
         busy: 'In use',
-        empty: 'No simulator is installed. Add a simulator runtime in Xcode.',
-        launching: 'Launching the simulator…',
+        empty: 'No available device was found.',
+        launching: 'Launching the device…',
         stepModel: 'Model',
         stepVersion: 'System Version',
         create: 'New Simulator',

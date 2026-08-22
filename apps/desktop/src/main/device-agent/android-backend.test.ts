@@ -44,7 +44,11 @@ interface Harness {
  * `screens` is the sequence of screenshots `screencap` hands back; repeating the last
  * one is what makes the picture settle, and varying them is what keeps it moving.
  */
-async function harness(options: { screens?: Buffer[]; dump?: string } = {}): Promise<Harness> {
+async function harness(options: {
+  screens?: Buffer[]
+  dump?: string
+  connectionScreen?: { width: number; height: number }
+} = {}): Promise<Harness> {
   const calls: string[][] = []
   const screens = options.screens ?? [png(1080, 2400)]
   let screencaps = 0
@@ -80,7 +84,7 @@ async function harness(options: { screens?: Buffer[]; dump?: string } = {}): Pro
   const sent: Buffer[] = []
   const connection = {
     deviceName: 'sdk_gphone64_arm64',
-    screen: { width: 1080, height: 2400 },
+    screen: options.connectionScreen ?? { width: 1080, height: 2400 },
     onMedia: () => () => {},
     onSession: () => () => {},
     onClosed: () => () => {},
@@ -193,16 +197,20 @@ describe('performing actions', () => {
     expect(sent.map((message) => message.readUInt8(1))).toEqual([MOTION.DOWN, MOTION.UP])
   })
 
-  it('aims at the screen the observation was taken against', async () => {
-    // Not at whatever the device reports now. A rotation between snapshot and action
-    // changes the framebuffer shape on Android, and the ratios the agent quoted belong
-    // to the picture it was shown.
-    const { backend, sent } = await harness()
+  it('uses the scrcpy video size when the observation came from a full-size screenshot', async () => {
+    // The server rejects positional events whose embedded size differs from the
+    // current video stream. Android observations come from a full-size screencap,
+    // while scrcpy is capped at 1280px, so the ratio must be projected into the
+    // connection's smaller coordinate space.
+    const { backend, sent } = await harness({
+      connectionScreen: { width: 576, height: 1280 },
+    })
     await backend.perform(
-      { kind: 'tap', x: 1, y: 1 },
-      { observation: observationOf({ width: 800, height: 360 }) },
+      { kind: 'tap', x: 0.5, y: 0.5 },
+      { observation: observationOf({ width: 1080, height: 2400 }) },
     )
-    expect([sent[0]!.readUInt16BE(18), sent[0]!.readUInt16BE(20)]).toEqual([800, 360])
+    expect([sent[0]!.readInt32BE(10), sent[0]!.readInt32BE(14)]).toEqual([288, 640])
+    expect([sent[0]!.readUInt16BE(18), sent[0]!.readUInt16BE(20)]).toEqual([576, 1280])
   })
 
   it('plays a swipe as a timed series rather than a teleport', async () => {

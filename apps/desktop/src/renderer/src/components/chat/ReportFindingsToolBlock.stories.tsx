@@ -168,7 +168,7 @@ export const Overflow: Story = {
       {block({
         findings: [
           {
-            file: 'apps/desktop/src/renderer/src/components/ios-simulator/use-ios-simulator-handover.ts',
+            file: 'apps/desktop/src/renderer/src/components/device/use-device-handover.ts',
             line: 1042,
             category: 'correctness',
             verdict: 'CONFIRMED',

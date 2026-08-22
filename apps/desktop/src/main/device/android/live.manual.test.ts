@@ -163,7 +163,7 @@ describe.skipIf(!live)('driving a real device through the backend', () => {
     await manager.dispose()
   }, 180_000)
 
-  it('swipes without leaving a finger held down', async () => {
+  it('opens the app drawer with a swipe and leaves no finger held down', async () => {
     const toolchain = detectAndroidToolchain()
     const manager = new AndroidDeviceManager(toolchain!)
     const devices = await manager.listDevices()
@@ -172,6 +172,9 @@ describe.skipIf(!live)('driving a real device through the backend', () => {
     await manager.boot('live-swipe', running.id)
     const backend = new AndroidBackend(manager, 'live-swipe', '/tmp/claude/live-captures')
 
+    const initial = await backend.observe()
+    await backend.perform({ kind: 'key', button: 'home' }, { observation: initial })
+    await new Promise((resolve) => setTimeout(resolve, 1200))
     const before = await backend.observe()
     const started = Date.now()
     await backend.perform(
@@ -182,6 +185,11 @@ describe.skipIf(!live)('driving a real device through the backend', () => {
     // The gesture must have taken roughly its stated duration. Sent back to back it
     // would return instantly and the guest would read it as a teleport, not a swipe.
     expect(Date.now() - started).toBeGreaterThan(200)
+
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    const after = await backend.observe()
+    report(`after swipe: hash changed = ${after.frameHash !== before.frameHash}`)
+    expect(after.frameHash).not.toBe(before.frameHash)
 
     await manager.dispose()
   }, 180_000)

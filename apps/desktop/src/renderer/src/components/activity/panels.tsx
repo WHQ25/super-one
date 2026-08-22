@@ -3,7 +3,7 @@ import { FilePreview } from '@/components/coding/FilePreview'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
 import { BrowserView } from '@/components/browser/BrowserView'
 import { TrajectoryPanel } from '@/components/trajectory/TrajectoryPanel'
-import { IosSimulatorDockPanel } from '@/components/ios-simulator/IosSimulatorDockPanel'
+import { DeviceDockPanel } from '@/components/device/DeviceDockPanel'
 import { ActivityTerminalPanel } from './ActivityTerminalPanel'
 
 function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string }>) {
@@ -32,5 +32,5 @@ export const activityPanelComponents: Record<string, React.FunctionComponent<IDo
   'browser': BrowserPanel as React.FunctionComponent<IDockviewPanelProps>,
   'terminal': TerminalHostPanel as React.FunctionComponent<IDockviewPanelProps>,
   'trajectory': TrajectoryDockPanel as React.FunctionComponent<IDockviewPanelProps>,
-  'ios-simulator': IosSimulatorDockPanel as React.FunctionComponent<IDockviewPanelProps>,
+  'ios-simulator': DeviceDockPanel as React.FunctionComponent<IDockviewPanelProps>,
 }

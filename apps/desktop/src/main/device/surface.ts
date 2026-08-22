@@ -12,17 +12,16 @@
  */
 
 import type {
+  DeviceCapture,
   DeviceFrame,
   DeviceInput,
   DeviceInputResult,
   DevicePlatform,
   DeviceSessionState,
+  DeviceStreamOptions,
 } from '@superone/shared/device'
 
-export interface DeviceCapture {
-  path: string
-  kind: 'screenshot' | 'recording'
-}
+export type { DeviceCapture }
 
 export interface DeviceSurface {
   readonly platform: DevicePlatform
@@ -46,8 +45,18 @@ export interface DeviceSurface {
   stopRecording(sessionId: string): Promise<DeviceCapture | null>
   isRecording(sessionId: string): boolean
 
-  /** Live frames. Returns an unsubscribe. */
-  subscribe(sessionId: string, listener: (frame: DeviceFrame) => void): () => void
+  /**
+   * Live frames. Returns an unsubscribe.
+   *
+   * `options` is advisory: the simulator settles scale and frame rate when the
+   * stream starts, so it honours them; scrcpy fixes its own when the video socket
+   * opens, so Android ignores them rather than pretending otherwise.
+   */
+  subscribe(
+    sessionId: string,
+    listener: (frame: DeviceFrame) => void,
+    options?: DeviceStreamOptions,
+  ): () => void
 
   /**
    * State changes the panel did not ask for.

@@ -163,10 +163,12 @@ import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
 import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
 import { registerHarnessIpcHandlers } from './harness/ipc'
-import { registerIosSimulatorIpc, closeIosSimulatorPorts } from './ios-simulator/ipc'
+import { registerIosSimulatorIpc } from './ios-simulator/ipc'
+import { registerDeviceIpc, closeDevicePorts } from './device/ipc'
+import { deviceSurfaces, listAllDevices } from './device/registry'
 import { disposeIosSimulatorManager } from './ios-simulator'
 import { disposeAndroidDeviceManager } from './device/android'
-import { attachIosSimulatorGestureEvents } from './ios-simulator/gesture-events'
+import { attachDeviceGestureEvents } from './device/gesture-events'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { connectWithHarnessResourceCache, getFreshHarnessResources } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
@@ -855,7 +857,7 @@ function createWindow(): void {
     if (url !== mainWindow?.webContents.getURL()) e.preventDefault()
   })
 
-  attachIosSimulatorGestureEvents(mainWindow)
+  attachDeviceGestureEvents(mainWindow)
 
   mainWindow.webContents.on('before-input-event', (_e, input) => {
     if (input.control || input.meta) {
@@ -954,7 +956,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     },
   })
 
-  attachIosSimulatorGestureEvents(win)
+  attachDeviceGestureEvents(win)
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
@@ -1258,6 +1260,14 @@ function registerIpcHandlers(): void {
   // so continueToMain's needsHarnessAlign invoke cannot race a dynamic import.
   registerHarnessIpcHandlers()
   registerIosSimulatorIpc(app.getPath('userData'))
+  // The panel's own channels, one set for both platforms. Surfaces are rebuilt per
+  // call rather than captured: the Android manager is constructed on first probe, so
+  // a list taken at startup would be permanently iOS-only on a machine that has an
+  // SDK. `listDevices` is the same enumeration the agent's `device_list` reads.
+  registerDeviceIpc({
+    surfaces: () => deviceSurfaces(app.getPath('userData')),
+    listDevices: () => listAllDevices(app.getPath('userData')),
+  })
 
   // Environment / remote-node product path (gateway + workspace router).
   // Lazy import keeps main boot light when environments unused.
@@ -5334,7 +5344,7 @@ function performQuit(): void {
   destroyComputerUsePermissionFloat()
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopComputerUseHelper()
-  closeIosSimulatorPorts()
+  closeDevicePorts()
   shutdownAllProxies()
   terminalManager.killAll()
   remoteTerminalController.dispose()
@@ -5380,7 +5390,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   log.info(`[main] received ${sig}, shutting down`)
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopComputerUseHelper()
-  closeIosSimulatorPorts()
+  closeDevicePorts()
   terminalManager.killAll()
   remoteTerminalController.dispose()
   closeAllDbConnections()

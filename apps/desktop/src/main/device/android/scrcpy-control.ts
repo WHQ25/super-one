@@ -73,7 +73,7 @@ export interface TouchTarget {
   /** Framebuffer ratios, matching `DeviceUiNode.bounds`. */
   xRatio: number
   yRatio: number
-  /** The size this end believes the screen is. The server scales against it. */
+  /** Current scrcpy video size. The server rejects events carrying any other size. */
   width: number
   height: number
 }
@@ -81,10 +81,9 @@ export interface TouchTarget {
 /**
  * One touch contact update.
  *
- * The position carries the screen size the client thinks it is aiming at, and the
- * server rescales — which is why ratios can go out directly without this end ever
- * learning the real resolution. Ratios are also the one space that survives the
- * rotation mid-stream that Android does.
+ * The position carries the current scrcpy video size and the server maps it back to
+ * the display. Ratios let the caller project snapshot coordinates into that required
+ * wire size, and are also the one space that survives Android rotation.
  */
 export function encodeTouch(options: {
   action: number
@@ -110,6 +109,8 @@ export function encodeTouch(options: {
     encodePressure(action === MOTION.UP ? 0 : options.pressure ?? 1),
     22,
   )
+  // Finger touches intentionally carry no action button or pressed buttons. scrcpy's
+  // server treats them as SOURCE_TOUCHSCREEN and clears buttons on that path.
   message.writeInt32BE(0, 24)
   message.writeInt32BE(options.buttons ?? 0, 28)
   return message

@@ -8,8 +8,8 @@ import { AndroidBackend } from './android-backend'
 import { requestDeviceControl } from './control'
 import { listDeviceCatalog } from './device-catalog'
 import type { DevicePlatformPort } from '../device/platform-port'
-import { IosSimulatorDevicePort } from '../ios-simulator/device-port'
-import { AndroidDevicePort, getAndroidDeviceManager } from '../device/android'
+import { devicePlatformPorts } from '../device/registry'
+import { getAndroidDeviceManager } from '../device/android'
 import { createDeviceRecents, type DeviceRecentsPort } from './device-recents'
 import type { DeviceAgentToolName } from './tools'
 import type { TouchDeviceBackend } from './types'
@@ -71,17 +71,12 @@ function buildBackend(sessionId: string, platform: string): TouchDeviceBackend {
  * Every platform whose devices this session may be offered, in the order the catalog
  * lists them. Swapped by tests alongside the backend.
  */
-let platformPortsFactory: () => DevicePlatformPort[] = () => {
-  const ports: DevicePlatformPort[] = [
-    new IosSimulatorDevicePort(getIosSimulatorManager(app.getPath('userData'))),
-  ]
-  // Registered only when there is an SDK to talk to. On a machine without one the
-  // catalog stays single-platform and its output is byte-identical to before Android
-  // existed — capability detection is the feature flag.
-  const android = getAndroidDeviceManager()
-  if (android) ports.push(new AndroidDevicePort(android))
-  return ports
-}
+// Registered only when there is an SDK to talk to. On a machine without one the
+// catalog stays single-platform and its output is byte-identical to before Android
+// existed — capability detection is the feature flag. Shared with the panel's picker
+// via `device/registry`, so the agent and the user are offered the same devices.
+let platformPortsFactory: () => DevicePlatformPort[] = () =>
+  devicePlatformPorts(app.getPath('userData'))
 
 export function setDeviceAgentPlatformPortsFactory(
   factory: () => DevicePlatformPort[],

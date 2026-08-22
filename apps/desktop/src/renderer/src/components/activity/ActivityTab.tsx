@@ -10,8 +10,8 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { useBrowserStore } from '@/stores/browser'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
-import { useIosSimulatorTabActions } from '@/components/ios-simulator/ios-simulator-tab-actions'
-import { closeActivityTerminalTab, closeBrowserTab, closeIosSimulatorTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
+import { useDeviceTabActions } from '@/components/device/device-tab-actions'
+import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
   const [active, setActive] = useState(api.isActive)
@@ -208,24 +208,24 @@ export function TrajectoryTab(props: IDockviewPanelHeaderProps<{ sessionId: stri
   )
 }
 
-export function IosSimulatorTab(props: IDockviewPanelHeaderProps<{ sessionId: string }>) {
+export function DeviceTab(props: IDockviewPanelHeaderProps<{ sessionId: string }>) {
   const { t } = useTranslation()
   const active = useIsActive(props.api)
   const title = usePanelTitle(props.api)
   // Absent until the panel body mounts and registers itself, which is also exactly
   // when there is a device list worth re-reading.
-  const actions = useIosSimulatorTabActions((s) => s.bySession[props.params.sessionId])
+  const actions = useDeviceTabActions((s) => s.bySession[props.params.sessionId])
   return (
     <div className={tabChipClass(active)}>
-      <HoverCloseSlot onClose={() => closeIosSimulatorTab(props.params.sessionId)}>
+      <HoverCloseSlot onClose={() => closeDeviceTab(props.params.sessionId)}>
         <Smartphone className="size-3.5 shrink-0" />
       </HoverCloseSlot>
-      <span className="min-w-0 truncate text-xs">{title || t('activity.iosSimulator.title')}</span>
+      <span className="min-w-0 truncate text-xs">{title || t('activity.device.title')}</span>
       {actions && (
         <TabActionButton
           active={active}
           onClick={(e) => { e.stopPropagation(); actions.refresh() }}
-          title={t('activity.iosSimulator.refresh')}
+          title={t('activity.device.refresh')}
         >
           <RotateCw className={cn('size-3 shrink-0', actions.busy && 'animate-spin')} />
         </TabActionButton>
@@ -241,5 +241,5 @@ export const activityTabComponents: Record<string, React.FunctionComponent<IDock
   'browser-tab': BrowserTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'terminal-tab': TerminalTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'trajectory-tab': TrajectoryTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
-  'ios-simulator-tab': IosSimulatorTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'ios-simulator-tab': DeviceTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
 }

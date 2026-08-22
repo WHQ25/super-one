@@ -3521,31 +3521,18 @@ export const AgentIpcChannels = {
   ENVIRONMENT_HARNESS_DISABLE: 'environment:harnessDisable',
   ENVIRONMENT_HARNESS_PROBE: 'environment:harnessProbe',
 
-  // Local macOS iOS Simulator foundation (remote environments report unsupported).
+  // The four things only the iOS Simulator has: whether this machine has a usable
+  // Xcode, which runtimes it installed, Apple's DeviceKit artwork, and making a new
+  // simulator. Android has no counterpart to any of them, so they are NOT part of
+  // the neutral set below and never will be.
   ENVIRONMENT_IOS_SIMULATOR_STATUS: 'environment:iosSimulatorStatus',
-  ENVIRONMENT_IOS_SIMULATOR_LIST: 'environment:iosSimulatorList',
   ENVIRONMENT_IOS_SIMULATOR_RUNTIMES: 'environment:iosSimulatorRuntimes',
   ENVIRONMENT_IOS_SIMULATOR_CHROME: 'environment:iosSimulatorChrome',
   ENVIRONMENT_IOS_SIMULATOR_CREATE: 'environment:iosSimulatorCreate',
-  ENVIRONMENT_IOS_SIMULATOR_BIND: 'environment:iosSimulatorBind',
-  ENVIRONMENT_IOS_SIMULATOR_BOOT: 'environment:iosSimulatorBoot',
-  ENVIRONMENT_IOS_SIMULATOR_DETACH: 'environment:iosSimulatorDetach',
-  ENVIRONMENT_IOS_SIMULATOR_SHUTDOWN: 'environment:iosSimulatorShutdown',
-  ENVIRONMENT_IOS_SIMULATOR_RELEASE: 'environment:iosSimulatorRelease',
-  ENVIRONMENT_IOS_SIMULATOR_INPUT: 'environment:iosSimulatorInput',
-  ENVIRONMENT_IOS_SIMULATOR_SCREENSHOT: 'environment:iosSimulatorScreenshot',
-  ENVIRONMENT_IOS_SIMULATOR_RECORD_START: 'environment:iosSimulatorRecordStart',
-  ENVIRONMENT_IOS_SIMULATOR_RECORD_STOP: 'environment:iosSimulatorRecordStop',
-  ENVIRONMENT_IOS_SIMULATOR_STREAM_OPEN: 'environment:iosSimulatorStreamOpen',
-  ENVIRONMENT_IOS_SIMULATOR_STREAM_CLOSE: 'environment:iosSimulatorStreamClose',
-  ENVIRONMENT_IOS_SIMULATOR_STREAM_PORT: 'environment:iosSimulatorStreamPort',
-  ENVIRONMENT_IOS_SIMULATOR_ROTATE_GESTURE: 'environment:iosSimulatorRotateGesture',
-  ENVIRONMENT_IOS_SIMULATOR_STATE: 'environment:iosSimulatorState',
 
   // Devices of any platform — simulators, emulators and phones through one set of
-  // channels. The iOS ones above stay: a runtime list, DeviceKit artwork and
-  // creating a simulator have no Android counterpart, and the rest are still what
-  // the panel talks to until it is generalized.
+  // channels. Everything the panel does to a device it already has is here; the
+  // platform is carried in the device id, and `device/ipc.ts` routes on it.
   ENVIRONMENT_DEVICE_LIST: 'environment:deviceList',
   ENVIRONMENT_DEVICE_BIND: 'environment:deviceBind',
   ENVIRONMENT_DEVICE_BOOT: 'environment:deviceBoot',

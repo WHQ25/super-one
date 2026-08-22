@@ -1,66 +1,27 @@
+import type { DeviceOrientation } from './device-agent'
+import {
+  DEVICE_MAX_TOUCH_CONTACTS,
+  DEVICE_ORIENTATION_CYCLE,
+  DEVICE_ROTATION_DEGREES,
+  isDeviceLandscape,
+  stepDeviceOrientation,
+} from './device'
+
 export const IOS_SIMULATOR_PROTOCOL_VERSION = 9 as const
-export const IOS_SIMULATOR_MAX_TOUCH_CONTACTS = 2 as const
-
 /**
- * `UIDeviceOrientation`, which is the vocabulary the guest workspace accepts. Apple's
- * `left`/`right` naming describes where the home button ends up, not which way the
- * device turned, so never infer the on-screen rotation from the name — use
- * `IOS_SIMULATOR_ROTATION_DEGREES`.
- */
-export type IosSimulatorOrientation =
-  | 'portrait'
-  | 'landscape-left'
-  | 'portrait-upside-down'
-  | 'landscape-right'
-
-/**
- * How far clockwise the device is lying, which is both how far the host turns the
- * shell and how far it has to turn the framebuffer to read upright.
+ * The neutral device vocabulary, under this platform's old names.
  *
- * The framebuffer never changes shape: the guest draws its rotated UI into the same
- * portrait surface, exactly like a real panel, so one CSS rotation carries artwork
- * and picture together.
- *
- * The landscape pair is the trap. `landscapeLeft` puts the home button on the RIGHT,
- * so the device's top edge points left -- a quarter turn ANTI-clockwise, 270deg on
- * screen -- and `landscapeRight` is the mirror of that. Reading the names as turn
- * directions lands both of them 180deg out, which shows up as a landscape picture
- * printed upside down inside a correctly-turned body.
+ * Aliases rather than copies: orientation, its clockwise cycle and the contact cap
+ * are identical on both platforms, and two tables that must agree eventually do not.
+ * `@superone/shared/device` is where they live; these keep every existing iOS call
+ * site — and its comments about what the names mean — reading as it did.
  */
-export const IOS_SIMULATOR_ROTATION_DEGREES: Record<IosSimulatorOrientation, number> = {
-  'portrait': 0,
-  'landscape-right': 90,
-  'portrait-upside-down': 180,
-  'landscape-left': 270,
-}
-
-/**
- * Whether the device is lying on its side, which is the only part of an orientation
- * the host can actually verify: accessibility frames come back in the rotated
- * screen's own point space, so the guest's root frame swaps width and height on a
- * quarter turn and looks identical across the two portraits and the two landscapes.
- */
-export function isIosSimulatorLandscape(orientation: IosSimulatorOrientation): boolean {
-  return IOS_SIMULATOR_ROTATION_DEGREES[orientation] % 180 !== 0
-}
-
-/** Clockwise order, so stepping forward turns the device to the right. */
-export const IOS_SIMULATOR_ORIENTATION_CYCLE = [
-  'portrait',
-  'landscape-right',
-  'portrait-upside-down',
-  'landscape-left',
-] as const satisfies readonly IosSimulatorOrientation[]
-
-export function stepIosSimulatorOrientation(
-  orientation: IosSimulatorOrientation,
-  direction: 'left' | 'right',
-): IosSimulatorOrientation {
-  const cycle = IOS_SIMULATOR_ORIENTATION_CYCLE
-  const index = cycle.indexOf(orientation)
-  const next = (index + (direction === 'right' ? 1 : cycle.length - 1)) % cycle.length
-  return cycle[next]!
-}
+export type IosSimulatorOrientation = DeviceOrientation
+export const IOS_SIMULATOR_MAX_TOUCH_CONTACTS = DEVICE_MAX_TOUCH_CONTACTS
+export const IOS_SIMULATOR_ROTATION_DEGREES = DEVICE_ROTATION_DEGREES
+export const IOS_SIMULATOR_ORIENTATION_CYCLE = DEVICE_ORIENTATION_CYCLE
+export const isIosSimulatorLandscape = isDeviceLandscape
+export const stepIosSimulatorOrientation = stepDeviceOrientation
 
 /**
  * Characters a simulated hardware keyboard can actually produce.

@@ -13,7 +13,7 @@
 
 import { BrowserWindow, ipcMain, MessageChannelMain, type MessagePortMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import type { DeviceDescriptor, DeviceInput } from '@superone/shared/device'
+import type { DeviceDescriptor, DeviceInput, DeviceStreamOptions } from '@superone/shared/device'
 import log from '../logger'
 import type { DeviceSurface } from './surface'
 
@@ -145,21 +145,32 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
 
   ipcMain.on(
     AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN,
-    (event, sessionId: string) => {
+    (event, sessionId: string, options?: DeviceStreamOptions) => {
       const key = portKey(event.sender.id, sessionId)
       closePort(key)
       const { port1, port2 } = new MessageChannelMain()
       let unsubscribe = () => {}
+      let closed = false
       void surfaceFor(surfaces(), sessionId).then((surface) => {
-        unsubscribe = surface.subscribe(sessionId, (frame) => {
+        const nextUnsubscribe = surface.subscribe(sessionId, (frame) => {
           try { port2.postMessage(frame) } catch { closePort(key) }
-        })
+        }, options)
+        // Closing the renderer port can beat the asynchronous owner lookup above.
+        // Do not leave the late subscription alive after its map entry is gone.
+        if (closed) nextUnsubscribe()
+        else unsubscribe = nextUnsubscribe
       }).catch((error: unknown) => {
         // Without this the panel sits on its spinner forever: a stream that never
         // starts looks exactly like one that has not produced a frame yet.
         log.warn('[device] preview stream failed to start', error)
       })
-      openPorts.set(key, { port: port2, unsubscribe: () => unsubscribe() })
+      openPorts.set(key, {
+        port: port2,
+        unsubscribe: () => {
+          closed = true
+          unsubscribe()
+        },
+      })
       port2.on('close', () => closePort(key))
       port2.start()
       event.sender.postMessage(

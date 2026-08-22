@@ -53,7 +53,8 @@
     }
 
     document.getElementById('btn-toast').onclick = function() {
-      superone.ui.toast('Toast from popover!', 'success')
+      // A popover is its own WebView; toast is Node-side, so ask for it.
+      superone.node.postMessage({ type: 'toast', text: 'Toast from popover!', toastType: 'success' })
     }
 
     document.getElementById('btn-close').onclick = function() {

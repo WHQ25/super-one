@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useChatStore } from '@/stores/chat'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/stores/app'
+import { useIsDark } from '@/hooks/use-is-dark'
 import { buildStandaloneToolUrl } from '@superone/shared/miniapp-types'
-import { buildMiniAppHost } from '@superone/shared/miniapp-host'
+import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { MiniAppWebview, type MiniAppWebviewHandle } from '@/components/miniapp/MiniAppWebview'
+import { readThemeVars } from '@/components/miniapp/miniapp-theme'
 import { cn } from '@superone/ui/lib/utils'
 import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
 
@@ -23,185 +25,90 @@ interface Props {
   templatePath: string
 }
 
-/**
- * Standalone tool block — owns one iframe per tool call. The iframe both executes the
- * author's `superone.tools.handle(...)` registration and renders the tool's chat-block UI.
- *
- * MCP server's callId (randomUUID, awaited in main's pending map) is distinct from the SDK
- * toolUseId (in the chat tool_use block). useStandaloneToolCallRouter populates
- * _pendingStandaloneCalls[toolUseId] = { callId, ... } once the IPC arrives. This block
- * subscribes by toolUseId; iframe dispatch + tool-result reply use entry.callId so main's
- * pending map can match.
- */
+/** A result-only WebView; all tool computation runs in the Node MiniApp Host. */
 export function StandaloneToolBlock(props: Props) {
   const { appId, toolUseId, toolName, appName, toolReadableName, args, result, isStreaming, templatePath } = props
-
   const projectId = useAppStore((s) => s.currentProjectId)
-  const projectDir = useAppStore((s) => s.currentFolder)
-  const callEntry = useChatStore((s) => s._pendingStandaloneCalls[toolUseId])
-
+  const projectDir = useAppStore((s) => s.currentFolder) ?? ''
+  const isDark = useIsDark()
   const containerRef = useRef<HTMLDivElement>(null)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const dispatchedRef = useRef(false)
-
-  const [iframeReady, setIframeReady] = useState(false)
+  const webviewRef = useRef<MiniAppWebviewHandle>(null)
+  const readyRef = useRef(false)
   const [inViewport, setInViewport] = useState(true)
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
 
-  const host = projectId ? buildMiniAppHost(appId, projectId) : buildMiniAppHost(appId, null)
+  const host = buildMiniAppUrlHost(appId, projectId)
   const src = useMemo(
     () => buildStandaloneToolUrl(host, toolUseId, toolName, templatePath),
     [host, toolUseId, toolName, templatePath],
   )
-
-  const cachedResult = useMemo(() => {
+  const parsedResult = useMemo(() => {
     if (!result || isStreaming) return null
     try { return JSON.parse(result) } catch { return result }
   }, [result, isStreaming])
 
-  function postToIframe(msg: unknown) {
-    const win = iframeRef.current?.contentWindow
-    if (!win) return
-    win.postMessage(msg, '*')
-  }
-
-  function maybeDispatch() {
-    if (!iframeReady) {
-      window.app.trace?.('miniapp.standalone', 'block-maybedispatch', {
-        toolUseId, decision: 'not-ready', hasEntry: !!callEntry, hasCachedResult: cachedResult !== null, inViewport,
-      }, callEntry?.callId)
-      return
-    }
-    if (dispatchedRef.current) {
-      window.app.trace?.('miniapp.standalone', 'block-maybedispatch', {
-        toolUseId, decision: 'already-dispatched',
-      }, callEntry?.callId)
-      return
-    }
-    if (cachedResult !== null && !isStreaming) {
-      const replyCallId = callEntry?.callId ?? toolUseId
-      window.app.trace?.('miniapp.standalone', 'block-maybedispatch', {
-        toolUseId, decision: 'dispatch-cached', callId: replyCallId,
-      }, replyCallId)
-      postToIframe({ type: 'miniapp-standalone-cached-result', callId: replyCallId, arguments: args, result: cachedResult })
-      dispatchedRef.current = true
-      return
-    }
-    if (callEntry) {
-      window.app.trace?.('miniapp.standalone', 'block-maybedispatch', {
-        toolUseId, decision: 'dispatch-call', callId: callEntry.callId, toolName,
-      }, callEntry.callId)
-      postToIframe({
-        type: 'miniapp-standalone-call',
-        callId: callEntry.callId,
-        toolName,
-        arguments: callEntry.arguments,
-      })
-      dispatchedRef.current = true
-    } else {
-      window.app.trace?.('miniapp.standalone', 'block-maybedispatch', {
-        toolUseId, decision: 'wait-for-entry',
-      })
-    }
-  }
-
-  useEffect(() => {
-    window.app.trace?.('miniapp.standalone', 'block-mount', {
-      toolUseId, appId, toolName, isStreaming, hasResult: !!result,
+  const sendData = useCallback(() => {
+    if (!readyRef.current) return
+    webviewRef.current?.send({
+      type: 'miniapp-standalone-data',
+      arguments: args,
+      result: parsedResult,
+      error: null,
     })
-    return () => {
-      window.app.trace?.('miniapp.standalone', 'block-unmount', { toolUseId, appId, toolName })
+  }, [args, parsedResult])
+
+  const handleMessage = useCallback((channel: string, data: Record<string, unknown>, send: (message: unknown) => void) => {
+    if (channel === 'miniapp-ready') {
+      readyRef.current = true
+      send({ type: 'miniapp-theme', vars: readThemeVars(), isDark })
+      send({ type: 'miniapp-standalone-data', arguments: args, result: parsedResult, error: null })
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toolUseId, appId, toolName])
-
-  useEffect(() => {
-    window.app.trace?.('miniapp.standalone', 'block-call-entry', {
-      toolUseId, hasEntry: !!callEntry, callId: callEntry?.callId, hasCachedResult: cachedResult !== null, iframeReady,
-    }, callEntry?.callId)
-    maybeDispatch()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callEntry, cachedResult, iframeReady])
-
-  // postMessage listener: standalone-specific (ready/resize) + delegate fs/kv/git/db/ui/
-  // tool-result to the shared handler so the iframe's superone.* requests reach main
-  // exactly like a panel iframe would.
-  useEffect(() => {
-    if (!inViewport) return
-    const onMessage = (ev: MessageEvent) => {
-      if (!iframeRef.current || ev.source !== iframeRef.current.contentWindow) return
-      const data = ev.data as Record<string, unknown> & { type?: string; height?: number }
-      if (!data || typeof data.type !== 'string') return
-
-      if (data.type === 'miniapp-ready') {
-        window.app.trace?.('miniapp.standalone', 'block-iframe-ready', {
-          toolUseId, appId, toolName,
-        })
-        setIframeReady(true)
-        return
-      }
-      if (data.type === 'miniapp-resize' && typeof data.height === 'number' && data.height > 0) {
-        setHeight(Math.max(data.height, PLACEHOLDER_MIN_HEIGHT))
-        return
-      }
-      if (projectDir) {
-        handleMiniAppMessage(data.type, data, appId, projectDir, postToIframe)
-      }
+    if (channel === 'miniapp-resize' && typeof data.height === 'number' && data.height > 0) {
+      setHeight(Math.max(data.height, PLACEHOLDER_MIN_HEIGHT))
+      return
     }
-    window.addEventListener('message', onMessage)
-    return () => {
-      window.removeEventListener('message', onMessage)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inViewport, toolUseId, appId, projectDir])
+    if (projectDir) handleMiniAppMessage(channel, data, appId, projectDir, send)
+  }, [appId, args, isDark, parsedResult, projectDir])
 
-  // Reset iframe-ready when the iframe is recreated (inViewport flips back to true
-  // mounts a fresh iframe; reuse of the old `iframeReady=true` would skip the
-  // load wait). Cleanup only fires when inViewport=false → iframe is unmounted.
+  useEffect(sendData, [sendData])
+
   useEffect(() => {
     if (!inViewport) {
-      setIframeReady(false)
-      dispatchedRef.current = false
+      readyRef.current = false
+      return
     }
-  }, [inViewport])
+    return window.miniapp.onHostMessage((event) => {
+      if (event.appId === appId && event.projectDir === projectDir) {
+        webviewRef.current?.send({ type: 'miniapp-node-message', payload: event.payload })
+      }
+    })
+  }, [appId, inViewport, projectDir])
 
-  // IntersectionObserver: unmount iframe when far from viewport.
-  // Trace lives outside the state updater so React 18 strict-mode's double-invoke
-  // for purity checks doesn't double-emit the trace event.
-  const lastTracedInViewport = useRef(true)
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const next = entry.isIntersecting
-          if (lastTracedInViewport.current !== next) {
-            lastTracedInViewport.current = next
-            window.app.trace?.('miniapp.standalone', 'block-viewport-change', {
-              toolUseId, inViewport: next,
-            })
-          }
-          setInViewport(next)
-        }
-      },
+    const element = containerRef.current
+    if (!element) return
+    const observer = new IntersectionObserver(
+      (entries) => entries.forEach((entry) => setInViewport(entry.isIntersecting)),
       { rootMargin: VIEWPORT_ROOT_MARGIN },
     )
-    obs.observe(el)
-    return () => obs.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toolUseId])
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <div ref={containerRef} className="my-0.5">
       {inViewport ? (
-        <iframe
-          ref={iframeRef}
-          src={src}
-          sandbox="allow-scripts allow-same-origin"
-          className="w-full rounded-md border border-border bg-background"
-          style={{ height }}
-        />
+        <div className="w-full overflow-hidden rounded-md border border-border bg-background" style={{ height }}>
+          <MiniAppWebview
+            ref={webviewRef}
+            appId={appId}
+            src={src}
+            onMessage={handleMessage}
+            className="block size-full"
+            style={{ border: 'none' }}
+          />
+        </div>
       ) : (
         <div
           className={cn(

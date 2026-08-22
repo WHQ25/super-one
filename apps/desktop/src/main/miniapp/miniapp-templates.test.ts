@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateVanillaFiles, generateReactFiles, generateSuperoneDts, slugify } from './miniapp-templates'
+import { generateVanillaFiles, generateReactFiles, generateSuperoneDts, generateHostDts, slugify } from './miniapp-templates'
 import type { TemplateOptions } from './miniapp-templates'
 import type { MiniAppManifest } from '@superone/shared/miniapp-types'
 
@@ -7,6 +7,7 @@ function makeOpts(overrides?: Partial<TemplateOptions>): TemplateOptions {
   const manifest: MiniAppManifest = {
     appId: 'test-app',
     name: 'Test App',
+    main: 'node.js',
   }
   return {
     name: 'Test App',
@@ -16,10 +17,10 @@ function makeOpts(overrides?: Partial<TemplateOptions>): TemplateOptions {
 }
 
 describe('generateVanillaFiles', () => {
-  it('generates 2 files', () => {
+  it('generates UI and MiniApp Host entries', () => {
     const files = generateVanillaFiles(makeOpts())
-    expect(files).toHaveLength(2)
-    expect(files.map((f) => f.path)).toEqual(['manifest.json', 'index.html'])
+    expect(files).toHaveLength(3)
+    expect(files.map((f) => f.path)).toEqual(['manifest.json', 'index.html', 'node.js'])
   })
 
   it('generates valid manifest JSON', () => {
@@ -61,6 +62,8 @@ describe('generateReactFiles', () => {
     expect(paths).toContain('index.html')
     expect(paths).toContain('src/main.tsx')
     expect(paths).toContain('src/App.tsx')
+    expect(paths).toContain('src/node.ts')
+    expect(paths).toContain('src/superone-host.d.ts')
     expect(paths).toContain('src/superone.d.ts')
     expect(paths).toContain('src/index.css')
     expect(paths).toContain('.gitignore')
@@ -102,7 +105,7 @@ describe('generateReactFiles', () => {
   it('package.json has build and dev scripts', () => {
     const files = generateReactFiles(makeOpts())
     const pkg = JSON.parse(files.find((f) => f.path === 'package.json')!.content)
-    expect(pkg.scripts.build).toBe('vite build')
+    expect(pkg.scripts.build).toContain('bun build src/node.ts')
     expect(pkg.scripts.dev).toBe('vite')
   })
 
@@ -124,6 +127,7 @@ describe('generateReactFiles', () => {
     const paths = files.map((f) => f.path)
     expect(paths).toContain('dist/manifest.json')
     expect(paths).toContain('dist/index.html')
+    expect(paths).toContain('dist/node.js')
   })
 
   it('dist/manifest.json matches public/manifest.json', () => {
@@ -142,65 +146,27 @@ describe('generateSuperoneDts', () => {
     expect(dts).toContain('superone: SuperOne')
   })
 
-  it('covers tools API', () => {
-    expect(dts).toContain('handle(name: string')
+  it('covers MiniApp Host messaging without UI tool handlers', () => {
+    expect(dts).toContain('readonly node: SuperOneNodeBridge')
+    expect(dts).not.toContain('tools: {')
   })
 
-  it('covers readiness API', () => {
-    expect(dts).toContain('ready(): void')
-    expect(dts).toContain('deferReady(): void')
+  it('does not expose privileged data APIs in WebViews', () => {
+    expect(dts).not.toMatch(/\b(fs|git|db|kv|peer):/)
   })
 
-
-  it('covers fs API', () => {
-    expect(dts).toContain('readFile(path: string): Promise<string>')
-    expect(dts).toContain("readFile(path: string, opts: { binary: true }): Promise<ArrayBuffer>")
-    expect(dts).toContain('writeFile(path: string, content: string | ArrayBuffer | Uint8Array, opts?: { append?: boolean }): Promise<void>')
-    expect(dts).toContain('deleteFile(path: string): Promise<void>')
-    expect(dts).toContain('rename(from: string, to: string): Promise<void>')
-    expect(dts).toContain('stat(path: string): Promise<SuperOneFsStat>')
-    expect(dts).toContain('mkdir(path: string): Promise<void>')
-    expect(dts).toContain('readDir(path?: string): Promise<SuperOneFsEntry[]>')
-    expect(dts).toContain('glob(pattern: string): Promise<string[]>')
-    expect(dts).toContain('watch(path: string')
-    expect(dts).toContain('unwatch(watchId: number): void')
+  it('keeps host capabilities out of the WebView — they moved to the MiniApp Host', () => {
+    for (const moved of ['sendPrompt', 'setContext', 'openFolder', 'openExternalLink', 'clipboard', 'toast(']) {
+      expect(dts).not.toContain(moved)
+    }
   })
 
-  it('covers git API', () => {
-    expect(dts).toContain('info(): Promise<SuperOneGitInfo>')
-    expect(dts).toContain('branches(): Promise<string[]>')
-    expect(dts).toContain('log(opts?: { limit?: number; all?: boolean; ref?: string })')
-    expect(dts).toContain('status(): Promise<SuperOneGitStatusEntry[]>')
-    expect(dts).toContain('diff(path: string')
-    expect(dts).toContain('show(ref: string')
-    expect(dts).toContain('blame(path: string): Promise<SuperOneGitBlameLine[]>')
-    expect(dts).toContain('diffSummary(ref1: string, ref2?: string): Promise<SuperOneGitDiffFile[]>')
-    expect(dts).toContain('getCommit(ref?: string): Promise<SuperOneGitCommit>')
-    expect(dts).toContain('tags(): Promise<SuperOneGitTag[]>')
-    expect(dts).toContain('remotes(): Promise<SuperOneGitRemote[]>')
-    expect(dts).toContain('branchDetail(name: string): Promise<SuperOneGitBranchDetail>')
-    expect(dts).toContain('stashList(): Promise<SuperOneGitStashEntry[]>')
-    expect(dts).toContain('logFile(path: string, opts?: { limit?: number }): Promise<SuperOneGitLogEntry[]>')
-    expect(dts).toContain('onHeadChange(callback: () => void): () => void')
-  })
-
-  it('covers agent API', () => {
-    expect(dts).toContain('sendPrompt(text: string): void')
-  })
-
-  it('covers system API', () => {
-    expect(dts).toContain('openFolder(path: string): void')
-    expect(dts).toContain('openExternalLink(url: string): void')
-    expect(dts).toContain('read(): Promise<string>')
-    expect(dts).toContain('write(text: string): void')
-  })
-
-  it('covers ui API', () => {
-    expect(dts).toContain('toast(message: string')
+  it('covers the anchored ui APIs that need DOM coordinates', () => {
     expect(dts).toContain('showTooltip(anchorRect:')
     expect(dts).toContain('hideTooltip(): void')
     expect(dts).toContain('startDrag(paths: string | string[]')
     expect(dts).toContain('showContextMenu(position:')
+    expect(dts).toContain('showPopover(')
   })
 
   it('covers theme API', () => {
@@ -211,6 +177,28 @@ describe('generateSuperoneDts', () => {
   it('covers dark mode API', () => {
     expect(dts).toContain('isDarkMode(): boolean')
     expect(dts).toContain('onDarkModeChange(callback: (isDark: boolean)')
+  })
+})
+
+describe('generateHostDts', () => {
+  it('covers MiniApp Host tools, state, and storage paths', () => {
+    const dts = generateHostDts()
+    expect(dts).toContain('handle(')
+    expect(dts).toContain('SuperOneMiniAppContext')
+    expect(dts).toContain('workspaceState: SuperOneMiniAppState')
+    expect(dts).toContain('globalState: SuperOneMiniAppState')
+    expect(dts).toContain('storagePath: string')
+  })
+
+  it('covers the host capabilities that moved off the WebView', () => {
+    const dts = generateHostDts()
+    expect(dts).toContain('agent: SuperOneMiniAppAgentApi')
+    expect(dts).toContain('host: SuperOneMiniAppHostApi')
+    expect(dts).toContain('sendPrompt(text: string): Promise<void>')
+    expect(dts).toContain('toast(message: string')
+    expect(dts).toContain('revealInFolder(path: string): Promise<void>')
+    expect(dts).toContain('openExternal(url: string): Promise<void>')
+    expect(dts).toContain('locale: SuperOneMiniAppLocaleApi')
   })
 })
 

@@ -316,7 +316,7 @@ describe('activity-view-state', () => {
     expect(isInstanceReferencedInSavedSessions('X:proj-1')).toBe(false)
   })
 
-  it('isInstanceReferencedInSavedSessions excludes the current session’s stale snapshot (regression: iframe not destroyed when closing in current session after another session was parked)', () => {
+  it('isInstanceReferencedInSavedSessions excludes the current session’s stale snapshot when closing a shared WebView', () => {
     mockIsDockReady.mockReturnValue(true)
     mockGetDockSnapshot.mockReturnValue(makeLayout('miniapp-X:proj-1'))
     // sess-A was parked once with the panel — but sess-A is now the active session and the user just closed the panel.

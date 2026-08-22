@@ -1,5 +1,6 @@
 import type { MiniAppManifest } from '@superone/shared/miniapp-types'
 import authorDts from '@superone/shared/miniapp-author-api.d.ts?raw'
+import hostDts from '@superone/shared/miniapp-host-api.d.ts?raw'
 
 export interface GeneratedFile {
   path: string
@@ -15,6 +16,7 @@ export function generateVanillaFiles(opts: TemplateOptions): GeneratedFile[] {
   return [
     { path: 'manifest.json', content: JSON.stringify(opts.manifest, null, 2) },
     { path: 'index.html', content: generateVanillaHtml(opts.name) },
+    { path: 'node.js', content: generateVanillaHostEntry() },
   ]
 }
 
@@ -28,11 +30,14 @@ export function generateReactFiles(opts: TemplateOptions): GeneratedFile[] {
     { path: 'index.html', content: generateReactEntryHtml(opts.name) },
     { path: 'src/main.tsx', content: generateReactMain() },
     { path: 'src/App.tsx', content: generateReactApp(opts.name) },
+    { path: 'src/node.ts', content: generateReactHostEntry() },
     { path: 'src/superone.d.ts', content: generateSuperoneDts() },
+    { path: 'src/superone-host.d.ts', content: generateHostDts() },
     { path: 'src/index.css', content: '@import "tailwindcss";\n' },
     { path: '.gitignore', content: 'node_modules\ndist\n' },
     { path: 'dist/manifest.json', content: JSON.stringify(opts.manifest, null, 2) },
     { path: 'dist/index.html', content: placeholderHtml },
+    { path: 'dist/node.js', content: generateVanillaHostEntry() },
   ]
   return files
 }
@@ -95,6 +100,17 @@ function generateVanillaHtml(name: string): string {
 </html>`
 }
 
+function generateVanillaHostEntry(): string {
+  return `export async function activate(context) {
+  context.webview.onMessage((message) => {
+    console.log('[miniapp-host] message from WebView', message)
+  })
+}
+
+export async function deactivate() {}
+`
+}
+
 function generatePackageJson(name: string): string {
   const pkg = {
     name: slugify(name),
@@ -102,7 +118,7 @@ function generatePackageJson(name: string): string {
     type: 'module',
     scripts: {
       dev: 'vite',
-      build: 'vite build',
+      build: 'vite build && bun build src/node.ts --target=node --format=esm --outfile=dist/node.js',
     },
     dependencies: {
       react: '^19.1.0',
@@ -200,6 +216,19 @@ export default App
 `
 }
 
+function generateReactHostEntry(): string {
+  return `import type { SuperOneMiniAppContext } from './superone-host'
+
+export async function activate(context: SuperOneMiniAppContext) {
+  context.webview.onMessage((message) => {
+    console.log('[miniapp-host] message from WebView', message)
+  })
+}
+
+export async function deactivate() {}
+`
+}
+
 export function generateSuperoneDts(): string {
   const body = authorDts.replace(/^export /gm, '')
   return `${body}
@@ -211,6 +240,10 @@ declare global {
 
 export {}
 `
+}
+
+export function generateHostDts(): string {
+  return hostDts
 }
 
 export function slugify(name: string): string {

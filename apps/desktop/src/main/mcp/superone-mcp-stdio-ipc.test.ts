@@ -44,14 +44,12 @@ vi.mock('../miniapp/miniapp-packager', () => ({
 vi.mock('./guides/overview.md?raw', () => ({ default: 'overview content' }))
 vi.mock('./guides/manifest.md?raw', () => ({ default: 'manifest' }))
 vi.mock('./guides/permissions.md?raw', () => ({ default: 'permissions' }))
-vi.mock('./guides/api/fs.md?raw', () => ({ default: 'fs' }))
-vi.mock('./guides/api/git.md?raw', () => ({ default: 'git' }))
-vi.mock('./guides/api/db.md?raw', () => ({ default: 'db' }))
 vi.mock('./guides/api/theme.md?raw', () => ({ default: 'theme' }))
 vi.mock('./guides/api/locale.md?raw', () => ({ default: 'locale' }))
 vi.mock('./guides/api/agent.md?raw', () => ({ default: 'agent' }))
 vi.mock('./guides/api/system.md?raw', () => ({ default: 'system' }))
 vi.mock('./guides/api/ui.md?raw', () => ({ default: 'ui' }))
+vi.mock('./guides/api/host.md?raw', () => ({ default: 'miniapp-host' }))
 vi.mock('./guides/packaging.md?raw', () => ({ default: 'packaging' }))
 vi.mock('./guides/icon.md?raw', () => ({ default: 'icon' }))
 vi.mock('./guides/recipes.md?raw', () => ({ default: 'recipes' }))
@@ -69,14 +67,18 @@ const {
   unregisterAppTools,
   markAppToolPreapproved,
   initSuperoneMcpServer,
-  notifyAppReady,
-  resolveToolCall,
+  setAppToolExecutor,
   setSessionHostProvider,
 } = await import('./superone-mcp-server')
 import type { MiniAppToolDefinition } from '@superone/shared/miniapp-types'
-import { AgentIpcChannels } from '@superone/shared/agent-types'
 
 const PROJ = '/proj-stdio'
+const pluginExecutor = vi.fn<(
+  projectDir: string,
+  appId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>>()
 
 function makeTools(name: string): MiniAppToolDefinition[] {
   return [{
@@ -166,6 +168,8 @@ function getEndpoint(): string {
 describe('superone-mcp-stdio-ipc', () => {
   beforeEach(async () => {
     requestSessionAgentsMock.mockReset()
+    pluginExecutor.mockReset().mockResolvedValue({ ok: true })
+    setAppToolExecutor(pluginExecutor)
     initSuperoneMcpServer(() => null)
     createSuperoneMcpServer(PROJ)
     await startSuperoneMcpStdioBridge()
@@ -306,33 +310,24 @@ describe('superone-mcp-stdio-ipc', () => {
     client.close()
   })
 
-  it('routes miniapp_call to dispatchAppToolCall scoped by sessionId', async () => {
-    const sentToRenderer: Array<{ channel: string; args: unknown[] }> = []
-    const fakeWin = {
-      webContents: { send: (channel: string, ...args: unknown[]) => sentToRenderer.push({ channel, args }) },
-      isDestroyed: () => false,
-    } as unknown as import('electron').BrowserWindow
-    initSuperoneMcpServer(() => fakeWin)
+  it('routes miniapp_call to the MiniApp Host scoped by sessionId', async () => {
     registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
     markAppToolPreapproved('test-app', 'do_thing')
-    notifyAppReady(PROJ, 'test-app')
 
     const client = new TestClient(getEndpoint())
     await client.ready()
-    const inflight = client.send('tools/call', getToken(), {
+    const res = await client.send('tools/call', getToken(), {
       sessionId: PROJ,
       name: 'miniapp_call',
       arguments: { appId: 'test-app', tool: 'do_thing', input: { x: 'hello' } },
     })
-    await new Promise((r) => setTimeout(r, 20))
-    const toolCallMsg = sentToRenderer.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!
-    const req = toolCallMsg.args[0] as { callId: string; projectDir: string; toolName: string; arguments: unknown }
-    expect(req.projectDir).toBe(PROJ)
-    expect(req.toolName).toBe('do_thing')
-    expect(req.arguments).toEqual({ x: 'hello' })
 
-    resolveToolCall(req.callId, { ok: true })
-    const res = await inflight
+    expect(pluginExecutor).toHaveBeenCalledWith(
+      PROJ,
+      'test-app',
+      'do_thing',
+      { x: 'hello' },
+    )
     expect(res.result?.content?.[0]?.text).toContain('"ok":true')
     client.close()
   })

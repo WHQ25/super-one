@@ -71,17 +71,6 @@
   </div>
 
   <script type="module">
-    const KEY = 'counter'
-
-    superone.tools.handle('increment', async ({ by }) => {
-      const amount = typeof by === 'number' && Number.isFinite(by) ? by : 1
-      const current = (await superone.kv.get(KEY)) ?? 0
-      const next = current + amount
-      await superone.kv.set(KEY, next)
-      superone.peer.emit('count-changed', { value: next, delta: amount, at: Date.now() })
-      return { ok: true, previous: current, value: next }
-    })
-
     const card = document.getElementById('card')
     function render(detail) {
       if (detail.error) {
@@ -106,15 +95,12 @@
           setTimeout(() => to && to.classList.remove('bump'), 200)
         }
       }
-      requestAnimationFrame(() => {
-        const h = document.documentElement.scrollHeight
-        if (window.parent) window.parent.postMessage({ type: 'miniapp-resize', height: h }, '*')
-      })
     }
-    window.addEventListener('superone:tool-result', (ev) => render(ev.detail))
     const t = window.superone && window.superone.tool
-    if (t && (t.result !== null || t.error !== null)) {
-      render({ result: t.result, error: t.error })
+    if (t && t.phase === 'standalone') {
+      t.onDidChange(render)
+      const initial = t.getState()
+      if (initial.result !== null || initial.error !== null) render(initial)
     }
   </script>
 </body>

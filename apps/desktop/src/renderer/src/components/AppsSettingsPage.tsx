@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, HardDrive, FolderOpen, Database, Library, AlertTriangle, Repeat } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, Library, AlertTriangle, Terminal } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
@@ -9,20 +9,8 @@ import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DevAppLibraryView } from '@/components/DevAppLibraryView'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
-import { cn } from '@superone/ui/lib/utils'
 import { hasAnyPermission } from '@/lib/miniapp-permissions'
-import type { MiniAppEntry, MiniAppFsEntry } from '@superone/shared/miniapp-types'
-
-function formatFsLabel(entry: MiniAppFsEntry): { label: string; detail: string } {
-  switch (entry.scope) {
-    case 'project':
-      return { label: 'Project', detail: entry.path === '.' ? 'Root directory' : entry.path! }
-    case 'user':
-      return { label: 'Home', detail: `~/${entry.path}` }
-    case 'app':
-      return { label: 'App', detail: 'Own data storage' }
-  }
-}
+import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 
 function AppCard({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
   const { t } = useTranslation()
@@ -182,27 +170,13 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-3 text-sm font-medium">{t('resources.apps.permissions')}</h3>
             <div className="space-y-1.5">
-              {manifest.permissions?.fs?.map((entry, i) => {
-                const { label, detail } = formatFsLabel(entry)
-                const accessLabel = entry.scope === 'app' ? t('resources.apps.readWrite') : entry.access === 'read' ? t('resources.apps.readOnly') : t('resources.apps.readWrite')
-                return (
-                  <div key={`fs-${i}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                    {entry.scope === 'project' ? (
-                      <FolderOpen className="size-5 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <HardDrive className="size-5 shrink-0 text-muted-foreground" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 text-sm">
-                        <span className="font-medium">{label}</span>
-                        <span className="text-muted-foreground">{detail}</span>
-                        <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-muted text-muted-foreground' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{accessLabel}</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{entry.reason}</div>
-                    </div>
-                  </div>
-                )
-              })}
+              <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <Terminal className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">Trusted MiniApp Host</div>
+                  <div className="text-xs text-muted-foreground">Full local Node.js access to files, network, and processes.</div>
+                </div>
+              </div>
               {manifest.permissions?.network?.map((entry) => (
                 <div key={`net-${entry.domain}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
                   <Globe className="size-5 shrink-0 text-muted-foreground" />
@@ -228,30 +202,6 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
                   </div>
                 )
               })}
-              {manifest.permissions?.storage && (
-                <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                  <Database className="size-5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 text-sm">
-                      <span className="font-medium">Storage</span>
-                      <span className="inline-flex h-4 shrink-0 items-center rounded bg-muted px-1 text-[10px] leading-none text-muted-foreground">Persistent</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">{manifest.permissions.storage.reason}</div>
-                  </div>
-                </div>
-              )}
-              {manifest.permissions?.background && (
-                <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                  <Repeat className="size-5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 text-sm">
-                      <span className="font-medium">Background activity</span>
-                      <span className="inline-flex h-4 shrink-0 items-center rounded bg-amber-500/10 px-1 text-[10px] leading-none text-amber-600 dark:text-amber-400">Always-on</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">{manifest.permissions.background.reason}</div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}

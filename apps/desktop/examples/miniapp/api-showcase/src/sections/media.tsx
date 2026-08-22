@@ -14,7 +14,7 @@ function describeErr(e: unknown): string {
         : name === 'NotReadableError'
           ? ' — device busy / held by another app'
           : name === 'SecurityError'
-            ? ' — blocked by the iframe sandbox'
+            ? ' — blocked by WebView permissions'
             : ''
   return `${name}: ${err?.message || String(e)}${hint}`
 }

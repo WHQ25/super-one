@@ -1,17 +1,12 @@
 import type { Protocol } from 'electron'
-import { app } from 'electron'
 import { createReadStream, statSync } from 'fs'
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { dirname } from 'path'
+import { readFile } from 'fs/promises'
 import { Readable } from 'stream'
 import { resolveRealPath, isPathWithinAllowed } from '../path-security'
 import { getMediaReadableRoots } from '../media-readable-roots'
-import { getProjectPathById } from '../recent-folders'
-import { getCurrentLocale } from '../i18n'
 import { trace } from '../agent/event-trace'
 import log from '../logger'
-import { generateBridgeScript, generatePopoverBridgeScript, generateStandaloneBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript, generateWorkerBridgeScript } from './miniapp-bridge'
-import { getAppBasePath, generateCSP, readManifest, validatePath, getAllowedDirs, resolveSafePathMulti } from './miniapp-service'
+import { getAppBasePath, generateCSP, readManifest, validatePath } from './miniapp-service'
 
 const LOCAL_FILE_MIME: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
@@ -147,11 +142,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
 
       if (ext === 'html' || ext === 'htm') {
         const html = data.toString('utf-8')
-        const popoverName = url.searchParams.get('_popover')
-        const toolIntercept = url.searchParams.get('_toolIntercept')
-        const toolResult = url.searchParams.get('_toolResult')
         const standalone = url.searchParams.get('_standalone')
-        const isWorker = url.searchParams.get('_worker')
         if (standalone) {
           trace('miniapp.standalone', 'protocol-serve-html', {
             appId,
@@ -161,37 +152,9 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
             htmlBytes: data.byteLength,
           })
         }
-        const locale = getCurrentLocale()
-        const bridgeScript = isWorker
-          ? generateWorkerBridgeScript(appId, app.getVersion(), locale)
-          : toolIntercept
-          ? generateToolInterceptBridgeScript(appId, app.getVersion(), locale, {
-              callId: url.searchParams.get('_toolCallId') || '',
-              toolName: url.searchParams.get('_toolName') || '',
-              initialData: JSON.parse(url.searchParams.get('_toolData') || 'null'),
-            })
-          : toolResult
-            ? generateToolResultBridgeScript(appId, app.getVersion(), locale, {
-                callId: url.searchParams.get('_toolCallId') || '',
-                toolName: url.searchParams.get('_toolName') || '',
-                result: JSON.parse(url.searchParams.get('_toolData') || 'null'),
-              })
-            : standalone
-              ? generateStandaloneBridgeScript(appId, app.getVersion(), locale, {
-                  callId: url.searchParams.get('_toolCallId') || '',
-                  toolName: url.searchParams.get('_toolName') || '',
-                })
-              : popoverName
-                ? generatePopoverBridgeScript(appId, app.getVersion(), locale, JSON.parse(url.searchParams.get('_popoverData') || 'null'))
-                : generateBridgeScript(appId, app.getVersion(), locale)
-        const injected = html.includes('<head>')
-          ? html.replace('<head>', `<head>${bridgeScript}`)
-          : html.includes('<html>')
-            ? html.replace('<html>', `<html><head>${bridgeScript}</head>`)
-            : bridgeScript + html
         const manifest = await readManifest(basePath)
         const csp = manifest ? generateCSP(manifest) : "default-src 'none'"
-        return new Response(injected, {
+        return new Response(html, {
           headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': csp, 'Cache-Control': 'no-store' },
         })
       }
@@ -205,60 +168,4 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
     }
   })
 
-  proto.handle('superone-fs', async (request) => {
-    try {
-      const url = new URL(request.url)
-      const fullHost = url.hostname
-      const dotIdx = fullHost.indexOf('.')
-      const appId = dotIdx < 0 ? fullHost : fullHost.slice(0, dotIdx)
-      const projectId = dotIdx < 0 ? null : fullHost.slice(dotIdx + 1)
-      const relativePath = decodeURIComponent(url.pathname).replace(/^\//, '')
-      if (!relativePath) return new Response('Bad request', { status: 400 })
-
-      const origin = request.headers.get('origin') || ''
-      if (origin && origin !== 'null' && origin !== `superone-app://${fullHost}`) {
-        return new Response('Forbidden', { status: 403 })
-      }
-
-      const projectDir = projectId ? getProjectPathById(projectId) : null
-      if (!projectDir) return new Response('Unknown project', { status: 403 })
-
-      const dirs = getAllowedDirs(projectDir, appId)
-      if (!dirs?.length) return new Response('No allowed directories', { status: 403 })
-
-      const op = request.method === 'PUT' ? 'write' : 'read'
-      const { resolved } = resolveSafePathMulti(dirs, relativePath, op)
-
-      if (request.method === 'GET') {
-        const data = await readFile(resolved)
-        const ext = resolved.split('.').pop()?.toLowerCase() ?? ''
-        const contentType = MINIAPP_MIME[ext] ?? 'application/octet-stream'
-        return new Response(data, {
-          headers: { 'Content-Type': contentType, 'Content-Length': String(data.byteLength), 'Cache-Control': 'no-store' },
-        })
-      }
-
-      if (request.method === 'PUT') {
-        await mkdir(dirname(resolved), { recursive: true })
-        const ct = request.headers.get('content-type') || ''
-        if (ct.startsWith('text/') || ct.includes('json')) {
-          const text = await request.text()
-          await writeFile(resolved, text, 'utf-8')
-        } else {
-          const buf = Buffer.from(await request.arrayBuffer())
-          await writeFile(resolved, buf)
-        }
-        return new Response(null, { status: 204 })
-      }
-
-      return new Response('Method not allowed', { status: 405 })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      log.error('[superone-fs] failed:', err)
-      if (msg.includes('denied') || msg.includes('not within allowed')) {
-        return new Response(msg, { status: 403 })
-      }
-      return new Response(msg, { status: 500 })
-    }
-  })
 }

@@ -8,12 +8,6 @@ const authorSchema = z.object({
   url: z.url().optional(),
 })
 
-const fsEntrySchema = z.discriminatedUnion('scope', [
-  z.object({ scope: z.literal('project'), path: z.string().min(1), access: z.enum(['read', 'readwrite']), reason: z.string().min(1) }),
-  z.object({ scope: z.literal('user'), path: z.string().min(1), access: z.enum(['read', 'readwrite']), reason: z.string().min(1) }),
-  z.object({ scope: z.literal('app'), reason: z.string().min(1) }),
-])
-
 const networkEntrySchema = z.object({
   domain: z.string().min(1),
   reason: z.string().min(1),
@@ -24,26 +18,21 @@ const mediaEntrySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('camera'), reason: z.string().min(1) }),
 ])
 
-const storageEntrySchema = z.object({
-  reason: z.string().min(1),
-})
-
-const backgroundPermissionSchema = z.object({
-  reason: z.string().min(1),
-})
-
 const permissionsSchema = z.object({
   network: z.array(networkEntrySchema).optional(),
-  fs: z.array(fsEntrySchema).optional(),
   media: z.array(mediaEntrySchema).optional(),
-  storage: storageEntrySchema.optional(),
-  background: backgroundPermissionSchema.optional(),
+}).strict()
+
+const hostEntrySchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9_./-]*\.(?:js|mjs|cjs)$/i, {
+  message: 'main must be a relative JavaScript file path',
+}).refine((entry) => !entry.split('/').includes('..'), {
+  message: 'main must stay inside the mini-app root',
 })
 
-const backgroundSchema = z.object({
-  entry: z.string().min(1).regex(/^[a-z0-9][a-z0-9_./-]*\.html$/i, {
-    message: 'background.entry must be a relative .html path',
-  }),
+const htmlEntrySchema = z.string().min(1).regex(/^[a-z0-9][a-z0-9_./-]*\.html?$/i, {
+  message: 'template must be a relative HTML file path',
+}).refine((entry) => !entry.split('/').includes('..'), {
+  message: 'template must stay inside the mini-app root',
 })
 
 const toolInputSchemaSchema = z.looseObject({
@@ -84,7 +73,7 @@ const toolDefinitionSchema = z.object({
   timeoutMs: z.number().int().positive().optional(),
 }).refine(
   (t) => !(t.standalone === true && !t.renderer?.result?.template),
-  { message: 'standalone tools require renderer.result.template — the template HTML registers the handler and renders the result UI' },
+  { message: 'standalone tools require renderer.result.template to render their result UI' },
 )
 
 const TOOL_NAME_RE = /^[a-z0-9_]+$/
@@ -92,6 +81,7 @@ const TOOL_NAME_RE = /^[a-z0-9_]+$/
 export const manifestSchema = z.object({
   appId: z.string().min(1).regex(APP_ID_RE, { message: 'appId must be lowercase alphanumeric, hyphens, or underscores' }),
   name: z.string().min(1),
+  main: hostEntrySchema,
   version: z.string().optional(),
   author: authorSchema.optional(),
   description: z.string().optional(),
@@ -99,15 +89,14 @@ export const manifestSchema = z.object({
   isDev: z.boolean().optional(),
   preferWidth: z.number().int().min(400).max(2000).optional(),
   permissions: permissionsSchema.optional(),
-  background: backgroundSchema.optional(),
   toolSlug: z.string().min(1).regex(TOOL_NAME_RE, { message: 'toolSlug must be lowercase alphanumeric with underscores' }).optional(),
   tools: z.array(toolDefinitionSchema).optional(),
   runningText: z.string().optional(),
   templates: z.record(
     z.string().min(1).regex(/^[a-z0-9_-]+$/, { message: 'Template name must be lowercase alphanumeric with hyphens or underscores' }),
-    z.string().min(1),
+    htmlEntrySchema,
   ).optional(),
-}).refine(
+}).strict().refine(
   (m) => {
     if (!m.tools || m.tools.length === 0) return true
     return !!m.toolSlug
@@ -133,9 +122,6 @@ export const manifestSchema = z.object({
     return true
   },
   { message: 'renderer.result.template must reference a key in manifest.templates' },
-).refine(
-  (m) => !m.background || !!m.permissions?.background,
-  { message: 'background requires permissions.background' },
 )
 
 export type ManifestParseResult =

@@ -31,11 +31,12 @@ import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useRemoteControl } from '@/hooks/useRemoteControl'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useReactScan } from '@/hooks/useReactScan'
-import { useStandaloneToolCallRouter } from '@/hooks/useStandaloneToolCallRouter'
 import { useAgentViewfinder } from '@/hooks/useAgentViewfinder'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
+import { useMiniAppHostActions } from '@/hooks/useMiniAppHostActions'
+import { useMiniAppContextConsumedRelay } from '@/hooks/useContextConsumedEvent'
 import { useMobileUploadToasts } from '@/hooks/useMobileUploadToasts'
 import { useAppStore, startProjectMirror } from '@/stores/app'
 import { useDevToolsStore } from '@/stores/dev-tools'
@@ -66,7 +67,8 @@ function App(): React.JSX.Element {
   useRemoteControl()
   useHarnessTheme()
   useMobileUploadToasts()
-  useStandaloneToolCallRouter()
+  useMiniAppHostActions()
+  useMiniAppContextConsumedRelay()
   // The floating preview is one slot shared by the device, the browser and Computer
   // Use. This is the only leg that cannot report itself — see `useAgentViewfinder`.
   useAgentViewfinder()

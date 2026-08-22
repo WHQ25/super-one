@@ -4,7 +4,7 @@ import type { SectionDef } from '../components/Section'
 import { Btn, Row, Out } from '../components/kit'
 
 function Demo() {
-  const [out, setOut] = useState('Host-rendered overlays escape the iframe sandbox.')
+  const [out, setOut] = useState('Host-rendered overlays can extend beyond the WebView.')
   const popBtn = useRef<HTMLButtonElement>(null)
 
   const tip = (el: HTMLElement, show: boolean) => {
@@ -52,12 +52,7 @@ function Demo() {
   return (
     <div>
       <Row>
-        <Btn onClick={() => window.superone.ui.toast('Saved ✓', 'success')}>
-          toast.success
-        </Btn>
-        <Btn variant="ghost" onClick={() => window.superone.ui.toast('Oops', 'error')}>
-          toast.error
-        </Btn>
+
         <span
           className="text-[13px] px-2.5 py-1.5 rounded-md bg-accent text-accent-fg cursor-default"
           onMouseEnter={(e) => tip(e.currentTarget, true)}
@@ -125,7 +120,6 @@ function Overlays() {
 
   return (
     <>
-      <button onClick={() => window.superone.ui.toast('Saved ✓', 'success')}>Toast</button>
       <span
         onMouseEnter={(e) => tip(e.currentTarget, true)}
         onMouseLeave={(e) => tip(e.currentTarget, false)}
@@ -138,7 +132,7 @@ function Overlays() {
   )
 }`
 
-const vanilla = `superone.ui.toast('Saved', 'success')   // success|error|warning|info
+const vanilla = `// toast moved to the MiniApp Host: context.host.toast('Saved', 'success')
 
 el.onmouseenter = () => {
   const r = el.getBoundingClientRect()
@@ -166,7 +160,7 @@ export const uiSection: SectionDef = {
   title: 'UI Overlays',
   api: 'superone.ui',
   blurb:
-    'toast, tooltip, context menu and template-driven popovers — all rendered by the host outside the sandbox.',
+    'Tooltip, context menu and template-driven popovers — the anchored surfaces that need DOM coordinates, so they stay in the WebView.',
   Demo,
   react,
   vanilla,

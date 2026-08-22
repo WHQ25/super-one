@@ -1,168 +1,84 @@
 # Mini-App Development Guide
 
-A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe and can be controlled by any AI agent through MCP tools.
-
-Every app opens as a tab in the activity Dockview. Users can maximize the entire Activity workspace when they need more room; all tabs and split groups remain available while chat becomes a floating panel. Apps can declare `tools[]` so the agent can drive them, and any tool can attach a custom result renderer (`tools[].renderer.result`) to render its output inline in the chat — read the `tools` topic for both. Tools come in two flavors: **panel-bound** tools whose handler lives in the open panel, and **standalone** tools (`tools[].standalone: true`) whose handler and UI both live in the chat-block iframe (no panel needed). Read the `manifest` topic for the full list of manifest fields and responsive layout guidance.
+A mini-app is a trusted Node.js module plus one or more full Electron WebViews. The MiniApp Host owns computation, agent-facing tools, and every host capability that needs no DOM coordinates; WebViews own rendering and the anchored surfaces (tooltip, context menu, popover, drag).
 
 ## Architecture
 
-- Mini-apps are pure HTML/CSS/JS running in sandboxed iframes
-- All agent communication goes through the built-in SuperOne MCP server
-- The bridge script (`window.superone.*`) is auto-injected into every mini-app's HTML `<head>`
-- Tools declared in `manifest.json` are automatically registered with the MCP server when the app opens
-- An app can declare a headless **background worker** (`background.entry` + `permissions.background`) that keeps running after the panel is closed — see the `api-worker` topic
-- Apps are packaged as `.s1app` files (zip + integrity checksums) and installed via drag-and-drop
-- Dev-mode apps are tracked in a global registry at `~/.superone/dev-registry.json`; the per-scope pointer file `.s1-dev.json` only carries `{ enabled }` and resolves to a source directory via the registry at runtime
+```text
+AI agent → miniapp_call → Node.js MiniApp Host → tool result
+                              ↕ structured messages
+                         Electron WebView → window.superone.*
+```
 
-## Development Workflow
+- `manifest.main` is required and exports `activate(context)`.
+- One utility-process MiniApp Host runs per `(projectDir, appId)` and does not depend on an open UI.
+- All mini-app HTML surfaces use `<webview>`: panel, popover, intercept, result, and standalone result.
+- Every app has its own persistent WebView partition and `superone-app://<appId>.<projectId>` origin.
+- `window.superone.*` is injected by a context-isolated preload; Node integration stays disabled in WebViews.
+- The trusted MiniApp Host has full Node.js access. Installation always asks for explicit trust.
+- Apps are packaged as `.s1app` archives with integrity checksums.
 
-**Before writing any code, confirm the following with the user:**
+Read `api-host` for the Node context and WebView messaging, `manifest` for entries, and `tools` for agent tools and inline UI.
 
-1. **Clarify requirements** — Ask the user what the app should do. Confirm the core features and scope. Don't assume — ask.
-2. **Suggest template** — Recommend `vanilla` or `react` with reasoning (see "Choosing a Template" below). Get user approval.
-3. **Design tools carefully** — Tools are called by the agent, not the user. Only declare tools when the app genuinely needs the agent to push data or trigger actions. Consider whether the app can achieve the functionality on its own using bridge APIs (`superone.git.*`, `superone.fs.*`, etc.) before adding agent-facing tools. If a tool's output should render inline in chat with a custom UI, declare `renderer.result.template` for that tool. Present any proposed tool design to the user and get approval before implementing. See the `tools` topic for details.
+## Development workflow
 
-Do NOT skip these steps. Do NOT start coding before the user confirms the plan.
+Before coding, confirm the app requirements, source `directory`, `scope` (`project` or `user`), and whether agent-facing tools are actually needed. Then:
 
-**After confirmation, build the app:**
+1. Call `miniapp_dev_setup` to scaffold a `vanilla` or `react` app, or `miniapp_dev_register` for an existing directory.
+2. Implement `manifest.main` and the WebView entry.
+3. Declare tools in `manifest.tools` and register matching handlers from `activate(context)`.
+4. Add WebView permissions only for browser-side APIs that need them.
+5. Build and test the app, then use `miniapp_dev_pack` for distribution.
 
-1. Confirm with the user **where** the mini-app source should live (`directory`) and **who** should see it (`scope`: `project` or `user`). See "Where the App Lives" below.
-2. Call `miniapp_dev_setup` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, description). It scaffolds files at `directory`, adds an entry to the global dev-registry, and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
-3. Read **`manifest`** for manifest fields and panel layout, then **`tools`** for declaring agent-facing tools and custom inline renderers.
-4. Edit `manifest.json` to add tools, permissions, etc.
-5. Write app code
+## Choosing a template
 
-**Already have a mini-app source directory?** (e.g. cloned from a repo, or copied from another machine) Skip scaffolding and call `miniapp_dev_register` with the absolute `directory` path. It reads the existing `manifest.json`, adds it to the dev-registry, and optionally installs a dev pointer to a chosen `scope`. Users can also run this flow from Settings → Mini Apps → "Dev Apps" → "Add dev app…".
+Use `vanilla` for small or moderate interfaces and zero-build apps. Use `react` for component-heavy interfaces or npm-only UI dependencies. Both templates include:
 
-## Do You Need Tools?
+```text
+manifest.json / public/manifest.json
+index.html                  # main WebView
+node.js / src/node.ts  # Node MiniApp Host entry
+```
 
-Tools let the **agent** call into your app. Before declaring tools, ask: can the app do this itself?
+The React build emits both `dist/index.html` and `dist/node.js`.
 
-**You likely DON'T need tools when:**
-- The app can fetch its own data using bridge APIs (`superone.git.*`, `superone.fs.*`, etc.)
-- The app has its own refresh/reload mechanism (buttons, timers, watchers)
-- The interaction is purely user-driven (clicking, scrolling, filtering)
+## Where the app lives
 
-Example: a Git Graph app can call `superone.git.log()` and `superone.git.branches()` directly — it does not need a `refresh` tool for the agent to push git data.
+- `scope: "project"`: visible only for one project. The source directory must be inside `projectDir`.
+- `scope: "user"`: visible across projects on this machine.
 
-**You likely DO need tools when:**
-- The agent needs to push context-specific data that the app cannot obtain on its own (e.g., analysis results, generated content)
-- The agent needs to trigger a specific app action as part of a multi-step workflow
-- The app is a rendering surface for agent-generated content (declare `renderer.result.template` on the tool to render inline in chat)
+Development apps are resolved through `~/.superone/dev-registry.json`. A project or user app slot contains only a path-free `.s1-dev.json` enablement pointer, so local source paths are not committed.
 
-Example: a Kanban board app needs a `create_task` tool so the agent can add tasks based on conversation context. A code coverage dashboard needs a `render_report` tool with `renderer.result.template` so the agent can push test results and the chat shows the styled report inline.
+## Do you need tools?
 
-When in doubt, start without tools. They can always be added later.
+Add a tool only when the agent must trigger computation or push conversation-specific data. User-driven refresh, browsing, and filtering should call the MiniApp Host through `window.superone.node` rather than becoming agent tools.
 
-## Choosing a Template
+Tool computation belongs in the MiniApp Host:
 
-Use `vanilla` (default) when:
-- Simple to moderate UI: displays, forms, lists, visualizations
-- Third-party libraries can be loaded via CDN (declare domain in `permissions.network`)
-- Single-file HTML is manageable for the app's complexity
-
-Use `react` when:
-- Required libraries are npm-only (no CDN available)
-- App complexity makes single-file HTML unmaintainable (many components, complex state)
-- User explicitly asks for React or a framework
-
-Most mini-apps should use vanilla. CDN libraries (Chart.js, D3, Alpine.js, Three.js, etc.) work great — add a `<script>` tag and declare the CDN domain in `permissions.network`.
-
-## Where the App Lives — `directory` and `scope`
-
-`miniapp_dev_setup` takes two location-related arguments:
-
-- **`directory`** (required, absolute path): where the mini-app source files are scaffolded. This is the **user's choice** — anywhere on disk. Common patterns:
-  - Inside a project's source tree: `<projectDir>/packages/my-app` (monorepo workspace), `<projectDir>/tools/dashboard`
-  - A dedicated standalone dir: `~/code/my-mini-app`
-- **`scope`**: who can see this app
-  - `project` (default): only visible when SuperOne is opened on `projectDir`. Required argument: `projectDir`. The `directory` MUST be inside `projectDir`.
-  - `user`: visible across every project on this machine. `projectDir` not required; `directory` can be anywhere.
-
-After scaffolding, `miniapp_dev_setup` writes a small pointer file at:
-
-- `<projectDir>/.superone/apps/<appId>/.s1-dev.json` for `scope=project`
-- `~/.superone/apps/<appId>/.s1-dev.json` for `scope=user`
-
-The pointer itself carries only enablement state:
-
-```jsonc
-{
-  "enabled": true   // set false to fall back to a packed prod version (see "Switching dev/prod" below)
+```js
+export function activate(context) {
+  context.subscriptions.push(
+    context.tools.handle('set_data', async ({ rows }) => {
+      const result = analyze(rows)
+      context.webview.postMessage({ type: 'analysis', result })
+      return result
+    }),
+  )
 }
 ```
 
-`appId` is taken from the parent directory name. At discovery time SuperOne looks up `appId` in the global dev-registry (`~/.superone/dev-registry.json`) to find the actual source / build path on this machine. **No local paths ever live inside the pointer file**, so committing a project-scope `.s1-dev.json` leaks zero filesystem information.
+The WebView receives updates independently:
 
-Each app's pointer lives in its own slot under `.superone/apps/<appId>/`. The slot also holds `data/` (the app's persistent storage when `permissions.fs` declares `scope: 'app'`), which survives any rebuild or pack/install cycle.
-
-### Choosing scope
-
-Use `project` (default) when:
-- Building a tool specific to the current codebase (kanban, dashboard, custom helper)
-- The pointer file is safe to commit (path-free) — teammates who clone the repo see the `.s1-dev.json` slot but the entry is **only discoverable to them after they register the same source locally** (their dev-registry has its own appIds; alpha-phase appIds carry a timestamp suffix so they won't match across machines). For now, expect each developer to run `miniapp_dev_register` (or the "Add dev app…" flow) once after cloning.
-
-Use `user` when:
-- Building a personal tool you want available regardless of which project you open (e.g. a notes pad, a clipboard manager)
-- Cross-machine distribution will go through `miniapp_dev_pack` → `.s1app` → drag-drop install, not via this dev pointer
-
-## React Template Setup Flow
-
-1. Check for a package manager: `which bun || which npm`
-2. If neither found, install bun:
-   - macOS/Linux: `curl -fsSL https://bun.sh/install | bash`
-   - Windows: `powershell -c "irm bun.sh/install.ps1 | iex"`
-3. Decide where the mini-app project lives (any directory; for `scope=project`, must be inside `projectDir` — e.g. `packages/<name>` for a monorepo workspace)
-4. Call `miniapp_dev_setup` with `template: "react"`, `directory` pointing to that path, and the chosen `scope`
-5. Run `<pm> install && <pm> run build` in the directory
-6. For ongoing development with auto-rebuild: `<pm> run build --watch`
-
-Prefer bun over npm when both are available (faster installs and builds).
-
-The scaffold has a **single** Vite entry (`index.html`). A background worker (`background.entry`) or any tool renderer / standalone tool / popover (`templates.*`) is a **separate document with its own Vite entry** — read the "React / Vite — Multi-Page Entries" section in the `manifest` topic before adding any of these, or the build will silently omit them.
-
-## Switching between Dev and Prod Versions
-
-Once a `.s1app` package has been installed by drag-drop into the same install slot, both versions can coexist:
-
-- `.s1-dev.json` with `enabled: true` → SuperOne resolves the app's dist via the dev-registry and loads from your live build output
-- `.s1-dev.json` with `enabled: false` → SuperOne ignores the registry and loads the packed prod files from the install slot itself
-- Delete `.s1-dev.json` (or remove the entry from Settings → Mini Apps → Dev Apps) → only the prod version remains
-
-**Drag-drop install never deletes `.s1-dev.json` or the `data/` directory** — your dev pointer and user data are preserved across version upgrades.
-
-## App Directory Structure
-
-The directory you scaffold into (the user-chosen `directory`) holds the actual mini-app source:
-
-```
-<directory>/                  # for vanilla — manifest.json + index.html in root
-├── manifest.json             # Required: app metadata
-├── index.html                # Required: entry point (bridge auto-injected)
-├── logo.png                  # Optional: app icon (see `icon` topic)
-└── ...                       # CSS, JS, assets
-
-<directory>/                  # for react — Vite project
-├── package.json
-├── vite.config.ts
-├── src/
-└── dist/                     # build output that SuperOne actually serves
-    ├── manifest.json
-    ├── index.html
-    └── ...
+```js
+window.superone.node.onMessage((message) => render(message))
 ```
 
-The install slot at `<scope-root>/.superone/apps/<appId>/` holds only:
+Closing the WebView does not stop tool execution.
 
-```
-<appId>/
-├── .s1-dev.json     # dev pointer (this file is what makes the app discoverable)
-└── data/            # created lazily on first app-scope fs write
-```
+## Related topics
 
-After `miniapp_dev_pack` + drag-drop install, the slot also contains the packed prod files (manifest.json, index.html, …) alongside `.s1-dev.json` and `data/`.
-
-## Updating Type Definitions
-
-If a mini-app was created with an older version of SuperOne and needs access to newly added APIs, call `miniapp_dev_update_types` with the app directory path. This regenerates `superone.d.ts` with the latest API definitions.
-
+- `manifest` — entries, tools, templates, layout
+- `api-host` — Node lifecycle and WebView messaging
+- `tools` — tool declarations and inline renderers
+- `permissions` — WebView permissions
+- `packaging` — validation and `.s1app` distribution

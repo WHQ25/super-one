@@ -1849,8 +1849,8 @@ export function PluginsPage() {
   }, [marketplacePlugins, selectedMarketplace])
 
   const userPlugins = plugins.filter((p) => p.scope === 'user')
-  const projectPlugins = plugins.filter((p) => p.scope === 'project')
-  const scopedPlugins = scope === 'user' ? userPlugins : projectPlugins
+  const projectHosts = plugins.filter((p) => p.scope === 'project')
+  const scopedPlugins = scope === 'user' ? userPlugins : projectHosts
   const updatablePlugins = scopedPlugins.filter((p) => p.hasUpdate)
   const [updatingAll, setUpdatingAll] = useState(false)
 

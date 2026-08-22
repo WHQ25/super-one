@@ -5,7 +5,6 @@ declare const requestAnimationFrame: (cb: () => void) => number
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { createSuperoneApi, startSuperoneResize, startSuperoneReady, type MiniAppTransport } from '@superone/shared/miniapp-api-runtime'
-import { parseMiniAppHost } from '@superone/shared/miniapp-host'
 
 // No `process.title` here: renderer processes cannot be renamed. See main/process-titles.ts.
 
@@ -29,14 +28,7 @@ const transport: MiniAppTransport = {
   },
 }
 
-ipcRenderer.on('miniapp-fs-response', (_e, data) => dispatchResponse(data))
-ipcRenderer.on('miniapp-fs-watch-ack', (_e, data) => dispatchResponse(data))
-ipcRenderer.on('miniapp-git-response', (_e, data) => dispatchResponse(data))
-ipcRenderer.on('miniapp-db-response', (_e, data) => dispatchResponse(data))
-ipcRenderer.on('miniapp-kv-response', (_e, data) => dispatchResponse(data))
-ipcRenderer.on('miniapp-clipboard-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-ui-contextmenu-result', (_e, data) => dispatchResponse(data))
-ipcRenderer.on('miniapp-worker-status-result', (_e, data) => dispatchResponse(data))
 
 function dispatchResponse(data: Record<string, unknown>) {
   const key = `${data.type}:${data.id}`
@@ -49,12 +41,10 @@ function dispatchResponse(data: Record<string, unknown>) {
 }
 
 const eventChannels = [
-  'miniapp-tool-call',
-  'miniapp-fs-watch-event',
-  'miniapp-git-head-change',
   'miniapp-theme',
   'miniapp-locale',
-  'miniapp-worker-event',
+  'miniapp-node-message',
+  'miniapp-standalone-data',
 ] as const
 
 for (const ch of eventChannels) {
@@ -67,24 +57,72 @@ for (const ch of eventChannels) {
 declare const __APP_VERSION__: string
 declare const location: { search: string; host: string }
 
-const ownAppId = (() => {
-  try { return parseMiniAppHost(location.host).appId } catch { return '' }
-})()
-
-ipcRenderer.on('miniapp-peer-event', (_e, data: { appId: string; event: string; payload: unknown }) => {
-  if (!data || data.appId !== ownAppId) return
-  const handler = eventHandlers.get('miniapp-peer-event')
-  if (handler) handler({ event: data.event, payload: data.payload })
-})
-
 const initialLocale = (new URLSearchParams(location.search).get('_locale') as 'en' | 'zh' | null) || 'en'
 const api = createSuperoneApi(transport, __APP_VERSION__, { initialLocale })
+const params = new URLSearchParams(location.search)
 
-const popoverParam = new URLSearchParams(location.search).get('_popover')
+function parseJsonParam(name: string): unknown {
+  const raw = params.get(name)
+  if (!raw) return null
+  try { return JSON.parse(raw) } catch { return null }
+}
+
+const callId = params.get('_toolCallId') || ''
+const toolName = params.get('_toolName') || ''
+if (params.has('_toolIntercept')) {
+  let settled = false
+  ;(api as unknown as Record<string, unknown>).tool = {
+    phase: 'intercept',
+    callId,
+    toolName,
+    data: parseJsonParam('_toolData'),
+    submit(userInput: Record<string, unknown>) {
+      if (settled) return
+      settled = true
+      transport.send('miniapp-tool-submit', { callId, userInput: userInput ?? {} })
+    },
+    cancel(reason?: string | null) {
+      if (settled) return
+      settled = true
+      transport.send('miniapp-tool-cancel', { callId, reason: reason ?? null })
+    },
+  }
+} else if (params.has('_toolResult')) {
+  ;(api as unknown as Record<string, unknown>).tool = {
+    phase: 'result',
+    callId,
+    toolName,
+    data: parseJsonParam('_toolData'),
+    close() { transport.send('miniapp-tool-result-close', { callId }) },
+  }
+} else if (params.has('_standalone')) {
+  type StandaloneState = { args: Record<string, unknown> | null; result: unknown; error: string | null }
+  let state: StandaloneState = { args: null, result: null, error: null }
+  const listeners = new Set<(value: StandaloneState) => void>()
+  ;(api as unknown as Record<string, unknown>).tool = {
+    phase: 'standalone',
+    callId,
+    toolName,
+    getState: () => state,
+    onDidChange(callback: (value: StandaloneState) => void) {
+      listeners.add(callback)
+      return () => listeners.delete(callback)
+    },
+  }
+  transport.on('miniapp-standalone-data', (data) => {
+    state = {
+      args: (data.arguments as Record<string, unknown> | null) ?? null,
+      result: data.result,
+      error: typeof data.error === 'string' ? data.error : null,
+    }
+    listeners.forEach((listener) => listener(state))
+  })
+}
+
+const popoverParam = params.get('_popover')
 if (popoverParam) {
   delete (api.ui as Record<string, unknown>).showPopover
-  const popoverDataRaw = new URLSearchParams(location.search).get('_popoverData')
-  const popoverData = popoverDataRaw ? JSON.parse(popoverDataRaw) : null
+  const popoverData = parseJsonParam('_popoverData')
   const popoverMsgListeners: Array<(data: unknown) => void> = []
   ;(api as unknown as Record<string, unknown>).popover = {
     data: popoverData,
@@ -107,4 +145,4 @@ contextBridge.exposeInMainWorld('__superoneIpcToHost', (type: string, data: Reco
   ipcRenderer.sendToHost(type, data)
 })
 startSuperoneResize(transport)
-startSuperoneReady(api)
+startSuperoneReady(transport)

@@ -11,7 +11,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
-        background: resolve(__dirname, 'background.html'),
         confirm: resolve(__dirname, 'confirm.html'),
         receipt: resolve(__dirname, 'receipt.html'),
         counter: resolve(__dirname, 'counter.html'),

@@ -351,9 +351,6 @@ export interface ChatStore {
   cancelToolIntercept: (callId: string, reason?: string) => void
   clearToolIntercepts: (callIds: string[]) => void
 
-  _pendingStandaloneCalls: Record<string, { callId: string; appId: string; projectDir: string; toolName: string; arguments: Record<string, unknown> }>
-  mapStandaloneCall: (toolUseId: string, payload: { callId: string; appId: string; projectDir: string; toolName: string; arguments: Record<string, unknown> }) => void
-
   isOpen: boolean
   corner: Corner
   /** In-chat dialog asking for a Cursor User API Key when send fails without one. */

@@ -101,7 +101,7 @@ apps/desktop/src/renderer/src/components/
 │   ├── slash-decoration.ts — Tiptap /command decoration
 │   └── chat-shared.ts      — Streamdown plugins, formatting
 ├── coding/       — CodingLayout, ProjectSelector, StatusBar, TerminalPanel
-├── miniapp/      — MiniAppFrame, MiniAppView, MiniAppIcon, MiniAppDevFrame, MiniAppOverlayPortal
+├── miniapp/      — MiniAppWebview, MiniAppView, MiniAppIcon, MiniAppOverlayPortal
 ├── sidebar/      — FileTree, ProjectSidebarRow, AppsPanel (drag-and-drop .s1app install)
 ├── AppSidebar    — Session list, folder tree, pending interaction badges
 └── *Page.tsx     — Settings pages (Agents, Skills, MCP, Plugins), Startup, Setup
@@ -421,7 +421,7 @@ the sandbox.
 
 ### Mini-App Platform
 
-Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are controlled by AI agents through MCP tools.
+Mini-apps use a VS Code-style split architecture: a trusted Node.js MiniApp Host owns computation and agent tools, while full Electron WebViews own rendering.
 
 **Key modules:**
 
@@ -431,29 +431,22 @@ Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are contr
 | Service | `apps/desktop/src/main/miniapp/miniapp-service.ts` | App discovery, manifest parsing (Zod validated), filesystem operations |
 | Schema | `apps/desktop/src/main/miniapp/miniapp-schema.ts` | Zod v4 manifest validation schema |
 | Packager | `apps/desktop/src/main/miniapp/miniapp-packager.ts` | `.s1app` packaging (zip + integrity), install/uninstall, SHA-256 verification |
-| API Runtime | `packages/shared/src/miniapp-api-runtime.js` | Shared `window.superone.*` API logic (transport-agnostic). Single source of truth for both bridge and preload |
-| Bridge | `apps/desktop/src/main/miniapp/miniapp-bridge.ts` | Inlines API runtime (`?raw`) + postMessage transport → `<script>` tag for iframe |
-| Preload | `apps/desktop/src/preload/miniapp-preload.ts` | Imports API runtime + ipcRenderer transport → `contextBridge` for webview |
-| Overlay | `apps/desktop/src/renderer/src/components/miniapp/MiniAppOverlayPortal.tsx` | Host-rendered toast/tooltip/context menu for sandboxed mini-apps |
+| MiniApp Host | `apps/desktop/src/main/miniapp/miniapp-host.ts` | One Electron utility process per project/app; lifecycle, tool RPC, WebView messages, status |
+| Host Entry | `apps/desktop/src/main/miniapp/miniapp-host-entry.ts` | Loads `manifest.main`, constructs `activate(context)`, owns tool handlers and disposables |
+| API Runtime | `packages/shared/src/miniapp-api-runtime.js` | Author-facing `window.superone.*` logic used by WebView preload |
+| Preload | `apps/desktop/src/preload/miniapp-preload.ts` | Context-isolated WebView transport and mode-specific APIs |
+| WebView | `apps/desktop/src/renderer/src/components/miniapp/MiniAppWebview.tsx` | Shared container for panel, tool renderer, standalone result, and popover HTML |
+| Overlay | `apps/desktop/src/renderer/src/components/miniapp/MiniAppOverlayPortal.tsx` | Host-rendered toast/tooltip/context menu and WebView popovers |
 
 **Installation flow:** `.s1app` file (zip) → extract to temp → validate manifest (Zod) → verify integrity (SHA-256) → copy to `~/.superone/apps/<appId>/` → write `install.json` metadata. Users can drag-and-drop `.s1app` files onto the Apps panel in the sidebar.
 
-**Manifest** requires `appId` and `name`; `version` and `author` are required for packaging. Schema enforces `appId` format (`^[a-z0-9][a-z0-9_-]*$`) and tool name format (`^[a-z0-9_]+$`).
+**Manifest** requires `appId`, `name`, and `main`; `version` and `author` are required for packaging. Schema is strict and rejects removed iframe/worker fields. All HTML surfaces use the same WebView/preload transport in development and production. Every app uses `persist:miniapp-<appId>` and may navigate only within its own `superone-app://` host.
 
-**⚠️ Two runtime paths — always wire BOTH (recurring footgun):**
+**⚠️ `<webview>` has window-level prerequisites.** Mini-app HTML no longer renders in an iframe, so any `BrowserWindow` that can show mini-app content — including the detached session window, which renders the same chat and therefore the same standalone tool blocks — needs BOTH `webPreferences.webviewTag: true` and `attachMiniAppWebviewGuards(win)` (`miniapp-webview-guard.ts`). Without the tag the element silently renders nothing; without the guards the attach is unvalidated and `superone-app://` is never registered for the partition. When you add a window that renders chat, wire both.
 
-A mini-app runs in **one of two transports depending on `manifest.isDev`**, and they do NOT share transport wiring (only the `createSuperoneApi` *logic* is shared):
+Agent tools are declared in `manifest.tools` and implemented with `context.tools.handle()` from `manifest.main`. MCP calls route directly to the MiniApp Host and never wait for a mounted WebView. The WebView and MiniApp Host communicate through `context.webview` / `window.superone.node` structured messages.
 
-| | Production (`isDev` falsy) | Dev (`isDev: true`) |
-|---|---|---|
-| Container | sandboxed `<iframe src="superone-app://…">` | `<webview>` |
-| Bridge injected by | `miniapp-bridge.ts` (`?raw` runtime + `postMessage`) | `miniapp-preload.ts` (`ipcRenderer.sendToHost`) |
-| Host side | `useMiniAppBridge` → `handleMiniAppMessage` | `MiniAppDevFrame` → `handleMiniAppMessage` |
-| Request→response replies reach the app via | `postMessage` back into the iframe (works for any type) | **only** the explicit channel list in `miniapp-preload.ts` |
-| Host→panel push events reach the app via | a `useMiniAppBridge` `useEffect` (`sendToFrame`) | a **separate** `MiniAppDevFrame` `useEffect` (`webview.send`) **+** `miniapp-preload.ts` `eventChannels` |
-
-So for **any new request/response message type**: add its response channel to the `ipcRenderer.on(... dispatchResponse)` list in `miniapp-preload.ts`, or the dev (webview) path's `transport.request` promise **hangs forever** (the iframe path silently works, so this is easy to miss — `hello` is `isDev:true`, test with it).
-For **any new host→panel push event**: forward it in **both** `useMiniAppBridge` *and* `MiniAppDevFrame`, and add the channel to `eventChannels` in `miniapp-preload.ts`.
+**Capability split (VS Code-shaped):** host capabilities live Node-side on `context` — `agent.*` (prompt / context card), `host.toast / revealInFolder / openExternal / clipboard`, `locale`, `version` — so a background app can reach the user with no UI open. They execute in the renderer (`lib/miniapp-host-actions.ts`, mounted globally by `useMiniAppHostActions`), routed via `miniapp-host-action-bridge.ts`; main only addresses the request, so clipboard and external-link consent prompts are never bypassed. The WebView keeps only what needs DOM coordinates — `ui.showTooltip / showContextMenu / showPopover / startDrag` — plus theme, locale, and `superone.node`.
 
 **Adding a new mini-app bridge API:**
 
@@ -461,13 +454,13 @@ For **any new host→panel push event**: forward it in **both** `useMiniAppBridg
 2. `packages/shared/src/miniapp-author-api.d.ts` — **single source of truth for author-facing types.** Add the signature to the `SuperOne` interface (use the `SuperOne*` named helper types). Both `miniapp-api-runtime.d.ts` (re-exports it as `SuperoneApi` for the runtime/preload) and the generated `src/superone.d.ts` derive from this one file — never hand-edit a second copy.
 3. ~~Update `generateSuperoneDts()`~~ — **no longer manual.** `miniapp-templates.ts` reads `miniapp-author-api.d.ts` via `?raw`, strips `export`, and wraps it in `declare global { Window { superone } }`. Editing step 2 is enough; the React-template `superone.d.ts` updates automatically. The `miniapp-templates.test.ts` `covers ui API` assertions guard against silent drift.
 4. `packages/shared/src/miniapp-types.ts` — If a new message type is added, append it to `MiniAppBridgeMessageType`.
-5. If the API needs host-side handling: add a case in `apps/desktop/src/renderer/src/hooks/miniapp-message-handler.ts` (shared by both the iframe and webview host paths).
+5. If the API needs host-side handling: add a case in `apps/desktop/src/renderer/src/hooks/miniapp-message-handler.ts`.
 6. If the API needs main process handling: add a handler in `apps/desktop/src/main/miniapp/miniapp-service.ts` or `apps/desktop/src/main/index.ts`.
-7. **Dev/webview path (do not skip):** for a request/response type, add `ipcRenderer.on('<resType>', (_e, d) => dispatchResponse(d))` to `miniapp-preload.ts`; for a host→panel push event, add the channel to `eventChannels` in `miniapp-preload.ts` **and** forward it in `MiniAppDevFrame` (mirror the existing `onGitHeadChangeEvent`/`onWorkerEvent` `useEffect`). The production iframe path needs the matching forward in `useMiniAppBridge`.
+7. Add response/push forwarding to `miniapp-preload.ts`, then forward the host event from `MiniAppWebview` consumers where applicable.
 8. Update the relevant guide in `apps/desktop/src/main/mcp/guides/api/`.
-9. Update `apps/desktop/examples/miniapp/hello/index.html` to demo the new API (`hello` is `isDev:true`, so it also exercises the webview path).
+9. Update `apps/desktop/examples/miniapp/hello/index.html` to demo the new API.
 
-The `createSuperoneApi` **logic** is shared (don't reimplement it), but the **transport wiring is per-path** — see the "Two runtime paths" table above; missing the dev-path wiring is the most common mini-app bug.
+For MiniApp Host API changes, update `packages/shared/src/miniapp-host-api.d.ts`, `miniapp-host-entry.ts`, host RPC tests, templates, and `api-host.md` together.
 
 ## Desktop Conventions
 

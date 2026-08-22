@@ -9,7 +9,6 @@
   "include": [
     "src/renderer/src/**/*.ts",
     "src/renderer/src/**/*.tsx",
-    "src/renderer/worker-host.ts",
     "src/preload/index.d.ts"
   ]
 }

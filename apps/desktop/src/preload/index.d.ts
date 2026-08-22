@@ -4,7 +4,7 @@ import type { ComputerUseDisplayInfo } from '@superone/shared/agent-types'
 import type { OpenCodeResources } from '@superone/shared/agent-types'
 import type { DshPluginList, DshPluginInstallResult, DshPluginInstallSource } from '@superone/shared/agent-types'
 import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexCollaborationMode, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, ProviderEndpointTestResponse, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
-import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, MiniAppWorkerInfo, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
+import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { LiveSessionSnapshot } from '@superone/shared/session-types'
 import type { ModelCatalog } from '@superone/shared/model-catalog-types'
@@ -704,29 +704,17 @@ interface MiniAppAPI {
   close(appId: string, projectDir: string, sessionId: string): Promise<void>
   authorize(appIds: string[], projectDir: string, sessionId: string): Promise<void>
   unauthorize(appIds: string[], projectDir: string, sessionId: string): Promise<void>
-  toolResult(callId: string, result: unknown, error?: string): Promise<void>
-  fsRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   startDrag(projectDir: string, appId: string, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }): void
-  gitRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
-  dbRequest(projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
-  kvRequest(projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
-  onGitHeadChangeEvent(callback: (event: { projectDir: string; appId: string }) => void): () => void
-  onLazyOpenRequest(callback: (event: { appId: string; projectDir: string; sessionId: string }) => void): () => void
-  onPeerEvent(callback: (event: { sessionId: string; appId: string; event: string; payload: unknown }) => void): () => void
-  peerEmit(appId: string, event: string, payload: unknown): void
-  workerStart(projectDir: string, appId: string): Promise<{ running: boolean; since?: number }>
-  workerStop(projectDir: string, appId: string): Promise<{ running: boolean }>
-  workerStatus(projectDir: string, appId: string): Promise<{ running: boolean; since?: number }>
-  workerSend(projectDir: string, appId: string, payload: unknown): void
-  onWorkerEvent(handler: (data: { appId: string; projectDir: string; payload: unknown }) => void): () => void
-  workerList(): Promise<MiniAppWorkerInfo[]>
-  onWorkerState(handler: (workers: MiniAppWorkerInfo[]) => void): () => void
-  fsWatch(projectDir: string, appId: string, path: string): Promise<number>
-  fsUnwatch(watchId: number): Promise<void>
-  onFsWatchEvent(callback: (event: MiniAppFsWatchEvent) => void): () => void
-  iframeReady(appId: string, projectDir: string): Promise<void>
-  onToolCall(callback: (call: MiniAppToolCallRequest) => void): () => void
+  showItemInFolder(projectDir: string, appId: string, path: string): void
   getPreloadPath(): Promise<string>
+  hostPostMessage(projectDir: string, appId: string, payload: unknown): void
+  onHostMessage(callback: (event: { appId: string; projectDir: string; payload: unknown }) => void): () => void
+  onHostAction(handler: (request: { requestId: string; appId: string; projectDir: string; action: string; args: Record<string, unknown> }) => void): () => void
+  hostActionResult(requestId: string, result?: unknown, error?: string): void
+  notifyContextConsumed(appIds: string[]): void
+  hostList(): Promise<Array<{ appId: string; projectDir: string; name: string; since: number; ready: boolean; statusText?: string }>>
+  hostStop(projectDir: string, appId: string): Promise<void>
+  onHostState(callback: (plugins: Array<{ appId: string; projectDir: string; name: string; since: number; ready: boolean; statusText?: string }>) => void): () => void
   detectDev(projectDir: string): Promise<MiniAppEntry[]>
   onDevAppReady(callback: (projectDir: string, appId: string) => void): () => void
   preview(s1appPath: string): Promise<MiniAppPreviewResult>

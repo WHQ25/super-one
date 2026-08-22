@@ -1,45 +1,63 @@
-# superone system APIs — System & Clipboard
+# context.host — System & Clipboard
 
-APIs for opening folders, external links, and clipboard access. These are top-level methods on the `superone` object.
+Node-side. Available on the `context` passed to `activate()` in `manifest.main`.
 
-## openFolder
+These are the host actions that need no DOM coordinates, so they belong to the
+MiniApp Host and work with no WebView mounted — a background sync can notify the
+user or reveal its output on its own. Anchored surfaces (tooltip, context menu,
+popover, drag) stay in the WebView; see `api-ui`.
 
-Reveal a file or folder in the system file manager (Finder / Explorer). The path is resolved within the app's allowed directories — you cannot open arbitrary paths.
+## host.toast
 
 ```js
-superone.openFolder('.')           // open project root
-superone.openFolder('src/utils')   // open a subdirectory
+await context.host.toast('Sync finished', 'success')
+await context.host.toast('Something went wrong', 'error')
+await context.host.toast('Be careful', 'warning')
+await context.host.toast('FYI')                    // 'info' is the default
 ```
 
-## openExternalLink
+## host.revealInFolder
 
-Open a URL in the user's default browser. A confirmation dialog is shown before opening — the user must approve.
-
-Only `http://` and `https://` URLs are allowed. Other schemes (e.g., `file://`) are silently ignored.
+Reveals a path in Finder / Explorer. The path must be absolute and inside the
+app's own scope — the open project, the app directory, or its storage dirs.
 
 ```js
-superone.openExternalLink('https://docs.example.com')
+await context.host.revealInFolder(context.workspace.rootPath)
 ```
 
-## clipboard.write
+## host.openExternal
 
-Write text to the system clipboard. A toast notification is shown to inform the user.
+Opens an `http(s)` URL in the system browser. SuperOne shows a confirm dialog
+first; the promise resolves once the request is handed off.
 
 ```js
-superone.clipboard.write('Hello, world!')
+await context.host.openExternal('https://docs.example.com')
 ```
 
-## clipboard.read
+## host.clipboard
 
-Read text from the system clipboard. A permission dialog is shown — the user must approve before the app can access clipboard contents. Returns a Promise.
+`write` is silent; `read` asks the user for permission and rejects if denied.
 
 ```js
+await context.host.clipboard.write('Hello, world!')
+
 try {
-  const text = await superone.clipboard.read()
-  console.log('Clipboard:', text)
+  const text = await context.host.clipboard.read()
 } catch (err) {
-  console.log('Denied or failed:', err.message)
+  // "Clipboard read denied by user"
 }
 ```
 
-The Promise rejects if the user denies the request (error message: `"User denied clipboard access"`). Always wrap in try/catch.
+## From a WebView
+
+The WebView has none of these. Ask for them:
+
+```js
+// index.html
+superone.node.postMessage({ type: 'copy', text: 'Hello' })
+
+// node.js
+context.webview.onMessage(async (message) => {
+  if (message?.type === 'copy') await context.host.clipboard.write(message.text)
+})
+```

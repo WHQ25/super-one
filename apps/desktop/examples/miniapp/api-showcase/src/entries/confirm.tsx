@@ -52,7 +52,7 @@ function ConfirmCard() {
           onClick={() => {
             setDone('submit')
             // shallow-merge: these keys are merged onto the agent input,
-            // then dispatched to the panel's tools.handle('confirm_action').
+            // then dispatched to the MiniApp Host's confirm_action handler.
             tool.submit({ approved: true, note })
           }}
         >

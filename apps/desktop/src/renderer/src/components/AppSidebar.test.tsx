@@ -136,7 +136,7 @@ vi.mock('@/stores/chat', () => ({
 }))
 
 vi.mock('@/stores/miniapp', () => ({
-  useMiniAppStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ fetchApps: vi.fn(), apps: [], workers: [] }),
+  useMiniAppStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ fetchApps: vi.fn(), apps: [], hosts: [] }),
 }))
 
 vi.mock('@/hooks/useFullscreen', () => ({
@@ -188,8 +188,8 @@ vi.mock('@/components/sidebar/AppDrawer', () => ({
 vi.mock('@/components/sidebar/DraftsSection', () => ({
   DraftsSection: () => null,
 }))
-vi.mock('@/components/sidebar/MiniAppWorkerGroup', () => ({
-  MiniAppWorkerGroup: () => null,
+vi.mock('@/components/sidebar/MiniAppHostGroup', () => ({
+  MiniAppHostGroup: () => null,
 }))
 vi.mock('@/components/sidebar/ProjectHistoryList', () => ({
   ProjectHistoryList: () => null,

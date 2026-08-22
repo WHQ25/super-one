@@ -21,6 +21,7 @@ const STORY_APP: MiniAppEntry = {
   manifest: {
     appId: 'project-tools',
     name: 'Project Tools',
+    main: 'node.js',
     version: '1.0.0',
     toolSlug: 'project',
     tools: [

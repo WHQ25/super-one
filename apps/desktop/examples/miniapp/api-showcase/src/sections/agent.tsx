@@ -2,54 +2,56 @@ import { useEffect, useState } from 'react'
 import { Bot } from 'lucide-react'
 import type { SectionDef } from '../components/Section'
 import { Btn, Row, Out } from '../components/kit'
+import { callHost } from '../lib/host-rpc'
 
 function Demo() {
   const [out, setOut] = useState(
-    'The app can suggest a prompt or attach context — the user stays in control.',
+    'Agent APIs live in the MiniApp Host — the WebView asks through superone.node.',
   )
 
   useEffect(() => {
-    const off = window.superone.agent.onContextConsumed(() =>
-      setOut('Context was consumed by a sent message.'),
-    )
-    return off
+    return window.superone.node.onMessage((message) => {
+      if ((message as { type?: string })?.type === 'context-consumed') {
+        setOut('Context was consumed by a sent message.')
+      }
+    })
   }, [])
 
   return (
     <div>
       <Row>
         <Btn
-          onClick={() => {
-            window.superone.agent.sendPrompt(
-              'Explain what the SuperOne mini-app bridge is in one sentence.',
-            )
+          onClick={async () => {
+            await callHost('sendPrompt', {
+              text: 'Explain what the SuperOne mini-app bridge is in one sentence.',
+            })
             setOut('Prefilled the chat input — the user decides to send.')
           }}
         >
-          sendPrompt()
+          agent.sendPrompt()
         </Btn>
         <Btn
           variant="ghost"
-          onClick={() => {
-            window.superone.agent.setContext({
+          onClick={async () => {
+            await callHost('setContext', {
               summary: 'showcase selection',
-              content: 'Three files:\n- src/App.tsx\n- src/worker.ts\n- manifest.json',
+              content: 'Three files:\n- src/App.tsx\n- src/node.ts\n- manifest.json',
               mode: 'inject',
               color: '#c4873a',
             })
             setOut('Attached an inject-mode context chip to the chat input.')
           }}
         >
-          setContext()
+          agent.setContext()
         </Btn>
         <Btn
           variant="ghost"
-          onClick={() => {
-            window.superone.agent.clearContext()
+          onClick={async () => {
+            await callHost('clearContext')
             setOut('Context chip cleared.')
           }}
         >
-          clearContext()
+          agent.clearContext()
         </Btn>
       </Row>
       <Out>{out}</Out>
@@ -57,61 +59,48 @@ function Demo() {
   )
 }
 
-const react = `import { useEffect } from 'react'
-
-function AgentActions() {
-  useEffect(() => {
-    const off = window.superone.agent.onContextConsumed(() => {
-      // context was sent with a message — re-inject if still relevant
-    })
-    return off
-  }, [])
-
-  return (
-    <>
-      <button onClick={() => window.superone.agent.sendPrompt('Summarize this file')}>
-        Suggest prompt
-      </button>
-      <button
-        onClick={() =>
-          window.superone.agent.setContext({
-            summary: 'showcase selection',
-            content: 'src/App.tsx',
-            mode: 'inject',
-            color: '#c4873a',
-          })
-        }
-      >
-        Attach context
-      </button>
-      <button onClick={() => window.superone.agent.clearContext()}>Clear</button>
-    </>
+const react = `// node.ts — the agent API is Node-side
+export function activate(context: SuperOneMiniAppContext) {
+  context.subscriptions.push(
+    context.agent.onContextConsumed(() => {
+      context.webview.postMessage({ type: 'context-consumed' })
+    }),
+    context.webview.onMessage(async (message) => {
+      if (message?.type === 'ask') {
+        await context.agent.sendPrompt('Summarize the selected files')
+      }
+    }),
   )
-}`
+}
 
-const vanilla = `// Suggest a prompt (user must press send)
-superone.agent.sendPrompt('Analyze this data and summarize')
+// App.tsx — the WebView only asks
+<button onClick={() => window.superone.node.postMessage({ type: 'ask' })}>
+  Ask the agent
+</button>`
 
-// Attach a context chip to the chat input
-superone.agent.setContext({
-  summary: '3 selected tasks',
-  content: 'Task 1...\\nTask 2...\\nTask 3...',
-  mode: 'inject',            // or 'suggest' (opt-in checkbox)
-  color: '#4a7fbf',
+const vanilla = `// node.js
+context.agent.sendPrompt('Analyze this data and summarize')
+
+context.agent.setContext({
+  summary: '3 files selected',
+  content: 'src/a.ts\\nsrc/b.ts\\nsrc/c.ts',
+  mode: 'inject',       // or 'suggest' — the user opts in
+  color: '#4a7fbf'
 })
 
-const unsub = superone.agent.onContextConsumed(() => {
-  // re-inject if state is still relevant
+const sub = context.agent.onContextConsumed(() => {
+  // the card went out with a message
 })
-superone.agent.clearContext()`
+
+context.agent.clearContext()`
 
 export const agentSection: SectionDef = {
   id: 'agent',
   icon: Bot,
   title: 'Agent',
-  api: 'superone.agent',
+  api: 'context.agent',
   blurb:
-    'Suggest prompts and attach context chips — the app can never silently instruct the agent; the user always confirms.',
+    'Prefill the chat input and attach context cards. Node-side: a background task can reach the agent with no UI open.',
   Demo,
   react,
   vanilla,

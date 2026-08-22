@@ -1,11 +1,7 @@
 /**
  * Shared mini-app API runtime.
  *
- * Used in two ways:
- * 1. Imported as module in miniapp-preload.ts
- * 2. Imported as ?raw string and inlined in bridge <script> tags
- *
- * Must be valid ES2020 JS (runs in Chromium iframe and Electron preload).
+ * Imported by the Electron WebView preload. Must remain valid ES2020 JS.
  * No external imports allowed.
  *
  * @param {object} transport - { send, request, on }
@@ -17,14 +13,10 @@
 
 // eslint-disable-next-line no-unused-vars
 function createSuperoneApi(transport, version, opts) {
-  const toolHandlers = new Map()
-  const watchCallbacks = new Map()
-  const gitHeadListeners = []
-  const contextConsumedListeners = []
   const darkModeListeners = []
   const themeListeners = []
   const localeListeners = []
-  const peerListenersByEvent = new Map()
+  const nodeMessageListeners = []
   let currentLocale = (opts && opts.initialLocale) || 'en'
 
   // --- drag image helpers (build an "icon + filename" pill for non-image files) ---
@@ -91,34 +83,6 @@ function createSuperoneApi(transport, version, opts) {
     } catch (e) { return null }
   }
 
-  transport.on('miniapp-tool-call', (data) => {
-    const handler = toolHandlers.get(data.toolName)
-    if (handler) {
-      Promise.resolve()
-        .then(() => handler(data.arguments))
-        .then((result) => {
-          transport.send('miniapp-tool-result', { callId: data.callId, result })
-        })
-        .catch((err) => {
-          transport.send('miniapp-tool-result', { callId: data.callId, error: err.message || String(err) })
-        })
-    } else {
-      transport.send('miniapp-tool-result', { callId: data.callId, error: 'No handler for tool: ' + data.toolName })
-    }
-  })
-
-  transport.on('miniapp-fs-watch-event', (data) => {
-    const cb = watchCallbacks.get(data.watchId)
-    if (cb) cb({ type: data.eventType, path: data.path })
-  })
-
-  transport.on('miniapp-git-head-change', () => {
-    gitHeadListeners.forEach((cb) => cb())
-  })
-
-  transport.on('miniapp-context-consumed', () => {
-    contextConsumedListeners.forEach((cb) => cb())
-  })
 
   transport.on('miniapp-theme', (data) => {
     const root = document.documentElement
@@ -141,13 +105,8 @@ function createSuperoneApi(transport, version, opts) {
     localeListeners.forEach((cb) => cb(currentLocale))
   })
 
-  transport.on('miniapp-peer-event', (data) => {
-    if (!data || typeof data.event !== 'string') return
-    const arr = peerListenersByEvent.get(data.event)
-    if (!arr) return
-    for (let i = 0; i < arr.length; i++) {
-      try { arr[i](data.payload) } catch { /* ignore listener throws */ }
-    }
+  transport.on('miniapp-node-message', (data) => {
+    nodeMessageListeners.forEach((cb) => cb(data && data.payload))
   })
 
   function makeSub(arr) {
@@ -160,152 +119,17 @@ function createSuperoneApi(transport, version, opts) {
     }
   }
 
-  function makeDb(scope, extra) {
-    const api = {
-      query(sql, params) {
-        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'query', scope: scope, args: { sql, params } })
-      },
-      exec(sql, params) {
-        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'exec', scope: scope, args: { sql, params } })
-      },
-      batch(statements) {
-        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'batch', scope: scope, args: { statements } })
-      },
-      pragma(name, value) {
-        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'pragma', scope: scope, args: { name, value } })
-      },
-    }
-    if (extra) for (const k in extra) api[k] = extra[k]
-    return api
-  }
-
-  let readyDeferred = false
-  let readySent = false
-  function emitReady() {
-    if (readySent) return
-    readySent = true
-    transport.send('miniapp-ready', {})
-  }
-
-  function makeKv(scope, extra) {
-    const api = {
-      get(key) {
-        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'get', scope: scope, args: { key } })
-      },
-      set(key, value) {
-        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'set', scope: scope, args: { key, value } })
-      },
-      delete(key) {
-        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'delete', scope: scope, args: { key } })
-      },
-      list(prefix) {
-        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'list', scope: scope, args: { prefix } })
-      },
-    }
-    if (extra) for (const k in extra) api[k] = extra[k]
-    return api
-  }
-
   return {
     version: version || '0.0.0',
-    tools: {
-      handle(name, callback) { toolHandlers.set(name, callback) },
-      // Exposed so the standalone bridge can do its own callId-filtered dispatch
-      // by reading the same handler registry that .handle() populates.
-      _handlers: toolHandlers,
-    },
-    db: makeDb('project', { project: makeDb('project'), user: makeDb('user') }),
-    kv: makeKv('project', { project: makeKv('project'), user: makeKv('user') }),
-    peer: {
-      on(event, callback) {
-        if (typeof event !== 'string' || typeof callback !== 'function') return () => {}
-        let arr = peerListenersByEvent.get(event)
-        if (!arr) { arr = []; peerListenersByEvent.set(event, arr) }
-        arr.push(callback)
+    node: {
+      postMessage(message) { transport.send('miniapp-node-post-message', { payload: message }) },
+      onMessage(handler) {
+        nodeMessageListeners.push(handler)
         return () => {
-          const cur = peerListenersByEvent.get(event)
-          if (!cur) return
-          const idx = cur.indexOf(callback)
-          if (idx >= 0) cur.splice(idx, 1)
-          if (cur.length === 0) peerListenersByEvent.delete(event)
+          const index = nodeMessageListeners.indexOf(handler)
+          if (index >= 0) nodeMessageListeners.splice(index, 1)
         }
       },
-      emit(event, payload) {
-        if (typeof event !== 'string') return
-        transport.send('miniapp-peer-emit', { event: event, payload: payload })
-      },
-    },
-    fs: {
-      readFile(path, opts) {
-        const op = opts && opts.binary ? 'readFileBinary' : 'readFile'
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op, args: { path } })
-      },
-      readDir(path) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'readDir', args: { path: path || '.' } })
-      },
-      writeFile(path, content, opts) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'writeFile', args: { path, content, append: opts?.append === true } })
-      },
-      deleteFile(path) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'deleteFile', args: { path } })
-      },
-      trashFile(path) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'trashFile', args: { path } })
-      },
-      rename(from, to) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'rename', args: { from, to } })
-      },
-      stat(path) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'stat', args: { path } })
-      },
-      mkdir(path) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'mkdir', args: { path } })
-      },
-      exists(path) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'exists', args: { path } })
-      },
-      glob(pattern) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'glob', args: { pattern } })
-      },
-      watch(path, callback) {
-        return transport.request('miniapp-fs-watch', 'miniapp-fs-watch-ack', { path }, 'watchId').then((res) => {
-          watchCallbacks.set(res, callback)
-          return res
-        })
-      },
-      unwatch(watchId) {
-        watchCallbacks.delete(watchId)
-        transport.send('miniapp-fs-unwatch', { watchId })
-      },
-    },
-    agent: {
-      sendPrompt(text) { transport.send('miniapp-sendPrompt', { text }) },
-      setContext(opts) { transport.send('miniapp-context-set', { summary: opts.summary, content: opts.content, mode: opts.mode || 'inject', color: opts.color }) },
-      clearContext() { transport.send('miniapp-context-clear', {}) },
-      onContextConsumed: makeSub(contextConsumedListeners),
-    },
-    openFolder(path) { transport.send('miniapp-open-folder', { path }) },
-    openExternalLink(url) { transport.send('miniapp-open-external-link', { url }) },
-    clipboard: {
-      read() { return transport.request('miniapp-clipboard-read', 'miniapp-clipboard-response', {}, 'text') },
-      write(text) { transport.send('miniapp-clipboard-write', { text }) },
-    },
-    git: {
-      info() { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'info', args: {} }) },
-      branches() { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'branches', args: {} }) },
-      log(opts) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'log', args: opts || {} }) },
-      status() { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'status', args: {} }) },
-      diff(path, staged) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'diff', args: { path, staged: !!staged } }) },
-      show(ref, path) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'show', args: { ref, path } }) },
-      blame(path) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'blame', args: { path } }) },
-      diffSummary(ref1, ref2) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'diffSummary', args: { ref1, ref2 } }) },
-      getCommit(ref) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'getCommit', args: { ref } }) },
-      tags() { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'tags', args: {} }) },
-      remotes() { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'remotes', args: {} }) },
-      branchDetail(name) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'branchDetail', args: { name } }) },
-      stashList() { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'stashList', args: {} }) },
-      logFile(path, opts) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'logFile', args: { path, ...(opts || {}) } }) },
-      onHeadChange: makeSub(gitHeadListeners),
     },
     locale: {
       get() { return currentLocale },
@@ -324,7 +148,6 @@ function createSuperoneApi(transport, version, opts) {
       onChange: makeSub(themeListeners),
     },
     ui: {
-      toast(message, type) { transport.send('miniapp-ui-toast', { message, toastType: type || 'info' }) },
       showTooltip(anchorRect, text, side) { transport.send('miniapp-ui-tooltip-show', { anchorRect, text, side: side || 'top' }) },
       hideTooltip() { transport.send('miniapp-ui-tooltip-hide', {}) },
       startDrag(paths, dragOpts) {
@@ -409,62 +232,8 @@ function createSuperoneApi(transport, version, opts) {
         }
       })(),
     },
-    worker: (function() {
-      const workerMsgListeners = []
-      transport.on('miniapp-worker-event', function(d) {
-        workerMsgListeners.forEach(function(cb) { cb(d && d.payload) })
-      })
-      return {
-        start() { return transport.request('miniapp-worker-start', 'miniapp-worker-status-result', {}) },
-        stop() { return transport.request('miniapp-worker-stop', 'miniapp-worker-status-result', {}) },
-        status() { return transport.request('miniapp-worker-status', 'miniapp-worker-status-result', {}) },
-        postMessage(msg) { transport.send('miniapp-worker-msg', { payload: msg }) },
-        onMessage(cb) {
-          workerMsgListeners.push(cb)
-          return function() {
-            const i = workerMsgListeners.indexOf(cb)
-            if (i >= 0) workerMsgListeners.splice(i, 1)
-          }
-        },
-      }
-    })(),
     isDarkMode() { return document.documentElement.classList.contains('dark') },
     onDarkModeChange: makeSub(darkModeListeners),
-    ready() { emitReady() },
-    deferReady() { readyDeferred = true },
-    _autoReady() { if (!readyDeferred) emitReady() },
-  }
-}
-
-// eslint-disable-next-line no-unused-vars
-function createSuperoneSelf(transport) {
-  const selfMsgListeners = []
-  transport.on('miniapp-worker-msg', function(d) {
-    selfMsgListeners.forEach(function(cb) { cb(d && d.payload) })
-  })
-  let leaseSeq = 0
-  return {
-    onMessage(cb) {
-      selfMsgListeners.push(cb)
-      return function() {
-        const i = selfMsgListeners.indexOf(cb)
-        if (i >= 0) selfMsgListeners.splice(i, 1)
-      }
-    },
-    postMessage(msg) { transport.send('miniapp-worker-event', { payload: msg }) },
-    setStatus(text) { transport.send('miniapp-worker-status-set', { text: text == null ? '' : String(text) }) },
-    keepAlive(label) {
-      const id = ++leaseSeq
-      transport.send('miniapp-worker-lease', { leaseId: id, label: label || '' })
-      let released = false
-      return {
-        release() {
-          if (released) return
-          released = true
-          transport.send('miniapp-worker-lease-release', { leaseId: id })
-        },
-      }
-    },
   }
 }
 
@@ -498,7 +267,7 @@ function installSuperoneMediaProbe(transport) {
 
   function notify(type, data) {
     // webview path: parent.postMessage doesn't reach the host (parent === window in <webview>),
-    // so the preload exposes a direct IPC bridge. iframe path: this is undefined → fall through to postMessage.
+    // The preload exposes a direct IPC bridge for media lifecycle notifications.
     if (typeof window !== 'undefined' && typeof window.__superoneIpcToHost === 'function') {
       try { window.__superoneIpcToHost(type, data); return } catch (_) { /* fall through */ }
     }
@@ -538,9 +307,9 @@ function installSuperoneMediaProbe(transport) {
 }
 
 // eslint-disable-next-line no-unused-vars
-function startSuperoneReady(api) {
+function startSuperoneReady(transport) {
   function fire() {
-    if (api && typeof api._autoReady === 'function') api._autoReady()
+    transport.send('miniapp-ready', {})
   }
   if (typeof document === 'undefined' || document.readyState === 'complete' || document.readyState === 'interactive') {
     fire()

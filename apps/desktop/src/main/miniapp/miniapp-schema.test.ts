@@ -6,6 +6,7 @@ describe('parseManifest', () => {
     appId: 'hello',
     name: 'Hello',
     version: '1.0.0',
+    main: 'node.js',
     toolSlug: 'hello',
     tools: [
       {
@@ -29,32 +30,29 @@ describe('parseManifest', () => {
     }
   })
 
-  it('accepts background entry when permissions.background is declared', () => {
+  it('accepts a JavaScript MiniApp Host entry', () => {
     const result = parseManifest({
-      appId: 'bg',
-      name: 'Bg',
-      background: { entry: 'background.html' },
-      permissions: { background: { reason: 'finish downloads with panel closed' } },
+      appId: 'demo',
+      name: 'Demo',
+      main: 'dist/node.js',
     })
     expect(result.ok).toBe(true)
   })
 
-  it('rejects background entry without permissions.background', () => {
+  it('requires every mini-app to declare a MiniApp Host entry', () => {
     const result = parseManifest({
-      appId: 'bg',
-      name: 'Bg',
-      background: { entry: 'background.html' },
+      appId: 'missing-main',
+      name: 'Missing Main',
     })
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.errors.join()).toMatch(/background requires permissions\.background/)
+    if (!result.ok) expect(result.errors.join()).toMatch(/main/)
   })
 
-  it('rejects a non-html background entry', () => {
+  it('rejects non-JavaScript MiniApp Host entries', () => {
     const result = parseManifest({
-      appId: 'bg',
-      name: 'Bg',
-      background: { entry: 'worker.js' },
-      permissions: { background: { reason: 'x' } },
+      appId: 'demo',
+      name: 'Demo',
+      main: 'background.html',
     })
     expect(result.ok).toBe(false)
   })
@@ -67,9 +65,9 @@ describe('parseManifest', () => {
     expect(result.ok).toBe(true)
   })
 
-  it('should accept manifest without optional fields', () => {
+  it('should reject manifest without the required MiniApp Host entry', () => {
     const result = parseManifest({ appId: 'minimal', name: 'Minimal' })
-    expect(result.ok).toBe(true)
+    expect(result.ok).toBe(false)
   })
 
   it('should reject manifest without appId', () => {
@@ -102,7 +100,7 @@ describe('parseManifest', () => {
   })
 
   it('should accept appId with hyphens and underscores', () => {
-    const result = parseManifest({ appId: 'my-cool_app', name: 'Cool' })
+    const result = parseManifest({ appId: 'my-cool_app', name: 'Cool', main: 'node.js' })
     expect(result.ok).toBe(true)
   })
 
@@ -166,76 +164,6 @@ describe('parseManifest', () => {
           },
         },
       ],
-    })
-    expect(result.ok).toBe(true)
-  })
-
-  it('should accept permissions.fs with project scope', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { fs: [{ scope: 'project', path: '.', access: 'readwrite', reason: 'Read project files' }] },
-    })
-    expect(result.ok).toBe(true)
-  })
-
-  it('should accept permissions.fs with read-only access', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { fs: [{ scope: 'project', path: 'src', access: 'read', reason: 'Analyze source code' }] },
-    })
-    expect(result.ok).toBe(true)
-  })
-
-  it('should accept permissions.fs with multiple entries', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: {
-        fs: [
-          { scope: 'project', path: 'src', access: 'read', reason: 'Read source' },
-          { scope: 'user', path: '.config/hello', access: 'readwrite', reason: 'Store config' },
-          { scope: 'app', reason: 'Persist app data' },
-        ],
-      },
-    })
-    expect(result.ok).toBe(true)
-  })
-
-  it('should reject permissions.fs project scope without path', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { fs: [{ scope: 'project', access: 'read', reason: 'test' }] },
-    })
-    expect(result.ok).toBe(false)
-  })
-
-  it('should reject permissions.fs user scope without path', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { fs: [{ scope: 'user', access: 'readwrite', reason: 'test' }] },
-    })
-    expect(result.ok).toBe(false)
-  })
-
-  it('should reject permissions.fs without access', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { fs: [{ scope: 'project', path: '.', reason: 'test' }] },
-    })
-    expect(result.ok).toBe(false)
-  })
-
-  it('should reject permissions.fs without reason', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { fs: [{ scope: 'project', path: '.', access: 'read' }] },
-    })
-    expect(result.ok).toBe(false)
-  })
-
-  it('should accept permissions.fs app scope without path or access', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { fs: [{ scope: 'app', reason: 'Store data' }] },
     })
     expect(result.ok).toBe(true)
   })
@@ -312,50 +240,35 @@ describe('parseManifest', () => {
     expect(result.ok).toBe(false)
   })
 
-  it('should accept permissions.storage with reason', () => {
+  it('should reject removed permissions.storage', () => {
     const result = parseManifest({
       ...validManifest,
-      permissions: { storage: { reason: 'Persist user preferences' } },
-    })
-    expect(result.ok).toBe(true)
-  })
-
-  it('should reject permissions.storage without reason', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { storage: {} },
+      permissions: { storage: { reason: 'WebView storage is always isolated' } },
     })
     expect(result.ok).toBe(false)
   })
 
-  it('should reject permissions.storage with empty reason', () => {
+  it('should reject removed background worker fields', () => {
     const result = parseManifest({
       ...validManifest,
-      permissions: { storage: { reason: '' } },
+      background: { entry: 'background.html' },
+      permissions: { background: { reason: 'legacy worker' } },
     })
     expect(result.ok).toBe(false)
   })
 
-  it('should reject permissions.storage as array', () => {
+  it('should reject a MiniApp Host entry that escapes the app root', () => {
     const result = parseManifest({
       ...validManifest,
-      permissions: { storage: [{ reason: 'x' }] },
+      main: 'dist/../../node.js',
     })
     expect(result.ok).toBe(false)
   })
 
-  it('should reject permissions.storage as boolean', () => {
+  it('should reject removed permissions.fs declarations', () => {
     const result = parseManifest({
       ...validManifest,
-      permissions: { storage: true },
-    })
-    expect(result.ok).toBe(false)
-  })
-
-  it('should reject old string-based permissions.fs format', () => {
-    const result = parseManifest({
-      ...validManifest,
-      permissions: { fs: 'project' },
+      permissions: { fs: [{ scope: 'project', path: '.', access: 'read', reason: 'legacy bridge' }] },
     })
     expect(result.ok).toBe(false)
   })
@@ -372,7 +285,7 @@ describe('parseManifest', () => {
   })
 
   it('should not require toolSlug when no tools declared', () => {
-    const result = parseManifest({ appId: 'notool', name: 'No Tool' })
+    const result = parseManifest({ appId: 'notool', name: 'No Tool', main: 'node.js' })
     expect(result.ok).toBe(true)
   })
 
@@ -394,6 +307,7 @@ describe('parseManifest - standalone tools', () => {
   const baseStandalone = {
     appId: 'weather',
     name: 'Weather',
+    main: 'node.js',
     toolSlug: 'weather',
     templates: { 'query-result': 'query-result.html' },
     tools: [
@@ -419,6 +333,7 @@ describe('parseManifest - standalone tools', () => {
     const result = parseManifest({
       appId: 'mixed',
       name: 'Mixed',
+      main: 'node.js',
       toolSlug: 'mixed',
       templates: { 'query-result': 'query-result.html' },
       tools: [
@@ -447,10 +362,11 @@ describe('parseManifest - standalone tools', () => {
     }
   })
 
-  it('defaults standalone undefined (backwards compatible)', () => {
+  it('defaults standalone to undefined', () => {
     const result = parseManifest({
       appId: 'legacy',
       name: 'Legacy',
+      main: 'node.js',
       toolSlug: 'legacy',
       tools: [{ name: 'foo', description: 'bar', inputSchema: { type: 'object' } }],
     })
@@ -507,6 +423,7 @@ describe('parseManifest - standalone tools', () => {
     const result = parseManifest({
       appId: 'hitl',
       name: 'HITL',
+      main: 'node.js',
       toolSlug: 'hitl',
       templates: { 'confirm': 'confirm.html', 'card': 'card.html' },
       tools: [{
@@ -552,6 +469,7 @@ describe('parseManifest - standalone tools', () => {
     const result = parseManifest({
       appId: 'ui',
       name: 'UI',
+      main: 'node.js',
       toolSlug: 'ui',
       templates: { 'counter': 'counter.html' },
       tools: [{

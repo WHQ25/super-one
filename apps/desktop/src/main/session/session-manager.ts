@@ -438,13 +438,12 @@ export class SessionManagerImpl implements SessionManagerContract {
       const { unregisterSessionAllApps, isAppStillAuthorizedInProject, unregisterAppTemplates } = await import('../mcp/superone-mcp-server')
       const cleared = unregisterSessionAllApps(sessionId)
       if (cleared.length > 0) {
-        const { clearAllowedDirectories, clearAllowedMedia } = await import('../miniapp/miniapp-service')
-        const { stopWorker } = await import('../miniapp/worker-host')
+        const { clearAllowedMedia } = await import('../miniapp/miniapp-service')
+        const { stopMiniAppHost } = await import('../miniapp/miniapp-host')
         for (const { projectDir, appId } of cleared) {
           if (!isAppStillAuthorizedInProject(projectDir, appId)) {
-            stopWorker(projectDir, appId)
+            stopMiniAppHost(projectDir, appId)
             unregisterAppTemplates(projectDir, appId)
-            clearAllowedDirectories(projectDir, appId)
             clearAllowedMedia(appId)
           }
         }

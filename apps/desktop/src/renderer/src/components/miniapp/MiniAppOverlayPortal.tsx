@@ -4,6 +4,9 @@ import { icons } from 'lucide-react'
 import type { TooltipState, ContextMenuState, PopoverState } from '@/hooks/useMiniAppOverlay'
 import type { MiniAppContextMenuItem } from '@superone/shared/miniapp-types'
 import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
+import { useIsDark } from '@/hooks/use-is-dark'
+import { MiniAppWebview, type MiniAppWebviewHandle } from './MiniAppWebview'
+import { readThemeVars } from './miniapp-theme'
 
 interface MiniAppOverlayPortalProps {
   tooltip: TooltipState | null
@@ -181,9 +184,9 @@ function OverlayPopover({
   onDismiss: () => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const webviewRef = useRef<MiniAppWebviewHandle>(null)
   const [height, setHeight] = useState(200)
-  const readyRef = useRef(false)
+  const isDark = useIsDark()
 
   useEffect(() => {
     const el = containerRef.current
@@ -228,53 +231,42 @@ function OverlayPopover({
     return () => window.removeEventListener('keydown', handleKey)
   }, [onDismiss])
 
+  const handleMessage = useCallback((channel: string, data: Record<string, unknown>, send: (message: unknown) => void) => {
+    if (channel === 'miniapp-ready') {
+      send({ type: 'miniapp-theme', vars: readThemeVars(), isDark })
+      state.sendToMain({ type: 'miniapp-popover-opened' })
+      return
+    }
+
+    if (channel === 'miniapp-resize') {
+      const h = data.height as number
+      if (h > 0) setHeight(state.maxHeight ? Math.min(h, state.maxHeight) : h)
+      return
+    }
+
+    if (channel === 'miniapp-popover-msg') {
+      state.sendToMain({ type: 'miniapp-popover-msg', data: data.data })
+      return
+    }
+
+    if (channel === 'miniapp-popover-close') {
+      onDismiss()
+      return
+    }
+
+    handleMiniAppMessage(channel, data, state.appId, state.projectDir, send)
+  }, [isDark, onDismiss, state])
+
+  // Bind on mount, not on the guest's first message: the host may push popover
+  // data before the page says anything. MiniAppWebview queues until dom-ready.
   useEffect(() => {
-    const iframe = iframeRef.current
-    if (!iframe) return
-
-    const sendToIframe = (msg: unknown) => {
-      iframe.contentWindow?.postMessage(msg, '*')
-    }
-    state.iframeSendRef.current = sendToIframe
-
-    const handleMessage = (e: MessageEvent) => {
-      if (e.source !== iframe.contentWindow) return
-      const data = e.data
-      if (!data || !data.type) return
-
-      if (data.type === 'miniapp-ready') {
-        readyRef.current = true
-        state.sendToMain({ type: 'miniapp-popover-opened' })
-        return
-      }
-
-      if (data.type === 'miniapp-resize') {
-        const h = data.height as number
-        if (h > 0) setHeight(state.maxHeight ? Math.min(h, state.maxHeight) : h)
-        return
-      }
-
-      if (data.type === 'miniapp-popover-msg') {
-        state.sendToMain({ type: 'miniapp-popover-msg', data: data.data })
-        return
-      }
-
-      if (data.type === 'miniapp-popover-close') {
-        onDismiss()
-        return
-      }
-
-      handleMiniAppMessage(data.type, data, state.appId, state.projectDir, sendToIframe)
-    }
-
-    window.addEventListener('message', handleMessage)
+    state.webviewSendRef.current = (message: unknown) => webviewRef.current?.send(message)
     return () => {
-      state.iframeSendRef.current = null
-      window.removeEventListener('message', handleMessage)
+      state.webviewSendRef.current = null
     }
-  }, [state, onDismiss])
+  }, [state])
 
-  const iframeHeight = state.maxHeight ? Math.min(height, state.maxHeight) : height
+  const webviewHeight = state.maxHeight ? Math.min(height, state.maxHeight) : height
 
   return (
     <>
@@ -284,12 +276,13 @@ function OverlayPopover({
         className="fixed z-50 overflow-hidden rounded-lg border bg-popover shadow-lg animate-in fade-in-0 zoom-in-95"
         style={{ top: -9999, left: -9999, width: state.width }}
       >
-        <iframe
-          ref={iframeRef}
+        <MiniAppWebview
+          ref={webviewRef}
+          appId={state.appId}
           src={state.templateUrl}
-          sandbox="allow-scripts"
+          onMessage={handleMessage}
           className="block w-full border-0"
-          style={{ height: iframeHeight }}
+          style={{ height: webviewHeight }}
         />
       </div>
     </>

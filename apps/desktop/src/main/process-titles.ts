@@ -38,7 +38,6 @@ export function glassBootArgs(enabled: boolean): string[] {
 export const WindowRole = {
   Main: 'main',
   Mini: 'mini',
-  WorkerHost: 'worker-host',
 } as const
 
 export type WindowRoleValue = (typeof WindowRole)[keyof typeof WindowRole]

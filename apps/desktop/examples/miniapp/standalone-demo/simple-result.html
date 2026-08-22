@@ -78,19 +78,6 @@
   <pre id="err" class="err" hidden></pre>
 
   <script type="module">
-    const KEY = 'counter'
-
-    superone.tools.handle('read_counter', async () => {
-      const value = (await superone.kv.get(KEY)) ?? 0
-      return { value }
-    })
-
-    superone.tools.handle('reset', async () => {
-      await superone.kv.set(KEY, 0)
-      superone.peer.emit('count-changed', { value: 0, delta: 0, reset: true, at: Date.now() })
-      return { ok: true, value: 0 }
-    })
-
     document.getElementById('name').textContent = superone.tool.toolName
 
     const dot = document.getElementById('dot')
@@ -110,15 +97,12 @@
         try { resultEl.textContent = JSON.stringify(detail.result, null, 2) }
         catch { resultEl.textContent = String(detail.result) }
       }
-      requestAnimationFrame(() => {
-        const h = document.documentElement.scrollHeight
-        if (window.parent) window.parent.postMessage({ type: 'miniapp-resize', height: h }, '*')
-      })
     }
-    window.addEventListener('superone:tool-result', (ev) => render(ev.detail))
     const t = window.superone && window.superone.tool
-    if (t && (t.result !== null || t.error !== null)) {
-      render({ result: t.result, error: t.error })
+    if (t && t.phase === 'standalone') {
+      t.onDidChange(render)
+      const initial = t.getState()
+      if (initial.result !== null || initial.error !== null) render(initial)
     }
   </script>
 </body>

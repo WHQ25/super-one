@@ -14,8 +14,7 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  // Highlight the section currently in view (viewport-rooted — the iframe
-  // document is the scroll container, not a nested element).
+  // Highlight the section currently in the WebView viewport.
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
@@ -100,8 +99,7 @@ export default function App() {
             <Section key={def.id} def={def} />
           ))}
           <footer className="text-center text-[12px] text-muted-fg py-6">
-            React mini-app template · {SECTIONS.length} APIs · 6-entry Vite build
-            (panel · worker · confirm · receipt · counter · detail)
+            React mini-app template · {SECTIONS.length} APIs · WebView + Node MiniApp Host
           </footer>
         </main>
       </div>

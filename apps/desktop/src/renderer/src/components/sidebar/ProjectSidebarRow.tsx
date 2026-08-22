@@ -8,7 +8,7 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { MiniAppWorkerGroup } from './MiniAppWorkerGroup'
+import { MiniAppHostGroup } from './MiniAppHostGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import type { Automation, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -217,14 +217,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     }
   }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel])
 
-  const projectWorkers = useMiniAppStore(useShallow((s) =>
-    s.workers.filter((w) => w.projectDir === folder.path),
+  const projectHosts = useMiniAppStore(useShallow((s) =>
+    s.hosts.filter((host) => host.projectDir === folder.path),
   ))
-  const handleStopWorker = useCallback((appId: string) => {
-    window.miniapp.workerStop(folder.path, appId).catch(() => {})
+  const handleStopHost = useCallback((appId: string) => {
+    window.miniapp.hostStop(folder.path, appId).catch(() => {})
   }, [folder.path])
 
-  const handleOpenWorkerApp = useCallback((appId: string) => {
+  const handleOpenHostApp = useCallback((appId: string) => {
     const entry = useMiniAppStore.getState().apps.find((a) => a.id === appId)
     if (entry) useMiniAppStore.getState().openAppInPanel(entry, folder.path).catch(() => {})
   }, [folder.path])
@@ -412,10 +412,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       )}
 
       {isExpanded && (
-        <MiniAppWorkerGroup
-          workers={projectWorkers}
-          onOpen={handleOpenWorkerApp}
-          onStop={handleStopWorker}
+        <MiniAppHostGroup
+          hosts={projectHosts}
+          onOpen={handleOpenHostApp}
+          onStop={handleStopHost}
         />
       )}
 

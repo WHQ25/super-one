@@ -1,13 +1,13 @@
 import { createHash } from 'crypto'
 import { createWriteStream } from 'fs'
 import { readdir, readFile, writeFile, rm, stat, mkdir, cp } from 'fs/promises'
-import { basename, dirname, join, relative } from 'path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import archiver from 'archiver'
 import { app } from 'electron'
 import log from '../logger'
 import { extractZip } from '../zip-utils'
 import { parseManifest } from './miniapp-schema'
-import { closeDbForApp } from './miniapp-db'
+import { closeMiniAppState } from './miniapp-state'
 import type { MiniAppInstallMeta, MiniAppInstallResult, MiniAppIntegrity, MiniAppManifest, MiniAppPackResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
 
 const INTEGRITY_FILE = 'integrity.json'
@@ -34,6 +34,28 @@ async function collectFiles(dir: string, base?: string): Promise<string[]> {
 
 function sha256(data: Buffer): string {
   return createHash('sha256').update(data).digest('hex')
+}
+
+async function assertRuntimeFile(appDir: string, entry: string, label: string): Promise<void> {
+  const root = resolve(appDir)
+  const filePath = resolve(root, entry)
+  const rel = relative(root, filePath)
+  if (!rel || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) {
+    throw new Error(`${label} must stay inside the mini-app root: ${entry}`)
+  }
+  try {
+    if (!(await stat(filePath)).isFile()) throw new Error('not a file')
+  } catch {
+    throw new Error(`${label} not found: ${entry}`)
+  }
+}
+
+async function assertRuntimeEntries(appDir: string, manifest: MiniAppManifest): Promise<void> {
+  await assertRuntimeFile(appDir, 'index.html', 'WebView entry')
+  await assertRuntimeFile(appDir, manifest.main, 'MiniApp Host entry')
+  for (const [name, entry] of Object.entries(manifest.templates ?? {})) {
+    await assertRuntimeFile(appDir, entry, `Template "${name}"`)
+  }
 }
 
 export async function generateIntegrity(appDir: string): Promise<MiniAppIntegrity> {
@@ -87,6 +109,7 @@ export async function packApp(appDir: string, outputDir: string): Promise<MiniAp
     throw new Error(`Invalid manifest:\n${parsed.errors.join('\n')}`)
   }
   const manifest = parsed.manifest as MiniAppManifest
+  await assertRuntimeEntries(appDir, manifest)
 
   if (!manifest.version) {
     throw new Error('manifest.version is required for packaging')
@@ -150,6 +173,7 @@ export async function previewApp(s1appPath: string): Promise<MiniAppPreviewResul
     if (!integrityResult.ok) {
       throw new Error(`Integrity check failed:\n${integrityResult.errors.join('\n')}`)
     }
+    await assertRuntimeEntries(tmpDir, manifest)
 
     let existingVersion: string | undefined
     try {
@@ -234,7 +258,7 @@ export async function uninstallApp(appId: string, installDir?: string): Promise<
   if (!(await dirExists(targetDir))) {
     throw new Error(`App not installed: ${appId}`)
   }
-  closeDbForApp(appId)
+  closeMiniAppState(appId)
   await rm(targetDir, { recursive: true, force: true })
   log.info('[miniapp] uninstalled %s → %s', appId, targetDir)
 }

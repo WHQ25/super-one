@@ -16,16 +16,11 @@ const MOCK_INSTALL_FULL: MiniAppPreviewResult = {
   manifest: {
     appId: 'debug-test-app',
     name: 'Debug Test App',
+    main: 'node.js',
     version: '2.0.0',
     author: { name: 'Debug', url: 'https://example.com' },
     description: 'A mock app for testing the install permission dialog',
     permissions: {
-      fs: [
-        { scope: 'project', path: '.', access: 'readwrite', reason: 'Manage project configuration and generated files' },
-        { scope: 'project', path: 'src', access: 'read', reason: 'Analyze source code structure for diagnostics' },
-        { scope: 'user', path: '.config/debug-app', access: 'readwrite', reason: 'Store user preferences and cached data' },
-        { scope: 'app', reason: 'Persist internal app state between sessions' },
-      ],
       network: [
         { domain: 'api.github.com', reason: 'Fetch repository metadata and issue tracking data' },
         { domain: 'cdn.example.com', reason: 'Download static assets and UI resources' },
@@ -64,8 +59,9 @@ const MOCK_INSTALL_TOOLS_ONLY: MiniAppPreviewResult = {
   manifest: {
     appId: 'debug-tools-only',
     name: 'Tools Only App',
+    main: 'node.js',
     version: '1.0.0',
-    description: 'An app with tools but no fs/network permissions',
+    description: 'An app with tools but no WebView permissions',
     toolSlug: 'tools_only',
     tools: [
       { name: 'process', description: 'Process input data and return results', inputSchema: { type: 'object', properties: { input: { type: 'string' } } } },
@@ -79,6 +75,7 @@ const MOCK_INSTALL_NO_PERMS: MiniAppPreviewResult = {
   manifest: {
     appId: 'debug-no-perms',
     name: 'Simple Widget',
+    main: 'node.js',
     version: '1.0.0',
     description: 'An app with no special permissions',
   },
@@ -89,13 +86,11 @@ const MOCK_INSTALL_MEDIA: MiniAppPreviewResult = {
   manifest: {
     appId: 'debug-media-app',
     name: 'Voice Notes Pro',
+    main: 'node.js',
     version: '1.2.0',
     author: { name: 'SuperOne Demos', url: 'https://example.com' },
     description: 'Records voice memos and captures snapshots',
     permissions: {
-      fs: [
-        { scope: 'app', reason: 'Persist recordings and snapshots between sessions' },
-      ],
       media: [
         { kind: 'microphone', reason: 'Record voice memos and dictation' },
         { kind: 'camera', reason: 'Take profile photos and document scans' },
@@ -109,7 +104,7 @@ const DEBUG_TRIGGERS: DebugTrigger[] = [
   {
     id: 'install-dialog',
     label: 'Install Dialog',
-    description: 'fs + network permissions',
+    description: 'MiniApp Host + WebView network permissions',
     action: () => useMiniAppStore.setState({ pendingInstall: MOCK_INSTALL_FULL }),
   },
   {

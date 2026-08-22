@@ -61,7 +61,7 @@ function makeEntry(id: string): MiniAppEntry {
   return {
     id,
     installDir: `/install/${id}`,
-    manifest: { appId: id, name: `App ${id}` },
+    manifest: { appId: id, name: `App ${id}`, main: 'node.js' },
   }
 }
 

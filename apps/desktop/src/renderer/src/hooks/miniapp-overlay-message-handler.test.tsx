@@ -34,40 +34,9 @@ beforeEach(() => {
 describe('miniapp-ui-toast', () => {
   const send = vi.fn()
 
-  it('calls toast.success for success type', () => {
-    const result = handleMiniAppMessage('miniapp-ui-toast', {
-      message: 'Done!', toastType: 'success',
-    }, 'app1', '/proj', send)
-    expect(result).toBe(true)
-    expect(toast.success).toHaveBeenCalledWith('Done!')
-  })
-
-  it('calls toast.error for error type', () => {
-    handleMiniAppMessage('miniapp-ui-toast', {
-      message: 'Failed', toastType: 'error',
-    }, 'app1', '/proj', send)
-    expect(toast.error).toHaveBeenCalledWith('Failed')
-  })
-
-  it('calls toast.warning for warning type', () => {
-    handleMiniAppMessage('miniapp-ui-toast', {
-      message: 'Careful', toastType: 'warning',
-    }, 'app1', '/proj', send)
-    expect(toast.warning).toHaveBeenCalledWith('Careful')
-  })
-
-  it('calls toast.info for info type', () => {
-    handleMiniAppMessage('miniapp-ui-toast', {
-      message: 'FYI', toastType: 'info',
-    }, 'app1', '/proj', send)
-    expect(toast.info).toHaveBeenCalledWith('FYI')
-  })
-
-  it('defaults to toast.info for unknown type', () => {
-    handleMiniAppMessage('miniapp-ui-toast', {
-      message: 'Hello', toastType: 'unknown',
-    }, 'app1', '/proj', send)
-    expect(toast.info).toHaveBeenCalledWith('Hello')
+  it('is no longer a WebView message — toast moved to context.host.toast', () => {
+    expect(handleMiniAppMessage('miniapp-ui-toast', { message: 'Hello', toastType: 'success' }, 'app1', '/proj', send))
+      .toBe(false)
   })
 })
 

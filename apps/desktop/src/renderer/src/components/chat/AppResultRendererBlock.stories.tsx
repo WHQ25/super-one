@@ -18,6 +18,7 @@ const APP: MiniAppEntry = {
   manifest: {
     appId: 'expense-tracker',
     name: 'Expense Tracker',
+    main: 'node.js',
     version: '1.0.0',
     toolSlug: 'expense',
     templates: {

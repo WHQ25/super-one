@@ -111,6 +111,7 @@ function entry(id: string, preferWidth?: number): MiniAppEntry {
     manifest: {
       appId: id,
       name: `App ${id}`,
+      main: 'node.js',
       ...(preferWidth != null && { preferWidth }),
     },
   }
@@ -206,7 +207,7 @@ describe('miniapp store onDevAppReady routing', () => {
     const noFlag: MiniAppEntry = {
       id: 'no-flag-app',
       installDir: '/install/no-flag-app',
-      manifest: { appId: 'no-flag-app', name: 'No Flag' },
+      manifest: { appId: 'no-flag-app', name: 'No Flag', main: 'node.js' },
     }
     mockMiniapp.list.mockResolvedValueOnce([noFlag])
 
@@ -216,7 +217,7 @@ describe('miniapp store onDevAppReady routing', () => {
   })
 })
 
-describe('miniapp store lifecycle (persistent iframe)', () => {
+describe('miniapp store lifecycle (persistent WebView)', () => {
   it('openAppInPanel registers app instance keyed by (appId, projectId) and triggers MINIAPP_OPEN exactly once', async () => {
     const app = entry('second-app')
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
@@ -233,7 +234,7 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     expect(open?.instanceKey).toBe(key)
   })
 
-  it('openAppInPanel captures the currentProjectId at open time so iframe origin stays stable across project switches', async () => {
+  it('openAppInPanel captures the currentProjectId at open time so WebView origin stays stable across project switches', async () => {
     appStateRef.currentProjectId = 'project-A-id'
     await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-A')
 
@@ -331,7 +332,7 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     expect(useMiniAppStore.getState().openApps[key]).toBeUndefined()
   })
 
-  it('closing in one session while another session still holds the same instance fires MINIAPP_CLOSE for the closing session only and keeps openApps alive (iframe sharing across sessions)', async () => {
+  it('closing in one session while another still holds the instance closes only that session and keeps the shared WebView alive', async () => {
     mockChatState.projectSessions['/proj'] = { _activeSessionId: 'sess-a', _sessions: {} }
     vi.resetModules()
     chatSubs.length = 0

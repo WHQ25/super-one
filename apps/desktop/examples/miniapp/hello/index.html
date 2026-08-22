@@ -44,11 +44,6 @@
     </div>
     <div id="api-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
   </div>
-  <div id="drop-api" style="margin-top:20px">
-    <h2 style="font-size:16px;margin-bottom:8px">File Drop</h2>
-    <div id="dropzone">Drop files here to save into <code>uploads/</code></div>
-    <div id="drop-list">(empty)</div>
-  </div>
   <div id="ui-api" style="margin-top:20px">
     <h2 style="font-size:16px;margin-bottom:8px">UI Overlay APIs</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -85,15 +80,6 @@
     <video id="cam-preview" autoplay playsinline muted style="width:100%;margin-top:8px;background:#000;border-radius:6px"></video>
     <canvas id="cam-snapshot" style="width:100%;margin-top:8px;border-radius:6px;display:none"></canvas>
   </div>
-  <div id="db-api" style="margin-top:20px">
-    <h2 style="font-size:16px;margin-bottom:8px">DB API</h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <input id="note-input" type="text" placeholder="Type a note..." style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px" />
-      <button id="btn-note-add">Add Note</button>
-      <button id="btn-note-clear">Clear All</button>
-    </div>
-    <div id="note-list" style="margin-top:8px;font-size:13px;color:#78716c">(no notes)</div>
-  </div>
   <div id="context-api" style="margin-top:20px">
     <h2 style="font-size:16px;margin-bottom:8px">Context APIs</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -103,88 +89,68 @@
     </div>
     <div id="ctx-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
   </div>
-  <div id="worker-api" style="margin-top:20px">
-    <h2 style="font-size:16px;margin-bottom:8px">Background Worker</h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <button id="btn-worker-start">Start background download</button>
-      <button id="btn-worker-ext">Start external download</button>
-      <button id="btn-worker-stop">Stop worker</button>
-      <span id="worker-state" style="font-size:13px;color:#78716c">stopped</span>
-    </div>
-    <progress id="worker-bar" value="0" max="100" style="width:100%;margin-top:8px"></progress>
-    <div id="worker-result" style="margin-top:4px;font-size:13px;color:#78716c">Close the panel after starting — it keeps running.</div>
-  </div>
   <div id="files"></div>
   <script>
-    superone.tools.handle('show_message', function(args) {
+    superone.node.onMessage(function(message) {
+      if (!message) return;
+      if (message.type === 'workspace-files') {
+        document.getElementById('files').textContent = 'Files: ' + message.files.join(', ');
+        return;
+      }
+      if (message.type === 'context-consumed') {
+        ctxResult.textContent = 'Context consumed by message (#' + message.count + ')';
+        return;
+      }
+      if (message.type === 'clipboard') {
+        apiResult.textContent = message.error ? ('Error: ' + message.error) : ('Clipboard: ' + message.text);
+        return;
+      }
+      if (message.type !== 'display-message') return;
       var container = document.getElementById('messages');
       if (container.querySelector('p')) container.innerHTML = '';
       var div = document.createElement('div');
       div.className = 'msg';
-      div.textContent = args.text;
+      div.textContent = message.text;
       container.appendChild(div);
-      return { success: true, displayed: args.text };
     });
 
-    superone.tools.handle('confirm_purchase', function(args) {
-      var container = document.getElementById('messages');
-      if (container.querySelector('p')) container.innerHTML = '';
-      var div = document.createElement('div');
-      div.className = 'msg';
-      div.textContent = 'Purchase placed: item=' + args.item_id + ' qty=' + args.final_qty + ' payment=' + args.payment;
-      container.appendChild(div);
-      var orderId = 'ord_' + Math.random().toString(36).slice(2, 8);
-      return {
-        order_id: orderId,
-        item_id: args.item_id,
-        qty: args.final_qty,
-        payment: args.payment,
-        summary: orderId + ' · ' + args.final_qty + ' × ' + args.item_id + ' (' + args.payment + ')',
-      };
-    });
+    superone.node.postMessage({ type: 'list-files' });
 
-    superone.fs.readDir('.').then(function(entries) {
-      document.getElementById('files').textContent = 'Files: ' + entries.map(function(e) { return e.name; }).join(', ');
-    }).catch(function() {});
-
+    // Every host capability below is a Node-side API. The WebView only asks.
     document.getElementById('ask-btn').onclick = function() {
-      superone.agent.sendPrompt('Say hello using the hello__show_message tool');
+      superone.node.postMessage({ type: 'send-prompt', text: 'Say hello using the hello__show_message tool' });
     };
     document.getElementById('ask-buy-btn').onclick = function() {
-      superone.agent.sendPrompt('Use the hello__confirm_purchase tool with item_id="sku-001" and suggested_qty=2 to place an order. The user will confirm the quantity and payment method in the popup.');
+      superone.node.postMessage({ type: 'send-prompt', text: 'Use the hello__confirm_purchase tool with item_id="sku-001" and suggested_qty=2 to place an order. The user will confirm the quantity and payment method in the popup.' });
     };
 
     var apiResult = document.getElementById('api-result');
     document.getElementById('btn-folder').onclick = function() {
-      superone.openFolder('.');
+      superone.node.postMessage({ type: 'open-folder' });
       apiResult.textContent = 'Opening project folder in Finder...';
     };
     document.getElementById('btn-link').onclick = function() {
-      superone.openExternalLink('https://github.com');
+      superone.node.postMessage({ type: 'open-link', url: 'https://github.com' });
       apiResult.textContent = 'Opening GitHub in browser...';
     };
     document.getElementById('btn-copy').onclick = function() {
-      superone.clipboard.write('Hello from SuperOne miniapp!');
+      superone.node.postMessage({ type: 'copy', text: 'Hello from SuperOne miniapp!' });
       apiResult.textContent = 'Copied "Hello from SuperOne miniapp!" to clipboard';
     };
     document.getElementById('btn-paste').onclick = function() {
-      superone.clipboard.read().then(function(text) {
-        apiResult.textContent = 'Clipboard: ' + text;
-      }).catch(function(err) {
-        apiResult.textContent = 'Error: ' + err.message;
-      });
+      superone.node.postMessage({ type: 'paste' });
     };
 
     var uiResult = document.getElementById('ui-result');
 
     document.getElementById('btn-toast-success').onclick = function() {
-      superone.ui.toast('Operation completed successfully!', 'success');
+      superone.node.postMessage({ type: 'toast', text: 'Operation completed successfully!', toastType: 'success' });
     };
     document.getElementById('btn-toast-error').onclick = function() {
-      superone.ui.toast('Something went wrong.', 'error');
+      superone.node.postMessage({ type: 'toast', text: 'Something went wrong.', toastType: 'error' });
     };
     document.getElementById('btn-toast-warning').onclick = function() {
-      superone.ui.toast('Careful, this is a warning.', 'warning');
+      superone.node.postMessage({ type: 'toast', text: 'Careful, this is a warning.', toastType: 'warning' });
     };
 
     var tooltipTarget = document.getElementById('tooltip-target');
@@ -237,7 +203,8 @@
 
     var ctxResult = document.getElementById('ctx-result');
     document.getElementById('btn-ctx-inject').onclick = function() {
-      superone.agent.setContext({
+      superone.node.postMessage({
+        type: 'set-context',
         summary: '3 project files',
         content: 'src/index.ts — main entry point\nsrc/utils.ts — utility helpers\nsrc/config.ts — configuration',
         mode: 'inject',
@@ -246,7 +213,8 @@
       ctxResult.textContent = 'Set inject-mode context (blue chip)';
     };
     document.getElementById('btn-ctx-suggest').onclick = function() {
-      superone.agent.setContext({
+      superone.node.postMessage({
+        type: 'set-context',
         summary: 'meeting notes',
         content: 'Action items:\n1. Review PR #42\n2. Update docs\n3. Deploy staging',
         mode: 'suggest',
@@ -255,14 +223,10 @@
       ctxResult.textContent = 'Set suggest-mode context (green chip, needs opt-in)';
     };
     document.getElementById('btn-ctx-clear').onclick = function() {
-      superone.agent.clearContext();
+      superone.node.postMessage({ type: 'clear-context' });
       ctxResult.textContent = 'Context cleared';
     };
-    var consumedCount = 0;
-    superone.agent.onContextConsumed(function() {
-      consumedCount++;
-      ctxResult.textContent = 'Context consumed by message (#' + consumedCount + ')';
-    });
+    // onContextConsumed is a Node-side event; node.js relays it back here.
 
     var micSelect = document.getElementById('mic-device');
     var camSelect = document.getElementById('cam-device');
@@ -377,96 +341,6 @@
       camStopBtn.disabled = true;
     };
 
-    var dropzone = document.getElementById('dropzone');
-    var dropList = document.getElementById('drop-list');
-
-    function refreshDropList() {
-      superone.fs.exists('uploads').then(function(ok) {
-        if (!ok) { dropList.textContent = '(empty)'; return; }
-        superone.fs.readDir('uploads').then(function(entries) {
-          var files = entries.filter(function(e) { return !e.isDir; }).map(function(e) { return e.name; });
-          dropList.textContent = files.length === 0 ? '(empty)' : 'uploads/: ' + files.join(', ');
-        });
-      });
-    }
-
-    ['dragenter', 'dragover'].forEach(function(ev) {
-      dropzone.addEventListener(ev, function(e) {
-        e.preventDefault();
-        dropzone.classList.add('drag-over');
-      });
-    });
-    ['dragleave', 'drop'].forEach(function(ev) {
-      dropzone.addEventListener(ev, function(e) {
-        e.preventDefault();
-        dropzone.classList.remove('drag-over');
-      });
-    });
-
-    dropzone.addEventListener('drop', function(e) {
-      e.preventDefault();
-      var files = Array.prototype.slice.call(e.dataTransfer.files || []);
-      if (files.length === 0) return;
-      Promise.all(files.map(function(file) {
-        return file.arrayBuffer().then(function(buf) {
-          return superone.fs.writeFile('uploads/' + file.name, buf)
-            .then(function() { return { ok: true, name: file.name, size: buf.byteLength }; })
-            .catch(function(err) { return { ok: false, name: file.name, error: err && err.message || String(err) }; });
-        });
-      })).then(function(results) {
-        var saved = results.filter(function(r) { return r.ok; });
-        var failed = results.filter(function(r) { return !r.ok; });
-        if (saved.length > 0) {
-          var kb = saved.reduce(function(s, r) { return s + r.size; }, 0) / 1024;
-          superone.ui.toast('Saved ' + saved.length + ' file(s) · ' + kb.toFixed(1) + ' KB', 'success');
-        }
-        if (failed.length > 0) {
-          superone.ui.toast('Failed: ' + failed.map(function(r) { return r.name + ' (' + r.error + ')'; }).join(', '), 'error');
-        }
-        refreshDropList();
-      });
-    });
-
-    refreshDropList();
-
-    var noteInput = document.getElementById('note-input');
-    var noteList = document.getElementById('note-list');
-
-    function refreshNotes() {
-      superone.db.query('SELECT id, content, created_at FROM notes ORDER BY id DESC LIMIT 20').then(function(rows) {
-        if (rows.length === 0) { noteList.textContent = '(no notes)'; return; }
-        noteList.innerHTML = rows.map(function(r) {
-          return '#' + r.id + ' · ' + new Date(r.created_at).toLocaleTimeString() + ' — ' + r.content;
-        }).join('<br>');
-      }).catch(function(err) {
-        noteList.textContent = 'Error: ' + err.message;
-      });
-    }
-
-    superone.db.exec(
-      'CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL)'
-    ).then(refreshNotes).catch(function(err) {
-      noteList.textContent = 'DB unavailable: ' + err.message;
-    });
-
-    document.getElementById('btn-note-add').onclick = function() {
-      var text = noteInput.value.trim();
-      if (!text) return;
-      superone.db.exec('INSERT INTO notes (content, created_at) VALUES (?, ?)', [text, Date.now()])
-        .then(function(r) {
-          noteInput.value = '';
-          superone.ui.toast('Saved note #' + r.lastInsertRowid, 'success');
-          refreshNotes();
-        }).catch(function(err) { superone.ui.toast(err.message, 'error'); });
-    };
-
-    document.getElementById('btn-note-clear').onclick = function() {
-      superone.db.exec('DELETE FROM notes').then(function(r) {
-        superone.ui.toast('Cleared ' + r.changes + ' note(s)', 'info');
-        refreshNotes();
-      }).catch(function(err) { superone.ui.toast(err.message, 'error'); });
-    };
-
     document.getElementById('contextmenu-target').oncontextmenu = function(e) {
       e.preventDefault();
       superone.ui.showContextMenu(
@@ -490,57 +364,6 @@
       });
     };
 
-    (function () {
-      var bar = document.getElementById('worker-bar');
-      var state = document.getElementById('worker-state');
-      var result = document.getElementById('worker-result');
-
-      superone.worker.onMessage(function (msg) {
-        if (!msg) return;
-        if (msg.type === 'progress') {
-          bar.value = msg.percent;
-          result.textContent = msg.percent + '%  (' + msg.received + '/' + (msg.total || '?') + ' bytes)';
-        } else if (msg.type === 'done') {
-          bar.value = 100;
-          result.textContent = 'Done → ' + msg.path + ' (' + msg.bytes + ' bytes)';
-          state.textContent = 'idle';
-        } else if (msg.type === 'error') {
-          result.textContent = 'Error: ' + msg.error;
-        } else if (msg.type === 'ready') {
-          state.textContent = 'running';
-        }
-      });
-
-      async function startDownload(src, dest) {
-        result.textContent = 'starting worker…';
-        try {
-          await superone.worker.start();
-          state.textContent = 'running';
-          result.textContent = 'worker started, downloading ' + src + ' …';
-          superone.worker.postMessage({ type: 'download', src: src, dest: dest });
-        } catch (e) {
-          result.textContent = 'worker.start failed: ' + (e && e.message ? e.message : String(e));
-          state.textContent = 'error';
-        }
-      }
-      document.getElementById('btn-worker-start').onclick = function () {
-        startDownload('logo.png', 'downloads/logo-copy.png');
-      };
-      document.getElementById('btn-worker-ext').onclick = function () {
-        startDownload('https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js', 'downloads/lodash.min.js');
-      };
-      document.getElementById('btn-worker-stop').onclick = async function () {
-        await superone.worker.stop();
-        state.textContent = 'stopped';
-      };
-
-      superone.worker.status().then(function (s) {
-        if (s && s.running) {
-          state.textContent = 'running';
-          superone.worker.postMessage({ type: 'query' });
-        }
-      });
-    })();
   </script>
 </body>
 </html>

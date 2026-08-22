@@ -4,8 +4,8 @@ import { useActivityPanelStore } from './activity-panel'
 import { useChatStore } from './chat'
 import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { LAYOUT } from '@/lib/layout-constants'
-import { NO_PROJECT_KEY } from '@superone/shared/miniapp-host'
-import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult, MiniAppWorkerInfo } from '@superone/shared/miniapp-types'
+import { NO_PROJECT_KEY } from '@superone/shared/miniapp-url'
+import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult, MiniAppHostInfo } from '@superone/shared/miniapp-types'
 import { withoutKey } from '@/lib/record'
 
 function activeSessionId(projectDir: string): string {
@@ -63,7 +63,7 @@ interface MiniAppStoreState {
   openApps: Record<string, OpenAppEntry>
   slots: Record<string, MiniAppSlot>
 
-  workers: MiniAppWorkerInfo[]
+  hosts: MiniAppHostInfo[]
 
   devControls: Record<string, MiniAppDevControls>
   registerDevControls: (instanceKey: string, controls: MiniAppDevControls) => void
@@ -94,32 +94,9 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     })
   }
 
-  if (typeof window !== 'undefined' && window.miniapp?.onWorkerState) {
-    window.miniapp.onWorkerState((workers) => set({ workers }))
-    window.miniapp.workerList().then((workers) => set({ workers })).catch(() => {})
-  }
-
-  if (typeof window !== 'undefined' && window.miniapp?.onLazyOpenRequest) {
-    window.miniapp.onLazyOpenRequest(async ({ appId, projectDir }) => {
-      window.app.trace?.('miniapp.lazyopen', 'renderer-received', { appId, projectDir, loaded: get().loaded, appsCount: get().apps.length })
-      if (!get().loaded) await get().fetchApps(projectDir)
-      const entry = get().apps.find((a) => a.id === appId)
-      if (!entry) {
-        window.app.trace?.('miniapp.lazyopen', 'renderer-app-missing-refresh', { appId, projectDir })
-        await get().refreshApps(projectDir)
-        const refreshed = get().apps.find((a) => a.id === appId)
-        if (!refreshed) {
-          window.app.trace?.('miniapp.lazyopen', 'renderer-app-still-missing-abort', { appId, projectDir })
-          return
-        }
-        window.app.trace?.('miniapp.lazyopen', 'renderer-openAppInPanel-after-refresh', { appId, projectDir })
-        await get().openAppInPanel(refreshed, projectDir)
-        return
-      }
-      window.app.trace?.('miniapp.lazyopen', 'renderer-openAppInPanel', { appId, projectDir })
-      await get().openAppInPanel(entry, projectDir)
-      window.app.trace?.('miniapp.lazyopen', 'renderer-openAppInPanel-done', { appId, projectDir })
-    })
+  if (typeof window !== 'undefined' && window.miniapp?.onHostState) {
+    window.miniapp.onHostState((hosts) => set({ hosts }))
+    window.miniapp.hostList().then((hosts) => set({ hosts })).catch(() => {})
   }
 
   return {
@@ -132,7 +109,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     openApps: {},
     slots: {},
 
-    workers: [],
+    hosts: [],
 
     devControls: {},
     registerDevControls: (instanceKey, controls) =>

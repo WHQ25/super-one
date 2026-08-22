@@ -3,17 +3,12 @@ import { AVAILABLE_MODULES, getGuidelines } from '../generative-ui/guidelines'
 import overviewMd from './guides/overview.md?raw'
 import manifestMd from './guides/manifest.md?raw'
 import permissionsMd from './guides/permissions.md?raw'
-import apiFsMd from './guides/api/fs.md?raw'
-import apiGitMd from './guides/api/git.md?raw'
-import apiDbMd from './guides/api/db.md?raw'
-import apiKvMd from './guides/api/kv.md?raw'
-import apiPeerMd from './guides/api/peer.md?raw'
 import apiThemeMd from './guides/api/theme.md?raw'
 import apiLocaleMd from './guides/api/locale.md?raw'
 import apiAgentMd from './guides/api/agent.md?raw'
 import apiSystemMd from './guides/api/system.md?raw'
 import apiUiMd from './guides/api/ui.md?raw'
-import apiWorkerMd from './guides/api/worker.md?raw'
+import apiHostMd from './guides/api/host.md?raw'
 import packagingMd from './guides/packaging.md?raw'
 import iconMd from './guides/icon.md?raw'
 import recipesMd from './guides/recipes.md?raw'
@@ -52,17 +47,12 @@ const MINIAPP_GUIDES = {
   overview: overviewMd,
   manifest: manifestMd,
   permissions: permissionsMd,
-  'api-fs': apiFsMd,
-  'api-git': apiGitMd,
-  'api-db': apiDbMd,
-  'api-kv': apiKvMd,
-  'api-peer': apiPeerMd,
   'api-theme': apiThemeMd,
   'api-locale': apiLocaleMd,
   'api-agent': apiAgentMd,
   'api-system': apiSystemMd,
   'api-ui': apiUiMd,
-  'api-worker': apiWorkerMd,
+  'api-host': apiHostMd,
   packaging: packagingMd,
   icon: iconMd,
   recipes: recipesMd,
@@ -91,22 +81,17 @@ const PRODUCT_GUIDES = {
 const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
   overview: 'architecture, workflow, template and scope decisions',
   manifest: 'manifest fields, entries, and panel layout',
-  permissions: 'filesystem, network, storage, media, and worker permissions',
-  'api-fs': 'sandboxed file operations and watchers',
-  'api-git': 'repository status, history, diffs, and read operations',
-  'api-db': 'SQLite queries, migrations, batches, and performance',
-  'api-kv': 'simple project- or user-scoped key-value storage',
-  'api-peer': 'ephemeral events between live instances of one mini-app',
+  permissions: 'MiniApp Host trust plus WebView network and media permissions',
   'api-theme': 'theme tokens and dark-mode updates',
   'api-locale': 'current language and change events',
-  'api-agent': 'sending prompts and contextual suggestions',
-  'api-system': 'folders, external links, and clipboard access',
-  'api-ui': 'toast, tooltip, context menu, popover, and drag APIs',
-  'api-worker': 'background worker lifecycle, messaging, and keep-alive',
+  'api-agent': 'Node-side agent prompts and context cards',
+  'api-system': 'Node-side toast, reveal, external links, and clipboard',
+  'api-ui': 'WebView-anchored tooltip, context menu, popover, and drag',
+  'api-host': 'Node.js lifecycle, tools, messaging, state, storage paths, and status',
   packaging: '.s1app validation and distribution',
   icon: 'mini-app logo requirements',
   recipes: 'cross-API implementation patterns',
-  tools: 'agent-facing tools, renderers, and standalone tools',
+  tools: 'MiniApp Host tools and WebView renderers',
 }
 
 const MEDIA_TOPIC_SUMMARIES: Record<MediaGuideTopic, string> = {

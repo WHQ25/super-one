@@ -21,12 +21,12 @@ import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
 export { codePlugin, codePluginLight }
 
-let mathPluginInstance: MathPlugin | null = null
+let mathMiniAppHostInstance: MathPlugin | null = null
 let mathPluginPromise: Promise<MathPlugin> | null = null
 
 /** Lazy-load @streamdown/math + katex CSS only when math content is detected. */
 export function loadMathPlugin(): Promise<MathPlugin> {
-  if (mathPluginInstance) return Promise.resolve(mathPluginInstance)
+  if (mathMiniAppHostInstance) return Promise.resolve(mathMiniAppHostInstance)
   if (!mathPluginPromise) {
     mathPluginPromise = Promise.all([
       import('@streamdown/math'),
@@ -34,7 +34,7 @@ export function loadMathPlugin(): Promise<MathPlugin> {
     ]).then(([mod]) => {
       const plugin = mod.createMathPlugin({ singleDollarTextMath: false })
       ;(plugin.rehypePlugin as [unknown, Record<string, unknown>])[1].strict = false
-      mathPluginInstance = plugin
+      mathMiniAppHostInstance = plugin
       return plugin
     })
   }
@@ -43,7 +43,7 @@ export function loadMathPlugin(): Promise<MathPlugin> {
 
 /** Synchronous accessor — returns null until loadMathPlugin() resolves. */
 export function getMathPluginSync(): MathPlugin | null {
-  return mathPluginInstance
+  return mathMiniAppHostInstance
 }
 
 /** Shared Streamdown plugins config (math omitted; injected per-render when needed). */

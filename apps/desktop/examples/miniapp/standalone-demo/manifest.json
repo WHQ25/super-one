@@ -1,10 +1,11 @@
 {
   "appId": "standalone-demo",
   "name": "Standalone Demo",
+  "main": "node.js",
   "isDev": true,
   "version": "0.3.0",
   "author": { "name": "SuperOne", "url": "https://github.com/WHQ25/super-one" },
-  "description": "Counter app demonstrating standalone tools (each tool's HTML registers its own handler), peer.emit, KV proxy, and lazy-open panel",
+  "description": "Counter app demonstrating Node MiniApp Host tools and result WebViews",
   "preferWidth": 420,
   "toolSlug": "demo",
   "templates": {

@@ -2,30 +2,10 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import '../index.css'
 
-// standalone tool template. This single file BOTH registers the handler and
-// renders the result UI — the chat tool block IS this iframe (no panel needed).
+// Standalone result WebView. Computation lives in extension.ts.
 document.body.style.background = 'transparent'
 
 type Outcome = { previous: number; value: number; by: number } | null
-
-// The handler runs once per tool call; persist across calls via superone.kv
-// (each call is a fresh iframe, so in-memory state does not survive).
-window.superone.tools.handle('bump_counter', async (args) => {
-  const by = typeof args.by === 'number' ? (args.by as number) : 1
-  const current = (await window.superone.kv.get<number>('counter')) ?? 0
-  const next = current + by
-  await window.superone.kv.set('counter', next)
-  return {
-    previous: current,
-    value: next,
-    by,
-    summary: `${current} → ${next} (+${by})`,
-  }
-})
-
-// The standalone `superone.tool` shape (phase 'standalone' + result/error) is
-// not covered by the generated d.ts union — read it through a narrow cast.
-type StandaloneTool = { result: unknown; error: unknown } | undefined
 
 function Card() {
   const [outcome, setOutcome] = useState<Outcome>(null)
@@ -39,17 +19,12 @@ function Card() {
       }
       setOutcome(detail.result as Outcome)
     }
-    // Live: handler just returned.
-    const onResult = (ev: Event) =>
-      render((ev as CustomEvent).detail as { result?: unknown; error?: unknown })
-    window.addEventListener('superone:tool-result', onResult)
-    // Replay: iframe was unmounted (scrolled away) and remounted — the cached
-    // result is exposed synchronously, no re-dispatch of the handler.
-    const t = window.superone.tool as unknown as StandaloneTool
-    if (t && (t.result !== null || t.error !== null)) {
-      render({ result: t.result, error: t.error })
-    }
-    return () => window.removeEventListener('superone:tool-result', onResult)
+    const tool = window.superone.tool
+    if (!tool || tool.phase !== 'standalone') return
+    const dispose = tool.onDidChange(render)
+    const initial = tool.getState()
+    if (initial.result !== null || initial.error !== null) render(initial)
+    return dispose
   }, [])
 
   if (error) {

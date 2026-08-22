@@ -4,7 +4,7 @@ import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { buildToolRendererUrl } from '@superone/shared/miniapp-types'
-import { buildMiniAppHost } from '@superone/shared/miniapp-host'
+import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
 import { coalesceAgentEventBatch } from '@/lib/agent-event-batcher'
 
 export function useAgentEvents(): void {
@@ -76,7 +76,7 @@ export function useAgentEvents(): void {
         (v) => v.entry.id === req.appId && v.projectDir === req.projectDir,
       )
       const projectId = instance?.projectId ?? useAppStore.getState().currentProjectId
-      const host = buildMiniAppHost(req.appId, projectId)
+      const host = buildMiniAppUrlHost(req.appId, projectId)
       const templateUrl = buildToolRendererUrl('intercept', host, req.templatePath, req.callId, req.toolName, req.agentInput ?? {})
       const toolUseId = findToolUseIdForIntercept(req.appId, req.toolSlug, req.toolName)
       useChatStore.getState().openToolIntercept({

@@ -17,15 +17,14 @@ import log from './logger'
 import { resolveAndMigrateUserData } from './user-data-path'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
-import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled, type AllowedDir } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppEntry, generateCSP, readManifest, validatePath, discoverApps, discoverProjectApps, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
 import * as devRegistry from './miniapp/dev-registry'
-import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
-import { handleKvRequest, type KvOp, type KvRequestArgs } from './miniapp/miniapp-kv'
-import { setPeerBroadcaster, emitPeer } from './miniapp/miniapp-peer-bus'
-import { generateBridgeScript, generatePopoverBridgeScript, generateStandaloneBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
-import { initWorkerHost, startWorker, stopWorker, stopWorkersByAppId, workerStatus, listWorkers, hasActiveWorkers, stopAllWorkers, sendToWorker, handleWorkerSend } from './miniapp/worker-host'
-import { buildMiniAppHost } from '@superone/shared/miniapp-host'
+import { attachMiniAppWebviewGuards } from './miniapp/miniapp-webview-guard'
+import { initMiniAppHostActionBridge, runMiniAppHostAction, settleMiniAppHostAction } from './miniapp/miniapp-host-action-bridge'
+import { isPathExposableByApp } from './miniapp/miniapp-path-exposure'
+import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, setMiniAppHostActionRunner, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
+import { closeAllMiniAppState, resolveMiniAppStoragePaths } from './miniapp/miniapp-state'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomation } from './browser/browser-automation-bridge'
@@ -33,7 +32,7 @@ import { detachAllCdp } from './browser/browser-cdp'
 import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
 import { MobileShareService, type MobileShareTarget } from './remote/mobile-share-service'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
 import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinator'
@@ -237,7 +236,6 @@ process.on('unhandledRejection', (reason) => {
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
-  { scheme: 'superone-fs', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
 ])
 
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport')
@@ -868,6 +866,8 @@ function createWindow(): void {
     if (url !== mainWindow?.webContents.getURL()) e.preventDefault()
   })
 
+  attachMiniAppWebviewGuards(mainWindow)
+
   attachDeviceGestureEvents(mainWindow)
 
   mainWindow.webContents.on('before-input-event', (_e, input) => {
@@ -900,7 +900,10 @@ function createWindow(): void {
   // Update agentService's window reference for event forwarding
   agentService.setMainWindow(mainWindow)
   setCodexSkillsWatcherWindow(mainWindow)
-  initWorkerHost(() => mainWindow)
+  initMiniAppHost(() => mainWindow, () => getCurrentLocale())
+  initMiniAppHostActionBridge(() => mainWindow)
+  setMiniAppHostActionRunner(runMiniAppHostAction)
+  setAppToolExecutor(executeMiniAppTool)
   agentService.setBroadcastFn((event) => rendererAgentEventTransport.push(event))
   agentService.setSessionManager(sessionManager)
   automationService.setMainWindow(mainWindow)
@@ -963,10 +966,14 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       zoomFactor: 1,
+      // The detached session window renders the same chat as the main window,
+      // so its mini-app tool blocks mount <webview> tags too.
+      webviewTag: true,
       additionalArguments: [roleArg(WindowRole.Mini), ...glassBootArgs(isGlassEnabled())],
     },
   })
 
+  attachMiniAppWebviewGuards(win)
   attachDeviceGestureEvents(win)
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -1135,21 +1142,6 @@ function createBenchWindow(): void {
     benchWindow.loadFile(join(__dirname, '../renderer/bench.html'))
   }
   benchWindow.webContents.openDevTools({ mode: 'detach' })
-}
-
-/** Register all IPC handlers once at app startup. */
-function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Array<{ scope: string; path?: string; access?: string; reason: string }> } }, projectDir: string, installDir: string): void {
-  const fsEntries = manifest.permissions?.fs ?? []
-  if (fsEntries.length === 0) return
-  const dirs = fsEntries.flatMap((entry): AllowedDir[] => {
-    switch (entry.scope) {
-      case 'project': return [{ path: join(projectDir, entry.path!), access: entry.access as 'read' | 'readwrite', root: projectDir, scope: 'project' }]
-      case 'user': return [{ path: join(homedir(), entry.path!), access: entry.access as 'read' | 'readwrite', root: homedir(), scope: 'user' }]
-      case 'app': { const dataDir = join(installDir, 'data'); return [{ path: dataDir, access: 'readwrite', root: dataDir, scope: 'app' }] }
-      default: return []
-    }
-  })
-  setAllowedDirectories(projectDir, appId, dirs)
 }
 
 function setAppMediaPermissions(appId: string, manifest: { permissions?: { media?: Array<{ kind: import('@superone/shared/miniapp-types').MiniAppMediaKind; reason: string }> } }): void {
@@ -3306,23 +3298,20 @@ function registerIpcHandlers(): void {
       event,
       projectDir: string,
       appId: string,
-      relPaths: string[],
+      paths: string[],
       iconOpts?: { png: ArrayBuffer; scaleFactor?: number },
     ) => {
-      if (!Array.isArray(relPaths) || relPaths.length === 0) return
+      if (!Array.isArray(paths) || paths.length === 0) return
+      if (typeof projectDir !== 'string' || typeof appId !== 'string') return
       try {
-        const dirs = getAllowedDirs(projectDir, appId)
-        if (!dirs || dirs.length === 0) {
-          log.warn('[miniapp start-drag] no allowed dirs for appId=%s', appId)
-          return
-        }
-        const { existsSync } = await import('node:fs')
         const files: string[] = []
-        for (const rel of relPaths) {
-          if (typeof rel !== 'string') continue
-          const { resolved } = resolveSafePathMulti(dirs, rel)
-          if (existsSync(resolved)) files.push(resolved)
-          else log.warn('[miniapp start-drag] file not found: %s', resolved)
+        for (const path of paths) {
+          if (!isPathExposableByApp(projectDir, appId, path)) {
+            log.warn('[miniapp start-drag] path outside app scope: %s', path)
+            continue
+          }
+          if (existsSync(path)) files.push(path)
+          else log.warn('[miniapp start-drag] file not found: %s', path)
         }
         if (files.length === 0) return
         const { nativeImage } = await import('electron')
@@ -3360,6 +3349,15 @@ function registerIpcHandlers(): void {
       }
     },
   )
+
+  ipcMain.on(AgentIpcChannels.MINIAPP_SHOW_ITEM_IN_FOLDER, (_event, projectDir: string, appId: string, path: string) => {
+    if (typeof projectDir !== 'string' || typeof appId !== 'string') return
+    if (!isPathExposableByApp(projectDir, appId, path)) {
+      log.warn('[miniapp show-item] path outside app scope: %s', path)
+      return
+    }
+    shell.showItemInFolder(path)
+  })
 
   ipcMain.handle(AgentIpcChannels.PATH_STAT, async (_event, p: string): Promise<{ isFile: boolean; isDirectory: boolean } | null> => {
     try {
@@ -4728,19 +4726,6 @@ function registerIpcHandlers(): void {
       )
     })
   })
-  setPeerBroadcaster((sessionId, appId, event, payload) => {
-    const hasWin = !!(mainWindow && !mainWindow.isDestroyed())
-    trace('miniapp.peer', 'broadcast', { sessionId, appId, event, payload, hasMainWindow: hasWin })
-    if (hasWin) {
-      mainWindow!.webContents.send('miniapp-peer-event', { sessionId, appId, event, payload })
-    }
-  })
-
-  ipcMain.on(AgentIpcChannels.MINIAPP_PEER_EMIT, (_e, appId: string, event: string, payload: unknown) => {
-    if (typeof appId !== 'string' || typeof event !== 'string') return
-    emitPeer('', appId, event, payload)
-  })
-
   startSuperoneMcpStdioBridge().catch((err) => log.error('[mcp-stdio-ipc] failed to start:', err))
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async (_e, projectDir?: string) => {
@@ -4761,9 +4746,12 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string, sessionId: string) => {
     const basePath = getAppBasePath(appId)
-    const installDir = getAppInstallDir(appId)
     const manifest = await readManifest(basePath)
     if (!manifest) throw new Error(`App not found: ${appId}`)
+    const pluginEntry = validatePath(basePath, manifest.main)
+    if (!pluginEntry) throw new Error(`Invalid plugin entry: ${manifest.main}`)
+    const storagePaths = await resolveMiniAppStoragePaths(projectDir, appId)
+    startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, ...storagePaths })
     const projectAppKey = `${projectDir}::${appId}`
     let sessions = miniAppSessionRefs.get(projectAppKey)
     if (!sessions) {
@@ -4773,7 +4761,6 @@ function registerIpcHandlers(): void {
     const isFirstSessionForApp = sessions.size === 0
     sessions.add(sessionId)
     if (isFirstSessionForApp) {
-      setAppFsPermissions(appId, manifest, projectDir, installDir)
       setAppMediaPermissions(appId, manifest)
       registerAppTemplates(projectDir, appId, manifest.templates)
     }
@@ -4792,13 +4779,18 @@ function registerIpcHandlers(): void {
     let registeredAny = false
     for (const appId of appIds) {
       const basePath = getAppBasePath(appId)
-      const installDir = getAppInstallDir(appId)
       const manifest = await readManifest(basePath)
       if (!manifest) {
         log.warn('[MINIAPP_AUTHORIZE] no manifest for appId=%s basePath=%s', appId, basePath)
         continue
       }
-      setAppFsPermissions(appId, manifest, projectDir, installDir)
+      const pluginEntry = validatePath(basePath, manifest.main)
+      if (!pluginEntry) {
+        log.warn('[MINIAPP_AUTHORIZE] invalid plugin entry for appId=%s main=%s', appId, manifest.main)
+        continue
+      }
+      const storagePaths = await resolveMiniAppStoragePaths(projectDir, appId)
+      startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, ...storagePaths })
       registerAppTemplates(projectDir, appId, manifest.templates)
       const toolSlug = manifest.toolSlug ?? appId
       registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [])
@@ -4822,69 +4814,13 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string, sessionId: string) => {
-    // Closing the panel is purely a UI action. Tools, templates, and fs/media
-    // permissions stay registered for the session lifetime — if the agent
-    // calls a UI tool later, `requestLazyOpenPanel` re-mounts the iframe.
-    // Cleanup is owned by SessionManager.disposeSession (session end) and the
-    // MINIAPP_UNINSTALL path (app removal).
-    clearAppReadyGate(projectDir, appId)
+    // Closing a WebView does not stop its MiniApp Host. Tools and data services
+    // stay available for the owning session until session/app teardown.
     const projectAppKey = `${projectDir}::${appId}`
     const sessions = miniAppSessionRefs.get(projectAppKey)
     if (sessions) {
       sessions.delete(sessionId)
       if (sessions.size === 0) miniAppSessionRefs.delete(projectAppKey)
-    }
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_START, async (_e, projectDir: string, appId: string) => {
-    if (!isAppStillAuthorizedInProject(projectDir, appId)) {
-      log.warn('[worker-host] start rejected: not authorized %s::%s', projectDir, appId)
-      throw new Error('App is not authorized in this project')
-    }
-    const basePath = getAppBasePath(appId)
-    const manifest = await readManifest(basePath)
-    if (!manifest) throw new Error(`App not found: ${appId}`)
-    if (!manifest.background?.entry) throw new Error('App does not declare a background entry')
-    if (!manifest.permissions?.background) throw new Error('App lacks permissions.background')
-    const projectId = getProjectId(projectDir)
-    const media = (manifest.permissions?.media ?? []).map((m) => m.kind)
-    return startWorker({
-      appId,
-      projectDir,
-      name: manifest.name,
-      host: buildMiniAppHost(appId, projectId),
-      entry: manifest.background.entry,
-      storage: !!manifest.permissions?.storage,
-      media,
-    })
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_STOP, (_e, projectDir: string, appId: string) => {
-    stopWorker(projectDir, appId)
-    return { running: false }
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_STATUS, (_e, projectDir: string, appId: string) => {
-    return workerStatus(projectDir, appId)
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_LIST, () => listWorkers())
-
-  ipcMain.on(AgentIpcChannels.MINIAPP_WORKER_SEND, (_e, msg: { projectDir: string; appId: string; type: string; data: Record<string, unknown> }) => {
-    if (!msg) return
-    if (msg.type === 'miniapp-worker-msg') {
-      sendToWorker(msg.projectDir, msg.appId, (msg.data as { payload?: unknown }).payload)
-    } else {
-      handleWorkerSend(msg.projectDir, msg.appId, msg.type, msg.data)
-    }
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_RESULT, (_e, callId: string, result: unknown, error?: string) => {
-    trace('miniapp.toolcall', 'main-result-ipc', { callId, hasError: !!error, error })
-    if (error) {
-      rejectToolCall(callId, error)
-    } else {
-      resolveToolCall(callId, result)
     }
   })
 
@@ -4904,45 +4840,30 @@ function registerIpcHandlers(): void {
     cancelToolIntercept(callId, reason)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_REQUEST, async (_e, projectDir: string, appId: string, op: string, args: Record<string, unknown>) => {
-    return handleFsRequest(projectDir, appId, op as any, args)
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_WATCH, (_e, projectDir: string, appId: string, path: string) => {
-    return startWatch(projectDir, appId, path)
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_UNWATCH, (_e, watchId: number) => {
-    stopWatch(watchId)
-  })
-
-  onFsWatchEvent((event) => {
-    mainWindow?.webContents.send(AgentIpcChannels.MINIAPP_FS_WATCH_EVENT, event)
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_GIT_REQUEST, async (_e, projectDir: string, appId: string, op: string, args: Record<string, unknown>) => {
-    return handleGitRequest(projectDir, appId, op as any, args)
-  })
-
-  onGitHeadChangeEvent((event) => {
-    mainWindow?.webContents.send(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, event)
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_DB_REQUEST, async (_e, projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) => {
-    return handleDbRequest(projectDir, scope as 'user' | 'project', appId, op as any, args)
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_KV_REQUEST, async (_e, projectDir: string | null, scope: string, appId: string, op: string, args: KvRequestArgs) => {
-    return handleKvRequest(projectDir, scope as 'user' | 'project', appId, op as KvOp, args ?? {})
-  })
-
-  ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string, projectDir: string) => {
-    trace('miniapp.lazyopen', 'main-iframe-ready-ipc', { appId, projectDir })
-    notifyMiniAppReady(projectDir, appId)
-  })
-
   ipcMain.handle(AgentIpcChannels.MINIAPP_GET_PRELOAD_PATH, () => {
     return join(__dirname, '../preload/miniapp-preload.js')
+  })
+
+  ipcMain.on(AgentIpcChannels.MINIAPP_HOST_POST_MESSAGE, (_e, message: { projectDir: string; appId: string; payload: unknown }) => {
+    if (!message || typeof message.projectDir !== 'string' || typeof message.appId !== 'string') return
+    postMiniAppWebviewMessage(message.projectDir, message.appId, message.payload)
+  })
+
+  ipcMain.on(AgentIpcChannels.MINIAPP_HOST_ACTION_RESULT, (_e, message: { requestId: string; result?: unknown; error?: string }) => {
+    if (!message || typeof message.requestId !== 'string') return
+    settleMiniAppHostAction(message.requestId, message.result, message.error)
+  })
+
+  ipcMain.on(AgentIpcChannels.MINIAPP_CONTEXT_CONSUMED, (_e, appIds: string[]) => {
+    if (!Array.isArray(appIds)) return
+    for (const appId of appIds) {
+      if (typeof appId === 'string') notifyMiniAppContextConsumed(appId)
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_HOST_LIST, () => listMiniAppHosts())
+  ipcMain.handle(AgentIpcChannels.MINIAPP_HOST_STOP, (_e, projectDir: string, appId: string) => {
+    stopMiniAppHost(projectDir, appId)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_DETECT_DEV, async (_e, projectDir: string) => {
@@ -4966,7 +4887,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.MINIAPP_UNINSTALL, async (_e, appId: string, installDir?: string) => {
     const affectedSessions = unregisterAppAcrossSessions(appId)
     for (const sid of affectedSessions) agentService.markSessionNeedsRebuild(sid, 'codex')
-    stopWorkersByAppId(appId)
+    stopMiniAppHostsByAppId(appId)
     for (const [key] of miniAppSessionRefs) {
       if (key.endsWith(`::${appId}`)) miniAppSessionRefs.delete(key)
     }
@@ -5380,7 +5301,7 @@ function performQuit(): void {
   terminalManager.killAll()
   remoteTerminalController.dispose()
   automationService.stop()
-  stopAllWorkers()
+  stopAllMiniAppHosts()
   stopWatching()
   stopSuperoneMcpStdioBridge()
   const remoteStop = Promise.race([
@@ -5406,7 +5327,7 @@ function performQuit(): void {
   ]).finally(() => {
     codexService.dispose()
     disposeGlobalWarmupManager()
-    closeAllDbConnections()
+    closeAllMiniAppState()
     closeDb()
     closeTraceDb()
     setTimeout(() => app.quit(), 500)
@@ -5425,7 +5346,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   closeDevicePorts()
   terminalManager.killAll()
   remoteTerminalController.dispose()
-  closeAllDbConnections()
+  closeAllMiniAppState()
   Promise.allSettled([
     remoteControlService.stop(),
     disposeIosSimulatorManager(),
@@ -5449,7 +5370,7 @@ app.on('before-quit', (e) => {
 
   // Restart-to-update already confirmed the quit. Don't block Squirrel.Mac
   // behind the "running sessions" dialog — that looks like a hung Restart.
-  if (isInstallingUpdate() || (!agentService.hasRunningSessions() && !hasActiveWorkers())) {
+  if (isInstallingUpdate() || (!agentService.hasRunningSessions() && !hasActiveMiniAppHosts())) {
     performQuit()
     return
   }

@@ -18,6 +18,7 @@ const APP: MiniAppEntry = {
   manifest: {
     appId: 'crm-tools',
     name: 'CRM Tools',
+    main: 'node.js',
     version: '0.4.0',
     toolSlug: 'crm',
     tools: [

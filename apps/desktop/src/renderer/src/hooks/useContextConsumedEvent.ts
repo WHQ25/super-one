@@ -1,19 +1,17 @@
 import { useEffect } from 'react'
 
-export function useContextConsumedEvent(
-  appId: string,
-  send: (msg: unknown) => void,
-  disabled?: boolean,
-) {
+/**
+ * Forwards "the agent consumed this mini-app's context card" to main, which
+ * relays it to the MiniApp Hosts. The context API lives Node-side now, so the
+ * WebView is no longer in this path — mount this once at the app root.
+ */
+export function useMiniAppContextConsumedRelay(): void {
   useEffect(() => {
-    if (disabled) return
-    const handler = (e: Event) => {
-      const { appIds } = (e as CustomEvent).detail
-      if (appIds.includes(appId)) {
-        send({ type: 'miniapp-context-consumed' })
-      }
+    const handler = (event: Event) => {
+      const { appIds } = (event as CustomEvent<{ appIds: string[] }>).detail
+      if (Array.isArray(appIds) && appIds.length > 0) window.miniapp.notifyContextConsumed(appIds)
     }
     window.addEventListener('miniapp-context-consumed', handler)
     return () => window.removeEventListener('miniapp-context-consumed', handler)
-  }, [appId, send, disabled])
+  }, [])
 }

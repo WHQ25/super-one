@@ -42,15 +42,12 @@ vi.mock('../miniapp/miniapp-packager', () => ({
 vi.mock('./guides/overview.md?raw', () => ({ default: 'overview' }))
 vi.mock('./guides/manifest.md?raw', () => ({ default: 'manifest' }))
 vi.mock('./guides/permissions.md?raw', () => ({ default: 'permissions' }))
-vi.mock('./guides/api/fs.md?raw', () => ({ default: 'fs' }))
-vi.mock('./guides/api/git.md?raw', () => ({ default: 'git' }))
-vi.mock('./guides/api/db.md?raw', () => ({ default: 'db' }))
 vi.mock('./guides/api/theme.md?raw', () => ({ default: 'theme' }))
 vi.mock('./guides/api/locale.md?raw', () => ({ default: 'locale' }))
 vi.mock('./guides/api/agent.md?raw', () => ({ default: 'agent' }))
 vi.mock('./guides/api/system.md?raw', () => ({ default: 'system' }))
 vi.mock('./guides/api/ui.md?raw', () => ({ default: 'ui' }))
-vi.mock('./guides/api/worker.md?raw', () => ({ default: 'worker' }))
+vi.mock('./guides/api/host.md?raw', () => ({ default: 'miniapp-host' }))
 vi.mock('./guides/packaging.md?raw', () => ({ default: 'packaging' }))
 vi.mock('./guides/icon.md?raw', () => ({ default: 'icon' }))
 vi.mock('./guides/recipes.md?raw', () => ({ default: 'recipes' }))
@@ -63,9 +60,7 @@ import {
   unregisterAppTools,
   isToolPreapproved,
   markAppToolPreapproved,
-  notifyAppReady,
-  resolveToolCall,
-  rejectToolCall,
+  setAppToolExecutor,
   initSuperoneMcpServer,
   registerAppTemplates,
   unregisterAppTemplates,
@@ -82,10 +77,16 @@ import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-too
 import { LAUNCH_PERMISSION_MODE_DESCRIPTION } from './superone-mcp-builtin-defs'
 import type { ZodArray, ZodObject, ZodOptional, ZodRawShape, ZodTypeAny } from 'zod'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
+import type { MiniAppToolDefinition, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 
 const PROJ_A = '/proj-a'
 const PROJ_B = '/proj-b'
+const pluginExecutor = vi.fn<(
+  projectDir: string,
+  appId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>>()
 
 function makeTools(...names: string[]): MiniAppToolDefinition[] {
   return names.map((n) => ({
@@ -125,6 +126,8 @@ function callMiniapp(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  pluginExecutor.mockResolvedValue({ ok: true })
+  setAppToolExecutor(pluginExecutor)
   // Clear residual authorizations from any session id used in this file
   for (const sid of [PROJ_A, PROJ_B, 'sess-a', 'sess-b', 'perm-path-session']) {
     for (const app of [
@@ -271,49 +274,35 @@ describe('standalone tool dispatch', () => {
     expect(tool.standalone).toBe(true)
   })
 
-  it('standalone tool dispatches MINIAPP_TOOL_CALL immediately without waitForAppReady', async () => {
+  it('executes standalone tools in the MiniApp Host without a mounted WebView', async () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'weather', 'wx', [makeStandaloneTool('forecast')])
+    pluginExecutor.mockResolvedValueOnce({ ok: true, temp: 22 })
 
-    // Don't await: handler waits for tool result IPC. Verify the dispatch happened without app-ready gate.
-    const pending = callMiniapp('weather', 'forecast', { city: 'Tokyo' })
-    await new Promise((r) => setImmediate(r))
+    const result = await callMiniapp('weather', 'forecast', { city: 'Tokyo' })
 
-    const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
-    expect(toolCall).toBeTruthy()
-    const req = toolCall!.args[0] as MiniAppToolCallRequest
-    expect(req.appId).toBe('weather')
-    expect(req.toolName).toBe('forecast')
-    expect(req.arguments).toEqual({ city: 'Tokyo' })
-
-    // Resolve so handler cleans up
-    resolveToolCall(req.callId, { ok: true, temp: 22 })
-    const result = await pending
+    expect(pluginExecutor).toHaveBeenCalledWith(
+      PROJ_A,
+      'weather',
+      'forecast',
+      { city: 'Tokyo' },
+    )
     expect(JSON.parse(result.content[0].text)).toEqual({ ok: true, temp: 22 })
   })
 
-  it('standalone tool does NOT trigger lazy-open IPC', async () => {
+  it('does not open mini-app UI when executing a standalone tool', async () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'standalone-app', 'sa', [makeStandaloneTool('do_thing')])
-    const pending = callMiniapp('standalone-app', 'do_thing', {})
-    await new Promise((r) => setImmediate(r))
+    await callMiniapp('standalone-app', 'do_thing', {})
 
-    const lazyOpen = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST)
-    expect(lazyOpen).toBeUndefined()
-
-    const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!
-    resolveToolCall((toolCall.args[0] as MiniAppToolCallRequest).callId, {})
-    void pending
+    expect(pluginExecutor).toHaveBeenCalledWith(PROJ_A, 'standalone-app', 'do_thing', {})
+    expect(sentMessages).toEqual([])
   })
 
   it('standalone error surface returned as [Error] result', async () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'bad', 'bd', [makeStandaloneTool('boom_tool')])
-    const pending = callMiniapp('bad', 'boom_tool', {})
-    await new Promise((r) => setImmediate(r))
+    pluginExecutor.mockRejectedValueOnce(new Error('plugin crashed'))
 
-    const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!
-    rejectToolCall((toolCall.args[0] as MiniAppToolCallRequest).callId, 'iframe crashed')
-
-    const result = await pending
-    expect(result.content[0].text).toBe('[Error] iframe crashed')
+    const result = await callMiniapp('bad', 'boom_tool', {})
+    expect(result.content[0].text).toBe('[Error] plugin crashed')
   })
 
   describe('standalone + intercept', () => {
@@ -333,7 +322,7 @@ describe('standalone tool dispatch', () => {
       }
     }
 
-    it('opens intercept renderer first, then dispatches MINIAPP_TOOL_CALL with merged args', async () => {
+    it('opens intercept renderer first, then executes the MiniApp Host with merged args', async () => {
       registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
       registerAppToolsPreapproved(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('confirm_increment')])
 
@@ -349,26 +338,22 @@ describe('standalone tool dispatch', () => {
       expect(interceptReq.templatePath).toBe('confirm.html')
       expect(interceptReq.agentInput).toEqual({ by: 1 })
 
-      // No MINIAPP_TOOL_CALL yet — we're still gated on user input
-      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
+      expect(pluginExecutor).not.toHaveBeenCalled()
 
       submitToolIntercept(interceptReq.callId, { by: 5 })
-      await new Promise((r) => setImmediate(r))
-
-      const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
-      expect(toolCall).toBeTruthy()
-      const callReq = toolCall!.args[0] as MiniAppToolCallRequest
-      // shallow-merge default: userInput overrides agentInput
-      expect(callReq.arguments).toEqual({ by: 5 })
-      // Same callId across intercept and the resulting tool call
-      expect(callReq.callId).toBe(interceptReq.callId)
-
-      resolveToolCall(callReq.callId, { ok: true, value: 5 })
+      pluginExecutor.mockResolvedValueOnce({ ok: true, value: 5 })
       const result = await pending
+
+      expect(pluginExecutor).toHaveBeenCalledWith(
+        PROJ_A,
+        'hitl-app',
+        'confirm_increment',
+        { by: 5 },
+      )
       expect(JSON.parse(result.content[0].text)).toEqual({ ok: true, value: 5 })
     })
 
-    it('honors onCancel: reject — never dispatches MINIAPP_TOOL_CALL and surfaces error', async () => {
+    it('honors onCancel: reject — never executes the MiniApp Host and surfaces error', async () => {
       registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
       registerAppToolsPreapproved(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('strict_tool', 'reject')])
 
@@ -380,10 +365,10 @@ describe('standalone tool dispatch', () => {
 
       const result = await pending
       expect(result.content[0].text).toBe('[Error] user said no')
-      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
+      expect(pluginExecutor).not.toHaveBeenCalled()
     })
 
-    it('honors onCancel: resolve-empty — returns { cancelled: true } without dispatching MINIAPP_TOOL_CALL', async () => {
+    it('honors onCancel: resolve-empty — returns cancelled without executing the MiniApp Host', async () => {
       registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
       registerAppToolsPreapproved(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('graceful_tool', 'resolve-empty')])
 
@@ -396,7 +381,7 @@ describe('standalone tool dispatch', () => {
       const result = await pending
       const parsed = JSON.parse(result.content[0].text)
       expect(parsed).toEqual({ cancelled: true, reason: 'dismissed' })
-      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
+      expect(pluginExecutor).not.toHaveBeenCalled()
     })
 
     it('throws when intercept.template is not registered in manifest.templates', async () => {
@@ -406,7 +391,7 @@ describe('standalone tool dispatch', () => {
       const result = await callMiniapp('no-tpl-app', 'missing_template', {})
       expect(result.content[0].text).toMatch(/Template "confirm" not found/)
       expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)).toBeUndefined()
-      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
+      expect(pluginExecutor).not.toHaveBeenCalled()
     })
   })
 })
@@ -444,7 +429,6 @@ describe('multi-project tool routing', () => {
 describe('tool handler rejects closed app', () => {
   it('returns error when app has been unregistered', async () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    notifyAppReady(PROJ_A, 'test-app')
 
     unregisterAppTools(PROJ_A, 'test-app')
 
@@ -453,28 +437,20 @@ describe('tool handler rejects closed app', () => {
   })
 
   it('works again after re-registering', async () => {
-    const sent: Array<{ channel: string; args: unknown[] }> = []
-    const win = {
-      webContents: { send: (channel: string, ...args: unknown[]) => sent.push({ channel, args }) },
-      isDestroyed: () => false,
-    } as unknown as import('electron').BrowserWindow
-    initSuperoneMcpServer(() => win)
-
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     unregisterAppTools(PROJ_A, 'test-app')
 
     createSuperoneMcpServer(PROJ_A)
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    notifyAppReady(PROJ_A, 'test-app')
+    const result = await callMiniapp('test-app', 'do_thing', { x: 'hello' })
 
-    const pending = callMiniapp('test-app', 'do_thing', { x: 'hello' })
-    await new Promise((r) => setImmediate(r))
-    const toolCall = sent.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
-    expect(toolCall).toBeTruthy()
-    resolveToolCall((toolCall!.args[0] as MiniAppToolCallRequest).callId, { ok: true })
-    const result = await pending
+    expect(pluginExecutor).toHaveBeenCalledWith(
+      PROJ_A,
+      'test-app',
+      'do_thing',
+      { x: 'hello' },
+    )
     expect(result.content[0].text).toContain('"ok":true')
-    initSuperoneMcpServer(() => null)
   })
 })
 
@@ -524,49 +500,38 @@ describe('stdio SuperOne MCP tool surface', () => {
 
   it('executes miniapp_call through the shared dispatcher scoped to projectDir', async () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    notifyAppReady(PROJ_A, 'test-app')
 
-    const pending = executeSuperoneMcpTool(PROJ_A, 'miniapp_call', {
+    const result = await executeSuperoneMcpTool(PROJ_A, 'miniapp_call', {
       appId: 'test-app',
       tool: 'do_thing',
       input: { x: 'hello' },
     })
-    await new Promise((r) => setTimeout(r, 10))
 
-    const callReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!.args[0] as MiniAppToolCallRequest
-    expect(callReq.projectDir).toBe(PROJ_A)
-    expect(callReq.toolName).toBe('do_thing')
-    expect(callReq.arguments).toEqual({ x: 'hello' })
-
-    resolveToolCall(callReq.callId, { ok: true })
-    const result = await pending
+    expect(pluginExecutor).toHaveBeenCalledWith(
+      PROJ_A,
+      'test-app',
+      'do_thing',
+      { x: 'hello' },
+    )
     expect(result.content[0].text).toContain('"ok":true')
   })
 
-  it('lazy-opens the panel for a codex tool call when the app is @-mentioned but not open', async () => {
-    // Regression: the codex bridge path (executeSuperoneMcpTool) used to call
-    // executeAppTool directly, so waitForAppReady blocked forever when the panel
-    // was never opened. It must trigger lazy-open like the Claude SDK path.
+  it('executes a tool while its panel is closed', async () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'lazy-codex-app', 'lz', makeTools('do_thing'))
-    // NOTE: deliberately NO notifyAppReady — the panel is not open.
 
-    const pending = executeSuperoneMcpTool(PROJ_A, 'miniapp_call', {
+    const result = await executeSuperoneMcpTool(PROJ_A, 'miniapp_call', {
       appId: 'lazy-codex-app',
       tool: 'do_thing',
       input: { x: 'hi' },
     })
-    await new Promise((r) => setTimeout(r, 10))
 
-    const lazyOpen = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST)
-    expect(lazyOpen).toBeTruthy()
-    expect((lazyOpen!.args[0] as { appId: string }).appId).toBe('lazy-codex-app')
-
-    // Renderer opens the panel → gate resolves → the tool call dispatches.
-    notifyAppReady(PROJ_A, 'lazy-codex-app')
-    await new Promise((r) => setTimeout(r, 10))
-    const callReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!.args[0] as MiniAppToolCallRequest
-    resolveToolCall(callReq.callId, { ok: true })
-    const result = await pending
+    expect(pluginExecutor).toHaveBeenCalledWith(
+      PROJ_A,
+      'lazy-codex-app',
+      'do_thing',
+      { x: 'hi' },
+    )
+    expect(sentMessages).toEqual([])
     expect(result.content[0].text).toContain('"ok":true')
 
     unregisterAppTools(PROJ_A, 'lazy-codex-app')
@@ -585,30 +550,18 @@ describe('clearSessionPendingCalls — cross-project isolation', () => {
     createSuperoneMcpServer(PROJ_B)
   })
 
-  it('rejects only same-project pending calls when one project interrupts', async () => {
+  it('routes concurrent calls to the correct project MiniApp Host', async () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     registerAppToolsPreapproved(PROJ_B, PROJ_B, 'test-app', 'myapp', makeTools('do_thing'))
-    notifyAppReady(PROJ_A, 'test-app')
-    notifyAppReady(PROJ_B, 'test-app')
+    pluginExecutor.mockImplementation(async (projectDir) => ({ projectDir }))
 
-    const pendingA = executeAppTool(PROJ_A, 'test-app', 'do_thing', { x: 'a' })
-    const pendingB = executeAppTool(PROJ_B, 'test-app', 'do_thing', { x: 'b' })
-    await new Promise((r) => setTimeout(r, 10))
+    await expect(Promise.all([
+      executeAppTool(PROJ_A, 'test-app', 'do_thing', { x: 'a' }),
+      executeAppTool(PROJ_B, 'test-app', 'do_thing', { x: 'b' }),
+    ])).resolves.toEqual([{ projectDir: PROJ_A }, { projectDir: PROJ_B }])
 
-    const callsByProject = sentMessages
-      .filter((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
-      .map((m) => m.args[0] as MiniAppToolCallRequest)
-    const callA = callsByProject.find((c) => c.projectDir === PROJ_A)!
-    const callB = callsByProject.find((c) => c.projectDir === PROJ_B)!
-    expect(callA).toBeTruthy()
-    expect(callB).toBeTruthy()
-
-    clearSessionPendingCalls(PROJ_A)
-
-    await expect(pendingA).rejects.toThrow(/Pending calls cleared/)
-
-    resolveToolCall(callB.callId, { still: 'alive' })
-    await expect(pendingB).resolves.toMatchObject({ still: 'alive' })
+    expect(pluginExecutor).toHaveBeenNthCalledWith(1, PROJ_A, 'test-app', 'do_thing', { x: 'a' })
+    expect(pluginExecutor).toHaveBeenNthCalledWith(2, PROJ_B, 'test-app', 'do_thing', { x: 'b' })
   })
 
   it('emits MINIAPP_TOOL_INTERCEPT_CLEAR with only this project\'s callIds', async () => {
@@ -622,9 +575,6 @@ describe('clearSessionPendingCalls — cross-project isolation', () => {
     registerAppToolsPreapproved(PROJ_B, PROJ_B, 'test-app', 'myapp', interceptTool)
     registerAppTemplates(PROJ_A, 'test-app', { 'popovers/confirm': 'popovers/confirm.html' })
     registerAppTemplates(PROJ_B, 'test-app', { 'popovers/confirm': 'popovers/confirm.html' })
-    notifyAppReady(PROJ_A, 'test-app')
-    notifyAppReady(PROJ_B, 'test-app')
-
     const pendingA = executeAppTool(PROJ_A, 'test-app', 'confirm_action', { x: 'a' })
     const pendingB = executeAppTool(PROJ_B, 'test-app', 'confirm_action', { x: 'b' })
     await new Promise((r) => setTimeout(r, 10))
@@ -649,12 +599,13 @@ describe('clearSessionPendingCalls — cross-project isolation', () => {
     await expect(pendingA).rejects.toThrow(/Pending calls cleared/)
 
     submitToolIntercept(openB.callId, { user: 'ok' })
-    await new Promise((r) => setTimeout(r, 10))
-    const followUp = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
-    expect(followUp).toBeTruthy()
-    const followCall = followUp!.args[0] as MiniAppToolCallRequest
-    resolveToolCall(followCall.callId, { still: 'alive' })
-    await expect(pendingB).resolves.toBeTruthy()
+    await expect(pendingB).resolves.toEqual({ ok: true })
+    expect(pluginExecutor).toHaveBeenCalledWith(
+      PROJ_B,
+      'test-app',
+      'confirm_action',
+      { x: 'b', user: 'ok' },
+    )
   })
 })
 
@@ -672,16 +623,6 @@ describe('isToolPreapproved', () => {
       tool: 'do_thing',
       input: {},
     })).toBe(false)
-  })
-})
-
-describe('resolveToolCall / rejectToolCall', () => {
-  it('resolveToolCall is no-op for unknown callId', () => {
-    expect(() => resolveToolCall('unknown-id', 'result')).not.toThrow()
-  })
-
-  it('rejectToolCall is no-op for unknown callId', () => {
-    expect(() => rejectToolCall('unknown-id', 'error')).not.toThrow()
   })
 })
 
@@ -711,10 +652,9 @@ describe('executeAppTool with renderer.intercept', () => {
     initSuperoneMcpServer(() => mockWin)
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action')])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
-    notifyAppReady(PROJ_A, 'test-app')
   })
 
-  it('submit path: merges agent + user input, dispatches MINIAPP_TOOL_CALL with projectDir', async () => {
+  it('submit path: merges agent + user input before MiniApp Host execution', async () => {
     const pending = callMiniapp('test-app', 'confirm_action', { agent_field: 'from_agent' })
 
     await new Promise((r) => setTimeout(r, 10))
@@ -727,17 +667,14 @@ describe('executeAppTool with renderer.intercept', () => {
     expect(openReq.projectDir).toBe(PROJ_A)
 
     submitToolIntercept(openReq.callId, { user_field: 'from_user' })
-
-    await new Promise((r) => setTimeout(r, 10))
-
-    const callMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
-    expect(callMsg).toBeTruthy()
-    const callReq = callMsg!.args[0] as MiniAppToolCallRequest
-    expect(callReq.arguments).toEqual({ agent_field: 'from_agent', user_field: 'from_user' })
-    expect(callReq.projectDir).toBe(PROJ_A)
-
-    resolveToolCall(callReq.callId, { ok: true })
     const result = await pending
+
+    expect(pluginExecutor).toHaveBeenCalledWith(
+      PROJ_A,
+      'test-app',
+      'confirm_action',
+      { agent_field: 'from_agent', user_field: 'from_user' },
+    )
     expect(result.content[0].text).toContain('"ok":true')
   })
 
@@ -756,7 +693,6 @@ describe('executeAppTool with renderer.intercept', () => {
     unregisterAppTools(PROJ_A, 'test-app')
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { onCancel: 'resolve-empty' })])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
-    notifyAppReady(PROJ_A, 'test-app')
 
     const pending = callMiniapp('test-app', 'confirm_action', { agent_field: 'x' })
     await new Promise((r) => setTimeout(r, 10))
@@ -773,20 +709,19 @@ describe('executeAppTool with renderer.intercept', () => {
     unregisterAppTools(PROJ_A, 'test-app')
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { inputMerge: 'replace' })])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
-    notifyAppReady(PROJ_A, 'test-app')
 
     const pending = callMiniapp('test-app', 'confirm_action', { agent_field: 'from_agent' })
     await new Promise((r) => setTimeout(r, 10))
     const openReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as { callId: string }
     submitToolIntercept(openReq.callId, { only_user: 'yes' })
-
-    await new Promise((r) => setTimeout(r, 10))
-    const callMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!
-    const callReq = callMsg.args[0] as { arguments: Record<string, unknown>; callId: string }
-    expect(callReq.arguments).toEqual({ only_user: 'yes' })
-
-    resolveToolCall(callReq.callId, { ok: true })
     await pending
+
+    expect(pluginExecutor).toHaveBeenCalledWith(
+      PROJ_A,
+      'test-app',
+      'confirm_action',
+      { only_user: 'yes' },
+    )
   })
 
   it('missing template: handler errors out immediately', async () => {

@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useChatStore, type ToolRendererState } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useIsDark } from '@/hooks/use-is-dark'
+import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
+import { MiniAppWebview, type MiniAppWebviewHandle } from '@/components/miniapp/MiniAppWebview'
+import { readThemeVars } from '@/components/miniapp/miniapp-theme'
 import { MiniAppToolBridgeMsg, buildToolRendererUrl } from '@superone/shared/miniapp-types'
-import { buildMiniAppHost } from '@superone/shared/miniapp-host'
+import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
 
 const DEFAULT_HEIGHT = 160
 
@@ -24,65 +28,57 @@ interface ResultProps {
 type Props = InterceptProps | ResultProps
 
 export function ToolRendererFrame(props: Props) {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const webviewRef = useRef<MiniAppWebviewHandle>(null)
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
-
   const submit = useChatStore((s) => s.submitToolIntercept)
   const cancel = useChatStore((s) => s.cancelToolIntercept)
-
   const projectId = useAppStore((s) => s.currentProjectId)
+  const projectDir = useAppStore((s) => s.currentFolder) ?? ''
+  const isDark = useIsDark()
+  const appId = props.phase === 'intercept' ? props.state.appId : props.appId
+  const expectedCallId = props.phase === 'intercept' ? props.state.callId : props.callId
+
   const src = useMemo(
     () => props.phase === 'intercept'
       ? props.state.templateUrl
-      : buildToolRendererUrl('result', buildMiniAppHost(props.appId, projectId), props.templatePath, props.callId, props.toolName, props.result),
+      : buildToolRendererUrl('result', buildMiniAppUrlHost(props.appId, projectId), props.templatePath, props.callId, props.toolName, props.result),
     [props, projectId],
   )
-  const expectedCallId = props.phase === 'intercept' ? props.state.callId : props.callId
-  const onCloseRef = useRef<(() => void) | undefined>(props.phase === 'result' ? props.onClose : undefined)
-  onCloseRef.current = props.phase === 'result' ? props.onClose : undefined
-  const phaseRef = useRef(props.phase)
-  phaseRef.current = props.phase
 
-  useEffect(() => {
-    const onMessage = (ev: MessageEvent) => {
-      if (!iframeRef.current || ev.source !== iframeRef.current.contentWindow) return
-      const data = ev.data as { type?: string; callId?: string; userInput?: Record<string, unknown>; reason?: string; height?: number }
-      if (!data || typeof data.type !== 'string') return
-
-      switch (data.type) {
-        case MiniAppToolBridgeMsg.SUBMIT:
-          if (phaseRef.current === 'intercept' && data.callId === expectedCallId) {
-            submit(expectedCallId, data.userInput ?? {})
-          }
-          break
-        case MiniAppToolBridgeMsg.CANCEL:
-          if (phaseRef.current === 'intercept' && data.callId === expectedCallId) {
-            cancel(expectedCallId, data.reason ?? undefined)
-          }
-          break
-        case MiniAppToolBridgeMsg.RESULT_CLOSE:
-          if (phaseRef.current === 'result' && data.callId === expectedCallId) {
-            onCloseRef.current?.()
-          }
-          break
-        case 'miniapp-resize':
-          if (typeof data.height === 'number' && data.height > 0) {
-            setHeight(data.height)
-          }
-          break
-      }
+  const handleMessage = useCallback((channel: string, data: Record<string, unknown>, send: (message: unknown) => void) => {
+    if (channel === 'miniapp-ready') {
+      send({ type: 'miniapp-theme', vars: readThemeVars(), isDark })
+      return
     }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
-  }, [expectedCallId, submit, cancel])
+    if (channel === MiniAppToolBridgeMsg.SUBMIT && props.phase === 'intercept' && data.callId === expectedCallId) {
+      submit(expectedCallId, (data.userInput as Record<string, unknown>) ?? {})
+      return
+    }
+    if (channel === MiniAppToolBridgeMsg.CANCEL && props.phase === 'intercept' && data.callId === expectedCallId) {
+      cancel(expectedCallId, data.reason as string | undefined)
+      return
+    }
+    if (channel === MiniAppToolBridgeMsg.RESULT_CLOSE && props.phase === 'result' && data.callId === expectedCallId) {
+      props.onClose?.()
+      return
+    }
+    if (channel === 'miniapp-resize' && typeof data.height === 'number' && data.height > 0) {
+      setHeight(data.height)
+      return
+    }
+    if (projectDir) handleMiniAppMessage(channel, data, appId, projectDir, send)
+  }, [appId, cancel, expectedCallId, isDark, projectDir, props, submit])
 
   return (
-    <iframe
-      ref={iframeRef}
-      src={src}
-      sandbox="allow-scripts allow-same-origin"
-      className="w-full rounded-md border border-border"
-      style={{ height }}
-    />
+    <div className="w-full overflow-hidden rounded-md border border-border" style={{ height }}>
+      <MiniAppWebview
+        ref={webviewRef}
+        appId={appId}
+        src={src}
+        onMessage={handleMessage}
+        className="block size-full"
+        style={{ border: 'none' }}
+      />
+    </div>
   )
 }

@@ -216,9 +216,10 @@ describe('pack/preview round-trip with many entries', () => {
   it('previewApp recovers manifest from a .s1app containing many entries', async () => {
     await writeFile(
       join(appDir, 'manifest.json'),
-      JSON.stringify({ appId: 'many', name: 'Many', version: '0.1.0' }),
+      JSON.stringify({ appId: 'many', name: 'Many', main: 'node.js', version: '0.1.0' }),
     )
     await writeFile(join(appDir, 'index.html'), '<html></html>')
+    await writeFile(join(appDir, 'node.js'), 'export function activate() {}')
     const assetsDir = join(appDir, 'assets')
     await mkdir(assetsDir, { recursive: true })
     for (let i = 0; i < 12; i++) {
@@ -239,6 +240,16 @@ describe('pack/preview round-trip with many entries', () => {
     } finally {
       await rm(preview.tempDir, { recursive: true, force: true }).catch(() => {})
     }
+  })
+
+  it('packApp rejects a manifest whose MiniApp Host entry is missing', async () => {
+    await writeFile(
+      join(appDir, 'manifest.json'),
+      JSON.stringify({ appId: 'missing-main', name: 'Missing', main: 'node.js', version: '0.1.0' }),
+    )
+    await writeFile(join(appDir, 'index.html'), '<html></html>')
+
+    await expect(packApp(appDir, outDir)).rejects.toThrow(/MiniApp Host entry not found/)
   })
 
   it('previewApp rejects on missing zip file', async () => {

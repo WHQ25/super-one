@@ -8,6 +8,9 @@
       "types": "./src/miniapp-api-runtime.d.ts",
       "default": "./src/miniapp-api-runtime.js"
     },
+    "./miniapp-host-api": {
+      "types": "./src/miniapp-host-api.d.ts"
+    },
     "./i18n": "./src/i18n/index.ts",
     "./i18n/*": "./src/i18n/*.ts",
     "./platform-registry": "./src/platform-registry/index.ts",

@@ -407,11 +407,11 @@ export type Messages = {
       removeProject: string
       automations: string
       miniApps: string
-      workerUptimeS: string
-      workerUptimeMS: string
-      workerUptimeHM: string
+      hostUptimeS: string
+      hostUptimeMS: string
+      hostUptimeHM: string
       openMiniApp: string
-      stopWorker: string
+      stopHost: string
       runNow: string
       edit: string
       delete: string
@@ -3739,11 +3739,11 @@ export const en: Messages = {
       removeProject: 'Remove Project',
       automations: 'Automations',
       miniApps: 'Mini apps',
-      workerUptimeS: '{{s}}s',
-      workerUptimeMS: '{{m}}m {{s}}s',
-      workerUptimeHM: '{{h}}h {{m}}m',
+      hostUptimeS: '{{s}}s',
+      hostUptimeMS: '{{m}}m {{s}}s',
+      hostUptimeHM: '{{h}}h {{m}}m',
       openMiniApp: 'Open',
-      stopWorker: 'Stop',
+      stopHost: 'Stop',
       runNow: 'Run Now',
       edit: 'Edit',
       delete: 'Delete',

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { highlight } from '../lib/highlight'
+import { callHost } from '../lib/host-rpc'
 
 type Lang = 'react' | 'vanilla'
 
@@ -11,8 +12,8 @@ export function CodeTabs({ react, vanilla }: { react: string; vanilla: string })
   const code = lang === 'react' ? react : vanilla
 
   const copy = () => {
-    // The showcase copy button itself dogfoods superone.clipboard.write.
-    window.superone.clipboard.write(code)
+    // The copy button dogfoods the new split: clipboard lives in the MiniApp Host.
+    void callHost('copy', { text: code })
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1200)
   }

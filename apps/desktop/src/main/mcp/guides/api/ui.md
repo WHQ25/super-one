@@ -1,27 +1,18 @@
-# superone UI APIs — Toast, Tooltip, Context Menu, Popover
+# superone.ui — Tooltip, Context Menu, Popover, Drag
 
-APIs for rendering overlay UI elements outside the iframe sandbox boundary. All methods are on the `superone.ui` object.
+WebView-side. These are the host surfaces that must be **anchored to an element**
+— they take an `anchorRect` or a pointer position, which only the WebView knows —
+so they stay here rather than moving to the MiniApp Host. `startDrag` likewise
+must run inside the synchronous `dragstart` handler.
 
-## ui.toast
-
-Show a brief notification message. Fire-and-forget — no return value.
-
-```js
-superone.ui.toast('Saved successfully', 'success')
-superone.ui.toast('Something went wrong', 'error')
-superone.ui.toast('Be careful', 'warning')
-superone.ui.toast('FYI', 'info')        // 'info' is the default
-superone.ui.toast('Also info')           // type can be omitted
-```
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `message` | `string` | Text to display |
-| `type` | `'success' \| 'error' \| 'warning' \| 'info'` | Optional. Defaults to `'info'` |
+Everything that needs no coordinates lives Node-side instead: `context.host.toast`,
+`revealInFolder`, `openExternal`, `clipboard` (see `api-system`), and
+`context.agent.*` (see `api-agent`). To trigger one from here, send a message
+through `superone.node.postMessage(...)`.
 
 ## ui.showTooltip / ui.hideTooltip
 
-Show a host-rendered tooltip anchored to an element inside the iframe. Call `hideTooltip` when the element is no longer hovered.
+Show a host-rendered tooltip anchored to an element inside the WebView. Call `hideTooltip` when the element is no longer hovered.
 
 ```js
 element.onmouseenter = () => {
@@ -43,7 +34,7 @@ element.onmouseleave = () => {
 | `text` | `string` | Tooltip content |
 | `side` | `'top' \| 'bottom' \| 'left' \| 'right'` | Optional. Defaults to `'top'` |
 
-The tooltip appears outside the iframe and follows the host's theme. Always pair `showTooltip` with `hideTooltip`.
+The tooltip appears outside the WebView and follows the host's theme. Always pair `showTooltip` with `hideTooltip`.
 
 ## ui.showContextMenu
 
@@ -247,7 +238,7 @@ superone.ui.startDrag(paths, opts?)
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `paths` | `string \| string[]` | File path(s) **relative to a granted fs scope** (the same paths you use with `superone.fs`). Paths outside your scopes, or missing files, are rejected by the host. |
+| `paths` | `string \| string[]` | Absolute file path(s) received from the trusted MiniApp Host. Missing files are ignored. |
 | `opts.iconPng` | `ArrayBuffer` | Optional custom drag image (PNG bytes). When set, it overrides the default. |
 | `opts.scaleFactor` | `number` | Pixel density of `iconPng` (e.g. `2` for retina). Default `1`. |
 

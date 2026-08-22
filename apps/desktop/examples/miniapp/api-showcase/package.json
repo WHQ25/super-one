@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build && bun build src/node.ts --target=node --format=esm --outfile=dist/node.js"
   },
   "dependencies": {
     "lucide-react": "^0.500.0",

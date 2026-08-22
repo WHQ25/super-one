@@ -33,6 +33,8 @@ export async function applyLocale(locale: Locale): Promise<void> {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(AgentIpcChannels.APP_LOCALE_CHANGED, locale)
   }
+  const { notifyMiniAppHostsLocale } = await import('./miniapp/miniapp-host')
+  notifyMiniAppHostsLocale(locale)
 }
 
 export function getCurrentLocale(): Locale {

@@ -158,31 +158,3 @@ describe('clearToolIntercepts', () => {
     expect(store.getState().toolRenderers).toEqual({})
   })
 })
-
-describe('mapStandaloneCall', () => {
-  it('stores the toolUseId → payload mapping and keeps existing entries', () => {
-    const store = makeStore()
-    store.getState().mapStandaloneCall('use-1', {
-      callId: 'c1', appId: 'app-1', projectDir: '/p', toolName: 't', arguments: { x: 1 },
-    })
-    store.getState().mapStandaloneCall('use-2', {
-      callId: 'c2', appId: 'app-2', projectDir: '/p', toolName: 't', arguments: {},
-    })
-
-    expect(store.getState()._pendingStandaloneCalls).toEqual({
-      'use-1': { callId: 'c1', appId: 'app-1', projectDir: '/p', toolName: 't', arguments: { x: 1 } },
-      'use-2': { callId: 'c2', appId: 'app-2', projectDir: '/p', toolName: 't', arguments: {} },
-    })
-  })
-
-  it('overwrites a previous mapping for the same toolUseId', () => {
-    const store = makeStore()
-    store.getState().mapStandaloneCall('use-1', {
-      callId: 'c1', appId: 'app-1', projectDir: '/p', toolName: 't', arguments: {},
-    })
-    store.getState().mapStandaloneCall('use-1', {
-      callId: 'c1', appId: 'app-1', projectDir: '/p', toolName: 't', arguments: { updated: true },
-    })
-    expect(store.getState()._pendingStandaloneCalls['use-1'].arguments).toEqual({ updated: true })
-  })
-})

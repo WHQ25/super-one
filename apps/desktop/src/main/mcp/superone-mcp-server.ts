@@ -3,7 +3,7 @@ import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import log from '../logger'
-import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
+import type { MiniAppToolDefinition, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import { trace } from '../agent/event-trace'
@@ -63,20 +63,7 @@ export function setMobileShareToolDeps(deps: MobileShareToolDeps | null): void {
 
 const mobileShareEnabled = new Set<string>()
 
-interface PendingCall {
-  resolve: (result: unknown) => void
-  reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
-  sessionId: string
-}
-
-interface GateEntry {
-  resolve?: () => void
-  startMs: number
-  ready: boolean
-}
-
-const TOOL_CALL_TIMEOUT_MS = 10_000
+const TOOL_INTERCEPT_TIMEOUT_MS = 10_000
 
 interface ProjectServerState {
   server: McpServer
@@ -102,10 +89,8 @@ function makeProjectAppKey(projectDir: string, appId: string): string {
 const sessionServers = new Map<string, Set<ProjectServerState>>()
 const appToolDefs = new Map<string, AppToolEntry>()
 const appTemplates = new Map<string, Record<string, string>>()
-const appReadyGates = new Map<string, GateEntry>()
 /** Keys: `toolSlug__toolName` (legacy / install metadata) and `appId::toolName` (args-aware). */
 const preapprovedTools = new Set<string>()
-const pendingCalls = new Map<string, PendingCall>()
 
 function isAppToolPreapproved(appId: string, toolName: string): boolean {
   if (preapprovedTools.has(`${appId}::${toolName}`)) return true
@@ -357,53 +342,27 @@ export function disposeSuperoneMcpServer(sessionId: string): void {
   log.debug('[superone-mcp] disposed all instances for sessionId=%s', sessionId)
 }
 
-const LAZY_OPEN_TIMEOUT_MS = 30_000
-const LAZY_OPEN_WARN_MS = 6_000
+type AppToolExecutor = (
+  projectDir: string,
+  appId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>
 
-async function requestLazyOpenPanel(projectDir: string, appId: string, sessionId: string): Promise<void> {
-  const win = getMainWindow?.()
-  if (!win || win.isDestroyed()) {
-    trace('miniapp.lazyopen', 'main-no-window', { appId, projectDir, sessionId })
-    throw new Error('No renderer available for lazy-open')
-  }
-  trace('miniapp.lazyopen', 'main-ipc-send', { appId, projectDir, sessionId })
-  win.webContents.send(AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST, { appId, projectDir, sessionId })
-  const warnTimer = setTimeout(() => {
-    log.warn(
-      "[superone-mcp] app '%s' not ready after %dms — if it calls superone.deferReady(), make sure it also calls superone.ready() once initialized",
-      appId,
-      LAZY_OPEN_WARN_MS,
-    )
-    trace('miniapp.lazyopen', 'main-ready-slow', { appId, projectDir, elapsedMs: LAZY_OPEN_WARN_MS })
-  }, LAZY_OPEN_WARN_MS)
-  try {
-    await Promise.race([
-      waitForAppReady(projectDir, appId),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Lazy-open timed out after ${LAZY_OPEN_TIMEOUT_MS}ms for app '${appId}'`)), LAZY_OPEN_TIMEOUT_MS),
-      ),
-    ])
-    trace('miniapp.lazyopen', 'main-ready-unblocked', { appId, projectDir })
-  } catch (err) {
-    trace('miniapp.lazyopen', 'main-timeout-or-error', { appId, projectDir, error: err instanceof Error ? err.message : String(err) })
-    throw err
-  } finally {
-    clearTimeout(warnTimer)
-  }
+let appToolExecutor: AppToolExecutor | null = null
+
+export function setAppToolExecutor(executor: AppToolExecutor): void {
+  appToolExecutor = executor
 }
 
-function isPanelReady(projectDir: string, appId: string): boolean {
-  const key = makeProjectAppKey(projectDir, appId)
-  return appReadyGates.get(key)?.ready === true
-}
-
-export function clearAppReadyGate(projectDir: string, appId: string): void {
-  const key = makeProjectAppKey(projectDir, appId)
-  const entry = appReadyGates.get(key)
-  if (entry?.resolve) {
-    entry.resolve()
-  }
-  appReadyGates.delete(key)
+function executeInMiniAppHost(
+  projectDir: string,
+  appId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  if (!appToolExecutor) throw new Error('Mini-app MiniApp Host is unavailable')
+  return appToolExecutor(projectDir, appId, toolName, args)
 }
 
 function registerMobileShareToolOnState(state: ProjectServerState, sessionId: string): void {
@@ -626,69 +585,7 @@ export function isSessionAuthorizedForApp(sessionId: string, projectDir: string,
   return !!entry && entry.projectDir === projectDir
 }
 
-export function resolveToolCall(callId: string, result: unknown): void {
-  const pending = pendingCalls.get(callId)
-  if (pending) {
-    clearTimeout(pending.timer)
-    pendingCalls.delete(callId)
-    log.debug('[superone-mcp] tool call resolved callId=%s', callId)
-    trace('miniapp.toolcall', 'main-resolve', { callId })
-    pending.resolve(result)
-  } else {
-    log.warn('[superone-mcp] resolveToolCall miss (no pending) callId=%s', callId)
-    trace('miniapp.toolcall', 'main-resolve-miss', { callId })
-  }
-}
-
-export function rejectToolCall(callId: string, error: string): void {
-  const pending = pendingCalls.get(callId)
-  if (pending) {
-    clearTimeout(pending.timer)
-    pendingCalls.delete(callId)
-    log.debug('[superone-mcp] tool call rejected callId=%s error=%s', callId, error)
-    trace('miniapp.toolcall', 'main-reject', { callId, error })
-    pending.reject(new Error(error))
-  } else {
-    log.warn('[superone-mcp] rejectToolCall miss (no pending) callId=%s', callId)
-    trace('miniapp.toolcall', 'main-reject-miss', { callId, error })
-  }
-}
-
-export function notifyAppReady(projectDir: string, appId: string): void {
-  const key = makeProjectAppKey(projectDir, appId)
-  const entry = appReadyGates.get(key)
-  if (entry?.resolve) {
-    const elapsed = Date.now() - entry.startMs
-    log.info('[superone-mcp] app ready: %s @ %s (%dms)', appId, projectDir, elapsed)
-    trace('miniapp.lazyopen', 'main-ready-resolve-pending', { appId, projectDir, elapsedMs: elapsed })
-    appReadyGates.set(key, { startMs: entry.startMs, ready: true })
-    entry.resolve()
-  } else {
-    log.info('[superone-mcp] app ready (early): %s @ %s', appId, projectDir)
-    trace('miniapp.lazyopen', 'main-ready-early-stash', { appId, projectDir })
-    appReadyGates.set(key, { startMs: Date.now(), ready: true })
-  }
-}
-
-function waitForAppReady(projectDir: string, appId: string): Promise<void> {
-  const key = makeProjectAppKey(projectDir, appId)
-  const existing = appReadyGates.get(key)
-  if (existing?.ready) {
-    return Promise.resolve()
-  }
-  const startMs = existing?.startMs ?? Date.now()
-  return new Promise<void>((resolve) => {
-    appReadyGates.set(key, { resolve, startMs, ready: false })
-  })
-}
-
 export function clearSessionPendingCalls(sessionId: string): void {
-  for (const [callId, pending] of pendingCalls) {
-    if (pending.sessionId !== sessionId) continue
-    clearTimeout(pending.timer)
-    pending.reject(new Error('Pending calls cleared for session'))
-    pendingCalls.delete(callId)
-  }
   const clearedInterceptCallIds: string[] = []
   for (const [callId, p] of pendingIntercepts) {
     if (p.sessionId !== sessionId) continue
@@ -771,43 +668,7 @@ export function cancelToolIntercept(callId: string, reason?: string): void {
   settleIntercept(callId, { error: new Error(reason ?? 'user_cancelled') })
 }
 
-function sendToolCall(
-  callId: string,
-  sessionId: string,
-  projectDir: string,
-  appId: string,
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  const request: MiniAppToolCallRequest = { callId, appId, projectDir, toolName, arguments: args }
-  return new Promise<unknown>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingCalls.delete(callId)
-      log.warn('[superone-mcp] tool call timeout callId=%s projectDir=%s appId=%s toolName=%s', callId, projectDir, appId, toolName)
-      reject(new Error(`Tool call timeout after ${TOOL_CALL_TIMEOUT_MS}ms: ${toolName}`))
-    }, TOOL_CALL_TIMEOUT_MS)
-
-    pendingCalls.set(callId, { resolve, reject, timer, sessionId })
-
-    const win = getMainWindow?.()
-    if (!win || win.isDestroyed()) {
-      pendingCalls.delete(callId)
-      clearTimeout(timer)
-      reject(new Error('Main window not available'))
-      return
-    }
-
-    log.debug('[superone-mcp] tool call dispatched callId=%s projectDir=%s appId=%s toolName=%s', callId, projectDir, appId, toolName)
-    trace('miniapp.toolcall', 'main-dispatch', { callId, appId, toolName, projectDir })
-    win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
-  })
-}
-
-/**
- * Standalone tools render their own iframe inside the chat tool block — no panel
- * lazy-open, no intercept template. Just dispatch the tool call IPC and let the
- * StandaloneToolBlock-mounted iframe receive it via `window.miniapp.onToolCall`.
- */
+/** Execute a tool in the app's Node MiniApp Host, optionally after UI interception. */
 export async function executeStandaloneTool(
   sessionId: string,
   appId: string,
@@ -832,7 +693,7 @@ export async function executeStandaloneTool(
       throw new Error(`Template "${intercept.template}" not found in manifest.templates`)
     }
     try {
-      const timeoutMs = intercept.timeoutMs ?? TOOL_CALL_TIMEOUT_MS
+      const timeoutMs = intercept.timeoutMs ?? TOOL_INTERCEPT_TIMEOUT_MS
       const userInput = await openInterceptRenderer({
         callId,
         appId,
@@ -852,7 +713,7 @@ export async function executeStandaloneTool(
     }
   }
 
-  return sendToolCall(callId, sessionId, projectDir, appId, toolName, finalInput)
+  return executeInMiniAppHost(projectDir, appId, toolName, finalInput)
 }
 
 export async function executeAppTool(
@@ -869,8 +730,6 @@ export async function executeAppTool(
   const projectDir = defsEntry.projectDir
 
   log.debug('[superone-mcp] executeAppTool begin sessionId=%s projectDir=%s appId=%s toolName=%s', sessionId, projectDir, appId, toolName)
-  await waitForAppReady(projectDir, appId)
-
   const toolDef = defsEntry.tools.find((t) => t.name === toolName)
   const intercept = toolDef?.renderer?.intercept
   const callId = randomUUID()
@@ -883,7 +742,7 @@ export async function executeAppTool(
       throw new Error(`Template "${intercept.template}" not found in manifest.templates`)
     }
     try {
-      const timeoutMs = intercept.timeoutMs ?? TOOL_CALL_TIMEOUT_MS
+      const timeoutMs = intercept.timeoutMs ?? TOOL_INTERCEPT_TIMEOUT_MS
       const userInput = await openInterceptRenderer({
         callId,
         appId,
@@ -903,16 +762,12 @@ export async function executeAppTool(
     }
   }
 
-  return sendToolCall(callId, sessionId, projectDir, appId, toolName, finalInput)
+  return executeInMiniAppHost(projectDir, appId, toolName, finalInput)
 }
 
 /**
- * Single entry point for executing a mini-app tool, shared by the in-process SDK
- * server (Claude) and the stdio-bridge IPC path (Codex). Standalone tools run
- * headless; panel-backed tools lazy-open the panel FIRST (the agent never opened
- * it — e.g. an @-mention) so `executeAppTool` does not block forever on a panel
- * that nothing else will bring up. Keeping the lazy-open here (not in the SDK tool
- * closure) is what makes the Codex path behave identically to Claude's.
+ * Single entry point for executing a mini-app tool, shared by every harness.
+ * Tool computation never depends on a mounted WebView.
  */
 export async function dispatchAppToolCall(
   sessionId: string,
@@ -928,15 +783,9 @@ export async function dispatchAppToolCall(
     trace('miniapp.standalone', 'tool-execute-done', { appId, toolName })
     return result
   }
-  const panelReady = isPanelReady(projectDir, appId)
-  trace('miniapp.lazyopen', 'tool-dispatch', { appId, toolName, panelReady })
-  if (!panelReady) {
-    log.info('[superone-mcp] panel not open for %s, triggering lazy-open', appId)
-    await requestLazyOpenPanel(projectDir, appId, sessionId)
-  }
-  trace('miniapp.lazyopen', 'tool-execute-start', { appId, toolName })
+  trace('miniapp.host', 'tool-execute-start', { appId, toolName })
   const result = await executeAppTool(sessionId, appId, toolName, args)
-  trace('miniapp.lazyopen', 'tool-execute-done', { appId, toolName })
+  trace('miniapp.host', 'tool-execute-done', { appId, toolName })
   return result
 }
 

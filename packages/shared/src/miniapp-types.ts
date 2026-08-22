@@ -1,12 +1,3 @@
-export type MiniAppFsAccess = 'read' | 'readwrite'
-
-export interface MiniAppFsEntry {
-  scope: 'project' | 'user' | 'app'
-  path?: string
-  access?: MiniAppFsAccess
-  reason: string
-}
-
 export interface MiniAppNetworkEntry {
   domain: string
   reason: string
@@ -19,10 +10,6 @@ export interface MiniAppMediaEntry {
   reason: string
 }
 
-export interface MiniAppStorageEntry {
-  reason: string
-}
-
 export interface MiniAppAuthor {
   name: string
   email?: string
@@ -32,6 +19,8 @@ export interface MiniAppAuthor {
 export interface MiniAppManifest {
   appId: string
   name: string
+  /** Node.js entrypoint loaded inside the app's dedicated MiniApp Host process. */
+  main: string
   version?: string
   author?: MiniAppAuthor
   description?: string
@@ -39,15 +28,10 @@ export interface MiniAppManifest {
   isDev?: boolean
   preferWidth?: number
   permissions?: MiniAppPermissions
-  background?: MiniAppBackground
   toolSlug?: string
   tools?: MiniAppToolDefinition[]
   runningText?: string
   templates?: Record<string, string>
-}
-
-export interface MiniAppBackground {
-  entry: string
 }
 
 export interface MiniAppToolInterceptRenderer {
@@ -82,14 +66,7 @@ export interface MiniAppIntegrity {
 
 export interface MiniAppPermissions {
   network?: MiniAppNetworkEntry[]
-  fs?: MiniAppFsEntry[]
   media?: MiniAppMediaEntry[]
-  storage?: MiniAppStorageEntry
-  background?: MiniAppBackgroundPermission
-}
-
-export interface MiniAppBackgroundPermission {
-  reason: string
 }
 
 export interface MiniAppToolDefinition {
@@ -120,11 +97,12 @@ export interface MiniAppEntry {
   orphan?: boolean
 }
 
-export interface MiniAppWorkerInfo {
+export interface MiniAppHostInfo {
   appId: string
   projectDir: string
   name: string
   since: number
+  ready: boolean
   statusText?: string
 }
 
@@ -148,14 +126,6 @@ export interface DevRegistryView extends DevRegistryEntry {
   /** 'ok' = sourceDir exists; 'missing' = sourceDir not found on disk. */
   status: 'ok' | 'missing'
   installations: DevAppInstallation[]
-}
-
-export interface MiniAppToolCallRequest {
-  callId: string
-  appId: string
-  projectDir: string
-  toolName: string
-  arguments: Record<string, unknown>
 }
 
 export interface MiniAppToolInterceptOpenRequest {
@@ -185,30 +155,6 @@ export interface MiniAppToolCallResponse {
   error?: string
 }
 
-export type MiniAppFsOp = 'readFile' | 'readFileBinary' | 'readDir' | 'writeFile' | 'exists' | 'glob' | 'deleteFile' | 'trashFile' | 'rename' | 'stat' | 'mkdir' | 'showInFolder'
-
-export type MiniAppGitOp = 'info' | 'branches' | 'log' | 'status' | 'diff' | 'show' | 'blame' | 'diffSummary' | 'getCommit' | 'tags' | 'remotes' | 'branchDetail' | 'stashList' | 'logFile'
-
-export type MiniAppDbOp = 'query' | 'exec' | 'batch' | 'pragma'
-
-export type MiniAppDbScope = 'user' | 'project'
-
-export interface MiniAppDbStatement {
-  sql: string
-  params?: unknown[] | Record<string, unknown>
-}
-
-export interface MiniAppDbRunResult {
-  changes: number
-  lastInsertRowid: number
-}
-
-export interface MiniAppFsRequest {
-  appId: string
-  op: MiniAppFsOp
-  args: Record<string, unknown>
-}
-
 export interface MiniAppPackResult {
   outputPath: string
   manifest: MiniAppManifest
@@ -225,13 +171,6 @@ export interface MiniAppInstallResult {
   entry: MiniAppEntry
   meta: MiniAppInstallMeta
   upgraded: boolean
-}
-
-export interface MiniAppFsWatchEvent {
-  watchId: number
-  appId: string
-  type: 'change' | 'rename'
-  path: string
 }
 
 export type MiniAppToastType = 'success' | 'error' | 'info' | 'warning'
@@ -275,25 +214,12 @@ export interface MiniAppContextData {
 }
 
 export type MiniAppBridgeMessageType =
-  | 'miniapp-tool-call'
-  | 'miniapp-tool-result'
-  | 'miniapp-fs-request'
-  | 'miniapp-fs-response'
-  | 'miniapp-fs-watch'
-  | 'miniapp-fs-unwatch'
-  | 'miniapp-fs-watch-ack'
-  | 'miniapp-fs-watch-event'
+  | 'miniapp-node-post-message'
+  | 'miniapp-node-message'
   | 'miniapp-theme'
   | 'miniapp-locale'
-  | 'miniapp-git-request'
-  | 'miniapp-git-response'
-  | 'miniapp-git-head-change'
-  | 'miniapp-db-request'
-  | 'miniapp-db-response'
-  | 'miniapp-sendPrompt'
   | 'miniapp-ready'
   | 'miniapp-resize'
-  | 'miniapp-ui-toast'
   | 'miniapp-ui-tooltip-show'
   | 'miniapp-ui-tooltip-hide'
   | 'miniapp-ui-contextmenu'
@@ -307,46 +233,9 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-tool-submit'
   | 'miniapp-tool-cancel'
   | 'miniapp-tool-result-close'
-  | 'miniapp-context-set'
-  | 'miniapp-context-clear'
-  | 'miniapp-context-consumed'
   | 'miniapp-media-started'
   | 'miniapp-media-track-ended'
-  | 'miniapp-peer-emit'
-  | 'miniapp-peer-event'
-  | 'miniapp-standalone-call'
-  | 'miniapp-standalone-cached-result'
-  | 'miniapp-worker-start'
-  | 'miniapp-worker-stop'
-  | 'miniapp-worker-status'
-  | 'miniapp-worker-status-result'
-  | 'miniapp-worker-msg'
-  | 'miniapp-worker-event'
-  | 'miniapp-worker-lease'
-  | 'miniapp-worker-lease-release'
-  | 'miniapp-worker-dropped'
-
-export const MINIAPP_HEADLESS_SAFE_TYPES: ReadonlySet<string> = new Set([
-  'miniapp-tool-result',
-  'miniapp-fs-request',
-  'miniapp-git-request',
-  'miniapp-db-request',
-  'miniapp-kv-request',
-  'miniapp-fs-watch',
-  'miniapp-fs-unwatch',
-  'miniapp-peer-emit',
-])
-
-// Request/response types the worker (headless) shell cannot service. The shell
-// must reply with an error on these so the iframe's transport.request promise
-// rejects instead of hanging forever. Single source of truth for both the
-// panel-host worker policy and the renderer worker-host shell.
-export const MINIAPP_WORKER_REJECT_RESPONSE: Readonly<Record<string, string>> = {
-  'miniapp-clipboard-read': 'miniapp-clipboard-response',
-  'miniapp-ui-contextmenu': 'miniapp-ui-contextmenu-result',
-}
-
-export const MINIAPP_WORKER_UNAVAILABLE_ERROR = 'unavailable-in-worker'
+  | 'miniapp-standalone-data'
 
 export const MiniAppToolBridgeMsg = {
   SUBMIT: 'miniapp-tool-submit',

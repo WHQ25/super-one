@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, type RefObject, type MutableRefObject } from 'react'
 import type { MiniAppOverlayCallbacks } from './miniapp-message-handler'
 import type { MiniAppTooltipRequest, MiniAppContextMenuRequest, MiniAppPopoverShowRequest } from '@superone/shared/miniapp-types'
-import { buildMiniAppHost } from '@superone/shared/miniapp-host'
+import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
 import { useAppStore } from '@/stores/app'
 
 export interface TooltipState {
@@ -27,7 +27,7 @@ export interface PopoverState {
   width?: number
   maxHeight?: number
   sendToMain: (msg: unknown) => void
-  iframeSendRef: MutableRefObject<((msg: unknown) => void) | null>
+  webviewSendRef: MutableRefObject<((msg: unknown) => void) | null>
 }
 
 export function useMiniAppOverlay(
@@ -41,7 +41,7 @@ export function useMiniAppOverlay(
   const [popover, setPopover] = useState<PopoverState | null>(null)
   const respondRef = useRef<((itemId: string | null) => void) | null>(null)
   const sendClosedRef = useRef<((msg: unknown) => void) | null>(null)
-  const popoverIframeSendRef = useRef<((msg: unknown) => void) | null>(null)
+  const popoverWebviewSendRef = useRef<((msg: unknown) => void) | null>(null)
 
   const toAbsolute = useCallback((relX: number, relY: number) => {
     const el = containerRef.current
@@ -79,7 +79,7 @@ export function useMiniAppOverlay(
   const closePopover = useCallback(() => {
     sendClosedRef.current?.({ type: 'miniapp-popover-closed' })
     sendClosedRef.current = null
-    popoverIframeSendRef.current = null
+    popoverWebviewSendRef.current = null
     setPopover(null)
   }, [])
 
@@ -92,12 +92,12 @@ export function useMiniAppOverlay(
       sendClosedRef.current({ type: 'miniapp-popover-closed' })
     }
     sendClosedRef.current = send
-    popoverIframeSendRef.current = null
+    popoverWebviewSendRef.current = null
 
     const pos = toAbsolute(req.anchorRect.x, req.anchorRect.y)
     const dataParam = req.data != null ? `&_popoverData=${encodeURIComponent(JSON.stringify(req.data))}` : ''
     const projectId = useAppStore.getState().currentProjectId
-    const templateUrl = `superone-app://${buildMiniAppHost(appId, projectId)}/${templatePath}?_popover=${req.template}${dataParam}`
+    const templateUrl = `superone-app://${buildMiniAppUrlHost(appId, projectId)}/${templatePath}?_popover=${req.template}${dataParam}`
 
     setPopover({
       appId,
@@ -110,12 +110,12 @@ export function useMiniAppOverlay(
       width: req.width,
       maxHeight: req.maxHeight,
       sendToMain: (msg) => send(msg),
-      iframeSendRef: popoverIframeSendRef,
+      webviewSendRef: popoverWebviewSendRef,
     })
   }, [appId, projectDir, templates, toAbsolute])
 
   const onPopoverMsg = useCallback((data: unknown) => {
-    popoverIframeSendRef.current?.({ type: 'miniapp-popover-msg', data })
+    popoverWebviewSendRef.current?.({ type: 'miniapp-popover-msg', data })
   }, [])
 
   const onPopoverClose = useCallback(() => {

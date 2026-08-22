@@ -1,6 +1,7 @@
 {
   "appId": "api-showcase-mpb8fxj3",
   "name": "API Showcase",
+  "main": "node.js",
   "isDev": true,
   "version": "0.1.0",
   "author": { "name": "SuperOne", "url": "https://github.com/WHQ25/super-one" },
@@ -9,20 +10,11 @@
   "fullscreen": true,
   "preferWidth": 640,
   "toolSlug": "showcase",
-  "background": { "entry": "background.html" },
   "permissions": {
-    "fs": [
-      { "scope": "project", "path": ".", "access": "readwrite", "reason": "Demo: read/write/list/watch project files" },
-      { "scope": "app", "reason": "Demo: persist app-scoped data" }
-    ],
-    "network": [
-      { "domain": "cdn.jsdelivr.net", "reason": "Demo: background worker external download" }
-    ],
     "media": [
       { "kind": "microphone", "reason": "Demo: microphone recording" },
       { "kind": "camera", "reason": "Demo: camera preview & snapshot" }
-    ],
-    "background": { "reason": "Demo: keep a download running after the panel is closed" }
+    ]
   },
   "templates": {
     "confirm": "confirm.html",

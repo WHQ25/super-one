@@ -22,22 +22,25 @@
   <button id="ask-btn">Ask Agent to Greet</button>
   <div id="files"></div>
   <script>
-    superone.tools.handle('show_message', function(args) {
+    superone.node.onMessage(function(message) {
+      if (!message) return;
+      if (message.type === 'workspace-files') {
+        document.getElementById('files').textContent = 'Files: ' + message.files.join(', ');
+        return;
+      }
+      if (message.type !== 'display-message') return;
       var container = document.getElementById('messages');
       if (container.querySelector('p')) container.innerHTML = '';
       var div = document.createElement('div');
       div.className = 'msg';
-      div.textContent = args.text;
+      div.textContent = message.text;
       container.appendChild(div);
-      return { success: true, displayed: args.text };
     });
 
-    superone.fs.readDir('.').then(function(entries) {
-      document.getElementById('files').textContent = 'Files: ' + entries.map(function(e) { return e.name; }).join(', ');
-    }).catch(function() {});
+    superone.node.postMessage({ type: 'list-files' });
 
     document.getElementById('ask-btn').onclick = function() {
-      superone.agent.sendPrompt('Say hello using the hello__show_message tool');
+      superone.node.postMessage({ type: 'send-prompt', text: 'Say hello using the hello__show_message tool' });
     };
   </script>
 </body>

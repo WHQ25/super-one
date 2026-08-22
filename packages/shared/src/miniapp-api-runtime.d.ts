@@ -1,4 +1,4 @@
-import type { SuperOne, SuperOneSelfApi, SuperOneLocale } from './miniapp-author-api'
+import type { SuperOne, SuperOneLocale } from './miniapp-author-api'
 
 export type {
   SuperOneLocale as MiniAppLocale,
@@ -8,10 +8,7 @@ export type {
   SuperOneToolResultApi as ToolResultApi,
   SuperOneToolStandaloneApi as ToolStandaloneApi,
   SuperOneToolRendererApi as ToolRendererApi,
-  SuperOneDb as SuperoneDbApi,
-  SuperOneKv as SuperoneKvApi,
   SuperOne as SuperoneApi,
-  SuperOneSelfApi,
 } from './miniapp-author-api'
 
 export interface MiniAppTransport {
@@ -21,7 +18,6 @@ export interface MiniAppTransport {
 }
 
 export function createSuperoneApi(transport: MiniAppTransport, version: string, opts?: { initialLocale?: SuperOneLocale }): SuperOne
-export function createSuperoneSelf(transport: MiniAppTransport): SuperOneSelfApi
 export function startSuperoneResize(transport: MiniAppTransport): void
 export function installSuperoneMediaProbe(transport: MiniAppTransport): void
-export function startSuperoneReady(api: SuperOne): void
+export function startSuperoneReady(transport: MiniAppTransport): void

@@ -506,6 +506,7 @@ describe('CodexTurnView', () => {
         manifest: {
           appId: 'project-tools',
           name: 'Project Tools',
+          main: 'node.js',
           tools: [
             { name: 'find_files', description: '', inputSchema: {}, groupable: true },
             { name: 'inspect_file', description: '', inputSchema: {}, groupable: true },

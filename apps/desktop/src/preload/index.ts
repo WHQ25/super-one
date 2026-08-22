@@ -2253,7 +2253,7 @@ const appAPI = {
   },
 }
 
-import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
+import type { MiniAppEntry, MiniAppInstallMeta, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 
 const miniappAPI = {
   list: (projectDir?: string) =>
@@ -2271,12 +2271,6 @@ const miniappAPI = {
   unauthorize: (appIds: string[], projectDir: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_UNAUTHORIZE, appIds, projectDir, sessionId),
 
-  toolResult: (callId: string, result: unknown, error?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_RESULT, callId, result, error),
-
-  fsRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_REQUEST, projectDir, appId, op, args),
-
   startDrag: (
     projectDir: string,
     appId: string,
@@ -2284,44 +2278,46 @@ const miniappAPI = {
     iconOpts?: { png: ArrayBuffer; scaleFactor?: number },
   ) => ipcRenderer.send(AgentIpcChannels.MINIAPP_START_DRAG, projectDir, appId, paths, iconOpts),
 
-  gitRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GIT_REQUEST, projectDir, appId, op, args),
-
-  dbRequest: (projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DB_REQUEST, projectDir, scope, appId, op, args),
-
-  kvRequest: (projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_KV_REQUEST, projectDir, scope, appId, op, args),
-
-  onGitHeadChangeEvent: (callback: (event: { projectDir: string; appId: string }) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, event: { projectDir: string; appId: string }) => callback(event)
-    ipcRenderer.on(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, handler)
-    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, handler)
-  },
-
-  fsWatch: (projectDir: string, appId: string, path: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_WATCH, projectDir, appId, path) as Promise<number>,
-
-  fsUnwatch: (watchId: number) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_UNWATCH, watchId),
-
-  onFsWatchEvent: (callback: (event: MiniAppFsWatchEvent) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, event: MiniAppFsWatchEvent) => callback(event)
-    ipcRenderer.on(AgentIpcChannels.MINIAPP_FS_WATCH_EVENT, handler)
-    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_FS_WATCH_EVENT, handler)
-  },
-
-  iframeReady: (appId: string, projectDir: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_IFRAME_READY, appId, projectDir),
-
-  onToolCall: (callback: (call: MiniAppToolCallRequest) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, call: MiniAppToolCallRequest) => callback(call)
-    ipcRenderer.on(AgentIpcChannels.MINIAPP_TOOL_CALL, handler)
-    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_TOOL_CALL, handler)
-  },
+  showItemInFolder: (projectDir: string, appId: string, path: string) =>
+    ipcRenderer.send(AgentIpcChannels.MINIAPP_SHOW_ITEM_IN_FOLDER, projectDir, appId, path),
 
   getPreloadPath: () =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GET_PRELOAD_PATH) as Promise<string>,
+
+  hostPostMessage: (projectDir: string, appId: string, payload: unknown) =>
+    ipcRenderer.send(AgentIpcChannels.MINIAPP_HOST_POST_MESSAGE, { projectDir, appId, payload }),
+
+  onHostMessage: (callback: (event: { appId: string; projectDir: string; payload: unknown }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { appId: string; projectDir: string; payload: unknown }) => callback(event)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_HOST_MESSAGE, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_HOST_MESSAGE, handler)
+  },
+
+  onHostAction: (
+    handler: (request: { requestId: string; appId: string; projectDir: string; action: string; args: Record<string, unknown> }) => void,
+  ) => {
+    const listener = (_e: Electron.IpcRendererEvent, request: { requestId: string; appId: string; projectDir: string; action: string; args: Record<string, unknown> }) => handler(request)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_HOST_ACTION, listener)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_HOST_ACTION, listener)
+  },
+
+  hostActionResult: (requestId: string, result?: unknown, error?: string) =>
+    ipcRenderer.send(AgentIpcChannels.MINIAPP_HOST_ACTION_RESULT, { requestId, result, error }),
+
+  notifyContextConsumed: (appIds: string[]) =>
+    ipcRenderer.send(AgentIpcChannels.MINIAPP_CONTEXT_CONSUMED, appIds),
+
+  hostList: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_HOST_LIST),
+
+  hostStop: (projectDir: string, appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_HOST_STOP, projectDir, appId),
+
+  onHostState: (callback: (hosts: unknown[]) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, data: { hosts: unknown[] }) => callback(data.hosts)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_HOST_STATE, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_HOST_STATE, handler)
+  },
 
   detectDev: (projectDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DETECT_DEV, projectDir) as Promise<MiniAppEntry[]>,
@@ -2331,44 +2327,6 @@ const miniappAPI = {
       callback(projectDir, appId)
     ipcRenderer.on('miniapp:dev-app-ready', handler)
     return () => ipcRenderer.removeListener('miniapp:dev-app-ready', handler)
-  },
-
-  onLazyOpenRequest: (callback: (event: { appId: string; projectDir: string; sessionId: string }) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, event: { appId: string; projectDir: string; sessionId: string }) =>
-      callback(event)
-    ipcRenderer.on(AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST, handler)
-    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST, handler)
-  },
-
-  onPeerEvent: (callback: (event: { sessionId: string; appId: string; event: string; payload: unknown }) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, event: { sessionId: string; appId: string; event: string; payload: unknown }) =>
-      callback(event)
-    ipcRenderer.on('miniapp-peer-event', handler)
-    return () => ipcRenderer.removeListener('miniapp-peer-event', handler)
-  },
-
-  peerEmit: (appId: string, event: string, payload: unknown) =>
-    ipcRenderer.send(AgentIpcChannels.MINIAPP_PEER_EMIT, appId, event, payload),
-
-  workerStart: (projectDir: string, appId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_WORKER_START, projectDir, appId) as Promise<{ running: boolean; since?: number }>,
-  workerStop: (projectDir: string, appId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_WORKER_STOP, projectDir, appId) as Promise<{ running: boolean }>,
-  workerStatus: (projectDir: string, appId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_WORKER_STATUS, projectDir, appId) as Promise<{ running: boolean; since?: number }>,
-  workerSend: (projectDir: string, appId: string, payload: unknown) =>
-    ipcRenderer.send(AgentIpcChannels.MINIAPP_WORKER_SEND, { projectDir, appId, type: 'miniapp-worker-msg', data: { payload } }),
-  onWorkerEvent: (handler: (data: { appId: string; projectDir: string; payload: unknown }) => void) => {
-    const listener = (_e: unknown, data: { appId: string; projectDir: string; payload: unknown }) => handler(data)
-    ipcRenderer.on(AgentIpcChannels.MINIAPP_WORKER_EVENT, listener)
-    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_WORKER_EVENT, listener)
-  },
-  workerList: () =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_WORKER_LIST) as Promise<Array<{ appId: string; projectDir: string; name: string; since: number; statusText?: string }>>,
-  onWorkerState: (handler: (workers: Array<{ appId: string; projectDir: string; name: string; since: number; statusText?: string }>) => void) => {
-    const listener = (_e: unknown, data: { workers: Array<{ appId: string; projectDir: string; name: string; since: number; statusText?: string }> }) => handler(data.workers)
-    ipcRenderer.on(AgentIpcChannels.MINIAPP_WORKER_STATE, listener)
-    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_WORKER_STATE, listener)
   },
 
   preview: (s1appPath: string) =>

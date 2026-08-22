@@ -3,17 +3,14 @@ import type { ChatStore, ToolRendererState } from '../types'
 
 /**
  * Subset of ChatStore concerned with the global tool-intercept renderer
- * machinery: `toolRenderers` (MCP callId → renderer state), the standalone
- * tool-call routing table (`_pendingStandaloneCalls`), and the live bash
- * output buffer (`_bashOutputs`). All three are global rather than
- * per-session.
+ * machinery: `toolRenderers` (MCP callId → renderer state) and the live bash
+ * output buffer (`_bashOutputs`). Both are global rather than per-session.
  *
  * Self-contained: actions only touch state owned by this slice, so it
  * composes cleanly with the rest of useChatStore via spread.
  */
 export interface ToolSlice {
   toolRenderers: Record<string, ToolRendererState>
-  _pendingStandaloneCalls: Record<string, { callId: string; appId: string; projectDir: string; toolName: string; arguments: Record<string, unknown> }>
   _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
   _shareProgress: Record<string, { loaded: number; total: number }>
 
@@ -22,15 +19,10 @@ export interface ToolSlice {
   cancelToolIntercept: (callId: string, reason?: string) => void
   clearToolIntercepts: (callIds: string[]) => void
 
-  mapStandaloneCall: (
-    toolUseId: string,
-    payload: { callId: string; appId: string; projectDir: string; toolName: string; arguments: Record<string, unknown> },
-  ) => void
 }
 
 export const createToolSlice: StateCreator<ChatStore, [], [], ToolSlice> = (set, get) => ({
   toolRenderers: {},
-  _pendingStandaloneCalls: {},
   _bashOutputs: {},
   _shareProgress: {},
 
@@ -65,8 +57,4 @@ export const createToolSlice: StateCreator<ChatStore, [], [], ToolSlice> = (set,
     for (const id of callIds) delete next[id]
     return { toolRenderers: next }
   }),
-
-  mapStandaloneCall: (toolUseId, payload) => set((s) => ({
-    _pendingStandaloneCalls: { ...s._pendingStandaloneCalls, [toolUseId]: payload },
-  })),
 })

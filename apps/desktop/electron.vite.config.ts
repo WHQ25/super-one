@@ -36,6 +36,7 @@ export default defineConfig(({ mode }) => {
           index: resolve('src/main/index.ts'),
           'superone-mcp-stdio-bridge': resolve('src/main/mcp/superone-mcp-stdio-bridge.ts'),
           'llm-proxy-entry': resolve('src/main/providers/llm-proxy-entry.ts'),
+          'plugin-host-entry': resolve('src/main/miniapp/plugin-host-entry.ts'),
         },
         output: {
           format: 'es',
@@ -55,7 +56,6 @@ export default defineConfig(({ mode }) => {
         input: {
           index: resolve('src/preload/index.ts'),
           'miniapp-preload': resolve('src/preload/miniapp-preload.ts'),
-          'worker-host-preload': resolve('src/preload/worker-host-preload.ts'),
         },
         output: {
           format: 'cjs',
@@ -84,7 +84,6 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
-          'worker-host': resolve('src/renderer/worker-host.html'),
           bench: resolve('src/renderer/bench.html'),
         },
         output: {

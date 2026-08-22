@@ -118,18 +118,40 @@ function closeStream(sessionId: string, surface: Surface): void {
 }
 
 /**
- * Renegotiate without disturbing the picture.
+ * Renegotiate the stream around the canvas that is already on screen.
  *
- * Scale and frame rate are settled in `stream.start`, so changing either one means
- * a new stream and a new decoder — but the SAME canvas, which is why the device
- * stays on screen at the old resolution until the first frame at the new one lands
- * rather than blanking. `hasFrame` deliberately stays true for that reason.
+ * Two different reasons land here and they want OPPOSITE things from the picture.
+ *
+ * A quality change is the same device at a new size: scale and frame rate are settled
+ * in `stream.start`, so changing either means a new stream and a new decoder, and
+ * holding the old resolution on screen until the first frame at the new one lands is
+ * what keeps it from blanking. `hasFrame` stays true for that.
+ *
+ * A DEVICE change is not a new version of what is on screen — it is a different
+ * phone. Keeping that picture is not continuity, it is showing the user the wrong
+ * device, and on a simulator that only repaints when something happens it can sit
+ * there indefinitely. So the picture is dropped and the panel goes back to waiting,
+ * which is the honest reading: this device has not shown us anything yet.
  */
 function renegotiate(sessionId: string, surface: Surface, options: DeviceSurfaceOptions): void {
+  const switchedDevice = surface.deviceId !== options.deviceId
   closeStream(sessionId, surface)
   surface.deviceId = options.deviceId
   surface.quality = options.quality
+  if (switchedDevice) discardPicture(surface)
   openStream(sessionId, surface)
+}
+
+/** Forget what is drawn, and tell everyone watching that there is nothing to see. */
+function discardPicture(surface: Surface): void {
+  surface.hasFrame = false
+  // The canvas is reused rather than rebuilt — rebuilding it would cost a stream
+  // restart — so the old bitmap has to be wiped by hand. A first frame at a new
+  // size resizes the canvas and clears it anyway; this covers the two devices that
+  // happen to encode at the same one.
+  const context = surface.canvas.getContext('2d', { alpha: false })
+  context?.clearRect(0, 0, surface.canvas.width, surface.canvas.height)
+  for (const watcher of surface.watchers) watcher(false)
 }
 
 function dispose(sessionId: string): void {

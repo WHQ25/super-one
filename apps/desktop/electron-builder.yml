@@ -11,7 +11,31 @@ files:
   # which a packaged build does. Scoped to node_modules so enabling sourcemaps for
   # our own bundles stays a decision this line does not silently override.
   - "!node_modules/**/*.map"
-  - "!node_modules/@img/sharp-*"
+  # Renderer-only packages. Vite inlines the renderer's dependencies into
+  # out/renderer/assets at build time, so the node_modules copies below are dead
+  # weight — verified zero imports from src/main and src/preload. NOT on this
+  # list on purpose: `shiki` (src/main/remote-highlighter.ts imports it) and
+  # `sharp`/`@img` (dependency of @deepseek-ai/dsh-attachment-local, a Cordis
+  # plugin loaded by string name — invisible to static analysis). Every pattern
+  # needs the trailing `/**`: a bare package path matches only the directory
+  # entry and excludes nothing.
+  - "!node_modules/mermaid/**"
+  - "!node_modules/@mermaid-js/parser/**"
+  - "!node_modules/posthog-js/**"
+  - "!node_modules/lucide-react/**"
+  - "!node_modules/pdfjs-dist/**"
+  - "!node_modules/@napi-rs/canvas*/**"
+  - "!node_modules/@emoji-mart/data/**"
+  - "!node_modules/katex/**"
+  - "!node_modules/recharts/**"
+  - "!node_modules/cytoscape*/**"
+  - "!node_modules/elkjs/**"
+  - "!node_modules/date-fns/**"
+  - "!node_modules/date-fns-jalali/**"
+  - "!node_modules/@lobehub/**"
+  - "!node_modules/@base-ui/**"
+  - "!node_modules/@splinetool/runtime/**"
+  - "!node_modules/prettier/**"
   # P5: do not ship managed harness platform binaries (~500MB+). Runtimes
   # install on demand via Settings → Harnesses (R2/npm tarball).
   - "!node_modules/@anthropic-ai/claude-agent-sdk-darwin-*/**"

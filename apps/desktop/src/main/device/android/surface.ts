@@ -96,6 +96,12 @@ export function createAndroidSurface(
 
       try {
         const connection = await manager.connection(deviceId)
+        // Reported before sending rather than after, because sending is where the
+        // signal dies: the write succeeds, the server refuses it, and `send` has no
+        // way to hear about that. The fault is only known once the server has tried
+        // and failed once, so the FIRST touch on such a device still vanishes
+        // silently — every one after it says why.
+        if (connection.controlFault) return { ok: false, error: connection.controlFault }
         const messages = encodeDeviceInput(input, connection.screen)
         if (messages.length === 0) return { ok: false, error: `Unsupported input: ${input.type}` }
         connection.send(messages)

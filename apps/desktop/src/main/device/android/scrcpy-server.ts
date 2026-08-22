@@ -96,6 +96,17 @@ export interface ScrcpyConnection {
   deviceName: string
   /** Current capture geometry. Changes when the device rotates. */
   readonly screen: { width: number; height: number }
+  /**
+   * Why this device is refusing everything sent on the control socket, if it is.
+   *
+   * Null on a device that takes input, which is nearly all of them. `send` cannot
+   * report a failure — it writes to a socket the server reads at its leisure, and a
+   * refusal happens on the far side, minutes of user confusion later. The server does
+   * say so in its log, so that is where this is read from, and it is the ONLY signal
+   * there is: a phone that will not accept an injected touch behaves exactly like a
+   * phone whose screen has nothing to tap.
+   */
+  readonly controlFault: string | null
   onMedia(listener: (packet: ScrcpyMediaPacket) => void): () => void
   /** Rotation, and the opening geometry. See `ScrcpySessionPacket`. */
   onSession(listener: (session: ScrcpySessionPacket) => void): () => void
@@ -137,9 +148,24 @@ export async function connectScrcpy(options: ScrcpyConnectionOptions): Promise<S
   let child: ChildProcess | null = null
   const sockets: Socket[] = []
   const mediaListeners = new Set<(packet: ScrcpyMediaPacket) => void>()
+  /**
+   * Media packets that arrived before anyone was listening.
+   *
+   * There is always a gap: this function does not hand the connection over until the
+   * opening session packet has arrived, and the config packet carrying the stream's
+   * parameter sets is written moments after — sometimes in the same TCP read as the
+   * preamble. Dropped, it leaves the caller with a decoder it can never configure and
+   * a picture that never appears, because scrcpy states the parameter sets exactly
+   * once per connection.
+   *
+   * Bounded by that same handover, which happens within a microtask of this function
+   * returning. Null once the first listener has drained it; live from then on.
+   */
+  let backlog: ScrcpyMediaPacket[] | null = []
   const sessionListeners = new Set<(session: ScrcpySessionPacket) => void>()
   const closedListeners = new Set<(reason: string) => void>()
   const screen = { width: 0, height: 0 }
+  let controlFault: string | null = null
   let closed = false
 
   const cleanup = async (reason: string) => {
@@ -157,6 +183,7 @@ export async function connectScrcpy(options: ScrcpyConnectionOptions): Promise<S
       const line = chunk.toString('utf8').trim()
       if (!line) return
       log.info('[scrcpy]', line)
+      controlFault ??= faultFromServerLog(line)
       options.onServerLog?.(line)
     }
     child.stdout?.on('data', watchLog)
@@ -170,17 +197,27 @@ export async function connectScrcpy(options: ScrcpyConnectionOptions): Promise<S
 
     const header = opened.header
     const parser = new ScrcpyPacketParser()
-    video.on('data', (chunk: Buffer) => {
+    const consume = (chunk: Buffer) => {
       for (const packet of parser.push(chunk)) {
         if (packet.kind === 'session') {
           screen.width = packet.width
           screen.height = packet.height
           for (const listener of sessionListeners) listener(packet)
+        } else if (backlog) {
+          backlog.push(packet)
         } else {
           for (const listener of mediaListeners) listener(packet)
         }
       }
-    })
+    }
+    // The bytes that shared a read with the preamble go through the parser first, in
+    // the order they arrived. See `readHeader` for why they come back by hand.
+    if (header.rest.length) consume(header.rest)
+    video.on('data', consume)
+    // Explicit, because `readHeader` paused the socket and attaching a `data` listener
+    // does NOT undo that: Node only auto-resumes when flowing is not already false, so
+    // a stream paused by hand stays paused and delivers nothing, forever, in silence.
+    video.resume()
     video.on('close', () => void cleanup('The video stream closed.'))
     video.on('error', (error) => void cleanup(`The video stream failed: ${error.message}`))
     control.on('error', (error) => log.warn('[scrcpy] control socket error', error))
@@ -209,7 +246,16 @@ export async function connectScrcpy(options: ScrcpyConnectionOptions): Promise<S
     return {
       deviceName: header.deviceName,
       get screen() { return screen },
-      onMedia: (listener) => { mediaListeners.add(listener); return () => mediaListeners.delete(listener) },
+      get controlFault() { return controlFault },
+      onMedia: (listener) => {
+        mediaListeners.add(listener)
+        if (backlog) {
+          const held = backlog
+          backlog = null
+          for (const packet of held) listener(packet)
+        }
+        return () => mediaListeners.delete(listener)
+      },
       onSession: (listener) => { sessionListeners.add(listener); return () => sessionListeners.delete(listener) },
       onClosed: (listener) => { closedListeners.add(listener); return () => closedListeners.delete(listener) },
       send: (messages) => {
@@ -224,6 +270,23 @@ export async function connectScrcpy(options: ScrcpyConnectionOptions): Promise<S
     await cleanup('Failed to connect.')
     throw error
   }
+}
+
+/**
+ * Read a server log line as a reason the control socket will never work.
+ *
+ * Only the one condition, because only one of them is silent AND recoverable by the
+ * user. A phone that denies `INJECT_EVENTS` to the shell user accepts the connection,
+ * accepts every control message written to it, and does nothing with any of them —
+ * so from the host the device simply looks unresponsive, and the person tapping it
+ * has no way to learn that a switch on the phone is what stands in the way. Xiaomi,
+ * Redmi and POCO ship with that switch off; the server's own advice names it.
+ */
+export function faultFromServerLog(line: string): string | null {
+  if (!line.includes('INJECT_EVENTS')) return null
+  return 'This phone is refusing injected input. Turn on "USB debugging (Security settings)" '
+    + 'in Developer options and restart it — Xiaomi, Redmi and POCO devices ship with that '
+    + 'switch off, and nothing can touch the screen until it is on.'
 }
 
 function startServer(
@@ -244,6 +307,19 @@ function startServer(
     'control=true',
     'tunnel_forward=true',
     'video_codec=h264',
+    // A keyframe every second, instead of whenever the encoder feels like one.
+    //
+    // Left to itself this phone went 26 SECONDS between them, and every path that
+    // recovers from a lost decoder waits for the next one: a viewer joining an open
+    // connection, a decoder rebuilt after a resize, and — the one that hurts — a
+    // renderer that fell behind and dropped to the next random-access point. Over
+    // wireless adb that last case fires roughly once a minute, and a 26-second freeze
+    // is indistinguishable from a dead preview.
+    //
+    // Asked as a codec option because scrcpy has no flag for it; the encoder treats
+    // it as a floor and lands nearer 2.5s on a static screen. Measured cost on this
+    // device: 414 -> 682 kbps, which is nothing next to what the link carries.
+    'video_codec_options=i-frame-interval:int=1',
     ...(options.maxSize ? [`max_size=${options.maxSize}`] : []),
     ...(options.maxFps ? [`max_fps=${options.maxFps}`] : []),
   ]
@@ -315,7 +391,11 @@ function waitForServerReady(child: ChildProcess, signal?: AbortSignal): Promise<
 async function openVideoSocket(
   port: number,
   onLog?: (line: string) => void,
-): Promise<{ socket: Socket; control: Socket; header: { deviceName: string; codec: string } }> {
+): Promise<{
+  socket: Socket
+  control: Socket
+  header: { deviceName: string; codec: string; rest: Buffer }
+}> {
   let lastError: unknown = null
   for (let attempt = 0; attempt < CONNECT_ATTEMPTS; attempt += 1) {
     const video = await openSocket(port, 'video').catch((error: unknown) => {
@@ -374,8 +454,22 @@ function openSocket(port: number, label: string, attempts = 1): Promise<Socket> 
   })
 }
 
-/** Read the preamble off the video socket before handing the rest to the parser. */
-function readHeader(socket: Socket): Promise<{ deviceName: string; codec: string }> {
+/**
+ * Read the preamble off the video socket, and hand back whatever came in behind it.
+ *
+ * The leftover is RETURNED rather than pushed back into the socket. `unshift` looks
+ * like the natural move and is a trap: a stream stays in flowing mode after its last
+ * `data` listener is removed, and `unshift` on a flowing stream with an empty buffer
+ * re-emits synchronously — to nobody. The bytes vanish. They are also the worst ones
+ * to lose, because the config packet carrying the stream's parameter sets is the first
+ * thing the server writes after the preamble, and scrcpy never sends it twice.
+ *
+ * Whether it happens at all is down to whether one TCP read carried both, which is a
+ * question about the transport rather than about this code — a local emulator socket
+ * usually delivers the preamble alone, a phone over wireless adb has every reason not
+ * to.
+ */
+function readHeader(socket: Socket): Promise<{ deviceName: string; codec: string; rest: Buffer }> {
   return new Promise((resolve, reject) => {
     let buffer = Buffer.alloc(0)
     // A socket that connects and then says nothing has to fail rather than hang: adb
@@ -390,11 +484,15 @@ function readHeader(socket: Socket): Promise<{ deviceName: string; codec: string
       if (!header) return
       clearTimeout(timer)
       socket.off('data', onData)
-      // Whatever came in past the preamble is already video; putting it back means the
-      // first frame is not silently eaten by the handshake.
-      const rest = buffer.subarray(header.consumed)
-      if (rest.length) socket.unshift(rest)
-      resolve({ deviceName: header.deviceName, codec: header.codec })
+      // Stopped, not merely unlistened: removing the last `data` listener does NOT
+      // take a stream out of flowing mode, and a flowing stream with nothing on it
+      // drops what it emits. The caller's listener resumes it.
+      socket.pause()
+      resolve({
+        deviceName: header.deviceName,
+        codec: header.codec,
+        rest: buffer.subarray(header.consumed),
+      })
     }
     socket.on('data', onData)
     socket.once('error', reject)

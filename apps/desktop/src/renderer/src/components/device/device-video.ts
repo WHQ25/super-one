@@ -5,6 +5,27 @@ export function preferredDevicePreviewMode(): IosSimulatorPreviewMode {
   return typeof VideoDecoder === 'undefined' ? 'native-framebuffer' : 'native-h264'
 }
 
+/**
+ * How deep the decoder queue may get before the picture is given up on.
+ *
+ * Tripping this is EXPENSIVE, which is the whole reason it is not tight: everything
+ * after it is dropped until a keyframe, and a keyframe is the stream's own business.
+ * So the threshold has to sit above ordinary burstiness rather than at the edge of it.
+ *
+ * A device on the far end of a cable delivers frames one at a time; a phone on
+ * wireless adb delivers them in clumps, because that is what a WiFi stall followed by
+ * a catch-up looks like. Measured on a real phone: 10 frames inside 50ms on an idle
+ * link, and 24 while a screencap was pulling 2MB over the same connection — against
+ * the 6 this used to allow. Every one of those clumps froze the preview until the
+ * next keyframe.
+ *
+ * Sixty is about two seconds of frames and roughly a tenth of a second of work:
+ * hardware H.264 at these sizes decodes in a millisecond or two, so the depth buys
+ * margin over that 24 without costing visible latency. What it still catches is a
+ * decoder that has genuinely stopped, which is the case worth abandoning frames over.
+ */
+const DECODE_QUEUE_LIMIT = 60
+
 export class DeviceFrameRenderer {
   private decoder: VideoDecoder | null = null
   private waitingForKeyframe = true
@@ -32,7 +53,7 @@ export class DeviceFrameRenderer {
     // closes itself, which a shadow copy of "did configure() succeed" cannot see.
     if (this.decoder?.state !== 'configured') return
     if (this.waitingForKeyframe && !frame.keyframe) return
-    if (this.decoder.decodeQueueSize > 6) {
+    if (this.decoder.decodeQueueSize > DECODE_QUEUE_LIMIT) {
       this.waitingForKeyframe = true
       return
     }

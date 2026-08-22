@@ -19,6 +19,7 @@ import { Adb, adbPath, emulatorPath, spawnTool, type AdbDevice } from './adb'
 import { Avd, parseEmuResponse, type AvdLaunch, type AvdSummary } from './avd'
 import { connectScrcpy, type ScrcpyConnection } from './scrcpy-server'
 import { orientationForRotation } from './uiautomator'
+import { AndroidVideoStream } from './video-frames'
 import {
   avdDeviceId,
   mergeAndroidDevices,
@@ -223,32 +224,21 @@ export class AndroidDeviceManager {
   /**
    * Stream this session's screen as decodable frames.
    *
-   * The translation is nearly nothing, and deliberately so: scrcpy delivers H.264 with
-   * a separate config packet, which is exactly the shape the simulator's helper
-   * produces, so the renderer decodes both through one path rather than growing a
-   * second one.
+   * Both platforms deliver H.264 with a separate config packet, so the renderer
+   * decodes them through one path — but the packets are not interchangeable, and
+   * `AndroidVideoStream` is what makes them so. scrcpy states the parameter sets
+   * exactly once and encodes at whatever profile the guest picked; the simulator
+   * repeats them on every keyframe and names its own codec. See that file.
    */
   subscribe(sessionId: string, listener: (frame: DeviceFrame) => void): () => void {
-    let sequence = 0
+    const video = new AndroidVideoStream()
     let disposed = false
     let stop: (() => void) | null = null
 
     void this.connection(sessionId).then((connection) => {
       if (disposed) return
       const offMedia = connection.onMedia((packet) => {
-        listener({
-          sessionId,
-          sequence: sequence++,
-          timestampMs: Date.now(),
-          timestampUs: packet.timestampUs,
-          mimeType: 'video/avc',
-          keyframe: packet.keyframe,
-          codecConfig: packet.config,
-          codec: 'avc1.640028',
-          codedWidth: connection.screen.width,
-          codedHeight: connection.screen.height,
-          data: packet.data,
-        })
+        listener(video.frame(packet, { sessionId, screen: connection.screen }))
       })
       // A rotation re-shapes the framebuffer rather than turning a fixed one, so the
       // decoder has to be told before the next frame arrives at a new size. Reported

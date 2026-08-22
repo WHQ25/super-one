@@ -4,6 +4,58 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.57.0-alpha] - 2026-08-23
+
+### Added
+
+- **Android devices** — emulators and physical phones now sit beside iOS simulators in one device picker, reached through adb. The agent observes and operates them with the same five `device_*` tools it uses for a simulator, and the panel streams live video with touch, text, hardware keys (including Android's Back and app-switch) and screenshots. Registration is gated on an SDK probe, so a machine without the Android SDK sees exactly what it saw before. Emulators SuperOne starts run windowless and are shut down with the app; a phone on someone's desk, or an emulator started from Android Studio, is left alone. Screen recording is refused by name rather than offered and failing.
+- **Mirrored iPhone as a third device provider** — macOS iPhone Mirroring, reached through the Computer Use helper that is already signed and already granted Accessibility and Screen Recording. Its screen is read by OCR, because accessibility genuinely cannot see into another app's window, and every capability it cannot honour — rotation, stream quality, hardware keyboard — is disabled rather than approximated.
+- Device picker: when nothing is available it now says what could be there and what stands in the way, resolved in main from a fresh probe at the moment you act on it rather than when the menu opened.
+- **A session can hold several devices at once** — a client build on one phone and a merchant build on another. Each Device tab is its own instance with its own picker, a new tab preselects a device that is running and free (a recently used one otherwise), and closing a tab releases only that tab's device.
+- `device_act`, `device_query`, `device_snapshot` and `device_wait_for` take an optional `device`. With one device in hand it can be omitted; with two it is required and the refusal names both — guessing there does not fail loudly, it taps the wrong app while the agent believes it is in the other one.
+- `device_launch` is replaced by a discovery/redeem pair: `device_list` browses a tiered catalog and `device_request_control` asks for one named device through the standard permission prompt. Measured against a 117-device machine, the first call costs 99 tokens where the old flat catalog cost ~3950; ids appear only where they are actionable, and devices this project has already driven are offered first.
+- Device agent: recognized on-screen text is now grafted into the app's own accessibility tree instead of replacing it, so a screen that names its chrome and leaves a hole in the middle — Safari with a page in it, a game canvas in a native shell — keeps its working Back button and gains a readable body. Those nodes carry `source: 'ocr'`, and `press` is refused on exactly them.
+- **The floating preview is one shared slot.** A device, a browser tab and Computer Use's native window could each put a picture-in-picture on screen and each decided alone. There is now one preview showing whatever the agent touched most recently; expanding it — or shrinking it back rather than dismissing it — pins it, so an agent that then touches something else cannot yank it away.
+- A bound device appears as a phone lying on the chat when the Activity panel is not up: movable, resizable from any of eight edges and corners, dismissable, and clickable to expand into an operable overlay.
+- Chat: `ReportFindings` gets its own tool block. Each finding reads as its rank, a dot separating CONFIRMED from PLAUSIBLE, the claim, and a file chip that opens the file at the line; expanding one adds the full summary and the failure scenario. It used to fall through to the generic row as a wrench and a truncated blob of JSON.
+- Codex: adopted app-server 149. A message sent while a turn is running now becomes a durable queued turn — start, edit or delete it from the queue — rather than steering the live one, MCP servers are supported, and the usage gauge reports thread tokens and estimated credits for the current thread.
+
+### Changed
+
+- **Mini-apps are now a Node host plus rendering WebViews.** `manifest.main` names a Node module that runs in a dedicated utility process; `activate(context)` registers tool handlers and owns all computation, and WebViews only render. Agent tool calls go straight to the host, so a tool no longer depends on a mounted panel — `waitForAppReady`, lazy panel opening and the whole ready gate are gone, along with `superone.fs` / `git` / `db` / `kv` / `peer` and the background worker shell. Apps that need data use Node directly, or `context.workspaceState` / `globalState`. `context.agent.*` (prompt, context card) and `context.host.*` (toast, revealInFolder, openExternal, clipboard) are Node-side, so a background app can reach the user with no panel open; anchored surfaces — tooltip, context menu, popover, drag — need a rect only the WebView has and stay in `superone.ui`. **Existing mini-apps have to be ported.**
+- Pinned Codex CLI moves to `0.149.0`.
+- Device ids now carry the provider that reaches them (`ios-sim:`, `android:`) rather than the platform they run. Bare udids and older `ios:` ids are normalised on read, so remembered devices and recents keep working.
+- The "+" menu collapses iOS Simulator and Android into one **Device** entry — both opened the same tab, whose picker already spans every platform.
+- Apple's Simulator.app is kept hidden while SuperOne owns a device it booted itself, including when `flutter run` / `expo run:ios` / Xcode relaunch it.
+- **The app bundle is about 20% smaller.** Third-party sourcemaps are no longer packaged — electron-builder includes `node_modules` implicitly, so every dependency's `.map` shipped too, 222 MB of it, and nothing in a packaged build reads them. Native packages built for the other CPU architecture are dropped as well, which the packaging step already did for the harness runtimes but not for the image and canvas libraries. Measured on macOS arm64: 1.0 GB to 792 MB.
+
+### Fixed
+
+- Packaged builds could not be produced at all: the mini-app refactor renamed the MiniApp Host entry module, but the electron-vite input kept the old name. Dev, tests and typecheck all bypass rollup's entry resolution, so nothing caught it.
+- Android over wireless adb: the preview froze for tens of seconds at a time. Not bandwidth — WiFi delivers a stall as a catch-up clump, which blew through the renderer's decode-queue guard, and tripping that guard drops every frame until a keyframe, which this encoder left 26.5 seconds apart. Both ends moved: a larger queue limit and a keyframe interval asked for explicitly. Measured on a Xiaomi 15 Pro.
+- Android input was refused and nothing said so on phones that deny the shell user `INJECT_EVENTS` — Xiaomi, Redmi and POCO ship that way until "USB debugging (Security settings)" is on. The control socket accepts every message and acts on none, so the refusal is now read from the server's own log and reported instead of returning ok.
+- A screen with no readable accessibility tree — anything playing video, where `uiautomator dump` never sees an idle UI — failed everything around it. `device_act` reads back after its batch has run, so a tap that had already landed came back as a tool error and the agent tapped again. Observation now degrades to pixels wherever the tree is a bonus and refuses only where the tree is the answer, and the refusal says UNSUPPORTED instead of sending the agent off restarting adb.
+- The Android preview never produced a first frame: scrcpy states the stream's parameter sets exactly once, so a decoder built from any later keyframe had no dimensions and silently emitted nothing. The parameter sets are held and stamped onto every keyframe, and the codec string is read off the stream's own SPS instead of hardcoded.
+- One Android connection now serves every viewer. A panel opening onto a stream the agent had already started used to attach a private decoder that never saw the config packet, and waited forever for a picture.
+- Switching a session to another device left the old connection in place, so the panel showed the previous phone and sent touches to it. Taking a device from another session now closes that session's connection too, and tells it what happened instead of leaving it on a stale frame still reading ready.
+- Switching devices left the previous device's picture on screen — indefinitely on iOS, whose helper is damage-driven and produces no frames at all on an idle simulator.
+- Typing Chinese, emoji or backspace into an Android device evaporated: the server reverse-maps raw text input through the virtual keyboard's KeyCharacterMap. Each string now travels the channel the guest can actually receive it on.
+- Real Android phones were labelled with a vendor part number instead of the name on the box, and an unanchored `car` pattern matched the `car` inside `nosdcard` — which is what `ro.build.characteristics` reads on a great many ordinary handsets, every one of which was filed under Android Auto.
+- The simulator preview flashed black for about half a second when moving between its Activity tab and the floating preview. Both surfaces now render into one persistent host layer, and the decoded picture is owned outside React, so a switch is a change of coordinates rather than a teardown.
+- Browser: CDP-driven automation left keyboard focus inside the guest page, so the user's next keystrokes went into the page instead of the app.
+- Grok: a wire tool name arriving on the first streaming chunk was painted as a generic Running chip — including tools that should stay hidden — and child-session deltas landed on the parent transcript.
+- Chat: a Grok `wait_for` kept shimmering under an Interrupted footer. Interrupt only flipped the message status, leaving in-flight tool rows streaming.
+- Sessions: `session_collab_send` / `session_collab_start` still resumed a peer whose worktree directory was gone, running the agent against the fallback project checkout.
+- iOS Simulator: Chinese could be started in the preview but never finished, and the first letter of every pinyin word landed on the device as a latin character. The composition is left alone until it ends, and printable characters come from the browser's own verdict that a keystroke was literal text. Option combinations and dead keys (é) reach the device as a side effect.
+- Chat: findings in a `ReportFindings` block used a fixed pixel size, so they ignored the chat zoom scale.
+- The Activity panel could shrink to 360 while the device group demanded 400, so dockview laid the group out oversized and clipped the right of the device.
+
+### Performance
+
+- Device routing asked each surface for its state and took the first one holding a device. On iOS that reading spawns `simctl list devices --json` — a quarter-second of talking to CoreSimulatorService — in front of every panel call, including one input per 8ms of a drag, so dragging a finger across the simulator queued ~125 subprocess spawns a second. Routing is now a map lookup.
+- `device_wait_for` re-observes every 200ms and each observation re-ran OCR — a few hundred milliseconds, a dozen times over, against identical pixels. Recognition is keyed on the frame hash.
+- Android settling reads the tree exactly once, on the frame that stopped moving, rather than sampling tree and pixels together: `uiautomator dump` costs 2.4-2.5s, so the iOS strategy would have been ~17 dumps and 40 seconds per snapshot.
+
 ## [0.56.0-alpha] - 2026-08-21
 
 ### Added

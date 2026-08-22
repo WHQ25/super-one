@@ -11,6 +11,22 @@ files:
   # which a packaged build does. Scoped to node_modules so enabling sourcemaps for
   # our own bundles stays a decision this line does not silently override.
   - "!node_modules/**/*.map"
+  # Package cruft: TypeScript sources, test suites, demos, docs. Anchored inside
+  # node_modules on purpose — a bare !**/test/** could hit a package that ships
+  # runtime code in a directory named test. Order is load-bearing (the matcher
+  # is last-match-wins, like .gitignore): the positive pattern re-includes type
+  # declarations that *.ts would otherwise drop, the directory exclusion after
+  # it strips declarations living inside test dirs anyway, and the renderer-only
+  # package negations further down get the final say for their packages, so this
+  # re-include cannot resurrect their .d.ts files. Verified: no main/preload
+  # runtime path resolves through a real .ts source — the only workspace package
+  # main needs (@superone/shared) is bundled inline by electron-vite.
+  - "!node_modules/**/*.{ts,mts,cts}"
+  - "node_modules/**/*.d.{ts,mts,cts}"
+  - "!node_modules/**/{test,tests,__tests__,demo,docs,example,examples}/**"
+  # sqlite3.c amalgamation + C++ sources — only needed to rebuild from source,
+  # never at runtime (the prebuilt .node is what loads).
+  - "!node_modules/better-sqlite3/{deps,src}/**"
   # Renderer-only packages. Vite inlines the renderer's dependencies into
   # out/renderer/assets at build time, so the node_modules copies below are dead
   # weight — verified zero imports from src/main and src/preload. NOT on this

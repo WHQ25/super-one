@@ -102,6 +102,106 @@ function cloneNamedHelperRuntimes(appOutDir, productFilename) {
   }
 }
 
+// Modules the app loads dynamically at runtime: spawned binaries, Cordis
+// plugins resolved by string name, optional native addons for ws, and the one
+// package src/main imports that looks renderer-only (shiki). No static import
+// edge exists for most of these, so a files: exclusion that drops one fails no
+// build and no test — it surfaces weeks later as a blank panel or a silently
+// degraded feature. Assert their presence right after packing instead.
+const MUST_SHIP_IN_ASAR = [
+  'node_modules/@musistudio/llms/package.json', // LLM proxy sidecar, forked on demand
+  'node_modules/@xterm/headless/package.json',
+  'node_modules/@xterm/addon-serialize/package.json',
+  'node_modules/@openai/codex/package.json', // launcher for the spawned codex binary
+  'node_modules/@cursor/sdk/package.json',
+  'node_modules/ws/package.json',
+  'node_modules/sharp/package.json', // dep of @deepseek-ai/dsh-attachment-local
+  'node_modules/shiki/package.json', // src/main/remote-highlighter.ts
+  'node_modules/@shikijs/langs/package.json',
+  'node_modules/@deepseek-ai/cordis/package.json',
+  'node_modules/@deepseek-ai/cordis-plugin-loader/package.json',
+  'node_modules/@deepseek-ai/dsh-attachment-local/package.json',
+]
+// The dsh harness is ~100 @deepseek-ai/* Cordis plugins, every one loaded by
+// string name. A glob that wipes the scope would pass the named checks above.
+const MIN_DSH_PACKAGE_COUNT = 90
+
+// Native modules must survive on disk in app.asar.unpacked — checked there
+// (not via the asar header) because the wrong-arch prune above deletes from
+// disk without rewriting the header.
+function mustShipUnpacked(osName, keepSuffix) {
+  const paths = [
+    'node_modules/better-sqlite3',
+    `node_modules/better-sqlite3/prebuilds/${keepSuffix}.node`,
+    'node_modules/node-pty',
+    'node_modules/utf-8-validate', // ws optional native deps
+    'node_modules/bufferutil',
+    `node_modules/@img/sharp-${keepSuffix}`,
+  ]
+  // Windows sharp bundles libvips inside sharp-win32-*; there is no separate
+  // libvips package to assert. @cursor/sdk publishes no win32-arm64 build.
+  if (osName !== 'win32') paths.push(`node_modules/@img/sharp-libvips-${keepSuffix}`)
+  if (keepSuffix !== 'win32-arm64') paths.push(`node_modules/@cursor/sdk-${keepSuffix}`)
+  return paths
+}
+
+function assertMustShipModules(asarPath, resourcesRoot, osName, keepSuffix) {
+  const tree = readAsarTree(asarPath)
+  const missing = []
+
+  for (const p of MUST_SHIP_IN_ASAR) {
+    if (!asarHasEntry(tree, p)) missing.push(`${p} (asar)`)
+  }
+
+  const dshDir = asarGetDir(tree, 'node_modules/@deepseek-ai')
+  const dshCount = dshDir ? Object.keys(dshDir.files || {}).length : 0
+  if (dshCount < MIN_DSH_PACKAGE_COUNT) {
+    missing.push(`node_modules/@deepseek-ai — ${dshCount} packages, expected >= ${MIN_DSH_PACKAGE_COUNT} (asar)`)
+  }
+
+  for (const p of mustShipUnpacked(osName, keepSuffix)) {
+    if (!existsSync(join(resourcesRoot, p))) missing.push(`${p} (app.asar.unpacked)`)
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `[afterPack] must-ship module check failed — the packaged app is missing:\n`
+      + missing.map((m) => `  - ${m}`).join('\n')
+      + `\nA files: exclusion in electron-builder.yml (or the wrong-arch prune above) `
+      + `removed something the app loads dynamically at runtime.`,
+    )
+  }
+  console.log(`[afterPack] must-ship check passed (${MUST_SHIP_IN_ASAR.length} asar + ${mustShipUnpacked(osName, keepSuffix).length} unpacked entries, ${dshCount} @deepseek-ai packages)`)
+}
+
+function readAsarTree(asarPath) {
+  const { readSync, openSync, closeSync } = require('node:fs')
+  const fd = openSync(asarPath, 'r')
+  try {
+    const head = Buffer.alloc(16)
+    readSync(fd, head, 0, 16, 0)
+    const headerSize = head.readUInt32LE(12)
+    const buf = Buffer.alloc(headerSize)
+    readSync(fd, buf, 0, headerSize, 16)
+    return JSON.parse(buf.toString('utf8'))
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function asarGetDir(tree, relPath) {
+  let node = tree
+  for (const seg of relPath.split('/')) {
+    node = node.files && node.files[seg]
+    if (!node) return null
+  }
+  return node
+}
+
+function asarHasEntry(tree, relPath) {
+  return asarGetDir(tree, relPath) !== null
+}
+
 const PRUNE_PARENTS = [
   'node_modules/@anthropic-ai',
   'node_modules/@openai',
@@ -187,6 +287,9 @@ module.exports = async function afterPack(context) {
   }
 
   console.log(`[afterPack] removed ${removedCount} wrong-arch packages, freed ${(totalFreed / 1024 / 1024).toFixed(1)} MB for ${osName}-${archName}`)
+
+  // resourcesRoot is <Resources>/app.asar.unpacked; the asar sits beside it.
+  assertMustShipModules(join(resourcesRoot, '..', 'app.asar'), resourcesRoot, osName, keepSuffix)
 }
 
 function dirSize(dir) {

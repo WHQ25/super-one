@@ -1,28 +1,60 @@
-import {
-  IOS_SIMULATOR_MAX_TOUCH_CONTACTS,
-  type IosSimulatorInput,
-} from '@superone/shared/ios-simulator'
-
 /**
  * Touch gestures are a shape traced over TIME, not an event.
  *
  * A tap can be one message because the guest only needs where it landed, but a
  * swipe, a long press and a pinch are all read from how the contacts moved between
  * frames -- iOS decides "flick" versus "drag" from the velocity at release, and
- * decides "long press" purely from how long nothing moved. So these compile down to
- * a timed series of contact updates rather than to a single input.
+ * decides "long press" purely from how long nothing moved. Android reads the same
+ * things off the same kind of series. So these compile down to a timed series of
+ * contact updates rather than to a single input.
+ *
+ * The series is platform-neutral: it says where the fingers are and when, and each
+ * backend translates a step into whatever its own transport speaks (a
+ * `IosSimulatorInput` for the simulator helper, an `INJECT_TOUCH_EVENT` for scrcpy).
+ * Keeping the timing here means both platforms share the part that was measured
+ * against real guests, rather than each re-deriving what counts as a flick.
  *
  * Kept as pure functions returning the series: the timing is the part worth testing,
  * and it is impossible to assert on if it is buried in an async send loop.
  */
 
-/** One message, plus how long to wait after it before sending the next. */
-export interface GestureStep {
-  input: IosSimulatorInput
-  delayMs: number
+/**
+ * Phases a synthesized gesture produces.
+ *
+ * Deliberately narrower than what a transport may accept — cancellation is not a
+ * phase any of these emit, it is a separate message a backend sends when a gesture
+ * is interrupted.
+ */
+export type TouchPhase = 'began' | 'moved' | 'ended'
+
+export interface TouchContact {
+  id: number
+  xRatio: number
+  yRatio: number
+  phase: TouchPhase
 }
 
-/** Roughly a frame at 60Hz. Finer than this and the helper's queue coalesces it away. */
+/**
+ * One step of a gesture, plus how long to wait after it before sending the next.
+ *
+ * `tap` stays its own kind rather than expanding into a began/ended pair: a backend
+ * whose transport has a real tap message should send that one message, and turning
+ * every tap into a two-message series here would take that choice away from it.
+ */
+export type TouchStep =
+  | { kind: 'tap'; xRatio: number; yRatio: number; delayMs: number }
+  | { kind: 'contacts'; contacts: TouchContact[]; delayMs: number }
+
+/**
+ * How many fingers a gesture may use.
+ *
+ * Two, which both platforms clear: the simulator's HID bridge carries two contacts,
+ * and scrcpy addresses pointers by a 64-bit id with no practical ceiling. Nothing
+ * here needs a third.
+ */
+const MAX_TOUCH_CONTACTS = 2
+
+/** Roughly a frame at 60Hz. Finer than this and the transport's queue coalesces it away. */
 const STEP_MS = 16
 
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1)
@@ -63,15 +95,15 @@ export function synthesizeLongPress(
   xRatio: number,
   yRatio: number,
   holdMs: number = LONG_PRESS_MS,
-): GestureStep[] {
+): TouchStep[] {
   const x = clamp01(xRatio)
   const y = clamp01(yRatio)
   return [
-    { input: { type: 'touch.update', contacts: [{ id: 1, xRatio: x, yRatio: y, phase: 'began' }] }, delayMs: holdMs },
+    { kind: 'contacts', contacts: [{ id: 1, xRatio: x, yRatio: y, phase: 'began' }], delayMs: holdMs },
     // A stationary 'moved' before release: without it a guest that saw only
     // began/ended can treat the whole thing as a plain tap.
-    { input: { type: 'touch.update', contacts: [{ id: 1, xRatio: x, yRatio: y, phase: 'moved' }] }, delayMs: STEP_MS },
-    { input: { type: 'touch.update', contacts: [{ id: 1, xRatio: x, yRatio: y, phase: 'ended' }] }, delayMs: 0 },
+    { kind: 'contacts', contacts: [{ id: 1, xRatio: x, yRatio: y, phase: 'moved' }], delayMs: STEP_MS },
+    { kind: 'contacts', contacts: [{ id: 1, xRatio: x, yRatio: y, phase: 'ended' }], delayMs: 0 },
   ]
 }
 
@@ -81,19 +113,19 @@ export function synthesizeLongPress(
  * The gap has to clear the guest's own double-tap window (~300ms at the far end)
  * with room to spare, but stay short enough that a slow queue does not split them.
  */
-export function synthesizeDoubleTap(xRatio: number, yRatio: number): GestureStep[] {
+export function synthesizeDoubleTap(xRatio: number, yRatio: number): TouchStep[] {
   const x = clamp01(xRatio)
   const y = clamp01(yRatio)
   return [
-    { input: { type: 'tap', xRatio: x, yRatio: y }, delayMs: 120 },
-    { input: { type: 'tap', xRatio: x, yRatio: y }, delayMs: 0 },
+    { kind: 'tap', xRatio: x, yRatio: y, delayMs: 120 },
+    { kind: 'tap', xRatio: x, yRatio: y, delayMs: 0 },
   ]
 }
 
 /**
  * A one-finger drag from one point to another.
  *
- * Sent as explicit contact updates rather than through the helper's own `drag`
+ * Sent as explicit contact updates rather than through a transport's own `drag`
  * because the caller has to be able to choose the duration: that single number is
  * what separates a flick from a drag, and it is the difference between a list that
  * coasts to a new position and one that lands where it was released.
@@ -104,7 +136,7 @@ export function synthesizeSwipe(
   toXRatio: number,
   toYRatio: number,
   durationMs: number = SWIPE_MS,
-): GestureStep[] {
+): TouchStep[] {
   const x0 = clamp01(fromXRatio)
   const y0 = clamp01(fromYRatio)
   const x1 = clamp01(toXRatio)
@@ -114,19 +146,17 @@ export function synthesizeSwipe(
 
   return progresses.map((progress, index) => {
     const last = index === progresses.length - 1
-    const phase = index === 0 ? 'began' : last ? 'ended' : 'moved'
+    const phase: TouchPhase = index === 0 ? 'began' : last ? 'ended' : 'moved'
     return {
-      input: {
-        type: 'touch.update',
-        contacts: [{
-          id: 1,
-          xRatio: interpolate(x0, x1, progress),
-          yRatio: interpolate(y0, y1, progress),
-          phase,
-        }],
-      },
+      kind: 'contacts',
+      contacts: [{
+        id: 1,
+        xRatio: interpolate(x0, x1, progress),
+        yRatio: interpolate(y0, y1, progress),
+        phase,
+      }],
       delayMs: last ? 0 : perStep,
-    } satisfies GestureStep
+    } satisfies TouchStep
   })
 }
 
@@ -143,8 +173,8 @@ export function synthesizePinch(
   centerYRatio: number,
   scale: number,
   options: { startSpanRatio?: number; durationMs?: number } = {},
-): GestureStep[] {
-  if (IOS_SIMULATOR_MAX_TOUCH_CONTACTS < 2) {
+): TouchStep[] {
+  if (MAX_TOUCH_CONTACTS < 2) {
     throw new Error('Pinch needs two touch contacts.')
   }
   const cx = clamp01(centerXRatio)
@@ -159,22 +189,20 @@ export function synthesizePinch(
 
   return progresses.map((progress, index) => {
     const last = index === progresses.length - 1
-    const phase = index === 0 ? 'began' : last ? 'ended' : 'moved'
+    const phase: TouchPhase = index === 0 ? 'began' : last ? 'ended' : 'moved'
     const half = interpolate(startSpan, endSpan, progress) / 2
     return {
-      input: {
-        type: 'touch.update',
-        contacts: [
-          { id: 1, xRatio: clamp01(cx - half), yRatio: cy, phase },
-          { id: 2, xRatio: clamp01(cx + half), yRatio: cy, phase },
-        ],
-      },
+      kind: 'contacts',
+      contacts: [
+        { id: 1, xRatio: clamp01(cx - half), yRatio: cy, phase },
+        { id: 2, xRatio: clamp01(cx + half), yRatio: cy, phase },
+      ],
       delayMs: last ? 0 : perStep,
-    } satisfies GestureStep
+    } satisfies TouchStep
   })
 }
 
 /** Total wall-clock a series will take, for timeout budgeting. */
-export function gestureDurationMs(steps: readonly GestureStep[]): number {
+export function gestureDurationMs(steps: readonly TouchStep[]): number {
   return steps.reduce((total, step) => total + step.delayMs, 0)
 }

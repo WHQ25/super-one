@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import type { IosSimulatorTouchContact } from '@superone/shared/ios-simulator'
 import {
   gestureDurationMs,
   LONG_PRESS_MS,
@@ -7,16 +6,16 @@ import {
   synthesizeLongPress,
   synthesizePinch,
   synthesizeSwipe,
-  type GestureStep,
+  type TouchContact,
+  type TouchStep,
 } from './gesture-synth'
 
-function contacts(step: GestureStep): IosSimulatorTouchContact[] {
-  const input = step.input
-  if (input.type !== 'touch.update') throw new Error(`expected touch.update, got ${input.type}`)
-  return input.contacts
+function contacts(step: TouchStep): TouchContact[] {
+  if (step.kind !== 'contacts') throw new Error(`expected contacts, got ${step.kind}`)
+  return step.contacts
 }
 
-function phases(steps: GestureStep[]): string[] {
+function phases(steps: TouchStep[]): string[] {
   return steps.map((step) => contacts(step)[0]!.phase)
 }
 
@@ -85,7 +84,7 @@ describe('synthesizeSwipe', () => {
 describe('synthesizeDoubleTap', () => {
   it('taps twice within the guest double-tap window', () => {
     const steps = synthesizeDoubleTap(0.4, 0.6)
-    expect(steps.map((step) => step.input.type)).toEqual(['tap', 'tap'])
+    expect(steps.map((step) => step.kind)).toEqual(['tap', 'tap'])
     expect(gestureDurationMs(steps)).toBeLessThan(300)
   })
 })
@@ -101,7 +100,7 @@ describe('synthesizePinch', () => {
 
   it('narrows the separation when pinching in', () => {
     const steps = synthesizePinch(0.5, 0.5, 0.5)
-    const span = (step: GestureStep) => {
+    const span = (step: TouchStep) => {
       const [a, b] = contacts(step)
       return Math.abs(b!.xRatio - a!.xRatio)
     }
@@ -110,7 +109,7 @@ describe('synthesizePinch', () => {
 
   it('widens the separation when spreading out', () => {
     const steps = synthesizePinch(0.5, 0.5, 2)
-    const span = (step: GestureStep) => {
+    const span = (step: TouchStep) => {
       const [a, b] = contacts(step)
       return Math.abs(b!.xRatio - a!.xRatio)
     }

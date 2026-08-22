@@ -13,7 +13,7 @@ import { IOS_SIMULATOR_PROTOCOL_VERSION } from '@superone/shared/ios-simulator'
 import { trace } from '../agent/event-trace'
 import type { IosSimulatorAccessibilityDump, IosSimulatorRawNode } from './a11y-tree'
 import { ensureIosSimulatorHelper } from './helper-build'
-import { LatestValueQueue } from './latest-value-queue'
+import { LatestValueQueue } from '../device/latest-value-queue'
 
 const MAX_CONTROL_LINE_BYTES = 1024 * 1024
 const MAX_FRAME_BYTES = 32 * 1024 * 1024

@@ -78,3 +78,17 @@ export interface DeviceUiSnapshot {
   /** Set when the node budget cut the tree short. */
   truncated?: boolean
 }
+
+/**
+ * Whether the device is lying on its side.
+ *
+ * The only part of an orientation that platform-neutral code has any business
+ * asking. Anything finer — how far the picture has to turn to read upright, which
+ * way the top edge points — is platform-specific: iOS names its landscape pair
+ * after where the home button lands (so `landscape-left` is a turn to the RIGHT),
+ * while Android counts `Surface.ROTATION_*` the other way. Code that needs degrees
+ * must ask its own backend, not this.
+ */
+export function isDeviceLandscape(orientation: DeviceOrientation): boolean {
+  return orientation === 'landscape-left' || orientation === 'landscape-right'
+}

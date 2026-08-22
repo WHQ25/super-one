@@ -1,9 +1,9 @@
 import type { DeviceOrientation, DeviceUiNode } from '@superone/shared/device-agent'
-import { containsRecognizedText, fingerprintTree, withoutRecognizedText } from '../ios-simulator/a11y-tree'
+import { containsRecognizedText, fingerprintTree, withoutRecognizedText } from '../device/tree'
 import {
   encodeObservationFingerprint,
   observationFingerprintsMatch,
-} from '../ios-simulator/observation-fingerprint'
+} from '../device/observation-fingerprint'
 import {
   describeCondition,
   evaluateCondition,

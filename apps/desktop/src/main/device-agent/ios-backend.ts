@@ -6,9 +6,9 @@ import {
   hasSemanticGap,
   hasUsableSemantics,
   mergeRecognizedText,
-  normalizeAccessibilityTree,
   type NormalizedAccessibilityTree,
-} from '../ios-simulator/a11y-tree'
+} from '../device/tree'
+import { normalizeAccessibilityTree } from '../ios-simulator/a11y-tree'
 import { IOS_SIMULATOR_ROTATION_DEGREES } from '@superone/shared/ios-simulator'
 import {
   gestureDurationMs,
@@ -16,14 +16,14 @@ import {
   synthesizeLongPress,
   synthesizePinch,
   synthesizeSwipe,
-  type GestureStep,
-} from '../ios-simulator/gesture-synth'
+  type TouchStep,
+} from '../device/gesture-synth'
 import {
   encodeObservationFingerprint,
   observationFingerprintsMatch,
-} from '../ios-simulator/observation-fingerprint'
+} from '../device/observation-fingerprint'
 import { ocrToTree } from '../ios-simulator/ocr-tree'
-import { settle } from '../ios-simulator/settle'
+import { settle } from '../device/settle'
 import type { IosSimulatorManager } from '../ios-simulator/ios-simulator-manager'
 import {
   DeviceAgentError,
@@ -36,6 +36,21 @@ import {
   type ResolvedAction,
   type TouchDeviceBackend,
 } from './types'
+
+/**
+ * One step of a synthesized gesture, in the vocabulary the helper speaks.
+ *
+ * The synthesizer decides WHERE the fingers are and WHEN, which is the part measured
+ * against real guests and therefore shared; this decides how to say it down the wire,
+ * which is the part that differs per transport. A `tap` stays one message because the
+ * helper has a real tap for it — expanding it into a began/ended pair here would send
+ * two messages where the guest expects one.
+ */
+function toIosSimulatorInput(step: TouchStep): IosSimulatorInput {
+  return step.kind === 'tap'
+    ? { type: 'tap', xRatio: step.xRatio, yRatio: step.yRatio }
+    : { type: 'touch.update', contacts: step.contacts }
+}
 
 /** What one observation needs to address its own elements on the helper. */
 interface ObservationAddressing {
@@ -317,11 +332,11 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
    * gaps between contact updates, so sending the series back to back would turn
    * every swipe into a teleport and every long press into a tap.
    */
-  private async runGesture(steps: readonly GestureStep[], signal?: AbortSignal): Promise<void> {
+  private async runGesture(steps: readonly TouchStep[], signal?: AbortSignal): Promise<void> {
     try {
       for (const step of steps) {
         throwIfDeviceOperationAborted(signal)
-        await this.send(step.input)
+        await this.send(toIosSimulatorInput(step))
         if (step.delayMs > 0) await waitForDeviceDelay(step.delayMs, signal)
       }
     } catch (error) {
@@ -333,7 +348,7 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
   }
 
   /** Wall-clock a gesture will take, so callers can budget a timeout around it. */
-  static gestureBudgetMs(steps: readonly GestureStep[]): number {
+  static gestureBudgetMs(steps: readonly TouchStep[]): number {
     return gestureDurationMs(steps)
   }
 }

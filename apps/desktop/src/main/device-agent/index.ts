@@ -4,7 +4,9 @@ import { getIosSimulatorManager } from '../ios-simulator'
 import { DeviceAgentSession, errorReply, reply, type DeviceToolReply } from './execute'
 import { IosSimulatorBackend } from './ios-backend'
 import { requestDeviceControl } from './control'
-import { listDeviceCatalog, type DeviceCatalogPort } from './device-catalog'
+import { listDeviceCatalog } from './device-catalog'
+import type { DevicePlatformPort } from '../device/platform-port'
+import { IosSimulatorDevicePort } from '../ios-simulator/device-port'
 import { createDeviceRecents, type DeviceRecentsPort } from './device-recents'
 import type { DeviceAgentToolName } from './tools'
 import type { TouchDeviceBackend } from './types'
@@ -30,11 +32,18 @@ export function setDeviceAgentBackendFactory(
   backendFactory = factory
 }
 
-/** The manager, as the catalog and control flows see it. Swapped by tests alongside the backend. */
-let catalogPortFactory: () => DeviceCatalogPort = () => getIosSimulatorManager(app.getPath('userData'))
+/**
+ * Every platform whose devices this session may be offered, in the order the catalog
+ * lists them. Swapped by tests alongside the backend.
+ */
+let platformPortsFactory: () => DevicePlatformPort[] = () => [
+  new IosSimulatorDevicePort(getIosSimulatorManager(app.getPath('userData'))),
+]
 
-export function setDeviceAgentCatalogPortFactory(factory: () => DeviceCatalogPort): void {
-  catalogPortFactory = factory
+export function setDeviceAgentPlatformPortsFactory(
+  factory: () => DevicePlatformPort[],
+): void {
+  platformPortsFactory = factory
 }
 
 /** Project-scoped device history, swapped by tests so no database is needed. */
@@ -89,7 +98,7 @@ export async function executeDeviceAgentTool(
       const { kind, model } = args as { kind?: string; model?: string }
       return reply(await listDeviceCatalog({
         sessionId,
-        port: catalogPortFactory(),
+        ports: platformPortsFactory(),
         recents: recentsFactory(sessionId),
         request: { ...(kind ? { kind } : {}), ...(model ? { model } : {}) },
       }))
@@ -98,7 +107,7 @@ export async function executeDeviceAgentTool(
       const { description, device } = args as { description?: string; device?: string }
       return reply(await requestDeviceControl({
         sessionId,
-        port: catalogPortFactory(),
+        ports: platformPortsFactory(),
         emitHostEvent: emitHostEventFor(sessionId),
         recents: recentsFactory(sessionId),
         request: {

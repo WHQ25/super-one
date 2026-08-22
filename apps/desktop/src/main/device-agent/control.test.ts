@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import type { IosSimulatorDevice, IosSimulatorSessionState } from '@superone/shared/ios-simulator'
+import type { IosSimulatorDevice } from '@superone/shared/ios-simulator'
+import type { DevicePlatformPort } from '../device/platform-port'
+import {
+  IosSimulatorDevicePort,
+  type IosSimulatorCatalogSource,
+} from '../ios-simulator/device-port'
 import { clearDeviceControlConfirmsForTests, resolveDeviceControlConfirm } from './control-confirm'
 import { requestDeviceControl } from './control'
 import type { DeviceRecentsPort } from './device-recents'
-import type { DeviceCatalogPort } from './device-catalog'
 import { DeviceAgentError } from './types'
 
 function device(overrides: Partial<IosSimulatorDevice> & { udid: string; name: string }): IosSimulatorDevice {
@@ -19,34 +23,36 @@ function device(overrides: Partial<IosSimulatorDevice> & { udid: string; name: s
   }
 }
 
-function readyState(sessionId: string, bound: IosSimulatorDevice | null): IosSimulatorSessionState {
-  return {
-    sessionId,
-    device: bound,
-    phase: bound ? 'ready' : 'idle',
-    previewMode: 'h264',
-    interactive: true,
-    orientation: 'portrait',
-    hardwareKeyboardConnected: true,
-  } as IosSimulatorSessionState
-}
-
-class FakePort implements DeviceCatalogPort {
+/**
+ * The manager, wrapped in the REAL iOS port.
+ *
+ * Faking the source rather than the neutral port means these also cover the
+ * descriptor mapping and the `ios:` prefix — `booted` below records the BARE udid,
+ * so it fails loudly if the prefix ever reaches the manager.
+ */
+class FakePort implements IosSimulatorCatalogSource {
   readonly booted: Array<{ sessionId: string; udid: string }> = []
   bound: IosSimulatorDevice | null = null
+  readonly ports: DevicePlatformPort[]
 
-  constructor(private readonly catalog: IosSimulatorDevice[]) {}
-
-  async listDevices(): Promise<IosSimulatorDevice[]> { return this.catalog }
-  async getSessionState(sessionId: string): Promise<IosSimulatorSessionState> {
-    return readyState(sessionId, this.bound)
+  constructor(private readonly catalog: IosSimulatorDevice[]) {
+    this.ports = [new IosSimulatorDevicePort(this)]
   }
 
-  async boot(sessionId: string, udid: string): Promise<IosSimulatorSessionState> {
+  async listDevices(): Promise<IosSimulatorDevice[]> { return this.catalog }
+
+  async getSessionState(): Promise<{ phase: string; device: IosSimulatorDevice | null }> {
+    return { phase: this.bound ? 'ready' : 'idle', device: this.bound }
+  }
+
+  async boot(
+    sessionId: string,
+    udid: string,
+  ): Promise<{ phase: string; device: IosSimulatorDevice | null }> {
     this.booted.push({ sessionId, udid })
     const chosen = this.catalog.find((candidate) => candidate.udid === udid) ?? null
     this.bound = chosen
-    return readyState(sessionId, chosen)
+    return { phase: chosen ? 'ready' : 'idle', device: chosen }
   }
 }
 
@@ -80,7 +86,7 @@ describe('requestDeviceControl', () => {
 
     const result = await requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: (event) => {
         if (event.type === 'permission_request') prompted = event.request.input as Record<string, unknown>
         host.emit(event)
@@ -103,7 +109,7 @@ describe('requestDeviceControl', () => {
 
     await requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: host.emit,
       request: { device: '17 pro max' },
     })
@@ -119,7 +125,7 @@ describe('requestDeviceControl', () => {
 
     await requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: (event) => {
         if (event.type === 'permission_request') {
           prompted = event.request.input as Record<string, unknown>
@@ -143,7 +149,7 @@ describe('requestDeviceControl', () => {
 
     await requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: (event) => {
         if (event.type === 'permission_request') message = event.request.message
         host.emit(event)
@@ -162,7 +168,7 @@ describe('requestDeviceControl', () => {
     const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
 
     await requestDeviceControl({
-      sessionId: 's1', port, emitHostEvent: host.emit, request: { device: 'cold' },
+      sessionId: 's1', ports: port.ports, emitHostEvent: host.emit, request: { device: 'cold' },
     })
 
     // Handed the catalog, rather than left to read it again.
@@ -178,17 +184,17 @@ describe('requestDeviceControl', () => {
     const accepting = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
 
     await requestDeviceControl({
-      sessionId: 's1', port, recents, emitHostEvent: accepting.emit, request: { device: 'cold' },
+      sessionId: 's1', ports: port.ports, recents, emitHostEvent: accepting.emit, request: { device: 'cold' },
     })
-    expect(remembered).toEqual(['cold'])
+    expect(remembered).toEqual(['ios:cold'])
 
     // A separate machine state, so this is a first request rather than a re-grant.
     const refused = new FakePort([device({ udid: 'other', name: 'iPad Pro 13-inch' })])
     const declining = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'decline'))
     await expect(requestDeviceControl({
-      sessionId: 's2', port: refused, recents, emitHostEvent: declining.emit, request: { device: 'other' },
+      sessionId: 's2', ports: refused.ports, recents, emitHostEvent: declining.emit, request: { device: 'other' },
     })).rejects.toThrow()
-    expect(remembered).toEqual(['cold'])
+    expect(remembered).toEqual(['ios:cold'])
   })
 
   it('returns the controlled device without prompting again', async () => {
@@ -199,7 +205,7 @@ describe('requestDeviceControl', () => {
 
     const result = await requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: emit,
       request: { device: 'warm' },
     })
@@ -217,7 +223,7 @@ describe('requestDeviceControl', () => {
 
     await requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: host.emit,
       request: { device: 'iPad Pro 13-inch' },
     })
@@ -234,7 +240,7 @@ describe('requestDeviceControl', () => {
     const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
 
     const result = await requestDeviceControl({
-      sessionId: 's1', port, emitHostEvent: host.emit, request: { device: 'a' },
+      sessionId: 's1', ports: port.ports, emitHostEvent: host.emit, request: { device: 'a' },
     })
 
     const note = String(result.note)
@@ -252,7 +258,7 @@ describe('requestDeviceControl', () => {
 
     await expect(requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: emit,
       request: { device: 'Pixel 9' },
     })).rejects.toThrow(/device_list/)
@@ -265,7 +271,7 @@ describe('requestDeviceControl', () => {
 
     await expect(requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: emit,
       request: { device: 'x' },
     })).rejects.toBeInstanceOf(DeviceAgentError)
@@ -283,7 +289,7 @@ describe('requestDeviceControl', () => {
 
     await expect(requestDeviceControl({
       sessionId: 's1',
-      port,
+      ports: port.ports,
       emitHostEvent: host.emit,
       request: { device: 'a' },
     })).rejects.toThrow(/Use the iPad instead/)

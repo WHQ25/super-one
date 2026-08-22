@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { IosSimulatorDevice, IosSimulatorSessionState } from '@superone/shared/ios-simulator'
+import type { IosSimulatorDevice } from '@superone/shared/ios-simulator'
 import {
   listDeviceCatalog,
-  type DeviceCatalogPort,
   type DeviceEntry,
   type DeviceKindSummary,
   type DeviceModelSummary,
 } from './device-catalog'
+import {
+  IosSimulatorDevicePort,
+  type IosSimulatorCatalogSource,
+} from '../ios-simulator/device-port'
 import type { DeviceRecentsPort } from './device-recents'
 
 function device(overrides: Partial<IosSimulatorDevice> & { udid: string; name: string }): IosSimulatorDevice {
@@ -31,22 +34,26 @@ function onRuntime(base: IosSimulatorDevice, version: string, udid: string): Ios
   }
 }
 
-function port(catalog: IosSimulatorDevice[], bound: IosSimulatorDevice | null = null): DeviceCatalogPort {
+/**
+ * The manager as the iOS port sees it. Wrapped in the REAL port rather than faking
+ * the neutral one, so these also cover the classification that turns a simulator into
+ * a DeviceDescriptor -- which is where the tiers get their kind and model from.
+ */
+function source(
+  catalog: IosSimulatorDevice[],
+  bound: IosSimulatorDevice | null = null,
+): IosSimulatorCatalogSource {
   return {
     async listDevices() { return catalog },
-    async getSessionState(sessionId) {
-      return {
-        sessionId,
-        device: bound,
-        phase: bound ? 'ready' : 'idle',
-        previewMode: 'h264',
-        interactive: true,
-        orientation: 'portrait',
-        hardwareKeyboardConnected: true,
-      } as IosSimulatorSessionState
+    async getSessionState() {
+      return { phase: bound ? 'ready' : 'idle', device: bound }
     },
     async boot() { throw new Error('not used') },
   }
+}
+
+function ports(catalog: IosSimulatorDevice[], bound: IosSimulatorDevice | null = null) {
+  return [new IosSimulatorDevicePort(source(catalog, bound))]
 }
 
 function recents(udids: string[]): DeviceRecentsPort {
@@ -69,12 +76,12 @@ describe('listDeviceCatalog overview', () => {
     catalog[0]!.booted = true
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port(catalog),
+      ports: ports(catalog),
       recents: recents(['iPad Pro 13-inch-18.0']),
     })
 
-    expect((result.running as DeviceEntry[]).map((entry) => entry.id)).toEqual(['iPhone 17-26.4'])
-    expect((result.recent as DeviceEntry[]).map((entry) => entry.id)).toEqual(['iPad Pro 13-inch-18.0'])
+    expect((result.running as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios:iPhone 17-26.4'])
+    expect((result.recent as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios:iPad Pro 13-inch-18.0'])
     expect(result.total).toBe(9)
     expect(result.groups).toBeUndefined()
   })
@@ -82,7 +89,7 @@ describe('listDeviceCatalog overview', () => {
   it('counts models per kind rather than listing the cartesian product', async () => {
     const kinds = (await listDeviceCatalog({
       sessionId: 's1',
-      port: port(fullMatrix()),
+      ports: ports(fullMatrix()),
     })).kinds as DeviceKindSummary[]
 
     expect(kinds).toEqual([
@@ -96,40 +103,40 @@ describe('listDeviceCatalog overview', () => {
     catalog[0]!.booted = true
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port(catalog),
+      ports: ports(catalog),
       // The running one, plus a udid that no longer exists on this machine.
       recents: recents(['iPhone 17-26.4', 'deleted-udid']),
     })
 
     expect(result.recent).toBeUndefined()
-    expect((result.running as DeviceEntry[]).map((entry) => entry.id)).toEqual(['iPhone 17-26.4'])
+    expect((result.running as DeviceEntry[]).map((entry) => entry.id)).toEqual(['ios:iPhone 17-26.4'])
   })
 
   it('separates a device another session holds from the one this session controls', async () => {
     const mine = device({ udid: 'mine', name: 'iPhone 16', booted: true, boundSessionId: 's1' })
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port([
+      ports: ports([
         mine,
         device({ udid: 'theirs', name: 'iPad Pro 13-inch', booted: true, boundSessionId: 's2' }),
       ], mine),
     })
 
     const byId = new Map((result.running as DeviceEntry[]).map((entry) => [entry.id, entry]))
-    expect(byId.get('mine')?.controlled).toBe(true)
-    expect(byId.get('mine')?.busy).toBeUndefined()
-    expect(byId.get('theirs')?.busy).toBe(true)
-    expect(byId.get('theirs')?.controlled).toBeUndefined()
-    expect(result.controlled).toMatchObject({ id: 'mine' })
+    expect(byId.get('ios:mine')?.controlled).toBe(true)
+    expect(byId.get('ios:mine')?.busy).toBeUndefined()
+    expect(byId.get('ios:theirs')?.busy).toBe(true)
+    expect(byId.get('ios:theirs')?.controlled).toBeUndefined()
+    expect(result.controlled).toMatchObject({ id: 'ios:mine' })
   })
 
   it('reads the session state from the catalog it already listed', async () => {
     // `getSessionState` spawns `simctl list devices --json` of its own when it is not
     // handed one, so listing in parallel with it paid for the same process twice.
-    const catalog = port(fullMatrix())
-    const getSessionState = vi.spyOn(catalog, 'getSessionState')
+    const backing = source(fullMatrix())
+    const getSessionState = vi.spyOn(backing, 'getSessionState')
 
-    await listDeviceCatalog({ sessionId: 's1', port: catalog })
+    await listDeviceCatalog({ sessionId: 's1', ports: [new IosSimulatorDevicePort(backing)] })
 
     expect(getSessionState).toHaveBeenCalledWith('s1', expect.arrayContaining([
       expect.objectContaining({ udid: 'iPhone 17-26.4' }),
@@ -139,7 +146,7 @@ describe('listDeviceCatalog overview', () => {
   it('hides devices whose runtime is not installed', async () => {
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port([device({ udid: 'x', name: 'iPhone 16', available: false })]),
+      ports: ports([device({ udid: 'x', name: 'iPhone 16', available: false })]),
     })
 
     expect(result.kinds).toEqual([])
@@ -150,7 +157,7 @@ describe('listDeviceCatalog overview', () => {
   it('names the follow-up tool when nothing is controlled yet', async () => {
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port([device({ udid: 'a', name: 'iPhone 16' })]),
+      ports: ports([device({ udid: 'a', name: 'iPhone 16' })]),
     })
 
     expect(result.controlled).toBeNull()
@@ -162,7 +169,7 @@ describe('listDeviceCatalog kind tier', () => {
   it('collapses runtimes into one row per model, newest named', async () => {
     const models = (await listDeviceCatalog({
       sessionId: 's1',
-      port: port(fullMatrix()),
+      ports: ports(fullMatrix()),
       request: { kind: 'iphone' },
     })).models as DeviceModelSummary[]
 
@@ -177,7 +184,7 @@ describe('listDeviceCatalog kind tier', () => {
     catalog[1]!.booted = true
     const models = (await listDeviceCatalog({
       sessionId: 's1',
-      port: port(catalog),
+      ports: ports(catalog),
       request: { kind: 'iPhone' },
     })).models as DeviceModelSummary[]
 
@@ -187,7 +194,7 @@ describe('listDeviceCatalog kind tier', () => {
   it('sends an unknown kind back to the overview instead of guessing', async () => {
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port(fullMatrix()),
+      ports: ports(fullMatrix()),
       request: { kind: 'android' },
     })
 
@@ -200,7 +207,7 @@ describe('listDeviceCatalog model tier', () => {
   it('hands out one id per runtime, newest first', async () => {
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port(fullMatrix()),
+      ports: ports(fullMatrix()),
       request: { model: 'iphone 17 pro max' },
     })
 
@@ -216,17 +223,17 @@ describe('listDeviceCatalog model tier', () => {
     renamed.deviceTypeIdentifier = 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max'
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port([renamed]),
+      ports: ports([renamed]),
       request: { model: 'iPhone 17 Pro Max' },
     })
 
-    expect((result.devices as DeviceEntry[])[0]).toMatchObject({ id: 'renamed', name: 'checkout rig' })
+    expect((result.devices as DeviceEntry[])[0]).toMatchObject({ id: 'ios:renamed', name: 'checkout rig' })
   })
 
   it('says so rather than returning an empty list for a model that does not exist', async () => {
     const result = await listDeviceCatalog({
       sessionId: 's1',
-      port: port(fullMatrix()),
+      ports: ports(fullMatrix()),
       request: { model: 'Pixel 9' },
     })
 

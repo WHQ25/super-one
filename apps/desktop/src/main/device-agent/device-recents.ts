@@ -7,7 +7,7 @@
  *
  * Scoped to the PROJECT, not the session — a new chat about the same app is the case
  * this exists for. Kept in `app_meta` rather than a table of its own: it is a hint,
- * it is a handful of udids, and losing it costs one extra tool call.
+ * it is a handful of ids, and losing it costs one extra tool call.
  */
 
 import { getDb } from '../database'
@@ -19,7 +19,7 @@ const KEY_PREFIX = 'device.recentUdids:'
 /** The slice of storage the catalog needs, so tests need no database. */
 export interface DeviceRecentsPort {
   read(): string[]
-  remember(udid: string): void
+  remember(deviceId: string): void
 }
 
 export const NO_DEVICE_RECENTS: DeviceRecentsPort = {
@@ -65,13 +65,13 @@ export function createDeviceRecents(sessionId: string): DeviceRecentsPort {
         return []
       }
     },
-    remember(udid: string): void {
+    remember(deviceId: string): void {
       try {
         const projectId = projectIdFor(sessionId)
         if (!projectId) return
         const key = `${KEY_PREFIX}${projectId}`
         const current = this.read()
-        const next = [udid, ...current.filter((entry) => entry !== udid)].slice(0, DEVICE_RECENT_LIMIT)
+        const next = [deviceId, ...current.filter((entry) => entry !== deviceId)].slice(0, DEVICE_RECENT_LIMIT)
         getDb()
           .prepare('INSERT INTO app_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
           .run(key, JSON.stringify(next))

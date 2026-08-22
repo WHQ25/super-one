@@ -183,7 +183,7 @@ describe('IosSimulatorManager', () => {
     const seen: string[] = []
     manager.onSessionState((state) => { seen.push(state.phase) })
 
-    await manager.detach('session-a')
+    await manager.detach('device-a')
 
     expect(seen.at(-1)).toBe('idle')
   })
@@ -220,7 +220,7 @@ describe('IosSimulatorManager', () => {
     })
     await manager.boot('session-a', 'device-a')
 
-    await manager.shutdown('session-a')
+    await manager.shutdown('device-a')
 
     expect(stop).toHaveBeenCalledTimes(1)
     // Idempotent: a second pass over an empty ledger must not stop it twice.
@@ -289,7 +289,7 @@ describe('IosSimulatorManager', () => {
     await manager.bind('session-a', 'device-a')
     const sequences: number[] = []
 
-    const unsubscribe = manager.subscribe('session-a', (frame) => sequences.push(frame.sequence))
+    const unsubscribe = manager.subscribe('device-a', (frame) => sequences.push(frame.sequence))
     await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalled())
     emitFrame()
     emitFrame()
@@ -311,7 +311,7 @@ describe('IosSimulatorManager', () => {
     })
     await manager.bind('session-a', 'device-a')
     const frames: Parameters<Parameters<typeof manager.subscribe>[1]>[0][] = []
-    const unsubscribe = manager.subscribe('session-a', (frame) => frames.push(frame))
+    const unsubscribe = manager.subscribe('device-a', (frame) => frames.push(frame))
     await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalled())
 
     emitFrame({
@@ -343,10 +343,10 @@ describe('IosSimulatorManager', () => {
       simctl, nativeFactory, helperProbe: async () => null, attachAttempts: 1,
     })
     await manager.bind('session-a', 'device-a')
-    const unsubscribe = manager.subscribe('session-a', () => undefined)
+    const unsubscribe = manager.subscribe('device-a', () => undefined)
     await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalled())
 
-    expect((await manager.getSessionState('session-a')).previewMode).toBe('native-framebuffer')
+    expect((await manager.getSessionState('device-a')).previewMode).toBe('native-framebuffer')
     unsubscribe()
   })
 
@@ -364,7 +364,7 @@ describe('IosSimulatorManager', () => {
         { id: 2, phase: 'moved' as const, xRatio: 0.75, yRatio: 0.5 },
       ],
     }
-    await manager.input('session-a', input)
+    await manager.input('device-a', input)
 
     expect(native.input).toHaveBeenCalledWith(input)
   })
@@ -387,7 +387,7 @@ describe('IosSimulatorManager', () => {
     await Promise.all([binding, release])
 
     expect(native.dispose).toHaveBeenCalledOnce()
-    expect(await manager.getSessionState('session-a')).toEqual(expect.objectContaining({
+    expect(await manager.getSessionState('device-a')).toEqual(expect.objectContaining({
       device: null,
       phase: 'idle',
     }))
@@ -405,7 +405,7 @@ describe('IosSimulatorManager', () => {
     })
     await manager.bind('session-a', 'device-a')
 
-    const unsubscribe = manager.subscribe('session-a', () => undefined)
+    const unsubscribe = manager.subscribe('device-a', () => undefined)
     await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalled())
     unsubscribe()
     finishStart?.()
@@ -421,7 +421,7 @@ describe('IosSimulatorManager', () => {
     })
     await manager.boot('session-a', 'device-a')
 
-    const state = await manager.detach('session-a')
+    const state = await manager.detach('device-a')
 
     expect(state.device).toBeNull()
     expect(native.dispose).toHaveBeenCalledOnce()
@@ -438,7 +438,7 @@ describe('IosSimulatorManager', () => {
     })
     // Booting marks it ours, which is exactly what detach has to give up.
     await manager.boot('session-a', 'device-a')
-    await manager.detach('session-a')
+    await manager.detach('device-a')
 
     await manager.releaseSession('session-a')
     await manager.dispose()
@@ -453,7 +453,7 @@ describe('IosSimulatorManager', () => {
     })
     await manager.bind('session-a', 'device-a')
 
-    const state = await manager.shutdown('session-a')
+    const state = await manager.shutdown('device-a')
 
     expect(simctl.shutdown).toHaveBeenCalledWith('device-a')
     expect(native.dispose).toHaveBeenCalledOnce()
@@ -468,7 +468,7 @@ describe('IosSimulatorManager', () => {
       simctl, nativeFactory, helperProbe: async () => null, attachAttempts: 1,
     })
     await manager.boot('session-a', 'device-a')
-    await manager.detach('session-a')
+    await manager.detach('device-a')
 
     const state = await manager.boot('session-b', 'device-a')
 
@@ -490,10 +490,10 @@ describe('IosSimulatorManager', () => {
     await manager.bind('session-a', 'device-a')
 
     // StrictMode runs the effect, its cleanup, then the effect again.
-    const unsubscribe = manager.subscribe('session-a', () => undefined)
+    const unsubscribe = manager.subscribe('device-a', () => undefined)
     unsubscribe()
     const frames: number[] = []
-    manager.subscribe('session-a', (frame) => frames.push(frame.sequence))
+    manager.subscribe('device-a', (frame) => frames.push(frame.sequence))
 
     await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalled())
     emitFrame()
@@ -516,7 +516,7 @@ describe('IosSimulatorManager preview quality', () => {
     await manager.bind('session-a', 'device-a')
 
     const quality = { scale: 0.5, maxFrameRate: 30 }
-    const unsubscribe = manager.subscribe('session-a', () => {}, 'native-h264', quality)
+    const unsubscribe = manager.subscribe('device-a', () => {}, 'native-h264', quality)
     await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalled())
 
     expect(native.startFrames).toHaveBeenCalledWith('native-h264', quality, expect.any(Function))
@@ -532,7 +532,7 @@ describe('IosSimulatorManager preview quality', () => {
 
     const frames: IosSimulatorFrame[] = []
     const unsubscribe = manager.subscribe(
-      'session-a', (frame) => frames.push(frame), 'native-h264', { scale: 0.5, maxFrameRate: 0 })
+      'device-a', (frame) => frames.push(frame), 'native-h264', { scale: 0.5, maxFrameRate: 0 })
     await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalled())
     emitFrame({
       kind: 'h264-config', keyframe: true, timestampUs: 0, data: Buffer.from('avc1.4D0028'),
@@ -559,15 +559,15 @@ describe('IosSimulatorManager screen capture', () => {
     })
   }
 
-  it('writes a screenshot into this session\'s own capture directory', async () => {
+  it('writes a screenshot into the device\'s own capture directory', async () => {
     const harness = setup()
     const manager = bootedManager(harness)
     await manager.boot('session-1', 'device-a')
 
-    const capture = await manager.screenshot('session-1')
+    const capture = await manager.screenshot('device-a')
 
     expect(capture.kind).toBe('screenshot')
-    expect(capture.path).toBe(`/captures/session-1/${capture.fileName}`)
+    expect(capture.path).toBe(`/captures/device-a/${capture.fileName}`)
     expect(capture.fileName).toMatch(/^iPhone-17-Pro-\d{8}-\d{6}\.png$/)
     expect(harness.capture.screenshot).toHaveBeenCalledWith('device-a', capture.path)
   })
@@ -577,7 +577,7 @@ describe('IosSimulatorManager screen capture', () => {
     const manager = bootedManager(harness)
     await manager.bind('session-1', 'device-a')
 
-    await expect(manager.screenshot('session-1')).rejects.toThrow('The simulator is not running.')
+    await expect(manager.screenshot('device-a')).rejects.toThrow('The simulator is not running.')
   })
 
   it('returns the finished movie when a recording is stopped', async () => {
@@ -585,14 +585,14 @@ describe('IosSimulatorManager screen capture', () => {
     const manager = bootedManager(harness)
     await manager.boot('session-1', 'device-a')
 
-    const started = await manager.startRecording('session-1')
-    expect(manager.isRecording('session-1')).toBe(true)
-    const stopped = await manager.stopRecording('session-1')
+    const started = await manager.startRecording('device-a')
+    expect(manager.isRecording('device-a')).toBe(true)
+    const stopped = await manager.stopRecording('device-a')
 
     expect(stopped).toEqual(started)
     expect(stopped!.fileName).toMatch(/\.mp4$/)
     expect(harness.stopped).toEqual([started.path])
-    expect(manager.isRecording('session-1')).toBe(false)
+    expect(manager.isRecording('device-a')).toBe(false)
   })
 
   it('reports nothing when a session that was never recording is stopped', async () => {
@@ -600,30 +600,30 @@ describe('IosSimulatorManager screen capture', () => {
     const manager = bootedManager(harness)
     await manager.boot('session-1', 'device-a')
 
-    await expect(manager.stopRecording('session-1')).resolves.toBeNull()
+    await expect(manager.stopRecording('device-a')).resolves.toBeNull()
   })
 
   it('finalises an open recording before shutting the device down', async () => {
     const harness = setup()
     const manager = bootedManager(harness)
     await manager.boot('session-1', 'device-a')
-    const started = await manager.startRecording('session-1')
+    const started = await manager.startRecording('device-a')
 
-    await manager.shutdown('session-1')
+    await manager.shutdown('device-a')
 
     // simctl can only close the movie while the device it reads from is still up,
     // so the stop has to land ahead of the shutdown.
     expect(harness.stopped).toEqual([started.path])
-    expect(manager.isRecording('session-1')).toBe(false)
+    expect(manager.isRecording('device-a')).toBe(false)
   })
 
   it('finalises an open recording when the session detaches', async () => {
     const harness = setup()
     const manager = bootedManager(harness)
     await manager.boot('session-1', 'device-a')
-    const started = await manager.startRecording('session-1')
+    const started = await manager.startRecording('device-a')
 
-    await manager.detach('session-1')
+    await manager.detach('device-a')
 
     expect(harness.stopped).toEqual([started.path])
   })
@@ -634,9 +634,9 @@ describe('IosSimulatorManager screen capture', () => {
     const manager = bootedManager(harness)
     await manager.boot('session-1', 'device-a')
 
-    await expect(manager.startRecording('session-1')).rejects.toThrow('Recording failed.')
+    await expect(manager.startRecording('device-a')).rejects.toThrow('Recording failed.')
     // A failed start that stayed registered would wedge the button on "recording".
-    expect(manager.isRecording('session-1')).toBe(false)
+    expect(manager.isRecording('device-a')).toBe(false)
   })
 })
 
@@ -657,7 +657,7 @@ describe('IosSimulatorManager text input', () => {
   it('sends a single keystroke as a keystroke', async () => {
     const { manager, native, simctl } = await readyManager()
 
-    await manager.input('session-a', { type: 'text', text: 'a' })
+    await manager.input('device-a', { type: 'text', text: 'a' })
 
     expect(native.input).toHaveBeenCalledWith({ type: 'text', text: 'a' })
     expect(simctl.writePasteboard).not.toHaveBeenCalled()
@@ -669,7 +669,7 @@ describe('IosSimulatorManager text input', () => {
     // The regression this guards: Indigo's keyboard channel only carries HID usage
     // codes, so every one of these characters used to be counted as skipped and
     // silently dropped.
-    await manager.input('session-a', { type: 'text', text: '你好' })
+    await manager.input('device-a', { type: 'text', text: '你好' })
 
     expect(simctl.writePasteboard).toHaveBeenCalledWith('device-a', '你好')
     expect(native.input).toHaveBeenCalledWith({ type: 'paste' })
@@ -679,7 +679,7 @@ describe('IosSimulatorManager text input', () => {
   it('pastes a long ASCII block rather than holding the input queue for it', async () => {
     const { manager, native, simctl } = await readyManager()
 
-    await manager.input('session-a', { type: 'text', text: 'the quick brown fox' })
+    await manager.input('device-a', { type: 'text', text: 'the quick brown fox' })
 
     expect(simctl.writePasteboard).toHaveBeenCalledWith('device-a', 'the quick brown fox')
     expect(native.input).toHaveBeenCalledWith({ type: 'paste' })
@@ -704,12 +704,12 @@ describe('IosSimulatorManager rotation', () => {
     const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
 
-    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
-    expect((await manager.getSessionState('session-a')).orientation).toBe('landscape-left')
+    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
+    expect((await manager.getSessionState('device-a')).orientation).toBe('landscape-left')
 
-    await manager.shutdown('session-a')
+    await manager.shutdown('device-a')
     await manager.boot('session-a', 'device-a')
-    expect((await manager.getSessionState('session-a')).orientation).toBe('portrait')
+    expect((await manager.getSessionState('device-a')).orientation).toBe('portrait')
   })
 
   it('leaves the panel upright when the guest refuses the rotation', async () => {
@@ -723,9 +723,9 @@ describe('IosSimulatorManager rotation', () => {
     })
     await manager.boot('session-a', 'device-a')
 
-    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
-    expect((await manager.getSessionState('session-a')).orientation).toBe('portrait')
+    expect((await manager.getSessionState('device-a')).orientation).toBe('portrait')
   })
 })
 
@@ -741,7 +741,7 @@ describe('IosSimulatorManager stream lifetime', () => {
     })
   }
 
-  it('tears the preview and the recording down before rebinding to another device', async () => {
+  it('leaves the first device running when a session takes a second one', async () => {
     const harness = setup(device({ state: 'Booted', booted: true }))
     harness.simctl.listDevices.mockImplementation(async () => [
       device({ state: 'Booted', booted: true }),
@@ -749,20 +749,42 @@ describe('IosSimulatorManager stream lifetime', () => {
     ])
     const manager = bootedManager(harness)
     await manager.bind('session-a', 'device-a')
-    manager.subscribe('session-a', () => undefined)
+    manager.subscribe('device-a', () => undefined)
     await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
-    await manager.startRecording('session-a')
+    await manager.startRecording('device-a')
 
     await manager.bind('session-a', 'device-b')
 
+    // The whole point of holding devices per device rather than per session: a client
+    // build and a merchant build, side by side, both live. Binding a second one used
+    // to tear the first one down, because a session could only mean one device and
+    // "another bind" could only mean "swap".
+    expect(harness.stopped).toHaveLength(0)
+    expect(manager.isRecording('device-a')).toBe(true)
+    expect(manager.devicesOf('session-a').sort()).toEqual(['device-a', 'device-b'])
+  })
+
+  it('finalises the recording and frees the stream when a device is given up', async () => {
+    const harness = setup(device({ state: 'Booted', booted: true }))
+    const manager = bootedManager(harness)
+    await manager.bind('session-a', 'device-a')
+    manager.subscribe('device-a', () => undefined)
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
+    await manager.startRecording('device-a')
+
+    await manager.detach('device-a')
+
     // simctl can only finalise the movie while the device it reads from is up, so
-    // the stop has to happen on this side of the rebind.
+    // the stop has to happen on this side of the teardown.
     expect(harness.stopped).toHaveLength(1)
-    expect(manager.isRecording('session-a')).toBe(false)
-    // And the stream is gone rather than left marked `started`: it used to block
-    // every reopen, so the new device's preview stayed black for the whole binding.
+    expect(manager.isRecording('device-a')).toBe(false)
     expect(harness.native.closeFrames).toHaveBeenCalled()
-    manager.subscribe('session-a', () => undefined)
+
+    // And the stream is gone rather than left marked `started`: it used to block
+    // every reopen, so the next preview stayed black for the whole binding. Taking
+    // the device again has to produce a second one.
+    await manager.bind('session-a', 'device-a')
+    manager.subscribe('device-a', () => undefined)
     await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(2))
   })
 
@@ -770,14 +792,14 @@ describe('IosSimulatorManager stream lifetime', () => {
     const harness = setup(device({ state: 'Booted', booted: true }))
     const manager = bootedManager(harness)
     await manager.bind('session-a', 'device-a')
-    manager.subscribe('session-a', () => undefined)
+    manager.subscribe('device-a', () => undefined)
     await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
 
     harness.crashHelper()
 
     // The dead runtime used to be handed straight back, so every input answered
     // "HID input is unavailable" until the user found the Refresh button.
-    expect(await manager.input('session-a', { type: 'button', button: 'home' }))
+    expect(await manager.input('device-a', { type: 'button', button: 'home' }))
       .toEqual({ ok: true })
     expect(harness.nativeFactory).toHaveBeenCalledTimes(2)
     // The preview comes back with it instead of staying frozen on the last frame.
@@ -788,7 +810,7 @@ describe('IosSimulatorManager stream lifetime', () => {
     const harness = setup(device({ state: 'Booted', booted: true }))
     const manager = bootedManager(harness)
     await manager.bind('session-a', 'device-a')
-    manager.subscribe('session-a', () => undefined)
+    manager.subscribe('device-a', () => undefined)
     await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalled())
     harness.emitFrame({
       kind: 'h264-config', keyframe: false, timestampUs: 100_000,
@@ -796,7 +818,7 @@ describe('IosSimulatorManager stream lifetime', () => {
     })
 
     const late: IosSimulatorFrame[] = []
-    manager.subscribe('session-a', (frame) => late.push(frame))
+    manager.subscribe('device-a', (frame) => late.push(frame))
 
     // Both the helper and the encoder send this exactly once per stream, so a second
     // window's decoder was never configured — it simply stayed black forever.
@@ -813,9 +835,9 @@ describe('IosSimulatorManager rotation (refusals)', () => {
     const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
 
-    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
-    expect((await manager.getSessionState('session-a')).orientation).toBe('portrait')
+    expect((await manager.getSessionState('device-a')).orientation).toBe('portrait')
   })
 
   it('fails the rotation when the event lands but the foreground app stays upright', async () => {
@@ -824,13 +846,13 @@ describe('IosSimulatorManager rotation (refusals)', () => {
     const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
 
-    const result = await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+    const result = await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
     // Delivering the event is not performing the rotation: reporting the send made
     // `device_act` claim a turn that never happened.
     expect(result.ok).toBe(false)
     expect(result.error).toMatch(/kept its own orientation/i)
-    expect((await manager.getSessionState('session-a')).orientation).toBe('portrait')
+    expect((await manager.getSessionState('device-a')).orientation).toBe('portrait')
   })
 
   it('takes a half turn on trust, because the screen keeps its shape through one', async () => {
@@ -839,12 +861,12 @@ describe('IosSimulatorManager rotation (refusals)', () => {
     const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
 
-    const result = await manager.input('session-a', {
+    const result = await manager.input('device-a', {
       type: 'rotate', orientation: 'portrait-upside-down',
     })
 
     expect(result.ok).toBe(true)
-    expect((await manager.getSessionState('session-a')).orientation).toBe('portrait-upside-down')
+    expect((await manager.getSessionState('device-a')).orientation).toBe('portrait-upside-down')
   })
 
   it('still rotates when the helper cannot see the guest at all', async () => {
@@ -854,12 +876,12 @@ describe('IosSimulatorManager rotation (refusals)', () => {
     const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
 
-    const result = await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+    const result = await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
     // Verification is a bonus. A helper build without accessibility would otherwise
     // lose a control that works perfectly well.
     expect(result.ok).toBe(true)
-    expect((await manager.getSessionState('session-a')).orientation).toBe('landscape-left')
+    expect((await manager.getSessionState('device-a')).orientation).toBe('landscape-left')
   })
 })
 
@@ -873,7 +895,7 @@ describe('IosSimulatorManager session state pushes', () => {
 
     // What `device_act` does: the renderer never sees this call, so without a push
     // the panel keeps drawing the device upright around a guest that has turned.
-    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
     expect(seen).toEqual(['landscape-left'])
   })
@@ -886,7 +908,7 @@ describe('IosSimulatorManager session state pushes', () => {
     const seen: string[] = []
     manager.onSessionState((state) => { seen.push(state.orientation) })
 
-    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
     expect(seen).toEqual(['portrait'])
   })
@@ -898,9 +920,9 @@ describe('IosSimulatorManager session state pushes', () => {
     const seen: string[] = []
     const stop = manager.onSessionState((state) => { seen.push(state.orientation) })
 
-    await manager.input('session-a', { type: 'rotate', orientation: 'landscape-left' })
+    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
     stop()
-    await manager.input('session-a', { type: 'rotate', orientation: 'portrait' })
+    await manager.input('device-a', { type: 'rotate', orientation: 'portrait' })
 
     expect(seen).toEqual(['landscape-left'])
   })

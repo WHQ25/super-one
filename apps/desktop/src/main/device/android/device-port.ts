@@ -24,7 +24,8 @@ export class AndroidDevicePort implements DevicePlatformPort {
     // yet gets one taken now, so this never reports "nothing" merely because it was
     // asked first.
     if (!devices) await this.manager.listDevices()
-    return this.manager.controlled(sessionId)
+    const deviceId = this.manager.soleDeviceOf(sessionId)
+    return deviceId ? this.manager.descriptorFor(deviceId) : null
   }
 
   boot(sessionId: string, deviceId: string): Promise<DeviceDescriptor | null> {

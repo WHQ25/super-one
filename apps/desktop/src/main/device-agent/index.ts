@@ -54,7 +54,7 @@ export function setDeviceAgentBackendFactory(
  */
 function controllingPlatform(sessionId: string): string {
   if (backendFactory) return 'injected'
-  return getAndroidDeviceManager()?.controlled(sessionId) ? 'android' : 'ios'
+  return getAndroidDeviceManager()?.soleDeviceOf(sessionId) ? 'android' : 'ios'
 }
 
 function buildBackend(sessionId: string, platform: string): TouchDeviceBackend {

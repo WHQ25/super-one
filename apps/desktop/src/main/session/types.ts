@@ -215,6 +215,18 @@ export class SessionLockedError extends Error {
   }
 }
 
+/** Worktree checkout is gone — session is read-only (composer withdrawn, no new turns). */
+export class SessionWorktreeRemovedError extends Error {
+  readonly sessionId: string
+  readonly worktreePath: string
+  constructor(sessionId: string, worktreePath: string) {
+    super(`Session ${sessionId} is read-only because its worktree was removed: ${worktreePath}`)
+    this.name = 'SessionWorktreeRemovedError'
+    this.sessionId = sessionId
+    this.worktreePath = worktreePath
+  }
+}
+
 export class SessionClaimConflictError extends Error {
   readonly sessionId: string
   readonly currentOwnerDeviceId: string

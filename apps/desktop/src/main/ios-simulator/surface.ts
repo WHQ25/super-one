@@ -20,7 +20,7 @@ import type {
   IosSimulatorSessionState,
 } from '@superone/shared/ios-simulator'
 import type { DeviceOrientation } from '@superone/shared/device-agent'
-import { parseDeviceId } from '@superone/shared/device'
+import { formatDeviceId, parseDeviceId } from '@superone/shared/device'
 import type { DeviceCapture, DeviceSurface } from '../device/surface'
 import { toDeviceDescriptor } from './device-port'
 import type { IosSimulatorManager } from './ios-simulator-manager'
@@ -45,21 +45,26 @@ function toSessionState(state: IosSimulatorSessionState): DeviceSessionState {
   }
 }
 
-/** `ios-sim:UDID` back to the udid the manager addresses. Tolerates a bare one. */
+/**
+ * `ios-sim:UDID` back to the udid the manager addresses. Tolerates a bare one.
+ *
+ * The whole translation this adapter performs: above it everything is a deviceId,
+ * below it CoreSimulator has only ever known udids.
+ */
 function udidOf(deviceId: string): string {
   return parseDeviceId(deviceId)?.native ?? deviceId
 }
 
 export function createIosSimulatorSurface(manager: IosSimulatorManager): DeviceSurface {
   return {
-    platform: 'ios',
+    provider: 'ios-sim',
 
-    owns(sessionId) {
-      return manager.holdsSession(sessionId)
+    devicesOf(sessionId) {
+      return manager.devicesOf(sessionId).map((udid) => formatDeviceId('ios-sim', udid))
     },
 
-    async sessionState(sessionId) {
-      return toSessionState(await manager.getSessionState(sessionId))
+    async state(deviceId) {
+      return toSessionState(await manager.getSessionState(udidOf(deviceId)))
     },
     async bind(sessionId, deviceId) {
       return toSessionState(await manager.bind(sessionId, udidOf(deviceId)))
@@ -67,49 +72,47 @@ export function createIosSimulatorSurface(manager: IosSimulatorManager): DeviceS
     async boot(sessionId, deviceId) {
       return toSessionState(await manager.boot(sessionId, udidOf(deviceId)))
     },
-    async detach(sessionId) {
-      return toSessionState(await manager.detach(sessionId))
+    async detach(deviceId) {
+      return toSessionState(await manager.detach(udidOf(deviceId)))
     },
-    async shutdown(sessionId) {
-      return toSessionState(await manager.shutdown(sessionId))
+    async shutdown(deviceId) {
+      return toSessionState(await manager.shutdown(udidOf(deviceId)))
     },
-    release(sessionId) {
-      return manager.releaseSession(sessionId)
+    async releaseSession(sessionId) {
+      await manager.releaseSession(sessionId)
     },
 
-    async input(sessionId, input): Promise<DeviceInputResult> {
-      // Structurally identical: `DeviceInput` is this vocabulary with the platform
-      // name taken off, and the one member Android lacks (`keyboard`) is the one iOS
-      // is the reason for.
-      return manager.input(sessionId, input as IosSimulatorInput)
+    async input(deviceId, input: DeviceInput): Promise<DeviceInputResult> {
+      return manager.input(udidOf(deviceId), input as IosSimulatorInput)
     },
-    async screenshot(sessionId): Promise<DeviceCapture> {
-      const capture = await manager.screenshot(sessionId)
+    // `kind` is the only field that differs: the simulator distinguishes video kinds
+    // the panel has no use for, so each is stated rather than spread through.
+    async screenshot(deviceId): Promise<DeviceCapture> {
+      const capture = await manager.screenshot(udidOf(deviceId))
       return { path: capture.path, fileName: capture.fileName, kind: 'screenshot' }
     },
-    async startRecording(sessionId): Promise<DeviceCapture> {
-      const capture = await manager.startRecording(sessionId)
+    async startRecording(deviceId): Promise<DeviceCapture> {
+      const capture = await manager.startRecording(udidOf(deviceId))
       return { path: capture.path, fileName: capture.fileName, kind: 'recording' }
     },
-    async stopRecording(sessionId): Promise<DeviceCapture | null> {
-      const capture = await manager.stopRecording(sessionId)
+    async stopRecording(deviceId): Promise<DeviceCapture | null> {
+      const capture = await manager.stopRecording(udidOf(deviceId))
       return capture ? { path: capture.path, fileName: capture.fileName, kind: 'recording' } : null
     },
-    isRecording(sessionId) {
-      return manager.isRecording(sessionId)
+    isRecording(deviceId) {
+      return manager.isRecording(udidOf(deviceId))
     },
 
-    subscribe(sessionId, listener, options?: DeviceStreamOptions) {
-      // Both settle in `stream.start`, so they have to travel WITH the subscription
-      // rather than be applied to a stream that is already running.
+    subscribe(deviceId, listener: (frame: DeviceFrame) => void, options?: DeviceStreamOptions) {
       return manager.subscribe(
-        sessionId,
-        (frame) => listener(frame as DeviceFrame),
+        udidOf(deviceId),
+        (frame) => listener(frame as unknown as DeviceFrame),
         options?.mode as IosSimulatorPreviewMode | undefined,
         options?.quality,
       )
     },
-    onSessionState(listener) {
+
+    onState(listener: (state: DeviceSessionState) => void) {
       return manager.onSessionState((state) => listener(toSessionState(state)))
     },
   }

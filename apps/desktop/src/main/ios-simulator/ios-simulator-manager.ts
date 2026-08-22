@@ -82,7 +82,7 @@ interface ManagerOptions {
   simctl?: IosSimulatorPort
   chrome?: IosSimulatorChromePort
   capture?: IosSimulatorCapturePort
-  /** Screenshots and recordings land in `<captureRoot>/<sessionId>/`. */
+  /** Screenshots and recordings land in `<captureRoot>/<udid>/`. */
   captureRoot?: string
   helperProbe: () => Promise<IosSimulatorHelperProbe | null>
   nativeFactory: () => Promise<IosSimulatorNativePort>
@@ -92,7 +92,7 @@ interface ManagerOptions {
    * A preview that fails to start leaves the panel on its spinner with nothing else
    * to show, so the reason has to leave this class somehow.
    */
-  onStreamError?: (sessionId: string, error: unknown) => void
+  onStreamError?: (udid: string, error: unknown) => void
   /**
    * Suppresses Apple's Simulator.app for as long as this app holds a device it booted
    * itself, returning the stop. See `external-simulator.ts` — a running Simulator.app
@@ -145,8 +145,14 @@ export class IosSimulatorManager {
   private readonly nativeFactory: () => Promise<IosSimulatorNativePort>
   private readonly attachAttempts: number
   private readonly attachRetryMs: number
-  private readonly sessionBindings = new Map<string, string>()
-  private readonly deviceOwners = new Map<string, string>()
+  /**
+   * Device (udid) -> the session holding it. The single source of truth for ownership.
+   *
+   * One simulator belongs to at most one session; a session may hold several. Every
+   * other map here is keyed by udid for the same reason: an attachment, a stream and
+   * a recording belong to a DEVICE, not to whoever is watching it.
+   */
+  private readonly owners = new Map<string, string>()
   private readonly superOneBooted = new Set<string>()
   // Keyed by device, not session: the guest keeps its orientation across a detach,
   // a rebind, or a panel remount, and only a shutdown puts it back to portrait.
@@ -162,7 +168,7 @@ export class IosSimulatorManager {
   // successor just opened.
   private readonly streamFlights = new Map<string, Promise<void>>()
   private readonly recordings = new Map<string, RecordingSession>()
-  private readonly onStreamError: (sessionId: string, error: unknown) => void
+  private readonly onStreamError: (udid: string, error: unknown) => void
   private readonly watchExternalSimulator: () => () => void
   /** Non-null exactly while the watcher is running, so it is started only once. */
   private stopExternalSimulatorWatch: (() => void) | null = null
@@ -243,7 +249,7 @@ export class IosSimulatorManager {
    * than re-fetched — which is why the old value is dropped rather than spread over.
    */
   private withOwnership(device: IosSimulatorDevice): IosSimulatorDevice {
-    const owner = this.deviceOwners.get(device.udid)
+    const owner = this.owners.get(device.udid)
     const { boundSessionId: _previous, ...rest } = device
     return {
       ...rest,
@@ -279,7 +285,7 @@ export class IosSimulatorManager {
   }
 
   async bind(sessionId: string, udid: string): Promise<IosSimulatorSessionState> {
-    const owner = this.deviceOwners.get(udid)
+    const owner = this.owners.get(udid)
     if (owner && owner !== sessionId) {
       throw new Error(`Simulator ${udid} is already bound to session ${owner}.`)
     }
@@ -287,18 +293,14 @@ export class IosSimulatorManager {
     if (!device) throw new Error(`Simulator ${udid} was not found.`)
     if (!device.available) throw new Error(device.availabilityError ?? `Simulator ${udid} is unavailable.`)
 
-    const previous = this.sessionBindings.get(sessionId)
-    if (previous && previous !== udid) {
-      this.deviceOwners.delete(previous)
-      await this.teardownSession(sessionId)
-    }
-    this.sessionBindings.set(sessionId, udid)
-    this.deviceOwners.set(udid, sessionId)
-    if (device.booted) await this.ensureNativeSession(sessionId, udid)
+    // No "previous device" to give up: a session may hold several at once, so
+    // letting one go is a decision its holder makes explicitly, through `detach`.
+    this.owners.set(udid, sessionId)
+    if (device.booted) await this.ensureNativeSession(udid)
     // The row read above, not a fresh one: nothing between here and there changes what
     // simctl would say about this device — attaching the helper does not boot it — and
     // the only field that DID change is the ownership this session just took.
-    return this.announce(this.sessionStateFor(sessionId, udid, this.withOwnership(device)))
+    return this.announce(this.sessionStateFor(udid, this.withOwnership(device)))
   }
 
   async boot(sessionId: string, udid: string): Promise<IosSimulatorSessionState> {
@@ -309,9 +311,9 @@ export class IosSimulatorManager {
       await this.simctl.boot(udid)
       this.superOneBooted.add(udid)
       this.syncExternalSimulatorWatch()
-      await this.ensureNativeSession(sessionId, udid)
+      await this.ensureNativeSession(udid)
     }
-    return this.announce(await this.getSessionState(sessionId))
+    return this.announce(await this.getSessionState(udid))
   }
 
   /**
@@ -319,43 +321,44 @@ export class IosSimulatorManager {
    * dropped too, so neither closing the panel nor quitting the app takes it down
    * later — it becomes an ordinary running simulator the launcher can attach to.
    */
-  async detach(sessionId: string): Promise<IosSimulatorSessionState> {
-    const udid = this.sessionBindings.get(sessionId)
-    await this.teardownSession(sessionId)
-    this.unbind(sessionId, udid)
-    if (udid) this.superOneBooted.delete(udid)
+  async detach(udid: string): Promise<IosSimulatorSessionState> {
+    await this.teardownSession(udid)
+    this.unbind(udid)
+    this.superOneBooted.delete(udid)
     this.syncExternalSimulatorWatch()
-    return this.announce(this.emptyState(sessionId))
+    return this.announce(this.emptyState(udid))
   }
 
   /** Shuts the device down for real, whoever booted it, and unbinds the session. */
-  async shutdown(sessionId: string): Promise<IosSimulatorSessionState> {
-    const udid = this.sessionBindings.get(sessionId)
-    if (!udid) return this.emptyState(sessionId)
-    await this.teardownSession(sessionId)
+  async shutdown(udid: string): Promise<IosSimulatorSessionState> {
+    await this.teardownSession(udid)
     await this.simctl.shutdown(udid)
     this.superOneBooted.delete(udid)
     this.syncExternalSimulatorWatch()
     this.orientations.delete(udid)
     this.hardwareKeyboards.delete(udid)
-    this.unbind(sessionId, udid)
-    return this.announce(this.emptyState(sessionId))
+    this.unbind(udid)
+    return this.announce(this.emptyState(udid))
   }
 
+  /** Every simulator this session held, on its way out. */
   async releaseSession(sessionId: string): Promise<void> {
-    const udid = this.sessionBindings.get(sessionId)
-    await this.teardownSession(sessionId)
-    this.unbind(sessionId, udid)
+    for (const udid of this.devicesOf(sessionId)) await this.releaseDevice(udid)
+  }
+
+  private async releaseDevice(udid: string): Promise<void> {
+    await this.teardownSession(udid)
+    this.unbind(udid)
     // Closing the panel puts the simulator back the way it was found: shut down
     // what we booted, leave an externally booted simulator running.
-    if (udid && this.superOneBooted.has(udid)) {
+    if (this.superOneBooted.has(udid)) {
       this.superOneBooted.delete(udid)
       this.syncExternalSimulatorWatch()
       this.orientations.delete(udid)
       this.hardwareKeyboards.delete(udid)
       await this.simctl.shutdown(udid)
     }
-    this.announce(this.emptyState(sessionId))
+    this.announce(this.emptyState(udid))
   }
 
   /**
@@ -365,25 +368,34 @@ export class IosSimulatorManager {
    * otherwise pay for a second identical one.
    */
   /**
-   * Whether this session holds a simulator, read straight off the binding.
+   * Every simulator this session holds, in no particular order.
    *
-   * Deliberately not `getSessionState(...).device != null`: that reading costs a
-   * `simctl list` and this one is on the routing path of every touch sample. See
-   * `DeviceSurface.owns`.
+   * Read off `owners` rather than a per-session index: ownership is the fact, and a
+   * second structure alongside it is a second thing to get out of step.
    */
-  holdsSession(sessionId: string): boolean {
-    return this.sessionBindings.has(sessionId)
+  devicesOf(sessionId: string): string[] {
+    return [...this.owners].filter(([, owner]) => owner === sessionId).map(([udid]) => udid)
+  }
+
+  /**
+   * The one simulator this session holds, when it holds exactly one.
+   *
+   * Null for none AND for several: with two in hand there is no default that is not
+   * a guess, and guessing wrong means driving the wrong app.
+   */
+  soleDeviceOf(sessionId: string): string | null {
+    const held = this.devicesOf(sessionId)
+    return held.length === 1 ? held[0]! : null
   }
 
   async getSessionState(
-    sessionId: string,
+    udid: string,
     devices?: IosSimulatorDevice[],
   ): Promise<IosSimulatorSessionState> {
-    const udid = this.sessionBindings.get(sessionId)
-    if (!udid) return this.emptyState(sessionId)
+    if (!this.owners.has(udid)) return this.emptyState(udid)
     const catalog = devices ?? await this.listDevices()
     const device = catalog.find((candidate) => candidate.udid === udid) ?? null
-    return this.sessionStateFor(sessionId, udid, device)
+    return this.sessionStateFor(udid, device)
   }
 
   /**
@@ -397,16 +409,15 @@ export class IosSimulatorManager {
    * was the only reason the reading had to be awaited at all.
    */
   private sessionStateFor(
-    sessionId: string,
     udid: string,
     device: IosSimulatorDevice | null,
   ): IosSimulatorSessionState {
-    const attachment = this.nativeSessions.get(sessionId)?.client.attachment
+    const attachment = this.nativeSessions.get(udid)?.client.attachment
     return {
-      sessionId,
+      sessionId: this.owners.get(udid) ?? '',
       device,
       phase: device?.booted ? 'ready' : 'idle',
-      previewMode: this.streams.get(sessionId)?.activeMode ?? 'native-h264',
+      previewMode: this.streams.get(udid)?.activeMode ?? 'native-h264',
       interactive: device?.booted === true && attachment?.inputAvailable === true,
       orientation: this.orientations.get(udid) ?? 'portrait',
       // The helper connects one on every attach, so an attachment with no entry of
@@ -421,11 +432,10 @@ export class IosSimulatorManager {
     }
   }
 
-  async input(sessionId: string, input: IosSimulatorInput): Promise<IosSimulatorInputResult> {
-    const udid = this.sessionBindings.get(sessionId)
-    if (!udid) return { ok: false, error: 'No simulator is bound to this session.' }
+  async input(udid: string, input: IosSimulatorInput): Promise<IosSimulatorInputResult> {
+    if (!this.owners.has(udid)) return { ok: false, error: `${udid} is not bound to a session.` }
     try {
-      const native = await this.ensureNativeSession(sessionId, udid)
+      const native = await this.ensureNativeSession(udid)
       // Anything the simulated keyboard cannot spell — Chinese, emoji, or simply a
       // long block — goes onto the device pasteboard and comes back as Command-V.
       // Sending it as keystrokes would silently drop every non-ASCII character.
@@ -434,10 +444,10 @@ export class IosSimulatorManager {
         return native.client.input({ type: 'paste' })
       }
       const result = await native.client.input(input)
-      if (input.type === 'rotate') return this.settleRotation(sessionId, udid, input.orientation, result)
+      if (input.type === 'rotate') return this.settleRotation(udid, input.orientation, result)
       if (input.type === 'keyboard' && result.ok) {
         this.hardwareKeyboards.set(udid, input.connected)
-        await this.publishSessionState(sessionId)
+        await this.publishSessionState(udid)
       }
       return result
     } catch (error) {
@@ -455,18 +465,17 @@ export class IosSimulatorManager {
    * shell around a device still standing up.
    */
   private async settleRotation(
-    sessionId: string,
     udid: string,
     orientation: IosSimulatorOrientation,
     result: IosSimulatorInputResult,
   ): Promise<IosSimulatorInputResult> {
     const previous = this.orientations.get(udid) ?? 'portrait'
-    const turned = result.ok && await this.confirmRotation(sessionId, orientation, previous)
+    const turned = result.ok && await this.confirmRotation(udid, orientation, previous)
     if (turned) this.orientations.set(udid, orientation)
     // Published on refusal too: the panel turns its shell the moment the user clicks
     // the button, so something has to be able to turn it back. Awaited rather than
     // fired off, so a caller that reads the state back cannot beat its own event.
-    await this.publishSessionState(sessionId)
+    await this.publishSessionState(udid)
     if (!result.ok || turned) return result
     return {
       ok: false,
@@ -488,7 +497,7 @@ export class IosSimulatorManager {
    * landscapes, so a half turn is still taken on trust.
    */
   private async confirmRotation(
-    sessionId: string,
+    udid: string,
     target: IosSimulatorOrientation,
     previous: IosSimulatorOrientation,
   ): Promise<boolean> {
@@ -498,7 +507,7 @@ export class IosSimulatorManager {
     const deadline = Date.now() + this.rotationConfirmMs
     for (;;) {
       // Only the root frame is read, so the dump is kept to it.
-      const frame = await this.rootAccessibilityFrame(sessionId)
+      const frame = await this.rootAccessibilityFrame(udid)
       // `null` means this helper cannot see the guest at all. Verifying is a bonus,
       // not a precondition — refusing here would take away a control that works.
       if (frame === null) return true
@@ -511,10 +520,10 @@ export class IosSimulatorManager {
   }
 
   private async rootAccessibilityFrame(
-    sessionId: string,
+    udid: string,
   ): Promise<[number, number, number, number] | null> {
     try {
-      const dump = await this.accessibilityDump(sessionId, { maxDepth: 1, maxNodes: 1 })
+      const dump = await this.accessibilityDump(udid, { maxDepth: 1, maxNodes: 1 })
       return dump.tree.frame ?? null
     } catch {
       return null
@@ -534,12 +543,12 @@ export class IosSimulatorManager {
     return state
   }
 
-  private async publishSessionState(sessionId: string): Promise<void> {
+  private async publishSessionState(udid: string): Promise<void> {
     if (this.stateListeners.size === 0) return
     try {
-      this.announce(await this.getSessionState(sessionId))
+      this.announce(await this.getSessionState(udid))
     } catch (error) {
-      log.warn('[ios-simulator] could not publish session state', sessionId, error)
+      log.warn('[ios-simulator] could not publish session state', udid, error)
     }
   }
 
@@ -551,10 +560,10 @@ export class IosSimulatorManager {
    * would read to a caller as "the screen is blank" rather than "I cannot see".
    */
   async accessibilityDump(
-    sessionId: string,
+    udid: string,
     options: { maxDepth?: number; maxNodes?: number } = {},
   ): Promise<IosSimulatorAccessibilityDump> {
-    const native = await this.requireNativeSession(sessionId)
+    const native = await this.requireNativeSession(udid)
     return native.client.dumpAccessibility(options)
   }
 
@@ -565,17 +574,17 @@ export class IosSimulatorManager {
    * accessibility tree. Unlike `accessibilityDump` this cannot be refused by the
    * guest -- it reads the same pixels the user is looking at.
    */
-  async frameHash(sessionId: string): Promise<IosSimulatorFrameHash> {
-    const native = await this.requireNativeSession(sessionId)
+  async frameHash(udid: string): Promise<IosSimulatorFrameHash> {
+    const native = await this.requireNativeSession(udid)
     return native.client.frameHash()
   }
 
   /** Recognized text with boxes, for screens the accessibility tree does not describe. */
   async frameOcr(
-    sessionId: string,
+    udid: string,
     options: IosSimulatorFrameOcrOptions,
   ): Promise<IosSimulatorFrameOcr> {
-    const native = await this.requireNativeSession(sessionId)
+    const native = await this.requireNativeSession(udid)
     return native.client.frameOcr(options)
   }
 
@@ -586,55 +595,54 @@ export class IosSimulatorManager {
    * instead of acting on whatever now occupies that slot.
    */
   async accessibilityPerform(
-    sessionId: string,
+    udid: string,
     action: string,
     generation: number,
     uid: number,
   ): Promise<void> {
-    const native = await this.requireNativeSession(sessionId)
+    const native = await this.requireNativeSession(udid)
     await native.client.performAccessibility(action, generation, uid)
   }
 
-  private async requireNativeSession(sessionId: string) {
-    const udid = this.sessionBindings.get(sessionId)
-    if (!udid) throw new Error('No simulator is bound to this session.')
-    return this.ensureNativeSession(sessionId, udid)
+  private async requireNativeSession(udid: string) {
+    if (!this.owners.has(udid)) throw new Error(`${udid} is not bound to a session.`)
+    return this.ensureNativeSession(udid)
   }
 
   /** Writes a PNG of the device's own display, at its native resolution. */
-  async screenshot(sessionId: string): Promise<IosSimulatorCapture> {
-    const { udid, deviceName } = await this.requireCaptureTarget(sessionId)
-    const capture = this.captureFor(sessionId, deviceName, 'screenshot', 'png')
+  async screenshot(udid: string): Promise<IosSimulatorCapture> {
+    const { deviceName } = await this.requireCaptureTarget(udid)
+    const capture = this.captureFor(udid, deviceName, 'screenshot', 'png')
     await this.capture.screenshot(udid, capture.path)
     return capture
   }
 
-  isRecording(sessionId: string): boolean {
-    return this.recordings.has(sessionId)
+  isRecording(udid: string): boolean {
+    return this.recordings.has(udid)
   }
 
   /** Resolves once simctl confirms the recording is running, not merely spawned. */
-  async startRecording(sessionId: string): Promise<IosSimulatorCapture> {
-    if (this.recordings.has(sessionId)) throw new Error('This simulator is already recording.')
-    const { udid, deviceName } = await this.requireCaptureTarget(sessionId)
-    const capture = this.captureFor(sessionId, deviceName, 'video', 'mp4')
+  async startRecording(udid: string): Promise<IosSimulatorCapture> {
+    if (this.recordings.has(udid)) throw new Error('This simulator is already recording.')
+    const { deviceName } = await this.requireCaptureTarget(udid)
+    const capture = this.captureFor(udid, deviceName, 'video', 'mp4')
     const flight = this.capture.startRecording(udid, capture.path)
     // Registered before the await so a stop arriving mid-start still finds it.
-    this.recordings.set(sessionId, { flight, capture })
+    this.recordings.set(udid, { flight, capture })
     try {
       await flight
     } catch (error) {
-      this.recordings.delete(sessionId)
+      this.recordings.delete(udid)
       throw error
     }
     return capture
   }
 
   /** Returns the finished file, or null when this session was not recording. */
-  async stopRecording(sessionId: string): Promise<IosSimulatorCapture | null> {
-    const current = this.recordings.get(sessionId)
+  async stopRecording(udid: string): Promise<IosSimulatorCapture | null> {
+    const current = this.recordings.get(udid)
     if (!current) return null
-    this.recordings.delete(sessionId)
+    this.recordings.delete(udid)
     // A start that already failed has nothing to signal, and its rejection was
     // reported to whoever pressed record.
     const recording = await current.flight.catch(() => null)
@@ -644,18 +652,18 @@ export class IosSimulatorManager {
   }
 
   subscribe(
-    sessionId: string,
+    udid: string,
     listener: (frame: IosSimulatorFrame) => void,
     preferredMode: 'native-framebuffer' | 'native-h264' = 'native-h264',
     quality: IosSimulatorPreviewQuality = DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
   ): () => void {
-    let stream = this.streams.get(sessionId)
+    let stream = this.streams.get(udid)
     if (!stream) {
       stream = {
         listeners: new Set(), sequence: 0, started: false,
         preferredMode, activeMode: preferredMode, quality, lastConfigFrame: null,
       }
-      this.streams.set(sessionId, stream)
+      this.streams.set(udid, stream)
     }
     stream.listeners.add(listener)
     // Joining a stream that is already running: the config frame went out before
@@ -663,23 +671,22 @@ export class IosSimulatorManager {
     // is torn down and reopened. Replaying it is the only way a second window's
     // decoder ever gets configured.
     if (stream.lastConfigFrame) listener(stream.lastConfigFrame)
-    void this.startStream(sessionId)
+    void this.startStream(udid)
     return () => {
-      const current = this.streams.get(sessionId)
+      const current = this.streams.get(udid)
       current?.listeners.delete(listener)
-      if (current?.listeners.size === 0) void this.stopStream(sessionId, false)
+      if (current?.listeners.size === 0) void this.stopStream(udid, false)
     }
   }
 
   async dispose(): Promise<void> {
     await Promise.allSettled([...this.recordings.keys()].map((id) => this.stopRecording(id)))
-    for (const sessionId of [...this.streams.keys()]) await this.stopStream(sessionId)
+    for (const udid of [...this.streams.keys()]) await this.stopStream(udid)
     await Promise.allSettled([...this.nativeSessions.keys()].map((id) => this.disposeNativeSession(id)))
     await Promise.allSettled([...this.superOneBooted].map((udid) => this.simctl.shutdown(udid)))
     this.superOneBooted.clear()
     this.syncExternalSimulatorWatch()
-    this.sessionBindings.clear()
-    this.deviceOwners.clear()
+    this.owners.clear()
   }
 
   /**
@@ -707,74 +714,77 @@ export class IosSimulatorManager {
    * up, and a stream left marked `started` would never reopen on whatever comes
    * next. Every caller that lets go of a binding goes through here.
    */
-  private async teardownSession(sessionId: string): Promise<void> {
-    await this.stopRecording(sessionId)
-    await this.stopStream(sessionId)
-    await this.disposeNativeSession(sessionId)
+  private async teardownSession(udid: string): Promise<void> {
+    await this.stopRecording(udid)
+    await this.stopStream(udid)
+    await this.disposeNativeSession(udid)
   }
 
-  private async requireCaptureTarget(sessionId: string): Promise<{ udid: string; deviceName: string }> {
-    const udid = this.sessionBindings.get(sessionId)
-    if (!udid) throw new Error('No simulator is bound to this session.')
+  private async requireCaptureTarget(udid: string): Promise<{ udid: string; deviceName: string }> {
+    if (!this.owners.has(udid)) throw new Error(`${udid} is not bound to a session.`)
     const device = (await this.listDevices()).find((entry) => entry.udid === udid)
     if (!device?.booted) throw new Error('The simulator is not running.')
     return { udid, deviceName: device.name }
   }
 
+  /**
+   * Where a capture lands. Filed under the DEVICE, not the session that took it:
+   * a session may hold several devices, and their screenshots in one folder could
+   * not be told apart.
+   */
   private captureFor(
-    sessionId: string,
+    udid: string,
     deviceName: string,
     kind: IosSimulatorCaptureKind,
     extension: string,
   ): IosSimulatorCapture {
     const fileName = captureFileName(deviceName, extension, new Date())
-    return { kind, fileName, path: join(this.captureRoot, sessionId, fileName) }
+    return { kind, fileName, path: join(this.captureRoot, udid, fileName) }
   }
 
-  private unbind(sessionId: string, udid: string | undefined): void {
-    this.sessionBindings.delete(sessionId)
-    if (udid && this.deviceOwners.get(udid) === sessionId) this.deviceOwners.delete(udid)
+  private unbind(udid: string): void {
+    this.owners.delete(udid)
   }
 
   /** Serialises every open/close for one session behind the previous one. */
-  private queueStreamWork(sessionId: string, work: () => Promise<void>): Promise<void> {
-    const previous = this.streamFlights.get(sessionId) ?? Promise.resolve()
+  private queueStreamWork(udid: string, work: () => Promise<void>): Promise<void> {
+    const previous = this.streamFlights.get(udid) ?? Promise.resolve()
     const next = previous.catch(() => undefined).then(work)
-    this.streamFlights.set(sessionId, next)
+    this.streamFlights.set(udid, next)
     void next.catch(() => undefined).then(() => {
-      if (this.streamFlights.get(sessionId) === next) this.streamFlights.delete(sessionId)
+      if (this.streamFlights.get(udid) === next) this.streamFlights.delete(udid)
     })
     return next
   }
 
-  private async ensureNativeSession(sessionId: string, udid: string): Promise<NativeSession> {
-    const existing = this.nativeSessions.get(sessionId)
+  private async ensureNativeSession(udid: string): Promise<NativeSession> {
+    const existing = this.nativeSessions.get(udid)
     // `alive` and not just the udid: a helper that exited left this session holding a
     // runtime that answers every request with "HID input is unavailable", and without
     // this check the only way out was for the user to hit Refresh.
     if (existing?.udid === udid && existing.client.alive) return existing
-    const inflight = this.nativeFlights.get(sessionId)
+    const inflight = this.nativeFlights.get(udid)
     if (inflight) return inflight
     // The dead helper took its frame stream with it. Clearing `started` is what lets
     // the reopen below reach `startFrames` again, and the cached config frame
     // describes an encoder that no longer exists.
     const crashed = existing !== undefined && !existing.client.alive
     if (crashed) {
-      const stream = this.streams.get(sessionId)
+      const stream = this.streams.get(udid)
       if (stream) {
         stream.started = false
         stream.lastConfigFrame = null
       }
     }
     const flight = (async () => {
-      if (existing) await this.disposeNativeSession(sessionId)
+      if (existing) await this.disposeNativeSession(udid)
       const client = await this.nativeFactory()
       let lastError: unknown
       for (let attempt = 0; attempt < this.attachAttempts; attempt++) {
         try {
           await client.attach(udid)
           const session = { udid, client }
-          this.nativeSessions.set(sessionId, session)
+          this.nativeSessions.set(udid, session)
           return session
         } catch (error) {
           lastError = error
@@ -783,31 +793,30 @@ export class IosSimulatorManager {
       }
       await client.dispose()
       throw lastError instanceof Error ? lastError : new Error('Could not attach the native iOS helper.')
-    })().finally(() => this.nativeFlights.delete(sessionId))
-    this.nativeFlights.set(sessionId, flight)
+    })().finally(() => this.nativeFlights.delete(udid))
+    this.nativeFlights.set(udid, flight)
     // Queued after the rebuild rather than inside it: `openStream` awaits this very
     // flight, so starting it from within would have it wait on itself.
-    if (crashed) void flight.then(() => this.startStream(sessionId), () => undefined)
+    if (crashed) void flight.then(() => this.startStream(udid), () => undefined)
     return flight
   }
 
-  private startStream(sessionId: string): Promise<void> {
-    return this.queueStreamWork(sessionId, () => this.openStream(sessionId))
+  private startStream(udid: string): Promise<void> {
+    return this.queueStreamWork(udid, () => this.openStream(udid))
   }
 
-  private async openStream(sessionId: string): Promise<void> {
-    const stream = this.streams.get(sessionId)
-    const udid = this.sessionBindings.get(sessionId)
-    if (!stream || !udid || stream.started || stream.listeners.size === 0) return
+  private async openStream(udid: string): Promise<void> {
+    const stream = this.streams.get(udid)
+    if (!stream || !this.owners.has(udid) || stream.started || stream.listeners.size === 0) return
     try {
-      const native = await this.ensureNativeSession(sessionId, udid)
-      if (!this.streams.has(sessionId)) return
+      const native = await this.ensureNativeSession(udid)
+      if (!this.streams.has(udid)) return
       const info = await native.client.startFrames(
         stream.preferredMode,
         stream.quality,
-        (frame) => this.emitFrame(sessionId, frame),
+        (frame) => this.emitFrame(udid, frame),
       )
-      if (this.streams.get(sessionId) !== stream || stream.listeners.size === 0) {
+      if (this.streams.get(udid) !== stream || stream.listeners.size === 0) {
         await native.client.closeFrames()
         return
       }
@@ -817,20 +826,20 @@ export class IosSimulatorManager {
       // Swallowing this used to strand the panel on its loading spinner with no
       // trace anywhere: the stream simply never produced a frame.
       stream.started = false
-      this.onStreamError(sessionId, error)
+      this.onStreamError(udid, error)
     }
   }
 
-  private emitFrame(sessionId: string, packet: NativeFramePacket): void {
-    const stream = this.streams.get(sessionId)
+  private emitFrame(udid: string, packet: NativeFramePacket): void {
+    const stream = this.streams.get(udid)
     if (!stream) return
     // The negotiated size, not the attachment size: a scaled preview encodes
     // smaller than the device's framebuffer, and this is what configures the decoder.
-    const negotiated = this.nativeSessions.get(sessionId)?.client.streamInfo
+    const negotiated = this.nativeSessions.get(udid)?.client.streamInfo
     const codecConfig = packet.kind === 'h264-config'
     const codec = codecConfig ? packet.data.toString('utf8') : undefined
     const frame: IosSimulatorFrame = {
-      sessionId,
+      deviceId: udid,
       sequence: ++stream.sequence,
       timestampMs: Math.floor(packet.timestampUs / 1_000),
       timestampUs: packet.timestampUs,
@@ -858,30 +867,30 @@ export class IosSimulatorManager {
    * whereas the last unsubscribe only asks for it, because a remount can re-subscribe
    * before the request reaches the front of the queue.
    */
-  private stopStream(sessionId: string, force = true): Promise<void> {
-    return this.queueStreamWork(sessionId, () => this.closeStream(sessionId, force))
+  private stopStream(udid: string, force = true): Promise<void> {
+    return this.queueStreamWork(udid, () => this.closeStream(udid, force))
   }
 
-  private async closeStream(sessionId: string, force: boolean): Promise<void> {
-    const stream = this.streams.get(sessionId)
+  private async closeStream(udid: string, force: boolean): Promise<void> {
+    const stream = this.streams.get(udid)
     if (!stream) return
     if (!force && stream.listeners.size > 0) return
-    this.streams.delete(sessionId)
+    this.streams.delete(udid)
     stream.listeners.clear()
-    await this.nativeSessions.get(sessionId)?.client.closeFrames()
+    await this.nativeSessions.get(udid)?.client.closeFrames()
   }
 
-  private async disposeNativeSession(sessionId: string): Promise<void> {
-    const inflight = this.nativeFlights.get(sessionId)
+  private async disposeNativeSession(udid: string): Promise<void> {
+    const inflight = this.nativeFlights.get(udid)
     if (inflight) await inflight.catch(() => undefined)
-    const native = this.nativeSessions.get(sessionId)
-    this.nativeSessions.delete(sessionId)
+    const native = this.nativeSessions.get(udid)
+    this.nativeSessions.delete(udid)
     await native?.client.dispose()
   }
 
-  private emptyState(sessionId: string): IosSimulatorSessionState {
+  private emptyState(udid: string): IosSimulatorSessionState {
     return {
-      sessionId,
+      sessionId: this.owners.get(udid) ?? '',
       device: null,
       phase: 'idle',
       previewMode: 'native-h264',

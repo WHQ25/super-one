@@ -212,7 +212,7 @@ export const DEVICE_PLATFORM_NAMES: Record<DevicePlatform, string> = {
  * video socket produce the same shape and the renderer decodes them with one path.
  */
 export interface DeviceFrame {
-  sessionId: string
+  deviceId: string
   sequence: number
   timestampMs: number
   timestampUs?: number

@@ -69,8 +69,14 @@ export function detectAndroidToolchain(env?: NodeJS.ProcessEnv): AndroidToolchai
 }
 
 export class AndroidDeviceManager {
-  private readonly sessionBindings = new Map<string, string>()
-  private readonly deviceOwners = new Map<string, string>()
+  /**
+   * Device id -> the session holding it. The single source of truth for ownership.
+   *
+   * One device belongs to at most one session; a session may hold several. Everything
+   * else here is keyed by DEVICE, because a device is the thing that has a connection,
+   * an orientation and a picture — the session is only who is looking at it.
+   */
+  private readonly owners = new Map<string, string>()
   /** Device id -> adb serial, for the ones that are up. */
   private readonly serials = new Map<string, string>()
   /** AVDs this app started, so it can shut down only what it is responsible for. */
@@ -158,7 +164,7 @@ export class AndroidDeviceManager {
       avds,
       attached,
       runtime,
-      owners: this.deviceOwners,
+      owners: this.owners,
     })
     this.rememberSerials(devices, runtime)
     this.lastDevices = devices
@@ -183,25 +189,24 @@ export class AndroidDeviceManager {
   }
 
   /**
-   * The scrcpy connection driving this session's device, opened on first use.
+   * The scrcpy connection to a device, opened on first use.
    *
-   * One per session, shared by the agent and the preview: they are looking at the same
-   * device, and a second connection would mean a second encoder on the guest and two
+   * One per DEVICE, shared by the agent and the preview: they are looking at the same
+   * screen, and a second connection would mean a second encoder on the guest and two
    * sets of touches arriving out of order.
    *
    * In-flight connections are tracked as well as finished ones — opening takes a
    * second or two, and a snapshot racing the panel would otherwise start a second one
    * before the first had finished announcing itself.
    */
-  async connection(sessionId: string): Promise<ScrcpyConnection> {
-    const existing = this.connections.get(sessionId)
+  async connection(deviceId: string): Promise<ScrcpyConnection> {
+    const existing = this.connections.get(deviceId)
     if (existing) return existing
-    const flight = this.connectionFlights.get(sessionId)
+    const flight = this.connectionFlights.get(deviceId)
     if (flight) return flight
 
-    const deviceId = this.sessionBindings.get(sessionId)
-    const serial = deviceId ? this.serialFor(deviceId) : null
-    if (!serial) throw new Error('This session controls no running Android device.')
+    const serial = this.serialFor(deviceId)
+    if (!serial) throw new Error(`${deviceId} is not a running Android device.`)
 
     const opening = connectScrcpy({
       adb: this.toolchain.adb,
@@ -209,15 +214,15 @@ export class AndroidDeviceManager {
       serial,
       maxSize: SCRCPY_MAX_SIZE,
     }).then((connection) => {
-      this.connectionFlights.delete(sessionId)
-      this.connections.set(sessionId, connection)
-      connection.onClosed(() => this.connections.delete(sessionId))
+      this.connectionFlights.delete(deviceId)
+      this.connections.set(deviceId, connection)
+      connection.onClosed(() => this.connections.delete(deviceId))
       return connection
     }).catch((error: unknown) => {
-      this.connectionFlights.delete(sessionId)
+      this.connectionFlights.delete(deviceId)
       throw error
     })
-    this.connectionFlights.set(sessionId, opening)
+    this.connectionFlights.set(deviceId, opening)
     return opening
   }
 
@@ -230,15 +235,15 @@ export class AndroidDeviceManager {
    * exactly once and encodes at whatever profile the guest picked; the simulator
    * repeats them on every keyframe and names its own codec. See that file.
    */
-  subscribe(sessionId: string, listener: (frame: DeviceFrame) => void): () => void {
+  subscribe(deviceId: string, listener: (frame: DeviceFrame) => void): () => void {
     const video = new AndroidVideoStream()
     let disposed = false
     let stop: (() => void) | null = null
 
-    void this.connection(sessionId).then((connection) => {
+    void this.connection(deviceId).then((connection) => {
       if (disposed) return
       const offMedia = connection.onMedia((packet) => {
-        listener(video.frame(packet, { sessionId, screen: connection.screen }))
+        listener(video.frame(packet, { deviceId, screen: connection.screen }))
       })
       // A rotation re-shapes the framebuffer rather than turning a fixed one, so the
       // decoder has to be told before the next frame arrives at a new size. Reported
@@ -247,9 +252,9 @@ export class AndroidDeviceManager {
         log.info('[android] capture resized', session.width, session.height)
         // A resize IS a rotation on Android, so the panel has to hear about it —
         // it cannot infer the new shape from a framebuffer that never changed.
-        void this.readOrientation(sessionId)
-          .then(() => this.announce(sessionId))
-          .catch(() => this.announce(sessionId))
+        void this.readOrientation(deviceId)
+          .then(() => this.announce(deviceId))
+          .catch(() => this.announce(deviceId))
       })
       stop = () => {
         offMedia()
@@ -266,15 +271,14 @@ export class AndroidDeviceManager {
   }
 
   /** The device's own idea of which way up it is. Cached for `sessionState`. */
-  private async readOrientation(sessionId: string): Promise<DeviceOrientation> {
-    const deviceId = this.sessionBindings.get(sessionId)
-    const serial = deviceId ? this.serialFor(deviceId) : null
+  private async readOrientation(deviceId: string): Promise<DeviceOrientation> {
+    const serial = this.serialFor(deviceId)
     if (!serial) return 'portrait'
     const raw = await this.toolchain.adb
       .shell(serial, ['settings', 'get', 'system', 'user_rotation'])
       .catch(() => '0')
     const orientation = orientationForRotation(Number.parseInt(raw.trim(), 10))
-    this.orientations.set(sessionId, orientation)
+    this.orientations.set(deviceId, orientation)
     return orientation
   }
 
@@ -285,85 +289,112 @@ export class AndroidDeviceManager {
    * new orientation is announced rather than merely stored: an agent rotating the
    * device behind the panel's back is exactly the case the broadcast exists for.
    */
-  async rotate(sessionId: string, rotation: number): Promise<void> {
-    const deviceId = this.sessionBindings.get(sessionId)
-    const serial = deviceId ? this.serialFor(deviceId) : null
+  async rotate(deviceId: string, rotation: number): Promise<void> {
+    const serial = this.serialFor(deviceId)
     if (!serial) return
     await this.toolchain.adb.shell(serial, ['settings', 'put', 'system', 'accelerometer_rotation', '0'])
     await this.toolchain.adb.shell(serial, ['settings', 'put', 'system', 'user_rotation', String(rotation)])
-    this.orientations.set(sessionId, orientationForRotation(rotation))
-    this.announce(sessionId)
+    this.orientations.set(deviceId, orientationForRotation(rotation))
+    this.announce(deviceId)
   }
 
   /**
-   * Stop the device this session holds — but only if this app started it.
+   * Stop a device — but only if this app started it.
    *
    * A phone on someone's desk, or an emulator they launched from Android Studio, is
    * not ours to turn off. Letting go is the most that can be done there, and it is
    * what happens.
    */
-  async stopDevice(sessionId: string): Promise<void> {
-    const deviceId = this.sessionBindings.get(sessionId)
-    const avdId = deviceId ? avdIdFromDeviceId(deviceId) : null
+  async stopDevice(deviceId: string): Promise<void> {
+    const avdId = avdIdFromDeviceId(deviceId)
     const launch = avdId ? this.launched.get(avdId) : null
-    await this.closeConnection(sessionId)
+    await this.closeConnection(deviceId)
     if (launch && avdId) {
       launch.stop()
       this.launched.delete(avdId)
     }
-    this.release(sessionId)
+    this.release(deviceId)
   }
 
   private readonly stateListeners = new Set<(state: DeviceSessionState) => void>()
 
   /** State the panel did not ask for — a rotation the agent made, a stream that died. */
-  onSessionState(listener: (state: DeviceSessionState) => void): () => void {
+  onState(listener: (state: DeviceSessionState) => void): () => void {
     this.stateListeners.add(listener)
     return () => this.stateListeners.delete(listener)
   }
 
-  private announce(sessionId: string): void {
-    const state = this.sessionState(sessionId)
+  /**
+   * Tell one session it is holding nothing, without describing any device.
+   *
+   * The counterpart to `announce`, which describes a DEVICE. A session that just lost
+   * one needs a reading addressed to itself, because that is the only kind its panel
+   * is listening for.
+   */
+  private announceLoss(sessionId: string): void {
+    const state: DeviceSessionState = {
+      sessionId,
+      device: null,
+      phase: 'idle',
+      interactive: false,
+      orientation: 'portrait',
+    }
     for (const listener of this.stateListeners) listener(state)
   }
 
-  /** What the panel needs to draw this session, in the shared shape. */
-  sessionState(sessionId: string): DeviceSessionState {
-    const device = this.controlled(sessionId)
-    const connection = this.connections.get(sessionId)
+  private announce(deviceId: string): void {
+    const state = this.deviceState(deviceId)
+    for (const listener of this.stateListeners) listener(state)
+  }
+
+  /** What the panel needs to draw this device, in the shared shape. */
+  deviceState(deviceId: string): DeviceSessionState {
+    const owner = this.owners.get(deviceId) ?? null
+    const device = owner ? this.descriptorFor(deviceId) : null
+    const connection = this.connections.get(deviceId)
     return {
-      sessionId,
+      sessionId: owner ?? '',
       device,
       phase: device ? 'ready' : 'idle',
       interactive: Boolean(device),
-      orientation: this.orientations.get(sessionId) ?? 'portrait',
+      orientation: this.orientations.get(deviceId) ?? 'portrait',
       ...(connection && connection.screen.width > 0
         ? { pixelWidth: connection.screen.width, pixelHeight: connection.screen.height }
         : {}),
     }
   }
 
-  private async closeConnection(sessionId: string): Promise<void> {
-    const connection = this.connections.get(sessionId)
-    this.connections.delete(sessionId)
+  private async closeConnection(deviceId: string): Promise<void> {
+    const connection = this.connections.get(deviceId)
+    this.connections.delete(deviceId)
     await connection?.close()
   }
 
   /**
-   * Whether this session holds a device. See `DeviceSurface.owns`.
+   * Every Android device this session holds, in no particular order.
    *
-   * Not `controlled(...) != null`: that one resolves the descriptor through the last
-   * device listing, so a session whose device is bound but not yet listed reads as
-   * holding nothing. The binding is the truth about ownership.
+   * Read off `owners` rather than a per-session index: ownership is the fact, and a
+   * second structure alongside it is a second thing to get out of step.
    */
-  holdsSession(sessionId: string): boolean {
-    return this.sessionBindings.has(sessionId)
+  devicesOf(sessionId: string): string[] {
+    return [...this.owners].filter(([, owner]) => owner === sessionId).map(([id]) => id)
   }
 
-  controlled(sessionId: string): DeviceDescriptor | null {
-    const id = this.sessionBindings.get(sessionId)
-    if (!id) return null
-    return this.lastDevices.find((device) => device.id === id) ?? null
+  /**
+   * The one device this session holds, when it holds exactly one.
+   *
+   * Null for none AND for several, deliberately: with two devices in hand there is no
+   * default that is not a guess, and guessing wrong means driving the wrong app. The
+   * agent tools name the device explicitly once they hold more than one.
+   */
+  soleDeviceOf(sessionId: string): string | null {
+    const held = this.devicesOf(sessionId)
+    return held.length === 1 ? held[0]! : null
+  }
+
+  /** The last-listed descriptor for a device. Null until a listing has seen it. */
+  descriptorFor(deviceId: string): DeviceDescriptor | null {
+    return this.lastDevices.find((device) => device.id === deviceId) ?? null
   }
 
   /**
@@ -391,51 +422,45 @@ export class AndroidDeviceManager {
     const device = devices.find((candidate) => candidate.id === deviceId)
     if (!device) return null
 
-    await this.bind(sessionId, deviceId)
+    this.bind(sessionId, deviceId)
     // Re-read so the descriptor handed back carries the ownership just recorded,
     // rather than the state from a moment before the grant.
     return { ...device, boundSessionId: sessionId }
   }
 
   /**
-   * Move the binding, and take down whatever the move orphaned.
+   * Hand the device to this session, taking it off whoever had it.
    *
-   * Both halves close a scrcpy connection, because a connection outlives the grant it
-   * was opened for unless someone ends it. `connection()` is keyed by SESSION and
-   * answers from its cache BEFORE it resolves a serial, so a stale one is not merely
-   * an idle socket — it is the connection the next subscribe and the next touch will
-   * be handed, pointing at a device this session no longer holds.
-   *
-   * Rebinding a session to the device it already has is left alone on purpose: it is
-   * how the panel re-affirms a grant, and tearing the video down for it would black
-   * the preview out for a second every time.
+   * Only the DISPLACED side needs tearing down now. A session changing which device
+   * it looks at is no longer a thing this can infer -- a session may hold several --
+   * so giving one up is the caller's decision, made by calling `release`.
    */
-  private async bind(sessionId: string, deviceId: string): Promise<void> {
-    const previous = this.sessionBindings.get(sessionId)
-    if (previous && previous !== deviceId) {
-      this.deviceOwners.delete(previous)
-      await this.closeConnection(sessionId)
-    }
-    const displaced = this.deviceOwners.get(deviceId)
+  private bind(sessionId: string, deviceId: string): void {
+    const displaced = this.owners.get(deviceId)
+    this.owners.set(deviceId, sessionId)
     if (displaced && displaced !== sessionId) {
-      this.sessionBindings.delete(displaced)
-      // Otherwise the guest is encoding twice, for a panel that no longer owns it.
-      await this.closeConnection(displaced)
-      // And that panel has to be told: it would sit on its last frame reading
-      // `ready`, offering controls whose touches `input` now refuses by name.
-      this.announce(displaced)
+      // The connection belongs to the device, so it is NOT closed: the new owner
+      // wants the same picture, and tearing it down would cost them a reconnect.
+      //
+      // But the previous owner has to hear about it, and it cannot hear it from the
+      // broadcast below -- that one names the NEW owner, and the panel subscribes by
+      // session, so the old one would never be handed it.
+      this.announceLoss(displaced)
     }
-    this.sessionBindings.set(sessionId, deviceId)
-    this.deviceOwners.set(deviceId, sessionId)
+    this.announce(deviceId)
   }
 
-  release(sessionId: string): void {
-    const deviceId = this.sessionBindings.get(sessionId)
-    this.sessionBindings.delete(sessionId)
-    if (deviceId) this.deviceOwners.delete(deviceId)
-    // The stream belonged to the grant, not to the device: letting go has to stop the
-    // encoder on the guest, or a released session keeps paying for frames nobody reads.
-    void this.closeConnection(sessionId)
+  /** Give a device up, and stop paying for its stream. */
+  release(deviceId: string): void {
+    if (!this.owners.delete(deviceId)) return
+    // The encoder on the guest runs for whoever is watching. Nobody is now.
+    void this.closeConnection(deviceId)
+    this.orientations.delete(deviceId)
+  }
+
+  /** Everything this session held, on its way out. */
+  releaseSession(sessionId: string): void {
+    for (const deviceId of this.devicesOf(sessionId)) this.release(deviceId)
   }
 
   /**
@@ -493,8 +518,7 @@ export class AndroidDeviceManager {
     await Promise.all([...this.connections.keys()].map((id) => this.closeConnection(id)))
     for (const launch of this.launched.values()) launch.stop()
     this.launched.clear()
-    this.sessionBindings.clear()
-    this.deviceOwners.clear()
+    this.owners.clear()
     this.serials.clear()
   }
 }

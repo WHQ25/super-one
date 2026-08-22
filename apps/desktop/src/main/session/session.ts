@@ -16,6 +16,7 @@ import type {
   SandboxMode,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
+import { existsSync, statSync } from 'fs'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { getSandboxCapability } from '../sandbox-platform'
@@ -56,6 +57,7 @@ import {
   LOCAL_OWNER,
   SessionClaimConflictError,
   SessionLockedError,
+  SessionWorktreeRemovedError,
   type BackendCommand,
   type BackendStartOptions,
   type HarnessId,
@@ -367,7 +369,35 @@ export class Session implements SessionContract {
     this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId, reason })
   }
 
+  /**
+   * Composer withdraws when the worktree checkout is gone. Main process must
+   * refuse new turns the same way — collab / mobile / automation otherwise
+   * bypass the READ ONLY banner.
+   */
+  private rejectIfWorktreeRemoved(): SessionWorktreeRemovedError | null {
+    if (this._missingWorktreePath) {
+      return new SessionWorktreeRemovedError(this.id, this._missingWorktreePath)
+    }
+    if (this._cwd === this.projectPath) return null
+    let gone = false
+    try {
+      gone = !existsSync(this._cwd) || !statSync(this._cwd).isDirectory()
+    } catch {
+      gone = true
+    }
+    if (!gone) return null
+    this._missingWorktreePath = this._cwd
+    this.forwardEvent({
+      type: 'worktree_missing',
+      worktreePath: this._cwd,
+      fallbackCwd: this.projectPath,
+    } as AgentEvent)
+    return new SessionWorktreeRemovedError(this.id, this._cwd)
+  }
+
   private assertCanSend(providerOrigin: SendProviderOrigin): void {
+    const worktreeErr = this.rejectIfWorktreeRemoved()
+    if (worktreeErr) throw worktreeErr
     // remote: device that owns/subscribes the session
     // host: trusted main-process wakes (mailbox, download settle) — not UI ownership
     if (providerOrigin === 'remote' || providerOrigin === 'host') return
@@ -1787,6 +1817,7 @@ export class Session implements SessionContract {
    */
   async injectTaskNotification(content: string): Promise<void> {
     if (this._status === 'disposed') return
+    if (this.rejectIfWorktreeRemoved()) return
     const text = content.trim()
     if (!text) return
     this.touchRuntimeActivity()

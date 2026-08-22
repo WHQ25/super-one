@@ -30,7 +30,7 @@ import { h264CodecString } from './h264'
 const FALLBACK_CODEC = 'avc1.640028'
 
 export interface AndroidFrameContext {
-  sessionId: string
+  deviceId: string
   screen: { width: number; height: number }
   timestampMs?: number
 }
@@ -52,7 +52,7 @@ export class AndroidVideoStream {
       ? Buffer.concat([this.parameterSets, packet.data])
       : packet.data
     return {
-      sessionId: context.sessionId,
+      deviceId: context.deviceId,
       sequence: this.sequence++,
       timestampMs: context.timestampMs ?? Date.now(),
       timestampUs: packet.timestampUs,

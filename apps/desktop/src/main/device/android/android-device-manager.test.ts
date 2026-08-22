@@ -164,7 +164,7 @@ describe('ownership', () => {
     const manager = new AndroidDeviceManager(tools)
     await manager.listDevices()
 
-    expect(manager.controlled('session-1')).toBeNull()
+    expect(manager.devicesOf('session-1')).toEqual([])
   })
 
   it('hands the device to the session that was granted it', async () => {
@@ -173,7 +173,7 @@ describe('ownership', () => {
     const device = await manager.boot('session-1', `android:avd:${AVD_ID}`)
 
     expect(device).toMatchObject({ boundSessionId: 'session-1' })
-    expect(manager.controlled('session-1')?.id).toBe(`android:avd:${AVD_ID}`)
+    expect(manager.devicesOf('session-1')).toEqual([`android:avd:${AVD_ID}`])
   }, 20_000)
 
   it('takes the device away from the session that had it', async () => {
@@ -184,17 +184,17 @@ describe('ownership', () => {
     await manager.boot('session-1', `android:avd:${AVD_ID}`)
     await manager.boot('session-2', `android:avd:${AVD_ID}`)
 
-    expect(manager.controlled('session-2')?.id).toBe(`android:avd:${AVD_ID}`)
-    expect(manager.controlled('session-1')).toBeNull()
+    expect(manager.devicesOf('session-2')).toEqual([`android:avd:${AVD_ID}`])
+    expect(manager.devicesOf('session-1')).toEqual([])
   }, 20_000)
 
   it('frees the device when the session lets go', async () => {
     const { toolchain: tools } = toolchain()
     const manager = new AndroidDeviceManager(tools)
     await manager.boot('session-1', `android:avd:${AVD_ID}`)
-    manager.release('session-1')
+    manager.releaseSession('session-1')
 
-    expect(manager.controlled('session-1')).toBeNull()
+    expect(manager.devicesOf('session-1')).toEqual([])
     const devices = await manager.listDevices()
     expect(devices[0]?.boundSessionId).toBeUndefined()
   }, 20_000)
@@ -217,47 +217,62 @@ describe('rebinding a session', () => {
     return new AndroidDeviceManager(toolchain({ devices: TWO_DEVICES_OUTPUT }).toolchain)
   }
 
-  it('closes the connection pointing at the device a session just left', async () => {
+  it('keeps both devices live when a session takes a second one', async () => {
     const android = manager()
     await android.boot('session-1', AVD_DEVICE_ID)
-    await android.connection('session-1')
-    expect(scrcpy.connections[0]!.serial).toBe(SERIAL)
+    await android.connection(AVD_DEVICE_ID)
 
     await android.boot('session-1', PHONE_ID)
+    await android.connection(PHONE_ID)
 
-    // Left open, the next subscribe would be handed this one back out of the
-    // session-keyed cache and the panel would keep watching the emulator.
-    expect(scrcpy.connections[0]!.closed).toBe(true)
-    await android.connection('session-1')
-    expect(scrcpy.connections[1]!.serial).toBe(PHONE_SERIAL)
+    // The point of keying by device: an emulator and a phone, watched side by side.
+    // Taking a second one used to close the first, because a session could only mean
+    // one device and "another boot" could only mean "swap".
+    expect(scrcpy.connections.map((entry) => entry.serial)).toEqual([SERIAL, PHONE_SERIAL])
+    expect(scrcpy.connections.every((entry) => !entry.closed)).toBe(true)
+    expect(android.devicesOf('session-1').sort()).toEqual([AVD_DEVICE_ID, PHONE_ID].sort())
   })
 
-  it('leaves the video alone when a session rebinds the device it already holds', async () => {
+  it('opens one connection per device, however often it is asked for', async () => {
     const android = manager()
     await android.boot('session-1', AVD_DEVICE_ID)
-    await android.connection('session-1')
+    await android.connection(AVD_DEVICE_ID)
 
-    await android.boot('session-1', AVD_DEVICE_ID)
+    await android.connection(AVD_DEVICE_ID)
 
+    // A second connection would mean a second encoder on the guest and two sets of
+    // touches arriving out of order.
     expect(scrcpy.connections).toHaveLength(1)
     expect(scrcpy.connections[0]!.closed).toBe(false)
   })
 
-  it('takes the displaced session down with the grant it lost', async () => {
+  it('closes the connection when a device is given up', async () => {
     const android = manager()
     await android.boot('session-1', AVD_DEVICE_ID)
-    await android.connection('session-1')
+    await android.connection(AVD_DEVICE_ID)
+
+    android.release(AVD_DEVICE_ID)
+
+    // The encoder on the guest runs for whoever is watching. Nobody is now.
+    expect(scrcpy.connections[0]!.closed).toBe(true)
+    expect(android.devicesOf('session-1')).toEqual([])
+  })
+
+  it('tells the displaced session it lost the device', async () => {
+    const android = manager()
+    await android.boot('session-1', AVD_DEVICE_ID)
+    await android.connection(AVD_DEVICE_ID)
     const announced: string[] = []
-    android.onSessionState((state) => {
-      if (!state.device) announced.push(state.sessionId)
-    })
+    android.onState((state) => { if (!state.device) announced.push(state.sessionId) })
 
     await android.boot('session-2', AVD_DEVICE_ID)
 
-    // A second encoder on the same guest, feeding a panel that no longer owns it.
-    expect(scrcpy.connections[0]!.closed).toBe(true)
-    expect(android.holdsSession('session-1')).toBe(false)
-    // And its panel hears about it, rather than sitting on its last frame as `ready`.
+    // The connection survives -- the new owner wants the same picture, and tearing it
+    // down would cost them a reconnect. What must not survive is the old owner's
+    // belief that it is still driving.
+    expect(scrcpy.connections[0]!.closed).toBe(false)
+    expect(android.devicesOf('session-1')).toEqual([])
+    expect(android.devicesOf('session-2')).toEqual([AVD_DEVICE_ID])
     expect(announced).toContain('session-1')
   })
 })

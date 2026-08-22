@@ -13,7 +13,13 @@
 
 import { BrowserWindow, ipcMain, MessageChannelMain, type MessagePortMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import type { DeviceDescriptor, DeviceInput, DeviceStreamOptions } from '@superone/shared/device'
+import { parseDeviceId } from '@superone/shared/device'
+import type {
+  DeviceDescriptor,
+  DeviceInput,
+  DeviceSessionState,
+  DeviceStreamOptions,
+} from '@superone/shared/device'
 import log from '../logger'
 import type { DeviceSurface } from './surface'
 
@@ -31,6 +37,17 @@ function closePort(key: string): void {
   current.port.close()
 }
 
+/** What the panel sees before it holds anything: an empty stage with a picker. */
+function emptyDeviceState(sessionId: string): DeviceSessionState {
+  return {
+    sessionId,
+    device: null,
+    phase: 'idle',
+    interactive: false,
+    orientation: 'portrait',
+  }
+}
+
 export interface DeviceIpcOptions {
   /** In catalog order. The first one is where a session with no device lands. */
   surfaces: () => DeviceSurface[]
@@ -39,38 +56,40 @@ export interface DeviceIpcOptions {
 }
 
 /**
- * Which surface owns this session.
+ * The surface that speaks to a device, read off the id's provider prefix.
  *
- * Asked in order and answered by the first that claims it. A session holding nothing
- * falls to the first surface, which is what makes an empty panel show the simulator's
- * device picker rather than nothing at all.
- *
- * Synchronous, and that is a requirement rather than a convenience: this runs in
- * front of EVERY call the panel makes, including one input per 8ms of a drag. It
- * used to ask `sessionState`, which on iOS spawns `simctl list devices --json` —
- * a quarter of a second, per touch sample. See `DeviceSurface.owns`.
+ * A pure function: `parseDeviceId` gives the provider, and the provider is what each
+ * surface registers under. Nothing to consult, nothing to keep in step — which is
+ * what makes routing cheap enough to sit in front of every touch sample.
  */
-function surfaceFor(surfaces: DeviceSurface[], sessionId: string): DeviceSurface {
-  for (const surface of surfaces) {
-    if (surface.owns(sessionId)) return surface
-  }
-  const fallback = surfaces[0]
-  if (!fallback) throw new Error('No device platform is available on this machine.')
-  return fallback
+function surfaceForDevice(surfaces: DeviceSurface[], deviceId: string): DeviceSurface {
+  const provider = parseDeviceId(deviceId)?.provider
+  const surface = provider ? surfaces.find((candidate) => candidate.provider === provider) : undefined
+  if (!surface) throw new Error(`No backend is registered for ${deviceId}.`)
+  return surface
 }
 
 /**
- * The surface that owns a device id, by its platform prefix.
+ * MIGRATION SHIM — the last place that turns a session into a device.
  *
- * Used for the calls that name a device rather than rely on the session already
- * holding one — binding and booting, which are how a session comes to hold one at all.
+ * Every channel below is about one device, but the renderer still names the session
+ * and lets the host work out which device that is. That was well defined while a
+ * session could hold only one; it is exactly what is being replaced. Until the
+ * renderer sends the deviceId itself, this resolves the single device a session
+ * holds, which reproduces today's behaviour precisely.
+ *
+ * A session holding nothing falls back to the first surface, which is what makes an
+ * empty panel open on the simulator's device picker rather than on nothing.
  */
-function surfaceForDevice(surfaces: DeviceSurface[], deviceId: string): DeviceSurface {
-  const separator = deviceId.indexOf(':')
-  const platform = separator > 0 ? deviceId.slice(0, separator) : 'ios'
-  const surface = surfaces.find((candidate) => candidate.platform === platform)
-  if (!surface) throw new Error(`No backend is registered for ${platform}.`)
-  return surface
+function sessionTarget(
+  surfaces: DeviceSurface[],
+  sessionId: string,
+): { surface: DeviceSurface; deviceId: string } | null {
+  for (const surface of surfaces) {
+    const held = surface.devicesOf(sessionId)
+    if (held.length > 0) return { surface, deviceId: held[0]! }
+  }
+  return null
 }
 
 export function registerDeviceIpc(options: DeviceIpcOptions): void {
@@ -81,7 +100,7 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
   // own. Orientation and the keyboard switch live in the main process, and an agent
   // driving the device changes them behind every panel's back.
   for (const surface of surfaces()) {
-    surface.onSessionState((state) => {
+    surface.onState((state: DeviceSessionState) => {
       for (const win of BrowserWindow.getAllWindows()) {
         if (win.isDestroyed()) continue
         win.webContents.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE, state)
@@ -89,7 +108,7 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
     })
   }
 
-  const bySession = (sessionId: string) => surfaceFor(surfaces(), sessionId)
+  const target = (sessionId: string) => sessionTarget(surfaces(), sessionId)
 
   // The catalog, not the surfaces: discovering devices is the ports' job and they
   // already merge every platform into one ordered list for the agent. The picker shows
@@ -98,7 +117,10 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
 
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_STATE,
-    (_event, sessionId: string) => bySession(sessionId).sessionState(sessionId),
+    (_event, sessionId: string) => {
+      const held = target(sessionId)
+      return held ? held.surface.state(held.deviceId) : emptyDeviceState(sessionId)
+    },
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_BIND,
@@ -112,35 +134,57 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_DETACH,
-    (_event, sessionId: string) => bySession(sessionId).detach(sessionId),
+    (_event, sessionId: string) => {
+      const held = target(sessionId)
+      return held ? held.surface.detach(held.deviceId) : emptyDeviceState(sessionId)
+    },
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_SHUTDOWN,
-    (_event, sessionId: string) => bySession(sessionId).shutdown(sessionId),
+    (_event, sessionId: string) => {
+      const held = target(sessionId)
+      return held ? held.surface.shutdown(held.deviceId) : emptyDeviceState(sessionId)
+    },
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE,
     async (_event, sessionId: string) => {
       // Every surface, not just the owner: releasing is cleanup on the way out, and a
       // session that changed platforms mid-life may have left state on both.
-      await Promise.all(surfaces().map((surface) => surface.release(sessionId).catch(() => undefined)))
+      await Promise.all(surfaces().map((surface) => surface.releaseSession(sessionId).catch(() => undefined)))
     },
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT,
-    (_event, sessionId: string, input: DeviceInput) => bySession(sessionId).input(sessionId, input),
+    (_event, sessionId: string, input: DeviceInput) => {
+      const held = target(sessionId)
+      if (!held) return { ok: false, error: 'This session controls no device.' }
+      return held.surface.input(held.deviceId, input)
+    },
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT,
-    (_event, sessionId: string) => bySession(sessionId).screenshot(sessionId),
+    (_event, sessionId: string) => {
+      const held = target(sessionId)
+      if (!held) throw new Error('This session controls no device.')
+      return held.surface.screenshot(held.deviceId)
+    },
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_START,
-    (_event, sessionId: string) => bySession(sessionId).startRecording(sessionId),
+    (_event, sessionId: string) => {
+      const held = target(sessionId)
+      if (!held) throw new Error('This session controls no device.')
+      return held.surface.startRecording(held.deviceId)
+    },
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_STOP,
-    (_event, sessionId: string) => bySession(sessionId).stopRecording(sessionId),
+    (_event, sessionId: string) => {
+      const held = target(sessionId)
+      if (!held) throw new Error('This session controls no device.')
+      return held.surface.stopRecording(held.deviceId)
+    },
   )
 
   ipcMain.on(
@@ -155,7 +199,9 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
       // asynchronous, and carrying a late subscription across that gap needed a flag.
       let unsubscribe = () => {}
       try {
-        unsubscribe = surfaceFor(surfaces(), sessionId).subscribe(sessionId, (frame) => {
+        const held = sessionTarget(surfaces(), sessionId)
+        if (!held) throw new Error('This session controls no device.')
+        unsubscribe = held.surface.subscribe(held.deviceId, (frame) => {
           try { port2.postMessage(frame) } catch { closePort(key) }
         }, options)
       } catch (error: unknown) {

@@ -15,7 +15,7 @@ function packet(over: Partial<ScrcpyMediaPacket>): ScrcpyMediaPacket {
   return { kind: 'media', config: false, keyframe: false, timestampUs: 0, data: DELTA, ...over }
 }
 
-const context = { sessionId: 's', screen: { width: 720, height: 1600 }, timestampMs: 1 }
+const context = { deviceId: 'android:emulator-5554', screen: { width: 720, height: 1600 }, timestampMs: 1 }
 
 describe('AndroidVideoStream', () => {
   it('reads the codec off the config packet instead of assuming one', () => {

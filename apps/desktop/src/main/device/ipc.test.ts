@@ -47,7 +47,7 @@ vi.mock('../logger', () => ({ default: { warn: vi.fn() } }))
 import { closeDevicePorts, registerDeviceIpc } from './ipc'
 
 const IOS_DEVICE: DeviceDescriptor = {
-  id: 'ios:sim-1',
+  id: 'ios-sim:sim-1',
   platform: 'ios',
   name: 'iPhone',
   kind: 'iphone',
@@ -70,23 +70,23 @@ function state(device: DeviceDescriptor | null): DeviceSessionState {
   }
 }
 
-function surface(platform: DeviceSurface['platform']): DeviceSurface {
+function surface(provider: DeviceSurface['provider']): DeviceSurface {
   return {
-    platform,
-    owns: vi.fn(() => false),
-    sessionState: vi.fn(async () => state(null)),
+    provider,
+    devicesOf: vi.fn(() => [] as string[]),
+    state: vi.fn(async () => state(null)),
     bind: vi.fn(async () => state(IOS_DEVICE)),
     boot: vi.fn(async () => state(IOS_DEVICE)),
     detach: vi.fn(async () => state(null)),
     shutdown: vi.fn(async () => state(null)),
-    release: vi.fn(async () => {}),
+    releaseSession: vi.fn(async () => {}),
     input: vi.fn(async () => ({ ok: true })),
     screenshot: vi.fn(async () => ({ kind: 'screenshot', path: '/shot.png', fileName: 'shot.png' })),
     startRecording: vi.fn(async () => ({ kind: 'recording', path: '/clip.mp4', fileName: 'clip.mp4' })),
     stopRecording: vi.fn(async () => null),
     isRecording: vi.fn(() => false),
     subscribe: vi.fn(() => () => {}),
-    onSessionState: vi.fn(() => () => {}),
+    onState: vi.fn(() => () => {}),
   }
 }
 
@@ -100,7 +100,7 @@ afterEach(() => closeDevicePorts())
 
 describe('device IPC routing', () => {
   it('routes a named device directly to the surface in its id', async () => {
-    const ios = surface('ios')
+    const ios = surface('ios-sim')
     const android = surface('android')
     registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
 
@@ -111,10 +111,10 @@ describe('device IPC routing', () => {
     expect(ios.bind).not.toHaveBeenCalled()
   })
 
-  it('routes a session to the surface that holds it', async () => {
-    const ios = surface('ios')
+  it('routes to the surface that holds the session\'s device', async () => {
+    const ios = surface('ios-sim')
     const android = surface('android')
-    vi.mocked(android.owns).mockReturnValue(true)
+    vi.mocked(android.devicesOf).mockReturnValue(['android:emulator-5554'])
     registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
 
     await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT)!(
@@ -123,19 +123,19 @@ describe('device IPC routing', () => {
       { type: 'button', button: 'home' },
     )
 
-    expect(android.input).toHaveBeenCalledOnce()
+    expect(android.input).toHaveBeenCalledWith('android:emulator-5554', { type: 'button', button: 'home' })
     expect(ios.input).not.toHaveBeenCalled()
   })
 
   /**
-   * The regression this whole seam exists for. `sessionState` on iOS spawns
+   * The regression this seam exists for. `state` on iOS spawns
    * `simctl list devices --json` — ~250ms — and a dragging finger routes an input
    * every 8ms, so a router that reads it makes the simulator unusable.
    */
   it('never reads device state to route, however many surfaces there are', async () => {
-    const ios = surface('ios')
+    const ios = surface('ios-sim')
     const android = surface('android')
-    vi.mocked(ios.owns).mockReturnValue(true)
+    vi.mocked(ios.devicesOf).mockReturnValue(['ios-sim:sim-1'])
     registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
 
     const handlers = electron.handlers
@@ -143,26 +143,40 @@ describe('device IPC routing', () => {
       type: 'button', button: 'home',
     })
     await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT)!({}, 'session-1')
-    await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_DETACH)!({}, 'session-1')
 
-    expect(ios.sessionState).not.toHaveBeenCalled()
-    expect(android.sessionState).not.toHaveBeenCalled()
+    expect(ios.state).not.toHaveBeenCalled()
+    expect(android.state).not.toHaveBeenCalled()
   })
 
-  it('lands a session holding nothing on the first surface, so the picker opens', async () => {
-    const ios = surface('ios')
+  it('answers for a session holding nothing without asking any surface', async () => {
+    const ios = surface('ios-sim')
     const android = surface('android')
     registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
 
-    await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE)!({}, 'session-1')
+    const answer = await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE)!({}, 'session-1')
 
-    expect(ios.sessionState).toHaveBeenCalledWith('session-1')
-    expect(android.sessionState).not.toHaveBeenCalled()
+    // An empty stage with a picker, which is what an unbound panel shows. Asking a
+    // surface would cost a `simctl list` to be told what the host already knows.
+    expect(answer).toMatchObject({ sessionId: 'session-1', device: null, phase: 'idle' })
+    expect(ios.state).not.toHaveBeenCalled()
+    expect(android.state).not.toHaveBeenCalled()
+  })
+
+  it('releases every device a session held, on every surface', async () => {
+    const ios = surface('ios-sim')
+    const android = surface('android')
+    registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
+
+    await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE)!({}, 'session-1')
+
+    // Both, not just the owner: a session may hold an emulator and a simulator at once.
+    expect(ios.releaseSession).toHaveBeenCalledWith('session-1')
+    expect(android.releaseSession).toHaveBeenCalledWith('session-1')
   })
 
   it('unsubscribes a stream closed right behind its open', async () => {
-    const ios = surface('ios')
-    vi.mocked(ios.owns).mockReturnValue(true)
+    const ios = surface('ios-sim')
+    vi.mocked(ios.devicesOf).mockReturnValue(['ios-sim:sim-1'])
     const unsubscribe = vi.fn()
     vi.mocked(ios.subscribe).mockReturnValue(unsubscribe)
     registerDeviceIpc({ surfaces: () => [ios], listDevices: async () => [] })

@@ -32,20 +32,15 @@ export function createAndroidSurface(
   manager: AndroidDeviceManager,
   captureRoot: string,
 ): DeviceSurface {
-  const serialFor = (sessionId: string): string | null => {
-    const device = manager.controlled(sessionId)
-    return device ? manager.serialFor(device.id) : null
-  }
-
   return {
-    platform: 'android',
+    provider: 'android',
 
-    owns(sessionId) {
-      return manager.holdsSession(sessionId)
+    devicesOf(sessionId) {
+      return manager.devicesOf(sessionId)
     },
 
-    async sessionState(sessionId) {
-      return manager.sessionState(sessionId)
+    async state(deviceId) {
+      return manager.deviceState(deviceId)
     },
 
     /**
@@ -58,42 +53,42 @@ export function createAndroidSurface(
      */
     async bind(sessionId, deviceId) {
       if (!manager.serialFor(deviceId)) {
-        return { ...manager.sessionState(sessionId), phase: 'idle' }
+        return { ...manager.deviceState(deviceId), phase: 'idle' }
       }
       await manager.boot(sessionId, deviceId)
-      return manager.sessionState(sessionId)
+      return manager.deviceState(deviceId)
     },
 
     async boot(sessionId, deviceId) {
       await manager.boot(sessionId, deviceId)
-      return manager.sessionState(sessionId)
+      return manager.deviceState(deviceId)
     },
 
-    async detach(sessionId) {
+    async detach(deviceId) {
       // Lets go of the device and its stream, and deliberately leaves the device
       // running: someone else may want it, and on Android that may be a phone on
       // somebody's desk.
-      manager.release(sessionId)
-      return manager.sessionState(sessionId)
+      manager.release(deviceId)
+      return manager.deviceState(deviceId)
     },
 
-    async shutdown(sessionId) {
-      await manager.stopDevice(sessionId)
-      return manager.sessionState(sessionId)
+    async shutdown(deviceId) {
+      await manager.stopDevice(deviceId)
+      return manager.deviceState(deviceId)
     },
 
-    async release(sessionId) {
-      manager.release(sessionId)
+    async releaseSession(sessionId) {
+      manager.releaseSession(sessionId)
     },
 
-    async input(sessionId, input: DeviceInput): Promise<DeviceInputResult> {
-      const serial = serialFor(sessionId)
-      if (!serial) return { ok: false, error: 'This session controls no Android device.' }
+    async input(deviceId, input: DeviceInput): Promise<DeviceInputResult> {
+      const serial = manager.serialFor(deviceId)
+      if (!serial) return { ok: false, error: `${deviceId} is not a running Android device.` }
 
       // Rotation is a setting, not a control message: scrcpy's ROTATE_DEVICE cycles to
       // the next orientation and cannot be told which one to land on.
       if (input.type === 'rotate') {
-        await manager.rotate(sessionId, ROTATION[input.orientation])
+        await manager.rotate(deviceId, ROTATION[input.orientation])
         return { ok: true }
       }
       if (input.type === 'keyboard') {
@@ -101,7 +96,7 @@ export function createAndroidSurface(
       }
 
       try {
-        const connection = await manager.connection(sessionId)
+        const connection = await manager.connection(deviceId)
         const messages = encodeDeviceInput(input, connection.screen)
         if (messages.length === 0) return { ok: false, error: `Unsupported input: ${input.type}` }
         connection.send(messages)
@@ -111,13 +106,15 @@ export function createAndroidSurface(
       }
     },
 
-    async screenshot(sessionId): Promise<DeviceCapture> {
-      const serial = serialFor(sessionId)
-      if (!serial) throw new Error('This session controls no Android device.')
+    async screenshot(deviceId): Promise<DeviceCapture> {
+      const serial = manager.serialFor(deviceId)
+      if (!serial) throw new Error(`${deviceId} is not a running Android device.`)
       const png = await manager.adb.execOut(serial, ['screencap', '-p'])
-      const name = manager.controlled(sessionId)?.name ?? 'android'
+      const name = manager.descriptorFor(deviceId)?.name ?? 'android'
       const fileName = captureFileName(name, 'png', new Date())
-      const path = join(captureRoot, sessionId, fileName)
+      // Filed under the device rather than the session: a capture is a picture OF a
+      // device, and a session may have several open at once.
+      const path = join(captureRoot, encodeURIComponent(deviceId), fileName)
       await mkdir(dirname(path), { recursive: true })
       await writeFile(path, png)
       return { path, fileName, kind: 'screenshot' }
@@ -126,7 +123,8 @@ export function createAndroidSurface(
     // Recording is not wired up yet. `adb shell screenrecord` can do it, but it needs
     // its own lifecycle — a device-side process, a 3-minute cap to work around, and a
     // pull when it stops — and none of that is shared with the simulator's path.
-    // Refused by name so the button can be disabled rather than appearing to work.
+    // Declared absent in `DEVICE_CAPABILITIES` so the button is disabled rather than
+    // offered and then refused.
     async startRecording(): Promise<DeviceCapture> {
       throw new Error('Screen recording is not available for Android devices yet.')
     },
@@ -137,12 +135,12 @@ export function createAndroidSurface(
       return false
     },
 
-    subscribe(sessionId, listener: (frame: DeviceFrame) => void) {
-      return manager.subscribe(sessionId, listener)
+    subscribe(deviceId, listener: (frame: DeviceFrame) => void) {
+      return manager.subscribe(deviceId, listener)
     },
 
-    onSessionState(listener: (state: DeviceSessionState) => void) {
-      return manager.onSessionState(listener)
+    onState(listener: (state: DeviceSessionState) => void) {
+      return manager.onState(listener)
     },
   }
 }

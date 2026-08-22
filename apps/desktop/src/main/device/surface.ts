@@ -16,7 +16,7 @@ import type {
   DeviceFrame,
   DeviceInput,
   DeviceInputResult,
-  DevicePlatform,
+  DeviceProvider,
   DeviceSessionState,
   DeviceStreamOptions,
 } from '@superone/shared/device'
@@ -24,53 +24,46 @@ import type {
 export type { DeviceCapture }
 
 export interface DeviceSurface {
-  readonly platform: DevicePlatform
+  readonly provider: DeviceProvider
 
   /**
-   * Whether this session's device is one of ours. THE ROUTING JUDGEMENT, and it is
-   * synchronous by contract.
+   * Every device this session holds here. The only session-shaped question left.
    *
-   * Every call the panel makes has to be routed, and one of them is `input` — which
-   * a dragging finger produces up to 125 times a second. So this may only read what
-   * the host already knows: which session bound which device, which both managers
-   * hold in memory.
-   *
-   * `sessionState` is the answer that looks equally correct and is not: on iOS it
-   * spawns `simctl list devices --json`, a quarter of a second of talking to
-   * CoreSimulatorService. Routing through it put one of those in front of every
-   * touch sample and made the simulator unusable while looking, from the outside,
-   * exactly like a rendering problem.
+   * A session may hold several devices at once — a client build and a merchant build,
+   * an iPhone and an Android — so everything below takes the DEVICE, and this is what
+   * answers "which ones are mine" for release and for the agent's default target.
    */
-  owns(sessionId: string): boolean
+  devicesOf(sessionId: string): string[]
 
-  sessionState(sessionId: string): Promise<DeviceSessionState>
+  state(deviceId: string): Promise<DeviceSessionState>
 
   /** Point a session at a device without starting anything. */
   bind(sessionId: string, deviceId: string): Promise<DeviceSessionState>
   /** Point a session at a device and get it running. */
   boot(sessionId: string, deviceId: string): Promise<DeviceSessionState>
   /** Let go, leaving the device running for whoever wants it next. */
-  detach(sessionId: string): Promise<DeviceSessionState>
+  detach(deviceId: string): Promise<DeviceSessionState>
   /** Let go AND stop the device. */
-  shutdown(sessionId: string): Promise<DeviceSessionState>
-  /** Drop everything this session held, on its way out. */
-  release(sessionId: string): Promise<void>
+  shutdown(deviceId: string): Promise<DeviceSessionState>
+  /** Drop every device this session held, on its way out. */
+  releaseSession(sessionId: string): Promise<void>
 
-  input(sessionId: string, input: DeviceInput): Promise<DeviceInputResult>
-  screenshot(sessionId: string): Promise<DeviceCapture>
-  startRecording(sessionId: string): Promise<DeviceCapture>
-  stopRecording(sessionId: string): Promise<DeviceCapture | null>
-  isRecording(sessionId: string): boolean
+  input(deviceId: string, input: DeviceInput): Promise<DeviceInputResult>
+  screenshot(deviceId: string): Promise<DeviceCapture>
+  startRecording(deviceId: string): Promise<DeviceCapture>
+  stopRecording(deviceId: string): Promise<DeviceCapture | null>
+  isRecording(deviceId: string): boolean
 
   /**
    * Live frames. Returns an unsubscribe.
    *
    * `options` is advisory: the simulator settles scale and frame rate when the
    * stream starts, so it honours them; scrcpy fixes its own when the video socket
-   * opens, so Android ignores them rather than pretending otherwise.
+   * opens, so Android ignores them rather than pretending otherwise. See
+   * `DEVICE_CAPABILITIES.previewQuality`.
    */
   subscribe(
-    sessionId: string,
+    deviceId: string,
     listener: (frame: DeviceFrame) => void,
     options?: DeviceStreamOptions,
   ): () => void
@@ -81,17 +74,18 @@ export interface DeviceSurface {
    * Orientation and the keyboard switch live in the main process, and an agent driving
    * the device changes them behind the panel's back.
    */
-  onSessionState(listener: (state: DeviceSessionState) => void): () => void
+  onState(listener: (state: DeviceSessionState) => void): () => void
 }
 
 /**
- * Which surface owns a session.
+ * Which surface speaks to a device.
  *
- * Resolved per call rather than remembered: a session can be handed from one platform
- * to another, and a cached answer would keep sending touches to the device it used
- * to hold. Resolving per call is only affordable because `owns` is cheap — see it.
+ * A pure function of the id: `parseDeviceId` reads the provider off the prefix, and
+ * the prefix is what the surface registers under. There is no state to consult and
+ * nothing to keep in step — which is what makes routing free enough to sit in front
+ * of every touch sample.
  */
 export interface DeviceSurfaceRegistry {
   surfaces(): DeviceSurface[]
-  forSession(sessionId: string): DeviceSurface
+  forDevice(deviceId: string): DeviceSurface
 }

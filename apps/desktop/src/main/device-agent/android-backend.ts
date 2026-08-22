@@ -82,7 +82,8 @@ export class AndroidBackend implements TouchDeviceBackend {
 
   /** The device this session was granted, or a refusal that says how to get one. */
   private require(): { serial: string; name: string } {
-    const device = this.manager.controlled(this.sessionId)
+    const deviceId = this.manager.soleDeviceOf(this.sessionId)
+    const device = deviceId ? this.manager.descriptorFor(deviceId) : null
     const serial = device ? this.manager.serialFor(device.id) : null
     if (!device || !serial) {
       throw new DeviceAgentError(

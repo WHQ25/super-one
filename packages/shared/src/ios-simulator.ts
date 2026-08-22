@@ -122,7 +122,7 @@ export interface IosSimulatorSessionState {
 }
 
 export interface IosSimulatorFrame {
-  sessionId: string
+  deviceId: string
   sequence: number
   timestampMs: number
   timestampUs?: number

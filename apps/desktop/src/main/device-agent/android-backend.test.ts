@@ -96,7 +96,7 @@ async function harness(options: {
   manager.connection = async () => connection
 
   return {
-    backend: new AndroidBackend(manager, 'session-1', '/tmp/captures'),
+    backend: new AndroidBackend(manager, DEVICE_ID, '/tmp/captures'),
     sent,
     calls,
     screencaps: () => screencaps,
@@ -183,7 +183,7 @@ describe('a session holding no device', () => {
       avd: new Avd('/x', async () => ok(''), '/x'),
       adbBinary: '/x',
     })
-    const backend = new AndroidBackend(manager, 'session-1', '/tmp')
+    const backend = new AndroidBackend(manager, DEVICE_ID, '/tmp')
     await expect(backend.observe()).rejects.toThrow(/device_request_control/)
   })
 })

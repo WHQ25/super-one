@@ -341,7 +341,13 @@ export function parseDeviceResult(
   }
 
   if (op === 'list') {
-    const controlled = asRecord(obj.controlled)
+    // A list, because a session can hold several at once. Named together in one
+    // fragment rather than dropped to the first: "which devices am I driving" is
+    // exactly what the row is being read for once there is more than one.
+    const controlled = Array.isArray(obj.controlled) ? obj.controlled.map(asRecord) : []
+    const names = controlled
+      .map((entry) => (typeof entry?.name === 'string' ? entry.name : null))
+      .filter((name): name is string => name !== null)
     const groups = deviceListGroups(obj)
     const devices = groups.flatMap((group) => group.devices)
     return {
@@ -351,7 +357,7 @@ export function parseDeviceResult(
       // tier actually holds — the row's job is to say how big the answer was.
       deviceCount: typeof obj.total === 'number' ? obj.total : devices.length,
       runningCount: devices.filter((device) => device.running).length,
-      ...(typeof controlled?.name === 'string' ? { device: controlled.name } : {}),
+      ...(names.length > 0 ? { device: names.join(', ') } : {}),
     }
   }
 

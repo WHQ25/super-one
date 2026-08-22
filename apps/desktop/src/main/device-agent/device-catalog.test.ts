@@ -39,21 +39,15 @@ function onRuntime(base: IosSimulatorDevice, version: string, udid: string): Ios
  * the neutral one, so these also cover the classification that turns a simulator into
  * a DeviceDescriptor -- which is where the tiers get their kind and model from.
  */
-function source(
-  catalog: IosSimulatorDevice[],
-  bound: IosSimulatorDevice | null = null,
-): IosSimulatorCatalogSource {
+function source(catalog: IosSimulatorDevice[]): IosSimulatorCatalogSource {
   return {
     async listDevices() { return catalog },
-    async getSessionState() {
-      return { phase: bound ? 'ready' : 'idle', device: bound }
-    },
     async boot() { throw new Error('not used') },
   }
 }
 
-function ports(catalog: IosSimulatorDevice[], bound: IosSimulatorDevice | null = null) {
-  return [new IosSimulatorDevicePort(source(catalog, bound))]
+function ports(catalog: IosSimulatorDevice[]) {
+  return [new IosSimulatorDevicePort(source(catalog))]
 }
 
 function recents(udids: string[]): DeviceRecentsPort {
@@ -119,7 +113,7 @@ describe('listDeviceCatalog overview', () => {
       ports: ports([
         mine,
         device({ udid: 'theirs', name: 'iPad Pro 13-inch', booted: true, boundSessionId: 's2' }),
-      ], mine),
+      ]),
     })
 
     const byId = new Map((result.running as DeviceEntry[]).map((entry) => [entry.id, entry]))
@@ -127,20 +121,39 @@ describe('listDeviceCatalog overview', () => {
     expect(byId.get('ios-sim:mine')?.busy).toBeUndefined()
     expect(byId.get('ios-sim:theirs')?.busy).toBe(true)
     expect(byId.get('ios-sim:theirs')?.controlled).toBeUndefined()
-    expect(result.controlled).toMatchObject({ id: 'ios-sim:mine' })
+    expect(result.controlled).toMatchObject([{ id: 'ios-sim:mine' }])
   })
 
-  it('reads the session state from the catalog it already listed', async () => {
-    // `getSessionState` spawns `simctl list devices --json` of its own when it is not
-    // handed one, so listing in parallel with it paid for the same process twice.
+  it('enumerates the machine exactly once, however many tiers read the answer', async () => {
+    // `simctl list devices --json` is a process spawn against CoreSimulatorService.
+    // Asking a port which device the session controls used to be a SECOND question,
+    // and it spawned a second one; ownership is stamped onto every row as it is
+    // listed, so the answer was already in hand.
     const backing = source(fullMatrix())
-    const getSessionState = vi.spyOn(backing, 'getSessionState')
+    const listDevices = vi.spyOn(backing, 'listDevices')
 
     await listDeviceCatalog({ sessionId: 's1', ports: [new IosSimulatorDevicePort(backing)] })
 
-    expect(getSessionState).toHaveBeenCalledWith('s1', expect.arrayContaining([
-      expect.objectContaining({ udid: 'iPhone 17-26.4' }),
-    ]))
+    expect(listDevices).toHaveBeenCalledOnce()
+  })
+
+  it('lists every device the session holds, not just the first', async () => {
+    // The case the whole multi-device change exists for: one conversation driving a
+    // client build on one simulator and a merchant build on another.
+    const result = await listDeviceCatalog({
+      sessionId: 's1',
+      ports: ports([
+        device({ udid: 'client', name: 'iPhone 16', booted: true, boundSessionId: 's1' }),
+        device({ udid: 'merchant', name: 'iPhone 17', booted: true, boundSessionId: 's1' }),
+      ]),
+    })
+
+    expect(result.controlled).toMatchObject([
+      { id: 'ios-sim:client' },
+      { id: 'ios-sim:merchant' },
+    ])
+    // ...and it says so, because from here on every device_* call must name one.
+    expect(String(result.note)).toMatch(/must name one|needs an explicit/)
   })
 
   it('hides devices whose runtime is not installed', async () => {
@@ -160,7 +173,7 @@ describe('listDeviceCatalog overview', () => {
       ports: ports([device({ udid: 'a', name: 'iPhone 16' })]),
     })
 
-    expect(result.controlled).toBeNull()
+    expect(result.controlled).toEqual([])
     expect(String(result.note)).toMatch(/device_list|device_request_control/)
   })
 })

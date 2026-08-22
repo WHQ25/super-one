@@ -72,23 +72,23 @@ const SETTLE_INTERVAL_MS = 60
 export class AndroidBackend implements TouchDeviceBackend {
   private deviceLabel = 'Android'
 
+  /** Addressed by DEVICE — see `IosSimulatorBackend` for why the session no longer is. */
   constructor(
     private readonly manager: AndroidDeviceManager,
-    private readonly sessionId: string,
+    private readonly deviceId: string,
     private readonly captureRoot: string,
   ) {}
 
   get label(): string { return this.deviceLabel }
 
-  /** The device this session was granted, or a refusal that says how to get one. */
+  /** The device this backend drives, or a refusal that says how to get one. */
   private require(): { serial: string; name: string } {
-    const deviceId = this.manager.soleDeviceOf(this.sessionId)
-    const device = deviceId ? this.manager.descriptorFor(deviceId) : null
+    const device = this.manager.descriptorFor(this.deviceId)
     const serial = device ? this.manager.serialFor(device.id) : null
     if (!device || !serial) {
       throw new DeviceAgentError(
         'NO_DEVICE',
-        'This session controls no device. Call device_list, then device_request_control with an id from it.',
+        `${this.deviceId} is no longer running. Call device_list, then device_request_control with an id from it.`,
       )
     }
     this.deviceLabel = device.name
@@ -153,7 +153,7 @@ export class AndroidBackend implements TouchDeviceBackend {
   async capture(): Promise<DeviceImage> {
     const { serial, name } = this.require()
     const png = await this.screencap(serial)
-    const path = join(this.captureRoot, this.sessionId, captureFileName(name, 'png', new Date()))
+    const path = join(this.captureRoot, this.deviceId, captureFileName(name, 'png', new Date()))
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, png)
     const size = readPngSize(png)
@@ -229,7 +229,7 @@ export class AndroidBackend implements TouchDeviceBackend {
   }
 
   private connection() {
-    return this.manager.connection(this.sessionId).catch((error: unknown) => {
+    return this.manager.connection(this.deviceId).catch((error: unknown) => {
       throw new DeviceAgentError(
         'NO_DEVICE',
         `Could not reach the device to send input: ${error instanceof Error ? error.message : String(error)}`,

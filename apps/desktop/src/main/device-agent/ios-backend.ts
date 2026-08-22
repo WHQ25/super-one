@@ -88,9 +88,17 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
 
   private deviceLabel = 'iOS Simulator'
 
+  /**
+   * Addressed by DEVICE, not by the session holding it.
+   *
+   * A session may hold two simulators at once — a client build on one, a merchant
+   * build on the other — so "this session's simulator" is not a question the manager
+   * can answer any more. The tool layer resolves which device the call meant and
+   * builds one backend per device.
+   */
   constructor(
     private readonly manager: IosSimulatorManager,
-    private readonly sessionId: string,
+    private readonly udid: string,
   ) {}
 
   /** Filled in from the device once observed, so summaries can name the model. */
@@ -98,7 +106,7 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
 
   async observe(options: ObserveOptions = {}): Promise<DeviceObservation> {
     throwIfDeviceOperationAborted(options.signal)
-    const state = await this.manager.getSessionState(this.sessionId)
+    const state = await this.manager.getSessionState(this.udid)
     throwIfDeviceOperationAborted(options.signal)
     if (!state.device || state.phase !== 'ready') {
       throw new DeviceAgentError(
@@ -116,12 +124,12 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
       // sampling them 40ms apart during an animation pairs a tree with pixels that
       // no longer match it.
       const [dump, frameHash] = await Promise.all([
-        this.manager.accessibilityDump(this.sessionId, {
+        this.manager.accessibilityDump(this.udid, {
           ...(options.maxNodes ? { maxNodes: options.maxNodes } : {}),
         }).catch(() => null),
         // A device whose framebuffer cannot be read still works through the tree
         // alone, so this failing is a lost signal rather than a lost observation.
-        this.manager.frameHash(this.sessionId).then(({ hash }) => hash).catch(() => undefined),
+        this.manager.frameHash(this.udid).then(({ hash }) => hash).catch(() => undefined),
       ])
       throwIfDeviceOperationAborted(options.signal)
       if (!dump && frameHash === undefined) {
@@ -230,7 +238,7 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
       return this.lastRecognized.result
     }
     try {
-      const result = await this.manager.frameOcr(this.sessionId, {
+      const result = await this.manager.frameOcr(this.udid, {
         rotationDegrees: IOS_SIMULATOR_ROTATION_DEGREES[orientation],
       })
       throwIfDeviceOperationAborted(options.signal)
@@ -252,8 +260,8 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
   }
 
   async capture(): Promise<DeviceImage> {
-    const shot = await this.manager.screenshot(this.sessionId)
-    const state = await this.manager.getSessionState(this.sessionId)
+    const shot = await this.manager.screenshot(this.udid)
+    const state = await this.manager.getSessionState(this.udid)
     return {
       path: shot.path,
       width: state.pixelWidth ?? 0,
@@ -326,11 +334,11 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
     if (uid === undefined) {
       throw new DeviceAgentError('UNKNOWN_REF', `${ref} is not in this snapshot.`)
     }
-    await this.manager.accessibilityPerform(this.sessionId, 'press', addressing.generation, uid)
+    await this.manager.accessibilityPerform(this.udid, 'press', addressing.generation, uid)
   }
 
   private async send(input: IosSimulatorInput): Promise<void> {
-    const result = await this.manager.input(this.sessionId, input)
+    const result = await this.manager.input(this.udid, input)
     if (!result.ok) {
       throw new DeviceAgentError('UNSUPPORTED', result.error ?? 'The device rejected the input.')
     }

@@ -14,6 +14,11 @@ const deviceDescriptionProperty = {
   description: "A short human-friendly explanation of what this step accomplishes, phrased for the user watching (e.g. 'Open the profile tab', 'Check the order total'). Shown in the UI in place of refs and coordinates. Write it in the conversation's language."
 }
 
+const deviceTargetProperty = {
+  type: "string",
+  description: "Which controlled device to act on — the id from device_list, or its name. Optional while this session controls exactly one device; required once it controls more than one (driving the wrong app there looks like a bug in the right one). Use device_request_control to be granted another."
+}
+
 const deviceConditionSchema = {
   type: "object",
   properties: {
@@ -3578,7 +3583,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "device_request_control",
-    "description": "Ask the user to let this session control one specific device, and wait for their answer. Every other device_* tool needs that grant and fails with NO_DEVICE until this succeeds — call it first, not after a failure. Pick the device from device_list yourself; the user only approves or declines, and a decline carries their feedback (often naming a different device — read it before retrying). Returns the device once it is bound and ready, booting it if it was not running. Calling it again for a device this session already controls returns it without prompting. Installing and launching a build is not part of this — use `xcrun simctl install/launch <udid>` afterwards.",
+    "description": "Ask the user to let this session control one specific device, and wait for their answer. Every other device_* tool needs that grant and fails with NO_DEVICE until this succeeds — call it first, not after a failure. Pick the device from device_list yourself; the user only approves or declines, and a decline carries their feedback (often naming a different device — read it before retrying). Returns it once bound and ready, booting it if it was not running; asking again for one this session already holds returns it without prompting. A session may hold several, and then every device_* call must name one with `device`. Install a build afterwards with `xcrun simctl install/launch`.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3602,6 +3607,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "type": "object",
       "properties": {
         "description": deviceDescriptionProperty,
+        "device": deviceTargetProperty,
         "mode": { "description": "Default semantic", "type": "string", "enum": ["semantic", "visual", "fused"] },
         "maxNodes": {
           "description": "Ceiling on tree size. Default 500; truncated=true means the screen has more.",
@@ -3621,6 +3627,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "type": "object",
       "properties": {
         "description": deviceDescriptionProperty,
+        "device": deviceTargetProperty,
         "stateId": { "type": "string", "description": "From a prior device_snapshot." },
         "op": { "type": "string", "enum": ["search", "inspect"] },
         "text": { "description": "For search.", "type": "string" },
@@ -3637,6 +3644,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "type": "object",
       "properties": {
         "description": deviceDescriptionProperty,
+        "device": deviceTargetProperty,
         "stateId": { "type": "string" },
         "actions": { "minItems": 1, "maxItems": 10, "type": "array", "items": deviceActionSchema },
         "expect": { "description": "Postcondition checked after the actions run.", ...deviceConditionSchema }
@@ -3652,6 +3660,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
       "type": "object",
       "properties": {
         "description": deviceDescriptionProperty,
+        "device": deviceTargetProperty,
         "condition": deviceConditionSchema,
         "timeoutMs": {
           "description": "Default 5000",

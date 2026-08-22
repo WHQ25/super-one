@@ -153,6 +153,9 @@ export class IosSimulatorManager {
    * a recording belong to a DEVICE, not to whoever is watching it.
    */
   private readonly owners = new Map<string, string>()
+
+  /** udid -> the name the last listing saw. For messages only; see `withOwnership`. */
+  private readonly deviceNames = new Map<string, string>()
   private readonly superOneBooted = new Set<string>()
   // Keyed by device, not session: the guest keeps its orientation across a detach,
   // a rebind, or a panel remount, and only a shutdown puts it back to portrait.
@@ -250,6 +253,10 @@ export class IosSimulatorManager {
    */
   private withOwnership(device: IosSimulatorDevice): IosSimulatorDevice {
     const owner = this.owners.get(device.udid)
+    // Recorded on the way past so a device can be NAMED without a second `simctl
+    // list` — the agent's target resolution runs on every action and cannot afford
+    // one. Only ever used in messages; nothing routes on it.
+    this.deviceNames.set(device.udid, device.name)
     const { boundSessionId: _previous, ...rest } = device
     return {
       ...rest,
@@ -380,6 +387,11 @@ export class IosSimulatorManager {
    * Null for none AND for several: with two in hand there is no default that is not
    * a guess, and guessing wrong means driving the wrong app.
    */
+  /** The name the last listing saw for this simulator, if any. */
+  nameOf(udid: string): string | null {
+    return this.deviceNames.get(udid) ?? null
+  }
+
   soleDeviceOf(sessionId: string): string | null {
     const held = this.devicesOf(sessionId)
     return held.length === 1 ? held[0]! : null

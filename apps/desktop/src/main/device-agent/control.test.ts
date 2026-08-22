@@ -32,17 +32,25 @@ function device(overrides: Partial<IosSimulatorDevice> & { udid: string; name: s
  */
 class FakePort implements IosSimulatorCatalogSource {
   readonly booted: Array<{ sessionId: string; udid: string }> = []
-  bound: IosSimulatorDevice | null = null
   readonly ports: DevicePlatformPort[]
 
-  constructor(private readonly catalog: IosSimulatorDevice[]) {
+  constructor(private catalog: IosSimulatorDevice[]) {
     this.ports = [new IosSimulatorDevicePort(this)]
   }
 
   async listDevices(): Promise<IosSimulatorDevice[]> { return this.catalog }
 
-  async getSessionState(): Promise<{ phase: string; device: IosSimulatorDevice | null }> {
-    return { phase: this.bound ? 'ready' : 'idle', device: this.bound }
+  /**
+   * Stamp ownership onto the listing, which is where the real manager puts it.
+   *
+   * Ownership used to be a second question the port answered separately; it is read
+   * off the rows now, so a fake that only tracked it on the side would be testing a
+   * mechanism that no longer exists.
+   */
+  grant(sessionId: string, udid: string): void {
+    this.catalog = this.catalog.map((candidate) => candidate.udid === udid
+      ? { ...candidate, state: 'Booted', booted: true, boundSessionId: sessionId }
+      : candidate)
   }
 
   async boot(
@@ -50,8 +58,8 @@ class FakePort implements IosSimulatorCatalogSource {
     udid: string,
   ): Promise<{ phase: string; device: IosSimulatorDevice | null }> {
     this.booted.push({ sessionId, udid })
+    if (this.catalog.some((candidate) => candidate.udid === udid)) this.grant(sessionId, udid)
     const chosen = this.catalog.find((candidate) => candidate.udid === udid) ?? null
-    this.bound = chosen
     return { phase: chosen ? 'ready' : 'idle', device: chosen }
   }
 }
@@ -160,19 +168,20 @@ describe('requestDeviceControl', () => {
     expect(message).toMatch(/another chat session/)
   })
 
-  it('reads the session state from the catalog it already listed', async () => {
-    // `getSessionState` spawns `simctl list devices --json` when it is not handed a
-    // catalog, and that is a quarter of a second against CoreSimulatorService.
+  it('enumerates the machine once, not once to list and once to ask what is held', async () => {
+    // `simctl list devices --json` is a quarter of a second against
+    // CoreSimulatorService. Asking a port which device the session controls used to
+    // be a second question that spawned a second one — ownership is stamped onto
+    // every row as it is listed, so the answer was already in hand.
     const port = new FakePort([device({ udid: 'cold', name: 'iPhone 16' })])
-    const getSessionState = vi.spyOn(port, 'getSessionState')
+    const listDevices = vi.spyOn(port, 'listDevices')
     const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
 
     await requestDeviceControl({
       sessionId: 's1', ports: port.ports, emitHostEvent: host.emit, request: { device: 'cold' },
     })
 
-    // Handed the catalog, rather than left to read it again.
-    expect(getSessionState).toHaveBeenCalledWith('s1', [expect.objectContaining({ udid: 'cold' })])
+    expect(listDevices).toHaveBeenCalledOnce()
   })
 
   it('records a granted device for the project, and a declined one not at all', async () => {
@@ -200,7 +209,7 @@ describe('requestDeviceControl', () => {
   it('returns the controlled device without prompting again', async () => {
     const bound = device({ udid: 'warm', name: 'iPhone 17 Pro Max', booted: true })
     const port = new FakePort([bound])
-    port.bound = bound
+    port.grant('s1', 'warm')
     const emit = vi.fn()
 
     const result = await requestDeviceControl({
@@ -218,7 +227,7 @@ describe('requestDeviceControl', () => {
   it('prompts again when asked for a device other than the controlled one', async () => {
     const bound = device({ udid: 'warm', name: 'iPhone 17 Pro Max', booted: true })
     const port = new FakePort([bound, device({ udid: 'pad', name: 'iPad Pro 13-inch' })])
-    port.bound = bound
+    port.grant('s1', 'warm')
     const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
 
     await requestDeviceControl({

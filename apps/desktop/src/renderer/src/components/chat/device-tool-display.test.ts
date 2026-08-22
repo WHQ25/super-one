@@ -188,7 +188,7 @@ describe('device tool result parsing', () => {
 describe('device catalog rows', () => {
   it('draws the overview as running-then-recent, and reports the machine-wide total', () => {
     const info = parseDeviceResult('list', JSON.stringify({
-      controlled: { id: 'a', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+      controlled: [{ id: 'a', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' }],
       running: [
         { id: 'a', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4', running: true, controlled: true },
         { id: 'b', name: 'iPhone 17', platform: 'iOS 26.4', running: true, busy: true },
@@ -211,9 +211,26 @@ describe('device catalog rows', () => {
     expect(info.groups?.[1]?.devices[0]).not.toHaveProperty('running')
   })
 
+  it('names every device the session is driving, not just the first', () => {
+    // One conversation, a client build on one phone and a merchant build on another.
+    // Dropping to the first would tell the user they are driving one device while the
+    // agent is quietly acting on two.
+    const info = parseDeviceResult('list', JSON.stringify({
+      controlled: [
+        { id: 'a', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+        { id: 'b', name: 'Medium Phone API 36', platform: 'Android 16' },
+      ],
+      running: [],
+      kinds: [],
+      total: 2,
+    }), false)
+
+    expect(info.device).toBe('iPhone 17 Pro Max, Medium Phone API 36')
+  })
+
   it('drops an overview section that has nothing in it', () => {
     const info = parseDeviceResult('list', JSON.stringify({
-      controlled: null,
+      controlled: [],
       running: [],
       kinds: [{ kind: 'iphone', name: 'iPhone', models: 8, devices: 74 }],
       total: 74,

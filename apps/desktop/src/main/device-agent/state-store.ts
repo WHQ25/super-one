@@ -20,14 +20,22 @@ export interface DeviceState {
 /** Older snapshots stay readable so `device_query` can revisit one without recapturing. */
 const RETAINED_STATES = 8
 
+/**
+ * Shared by every store, so no two snapshots ever carry the same id.
+ *
+ * There is one store per DEVICE now, and a session can hold two. Counting per store
+ * gave each device its own `s1`, which is the worst possible collision: quoting the
+ * wrong one is not rejected as stale, it silently reads the other phone's screen.
+ */
+let stateCounter = 0
+
 export class DeviceStateStore {
   private readonly states = new Map<string, DeviceState>()
-  private counter = 0
   private latestId: string | null = null
 
   put(observation: DeviceObservation, image?: DeviceImage): DeviceState {
     const state: DeviceState = {
-      stateId: `s${++this.counter}`,
+      stateId: `s${++stateCounter}`,
       observation,
       createdAt: Date.now(),
       ...(image ? { image } : {}),

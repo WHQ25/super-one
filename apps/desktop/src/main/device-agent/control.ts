@@ -16,7 +16,7 @@
  */
 
 import type { DeviceDescriptor } from '@superone/shared/device'
-import { offerableDevices, resolveDevice, type DevicePlatformPort } from '../device/platform-port'
+import { controlledDevices, offerableDevices, resolveDevice, type DevicePlatformPort } from '../device/platform-port'
 import { awaitDeviceControlConfirm } from './control-confirm'
 import { NO_DEVICE_RECENTS, type DeviceRecentsPort } from './device-recents'
 import { DeviceAgentError, throwIfDeviceOperationAborted } from './types'
@@ -95,11 +95,11 @@ export async function requestDeviceControl(options: {
   // Handed the devices we just listed, which is not a micro-optimization: a port asked
   // without them enumerates the machine again — a second `simctl list devices` or
   // `adb devices` spawn — for a catalog it was given a moment ago.
-  const current = await port.controlled(
-    sessionId,
-    all.filter((device) => device.platform === port.platform),
-  )
-  if (current?.id === chosen.id) {
+  // Read off the listing above: ownership is stamped on as each row is built, so
+  // asking a port separately would only spawn `simctl list` / `adb devices` again to
+  // be told what is already in hand.
+  const current = controlledDevices(all, sessionId).find((device) => device.id === chosen.id)
+  if (current) {
     recents.remember(chosen.id)
     return readyResult(current, port, true)
   }

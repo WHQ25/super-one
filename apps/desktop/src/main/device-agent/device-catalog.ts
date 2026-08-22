@@ -29,7 +29,7 @@
 
 import { normalizeDeviceId } from '@superone/shared/device'
 import type { DeviceDescriptor, DevicePlatform } from '@superone/shared/device'
-import { offerableDevices, type DevicePlatformPort } from '../device/platform-port'
+import { controlledDevices, offerableDevices, type DevicePlatformPort } from '../device/platform-port'
 import { NO_DEVICE_RECENTS, type DeviceRecentsPort } from './device-recents'
 
 export { offerableDevices, resolveDevice } from '../device/platform-port'
@@ -97,10 +97,15 @@ function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
-function controlledSummary(device: DeviceDescriptor | null): Record<string, string> | null {
-  return device
-    ? { id: device.id, name: device.name, platform: device.platformVersion }
-    : null
+/**
+ * What this session already holds, as the agent needs to see it.
+ *
+ * A list, not one device: a session can drive a client build and a merchant build at
+ * the same time, and the agent has to know both ids exist — that is precisely when
+ * the other device tools start requiring an explicit `device`.
+ */
+function controlledSummary(devices: readonly DeviceDescriptor[]): Record<string, string>[] {
+  return devices.map((device) => ({ id: device.id, name: device.name, platform: device.platformVersion }))
 }
 
 /**
@@ -113,7 +118,7 @@ interface CatalogRead {
   offerable: DeviceDescriptor[]
   /** Installed but filtered out as unavailable, per platform. Drives the empty note. */
   installed: number
-  controlled: DeviceDescriptor | null
+  controlled: DeviceDescriptor[]
   /** True when more than one platform contributed a device. */
   multiPlatform: boolean
   ports: readonly DevicePlatformPort[]
@@ -124,23 +129,20 @@ async function readCatalog(
   ports: readonly DevicePlatformPort[],
 ): Promise<CatalogRead> {
   const all: DeviceDescriptor[] = []
-  let controlled: DeviceDescriptor | null = null
-  // Sequential per port on purpose: a port's `controlled` reads the catalog itself
-  // when it is not handed one, so running the two in parallel spawns the enumeration
-  // twice. Across ports it would be safe to parallelize, but the win is one process
-  // on a machine that usually has exactly one platform installed.
+  // Sequential per port: the win is one process spawn on a machine that usually has
+  // exactly one platform installed, and the listings are what everything below reads.
   for (const port of ports) {
-    const devices = await port.listDevices()
-    all.push(...devices)
-    const held = await port.controlled(sessionId, devices)
-    if (held) controlled = held
+    all.push(...await port.listDevices())
   }
   const offerable = offerableDevices(all)
   const platforms = new Set(offerable.map((device) => device.platform))
   return {
     offerable,
     installed: all.length,
-    controlled,
+    // Read off the listing rather than asked for separately. Ownership is stamped on
+    // as each row is built, so a second question would only spawn `simctl list` again
+    // to be told what is already in hand.
+    controlled: controlledDevices(all, sessionId),
     multiPlatform: platforms.size > 1,
     ports,
   }
@@ -261,9 +263,12 @@ function overviewTier(
     ...(recent.length > 0 ? { recent: recent.map((device) => toDeviceEntry(device, sessionId)) } : {}),
     kinds,
     total: offerable.length,
-    note: controlled
-      ? 'This session already controls a device; the other device tools are ready. '
-        + 'Call device_request_control only to switch to a different one.'
+    note: controlled.length > 1
+      ? 'This session controls several devices, so every other device tool needs an explicit '
+        + '`device` naming which one. Call device_request_control only to add or switch to another.'
+      : controlled.length === 1
+        ? 'This session already controls a device; the other device tools are ready. '
+          + 'Call device_request_control only to add a second one or switch to a different one.'
       : running.length > 0 || recent.length > 0
         ? 'Prefer a device listed above — running ones attach instantly, and a cold boot costs ~20s. '
           + 'Otherwise call device_list with kind to browse models.'

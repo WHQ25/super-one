@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { formatDeviceId, parseDeviceId } from '@superone/shared/device'
 import { getIosSimulatorManager } from '../ios-simulator'
 import { DeviceAgentSession, errorReply, reply, type DeviceToolReply } from './execute'
 import { IosSimulatorBackend } from './ios-backend'
@@ -11,6 +12,7 @@ import type { DevicePlatformPort } from '../device/platform-port'
 import { devicePlatformPorts } from '../device/registry'
 import { getAndroidDeviceManager } from '../device/android'
 import { createDeviceRecents, type DeviceRecentsPort } from './device-recents'
+import { resolveHeldDevice, type HeldDevice } from './target'
 import type { DeviceAgentToolName } from './tools'
 import type { TouchDeviceBackend } from './types'
 
@@ -24,21 +26,25 @@ export {
 } from './tools'
 
 /**
- * The live snapshot state per chat session, tagged with the platform it was built for.
+ * The live snapshot state per DEVICE, tagged with the session that was driving it.
  *
- * The tag is what makes switching devices safe. Refs and the stateId that guards them
- * belong to one backend's reading of one screen, so a session that moves from a
- * simulator to a phone has to start over — and it does, because the entry no longer
- * matches and a fresh one is built. Keyed by session alone, the agent would keep
- * quoting refs from a device it no longer holds.
+ * Keyed by device because that is what a snapshot is a reading OF: refs and the
+ * stateId guarding them describe one screen, and a session holding two devices has
+ * two screens that must not share a state store. The session tag is what makes a
+ * handover safe — a device that changes hands no longer matches, so the new owner
+ * starts from a fresh store rather than inheriting refs into a conversation that
+ * never saw them.
  */
-const sessions = new Map<string, { session: DeviceAgentSession; platform: string }>()
+const sessions = new Map<string, { session: DeviceAgentSession; sessionId: string }>()
 
 /** Swapped by tests so the tool layer can run without Electron or a device. */
-let backendFactory: ((sessionId: string) => TouchDeviceBackend) | null = null
+let backendFactory: ((deviceId: string) => TouchDeviceBackend) | null = null
+
+/** The single device an injected backend stands for. No provider, so nothing routes on it. */
+const INJECTED_DEVICE_ID = 'injected:device'
 
 export function setDeviceAgentBackendFactory(
-  factory: (sessionId: string) => TouchDeviceBackend,
+  factory: (deviceId: string) => TouchDeviceBackend,
 ): void {
   backendFactory = factory
   // A different backend invalidates every snapshot taken against the old one.
@@ -46,25 +52,47 @@ export function setDeviceAgentBackendFactory(
 }
 
 /**
- * Which platform is driving this session right now.
+ * Every device this session is driving, without listing the machine.
  *
- * Android answers from the binding it already holds, so this costs nothing; anything
- * it does not claim belongs to the simulator, which is also the answer on a machine
- * with no Android SDK at all.
+ * Read straight off each manager's ownership map, which is why it is synchronous and
+ * free: `device_act` resolves its target on every call, and a `simctl list devices`
+ * there would cost a quarter of a second per tap. Names come from whatever the last
+ * listing saw and are only ever used in messages — a device with no cached name still
+ * resolves by id.
  */
-function controllingPlatform(sessionId: string): string {
-  if (backendFactory) return 'injected'
-  return getAndroidDeviceManager()?.soleDeviceOf(sessionId) ? 'android' : 'ios'
+function heldDevicesFor(sessionId: string): HeldDevice[] {
+  // An injected backend stands in for the whole device layer, so there is no
+  // ownership map to read and exactly one device to be: its own.
+  if (backendFactory) return [{ id: INJECTED_DEVICE_ID }]
+  const held: HeldDevice[] = []
+  const ios = getIosSimulatorManager(app.getPath('userData'))
+  for (const udid of ios.devicesOf(sessionId)) {
+    const name = ios.nameOf(udid)
+    held.push({ id: formatDeviceId('ios-sim', udid), ...(name ? { name } : {}) })
+  }
+  const android = getAndroidDeviceManager()
+  for (const deviceId of android?.devicesOf(sessionId) ?? []) {
+    const name = android?.descriptorFor(deviceId)?.name
+    held.push({ id: deviceId, ...(name ? { name } : {}) })
+  }
+  return held
 }
 
-function buildBackend(sessionId: string, platform: string): TouchDeviceBackend {
-  if (backendFactory) return backendFactory(sessionId)
+/**
+ * Which backend speaks to a device, read off the provider in its id.
+ *
+ * The same pure routing the panel's surfaces use — no state to consult, and nothing
+ * that could disagree with which device the user actually approved.
+ */
+function buildBackend(deviceId: string): TouchDeviceBackend {
+  if (backendFactory) return backendFactory(deviceId)
   const userData = app.getPath('userData')
-  if (platform === 'android') {
+  const parsed = parseDeviceId(deviceId)
+  if (parsed?.provider === 'android') {
     const android = getAndroidDeviceManager()
-    if (android) return new AndroidBackend(android, sessionId, join(userData, 'android', 'captures'))
+    if (android) return new AndroidBackend(android, deviceId, join(userData, 'android', 'captures'))
   }
-  return new IosSimulatorBackend(getIosSimulatorManager(userData), sessionId)
+  return new IosSimulatorBackend(getIosSimulatorManager(userData), parsed?.native ?? deviceId)
 }
 
 /**
@@ -105,24 +133,26 @@ export function setDeviceAgentHostEventResolver(
   emitHostEventFor = resolver
 }
 
-function sessionFor(sessionId: string): DeviceAgentSession {
-  const platform = controllingPlatform(sessionId)
-  const existing = sessions.get(sessionId)
-  if (existing && existing.platform === platform) return existing.session
-  const session = new DeviceAgentSession(buildBackend(sessionId, platform))
-  sessions.set(sessionId, { session, platform })
+function sessionFor(sessionId: string, deviceId: string): DeviceAgentSession {
+  const existing = sessions.get(deviceId)
+  if (existing && existing.sessionId === sessionId) return existing.session
+  const session = new DeviceAgentSession(buildBackend(deviceId))
+  sessions.set(deviceId, { session, sessionId })
   return session
 }
 
 /**
- * Snapshots are per chat session, so ending one must drop them.
+ * Snapshots belong to a conversation, so ending one must drop them.
  *
  * Otherwise a new session inherits refs pointing at a screen from the previous
  * conversation — which is exactly the stale-snapshot failure the stateId exists to
- * prevent, arriving through the back door.
+ * prevent, arriving through the back door. Every device this session was driving
+ * goes, not one: it may have been driving several.
  */
 export function disposeDeviceAgentSession(sessionId: string): void {
-  sessions.delete(sessionId)
+  for (const [deviceId, entry] of sessions) {
+    if (entry.sessionId === sessionId) sessions.delete(deviceId)
+  }
 }
 
 export async function executeDeviceAgentTool(
@@ -155,7 +185,10 @@ export async function executeDeviceAgentTool(
         ...(signal ? { signal } : {}),
       }))
     }
-    const session = sessionFor(sessionId)
+    // Every remaining tool drives one device, so which one is settled first — and
+    // refused rather than guessed when the session holds more than one.
+    const { device } = args as { device?: string }
+    const session = sessionFor(sessionId, resolveHeldDevice(heldDevicesFor(sessionId), device))
     switch (name) {
       case 'device_snapshot':
         return await session.snapshot(args as { mode?: string; maxNodes?: number }, signal)

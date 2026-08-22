@@ -81,6 +81,24 @@ const conditionSchema = z.object({
     { message: 'textEquals and textContains need text.' },
   )
 
+/**
+ * Which of the session's devices this call is for.
+ *
+ * Optional, and almost always omitted — one device is the common case and naming it
+ * every time would be noise. It becomes REQUIRED the moment a session holds more than
+ * one, enforced in `resolveHeldDevice` rather than in the schema, because JSON Schema
+ * cannot express "required depending on runtime state" in a form every harness obeys.
+ * The refusal names the devices it could have meant, so the next call is right.
+ */
+const deviceField = {
+  device: z.string().optional().describe(
+    'Which controlled device to act on — the id from device_list, or its name. '
+    + 'Optional while this session controls exactly one device; required once it controls more than one '
+    + '(driving the wrong app there looks like a bug in the right one). '
+    + 'Use device_request_control to be granted another.',
+  ),
+}
+
 const descriptionField = {
   description: z.string().trim().min(1).max(160).describe(
     'A short human-friendly explanation of what this step accomplishes, phrased for the user watching '
@@ -111,12 +129,12 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
     name: 'device_request_control',
     description:
       'Ask the user to let this session control one specific device, and wait for their answer. '
-      + 'Every other device_* tool needs that grant and fails with NO_DEVICE until this succeeds — call it first, '
-      + 'not after a failure. Pick the device from device_list yourself; the user only approves or declines, '
-      + 'and a decline carries their feedback (often naming a different device — read it before retrying). '
-      + 'Returns the device once it is bound and ready, booting it if it was not running. '
-      + 'Calling it again for a device this session already controls returns it without prompting. '
-      + 'Installing and launching a build is not part of this — use `xcrun simctl install/launch <udid>` afterwards.',
+      + 'Every other device_* tool needs that grant and fails with NO_DEVICE until this succeeds — call it '
+      + 'first, not after a failure. Pick the device from device_list yourself; the user only approves or '
+      + 'declines, and a decline carries their feedback (often naming a different device — read it before '
+      + 'retrying). Returns it once bound and ready, booting it if it was not running; asking again for one '
+      + 'this session already holds returns it without prompting. A session may hold several, and then every '
+      + 'device_* call must name one with `device`. Install a build afterwards with `xcrun simctl install/launch`.',
     shape: {
       ...descriptionField,
       device: z.string()
@@ -137,6 +155,7 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
       + 'Re-snapshot after anything that changes the screen — refs are positional and device_act rejects a stale stateId.',
     shape: {
       ...descriptionField,
+      ...deviceField,
       mode: z.enum(['semantic', 'visual', 'fused']).optional().describe('Default semantic'),
       maxNodes: z.number().int().min(1).max(2000).optional()
         .describe('Ceiling on tree size. Default 500; truncated=true means the screen has more.'),
@@ -151,6 +170,7 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
       + 'op=search matches text against labels, values and identifiers. op=inspect returns one element and its children.',
     shape: {
       ...descriptionField,
+      ...deviceField,
       stateId: z.string().describe('From a prior device_snapshot.'),
       op: z.enum(['search', 'inspect']),
       text: z.string().optional().describe('For search.'),
@@ -169,6 +189,7 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
       + 'Returns worked|didnt|unknown; unknown means input landed but nothing visibly changed. Pass expect to define success.',
     shape: {
       ...descriptionField,
+      ...deviceField,
       stateId: z.string(),
       actions: z.array(actionSchema).min(1).max(10),
       expect: conditionSchema.optional().describe('Postcondition checked after the actions run.'),
@@ -185,6 +206,7 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
       + 'Every condition must name an element that way — text only says what to compare, it never selects.',
     shape: {
       ...descriptionField,
+      ...deviceField,
       condition: conditionSchema,
       timeoutMs: z.number().int().min(100).max(60_000).optional().describe('Default 5000'),
     },

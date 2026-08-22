@@ -15,10 +15,6 @@ import type { DevicePlatformPort } from '../device/platform-port'
 /** The slice of `IosSimulatorManager` this needs, so tests need no Electron. */
 export interface IosSimulatorCatalogSource {
   listDevices(): Promise<IosSimulatorDevice[]>
-  getSessionState(
-    sessionId: string,
-    devices?: IosSimulatorDevice[],
-  ): Promise<{ phase: string; device?: IosSimulatorDevice | null }>
   boot(
     sessionId: string,
     udid: string,
@@ -105,26 +101,12 @@ export class IosSimulatorDevicePort implements DevicePlatformPort {
    * one, and the catalog flow calls both in sequence — without this, every
    * `device_list` would spawn `simctl list devices` twice.
    */
-  private lastListed: IosSimulatorDevice[] = []
 
   constructor(private readonly source: IosSimulatorCatalogSource) {}
 
   async listDevices(): Promise<DeviceDescriptor[]> {
     const devices = await this.source.listDevices()
-    this.lastListed = devices
     return devices.map(toDeviceDescriptor)
-  }
-
-  async controlled(
-    sessionId: string,
-    devices?: DeviceDescriptor[],
-  ): Promise<DeviceDescriptor | null> {
-    // A caller passing `devices` is telling us it just listed them, so the raw copy
-    // cached above is the same generation and is safe to reuse.
-    const state = devices
-      ? await this.source.getSessionState(sessionId, this.lastListed)
-      : await this.source.getSessionState(sessionId)
-    return state.phase === 'ready' && state.device ? toDeviceDescriptor(state.device) : null
   }
 
   async boot(sessionId: string, deviceId: string): Promise<DeviceDescriptor | null> {

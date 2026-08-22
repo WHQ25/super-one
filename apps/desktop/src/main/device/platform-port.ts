@@ -22,14 +22,6 @@ export interface DevicePlatformPort {
   listDevices(): Promise<DeviceDescriptor[]>
 
   /**
-   * The device this session drives on this platform, or null.
-   *
-   * `devices` lets a caller that has already listed them skip a second enumeration —
-   * on iOS that is a `simctl list` spawn, on Android an `adb devices` round trip.
-   */
-  controlled(sessionId: string, devices?: DeviceDescriptor[]): Promise<DeviceDescriptor | null>
-
-  /**
    * Hand this session the device, booting it if needed.
    *
    * Resolves to the device once it is actually usable, or null if it never came up.
@@ -52,6 +44,24 @@ export interface DevicePlatformPort {
    * problems with completely different fixes.
    */
   emptyNote(installed: number): string
+}
+
+/**
+ * Every device this session is driving, read straight off the catalog.
+ *
+ * Ownership is stamped onto each row as it is listed — both platforms do it, from the
+ * same `owners` map their bind writes — so a caller that has already listed the
+ * devices has the answer in hand and needs no second question. It used to be one, per
+ * port, and could only ever return ONE device; a session may now hold several.
+ *
+ * `running` is part of the test, not decoration: a device can stay bound while its
+ * simulator is shut down, and the agent cannot drive one of those.
+ */
+export function controlledDevices(
+  devices: readonly DeviceDescriptor[],
+  sessionId: string,
+): DeviceDescriptor[] {
+  return devices.filter((device) => device.boundSessionId === sessionId && device.running)
 }
 
 /** Newest first among devices sharing a model; running ones ahead of cold ones. */

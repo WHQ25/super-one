@@ -364,6 +364,17 @@ export class IosSimulatorManager {
    * caller that has just listed them (`device_list`, `device_request_control`) would
    * otherwise pay for a second identical one.
    */
+  /**
+   * Whether this session holds a simulator, read straight off the binding.
+   *
+   * Deliberately not `getSessionState(...).device != null`: that reading costs a
+   * `simctl list` and this one is on the routing path of every touch sample. See
+   * `DeviceSurface.owns`.
+   */
+  holdsSession(sessionId: string): boolean {
+    return this.sessionBindings.has(sessionId)
+  }
+
   async getSessionState(
     sessionId: string,
     devices?: IosSimulatorDevice[],

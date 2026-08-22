@@ -40,6 +40,10 @@ export function createAndroidSurface(
   return {
     platform: 'android',
 
+    owns(sessionId) {
+      return manager.holdsSession(sessionId)
+    },
+
     async sessionState(sessionId) {
       return manager.sessionState(sessionId)
     },

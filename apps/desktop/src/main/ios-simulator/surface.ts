@@ -53,6 +53,10 @@ export function createIosSimulatorSurface(manager: IosSimulatorManager): DeviceS
   return {
     platform: 'ios',
 
+    owns(sessionId) {
+      return manager.holdsSession(sessionId)
+    },
+
     async sessionState(sessionId) {
       return toSessionState(await manager.getSessionState(sessionId))
     },

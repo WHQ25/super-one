@@ -73,6 +73,7 @@ function state(device: DeviceDescriptor | null): DeviceSessionState {
 function surface(platform: DeviceSurface['platform']): DeviceSurface {
   return {
     platform,
+    owns: vi.fn(() => false),
     sessionState: vi.fn(async () => state(null)),
     bind: vi.fn(async () => state(IOS_DEVICE)),
     boot: vi.fn(async () => state(IOS_DEVICE)),
@@ -110,26 +111,66 @@ describe('device IPC routing', () => {
     expect(ios.bind).not.toHaveBeenCalled()
   })
 
-  it('unsubscribes a stream whose close beats the async owner lookup', async () => {
-    let resolveState!: (value: DeviceSessionState) => void
-    const held = new Promise<DeviceSessionState>((resolve) => { resolveState = resolve })
+  it('routes a session to the surface that holds it', async () => {
     const ios = surface('ios')
-    vi.mocked(ios.sessionState).mockReturnValueOnce(held)
+    const android = surface('android')
+    vi.mocked(android.owns).mockReturnValue(true)
+    registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
+
+    await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT)!(
+      {},
+      'session-1',
+      { type: 'button', button: 'home' },
+    )
+
+    expect(android.input).toHaveBeenCalledOnce()
+    expect(ios.input).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The regression this whole seam exists for. `sessionState` on iOS spawns
+   * `simctl list devices --json` — ~250ms — and a dragging finger routes an input
+   * every 8ms, so a router that reads it makes the simulator unusable.
+   */
+  it('never reads device state to route, however many surfaces there are', async () => {
+    const ios = surface('ios')
+    const android = surface('android')
+    vi.mocked(ios.owns).mockReturnValue(true)
+    registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
+
+    const handlers = electron.handlers
+    await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT)!({}, 'session-1', {
+      type: 'button', button: 'home',
+    })
+    await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT)!({}, 'session-1')
+    await handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_DETACH)!({}, 'session-1')
+
+    expect(ios.sessionState).not.toHaveBeenCalled()
+    expect(android.sessionState).not.toHaveBeenCalled()
+  })
+
+  it('lands a session holding nothing on the first surface, so the picker opens', async () => {
+    const ios = surface('ios')
+    const android = surface('android')
+    registerDeviceIpc({ surfaces: () => [ios, android], listDevices: async () => [] })
+
+    await electron.handlers.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE)!({}, 'session-1')
+
+    expect(ios.sessionState).toHaveBeenCalledWith('session-1')
+    expect(android.sessionState).not.toHaveBeenCalled()
+  })
+
+  it('unsubscribes a stream closed right behind its open', async () => {
+    const ios = surface('ios')
+    vi.mocked(ios.owns).mockReturnValue(true)
     const unsubscribe = vi.fn()
     vi.mocked(ios.subscribe).mockReturnValue(unsubscribe)
     registerDeviceIpc({ surfaces: () => [ios], listDevices: async () => [] })
 
     const event = { sender: { id: 7, postMessage: vi.fn() }, ports: [] }
-    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN)!(
-      event,
-      'session-1',
-    )
-    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_CLOSE)!(
-      event,
-      'session-1',
-    )
-    resolveState(state(IOS_DEVICE))
-    await held
-    await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce())
+    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN)!(event, 'session-1')
+    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_CLOSE)!(event, 'session-1')
+
+    expect(unsubscribe).toHaveBeenCalledOnce()
   })
 })

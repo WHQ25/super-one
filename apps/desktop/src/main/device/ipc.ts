@@ -44,14 +44,15 @@ export interface DeviceIpcOptions {
  * Asked in order and answered by the first that claims it. A session holding nothing
  * falls to the first surface, which is what makes an empty panel show the simulator's
  * device picker rather than nothing at all.
+ *
+ * Synchronous, and that is a requirement rather than a convenience: this runs in
+ * front of EVERY call the panel makes, including one input per 8ms of a drag. It
+ * used to ask `sessionState`, which on iOS spawns `simctl list devices --json` —
+ * a quarter of a second, per touch sample. See `DeviceSurface.owns`.
  */
-async function surfaceFor(
-  surfaces: DeviceSurface[],
-  sessionId: string,
-): Promise<DeviceSurface> {
+function surfaceFor(surfaces: DeviceSurface[], sessionId: string): DeviceSurface {
   for (const surface of surfaces) {
-    const state = await surface.sessionState(sessionId).catch(() => null)
-    if (state?.device) return surface
+    if (surface.owns(sessionId)) return surface
   }
   const fallback = surfaces[0]
   if (!fallback) throw new Error('No device platform is available on this machine.')
@@ -97,7 +98,7 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
 
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_STATE,
-    async (_event, sessionId: string) => (await bySession(sessionId)).sessionState(sessionId),
+    (_event, sessionId: string) => bySession(sessionId).sessionState(sessionId),
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_BIND,
@@ -111,11 +112,11 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_DETACH,
-    async (_event, sessionId: string) => (await bySession(sessionId)).detach(sessionId),
+    (_event, sessionId: string) => bySession(sessionId).detach(sessionId),
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_SHUTDOWN,
-    async (_event, sessionId: string) => (await bySession(sessionId)).shutdown(sessionId),
+    (_event, sessionId: string) => bySession(sessionId).shutdown(sessionId),
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_RELEASE,
@@ -127,20 +128,19 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT,
-    async (_event, sessionId: string, input: DeviceInput) =>
-      (await bySession(sessionId)).input(sessionId, input),
+    (_event, sessionId: string, input: DeviceInput) => bySession(sessionId).input(sessionId, input),
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_SCREENSHOT,
-    async (_event, sessionId: string) => (await bySession(sessionId)).screenshot(sessionId),
+    (_event, sessionId: string) => bySession(sessionId).screenshot(sessionId),
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_START,
-    async (_event, sessionId: string) => (await bySession(sessionId)).startRecording(sessionId),
+    (_event, sessionId: string) => bySession(sessionId).startRecording(sessionId),
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_STOP,
-    async (_event, sessionId: string) => (await bySession(sessionId)).stopRecording(sessionId),
+    (_event, sessionId: string) => bySession(sessionId).stopRecording(sessionId),
   )
 
   ipcMain.on(
@@ -149,28 +149,21 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
       const key = portKey(event.sender.id, sessionId)
       closePort(key)
       const { port1, port2 } = new MessageChannelMain()
+      // Subscribing and recording the port happen in one synchronous step, which is
+      // what makes a close arriving right behind an open safe: there is no window in
+      // which the subscription exists but its map entry does not. Routing used to be
+      // asynchronous, and carrying a late subscription across that gap needed a flag.
       let unsubscribe = () => {}
-      let closed = false
-      void surfaceFor(surfaces(), sessionId).then((surface) => {
-        const nextUnsubscribe = surface.subscribe(sessionId, (frame) => {
+      try {
+        unsubscribe = surfaceFor(surfaces(), sessionId).subscribe(sessionId, (frame) => {
           try { port2.postMessage(frame) } catch { closePort(key) }
         }, options)
-        // Closing the renderer port can beat the asynchronous owner lookup above.
-        // Do not leave the late subscription alive after its map entry is gone.
-        if (closed) nextUnsubscribe()
-        else unsubscribe = nextUnsubscribe
-      }).catch((error: unknown) => {
+      } catch (error: unknown) {
         // Without this the panel sits on its spinner forever: a stream that never
         // starts looks exactly like one that has not produced a frame yet.
         log.warn('[device] preview stream failed to start', error)
-      })
-      openPorts.set(key, {
-        port: port2,
-        unsubscribe: () => {
-          closed = true
-          unsubscribe()
-        },
-      })
+      }
+      openPorts.set(key, { port: port2, unsubscribe })
       port2.on('close', () => closePort(key))
       port2.start()
       event.sender.postMessage(

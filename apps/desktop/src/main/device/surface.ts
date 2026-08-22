@@ -26,6 +26,23 @@ export type { DeviceCapture }
 export interface DeviceSurface {
   readonly platform: DevicePlatform
 
+  /**
+   * Whether this session's device is one of ours. THE ROUTING JUDGEMENT, and it is
+   * synchronous by contract.
+   *
+   * Every call the panel makes has to be routed, and one of them is `input` — which
+   * a dragging finger produces up to 125 times a second. So this may only read what
+   * the host already knows: which session bound which device, which both managers
+   * hold in memory.
+   *
+   * `sessionState` is the answer that looks equally correct and is not: on iOS it
+   * spawns `simctl list devices --json`, a quarter of a second of talking to
+   * CoreSimulatorService. Routing through it put one of those in front of every
+   * touch sample and made the simulator unusable while looking, from the outside,
+   * exactly like a rendering problem.
+   */
+  owns(sessionId: string): boolean
+
   sessionState(sessionId: string): Promise<DeviceSessionState>
 
   /** Point a session at a device without starting anything. */
@@ -72,9 +89,9 @@ export interface DeviceSurface {
  *
  * Resolved per call rather than remembered: a session can be handed from one platform
  * to another, and a cached answer would keep sending touches to the device it used
- * to hold.
+ * to hold. Resolving per call is only affordable because `owns` is cheap — see it.
  */
 export interface DeviceSurfaceRegistry {
   surfaces(): DeviceSurface[]
-  forSession(sessionId: string): Promise<DeviceSurface>
+  forSession(sessionId: string): DeviceSurface
 }

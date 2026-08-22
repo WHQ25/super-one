@@ -349,6 +349,17 @@ export class AndroidDeviceManager {
     await connection?.close()
   }
 
+  /**
+   * Whether this session holds a device. See `DeviceSurface.owns`.
+   *
+   * Not `controlled(...) != null`: that one resolves the descriptor through the last
+   * device listing, so a session whose device is bound but not yet listed reads as
+   * holding nothing. The binding is the truth about ownership.
+   */
+  holdsSession(sessionId: string): boolean {
+    return this.sessionBindings.has(sessionId)
+  }
+
   controlled(sessionId: string): DeviceDescriptor | null {
     const id = this.sessionBindings.get(sessionId)
     if (!id) return null

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { DeviceFrame } from '@superone/shared/device'
 import { Adb, type AdbResult, type RunAdb } from './adb'
 import { Avd } from './avd'
 import {
@@ -29,20 +30,34 @@ ${PHONE_SERIAL}          device product:a54x model:SM_A546B device:a54x transpor
  * test can assert on the one that should have been taken down.
  */
 const scrcpy = vi.hoisted(() => ({
-  connections: [] as { serial: string; closed: boolean }[],
+  connections: [] as {
+    serial: string
+    closed: boolean
+    emit: (packet: unknown) => void
+    sent: number[]
+  }[],
 }))
 
 vi.mock('./scrcpy-server', () => ({
   connectScrcpy: vi.fn(async (options: { serial: string }) => {
-    const connection = { serial: options.serial, closed: false }
+    const listeners = new Set<(packet: unknown) => void>()
+    const connection = {
+      serial: options.serial,
+      closed: false,
+      emit: (packet: unknown) => { for (const listener of listeners) listener(packet) },
+      sent: [] as number[],
+    }
     scrcpy.connections.push(connection)
     return {
       deviceName: options.serial,
       screen: { width: 720, height: 1600 },
-      onMedia: () => () => {},
+      onMedia: (listener: (packet: unknown) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
       onSession: () => () => {},
       onClosed: () => () => {},
-      send: () => {},
+      send: (message: Buffer) => { connection.sent.push(message[0]!) },
       close: async () => { connection.closed = true },
     }
   }),
@@ -59,7 +74,11 @@ function ok(text: string): AdbResult {
  * these exercise the actual argument construction and output parsing — the parts most
  * likely to drift from what the tools accept.
  */
-function toolchain(options: { avds?: string; devices?: string } = {}): {
+function toolchain(options: {
+  avds?: string
+  /** A thunk when the catalog changes mid-test — an emulator on its way out. */
+  devices?: string | (() => string)
+} = {}): {
   toolchain: AndroidToolchain
   calls: string[][]
 } {
@@ -68,7 +87,9 @@ function toolchain(options: { avds?: string; devices?: string } = {}): {
     calls.push([...args])
     const joined = args.join(' ')
     if (joined === '-list-avds') return ok(options.avds ?? `${AVD_ID}\n`)
-    if (joined === 'devices -l') return ok(options.devices ?? DEVICES_OUTPUT)
+    if (joined === 'devices -l') {
+      return ok(typeof options.devices === 'function' ? options.devices() : options.devices ?? DEVICES_OUTPUT)
+    }
     if (joined.includes('emu avd name')) return ok(`${AVD_ID}\nOK\n`)
     if (joined.includes('ro.build.version.sdk')) return ok('36\n')
     if (joined.includes('ro.product.model')) return ok('sdk_gphone64_arm64\n')
@@ -285,5 +306,150 @@ describe('rebinding a session', () => {
     expect(android.devicesOf('session-1')).toEqual([])
     expect(android.devicesOf('session-2')).toEqual([AVD_DEVICE_ID])
     expect(announced).toContainEqual({ deviceId: AVD_DEVICE_ID, owner: 'session-2' })
+  })
+})
+
+/**
+ * Shutting a device down, which is where Android differs most from the simulator.
+ *
+ * The emulator outlives the app that started it — `emulator` execs into a qemu process
+ * that is reparented when this app restarts — so a signal aimed at a remembered child
+ * is not a mechanism that survives a restart. The console is.
+ */
+describe('stopping a device', () => {
+  const AVD_DEVICE_ID = `android:avd:${AVD_ID}`
+  const PHONE_ID = `android:${PHONE_SERIAL}`
+  const NO_DEVICES_OUTPUT = 'List of devices attached\n\n'
+
+  it('kills an emulator this app never launched, which is every emulator after a restart', async () => {
+    let killed = false
+    const { toolchain: tools, calls } = toolchain({
+      devices: () => (killed ? NO_DEVICES_OUTPUT : DEVICES_OUTPUT),
+    })
+    const android = new AndroidDeviceManager(tools)
+    await android.listDevices()
+    // No `boot` — nothing is in `launched`, exactly as after the app was restarted
+    // under a running emulator. That used to mean the stop signal went nowhere.
+    const emuKill = calls.find((args) => args.join(' ').includes('emu kill'))
+    expect(emuKill).toBeUndefined()
+
+    const stopping = android.stopDevice(AVD_DEVICE_ID)
+    killed = true
+    await stopping
+
+    expect(calls).toContainEqual(['-s', SERIAL, 'emu', 'kill'])
+    expect(android.serialFor(AVD_DEVICE_ID)).toBeNull()
+  })
+
+  it('returns only once adb has stopped reporting the device', async () => {
+    // The emulator takes seconds to go, and the panel re-reads the catalog the moment
+    // this resolves — so resolving early is what leaves it marked running.
+    let remaining = 2
+    const { toolchain: tools } = toolchain({
+      devices: () => {
+        if (remaining <= 0) return NO_DEVICES_OUTPUT
+        remaining -= 1
+        return DEVICES_OUTPUT
+      },
+    })
+    const android = new AndroidDeviceManager(tools)
+    await android.listDevices()
+
+    await android.stopDevice(AVD_DEVICE_ID)
+
+    expect(remaining).toBe(0)
+    const devices = await android.listDevices()
+    expect(devices[0]).toMatchObject({ id: AVD_DEVICE_ID, running: false })
+  })
+
+  it('does not try to switch off a phone that is merely plugged in', async () => {
+    const { toolchain: tools, calls } = toolchain({ devices: TWO_DEVICES_OUTPUT })
+    const android = new AndroidDeviceManager(tools)
+    await android.boot('session-1', PHONE_ID)
+
+    await android.stopDevice(PHONE_ID)
+
+    expect(calls.some((args) => args.join(' ').includes('emu kill'))).toBe(false)
+    expect(android.devicesOf('session-1')).toEqual([])
+  })
+})
+
+/**
+ * Everyone watching one device, fed from one decoder state.
+ *
+ * scrcpy states the stream's parameter sets exactly once per connection, in a config
+ * packet at the very start, and the renderer builds its decoder ONLY on a frame
+ * marked `codecConfig`. So who gets that packet is not a detail — it is whether a
+ * viewer ever draws anything at all.
+ */
+describe('a second viewer of the same device', () => {
+  const AVD_DEVICE_ID = `android:avd:${AVD_ID}`
+
+  function manager() {
+    scrcpy.connections.length = 0
+    return new AndroidDeviceManager(toolchain({ devices: TWO_DEVICES_OUTPUT }).toolchain)
+  }
+
+  /** SPS then PPS, Baseline 4.1, exactly as this repo's AVD sends them. */
+  const PARAMETER_SETS = Buffer.from(
+    '000000016742c0298d680900a1a420202020f08846a00000000168ce01a835c8',
+    'hex',
+  )
+  const config = {
+    kind: 'media' as const,
+    config: true,
+    keyframe: false,
+    timestampUs: 0,
+    data: PARAMETER_SETS,
+  }
+
+  it('is handed the config packet the first viewer already spent', async () => {
+    const android = manager()
+    await android.boot('session-1', AVD_DEVICE_ID)
+
+    const first: DeviceFrame[] = []
+    android.subscribe(AVD_DEVICE_ID, (frame) => first.push(frame))
+    await vi.waitFor(() => expect(scrcpy.connections).toHaveLength(1))
+    scrcpy.connections[0]!.emit(config)
+    expect(first[0]).toMatchObject({ codecConfig: true, codec: 'avc1.42c029' })
+
+    // A panel remounting, a quality renegotiate, or a preview opening onto the
+    // connection the agent already made. The config packet is long gone.
+    const second: DeviceFrame[] = []
+    android.subscribe(AVD_DEVICE_ID, (frame) => second.push(frame))
+    await vi.waitFor(() => expect(second).toHaveLength(1))
+    expect(second[0]).toMatchObject({ codecConfig: true, codec: 'avc1.42c029' })
+
+    // One connection, not two: a second encoder on the guest would cost the device
+    // real work and land two sets of touches out of order.
+    expect(scrcpy.connections).toHaveLength(1)
+  })
+
+  it('asks the device for a keyframe, rather than waiting out the encoder', async () => {
+    const android = manager()
+    await android.boot('session-1', AVD_DEVICE_ID)
+    android.subscribe(AVD_DEVICE_ID, () => {})
+    await vi.waitFor(() => expect(scrcpy.connections).toHaveLength(1))
+    scrcpy.connections[0]!.emit(config)
+    // The first viewer arrived with the connection, so it needs nothing asked for.
+    expect(scrcpy.connections[0]!.sent).toEqual([])
+
+    android.subscribe(AVD_DEVICE_ID, () => {})
+    // RESET_VIDEO. A configured decoder still draws nothing until a keyframe, and the
+    // encoder's own were measured more than 12s apart on a real phone.
+    await vi.waitFor(() => expect(scrcpy.connections[0]!.sent).toEqual([17]))
+  })
+
+  it('leaves the other viewers alone when one goes away', async () => {
+    const android = manager()
+    await android.boot('session-1', AVD_DEVICE_ID)
+    const kept: DeviceFrame[] = []
+    const stop = android.subscribe(AVD_DEVICE_ID, () => {})
+    android.subscribe(AVD_DEVICE_ID, (frame) => kept.push(frame))
+    await vi.waitFor(() => expect(scrcpy.connections).toHaveLength(1))
+
+    stop()
+    scrcpy.connections[0]!.emit(config)
+    expect(kept).toHaveLength(1)
   })
 })

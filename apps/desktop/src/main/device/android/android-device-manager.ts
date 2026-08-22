@@ -17,6 +17,7 @@ import type { DeviceOrientation } from '@superone/shared/device-agent'
 import log from '../../logger'
 import { Adb, adbPath, emulatorPath, spawnTool, type AdbDevice } from './adb'
 import { Avd, parseEmuResponse, type AvdLaunch, type AvdSummary } from './avd'
+import { encodeResetVideo } from './scrcpy-control'
 import { connectScrcpy, type ScrcpyConnection } from './scrcpy-server'
 import { orientationForRotation } from './uiautomator'
 import { AndroidVideoStream } from './video-frames'
@@ -36,9 +37,31 @@ import {
  */
 const SCRCPY_MAX_SIZE = 1280
 
+/**
+ * Where a vendor might have written the name on the box, best first.
+ *
+ * `ro.product.model` is the only property Android itself defines, and on everything
+ * but a Pixel it holds a part number — `2410DPN6CC` for a Xiaomi 15 Pro. Each vendor
+ * keeps the real name somewhere of its own choosing; these are the three that cover
+ * most phones in circulation. Read together in one round trip, so the list costs
+ * nothing to extend.
+ */
+const MARKET_NAME_PROPS = [
+  // Xiaomi / Redmi / POCO.
+  'ro.product.marketname',
+  // OPPO, OnePlus, realme.
+  'ro.vendor.oplus.market.name',
+  // Huawei, Honor.
+  'ro.config.marketing_name',
+] as const
+
 /** How long a cold emulator gets to appear on adb and finish booting. */
 const BOOT_TIMEOUT_MS = 180_000
 const BOOT_POLL_MS = 1_000
+
+/** How long a killed emulator gets to leave `adb devices`. Seconds, in practice. */
+const SHUTDOWN_TIMEOUT_MS = 30_000
+const SHUTDOWN_POLL_MS = 250
 
 export interface AndroidToolchain {
   adb: Adb
@@ -84,6 +107,15 @@ export class AndroidDeviceManager {
   private readonly orientations = new Map<string, DeviceOrientation>()
   private readonly connections = new Map<string, ScrcpyConnection>()
   private readonly connectionFlights = new Map<string, Promise<ScrcpyConnection>>()
+  /**
+   * Device id -> the one stream decoding its picture, and everyone watching it.
+   *
+   * Both belong to the CONNECTION rather than to any viewer, because the fact they
+   * carry — the stream's parameter sets — arrives exactly once per connection and is
+   * needed by every viewer that ever joins it. See `AndroidVideoStream.configFrame`.
+   */
+  private readonly videos = new Map<string, AndroidVideoStream>()
+  private readonly viewers = new Map<string, Set<(frame: DeviceFrame) => void>>()
   private lastDevices: DeviceDescriptor[] = []
 
   constructor(private readonly toolchain: AndroidToolchain) {}
@@ -100,19 +132,20 @@ export class AndroidDeviceManager {
   /**
    * Ask a running device who it is.
    *
-   * Four round trips, run together. Each is ~30ms over adb and they are independent,
-   * so doing them in sequence would make listing a machine with three devices feel
-   * like half a second of nothing.
+   * Every read at once. Each is ~30ms over adb and they are independent, so doing
+   * them in sequence would make listing a machine with three devices feel like half a
+   * second of nothing.
    */
   private async readRuntimeInfo(serial: string): Promise<AndroidRuntimeInfo> {
     const { adb } = this.toolchain
-    const [avdName, sdk, model, characteristics] = await Promise.all([
+    const [avdName, sdk, model, characteristics, marketName] = await Promise.all([
       // Only an emulator answers this, which is how an AVD is told apart from a phone
       // without having to ask anything else.
       this.avdNameOf(serial).catch(() => null),
       adb.getProp(serial, 'ro.build.version.sdk').catch(() => ''),
       adb.getProp(serial, 'ro.product.model').catch(() => ''),
       adb.getProp(serial, 'ro.build.characteristics').catch(() => ''),
+      this.readMarketName(serial),
     ])
     const apiLevel = Number.parseInt(sdk, 10)
     return {
@@ -120,8 +153,19 @@ export class AndroidDeviceManager {
       ...(avdName ? { avdId: avdName } : {}),
       ...(Number.isInteger(apiLevel) && apiLevel > 0 ? { apiLevel } : {}),
       ...(model ? { model } : {}),
+      ...(marketName ? { marketName } : {}),
       ...(characteristics ? { characteristics } : {}),
     }
+  }
+
+  /** The first market name any vendor on this device answered to. */
+  private async readMarketName(serial: string): Promise<string> {
+    const values = await Promise.all(
+      MARKET_NAME_PROPS.map((prop) => this.toolchain.adb.getProp(serial, prop).catch(() => '')),
+    )
+    // `getprop` prints an empty line for a property that does not exist, so absence
+    // and emptiness are the same thing here.
+    return values.find((value) => Boolean(value)) ?? ''
   }
 
   /**
@@ -216,7 +260,11 @@ export class AndroidDeviceManager {
     }).then((connection) => {
       this.connectionFlights.delete(deviceId)
       this.connections.set(deviceId, connection)
-      connection.onClosed(() => this.connections.delete(deviceId))
+      this.pump(deviceId, connection)
+      connection.onClosed(() => {
+        this.connections.delete(deviceId)
+        this.videos.delete(deviceId)
+      })
       return connection
     }).catch((error: unknown) => {
       this.connectionFlights.delete(deviceId)
@@ -227,7 +275,37 @@ export class AndroidDeviceManager {
   }
 
   /**
-   * Stream this session's screen as decodable frames.
+   * Wire a fresh connection to everyone who will ever watch it.
+   *
+   * Once per CONNECTION, not once per viewer. Both of the things attached here are
+   * facts about the device rather than about whoever is looking: a packet decodes to
+   * one frame no matter how many panels want it, and a rotation happened once.
+   * Subscribing used to attach its own pair, which meant N viewers announced the same
+   * rotation N times — and, far worse, N private `AndroidVideoStream`s, only the first
+   * of which ever saw the connection's single config packet.
+   */
+  private pump(deviceId: string, connection: ScrcpyConnection): void {
+    const video = new AndroidVideoStream()
+    this.videos.set(deviceId, video)
+    connection.onMedia((packet) => {
+      const frame = video.frame(packet, { deviceId, screen: connection.screen })
+      for (const viewer of this.viewers.get(deviceId) ?? []) viewer(frame)
+    })
+    // A rotation re-shapes the framebuffer rather than turning a fixed one, so the
+    // decoder has to be told before the next frame arrives at a new size. Reported
+    // as a config-less keyframe boundary via the geometry on the following frames.
+    connection.onSession((session) => {
+      log.info('[android] capture resized', session.width, session.height)
+      // A resize IS a rotation on Android, so the panel has to hear about it — it
+      // cannot infer the new shape from a framebuffer that never changed.
+      void this.readOrientation(deviceId)
+        .then(() => this.announce(deviceId))
+        .catch(() => this.announce(deviceId))
+    })
+  }
+
+  /**
+   * Watch this device's screen as decodable frames.
    *
    * Both platforms deliver H.264 with a separate config packet, so the renderer
    * decodes them through one path — but the packets are not interchangeable, and
@@ -236,38 +314,38 @@ export class AndroidDeviceManager {
    * repeats them on every keyframe and names its own codec. See that file.
    */
   subscribe(deviceId: string, listener: (frame: DeviceFrame) => void): () => void {
-    const video = new AndroidVideoStream()
-    let disposed = false
-    let stop: (() => void) | null = null
+    const viewers = this.viewers.get(deviceId) ?? new Set<(frame: DeviceFrame) => void>()
+    this.viewers.set(deviceId, viewers)
 
-    void this.connection(deviceId).then((connection) => {
-      if (disposed) return
-      const offMedia = connection.onMedia((packet) => {
-        listener(video.frame(packet, { deviceId, screen: connection.screen }))
-      })
-      // A rotation re-shapes the framebuffer rather than turning a fixed one, so the
-      // decoder has to be told before the next frame arrives at a new size. Reported
-      // as a config-less keyframe boundary via the geometry on the following frames.
-      const offSession = connection.onSession((session) => {
-        log.info('[android] capture resized', session.width, session.height)
-        // A resize IS a rotation on Android, so the panel has to hear about it —
-        // it cannot infer the new shape from a framebuffer that never changed.
-        void this.readOrientation(deviceId)
-          .then(() => this.announce(deviceId))
-          .catch(() => this.announce(deviceId))
-      })
-      stop = () => {
-        offMedia()
-        offSession()
-      }
-    }).catch((error: unknown) => {
+    // A connection that is ALREADY up is what makes this viewer a late one: the config
+    // packet carrying the stream's parameter sets went past before it was here, and
+    // scrcpy never sends a second. Settled synchronously, BEFORE the viewer joins the
+    // fan-out, so no picture can reach it ahead of the frame that lets it decode one.
+    // A viewer that arrives with the connection, or while one is still opening, needs
+    // none of this — the real config packet is still coming to it.
+    const live = this.connections.get(deviceId)
+    const replay = live
+      ? this.videos.get(deviceId)?.configFrame({ deviceId, screen: live.screen })
+      : null
+    if (live && replay) {
+      listener(replay)
+      // A configured decoder still has nothing to draw until a keyframe, and the
+      // encoder's own are far apart — measured at over 12s on a real phone. Asking
+      // costs one control message and buys a picture in a round trip. The viewers
+      // already watching get a fresh config packet and keyframe out of it, which is
+      // exactly what they are built to handle.
+      live.send(encodeResetVideo())
+    }
+    viewers.add(listener)
+
+    // Opens one if there is none. Nothing is awaited: everything this viewer needs
+    // from a NEW connection arrives through `pump`, on the wire, like every other
+    // frame.
+    void this.connection(deviceId).catch((error: unknown) => {
       log.warn('[android] preview stream failed to start', error)
     })
 
-    return () => {
-      disposed = true
-      stop?.()
-    }
+    return () => { viewers.delete(listener) }
   }
 
   /** The device's own idea of which way up it is. Cached for `sessionState`. */
@@ -299,21 +377,50 @@ export class AndroidDeviceManager {
   }
 
   /**
-   * Stop a device — but only if this app started it.
+   * Stop a device.
    *
-   * A phone on someone's desk, or an emulator they launched from Android Studio, is
-   * not ours to turn off. Letting go is the most that can be done there, and it is
-   * what happens.
+   * The kill goes to the emulator's own console, not to the process this app spawned.
+   * `emulator` execs into a qemu process that is NOT taken down with its parent, so an
+   * emulator outlives a restart of this app — after one, `launched` is empty and a
+   * signal would land nowhere, leaving a device the user just asked to stop running
+   * with nothing left able to reach it. The console command addresses the emulator
+   * itself, so it works whoever started it, which is the rule the simulator follows.
+   *
+   * A phone on someone's desk is not ours to switch off: it has no console, and
+   * letting go is the most that happens to it.
    */
   async stopDevice(deviceId: string): Promise<void> {
+    const serial = this.serialFor(deviceId)
     const avdId = avdIdFromDeviceId(deviceId)
-    const launch = avdId ? this.launched.get(avdId) : null
     await this.closeConnection(deviceId)
-    if (launch && avdId) {
-      launch.stop()
-      this.launched.delete(avdId)
+    if (serial?.startsWith('emulator-')) {
+      await this.toolchain.adb.emu(serial, ['kill'])
+        .then(() => this.waitForGone(serial))
+        .catch((error: unknown) => { log.warn('[android] emulator refused to stop', serial, error) })
+      this.serials.delete(deviceId)
     }
+    if (avdId) this.launched.delete(avdId)
     this.release(deviceId)
+  }
+
+  /**
+   * Wait until adb stops reporting the serial.
+   *
+   * The kill returns as soon as the emulator has heard it, and the device then takes
+   * seconds to actually go — while adb still lists it, first as `device` and then as
+   * `offline`. The caller re-reads the catalog the moment this resolves, so returning
+   * early is exactly what leaves a device the user shut down still marked running.
+   */
+  private async waitForGone(serial: string): Promise<void> {
+    const deadline = Date.now() + SHUTDOWN_TIMEOUT_MS
+    while (Date.now() < deadline) {
+      const attached = await this.toolchain.adb.devices().catch(() => null)
+      // A list that could not be read says nothing about the device; only one that
+      // answered and does not name it means the emulator is gone.
+      if (attached && !attached.some((device) => device.serial === serial)) return
+      await delay(SHUTDOWN_POLL_MS)
+    }
+    log.warn('[android] emulator still attached after kill', serial)
   }
 
   private readonly stateListeners = new Set<(state: DeviceState) => void>()

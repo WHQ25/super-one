@@ -6,7 +6,9 @@ import {
   encodeKeyPress,
   encodeKeycode,
   encodePressure,
+  encodeSetClipboard,
   encodeText,
+  encodeTextInput,
   encodeTouch,
   encodeTouchStep,
   KEYCODE,
@@ -131,17 +133,106 @@ describe('encodeText', () => {
     expect(message.subarray(5).toString('utf8')).toBe('hi')
   })
 
-  it('types Chinese and emoji directly, with no pasteboard detour', () => {
-    // The simulator cannot: its HID channel carries usage codes, so anything outside
-    // ASCII has to go via the pasteboard. This channel is UTF-8 the whole way.
-    const message = encodeText('中文 🎉')
-    const payload = Buffer.from('中文 🎉', 'utf8')
-    expect(message.readUInt32BE(1)).toBe(payload.length)
-    expect(message.subarray(5).toString('utf8')).toBe('中文 🎉')
-  })
-
   it('counts bytes, not characters', () => {
     expect(encodeText('中').readUInt32BE(1)).toBe(3)
+  })
+})
+
+describe('encodeSetClipboard', () => {
+  it('lays out sequence, paste flag and a 4-byte length', () => {
+    const message = encodeSetClipboard('中', true)
+    expect(message).toHaveLength(14 + 3)
+    expect(message.readUInt8(0)).toBe(SCRCPY_MSG.SET_CLIPBOARD)
+    expect(message.readBigInt64BE(1)).toBe(0n)
+    expect(message.readUInt8(9)).toBe(1)
+    expect(message.readUInt32BE(10)).toBe(3)
+    expect(message.subarray(14).toString('utf8')).toBe('中')
+  })
+
+  it('asks for no acknowledgement, because nothing reads the socket back', () => {
+    expect(encodeSetClipboard('hi', false).readBigInt64BE(1)).toBe(0n)
+  })
+})
+
+describe('encodeTextInput', () => {
+  it('sends printable ASCII on the text channel', () => {
+    const [message, ...rest] = encodeTextInput('hello')
+    expect(rest).toHaveLength(0)
+    expect(message!.readUInt8(0)).toBe(SCRCPY_MSG.INJECT_TEXT)
+    expect(message!.subarray(5).toString('utf8')).toBe('hello')
+  })
+
+  it('pastes anything the virtual keyboard cannot spell', () => {
+    // INJECT_TEXT is not UTF-8 end to end the way its wire format suggests: the server
+    // reverse-maps every character through KeyCharacterMap and drops the ones no key
+    // produces, which is every Chinese character and every emoji.
+    const [message, ...rest] = encodeTextInput('中文🎉')
+    expect(rest).toHaveLength(0)
+    expect(message!.readUInt8(0)).toBe(SCRCPY_MSG.SET_CLIPBOARD)
+    expect(message!.readUInt8(9)).toBe(1)
+    expect(message!.subarray(14).toString('utf8')).toBe('中文🎉')
+  })
+
+  it('turns backspace into a DEL press rather than a character', () => {
+    // Virtual.kcm gives DEL no character mapping at all, so a literal \b on the text
+    // channel is looked up, not found, and thrown away.
+    const messages = encodeTextInput('\b')
+    expect(messages).toHaveLength(2)
+    expect(messages[0]!.readUInt8(0)).toBe(SCRCPY_MSG.INJECT_KEYCODE)
+    expect(messages[0]!.readInt32BE(2)).toBe(67)
+    expect(messages[1]!.readUInt8(1)).toBe(1)
+  })
+
+  it('sends Enter and Tab as keys, so IME actions fire', () => {
+    expect(encodeTextInput('\n')[0]!.readInt32BE(2)).toBe(66)
+    expect(encodeTextInput('\r')[0]!.readInt32BE(2)).toBe(66)
+    expect(encodeTextInput('\t')[0]!.readInt32BE(2)).toBe(61)
+  })
+
+  it('never splits one string across both channels', () => {
+    // Measured on a device: injected characters are queued and then routed through the
+    // IME, while KEYCODE_PASTE is handled by the focused view directly, so a string
+    // sent as text + paste arrives out of order — `hi 中文` landed as `hi中文 `.
+    const messages = encodeTextInput('hi 中文')
+    expect(messages).toHaveLength(1)
+    expect(messages[0]!.readUInt8(0)).toBe(SCRCPY_MSG.SET_CLIPBOARD)
+    expect(messages[0]!.subarray(14).toString('utf8')).toBe('hi 中文')
+  })
+
+  it('keeps the key presses between the runs, in order', () => {
+    const messages = encodeTextInput('ab中\ncd')
+    expect(messages.map((message) => message.readUInt8(0))).toEqual([
+      SCRCPY_MSG.SET_CLIPBOARD,
+      SCRCPY_MSG.INJECT_KEYCODE,
+      SCRCPY_MSG.INJECT_KEYCODE,
+      SCRCPY_MSG.SET_CLIPBOARD,
+    ])
+    expect(messages[0]!.subarray(14).toString('utf8')).toBe('ab中')
+    expect(messages[3]!.subarray(14).toString('utf8')).toBe('cd')
+  })
+
+  it('leaves an all-ASCII string on the cheaper text channel', () => {
+    // The clipboard is a detour, not an upgrade: it clobbers whatever the user had
+    // copied on the device, so it is only taken when the text channel cannot deliver.
+    const messages = encodeTextInput('ab\ncd')
+    expect(messages.map((message) => message.readUInt8(0))).toEqual([
+      SCRCPY_MSG.INJECT_TEXT,
+      SCRCPY_MSG.INJECT_KEYCODE,
+      SCRCPY_MSG.INJECT_KEYCODE,
+      SCRCPY_MSG.INJECT_TEXT,
+    ])
+  })
+
+  it('keeps a surrogate pair whole', () => {
+    // Iterating code units would split the emoji across two clipboard writes, and each
+    // half alone is not a character.
+    const messages = encodeTextInput('🎉🎉')
+    expect(messages).toHaveLength(1)
+    expect(messages[0]!.subarray(14).toString('utf8')).toBe('🎉🎉')
+  })
+
+  it('sends nothing for an empty string', () => {
+    expect(encodeTextInput('')).toEqual([])
   })
 })
 

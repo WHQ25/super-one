@@ -23,18 +23,30 @@ import { androidVersionName } from './android-version'
  * Phones first for the same reason iPhone comes before iPad: it is what almost
  * everyone is looking for. The order is editorial and rides on the descriptor as
  * `kindRank` — see `DeviceDescriptor`.
+ *
+ * Every display name names the platform, because the picker is not a list of Android
+ * devices — it is one list holding every platform this Mac can reach. A heading of
+ * "Phone" sitting under one that says "iPhone" tells the reader nothing about which
+ * is which; "Android Phone" does. The `kind` slugs stay in Android's own vocabulary
+ * (`phone`, not `iphone`) exactly as `DeviceDescriptor` requires — this is the label,
+ * not the classification.
  */
 const KINDS: Array<{ kind: string; name: string; match: RegExp }> = [
-  { kind: 'phone', name: 'Phone', match: /phone|pixel|nexus|galaxy/i },
-  { kind: 'tablet', name: 'Tablet', match: /tablet|pad/i },
-  { kind: 'foldable', name: 'Foldable', match: /fold|flip/i },
+  { kind: 'phone', name: 'Android Phone', match: /phone|pixel|nexus|galaxy/i },
+  { kind: 'tablet', name: 'Android Tablet', match: /tablet|pad/i },
+  { kind: 'foldable', name: 'Android Foldable', match: /fold|flip/i },
+  // Already unambiguous, and Google's own product names besides — "Android Wear OS"
+  // is not a thing anyone writes.
   { kind: 'wear', name: 'Wear OS', match: /wear|watch/i },
   { kind: 'tv', name: 'Android TV', match: /\btv\b|television/i },
-  { kind: 'auto', name: 'Android Auto', match: /auto|car/i },
-  { kind: 'desktop', name: 'Desktop', match: /desktop|freeform/i },
+  // Both anchored at a word start. Unanchored, `car` matches the `car` inside
+  // `nosdcard` — which is what `ro.build.characteristics` reads on a great many
+  // ordinary phones, every one of which was then filed under Android Auto.
+  { kind: 'auto', name: 'Android Auto', match: /\bauto|\bcar\b/i },
+  { kind: 'desktop', name: 'Android Desktop', match: /desktop|freeform/i },
 ]
 
-const OTHER = { kind: 'other', name: 'Other', rank: KINDS.length }
+const OTHER = { kind: 'other', name: 'Other Android', rank: KINDS.length }
 
 /**
  * Classify from whatever text describes the hardware.
@@ -42,8 +54,11 @@ const OTHER = { kind: 'other', name: 'Other', rank: KINDS.length }
  * For an AVD that is `hw.device.name` (`medium_phone`, `pixel_tablet`, `tv_1080p`);
  * for a real device it is `ro.build.characteristics` plus the model. Both are
  * free-form, so this matches rather than looks up — and answers `phone` for anything
- * unrecognized that is plainly a handset, since that is what an unlabelled Android
- * device overwhelmingly is.
+ * unrecognized, since that is what an unlabelled Android device overwhelmingly is.
+ * Only a device that described itself with NOTHING is filed under other: a phone
+ * announces itself as `nosdcard` or `default`, which name a handset by saying nothing
+ * interesting, while an empty string means the read failed and there is no fact here
+ * to guess from.
  */
 export function androidKind(subject: string): { kind: string; name: string; rank: number } {
   // Underscores become spaces first, because AVD profiles use them as the word
@@ -58,9 +73,12 @@ export function androidKind(subject: string): { kind: string; name: string; rank
   const specific = KINDS.slice(1).find((entry) => entry.match.test(text))
   if (specific) return { kind: specific.kind, name: specific.name, rank: KINDS.indexOf(specific) }
   const phone = KINDS[0]!
-  return phone.match.test(text)
-    ? { kind: phone.kind, name: phone.name, rank: 0 }
-    : OTHER
+  if (phone.match.test(text)) return { kind: phone.kind, name: phone.name, rank: 0 }
+  // A real phone's model is a vendor part number — `2410DPN6CC`, `SM-S928B` — which
+  // shares no vocabulary with the AVD profile names the patterns above were built
+  // from. Falling through to `other` put every non-Pixel handset on the machine in a
+  // trailing bucket of its own, which is worse than the occasional miscall.
+  return text.trim() ? { kind: phone.kind, name: phone.name, rank: 0 } : OTHER
 }
 
 /** Handle for an AVD. Stable across boots, unlike the `emulator-5554` port it gets. */
@@ -80,8 +98,16 @@ export interface AndroidRuntimeInfo {
   avdId?: string
   /** `ro.build.version.sdk`. */
   apiLevel?: number
-  /** `ro.product.model`. */
+  /** `ro.product.model`. A vendor part number on most phones: `2410DPN6CC`. */
   model?: string
+  /**
+   * The name printed on the box, when the vendor records one anywhere.
+   *
+   * Android defines no standard property for it — `ro.product.model` is the closest
+   * thing the platform has, and on everything but a Pixel it holds a part number.
+   * See `MARKET_NAME_PROPS` for where this is read from.
+   */
+  marketName?: string
   /** `ro.build.characteristics` — `emulator`, `tablet`, `tv`, `nosdcard,emulator`. */
   characteristics?: string
 }
@@ -123,6 +149,10 @@ function descriptorForPhysical(
   owners: ReadonlyMap<string, string>,
 ): DeviceDescriptor {
   const model = info?.model ?? device.properties.model ?? device.serial
+  // Classified on the part number, LABELLED with the market name. Different questions:
+  // the classifier wants every scrap of text it can get, while the label wants the one
+  // string a person would recognize — and would rather fall back than show both.
+  const label = info?.marketName || model
   const { kind, name, rank } = androidKind(`${info?.characteristics ?? ''} ${model}`)
   const id = serialDeviceId(device.serial)
   const apiLevel = info?.apiLevel ?? 0
@@ -131,11 +161,11 @@ function descriptorForPhysical(
     provider: 'android',
     platform: 'android',
     // Underscores because adb reports `sdk_gphone64_arm64`; nobody writes it that way.
-    name: model.replace(/_/g, ' '),
+    name: label.replace(/_/g, ' '),
     kind,
     kindName: name,
     kindRank: rank,
-    model: model.replace(/_/g, ' '),
+    model: label.replace(/_/g, ' '),
     platformVersion: androidVersionName(apiLevel),
     versionRank: apiLevel,
     // It is attached, so it is running by definition — there is nothing to boot.

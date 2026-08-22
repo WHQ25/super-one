@@ -176,9 +176,10 @@ export class Avd {
   launch(id: string, options: { headless?: boolean } = {}): AvdLaunch {
     const child = spawn(this.emulatorBinary, emulatorLaunchArgs(id, options), {
       stdio: ['ignore', 'pipe', 'pipe'],
-      // Survives this app quitting? No — deliberately not detached, so an emulator
-      // SuperOne started goes away with it rather than being orphaned headless with
-      // no window for the user to find and close.
+      // Same process group, so a clean quit can still signal it — see `dispose` on the
+      // manager. The kernel does NOT take it down with this app, though: `emulator`
+      // execs into a qemu process that is simply reparented, which is why stopping one
+      // goes through its own console rather than through this handle.
       detached: false,
     })
     const exited = new Promise<number | null>((resolve) => {

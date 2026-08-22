@@ -24,6 +24,14 @@ export const SCRCPY_MSG = {
   SET_CLIPBOARD: 9,
   SET_DISPLAY_POWER: 10,
   ROTATE_DEVICE: 11,
+  /**
+   * Restart the encoder: a fresh config packet and an immediate keyframe.
+   *
+   * Read off `ControlMessage` in the pinned jar rather than counted along the list —
+   * the numbering is not contiguous past 11 (`RESIZE_DISPLAY` is 21), so guessing the
+   * next one along lands on the wrong message.
+   */
+  RESET_VIDEO: 17,
 } as const
 
 /** `android.view.MotionEvent` actions. */
@@ -140,11 +148,13 @@ export function encodeKeyPress(keycode: number): Buffer[] {
 }
 
 /**
- * Type text directly, without a keyboard.
+ * Hand the server a string for its INJECT_TEXT channel.
  *
- * Unlike the simulator's HID channel — which carries usage codes and therefore cannot
- * express anything outside ASCII — this is UTF-8 all the way down, so Chinese and
- * emoji need no pasteboard detour.
+ * The wire is UTF-8, but the far side is NOT: `Controller.injectChar` looks every
+ * character up in the virtual keyboard's `KeyCharacterMap` and injects the key events
+ * that would have produced it, so anything no key can spell is dropped with a
+ * `Could not inject char u+…` warning. Callers want `encodeTextInput`, which knows
+ * which characters those are; this stays the raw encoder, and the raw encoder only.
  */
 export function encodeText(text: string): Buffer {
   const payload = Buffer.from(text, 'utf8')
@@ -153,6 +163,97 @@ export function encodeText(text: string): Buffer {
   message.writeUInt32BE(payload.length, 1)
   payload.copy(message, 5)
   return message
+}
+
+/**
+ * Put text on the device clipboard, optionally pasting it into the focused field.
+ *
+ * `sequence` is deliberately 0: a non-zero one makes the server answer with an
+ * ACK_CLIPBOARD device message, and nothing on this end reads the control socket back.
+ */
+export function encodeSetClipboard(text: string, paste: boolean): Buffer {
+  const payload = Buffer.from(text, 'utf8')
+  const message = Buffer.alloc(14 + payload.length)
+  message.writeUInt8(SCRCPY_MSG.SET_CLIPBOARD, 0)
+  message.writeBigInt64BE(0n, 1)
+  message.writeUInt8(paste ? 1 : 0, 9)
+  message.writeUInt32BE(payload.length, 10)
+  payload.copy(message, 14)
+  return message
+}
+
+/**
+ * `android.view.KeyEvent` keycodes for the control characters a keyboard produces.
+ *
+ * These cannot ride INJECT_TEXT. Backspace is the one that proves it: `Virtual.kcm`
+ * gives DEL no character mapping at all, so `KeyCharacterMap.getEvents('\b')` returns
+ * null and the keystroke evaporates. Enter and Tab do map, but they are sent as keys
+ * anyway — a key is what the guest is actually being told about, and IME actions like
+ * "search" or "send" only fire for one.
+ */
+const TEXT_KEYCODE: Record<string, number> = {
+  '\n': 66, // ENTER
+  '\r': 66,
+  '\b': 67, // DEL
+  '\t': 61, // TAB
+}
+
+/**
+ * Characters the virtual keyboard can actually spell.
+ *
+ * The Android counterpart of `canTypeIosSimulatorText`, and it exists for the mirror
+ * image of the same reason: there, the HID channel carries usage codes; here, the far
+ * side reverse-maps every character through a key character map. Either way anything
+ * outside this set — Chinese, emoji, accented latin — has to reach the guest through
+ * its clipboard instead.
+ */
+function isInjectable(char: string): boolean {
+  const code = char.codePointAt(0) ?? 0
+  return code >= 0x20 && code <= 0x7e
+}
+
+/**
+ * A person's typing, in scrcpy's vocabulary.
+ *
+ * Control characters become key presses; everything between them travels on ONE
+ * channel — the text channel if the whole string can be spelled, the clipboard if any
+ * part of it cannot.
+ *
+ * The all-or-nothing choice is the point, and it is the same one
+ * `canTypeIosSimulatorText` makes. Splitting a string across both channels looks
+ * tidier and does not survive contact with a device: injected characters are queued
+ * asynchronously and then routed through the IME, while KEYCODE_PASTE is handled by
+ * the focused view directly, so the two arrive out of order. `hi 中文` sent as
+ * text + paste landed as `hi中文 ` — the space overtook the paste.
+ */
+export function encodeTextInput(text: string): Buffer[] {
+  const messages: Buffer[] = []
+  // One verdict for the whole string, taken before anything is sent.
+  const typeable = [...text].every((char) => char in TEXT_KEYCODE || isInjectable(char))
+  let run = ''
+
+  const flush = (): void => {
+    if (!run) return
+    // A clipboard write pastes itself: the server sets the clipboard and presses
+    // KEYCODE_PASTE (279) inside the one message handler, so nothing can slip between
+    // the two and no second message is needed from here.
+    messages.push(typeable ? encodeText(run) : encodeSetClipboard(run, true))
+    run = ''
+  }
+
+  // Iterated by code point rather than code unit so an emoji's surrogate pair stays
+  // one character and cannot be split across two clipboard writes.
+  for (const char of text) {
+    const keycode = TEXT_KEYCODE[char]
+    if (keycode !== undefined) {
+      flush()
+      messages.push(...encodeKeyPress(keycode))
+      continue
+    }
+    run += char
+  }
+  flush()
+  return messages
 }
 
 /** Messages that are their type byte and nothing else. */
@@ -238,7 +339,7 @@ export function encodeDeviceInput(
         screen,
       )
     case 'text':
-      return [encodeText(input.text)]
+      return encodeTextInput(input.text)
     case 'button': {
       const keycode = keycodeForButton(input.button as never)
       return keycode === null ? [] : encodeKeyPress(keycode)
@@ -252,4 +353,16 @@ export function encodeDeviceInput(
       // No Android counterpart. The on-screen keyboard follows focus and the IME.
       return []
   }
+}
+
+/**
+ * Ask the device to start a new GOP, now.
+ *
+ * The encoder's own keyframes are far apart — measured at well over 12s on a Xiaomi
+ * 15 Pro — and a viewer that joins between two of them has a configured decoder and
+ * nothing it is allowed to decode. This is what turns that wait into a round trip.
+ * Bodyless: the type byte IS the message.
+ */
+export function encodeResetVideo(): Buffer {
+  return Buffer.from([SCRCPY_MSG.RESET_VIDEO])
 }

@@ -16,6 +16,10 @@
  * makes every keyframe a real random-access point: a decoder rebuilt mid-stream (a
  * quality change, a panel remount) recovers on the next one instead of waiting for a
  * config packet that already went past.
+ *
+ * That holding is per CONNECTION, not per viewer — see `configFrame`. One of these
+ * lives beside each scrcpy connection in `AndroidDeviceManager`, and every viewer of
+ * that device is fed from it.
  */
 
 import type { DeviceFrame } from '@superone/shared/device'
@@ -51,6 +55,41 @@ export class AndroidVideoStream {
     const data = packet.keyframe && !packet.config && this.parameterSets
       ? Buffer.concat([this.parameterSets, packet.data])
       : packet.data
+    return this.build(context, {
+      keyframe: packet.keyframe,
+      config: packet.config,
+      timestampUs: packet.timestampUs,
+      data,
+    })
+  }
+
+  /**
+   * The config packet again, for a viewer that arrived after the real one went past.
+   *
+   * The renderer builds its decoder ONLY on a frame marked `codecConfig`, and scrcpy
+   * sends exactly one such packet per connection, at the very start. So a viewer that
+   * is not the first on a connection — a panel remounting, a second view of the same
+   * device, a preview opening onto a connection the agent already made — would never
+   * configure a decoder at all, and silently drop every frame it was sent. No error,
+   * no log, a preview that spins for as long as you care to watch it.
+   *
+   * Null before the first config packet has been seen, which is the only moment when
+   * a new viewer does not need one: the real one is still coming.
+   */
+  configFrame(context: AndroidFrameContext): DeviceFrame | null {
+    if (!this.parameterSets) return null
+    return this.build(context, {
+      keyframe: false,
+      config: true,
+      timestampUs: 0,
+      data: this.parameterSets,
+    })
+  }
+
+  private build(
+    context: AndroidFrameContext,
+    packet: { keyframe: boolean; config: boolean; timestampUs: number; data: Buffer },
+  ): DeviceFrame {
     return {
       deviceId: context.deviceId,
       sequence: this.sequence++,
@@ -62,7 +101,7 @@ export class AndroidVideoStream {
       codec: this.codec,
       codedWidth: context.screen.width,
       codedHeight: context.screen.height,
-      data,
+      data: packet.data,
     }
   }
 }

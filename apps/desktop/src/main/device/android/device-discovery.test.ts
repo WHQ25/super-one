@@ -139,6 +139,32 @@ describe('a cable-attached phone', () => {
     expect(device).toMatchObject({ available: false, running: true })
   })
 
+  it('is named for the box it came in, not the part number in ro.product.model', () => {
+    // Every vendor but Google puts a part number in `ro.product.model`. The name a
+    // person would recognize lives in a property Android does not define.
+    const [device] = mergeAndroidDevices({
+      avds: [],
+      attached: [{ serial: 'adb-f43b555._adb-tls-connect._tcp', state: 'device', properties: {} }],
+      runtime: runtime({
+        serial: 'adb-f43b555._adb-tls-connect._tcp',
+        model: '2410DPN6CC',
+        marketName: 'Xiaomi 15 Pro',
+        characteristics: 'nosdcard',
+        apiLevel: 36,
+      }),
+    })
+    expect(device).toMatchObject({ name: 'Xiaomi 15 Pro', model: 'Xiaomi 15 Pro', kind: 'phone' })
+  })
+
+  it('falls back to the part number when no vendor recorded a market name', () => {
+    const [device] = mergeAndroidDevices({
+      avds: [],
+      attached: [{ serial: 'x', state: 'device', properties: {} }],
+      runtime: runtime({ serial: 'x', model: 'SM-S928B' }),
+    })
+    expect(device?.name).toBe('SM-S928B')
+  })
+
   it('reads a model adb reported with underscores the way a person writes it', () => {
     const [device] = mergeAndroidDevices({
       avds: [],
@@ -167,6 +193,21 @@ describe('androidKind', () => {
 
   it('assumes a handset for something it does not recognize but adb calls a device', () => {
     expect(androidKind('Galaxy S24').kind).toBe('phone')
+  })
+
+  it('calls an unrecognized device a phone, because that is what one almost always is', () => {
+    // `ro.build.characteristics` plus a vendor part number, which is everything a real
+    // Xiaomi 15 Pro says about itself. None of it shares a word with an AVD profile.
+    expect(androidKind('nosdcard 2410DPN6CC').kind).toBe('phone')
+    expect(androidKind('default SM-S928B').kind).toBe('phone')
+  })
+
+  it('does not read the car in nosdcard as Android Auto', () => {
+    // `car` unanchored matches inside `nosdcard`, which is what an ordinary phone
+    // reports — and filed every one of them under Android Auto.
+    expect(androidKind('nosdcard 2410DPN6CC').kind).not.toBe('auto')
+    expect(androidKind('automotive_1024p_landscape').kind).toBe('auto')
+    expect(androidKind('car_1080p').kind).toBe('auto')
   })
 
   it('says other rather than guessing when there is nothing to go on', () => {

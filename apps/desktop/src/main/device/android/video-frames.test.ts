@@ -67,4 +67,29 @@ describe('AndroidVideoStream', () => {
     expect(next.codedWidth).toBe(720)
     expect(next.codedHeight).toBe(1600)
   })
+
+  describe('a viewer that joined after the config packet went past', () => {
+    it('is handed one, carrying the codec the stream is really using', () => {
+      // scrcpy sends its config packet once per connection. A panel remounting, or a
+      // preview opening onto a connection the agent already made, arrives long after
+      // — and the renderer builds its decoder ONLY on a frame marked `codecConfig`.
+      const stream = new AndroidVideoStream()
+      stream.frame(packet({ config: true, data: PARAMETER_SETS }), context)
+      stream.frame(packet({ keyframe: true, data: KEYFRAME }), context)
+
+      const replay = stream.configFrame(context)
+      expect(replay).toMatchObject({
+        codecConfig: true,
+        keyframe: false,
+        codec: 'avc1.42c029',
+        codedWidth: 720,
+        codedHeight: 1600,
+      })
+      expect(replay?.data).toEqual(PARAMETER_SETS)
+    })
+
+    it('gets nothing before the real config packet, which is still on its way', () => {
+      expect(new AndroidVideoStream().configFrame(context)).toBeNull()
+    })
+  })
 })

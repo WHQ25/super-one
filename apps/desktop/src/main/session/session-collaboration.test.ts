@@ -867,6 +867,90 @@ describe('@agent mention targets', () => {
     expect(parent.appendTranscriptMessage).not.toHaveBeenCalled()
   })
 
+  function markWorktreeRemoved(sessionId: string): string {
+    const worktreePath = join(tmpdir(), `gone-worktree-${sessionId}`)
+    state.db!.prepare('UPDATE sessions SET is_worktree = 1, worktree_path = ? WHERE id = ?')
+      .run(worktreePath, sessionId)
+    return worktreePath
+  }
+
+  it('does not wake a spawn child after its worktree directory is removed', async () => {
+    const parent = fakeSession('parent')
+    const { host, sessions } = fakeHost(parent)
+    const [grant] = await approveLaunches(parent, host)
+    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const childId = started.sessionId as string
+    const child = sessions.get(childId)!
+    markWorktreeRemoved(childId)
+    ;(child.injectTaskNotification as ReturnType<typeof vi.fn>).mockClear()
+
+    const sent = resultJson(await sendSessionMessage('parent', {
+      credential: grant.credential,
+      content: 'please continue',
+      clientMessageId: 'after-wt-gone',
+    }, host))
+
+    expect(sent).toMatchObject({ status: 'error' })
+    expect(String(sent.message)).toMatch(/worktree directory has been removed/i)
+    expect(child.injectTaskNotification).not.toHaveBeenCalled()
+
+    const retrieved = resultJson(await retrieveSessionMessages(childId, {
+      credentials: [grant.credential],
+    }))
+    expect(retrieved.status).toBe('empty')
+    expect(retrieved.messages).toEqual([])
+  })
+
+  it('does not re-deliver the initial task when restarting a child whose worktree is gone', async () => {
+    const parent = fakeSession('parent')
+    const { host, sessions } = fakeHost(parent)
+    const [grant] = await approveLaunches(parent, host)
+    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const childId = started.sessionId as string
+    const child = sessions.get(childId)!
+    markWorktreeRemoved(childId)
+    ;(child.send as ReturnType<typeof vi.fn>).mockClear()
+
+    const retry = resultJson(await startSessionAgent('parent', grant.credential, host))
+    expect(retry).toMatchObject({ status: 'error' })
+    expect(String(retry.message)).toMatch(/worktree directory has been removed/i)
+    expect(child.send).not.toHaveBeenCalled()
+  })
+
+  it('does not activate a link peer after its worktree directory is removed', async () => {
+    insertSessionRow('peer-wt-gone', TEST_CWD, 'Peer WT', {
+      providerId: 'claude-base',
+      isWorktree: true,
+      worktreePath: join(tmpdir(), 'gone-link-worktree'),
+    })
+    const parent = fakeSession('parent')
+    const peer = fakeSession('peer-wt-gone')
+    const { host, sessions } = fakeHost(parent)
+    sessions.set(peer.id, peer)
+
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{
+        mode: 'link',
+        sessionId: 'peer-wt-gone',
+        summary: 'Sync on the existing review',
+        task: 'Please confirm the types.',
+      }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+    })
+    const approved = resultJson(await promise)
+    const grant = (approved.launches as Array<{ credential: string }>)[0]
+
+    const linked = resultJson(await startSessionAgent('parent', grant.credential, host))
+    expect(linked).toMatchObject({ status: 'error' })
+    expect(String(linked.message)).toMatch(/worktree directory has been removed/i)
+    expect(peer.injectTaskNotification).not.toHaveBeenCalled()
+  })
+
   it('restores the parent as the project active session after starting a child', async () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)

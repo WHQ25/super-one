@@ -926,6 +926,35 @@ function resolveLiveSession(host: SessionManager, sessionId: string): Session | 
   }
 }
 
+function collaborationTargetReadOnlyMessage(sessionId: string): string {
+  return (
+    `Cannot wake session ${sessionId}: its worktree directory has been removed and the session is now read-only. `
+    + 'Spawn a new child (or hand off) if the work still needs an agent.'
+  )
+}
+
+/**
+ * UI withdraws the composer when a worktree checkout is gone. Collab must not
+ * resume/inject a turn into that session (it would run against the fallback
+ * project checkout).
+ */
+function isCollaborationTargetReadOnly(sessionId: string, live: Session | null): boolean {
+  if (live?.snapshot.worktreeMissing) return true
+  if (live?.snapshot.isWorktree) {
+    const dir = live.cwd
+    if (dir && (!existsSync(dir) || !statSync(dir).isDirectory())) return true
+  }
+  const row = getDb().prepare('SELECT worktree_path FROM sessions WHERE id = ?')
+    .get(sessionId) as { worktree_path: string | null } | undefined
+  const stored = row?.worktree_path?.trim()
+  if (!stored) return false
+  try {
+    return !existsSync(stored) || !statSync(stored).isDirectory()
+  } catch {
+    return true
+  }
+}
+
 async function wakeCollaborationPeer(
   host: SessionManager,
   sessionId: string,
@@ -934,6 +963,10 @@ async function wakeCollaborationPeer(
   const session = resolveLiveSession(host, sessionId)
   if (!session) {
     log.debug('[session-collaboration] peer not available for wake sid=%s', sessionId)
+    return
+  }
+  if (isCollaborationTargetReadOnly(sessionId, session)) {
+    log.debug('[session-collaboration] skip wake; worktree removed sid=%s', sessionId)
     return
   }
   // Always wake — injectTaskNotification already queues behind an in-flight turn.
@@ -977,6 +1010,13 @@ export async function startSessionAgent(
       .get(grant.parent_session_id) as { title: string | null } | undefined
     const initiatorTitle = initiatorRow?.title?.trim() || grant.parent_session_id.slice(0, 8)
     const alreadyStarted = Boolean(grant.started_at)
+    const livePeer = host.getSession(peerSessionId)
+    if (isCollaborationTargetReadOnly(peerSessionId, livePeer)) {
+      return toolResult({
+        status: 'error',
+        message: collaborationTargetReadOnlyMessage(peerSessionId),
+      }, true)
+    }
     if (!alreadyStarted) {
       getDb().prepare(`
         UPDATE session_collaboration_grants SET started_at = ? WHERE credential_hash = ? AND started_at IS NULL
@@ -1033,6 +1073,12 @@ export async function startSessionAgent(
         message: `The handoff session no longer exists: ${existingHandoffSessionId}`,
       }, true)
     }
+    if (isCollaborationTargetReadOnly(existingHandoffSessionId, existing)) {
+      return toolResult({
+        status: 'error',
+        message: collaborationTargetReadOnlyMessage(existingHandoffSessionId),
+      }, true)
+    }
     await deliverInitialTask(grant, existing)
     const peer = describeCollaborationPeer(grant)
     return toolResult({
@@ -1048,7 +1094,14 @@ export async function startSessionAgent(
     })
   }
   if (grant.child_session_id) {
-    const existing = host.getSession(grant.child_session_id)
+    const liveChild = host.getSession(grant.child_session_id)
+    if (isCollaborationTargetReadOnly(grant.child_session_id, liveChild)) {
+      return toolResult({
+        status: 'error',
+        message: collaborationTargetReadOnlyMessage(grant.child_session_id),
+      }, true)
+    }
+    const existing = liveChild
       ?? host.resumeSession(grant.child_session_id, { passive: true })
     if (existing) await deliverInitialTask(grant, existing)
     const peer = describeCollaborationPeer(grant)
@@ -1264,6 +1317,10 @@ async function wakeLinkPeer(
     log.debug('[session-collaboration] link peer not available for wake sid=%s', sessionId)
     return
   }
+  if (isCollaborationTargetReadOnly(sessionId, session)) {
+    log.debug('[session-collaboration] skip link wake; worktree removed sid=%s', sessionId)
+    return
+  }
   try {
     await session.injectTaskNotification(
       linkActivationWakeText(credential, initiatorSessionId, initiatorTitle, hasOpening),
@@ -1324,6 +1381,14 @@ export async function sendSessionMessage(
   const content = args.content?.trim()
   if (!content) return toolResult({ status: 'error', message: 'content must not be empty' }, true)
   if (content.length > 100_000) return toolResult({ status: 'error', message: 'content may contain at most 100,000 characters' }, true)
+
+  const liveRecipient = host.getSession(recipientSessionId)
+  if (isCollaborationTargetReadOnly(recipientSessionId, liveRecipient)) {
+    return toolResult({
+      status: 'error',
+      message: collaborationTargetReadOnlyMessage(recipientSessionId),
+    }, true)
+  }
 
   const insert = getDb().transaction(() => {
     if (args.clientMessageId) {

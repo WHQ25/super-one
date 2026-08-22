@@ -16,7 +16,6 @@ import type {
   SandboxMode,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
-import { existsSync, statSync } from 'fs'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { getSandboxCapability } from '../sandbox-platform'
@@ -372,27 +371,12 @@ export class Session implements SessionContract {
   /**
    * Composer withdraws when the worktree checkout is gone. Main process must
    * refuse new turns the same way — collab / mobile / automation otherwise
-   * bypass the READ ONLY banner.
+   * bypass the READ ONLY banner. Live deletion of the directory is detected
+   * at resume (`missingWorktreePath`) and by collaboration's DB-path check.
    */
   private rejectIfWorktreeRemoved(): SessionWorktreeRemovedError | null {
-    if (this._missingWorktreePath) {
-      return new SessionWorktreeRemovedError(this.id, this._missingWorktreePath)
-    }
-    if (this._cwd === this.projectPath) return null
-    let gone = false
-    try {
-      gone = !existsSync(this._cwd) || !statSync(this._cwd).isDirectory()
-    } catch {
-      gone = true
-    }
-    if (!gone) return null
-    this._missingWorktreePath = this._cwd
-    this.forwardEvent({
-      type: 'worktree_missing',
-      worktreePath: this._cwd,
-      fallbackCwd: this.projectPath,
-    } as AgentEvent)
-    return new SessionWorktreeRemovedError(this.id, this._cwd)
+    if (!this._missingWorktreePath) return null
+    return new SessionWorktreeRemovedError(this.id, this._missingWorktreePath)
   }
 
   private assertCanSend(providerOrigin: SendProviderOrigin): void {

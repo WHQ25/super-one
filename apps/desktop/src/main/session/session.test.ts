@@ -44,6 +44,7 @@ vi.mock('../acp/acp-recap-focus', () => ({
 }))
 
 import { Session, type SessionConstructorOptions } from './session'
+import { SessionWorktreeRemovedError } from './types'
 
 class FakeBackend implements SessionBackend {
   readonly kind = 'claude' as const
@@ -1975,17 +1976,36 @@ describe('Session persist hook', () => {
 
     it('notifyStateChange forwards worktreeMissing=true', async () => {
       const captured: SessionStateChange[] = []
-      const { session, backend } = makeSession({
+      const { session } = makeSession({
         missingWorktreePath: '/tmp/proj/.worktrees/gone',
         onStateChange: (s) => captured.push(s),
       })
-      const p = session.send({ content: 'hi', clientMessageId: 'u0' })
-      await new Promise((r) => setTimeout(r, 0))
-      backend.emit({ type: 'message_complete', messageId: 'a1' } as AgentEvent)
-      backend.resolveSend?.()
-      await p
+      session.appendTranscriptMessage({
+        id: 'm1',
+        role: 'user',
+        status: 'complete',
+        content: [{ type: 'text', text: 'hi' }],
+        createdAt: new Date().toISOString(),
+      })
       expect(captured.length).toBeGreaterThan(0)
       expect(captured[captured.length - 1].worktreeMissing).toBe(true)
+    })
+
+    it('send refuses new turns when the worktree is gone', async () => {
+      const { session, backend } = makeSession({
+        missingWorktreePath: '/tmp/proj/.worktrees/gone',
+      })
+      await expect(session.send({ content: 'hi', clientMessageId: 'u0' }))
+        .rejects.toBeInstanceOf(SessionWorktreeRemovedError)
+      expect(backend.sendCalls).toHaveLength(0)
+    })
+
+    it('injectTaskNotification is a no-op when the worktree is gone', async () => {
+      const { session, backend } = makeSession({
+        missingWorktreePath: '/tmp/proj/.worktrees/gone',
+      })
+      await session.injectTaskNotification('mailbox ready')
+      expect(backend.sendCalls).toHaveLength(0)
     })
   })
 

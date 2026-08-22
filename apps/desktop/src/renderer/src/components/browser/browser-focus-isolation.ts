@@ -22,9 +22,22 @@ function isBrowserHostTarget(target: EventTarget | null): boolean {
   return target.closest('[data-browser-host]') != null
 }
 
+/** How long the guard keeps bouncing after the last automation call resolves. */
+const FOCUS_RELEASE_GRACE_MS = 600
+
+/**
+ * Hard cap on one guarded region. The main process brackets its own CDP input
+ * with begin/end, so a lost `end` (main crash, window reload mid-call) would
+ * otherwise leave the guard up forever and the user could never click into a
+ * page again. Longer than the 30s automation-call timeout.
+ */
+const MAX_GUARD_HOLD_MS = 60_000
+
 let depth = 0
 let saved: HTMLElement | null = null
 let savedSelection: { start: number; end: number } | null = null
+let releaseTimer: ReturnType<typeof setTimeout> | null = null
+let holdWatchdog: ReturnType<typeof setTimeout> | null = null
 
 function snapshotUserFocus(): void {
   const el = document.activeElement
@@ -78,22 +91,54 @@ export function isBrowserFocusIsolationActive(): boolean {
   return depth > 0
 }
 
+function teardownGuard(): void {
+  if (releaseTimer) {
+    clearTimeout(releaseTimer)
+    releaseTimer = null
+  }
+  if (holdWatchdog) {
+    clearTimeout(holdWatchdog)
+    holdWatchdog = null
+  }
+  document.removeEventListener('focusin', onFocusIn, true)
+  depth = 0
+  saved = null
+  savedSelection = null
+}
+
 export function beginBrowserFocusIsolation(): void {
-  if (depth === 0) {
+  if (releaseTimer) {
+    // Still inside the trailing grace of a previous region: the listener and
+    // the snapshot are live, so just re-arm instead of re-snapshotting (the
+    // guest may hold focus right now, which would clear the snapshot).
+    clearTimeout(releaseTimer)
+    releaseTimer = null
+  } else if (depth === 0) {
     snapshotUserFocus()
     document.addEventListener('focusin', onFocusIn, true)
   }
   depth += 1
+  if (holdWatchdog) clearTimeout(holdWatchdog)
+  holdWatchdog = setTimeout(() => {
+    restoreUserFocus()
+    teardownGuard()
+  }, MAX_GUARD_HOLD_MS)
 }
 
 export function endBrowserFocusIsolation(): void {
   if (depth === 0) return
   depth -= 1
   if (depth > 0) return
-  document.removeEventListener('focusin', onFocusIn, true)
   restoreUserFocus()
-  saved = null
-  savedSelection = null
+  // A steal can land AFTER the op resolves: guest-side focus (a CDP click, an
+  // el.focus() inside the page, a post-load autofocus) reaches the host through
+  // an async IPC hop, and CDP input is dispatched from the main process once the
+  // renderer call has already returned. Keep bouncing for a grace period rather
+  // than tearing the guard down on the same tick.
+  releaseTimer = setTimeout(() => {
+    restoreUserFocus()
+    teardownGuard()
+  }, FOCUS_RELEASE_GRACE_MS)
 }
 
 export async function withBrowserFocusIsolation<T>(fn: () => Promise<T>): Promise<T> {
@@ -105,12 +150,7 @@ export async function withBrowserFocusIsolation<T>(fn: () => Promise<T>): Promis
   }
 }
 
-/** Test-only: reset refcount and listeners between cases. */
+/** Test-only: reset refcount, timers and listeners between cases. */
 export function _resetBrowserFocusIsolationForTests(): void {
-  if (depth > 0) {
-    document.removeEventListener('focusin', onFocusIn, true)
-  }
-  depth = 0
-  saved = null
-  savedSelection = null
+  teardownGuard()
 }

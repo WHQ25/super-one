@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z, toJSONSchema, type ZodTypeAny } from 'zod'
-import { browserAutomationCall, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
+import { browserAutomationCall, browserFocusGuard, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
 import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpScreenshot, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
 import { encode as toonEncode } from '@toon-format/toon'
@@ -91,10 +91,22 @@ async function cdpOrData(
   try {
     if (engine === 'cdp' && !isCdpEnabled()) return errorReply(CDP_REQUIRED_MESSAGE)
     const useCdp = engine === 'cdp' || (engine === 'auto' && isCdpEnabled())
-    if (useCdp) return textReply(await cdpFn())
+    // The CDP branch dispatches input from the main process, outside any
+    // renderer-side isolation window, so the guard has to span the whole call.
+    // The synthetic branch is already covered by the renderer's own wrapper.
+    if (useCdp) return textReply(await withHostFocusGuard(sessionId, cdpFn))
     return textReply(await browserAutomationCall(sessionId, op, input))
   } catch (err) {
     return errorReply(err)
+  }
+}
+
+async function withHostFocusGuard<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+  await browserFocusGuard(sessionId, true)
+  try {
+    return await fn()
+  } finally {
+    await browserFocusGuard(sessionId, false)
   }
 }
 

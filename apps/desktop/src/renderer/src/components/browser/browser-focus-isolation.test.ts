@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   beginBrowserFocusIsolation,
   endBrowserFocusIsolation,
@@ -73,6 +73,63 @@ describe('browser focus isolation', () => {
       expect(document.activeElement).toBe(composer)
     })
     expect(isBrowserFocusIsolationActive()).toBe(false)
+  })
+
+  it('keeps bouncing for a grace period after the call resolves, covering late steals', async () => {
+    const composer = document.getElementById('composer') as HTMLTextAreaElement
+    const wv = document.getElementById('fake-webview') as HTMLElement
+    composer.focus()
+    vi.useFakeTimers()
+    try {
+      await withBrowserFocusIsolation(async () => {})
+
+      // A CDP click dispatched from the main process (or a guest autofocus)
+      // lands after the renderer op already returned.
+      wv.focus()
+      expect(document.activeElement).toBe(composer)
+
+      vi.advanceTimersByTime(2000)
+      wv.focus()
+      expect(document.activeElement).toBe(wv)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('re-arms inside the grace period without losing the original snapshot', async () => {
+    const composer = document.getElementById('composer') as HTMLTextAreaElement
+    const wv = document.getElementById('fake-webview') as HTMLElement
+    composer.focus()
+    vi.useFakeTimers()
+    try {
+      await withBrowserFocusIsolation(async () => {})
+      beginBrowserFocusIsolation()
+      wv.focus()
+      expect(document.activeElement).toBe(composer)
+      endBrowserFocusIsolation()
+      wv.focus()
+      expect(document.activeElement).toBe(composer)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('force-releases a guard whose end never arrives, so clicks into the page work again', () => {
+    const composer = document.getElementById('composer') as HTMLTextAreaElement
+    const wv = document.getElementById('fake-webview') as HTMLElement
+    composer.focus()
+    vi.useFakeTimers()
+    try {
+      // Main process opened the guard and then died / the window reloaded.
+      beginBrowserFocusIsolation()
+      vi.advanceTimersByTime(61_000)
+
+      expect(isBrowserFocusIsolationActive()).toBe(false)
+      wv.focus()
+      expect(document.activeElement).toBe(wv)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not force-restore when the user was already focused inside the browser', async () => {

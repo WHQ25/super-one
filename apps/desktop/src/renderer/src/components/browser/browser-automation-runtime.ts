@@ -13,7 +13,7 @@ import {
   focusBrowserWebview,
   type ConsoleQuery,
 } from './browser-host-api'
-import { withBrowserFocusIsolation } from './browser-focus-isolation'
+import { beginBrowserFocusIsolation, endBrowserFocusIsolation, withBrowserFocusIsolation } from './browser-focus-isolation'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
 const MAX_SCREENSHOT_WIDTH = 1280
@@ -777,6 +777,15 @@ export function useBrowserAutomationHost(): void {
     if (!window.browserHost) return
     return window.browserHost.onAutomationCall(async ({ callId, sessionId, op, input }) => {
       try {
+        // The main process holds the guard open across ops it dispatches itself
+        // (CDP input never reaches this runtime), so begin/end arrive as their
+        // own calls and must not be wrapped in a region of their own.
+        if (op === 'focusGuardBegin' || op === 'focusGuardEnd') {
+          if (op === 'focusGuardBegin') beginBrowserFocusIsolation()
+          else endBrowserFocusIsolation()
+          window.browserHost!.sendAutomationResult(callId, true, { ok: true })
+          return
+        }
         // Every automation op (including focusView no-op / guest el.focus side
         // effects) runs under host focus isolation so background browser work
         // cannot steal the user's composer caret.

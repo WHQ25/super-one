@@ -25,6 +25,8 @@ export type BrowserAutomationOp =
   | 'resolvePoint'
   | 'emulateViewport'
   | 'focusView'
+  | 'focusGuardBegin'
+  | 'focusGuardEnd'
 
 interface PendingCall {
   resolve: (result: unknown) => void
@@ -57,6 +59,24 @@ export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp
     pendingCalls.set(callId, { resolve, reject, timer })
     win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, sessionId, op, input })
   })
+}
+
+/**
+ * Hold (or release) the renderer's host-focus guard around agent-driven input.
+ *
+ * CDP input is dispatched from THIS process straight to the guest webContents,
+ * so the renderer never sees the op and its own isolation window (which only
+ * wraps renderer-side ops) is already closed by then. Without this the guest
+ * keeps keyboard focus after a click and the user's typing lands in the page.
+ *
+ * Best-effort: a guard failure must never fail the tool call.
+ */
+export async function browserFocusGuard(sessionId: string, active: boolean): Promise<void> {
+  try {
+    await browserAutomationCall(sessionId, active ? 'focusGuardBegin' : 'focusGuardEnd', {})
+  } catch (err) {
+    log.warn('[browser-automation] focus guard %s failed: %s', active ? 'begin' : 'end', err instanceof Error ? err.message : String(err))
+  }
 }
 
 export function resolveBrowserAutomation(callId: string, result: unknown): void {

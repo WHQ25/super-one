@@ -5,6 +5,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
 vi.mock('../browser/browser-automation-bridge', () => ({
   browserAutomationCall: vi.fn(),
+  browserFocusGuard: vi.fn(async () => {}),
 }))
 
 const gates = {
@@ -81,8 +82,8 @@ import {
 } from './browser-mcp-tools'
 import { setBrowserToolSurfaceForTests, clearBrowserToolSurfaceLocks } from './browser-tool-surface'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
-import { browserAutomationCall } from '../browser/browser-automation-bridge'
-import { cdpHover } from '../browser/browser-cdp'
+import { browserAutomationCall, browserFocusGuard } from '../browser/browser-automation-bridge'
+import { cdpClick, cdpHover } from '../browser/browser-cdp'
 import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
 
@@ -189,6 +190,34 @@ describe('browser tool registration under experimental gates', () => {
     expect(reply.isError).toBeUndefined()
     expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith('sess-1', 'resolvePoint', { selector: '#menu' })
     expect(vi.mocked(cdpHover)).toHaveBeenCalledWith(7, 12, 34)
+  })
+
+  it('holds the host focus guard around a CDP click so the composer keeps the caret', async () => {
+    gates.cdp = true
+    const tools = buildTools()
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#go' })
+
+    const reply = await tools.get('browser_click')!({ selector: '#go' })
+    expect(reply.isError).toBeUndefined()
+
+    // CDP input is dispatched from this process, after the renderer's own
+    // isolation window closed — the guard must open before it and close after.
+    expect(vi.mocked(browserFocusGuard).mock.calls).toEqual([
+      ['sess-1', true],
+      ['sess-1', false],
+    ])
+    const [begin, end] = vi.mocked(browserFocusGuard).mock.invocationCallOrder
+    const [click] = vi.mocked(cdpClick).mock.invocationCallOrder
+    expect(begin).toBeLessThan(click)
+    expect(end).toBeGreaterThan(click)
+  })
+
+  it('leaves the focus guard alone on the synthetic path, which the renderer already isolates', async () => {
+    const tools = buildTools()
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, selector: '#go' })
+
+    await tools.get('browser_click')!({ selector: '#go' })
+    expect(vi.mocked(browserFocusGuard)).not.toHaveBeenCalled()
   })
 
   it('resizes the viewport without CDP, resolving presets and rejecting empty input', async () => {

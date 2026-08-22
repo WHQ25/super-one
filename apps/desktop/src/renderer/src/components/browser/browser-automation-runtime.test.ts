@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { HELPERS, runBrowserOp } from './browser-automation-runtime'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
+import { renderHook } from '@testing-library/react'
+import { HELPERS, runBrowserOp, useBrowserAutomationHost } from './browser-automation-runtime'
+import { isBrowserFocusIsolationActive, _resetBrowserFocusIsolationForTests } from './browser-focus-isolation'
 import { useBrowserStore } from '@/stores/browser'
 
 interface Sone {
@@ -88,5 +90,38 @@ describe('browser automation presentation activity', () => {
     expect(end).toHaveBeenCalledWith('browser-a')
     expect(useBrowserStore.getState().activeAutomationId).toBeNull()
     expect(useBrowserStore.getState().automationPreviewBrowserId).toBe('browser-a')
+  })
+})
+
+describe('automation host focus guard', () => {
+  afterEach(() => {
+    _resetBrowserFocusIsolationForTests()
+    delete (window as { browserHost?: unknown }).browserHost
+  })
+
+  it('opens and closes host focus isolation for the main-process guard ops', async () => {
+    let handler: ((req: { callId: string; sessionId: string; op: string; input: unknown }) => void) | null = null
+    const sendAutomationResult = vi.fn()
+    ;(window as { browserHost?: unknown }).browserHost = {
+      onAutomationCall: (cb: typeof handler) => {
+        handler = cb
+        return () => {}
+      },
+      sendAutomationResult,
+    }
+
+    const { unmount } = renderHook(() => useBrowserAutomationHost())
+    expect(handler).not.toBeNull()
+
+    // CDP input runs in the main process, so it brackets its own dispatch with
+    // these two calls instead of relying on a renderer op's isolation window.
+    await handler!({ callId: 'c1', sessionId: 'session-a', op: 'focusGuardBegin', input: {} })
+    expect(isBrowserFocusIsolationActive()).toBe(true)
+    expect(sendAutomationResult).toHaveBeenCalledWith('c1', true, { ok: true })
+
+    await handler!({ callId: 'c2', sessionId: 'session-a', op: 'focusGuardEnd', input: {} })
+    expect(isBrowserFocusIsolationActive()).toBe(false)
+
+    unmount()
   })
 })

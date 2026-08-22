@@ -11,6 +11,7 @@ import { useBrowserStore } from '@/stores/browser'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
 import { useDeviceTabActions } from '@/components/device/device-tab-actions'
+import { deviceFamilyIcon } from '@/components/device/device-icons'
 import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
@@ -215,12 +216,19 @@ export function DeviceTab(props: IDockviewPanelHeaderProps<{ instanceId: string 
   // Absent until the panel body mounts and registers itself, which is also exactly
   // when there is a device list worth re-reading.
   const actions = useDeviceTabActions((s) => s.byInstance[props.params.instanceId])
+  // The device the panel is showing, which is what this tab is FOR. A session can hold
+  // two at once, and two tabs both reading "Device" cannot be told apart without
+  // clicking one. Falls back only while the panel is empty.
+  const device = actions?.device ?? null
+  const Icon = device ? deviceFamilyIcon(device.provider, device.kind) : Smartphone
   return (
     <div className={tabChipClass(active)}>
       <HoverCloseSlot onClose={() => closeDeviceTab(props.params.instanceId)}>
-        <Smartphone className="size-3.5 shrink-0" />
+        <Icon className="size-3.5 shrink-0" />
       </HoverCloseSlot>
-      <span className="min-w-0 truncate text-xs">{title || t('activity.device.title')}</span>
+      <span className="min-w-0 truncate text-xs">
+        {device?.name || title || t('activity.device.title')}
+      </span>
       {actions && (
         <TabActionButton
           active={active}

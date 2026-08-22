@@ -43,7 +43,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.56.0-alpha",
+      "version": "0.57.0-alpha",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.2.1",
         "@ai-sdk/google": "^4.0.8",

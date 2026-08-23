@@ -244,6 +244,38 @@ function isAgentInitiatedContentUpdate(update: { sessionUpdate?: string }): bool
     || kind === 'plan'
 }
 
+function peekChunkText(update: {
+  sessionUpdate?: string
+  content?: { type?: string; text?: string }
+}): string {
+  if (update.sessionUpdate !== 'agent_message_chunk' && update.sessionUpdate !== 'agent_thought_chunk') {
+    return ''
+  }
+  const content = update.content
+  return content?.type === 'text' && typeof content.text === 'string' ? content.text : ''
+}
+
+/**
+ * Updates that may open a new auto-wake bubble while SuperOne is idle.
+ *
+ * Grok's turn-end Plan cleanup is fire-and-forget and often lands *after*
+ * session/prompt returns. `tool_call_update` / empty chunks are leftovers of
+ * the same race. Opening a wake for those mints an empty `acp_wake_*` row.
+ * Real auto-wakes (workflow / task / notification drain) start with text or
+ * a new `tool_call`.
+ */
+function isAgentInitiatedWakeStarter(update: {
+  sessionUpdate?: string
+  content?: { type?: string; text?: string }
+}): boolean {
+  const kind = update.sessionUpdate
+  if (kind === 'tool_call') return true
+  if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
+    return peekChunkText(update).trim().length > 0
+  }
+  return false
+}
+
 /**
  * Grok durable turn terminal (`turn_completed` on the session_notification rail).
  * Used to close SuperOne assistant bubbles for agent-initiated auto-wake turns.
@@ -904,7 +936,13 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           }
         } else if (isAgentInitiatedContentUpdate(update)) {
           // Workflow / task / notification auto-wake while SuperOne is idle.
-          messageId = ensureAgentInitiatedMessage(agentMid)
+          // Leftover plan / tool_call_update / empty chunks after session/prompt
+          // returns attach to the just-finished bubble instead of minting a new one.
+          if (agentInitiatedMessageId || isAgentInitiatedWakeStarter(update)) {
+            messageId = ensureAgentInitiatedMessage(agentMid)
+          } else if (xaiCorrelation.lastMessageId) {
+            messageId = xaiCorrelation.lastMessageId
+          }
         }
         const mapped = mapSessionUpdate(update, { messageId }, {
           resolveTerminalCommand: (id) => terminalManager.getCommandLine(id),

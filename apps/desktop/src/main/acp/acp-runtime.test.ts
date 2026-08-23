@@ -826,6 +826,91 @@ describe('createAcpRuntime (in-process agent)', () => {
     await new Promise((r) => setTimeout(r, 0))
   })
 
+  it('does not open an empty auto-wake for leftover plan / empty chunks after prompt returns', async () => {
+    const sessionEvents: AgentEvent[] = []
+    let agentNotifyClient: {
+      notify: (method: string, params: unknown) => Promise<void>
+    } | null = null
+
+    const agentApp = agent({ name: 'wake-leftover-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'sess-wake-leftover' }))
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        agentNotifyClient = ctx.client
+        await ctx.client.notify(methods.client.session.update, {
+          sessionId: ctx.params.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'done for now' },
+          },
+        })
+        return { stopReason: 'end_turn' as const }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(methods.agent.session.setMode, async () => ({}))
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const dispose = () => {
+      try {
+        if (!clientToAgent.writable.locked) void clientToAgent.writable.close().catch(() => undefined)
+      } catch { /* ignore */ }
+      try {
+        if (!agentToClient.writable.locked) void agentToClient.writable.close().catch(() => undefined)
+      } catch { /* ignore */ }
+    }
+
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      onSessionEvent: (e) => sessionEvents.push(e),
+      streamFactory: async () => ({ stream: clientStream, dispose }),
+    })
+
+    const promptEvents: AgentEvent[] = []
+    await runtime.prompt('run it', 'msg-launch', (e) => promptEvents.push(e))
+    expect(agentNotifyClient).toBeTruthy()
+
+    // Grok's turn-end Plan cleanup is fire-and-forget and often lands after
+    // session/prompt returns. Empty trailing chunks are the same race.
+    await agentNotifyClient!.notify(methods.client.session.update, {
+      sessionId: 'sess-wake-leftover',
+      update: {
+        sessionUpdate: 'plan',
+        entries: [{ content: 'Watch Linux CI', status: 'completed' }],
+      },
+    })
+    await agentNotifyClient!.notify(methods.client.session.update, {
+      sessionId: 'sess-wake-leftover',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: '   ' },
+      },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+
+    const wakeStarts = sessionEvents.filter(
+      (e) => e.type === 'message_start' && e.message.id.startsWith('acp_wake_'),
+    )
+    expect(wakeStarts).toHaveLength(0)
+
+    const planOnPrior = [...promptEvents, ...sessionEvents].filter(
+      (e) => e.type === 'content_delta'
+        && e.messageId === 'msg-launch'
+        && e.delta.type === 'tool_use'
+        && e.delta.toolName === 'TodoWrite',
+    )
+    expect(planOnPrior.length).toBeGreaterThanOrEqual(1)
+
+    await runtime.close()
+    await new Promise((r) => setTimeout(r, 0))
+  })
+
   it('finalizes an open agent auto-wake before a new user prompt', async () => {
     const sessionEvents: AgentEvent[] = []
     let agentNotifyClient: {

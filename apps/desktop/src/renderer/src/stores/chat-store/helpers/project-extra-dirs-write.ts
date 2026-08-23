@@ -30,8 +30,30 @@ const generations = new Map<string, number>()
 export interface ProjectExtraDirsSink {
   /** Write the folder list into `ProjectState.projectExtraDirs`. */
   commit: (dirs: string[]) => void
-  /** Re-read the catalog. Used to recover the truth after a failed write. */
-  reload: () => Promise<void>
+}
+
+/**
+ * Read a project's stored folders. Returns null when the catalog cannot be
+ * reached or does not know this project.
+ *
+ * Reads rather than writes so the caller decides whether the answer is still
+ * worth publishing — a read that resolves after a newer edit has already
+ * committed must not be allowed to overwrite it.
+ *
+ * `listProjects('local')` is served by the desktop catalog, so local and remote
+ * share one code path and no separate read IPC is needed.
+ */
+export async function readProjectExtraDirs(projectKey: string): Promise<string[] | null> {
+  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+  const remote = parseRemoteProjectKey(projectKey)
+  try {
+    const projects = await window.environment.listProjects(remote?.connectionId ?? 'local')
+    const hit = projects.find((p) => p.path === (remote?.path ?? projectKey))
+    return [...(hit?.extraDirs ?? [])]
+  } catch (err) {
+    console.warn('[projectExtraDirs] Failed to read project catalog:', err)
+    return null
+  }
 }
 
 export function writeProjectExtraDirs(
@@ -62,9 +84,13 @@ export function writeProjectExtraDirs(
       console.error('[projectExtraDirs] Failed to persist project folders:', err)
       toast.error(i18n.t('chat.addDir.errors.saveFailed'))
       // A lease denial, an offline node or a database error all leave the
-      // catalog as the only party that knows what actually survived. A newer
-      // edit is already in flight and will publish its own answer.
-      if (isNewest()) await sink.reload().catch(() => {})
+      // catalog as the only party that knows what actually survived. The
+      // generation is re-checked AFTER the read, not before it: an edit made
+      // while the read was in flight has already committed, and this answer
+      // predates it.
+      if (!isNewest()) return
+      const recovered = await readProjectExtraDirs(projectKey)
+      if (recovered && isNewest()) sink.commit(recovered)
     })
   pendingWrites.set(projectKey, chain)
   void chain.finally(() => {

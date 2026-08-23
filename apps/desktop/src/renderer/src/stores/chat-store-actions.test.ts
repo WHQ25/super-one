@@ -185,6 +185,13 @@ function activeSession(path: string = PATH) {
   return proj._sessions[proj._activeSessionId!]
 }
 
+/** A promise plus the handle that settles it, for holding a mock mid-flight. */
+function deferred() {
+  let release!: () => void
+  const promise = new Promise<void>((r) => { release = r })
+  return { promise, release: () => release() }
+}
+
 /** Drain the serialized catalog-write chain (commit → rpc → commit → reload). */
 async function flushProjectDirWrites() {
   for (let i = 0; i < 8; i++) await Promise.resolve()
@@ -903,6 +910,39 @@ describe('addDir / removeDir', () => {
     useChatStore.getState().addDir('/shared/', 'project')
     await flushProjectDirWrites()
     expect(activeProjectState().projectExtraDirs).toEqual(['/resolved/shared'])
+  })
+
+  it("a failed write's recovery read does not overwrite an edit made while it was in flight", async () => {
+    setupProject()
+    const read = deferred()
+    const secondWrite = deferred()
+    mockWindowEnvironment.listProjects.mockImplementation(async () => {
+      await read.promise
+      return [{ projectId: 'p', path: PATH, name: 'p', extraDirs: [] }]
+    })
+    mockWindowEnvironment.updateProject
+      .mockRejectedValueOnce(new Error('lease denied'))
+      .mockImplementationOnce(async () => {
+        await secondWrite.promise
+        return { projectId: 'p', path: PATH, name: 'p', extraDirs: ['/first', '/second'] }
+      })
+
+    useChatStore.getState().addDir('/first', 'project')
+    await flushProjectDirWrites()
+    // The recovery read is open. The user edits again, which commits optimistically.
+    useChatStore.getState().addDir('/second', 'project')
+    expect(activeProjectState().projectExtraDirs).toEqual(['/first', '/second'])
+
+    read.release()
+    await flushProjectDirWrites()
+    // The read answered `[]`, from before either edit. Checking the generation
+    // only before the read would let that stale answer land here, wiping both
+    // folders out of the composer until the second write finally answers.
+    expect(activeProjectState().projectExtraDirs).toEqual(['/first', '/second'])
+
+    secondWrite.release()
+    await flushProjectDirWrites()
+    expect(activeProjectState().projectExtraDirs).toEqual(['/first', '/second'])
   })
 
   it("addDir scope='project' re-reads the catalog when the write is rejected", async () => {

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { useAppStore } from '../app'
 import { useActivityViewStateStore } from '../activity-view-state'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget } from './helpers/chat-helpers'
-import { writeProjectExtraDirs, type ProjectExtraDirsSink } from './helpers/project-extra-dirs-write'
+import { writeProjectExtraDirs, readProjectExtraDirs, type ProjectExtraDirsSink } from './helpers/project-extra-dirs-write'
 import {
   accumulateCodexFooterTokens,
   type CodexCommand,
@@ -405,11 +405,9 @@ import { createOpenCodeSlice } from './slices/opencode-slice'
 function projectDirsSink(
   projectPath: string,
   set: (updater: (s: ChatStore) => Partial<ChatStore>) => void,
-  get: () => ChatStore,
 ): ProjectExtraDirsSink {
   return {
     commit: (dirs) => set((s) => updateProjectState(s, projectPath, () => ({ projectExtraDirs: dirs }))),
-    reload: () => get().refreshProjectExtraDirs(projectPath),
   }
 }
 
@@ -1034,19 +1032,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   refreshProjectExtraDirs: async (projectPath) => {
     const key = projectPath ?? get().activeProject
     if (!key) return
-    // One code path for local and remote: `listProjects('local')` is served by
-    // the desktop catalog, so no separate read IPC is needed.
-    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-    const remote = parseRemoteProjectKey(key)
-    const connectionId = remote?.connectionId ?? 'local'
-    const hostPath = remote?.path ?? key
-    try {
-      const projects = await window.environment.listProjects(connectionId)
-      const hit = projects.find((p) => p.path === hostPath)
-      set((s) => updateProjectState(s, key, () => ({ projectExtraDirs: [...(hit?.extraDirs ?? [])] })))
-    } catch (err) {
-      console.warn(`[projectExtraDirs] Failed to read project catalog:`, err)
-    }
+    const dirs = await readProjectExtraDirs(key)
+    if (!dirs) return
+    set((s) => updateProjectState(s, key, () => ({ projectExtraDirs: dirs })))
   },
 
   addDir: (path, scope, target) => {
@@ -1073,7 +1061,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       projectPath,
       [...proj.projectExtraDirs, path],
       { addExtraDirs: [path] },
-      projectDirsSink(projectPath, set, get),
+      projectDirsSink(projectPath, set),
     )
   },
 
@@ -1093,7 +1081,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       projectPath,
       proj.projectExtraDirs.filter((d) => d !== path),
       { removeExtraDirs: [path] },
-      projectDirsSink(projectPath, set, get),
+      projectDirsSink(projectPath, set),
     )
   },
 

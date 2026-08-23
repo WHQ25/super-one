@@ -204,6 +204,7 @@ vi.mock('../recent-folders', () => ({
   ]),
   addRecentFolder: vi.fn(),
   removeRecentFolder: vi.fn(),
+  getProjectExtraDirs: vi.fn(() => []),
 }))
 
 const mockReaddir = vi.fn()

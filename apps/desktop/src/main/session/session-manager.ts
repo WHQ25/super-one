@@ -73,21 +73,6 @@ export interface SessionManagerPersistence {
   getProjectExtraDirs?: (projectPath: string) => string[]
 }
 
-/**
- * Seed a session with the project's workspace folders.
- *
- * Additive on purpose: the renderer's per-send set is a superset, so the diff
- * in `Session.send` sees no change on the first send. Removals still propagate,
- * because the renderer then sends the reduced set.
- */
-function mergeProjectExtraDirs(
-  projectExtraDirs: string[] | undefined,
-  requested: string[] | undefined,
-): string[] | undefined {
-  if (!projectExtraDirs?.length) return requested
-  return [...new Set([...projectExtraDirs, ...(requested ?? [])])]
-}
-
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
   if (!data.worktreePath) return { cwd: data.projectPath, missingWorktreePath: null }
   if (existsSync(data.worktreePath)) return { cwd: data.worktreePath, missingWorktreePath: null }
@@ -241,10 +226,10 @@ export class SessionManagerImpl implements SessionManagerContract {
       sandboxInfo,
       effort: selectedEffort,
       model: selectedModel,
-      additionalDirectories: mergeProjectExtraDirs(
-        this.persistence.getProjectExtraDirs?.(opts.projectPath),
-        opts.additionalDirectories,
-      ),
+      // Caller scope only. `Session` owns the union with the project's folders
+      // and recomputes it every turn; pre-mixing them here would bake project
+      // folders into the caller half, so a later removal could never propagate.
+      additionalDirectories: opts.additionalDirectories,
       gitBranch: opts.gitBranch ?? null,
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,

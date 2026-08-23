@@ -656,6 +656,36 @@ describe('Session state machine', () => {
       expect(s.getAdditionalDirectoriesSnapshot()).toEqual([])
     })
 
+    it('picks up a folder added after the session started, from a caller that sends no dirs', async () => {
+      // Scheduled sends, automations, mobile and collaboration turns all reach
+      // Session.send without an additionalDirs field at all.
+      let workspace: string[] = []
+      const { session: s, backend: b } = makeSession({ getProjectExtraDirs: () => workspace })
+      await settle(s.send({ content: 'first' }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual([])
+
+      workspace = ['/added-later']
+      await settle(s.send({ content: 'second' }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/added-later'])
+    })
+
+    it('drops a folder removed after the session started, from a caller that sends no dirs', async () => {
+      let workspace = ['/workspace']
+      const { session: s, backend: b } = makeSession({ getProjectExtraDirs: () => workspace })
+      await settle(s.send({ content: 'first' }), b)
+
+      workspace = []
+      await settle(s.send({ content: 'second' }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual([])
+    })
+
+    it('keeps the caller scope across a turn that sends no dirs', async () => {
+      const { session: s, backend: b } = withWorkspace(['/workspace'])
+      await settle(s.send({ content: 'first', additionalDirs: ['/session'] }), b)
+      await settle(s.send({ content: 'second' }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/workspace', '/session'])
+    })
+
     it('leaves a project without workspace folders exactly as before', async () => {
       const { session: s, backend: b } = withWorkspace([])
       await settle(s.send({ content: 'first', additionalDirs: ['/session'] }), b)
@@ -665,6 +695,22 @@ describe('Session state machine', () => {
 
   describe('session.set_additional_dirs command', () => {
     const cmd = (dirs: string[]) => ({ kind: 'session.set_additional_dirs', dirs }) as import('./types').BackendCommand
+
+    it('keeps the project\'s workspace folders when mobile clears the session scope', async () => {
+      // The command carries the SESSION scope only. Writing it raw would strip
+      // a project folder from the live backend, and the next mobile turn sends
+      // no directory set at all, so nothing would put it back.
+      const { session: s, backend: b } = makeSession({ getProjectExtraDirs: () => ['/workspace'] })
+      await s.dispatchBackendCommand(cmd([]))
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/workspace'])
+      expect(b.setAdditionalDirectoriesCalls).toEqual([])
+    })
+
+    it('unions the session scope onto the project scope rather than replacing it', async () => {
+      const { session: s } = makeSession({ getProjectExtraDirs: () => ['/workspace'] })
+      await s.dispatchBackendCommand(cmd(['/session']))
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/workspace', '/session'])
+    })
 
     it('applies dirs in place even while streaming, without deferring a rebuild', async () => {
       const pending = session.send({ content: 'hi', clientMessageId: 'u0' })

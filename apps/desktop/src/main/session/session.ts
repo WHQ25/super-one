@@ -222,7 +222,15 @@ export class Session implements SessionContract {
   private sandboxInfo: SandboxInfo
   private effort: SendMessageRequest['effort']
   private model: string | undefined
+  /** Effective set = project scope ∪ caller scope. Never assigned directly. */
   private additionalDirectories: string[]
+  /**
+   * The half of the directory set the caller owns (session `/add-dir`, harness
+   * config scopes). Kept apart from the project's own folders so the effective
+   * set can be recomputed every turn without a caller having to know about —
+   * or resend — folders it never managed.
+   */
+  private callerScopedDirs: string[]
   private _apiProviderId: string | null = null
   private _acpAgentId: string | null = null
   private systemPromptAppend: string | undefined
@@ -432,7 +440,10 @@ export class Session implements SessionContract {
     this.sandboxInfo = coerceSandboxInfo(opts.sandboxInfo ?? getDefaultSandbox())
     this.effort = opts.effort
     this.model = opts.model
-    this.additionalDirectories = opts.additionalDirectories ?? []
+    this.callerScopedDirs = [...(opts.additionalDirectories ?? [])]
+    // Assigned before the seed below, which reads it.
+    this.getProjectExtraDirs = opts.getProjectExtraDirs
+    this.additionalDirectories = this.resolveEffectiveDirs()
     this.createdAt = opts.createdAt ?? Date.now()
     this._providerSessionId = opts.resumedProviderSessionId ?? null
     if (opts.initialMessages?.length) this._messages = [...opts.initialMessages]
@@ -456,7 +467,6 @@ export class Session implements SessionContract {
     }
     this.homedir = opts.homedir ?? ''
     this.getProjectResources = opts.getProjectResources
-    this.getProjectExtraDirs = opts.getProjectExtraDirs
     this.invalidateProjectResources = opts.invalidateProjectResources
     this.onStateChange = opts.onStateChange
     this.onProviderSessionIdChange = opts.onProviderSessionIdChange
@@ -585,6 +595,18 @@ export class Session implements SessionContract {
       } else if (this._needsRebuild) {
         log.info('[Session] queued send promoted to normal send sid=%s (pending rebuild)', this.id)
       } else {
+        // A queued send rides the in-flight backend, whose roots are fixed for
+        // the turn. Record the intent so the next turn rebuilds against it,
+        // matching what `session.set_additional_dirs` does while streaming —
+        // otherwise the change is dropped and never comes back.
+        if (request.additionalDirs !== undefined) {
+          this.callerScopedDirs = [...request.additionalDirs]
+        }
+        const queuedDirs = this.resolveEffectiveDirs()
+        if (!sameStringArray(queuedDirs, this.additionalDirectories)) {
+          this.additionalDirectories = queuedDirs
+          this._needsRebuild = true
+        }
         if (request.clientMessageId) {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin })
         }
@@ -610,14 +632,12 @@ export class Session implements SessionContract {
       // session window, a promoted draft, a mini-app-opened project — would
       // otherwise send a set without them, which reads as a removal and both
       // revokes the agent's access and rebuilds the backend for nothing.
-      const nextDirs = request.additionalDirs === undefined
-        ? undefined
-        : withProjectExtraDirs(this.getProjectExtraDirs?.(this.projectPath), request.additionalDirs)
-      const dirsChanged = nextDirs !== undefined
-        && !sameStringArray(nextDirs, this.additionalDirectories)
+      if (request.additionalDirs !== undefined) this.callerScopedDirs = [...request.additionalDirs]
+      const nextDirs = this.resolveEffectiveDirs()
+      const dirsChanged = !sameStringArray(nextDirs, this.additionalDirectories)
       if (request.effort !== undefined) this.effort = request.effort
       if (request.model !== undefined) this.model = request.model
-      if (nextDirs !== undefined) this.additionalDirectories = nextDirs
+      this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
       this.snapEffectiveApiProviderId()
       const needsRebuild = this._needsRebuild
@@ -1152,10 +1172,16 @@ export class Session implements SessionContract {
         return
       }
       case 'session.set_additional_dirs': {
-        if (sameStringArray(cmd.dirs, this.additionalDirectories)) return
-        this.additionalDirectories = [...cmd.dirs]
+        // `cmd.dirs` is the SESSION scope only — mobile sends it when the user
+        // edits session dirs. Writing it raw would drop the project's folders
+        // from a live backend, and the next mobile turn sends no directory set
+        // at all, so nothing would put them back.
+        this.callerScopedDirs = [...cmd.dirs]
+        const nextDirs = this.resolveEffectiveDirs()
+        if (sameStringArray(nextDirs, this.additionalDirectories)) return
+        this.additionalDirectories = nextDirs
         if (!this.backendStarted) return
-        const applied = (await this.backend.setAdditionalDirectories?.(cmd.dirs)) ?? false
+        const applied = (await this.backend.setAdditionalDirectories?.(nextDirs)) ?? false
         if (applied) return
         if (!this.isStreaming() && !this.backend.hasActiveBackgroundTasks?.()) {
           await this.backend.rebuild(this.buildBackendStartOpts())
@@ -1404,6 +1430,18 @@ export class Session implements SessionContract {
   markNeedsRebuild(): void {
     this.assertNotDisposed()
     this._needsRebuild = true
+  }
+
+  /**
+   * Effective directory set for the next turn.
+   *
+   * Recomputed rather than stored so a project's folders can change under a
+   * live session without every caller having to resend them — scheduled sends,
+   * automations, mobile turns and collaboration turns all send no directory
+   * set at all.
+   */
+  private resolveEffectiveDirs(): string[] {
+    return withProjectExtraDirs(this.getProjectExtraDirs?.(this.projectPath), this.callerScopedDirs)
   }
 
   getAdditionalDirectoriesSnapshot(): string[] {

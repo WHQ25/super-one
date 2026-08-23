@@ -15,6 +15,7 @@ import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest, type TerminalEvent } from '@superone/shared/agent-types'
 import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
@@ -1820,6 +1821,9 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.PREWARM, async (_event, projectPath: string, hint?: AgentPrewarmHint) => {
       if (!this.sessionManager) return
+      // A remote project is executed by its node. Never instantiate a local
+      // Session whose cwd is the renderer-only `remote:<connection>:<path>` key.
+      if (parseRemoteProjectKey(projectPath)) return
       if (this.isRemoteLockedSession(projectPath)) return
       const session = await this.getOrCreatePrewarmSession(projectPath, hint)
       if (!session) return

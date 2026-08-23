@@ -394,6 +394,23 @@ describe('dsh MCP config IPC', () => {
 })
 
 describe('AgentService prewarm', () => {
+  it('skips local prewarm for a project hosted by a remote node', async () => {
+    const service = new AgentService()
+    const createSession = vi.fn()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => null),
+      createSession,
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.PREWARM)!
+
+    await handler(null, 'remote:env-1:/srv/project', {
+      provider: 'claude',
+    })
+
+    expect(createSession).not.toHaveBeenCalled()
+  })
+
   it('creates a Codex session for Codex prewarm hints instead of reusing an empty Claude draft', async () => {
     const service = new AgentService()
     const claudeSession = makeMockSession({

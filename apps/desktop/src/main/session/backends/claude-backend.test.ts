@@ -632,6 +632,54 @@ describe('ClaudeBackend', () => {
   })
 
   describe('prewarm()', () => {
+    it('rejects start when a remote project key reaches the local backend', async () => {
+      const backend = new ClaudeBackend()
+
+      await expect(backend.start({
+        ...makeStartOpts(),
+        projectPath: 'remote:env-1:/srv/project',
+        cwd: 'remote:env-1:/srv/project',
+      })).rejects.toThrow('remote project key')
+
+      expect(hoisted.captured.createSessionQueryMock).not.toHaveBeenCalled()
+    })
+
+    it('rejects start when cwd is not absolute', async () => {
+      const backend = new ClaudeBackend()
+
+      await expect(backend.start({
+        ...makeStartOpts(),
+        cwd: 'relative/project',
+      })).rejects.toThrow('absolute')
+
+      expect(hoisted.captured.createSessionQueryMock).not.toHaveBeenCalled()
+    })
+
+    it('rejects a remote project key before building local SDK spawn options', () => {
+      const backend = new ClaudeBackend()
+
+      backend.prewarm({
+        ...makeStartOpts(),
+        projectPath: 'remote:env-1:/srv/project',
+        cwd: 'remote:env-1:/srv/project',
+      })
+
+      expect(hoisted.captured.buildClaudeOptionsMock).not.toHaveBeenCalled()
+      expect(hoisted.captured.warmupPrewarm).not.toHaveBeenCalled()
+    })
+
+    it('skips prewarm when cwd is not absolute', () => {
+      const backend = new ClaudeBackend()
+
+      backend.prewarm({
+        ...makeStartOpts(),
+        cwd: 'relative/project',
+      })
+
+      expect(hoisted.captured.buildClaudeOptionsMock).not.toHaveBeenCalled()
+      expect(hoisted.captured.warmupPrewarm).not.toHaveBeenCalled()
+    })
+
     it('forwards buildClaudeOptions(opts) to warmupManager.prewarm', () => {
       const backend = new ClaudeBackend()
       backend.prewarm({

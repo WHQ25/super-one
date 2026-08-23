@@ -148,6 +148,18 @@ describe('triggerPrewarm', () => {
     expect(mockPrewarm).not.toHaveBeenCalled()
   })
 
+  it('does not ask the desktop to prewarm a project hosted by a remote node', () => {
+    const projectKey = 'remote:env-1:/srv/project'
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid-remote'
+    proj._sessions = { 'sid-remote': createDefaultPerSessionState() }
+    useChatStore.setState({ projectSessions: { [projectKey]: proj }, activeProject: projectKey })
+
+    triggerPrewarm(useChatStore.getState())
+
+    expect(mockPrewarm).not.toHaveBeenCalled()
+  })
+
   it('dispatches window.agent.prewarm with provider/model/effort hint from the active session', () => {
     const proj = createDefaultProjectState()
     const sess = { ...createDefaultPerSessionState(), selectedModel: 'opus-4-8', selectedEffort: 'high' as const }

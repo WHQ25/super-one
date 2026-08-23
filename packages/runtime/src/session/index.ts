@@ -24,10 +24,15 @@ export {
   type SessionTurnEvent,
   type TranscriptBlock,
   type TurnRunner,
+  type ActiveHarnessRuntime,
   type LeaseGuard,
   type SessionEventLog,
   type SessionStore,
 } from './session-runtime'
+export {
+  getRuntimeIdleTimeoutMs,
+  SESSION_RUNTIME_REAPER_INTERVAL_MS,
+} from './runtime-policy'
 export type { TurnImageAttachment } from './types'
 export { EventLog } from './event-log'
 export {

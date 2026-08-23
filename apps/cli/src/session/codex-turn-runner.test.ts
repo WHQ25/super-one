@@ -674,6 +674,9 @@ url = "https://mcp.linear.app/mcp"
       `${JSON.stringify({ jsonrpc: '2.0', id: turn.id, result: { turn: { id: 'u-active' } } })}\n`,
     )
     await pump(50)
+    expect(runner.listActiveRuntimes?.()).toEqual([
+      expect.objectContaining({ sessionId: 'steer-s', busy: true }),
+    ])
 
     // Concurrent steer on same session while turn is open.
     const steerP = runner({
@@ -702,7 +705,15 @@ url = "https://mcp.linear.app/mcp"
     await turnP
 
     expect(spawnFn).toHaveBeenCalledTimes(1)
+    expect(runner.listActiveRuntimes?.()).toEqual([
+      expect.objectContaining({
+        sessionId: 'steer-s',
+        busy: false,
+        lastActivityAt: expect.any(Number),
+      }),
+    ])
     await runner.disposeSession?.('steer-s')
+    expect(runner.listActiveRuntimes?.()).toEqual([])
     rmSync(dir, { recursive: true, force: true })
   })
 })

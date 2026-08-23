@@ -1,5 +1,6 @@
 import type { CanUseTool, OnElicitation, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 import { MessageBridge } from '../../agent/message-bridge'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
@@ -41,6 +42,7 @@ import { ensureProxy, type ProxyUpstream } from '../../providers/llm-proxy-manag
 import { getSandboxCapability } from '../../sandbox-platform'
 import { listSkills } from '../../skills-service'
 import { hasRunningDownloadTasks } from '../../browser/browser-download-tasks'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 
 interface ClaudeConfig {
   apiKey?: string
@@ -63,6 +65,19 @@ const INTERRUPT_ACK_TIMEOUT_MS = INTERRUPT_CANCEL_TIMEOUT_MS
  * SDK loop then swallowed every later message while the agent kept working.
  */
 const INTERRUPT_SETTLE_TIMEOUT_MS = 10_000
+
+function invalidLocalBackendStartReason(opts: BackendStartOptions): string | null {
+  if (parseRemoteProjectKey(opts.projectPath)) {
+    return `remote project key: ${opts.projectPath}`
+  }
+  if (parseRemoteProjectKey(opts.cwd)) {
+    return `remote cwd key: ${opts.cwd}`
+  }
+  if (!isAbsolute(opts.cwd)) {
+    return `cwd must be absolute: ${opts.cwd}`
+  }
+  return null
+}
 
 export class ClaudeBackend implements SessionBackend {
   readonly kind: HarnessId = 'claude'
@@ -234,6 +249,10 @@ export class ClaudeBackend implements SessionBackend {
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.bridge) throw new Error('ClaudeBackend already started')
+    const invalidStartReason = invalidLocalBackendStartReason(opts)
+    if (invalidStartReason) {
+      throw new Error(`ClaudeBackend cannot start a local runtime: ${invalidStartReason}`)
+    }
     // A turn id belongs to the runtime that produced it. `iterateMessages` seeds
     // its open turn from `getCurrentMessageId()`, so letting a finished turn's id
     // survive a release/rebuild makes the replacement loop treat that closed
@@ -577,6 +596,11 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   prewarm(opts: BackendStartOptions): void {
+    const invalidStartReason = invalidLocalBackendStartReason(opts)
+    if (invalidStartReason) {
+      log.debug('[ClaudeBackend] prewarm skipped for invalid local start:', invalidStartReason)
+      return
+    }
     const config = (opts.config ?? {}) as ClaudeConfig
     if (config.proxy) return
     try {

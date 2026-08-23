@@ -582,9 +582,17 @@ describe('createNodeClaudeTurnRunner', () => {
     })
     expect(dispose).not.toHaveBeenCalled()
     expect(queryFn).toHaveBeenCalledTimes(1)
+    expect(runner.listActiveRuntimes?.()).toEqual([
+      expect.objectContaining({
+        sessionId: 'dispose-s',
+        busy: false,
+        lastActivityAt: expect.any(Number),
+      }),
+    ])
 
     await runner.disposeSession?.('dispose-s')
     expect(dispose).toHaveBeenCalledTimes(1)
+    expect(runner.listActiveRuntimes?.()).toEqual([])
 
     // Next turn reopens a fresh live process.
     await runner({
@@ -728,6 +736,11 @@ describe('createProductionTurnRunner multi-dispatch', () => {
     expect(result.finalText).toBe('hello')
     expect(result.providerResume).toBe('claude-session:m1')
     expect(claudeQueryFn).toHaveBeenCalled()
+    expect(runner.listActiveRuntimes?.()).toEqual([
+      expect.objectContaining({ sessionId: 's1', busy: false }),
+    ])
+    await runner.disposeAll?.()
+    expect(runner.listActiveRuntimes?.()).toEqual([])
     rmSync(dir, { recursive: true, force: true })
   })
 

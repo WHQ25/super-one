@@ -145,6 +145,13 @@ export const DEFAULT_PERMISSION_TIMEOUT_MS = 60_000
  * release SDK children and host-action MCP when a session ends or the runtime
  * shuts down. Simple FIFO runners may omit them.
  */
+export interface ActiveHarnessRuntime {
+  sessionId: string
+  lastActivityAt: number
+  /** Includes an in-flight turn, queued turn, or pending interaction. */
+  busy: boolean
+}
+
 export type TurnRunner = ((input: {
   session: NodeSessionRecord
   /** Stable assistant message id allocated by SessionRuntime for this turn. */
@@ -208,6 +215,8 @@ export type TurnRunner = ((input: {
   disposeSession?: (sessionId: string) => void | Promise<void>
   /** Tear down all long-lived harness state (runtime stop). */
   disposeAll?: () => void | Promise<void>
+  /** Snapshot long-lived harness state for the host's idle runtime reaper. */
+  listActiveRuntimes?: () => ActiveHarnessRuntime[]
 }
 
 export type { SessionTurnEvent }

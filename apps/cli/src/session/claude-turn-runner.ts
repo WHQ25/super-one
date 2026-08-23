@@ -185,6 +185,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       cwd: string
       /** Sorted disk MCP names at open time — rebuild when mcp.save changes allowlist. */
       mcpDiskKey: string
+      busyCount: number
+      lastActivityAt: number
     }
   >()
 
@@ -329,6 +331,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         hostActionDispose: hostActionMcp ? () => hostActionMcp.dispose() : null,
         cwd,
         mcpDiskKey: mcpDiskKeyOf(merged.diskNames),
+        busyCount: 0,
+        lastActivityAt: Date.now(),
       }
       lives.set(sessionKey, entry)
     }
@@ -337,8 +341,11 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     const content =
       prepared.kind === 'text' ? prepared.text : prepared.content
 
+    const activeEntry = entry
+    activeEntry.busyCount += 1
+    activeEntry.lastActivityAt = Date.now()
     try {
-      const result = await entry.live.sendTurn({
+      const result = await activeEntry.live.sendTurn({
         content,
         messageId: input.messageId,
         clientMessageId: input.messageId,
@@ -393,6 +400,9 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       // Drop broken live session so the next turn reopens cleanly.
       await disposeEntry(sessionKey)
       throw err
+    } finally {
+      activeEntry.busyCount = Math.max(0, activeEntry.busyCount - 1)
+      activeEntry.lastActivityAt = Date.now()
     }
   }
 
@@ -404,6 +414,12 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     const keys = [...lives.keys()]
     await Promise.all(keys.map((id) => disposeEntry(id)))
   }
+
+  runner.listActiveRuntimes = () => [...lives.entries()].map(([sessionId, entry]) => ({
+    sessionId,
+    lastActivityAt: entry.lastActivityAt,
+    busy: entry.busyCount > 0,
+  }))
 
   return runner
 }

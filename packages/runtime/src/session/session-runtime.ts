@@ -26,6 +26,7 @@ import {
   type HostActionStore,
 } from './host-action-store'
 import {
+  type ActiveHarnessRuntime,
   DEFAULT_PERMISSION_TIMEOUT_MS,
   type AgentsConfirmOutcome,
   type NodeSessionRecord,
@@ -40,6 +41,10 @@ import {
   type TurnImageAttachment,
   type TurnRunner,
 } from './types'
+import {
+  getRuntimeIdleTimeoutMs,
+  SESSION_RUNTIME_REAPER_INTERVAL_MS,
+} from './runtime-policy'
 
 /** Default wall-clock wait for multi-launch agent confirm (ms). Desktop: 10 min. */
 export const DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS = 10 * 60_000
@@ -72,6 +77,7 @@ export function forkSessionTitle(title: string | null): string {
 }
 
 export type {
+  ActiveHarnessRuntime,
   AgentsConfirmOutcome,
   NodeSessionRecord,
   NodeSessionSettings,
@@ -204,6 +210,8 @@ export class SessionRuntime {
   /** Long-poll waiters woken on host action change. */
   private readonly hostActionPollWaiters = new Set<() => void>()
   private hostActionExpiryTimer: ReturnType<typeof setInterval> | null = null
+  private runtimeReaperTimer: ReturnType<typeof setInterval> | null = null
+  private readonly runtimeReleases = new Set<string>()
   /**
    * Per-session FIFO of turns accepted while status is streaming for harnesses
    * without a live inject channel (e.g. Codex). Claude uses concurrent
@@ -228,6 +236,8 @@ export class SessionRuntime {
       permissionTimeoutMs?: number
       agentsConfirmTimeoutMs?: number
       hostActions?: HostActionStore | null
+      /** Tests may disable or shorten the runtime sweep; production uses 30s. */
+      runtimeReaperIntervalMs?: number
     },
   ) {
     this.permissionTimeoutMs = opts?.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS
@@ -236,6 +246,18 @@ export class SessionRuntime {
     this.hostActions = opts?.hostActions ?? null
     this.hydrateFromStore()
     this.reconcileAfterRestart()
+    const runtimeReaperIntervalMs =
+      opts?.runtimeReaperIntervalMs ?? SESSION_RUNTIME_REAPER_INTERVAL_MS
+    if (
+      runtimeReaperIntervalMs > 0
+      && this.turnRunner.listActiveRuntimes
+      && this.turnRunner.disposeSession
+    ) {
+      this.runtimeReaperTimer = setInterval(() => {
+        void this.reapIdleRuntimes()
+      }, runtimeReaperIntervalMs)
+      this.runtimeReaperTimer.unref?.()
+    }
     if (this.hostActions) {
       this.hostActions.subscribe(() => this.wakeHostActionPollers())
       // Periodic claim/deadline reconciliation (claim TTL requeue / cancel).
@@ -252,6 +274,49 @@ export class SessionRuntime {
   /** True while dispose() is in progress or has completed. */
   isDisposing(): boolean {
     return this.disposing
+  }
+
+  /** Release idle long-lived harness processes without ending resumable sessions. */
+  async reapIdleRuntimes(now = Date.now()): Promise<void> {
+    if (this.disposing) return
+    const listActiveRuntimes = this.turnRunner.listActiveRuntimes
+    const disposeSession = this.turnRunner.disposeSession
+    if (!listActiveRuntimes || !disposeSession) return
+
+    const bySession = new Map<string, ActiveHarnessRuntime>()
+    for (const entry of listActiveRuntimes()) {
+      const previous = bySession.get(entry.sessionId)
+      bySession.set(entry.sessionId, previous
+        ? {
+            sessionId: entry.sessionId,
+            lastActivityAt: Math.max(previous.lastActivityAt, entry.lastActivityAt),
+            busy: previous.busy || entry.busy,
+          }
+        : entry)
+    }
+    if (bySession.size === 0) return
+
+    const timeoutMs = getRuntimeIdleTimeoutMs(bySession.size)
+    const releases: Promise<void>[] = []
+    for (const entry of bySession.values()) {
+      if (entry.busy || now - entry.lastActivityAt < timeoutMs) continue
+      if (this.runtimeReleases.has(entry.sessionId)) continue
+      const session = this.live.get(entry.sessionId)
+      if (
+        session?.status === 'streaming'
+        || session?.pendingInteraction != null
+        || (this.activeTurnCounts.get(entry.sessionId) ?? 0) > 0
+      ) continue
+
+      this.runtimeReleases.add(entry.sessionId)
+      releases.push(
+        Promise.resolve()
+          .then(() => disposeSession(entry.sessionId))
+          .catch(() => undefined)
+          .finally(() => this.runtimeReleases.delete(entry.sessionId)),
+      )
+    }
+    await Promise.all(releases)
   }
 
   private hydrateFromStore(): void {
@@ -2325,6 +2390,10 @@ export class SessionRuntime {
    */
   async dispose(timeoutMs = 5_000): Promise<void> {
     this.disposing = true
+    if (this.runtimeReaperTimer) {
+      clearInterval(this.runtimeReaperTimer)
+      this.runtimeReaperTimer = null
+    }
     if (this.hostActionExpiryTimer) {
       clearInterval(this.hostActionExpiryTimer)
       this.hostActionExpiryTimer = null

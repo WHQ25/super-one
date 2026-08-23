@@ -3,6 +3,7 @@ import { createDefaultPerSessionState, createDefaultProjectState } from '../defa
 import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '../types'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import { resolveProvider } from './provider-routing'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 export function getProject(state: ChatStore, projectPath?: string | null): ProjectState {
   const key = projectPath ?? state.activeProject
@@ -41,6 +42,7 @@ export function mergeProjectAndSessionDirs(
 export function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
   const key = projectPath ?? state.activeProject
   if (!key) return
+  if (parseRemoteProjectKey(key)) return
   const session = getActivePerSession(state, key)
   const provider = resolveProvider(session)
   if (typeof window.agent?.prewarm !== 'function') return

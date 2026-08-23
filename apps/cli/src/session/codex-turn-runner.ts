@@ -152,6 +152,8 @@ interface LiveCodexConnection {
   providerEnvKey: string
   /** Serializes full turns (run/review/compact) on the same connection. */
   chain: Promise<unknown>
+  busyCount: number
+  lastActivityAt: number
 }
 
 function parseTurnKind(raw: unknown): CodexTurnKind {
@@ -198,6 +200,8 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       cwd,
       providerEnvKey,
       chain: Promise.resolve(),
+      busyCount: 0,
+      lastActivityAt: Date.now(),
     }
     liveBySession.set(sessionId, live)
     return live
@@ -278,20 +282,27 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       if (!live?.threadId || !live.activeTurnId) {
         throw new Error('No active Codex turn to steer')
       }
-      const result = await runCodexAppServerTurn({
-        client: live.client,
-        prompt,
-        cwd: live.cwd,
-        threadId: live.threadId,
-        turnKind: 'steer',
-        expectedTurnId: live.activeTurnId,
-        skipThreadSetup: true,
-        signal: input.signal,
-      })
-      return {
-        finalText: result.finalText,
-        providerResume: result.threadId ? `thread:${result.threadId}` : null,
-        skipAssistantTranscript: true,
+      live.busyCount += 1
+      live.lastActivityAt = Date.now()
+      try {
+        const result = await runCodexAppServerTurn({
+          client: live.client,
+          prompt,
+          cwd: live.cwd,
+          threadId: live.threadId,
+          turnKind: 'steer',
+          expectedTurnId: live.activeTurnId,
+          skipThreadSetup: true,
+          signal: input.signal,
+        })
+        return {
+          finalText: result.finalText,
+          providerResume: result.threadId ? `thread:${result.threadId}` : null,
+          skipAssistantTranscript: true,
+        }
+      } finally {
+        live.busyCount = Math.max(0, live.busyCount - 1)
+        live.lastActivityAt = Date.now()
       }
     }
 
@@ -380,12 +391,18 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       }
     }
 
+    live.busyCount += 1
+    live.lastActivityAt = Date.now()
     const next = live.chain.then(fullTurn, fullTurn)
-    live.chain = next.then(
+    const tracked = next.finally(() => {
+      live.busyCount = Math.max(0, live.busyCount - 1)
+      live.lastActivityAt = Date.now()
+    })
+    live.chain = tracked.then(
       () => undefined,
       () => undefined,
     )
-    return next
+    return tracked
   }
 
   runner.disposeSession = async (sessionId) => {
@@ -395,6 +412,11 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     const ids = [...liveBySession.keys()]
     await Promise.all(ids.map((id) => disposeLive(id)))
   }
+  runner.listActiveRuntimes = () => [...liveBySession.entries()].map(([sessionId, live]) => ({
+    sessionId,
+    lastActivityAt: live.lastActivityAt,
+    busy: live.busyCount > 0,
+  }))
 
   return runner
 }
@@ -456,6 +478,10 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
   runner.disposeAll = async () => {
     await Promise.all([claude.disposeAll?.(), codex.disposeAll?.()])
   }
+  runner.listActiveRuntimes = () => [
+    ...(claude.listActiveRuntimes?.() ?? []),
+    ...(codex.listActiveRuntimes?.() ?? []),
+  ]
 
   return runner
 }

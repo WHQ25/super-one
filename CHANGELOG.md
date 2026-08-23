@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.57.2-alpha] - 2026-08-23
+
+### Added
+
+- Chat: messages can now be scheduled directly from the composer. Scheduled
+  text remains editable, survives app restarts, and can be queued for shortly
+  after a provider usage limit resets.
+- Light theme: brand fills now use hue-aware sRGB chroma limits and
+  contrast-derived foreground colors for stronger, more consistent branding.
+
+### Fixed
+
+- Browser tabs attach and navigate normally again instead of being rejected by
+  the mini-app WebView security guard.
+- Terminals immediately reapply the active theme when their panels remount, so
+  text colors no longer remain stuck in the previous light or dark scheme.
+- Sessions reap idle remote harness processes while preserving resumable state,
+  and remote projects no longer prewarm a local Claude process.
+- Built-in chat mentions appear before collaborators in the mention menu.
+- Grok no longer creates an empty auto-wake message after a completed response.
+
 ## [0.57.1-alpha] - 2026-08-23
 
 ### Added

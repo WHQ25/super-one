@@ -60,7 +60,7 @@ export const MiniAppHostGroup = memo(function MiniAppHostGroup({
               <ContextMenuTrigger asChild>
                 <button
                   onClick={() => onOpen(host.appId)}
-                  className="group/hostrow flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-hover"
+                  className="group/hostrow flex h-7 items-center justify-between gap-2 overflow-hidden rounded-md px-2.5 text-left text-xs transition-colors hover:bg-sidebar-hover"
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <MiniAppIcon appId={host.appId} className="size-4 shrink-0" />
@@ -75,7 +75,7 @@ export const MiniAppHostGroup = memo(function MiniAppHostGroup({
                   >
                     <CircleStop className="size-3.5" />
                   </span>
-                  <span className="min-w-0 shrink truncate text-[10px] text-sidebar-foreground/40 group-hover/hostrow:hidden">
+                  <span className="min-w-0 shrink truncate text-2xs text-sidebar-foreground/40 group-hover/hostrow:hidden">
                     {host.statusText || formatUptime(host.since)}
                   </span>
                 </button>

@@ -448,6 +448,10 @@ async function applyProjectSelection(
       // focusProject (not bare activeProject set) so an open unsent draft is
       // carried across projects instead of left behind as a blank session.
       useChatStore.getState().ensureSession(projectKey)
+      // Hydrate before any session can mount: a send composed without these
+      // would read as a *removal* against the previous set and cost a running
+      // Claude backend a needless rebuild.
+      void useChatStore.getState().refreshProjectExtraDirs(projectKey)
       await useChatStore.getState().focusProject(projectKey, {
         carryOpenDraft: options?.carryOpenDraft === true,
       })
@@ -475,6 +479,7 @@ async function applyProjectSelection(
   const { useSettingsStore } = await import('./settings')
   useSettingsStore.getState().setProviderScope('local')
   useChatStore.getState().ensureSession(folderPath)
+  void useChatStore.getState().refreshProjectExtraDirs(folderPath)
   // currentFolder / currentProjectId mirror chat.activeProject — see subscription at file end.
   await useChatStore.getState().focusProject(folderPath, {
     carryOpenDraft: options?.carryOpenDraft === true,

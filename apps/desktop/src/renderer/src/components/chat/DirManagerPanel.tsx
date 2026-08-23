@@ -69,6 +69,7 @@ export function DirManagerPanel({ isCoding }: DirManagerPanelProps) {
   const provider = useActiveSession((s) => resolveProvider(s))
   const harness = provider === 'codex' ? 'codex' : 'claude'
   const additionalDirs = useActiveSession((s) => s.additionalDirs)
+  const projectExtraDirs = useActiveSession((s) => s.projectExtraDirs)
   const claudeProjectAdditionalDirs = useActiveSession((s) => s.projectAdditionalDirs)
   const claudeProjectLocalDirs = useActiveSession((s) => s.projectLocalDirs)
   const claudeUserAdditionalDirs = useActiveSession((s) => s.userAdditionalDirs)
@@ -97,6 +98,11 @@ export function DirManagerPanel({ isCoding }: DirManagerPanelProps) {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2 space-y-3">
+        {projectExtraDirs.length > 0 && (
+          // Read-only mirror: these are owned by the project, not by a harness
+          // config file, so they are edited from Edit Project instead.
+          <DirSection label="Workspace" dirs={projectExtraDirs} scope="project" readOnly />
+        )}
         {userAdditionalDirs.length > 0 && (
           <DirSection label="User" dirs={userAdditionalDirs} scope="project" readOnly />
         )}

@@ -13,7 +13,9 @@ import { listWorktreePaths } from './session/session-repo'
  */
 export function getMediaReadableRoots(): string[] {
   return getReadableAssetRoots([
-    ...getRecentFolders().map((f) => f.path),
+    // Workspace folders too: a generated image living under one is otherwise
+    // 403'd by both the media server and the local-file protocol.
+    ...getRecentFolders().flatMap((f) => [f.path, ...(f.extraDirs ?? [])]),
     ...listWorktreePaths(),
     mediaGenRoot(),
   ])

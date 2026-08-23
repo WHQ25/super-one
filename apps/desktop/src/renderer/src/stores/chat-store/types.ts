@@ -294,6 +294,12 @@ export interface ProjectState {
   _codexSkillsLoading: boolean
   _cursorSlashItems: SlashCommandInfo[]
   _cursorSlashItemsLoading: boolean
+  /**
+   * SuperOne-owned workspace folders for the project (Edit Project).
+   * Harness-neutral, unlike every other dir field here — do not add a
+   * codex/claude variant.
+   */
+  projectExtraDirs: string[]
   projectAdditionalDirs: string[]
   userAdditionalDirs: string[]
   projectSharedDirs: string[]
@@ -483,6 +489,8 @@ export interface ChatStore {
   clearUserSelections: (target?: SessionWriteTarget) => void
 
   refreshProjectAdditionalDirs: (harness: Extract<ChatProvider, 'claude' | 'codex'>, target?: SessionWriteTarget) => Promise<void>
+  /** Hydrate `projectExtraDirs` from the host's project catalog (local or remote). */
+  refreshProjectExtraDirs: (projectPath?: string) => Promise<void>
   addDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget, harness?: Extract<ChatProvider, 'claude' | 'codex'>) => void
   removeDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget, harness?: Extract<ChatProvider, 'claude' | 'codex'>) => void
   setShowDirManager: (show: boolean) => void

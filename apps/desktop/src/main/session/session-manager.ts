@@ -63,6 +63,29 @@ export interface SessionManagerPersistence {
   getActiveProvider?: (harnessId: HarnessId, apiProviderId: string | null) => RemoteActiveProvider | null
   getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   onBeforeInterrupt?: (sessionId: string) => void
+  /**
+   * Project-level workspace folders (Edit Project).
+   *
+   * Injected rather than imported so the manager stays hermetic in tests, and
+   * read here because automations, mobile-initiated and remote-control turns
+   * reach `createSession` with no renderer to compose the directory set.
+   */
+  getProjectExtraDirs?: (projectPath: string) => string[]
+}
+
+/**
+ * Seed a session with the project's workspace folders.
+ *
+ * Additive on purpose: the renderer's per-send set is a superset, so the diff
+ * in `Session.send` sees no change on the first send. Removals still propagate,
+ * because the renderer then sends the reduced set.
+ */
+function mergeProjectExtraDirs(
+  projectExtraDirs: string[] | undefined,
+  requested: string[] | undefined,
+): string[] | undefined {
+  if (!projectExtraDirs?.length) return requested
+  return [...new Set([...projectExtraDirs, ...(requested ?? [])])]
 }
 
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
@@ -218,7 +241,10 @@ export class SessionManagerImpl implements SessionManagerContract {
       sandboxInfo,
       effort: selectedEffort,
       model: selectedModel,
-      additionalDirectories: opts.additionalDirectories,
+      additionalDirectories: mergeProjectExtraDirs(
+        this.persistence.getProjectExtraDirs?.(opts.projectPath),
+        opts.additionalDirectories,
+      ),
       gitBranch: opts.gitBranch ?? null,
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,

@@ -140,6 +140,39 @@ describe('mergeProjectAndSessionDirs', () => {
     }
     expect(mergeProjectAndSessionDirs(proj, sess)).toEqual(['/codex-user', '/codex-project', '/session'])
   })
+
+  it('puts project workspace folders first, ahead of every harness-scoped source', () => {
+    const proj = {
+      ...createDefaultProjectState(),
+      projectExtraDirs: ['/workspace'],
+      userAdditionalDirs: ['/user'],
+      projectAdditionalDirs: ['/config'],
+    }
+    const sess = { ...createDefaultPerSessionState(), additionalDirs: ['/session'] }
+    expect(mergeProjectAndSessionDirs(proj, sess)).toEqual([
+      '/workspace', '/user', '/config', '/session',
+    ])
+  })
+
+  it('keeps the same workspace folders when the session switches from claude to codex', () => {
+    const proj = {
+      ...createDefaultProjectState(),
+      projectExtraDirs: ['/workspace'],
+      projectAdditionalDirs: ['/claude-only'],
+      codexProjectAdditionalDirs: ['/codex-only'],
+    }
+    const claude = { ...createDefaultPerSessionState() }
+    const codex = { ...createDefaultPerSessionState(), preferredProvider: 'codex' as const }
+
+    expect(mergeProjectAndSessionDirs(proj, claude)).toContain('/workspace')
+    expect(mergeProjectAndSessionDirs(proj, codex)).toContain('/workspace')
+  })
+
+  it('does not list a workspace folder twice when it is also a session dir', () => {
+    const proj = { ...createDefaultProjectState(), projectExtraDirs: ['/shared'] }
+    const sess = { ...createDefaultPerSessionState(), additionalDirs: ['/shared'] }
+    expect(mergeProjectAndSessionDirs(proj, sess)).toEqual(['/shared'])
+  })
 })
 
 describe('triggerPrewarm', () => {

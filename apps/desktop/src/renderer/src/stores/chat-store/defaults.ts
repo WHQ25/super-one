@@ -141,6 +141,7 @@ export function createDefaultProjectState(): ProjectState {
     _codexSkillsLoading: false,
     _cursorSlashItems: [],
     _cursorSlashItemsLoading: false,
+    projectExtraDirs: [],
     projectAdditionalDirs: [],
     userAdditionalDirs: [],
     projectSharedDirs: [],

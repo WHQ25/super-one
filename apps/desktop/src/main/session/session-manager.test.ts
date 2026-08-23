@@ -295,6 +295,47 @@ describe('SessionManager', () => {
       expect(() => mgr.createSession({ projectPath: '/p', providerId: 'missing' })).toThrow(/not found/)
     })
 
+    describe('project workspace folders', () => {
+      const withWorkspaceDirs = (dirs: Record<string, string[]>) =>
+        new SessionManagerImpl({ getProjectExtraDirs: (projectPath) => dirs[projectPath] ?? [] })
+
+      it('seeds a session created without a renderer — automations, mobile, remote control', () => {
+        const scoped = withWorkspaceDirs({ '/proj': ['/shared-lib'] })
+        const session = scoped.createSession({ projectPath: '/proj', providerId: 'claude-base' })
+        expect(session.getAdditionalDirectoriesSnapshot()).toEqual(['/shared-lib'])
+      })
+
+      it('unions with dirs the caller supplied instead of replacing them', () => {
+        const scoped = withWorkspaceDirs({ '/proj': ['/shared-lib'] })
+        const session = scoped.createSession({
+          projectPath: '/proj',
+          providerId: 'claude-base',
+          additionalDirectories: ['/session-dir'],
+        })
+        expect(session.getAdditionalDirectoriesSnapshot()).toEqual(['/shared-lib', '/session-dir'])
+      })
+
+      it('does not list a folder twice when the caller already sent it', () => {
+        const scoped = withWorkspaceDirs({ '/proj': ['/shared-lib'] })
+        const session = scoped.createSession({
+          projectPath: '/proj',
+          providerId: 'claude-base',
+          additionalDirectories: ['/shared-lib'],
+        })
+        expect(session.getAdditionalDirectoriesSnapshot()).toEqual(['/shared-lib'])
+      })
+
+      it('leaves the directory set untouched for a project with no workspace folders', () => {
+        const scoped = withWorkspaceDirs({})
+        const session = scoped.createSession({
+          projectPath: '/proj',
+          providerId: 'claude-base',
+          additionalDirectories: ['/session-dir'],
+        })
+        expect(session.getAdditionalDirectoriesSnapshot()).toEqual(['/session-dir'])
+      })
+    })
+
     it('each call creates an independent Session and Backend', () => {
       const a = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       const b = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })

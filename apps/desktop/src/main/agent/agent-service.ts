@@ -19,7 +19,7 @@ import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
-import { getRecentFolders, addRecentFolder } from '../recent-folders'
+import { getRecentFolders, addRecentFolder, getProjectExtraDirs } from '../recent-folders'
 import { readdir, mkdir } from 'fs/promises'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
@@ -413,7 +413,10 @@ export class AgentService {
       ? readCodexScopedAdditionalDirs(projectPath)
       : readScopedAdditionalDirs(projectPath)
     const sessionDirs = targetSession?.getAdditionalDirectoriesSnapshot() ?? []
-    const dedup = Array.from(new Set([...scoped.user, ...scoped.projectShared, ...scoped.projectLocal, ...sessionDirs]))
+    // Harness-neutral, so it is NOT folded into `additionalDirsScoped` (which
+    // describes what was read out of the harness's own config files).
+    const workspaceDirs = getProjectExtraDirs(projectPath)
+    const dedup = Array.from(new Set([...workspaceDirs, ...scoped.user, ...scoped.projectShared, ...scoped.projectLocal, ...sessionDirs]))
     const event: AgentEvent = {
       type: 'additional_dirs_changed',
       provider: resolvedProvider,
@@ -422,6 +425,7 @@ export class AgentService {
       additionalDirectories: dedup,
       additionalDirsScoped: scoped,
       sessionAdditionalDirs: sessionDirs,
+      workspaceDirs,
     }
     this.notifyEventSubscribers(event)
     this.broadcastEventToRenderer(event)

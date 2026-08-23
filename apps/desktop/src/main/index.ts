@@ -160,7 +160,7 @@ import {
 import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { getProviderRateLimits } from './agent/provider-usage-service'
-import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
+import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, getProjectExtraDirs, getProjectId, getProjectPathById } from './recent-folders'
 import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
 import { registerHarnessIpcHandlers } from './harness/ipc'
 import { registerIosSimulatorIpc } from './ios-simulator/ipc'
@@ -334,6 +334,7 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
 
 const sessionManager = new SessionManagerImpl({
   resolveProviderConfig: resolveBaseProviderConfig,
+  getProjectExtraDirs,
   onSessionStateChange: (snapshot) => {
     // Do not swallow errors: Session clears dirty ids only after a successful
     // return from this hook. Rethrow so notifyStateChange retains dirty state.
@@ -543,7 +544,13 @@ const mobileShareService = new MobileShareService({
     return {
       deviceId,
       projectPath: session.projectPath,
-      allowedRoots: [session.projectPath, ...session.getAdditionalDirectoriesSnapshot()],
+      allowedRoots: [
+        session.projectPath,
+        // Read from the catalog, not just the session snapshot: before the
+        // first send the snapshot is still empty.
+        ...getProjectExtraDirs(session.projectPath),
+        ...session.getAdditionalDirectoriesSnapshot(),
+      ],
     }
   },
   resolveDeviceName: (deviceId) => remoteControlService.getOnlineDevices().get(deviceId)?.name ?? null,
@@ -568,7 +575,13 @@ const mobileReceiveService = new MobileReceiveService({
       deviceId,
       deviceName: remoteControlService.getOnlineDevices().get(deviceId)?.name,
       projectPath: session.projectPath,
-      allowedRoots: [session.projectPath, ...session.getAdditionalDirectoriesSnapshot()],
+      allowedRoots: [
+        session.projectPath,
+        // Read from the catalog, not just the session snapshot: before the
+        // first send the snapshot is still empty.
+        ...getProjectExtraDirs(session.projectPath),
+        ...session.getAdditionalDirectoriesSnapshot(),
+      ],
     }
   },
   signLanUploadUrl: (savedPath) => remoteControlService.signLanUploadUrl(savedPath, { ttlMs: 60_000 }),
@@ -5038,7 +5051,6 @@ function registerIpcHandlers(): void {
     scheduledSendService.get(sessionId))
 
   ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_LIST, () => scheduledSendService.list())
-
 
   ipcMain.handle(
     AgentIpcChannels.SCHEDULED_SEND_SET,

@@ -1459,6 +1459,7 @@ export const zh: Messages = {
     additionalDirs: {
       label: '附加目录',
       scopes: {
+        workspace: '工作区文件夹',
         user: '用户设置',
         project: '项目设置',
         session: '会话设置',

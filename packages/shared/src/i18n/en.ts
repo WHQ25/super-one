@@ -1362,6 +1362,7 @@ export type Messages = {
     additionalDirs: {
       label: string
       scopes: {
+        workspace: string
         user: string
         project: string
         session: string
@@ -4838,6 +4839,7 @@ export const en: Messages = {
     additionalDirs: {
       label: 'Additional folder',
       scopes: {
+        workspace: 'Workspace Folders',
         user: 'User Settings',
         project: 'Project Settings',
         session: 'Session Settings',

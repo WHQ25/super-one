@@ -6,7 +6,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { shortenPath } from '@/lib/path-utils'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 
-type DirScope = 'user' | 'project' | 'session'
+type DirScope = 'workspace' | 'user' | 'project' | 'session'
 
 function basename(p: string): string {
   const trimmed = p.replace(/[/\\]+$/, '')
@@ -24,6 +24,7 @@ export function ChatInputDirsHint() {
   const userDirs = provider === 'codex' ? codexUserDirs : claudeUserDirs
   const projectDirs = provider === 'codex' ? codexProjectDirs : claudeProjectDirs
   const sessionDirs = useActiveSession((s) => s.additionalDirs)
+  const workspaceDirs = useActiveSession((s) => s.projectExtraDirs)
   const messagesLen = useActiveSession((s) => s.messages.length)
   const dirty = useActiveSession((s) => s.additionalDirsDirty)
   const cwd = useActiveSession((s) => s.cwd)
@@ -33,6 +34,7 @@ export function ChatInputDirsHint() {
 
   const entries: Array<{ dir: string; scope: DirScope }> = []
   const seen = new Set<string>()
+  for (const d of workspaceDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'workspace' }) }
   for (const d of userDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'user' }) }
   for (const d of projectDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'project' }) }
   for (const d of sessionDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'session' }) }

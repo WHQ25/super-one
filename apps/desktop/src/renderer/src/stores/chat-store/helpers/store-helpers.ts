@@ -33,6 +33,9 @@ export function mergeProjectAndSessionDirs(
 ): string[] {
   const configured = getProjectDirsForProvider(project, provider)
   return [...new Set([
+    // First and provider-independent: `configured` swaps with the harness, and
+    // a folder the user attached to the Project should not move when they do.
+    ...project.projectExtraDirs,
     ...configured.user,
     ...configured.project,
     ...session.additionalDirs,

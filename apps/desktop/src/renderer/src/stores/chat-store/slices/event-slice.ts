@@ -211,9 +211,15 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
               },
             }
           : {}
+        // Harness-neutral, so it is written on both branches rather than
+        // mirrored into a codex/claude pair like everything around it.
+        const workspacePatch = event.workspaceDirs
+          ? { projectExtraDirs: [...event.workspaceDirs] }
+          : {}
         return event.provider === 'codex'
           ? {
               ...sessionPatch,
+              ...workspacePatch,
               codexUserAdditionalDirs: [...event.additionalDirsScoped.user],
               codexProjectAdditionalDirs: Array.from(new Set([
                 ...event.additionalDirsScoped.projectShared,
@@ -222,6 +228,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
             }
           : {
               ...sessionPatch,
+              ...workspacePatch,
               userAdditionalDirs: [...event.additionalDirsScoped.user],
               projectSharedDirs: [...event.additionalDirsScoped.projectShared],
               projectLocalDirs: [...event.additionalDirsScoped.projectLocal],

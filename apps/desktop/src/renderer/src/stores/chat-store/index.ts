@@ -1020,6 +1020,24 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     set((s) => ({ mountedSessions: removeMountedSession(s.mountedSessions, projectPath, sessionId) }))
   },
 
+  refreshProjectExtraDirs: async (projectPath) => {
+    const key = projectPath ?? get().activeProject
+    if (!key) return
+    // One code path for local and remote: `listProjects('local')` is served by
+    // the desktop catalog, so no separate read IPC is needed.
+    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+    const remote = parseRemoteProjectKey(key)
+    const connectionId = remote?.connectionId ?? 'local'
+    const hostPath = remote?.path ?? key
+    try {
+      const projects = await window.environment.listProjects(connectionId)
+      const hit = projects.find((p) => p.path === hostPath)
+      set((s) => updateProjectState(s, key, () => ({ projectExtraDirs: [...(hit?.extraDirs ?? [])] })))
+    } catch (err) {
+      console.warn(`[projectExtraDirs] Failed to read project catalog:`, err)
+    }
+  },
+
   refreshProjectAdditionalDirs: async (harness, target) => {
     const projectPath = target?.projectPath ?? get().activeProject
     if (!projectPath) return

@@ -18,7 +18,7 @@ import { ChatStoreSet } from '../helpers/lifecycle'
 import { _getSessionCwd } from '../helpers/persistence'
 import {
   getProject,
-  mergeProjectAndSessionDirs,
+  mergeCallerScopedDirs,
   updateActivePerSession,
   updatePerSession,
 } from '../helpers/store-helpers'
@@ -69,7 +69,7 @@ export async function runCodexCommand(
     userSelections,
     apiProviderId: session.apiProviderId ?? undefined,
     serviceTier: session.selectedCodexServiceTier,
-    additionalDirectories: mergeProjectAndSessionDirs(getProject(get(), activeProject), session, 'codex'),
+    additionalDirectories: mergeCallerScopedDirs(getProject(get(), activeProject), session, 'codex'),
   }
   set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
 

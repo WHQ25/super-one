@@ -656,6 +656,25 @@ describe('Session state machine', () => {
       expect(s.getAdditionalDirectoriesSnapshot()).toEqual([])
     })
 
+    it('revokes a removed folder even after a renderer echoed it back as a session dir', async () => {
+      // The real renderer used to send the whole effective set, which baked the
+      // project's folders into caller scope — removal could then never revoke.
+      let workspace = ['/workspace']
+      const { session: s, backend: b } = makeSession({ getProjectExtraDirs: () => workspace })
+      await settle(s.send({ content: 'first', additionalDirs: ['/session'] }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/workspace', '/session'])
+
+      workspace = []
+      await settle(s.send({ content: 'second' }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/session'])
+    })
+
+    it('reports only the caller half as the session scope, so the renderer cannot echo project folders back', async () => {
+      const { session: s, backend: b } = withWorkspace(['/workspace'])
+      await settle(s.send({ content: 'first', additionalDirs: ['/session'] }), b)
+      expect(s.getCallerScopedDirsSnapshot()).toEqual(['/session'])
+    })
+
     it('picks up a folder added after the session started, from a caller that sends no dirs', async () => {
       // Scheduled sends, automations, mobile and collaboration turns all reach
       // Session.send without an additionalDirs field at all.
@@ -684,6 +703,54 @@ describe('Session state machine', () => {
       await settle(s.send({ content: 'first', additionalDirs: ['/session'] }), b)
       await settle(s.send({ content: 'second' }), b)
       expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/workspace', '/session'])
+    })
+
+    it('promotes a queued send out of the fast path when the roots changed', async () => {
+      // The backend flushes its own queue at turn end without returning here,
+      // so a queued send on the fast path would run the whole turn on stale
+      // roots and only pick up the change one turn later.
+      let workspace: string[] = []
+      const { session: s, backend: b } = makeSession({ getProjectExtraDirs: () => workspace })
+      const first = s.send({ content: 'first', clientMessageId: 'u1' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(b.sendCalls).toHaveLength(1)
+
+      workspace = ['/added-mid-stream']
+      const queued = s.send({ content: 'queued', clientMessageId: 'u2', priority: 'next' })
+      await new Promise((r) => setTimeout(r, 0))
+      // Held on the sendChain rather than handed to the in-flight backend.
+      expect(b.sendCalls).toHaveLength(1)
+
+      b.resolveSend?.()
+      await first
+      await new Promise((r) => setTimeout(r, 0))
+      // Released, and the new root was applied before the turn ran.
+      expect(b.sendCalls).toHaveLength(2)
+      expect(b.setAdditionalDirectoriesCalls.at(-1)).toEqual(['/added-mid-stream'])
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/added-mid-stream'])
+
+      b.resolveSend?.()
+      await queued
+    })
+
+    it('keeps the queued fast path when the roots are unchanged', async () => {
+      const { session: s, backend: b } = withWorkspace(['/workspace'])
+      const first = s.send({ content: 'first', clientMessageId: 'u1' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(b.sendCalls).toHaveLength(1)
+      // The fake keeps one resolver, and the queued send overwrites it.
+      const resolveFirst = b.resolveSend!
+
+      const queued = s.send({ content: 'queued', clientMessageId: 'u2', priority: 'next' })
+      await new Promise((r) => setTimeout(r, 0))
+      // Delivered straight to the live backend — no promotion, no rebuild.
+      expect(b.sendCalls).toHaveLength(2)
+      expect(b.rebuildCalls).toHaveLength(0)
+
+      b.resolveSend?.()
+      await queued
+      resolveFirst()
+      await first
     })
 
     it('leaves a project without workspace folders exactly as before', async () => {

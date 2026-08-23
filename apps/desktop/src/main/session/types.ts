@@ -418,6 +418,8 @@ export interface Session {
   updateProviderConfig(nextConfig: unknown): void
   markNeedsRebuild(): void
   getAdditionalDirectoriesSnapshot(): string[]
+  /** Caller-owned half only — see `Session.getCallerScopedDirsSnapshot`. */
+  getCallerScopedDirsSnapshot(): string[]
   switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void>
   isStreaming(): boolean
   truncateMessagesAt(checkpointId: string): void

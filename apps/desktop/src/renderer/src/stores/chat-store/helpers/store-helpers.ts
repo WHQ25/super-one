@@ -26,19 +26,41 @@ export function getProjectDirsForProvider(
     : { user: project.userAdditionalDirs, project: project.projectAdditionalDirs }
 }
 
-export function mergeProjectAndSessionDirs(
+/**
+ * The half of the directory set this client owns: harness config scopes plus
+ * the session's own `/add-dir` entries.
+ *
+ * Deliberately excludes the project's workspace folders. `Session.send` unions
+ * those in on every turn, so echoing them here would bake them into the
+ * session's caller scope — and a later removal from Edit Project could then
+ * never revoke access, because the session would keep resending them.
+ */
+export function mergeCallerScopedDirs(
   project: ProjectState,
   session: PerSessionState,
   provider: 'claude' | 'codex' = resolveProvider(session) === 'codex' ? 'codex' : 'claude',
 ): string[] {
   const configured = getProjectDirsForProvider(project, provider)
   return [...new Set([
-    // First and provider-independent: `configured` swaps with the harness, and
-    // a folder the user attached to the Project should not move when they do.
-    ...project.projectExtraDirs,
     ...configured.user,
     ...configured.project,
     ...session.additionalDirs,
+  ])]
+}
+
+/**
+ * The full effective set, for callers that do NOT pass through `Session.send`
+ * — currently only the prewarm hint, whose warmup key must match the set the
+ * real turn will end up with.
+ */
+export function mergeProjectAndSessionDirs(
+  project: ProjectState,
+  session: PerSessionState,
+  provider: 'claude' | 'codex' = resolveProvider(session) === 'codex' ? 'codex' : 'claude',
+): string[] {
+  return [...new Set([
+    ...project.projectExtraDirs,
+    ...mergeCallerScopedDirs(project, session, provider),
   ])]
 }
 

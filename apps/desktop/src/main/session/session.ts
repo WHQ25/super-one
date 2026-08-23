@@ -590,23 +590,23 @@ export class Session implements SessionContract {
     const isQueued = (request.priority === 'next' || request.priority === 'later') && this.isStreaming()
     if (isQueued) {
       this.assertNotDisposed()
+      // Stage the caller half first so the check below — and the normal path,
+      // if we fall through to it — both see what this request actually asks for.
+      if (request.additionalDirs !== undefined) {
+        this.callerScopedDirs = [...request.additionalDirs]
+      }
+      // A queued send rides the in-flight backend, whose roots are fixed for the
+      // turn, and the backend flushes its own queue at turn end without coming
+      // back through here. Flagging a rebuild would therefore land one turn too
+      // late, so a changed root set takes the existing promote-to-normal path.
+      const queuedDirsChanged = !sameStringArray(this.resolveEffectiveDirs(), this.additionalDirectories)
       if (!this.backendStarted) {
         log.warn('[Session] queued send before backend start sid=%s — promoting to normal send', this.id)
       } else if (this._needsRebuild) {
         log.info('[Session] queued send promoted to normal send sid=%s (pending rebuild)', this.id)
+      } else if (queuedDirsChanged) {
+        log.info('[Session] queued send promoted to normal send sid=%s (workspace roots changed)', this.id)
       } else {
-        // A queued send rides the in-flight backend, whose roots are fixed for
-        // the turn. Record the intent so the next turn rebuilds against it,
-        // matching what `session.set_additional_dirs` does while streaming —
-        // otherwise the change is dropped and never comes back.
-        if (request.additionalDirs !== undefined) {
-          this.callerScopedDirs = [...request.additionalDirs]
-        }
-        const queuedDirs = this.resolveEffectiveDirs()
-        if (!sameStringArray(queuedDirs, this.additionalDirectories)) {
-          this.additionalDirectories = queuedDirs
-          this._needsRebuild = true
-        }
         if (request.clientMessageId) {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin })
         }
@@ -1442,6 +1442,18 @@ export class Session implements SessionContract {
    */
   private resolveEffectiveDirs(): string[] {
     return withProjectExtraDirs(this.getProjectExtraDirs?.(this.projectPath), this.callerScopedDirs)
+  }
+
+  /**
+   * The caller-owned half only.
+   *
+   * `additional_dirs_changed` reports this as `sessionAdditionalDirs`, and the
+   * renderer writes it straight back into its session scope — so reporting the
+   * effective set here would echo the project's folders into caller scope and
+   * defeat the split.
+   */
+  getCallerScopedDirsSnapshot(): string[] {
+    return [...this.callerScopedDirs]
   }
 
   getAdditionalDirectoriesSnapshot(): string[] {

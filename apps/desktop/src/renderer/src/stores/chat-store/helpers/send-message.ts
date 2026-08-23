@@ -22,7 +22,7 @@ import {
   commitPerSession,
   getProject,
   getScopedPerSession,
-  mergeProjectAndSessionDirs,
+  mergeCallerScopedDirs,
 } from './store-helpers'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
@@ -534,7 +534,7 @@ export async function sendMessageImpl(
     const permissionModeForTurn = writeSess.permissionMode || undefined
     const projectState = getProject(get(), projectPath)
     const liveSession = getScopedPerSession(get(), writeTarget ?? { projectPath, sessionId: sid })
-    const additionalDirs = mergeProjectAndSessionDirs(projectState, liveSession)
+    const additionalDirs = mergeCallerScopedDirs(projectState, liveSession)
     // Desktop disabled-skills filter → Claude SDK skills allow-list (node discovers rest).
     const storeDisabled = get().disabledSkills ?? []
     const disabledSkillsForTurn =
@@ -1255,7 +1255,7 @@ export async function sendMessageImpl(
   }
 
   const liveSession = getScopedPerSession(get(), writeTarget)
-  const mergedDirs = mergeProjectAndSessionDirs(project, liveSession)
+  const mergedDirs = mergeCallerScopedDirs(project, liveSession)
 
   try {
     await window.agent.sendMessage(projectPath, {

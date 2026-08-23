@@ -412,7 +412,7 @@ export class AgentService {
     const scoped = resolvedProvider === 'codex'
       ? readCodexScopedAdditionalDirs(projectPath)
       : readScopedAdditionalDirs(projectPath)
-    const sessionDirs = targetSession?.getAdditionalDirectoriesSnapshot() ?? []
+    const sessionDirs = targetSession?.getCallerScopedDirsSnapshot() ?? []
     // Harness-neutral, so it is NOT folded into `additionalDirsScoped` (which
     // describes what was read out of the harness's own config files).
     const workspaceDirs = getProjectExtraDirs(projectPath)

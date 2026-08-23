@@ -78,6 +78,12 @@ export function setAcpRuntimeFactory(factory: AcpRuntimeFactory | null): void {
   runtimeFactory = factory ?? createAcpRuntime
 }
 
+function sameDirSet(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  const left = [...new Set(a ?? [])].sort()
+  const right = [...new Set(b ?? [])].sort()
+  return left.length === right.length && left.every((dir, i) => dir === right[i])
+}
+
 export class AcpBackend implements SessionBackend {
   readonly kind: HarnessId = 'acp'
 
@@ -194,6 +200,11 @@ export class AcpBackend implements SessionBackend {
     const nextCwd = this.effectiveCwd(opts)
     if (this.runtimeCwd && this.runtimeCwd !== nextCwd) return true
     if (this.startOpts && this.effectiveCwd(this.startOpts) !== nextCwd) return true
+    // ACP fixes its roots at `session/new`, so a changed directory set only
+    // takes effect across a restart — same reasoning as cwd above.
+    if (this.startOpts && !sameDirSet(this.startOpts.additionalDirectories, opts.additionalDirectories)) {
+      return true
+    }
     return false
   }
 
@@ -569,6 +580,10 @@ export class AcpBackend implements SessionBackend {
         signal: abortController.signal,
         launch,
         superoneSessionId: this.startOpts?.sessionId,
+        // The pipeline (fsRoots → session/new additionalDirectories, gated on
+        // the agent's own capability) has always existed here; nothing ever
+        // supplied it, so BackendStartOptions.additionalDirectories was dropped.
+        additionalRoots: this.startOpts?.additionalDirectories,
         permissionMode: this.startOpts?.permissionMode,
         reasoningEffort:
           asGrokReasoningEffort(this.grokReasoningEffort)

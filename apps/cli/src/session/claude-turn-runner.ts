@@ -185,6 +185,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       cwd: string
       /** Sorted disk MCP names at open time — rebuild when mcp.save changes allowlist. */
       mcpDiskKey: string
+      /** Sorted directory set at open time — ACP-style: only changes on restart. */
+      additionalDirsKey: string
       busyCount: number
       lastActivityAt: number
     }
@@ -200,6 +202,14 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
 
   const mcpDiskKeyOf = (diskNames: string[]): string =>
     [...diskNames].sort().join('\0')
+
+  /**
+   * `ClaudeLiveSession` fixes its directory set at open. Without this in the
+   * restart predicate, changing a project's workspace folders mid-session is
+   * silently ignored on a node — the edit reports success and does nothing.
+   */
+  const additionalDirsKeyOf = (dirs: readonly string[] | undefined): string =>
+    [...new Set(dirs ?? [])].sort().join('\0')
 
   const runner: TurnRunner = async (input) => {
     const harnessId = input.session.harnessId || 'claude'
@@ -275,10 +285,17 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       homeDir: opts.homeDir,
     })
     const nextMcpDiskKey = mcpDiskKeyOf(mergedProbe.diskNames)
+    const nextAdditionalDirsKey = additionalDirsKeyOf(input.additionalDirectories?.filter(Boolean))
 
     let entry = lives.get(sessionKey)
-    // Restart live session if cwd changed (worktree switch) or MCP allowlist changed.
-    if (entry && (entry.cwd !== cwd || entry.mcpDiskKey !== nextMcpDiskKey)) {
+    // Restart live session if cwd changed (worktree switch), the MCP allowlist
+    // changed, or the directory set changed.
+    if (
+      entry
+      && (entry.cwd !== cwd
+        || entry.mcpDiskKey !== nextMcpDiskKey
+        || entry.additionalDirsKey !== nextAdditionalDirsKey)
+    ) {
       await entry.live.dispose().catch(() => undefined)
       await entry.hostActionDispose?.().catch(() => undefined)
       lives.delete(sessionKey)
@@ -331,6 +348,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         hostActionDispose: hostActionMcp ? () => hostActionMcp.dispose() : null,
         cwd,
         mcpDiskKey: mcpDiskKeyOf(merged.diskNames),
+        additionalDirsKey: additionalDirsKeyOf(input.additionalDirectories?.filter(Boolean)),
         busyCount: 0,
         lastActivityAt: Date.now(),
       }

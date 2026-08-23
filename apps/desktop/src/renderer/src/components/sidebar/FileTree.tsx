@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { RefreshCw, Search } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
+import { projectDisplayName } from '@/lib/project-display-name'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
@@ -88,7 +89,9 @@ export function FileTree() {
   const revealedPath = useFileTreeStore((s) => s.revealedPath)
   const clearRevealed = useFileTreeStore((s) => s.clearRevealed)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
-  const folderName = currentFolder?.split('/').pop() ?? 'Project'
+  // Registry name so a renamed project reads the same here as in the sidebar.
+  const recentFolders = useAppStore((s) => s.recentFolders)
+  const folderName = projectDisplayName(recentFolders, currentFolder) || 'Project'
   // Remote projects have no file watcher (fs.watch cannot follow a `remote:` key),
   // so the tree only refreshes when a turn ends — offer a manual refresh there.
   const isRemote = !!fileRoot && parseRemoteProjectKey(fileRoot) !== null

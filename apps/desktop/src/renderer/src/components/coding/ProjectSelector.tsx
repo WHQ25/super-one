@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { RecentFolder } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
+import { projectDisplayName } from '@/lib/project-display-name'
 import { useHostProjects } from '@/hooks/use-host-projects'
 import { displayHostPath } from '@/lib/remote-project-key'
 import { Check, ChevronDown, Folder, FolderOpen, Plus, RotateCw } from 'lucide-react'
@@ -46,9 +47,13 @@ export function ProjectSelector({
   const selectProject = useAppStore((s) => s.selectProject)
   const { connectionId, isLocal, projects, loading, error, refresh } = useHostProjects()
 
+  // Read the registry name, not basename(path): the list items below already
+  // render `folder.name`, so recomputing here made the trigger disagree with
+  // the list for any renamed project.
   const projectName =
-    (currentFolder ? displayHostPath(currentFolder) : '').split(/[\\/]/).filter(Boolean).pop() ??
-    'No Project'
+    projectDisplayName(projects, currentFolder)
+    || (currentFolder ? displayHostPath(currentFolder) : '').split(/[\\/]/).filter(Boolean).pop()
+    || 'No Project'
 
   const openFolder = (folder: RecentFolder) => {
     void selectProject(folder.path, {

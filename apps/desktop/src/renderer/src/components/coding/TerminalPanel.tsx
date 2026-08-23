@@ -5,8 +5,8 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { setCloseActiveTerminal, setCreateTerminal } from './terminal-panel-api'
-import { getTerminalFontFamily, getTerminalFontSize, getTerminalTheme, onTerminalThemeChange } from './terminal-theme'
-import { applyTerminalEvent, createBaseXterm, disposeTermInstance, SEARCH_DECORATIONS } from './term-instance'
+import { onTerminalThemeChange } from './terminal-theme'
+import { applyTerminalAppearance, applyTerminalEvent, createBaseXterm, disposeTermInstance, SEARCH_DECORATIONS } from './term-instance'
 import { TerminalFindBar } from './TerminalFindBar'
 import { createTerminalKeyEventHandler } from './terminal-keybindings'
 import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
@@ -84,7 +84,6 @@ export function TerminalPanel() {
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const [find, setFind] = useState<string | null>(null)
   const [findHits, setFindHits] = useState({ idx: -1, count: 0 })
-  const themeRef = useRef(getTerminalTheme())
   const hostRef = useRef<HTMLDivElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
   const openFindRef = useRef<() => void>(() => {})
@@ -166,22 +165,8 @@ export function TerminalPanel() {
 
   useEffect(() => {
     return onTerminalThemeChange(() => {
-      const theme = getTerminalTheme()
-      const fontSize = getTerminalFontSize()
-      const fontFamily = getTerminalFontFamily()
-      themeRef.current = theme
       for (const [terminalId, inst] of instances.entries()) {
-        if (!inst.xterm.options.allowTransparency) inst.xterm.options.allowTransparency = true
-        inst.xterm.options.theme = theme
-        const metricsChanged =
-          inst.xterm.options.fontSize !== fontSize || inst.xterm.options.fontFamily !== fontFamily
-        if (inst.xterm.options.fontSize !== fontSize) inst.xterm.options.fontSize = fontSize
-        if (inst.xterm.options.fontFamily !== fontFamily) inst.xterm.options.fontFamily = fontFamily
-        inst.xterm.clearTextureAtlas()
-        if (metricsChanged && inst.xterm.element?.isConnected) {
-          inst.fit.fit()
-          void window.terminal.resize(terminalId, inst.xterm.cols, inst.xterm.rows)
-        }
+        applyTerminalAppearance(terminalId, inst)
       }
     })
   }, [instances])

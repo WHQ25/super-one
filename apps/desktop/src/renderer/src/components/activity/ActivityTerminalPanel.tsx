@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { useChatStore } from '@/stores/chat'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
-import { getTerminalFontFamily, getTerminalFontSize, getTerminalTheme, onTerminalThemeChange } from '@/components/coding/terminal-theme'
-import { SEARCH_DECORATIONS } from '@/components/coding/term-instance'
+import { onTerminalThemeChange } from '@/components/coding/terminal-theme'
+import { applyTerminalAppearance, SEARCH_DECORATIONS } from '@/components/coding/term-instance'
 import { TerminalFindBar } from '@/components/coding/TerminalFindBar'
 import { createTerminalKeyEventHandler } from '@/components/coding/terminal-keybindings'
 import { ensureActivityTermInstance, feedActivityTerminal, getActivityTermInstance } from './activity-terminal'
@@ -64,20 +64,7 @@ export function ActivityTerminalPanel({ terminalId, api }: Props) {
   useEffect(() => {
     return onTerminalThemeChange(() => {
       const inst = getActivityTermInstance(terminalId)
-      if (!inst) return
-      const theme = getTerminalTheme()
-      const fontSize = getTerminalFontSize()
-      const fontFamily = getTerminalFontFamily()
-      inst.xterm.options.theme = theme
-      const metricsChanged =
-        inst.xterm.options.fontSize !== fontSize || inst.xterm.options.fontFamily !== fontFamily
-      inst.xterm.options.fontSize = fontSize
-      inst.xterm.options.fontFamily = fontFamily
-      inst.xterm.clearTextureAtlas()
-      if (metricsChanged && inst.xterm.element?.isConnected) {
-        inst.fit.fit()
-        void window.terminal.resize(terminalId, inst.xterm.cols, inst.xterm.rows)
-      }
+      if (inst) applyTerminalAppearance(terminalId, inst)
     })
   }, [terminalId])
 

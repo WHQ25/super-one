@@ -85,8 +85,19 @@ export function getTerminalFontFamily(): string {
   return family ? `"${family}", ${DEFAULT_TERMINAL_FONT_FAMILY}` : DEFAULT_TERMINAL_FONT_FAMILY
 }
 
+/**
+ * Watch the appearance inputs on <html> and re-run `cb` when any of them change.
+ *
+ * `cb` also fires ONCE on subscribe. That is not a convenience — it is the fix
+ * for stale terminal colours: xterm instances outlive their panels (they live in
+ * a registry so scrollback survives), and the light/dark class typically flips
+ * from the Settings view, which unmounts the whole coding workspace. With no
+ * observer attached at that moment the change is simply missed, so the only
+ * chance to catch up is the next subscribe.
+ */
 export function onTerminalThemeChange(cb: () => void): () => void {
   let raf = 0
+  cb()
   const observer = new MutationObserver(() => {
     cancelAnimationFrame(raf)
     raf = requestAnimationFrame(cb)

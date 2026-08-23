@@ -40,6 +40,33 @@ export function createBaseXterm(): { xterm: XTerm; fit: FitAddon; search: Search
   return { xterm, fit, search }
 }
 
+/**
+ * Push the live appearance (theme + font metrics) onto one instance.
+ *
+ * Instances outlive the panels that render them — they sit in a module/zustand
+ * registry so a closed or navigated-away panel keeps its scrollback. That makes
+ * "apply on change" insufficient: the light/dark class flips while the Settings
+ * view has the whole coding workspace unmounted, so no observer is listening.
+ * The subscribe-time call in `onTerminalThemeChange` re-syncs on every remount.
+ */
+export function applyTerminalAppearance(terminalId: string, inst: TermInstance): void {
+  const fontSize = getTerminalFontSize()
+  const fontFamily = getTerminalFontFamily()
+  const metricsChanged =
+    inst.xterm.options.fontSize !== fontSize || inst.xterm.options.fontFamily !== fontFamily
+  if (!inst.xterm.options.allowTransparency) inst.xterm.options.allowTransparency = true
+  inst.xterm.options.theme = getTerminalTheme()
+  if (metricsChanged) {
+    inst.xterm.options.fontSize = fontSize
+    inst.xterm.options.fontFamily = fontFamily
+  }
+  inst.xterm.clearTextureAtlas()
+  if (metricsChanged && inst.xterm.element?.isConnected) {
+    inst.fit.fit()
+    void window.terminal.resize(terminalId, inst.xterm.cols, inst.xterm.rows)
+  }
+}
+
 export function applyTerminalEvent(inst: TermInstance, event: TerminalEvent): void {
   if (event.type === 'terminal_output') {
     if (event.toSeq <= inst.lastSeq) return

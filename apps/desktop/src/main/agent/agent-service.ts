@@ -1771,7 +1771,8 @@ export class AgentService {
     return mgr.createSession(createOpts)
   }
 
-  private readDefaultSessionPrefs(): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
+  /** Public so the scheduled-send service can revive a session with the same defaults. */
+  readDefaultSessionPrefs(): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
     const { agentPreference } = readAppSettings()
     const storedSandboxMode = agentPreference.claude.defaultSandboxMode || undefined
     return {

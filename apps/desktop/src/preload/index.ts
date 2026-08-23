@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
-import type { DshPluginInstallSource } from '@superone/shared/agent-types'
+import type { DshPluginInstallSource, ScheduledSend, ScheduledSendPatch } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
@@ -2095,6 +2095,24 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE_OLDER, folderPath, cutoffDate),
   pinSession: (sessionId: string, pinned: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_PIN, sessionId, pinned),
+  getScheduledSend: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_GET, sessionId),
+  setScheduledSend: (sessionId: string, patch: ScheduledSendPatch) =>
+    ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_SET, sessionId, patch),
+  clearScheduledSend: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_CLEAR, sessionId),
+  onScheduledSendChanged: (
+    callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void,
+  ) => {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean },
+    ) => callback(event)
+    ipcRenderer.on(AgentIpcChannels.SCHEDULED_SEND_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.SCHEDULED_SEND_CHANGED, handler)
+    }
+  },
   hideSession: (sessionId: string, hidden: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_HIDE, sessionId, hidden),
   listPinnedSessions: () =>

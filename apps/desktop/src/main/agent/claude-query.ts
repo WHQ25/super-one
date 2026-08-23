@@ -289,6 +289,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   // field is cleared by the trailing idle and cannot answer this.
   const retryDelaysMs: number[] = []
   let retryMaxRetries: number | undefined
+  // Latest `rate_limit_event.resetsAt` (unix seconds). The SDK reports the reset
+  // time on its own message, never on the failing result, so it is stashed here
+  // and copied onto a rate-limit failure — that is what lets the UI say when the
+  // quota returns, and lets auto-resume know when to fire.
+  let lastRateLimitResetsAt: number | undefined
   let pendingSlashOutput = ''
   // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
@@ -1038,6 +1043,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               ...(retryDelaysMs.length > 0
                 ? { retries: { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) } }
                 : {}),
+              ...(lastRateLimitResetsAt === undefined ? {} : { resetsAt: lastRateLimitResetsAt }),
             }
             metadata.errorInfo = errorInfo
             if (isResumeDropsTurnRefusal(rawError)) {
@@ -1091,6 +1097,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const rl = (msg as any).rate_limit_info
           if (rl) {
+            if (typeof rl.resetsAt === 'number') lastRateLimitResetsAt = rl.resetsAt
             emit({
               type: 'rate_limit',
               status: rl.status,
@@ -1135,6 +1142,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         ...(retryDelaysMs.length > 0
           ? { retries: { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) } }
           : {}),
+        ...(lastRateLimitResetsAt === undefined ? {} : { resetsAt: lastRateLimitResetsAt }),
       },
     })
     emit({ type: 'status_change', status: 'error' })

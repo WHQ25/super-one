@@ -1,4 +1,5 @@
 import type { AgentErrorInfo } from '@superone/shared/agent-types'
+import { RATE_LIMIT_TERMINAL_REASONS } from '@superone/shared/agent-error'
 
 /** i18n leaf under `chat.error.title` / `chat.error.hint`. */
 export type AgentErrorKind =
@@ -31,8 +32,8 @@ const BY_TERMINAL_REASON: Record<string, AgentErrorKind> = {
   budget_exhausted: 'budgetExhausted',
   malformed_tool_use_exhausted: 'malformedToolUse',
   model_error: 'serverError',
-  rapid_refill_breaker: 'rateLimit',
-  blocking_limit: 'rateLimit',
+  // Shared with the auto-resume scheduler so both agree on what a rate limit is.
+  ...Object.fromEntries(RATE_LIMIT_TERMINAL_REASONS.map((reason) => [reason, 'rateLimit' as const])),
 }
 
 /** SDK `SDKAssistantMessageError` codes. */

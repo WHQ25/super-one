@@ -5,7 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectActiveCursorSlashItems, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { ArrowUp, Loader2, Paperclip, X } from 'lucide-react'
+import { Loader2, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
@@ -50,6 +50,15 @@ import { WorkflowsSlashPopup } from './WorkflowsSlashPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { SlashCommandContent } from './SlashCommandContent'
 import { StopButton, harnessUsesSoftCancel } from './StopButton'
+import { ScheduledSendButton } from './ScheduledSendButton'
+
+/**
+ * Beat at which an armed schedule re-reads the composer. Long enough that a
+ * burst of typing is one write, short enough that the queued text is never
+ * meaningfully behind what is on screen.
+ */
+const SCHEDULED_SEND_SYNC_MS = 400
+import { useScheduledSend } from '@/hooks/useScheduledSend'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { plainTextToTiptapDoc, plainTextToTiptapParagraphContent } from './chat-input/plainTextToTiptapDoc'
@@ -251,7 +260,26 @@ export function ChatInput() {
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
     const codexDirsPendingNextTurn = activeProviderForResources === 'codex' && isStreaming && additionalDirsDirty
+    const {
+      scheduled, loading: scheduledLoading, deliveredNonce, schedule: scheduleSend,
+      setMessage: setScheduledMessage, setArmed: setArmedScheduled, setSendAt, clear: clearScheduled,
+    } = useScheduledSend(displayedSessionId)
+    // An *armed* schedule blocks an immediate send — cancel it first. Sending
+    // under one would empty the composer the schedule mirrors, so the same text
+    // would go out twice. An unanswered offer blocks nothing: it is a question,
+    // and gating on the row's mere existence would strand the user, since
+    // cancelling a rate-limit offer leaves the row in place unarmed.
+    // Any queued send blocks an immediate one, answered or not. Under a usage
+    // limit an immediate send only bounces off the same wall, and under an armed
+    // schedule it would empty the composer that schedule mirrors, sending the
+    // same text twice. The way out of an offer is to switch provider — a
+    // different quota retires it — not to send past it.
+    //
+    // `scheduledLoading` counts too: until the read for this session lands, a
+    // null schedule means "not known yet", and sending into that window would go
+    // out immediately *and* again when the armed row arrives and comes due.
     const canSend = hasContent && !isRemoteLocked && !codexDirsPendingNextTurn
+      && !scheduledLoading && !scheduled
     const showAgentMentions = activeProviderForResources === 'claude'
 
     useEffect(() => {
@@ -764,7 +792,13 @@ export function ChatInput() {
       }
     }, [])
 
-    const serializeAndClear = useCallback(() => {
+    /**
+     * Read the composer without touching it.
+     *
+     * Split out from `serializeAndClear` because a scheduled send mirrors the
+     * draft continuously — it has to be able to look without consuming.
+     */
+    const serializeDraft = useCallback(() => {
       const ed = editorRef.current
       const segments: InputSegment[] = []
       const collectedMentions: MentionNodeAttrs[] = []
@@ -820,15 +854,25 @@ export function ChatInput() {
         .flatMap((s) => ('attachmentId' in s ? [s.attachmentId] : []))
         .map((id) => attachmentsRef.current.find((a) => a.id === id))
         .filter((a): a is ImageAttachment => !!a)
+      return { segments, mentions: collectedMentions, attachments: orderedAttachments }
+    }, [text])
+
+    /** Empty the composer and every popup state that hangs off its content. */
+    const clearDraft = useCallback(() => {
       setText('')
-      ed?.commands.clearContent()
+      editorRef.current?.commands.clearContent()
       setSlashIndex(-1)
       setMentionActive(false)
       setMentionIndex(0)
       mentionInfoRef.current = null
       mentionEmptyByAtRef.current.clear()
-      return { segments, mentions: collectedMentions, attachments: orderedAttachments }
-    }, [text])
+    }, [setText])
+
+    const serializeAndClear = useCallback(() => {
+      const result = serializeDraft()
+      clearDraft()
+      return result
+    }, [clearDraft, serializeDraft])
 
     const sendGrokGoalSlash = useCallback(async (line: string) => {
       await sendMessage(
@@ -839,6 +883,79 @@ export function ChatInput() {
         sessionScope ?? undefined,
       )
     }, [sendMessage, sessionScope])
+
+    /**
+     * Plain text of the composer as the scheduler would send it — mentions in
+     * their structured form, attachments dropped. The persisted row is a single
+     * string, so nothing richer could survive the wait anyway.
+     */
+    const draftMessage = useCallback(() => {
+      const { segments } = serializeDraft()
+      return segments.flatMap((seg) => ('attachmentId' in seg ? [] : [seg.text])).join('\n').trim() || null
+    }, [serializeDraft])
+
+    /** Queue what is in the composer — without taking it away. */
+    const handleArmScheduled = useCallback((sendAt: number) => {
+      scheduleSend(draftMessage(), sendAt)
+    }, [draftMessage, scheduleSend])
+
+    /**
+     * Cancel. Nothing to restore: the draft was never consumed, it stayed in the
+     * composer the whole time the schedule mirrored it.
+     */
+    const handleDisarmScheduled = useCallback(() => {
+      // A rate-limit row is an offer worth keeping on screen after a cancel; one
+      // the user made by hand has nothing left to say, so it goes entirely.
+      if (scheduled?.source === 'manual') clearScheduled()
+      else setArmedScheduled(false)
+    }, [clearScheduled, scheduled, setArmedScheduled])
+
+    /**
+     * Keep the queued text in step with the composer.
+     *
+     * The schedule mirrors the draft rather than snapshotting it: what goes out
+     * at the due time is whatever the composer says then, so editing after
+     * arming is never a trap.
+     *
+     * The mirror reads the editor on a beat instead of reacting to `text`. Two
+     * reasons: `text` is only the plain string, so a change that leaves it equal
+     * (swapping a mention, dropping an attachment chip) would not resync; and a
+     * per-keystroke effect has to survive every re-render that clears its
+     * pending timer, which makes "did it sync" depend on render scheduling. One
+     * interval reading live refs is both cheaper and unconditionally correct —
+     * it only runs while a schedule is actually armed, and only writes on a
+     * real change.
+     */
+    const draftMessageRef = useRef(draftMessage)
+    draftMessageRef.current = draftMessage
+    const queuedMessageRef = useRef(scheduled?.message ?? null)
+    queuedMessageRef.current = scheduled?.message ?? null
+
+    useEffect(() => {
+      if (!scheduled?.armed) return
+      const id = setInterval(() => {
+        const next = draftMessageRef.current()
+        // An empty composer is not an instruction to blank the queue. The draft
+        // is shared with ordinary sends, so clearing it — or just mounting a
+        // pane with nothing typed — must not quietly reduce a queued prompt to
+        // the default. Only real text mirrors.
+        if (next === null || next === queuedMessageRef.current) return
+        queuedMessageRef.current = next
+        setScheduledMessage(next)
+      }, SCHEDULED_SEND_SYNC_MS)
+      return () => clearInterval(id)
+    }, [scheduled?.armed, setScheduledMessage])
+
+    /**
+     * Empty the composer once — and only once — the mirrored text has actually
+     * been sent. Cancelling or a superseded offer must leave the draft alone.
+     */
+    const deliveredSeen = useRef(deliveredNonce)
+    useEffect(() => {
+      if (deliveredNonce === deliveredSeen.current) return
+      deliveredSeen.current = deliveredNonce
+      clearDraft()
+    }, [clearDraft, deliveredNonce])
 
     const handleSend = useCallback(() => {
       if (!canSend) return
@@ -1800,14 +1917,14 @@ export function ChatInput() {
                 softCancel={harnessUsesSoftCancel(activeProviderForResources)}
               />
             )}
-            <IconButton
-              variant="ghost"
-              onClick={handleSend}
-              disabled={!canSend}
-              className="size-7 rounded-full border border-border disabled:opacity-30"
-            >
-              <ArrowUp />
-            </IconButton>
+            <ScheduledSendButton
+              scheduled={scheduled}
+              canSend={canSend}
+              onSendNow={handleSend}
+              onArm={handleArmScheduled}
+              onDisarm={handleDisarmScheduled}
+              onSetSendAt={setSendAt}
+            />
           </div>
         </div>
 

@@ -114,3 +114,30 @@ export function buildAgentErrorInfo(
   }
   return merged
 }
+
+/**
+ * `terminal_reason` values that mean "quota exhausted" even though the typed
+ * code is vaguer. Shared so the UI's error-kind table and the auto-resume
+ * scheduler cannot drift apart on what counts as a rate limit.
+ */
+export const RATE_LIMIT_TERMINAL_REASONS = ['rapid_refill_breaker', 'blocking_limit'] as const
+
+/**
+ * Does this failure mean "come back when the quota window resets"?
+ *
+ * Deliberately narrow: `overloaded` (529) is upstream capacity, not the user's
+ * quota, and retrying it on a multi-hour timer would be the wrong advice.
+ */
+export function isRateLimitErrorInfo(
+  info: Pick<AgentErrorInfo, 'code' | 'terminalReason' | 'httpStatus'>,
+): boolean {
+  if (info.terminalReason && (RATE_LIMIT_TERMINAL_REASONS as readonly string[]).includes(info.terminalReason)) {
+    return true
+  }
+  if (info.code === 'rate_limit') return true
+  // Falls through on any other code rather than short-circuiting: the UI's kind
+  // table does the same, so a 429 carrying a code that table does not recognise
+  // would otherwise render as a rate limit while producing no resume offer —
+  // exactly the drift this module exists to prevent.
+  return info.httpStatus === 429
+}

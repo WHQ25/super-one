@@ -184,13 +184,14 @@ import { setCodexSkillsWatcherWindow } from './codex/codex-skills-watcher'
 import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
 import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService, bindAutomationService, notifyAutomationsListChanged } from './automation-service'
+import { ScheduledSendService } from './session/scheduled-send-service'
 import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation, getAutomation as dbGetAutomation } from './db-automations'
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { getInstallId } from './install-id'
-import type { AppSettings, AppSettingsPatch, GitInfo, ThemeMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, ThemeMode } from '@superone/shared/agent-types'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
@@ -419,6 +420,12 @@ const sessionManager = new SessionManagerImpl({
     clearSessionPendingMiniAppCalls(sessionId)
   },
 })
+const scheduledSendService = new ScheduledSendService({
+  sessionManager,
+  broadcast: (sessionId, scheduled, delivered) =>
+    safeSend(AgentIpcChannels.SCHEDULED_SEND_CHANGED, { sessionId, scheduled, delivered }),
+  resumeDefaults: () => agentService.readDefaultSessionPrefs(),
+})
 sessionManager.onAny((_sid, event) => {
   if (event.type === 'permission_request') {
     const alive = !!mainWindow && !mainWindow.isDestroyed()
@@ -426,6 +433,7 @@ sessionManager.onAny((_sid, event) => {
       _sid, event.sessionId ?? '(none)', event.projectPath ?? '(none)', alive, event.request.requestId)
   }
   agentService.notifyEventSubscribers(event)
+  scheduledSendService.observe(_sid, event)
   rendererAgentEventTransport.push(event)
 })
 const deviceRegistry = new DeviceRegistry(sessionManager)
@@ -910,6 +918,7 @@ function createWindow(): void {
   automationService.setMainWindow(mainWindow)
   automationService.setAgentService(agentService)
   automationService.start()
+  scheduledSendService.start()
   setBashOutputWindow(mainWindow)
 
   allWindows.add(mainWindow)
@@ -5008,6 +5017,19 @@ function registerIpcHandlers(): void {
     return ok
   })
 
+  ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_GET, (_e, sessionId: string) =>
+    scheduledSendService.get(sessionId))
+
+  ipcMain.handle(
+    AgentIpcChannels.SCHEDULED_SEND_SET,
+    (_e, sessionId: string, patch: ScheduledSendPatch) =>
+      scheduledSendService.set(sessionId, patch),
+  )
+
+  ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_CLEAR, (_e, sessionId: string) => {
+    scheduledSendService.clear(sessionId)
+  })
+
   ipcMain.handle(AgentIpcChannels.AUTOMATIONS_RUN_NOW, async (_e, id: string) => {
     return automationService.runNow(id)
   })
@@ -5333,6 +5355,7 @@ function performQuit(): void {
   terminalManager.killAll()
   remoteTerminalController.dispose()
   automationService.stop()
+  scheduledSendService.stop()
   stopAllMiniAppHosts()
   stopWatching()
   stopSuperoneMcpStdioBridge()

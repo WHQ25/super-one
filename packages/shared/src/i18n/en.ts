@@ -1513,6 +1513,20 @@ export type Messages = {
         unknown: string
       }
     }
+    scheduledSend: {
+      continueOnReset: string
+      sendAt: string
+      toggle: string
+      date: string
+      time: string
+      accept: string
+      cancel: string
+      sendNow: string
+      queued: string
+      hintIdle: string
+      hintRateLimit: string
+      explainOffer: string
+    }
     runningCommand: string
     codex: {
       statusRunning: string
@@ -4937,6 +4951,20 @@ export const en: Messages = {
         invalidRequest: 'The service rejected this request as invalid. The error details below say what it objected to.',
         unknown: 'The turn failed before it finished. See the error details below, or copy them when reporting the problem.',
       },
+    },
+    scheduledSend: {
+      continueOnReset: 'Continue on usage reset?',
+      sendAt: 'Send at {{time}}',
+      toggle: 'Scheduled send',
+      date: 'Date',
+      time: 'Time',
+      accept: 'Schedule for {{time}}',
+      cancel: 'Cancel scheduled send',
+      sendNow: 'Send',
+      queued: 'Queued: {{message}}',
+      hintIdle: 'Queue the composer for later.',
+      hintRateLimit: 'Usage reset at: {{time}}',
+      explainOffer: 'Send draft text or "{{fallback}}"',
     },
     runningCommand: 'Running /{{command}}…',
     codex: {

@@ -503,3 +503,20 @@
 .dark .harness-session-corner-clock {
   color: #fac775;
 }
+
+/* --- Composer scheduled-send control ---
+   The send button is the seed: when a schedule appears, the label unrolls out of
+   the circle instead of the pill fading in beside it. Animating an `fr` column
+   (rather than width) is what lets the label size itself to its own text while
+   still growing from zero — there is no measured pixel value to keep in sync. */
+
+@keyframes scheduled-send-unroll {
+  from {
+    grid-template-columns: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-columns: 1fr;
+    opacity: 1;
+  }
+}

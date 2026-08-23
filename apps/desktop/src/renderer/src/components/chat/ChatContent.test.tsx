@@ -191,8 +191,10 @@ class MockIntersectionObserver {
 globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
 globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver
 
-window.app = {
-  ...(window.app ?? {}),
+// Assign onto the shared stub rather than replacing it — the setup-file proxy
+// answers every other `window.app` call this tree makes, and a spread would
+// drop all of them.
+Object.assign(window.app, {
   onContentZoom: vi.fn((callback) => {
     hoisted.contentZoom.callback = callback
     return () => {
@@ -200,7 +202,7 @@ window.app = {
     }
   }),
   trace: vi.fn(),
-} as never
+})
 
 import { ChatContent } from './ChatContent'
 import { useAppStore } from '@/stores/app'

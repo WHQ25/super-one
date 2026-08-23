@@ -53,20 +53,26 @@ if (typeof (globalThis as unknown as { self?: unknown }).self === 'undefined') {
 if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown as Record<string, unknown>).app) {
   const noop = () => Promise.resolve(undefined)
   const w = globalThis.window as unknown as Record<string, unknown>
-  w.app = new Proxy({}, { get: () => noop })
-  w.agent = new Proxy({}, { get: () => noop })
+  // `on*` is a subscription everywhere in the preload API: it returns the
+  // unsubscribe synchronously, and a component's effect cleanup calls it. A flat
+  // promise-returning stub makes every such cleanup throw, so the default has to
+  // know that much about the shape.
+  const shaped = (fallback: () => unknown) =>
+    new Proxy({} as Record<string | symbol, unknown>, {
+      // Own properties win, so a test can `Object.assign(window.app, { … })` to
+      // stub one call and keep every default. Reassigning with a spread cannot
+      // work — a proxy over an empty target enumerates nothing.
+      get: (target, prop) =>
+        prop in target
+          ? target[prop]
+          : typeof prop === 'string' && prop.startsWith('on') ? () => () => {} : fallback,
+    })
+  w.app = shaped(noop)
+  w.agent = shaped(noop)
   // `window.environment` needs a shape-aware default: `on*` subscriptions hand
   // back a synchronous unsubscribe, while every query resolves to an empty list
   // so components can render their list state without a per-test stub.
-  w.environment = new Proxy(
-    {},
-    {
-      get: (_target, prop) =>
-        typeof prop === 'string' && prop.startsWith('on')
-          ? () => () => {}
-          : () => Promise.resolve([]),
-    },
-  )
+  w.environment = shaped(() => Promise.resolve([]))
 }
 
 if (typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined') {

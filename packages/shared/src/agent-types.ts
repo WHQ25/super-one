@@ -471,9 +471,65 @@ export interface AgentErrorInfo {
    * configured ceiling, Codex reports neither.
    */
   retries?: { attempts: number; delaysMs?: number[]; max?: number }
+  /**
+   * Unix **seconds** at which the exhausted quota window recovers. Only Claude
+   * reports one (SDK `rate_limit_event.resetsAt`); it is copied onto the failure
+   * so the "resume when quota returns" banner survives a reload — the live
+   * `rate_limit` event is in-memory only, but message metadata is persisted.
+   */
+  resetsAt?: number
   /** Raw upstream text. Always present — the display fallback when nothing maps. */
   raw: string
 }
+
+/**
+ * A session stalled by a provider rate limit, and whether the user armed it to
+ * resume by itself once the quota window recovers.
+ *
+ * The row exists from the moment the turn fails (`armed: false` — banner shown,
+ * nothing scheduled) and is dropped when the session takes a new turn, the user
+ * dismisses it, or the queued resume is delivered.
+ */
+/**
+ * What put the row there.
+ *
+ * The distinction is not cosmetic: a `rate_limit` row only describes the stall
+ * it was born from, so any turn that gets anywhere retires it. A `manual` row is
+ * a promise the user made to themselves and survives everything but its own
+ * delivery.
+ */
+export type ScheduledSendSource = 'rate_limit' | 'manual'
+
+/** A message queued to be sent to a session at a wall-clock time. */
+export interface ScheduledSend {
+  sessionId: string
+  /** Epoch ms the queued message is due. */
+  sendAt: number
+  /** Message to send. Null/empty → the harness-neutral default (`SCHEDULED_SEND_DEFAULT_MESSAGE`). */
+  message: string | null
+  /** User opted in — the scheduler will send `message` at `sendAt`. */
+  armed: boolean
+  source: ScheduledSendSource
+}
+
+/**
+ * Partial write against a session's scheduled send. Omitted fields are left
+ * alone, so the composer can flip `armed` without restating the time and can
+ * re-time a queued message without restating its text.
+ */
+export interface ScheduledSendPatch {
+  sendAt?: number
+  message?: string | null
+  armed?: boolean
+  source?: ScheduledSendSource
+}
+
+/**
+ * Sent when the user scheduled a send without typing anything. Deliberately
+ * language-neutral: the agent answers in the conversation's own language, and a
+ * localized nudge here would fight the transcript.
+ */
+export const SCHEDULED_SEND_DEFAULT_MESSAGE = 'Continue'
 
 export interface MessageMetadata {
   model?: string
@@ -3287,6 +3343,10 @@ export const AgentIpcChannels = {
   SESSIONS_HIDE: 'sessions:hide',
   SESSIONS_LIST_PINNED: 'sessions:list-pinned',
   SESSIONS_CHANGED: 'sessions:changed',
+  SCHEDULED_SEND_GET: 'sessions:scheduled-send-get',
+  SCHEDULED_SEND_SET: 'sessions:scheduled-send-set',
+  SCHEDULED_SEND_CLEAR: 'sessions:scheduled-send-clear',
+  SCHEDULED_SEND_CHANGED: 'sessions:scheduled-send-changed',
 
   // Additional directories
   READ_PROJECT_ADDITIONAL_DIRS: 'agent:read-project-additional-dirs',

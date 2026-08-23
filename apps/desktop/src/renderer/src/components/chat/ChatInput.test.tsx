@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState } = vi.hoisted(() => {
+const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend } = vi.hoisted(() => {
   const mentionPopup = {
     props: null as null | { query: string; onResultState?: (q: string, isEmpty: boolean) => void },
   }
@@ -111,7 +111,15 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     getGoal: vi.fn(),
   }
 
-  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState }
+  // The queued send lives in main, so the composer only ever sees it through IPC.
+  const scheduledSend = {
+    row: null as null | Record<string, unknown>,
+    set: vi.fn(async () => null),
+    clear: vi.fn(async () => undefined),
+    listeners: new Set<(event: unknown) => void>(),
+  }
+
+  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend }
 })
 
 vi.mock('@tiptap/react', () => {
@@ -381,11 +389,22 @@ beforeEach(() => {
   sessionScope.value = null
   goalState.threadId = undefined
   goalState.getGoal.mockReset()
+  scheduledSend.row = null
+  scheduledSend.listeners.clear()
   Object.assign(window, {
     app: {
       ...window.app,
       codexGetGoal: goalState.getGoal,
       getMediaServerPort: vi.fn(async () => 0),
+      // Spreading `window.app` drops the shared proxy defaults (a proxy over an
+      // empty target enumerates nothing), so these have to be named explicitly.
+      getScheduledSend: vi.fn(async () => scheduledSend.row),
+      setScheduledSend: scheduledSend.set,
+      clearScheduledSend: scheduledSend.clear,
+      onScheduledSendChanged: (cb: (event: unknown) => void) => {
+        scheduledSend.listeners.add(cb)
+        return () => scheduledSend.listeners.delete(cb)
+      },
     },
   })
   mentionPopup.props = null
@@ -479,7 +498,7 @@ describe('ChatInput', () => {
     expect(screen.getByTestId('codex-goal-indicator')).toHaveTextContent('Ship the goal UX')
   })
 
-  it('opens the Grok goal dialog instead of sending /goal', () => {
+  it('opens the Grok goal dialog instead of sending /goal', async () => {
     activeSessionState.preferredProvider = 'acp'
     activeSessionState.sessionProvider = 'acp'
     activeSessionState.acpAgentId = 'grok-build'
@@ -487,6 +506,9 @@ describe('ChatInput', () => {
     editorState.text = '/goal Ship login'
 
     render(<ChatInput />)
+    // The composer will not send until it knows whether this session has a
+    // queued send; in the app that is one IPC round trip.
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
 
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     expect(send).toBeTruthy()
@@ -496,7 +518,7 @@ describe('ChatInput', () => {
     expect(screen.getByTestId('grok-goal-dialog')).toHaveAttribute('data-prefill', 'Ship login')
   })
 
-  it('sends Grok /goal pause through as a prompt', () => {
+  it('sends Grok /goal pause through as a prompt', async () => {
     activeSessionState.preferredProvider = 'acp'
     activeSessionState.sessionProvider = 'acp'
     activeSessionState.acpAgentId = 'grok-build'
@@ -504,6 +526,9 @@ describe('ChatInput', () => {
     editorState.text = '/goal pause'
 
     render(<ChatInput />)
+    // The composer will not send until it knows whether this session has a
+    // queued send; in the app that is one IPC round trip.
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
 
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     fireEvent.click(send!)
@@ -529,12 +554,15 @@ describe('ChatInput', () => {
     expect(screen.getByTestId('grok-goal-indicator')).toHaveTextContent('Ship login')
   })
 
-  it('passes the mosaic session scope as the sendMessage target', () => {
+  it('passes the mosaic session scope as the sendMessage target', async () => {
     sessionScope.value = { projectPath: '/project', sessionId: 'sid-new' }
     activeSessionState.draftText = 'hello from tile'
     editorState.text = 'hello from tile'
 
     render(<ChatInput />)
+    // The composer will not send until it knows whether this session has a
+    // queued send; in the app that is one IPC round trip.
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
 
     // Footer send control is the ArrowUp icon button (last icon-button in the composer).
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
@@ -897,5 +925,190 @@ describe('ChatInput slash command grouping', () => {
     chatActions.setDraftText.mockClear()
     fireEvent.mouseDown(screen.getByText('Skill review').closest('button')!)
     expect(chatActions.setDraftText.mock.calls.at(-1)?.[0]).toBe('/review ')
+  })
+})
+
+describe('ChatInput scheduled send', () => {
+  const SEND_AT = Date.UTC(2026, 0, 1, 14, 30, 0)
+
+  function queued(overrides: Record<string, unknown> = {}) {
+    return {
+      sessionId: 'session-1',
+      sendAt: SEND_AT,
+      message: null,
+      armed: false,
+      source: 'rate_limit',
+      ...overrides,
+    }
+  }
+
+  it('sends immediately while nothing is queued', async () => {
+    const { rerender } = render(<ChatInput />)
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalledWith('session-1'))
+    typeInEditor('ship it')
+    rerender(<ChatInput />)
+
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    expect(chatActions.sendMessage).toHaveBeenCalled()
+    expect(scheduledSend.set).not.toHaveBeenCalled()
+  })
+
+  it('queues the composer draft for the offered time instead of sending it now', async () => {
+    scheduledSend.row = queued()
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /schedule for/i })
+
+    typeInEditor('finish the migration')
+    rerender(<ChatInput />)
+    fireEvent.click(screen.getByRole('button', { name: /schedule for/i }))
+
+    expect(scheduledSend.set).toHaveBeenCalledWith('session-1', {
+      armed: true,
+      message: 'finish the migration',
+      sendAt: SEND_AT,
+    })
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('leaves the draft in the composer, because the schedule mirrors it', async () => {
+    scheduledSend.row = queued()
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /schedule for/i })
+
+    typeInEditor('finish the migration')
+    rerender(<ChatInput />)
+    chatActions.setDraftText.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: /schedule for/i }))
+
+    expect(editorState.text).toBe('finish the migration')
+    expect(chatActions.setDraftText).not.toHaveBeenCalledWith('')
+  })
+
+  it('follows later edits so what goes out is what the composer says', async () => {
+    scheduledSend.row = queued({ armed: true, message: 'first draft' })
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /cancel scheduled send/i })
+    scheduledSend.set.mockClear()
+
+    typeInEditor('second draft')
+    rerender(<ChatInput />)
+
+    await waitFor(
+      () => expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { message: 'second draft' }),
+      { timeout: 2000 },
+    )
+  })
+
+  it('will not send before it knows whether this session has something queued', async () => {
+    let resolveRead: (row: unknown) => void = () => {}
+    Object.assign(window.app, {
+      getScheduledSend: vi.fn(() => new Promise((resolve) => { resolveRead = resolve })),
+    })
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('send this now')
+    rerender(<ChatInput />)
+
+    act(() => {
+      editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' }))
+    })
+    // The draft is persisted per session and the armed row mirrors it, so
+    // sending into the read window would put the same text out twice.
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+
+    await act(async () => { resolveRead(queued({ armed: true, message: 'send this now' })) })
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('refuses to send past an unanswered offer either', async () => {
+    scheduledSend.row = queued()
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /schedule for/i })
+
+    typeInEditor('try it anyway')
+    rerender(<ChatInput />)
+    act(() => {
+      editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' }))
+    })
+
+    // Under a usage limit an immediate send only bounces off the same wall. The
+    // way out is switching provider, which retires the offer in main.
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('refuses an immediate send while anything is queued, whatever queued it', async () => {
+    scheduledSend.row = queued({ armed: true, message: 'run the tests', source: 'manual' })
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /cancel scheduled send/i })
+
+    typeInEditor('send this now')
+    rerender(<ChatInput />)
+    act(() => {
+      editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' }))
+    })
+
+    // Sending now would empty the composer the schedule mirrors, so the same
+    // text would go out again at the due time. Cancel first.
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /^send$/i })).toBeNull()
+  })
+
+  it('does not blank a queued message when the composer is emptied', async () => {
+    scheduledSend.row = queued({ armed: true, message: 'run the tests', source: 'manual' })
+    render(<ChatInput />)
+    await screen.findByRole('button', { name: /cancel scheduled send/i })
+    scheduledSend.set.mockClear()
+
+    // The draft is shared with ordinary sends, so an empty composer is not an
+    // instruction to reduce a queued prompt to the default.
+    await new Promise((resolve) => setTimeout(resolve, 900))
+
+    expect(scheduledSend.set).not.toHaveBeenCalled()
+  })
+
+  it('empties the composer only once the mirrored text has actually gone out', async () => {
+    scheduledSend.row = queued({ armed: true, message: 'finish the migration' })
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /cancel scheduled send/i })
+    typeInEditor('finish the migration')
+    rerender(<ChatInput />)
+
+    // A plain removal — cancelled, or an offer a new turn superseded.
+    act(() => {
+      scheduledSend.listeners.forEach((cb) =>
+        cb({ sessionId: 'session-1', scheduled: null, delivered: false }),
+      )
+    })
+    expect(editorState.text).toBe('finish the migration')
+
+    act(() => {
+      scheduledSend.listeners.forEach((cb) =>
+        cb({ sessionId: 'session-1', scheduled: null, delivered: true }),
+      )
+    })
+    expect(editorState.text).toBe('')
+  })
+
+  it('cancels without disturbing the composer it was mirroring', async () => {
+    scheduledSend.row = queued({ armed: true, message: 'finish the migration' })
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /cancel scheduled send/i })
+    typeInEditor('finish the migration')
+    rerender(<ChatInput />)
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel scheduled send/i }))
+
+    expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { armed: false })
+    expect(editorState.text).toBe('finish the migration')
+  })
+
+  it('drops a hand-made schedule entirely on cancel, since nothing offered it', async () => {
+    scheduledSend.row = queued({ armed: true, message: 'run the tests', source: 'manual' })
+    render(<ChatInput />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /cancel scheduled send/i }))
+
+    expect(scheduledSend.clear).toHaveBeenCalledWith('session-1')
+    expect(scheduledSend.set).not.toHaveBeenCalled()
   })
 })

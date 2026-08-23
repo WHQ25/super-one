@@ -252,6 +252,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       resumedProviderSessionId: resumedProviderSessionId ?? undefined,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
+      getProjectExtraDirs: this.persistence.getProjectExtraDirs,
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),
       onStateChange: this.persistence.onSessionStateChange
         ? (snapshot) => this.persistence.onSessionStateChange!(snapshot)

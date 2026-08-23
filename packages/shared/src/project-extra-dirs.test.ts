@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  MAX_PROJECT_EXTRA_DIRS,
-  normalizeProjectExtraDirs,
-  parseProjectExtraDirs,
-} from './project-extra-dirs'
+import { MAX_PROJECT_EXTRA_DIRS, parseProjectExtraDirs } from './project-extra-dirs'
+import { normalizeProjectExtraDirs } from './project-extra-dirs-node'
 
 describe('reading persisted project workspace folders', () => {
   it('returns the stored list for a well-formed column', () => {

@@ -1266,7 +1266,10 @@ export async function sendMessageImpl(
         ? { agent: liveSession.openCodeAgentId }
         : {}),
       images: attachments.length > 0 ? attachments : undefined,
-      additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
+      // Always an array, never undefined: `Session.send` reads undefined as
+      // "leave unchanged", so collapsing an empty set meant removing the last
+      // workspace folder silently never reached a live session.
+      additionalDirs: mergedDirs,
       clientMessageId: userMessageId,
       sessionId: resolvedSessionId,
       gitBranch: liveSession._gitBranch ?? undefined,

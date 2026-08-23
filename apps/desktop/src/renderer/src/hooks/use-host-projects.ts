@@ -97,6 +97,10 @@ export function useHostProjects(options?: UseHostProjectsOptions): UseHostProjec
             path: remoteProjectKey(selectedHostConnectionId, p.path),
             name: p.name,
             missing: p.missing,
+            // Host-absolute and never rewritten into a `remote:` key — the node
+            // resolves them, not the desktop path layer. Dropping this made
+            // Edit Project submit [] and wipe a remote project's folders.
+            extraDirs: p.extraDirs ?? [],
             addedAt: p.lastActiveAt
               ? new Date(p.lastActiveAt).toISOString()
               : new Date(0).toISOString(),

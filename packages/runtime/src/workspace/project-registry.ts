@@ -4,10 +4,8 @@ import type { ProjectSnapshot } from '@superone/shared/environment'
 import type { SqliteDatabase } from '../sqlite'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import {
-  normalizeProjectExtraDirs,
-  parseProjectExtraDirs,
-} from '@superone/shared/project-extra-dirs'
+import { parseProjectExtraDirs } from '@superone/shared/project-extra-dirs'
+import { normalizeProjectExtraDirs } from '@superone/shared/project-extra-dirs-node'
 
 export class ProjectRegistry {
   constructor(private readonly db: SqliteDatabase) {}
@@ -49,6 +47,12 @@ export class ProjectRegistry {
     return this.toSnapshot(r)
   }
 
+  /**
+   * `open()` stores the realpath, so a caller handing back the path the user
+   * typed must be canonicalized the same way or it misses whenever a parent is
+   * a symlink (`/var` on macOS). Belongs here rather than at each call site:
+   * `update({ path })` and `remove({ path })` both take user-facing spellings.
+   */
   getByPath(path: string): ProjectSnapshot | null {
     const abs = resolve(path)
     const r = this.db
@@ -66,8 +70,15 @@ export class ProjectRegistry {
           extra_dirs_json: string | null
         }
       | undefined
-    if (!r) return null
-    return this.toSnapshot(r)
+    if (r) return this.toSnapshot(r)
+    let real: string
+    try {
+      real = realpathSync(abs)
+    } catch {
+      return null
+    }
+    if (real === abs) return null
+    return this.getByPath(real)
   }
 
   open(path: string, name?: string): ProjectSnapshot {
@@ -117,7 +128,7 @@ export class ProjectRegistry {
     const existing = input.projectId
       ? this.get(input.projectId)
       : input.path
-        ? (this.getByPath(input.path) ?? this.getByRealPath(input.path))
+        ? this.getByPath(input.path)
         : null
     if (!existing) return null
 
@@ -147,20 +158,6 @@ export class ProjectRegistry {
       .run(nextName, nextExtraDirs, existing.projectId)
 
     return this.get(existing.projectId)
-  }
-
-  /**
-   * `open()` canonicalizes through `realpathSync` before storing a path, but
-   * `getByPath` only `resolve()`s — so a caller handing back the path the user
-   * typed misses whenever a parent is a symlink (`/var` on macOS, `/home` under
-   * some Linux setups).
-   */
-  private getByRealPath(path: string): ProjectSnapshot | null {
-    try {
-      return this.getByPath(realpathSync(resolve(path)))
-    } catch {
-      return null
-    }
   }
 
   touch(projectId: string): void {

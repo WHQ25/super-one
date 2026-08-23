@@ -43,14 +43,12 @@ function createMockDb(seed: ProjectRow[] = []) {
           return
         }
         if (sql.includes('UPDATE projects')) {
-          const [nextName, , nextExtraDirs, id] = args as Array<string | null>
+          const [nextName, renamedFlag, nextExtraDirs, id] = args as Array<string | number | null>
           const target = rows.get(id as string)
           if (!target) return
-          if (nextName != null) {
-            target.name = nextName
-            target.is_user_renamed = 1
-          }
-          if (nextExtraDirs != null) target.extra_dirs_json = nextExtraDirs
+          if (nextName != null) target.name = nextName as string
+          if (renamedFlag != null) target.is_user_renamed = renamedFlag as number
+          if (nextExtraDirs != null) target.extra_dirs_json = nextExtraDirs as string
         }
       }),
       get: vi.fn((arg: string) => {
@@ -95,6 +93,27 @@ describe('project name across re-opens', () => {
     addRecentFolder('/repo/apps/old-name')
 
     expect(getRecentFolders()[0].name).toBe('old-name')
+  })
+
+  it('keeps tracking the folder name when a folders-only save resubmits it unchanged', () => {
+    // The dialog always sends `name`, so keying the pin off "a name was
+    // supplied" would freeze the label after any Edit Project save.
+    const db = createMockDb([SEED])
+    getDbMock.mockReturnValue(db)
+
+    updateProject({ projectId: 'p1', name: 'desktop', extraDirs: ['/repo/packages/ui'] })
+    addRecentFolder('/repo/apps/desktop')
+
+    expect(db.rows.get('p1')?.is_user_renamed).toBe(0)
+  })
+
+  it('unpins the name when the user renames it back to the folder name', () => {
+    const db = createMockDb([{ ...SEED, name: 'Custom', is_user_renamed: 1 }])
+    getDbMock.mockReturnValue(db)
+
+    updateProject({ projectId: 'p1', name: 'desktop' })
+
+    expect(db.rows.get('p1')?.is_user_renamed).toBe(0)
   })
 
   it('rejects an empty name rather than leaving the sidebar row blank', () => {

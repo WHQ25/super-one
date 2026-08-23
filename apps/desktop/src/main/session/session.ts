@@ -99,6 +99,12 @@ export interface SessionConstructorOptions {
   systemPromptAppend?: string
   homedir?: string
   getProjectResources?: (cwd: string) => ProjectResources
+  /**
+   * Project-level workspace folders. Keyed by projectPath, NOT cwd — a worktree
+   * session has cwd !== projectPath, which is also why these stay out of the
+   * cwd-keyed `ProjectResources`.
+   */
+  getProjectExtraDirs?: (projectPath: string) => string[]
   invalidateProjectResources?: (cwd: string) => void
   onStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
@@ -128,6 +134,21 @@ function coerceSandboxInfo(info: SandboxInfo): SandboxInfo {
   if (!info.enabled) return info
   if (getSandboxCapability().supportLevel === 'unsupported') return { enabled: false, autoAllowBash: false }
   return info
+}
+
+/**
+ * Union the project's workspace folders into a caller-supplied directory set.
+ *
+ * Project folders lead so the result is stable regardless of what the caller
+ * knew about; removal still propagates, because an emptied project contributes
+ * nothing and the caller's own set is passed through untouched.
+ */
+function withProjectExtraDirs(
+  projectExtraDirs: string[] | undefined,
+  requested: readonly string[],
+): string[] {
+  if (!projectExtraDirs?.length) return [...requested]
+  return [...new Set([...projectExtraDirs, ...requested])]
 }
 
 function sameStringArray(a: readonly string[], b: readonly string[]): boolean {
@@ -208,6 +229,7 @@ export class Session implements SessionContract {
 
   private homedir: string
   private getProjectResources?: (cwd: string) => ProjectResources
+  private getProjectExtraDirs?: (projectPath: string) => string[]
   private invalidateProjectResources?: (cwd: string) => void
   private onStateChange?: (snapshot: SessionStateChange) => void
   private onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
@@ -434,6 +456,7 @@ export class Session implements SessionContract {
     }
     this.homedir = opts.homedir ?? ''
     this.getProjectResources = opts.getProjectResources
+    this.getProjectExtraDirs = opts.getProjectExtraDirs
     this.invalidateProjectResources = opts.invalidateProjectResources
     this.onStateChange = opts.onStateChange
     this.onProviderSessionIdChange = opts.onProviderSessionIdChange
@@ -582,11 +605,19 @@ export class Session implements SessionContract {
       await this.waitForRuntimeRelease()
       this.assertNotDisposed()
       const effortChanged = request.effort !== undefined && request.effort !== this.effort
-      const dirsChanged = request.additionalDirs !== undefined
-        && !sameStringArray(request.additionalDirs, this.additionalDirectories)
+      // The project's workspace folders are re-applied here rather than trusted
+      // from the caller. A renderer that has not hydrated them — a detached
+      // session window, a promoted draft, a mini-app-opened project — would
+      // otherwise send a set without them, which reads as a removal and both
+      // revokes the agent's access and rebuilds the backend for nothing.
+      const nextDirs = request.additionalDirs === undefined
+        ? undefined
+        : withProjectExtraDirs(this.getProjectExtraDirs?.(this.projectPath), request.additionalDirs)
+      const dirsChanged = nextDirs !== undefined
+        && !sameStringArray(nextDirs, this.additionalDirectories)
       if (request.effort !== undefined) this.effort = request.effort
       if (request.model !== undefined) this.model = request.model
-      if (request.additionalDirs !== undefined) this.additionalDirectories = request.additionalDirs
+      if (nextDirs !== undefined) this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
       this.snapEffectiveApiProviderId()
       const needsRebuild = this._needsRebuild

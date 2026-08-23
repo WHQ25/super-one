@@ -80,12 +80,27 @@ describe('project workspace folders on a node', () => {
     expect(after?.extraDirs).toEqual([sibling])
   })
 
+  it('removes a project by the path the user typed, not just the stored realpath', () => {
+    registry.open(root)
+    expect(registry.remove({ path: root })).not.toBeNull()
+    expect(registry.list()).toHaveLength(0)
+  })
+
   it('resolves the project by the path the user typed, not just the stored realpath', () => {
     // `root` lives under /var on macOS, which is a symlink to /private/var —
     // `open()` canonicalizes it away, so a naive path lookup would 404.
     registry.open(root)
     const updated = registry.update({ path: root, extraDirs: [sibling] })
     expect(updated?.extraDirs).toEqual([sibling])
+  })
+})
+
+describe('pinning a custom name', () => {
+  it('stops tracking the folder name only when the new name diverges from it', () => {
+    const opened = registry.open(root)
+    // A folders-only edit still submits the current name; that must not pin it.
+    registry.update({ projectId: opened.projectId, name: opened.name, extraDirs: [sibling] })
+    expect(registry.get(opened.projectId)?.name).toBe(opened.name)
   })
 })
 

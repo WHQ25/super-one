@@ -4,7 +4,8 @@ import { getDb } from './database'
 import { dropMiniAppOrderBucket } from './app-settings-service'
 import type { RecentFolder } from '@superone/shared/agent-types'
 import { PATH_EXISTS_LIST_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
-import { normalizeProjectExtraDirs, parseProjectExtraDirs } from '@superone/shared/project-extra-dirs'
+import { parseProjectExtraDirs } from '@superone/shared/project-extra-dirs'
+import { normalizeProjectExtraDirs } from '@superone/shared/project-extra-dirs-node'
 
 export function getRecentFolders(): RecentFolder[] {
   const db = getDb()
@@ -110,13 +111,19 @@ export function updateProject(input: UpdateProjectInput): RecentFolder {
     ? null
     : JSON.stringify(normalizeProjectExtraDirs(input.extraDirs, row.path))
 
+  // Pin the name only when it actually diverges from the folder. The dialog
+  // submits `name` on every save, so keying off "was a name supplied" would
+  // stop a folder-only edit from ever tracking a disk rename again. Renaming
+  // back to the basename unpins it.
+  const renamedFlag = nextName === null ? null : nextName === basename(row.path) ? 0 : 1
+
   db.prepare(`
     UPDATE projects
     SET name = COALESCE(?, name),
-        is_user_renamed = CASE WHEN ? IS NULL THEN is_user_renamed ELSE 1 END,
+        is_user_renamed = COALESCE(?, is_user_renamed),
         extra_dirs_json = COALESCE(?, extra_dirs_json)
     WHERE id = ?
-  `).run(nextName, nextName, nextExtraDirs, row.id)
+  `).run(nextName, renamedFlag, nextExtraDirs, row.id)
 
   const updated = getRecentFolders().find((f) => f.id === row.id)
   if (!updated) {

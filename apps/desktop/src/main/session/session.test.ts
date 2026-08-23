@@ -617,6 +617,52 @@ describe('Session state machine', () => {
     await p2
   })
 
+  describe('project workspace folders are re-applied on send', () => {
+    const withWorkspace = (dirs: string[]) =>
+      makeSession({ getProjectExtraDirs: () => dirs })
+
+    const settle = async (p: Promise<unknown>, b: FakeBackend) => {
+      await new Promise((r) => setTimeout(r, 0))
+      b.resolveSend?.()
+      await p
+    }
+
+    it('restores a folder a stale renderer omitted instead of revoking access', async () => {
+      // A detached session window never runs refreshProjectExtraDirs, so its
+      // send carries only the session-scoped dirs.
+      const { session: s, backend: b } = withWorkspace(['/workspace'])
+      await settle(s.send({ content: 'first', additionalDirs: ['/session'] }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/workspace', '/session'])
+    })
+
+    it('does not rebuild the backend when only the stale renderer differs', async () => {
+      const { session: s, backend: b } = withWorkspace(['/workspace'])
+      await settle(s.send({ content: 'first', additionalDirs: ['/workspace'] }), b)
+      const before = b.rebuildCalls.length
+      // Same turn, but this renderer had not hydrated.
+      await settle(s.send({ content: 'second', additionalDirs: [] }), b)
+      expect(b.rebuildCalls).toHaveLength(before)
+    })
+
+    it('propagates removal of the last workspace folder to a live session', async () => {
+      let workspace = ['/workspace']
+      const { session: s, backend: b } = makeSession({ getProjectExtraDirs: () => workspace })
+      await settle(s.send({ content: 'first', additionalDirs: [] }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/workspace'])
+
+      // Edit Project removed it; an empty set must mean empty, not unchanged.
+      workspace = []
+      await settle(s.send({ content: 'second', additionalDirs: [] }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual([])
+    })
+
+    it('leaves a project without workspace folders exactly as before', async () => {
+      const { session: s, backend: b } = withWorkspace([])
+      await settle(s.send({ content: 'first', additionalDirs: ['/session'] }), b)
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/session'])
+    })
+  })
+
   describe('session.set_additional_dirs command', () => {
     const cmd = (dirs: string[]) => ({ kind: 'session.set_additional_dirs', dirs }) as import('./types').BackendCommand
 

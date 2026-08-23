@@ -37,16 +37,6 @@ vi.mock('../agent/discover-resources', () => ({
   discoverProjectAgents: vi.fn((cwd: string) => [{ name: `agent-${cwd}`, description: '', source: 'project' }]),
 }))
 
-vi.mock('../agent/project-additional-dirs', () => ({
-  readScopedAdditionalDirs: vi.fn((cwd: string) => ({
-    user: [],
-    projectShared: [`${cwd}/extra-dir`],
-    projectLocal: [],
-  })),
-  readProjectAdditionalDirs: vi.fn((cwd: string) => [`${cwd}/extra-dir`]),
-  addProjectAdditionalDir: vi.fn(),
-  removeProjectAdditionalDir: vi.fn(),
-}))
 
 vi.mock('os', async (importActual) => {
   const actual = (await importActual()) as Record<string, unknown>
@@ -1002,7 +992,6 @@ describe('SessionManager', () => {
       const resources = mgr.getProjectResources('/proj')
       expect(resources.skills).toHaveLength(1)
       expect(resources.skills[0].name).toBe('skill-/proj')
-      expect(resources.additionalDirectories).toEqual(['/proj/extra-dir'])
     })
 
     it('subsequent calls return cached result', () => {
@@ -1052,7 +1041,7 @@ describe('SessionManager', () => {
       expect(ev.skills[0].name).toBe('skill-/init-test')
       expect(ev.projectCommands[0].name).toBe('cmd-/init-test')
       expect(ev.projectAgents[0].name).toBe('agent-/init-test')
-      expect(ev.additionalDirectories).toEqual(['/init-test/extra-dir'])
+      expect(ev.additionalDirectories).toEqual([])
       expect(ev.sessionId).toBe(s.snapshot.id)
       expect(ev.projectPath).toBe('/init-test')
     })

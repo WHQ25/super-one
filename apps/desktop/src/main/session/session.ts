@@ -1345,12 +1345,7 @@ export class Session implements SessionContract {
       skills: resources.skills,
       projectCommands: resources.projectCommands,
       projectAgents: resources.projectAgents,
-      additionalDirectories: resources.additionalDirectories,
-      additionalDirsScoped: {
-        user: [...resources.additionalDirsScoped.user],
-        projectShared: [...resources.additionalDirsScoped.projectShared],
-        projectLocal: [...resources.additionalDirsScoped.projectLocal],
-      },
+      additionalDirectories: this.additionalDirectories,
       cwd: this._cwd,
       homedir: this.homedir,
       sandboxInfo: this.sandboxInfo,

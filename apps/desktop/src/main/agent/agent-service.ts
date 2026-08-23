@@ -5,11 +5,7 @@ import log from '../logger'
 import { gitRun } from '../git-run'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
-import { addProjectAdditionalDir, readScopedAdditionalDirs, removeProjectAdditionalDir } from './project-additional-dirs'
 import {
-  addCodexProjectAdditionalDir,
-  readCodexScopedAdditionalDirs,
-  removeCodexProjectAdditionalDir,
 } from '../codex-config-service'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
@@ -19,7 +15,7 @@ import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
-import { getRecentFolders, addRecentFolder, getProjectExtraDirs } from '../recent-folders'
+import { getRecentFolders, addRecentFolder, getProjectExtraDirs, updateProject } from '../recent-folders'
 import { readdir, mkdir } from 'fs/promises'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
@@ -402,28 +398,28 @@ export class AgentService {
     }
   }
 
-  private emitAdditionalDirsChanged(
-    projectPath: string,
-    sessionId?: string,
-    provider?: Extract<HarnessId, 'claude' | 'codex'>,
-  ): void {
+  /**
+   * Replace a project's workspace folders and tell everyone.
+   *
+   * Mobile's add/remove commands land here: the folder belongs to the SuperOne
+   * project now, not to whichever config file the caller's harness reads.
+   */
+  private setProjectExtraDirs(projectPath: string, update: (dirs: string[]) => string[]): void {
+    updateProject({ path: projectPath, extraDirs: update(getProjectExtraDirs(projectPath)) })
+    // The event carries `workspaceDirs`, so the renderer repaints from it —
+    // no separate project-list broadcast needed.
+    this.emitAdditionalDirsChanged(projectPath)
+  }
+
+  private emitAdditionalDirsChanged(projectPath: string, sessionId?: string): void {
     const targetSession = sessionId ? this.sessionManager?.getSession(sessionId) : this.sessionManager?.getActiveSession(projectPath)
-    const resolvedProvider = provider ?? (targetSession?.snapshot.harnessId === 'codex' ? 'codex' : 'claude')
-    const scoped = resolvedProvider === 'codex'
-      ? readCodexScopedAdditionalDirs(projectPath)
-      : readScopedAdditionalDirs(projectPath)
     const sessionDirs = targetSession?.getCallerScopedDirsSnapshot() ?? []
-    // Harness-neutral, so it is NOT folded into `additionalDirsScoped` (which
-    // describes what was read out of the harness's own config files).
     const workspaceDirs = getProjectExtraDirs(projectPath)
-    const dedup = Array.from(new Set([...workspaceDirs, ...scoped.user, ...scoped.projectShared, ...scoped.projectLocal, ...sessionDirs]))
     const event: AgentEvent = {
       type: 'additional_dirs_changed',
-      provider: resolvedProvider,
       projectPath,
       sessionId: targetSession?.snapshot.id,
-      additionalDirectories: dedup,
-      additionalDirsScoped: scoped,
+      additionalDirectories: Array.from(new Set([...workspaceDirs, ...sessionDirs])),
       sessionAdditionalDirs: sessionDirs,
       workspaceDirs,
     }
@@ -1138,21 +1134,19 @@ export class AgentService {
             const skills = listSkills(command.projectPath)
             const agents = discoverAllAgents(command.projectPath)
             const projectSlashCommands = discoverProjectCommands(command.projectPath)
-            const scoped = readScopedAdditionalDirs(command.projectPath)
             await respond?.(command.requestId, {
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
               agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
               projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '', argumentHint: c.argumentHint ?? '' })),
-              additionalDirsScoped: { user: scoped.user, projectShared: scoped.projectShared, projectLocal: scoped.projectLocal },
+              workspaceDirs: getProjectExtraDirs(command.projectPath),
               cwd: command.projectPath,
               homedir: homedir(),
             })
           } else {
             const skills = await getSharedCodexSkillsService().list(command.projectPath)
-            const scoped = readCodexScopedAdditionalDirs(command.projectPath)
             await respond?.(command.requestId, {
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
-              additionalDirsScoped: scoped,
+              workspaceDirs: getProjectExtraDirs(command.projectPath),
               cwd: command.projectPath,
               homedir: homedir(),
             })
@@ -1280,14 +1274,10 @@ export class AgentService {
             await respond?.(command.requestId, v)
             break
           }
-          if (command.provider === 'codex') {
-            addCodexProjectAdditionalDir(command.projectPath, command.dir)
-            this.emitAdditionalDirsChanged(command.projectPath, undefined, 'codex')
-          } else {
-            addProjectAdditionalDir(command.projectPath, command.dir)
-            this.sessionManager?.invalidateProjectResources(command.projectPath)
-            this.emitAdditionalDirsChanged(command.projectPath)
-          }
+          // Harness-neutral now: the folder lands on the SuperOne project,
+          // not in whichever config file the caller's harness happens to read.
+          this.setProjectExtraDirs(command.projectPath, (dirs) =>
+            dirs.includes(command.dir) ? dirs : [...dirs, command.dir])
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
@@ -1296,14 +1286,8 @@ export class AgentService {
       }
       case 'remove_project_additional_dir': {
         try {
-          if (command.provider === 'codex') {
-            removeCodexProjectAdditionalDir(command.projectPath, command.dir)
-            this.emitAdditionalDirsChanged(command.projectPath, undefined, 'codex')
-          } else {
-            removeProjectAdditionalDir(command.projectPath, command.dir)
-            this.sessionManager?.invalidateProjectResources(command.projectPath)
-            this.emitAdditionalDirsChanged(command.projectPath)
-          }
+          this.setProjectExtraDirs(command.projectPath, (dirs) =>
+            dirs.filter((d) => d !== command.dir))
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
@@ -1318,11 +1302,7 @@ export class AgentService {
             break
           }
           await session.dispatchBackendCommand({ kind: 'session.set_additional_dirs', dirs: command.dirs })
-          this.emitAdditionalDirsChanged(
-            command.projectPath,
-            command.sessionId,
-            session.snapshot.harnessId === 'codex' ? 'codex' : 'claude',
-          )
+          this.emitAdditionalDirsChanged(command.projectPath, command.sessionId)
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
@@ -2175,36 +2155,6 @@ export class AgentService {
         if (session.owner.kind === 'remote') session.release(session.owner.deviceId, 'desktop_kick')
         for (const d of Array.from(session.subscribers)) session.unsubscribe(d, 'desktop_kick')
       }
-    })
-
-    // --- Additional directories ---
-
-    ipcMain.handle(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, (_event, projectPath: string, harness: HarnessId = 'claude') => {
-      return harness === 'codex'
-        ? readCodexScopedAdditionalDirs(projectPath)
-        : readScopedAdditionalDirs(projectPath)
-    })
-
-    ipcMain.handle(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string, harness: HarnessId = 'claude') => {
-      if (harness === 'codex') {
-        addCodexProjectAdditionalDir(projectPath, dir)
-        this.emitAdditionalDirsChanged(projectPath, undefined, 'codex')
-        return
-      }
-      addProjectAdditionalDir(projectPath, dir)
-      this.sessionManager?.invalidateProjectResources(projectPath)
-      this.emitAdditionalDirsChanged(projectPath)
-    })
-
-    ipcMain.handle(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string, harness: HarnessId = 'claude') => {
-      if (harness === 'codex') {
-        removeCodexProjectAdditionalDir(projectPath, dir)
-        this.emitAdditionalDirsChanged(projectPath, undefined, 'codex')
-        return
-      }
-      removeProjectAdditionalDir(projectPath, dir)
-      this.sessionManager?.invalidateProjectResources(projectPath)
-      this.emitAdditionalDirsChanged(projectPath)
     })
 
     // --- Plugins (session-scoped — need cwd) ---
@@ -3196,9 +3146,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_FILES)
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_MENTIONS)
     ipcMain.removeHandler(AgentIpcChannels.DISCONNECT_REMOTE_SESSION)
-    ipcMain.removeHandler(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS)
-    ipcMain.removeHandler(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR)
-    ipcMain.removeHandler(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ_FILE)

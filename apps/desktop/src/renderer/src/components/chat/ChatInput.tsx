@@ -42,6 +42,7 @@ import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { WorkflowSlashPopup, type WorkflowSlashPopupHandle, type WorkflowApplyPayload } from './WorkflowSlashPopup'
 import { parseWorkflowSlashLine } from './workflow-slash-suggest'
 // import { ProviderSlashPopup } from './ProviderSlashPopup' // /provider popup retired — kept for reference
@@ -108,11 +109,10 @@ export function ChatInput() {
       clearUserSelections: s.clearUserSelections,
       addDir: s.addDir,
       removeDir: s.removeDir,
-      refreshProjectAdditionalDirs: s.refreshProjectAdditionalDirs,
     })))
     const { sendMessage, interrupt, setShowReviewPanel } = storeActions
     const sessionScope = useSessionScope()
-    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, claudeUserAdditionalDirs, claudeProjectAdditionalDirs, codexUserAdditionalDirs, codexProjectAdditionalDirs, additionalDirs, additionalDirsDirty } =
+    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, projectExtraDirs, additionalDirs, additionalDirsDirty } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         draftJson: s.draftJson,
@@ -125,10 +125,7 @@ export function ChatInput() {
         queuedMessages: s.queuedMessages,
         miniAppContexts: s.miniAppContexts,
         userSelections: s.userSelections,
-        claudeUserAdditionalDirs: s.userAdditionalDirs,
-        claudeProjectAdditionalDirs: s.projectAdditionalDirs,
-        codexUserAdditionalDirs: s.codexUserAdditionalDirs,
-        codexProjectAdditionalDirs: s.codexProjectAdditionalDirs,
+        projectExtraDirs: s.projectExtraDirs,
         additionalDirs: s.additionalDirs,
         additionalDirsDirty: s.additionalDirsDirty,
       })))
@@ -187,8 +184,8 @@ export function ChatInput() {
         clearMiniAppContext: (id: string) => storeActions.clearMiniAppContext(id, target),
         removeUserSelectionAt: (i: number) => storeActions.removeUserSelectionAt(i, target),
         clearUserSelections: () => storeActions.clearUserSelections(target),
-        addDir: (p: string, scope: 'session' | 'project', harness: 'claude' | 'codex') => storeActions.addDir(p, scope, target, harness),
-        removeDir: (p: string, scope: 'session' | 'project', harness: 'claude' | 'codex') => storeActions.removeDir(p, scope, target, harness),
+        addDir: (p: string, scope: 'session' | 'project') => storeActions.addDir(p, scope, target),
+        removeDir: (p: string, scope: 'session' | 'project') => storeActions.removeDir(p, scope, target),
       }
     }, [storeActions, sessionScope])
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -251,13 +248,8 @@ export function ChatInput() {
     const isRemoteLocked = useIsRemoteLocked()
     const isStreaming = status === 'streaming'
     const activeProviderForResources = resolveProvider({ sessionProvider, preferredProvider })
-    const additionalDirsHarness = activeProviderForResources === 'codex' ? 'codex' : 'claude'
-    const userAdditionalDirs = additionalDirsHarness === 'codex'
-      ? codexUserAdditionalDirs
-      : claudeUserAdditionalDirs
-    const projectAdditionalDirs = additionalDirsHarness === 'codex'
-      ? codexProjectAdditionalDirs
-      : claudeProjectAdditionalDirs
+    // One folder set for every harness now — nothing swaps with the provider.
+    const supportsAdditionalDirs = HARNESS_CAPABILITIES[activeProviderForResources]?.supportsAdditionalDirs ?? false
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
     const codexDirsPendingNextTurn = activeProviderForResources === 'codex' && isStreaming && additionalDirsDirty
@@ -301,13 +293,7 @@ export function ChatInput() {
       && !scheduledLoading && !scheduled
     const showAgentMentions = activeProviderForResources === 'claude'
 
-    useEffect(() => {
-      if (activeProviderForResources !== 'claude' && activeProviderForResources !== 'codex') return
-      void storeActions.refreshProjectAdditionalDirs(
-        activeProviderForResources,
-        sessionScope ?? undefined,
-      )
-    }, [activeProviderForResources, sessionScope, storeActions])
+
 
     const codexPrompts = useChatStore(selectCodexPrompts)
     const codexSkills = useChatStore(selectActiveCodexSkills)
@@ -352,7 +338,9 @@ export function ChatInput() {
       { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: '', isSkill: false },
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
-      { name: 'add-dir', description: t('chat.codexCommands.addDirDesc'), argumentHint: '[project|session] [dir]', isSkill: false },
+      ...(HARNESS_CAPABILITIES[activeProviderForResources]?.supportsAdditionalDirs
+        ? [{ name: 'add-dir', description: t('chat.codexCommands.addDirDesc'), argumentHint: '[project|session] [dir]', isSkill: false }]
+        : []),
       // /provider command retired — provider selection moved into the model selector (kept for reference)
       // { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
       { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
@@ -687,7 +675,7 @@ export function ChatInput() {
 
     const validateAndAddDir = useCallback(async (absolutePath: string, scope: 'project' | 'session'): Promise<boolean> => {
       if (!activeProject) return false
-      const known = new Set([...userAdditionalDirs, ...projectAdditionalDirs, ...additionalDirs])
+      const known = new Set([...projectExtraDirs, ...additionalDirs])
       if (known.has(absolutePath)) {
         toast.error(t('chat.addDir.errors.duplicate', { defaultValue: 'Directory is already added' }))
         return false
@@ -703,12 +691,12 @@ export function ChatInput() {
         toast.error(messageMap[res.reason] ?? res.reason)
         return false
       }
-      addDir(absolutePath, scope, additionalDirsHarness)
+      addDir(absolutePath, scope)
       if (activeProviderForResources === 'codex' && isStreaming) {
         toast.info(t('chat.addDir.nextTurn', { defaultValue: 'Directory will be available to Codex on the next turn' }))
       }
       return true
-    }, [activeProject, activeProviderForResources, addDir, additionalDirsHarness, additionalDirs, isStreaming, projectAdditionalDirs, userAdditionalDirs, t])
+    }, [activeProject, activeProviderForResources, addDir, additionalDirs, isStreaming, projectExtraDirs, t])
 
     const handleAddDirCommit = useCallback(async (absolutePath: string, scope: 'project' | 'session') => {
       const ok = await validateAndAddDir(absolutePath, scope)
@@ -724,8 +712,8 @@ export function ChatInput() {
     }, [validateAndAddDir])
 
     const handleAddDirRemove = useCallback((path: string, scope: 'project' | 'session') => {
-      removeDir(path, scope, additionalDirsHarness)
-    }, [additionalDirsHarness, removeDir])
+      removeDir(path, scope)
+    }, [removeDir])
 
     const handleMentionSelect = useCallback(
       (value: string, action: 'navigate' | 'select', kindHint?: MentionKind, displayNameHint?: string) => {
@@ -1837,7 +1825,6 @@ export function ChatInput() {
         {addDirActive && (
           <AddDirPopup
             ref={addDirRef}
-            harness={additionalDirsHarness}
             argsText={addDirArgsText}
             selectedIndex={addDirIndex}
             onSetSelectedIndex={setAddDirIndex}

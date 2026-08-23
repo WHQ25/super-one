@@ -74,7 +74,6 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     setShowReviewPanel: vi.fn((show: boolean) => {
       activeSessionState.showReviewPanel = show
     }),
-    refreshProjectAdditionalDirs: vi.fn(async () => undefined),
     toggleMiniAppContext: vi.fn(),
     clearMiniAppContext: vi.fn(),
     removeUserSelectionAt: vi.fn(),

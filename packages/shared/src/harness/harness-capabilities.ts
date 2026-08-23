@@ -25,6 +25,14 @@ export interface HarnessCapabilities {
   supportsCompact: boolean
   /** Streams content via streaming tool input previews (Edit/Write/etc). */
   supportsStreamingToolInput: boolean
+  /**
+   * Accepts working directories beyond the session cwd.
+   *
+   * Gates `/add-dir` and the workspace-folder UI: a harness without this reads
+   * only its cwd, so offering the control would let a user configure something
+   * that silently does nothing.
+   */
+  supportsAdditionalDirs: boolean
   /** User-facing display name for this harness. */
   displayName: string
 }
@@ -37,6 +45,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsCompact: true,
     supportsStreamingToolInput: true,
+    // SDK `additionalDirectories`.
+    supportsAdditionalDirs: true,
     displayName: 'Claude',
   },
   codex: {
@@ -46,6 +56,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: false,
     supportsCompact: true,
     supportsStreamingToolInput: false,
+    // sandbox_workspace_write.writable_roots, re-sent every turn.
+    supportsAdditionalDirs: true,
     displayName: 'Codex',
   },
   acp: {
@@ -58,6 +70,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: false,
     supportsCompact: false,
     supportsStreamingToolInput: false,
+    // session/new additionalDirectories, gated per agent capability.
+    supportsAdditionalDirs: true,
     displayName: 'Others',
   },
   opencode: {
@@ -67,6 +81,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsCompact: true,
     supportsStreamingToolInput: false,
+    // Single `directory` only.
+    supportsAdditionalDirs: false,
     displayName: 'OpenCode',
   },
   cursor: {
@@ -77,6 +93,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsCompact: false,
     supportsStreamingToolInput: true,
+    // Single cwd; multi-root parked in the harness design doc.
+    supportsAdditionalDirs: false,
     displayName: 'Cursor',
   },
   dsh: {
@@ -96,6 +114,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsCompact: true,
     supportsStreamingToolInput: false,
+    // Single cwd.
+    supportsAdditionalDirs: false,
     displayName: 'DeepSeek',
   },
 }

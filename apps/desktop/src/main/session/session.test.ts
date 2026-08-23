@@ -2275,7 +2275,8 @@ describe('Session persist hook', () => {
       expect(ev.cwd).toBe('/proj')
       expect(ev.homedir).toBe('/home/u')
       expect(ev.skills[0].name).toBe('skill@/proj')
-      expect(ev.additionalDirectories).toEqual(['/proj/extra'])
+      // init_ready reports the session's effective set, not a cwd-scoped config read.
+      expect(ev.additionalDirectories).toEqual([])
     })
 
     it('does NOT emit init_ready for codex harness', () => {

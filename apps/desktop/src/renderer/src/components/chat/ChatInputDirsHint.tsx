@@ -5,8 +5,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@super
 import { cn } from '@superone/ui/lib/utils'
 import { shortenPath } from '@/lib/path-utils'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 
-type DirScope = 'workspace' | 'user' | 'project' | 'session'
+type DirScope = 'project' | 'session'
 
 function basename(p: string): string {
   const trimmed = p.replace(/[/\\]+$/, '')
@@ -17,25 +18,19 @@ function basename(p: string): string {
 export function ChatInputDirsHint() {
   const { t } = useTranslation()
   const provider = useActiveSession((s) => resolveProvider(s))
-  const claudeUserDirs = useActiveSession((s) => s.userAdditionalDirs)
-  const claudeProjectDirs = useActiveSession((s) => s.projectAdditionalDirs)
-  const codexUserDirs = useActiveSession((s) => s.codexUserAdditionalDirs)
-  const codexProjectDirs = useActiveSession((s) => s.codexProjectAdditionalDirs)
-  const userDirs = provider === 'codex' ? codexUserDirs : claudeUserDirs
-  const projectDirs = provider === 'codex' ? codexProjectDirs : claudeProjectDirs
   const sessionDirs = useActiveSession((s) => s.additionalDirs)
-  const workspaceDirs = useActiveSession((s) => s.projectExtraDirs)
+  const projectDirs = useActiveSession((s) => s.projectExtraDirs)
   const messagesLen = useActiveSession((s) => s.messages.length)
   const dirty = useActiveSession((s) => s.additionalDirsDirty)
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
 
+  // A harness that reads only its cwd would show folders it silently ignores.
+  if (!HARNESS_CAPABILITIES[provider]?.supportsAdditionalDirs) return null
   if (messagesLen > 0 && !dirty) return null
 
   const entries: Array<{ dir: string; scope: DirScope }> = []
   const seen = new Set<string>()
-  for (const d of workspaceDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'workspace' }) }
-  for (const d of userDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'user' }) }
   for (const d of projectDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'project' }) }
   for (const d of sessionDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'session' }) }
 

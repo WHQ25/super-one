@@ -18,12 +18,6 @@ interface TomlSandboxWorkspaceWrite {
   [key: string]: unknown
 }
 
-export interface CodexScopedAdditionalDirs {
-  user: string[]
-  projectShared: string[]
-  projectLocal: string[]
-}
-
 function getCodexConfigPath(scope: ResourceScope, cwd: string): string {
   return scope === 'project'
     ? join(cwd, '.codex', 'config.toml')
@@ -47,53 +41,6 @@ function readConfigFile(filePath: string): Record<string, unknown> {
 function writeConfigFile(filePath: string, data: Record<string, unknown>): void {
   mkdirSync(dirname(filePath), { recursive: true })
   writeFileSync(filePath, stringify(data), 'utf-8')
-}
-
-function extractWritableRoots(data: Record<string, unknown>): string[] {
-  const workspaceWrite = data.sandbox_workspace_write
-  if (!workspaceWrite || typeof workspaceWrite !== 'object' || Array.isArray(workspaceWrite)) return []
-  const roots = (workspaceWrite as TomlSandboxWorkspaceWrite).writable_roots
-  if (!Array.isArray(roots)) return []
-  return Array.from(new Set(roots.filter((root): root is string => typeof root === 'string' && root.trim().length > 0)))
-}
-
-export function readCodexScopedAdditionalDirs(cwd: string): CodexScopedAdditionalDirs {
-  return {
-    user: extractWritableRoots(readConfigFile(join(getCodexHome(), 'config.toml'))),
-    projectShared: [],
-    projectLocal: extractWritableRoots(readConfigFile(join(cwd, '.codex', 'config.toml'))),
-  }
-}
-
-export function addCodexProjectAdditionalDir(cwd: string, dir: string): void {
-  const filePath = getCodexConfigPath('project', cwd)
-  const data = readConfigFile(filePath)
-  const workspaceWrite = (
-    data.sandbox_workspace_write
-      && typeof data.sandbox_workspace_write === 'object'
-      && !Array.isArray(data.sandbox_workspace_write)
-      ? data.sandbox_workspace_write
-      : {}
-  ) as TomlSandboxWorkspaceWrite
-  const existing = extractWritableRoots(data)
-  if (existing.includes(dir)) return
-  workspaceWrite.writable_roots = [...existing, dir]
-  data.sandbox_workspace_write = workspaceWrite
-  writeConfigFile(filePath, data)
-}
-
-export function removeCodexProjectAdditionalDir(cwd: string, dir: string): void {
-  const filePath = getCodexConfigPath('project', cwd)
-  const data = readConfigFile(filePath)
-  const workspaceWrite = data.sandbox_workspace_write as TomlSandboxWorkspaceWrite | undefined
-  if (!workspaceWrite || typeof workspaceWrite !== 'object' || Array.isArray(workspaceWrite)) return
-  const existing = extractWritableRoots(data)
-  const filtered = existing.filter((root) => root !== dir)
-  if (filtered.length === existing.length) return
-  if (filtered.length > 0) workspaceWrite.writable_roots = filtered
-  else delete workspaceWrite.writable_roots
-  if (Object.keys(workspaceWrite).length === 0) delete data.sandbox_workspace_write
-  writeConfigFile(filePath, data)
 }
 
 function parseConfigFile(filePath: string, scope: ResourceScope): McpServerConfig[] {

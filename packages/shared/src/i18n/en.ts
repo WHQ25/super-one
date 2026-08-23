@@ -1379,6 +1379,14 @@ export type Messages = {
         session: string
       }
     }
+    dirManager: {
+      project: string
+      projectHint: string
+      session: string
+      sessionHint: string
+      empty: string
+      unsupported: string
+    }
     plan: {
       review: string
       requestedPermissions: string
@@ -4867,6 +4875,14 @@ export const en: Messages = {
         project: 'Project Settings',
         session: 'Session Settings',
       },
+    },
+    dirManager: {
+      project: 'Project',
+      projectHint: 'Every session in this project',
+      session: 'Session',
+      sessionHint: 'This session only',
+      empty: 'No folders',
+      unsupported: '{{harness}} reads only the project folder',
     },
     plan: {
       review: 'Review',

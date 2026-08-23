@@ -107,13 +107,6 @@ export {
   type HooksConfigOptions,
 } from './hooks-config'
 export {
-  readScopedAdditionalDirs,
-  addProjectAdditionalDir,
-  removeProjectAdditionalDir,
-  type ScopedAdditionalDirs,
-  type AdditionalDirsConfigOptions,
-} from './additional-dirs-config'
-export {
   discoverUserAgents,
   discoverProjectAgents,
   discoverAllAgents,

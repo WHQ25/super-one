@@ -20,7 +20,6 @@ import {
 import type { HookSavePayload, MarketplaceScope } from '@superone/shared/agent-types'
 import {
   addMarketplace,
-  addProjectAdditionalDir,
   deleteHook,
   deleteManagedSkill,
   deleteMcpConfig,
@@ -37,14 +36,12 @@ import {
   listMcpConfigs,
   listPlugins,
   readAgentFile,
-  readScopedAdditionalDirs,
   readManagedSkillFile,
   readMarketplacePluginContent,
   readMarketplacePluginFile,
   readPluginContent,
   readPluginFile,
   removeMarketplace,
-  removeProjectAdditionalDir,
   saveHook,
   saveMcpConfig,
   toggleMcpConfig,
@@ -292,60 +289,6 @@ export function handleMcpList(payload: unknown, ctx: ResourceRpcContext): Resour
         provider,
       },
     }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-export function handleAdditionalDirsList(payload: unknown, ctx: ResourceRpcContext): ResourceRpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
-  if (denied) return denied
-  const p = asRecord(payload)
-  try {
-    const projectId = String(p.projectId ?? '')
-    const cwd = projectRoot(ctx.projects, projectId)
-    const provider = parseProviderStrict(p.provider)
-    if (!provider) return { error: { code: 'invalid_argument', message: 'provider must be claude or codex' } }
-    ctx.projects.touch(projectId)
-    return { result: readScopedAdditionalDirs(provider, cwd, manageOpts(ctx)) }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-export function handleAdditionalDirsAdd(payload: unknown, ctx: ResourceRpcContext): ResourceRpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
-  if (denied) return denied
-  const p = asRecord(payload)
-  try {
-    const projectId = String(p.projectId ?? '')
-    const cwd = projectRoot(ctx.projects, projectId)
-    const provider = parseProviderStrict(p.provider)
-    if (!provider) return { error: { code: 'invalid_argument', message: 'provider must be claude or codex' } }
-    const dir = typeof p.dir === 'string' ? p.dir.trim() : ''
-    if (!dir) return { error: { code: 'invalid_argument', message: 'dir is required' } }
-    addProjectAdditionalDir(provider, cwd, dir, manageOpts(ctx))
-    ctx.projects.touch(projectId)
-    return { result: { ok: true as const } }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-export function handleAdditionalDirsRemove(payload: unknown, ctx: ResourceRpcContext): ResourceRpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
-  if (denied) return denied
-  const p = asRecord(payload)
-  try {
-    const projectId = String(p.projectId ?? '')
-    const cwd = projectRoot(ctx.projects, projectId)
-    const provider = parseProviderStrict(p.provider)
-    if (!provider) return { error: { code: 'invalid_argument', message: 'provider must be claude or codex' } }
-    const dir = typeof p.dir === 'string' ? p.dir.trim() : ''
-    if (!dir) return { error: { code: 'invalid_argument', message: 'dir is required' } }
-    removeProjectAdditionalDir(provider, cwd, dir)
-    ctx.projects.touch(projectId)
-    return { result: { ok: true as const } }
   } catch (err) {
     return mapThrown(err)
   }
@@ -1040,12 +983,6 @@ export function dispatchResourceRpc(
       return handleMcpToggle(payload, ctx)
     case 'mcp.delete':
       return handleMcpDelete(payload, ctx)
-    case 'additionalDirs.list':
-      return handleAdditionalDirsList(payload, ctx)
-    case 'additionalDirs.add':
-      return handleAdditionalDirsAdd(payload, ctx)
-    case 'additionalDirs.remove':
-      return handleAdditionalDirsRemove(payload, ctx)
     case 'plugins.list':
       return handlePluginsList(payload, ctx)
     case 'plugins.get':

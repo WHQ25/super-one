@@ -1476,6 +1476,14 @@ export const zh: Messages = {
         session: '会话设置',
       },
     },
+    dirManager: {
+      project: '项目',
+      projectHint: '本项目所有会话生效',
+      session: '会话',
+      sessionHint: '仅本次会话',
+      empty: '暂无文件夹',
+      unsupported: '{{harness}} 只能读取项目文件夹',
+    },
     plan: {
       review: '审查',
       requestedPermissions: '请求的权限',

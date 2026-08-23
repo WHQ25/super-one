@@ -59,17 +59,15 @@ export async function runCodexCommand(
     userSelections?: string[]
   },
 ): Promise<void> {
-  await get().refreshProjectAdditionalDirs('codex', {
-    projectPath: activeProject,
-    sessionId: codexSessionId,
-  })
+  // Project folders are re-read authoritatively in `Session.send`; the caller
+  // half here is the session scope, which the store already holds.
   const userMessageExtras = {
     userMessageContent,
     contexts,
     userSelections,
     apiProviderId: session.apiProviderId ?? undefined,
     serviceTier: session.selectedCodexServiceTier,
-    additionalDirectories: mergeCallerScopedDirs(getProject(get(), activeProject), session, 'codex'),
+    additionalDirectories: mergeCallerScopedDirs(getProject(get(), activeProject), session),
   }
   set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
 

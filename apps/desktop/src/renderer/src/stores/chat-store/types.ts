@@ -300,12 +300,6 @@ export interface ProjectState {
    * codex/claude variant.
    */
   projectExtraDirs: string[]
-  projectAdditionalDirs: string[]
-  userAdditionalDirs: string[]
-  projectSharedDirs: string[]
-  projectLocalDirs: string[]
-  codexProjectAdditionalDirs: string[]
-  codexUserAdditionalDirs: string[]
   showDirManager: boolean
   showReviewPanel: boolean
   reviewPanelInitialMode?: 'uncommitted' | 'branch' | 'commit'
@@ -488,7 +482,6 @@ export interface ChatStore {
   removeUserSelectionAt: (index: number, target?: SessionWriteTarget) => void
   clearUserSelections: (target?: SessionWriteTarget) => void
 
-  refreshProjectAdditionalDirs: (harness: Extract<ChatProvider, 'claude' | 'codex'>, target?: SessionWriteTarget) => Promise<void>
   /** Hydrate `projectExtraDirs` from the host's project catalog (local or remote). */
   refreshProjectExtraDirs: (projectPath?: string) => Promise<void>
   addDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget, harness?: Extract<ChatProvider, 'claude' | 'codex'>) => void

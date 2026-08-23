@@ -1408,7 +1408,7 @@ describe('init_ready updates session fields', () => {
     expect(proj.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
   })
 
-  it('populates projectAdditionalDirs from event payload', () => {
+  it('reports the session effective directory set, with no harness-config scopes', () => {
     setupProject('/proj-add-dir')
 
     useChatStore.getState().handleAgentEvent({
@@ -1421,19 +1421,12 @@ describe('init_ready updates session fields', () => {
       skills: [],
       projectCommands: [],
       projectAgents: [],
-      additionalDirectories: ['/proj-add-dir/lib', '/proj-add-dir/shared'],
-      additionalDirsScoped: {
-        user: [],
-        projectShared: ['/proj-add-dir/shared'],
-        projectLocal: ['/proj-add-dir/lib'],
-      },
+      additionalDirectories: ['/proj-add-dir/lib'],
     } as never)
 
     const proj = useChatStore.getState().projectSessions['/proj-add-dir']
-    expect(proj.projectAdditionalDirs).toEqual(['/proj-add-dir/shared', '/proj-add-dir/lib'])
-    expect(proj.userAdditionalDirs).toEqual([])
-    expect(proj.projectSharedDirs).toEqual(['/proj-add-dir/shared'])
-    expect(proj.projectLocalDirs).toEqual(['/proj-add-dir/lib'])
+    // Workspace folders arrive via the project catalog, not init_ready.
+    expect(proj.projectExtraDirs).toEqual([])
   })
 })
 
@@ -2776,28 +2769,22 @@ describe('codex plan mode', () => {
     expect(call?.[6]).toBe('default')
   })
 
-  it('passes merged project and session directories to codex runs', async () => {
+  it('passes only the session scope to codex runs — Session unions the project folders', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const sid = draftOf(proj)
 
-    mockWindowAgent.readProjectAdditionalDirs.mockResolvedValue({
-      user: ['/codex-user'],
-      projectShared: [],
-      projectLocal: ['/codex-project'],
-    })
     useChatStore.setState({
       projectSessions: {
         '/test': {
           ...proj,
-          userAdditionalDirs: ['/claude-user'],
-          projectAdditionalDirs: ['/claude-project'],
+          projectExtraDirs: ['/workspace'],
           _sessions: {
             ...proj._sessions,
             [sid]: {
               ...proj._sessions[sid],
               preferredProvider: 'codex',
-              additionalDirs: ['/session-shared', '/codex-project'],
+              additionalDirs: ['/session-shared'],
             },
           },
         },
@@ -2807,10 +2794,7 @@ describe('codex plan mode', () => {
     await useChatStore.getState().sendMessage('hello')
 
     const call = mockWindowApp.codexRun.mock.calls.at(-1)
-    expect(mockWindowAgent.readProjectAdditionalDirs).toHaveBeenCalledWith('/test', 'codex')
-    expect(call?.[15]).toMatchObject({
-      additionalDirectories: ['/codex-user', '/codex-project', '/session-shared'],
-    })
+    expect(call?.[15]).toMatchObject({ additionalDirectories: ['/session-shared'] })
   })
 
   it('approves codex plan with default collaboration mode without consuming draft attachments or mentions', async () => {
@@ -4624,7 +4608,6 @@ describe('createDefaultProjectState', () => {
     expect(state.unseenCompletedSessions).toEqual(new Set())
     expect(state.codexModels).toEqual([])
     expect(state.codexModelsLoading).toBe(false)
-    expect(state.projectAdditionalDirs).toEqual([])
     expect(state.showDirManager).toBe(false)
     expect(state.showReviewPanel).toBe(false)
   })

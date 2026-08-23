@@ -153,15 +153,6 @@ const agentAPI = {
   disconnectRemoteSession: (sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, sessionId),
 
-  readProjectAdditionalDirs: (projectPath: string, harness: Extract<HarnessId, 'claude' | 'codex'> = 'claude') =>
-    ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, projectPath, harness) as Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>,
-
-  addProjectAdditionalDir: (projectPath: string, dir: string, harness: Extract<HarnessId, 'claude' | 'codex'> = 'claude') =>
-    ipcRenderer.invoke(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, projectPath, dir, harness),
-
-  removeProjectAdditionalDir: (projectPath: string, dir: string, harness: Extract<HarnessId, 'claude' | 'codex'> = 'claude') =>
-    ipcRenderer.invoke(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, projectPath, dir, harness),
-
   onAgentEvent: (callback: (event: AgentEvent) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, payload: AgentEvent | AgentEvent[]): void => {
       forEachAgentEventPayload(payload, callback)
@@ -737,31 +728,6 @@ const environmentAPI = {
       input,
     ),
 
-  listRemoteAdditionalDirs: (connectionId: string, projectId: string, provider: 'claude' | 'codex') =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.ENVIRONMENT_LIST_REMOTE_ADDITIONAL_DIRS,
-      connectionId,
-      projectId,
-      provider,
-    ) as Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>,
-  addRemoteAdditionalDir: (connectionId: string, projectId: string, dir: string, provider: 'claude' | 'codex') =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.ENVIRONMENT_ADD_REMOTE_ADDITIONAL_DIR,
-      connectionId,
-      projectId,
-      dir,
-      provider,
-    ),
-  removeRemoteAdditionalDir: (connectionId: string, projectId: string, dir: string, provider: 'claude' | 'codex') =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.ENVIRONMENT_REMOVE_REMOTE_ADDITIONAL_DIR,
-      connectionId,
-      projectId,
-      dir,
-      provider,
-    ),
-
-  /** Agents the node can launch — the agentIds its session_collab_request accepts. */
   listRemoteCollabProfiles: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES, connectionId),
 

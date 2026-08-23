@@ -1572,8 +1572,8 @@ export type AgentEventBase =
   | { type: 'codex_item_patch'; messageId: string; phase: 'updated'; itemId: string; patch: CodexItemPatch }
   | { type: 'codex_mcp_startup'; messageId: string; servers: CodexMcpServerStartup[] }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
-  | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
-  | { type: 'additional_dirs_changed'; provider?: Extract<HarnessId, 'claude' | 'codex'>; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; sessionAdditionalDirs: string[]; /** SuperOne-owned project workspace folders — harness-neutral, so deliberately outside `additionalDirsScoped`. */ workspaceDirs?: string[] }
+  | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
+  | { type: 'additional_dirs_changed'; additionalDirectories: string[]; /** SuperOne-owned project workspace folders — the same set for every harness. */ workspaceDirs: string[]; sessionAdditionalDirs: string[] }
   | { type: 'prompt_suggestion'; suggestion: string }
   | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number; errorCode?: 'credits_required'; canUserPurchaseCredits?: boolean; hasChargeableSavedPaymentMethod?: boolean }
   | { type: 'hook_progress'; hook: HookEvent }
@@ -3371,9 +3371,6 @@ export const AgentIpcChannels = {
   SCHEDULED_SEND_CHANGED: 'sessions:scheduled-send-changed',
 
   // Additional directories
-  READ_PROJECT_ADDITIONAL_DIRS: 'agent:read-project-additional-dirs',
-  ADD_PROJECT_ADDITIONAL_DIR: 'agent:add-project-additional-dir',
-  REMOVE_PROJECT_ADDITIONAL_DIR: 'agent:remove-project-additional-dir',
 
   // Settings
   SET_FAST_MODE: 'app:set-fast-mode',
@@ -3757,9 +3754,6 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SAVE_REMOTE_MCP_CONFIG: 'environment:saveRemoteMcpConfig',
   ENVIRONMENT_TOGGLE_REMOTE_MCP_CONFIG: 'environment:toggleRemoteMcpConfig',
   ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG: 'environment:deleteRemoteMcpConfig',
-  ENVIRONMENT_LIST_REMOTE_ADDITIONAL_DIRS: 'environment:listRemoteAdditionalDirs',
-  ENVIRONMENT_ADD_REMOTE_ADDITIONAL_DIR: 'environment:addRemoteAdditionalDir',
-  ENVIRONMENT_REMOVE_REMOTE_ADDITIONAL_DIR: 'environment:removeRemoteAdditionalDir',
   /** Node harness.resources aggregate (models + skills/commands/agents/prompts). */
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',
   /** Node session_providers CRUD. */

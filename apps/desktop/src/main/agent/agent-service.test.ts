@@ -197,6 +197,7 @@ vi.mock('../logger', () => ({
   },
 }))
 
+const updateProjectMock = vi.hoisted(() => vi.fn())
 vi.mock('../recent-folders', () => ({
   getRecentFolders: vi.fn(() => [
     { path: '/projects/app-one', name: 'app-one', added_at: '2025-01-01' },
@@ -205,6 +206,7 @@ vi.mock('../recent-folders', () => ({
   addRecentFolder: vi.fn(),
   removeRecentFolder: vi.fn(),
   getProjectExtraDirs: vi.fn(() => []),
+  updateProject: updateProjectMock,
 }))
 
 const mockReaddir = vi.fn()
@@ -2318,7 +2320,7 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(payload.permissionPresets).toEqual(['read-only', 'default', 'auto-review', 'full-access'])
   })
 
-  it('get_project_resources returns Codex roots without reading Claude config', async () => {
+  it('get_project_resources reports the SuperOne project folders, whatever the harness', async () => {
     const respond = vi.fn()
     const service = new AgentService()
 
@@ -2329,18 +2331,14 @@ describe('AgentService.handleRemoteCommand', () => {
       provider: 'codex',
     }, respond)
 
-    expect(codexAdditionalDirMocks.read).toHaveBeenCalledWith('/p')
+    // One harness-neutral set now — no Codex config read at all.
     expect(respond).toHaveBeenCalledWith('resources-codex', expect.objectContaining({
-      additionalDirsScoped: {
-        user: ['/codex-user'],
-        projectShared: [],
-        projectLocal: ['/codex-project'],
-      },
+      workspaceDirs: [],
       cwd: '/p',
     }))
   })
 
-  it('routes remote Codex project directory writes to Codex config', async () => {
+  it('routes a remote directory write to the SuperOne project, not a harness config', async () => {
     const respond = vi.fn()
     const service = new AgentService()
     ;(service as unknown as { validateAddDirCandidate: () => { ok: true; absolutePath: string } }).validateAddDirCandidate = () => ({
@@ -2363,8 +2361,8 @@ describe('AgentService.handleRemoteCommand', () => {
       provider: 'codex',
     }, respond)
 
-    expect(codexAdditionalDirMocks.add).toHaveBeenCalledWith('/p', '/shared')
-    expect(codexAdditionalDirMocks.remove).toHaveBeenCalledWith('/p', '/shared')
+    expect(updateProjectMock).toHaveBeenCalledWith({ path: '/p', extraDirs: ['/shared'] })
+    expect(updateProjectMock).toHaveBeenLastCalledWith({ path: '/p', extraDirs: [] })
   })
 
   it('applies remote session directories through the provider-neutral session command', async () => {
@@ -2393,7 +2391,6 @@ describe('AgentService.handleRemoteCommand', () => {
       kind: 'session.set_additional_dirs',
       dirs: ['/session-dir'],
     })
-    expect(codexAdditionalDirMocks.read).toHaveBeenCalledWith('/p')
   })
 })
 
@@ -2616,29 +2613,6 @@ describe('add-dir IPC handlers', () => {
 
   afterEach(() => {
     try { rmSync(tmpRoot, { recursive: true, force: true }) } catch { /* noop */ }
-  })
-
-  it('routes Codex project directory reads and writes to Codex config', async () => {
-    const claudeAdditionalDirs = await import('./project-additional-dirs')
-    const service = new AgentService()
-    service.setup()
-    const read = getRegisteredIpcHandler(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS)!
-    const add = getRegisteredIpcHandler(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR)!
-    const remove = getRegisteredIpcHandler(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR)!
-
-    expect(await read({}, '/project', 'codex')).toEqual({
-      user: ['/codex-user'],
-      projectShared: [],
-      projectLocal: ['/codex-project'],
-    })
-    await add({}, '/project', '/shared', 'codex')
-    await remove({}, '/project', '/shared', 'codex')
-
-    expect(codexAdditionalDirMocks.read).toHaveBeenCalledWith('/project')
-    expect(codexAdditionalDirMocks.add).toHaveBeenCalledWith('/project', '/shared')
-    expect(codexAdditionalDirMocks.remove).toHaveBeenCalledWith('/project', '/shared')
-    expect(claudeAdditionalDirs.addProjectAdditionalDir).not.toHaveBeenCalled()
-    expect(claudeAdditionalDirs.removeProjectAdditionalDir).not.toHaveBeenCalled()
   })
 
   describe('validate-add-dir', () => {

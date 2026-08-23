@@ -153,12 +153,6 @@ export {
   commitPerSession,
   resolveActiveSessionId,
 } from './helpers/store-helpers'
-import {
-  addRemoteAdditionalDir,
-  isRemoteAdditionalDirsProject,
-  readRemoteAdditionalDirs,
-  removeRemoteAdditionalDir,
-} from '@/lib/remote-additional-dirs'
 
 import {
   getProject,
@@ -399,6 +393,15 @@ import { createSessionSlice } from './slices/session-slice'
 import { createCoreSlice } from './slices/core-slice'
 import { createEventSlice } from './slices/event-slice'
 import { createOpenCodeSlice } from './slices/opencode-slice'
+
+async function writeProjectExtraDirs(projectKey: string, extraDirs: string[]): Promise<void> {
+  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+  const remote = parseRemoteProjectKey(projectKey)
+  await window.environment.updateProject(remote?.connectionId ?? 'local', {
+    path: remote?.path ?? projectKey,
+    extraDirs,
+  })
+}
 
 export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createToolSlice(set, get, store),
@@ -1036,125 +1039,44 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
   },
 
-  refreshProjectAdditionalDirs: async (harness, target) => {
+  addDir: (path, scope, target) => {
     const projectPath = target?.projectPath ?? get().activeProject
     if (!projectPath) return
-    try {
-      const scoped = await readRemoteAdditionalDirs(projectPath, harness)
-        ?? await window.agent.readProjectAdditionalDirs(projectPath, harness)
-      set((s) => updateProjectState(s, projectPath, () => harness === 'codex'
-        ? {
-            codexUserAdditionalDirs: [...scoped.user],
-            codexProjectAdditionalDirs: Array.from(new Set([
-              ...scoped.projectShared,
-              ...scoped.projectLocal,
-            ])),
-          }
-        : {
-            userAdditionalDirs: [...scoped.user],
-            projectSharedDirs: [...scoped.projectShared],
-            projectLocalDirs: [...scoped.projectLocal],
-            projectAdditionalDirs: Array.from(new Set([
-              ...scoped.projectShared,
-              ...scoped.projectLocal,
-            ])),
-          }))
-    } catch (err) {
-      console.warn(`[additionalDirs] Failed to read ${harness} project config:`, err)
-    }
-  },
-
-  addDir: (path, scope, target, harness) => {
-    const projectPath = target?.projectPath ?? get().activeProject
-    if (!projectPath) return
-    const sessionProvider = resolveProvider(getScopedPerSession(get(), target))
-    const resolvedHarness = harness ?? (sessionProvider === 'codex' ? 'codex' : 'claude')
     if (scope === 'session') {
       set((s) => {
         const sess = getScopedPerSession(s, target)
         const proj = getProject(s, projectPath)
-        const projectDirs = resolvedHarness === 'codex'
-          ? proj.codexProjectAdditionalDirs
-          : proj.projectAdditionalDirs
-        if (sess.additionalDirs.includes(path) || projectDirs.includes(path)) return {}
+        // Already a workspace folder → nothing to add at session scope.
+        if (sess.additionalDirs.includes(path) || proj.projectExtraDirs.includes(path)) return {}
         return commitPerSession(s, target, () => ({
           additionalDirs: [...sess.additionalDirs, path],
           additionalDirsDirty: true,
         }))
       })
-    } else {
-      set((s) => {
-        const sess = getScopedPerSession(s, target)
-        const proj = getProject(s, projectPath)
-        if (resolvedHarness === 'codex') {
-          if (sess.additionalDirs.includes(path) || proj.codexProjectAdditionalDirs.includes(path)) return {}
-          if (isRemoteAdditionalDirsProject(projectPath)) {
-            addRemoteAdditionalDir(projectPath, path, 'codex').catch(() => {})
-          } else {
-            window.agent.addProjectAdditionalDir(projectPath, path, 'codex').catch(() => {})
-          }
-          const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
-            codexProjectAdditionalDirs: [...proj.codexProjectAdditionalDirs, path],
-          })) } as ChatStore
-          return commitPerSession(merged, target, () => ({ additionalDirsDirty: true }))
-        }
-        if (sess.additionalDirs.includes(path) || proj.projectLocalDirs.includes(path)) return {}
-        if (isRemoteAdditionalDirsProject(projectPath)) {
-          addRemoteAdditionalDir(projectPath, path, 'claude').catch(() => {})
-        } else {
-          window.agent.addProjectAdditionalDir(projectPath, path, 'claude').catch(() => {})
-        }
-        const nextLocal = [...proj.projectLocalDirs, path]
-        const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
-        const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
-          projectLocalDirs: nextLocal,
-          projectAdditionalDirs: nextMerged,
-        })) } as ChatStore
-        return commitPerSession(merged, target, () => ({ additionalDirsDirty: true }))
-      })
+      return
     }
+    // Project scope is the SuperOne project record — no harness config file is
+    // touched, so one folder serves claude, codex and ACP alike.
+    const proj = getProject(get(), projectPath)
+    if (proj.projectExtraDirs.includes(path)) return
+    void writeProjectExtraDirs(projectPath, [...proj.projectExtraDirs, path])
+      .then(() => get().refreshProjectExtraDirs(projectPath))
   },
 
-  removeDir: (path, scope, target, harness) => {
+  removeDir: (path, scope, target) => {
     const projectPath = target?.projectPath ?? get().activeProject
     if (!projectPath) return
-    const sessionProvider = resolveProvider(getScopedPerSession(get(), target))
-    const resolvedHarness = harness ?? (sessionProvider === 'codex' ? 'codex' : 'claude')
     if (scope === 'session') {
       set((s) => commitPerSession(s, target, (sess) => ({
         additionalDirs: sess.additionalDirs.filter((d) => d !== path),
         additionalDirsDirty: true,
       })))
-    } else {
-      set((s) => {
-        const proj = getProject(s, projectPath)
-        if (resolvedHarness === 'codex') {
-          if (!proj.codexProjectAdditionalDirs.includes(path)) return {}
-          if (isRemoteAdditionalDirsProject(projectPath)) {
-            removeRemoteAdditionalDir(projectPath, path, 'codex').catch(() => {})
-          } else {
-            window.agent.removeProjectAdditionalDir(projectPath, path, 'codex').catch(() => {})
-          }
-          const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
-            codexProjectAdditionalDirs: proj.codexProjectAdditionalDirs.filter((d) => d !== path),
-          })) } as ChatStore
-          return commitPerSession(merged, target, () => ({ additionalDirsDirty: true }))
-        }
-        if (!proj.projectLocalDirs.includes(path)) return {}
-        if (isRemoteAdditionalDirsProject(projectPath)) {
-          removeRemoteAdditionalDir(projectPath, path, 'claude').catch(() => {})
-        } else {
-          window.agent.removeProjectAdditionalDir(projectPath, path, 'claude').catch(() => {})
-        }
-        const nextLocal = proj.projectLocalDirs.filter((d) => d !== path)
-        const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
-        const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
-          projectLocalDirs: nextLocal,
-          projectAdditionalDirs: nextMerged,
-        })) } as ChatStore
-        return commitPerSession(merged, target, () => ({ additionalDirsDirty: true }))
-      })
+      return
     }
+    const proj = getProject(get(), projectPath)
+    if (!proj.projectExtraDirs.includes(path)) return
+    void writeProjectExtraDirs(projectPath, proj.projectExtraDirs.filter((d) => d !== path))
+      .then(() => get().refreshProjectExtraDirs(projectPath))
   },
 
   // setShowDirManager / setShowReviewPanel now provided by createCoreSlice

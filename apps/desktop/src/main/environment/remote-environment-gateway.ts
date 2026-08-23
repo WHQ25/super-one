@@ -575,18 +575,6 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('mcp.list', { projectId, provider })
   }
 
-  async additionalDirsList(projectId: string, provider: ResourceProvider): Promise<unknown> {
-    return this.client.rpc('additionalDirs.list', { projectId, provider })
-  }
-
-  async additionalDirsAdd(projectId: string, dir: string, provider: ResourceProvider): Promise<unknown> {
-    return this.client.rpc('additionalDirs.add', { projectId, dir, provider })
-  }
-
-  async additionalDirsRemove(projectId: string, dir: string, provider: ResourceProvider): Promise<unknown> {
-    return this.client.rpc('additionalDirs.remove', { projectId, dir, provider })
-  }
-
   async mcpSave(
     projectId: string,
     input: {

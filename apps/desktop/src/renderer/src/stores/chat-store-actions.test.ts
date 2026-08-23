@@ -103,9 +103,7 @@ const mockWindowEnvironment = {
   listSessions: vi.fn().mockResolvedValue([]),
   listProjects: vi.fn().mockResolvedValue([]),
   openProject: vi.fn().mockResolvedValue({ projectId: 'remote-project' }),
-  listRemoteAdditionalDirs: vi.fn().mockResolvedValue({ user: [], projectShared: [], projectLocal: [] }),
-  addRemoteAdditionalDir: vi.fn().mockResolvedValue({ ok: true }),
-  removeRemoteAdditionalDir: vi.fn().mockResolvedValue({ ok: true }),
+  updateProject: vi.fn().mockResolvedValue({ projectId: 'p', path: '/p', name: 'p', extraDirs: [] }),
 }
 
 const eventTarget = new EventTarget()
@@ -750,115 +748,79 @@ describe('renameSession', () => {
 describe('addDir / removeDir', () => {
   it("addDir scope='session' appends to session.additionalDirs and sets dirty flag", () => {
     setupProject()
-    useChatStore.getState().addDir('/extra-dir', 'session')
-    expect(activeSession().additionalDirs).toContain('/extra-dir')
+    useChatStore.getState().addDir('/tmp/extra', 'session')
+    expect(activeSession().additionalDirs).toEqual(['/tmp/extra'])
     expect(activeSession().additionalDirsDirty).toBe(true)
   })
 
   it("addDir scope='session' dedupes by exact path", () => {
     setupProject()
-    patchSession({ additionalDirs: ['/already'] })
-    useChatStore.getState().addDir('/already', 'session')
-    expect(activeSession().additionalDirs).toEqual(['/already'])
+    useChatStore.getState().addDir('/tmp/extra', 'session')
+    useChatStore.getState().addDir('/tmp/extra', 'session')
+    expect(activeSession().additionalDirs).toEqual(['/tmp/extra'])
   })
 
-  it("addDir scope='project' calls addProjectAdditionalDir IPC and writes projectLocalDirs", () => {
+  it("addDir scope='session' skips a folder the project already provides", () => {
     setupProject()
-    useChatStore.getState().addDir('/proj-shared', 'project')
-    expect(mockWindowAgent.addProjectAdditionalDir).toHaveBeenCalledWith(PATH, '/proj-shared', 'claude')
-    expect(activeProjectState().projectLocalDirs).toContain('/proj-shared')
-  })
-
-  it("addDir scope='project' keeps Codex directories isolated from Claude", () => {
-    setupProject()
-    patchSession({ preferredProvider: 'codex' })
-    useChatStore.getState().addDir('/codex-shared', 'project', undefined, 'codex')
-    expect(mockWindowAgent.addProjectAdditionalDir).toHaveBeenCalledWith(PATH, '/codex-shared', 'codex')
-    expect(activeProjectState().codexProjectAdditionalDirs).toEqual(['/codex-shared'])
-    expect(activeProjectState().projectAdditionalDirs).toEqual([])
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: { ...s.projectSessions[PATH], projectExtraDirs: ['/workspace'] },
+      },
+    }))
+    useChatStore.getState().addDir('/workspace', 'session')
+    expect(activeSession().additionalDirs).toEqual([])
   })
 
   it("removeDir scope='session' filters out the path", () => {
     setupProject()
-    patchSession({ additionalDirs: ['/a', '/b'] })
+    useChatStore.getState().addDir('/a', 'session')
+    useChatStore.getState().addDir('/b', 'session')
     useChatStore.getState().removeDir('/a', 'session')
     expect(activeSession().additionalDirs).toEqual(['/b'])
   })
 
-  it("removeDir scope='project' calls removeProjectAdditionalDir IPC", () => {
+  it("addDir scope='project' writes the SuperOne project, not a harness config", async () => {
     setupProject()
-    useChatStore.setState((s) => ({
-      projectSessions: {
-        ...s.projectSessions,
-        [PATH]: { ...s.projectSessions[PATH], projectLocalDirs: ['/p'] },
-      },
-    }))
-    useChatStore.getState().removeDir('/p', 'project')
-    expect(mockWindowAgent.removeProjectAdditionalDir).toHaveBeenCalledWith(PATH, '/p', 'claude')
-    expect(activeProjectState().projectLocalDirs).toEqual([])
-  })
-
-  it("removeDir scope='project' removes only the Codex project entry", () => {
-    setupProject()
-    useChatStore.setState((s) => ({
-      projectSessions: {
-        ...s.projectSessions,
-        [PATH]: {
-          ...s.projectSessions[PATH],
-          projectAdditionalDirs: ['/claude-dir'],
-          codexProjectAdditionalDirs: ['/codex-dir'],
-        },
-      },
-    }))
-    useChatStore.getState().removeDir('/codex-dir', 'project', undefined, 'codex')
-    expect(mockWindowAgent.removeProjectAdditionalDir).toHaveBeenCalledWith(PATH, '/codex-dir', 'codex')
-    expect(activeProjectState().codexProjectAdditionalDirs).toEqual([])
-    expect(activeProjectState().projectAdditionalDirs).toEqual(['/claude-dir'])
-  })
-
-  it('routes remote Codex project writes to the owning node', async () => {
-    const remotePath = 'remote:conn-1:/srv/project'
-    mockWindowEnvironment.listProjects.mockResolvedValueOnce([{
-      projectId: 'p-remote', path: '/srv/project', name: 'project',
-    }])
-    setupProject(remotePath)
-    patchSession({ preferredProvider: 'codex' }, remotePath)
-
-    useChatStore.getState().addDir('/srv/shared', 'project', undefined, 'codex')
+    useChatStore.getState().addDir('/shared', 'project')
     await new Promise((resolve) => setTimeout(resolve, 0))
-
-    expect(mockWindowEnvironment.addRemoteAdditionalDir).toHaveBeenCalledWith(
-      'conn-1', 'p-remote', '/srv/shared', 'codex',
-    )
-    expect(mockWindowAgent.addProjectAdditionalDir).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.updateProject).toHaveBeenCalledWith('local', {
+      path: PATH,
+      extraDirs: ['/shared'],
+    })
   })
 
-  it('reads remote Codex roots from the owning node', async () => {
+  it("removeDir scope='project' writes the reduced list to the project", async () => {
+    setupProject()
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: { ...s.projectSessions[PATH], projectExtraDirs: ['/a', '/b'] },
+      },
+    }))
+    useChatStore.getState().removeDir('/a', 'project')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockWindowEnvironment.updateProject).toHaveBeenCalledWith('local', {
+      path: PATH,
+      extraDirs: ['/b'],
+    })
+  })
+
+  it("addDir scope='project' targets the owning node for a remote project", async () => {
     const remotePath = 'remote:conn-1:/srv/project'
-    mockWindowEnvironment.listProjects.mockResolvedValueOnce([{
-      projectId: 'p-remote', path: '/srv/project', name: 'project',
-    }])
-    mockWindowEnvironment.listRemoteAdditionalDirs.mockResolvedValueOnce({
-      user: ['/remote-user'], projectShared: [], projectLocal: ['/remote-project'],
-    })
     setupProject(remotePath)
-
-    await useChatStore.getState().refreshProjectAdditionalDirs('codex', {
-      projectPath: remotePath,
-      sessionId: activeProjectState(remotePath)._activeSessionId!,
+    useChatStore.getState().addDir('/srv/shared', 'project')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockWindowEnvironment.updateProject).toHaveBeenCalledWith('conn-1', {
+      path: '/srv/project',
+      extraDirs: ['/srv/shared'],
     })
-
-    expect(mockWindowEnvironment.listRemoteAdditionalDirs).toHaveBeenCalledWith(
-      'conn-1', 'p-remote', 'codex',
-    )
-    expect(activeProjectState(remotePath).codexProjectAdditionalDirs).toEqual(['/remote-project'])
-    expect(mockWindowAgent.readProjectAdditionalDirs).not.toHaveBeenCalled()
   })
 
   it('removeDir / addDir are no-ops when no active project', () => {
     useChatStore.getState().addDir('/x', 'session')
     useChatStore.getState().removeDir('/x', 'session')
-    expect(mockWindowAgent.addProjectAdditionalDir).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.updateProject).not.toHaveBeenCalled()
   })
 })
 

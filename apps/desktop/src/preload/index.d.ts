@@ -65,9 +65,6 @@ interface AgentAPI {
   searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
   searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>
   disconnectRemoteSession(sessionId?: string): Promise<void>
-  readProjectAdditionalDirs(projectPath: string, harness?: Extract<HarnessId, 'claude' | 'codex'>): Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>
-  addProjectAdditionalDir(projectPath: string, dir: string, harness?: Extract<HarnessId, 'claude' | 'codex'>): Promise<void>
-  removeProjectAdditionalDir(projectPath: string, dir: string, harness?: Extract<HarnessId, 'claude' | 'codex'>): Promise<void>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
@@ -1158,23 +1155,6 @@ export interface EnvironmentAPI {
     },
   ): Promise<unknown>
 
-  listRemoteAdditionalDirs(
-    connectionId: string,
-    projectId: string,
-    provider: 'claude' | 'codex',
-  ): Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>
-  addRemoteAdditionalDir(
-    connectionId: string,
-    projectId: string,
-    dir: string,
-    provider: 'claude' | 'codex',
-  ): Promise<unknown>
-  removeRemoteAdditionalDir(
-    connectionId: string,
-    projectId: string,
-    dir: string,
-    provider: 'claude' | 'codex',
-  ): Promise<unknown>
 
   /** Node session_providers list (optional harness filter). */
   listRemoteSessionProviders(

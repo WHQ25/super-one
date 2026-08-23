@@ -17,35 +17,20 @@ export function getActivePerSession(state: ChatStore, projectPath?: string | nul
   return proj._sessions[proj._activeSessionId] ?? applyCachedCodexPermissionPreset(createDefaultPerSessionState())
 }
 
-export function getProjectDirsForProvider(
-  project: ProjectState,
-  provider: 'claude' | 'codex',
-): { user: string[]; project: string[] } {
-  return provider === 'codex'
-    ? { user: project.codexUserAdditionalDirs, project: project.codexProjectAdditionalDirs }
-    : { user: project.userAdditionalDirs, project: project.projectAdditionalDirs }
-}
-
 /**
- * The half of the directory set this client owns: harness config scopes plus
- * the session's own `/add-dir` entries.
+ * The half of the directory set this client owns — now just the session's own
+ * `/add-dir` entries.
  *
- * Deliberately excludes the project's workspace folders: `Session` unions
- * those in from its own authoritative read, on both `send` and `prewarm`.
- * Echoing them here would bake them into the session's caller scope, and a
- * later removal from Edit Project could then never revoke access.
+ * Project workspace folders are deliberately excluded: `Session` unions those
+ * in from its own authoritative read, on both `send` and `prewarm`. Echoing
+ * them here would bake them into caller scope, and a later removal from Edit
+ * Project could then never revoke access.
  */
 export function mergeCallerScopedDirs(
-  project: ProjectState,
+  _project: ProjectState,
   session: PerSessionState,
-  provider: 'claude' | 'codex' = resolveProvider(session) === 'codex' ? 'codex' : 'claude',
 ): string[] {
-  const configured = getProjectDirsForProvider(project, provider)
-  return [...new Set([
-    ...configured.user,
-    ...configured.project,
-    ...session.additionalDirs,
-  ])]
+  return [...new Set(session.additionalDirs)]
 }
 
 export function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {

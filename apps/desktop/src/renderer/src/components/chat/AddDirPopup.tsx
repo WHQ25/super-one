@@ -15,7 +15,6 @@ export interface AddDirPopupHandle {
 }
 
 interface AddDirPopupProps {
-  harness: 'claude' | 'codex'
   argsText: string
   selectedIndex: number
   onSetSelectedIndex: (index: number) => void
@@ -87,17 +86,10 @@ function joinPath(parent: string, name: string, isDir: boolean): string {
 }
 
 export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
-  function AddDirPopup({ harness, argsText, selectedIndex, onSetSelectedIndex, onScopeFill, onPathNavigate, onPathCommit, onAddViaPicker, onRemoveDir }, ref) {
+  function AddDirPopup({ argsText, selectedIndex, onSetSelectedIndex, onScopeFill, onPathNavigate, onPathCommit, onAddViaPicker, onRemoveDir }, ref) {
     const fileRoot = useEffectiveProjectRoot()
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
-    const claudeProjectSharedDirs = useActiveSession((s) => s.projectSharedDirs)
-    const claudeProjectLocalDirs = useActiveSession((s) => s.projectLocalDirs)
-    const claudeUserAdditionalDirs = useActiveSession((s) => s.userAdditionalDirs)
-    const codexProjectAdditionalDirs = useActiveSession((s) => s.codexProjectAdditionalDirs)
-    const codexUserAdditionalDirs = useActiveSession((s) => s.codexUserAdditionalDirs)
-    const projectSharedDirs = harness === 'codex' ? [] : claudeProjectSharedDirs
-    const projectLocalDirs = harness === 'codex' ? codexProjectAdditionalDirs : claudeProjectLocalDirs
-    const userAdditionalDirs = harness === 'codex' ? codexUserAdditionalDirs : claudeUserAdditionalDirs
+    const projectExtraDirs = useActiveSession((s) => s.projectExtraDirs)
     const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
     const [entries, setEntries] = useState<ListDirEntry[]>([])
     const [absolutePath, setAbsolutePath] = useState<string>('')
@@ -218,9 +210,7 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
         <div className="overflow-y-auto p-1 flex-1 min-h-0">
           {phase.kind === 'overview' && (
             <OverviewView
-              user={userAdditionalDirs}
-              projectShared={projectSharedDirs}
-              projectLocal={projectLocalDirs}
+              project={projectExtraDirs}
               session={additionalDirs}
               onAddViaPicker={onAddViaPicker}
               onRemoveDir={onRemoveDir}
@@ -284,39 +274,23 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
 )
 
 function OverviewView({
-  user,
-  projectShared,
-  projectLocal,
+  project,
   session,
   onAddViaPicker,
   onRemoveDir,
 }: {
-  user: string[]
-  projectShared: string[]
-  projectLocal: string[]
+  project: string[]
   session: string[]
   onAddViaPicker: (scope: 'project' | 'session') => void
   onRemoveDir: (path: string, scope: 'project' | 'session') => void
 }) {
-  const hasUser = user.length > 0
-  const projectEmpty = projectShared.length === 0 && projectLocal.length === 0
   const sessionEmpty = session.length === 0
 
   return (
     <div className="px-2 py-1 space-y-2">
-      {hasUser && (
-        <DirGroup label="USER">
-          {user.map((d) => (
-            <DirRow key={`user:${d}`} dir={d} />
-          ))}
-        </DirGroup>
-      )}
-      <DirGroup label="PROJECT" empty={projectEmpty} onAdd={() => onAddViaPicker('project')}>
-        {projectShared.map((d) => (
-          <DirRow key={`shared:${d}`} dir={d} />
-        ))}
-        {projectLocal.map((d) => (
-          <DirRow key={`local:${d}`} dir={d} onRemove={() => onRemoveDir(d, 'project')} />
+      <DirGroup label="PROJECT" empty={project.length === 0} onAdd={() => onAddViaPicker('project')}>
+        {project.map((d) => (
+          <DirRow key={`project:${d}`} dir={d} onRemove={() => onRemoveDir(d, 'project')} />
         ))}
       </DirGroup>
       <DirGroup label="SESSION" empty={sessionEmpty} onAdd={() => onAddViaPicker('session')}>

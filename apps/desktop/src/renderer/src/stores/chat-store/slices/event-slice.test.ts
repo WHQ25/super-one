@@ -291,7 +291,7 @@ describe('provider_changed', () => {
 })
 
 describe('additional_dirs_changed', () => {
-  function seedProviderDirs() {
+  function seedDirs() {
     const project = createDefaultProjectState()
     project._activeSessionId = 'sid-1'
     project._sessions = {
@@ -301,58 +301,41 @@ describe('additional_dirs_changed', () => {
         additionalDirsDirty: true,
       },
     }
-    project.userAdditionalDirs = ['/claude-user']
-    project.projectAdditionalDirs = ['/claude-project']
-    project.codexUserAdditionalDirs = ['/old-codex-user']
-    project.codexProjectAdditionalDirs = ['/old-codex-project']
+    project.projectExtraDirs = ['/old-workspace']
     useChatStore.setState({ projectSessions: { '/p': project }, activeProject: '/p' })
   }
 
-  it('updates only Codex project roots for a Codex event', () => {
-    seedProviderDirs()
+  it('writes one harness-neutral project set and the session scope', () => {
+    seedDirs()
 
     useChatStore.getState().handleAgentEvent({
       type: 'additional_dirs_changed',
       projectPath: '/p',
       sessionId: 'sid-1',
-      provider: 'codex',
-      additionalDirectories: ['/codex-user', '/codex-project', '/session'],
-      additionalDirsScoped: {
-        user: ['/codex-user'],
-        projectShared: [],
-        projectLocal: ['/codex-project'],
-      },
+      additionalDirectories: ['/workspace', '/session'],
+      workspaceDirs: ['/workspace'],
       sessionAdditionalDirs: ['/session'],
     } as AgentEvent)
 
     const project = useChatStore.getState().projectSessions['/p']
-    expect(project.codexUserAdditionalDirs).toEqual(['/codex-user'])
-    expect(project.codexProjectAdditionalDirs).toEqual(['/codex-project'])
-    expect(project.userAdditionalDirs).toEqual(['/claude-user'])
-    expect(project.projectAdditionalDirs).toEqual(['/claude-project'])
+    expect(project.projectExtraDirs).toEqual(['/workspace'])
     expect(project._sessions['sid-1'].additionalDirs).toEqual(['/session'])
     expect(project._sessions['sid-1'].additionalDirsDirty).toBe(false)
   })
 
-  it('keeps legacy provider-less events scoped to Claude', () => {
-    seedProviderDirs()
+  it('clears the project set when the last workspace folder is removed', () => {
+    seedDirs()
 
     useChatStore.getState().handleAgentEvent({
       type: 'additional_dirs_changed',
       projectPath: '/p',
       sessionId: 'sid-1',
-      additionalDirectories: ['/new-claude'],
-      additionalDirsScoped: {
-        user: [],
-        projectShared: ['/new-claude'],
-        projectLocal: [],
-      },
+      additionalDirectories: [],
+      workspaceDirs: [],
       sessionAdditionalDirs: [],
     } as AgentEvent)
 
-    const project = useChatStore.getState().projectSessions['/p']
-    expect(project.projectAdditionalDirs).toEqual(['/new-claude'])
-    expect(project.codexProjectAdditionalDirs).toEqual(['/old-codex-project'])
+    expect(useChatStore.getState().projectSessions['/p'].projectExtraDirs).toEqual([])
   })
 })
 

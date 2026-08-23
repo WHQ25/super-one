@@ -199,44 +199,22 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       set((s) => updateProjectState(s, projectPath, (project) => {
         const targetSid = eventSessionId ?? project._activeSessionId
         const session = targetSid ? project._sessions[targetSid] : undefined
-        const sessionPatch = session && targetSid
-          ? {
-              _sessions: {
-                ...project._sessions,
-                [targetSid]: {
-                  ...session,
-                  additionalDirs: [...event.sessionAdditionalDirs],
-                  additionalDirsDirty: false,
+        return {
+          // One harness-neutral set — no codex/claude pair to mirror into.
+          projectExtraDirs: [...event.workspaceDirs],
+          ...(session && targetSid
+            ? {
+                _sessions: {
+                  ...project._sessions,
+                  [targetSid]: {
+                    ...session,
+                    additionalDirs: [...event.sessionAdditionalDirs],
+                    additionalDirsDirty: false,
+                  },
                 },
-              },
-            }
-          : {}
-        // Harness-neutral, so it is written on both branches rather than
-        // mirrored into a codex/claude pair like everything around it.
-        const workspacePatch = event.workspaceDirs
-          ? { projectExtraDirs: [...event.workspaceDirs] }
-          : {}
-        return event.provider === 'codex'
-          ? {
-              ...sessionPatch,
-              ...workspacePatch,
-              codexUserAdditionalDirs: [...event.additionalDirsScoped.user],
-              codexProjectAdditionalDirs: Array.from(new Set([
-                ...event.additionalDirsScoped.projectShared,
-                ...event.additionalDirsScoped.projectLocal,
-              ])),
-            }
-          : {
-              ...sessionPatch,
-              ...workspacePatch,
-              userAdditionalDirs: [...event.additionalDirsScoped.user],
-              projectSharedDirs: [...event.additionalDirsScoped.projectShared],
-              projectLocalDirs: [...event.additionalDirsScoped.projectLocal],
-              projectAdditionalDirs: Array.from(new Set([
-                ...event.additionalDirsScoped.projectShared,
-                ...event.additionalDirsScoped.projectLocal,
-              ])),
-            }
+              }
+            : {}),
+        }
       }))
       return
     }
@@ -438,13 +416,6 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         updatedProject.sandboxInfo = event.sandboxInfo
         updatedProject._projectSkills = event.skills
         updatedProject._projectCommands = event.projectCommands
-        updatedProject.userAdditionalDirs = event.additionalDirsScoped.user
-        updatedProject.projectSharedDirs = event.additionalDirsScoped.projectShared
-        updatedProject.projectLocalDirs = event.additionalDirsScoped.projectLocal
-        updatedProject.projectAdditionalDirs = Array.from(new Set([
-          ...event.additionalDirsScoped.projectShared,
-          ...event.additionalDirsScoped.projectLocal,
-        ]))
         const claudeRes = s.harnessResources.claude
         updatedProject.slashCommands = buildSlashCommands(
           claudeRes?.slashCommands ?? [], claudeRes?.skills ?? [], claudeRes?.commands ?? [],

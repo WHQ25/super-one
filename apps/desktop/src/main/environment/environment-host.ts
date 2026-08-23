@@ -835,32 +835,6 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).skillsList(projectId, provider)
   }
 
-  async listRemoteAdditionalDirs(
-    connectionId: string,
-    projectId: string,
-    provider: ResourceProvider,
-  ): Promise<unknown> {
-    return this.asRemoteProviderGw(connectionId).additionalDirsList(projectId, provider)
-  }
-
-  async addRemoteAdditionalDir(
-    connectionId: string,
-    projectId: string,
-    dir: string,
-    provider: ResourceProvider,
-  ): Promise<unknown> {
-    return this.asRemoteProviderGw(connectionId).additionalDirsAdd(projectId, dir, provider)
-  }
-
-  async removeRemoteAdditionalDir(
-    connectionId: string,
-    projectId: string,
-    dir: string,
-    provider: ResourceProvider,
-  ): Promise<unknown> {
-    return this.asRemoteProviderGw(connectionId).additionalDirsRemove(projectId, dir, provider)
-  }
-
   async getRemoteSkill(
     connectionId: string,
     projectId: string,

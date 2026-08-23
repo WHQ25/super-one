@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { ScheduledSend, ScheduledSendPatch } from '@superone/shared/agent-types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit } from '@superone/shared/agent-types'
 
 export interface ScheduledSendControls {
   /** The queued send main owns for this session, or null when nothing is queued. */
@@ -38,7 +38,15 @@ export interface ScheduledSendControls {
  * whose result arrives back through that same subscription rather than through
  * local state.
  */
-export function useScheduledSend(sessionId: string | null | undefined): ScheduledSendControls {
+export function useScheduledSend(
+  sessionId: string | null | undefined,
+  /**
+   * How to persist this session if arming finds it has never been sent in. Read
+   * through a ref so a changing project root does not re-subscribe, and so the
+   * write uses what is true at the moment the user arms.
+   */
+  sessionInit?: ScheduledSendSessionInit | null,
+): ScheduledSendControls {
   const [scheduled, setScheduled] = useState<ScheduledSend | null>(null)
   const [loading, setLoading] = useState(true)
   const [deliveredNonce, setDeliveredNonce] = useState(0)
@@ -73,10 +81,13 @@ export function useScheduledSend(sessionId: string | null | undefined): Schedule
     }
   }, [sessionId])
 
+  const initRef = useRef(sessionInit)
+  initRef.current = sessionInit
+
   const patch = useCallback(
     (next: ScheduledSendPatch) => {
       if (!sessionId) return
-      void window.app.setScheduledSend(sessionId, next)
+      void window.app.setScheduledSend(sessionId, next, initRef.current ?? undefined)
     },
     [sessionId],
   )

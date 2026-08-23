@@ -1,12 +1,14 @@
 import { memo, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronDown, ChevronRight, CornerDownRight, Eye, EyeOff, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
+import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
+import { formatSendWhen } from '@/components/chat/scheduled-send-time'
 import { useStallLevel, getStallColor, useEllipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
@@ -122,6 +124,7 @@ export const SessionRow = memo(function SessionRow({
           ? 'automation'
           : 'default'
   const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
+  const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, session.sessionId))
 
   const { rowRef, dragHandlers, dragPreview } = useSessionDragOut({
     folderPath,
@@ -175,6 +178,15 @@ export const SessionRow = memo(function SessionRow({
               : <PlainSessionTitle sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
             }
             <div className="ml-auto flex shrink-0 items-center">
+              {/* Why this row is at the top of the list. Always visible — the
+                  hover-revealed pin/expand buttons beside it are actions, this
+                  is a state, and a state the user cannot see explains nothing. */}
+              {scheduled && (
+                <Clock
+                  className="mr-1 size-3 shrink-0 text-warning"
+                  aria-label={t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })}
+                />
+              )}
               {hasChildren && onToggleChildren && (
                 <button
                   onClick={(e) => {

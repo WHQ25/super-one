@@ -434,6 +434,14 @@ export function pinSession(sessionId: string, pinned: boolean): void {
 }
 
 /** Hide or unhide a session. */
+/** True once the session holds any transcript at all. */
+export function sessionHasMessages(sessionId: string): boolean {
+  const row = getDb()
+    .prepare('SELECT 1 AS present FROM chat_messages WHERE session_id = ? LIMIT 1')
+    .get(sessionId) as { present: number } | undefined
+  return !!row
+}
+
 export function hideSession(sessionId: string, hidden: boolean): void {
   const db = getDb()
   db.prepare('UPDATE sessions SET is_hidden = ? WHERE id = ?').run(hidden ? 1 : 0, sessionId)

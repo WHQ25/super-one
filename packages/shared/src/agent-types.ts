@@ -525,6 +525,21 @@ export interface ScheduledSendPatch {
 }
 
 /**
+ * Enough to persist a session nobody has sent in yet.
+ *
+ * Arming a schedule from a fresh composer is the case the feature exists for,
+ * and it is also the one case where the session has no database row: rows are
+ * written by the first send. The schedule needs one to hang off, and delivery
+ * needs one to resume from — hours later, quite possibly in another app run.
+ */
+export interface ScheduledSendSessionInit {
+  projectPath: string
+  harnessId: HarnessId
+  /** Set when the pane is pointed at a worktree rather than the project root. */
+  worktreePath?: string | null
+}
+
+/**
  * Sent when the user scheduled a send without typing anything. Deliberately
  * language-neutral: the agent answers in the conversation's own language, and a
  * localized nudge here would fight the transcript.
@@ -3344,6 +3359,7 @@ export const AgentIpcChannels = {
   SESSIONS_LIST_PINNED: 'sessions:list-pinned',
   SESSIONS_CHANGED: 'sessions:changed',
   SCHEDULED_SEND_GET: 'sessions:scheduled-send-get',
+  SCHEDULED_SEND_LIST: 'sessions:scheduled-send-list',
   SCHEDULED_SEND_SET: 'sessions:scheduled-send-set',
   SCHEDULED_SEND_CLEAR: 'sessions:scheduled-send-clear',
   SCHEDULED_SEND_CHANGED: 'sessions:scheduled-send-changed',

@@ -6,15 +6,20 @@ import {
   type SandboxMode,
   type ScheduledSend,
   type ScheduledSendPatch,
+  type ScheduledSendSessionInit,
 } from '@superone/shared/agent-types'
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import log from '../logger'
 import {
   deleteScheduledSend,
   deleteScheduledSendBySource,
   getScheduledSend,
   listDueScheduledSends,
+  listScheduledSends,
   upsertScheduledSend,
 } from '../db-scheduled-sends'
+import { hideSession, sessionHasMessages } from '../db-sessions'
+import { insertSessionRecord } from './session-repo'
 import type { SessionManagerImpl } from './session-manager'
 
 /**
@@ -117,15 +122,104 @@ export class ScheduledSendService {
     return getScheduledSend(sessionId)
   }
 
+  /** Every queued send, so the sidebar can mark and order the sessions holding one. */
+  list(): ScheduledSend[] {
+    return listScheduledSends()
+  }
+
   /**
    * Create or amend the queued send from the composer. Omitted fields keep what
    * is stored, so arming, re-timing and re-wording are three independent writes.
+   *
+   * `init` describes the session for the one case where it does not exist yet —
+   * see `materializeSession`.
    */
-  set(sessionId: string, patch: ScheduledSendPatch): ScheduledSend | null {
-    const next = upsertScheduledSend(sessionId, patch)
+  set(sessionId: string, patch: ScheduledSendPatch, init?: ScheduledSendSessionInit): ScheduledSend | null {
+    if (!this.armableInPast(sessionId, patch)) {
+      const current = getScheduledSend(sessionId)
+      log.warn('[scheduled-send] refused to arm sid=%s in the past (%s)', sessionId, new Date(patch.sendAt ?? 0).toISOString())
+      // Report what is actually stored rather than staying silent, so a caller
+      // holding a stale time is corrected instead of believing it took.
+      this.emit(sessionId, current)
+      return current
+    }
+    let next = upsertScheduledSend(sessionId, patch)
+    // `sendAt` as well as `armed`: a write with neither a time of its own nor a
+    // stored one to fall back on has nothing to schedule, and persisting a
+    // session for it would leave an empty one behind for no promise at all.
+    if (!next && patch.armed && patch.sendAt !== undefined && init && this.materializeSession(sessionId, init)) {
+      next = upsertScheduledSend(sessionId, patch)
+    }
     if (patch.armed === false) this.autoRearm.delete(sessionId)
     this.emit(sessionId, next)
     return next
+  }
+
+  /**
+   * Whether this write may arm the row given where its due time sits.
+   *
+   * A hand-made schedule is a promise about the future, so arming one already
+   * behind the clock is refused outright rather than clamped: the row would be
+   * due on arrival and go out on the very next poll, which is exactly the
+   * surprise the user was trying to avoid by scheduling it. Inventing a
+   * replacement time here would be worse — main cannot know which future
+   * instant they meant, and it would fire at one nobody chose.
+   *
+   * Three things are deliberately still allowed:
+   * - anything that is not arming (re-timing, mirroring text, disarming);
+   * - a rate-limit offer, whose time is a gate that has already opened rather
+   *   than a plan — accepting it late means "the quota is back, go now";
+   * - an already-armed row whose time has passed, which is the normal state
+   *   between falling due and being delivered, and while a failed send retries.
+   */
+  private armableInPast(sessionId: string, patch: ScheduledSendPatch): boolean {
+    if (patch.armed !== true) return true
+    const prev = getScheduledSend(sessionId)
+    if (prev?.armed) return true
+    const source = patch.source ?? prev?.source ?? 'manual'
+    if (source === 'rate_limit') return true
+    const sendAt = patch.sendAt ?? prev?.sendAt
+    return sendAt === undefined || sendAt > Date.now()
+  }
+
+  /**
+   * Write the `sessions` row a schedule needs to exist against.
+   *
+   * A session gets its row from its first send, so a composer nobody has sent
+   * from yet has none — and the schedule's foreign key has nothing to point at,
+   * which is exactly the case "queue this for later" is for. Two reasons to
+   * persist rather than relax the key: delivery resumes the session out of the
+   * database, so a row it cannot load is a promise that silently never fires;
+   * and the wait is routinely hours, outliving the app run that made it.
+   *
+   * Only on arming. An offer nobody answered, or a time picked and abandoned,
+   * has not asked for anything to be kept, and would leave an empty session in
+   * the project's history for a schedule that was never made.
+   *
+   * Hidden, because until the send fires there is nothing in this session to
+   * show: the composer it mirrors is already on screen as a draft, and an empty
+   * "Untitled" row beside it would be the same pending message drawn twice.
+   * `reveal` puts it back the moment it stops being empty.
+   *
+   * The base provider is a placeholder the first real send overwrites; nothing
+   * reads it until delivery, and by then either the send has corrected it or it
+   * is the harness the composer was pointed at anyway.
+   */
+  private materializeSession(sessionId: string, init: ScheduledSendSessionInit): boolean {
+    try {
+      insertSessionRecord({
+        id: sessionId,
+        projectPath: init.projectPath,
+        providerId: baseSessionProviderId(init.harnessId),
+        isWorktree: !!init.worktreePath,
+        worktreePath: init.worktreePath ?? null,
+        isHidden: true,
+      })
+      return true
+    } catch (err) {
+      log.warn('[scheduled-send] could not persist session sid=%s: %s', sessionId, String(err))
+      return false
+    }
   }
 
   /** User cleared the schedule — forget it, consent included. */
@@ -305,6 +399,7 @@ export class ScheduledSendService {
       }
       const content = fresh.message?.trim() || SCHEDULED_SEND_DEFAULT_MESSAGE
       if (fresh.source === 'rate_limit') this.autoRearm.set(sessionId, fresh.message)
+      this.reveal(sessionId)
       log.info('[scheduled-send] delivering queued send for session %s', sessionId)
       this.delivering.add(sessionId)
       try {
@@ -329,6 +424,25 @@ export class ScheduledSendService {
       log.warn('[scheduled-send] send failed sid=%s: %s', sessionId, String(err))
     } finally {
       this.sending.delete(sessionId)
+    }
+  }
+
+  /**
+   * Undo the hiding `materializeSession` applied, now that the session is about
+   * to hold a conversation.
+   *
+   * Guarded on emptiness rather than on a flag: only a session with nothing in
+   * it can be one this service created, and a session the *user* hid is one they
+   * chose to hide — a scheduled send arriving in it is no reason to overrule
+   * that. Before the send rather than after, so the row is already there when
+   * the first token streams into it.
+   */
+  private reveal(sessionId: string): void {
+    try {
+      if (sessionHasMessages(sessionId)) return
+      hideSession(sessionId, false)
+    } catch (err) {
+      log.warn('[scheduled-send] could not reveal session sid=%s: %s', sessionId, String(err))
     }
   }
 

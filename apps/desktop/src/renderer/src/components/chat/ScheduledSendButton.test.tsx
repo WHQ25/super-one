@@ -26,14 +26,14 @@ function queued(overrides: Partial<ScheduledSend> = {}): ScheduledSend {
   }
 }
 
-function renderButton(scheduled: ScheduledSend | null, canSend = true) {
+function renderButton(scheduled: ScheduledSend | null, canSend = true, canArm = true) {
   const handlers = {
     onSendNow: vi.fn(),
     onArm: vi.fn(),
     onDisarm: vi.fn(),
     onSetSendAt: vi.fn(),
   }
-  render(<ScheduledSendButton scheduled={scheduled} canSend={canSend} {...handlers} />)
+  render(<ScheduledSendButton scheduled={scheduled} canSend={canSend} canArm={canArm} {...handlers} />)
   return handlers
 }
 
@@ -50,6 +50,61 @@ describe('scheduled send button', () => {
   it('stays disabled when there is nothing to send and nothing queued', () => {
     renderButton(null, false)
     expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled()
+  })
+
+  it('will not arm a conversation that has not started with nothing to say', async () => {
+    const { onArm } = renderButton(null, false, false)
+
+    await userEvent.hover(screen.getByTestId('scheduled-send'))
+    const toggle = await screen.findByRole('switch', { name: /schedule send/i })
+
+    // "Continue" means carry on with what we were doing, and there is no
+    // conversation here to carry on from — the schedule would send a message
+    // the user never wrote into a session that has never spoken.
+    expect(toggle).toBeDisabled()
+    await userEvent.click(toggle)
+    expect(onArm).not.toHaveBeenCalled()
+  })
+
+  it('cancels from the clock slot only, not from the chip it labels', async () => {
+    const { onDisarm } = renderButton(queued({ armed: true }))
+
+    // The label is something the user reads; cancelling is destructive and
+    // cannot be undone from the composer. A stray click on the text must not
+    // throw the promise away.
+    await userEvent.click(screen.getByText(formatSendTime(SEND_AT), { exact: false }))
+    expect(onDisarm).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: /cancel scheduled send/i }))
+    expect(onDisarm).toHaveBeenCalledTimes(1)
+  })
+
+  it('arms the next occurrence of a time the user picked and then sat on', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const at2pm = new Date()
+      at2pm.setHours(14, 0, 0, 0)
+      vi.setSystemTime(new Date(at2pm.getTime() - 60 * 60 * 1000))
+
+      const { onArm } = renderButton(null)
+      await userEvent.hover(screen.getByTestId('scheduled-send'))
+      const timeField = await screen.findByLabelText('Time')
+      fireEvent.change(timeField, { target: { value: '14:00' } })
+
+      // Pointer never leaves the panel, so nothing re-anchors the held time —
+      // `fireEvent` on purpose, since userEvent replays a whole pointer path
+      // and would re-enter the panel on the way to the toggle.
+      vi.setSystemTime(new Date(at2pm.getTime() + 60 * 1000))
+      fireEvent.click(screen.getByRole('switch', { name: /schedule send/i }))
+
+      // Not today's 14:00 — that is behind the clock now and would go out on
+      // the very next poll. The hour the user chose survives; the day moves.
+      const armedAt = onArm.mock.calls.at(-1)?.[0] as number
+      expect(armedAt).toBeGreaterThan(Date.now())
+      expect(toTimeInputValue(armedAt)).toBe('14:00')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('asks rather than states while the offer is unanswered', async () => {
@@ -87,7 +142,7 @@ describe('scheduled send button', () => {
 
     await userEvent.hover(screen.getByTestId('scheduled-send'))
 
-    expect(await screen.findByRole('switch', { name: /scheduled send/i })).toBeInTheDocument()
+    expect(await screen.findByRole('switch', { name: /schedule send/i })).toBeInTheDocument()
     expect(document.activeElement).toBe(probe)
   })
 
@@ -104,7 +159,7 @@ describe('scheduled send button', () => {
     renderButton(queued({ armed: true }))
 
     await userEvent.hover(screen.getByTestId('scheduled-send'))
-    await screen.findByRole('switch', { name: /scheduled send/i })
+    await screen.findByRole('switch', { name: /schedule send/i })
 
     expect(screen.queryByText(/send draft text/i)).toBeNull()
   })
@@ -113,7 +168,7 @@ describe('scheduled send button', () => {
     const { onArm } = renderButton(queued())
 
     await userEvent.hover(screen.getByTestId('scheduled-send'))
-    await userEvent.click(await screen.findByRole('switch', { name: /scheduled send/i }))
+    await userEvent.click(await screen.findByRole('switch', { name: /schedule send/i }))
 
     expect(onArm).toHaveBeenCalledWith(SEND_AT)
   })
@@ -152,7 +207,7 @@ describe('scheduled send popover stability', () => {
     const { onArm } = renderButton(queued())
 
     await userEvent.hover(screen.getByTestId('scheduled-send'))
-    await screen.findByRole('switch', { name: /scheduled send/i })
+    await screen.findByRole('switch', { name: /schedule send/i })
     await userEvent.click(screen.getByRole('button', { name: /schedule for/i }))
 
     // The press must reach the button's own handler rather than being spent
@@ -166,7 +221,7 @@ describe('scheduled send defaults', () => {
     const { onArm } = renderButton(null)
 
     await userEvent.hover(screen.getByTestId('scheduled-send'))
-    await userEvent.click(await screen.findByRole('switch', { name: /scheduled send/i }))
+    await userEvent.click(await screen.findByRole('switch', { name: /schedule send/i }))
 
     // A default frozen at mount would arm a send that is already due and fire on
     // the very next poll.
@@ -195,10 +250,12 @@ describe('scheduled send date field', () => {
 
     const target = new Date(SEND_AT)
     target.setDate(target.getDate() + 1)
-    await userEvent.click(
-      screen.getByRole('gridcell', { name: String(target.getDate()) }).querySelector('button')
-        ?? screen.getByRole('gridcell', { name: String(target.getDate()) }),
-    )
+    // A month grid pads with the neighbouring months' days, so the same number
+    // can appear twice — pick the one that belongs to the month on screen.
+    const cell = screen
+      .getAllByRole('gridcell', { name: String(target.getDate()) })
+      .find((el) => !el.hasAttribute('data-outside'))
+    await userEvent.click(cell!.querySelector('button') ?? cell!)
 
     const at = onSetSendAt.mock.calls.at(-1)?.[0] as number
     expect(toTimeInputValue(at)).toBe('14:30')

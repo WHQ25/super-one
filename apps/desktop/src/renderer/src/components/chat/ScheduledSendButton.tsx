@@ -1,24 +1,64 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowUp, Clock, X } from 'lucide-react'
+import { ArrowUp, Clock } from 'lucide-react'
 import { SCHEDULED_SEND_DEFAULT_MESSAGE, type ScheduledSend } from '@superone/shared/agent-types'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Popover, PopoverAnchor, PopoverContent } from '@superone/ui/components/ui/popover'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
-import { formatSendWhen } from './scheduled-send-time'
+import { formatSendWhen, nextOccurrenceOf } from './scheduled-send-time'
 import { ScheduledSendWhenFields } from './ScheduledSendWhenFields'
+import { HoverCloseSlot } from '@/components/activity/ActivityTab'
+
+/**
+ * The instant to actually arm, given the one on screen.
+ *
+ * A hand-picked time can only mean the future, so one that has slipped behind
+ * rolls to its next occurrence rather than arming a row that is due on arrival
+ * and fires on the very next poll.
+ *
+ * A rate-limit offer is the exception and arms exactly as it stands. Its time is
+ * not a plan, it is a gate: "when the quota reopens". Coming back to that offer
+ * after the reset has already passed means the gate is open now, and rolling it
+ * to tomorrow would make the user wait out a window that is no longer closed.
+ */
+function armableSendAt(sendAt: number, scheduled: ScheduledSend | null): number {
+  if (scheduled?.source === 'rate_limit') return sendAt
+  return nextOccurrenceOf(sendAt, Date.now())
+}
+
+/** Geometry both chip states share, so the swap between them never jumps. */
+const chipClass = 'inline-flex h-7 items-center gap-1.5 rounded-full border pl-2 pr-2.5 text-xs font-medium'
+
+/** The label unrolling out of the circle rather than appearing beside it. */
+function ChipLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="grid animate-[scheduled-send-unroll_360ms_cubic-bezier(0.32,0.72,0,1)_both] grid-cols-[1fr]">
+      <span className="min-w-0 overflow-hidden whitespace-nowrap">{children}</span>
+    </span>
+  )
+}
 
 /** Where the time field starts when nothing has proposed one. */
 const DEFAULT_LEAD_MS = 60 * 60 * 1000
 /** Grace on pointer-out, so a pointer between the two hover regions is not a leave. */
 const CLOSE_DELAY_MS = 220
+/** Gap between chip and panel. Kept in step with the `after` bridge that spans it. */
+const SIDE_OFFSET = 8
 
 interface ScheduledSendButtonProps {
   /** The session's queued send, or null when nothing is queued. */
   scheduled: ScheduledSend | null
   /** Whether an immediate send is possible right now (composer has content, etc). */
   canSend: boolean
+  /**
+   * Whether there is anything to schedule.
+   *
+   * False only for a session that has never been sent in and whose composer is
+   * empty: the default message means "carry on with what we were doing", and in
+   * a conversation that has not started there is nothing to carry on from.
+   */
+  canArm: boolean
   onSendNow: () => void
   /** Arm using whatever is in the composer, due at `sendAt`. */
   onArm: (sendAt: number) => void
@@ -40,6 +80,7 @@ interface ScheduledSendButtonProps {
 export function ScheduledSendButton({
   scheduled,
   canSend,
+  canArm,
   onSendNow,
   onArm,
   onDisarm,
@@ -76,7 +117,11 @@ export function ScheduledSendButton({
 
   const hoverIn = useCallback(() => {
     cancelClose()
+    // Both held times can have gone stale while the composer sat untouched, and
+    // the panel must never *show* an instant that has already passed — arming
+    // what is on screen is the one thing the user is about to do.
     setFallbackSendAt((prev) => (prev > Date.now() ? prev : Date.now() + DEFAULT_LEAD_MS))
+    setDraftSendAt((prev) => (prev === null ? null : nextOccurrenceOf(prev, Date.now())))
     setOpen(true)
   }, [cancelClose])
 
@@ -114,17 +159,19 @@ export function ScheduledSendButton({
 
   const handleToggle = useCallback(
     (next: boolean) => {
-      if (next) onArm(sendAt)
-      else onDisarm()
+      if (!next) { onDisarm(); return }
+      if (!canArm) return
+      onArm(armableSendAt(sendAt, scheduled))
     },
-    [onArm, onDisarm, sendAt],
+    [canArm, onArm, onDisarm, scheduled, sendAt],
   )
 
+  // Only the two non-destructive states reach this: accepting an offer, and an
+  // ordinary send. Cancelling has its own target inside the armed chip.
   const handlePrimary = useCallback(() => {
-    if (armed) onDisarm()
-    else if (scheduled) onArm(scheduled.sendAt)
+    if (scheduled) onArm(armableSendAt(scheduled.sendAt, scheduled))
     else onSendNow()
-  }, [armed, onArm, onDisarm, onSendNow, scheduled])
+  }, [onArm, onSendNow, scheduled])
 
   // Unarmed is a question the user has not answered yet, so it asks rather than
   // states — and asks about the event ("on reset") rather than a clock time they
@@ -157,31 +204,35 @@ export function ScheduledSendButton({
           className="inline-flex items-center"
         >
           {scheduled ? (
-            <button
-              type="button"
-              onClick={handlePrimary}
-              aria-label={primaryLabel}
-              className={cn(
-                'group/send inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border pl-2 pr-2.5 text-xs font-medium transition-colors',
-                armed
-                  ? 'border-warning/60 bg-warning/15 text-warning hover:bg-warning/25'
-                  : 'border-warning/40 bg-warning/8 text-warning/90 hover:bg-warning/15 hover:text-warning',
-              )}
-            >
-              {armed ? (
-                // Armed is a state, so it rests as a clock; the X only appears
-                // under the pointer, where it answers "what does clicking do".
-                <>
-                  <Clock className="size-3.5 shrink-0 group-hover/send:hidden" />
-                  <X className="hidden size-3.5 shrink-0 group-hover/send:block" />
-                </>
-              ) : (
+            armed ? (
+              // Not a button. An armed schedule is a state the user set on
+              // purpose, and cancelling it is destructive — putting that on the
+              // whole chip means every stray click on a label they were only
+              // reading throws the promise away. The clock slot is the one
+              // target, and it says so by growing a fill under the pointer.
+              <div className={cn(chipClass, 'border-warning/60 bg-warning/15 text-warning')}>
+                <HoverCloseSlot onClose={onDisarm} label={primaryLabel}>
+                  <Clock className="size-3.5 shrink-0" />
+                </HoverCloseSlot>
+                <ChipLabel>{label}</ChipLabel>
+              </div>
+            ) : (
+              // Unanswered, so the whole chip is the answer: it asks a question
+              // and clicking anywhere on it says yes, which is additive and
+              // undoable by the armed state's own X.
+              <button
+                type="button"
+                onClick={handlePrimary}
+                aria-label={primaryLabel}
+                className={cn(
+                  chipClass,
+                  'cursor-pointer border-warning/40 bg-warning/8 text-warning/90 transition-colors hover:bg-warning/15 hover:text-warning',
+                )}
+              >
                 <Clock className="size-3.5 shrink-0" />
-              )}
-              <span className="grid animate-[scheduled-send-unroll_360ms_cubic-bezier(0.32,0.72,0,1)_both] grid-cols-[1fr]">
-                <span className="min-w-0 overflow-hidden whitespace-nowrap">{label}</span>
-              </span>
-            </button>
+                <ChipLabel>{label}</ChipLabel>
+              </button>
+            )
           ) : (
             <IconButton
               variant="ghost"
@@ -198,10 +249,12 @@ export function ScheduledSendButton({
       <PopoverContent
         align="end"
         side="top"
-        // No gap: a dead zone between button and panel is a place for the
-        // pointer to be in neither, which reads to the user as "it vanished".
-        sideOffset={0}
-        className="w-64 p-3"
+        // Standing off the chip so the panel reads as its own surface rather
+        // than a taller button. The gap is only visual: the `after` strip below
+        // spans it as part of this element's box, so the pointer crossing it
+        // never leaves the panel and there is no dead zone to fall into.
+        sideOffset={SIDE_OFFSET}
+        className="w-64 p-3 after:absolute after:inset-x-0 after:top-full after:h-2 after:content-['']"
         // Hovering must never pull focus out of the composer mid-sentence.
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerEnter={hoverIn}
@@ -216,7 +269,12 @@ export function ScheduledSendButton({
       >
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-medium">{t('chat.scheduledSend.toggle')}</span>
-          <Switch checked={armed} onCheckedChange={handleToggle} aria-label={t('chat.scheduledSend.toggle')} />
+          <Switch
+            checked={armed}
+            disabled={!armed && !canArm}
+            onCheckedChange={handleToggle}
+            aria-label={t('chat.scheduledSend.toggle')}
+          />
         </div>
         <div className="mt-3">
           <ScheduledSendWhenFields value={sendAt} onChange={handleWhenChange} />
@@ -229,7 +287,9 @@ export function ScheduledSendButton({
                 })
               : scheduled?.source === 'rate_limit'
                 ? t('chat.scheduledSend.hintRateLimit', { time })
-                : t('chat.scheduledSend.hintIdle')}
+                : canArm
+                  ? t('chat.scheduledSend.hintIdle')
+                  : t('chat.scheduledSend.hintNeedsDraft')}
           </p>
           {/* The pill asks a question but cannot say what answering yes does —
               it has room for the question only. The panel is where that lands. */}

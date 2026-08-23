@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatSendWhen,
+  nextOccurrenceOf,
   toTimeInputValue,
   withDate,
   withTime,
@@ -76,5 +77,28 @@ describe('how an instant reads', () => {
     const at = new Date(2026, 0, 2, 9, 0, 0).getTime()
     expect(formatSendWhen(at, NOON)).toMatch(/9.*09:00|09:00/)
     expect(formatSendWhen(at, NOON)).not.toBe('09:00')
+  })
+})
+
+describe('a picked time that has slipped behind the clock', () => {
+  it('leaves a time that is still ahead exactly where it is', () => {
+    const later = new Date(2026, 0, 1, 15, 30, 0).getTime()
+    expect(nextOccurrenceOf(later, NOON)).toBe(later)
+  })
+
+  it('rolls a time that has passed to the same time of day tomorrow', () => {
+    const earlier = new Date(2026, 0, 1, 9, 30, 0).getTime()
+    // The user picked 09:30, not "three hours from whenever I click" — the
+    // hour is the choice worth keeping.
+    expect(nextOccurrenceOf(earlier, NOON)).toBe(new Date(2026, 0, 2, 9, 30, 0).getTime())
+  })
+
+  it('lands on today when the time of day is still ahead of a days-old pick', () => {
+    const stale = new Date(2025, 11, 20, 15, 30, 0).getTime()
+    expect(nextOccurrenceOf(stale, NOON)).toBe(new Date(2026, 0, 1, 15, 30, 0).getTime())
+  })
+
+  it('treats this exact instant as passed, since a row due now fires on the next poll', () => {
+    expect(nextOccurrenceOf(NOON, NOON)).toBe(new Date(2026, 0, 2, 12, 0, 0).getTime())
   })
 })

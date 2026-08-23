@@ -23,7 +23,7 @@ import type {
 import type { HarnessId } from '@superone/shared/session-types'
 import { useDraftsStore } from '../../drafts'
 import type { ChatProvider, ChatStore, PerSessionState, ProjectState } from '../types'
-import { _isLiveSession } from './session-liveness'
+import { _isLiveSession, isUnsentSession } from './session-liveness'
 
 /**
  * Renderer session id → draft id. Keeps repeated switches away from the same
@@ -33,10 +33,7 @@ import { _isLiveSession } from './session-liveness'
  */
 const draftIdBySession = new Map<string, string>()
 
-/** True when the session has no conversation on any host yet. */
-export function isUnsentSession(session: PerSessionState | undefined): boolean {
-  return !!session && session.messages.length === 0 && !_isLiveSession(session)
-}
+export { isUnsentSession } from './session-liveness'
 
 /**
  * Composer holds something worth keeping. Single source of truth for "there is

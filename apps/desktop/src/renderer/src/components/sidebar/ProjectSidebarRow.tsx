@@ -8,10 +8,11 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { MiniAppHostGroup } from './MiniAppHostGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
-import type { Automation, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { Automation, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { DEFAULT_SESSION_TITLE, getSessionTitle, isLiveSession } from './session-state-utils'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
@@ -66,6 +67,38 @@ export function groupSidebarSessions(sessions: SessionHistoryEntry[]): SidebarSe
   return sessions
     .filter((session) => !session.parentSessionId || !byId.has(session.parentSessionId))
     .map((parent) => ({ parent, children: children.get(parent.sessionId) ?? [] }))
+}
+
+/**
+ * Float the groups that owe a send to the top, soonest first.
+ *
+ * A queued send is the one thing in this list that is about the *future*: every
+ * other row is ordered by when it was last active, which buries the session that
+ * is going to speak next under every session that already has. Ties and the
+ * unscheduled remainder keep the order they came in, so this only ever lifts
+ * rows — it never reshuffles the list underneath them.
+ *
+ * Only the parent counts. A collab child sits inside its parent's group, and
+ * pulling the group up because a child is scheduled would move a row the user
+ * cannot even see while the group is collapsed.
+ */
+export function orderScheduledGroupsFirst(
+  groups: SidebarSessionGroup[],
+  scheduledBySession: Record<string, ScheduledSend>,
+): SidebarSessionGroup[] {
+  const ranked = groups.map((group, index) => ({
+    group,
+    index,
+    dueAt: armedSendFor(scheduledBySession, group.parent.sessionId)?.sendAt ?? null,
+  }))
+  if (!ranked.some((entry) => entry.dueAt !== null)) return groups
+  ranked.sort((a, b) => {
+    if (a.dueAt !== null && b.dueAt !== null) return a.dueAt - b.dueAt || a.index - b.index
+    if (a.dueAt !== null) return -1
+    if (b.dueAt !== null) return 1
+    return a.index - b.index
+  })
+  return ranked.map((entry) => entry.group)
 }
 
 /**
@@ -157,6 +190,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     if (!isExpanded) onToggleExpand(folder.path)
   }, [isExpanded, onToggleExpand, folder.path])
 
+  const scheduledBySession = useScheduledSendsStore((s) => s.bySession)
+
   const derived = useMemo(() => {
     const projectSession = useChatStore.getState().projectSessions[folder.path]
     const dbVisibleSessions = allSessions.filter((session) => !session.isHidden)
@@ -189,7 +224,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       if (live.length > 0) sessions = [...live, ...sessions]
     }
 
-    const groups = groupSidebarSessions(sessions)
+    const groups = orderScheduledGroupsFirst(groupSidebarSessions(sessions), scheduledBySession)
     const isLive = (session: SessionHistoryEntry) => {
       const entry = projectSession?._sessions?.[session.sessionId]
       const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
@@ -215,7 +250,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       hasOverflow: groups.length > maxSessions,
       isLive,
     }
-  }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel])
+  }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel, scheduledBySession])
 
   /**
    * Every opened mini-app owns a host process, so listing live hosts would just

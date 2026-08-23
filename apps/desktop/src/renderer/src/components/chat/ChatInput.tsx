@@ -72,6 +72,7 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
 import { wrapPathRefMention } from './user-mention-parser'
 import { chatInputAPI } from './chat-input-api'
+import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
 
 export { chatInputAPI } from './chat-input-api'
 
@@ -260,10 +261,28 @@ export function ChatInput() {
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
     const codexDirsPendingNextTurn = activeProviderForResources === 'codex' && isStreaming && additionalDirsDirty
+    // A session gets its database row from its first send, so arming a schedule
+    // before then has nothing to hang off — this tells main how to persist it.
+    const scheduledSendInit = useMemo(
+      () => (activeProject
+        ? {
+            projectPath: activeProject,
+            harnessId: activeProviderForResources,
+            worktreePath: fileRoot && fileRoot !== activeProject ? fileRoot : null,
+          }
+        : null),
+      [activeProject, activeProviderForResources, fileRoot],
+    )
+    // The default message ("Continue") only makes sense against a conversation
+    // that exists. In a session nobody has sent in, an empty composer has
+    // nothing to schedule — and arming it would create a session holding a
+    // message the user never wrote.
+    const sessionIsUnsent = useActiveSession(isUnsentSession)
+    const canArmSchedule = hasContent || !sessionIsUnsent
     const {
       scheduled, loading: scheduledLoading, deliveredNonce, schedule: scheduleSend,
       setMessage: setScheduledMessage, setArmed: setArmedScheduled, setSendAt, clear: clearScheduled,
-    } = useScheduledSend(displayedSessionId)
+    } = useScheduledSend(displayedSessionId, scheduledSendInit)
     // An *armed* schedule blocks an immediate send — cancel it first. Sending
     // under one would empty the composer the schedule mirrors, so the same text
     // would go out twice. An unanswered offer blocks nothing: it is a question,
@@ -1920,6 +1939,7 @@ export function ChatInput() {
             <ScheduledSendButton
               scheduled={scheduled}
               canSend={canSend}
+              canArm={canArmSchedule}
               onSendNow={handleSend}
               onArm={handleArmScheduled}
               onDisarm={handleDisarmScheduled}

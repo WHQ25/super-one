@@ -657,6 +657,7 @@ interface AppAPI {
   pinSession(sessionId: string, pinned: boolean): Promise<void>
   /** Pending "resume when the rate-limit window resets" record for a session. */
   getScheduledSend(sessionId: string): Promise<ScheduledSend | null>
+  listScheduledSends(): Promise<ScheduledSend[]>
   /** Arm/disarm auto-resume. `message` null/empty → the default continue prompt. */
   setScheduledSend(sessionId: string, patch: ScheduledSendPatch): Promise<ScheduledSend | null>
   clearScheduledSend(sessionId: string): Promise<void>

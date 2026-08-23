@@ -6,6 +6,8 @@ import type { DraftListEntry } from '@superone/shared/environment'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { resumeDraft } from '@/lib/draft-resume'
 import { useDraftsStore } from '@/stores/drafts'
+import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
+import { formatSendWhen } from '@/components/chat/scheduled-send-time'
 import { useChatStore } from '@/stores/chat-store'
 import { discardDeletedDraft, getDraftIdForSession } from '@/stores/chat-store/helpers/draft-promote'
 import { nextDraftSlots, selectVisibleDrafts } from './draft-visibility'
@@ -53,6 +55,9 @@ const DraftRow = memo(function DraftRow({
 }) {
   const { t } = useTranslation()
   const discardDraft = useDraftsStore((s) => s.discardDraft)
+  // A draft whose session owes a send is not a note to self any more — it is
+  // the message that goes out at that time, so the row leads with the clock.
+  const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, draft.originSessionId))
 
   const resume = () => {
     onResume?.(draft, slotY ?? 0)
@@ -72,7 +77,14 @@ const DraftRow = memo(function DraftRow({
       style={{ height: DRAFT_ROW_HEIGHT }}
       className="group/draft flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 transition-colors hover:bg-sidebar-hover"
     >
-      <PencilLine className="size-3.5 shrink-0 text-sidebar-foreground/45" aria-hidden />
+      {scheduled ? (
+        <Clock
+          className="size-3.5 shrink-0 text-warning"
+          aria-label={t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })}
+        />
+      ) : (
+        <PencilLine className="size-3.5 shrink-0 text-sidebar-foreground/45" aria-hidden />
+      )}
       <span className="min-w-0 flex-1 truncate text-md text-sidebar-foreground">
         {draft.title || draft.text.trim() || t('sidebar.drafts.untitled')}
       </span>
@@ -87,6 +99,10 @@ const DraftRow = memo(function DraftRow({
         tooltip={t('common.delete')}
         onClick={(e) => {
           e.stopPropagation()
+          // Deleting the draft retires the promise with it — the schedule
+          // mirrors this text, so leaving it armed would send a message the
+          // user just threw away.
+          if (scheduled) void window.app.clearScheduledSend(scheduled.sessionId)
           discardDeletedDraft(draft.id)
           void discardDraft(connectionId, draft.id)
         }}

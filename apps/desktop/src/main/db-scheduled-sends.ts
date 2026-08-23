@@ -38,6 +38,20 @@ export function getScheduledSend(sessionId: string): ScheduledSend | null {
   return row ? toScheduledSend(row) : null
 }
 
+/**
+ * Every queued send, for the sidebar.
+ *
+ * The list is one row per session and only grows with things the user armed by
+ * hand or was offered, so there is nothing to paginate — the renderer keeps the
+ * whole set and the change broadcast keeps it current.
+ */
+export function listScheduledSends(): ScheduledSend[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM scheduled_sends ORDER BY send_at ASC')
+    .all() as DbScheduledSend[]
+  return rows.map(toScheduledSend)
+}
+
 /** Armed rows whose `send_at` has passed. */
 export function listDueScheduledSends(nowMs: number): ScheduledSend[] {
   const rows = getDb()

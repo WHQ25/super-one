@@ -23,6 +23,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     codexProjectAdditionalDirs: [] as string[],
     codexUserAdditionalDirs: [] as string[],
     additionalDirs: [] as string[],
+    projectExtraDirs: [] as string[],
+    additionalDirsDirty: false,
     messages: [] as unknown[],
     cwd: '/project' as string,
     homedir: '/home/user' as string,
@@ -43,6 +45,12 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     showReviewPanel: false,
     _activeSessionId: 'session-1',
     slashCommandOutput: null as { command: string; content: string; mode?: 'overlay' | 'popup' } | null,
+    // Liveness fields: `isUnsentSession` reads them to decide whether this
+    // session has a conversation to schedule against.
+    pendingPermissions: [] as unknown[],
+    pendingQuestion: null as unknown,
+    pendingPlanApproval: null as unknown,
+    awaitingAssistantReply: false,
   }
 
   const chatActions = {
@@ -963,11 +971,13 @@ describe('ChatInput scheduled send', () => {
     rerender(<ChatInput />)
     fireEvent.click(screen.getByRole('button', { name: /schedule for/i }))
 
-    expect(scheduledSend.set).toHaveBeenCalledWith('session-1', {
-      armed: true,
-      message: 'finish the migration',
-      sendAt: SEND_AT,
-    })
+    // The third argument is how main persists a session nobody has sent in yet
+    // — without it the schedule has no row to hang off and the arm is a no-op.
+    expect(scheduledSend.set).toHaveBeenCalledWith(
+      'session-1',
+      { armed: true, message: 'finish the migration', sendAt: SEND_AT },
+      { projectPath: '/project', harnessId: 'claude', worktreePath: null },
+    )
     expect(chatActions.sendMessage).not.toHaveBeenCalled()
   })
 
@@ -995,7 +1005,11 @@ describe('ChatInput scheduled send', () => {
     rerender(<ChatInput />)
 
     await waitFor(
-      () => expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { message: 'second draft' }),
+      () => expect(scheduledSend.set).toHaveBeenCalledWith(
+        'session-1',
+        { message: 'second draft' },
+        expect.anything(),
+      ),
       { timeout: 2000 },
     )
   })
@@ -1098,7 +1112,7 @@ describe('ChatInput scheduled send', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /cancel scheduled send/i }))
 
-    expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { armed: false })
+    expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { armed: false }, expect.anything())
     expect(editorState.text).toBe('finish the migration')
   })
 

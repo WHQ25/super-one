@@ -267,6 +267,7 @@ export type Messages = {
       pendingSync: string
       pendingSyncHint: string
     }
+    scheduledFor: string
     projects: string
     thisMac: string
     thisPc: string
@@ -1524,6 +1525,7 @@ export type Messages = {
       sendNow: string
       queued: string
       hintIdle: string
+      hintNeedsDraft: string
       hintRateLimit: string
       explainOffer: string
     }
@@ -3651,6 +3653,8 @@ export const en: Messages = {
       pendingSync: 'Pending Sync',
       pendingSyncHint: 'Saved on this computer; it will sync when the host reconnects.',
     },
+    /** Marks a draft row or a session row whose message goes out at that time. */
+    scheduledFor: 'Scheduled for {{time}}',
     projects: 'Projects',
     thisMac: 'This Mac',
     thisPc: 'This PC',
@@ -4985,7 +4989,7 @@ export const en: Messages = {
     scheduledSend: {
       continueOnReset: 'Continue on usage reset?',
       sendAt: 'Send at {{time}}',
-      toggle: 'Scheduled send',
+      toggle: 'Schedule Send',
       date: 'Date',
       time: 'Time',
       accept: 'Schedule for {{time}}',
@@ -4993,6 +4997,7 @@ export const en: Messages = {
       sendNow: 'Send',
       queued: 'Queued: {{message}}',
       hintIdle: 'Queue the composer for later.',
+      hintNeedsDraft: 'Type the message you want sent later.',
       hintRateLimit: 'Usage reset at: {{time}}',
       explainOffer: 'Send draft text or "{{fallback}}"',
     },

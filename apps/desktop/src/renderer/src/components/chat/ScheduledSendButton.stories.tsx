@@ -50,6 +50,7 @@ function Harness({ initial }: { initial: ScheduledSend | null }) {
             <ScheduledSendButton
               scheduled={row}
               canSend={draft.trim().length > 0}
+              canArm={draft.trim().length > 0}
               onSendNow={() => {
                 setSentLog(draft)
                 setDraft('')

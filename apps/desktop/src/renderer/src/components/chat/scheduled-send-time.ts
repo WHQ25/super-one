@@ -44,6 +44,24 @@ export function withTime(epochMs: number, value: string, nowMs: number): number 
   return at.getTime()
 }
 
+/**
+ * The next time the clock will read what `epochMs` reads, at or after `nowMs`.
+ *
+ * A time picked and then left sitting stops being a time: the panel can stay
+ * open, or be reopened hours later, long after the instant it holds has passed.
+ * Rolling to the same time of day tomorrow keeps the user's actual choice —
+ * the hour they picked — rather than inventing a fresh offset they never chose,
+ * and it matches what `withTime` already does when a bare `HH:MM` lands behind.
+ */
+export function nextOccurrenceOf(epochMs: number, nowMs: number): number {
+  if (epochMs > nowMs) return epochMs
+  const picked = new Date(epochMs)
+  const next = new Date(nowMs)
+  next.setHours(picked.getHours(), picked.getMinutes(), 0, 0)
+  if (next.getTime() <= nowMs) next.setDate(next.getDate() + 1)
+  return next.getTime()
+}
+
 /** Move the instant to another day, keeping the time of day already chosen. */
 export function withDate(epochMs: number, day: Date): number {
   const at = new Date(epochMs)

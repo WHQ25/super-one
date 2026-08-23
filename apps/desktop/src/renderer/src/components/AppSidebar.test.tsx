@@ -56,6 +56,8 @@ const mockWindowApp = {
   onAutomationEvent: vi.fn(() => () => {}),
   getAppSettings: vi.fn(async () => ({ miniAppOrder: {} })),
   getMediaServerPort: vi.fn(async () => 0),
+  listScheduledSends: vi.fn(async () => []),
+  onScheduledSendChanged: vi.fn(() => () => {}),
 }
 
 const mockEnvironment = {

@@ -6,13 +6,23 @@ import type { AgentEvent, ScheduledSend, ScheduledSendPatch } from '@superone/sh
  * the real table (same patch-merge rule, same due predicate, same source-scoped
  * delete), so the service's real logic runs end to end.
  */
-const { store } = vi.hoisted(() => ({ store: new Map<string, ScheduledSend>() }))
+const { store, sessions, hidden, transcripts } = vi.hoisted(() => ({
+  store: new Map<string, ScheduledSend>(),
+  /** Sessions that have a `sessions` row — the schedule's foreign key. */
+  sessions: new Set<string>(),
+  /** Sessions kept out of the sidebar's list. */
+  hidden: new Set<string>(),
+  /** Sessions that hold a transcript, which is what "not empty" means here. */
+  transcripts: new Set<string>(),
+}))
 
 vi.mock('../db-scheduled-sends', () => ({
   getScheduledSend: (sessionId: string) => store.get(sessionId) ?? null,
   listDueScheduledSends: (nowMs: number) =>
     [...store.values()].filter((r) => r.armed && r.sendAt <= nowMs),
   upsertScheduledSend: (sessionId: string, patch: ScheduledSendPatch) => {
+    // The real table's foreign key: a session with no row cannot hold a schedule.
+    if (!sessions.has(sessionId)) return null
     const prev = store.get(sessionId)
     const sendAt = patch.sendAt ?? prev?.sendAt
     if (sendAt === undefined) return null
@@ -34,6 +44,22 @@ vi.mock('../db-scheduled-sends', () => ({
 
 vi.mock('../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}))
+
+vi.mock('./session-repo', () => ({
+  insertSessionRecord: (input: { id: string; projectPath: string; isHidden?: boolean }) => {
+    if (!input.projectPath) throw new Error(`Project not found for path: ${input.projectPath}`)
+    sessions.add(input.id)
+    if (input.isHidden) hidden.add(input.id)
+  },
+}))
+
+vi.mock('../db-sessions', () => ({
+  hideSession: (sessionId: string, hide: boolean) => {
+    if (hide) hidden.add(sessionId)
+    else hidden.delete(sessionId)
+  },
+  sessionHasMessages: (sessionId: string) => transcripts.has(sessionId),
 }))
 
 import { ScheduledSendService } from './scheduled-send-service'
@@ -75,6 +101,11 @@ function setup() {
 
 beforeEach(() => {
   store.clear()
+  sessions.clear()
+  hidden.clear()
+  transcripts.clear()
+  sessions.add(SID)
+  transcripts.add(SID)
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
 })
@@ -185,6 +216,103 @@ describe('scheduled send — rate-limit offer', () => {
     service.set(SID, { sendAt: IN_ONE_HOUR, armed: true, message: 'run the tests', source: 'manual' })
     service.observe(SID, { type: 'message_complete', messageId: 'm1' } as AgentEvent)
     expect(store.get(SID)).toMatchObject({ armed: true, message: 'run the tests' })
+  })
+})
+
+describe('scheduled send — a session that has never been sent in', () => {
+  const FRESH = 'sess-fresh'
+  const init = { projectPath: '/proj', harnessId: 'claude' as const }
+
+  it('persists the session so arming from a fresh composer takes', () => {
+    const { service, broadcast } = setup()
+    const next = service.set(FRESH, { armed: true, sendAt: IN_ONE_HOUR, message: 'ping' }, init)
+    expect(next).toMatchObject({ sendAt: IN_ONE_HOUR, armed: true, message: 'ping' })
+    expect(broadcast).toHaveBeenCalledWith(FRESH, next, false)
+  })
+
+  it('keeps the session out of the sidebar until the send actually goes out', async () => {
+    const { service } = setup()
+    service.set(FRESH, { armed: true, sendAt: IN_ONE_HOUR, message: 'ping' }, init)
+    // The composer it mirrors is already on screen as a draft; an empty
+    // "Untitled" row beside it would be the same pending message drawn twice.
+    expect(hidden.has(FRESH)).toBe(true)
+
+    vi.setSystemTime(IN_ONE_HOUR + 1)
+    service.start()
+    await vi.waitFor(() => expect(hidden.has(FRESH)).toBe(false))
+    service.stop()
+  })
+
+  it('leaves a session the user hid alone when its scheduled send fires', async () => {
+    const { service, send } = setup()
+    hidden.add(SID)
+    service.set(SID, { armed: true, sendAt: IN_ONE_HOUR, message: 'ping' })
+
+    vi.setSystemTime(IN_ONE_HOUR + 1)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    service.stop()
+
+    // SID has a transcript, so it cannot be a row this service invented — the
+    // user hid a real conversation, and a scheduled send is no reason to
+    // overrule that.
+    expect(hidden.has(SID)).toBe(true)
+  })
+
+  it('leaves the session unwritten when the schedule is only being offered, not armed', () => {
+    const { service } = setup()
+    expect(service.set(FRESH, { sendAt: IN_ONE_HOUR }, init)).toBeNull()
+    expect(sessions.has(FRESH)).toBe(false)
+  })
+
+  it('reports nothing queued when the session cannot be persisted', () => {
+    const { service, broadcast } = setup()
+    const next = service.set(FRESH, { armed: true, sendAt: IN_ONE_HOUR }, { ...init, projectPath: '' })
+    expect(next).toBeNull()
+    expect(broadcast).toHaveBeenCalledWith(FRESH, null, false)
+  })
+})
+
+describe('scheduled send — a time that has already passed', () => {
+  const PAST = NOW - 60_000
+
+  it('refuses to arm a hand-made schedule behind the clock', () => {
+    const { service, broadcast } = setup()
+
+    // Armed in the past means due on arrival: it would go out on the very next
+    // poll, which is the surprise scheduling exists to avoid.
+    expect(service.set(SID, { armed: true, sendAt: PAST, message: 'ping' })).toBeNull()
+    expect(store.get(SID)).toBeUndefined()
+    expect(broadcast).toHaveBeenCalledWith(SID, null, false)
+  })
+
+  it('still accepts a rate-limit offer whose reset has already come round', async () => {
+    const { service, send } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    // The user walked away and came back after the window reopened. That time
+    // is a gate, not a plan — it is open now, so accepting means "go".
+    vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
+    service.set(SID, { armed: true, message: 'finish the migration' })
+
+    expect(store.get(SID)?.armed).toBe(true)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    service.stop()
+  })
+
+  it('leaves an already-armed row alone once its time has come round', () => {
+    const { service } = setup()
+    service.set(SID, { armed: true, sendAt: IN_ONE_HOUR, message: 'ping' })
+
+    // Between falling due and being delivered — and for every retry of a send
+    // that failed — an armed row legitimately sits behind the clock. A mirror
+    // write must not be refused for it.
+    vi.setSystemTime(IN_ONE_HOUR + 1)
+    service.set(SID, { message: 'edited after it fell due' })
+    expect(store.get(SID)?.message).toBe('edited after it fell due')
+
+    service.set(SID, { armed: true })
+    expect(store.get(SID)?.armed).toBe(true)
   })
 })
 

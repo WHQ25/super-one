@@ -172,6 +172,13 @@ export interface InsertSessionInput {
   isWorktree?: boolean
   gitBranch?: string | null
   worktreePath?: string | null
+  /**
+   * Keep the row out of the sidebar's session list. For a session that exists
+   * only so something else can reference it — a scheduled send arming before
+   * the first message — showing an empty "Untitled" row would be a second,
+   * duplicate representation of work the user already sees elsewhere.
+   */
+  isHidden?: boolean
 }
 
 export function insertSessionRecord(input: InsertSessionInput): void {
@@ -182,8 +189,8 @@ export function insertSessionRecord(input: InsertSessionInput): void {
   getDb().prepare(`
     INSERT INTO sessions (
       id, project_id, provider_id, provider, title, created_at, last_user_message_at,
-      is_worktree, git_branch, worktree_path
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      is_worktree, git_branch, worktree_path, is_hidden
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.id,
     projectId,
@@ -195,6 +202,7 @@ export function insertSessionRecord(input: InsertSessionInput): void {
     input.isWorktree ? 1 : 0,
     input.gitBranch ?? null,
     input.worktreePath ?? null,
+    input.isHidden ? 1 : 0,
   )
 }
 

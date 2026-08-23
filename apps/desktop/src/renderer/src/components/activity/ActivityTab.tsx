@@ -34,7 +34,25 @@ function usePanelTitle(api: IDockviewPanelHeaderProps['api']) {
   return title
 }
 
-export function HoverCloseSlot({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+/**
+ * A leading icon that becomes a dismiss button while its row is hovered.
+ *
+ * The X takes the icon's place rather than sitting beside it, so the row never
+ * changes width — and it carries its own round fill, which is what makes it
+ * read as a hit target instead of a decoration on the row behind it.
+ *
+ * `label` names what is being dismissed. It defaults to "Close" for tabs, where
+ * the row title already says what would close; anywhere else, say it.
+ */
+export function HoverCloseSlot({
+  children,
+  onClose,
+  label = 'Close',
+}: {
+  children: React.ReactNode
+  onClose: () => void
+  label?: string
+}) {
   return (
     <div className="relative size-3.5 shrink-0">
       <div className="absolute inset-0 transition-opacity [div:hover>div>&]:opacity-0">
@@ -43,7 +61,8 @@ export function HoverCloseSlot({ children, onClose }: { children: React.ReactNod
       <button
         onClick={(e) => { e.stopPropagation(); onClose() }}
         className="absolute inset-0 flex items-center justify-center rounded-full bg-foreground/15 text-foreground/80 opacity-0 transition-opacity hover:bg-foreground/25 [div:hover>div>&]:opacity-100"
-        title="Close"
+        title={label}
+        aria-label={label}
       >
         <X className="size-2.5" strokeWidth={2.5} />
       </button>

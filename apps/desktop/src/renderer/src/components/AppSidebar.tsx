@@ -36,6 +36,7 @@ import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { PinnedSessionRow } from '@/components/sidebar/PinnedSessionRow'
 import { DraftsSection } from '@/components/sidebar/DraftsSection'
+import { useScheduledSendsSync } from '@/hooks/useScheduledSendsSync'
 import { useDraftsStore } from '@/stores/drafts'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
@@ -99,6 +100,11 @@ export const AppSidebar = memo(function AppSidebar() {
 
   const fetchApps = useMiniAppStore((s) => s.fetchApps)
   useEffect(() => { fetchApps(currentFolder ?? undefined) }, [fetchApps, currentFolder])
+
+  // Both halves of the sidebar read queued sends — the drafts group to mark a
+  // row, the project rows to order them — so the subscription lives here rather
+  // than in either one.
+  useScheduledSendsSync()
 
   const sidebarTabs: SidebarTab[] = ['sessions', 'files']
   useEffect(() => {

@@ -15,6 +15,7 @@ vi.mock('react-i18next', () => ({
 
 import { DraftsSection } from './DraftsSection'
 import { useDraftsStore } from '@/stores/drafts'
+import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 
 function draft(id: string, title: string): DraftListEntry {
   return {
@@ -37,6 +38,7 @@ function draft(id: string, title: string): DraftListEntry {
 beforeEach(() => {
   vi.clearAllMocks()
   useDraftsStore.setState({ byConnection: {}, loading: {}, resumingDraftId: null, discardedIds: {} })
+  useScheduledSendsStore.setState({ bySession: {} })
 })
 
 describe('DraftsSection', () => {
@@ -48,6 +50,52 @@ describe('DraftsSection', () => {
     fireEvent.click(screen.getByText('first draft'))
 
     expect(resumeDraft).toHaveBeenCalledWith('local', one)
+  })
+
+  it('leads with the clock once the draft has a send queued behind it', () => {
+    const one = draft('d1', 'first draft')
+    useDraftsStore.setState({ byConnection: { local: [one] } })
+    useScheduledSendsStore.setState({
+      bySession: {
+        'sess-d1': {
+          sessionId: 'sess-d1',
+          sendAt: Date.now() + 3_600_000,
+          message: 'first draft',
+          armed: true,
+          source: 'manual',
+        },
+      },
+    })
+
+    render(<DraftsSection connectionId="local" />)
+
+    // The draft is no longer a note to self — it is the message that goes out
+    // at that time, and it is the only place that promise is visible: the
+    // session it will create is deliberately kept out of the list until then.
+    expect(screen.getByLabelText('sidebar.scheduledFor')).toBeInTheDocument()
+  })
+
+  it('cancels the queued send when the draft it mirrors is deleted', () => {
+    const clearScheduledSend = vi.fn()
+    Object.assign(window.app, { clearScheduledSend })
+    useDraftsStore.setState({ byConnection: { local: [draft('d1', 'first draft')] } })
+    useScheduledSendsStore.setState({
+      bySession: {
+        'sess-d1': {
+          sessionId: 'sess-d1',
+          sendAt: Date.now() + 3_600_000,
+          message: 'first draft',
+          armed: true,
+          source: 'manual',
+        },
+      },
+    })
+
+    render(<DraftsSection connectionId="local" />)
+    fireEvent.click(screen.getByRole('button', { name: 'common.delete' }))
+
+    // Otherwise the schedule keeps mirroring text the user just threw away.
+    expect(clearScheduledSend).toHaveBeenCalledWith('sess-d1')
   })
 
   it('positions every row by slot rather than by flow', () => {

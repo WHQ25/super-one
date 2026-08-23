@@ -191,7 +191,7 @@ import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { getInstallId } from './install-id'
-import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, ThemeMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode } from '@superone/shared/agent-types'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
@@ -5020,10 +5020,13 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_GET, (_e, sessionId: string) =>
     scheduledSendService.get(sessionId))
 
+  ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_LIST, () => scheduledSendService.list())
+
+
   ipcMain.handle(
     AgentIpcChannels.SCHEDULED_SEND_SET,
-    (_e, sessionId: string, patch: ScheduledSendPatch) =>
-      scheduledSendService.set(sessionId, patch),
+    (_e, sessionId: string, patch: ScheduledSendPatch, init?: ScheduledSendSessionInit) =>
+      scheduledSendService.set(sessionId, patch, init),
   )
 
   ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_CLEAR, (_e, sessionId: string) => {

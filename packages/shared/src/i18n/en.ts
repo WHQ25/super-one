@@ -2476,6 +2476,18 @@ export type Messages = {
       goalDesc: string
       goalArg: string
     }
+    addDir: {
+      nextTurn: string
+      errors: {
+        duplicate: string
+        notFound: string
+        notDirectory: string
+        sameAsProject: string
+        sameRepo: string
+        tooMany: string
+        saveFailed: string
+      }
+    }
     providerPopup: {
       title: string
       addProvider: string
@@ -5961,6 +5973,18 @@ export const en: Messages = {
       mcpDesc: 'View MCP servers in this session',
       goalDesc: 'Set or clear the goal for this Codex thread',
       goalArg: '[objective]',
+    },
+    addDir: {
+      nextTurn: 'Directory will be available to Codex on the next turn',
+      errors: {
+        duplicate: 'Directory is already added',
+        notFound: 'Directory not found',
+        notDirectory: 'Path is not a directory',
+        sameAsProject: 'Directory is the project itself',
+        sameRepo: 'Directory belongs to the same git repository as the project',
+        tooMany: 'A project can hold at most {{count}} folders',
+        saveFailed: 'Could not save the project folders',
+      },
     },
     providerPopup: {
       title: 'Choose a provider for this session',

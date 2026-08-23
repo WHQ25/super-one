@@ -4,7 +4,7 @@ import { getDb } from './database'
 import { dropMiniAppOrderBucket } from './app-settings-service'
 import type { RecentFolder } from '@superone/shared/agent-types'
 import { PATH_EXISTS_LIST_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
-import { parseProjectExtraDirs } from '@superone/shared/project-extra-dirs'
+import { parseProjectExtraDirs, resolveProjectExtraDirs, type ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import { normalizeProjectExtraDirs } from '@superone/shared/project-extra-dirs-node'
 
 export function getRecentFolders(): RecentFolder[] {
@@ -70,29 +70,27 @@ export function removeRecentFolder(folderPath: string): void {
   if (projectId) dropMiniAppOrderBucket(projectId)
 }
 
-export interface UpdateProjectInput {
+export interface UpdateProjectInput extends ProjectExtraDirsPatch {
   projectId?: string
   path?: string
   /** Omit to leave unchanged. Setting it pins the name against basename refreshes. */
   name?: string
-  /** Omit to leave unchanged. */
-  extraDirs?: string[]
 }
 
 /**
- * Apply an Edit Project submission.
+ * Apply an Edit Project submission or an `/add-dir` delta.
  *
- * Both fields are optional and independent so the dialog can send one PATCH for
+ * Every field is optional and independent so the dialog can send one PATCH for
  * whatever the user actually touched, rather than one write per folder added —
  * every write can cost a running Claude session a process rebuild.
  */
 export function updateProject(input: UpdateProjectInput): RecentFolder {
   const db = getDb()
   const row = (input.projectId
-    ? db.prepare('SELECT id, path FROM projects WHERE id = ?').get(input.projectId)
+    ? db.prepare('SELECT id, path, extra_dirs_json FROM projects WHERE id = ?').get(input.projectId)
     : input.path
-      ? db.prepare('SELECT id, path FROM projects WHERE path = ?').get(input.path)
-      : undefined) as { id: string; path: string } | undefined
+      ? db.prepare('SELECT id, path, extra_dirs_json FROM projects WHERE path = ?').get(input.path)
+      : undefined) as { id: string; path: string; extra_dirs_json: string | null } | undefined
 
   if (!row) {
     throw Object.assign(new Error('project not found'), { code: 'not_found' })
@@ -107,9 +105,13 @@ export function updateProject(input: UpdateProjectInput): RecentFolder {
     nextName = trimmed.slice(0, 200)
   }
 
-  const nextExtraDirs = input.extraDirs === undefined
+  // Read-modify-write for the delta form happens here, not in the renderer:
+  // this runs inside the single main process, so two windows adding a folder
+  // at the same time compose instead of replacing each other's list.
+  const resolved = resolveProjectExtraDirs(parseProjectExtraDirs(row.extra_dirs_json), input)
+  const nextExtraDirs = resolved === null
     ? null
-    : JSON.stringify(normalizeProjectExtraDirs(input.extraDirs, row.path))
+    : JSON.stringify(normalizeProjectExtraDirs(resolved, row.path))
 
   // Pin the name only when it actually diverges from the folder. The dialog
   // submits `name` on every save, so keying off "was a name supplied" would

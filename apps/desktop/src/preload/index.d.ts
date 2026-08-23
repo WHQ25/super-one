@@ -937,7 +937,17 @@ export interface EnvironmentAPI {
    */
   updateProject(
     connectionId: string,
-    input: { projectId?: string; path?: string; name?: string; extraDirs?: string[] },
+    input: {
+      projectId?: string
+      path?: string
+      name?: string
+      /** Replace the whole list (Edit Project's Save). */
+      extraDirs?: string[]
+      /** Append (`/add-dir`) — resolved against stored state in main. */
+      addExtraDirs?: string[]
+      /** Drop (`/add-dir`) — resolved against stored state in main. */
+      removeExtraDirs?: string[]
+    },
   ): Promise<ProjectSnapshot>
   /**
    * Unsent composer drafts owned by this environment. A remote list merges in

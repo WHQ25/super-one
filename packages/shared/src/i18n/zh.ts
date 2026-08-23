@@ -2559,6 +2559,18 @@ export const zh: Messages = {
       goalDesc: '为当前 Codex 线程设置或清除目标',
       goalArg: '[目标描述]',
     },
+    addDir: {
+      nextTurn: '该目录将在下一轮对话中对 Codex 生效',
+      errors: {
+        duplicate: '该目录已添加',
+        notFound: '目录不存在',
+        notDirectory: '该路径不是目录',
+        sameAsProject: '该目录就是项目本身',
+        sameRepo: '该目录与项目属于同一个 git 仓库',
+        tooMany: '一个项目最多添加 {{count}} 个目录',
+        saveFailed: '项目目录保存失败',
+      },
+    },
     providerPopup: {
       title: '为本会话选择服务商',
       addProvider: '添加新服务商…',

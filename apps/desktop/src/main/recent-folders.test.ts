@@ -172,4 +172,33 @@ describe('project workspace folders', () => {
 
     expect(getRecentFolders()[0].extraDirs).toEqual(['/elsewhere'])
   })
+
+  it('appends an add-dir delta to whatever is already stored', () => {
+    getDbMock.mockReturnValue(createMockDb([{ ...SEED, extra_dirs_json: '["/repo/packages/ui"]' }]))
+
+    // A second window that only knows about its own folder must not delete the
+    // first window's — which is exactly what sending the whole array would do.
+    updateProject({ projectId: 'p1', addExtraDirs: ['/repo/packages/shared'] })
+
+    expect(getRecentFolders()[0].extraDirs).toEqual([
+      '/repo/packages/ui', '/repo/packages/shared',
+    ])
+  })
+
+  it('drops only the named folder for a remove delta', () => {
+    getDbMock.mockReturnValue(createMockDb([{ ...SEED, extra_dirs_json: '["/a","/b"]' }]))
+
+    updateProject({ projectId: 'p1', removeExtraDirs: ['/a'] })
+
+    expect(getRecentFolders()[0].extraDirs).toEqual(['/b'])
+  })
+
+  it("lets Edit Project's whole-array save win over what is stored", () => {
+    getDbMock.mockReturnValue(createMockDb([{ ...SEED, extra_dirs_json: '["/a","/b"]' }]))
+
+    // A Save button promises last-writer-wins; only `/add-dir` is a delta.
+    updateProject({ projectId: 'p1', extraDirs: ['/c'] })
+
+    expect(getRecentFolders()[0].extraDirs).toEqual(['/c'])
+  })
 })

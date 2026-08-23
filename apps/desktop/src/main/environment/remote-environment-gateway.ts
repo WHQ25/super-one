@@ -42,6 +42,7 @@ import type {
   WorkspaceWriteInput,
   ResourceProvider,
 } from '@superone/shared/environment'
+import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import type { NodeRpcClient } from './node-rpc-client'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 
@@ -193,11 +194,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   }
 
   /** Edit Project: rename and/or set workspace folders on the remote node. */
-  async updateProject(input: {
+  async updateProject(input: ProjectExtraDirsPatch & {
     projectId?: string
     path?: string
     name?: string
-    extraDirs?: string[]
   }): Promise<ProjectSnapshot> {
     return this.client.rpc('project.update', input)
   }

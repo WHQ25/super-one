@@ -9,6 +9,7 @@ let db: NodeDatabase
 let registry: ProjectRegistry
 let root: string
 let sibling: string
+let sibling2: string
 
 beforeEach(() => {
   db = openNodeDatabase(':memory:')
@@ -16,8 +17,10 @@ beforeEach(() => {
   const base = mkdtempSync(join(tmpdir(), 'project-registry-'))
   root = join(base, 'repo')
   sibling = join(base, 'shared-lib')
+  sibling2 = join(base, 'other-lib')
   mkdirSync(root, { recursive: true })
   mkdirSync(sibling, { recursive: true })
+  mkdirSync(sibling2, { recursive: true })
 })
 
 afterEach(() => db.close())
@@ -92,6 +95,22 @@ describe('project workspace folders on a node', () => {
     registry.open(root)
     const updated = registry.update({ path: root, extraDirs: [sibling] })
     expect(updated?.extraDirs).toEqual([sibling])
+  })
+
+  it('composes an add-dir delta with folders another client already stored', () => {
+    const opened = registry.open(root)
+    registry.update({ projectId: opened.projectId, extraDirs: [sibling] })
+    // A desktop and a phone can both hold a stale list; the delta is resolved
+    // here, inside the node, so neither deletes the other's folder.
+    const updated = registry.update({ projectId: opened.projectId, addExtraDirs: [sibling2] })
+    expect(updated?.extraDirs).toEqual([sibling, sibling2])
+  })
+
+  it('drops only the named folder for a remove delta', () => {
+    const opened = registry.open(root)
+    registry.update({ projectId: opened.projectId, extraDirs: [sibling, sibling2] })
+    const updated = registry.update({ projectId: opened.projectId, removeExtraDirs: [sibling] })
+    expect(updated?.extraDirs).toEqual([sibling2])
   })
 })
 

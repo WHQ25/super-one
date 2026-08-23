@@ -1140,13 +1140,21 @@ function handleProjectUpdate(payload: unknown, ctx: RpcContext): RpcResult {
     return { error: { code: 'invalid_argument', message: 'projectId or path is required' } }
   }
   const name = typeof p.name === 'string' ? p.name : undefined
-  const extraDirs = Array.isArray(p.extraDirs)
-    ? p.extraDirs
-        .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
-        .map((d) => expandHostPath(d.trim()))
-    : undefined
+  const hostDirs = (raw: unknown): string[] | undefined =>
+    Array.isArray(raw)
+      ? raw
+          .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+          .map((d) => expandHostPath(d.trim()))
+      : undefined
   try {
-    const updated = ctx.projects.update({ projectId, path: pathRaw, name, extraDirs })
+    const updated = ctx.projects.update({
+      projectId,
+      path: pathRaw,
+      name,
+      extraDirs: hostDirs(p.extraDirs),
+      addExtraDirs: hostDirs(p.addExtraDirs),
+      removeExtraDirs: hostDirs(p.removeExtraDirs),
+    })
     if (!updated) {
       return { error: { code: 'not_found', message: 'project not found' } }
     }

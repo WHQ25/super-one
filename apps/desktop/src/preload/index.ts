@@ -411,7 +411,17 @@ const environmentAPI = {
   /** Edit Project: rename and/or replace the project's workspace folders. */
   updateProject: (
     connectionId: string,
-    input: { projectId?: string; path?: string; name?: string; extraDirs?: string[] },
+    input: {
+      projectId?: string
+      path?: string
+      name?: string
+      /** Replace the whole list (Edit Project's Save). */
+      extraDirs?: string[]
+      /** Append (`/add-dir`) — resolved against stored state in main. */
+      addExtraDirs?: string[]
+      /** Drop (`/add-dir`) — resolved against stored state in main. */
+      removeExtraDirs?: string[]
+    },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_UPDATE_PROJECT,

@@ -1501,7 +1501,14 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: { projectId?: string; path?: string; name?: string; extraDirs?: string[] },
+      input: {
+        projectId?: string
+        path?: string
+        name?: string
+        extraDirs?: string[]
+        addExtraDirs?: string[]
+        removeExtraDirs?: string[]
+      },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       const updated = await getEnvironmentHost().updateProject(connectionId, input)

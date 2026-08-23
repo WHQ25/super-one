@@ -44,3 +44,38 @@ export function parseProjectExtraDirs(raw: unknown): string[] {
 export function dedupeDirs(dirs: readonly string[]): string[] {
   return [...new Set(dirs)]
 }
+
+/** What a caller wants done to a project's folder list. */
+export interface ProjectExtraDirsPatch {
+  /** Replace the whole list — Edit Project's Save, explicitly last-writer-wins. */
+  extraDirs?: string[]
+  /** Append these — `/add-dir`. */
+  addExtraDirs?: string[]
+  /** Drop these — `/add-dir`'s remove. */
+  removeExtraDirs?: string[]
+}
+
+/**
+ * Resolve a folder patch against what the catalog currently holds.
+ *
+ * `/add-dir` adds ONE folder, so it travels as a delta rather than as a whole
+ * array. Sending the array would make two windows — or two edits spanning one
+ * round trip — race to replace each other's list, and the loser's folder would
+ * be silently deleted. Resolving the delta inside the catalog's own write is
+ * what lets concurrent adds compose instead of clobber.
+ *
+ * Edit Project keeps the whole-array form on purpose: it is a form submission,
+ * and last-writer-wins is the behaviour a Save button promises.
+ *
+ * Returns `null` when the patch says nothing about folders, which the callers
+ * turn into "leave the column alone".
+ */
+export function resolveProjectExtraDirs(
+  current: readonly string[],
+  patch: ProjectExtraDirsPatch,
+): string[] | null {
+  if (patch.extraDirs !== undefined) return [...patch.extraDirs]
+  if (patch.addExtraDirs === undefined && patch.removeExtraDirs === undefined) return null
+  const removed = new Set(patch.removeExtraDirs ?? [])
+  return [...current.filter((d) => !removed.has(d)), ...(patch.addExtraDirs ?? [])]
+}

@@ -685,32 +685,29 @@ export function ChatInput() {
       if (!activeProject) return false
       const known = new Set([...projectExtraDirs, ...additionalDirs])
       if (known.has(absolutePath)) {
-        toast.error(t('chat.addDir.errors.duplicate', { defaultValue: 'Directory is already added' }))
+        toast.error(t('chat.addDir.errors.duplicate'))
         return false
       }
       // The catalog silently truncates past the cap, which would close the popup
       // as if the folder had been added.
       if (scope === 'project' && projectExtraDirs.length >= MAX_PROJECT_EXTRA_DIRS) {
-        toast.error(t('chat.addDir.errors.tooMany', {
-          defaultValue: `A project can hold at most ${MAX_PROJECT_EXTRA_DIRS} folders`,
-          count: MAX_PROJECT_EXTRA_DIRS,
-        }))
+        toast.error(t('chat.addDir.errors.tooMany', { count: MAX_PROJECT_EXTRA_DIRS }))
         return false
       }
       const res = await window.agent.validateAddDir(activeProject, absolutePath)
       if (!res.ok) {
         const messageMap: Record<string, string> = {
-          'not-found': t('chat.addDir.errors.notFound', { defaultValue: 'Directory not found' }),
-          'not-directory': t('chat.addDir.errors.notDirectory', { defaultValue: 'Path is not a directory' }),
-          'same-as-project': t('chat.addDir.errors.sameAsProject', { defaultValue: 'Directory is the project itself' }),
-          'same-repo': t('chat.addDir.errors.sameRepo', { defaultValue: 'Directory belongs to the same git repository as the project' }),
+          'not-found': t('chat.addDir.errors.notFound'),
+          'not-directory': t('chat.addDir.errors.notDirectory'),
+          'same-as-project': t('chat.addDir.errors.sameAsProject'),
+          'same-repo': t('chat.addDir.errors.sameRepo'),
         }
         toast.error(messageMap[res.reason] ?? res.reason)
         return false
       }
       addDir(absolutePath, scope)
       if (activeProviderForResources === 'codex' && isStreaming) {
-        toast.info(t('chat.addDir.nextTurn', { defaultValue: 'Directory will be available to Codex on the next turn' }))
+        toast.info(t('chat.addDir.nextTurn'))
       }
       return true
     }, [activeProject, activeProviderForResources, addDir, additionalDirs, isStreaming, projectExtraDirs, t])

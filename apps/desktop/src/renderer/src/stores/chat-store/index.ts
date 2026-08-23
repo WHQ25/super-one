@@ -1069,7 +1069,12 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     // touched, so one folder serves claude, codex and ACP alike.
     const proj = getProject(get(), projectPath)
     if (proj.projectExtraDirs.includes(path)) return
-    void writeProjectExtraDirs(projectPath, [...proj.projectExtraDirs, path], projectDirsSink(projectPath, set, get))
+    void writeProjectExtraDirs(
+      projectPath,
+      [...proj.projectExtraDirs, path],
+      { addExtraDirs: [path] },
+      projectDirsSink(projectPath, set, get),
+    )
   },
 
   removeDir: (path, scope, target) => {
@@ -1084,7 +1089,12 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
     const proj = getProject(get(), projectPath)
     if (!proj.projectExtraDirs.includes(path)) return
-    void writeProjectExtraDirs(projectPath, proj.projectExtraDirs.filter((d) => d !== path), projectDirsSink(projectPath, set, get))
+    void writeProjectExtraDirs(
+      projectPath,
+      proj.projectExtraDirs.filter((d) => d !== path),
+      { removeExtraDirs: [path] },
+      projectDirsSink(projectPath, set, get),
+    )
   },
 
   // setShowDirManager / setShowReviewPanel now provided by createCoreSlice

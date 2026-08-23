@@ -4,7 +4,7 @@ import type { ProjectSnapshot } from '@superone/shared/environment'
 import type { SqliteDatabase } from '../sqlite'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { parseProjectExtraDirs } from '@superone/shared/project-extra-dirs'
+import { parseProjectExtraDirs, resolveProjectExtraDirs, type ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import { normalizeProjectExtraDirs } from '@superone/shared/project-extra-dirs-node'
 
 export class ProjectRegistry {
@@ -113,17 +113,16 @@ export class ProjectRegistry {
   }
 
   /**
-   * Apply an Edit Project submission — rename and/or set workspace folders.
+   * Apply an Edit Project submission or an `/add-dir` delta.
    *
    * Both fields are optional and independent so one patch covers whatever the
    * user actually touched. Unlike `open()`, a name given here is authoritative:
    * it is an explicit rename, not a basename refresh.
    */
-  update(input: {
+  update(input: ProjectExtraDirsPatch & {
     projectId?: string
     path?: string
     name?: string
-    extraDirs?: string[]
   }): ProjectSnapshot | null {
     const existing = input.projectId
       ? this.get(input.projectId)
@@ -143,10 +142,12 @@ export class ProjectRegistry {
       nextName = trimmed.slice(0, 200)
     }
 
+    // The `/add-dir` delta is resolved against stored state here rather than in
+    // the caller, so two clients adding a folder at the same time compose
+    // instead of replacing each other's whole list.
+    const resolved = resolveProjectExtraDirs(existing.extraDirs ?? [], input)
     const nextExtraDirs =
-      input.extraDirs === undefined
-        ? null
-        : JSON.stringify(normalizeProjectExtraDirs(input.extraDirs, existing.path))
+      resolved === null ? null : JSON.stringify(normalizeProjectExtraDirs(resolved, existing.path))
 
     this.db
       .prepare(

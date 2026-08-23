@@ -796,7 +796,7 @@ describe('addDir / removeDir', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mockWindowEnvironment.updateProject).toHaveBeenCalledWith('local', {
       path: PATH,
-      extraDirs: ['/shared'],
+      addExtraDirs: ['/shared'],
     })
   })
 
@@ -812,7 +812,7 @@ describe('addDir / removeDir', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mockWindowEnvironment.updateProject).toHaveBeenCalledWith('local', {
       path: PATH,
-      extraDirs: ['/b'],
+      removeExtraDirs: ['/a'],
     })
   })
 
@@ -823,7 +823,7 @@ describe('addDir / removeDir', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mockWindowEnvironment.updateProject).toHaveBeenCalledWith('conn-1', {
       path: '/srv/project',
-      extraDirs: ['/srv/shared'],
+      addExtraDirs: ['/srv/shared'],
     })
   })
 
@@ -842,18 +842,56 @@ describe('addDir / removeDir', () => {
 
   it("two addDir scope='project' calls in the same tick both survive", async () => {
     setupProject()
-    const seen: string[][] = []
-    mockWindowEnvironment.updateProject.mockImplementation(async (_c: string, input: { extraDirs: string[] }) => {
-      seen.push([...input.extraDirs])
-      return { projectId: 'p', path: PATH, name: 'p', extraDirs: input.extraDirs }
+    const stored: string[] = []
+    mockWindowEnvironment.updateProject.mockImplementation(async (_c: string, input: { addExtraDirs?: string[] }) => {
+      stored.push(...(input.addExtraDirs ?? []))
+      return { projectId: 'p', path: PATH, name: 'p', extraDirs: [...stored] }
     })
     useChatStore.getState().addDir('/a', 'project')
     useChatStore.getState().addDir('/b', 'project')
     await flushProjectDirWrites()
-    // The second call must compute from the first one's committed result, and
-    // the catalog must receive them in that order — `updateProject` replaces the
-    // whole array, so an overlap would drop whichever folder wrote first.
-    expect(seen).toEqual([['/a'], ['/a', '/b']])
+    expect(stored).toEqual(['/a', '/b'])
+    expect(activeProjectState().projectExtraDirs).toEqual(['/a', '/b'])
+  })
+
+  it("addDir scope='project' sends a delta so a second window cannot delete the folder", async () => {
+    setupProject()
+    useChatStore.getState().addDir('/shared', 'project')
+    await flushProjectDirWrites()
+    // Main resolves the delta against stored state inside its own write. Sending
+    // the resulting array instead would let two windows that both started from
+    // `[]` replace each other's list.
+    const [, input] = mockWindowEnvironment.updateProject.mock.calls[0]
+    expect(input).not.toHaveProperty('extraDirs')
+    expect(input.addExtraDirs).toEqual(['/shared'])
+  })
+
+  it("an older catalog response does not rewind a newer optimistic edit out of the store", async () => {
+    setupProject()
+    const stored: string[] = []
+    const answers: Array<() => void> = []
+    mockWindowEnvironment.updateProject.mockImplementation(async (_c: string, input: { addExtraDirs?: string[] }) => {
+      stored.push(...(input.addExtraDirs ?? []))
+      const snapshot = [...stored]
+      return new Promise((resolve) => {
+        answers.push(() => resolve({ projectId: 'p', path: PATH, name: 'p', extraDirs: snapshot }))
+      })
+    })
+
+    useChatStore.getState().addDir('/a', 'project')
+    await flushProjectDirWrites()
+    useChatStore.getState().addDir('/b', 'project')
+    expect(activeProjectState().projectExtraDirs).toEqual(['/a', '/b'])
+
+    // The first write answers with the list as it was BEFORE '/b' was added.
+    // Committing that would rewind the store and make the composer flash '/b'
+    // out of existence while its own write is still in flight.
+    answers[0]?.()
+    await flushProjectDirWrites()
+    expect(activeProjectState().projectExtraDirs).toEqual(['/a', '/b'])
+
+    answers[1]?.()
+    await flushProjectDirWrites()
     expect(activeProjectState().projectExtraDirs).toEqual(['/a', '/b'])
   })
 

@@ -66,6 +66,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join as pathJoin, resolve as pathResolve } from 'node:path'
 import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
+import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, updateProject, getProjectId, getProjectPathById } from '../recent-folders'
 import { listSessionsForProjectId } from '../db-sessions'
 import type {
@@ -2231,7 +2232,7 @@ export class EnvironmentHost {
    */
   async updateProject(
     connectionId: string,
-    input: { projectId?: string; path?: string; name?: string; extraDirs?: string[] },
+    input: ProjectExtraDirsPatch & { projectId?: string; path?: string; name?: string },
   ): Promise<ProjectSnapshot> {
     const path = input.path?.trim()
     const projectId = input.projectId?.trim()
@@ -2245,6 +2246,8 @@ export class EnvironmentHost {
         path: path ? this.expandLocalPath(path) : undefined,
         name: input.name,
         extraDirs: input.extraDirs,
+        addExtraDirs: input.addExtraDirs,
+        removeExtraDirs: input.removeExtraDirs,
       })
       return {
         projectId: updated.id,
@@ -2260,6 +2263,8 @@ export class EnvironmentHost {
       path: path || undefined,
       name: input.name,
       extraDirs: input.extraDirs,
+      addExtraDirs: input.addExtraDirs,
+      removeExtraDirs: input.removeExtraDirs,
     })
     // Without this the sidebar keeps showing the stale name until the next
     // forced refresh — same reason removeProject/openProject patch the cache.

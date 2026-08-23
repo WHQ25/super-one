@@ -1047,7 +1047,7 @@ export class Session implements SessionContract {
       sandboxInfo: this.sandboxInfo,
       effort: hint?.effort ?? asEffortLevel(this._uiSettings.selectedAcpModeId) ?? this.effort,
       model: hint?.model ?? this.model,
-      additionalDirectories: dirs.length > 0 ? dirs : undefined,
+      additionalDirectories: this.backendDirs(dirs),
       abortController: new AbortController(),
       providerSessionId: this._providerSessionId ?? undefined,
       apiProviderId: this._apiProviderId,
@@ -1461,6 +1461,12 @@ export class Session implements SessionContract {
     return HARNESS_CAPABILITIES[this.harnessId]?.supportsAdditionalDirs ?? false
   }
 
+  /** The directory set as the backend should see it — nothing, if it cannot use one. */
+  private backendDirs(dirs: readonly string[] = this.additionalDirectories): string[] | undefined {
+    if (!this.dirsReachBackend() || dirs.length === 0) return undefined
+    return [...dirs]
+  }
+
   /**
    * The caller-owned half only.
    *
@@ -1511,7 +1517,7 @@ export class Session implements SessionContract {
       sandboxInfo: this.sandboxInfo,
       effort: asEffortLevel(this._uiSettings.selectedAcpModeId) ?? this.effort,
       model: this.model,
-      additionalDirectories: this.additionalDirectories.length > 0 ? this.additionalDirectories : undefined,
+      additionalDirectories: this.backendDirs(),
       abortController: this.abortController,
       providerSessionId: this._providerSessionId ?? undefined,
       apiProviderId: this._apiProviderId,

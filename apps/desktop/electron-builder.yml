@@ -94,6 +94,9 @@ asarUnpack:
   # Cursor platform helpers (cursorsandbox, rg, tree-sitter .node). Do not
   # unpack @cursor/sdk JS — only the optional `@cursor/sdk-<platform>` package.
   - "node_modules/@cursor/sdk-*/**"
+  # sharp's libvips packages ship .so/.dylib, not .node, so **/*.node never
+  # unpacks them. The addon require.resolve()s this binary then dlopens it.
+  - "node_modules/@img/sharp-libvips-*/**"
 
 publish:
   provider: generic

@@ -22,6 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Sidebar: a mini-app host row no longer grows by 2px on hover (the
   status text swapped for a slightly taller stop button and shifted every
   row below it).
+- Packaged Linux/macOS builds unpack `@img/sharp-libvips-*`. Those
+  packages ship `.so`/`.dylib`, not `.node`, so they stayed inside the
+  asar and sharp could not load libvips.
 
 ### Performance
 

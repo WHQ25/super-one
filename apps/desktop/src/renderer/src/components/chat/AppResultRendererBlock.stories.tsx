@@ -20,7 +20,6 @@ const APP: MiniAppEntry = {
     name: 'Expense Tracker',
     main: 'node.js',
     version: '1.0.0',
-    toolSlug: 'expense',
     templates: {
       receiptCard: 'templates/receipt-card.html',
     },

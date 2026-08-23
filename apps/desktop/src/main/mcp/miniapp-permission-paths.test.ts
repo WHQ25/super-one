@@ -91,8 +91,8 @@ function acpWouldAutoAllowMiniappCall(): boolean {
 
 beforeEach(async () => {
   unregisterAppTools(SID, APP)
-  registerAppTools(SID, '/proj', APP, 'hello', makeTools())
-  await loadPreapprovedTools(APP, 'hello', '/fake/install')
+  registerAppTools(SID, '/proj', APP, makeTools())
+  await loadPreapprovedTools(APP, '/fake/install')
 })
 
 describe('miniapp_call unified static-admit + executor gate', () => {

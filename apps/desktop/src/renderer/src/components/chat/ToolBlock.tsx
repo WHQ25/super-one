@@ -1411,7 +1411,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         />
       )
     }
-    // Fixed miniapp_call (appId+tool in args) or legacy slug__tool transcript names.
+    // Fixed miniapp_call (appId+tool in args) or legacy appId__tool transcript names.
     const resolvedAppTool = resolveMiniAppToolIdentity(mcpInfo.mcpToolName, params, miniApps)
     if (resolvedAppTool) {
       const canvasApp = miniApps.find((a) => a.id === resolvedAppTool.appId)

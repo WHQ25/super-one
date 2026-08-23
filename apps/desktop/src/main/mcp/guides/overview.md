@@ -73,7 +73,7 @@ The WebView receives updates independently:
 window.superone.node.onMessage((message) => render(message))
 ```
 
-Closing the WebView does not stop tool execution.
+Closing the WebView does not interrupt a tool call in flight. Once the last panel closes the host is released unless the manifest declares `background: true`; the next tool call starts it again.
 
 ## Related topics
 

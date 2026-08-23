@@ -426,7 +426,7 @@ export const zh: Messages = {
       sessionHistory: '会话历史',
       removeProject: '移除项目',
       automations: '自动化',
-      miniApps: '小程序',
+      miniApps: '后台小程序',
       hostUptimeS: '{{s}}秒',
       hostUptimeMS: '{{m}}分{{s}}秒',
       hostUptimeHM: '{{h}}时{{m}}分',

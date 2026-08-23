@@ -78,11 +78,10 @@ export function useAgentEvents(): void {
       const projectId = instance?.projectId ?? useAppStore.getState().currentProjectId
       const host = buildMiniAppUrlHost(req.appId, projectId)
       const templateUrl = buildToolRendererUrl('intercept', host, req.templatePath, req.callId, req.toolName, req.agentInput ?? {})
-      const toolUseId = findToolUseIdForIntercept(req.appId, req.toolSlug, req.toolName)
+      const toolUseId = findToolUseIdForIntercept(req.appId, req.toolName)
       useChatStore.getState().openToolIntercept({
         callId: req.callId,
         appId: req.appId,
-        toolSlug: req.toolSlug,
         toolName: req.toolName,
         toolUseId,
         templateUrl,
@@ -101,7 +100,7 @@ export function useAgentEvents(): void {
   }, [])
 }
 
-function findToolUseIdForIntercept(appId: string, toolSlug: string, toolName: string): string | null {
+function findToolUseIdForIntercept(appId: string, toolName: string): string | null {
   const state = useChatStore.getState()
   const activeProject = state.activeProject
   if (!activeProject) return null
@@ -111,7 +110,7 @@ function findToolUseIdForIntercept(appId: string, toolSlug: string, toolName: st
   const session = project._sessions[sessionId]
   if (!session) return null
 
-  const legacyName = `mcp__superone__${toolSlug}__${toolName}`
+  const legacyName = `mcp__superone__${appId}__${toolName}`
   const fixedName = 'mcp__superone__miniapp_call'
   const resultedIds = new Set<string>()
   for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -128,8 +127,6 @@ function findToolUseIdForIntercept(appId: string, toolSlug: string, toolName: st
         try {
           const input = JSON.parse(block.input) as Record<string, unknown>
           if (input.appId === appId && input.tool === toolName) return block.toolUseId
-          // Also match when agent used toolSlug as appId
-          if (input.appId === toolSlug && input.tool === toolName) return block.toolUseId
         } catch { /* ignore partial JSON */ }
       }
     }

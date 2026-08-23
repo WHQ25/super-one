@@ -33,7 +33,7 @@ vi.mock('./activity-view-state', () => ({
   useActivityViewStateStore: { getState: () => ({ seedFromCurrent: mockSeedFromCurrent, clearForSession: mockClearForSession }) },
 }))
 
-const mockMiniAppStore: { openApps: Record<string, unknown>; apps: Array<{ id: string; manifest?: { name: string; toolSlug: string } }> } = {
+const mockMiniAppStore: { openApps: Record<string, unknown>; apps: Array<{ id: string; manifest?: { name: string } }> } = {
   openApps: {},
   apps: [],
 }

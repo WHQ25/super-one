@@ -217,8 +217,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     }
   }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel])
 
+  /**
+   * Every opened mini-app owns a host process, so listing live hosts would just
+   * mirror the open panels. This group is about work the user cannot see, which
+   * only apps that declared `background` in their manifest can do — UI-bound
+   * hosts are released with their last panel.
+   */
   const projectHosts = useMiniAppStore(useShallow((s) =>
-    s.hosts.filter((host) => host.projectDir === folder.path),
+    s.hosts.filter((host) => host.projectDir === folder.path && host.background),
   ))
   const handleStopHost = useCallback((appId: string) => {
     window.miniapp.hostStop(folder.path, appId).catch(() => {})

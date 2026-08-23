@@ -3,7 +3,7 @@
  *
  * Supports:
  * - Fixed tools: miniapp_call with { appId, tool, input }
- * - Legacy transcript names: mcp bare name `toolSlug__toolName` (render-only back-compat)
+ * - Legacy transcript names: mcp bare name `appId__toolName` (render-only back-compat)
  */
 
 import type { MiniAppToolDefinition } from '@superone/shared/miniapp-types'
@@ -12,7 +12,6 @@ export interface MiniAppLike {
   id: string
   manifest: {
     name: string
-    toolSlug?: string
     tools?: MiniAppToolDefinition[]
     templates?: Record<string, string>
   }
@@ -21,12 +20,11 @@ export interface MiniAppLike {
 export interface ResolvedMiniAppTool {
   app: MiniAppLike
   appId: string
-  toolSlug: string
   toolName: string
   toolDef: MiniAppToolDefinition | undefined
   /** Args that the app tool itself receives (inner input for miniapp_call). */
   toolInput: Record<string, unknown>
-  /** True when resolved from historical slug__tool MCP names. */
+  /** True when resolved from historical appId__tool MCP names. */
   legacy: boolean
 }
 
@@ -52,25 +50,21 @@ export function resolveMiniAppToolIdentity(
     const toolName = typeof params.tool === 'string' ? params.tool : ''
     if (!appId || !toolName) return null
     const app = apps.find((a) => a.id === appId)
-      ?? apps.find((a) => (a.manifest.toolSlug ?? a.id) === appId)
     if (!app) {
       // Still return a synthetic resolution so UI can show appId/tool text.
       return {
         app: { id: appId, manifest: { name: appId } },
         appId,
-        toolSlug: appId,
         toolName,
         toolDef: undefined,
         toolInput: asRecord(params.input),
         legacy: false,
       }
     }
-    const toolSlug = app.manifest.toolSlug ?? app.id
     const toolDef = app.manifest.tools?.find((t) => t.name === toolName)
     return {
       app,
       appId: app.id,
-      toolSlug,
       toolName,
       toolDef,
       toolInput: asRecord(params.input),
@@ -78,16 +72,15 @@ export function resolveMiniAppToolIdentity(
     }
   }
 
-  // Legacy: slug__toolName (historical transcripts only — no execution path).
+  // Legacy: appId__toolName (historical transcripts only — no execution path).
   const appToolMatch = mcpToolName.match(/^(.+?)__(.+)$/)
   if (!appToolMatch) return null
-  const [, mcpSlug, mcpToolNamePart] = appToolMatch
-  const app = apps.find((a) => (a.manifest.toolSlug ?? a.id) === mcpSlug)
+  const [, mcpAppId, mcpToolNamePart] = appToolMatch
+  const app = apps.find((a) => a.id === mcpAppId)
   if (!app) {
     return {
-      app: { id: mcpSlug, manifest: { name: mcpSlug } },
-      appId: mcpSlug,
-      toolSlug: mcpSlug,
+      app: { id: mcpAppId, manifest: { name: mcpAppId } },
+      appId: mcpAppId,
       toolName: mcpToolNamePart,
       toolDef: undefined,
       toolInput: params,
@@ -98,7 +91,6 @@ export function resolveMiniAppToolIdentity(
   return {
     app,
     appId: app.id,
-    toolSlug: app.manifest.toolSlug ?? app.id,
     toolName: mcpToolNamePart,
     toolDef,
     toolInput: params,

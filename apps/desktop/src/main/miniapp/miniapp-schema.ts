@@ -76,8 +76,6 @@ const toolDefinitionSchema = z.object({
   { message: 'standalone tools require renderer.result.template to render their result UI' },
 )
 
-const TOOL_NAME_RE = /^[a-z0-9_]+$/
-
 export const manifestSchema = z.object({
   appId: z.string().min(1).regex(APP_ID_RE, { message: 'appId must be lowercase alphanumeric, hyphens, or underscores' }),
   name: z.string().min(1),
@@ -87,9 +85,9 @@ export const manifestSchema = z.object({
   description: z.string().optional(),
   logo: z.string().optional(),
   isDev: z.boolean().optional(),
+  background: z.boolean().optional(),
   preferWidth: z.number().int().min(400).max(2000).optional(),
   permissions: permissionsSchema.optional(),
-  toolSlug: z.string().min(1).regex(TOOL_NAME_RE, { message: 'toolSlug must be lowercase alphanumeric with underscores' }).optional(),
   tools: z.array(toolDefinitionSchema).optional(),
   runningText: z.string().optional(),
   templates: z.record(
@@ -97,12 +95,6 @@ export const manifestSchema = z.object({
     htmlEntrySchema,
   ).optional(),
 }).strict().refine(
-  (m) => {
-    if (!m.tools || m.tools.length === 0) return true
-    return !!m.toolSlug
-  },
-  { message: 'apps with tools require toolSlug' },
-).refine(
   (m) => {
     if (!m.tools) return true
     for (const t of m.tools) {
@@ -128,8 +120,16 @@ export type ManifestParseResult =
   | { ok: true; manifest: z.infer<typeof manifestSchema> }
   | { ok: false; errors: string[] }
 
+/** Drop leftover `toolSlug` so already-installed manifests still parse. */
+function stripLegacyToolSlug(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  if (!('toolSlug' in raw)) return raw
+  const { toolSlug: _ignored, ...rest } = raw as Record<string, unknown>
+  return rest
+}
+
 export function parseManifest(raw: unknown): ManifestParseResult {
-  const result = manifestSchema.safeParse(raw)
+  const result = manifestSchema.safeParse(stripLegacyToolSlug(raw))
   if (result.success) {
     return { ok: true, manifest: result.data }
   }

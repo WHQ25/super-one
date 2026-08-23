@@ -85,7 +85,7 @@ export const CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS = new Set<string>([...MAIN_T
  *
  * Host-owned names (static builtins, mobile_share_file, computer_*, miniapp_list)
  * come from superone-host-owned-tools. Fixed miniapp_call and legacy mini-app
- * tools (`slug__tool`) always rewrite so isToolPreapproved can match.
+ * tools (`appId__tool`) always rewrite so isToolPreapproved can match.
  */
 export function extractSuperoneMiniAppToolName(message: string): string | null {
   const match = message.match(SUPERONE_MCP_TOOL_NAME_PATTERN)

@@ -21,7 +21,6 @@ const awaitingRenderer = (
 ): ToolRendererState => ({
   callId,
   appId: 'app-1',
-  toolSlug: 'hello',
   toolName: 'hello',
   toolUseId: 'use-1',
   templateUrl: 'about:blank',

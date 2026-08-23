@@ -7,7 +7,6 @@
   "author": { "name": "SuperOne", "url": "https://github.com/WHQ25/super-one" },
   "description": "Counter app demonstrating Node MiniApp Host tools and result WebViews",
   "preferWidth": 420,
-  "toolSlug": "demo",
   "templates": {
     "increment-result": "increment-result.html",
     "simple-result": "simple-result.html",

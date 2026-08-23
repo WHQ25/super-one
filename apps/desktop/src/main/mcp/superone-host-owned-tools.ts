@@ -8,7 +8,7 @@
  *
  * Keep static names in sync with tools registered on the SuperOne MCP surface
  * (`listSuperoneMcpTools` / `createSuperoneMcpServer`). Mini-app tools
- * (`slug__tool`) are NOT host-owned — they use preapproved.json instead.
+ * (`miniapp_call`) are NOT host-owned — they use preapproved.json instead.
  *
  * Feature-gated tools:
  * - computer_*: recognized for rewrite always; auto-allow only when enabled

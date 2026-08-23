@@ -828,7 +828,6 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
     id: 'excalidraw',
     manifest: {
       name: 'Excalidraw',
-      toolSlug: 'excalidraw',
       tools: [
         { name: 'read_scene', description: 'Read the current canvas state' },
         { name: 'clear_canvas', description: 'Clear all elements from the canvas' },

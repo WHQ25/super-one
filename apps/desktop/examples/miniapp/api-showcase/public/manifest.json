@@ -9,7 +9,6 @@
   "logo": "logo.png",
   "fullscreen": true,
   "preferWidth": 640,
-  "toolSlug": "showcase",
   "permissions": {
     "media": [
       { "kind": "microphone", "reason": "Demo: microphone recording" },

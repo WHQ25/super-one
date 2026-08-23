@@ -59,12 +59,10 @@ export function miniappSchemaErrorReply(details: {
 export interface MiniappToolDeps {
   getAuthorizedApps(sessionId: string): Array<{
     appId: string
-    toolSlug: string
     tools: MiniAppToolDefinition[]
   }>
   getAppEntry(sessionId: string, appId: string): {
     projectDir: string
-    toolSlug: string
     tools: MiniAppToolDefinition[]
   } | null
   dispatchAppToolCall(
@@ -77,7 +75,7 @@ export interface MiniappToolDeps {
   ): Promise<unknown>
   /** Args-aware preapprove (install preapproved.json + alwaysAllow updates). */
   isAppToolPreapproved(appId: string, toolName: string): boolean
-  /** Persist alwaysAllow for the rest of the process (and matching slug key). */
+  /** Persist alwaysAllow for the rest of the process. */
   markAppToolPreapproved(appId: string, toolName: string): void
   /**
    * Host event emitter for the SuperOne session. When null, non-preapproved
@@ -123,7 +121,6 @@ export async function executeMiniappList(
         : entry.tools.map(fullToolDef)
       return miniappTextReply({
         appId: entry.appId,
-        toolSlug: entry.toolSlug,
         tools,
       })
     }
@@ -132,7 +129,6 @@ export async function executeMiniappList(
       count: authorized.length,
       apps: authorized.map((entry) => ({
         appId: entry.appId,
-        toolSlug: entry.toolSlug,
         tools: entry.tools.map(summarizeTool),
       })),
     })

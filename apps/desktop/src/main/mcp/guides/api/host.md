@@ -5,7 +5,7 @@ Every mini-app has two independent parts:
 - A full Electron `<webview>` for HTML/CSS/JS UI.
 - A dedicated Node.js MiniApp Host for computation and agent-facing tools.
 
-The MiniApp Host starts from the required `manifest.main` JavaScript entry. It runs in an Electron utility process, stays alive when the UI tab is closed, and is isolated per `(projectDir, appId)`. Mini-app installation explicitly asks the user to trust this entry with full local Node.js access.
+The MiniApp Host starts from the required `manifest.main` JavaScript entry. It runs in an Electron utility process, is isolated per `(projectDir, appId)`, and outlives its UI tab only when the manifest declares `background`. Mini-app installation explicitly asks the user to trust this entry with full local Node.js access.
 
 ## Entry module
 
@@ -90,6 +90,7 @@ Keep privileged computation in `main`; keep rendering and user interaction in We
 
 - The host starts when the app is opened or authorized for a session.
 - `activate()` must finish before tool calls or WebView messages are delivered.
-- Closing a panel does not stop its host.
+- Closing the last panel deactivates a UI-bound host; a later tool call respawns it.
+- A host declaring `background: true` in the manifest keeps running with no panel open.
 - Stopping/uninstalling the app, closing its final session, or quitting SuperOne deactivates the host.
 - An activation failure or process exit rejects pending tool calls and is surfaced as a MiniApp Host error.

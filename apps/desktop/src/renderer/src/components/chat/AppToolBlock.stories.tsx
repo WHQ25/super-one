@@ -20,7 +20,6 @@ const APP: MiniAppEntry = {
     name: 'CRM Tools',
     main: 'node.js',
     version: '0.4.0',
-    toolSlug: 'crm',
     tools: [
       {
         name: 'find_contact',

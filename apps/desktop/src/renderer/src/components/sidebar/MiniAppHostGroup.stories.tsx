@@ -5,7 +5,7 @@ import { MiniAppHostGroup } from './MiniAppHostGroup'
 const now = Date.now()
 
 function host(p: Partial<MiniAppHostInfo> & { appId: string }): MiniAppHostInfo {
-  return { projectDir: '/storybook/super-one', name: p.appId, since: now, ready: true, ...p }
+  return { projectDir: '/storybook/super-one', name: p.appId, since: now, ready: true, background: true, ...p }
 }
 
 function StoryHost({ hosts }: { hosts: MiniAppHostInfo[] }) {

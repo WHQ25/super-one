@@ -26,9 +26,15 @@ export interface MiniAppManifest {
   description?: string
   logo?: string
   isDev?: boolean
+  /**
+   * Declares that the app keeps working after its panel is closed (timers,
+   * watchers, servers, long jobs). Without it the host is UI-bound: it stops
+   * with the last panel, so the platform never has to guess — or ask the app —
+   * whether something is still running in the background.
+   */
+  background?: boolean
   preferWidth?: number
   permissions?: MiniAppPermissions
-  toolSlug?: string
   tools?: MiniAppToolDefinition[]
   runningText?: string
   templates?: Record<string, string>
@@ -103,6 +109,8 @@ export interface MiniAppHostInfo {
   name: string
   since: number
   ready: boolean
+  /** Mirrors `MiniAppManifest.background` — only these outlive their panel. */
+  background: boolean
   statusText?: string
 }
 
@@ -132,7 +140,6 @@ export interface MiniAppToolInterceptOpenRequest {
   callId: string
   appId: string
   projectDir: string
-  toolSlug: string
   toolName: string
   agentInput: Record<string, unknown>
   template: string

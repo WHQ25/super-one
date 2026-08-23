@@ -74,7 +74,6 @@ interface AppToolEntry {
   sessionId: string
   projectDir: string
   appId: string
-  toolSlug: string
   tools: MiniAppToolDefinition[]
 }
 
@@ -89,34 +88,16 @@ function makeProjectAppKey(projectDir: string, appId: string): string {
 const sessionServers = new Map<string, Set<ProjectServerState>>()
 const appToolDefs = new Map<string, AppToolEntry>()
 const appTemplates = new Map<string, Record<string, string>>()
-/** Keys: `toolSlug__toolName` (legacy / install metadata) and `appId::toolName` (args-aware). */
+/** Keys: `appId::toolName`. */
 const preapprovedTools = new Set<string>()
 
 function isAppToolPreapproved(appId: string, toolName: string): boolean {
-  if (preapprovedTools.has(`${appId}::${toolName}`)) return true
-  let toolSlug: string | null = null
-  for (const entry of appToolDefs.values()) {
-    if (entry.appId === appId) {
-      toolSlug = entry.toolSlug
-      break
-    }
-  }
-  if (!toolSlug) toolSlug = appId
-  return preapprovedTools.has(`${toolSlug}__${toolName}`)
+  return preapprovedTools.has(`${appId}::${toolName}`)
 }
 
-/** Runtime alwaysAllow / test helper — adds both appId and toolSlug keys. */
+/** Runtime alwaysAllow / test helper. */
 export function markAppToolPreapproved(appId: string, toolName: string): void {
   preapprovedTools.add(`${appId}::${toolName}`)
-  let toolSlug: string | null = null
-  for (const entry of appToolDefs.values()) {
-    if (entry.appId === appId) {
-      toolSlug = entry.toolSlug
-      break
-    }
-  }
-  if (!toolSlug) toolSlug = appId
-  preapprovedTools.add(`${toolSlug}__${toolName}`)
 }
 
 /** Test/export for executor preapprove checks. */
@@ -124,24 +105,18 @@ export function isAppToolPreapprovedForSession(appId: string, toolName: string):
   return isAppToolPreapproved(appId, toolName)
 }
 
-function isLegacyNamespacedPreapproved(namespacedName: string): boolean {
-  return preapprovedTools.has(namespacedName)
-}
-
 setMiniappPreapproveLookup({
   isAppToolPreapproved,
-  isLegacyNamespacedPreapproved,
 })
 
 export function getAuthorizedAppsForSession(sessionId: string): Array<{
   appId: string
-  toolSlug: string
   tools: MiniAppToolDefinition[]
 }> {
-  const out: Array<{ appId: string; toolSlug: string; tools: MiniAppToolDefinition[] }> = []
+  const out: Array<{ appId: string; tools: MiniAppToolDefinition[] }> = []
   for (const entry of appToolDefs.values()) {
     if (entry.sessionId !== sessionId) continue
-    out.push({ appId: entry.appId, toolSlug: entry.toolSlug, tools: entry.tools })
+    out.push({ appId: entry.appId, tools: entry.tools })
   }
   return out
 }
@@ -149,10 +124,10 @@ export function getAuthorizedAppsForSession(sessionId: string): Array<{
 export function getAppToolEntryForSession(
   sessionId: string,
   appId: string,
-): { projectDir: string; toolSlug: string; tools: MiniAppToolDefinition[] } | null {
+): { projectDir: string; tools: MiniAppToolDefinition[] } | null {
   const entry = appToolDefs.get(makeAppKey(sessionId, appId))
   if (!entry) return null
-  return { projectDir: entry.projectDir, toolSlug: entry.toolSlug, tools: entry.tools }
+  return { projectDir: entry.projectDir, tools: entry.tools }
 }
 
 export function miniappToolDepsForSurface(): MiniappToolDeps {
@@ -443,50 +418,36 @@ export function registerAppTools(
   sessionId: string,
   projectDir: string,
   appId: string,
-  toolSlug: string,
   tools: MiniAppToolDefinition[],
 ): void {
   const key = makeAppKey(sessionId, appId)
-  log.debug('[superone-mcp] registerAppTools sessionId=%s projectDir=%s appId=%s toolSlug=%s tools=%d',
-    sessionId, projectDir, appId, toolSlug, tools.length)
-  appToolDefs.set(key, { sessionId, projectDir, appId, toolSlug, tools })
+  log.debug('[superone-mcp] registerAppTools sessionId=%s projectDir=%s appId=%s tools=%d',
+    sessionId, projectDir, appId, tools.length)
+  appToolDefs.set(key, { sessionId, projectDir, appId, tools })
   log.info(
-    '[superone-mcp] authorized mini-app sessionId=%s appId=%s toolSlug=%s tools=%d (fixed MCP surface)',
+    '[superone-mcp] authorized mini-app sessionId=%s appId=%s tools=%d (fixed MCP surface)',
     sessionId,
     appId,
-    toolSlug,
     tools.length,
   )
 }
 
 export async function loadPreapprovedTools(
   appId: string,
-  toolSlug: string,
   basePath: string,
 ): Promise<void> {
   const tools = await getPreapprovedByPath(basePath)
   for (const t of tools) {
-    preapprovedTools.add(`${toolSlug}__${t}`)
     preapprovedTools.add(`${appId}::${t}`)
   }
 }
 
 export function updatePreapprovedTools(appId: string, tools: string[]): void {
-  let toolSlug: string | null = null
-  for (const entry of appToolDefs.values()) {
-    if (entry.appId === appId) {
-      toolSlug = entry.toolSlug
-      break
-    }
-  }
-  if (!toolSlug) toolSlug = appId
-  const slugPrefix = `${toolSlug}__`
   const appPrefix = `${appId}::`
   for (const name of [...preapprovedTools]) {
-    if (name.startsWith(slugPrefix) || name.startsWith(appPrefix)) preapprovedTools.delete(name)
+    if (name.startsWith(appPrefix)) preapprovedTools.delete(name)
   }
   for (const t of tools) {
-    preapprovedTools.add(`${slugPrefix}${t}`)
     preapprovedTools.add(`${appPrefix}${t}`)
   }
 }
@@ -494,7 +455,7 @@ export function updatePreapprovedTools(appId: string, tools: string[]): void {
 /**
  * Args-aware preapproval for harness permission layers.
  *
- * - Legacy: `mcp__superone__<slug>__<tool>` matches the preapproved set by bare name
+ * - Legacy: `mcp__superone__<appId>__<tool>` matches preapprove by appId + tool
  * - Fixed: `mcp__superone__miniapp_call` checks input.appId + input.tool
  * - `miniapp_list` is always allow (via policy), not preapproved
  *
@@ -510,11 +471,8 @@ export function isToolPreapproved(
 
 export function unregisterAppTools(sessionId: string, appId: string): void {
   const key = makeAppKey(sessionId, appId)
-  const entry = appToolDefs.get(key)
-  const toolSlug = entry?.toolSlug ?? appId
   appToolDefs.delete(key)
 
-  const slugPrefix = `${toolSlug}__`
   const appPrefix = `${appId}::`
 
   let stillOpen = false
@@ -526,7 +484,7 @@ export function unregisterAppTools(sessionId: string, appId: string): void {
   }
   if (!stillOpen) {
     for (const name of [...preapprovedTools]) {
-      if (name.startsWith(slugPrefix) || name.startsWith(appPrefix)) preapprovedTools.delete(name)
+      if (name.startsWith(appPrefix)) preapprovedTools.delete(name)
     }
   }
 
@@ -698,7 +656,6 @@ export async function executeStandaloneTool(
         callId,
         appId,
         projectDir,
-        toolSlug: defsEntry.toolSlug,
         toolName,
         agentInput: args,
         template: intercept.template,
@@ -747,7 +704,6 @@ export async function executeAppTool(
         callId,
         appId,
         projectDir,
-        toolSlug: defsEntry.toolSlug,
         toolName,
         agentInput: args,
         template: intercept.template,

@@ -7,7 +7,6 @@ const apps = [
     id: 'excalidraw',
     manifest: {
       name: 'Excalidraw',
-      toolSlug: 'excalidraw',
       tools: [
         {
           name: 'clear_canvas',
@@ -37,14 +36,13 @@ describe('resolveMiniAppToolIdentity', () => {
     expect(resolved).toMatchObject({
       appId: 'excalidraw',
       toolName: 'clear_canvas',
-      toolSlug: 'excalidraw',
       legacy: false,
       toolInput: { force: true },
     })
     expect(resolved?.toolDef?.displayName).toBe('Clear canvas')
   })
 
-  it('resolves legacy transcript names slug__tool', () => {
+  it('resolves legacy transcript names appId__tool', () => {
     const resolved = resolveMiniAppToolIdentity(
       'excalidraw__clear_canvas',
       { force: true },

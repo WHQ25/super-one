@@ -8,7 +8,6 @@
   "description": "A fullscreen app for exploring the world",
   "logo": "logo.png",
   "fullscreen": true,
-  "toolSlug": "world",
   "tools": [
     {
       "name": "show_message",

@@ -56,6 +56,7 @@ const START = {
   name: 'Demo',
   appPath: '/apps/demo',
   entryPath: '/apps/demo/node.js',
+  background: false,
   workspaceStoragePath: '/project/.superone/apps/demo/data',
   globalStoragePath: '/home/.superone/apps/demo/data',
 }
@@ -213,12 +214,38 @@ describe('mini-app MiniApp Host', () => {
     expect(child().postMessage).toHaveBeenCalledWith({ type: 'context-consumed' })
   })
 
-  it('counts only a host that published a status as a background task', () => {
+  it('counts only a host that declared background as a background task', () => {
     host.startMiniAppHost(START)
     expect(host.hasActiveMiniAppHosts()).toBe(false)
 
+    // A self-reported status must not promote a UI-bound host to a background task.
     child().emit('message', { type: 'status', text: 'Indexing…' })
+    expect(host.hasActiveMiniAppHosts()).toBe(false)
+
+    host.startMiniAppHost({ ...START, appId: 'daemon', background: true })
     expect(host.hasActiveMiniAppHosts()).toBe(true)
+  })
+
+  it('releases a UI-bound host with its last panel, keeping it respawnable for tools', async () => {
+    host.startMiniAppHost(START)
+    child().spawn()
+
+    host.releaseMiniAppHost('/project', 'demo')
+    expect(child().postMessage).toHaveBeenCalledWith({ type: 'deactivate' })
+    expect(host.listMiniAppHosts()).toEqual([])
+
+    host.executeMiniAppTool('/project', 'demo', 'calculate', {}).catch(() => {})
+    expect(fork).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a host that declared background running after its last panel closes', () => {
+    host.startMiniAppHost({ ...START, background: true })
+    child().spawn()
+
+    host.releaseMiniAppHost('/project', 'demo')
+
+    expect(child().postMessage).not.toHaveBeenCalledWith({ type: 'deactivate' })
+    expect(host.listMiniAppHosts()).toEqual([expect.objectContaining({ appId: 'demo', background: true })])
   })
 
   it('routes an agent tool call to the host process and resolves its result', async () => {

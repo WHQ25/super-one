@@ -715,9 +715,9 @@ interface MiniAppAPI {
   onHostAction(handler: (request: { requestId: string; appId: string; projectDir: string; action: string; args: Record<string, unknown> }) => void): () => void
   hostActionResult(requestId: string, result?: unknown, error?: string): void
   notifyContextConsumed(appIds: string[]): void
-  hostList(): Promise<Array<{ appId: string; projectDir: string; name: string; since: number; ready: boolean; statusText?: string }>>
+  hostList(): Promise<Array<{ appId: string; projectDir: string; name: string; since: number; ready: boolean; background: boolean; statusText?: string }>>
   hostStop(projectDir: string, appId: string): Promise<void>
-  onHostState(callback: (plugins: Array<{ appId: string; projectDir: string; name: string; since: number; ready: boolean; statusText?: string }>) => void): () => void
+  onHostState(callback: (plugins: Array<{ appId: string; projectDir: string; name: string; since: number; ready: boolean; background: boolean; statusText?: string }>) => void): () => void
   detectDev(projectDir: string): Promise<MiniAppEntry[]>
   onDevAppReady(callback: (projectDir: string, appId: string) => void): () => void
   preview(s1appPath: string): Promise<MiniAppPreviewResult>

@@ -12,7 +12,6 @@ WebViews never implement tool computation.
 ```json
 {
   "main": "node.js",
-  "toolSlug": "tasks",
   "tools": [
     {
       "name": "create_task",
@@ -30,7 +29,7 @@ WebViews never implement tool computation.
 }
 ```
 
-`toolSlug` is required when `tools` is non-empty. Tool names use lowercase letters, digits, and underscores.
+Tool names use lowercase letters, digits, and underscores. Agents call them through `miniapp_call` with `{ appId, tool, input }`.
 
 ## Implement it in the MiniApp Host
 

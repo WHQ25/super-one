@@ -310,7 +310,6 @@ export type ActiveSessionView = PerSessionState & ProjectState
 export interface ToolRendererState {
   callId: string
   appId: string
-  toolSlug: string
   toolName: string
   toolUseId: string | null
   templateUrl: string

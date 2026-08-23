@@ -16,6 +16,12 @@ export interface MiniAppHostStartArgs extends MiniAppStoragePaths {
   name: string
   appPath: string
   entryPath: string
+  /**
+   * `manifest.background`. A host without it is UI-bound and is released with
+   * its last panel, so "alive" means "running in the background" for every
+   * host the platform reports — no self-reported status involved.
+   */
+  background: boolean
 }
 
 /** Runs a host action in the renderer, which owns the UI and its consent prompts. */
@@ -235,6 +241,7 @@ function snapshot(instance: MiniAppHostInstance): MiniAppHostInfo {
     name: instance.name,
     since: instance.since,
     ready: instance.ready,
+    background: instance.background,
     ...(instance.statusText ? { statusText: instance.statusText } : {}),
   }
 }
@@ -244,12 +251,13 @@ export function listMiniAppHosts(): MiniAppHostInfo[] {
 }
 
 /**
- * Quit-confirmation input. A host is *not* a background task just by
- * being alive — every opened mini-app has one. Only a host that published a
- * status through `context.setStatus()` is doing work worth warning about.
+ * Quit-confirmation input. Every opened mini-app owns a host, so being alive
+ * proves nothing; what does is the manifest declaring `background`, since only
+ * those are kept past their panel. Deliberately not keyed on
+ * `context.setStatus()` — an app must not decide whether the user is warned.
  */
 export function hasActiveMiniAppHosts(): boolean {
-  return [...instances.values()].some((instance) => instance.alive && !!instance.statusText)
+  return [...instances.values()].some((instance) => instance.alive && instance.background)
 }
 
 /**
@@ -334,9 +342,14 @@ function terminate(instance: MiniAppHostInstance): void {
   child.postMessage({ type: 'deactivate' })
 }
 
-export function stopMiniAppHost(projectDir: string, appId: string): void {
+export interface MiniAppHostStopOptions {
+  /** Keep the start args so a later tool call can lazily respawn the host. */
+  respawnable?: boolean
+}
+
+export function stopMiniAppHost(projectDir: string, appId: string, options?: MiniAppHostStopOptions): void {
   const instanceKey = key(projectDir, appId)
-  restartArgs.delete(instanceKey)
+  if (!options?.respawnable) restartArgs.delete(instanceKey)
   const instance = instances.get(instanceKey)
   if (!instance) return
   instance.alive = false
@@ -349,6 +362,19 @@ export function stopMiniAppHost(projectDir: string, appId: string): void {
   if (instance.process.pid === undefined) instance.process.once('spawn', () => terminate(instance))
   else terminate(instance)
   emitState()
+}
+
+/**
+ * The last panel for an app closed. A UI-bound host has nothing left to serve,
+ * so it goes down rather than linger as an invisible process; it stays
+ * respawnable because its tools remain registered for the session, and an agent
+ * call pulls it back up through `resolveRunningInstance`. A host that declared
+ * `background` is left alone — outliving the panel is what it declared.
+ */
+export function releaseMiniAppHost(projectDir: string, appId: string): void {
+  const instance = instances.get(key(projectDir, appId))
+  if (!instance || instance.background) return
+  stopMiniAppHost(projectDir, appId, { respawnable: true })
 }
 
 export function stopMiniAppHostsByAppId(appId: string): void {

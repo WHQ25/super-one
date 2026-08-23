@@ -45,7 +45,6 @@ const MOCK_INSTALL_WITH_TOOLS: MiniAppPreviewResult = {
     appId: 'debug-tools-app',
     name: 'Debug Tools App',
     description: 'An app with both permissions and tools for preapproval testing',
-    toolSlug: 'debug_tools',
     tools: [
       { name: 'analyze', description: 'Analyze project files and generate insights', inputSchema: { type: 'object', properties: { path: { type: 'string' } } } },
       { name: 'render_chart', description: 'Render data as interactive charts', inputSchema: { type: 'object', properties: { data: { type: 'array' } } } },
@@ -62,7 +61,6 @@ const MOCK_INSTALL_TOOLS_ONLY: MiniAppPreviewResult = {
     main: 'node.js',
     version: '1.0.0',
     description: 'An app with tools but no WebView permissions',
-    toolSlug: 'tools_only',
     tools: [
       { name: 'process', description: 'Process input data and return results', inputSchema: { type: 'object', properties: { input: { type: 'string' } } } },
       { name: 'summarize', description: 'Summarize content into key points', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } },

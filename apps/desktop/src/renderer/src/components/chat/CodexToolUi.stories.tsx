@@ -23,7 +23,6 @@ const STORY_APP: MiniAppEntry = {
     name: 'Project Tools',
     main: 'node.js',
     version: '1.0.0',
-    toolSlug: 'project',
     tools: [
       {
         name: 'find_files',

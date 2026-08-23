@@ -212,7 +212,7 @@ describe('superone-mcp-stdio-ipc', () => {
   })
 
   it('lists built-in superone tools + fixed miniapp tools (not per-app)', async () => {
-    registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ, PROJ, 'test-app', makeTools('do_thing'))
     markAppToolPreapproved('test-app', 'do_thing')
 
     const client = new TestClient(getEndpoint())
@@ -250,7 +250,7 @@ describe('superone-mcp-stdio-ipc', () => {
     await clientB.ready()
     await clientB.send('tools/list', getToken('/other-proj'), { sessionId: '/other-proj' })
 
-    registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ, PROJ, 'test-app', makeTools('do_thing'))
     markAppToolPreapproved('test-app', 'do_thing')
     await new Promise((r) => setTimeout(r, 30))
 
@@ -311,7 +311,7 @@ describe('superone-mcp-stdio-ipc', () => {
   })
 
   it('routes miniapp_call to the MiniApp Host scoped by sessionId', async () => {
-    registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ, PROJ, 'test-app', makeTools('do_thing'))
     markAppToolPreapproved('test-app', 'do_thing')
 
     const client = new TestClient(getEndpoint())

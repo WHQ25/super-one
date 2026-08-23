@@ -26,7 +26,6 @@ export const InterceptPhase: Story = {
     state: {
       callId: 'call-int-1',
       appId: 'crm-tools',
-      toolSlug: 'crm',
       toolName: 'find_contact',
       toolUseId: 'tu-int-1',
       templateUrl: 'about:blank',

@@ -7,7 +7,6 @@ describe('parseManifest', () => {
     name: 'Hello',
     version: '1.0.0',
     main: 'node.js',
-    toolSlug: 'hello',
     tools: [
       {
         name: 'show_message',
@@ -273,18 +272,19 @@ describe('parseManifest', () => {
     expect(result.ok).toBe(false)
   })
 
-  it('should require toolSlug when tools are declared', () => {
-    const { toolSlug, ...rest } = validManifest
-    const result = parseManifest(rest)
-    expect(result.ok).toBe(false)
-  })
-
-  it('should accept manifest with toolSlug and tools', () => {
+  it('should accept a manifest with tools and no toolSlug', () => {
     const result = parseManifest(validManifest)
     expect(result.ok).toBe(true)
+    if (result.ok) expect('toolSlug' in result.manifest).toBe(false)
   })
 
-  it('should not require toolSlug when no tools declared', () => {
+  it('strips leftover toolSlug from already-installed manifests', () => {
+    const result = parseManifest({ ...validManifest, toolSlug: 'legacy_slug' })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect('toolSlug' in result.manifest).toBe(false)
+  })
+
+  it('should accept a manifest with no tools declared', () => {
     const result = parseManifest({ appId: 'notool', name: 'No Tool', main: 'node.js' })
     expect(result.ok).toBe(true)
   })
@@ -308,7 +308,6 @@ describe('parseManifest - standalone tools', () => {
     appId: 'weather',
     name: 'Weather',
     main: 'node.js',
-    toolSlug: 'weather',
     templates: { 'query-result': 'query-result.html' },
     tools: [
       {
@@ -334,7 +333,6 @@ describe('parseManifest - standalone tools', () => {
       appId: 'mixed',
       name: 'Mixed',
       main: 'node.js',
-      toolSlug: 'mixed',
       templates: { 'query-result': 'query-result.html' },
       tools: [
         { name: 'query', description: 'bg', inputSchema: { type: 'object' }, standalone: true, renderer: { result: { template: 'query-result' } } },
@@ -348,7 +346,6 @@ describe('parseManifest - standalone tools', () => {
     const result = parseManifest({
       appId: 'missing-tpl',
       name: 'Missing',
-      toolSlug: 'missing',
       tools: [{
         name: 'query',
         description: 'no template',
@@ -367,7 +364,6 @@ describe('parseManifest - standalone tools', () => {
       appId: 'legacy',
       name: 'Legacy',
       main: 'node.js',
-      toolSlug: 'legacy',
       tools: [{ name: 'foo', description: 'bar', inputSchema: { type: 'object' } }],
     })
     expect(result.ok).toBe(true)
@@ -424,7 +420,6 @@ describe('parseManifest - standalone tools', () => {
       appId: 'hitl',
       name: 'HITL',
       main: 'node.js',
-      toolSlug: 'hitl',
       templates: { 'confirm': 'confirm.html', 'card': 'card.html' },
       tools: [{
         name: 'confirm_increment',
@@ -449,7 +444,6 @@ describe('parseManifest - standalone tools', () => {
     const result = parseManifest({
       appId: 'bad',
       name: 'Bad',
-      toolSlug: 'bad',
       templates: { 'pop': 'pop.html' },
       tools: [{
         name: 'incomplete',
@@ -470,7 +464,6 @@ describe('parseManifest - standalone tools', () => {
       appId: 'ui',
       name: 'UI',
       main: 'node.js',
-      toolSlug: 'ui',
       templates: { 'counter': 'counter.html' },
       tools: [{
         name: 'increment',

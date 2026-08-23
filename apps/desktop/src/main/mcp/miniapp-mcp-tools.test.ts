@@ -30,10 +30,10 @@ function buildDeps(overrides: Partial<MiniappToolDeps> = {}): MiniappToolDeps {
   const tools = [makeTool('forecast')]
   const preapproved = new Set<string>(['weather::forecast'])
   return {
-    getAuthorizedApps: () => [{ appId: 'weather', toolSlug: 'wx', tools }],
+    getAuthorizedApps: () => [{ appId: 'weather', tools }],
     getAppEntry: (sessionId, appId) => {
       if (sessionId !== 'sid-1' || appId !== 'weather') return null
-      return { projectDir: '/proj', toolSlug: 'wx', tools }
+      return { projectDir: '/proj', tools }
     },
     dispatchAppToolCall: vi.fn(async () => ({ ok: true, temp: 22 })),
     isAppToolPreapproved: (appId, tool) => preapproved.has(`${appId}::${tool}`),
@@ -76,9 +76,9 @@ describe('miniapp fixed MCP tools', () => {
     expect(body.count).toBe(1)
     expect(body.apps[0]).toMatchObject({
       appId: 'weather',
-      toolSlug: 'wx',
       tools: [{ name: 'forecast', description: 'Tool forecast' }],
     })
+    expect(body.apps[0].toolSlug).toBeUndefined()
     expect(body.apps[0].tools[0].inputSchema).toBeUndefined()
   })
 
@@ -161,7 +161,7 @@ describe('miniapp fixed MCP tools', () => {
           resolveMiniappCallConfirm(event.request.requestId, 'decline', false, 'nope')
         })
       },
-      getAppEntry: () => ({ projectDir: '/proj', toolSlug: 'wx', tools }),
+      getAppEntry: () => ({ projectDir: '/proj', tools }),
     })
 
     const denied = await executeMiniappCall('sid-1', {

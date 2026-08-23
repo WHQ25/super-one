@@ -3745,7 +3745,7 @@ export const en: Messages = {
       sessionHistory: 'Session History',
       removeProject: 'Remove Project',
       automations: 'Automations',
-      miniApps: 'Mini apps',
+      miniApps: 'Background apps',
       hostUptimeS: '{{s}}s',
       hostUptimeMS: '{{m}}m {{s}}s',
       hostUptimeHM: '{{h}}h {{m}}m',

@@ -15,7 +15,6 @@ describe('miniapp-call-policy', () => {
     preapproved.clear()
     setMiniappPreapproveLookup({
       isAppToolPreapproved: (appId, tool) => preapproved.has(`${appId}::${tool}`),
-      isLegacyNamespacedPreapproved: (name) => preapproved.has(`legacy::${name}`),
     })
   })
 
@@ -39,8 +38,8 @@ describe('miniapp-call-policy', () => {
     expect(missing.reason).toMatch(/appId and tool/)
   })
 
-  it('legacy slug__tool names still honor preapprove set', () => {
-    preapproved.add('legacy::hello__render_data')
+  it('legacy appId__tool names still honor preapprove set', () => {
+    preapproved.add('hello::render_data')
     expect(
       evaluateMiniappFixedToolPermission('mcp__superone__hello__render_data', { data: [] }).decision,
     ).toBe('allow')

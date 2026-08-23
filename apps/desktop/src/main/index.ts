@@ -23,7 +23,7 @@ import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
 import { attachMiniAppWebviewGuards } from './miniapp/miniapp-webview-guard'
 import { initMiniAppHostActionBridge, runMiniAppHostAction, settleMiniAppHostAction } from './miniapp/miniapp-host-action-bridge'
 import { isPathExposableByApp } from './miniapp/miniapp-path-exposure'
-import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, setMiniAppHostActionRunner, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
+import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, releaseMiniAppHost, setMiniAppHostActionRunner, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
 import { closeAllMiniAppState, resolveMiniAppStoragePaths } from './miniapp/miniapp-state'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
@@ -4781,7 +4781,7 @@ function registerIpcHandlers(): void {
     const pluginEntry = validatePath(basePath, manifest.main)
     if (!pluginEntry) throw new Error(`Invalid plugin entry: ${manifest.main}`)
     const storagePaths = await resolveMiniAppStoragePaths(projectDir, appId)
-    startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, ...storagePaths })
+    startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, background: manifest.background === true, ...storagePaths })
     const projectAppKey = `${projectDir}::${appId}`
     let sessions = miniAppSessionRefs.get(projectAppKey)
     if (!sessions) {
@@ -4794,9 +4794,8 @@ function registerIpcHandlers(): void {
       setAppMediaPermissions(appId, manifest)
       registerAppTemplates(projectDir, appId, manifest.templates)
     }
-    const toolSlug = manifest.toolSlug ?? appId
-    registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [])
-    loadPreapprovedTools(appId, toolSlug, basePath)
+    registerAppTools(sessionId, projectDir, appId, manifest.tools ?? [])
+    loadPreapprovedTools(appId, basePath)
     if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId, 'codex')
   })
 
@@ -4820,11 +4819,10 @@ function registerIpcHandlers(): void {
         continue
       }
       const storagePaths = await resolveMiniAppStoragePaths(projectDir, appId)
-      startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, ...storagePaths })
+      startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, background: manifest.background === true, ...storagePaths })
       registerAppTemplates(projectDir, appId, manifest.templates)
-      const toolSlug = manifest.toolSlug ?? appId
-      registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [])
-      loadPreapprovedTools(appId, toolSlug, basePath)
+      registerAppTools(sessionId, projectDir, appId, manifest.tools ?? [])
+      loadPreapprovedTools(appId, basePath)
       if (manifest.tools?.length) {
         registeredAny = true
         log.info('[MINIAPP_AUTHORIZE] registered %d tools for appId=%s sessionId=%s', manifest.tools.length, appId, sessionId)
@@ -4844,13 +4842,17 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string, sessionId: string) => {
-    // Closing a WebView does not stop its MiniApp Host. Tools and data services
-    // stay available for the owning session until session/app teardown.
+    // Tools and data services stay registered for the owning session, so the
+    // host is only released once no session holds this app open — and even then
+    // only if it did not declare `background`, in which case it keeps running.
     const projectAppKey = `${projectDir}::${appId}`
     const sessions = miniAppSessionRefs.get(projectAppKey)
     if (sessions) {
       sessions.delete(sessionId)
-      if (sessions.size === 0) miniAppSessionRefs.delete(projectAppKey)
+      if (sessions.size === 0) {
+        miniAppSessionRefs.delete(projectAppKey)
+        releaseMiniAppHost(projectDir, appId)
+      }
     }
   })
 

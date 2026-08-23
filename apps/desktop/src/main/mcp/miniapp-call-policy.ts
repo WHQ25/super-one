@@ -32,10 +32,6 @@ export interface MiniappPreapproveLookup {
    * Implementation lives in superone-mcp-server (holds the Set).
    */
   isAppToolPreapproved(appId: string, toolName: string): boolean
-  /**
-   * Legacy bare name `toolSlug__toolName` (historical transcripts / preapprove set).
-   */
-  isLegacyNamespacedPreapproved(namespacedName: string): boolean
 }
 
 let lookup: MiniappPreapproveLookup | null = null
@@ -78,7 +74,7 @@ export function parseMiniappCallArgs(input: Record<string, unknown> | undefined 
  * - `miniapp_list` → always allow (read-only catalog)
  * - `miniapp_call` → allow only when that app's tool is preapproved; else prompt
  *   (deny only when required args are missing / unusable)
- * - legacy `mcp__superone__<slug>__<tool>` → preapprove by namespaced name
+ * - legacy `mcp__superone__<appId>__<tool>` → preapprove by appId + tool
  * - anything else → prompt (caller may still short-circuit on host-owned builtins)
  */
 export function evaluateMiniappFixedToolPermission(
@@ -113,11 +109,14 @@ export function evaluateMiniappFixedToolPermission(
     return { decision: 'prompt', appId, tool }
   }
 
-  // Legacy per-app tool surface: slug__toolName
-  if (bare.includes('__') && lookup?.isLegacyNamespacedPreapproved(bare)) {
-    return { decision: 'allow' }
-  }
+  // Legacy per-app MCP names: mcp__superone__<appId>__<tool>
   if (bare.includes('__')) {
+    const idx = bare.indexOf('__')
+    const appId = bare.slice(0, idx)
+    const tool = bare.slice(idx + 2)
+    if (appId && tool && lookup?.isAppToolPreapproved(appId, tool)) {
+      return { decision: 'allow', appId, tool }
+    }
     return { decision: 'prompt' }
   }
 

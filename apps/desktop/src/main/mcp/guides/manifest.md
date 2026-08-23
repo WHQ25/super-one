@@ -14,7 +14,7 @@ Every mini-app has a `manifest.json` at its runtime root.
 | `description` | no | Catalog description. |
 | `logo` | no | Relative PNG icon. |
 | `preferWidth` | no | Initial panel width, 400–2000 px. |
-| `toolSlug` | with tools | MCP namespace slug. |
+| `background` | no | `true` if the app keeps working after its panel closes. Default `false`. |
 | `tools` | no | Agent-facing tool declarations. |
 | `templates` | no | Template name to relative HTML path for popovers and tool renderers. |
 | `permissions` | no | WebView filesystem, network, storage, and media grants. |
@@ -28,6 +28,26 @@ Minimal manifest:
   "main": "node.js"
 }
 ```
+
+## Background capability
+
+A host is UI-bound by default: it is released when the last panel for the app
+closes, and an agent tool call respawns it on demand. Declare `background` only
+when the app must keep working with no panel open — timers, file watchers,
+servers, or a long job that must survive the panel:
+
+```json
+{
+  "appId": "indexer",
+  "name": "Indexer",
+  "main": "node.js",
+  "background": true
+}
+```
+
+Declared background apps are listed under the project in the sidebar, where the
+user can see and stop them, and they hold back quit confirmation. Do not declare
+it to keep in-memory caches warm — use `context.workspaceState` instead.
 
 ## Runtime entries
 

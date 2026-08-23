@@ -2,7 +2,7 @@
  * Static SuperOne host-owned MCP tool-name judgement (Electron-free).
  *
  * Desktop layers computer-use feature gating on top of this core.
- * Mini-app tools (`slug__tool`) are NOT host-owned — they use preapproved.json.
+ * Mini-app tools (`miniapp_call`) are NOT host-owned — they use preapproved.json.
  *
  * Single source of truth for static bare names: browser tool lists live here so
  * registration (desktop) and auto-approve (node + desktop) cannot drift.

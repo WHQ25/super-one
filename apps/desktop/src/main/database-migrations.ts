@@ -27,7 +27,7 @@ import { encryptSecret } from './crypto/secret-store'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 /**
  * The oldest schema revision that can still read this database.
@@ -176,6 +176,18 @@ function applyMigrations(db: Database.Database): void {
   db.exec('DROP INDEX IF EXISTS idx_chat_messages_last_user')
 
   db.exec('DROP TABLE IF EXISTS init_cache')
+
+  const projectCols = db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>
+  if (!projectCols.some((c) => c.name === 'extra_dirs_json')) {
+    // Project-level workspace folders, owned by SuperOne rather than by any
+    // harness config file, so claude/codex/acp see one identical set.
+    db.exec("ALTER TABLE projects ADD COLUMN extra_dirs_json TEXT NOT NULL DEFAULT '[]'")
+  }
+  if (!projectCols.some((c) => c.name === 'is_user_renamed')) {
+    // Until the user renames a project, `name` keeps tracking basename(path).
+    // Once set, addRecentFolder stops clobbering it on every re-open.
+    db.exec('ALTER TABLE projects ADD COLUMN is_user_renamed INTEGER NOT NULL DEFAULT 0')
+  }
 
   const cols = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
   if (!cols.some((c) => c.name === 'is_worktree')) {

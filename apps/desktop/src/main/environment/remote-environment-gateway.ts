@@ -192,6 +192,16 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('project.remove', input)
   }
 
+  /** Edit Project: rename and/or set workspace folders on the remote node. */
+  async updateProject(input: {
+    projectId?: string
+    path?: string
+    name?: string
+    extraDirs?: string[]
+  }): Promise<ProjectSnapshot> {
+    return this.client.rpc('project.update', input)
+  }
+
   /** List child directories at an absolute host path (add-project browser). */
   async listHostDir(
     absolutePath: string,

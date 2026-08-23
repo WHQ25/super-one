@@ -1484,6 +1484,23 @@ function registerIpcHandlers(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_UPDATE_PROJECT,
+    async (
+      _e,
+      connectionId: string,
+      input: { projectId?: string; path?: string; name?: string; extraDirs?: string[] },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      const updated = await getEnvironmentHost().updateProject(connectionId, input)
+      // A rename changes the sidebar label in every window; remote rows repaint
+      // off the host-projects bus instead.
+      if (connectionId === 'local') {
+        safeSend(AgentIpcChannels.RECENT_FOLDERS_CHANGED, getRecentFolders())
+      }
+      return updated
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_LIST_SESSIONS,
     async (
       _e,

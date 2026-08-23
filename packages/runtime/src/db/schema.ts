@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL,
   repo_identity TEXT,
   opened_at INTEGER,
-  last_active_at INTEGER
+  last_active_at INTEGER,
+  extra_dirs_json TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

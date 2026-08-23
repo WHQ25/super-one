@@ -66,7 +66,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join as pathJoin, resolve as pathResolve } from 'node:path'
 import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from '../recent-folders'
+import { getRecentFolders, addRecentFolder, removeRecentFolder, updateProject, getProjectId, getProjectPathById } from '../recent-folders'
 import { listSessionsForProjectId } from '../db-sessions'
 import type {
   DraftListEntry,
@@ -206,6 +206,7 @@ export class EnvironmentHost {
             projectId: f.id,
             path: f.path,
             name: f.name,
+            extraDirs: f.extraDirs ?? [],
             lastActiveAt: Date.parse(f.lastOpened) || undefined,
           }),
         ),
@@ -216,6 +217,7 @@ export class EnvironmentHost {
           projectId: f.id,
           path: f.path,
           name: f.name,
+          extraDirs: f.extraDirs ?? [],
           lastActiveAt: Date.parse(f.lastOpened) || undefined,
         }
       },
@@ -1823,7 +1825,9 @@ export class EnvironmentHost {
       ? input.additionalDirectories
           .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
           .map((d) => d.trim())
-          .slice(0, 32)
+          // Kept in step with the node's MAX_TURN_ADDITIONAL_DIRS: project
+          // workspace folders are a fourth contributor to this union.
+          .slice(0, 64)
       : []
     const apiProviderId =
       typeof input.apiProviderId === 'string' && input.apiProviderId.trim()
@@ -2200,6 +2204,7 @@ export class EnvironmentHost {
       projectId: folder.id,
       path: folder.path,
       name: folder.name,
+      extraDirs: folder.extraDirs ?? [],
       lastActiveAt: Date.parse(folder.lastOpened) || undefined,
     }
   }
@@ -2244,6 +2249,52 @@ export class EnvironmentHost {
     return removed
   }
 
+  /**
+   * Apply an Edit Project submission — rename and/or set workspace folders.
+   *
+   * Product surfaces go through the Environment gateway rather than a second
+   * `app:` channel, so the dialog has one code path for local and remote.
+   */
+  async updateProject(
+    connectionId: string,
+    input: { projectId?: string; path?: string; name?: string; extraDirs?: string[] },
+  ): Promise<ProjectSnapshot> {
+    const path = input.path?.trim()
+    const projectId = input.projectId?.trim()
+    if (!path && !projectId) {
+      throw Object.assign(new Error('projectId or path is required'), { code: 'invalid_argument' })
+    }
+
+    if (connectionId === 'local') {
+      const updated = updateProject({
+        projectId: projectId || undefined,
+        path: path ? this.expandLocalPath(path) : undefined,
+        name: input.name,
+        extraDirs: input.extraDirs,
+      })
+      return {
+        projectId: updated.id,
+        path: updated.path,
+        name: updated.name,
+        extraDirs: updated.extraDirs ?? [],
+        lastActiveAt: Date.parse(updated.lastOpened) || undefined,
+      }
+    }
+
+    const updated = await this.requireRemoteGateway(connectionId).updateProject({
+      projectId: projectId || undefined,
+      path: path || undefined,
+      name: input.name,
+      extraDirs: input.extraDirs,
+    })
+    // Without this the sidebar keeps showing the stale name until the next
+    // forced refresh — same reason removeProject/openProject patch the cache.
+    this.updateRemoteProjectCache(connectionId, (projects) =>
+      projects.map((project) => (project.projectId === updated.projectId ? updated : project)),
+    )
+    return updated
+  }
+
   async openProject(
     connectionId: string,
     projectPath: string,
@@ -2265,9 +2316,13 @@ export class EnvironmentHost {
       return this.registerLocalProject(resolved)
     }
 
+    // Deliberately no name: `ProjectRegistry.open` does `COALESCE(?, name)`, so
+    // passing basename(path) on every re-open reverts a user's custom name —
+    // the remote twin of the desktop clobber that `is_user_renamed` guards.
+    // Inserts still fall back to basename(abs) registry-side.
     const project = await this.requireRemoteGateway(connectionId).openProject(
       path,
-      basename(path),
+      undefined,
       opts?.createIfMissing,
     )
     this.updateRemoteProjectCache(connectionId, (projects) => [

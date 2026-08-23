@@ -4,6 +4,10 @@ import type { ProjectSnapshot } from '@superone/shared/environment'
 import type { SqliteDatabase } from '../sqlite'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import {
+  normalizeProjectExtraDirs,
+  parseProjectExtraDirs,
+} from '@superone/shared/project-extra-dirs'
 
 export class ProjectRegistry {
   constructor(private readonly db: SqliteDatabase) {}
@@ -11,7 +15,7 @@ export class ProjectRegistry {
   list(): ProjectSnapshot[] {
     const rows = this.db
       .prepare(
-        `SELECT project_id, path, name, repo_identity, opened_at, last_active_at FROM projects ORDER BY last_active_at DESC`,
+        `SELECT project_id, path, name, repo_identity, opened_at, last_active_at, extra_dirs_json FROM projects ORDER BY last_active_at DESC`,
       )
       .all() as Array<{
       project_id: string
@@ -20,6 +24,7 @@ export class ProjectRegistry {
       repo_identity: string | null
       opened_at: number | null
       last_active_at: number | null
+      extra_dirs_json: string | null
     }>
     return rows.map((r) => this.toSnapshot(r))
   }
@@ -27,7 +32,7 @@ export class ProjectRegistry {
   get(projectId: string): ProjectSnapshot | null {
     const r = this.db
       .prepare(
-        `SELECT project_id, path, name, repo_identity, opened_at, last_active_at FROM projects WHERE project_id = ?`,
+        `SELECT project_id, path, name, repo_identity, opened_at, last_active_at, extra_dirs_json FROM projects WHERE project_id = ?`,
       )
       .get(projectId) as
       | {
@@ -37,6 +42,7 @@ export class ProjectRegistry {
           repo_identity: string | null
           opened_at: number | null
           last_active_at: number | null
+          extra_dirs_json: string | null
         }
       | undefined
     if (!r) return null
@@ -47,7 +53,7 @@ export class ProjectRegistry {
     const abs = resolve(path)
     const r = this.db
       .prepare(
-        `SELECT project_id, path, name, repo_identity, opened_at, last_active_at FROM projects WHERE path = ?`,
+        `SELECT project_id, path, name, repo_identity, opened_at, last_active_at, extra_dirs_json FROM projects WHERE path = ?`,
       )
       .get(abs) as
       | {
@@ -57,6 +63,7 @@ export class ProjectRegistry {
           repo_identity: string | null
           opened_at: number | null
           last_active_at: number | null
+          extra_dirs_json: string | null
         }
       | undefined
     if (!r) return null
@@ -94,6 +101,68 @@ export class ProjectRegistry {
     return this.get(projectId)!
   }
 
+  /**
+   * Apply an Edit Project submission — rename and/or set workspace folders.
+   *
+   * Both fields are optional and independent so one patch covers whatever the
+   * user actually touched. Unlike `open()`, a name given here is authoritative:
+   * it is an explicit rename, not a basename refresh.
+   */
+  update(input: {
+    projectId?: string
+    path?: string
+    name?: string
+    extraDirs?: string[]
+  }): ProjectSnapshot | null {
+    const existing = input.projectId
+      ? this.get(input.projectId)
+      : input.path
+        ? (this.getByPath(input.path) ?? this.getByRealPath(input.path))
+        : null
+    if (!existing) return null
+
+    let nextName: string | null = null
+    if (input.name !== undefined) {
+      const trimmed = input.name.trim()
+      if (!trimmed) {
+        throw Object.assign(new Error('project name cannot be empty'), {
+          code: 'invalid_argument',
+        })
+      }
+      nextName = trimmed.slice(0, 200)
+    }
+
+    const nextExtraDirs =
+      input.extraDirs === undefined
+        ? null
+        : JSON.stringify(normalizeProjectExtraDirs(input.extraDirs, existing.path))
+
+    this.db
+      .prepare(
+        `UPDATE projects
+         SET name = COALESCE(?, name),
+             extra_dirs_json = COALESCE(?, extra_dirs_json)
+         WHERE project_id = ?`,
+      )
+      .run(nextName, nextExtraDirs, existing.projectId)
+
+    return this.get(existing.projectId)
+  }
+
+  /**
+   * `open()` canonicalizes through `realpathSync` before storing a path, but
+   * `getByPath` only `resolve()`s — so a caller handing back the path the user
+   * typed misses whenever a parent is a symlink (`/var` on macOS, `/home` under
+   * some Linux setups).
+   */
+  private getByRealPath(path: string): ProjectSnapshot | null {
+    try {
+      return this.getByPath(realpathSync(resolve(path)))
+    } catch {
+      return null
+    }
+  }
+
   touch(projectId: string): void {
     this.db.prepare(`UPDATE projects SET last_active_at = ? WHERE project_id = ?`).run(Date.now(), projectId)
   }
@@ -121,6 +190,7 @@ export class ProjectRegistry {
     repo_identity: string | null
     opened_at: number | null
     last_active_at: number | null
+    extra_dirs_json: string | null
   }): ProjectSnapshot {
     let missing = false
     try {
@@ -133,6 +203,7 @@ export class ProjectRegistry {
       path: r.path,
       name: r.name,
       ...(missing ? { missing: true } : {}),
+      extraDirs: parseProjectExtraDirs(r.extra_dirs_json),
       repoIdentity: r.repo_identity,
       openedAt: r.opened_at ?? undefined,
       lastActiveAt: r.last_active_at ?? undefined,

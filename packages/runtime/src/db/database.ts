@@ -30,6 +30,9 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
   // Automations table + session automation ownership columns.
   ensureAutomationsSupport(db)
   ensureSessionTagsColumn(db)
+  // Project-level workspace folders (Edit Project). Additive, so it stays
+  // generation-1 compatible — an older node binary just ignores the column.
+  ensureProjectExtraDirsColumn(db)
   // Session-layer provider profiles (collaboration + multi-profile models).
   ensureSessionProvidersSupport(db)
 
@@ -65,6 +68,13 @@ function ensureSessionUiColumns(db: NodeDatabase): void {
   }
   if (!names.has('is_user_renamed')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN is_user_renamed INTEGER NOT NULL DEFAULT 0`)
+  }
+}
+
+function ensureProjectExtraDirsColumn(db: NodeDatabase): void {
+  const cols = db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === 'extra_dirs_json')) {
+    db.exec(`ALTER TABLE projects ADD COLUMN extra_dirs_json TEXT NOT NULL DEFAULT '[]'`)
   }
 }
 

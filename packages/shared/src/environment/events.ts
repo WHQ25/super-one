@@ -61,6 +61,12 @@ export interface ProjectSnapshot {
   missing?: boolean
   /** Stable repository identity when available. */
   repoIdentity?: string | null
+  /**
+   * Project-level workspace folders, owned by the host's project catalog rather
+   * than by any harness config file. Optional: an older node omits it, and the
+   * desktop then behaves exactly as it did before the feature existed.
+   */
+  extraDirs?: string[]
   openedAt?: number
   lastActiveAt?: number
 }

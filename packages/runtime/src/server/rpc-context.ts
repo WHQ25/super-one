@@ -24,6 +24,12 @@ export interface ProjectsPort {
   list(): ProjectSnapshot[]
   get(projectId: string): ProjectSnapshot | null
   open(path: string, name?: string): ProjectSnapshot
+  update(input: {
+    projectId?: string
+    path?: string
+    name?: string
+    extraDirs?: string[]
+  }): ProjectSnapshot | null
   remove(input: { projectId?: string; path?: string }): ProjectSnapshot | null
   touch(projectId: string): void
 }

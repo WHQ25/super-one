@@ -141,12 +141,20 @@ export function clearWatchBuffersForClient(clientSessionId: string): void {
   }
 }
 
+/**
+ * Transport bound on a turn's directory set — the union of project workspace
+ * folders, the harness config scopes and the session scope. Raised from 32 when
+ * project workspace folders became a fourth contributor.
+ */
+const MAX_TURN_ADDITIONAL_DIRS = 64
+
 const MUTATING_METHODS = new Set([
   'terminal.create',
   'terminal.write',
   'terminal.resize',
   'terminal.kill',
   'project.open',
+  'project.update',
   'project.remove',
   'workspace.writeFile',
   'workspace.rename',
@@ -357,6 +365,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleProjectGet(payload, ctx)
     case 'project.open':
       return handleProjectOpen(payload, ctx)
+    case 'project.update':
+      return handleProjectUpdate(payload, ctx)
     case 'project.remove':
       return handleProjectRemove(payload, ctx)
     case 'fs.listDir':
@@ -1114,6 +1124,33 @@ function handleProjectOpen(payload: unknown, ctx: RpcContext): RpcResult {
       mkdirSync(path, { recursive: true })
     }
     return { result: ctx.projects.open(path, name) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Edit Project: rename and/or set the project's workspace folders. */
+function handleProjectUpdate(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.manageProject)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const projectId = typeof p.projectId === 'string' && p.projectId ? p.projectId : undefined
+  const pathRaw = typeof p.path === 'string' && p.path ? expandHostPath(p.path) : undefined
+  if (!projectId && !pathRaw) {
+    return { error: { code: 'invalid_argument', message: 'projectId or path is required' } }
+  }
+  const name = typeof p.name === 'string' ? p.name : undefined
+  const extraDirs = Array.isArray(p.extraDirs)
+    ? p.extraDirs
+        .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+        .map((d) => expandHostPath(d.trim()))
+    : undefined
+  try {
+    const updated = ctx.projects.update({ projectId, path: pathRaw, name, extraDirs })
+    if (!updated) {
+      return { error: { code: 'not_found', message: 'project not found' } }
+    }
+    return { result: updated }
   } catch (err) {
     return mapThrown(err)
   }
@@ -2247,10 +2284,9 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       : Array.isArray(p.additionalDirectories)
         ? p.additionalDirectories
         : []
-    const additionalDirectories = rawAdditionalDirs
+    const clientAdditionalDirectories = rawAdditionalDirs
       .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
       .map((d) => d.trim())
-      .slice(0, 32)
     const rawEnabledSkills = Array.isArray(options.enabledSkills)
       ? options.enabledSkills
       : Array.isArray(p.enabledSkills)
@@ -2325,6 +2361,15 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
     // → node agent defaults. SessionRuntime also re-applies session fallbacks.
     const existing = ctx.sessions.get(String(p.sessionId ?? ''))
     const harnessId = existing?.harnessId || 'claude'
+    // The node is the only place that can enforce a project's workspace folders
+    // for turns the desktop never composed — mobile, CLI and node automations
+    // all reach SessionRuntime.send with whatever the caller happened to pass.
+    const projectExtraDirs = existing
+      ? (ctx.projects.get(existing.projectId)?.extraDirs ?? [])
+      : []
+    const additionalDirectories = [
+      ...new Set([...projectExtraDirs, ...clientAdditionalDirectories]),
+    ].slice(0, MAX_TURN_ADDITIONAL_DIRS)
     const agentDefaults = resolveAgentTurnDefaults(
       loadNodeAgentSettings(ctx.settingsConfigPath),
       harnessId,

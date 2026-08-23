@@ -417,6 +417,16 @@ const environmentAPI = {
       connectionId,
       input,
     ) as Promise<{ projectId?: string; path: string; name?: string; lastActiveAt?: number }>,
+  /** Edit Project: rename and/or replace the project's workspace folders. */
+  updateProject: (
+    connectionId: string,
+    input: { projectId?: string; path?: string; name?: string; extraDirs?: string[] },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_UPDATE_PROJECT,
+      connectionId,
+      input,
+    ) as Promise<ProjectSnapshot>,
   /** Drafts live in the environment that owns the project — never mirrored. */
   listDrafts: (connectionId: string, projectPath?: string) =>
     ipcRenderer.invoke(

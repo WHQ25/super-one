@@ -1896,6 +1896,12 @@ export interface RecentFolder {
   lastOpened: string   // ISO timestamp — last user message time or added time
   addedAt: string      // ISO timestamp — set once on first add
   missing?: boolean   // true when the folder path no longer exists on disk
+  /**
+   * Project-level workspace folders, owned by SuperOne rather than by any
+   * harness config file, so claude/codex/acp all see one identical set.
+   * Optional: remote-mapped rows from an older node omit it — read with `?? []`.
+   */
+  extraDirs?: string[]
 }
 
 // --- Resource scope ---
@@ -3624,6 +3630,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_OPEN_PROJECT: 'environment:openProject',
   /** Unregister a project from a host list (local recents or remote project.remove). */
   ENVIRONMENT_REMOVE_PROJECT: 'environment:removeProject',
+  /** Edit Project: rename and/or set the project's workspace folders. */
+  ENVIRONMENT_UPDATE_PROJECT: 'environment:updateProject',
   /** List sessions for a remote project (local uses sessions:* DB IPC). */
   ENVIRONMENT_LIST_SESSIONS: 'environment:listSessions',
   /** Unsent composer drafts, stored in the environment that owns the project. */

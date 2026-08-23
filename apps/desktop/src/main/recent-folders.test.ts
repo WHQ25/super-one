@@ -1,0 +1,156 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { getDbMock } = vi.hoisted(() => ({ getDbMock: vi.fn() }))
+
+vi.mock('./database', () => ({ getDb: getDbMock }))
+vi.mock('./app-settings-service', () => ({ dropMiniAppOrderBucket: vi.fn() }))
+
+import { addRecentFolder, getProjectExtraDirs, getRecentFolders, updateProject } from './recent-folders'
+
+interface ProjectRow {
+  id: string
+  path: string
+  name: string
+  added_at: string
+  extra_dirs_json: string | null
+  is_user_renamed: number
+}
+
+/**
+ * Stand-in for the `projects` table.
+ *
+ * The suite cannot load a real better-sqlite3 (native module), so the fake
+ * interprets just enough SQL to exercise the upsert's conflict clause — which
+ * is the part that actually decides whether a rename survives.
+ */
+function createMockDb(seed: ProjectRow[] = []) {
+  const rows = new Map(seed.map((r) => [r.id, { ...r }]))
+  const byPath = (path: string) => [...rows.values()].find((r) => r.path === path)
+
+  return {
+    rows,
+    prepare: vi.fn((sql: string) => ({
+      run: vi.fn((...args: unknown[]) => {
+        if (sql.includes('INSERT INTO projects')) {
+          const [id, path, name, addedAt] = args as string[]
+          const existing = byPath(path)
+          if (!existing) {
+            rows.set(id, { id, path, name, added_at: addedAt, extra_dirs_json: '[]', is_user_renamed: 0 })
+            return
+          }
+          // ON CONFLICT(path) DO UPDATE SET name = CASE WHEN is_user_renamed …
+          if (existing.is_user_renamed !== 1) existing.name = name
+          return
+        }
+        if (sql.includes('UPDATE projects')) {
+          const [nextName, , nextExtraDirs, id] = args as Array<string | null>
+          const target = rows.get(id as string)
+          if (!target) return
+          if (nextName != null) {
+            target.name = nextName
+            target.is_user_renamed = 1
+          }
+          if (nextExtraDirs != null) target.extra_dirs_json = nextExtraDirs
+        }
+      }),
+      get: vi.fn((arg: string) => {
+        if (sql.includes('WHERE id = ?')) return rows.get(arg)
+        if (sql.includes('WHERE path = ?')) return byPath(arg)
+        return undefined
+      }),
+      all: vi.fn(() =>
+        [...rows.values()].map((r) => ({ ...r, last_active: r.added_at })),
+      ),
+    })),
+  }
+}
+
+const SEED: ProjectRow = {
+  id: 'p1',
+  path: '/repo/apps/desktop',
+  name: 'desktop',
+  added_at: '2026-01-01T00:00:00.000Z',
+  extra_dirs_json: '[]',
+  is_user_renamed: 0,
+}
+
+describe('project name across re-opens', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('keeps a custom name when the same folder is opened again', () => {
+    const db = createMockDb([SEED])
+    getDbMock.mockReturnValue(db)
+
+    updateProject({ projectId: 'p1', name: 'Desktop App' })
+    // openFolder runs addRecentFolder on every open — this is the regression.
+    addRecentFolder('/repo/apps/desktop')
+
+    expect(getRecentFolders()[0].name).toBe('Desktop App')
+  })
+
+  it('still tracks the folder basename for a project the user never renamed', () => {
+    const db = createMockDb([{ ...SEED, path: '/repo/apps/old-name', name: 'old-name' }])
+    getDbMock.mockReturnValue(db)
+
+    addRecentFolder('/repo/apps/old-name')
+
+    expect(getRecentFolders()[0].name).toBe('old-name')
+  })
+
+  it('rejects an empty name rather than leaving the sidebar row blank', () => {
+    getDbMock.mockReturnValue(createMockDb([SEED]))
+    expect(() => updateProject({ projectId: 'p1', name: '   ' })).toThrow(/empty/)
+  })
+
+  it('reports not_found for a project id that is no longer registered', () => {
+    getDbMock.mockReturnValue(createMockDb([SEED]))
+    expect(() => updateProject({ projectId: 'gone', name: 'x' })).toThrow(/not found/)
+  })
+})
+
+describe('project workspace folders', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('round-trips a folder list and exposes it on the recent-folders row', () => {
+    getDbMock.mockReturnValue(createMockDb([SEED]))
+
+    updateProject({ projectId: 'p1', extraDirs: ['/repo/packages/ui'] })
+
+    expect(getRecentFolders()[0].extraDirs).toEqual(['/repo/packages/ui'])
+    expect(getProjectExtraDirs('/repo/apps/desktop')).toEqual(['/repo/packages/ui'])
+  })
+
+  it('reads an empty list for a row written before the column existed', () => {
+    getDbMock.mockReturnValue(createMockDb([{ ...SEED, extra_dirs_json: null }]))
+    expect(getRecentFolders()[0].extraDirs).toEqual([])
+    expect(getProjectExtraDirs('/repo/apps/desktop')).toEqual([])
+  })
+
+  it('leaves folders untouched when only the name is edited', () => {
+    getDbMock.mockReturnValue(createMockDb([{ ...SEED, extra_dirs_json: '["/repo/packages/ui"]' }]))
+
+    updateProject({ projectId: 'p1', name: 'Renamed' })
+
+    const [folder] = getRecentFolders()
+    expect(folder.name).toBe('Renamed')
+    expect(folder.extraDirs).toEqual(['/repo/packages/ui'])
+  })
+
+  it('leaves the name untouched when only folders are edited', () => {
+    getDbMock.mockReturnValue(createMockDb([{ ...SEED, name: 'Custom', is_user_renamed: 1 }]))
+
+    updateProject({ projectId: 'p1', extraDirs: ['/elsewhere'] })
+
+    const [folder] = getRecentFolders()
+    expect(folder.name).toBe('Custom')
+    expect(folder.extraDirs).toEqual(['/elsewhere'])
+  })
+
+  it('resolves a project by path when no id is supplied', () => {
+    getDbMock.mockReturnValue(createMockDb([SEED]))
+
+    updateProject({ path: '/repo/apps/desktop', extraDirs: ['/elsewhere'] })
+
+    expect(getRecentFolders()[0].extraDirs).toEqual(['/elsewhere'])
+  })
+})

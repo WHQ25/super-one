@@ -38,29 +38,42 @@ export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
 /**
  * The routes SuperOne offers, and what they accept.
  *
- * Both entries are deliberately text-only. `DeepSeekCatalogModel` takes an
- * `inputModalities` list and rc.8 wired the whole multimodal path — attachment
- * store, admission, `image_url` content parts — but DeepSeek's own API
- * documentation describes both published models as text-only: the chat
- * completions reference states that user message content accepts text only,
- * and neither the pricing nor the token-usage page mentions image input.
- * Upstream treats an uncatalogued endpoint as text-only for exactly this
- * reason, so the omission here is the accurate answer rather than a TODO.
+ * `inputModalities` is the one field with teeth: `llm-deepseek` reads it both
+ * when serializing a request and when SuperOne decides whether a composer
+ * attachment may be admitted at all (`DeepseekRuntime.imageBlocksFor`). The two
+ * text-only entries stay text-only because DeepSeek's chat-completions
+ * reference still describes their user content as text; upstream treats an
+ * uncatalogued endpoint the same way, so the omission is the accurate answer
+ * rather than a TODO.
  *
- * Getting this wrong is not a cosmetic error. `llm-deepseek` refuses image
- * content while SERIALIZING a request from history, so an image admitted for a
- * model that rejects it would fail every later turn of that session, not just
- * the one it was attached to. SuperOne therefore refuses before storing
- * anything (`DeepseekRuntime.imageBlocksFor`) and reads this very field to
- * decide.
+ * The vision route is upstream's own catalog entry, mirrored here because
+ * SuperOne passes an explicit `models` list and therefore never inherits the
+ * adapter's defaults. Its per-request pixel and byte budgets are deliberately
+ * left off: omitted, `llm-deepseek` fills in exactly the values its own default
+ * entry carries, so restating them here would only be a second copy to drift.
  *
- * Enabling a route once DeepSeek publishes an image-capable model is one line:
- * add `inputModalities: ['text', 'image']` to its entry. Nothing else needs to
- * change — the store is mounted and the send path is wired.
+ * `-exp` is the provider's own suffix, not ours. It is an experimental route
+ * DeepSeek may withdraw, which is why it is offered beside the stable pair
+ * instead of replacing either.
+ *
+ * No entry declares `contextWindow`, on purpose. Nothing in the DeepSeek API
+ * reports capacity, so whatever is written here IS the number — and it is not
+ * only a progress ring: `compaction-basic` computes its trigger from it
+ * (`contextWindow * 0.8`), so a value below the truth compacts a healthy
+ * conversation away early. Omitted, the adapter's own `defaultContextWindow`
+ * answers, which is the figure DeepSeek's harness team publishes for these
+ * exact model ids and which then tracks upstream on every bump instead of
+ * ageing here. It also keeps a catalogued route and an unlisted pass-through
+ * id — which always reads that same default — from disagreeing.
  */
 export const DEEPSEEK_MODEL_CATALOG = [
-  { id: DEEPSEEK_DEFAULT_MODEL, name: 'DeepSeek V4 Pro', contextWindow: 128_000 },
-  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', contextWindow: 128_000 },
+  { id: DEEPSEEK_DEFAULT_MODEL, name: 'DeepSeek V4 Pro' },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+  {
+    id: 'deepseek-v4-flash-vision-exp',
+    name: 'DeepSeek V4 Flash Vision (Exp)',
+    inputModalities: ['text', 'image'],
+  },
 ] as const satisfies DeepseekAdapterOptions['models']
 
 /**

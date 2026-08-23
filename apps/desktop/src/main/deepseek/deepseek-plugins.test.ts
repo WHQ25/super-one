@@ -44,7 +44,7 @@ beforeEach(() => {
   listBundledDshPlugins.mockResolvedValue([
     {
       name: '@deepseek-ai/dsh-agent-loop',
-      version: '0.1.0-rc.8',
+      version: '0.1.1-rc.2',
       scopes: ['core'],
     },
   ])
@@ -73,7 +73,7 @@ describe('listDshPlugins', () => {
       bundled: [
         {
           name: '@deepseek-ai/dsh-agent-loop',
-          version: '0.1.0-rc.8',
+          version: '0.1.1-rc.2',
           scopes: ['core'],
         },
       ],

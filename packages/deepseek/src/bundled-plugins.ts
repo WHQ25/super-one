@@ -18,7 +18,7 @@ export interface BundledDshPlugin {
   scopes: string[]
 }
 
-const DSH_VERSION = '0.1.0-rc.8'
+const DSH_VERSION = '0.1.1-rc.2'
 
 const CORE_PLUGINS: readonly { name: string; version: string }[] = [
   { name: '@deepseek-ai/cordis-plugin-group', version: '1.0.1' },

@@ -19,11 +19,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - A bound device appears as a phone lying on the chat when the Activity panel is not up: movable, resizable from any of eight edges and corners, dismissable, and clickable to expand into an operable overlay.
 - Chat: `ReportFindings` gets its own tool block. Each finding reads as its rank, a dot separating CONFIRMED from PLAUSIBLE, the claim, and a file chip that opens the file at the line; expanding one adds the full summary and the failure scenario. It used to fall through to the generic row as a wrench and a truncated blob of JSON.
 - Codex: adopted app-server 149. A message sent while a turn is running now becomes a durable queued turn — start, edit or delete it from the queue — rather than steering the live one, MCP servers are supported, and the usage gauge reports thread tokens and estimated credits for the current thread.
+- DeepSeek: **image input actually works now** — DeepSeek published its first vision route, `DeepSeek V4 Flash Vision (Exp)`, and it is offered in the model picker beside V4 Pro and V4 Flash. The attachment path has been wired since the multimodal work; what was missing was a model that accepts pictures. The two text-only routes still refuse an attachment up front, naming what could not be sent.
 
 ### Changed
 
 - **Mini-apps are now a Node host plus rendering WebViews.** `manifest.main` names a Node module that runs in a dedicated utility process; `activate(context)` registers tool handlers and owns all computation, and WebViews only render. Agent tool calls go straight to the host, so a tool no longer depends on a mounted panel — `waitForAppReady`, lazy panel opening and the whole ready gate are gone, along with `superone.fs` / `git` / `db` / `kv` / `peer` and the background worker shell. Apps that need data use Node directly, or `context.workspaceState` / `globalState`. `context.agent.*` (prompt, context card) and `context.host.*` (toast, revealInFolder, openExternal, clipboard) are Node-side, so a background app can reach the user with no panel open; anchored surfaces — tooltip, context menu, popover, drag — need a rect only the WebView has and stay in `superone.ui`. **Existing mini-apps have to be ported.**
 - Pinned Codex CLI moves to `0.149.0`.
+- DeepSeek: upgraded `dsh` to `0.1.1-rc.2`.
+- DeepSeek: conversations run far longer before compacting. SuperOne declared a 128k context window for models DeepSeek publishes as 1M, and that number is what the auto-compaction threshold is derived from — so a healthy conversation was being summarised away at roughly an eighth of the model's actual capacity. The capacity now comes from the harness rather than a hardcoded guess.
+- DeepSeek: an image is no longer refused for being large. The old limits rejected an ordinary phone photo outright — 3.5 MB, or any side over 2000px. A picture up to 20 MB and 8192px a side is now accepted and stored downscaled once, and switching a conversation from the vision route to a text-only one leaves the earlier images as placeholders instead of failing every turn after.
 - Device ids now carry the provider that reaches them (`ios-sim:`, `android:`) rather than the platform they run. Bare udids and older `ios:` ids are normalised on read, so remembered devices and recents keep working.
 - The "+" menu collapses iOS Simulator and Android into one **Device** entry — both opened the same tab, whose picker already spans every platform.
 - Apple's Simulator.app is kept hidden while SuperOne owns a device it booted itself, including when `flutter run` / `expo run:ios` / Xcode relaunch it.
@@ -49,6 +53,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - iOS Simulator: Chinese could be started in the preview but never finished, and the first letter of every pinyin word landed on the device as a latin character. The composition is left alone until it ends, and printable characters come from the browser's own verdict that a keystroke was literal text. Option combinations and dead keys (é) reach the device as a side effect.
 - Chat: findings in a `ReportFindings` block used a fixed pixel size, so they ignored the chat zoom scale.
 - The Activity panel could shrink to 360 while the device group demanded 400, so dockview laid the group out oversized and clipped the right of the device.
+- DeepSeek on Windows: the `minimal` preset composed no shell the platform could run. SuperOne vendors dsh's preset files and the copies had drifted a release behind, missing the PowerShell stack upstream added for Windows.
 
 ### Performance
 

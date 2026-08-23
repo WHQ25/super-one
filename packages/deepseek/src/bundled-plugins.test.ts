@@ -30,12 +30,12 @@ describe('bundled dsh plugin catalog', () => {
 
     expect(plugins).toContainEqual({
       name: '@deepseek-ai/dsh-tool-todo',
-      version: '0.1.0-rc.8',
+      version: '0.1.1-rc.2',
       scopes: ['code', 'standard'],
     })
     expect(plugins).toContainEqual({
       name: '@deepseek-ai/dsh-agent-loop',
-      version: '0.1.0-rc.8',
+      version: '0.1.1-rc.2',
       scopes: ['core'],
     })
   })

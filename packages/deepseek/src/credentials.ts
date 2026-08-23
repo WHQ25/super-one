@@ -2,6 +2,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   CredentialProvider,
   type CredentialInfo,
+  type CredentialRecordEntry,
+  type CredentialRecordInfo,
   type CredentialRef,
   type ResolvedCredential,
 } from '@deepseek-ai/dsh-credentials'
@@ -46,12 +48,50 @@ export class SuperoneCredentialProvider extends CredentialProvider {
   // SuperOne owns credential authoring in its own settings UI; the harness
   // side is read-only so dsh can never fork the store.
   async set(): Promise<never> {
-    throw new Error('SuperOne credentials are read-only from the harness; edit them in SuperOne settings')
+    throw readOnly()
   }
 
   async unset(): Promise<never> {
-    throw new Error('SuperOne credentials are read-only from the harness; edit them in SuperOne settings')
+    throw readOnly()
   }
+
+  /**
+   * The record half of the seam — `<scope>/<id>` addresses holding an api-key
+   * or an authorization grant a plugin obtained for itself — has no SuperOne
+   * counterpart: settings author references, not grants. Rather than open a
+   * second store dsh would own, this side reports an empty, unwritable record
+   * space, which is the same answer `describe`/`set` give for a reference
+   * SuperOne does not hold.
+   *
+   * Nothing SuperOne mounts stores records (`llm-deepseek` resolves only the
+   * api-key reference), so this is inert for the shipped tree. A third-party
+   * plugin installed at runtime that wants to persist a grant is refused
+   * explicitly rather than silently losing it on the next boot.
+   */
+  async readRecord(): Promise<undefined> {
+    return undefined
+  }
+
+  async describeRecord(): Promise<CredentialRecordInfo> {
+    return { configured: false, writable: false }
+  }
+
+  async listRecords(): Promise<readonly CredentialRecordEntry[]> {
+    return []
+  }
+
+  async modifyRecord(): Promise<never> {
+    throw readOnly()
+  }
+
+  async deleteRecord(): Promise<never> {
+    throw readOnly()
+  }
+}
+
+/** The one refusal every write path on this provider answers with. */
+function readOnly(): Error {
+  return new Error('SuperOne credentials are read-only from the harness; edit them in SuperOne settings')
 }
 
 /** Cordis plugin form: mounts the provider as `ctx.credentials`. */

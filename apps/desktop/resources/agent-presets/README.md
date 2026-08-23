@@ -1,7 +1,7 @@
 # Vendored dsh agent presets
 
 Copies of the four presets `@deepseek-ai/dsh` ships in its own
-`config/agent-presets/`, pinned to the same `0.1.0-rc.8` line as the rest of the
+`config/agent-presets/`, pinned to the same `0.1.1-rc.2` line as the rest of the
 family. They are verbatim **except for one deviation**, marked with a
 `SuperOne deviation` banner at the top of each file it touches: `standard`,
 `code`, and `cordis` pin their two delegation rows to the foreground, because

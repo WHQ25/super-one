@@ -16,7 +16,7 @@ describe('DeepSeek plugin settings', () => {
           bundled: [
             {
               name: '@deepseek-ai/dsh-agent-loop',
-              version: '0.1.0-rc.8',
+              version: '0.1.1-rc.2',
               scopes: ['core'],
             },
           ],

@@ -164,7 +164,7 @@ function getSelectPath(item: FlatItem): string {
   return ''
 }
 
-const MENTION_GROUP_ORDER = ['agent-profile', 'capability', 'session-project', 'session', 'desktop-app', 'agent', 'miniapp', 'file'] as const
+export const MENTION_GROUP_ORDER = ['capability', 'agent-profile', 'session-project', 'session', 'desktop-app', 'agent', 'miniapp', 'file'] as const
 
 function mentionGroupKey(item: FlatItem): string {
   if (item.kind === 'agent-profile') return 'agent-profile'

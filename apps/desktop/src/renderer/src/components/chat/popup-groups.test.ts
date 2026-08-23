@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { BUILTIN_CAPABILITIES } from '@superone/shared/capability-prompt-tags'
+import { MENTION_GROUP_ORDER } from './MentionPopup'
 import { groupItems } from './popup-groups'
 
 interface Row {
@@ -9,6 +11,11 @@ interface Row {
 const row = (id: string, kind: Row['kind']): Row => ({ id, kind })
 
 describe('groupItems', () => {
+  it('puts built-ins first, collaborators second, and includes Widget as a built-in', () => {
+    expect(MENTION_GROUP_ORDER.slice(0, 2)).toEqual(['capability', 'agent-profile'])
+    expect(BUILTIN_CAPABILITIES.some((capability) => capability.id === 'widget')).toBe(true)
+  })
+
   it('reorders mixed items into the declared group order', () => {
     const items = [row('1', 'b'), row('2', 'a'), row('3', 'c'), row('4', 'a')]
     const groups = groupItems(items, (r) => r.kind, ['a', 'b', 'c'])

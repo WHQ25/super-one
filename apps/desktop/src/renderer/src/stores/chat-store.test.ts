@@ -51,7 +51,6 @@ const mockWindowAgent = {
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
   interrupt: vi.fn().mockResolvedValue(true),
-  readProjectAdditionalDirs: vi.fn().mockResolvedValue({ user: [], projectShared: [], projectLocal: [] }),
   respondToPermission: vi.fn().mockResolvedValue(true),
   answerQuestion: vi.fn().mockResolvedValue(undefined),
   dismissQuestion: vi.fn().mockResolvedValue(undefined),
@@ -1399,7 +1398,6 @@ describe('init_ready updates session fields', () => {
       projectCommands: [],
       projectAgents: [],
       additionalDirectories: [],
-      additionalDirsScoped: { user: [], projectShared: [], projectLocal: [] },
     } as never)
 
     const proj = useChatStore.getState().projectSessions['/test']

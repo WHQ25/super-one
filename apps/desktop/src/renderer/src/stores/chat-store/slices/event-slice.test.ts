@@ -37,7 +37,6 @@ const mockWindowApp = {
   saveSessionState: vi.fn().mockResolvedValue(undefined),
   loadSessionState: vi.fn().mockResolvedValue(null),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
-  readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
   codexListModels: vi.fn().mockResolvedValue([]),
   watchBashOutput: vi.fn(),
   getAppSettings: vi.fn().mockResolvedValue({

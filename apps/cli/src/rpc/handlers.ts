@@ -142,9 +142,9 @@ export function clearWatchBuffersForClient(clientSessionId: string): void {
 }
 
 /**
- * Transport bound on a turn's directory set — the union of project workspace
- * folders, the harness config scopes and the session scope. Raised from 32 when
- * project workspace folders became a fourth contributor.
+ * Transport bound on a turn's directory set — the union of the project's
+ * workspace folders and the session scope. Well above the 16-folder project cap
+ * so the bound is about payload size, never policy.
  */
 const MAX_TURN_ADDITIONAL_DIRS = 64
 

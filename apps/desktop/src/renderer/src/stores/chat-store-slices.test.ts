@@ -40,7 +40,6 @@ const mockWindowAgent = {
   truncateAtCheckpoint: vi.fn().mockResolvedValue(undefined),
   dequeueMessage: vi.fn().mockResolvedValue(true),
   startQueuedMessages: vi.fn().mockResolvedValue(true),
-  readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
   parkSession: vi.fn().mockResolvedValue(undefined),
 }
 

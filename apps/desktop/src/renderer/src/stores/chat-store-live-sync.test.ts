@@ -33,7 +33,6 @@ const mockWindowAgent = {
 const mockWindowApp = {
   saveSessionState: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
-  readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
   getAppSettings: vi.fn().mockResolvedValue({
     analyticsEnabled: true,
     agentPreference: {

@@ -16,6 +16,7 @@ import type {
   SandboxMode,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { getSandboxCapability } from '../sandbox-platform'
@@ -599,7 +600,7 @@ export class Session implements SessionContract {
       // turn, and the backend flushes its own queue at turn end without coming
       // back through here. Flagging a rebuild would therefore land one turn too
       // late, so a changed root set takes the existing promote-to-normal path.
-      const queuedDirsChanged = !sameStringArray(this.resolveEffectiveDirs(), this.additionalDirectories)
+      const queuedDirsChanged = this.dirsReachBackend() && !sameStringArray(this.resolveEffectiveDirs(), this.additionalDirectories)
       if (!this.backendStarted) {
         log.warn('[Session] queued send before backend start sid=%s — promoting to normal send', this.id)
       } else if (this._needsRebuild) {
@@ -634,7 +635,7 @@ export class Session implements SessionContract {
       // revokes the agent's access and rebuilds the backend for nothing.
       if (request.additionalDirs !== undefined) this.callerScopedDirs = [...request.additionalDirs]
       const nextDirs = this.resolveEffectiveDirs()
-      const dirsChanged = !sameStringArray(nextDirs, this.additionalDirectories)
+      const dirsChanged = this.dirsReachBackend() && !sameStringArray(nextDirs, this.additionalDirectories)
       if (request.effort !== undefined) this.effort = request.effort
       if (request.model !== undefined) this.model = request.model
       this.additionalDirectories = nextDirs
@@ -1185,7 +1186,7 @@ export class Session implements SessionContract {
         const nextDirs = this.resolveEffectiveDirs()
         if (sameStringArray(nextDirs, this.additionalDirectories)) return
         this.additionalDirectories = nextDirs
-        if (!this.backendStarted) return
+        if (!this.backendStarted || !this.dirsReachBackend()) return
         const applied = (await this.backend.setAdditionalDirectories?.(nextDirs)) ?? false
         if (applied) return
         if (!this.isStreaming() && !this.backend.hasActiveBackgroundTasks?.()) {
@@ -1442,6 +1443,22 @@ export class Session implements SessionContract {
    */
   private resolveEffectiveDirs(): string[] {
     return withProjectExtraDirs(this.getProjectExtraDirs?.(this.projectPath), this.callerScopedDirs)
+  }
+
+  /**
+   * Does a change to the working-directory set have to reach the backend?
+   *
+   * The set itself is tracked for every harness — SuperOne derives its own
+   * file-read allowlists from it, and a project's folders belong to the project
+   * rather than to whichever harness is selected. But `setAdditionalDirectories`
+   * is optional on `SessionBackend`, so for a harness that reads only its cwd
+   * the optional call resolves `false` and every edit would tear down and
+   * rebuild a backend over a folder it will never look at. Hiding the UI cannot
+   * prevent that: project folders are shared, and a Claude session can have
+   * added them already.
+   */
+  private dirsReachBackend(): boolean {
+    return HARNESS_CAPABILITIES[this.harnessId]?.supportsAdditionalDirs ?? false
   }
 
   /**

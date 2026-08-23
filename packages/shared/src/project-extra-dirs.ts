@@ -17,9 +17,9 @@
  * Cap on project workspace folders.
  *
  * Deliberately well under the 64-dir transport cap: a turn's directory set is
- * the union of these, the harness config scopes (`.claude/settings*.json`,
- * `.codex/config.toml`) and the session scope, so this budget has to leave the
- * other three room.
+ * the union of these and the session scope, so this budget has to leave the
+ * session room. No harness config file contributes — SuperOne is the only
+ * source of an agent's working directories.
  */
 export const MAX_PROJECT_EXTRA_DIRS = 16
 

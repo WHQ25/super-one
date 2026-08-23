@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useAppStore } from '../app'
 import { useActivityViewStateStore } from '../activity-view-state'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget } from './helpers/chat-helpers'
+import { writeProjectExtraDirs, type ProjectExtraDirsSink } from './helpers/project-extra-dirs-write'
 import {
   accumulateCodexFooterTokens,
   type CodexCommand,
@@ -394,13 +395,22 @@ import { createCoreSlice } from './slices/core-slice'
 import { createEventSlice } from './slices/event-slice'
 import { createOpenCodeSlice } from './slices/opencode-slice'
 
-async function writeProjectExtraDirs(projectKey: string, extraDirs: string[]): Promise<void> {
-  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-  const remote = parseRemoteProjectKey(projectKey)
-  await window.environment.updateProject(remote?.connectionId ?? 'local', {
-    path: remote?.path ?? projectKey,
-    extraDirs,
-  })
+
+/**
+ * Bind the serialized catalog writer to one project's slice of the store.
+ *
+ * Kept out of `writeProjectExtraDirs` so that helper stays store-agnostic and
+ * unit-testable without standing up a zustand instance.
+ */
+function projectDirsSink(
+  projectPath: string,
+  set: (updater: (s: ChatStore) => Partial<ChatStore>) => void,
+  get: () => ChatStore,
+): ProjectExtraDirsSink {
+  return {
+    commit: (dirs) => set((s) => updateProjectState(s, projectPath, () => ({ projectExtraDirs: dirs }))),
+    reload: () => get().refreshProjectExtraDirs(projectPath),
+  }
 }
 
 export const useChatStore = create<ChatStore>((set, get, store) => ({
@@ -1059,8 +1069,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     // touched, so one folder serves claude, codex and ACP alike.
     const proj = getProject(get(), projectPath)
     if (proj.projectExtraDirs.includes(path)) return
-    void writeProjectExtraDirs(projectPath, [...proj.projectExtraDirs, path])
-      .then(() => get().refreshProjectExtraDirs(projectPath))
+    void writeProjectExtraDirs(projectPath, [...proj.projectExtraDirs, path], projectDirsSink(projectPath, set, get))
   },
 
   removeDir: (path, scope, target) => {
@@ -1075,8 +1084,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
     const proj = getProject(get(), projectPath)
     if (!proj.projectExtraDirs.includes(path)) return
-    void writeProjectExtraDirs(projectPath, proj.projectExtraDirs.filter((d) => d !== path))
-      .then(() => get().refreshProjectExtraDirs(projectPath))
+    void writeProjectExtraDirs(projectPath, proj.projectExtraDirs.filter((d) => d !== path), projectDirsSink(projectPath, set, get))
   },
 
   // setShowDirManager / setShowReviewPanel now provided by createCoreSlice

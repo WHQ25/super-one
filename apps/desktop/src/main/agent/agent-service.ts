@@ -5,8 +5,6 @@ import log from '../logger'
 import { gitRun } from '../git-run'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
-import {
-} from '../codex-config-service'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest, type TerminalEvent } from '@superone/shared/agent-types'

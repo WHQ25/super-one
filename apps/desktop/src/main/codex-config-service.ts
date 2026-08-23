@@ -13,11 +13,6 @@ interface TomlMcpServer {
   enabled?: boolean
 }
 
-interface TomlSandboxWorkspaceWrite {
-  writable_roots?: string[]
-  [key: string]: unknown
-}
-
 function getCodexConfigPath(scope: ResourceScope, cwd: string): string {
   return scope === 'project'
     ? join(cwd, '.codex', 'config.toml')

@@ -38,9 +38,6 @@ export function buildSlashCommands(
   if (!seen.has('clear')) {
     extra.push({ name: 'clear', description: 'Clear the conversation and start fresh', argumentHint: '', isSkill: false })
   }
-  if (!seen.has('add-dir')) {
-    extra.push({ name: 'add-dir', description: 'Manage additional working directories', argumentHint: '[project|session] [dir]', isSkill: false })
-  }
   // /provider command retired — provider selection moved into the model selector (kept for reference)
   // if (!seen.has('provider')) {
   //   extra.push({ name: 'provider', description: 'Choose API provider for this session', argumentHint: '', isSkill: false })

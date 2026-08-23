@@ -356,9 +356,6 @@ vi.mock('./ProviderSlashPopup', () => ({
   ProviderSlashPopup: () => null,
 }))
 
-vi.mock('./DirManagerPanel', () => ({
-  DirManagerPanel: () => null,
-}))
 
 vi.mock('./ReviewPanel', () => ({
   ReviewPanel: () => <div>review panel</div>,
@@ -713,6 +710,46 @@ describe('ChatInput slash command grouping', () => {
     expect(addDirButton).toHaveTextContent('/add-dir')
   })
 
+  it('offers add-dir to ACP, which also accepts extra working roots', () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    expect(screen.queryByText('Manage additional working directories')).toBeTruthy()
+  })
+
+  it('hides add-dir for a harness that reads only its cwd', () => {
+    activeSessionState.preferredProvider = 'opencode'
+    activeSessionState.sessionProvider = 'opencode'
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    expect(screen.queryByText('Manage additional working directories')).toBeNull()
+  })
+
+  it('restores add-dir when the provider switches to a supporting harness without a remount', () => {
+    activeSessionState.preferredProvider = 'opencode'
+    activeSessionState.sessionProvider = 'opencode'
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+    expect(screen.queryByText('Manage additional working directories')).toBeNull()
+
+    // Same mounted component, new provider — a memo that forgot to depend on the
+    // provider would keep serving the unsupported catalog.
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+    rerender(<ChatInput />)
+
+    expect(screen.queryByText('Manage additional working directories')).toBeTruthy()
+  })
+
   it('splits the slash popup into Slash commands and Skills sections with commands listed first', () => {
     activeSessionState.slashCommands = [
       { name: 'release', description: 'Release the app', argumentHint: '', isSkill: true },
@@ -733,8 +770,12 @@ describe('ChatInput slash command grouping', () => {
       .map((b) => b.querySelector('.font-medium')?.textContent)
       .filter((name): name is string => typeof name === 'string' && name.startsWith('/'))
 
-    expect(order.slice(0, 2).sort()).toEqual(['/clear', '/compact'])
-    expect(order.slice(2, 4).sort()).toEqual(['/release', '/tdd'])
+    // Claude accepts extra roots, so the host `/add-dir` entry joins the
+    // commands group — skills still come after every command.
+    expect(order.slice(0, 3).sort()).toEqual([
+      '/add-dir[project|session] [dir]', '/clear', '/compact',
+    ])
+    expect(order.slice(3, 5).sort()).toEqual(['/release', '/tdd'])
   })
 
   it('limits slash command and skill descriptions to two lines', () => {

@@ -678,6 +678,28 @@ describe('Session state machine', () => {
       expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/session'])
     })
 
+    it('does not rebuild a cwd-only harness when the project folders change', async () => {
+      // OpenCode has no notion of extra roots, so `setAdditionalDirectories` is
+      // absent and the optional call resolves false. Without a capability gate
+      // every Edit Project save would tear its backend down for nothing — and
+      // hiding the UI cannot prevent it, since the folders are project-wide and
+      // a Claude session may have added them.
+      let workspace = ['/workspace']
+      const { session: s, backend: b } = makeSession({
+        harnessId: 'opencode' as never,
+        getProjectExtraDirs: () => workspace,
+      })
+      await settle(s.send({ content: 'first' }), b)
+      const before = b.rebuildCalls.length
+
+      workspace = ['/workspace', '/another']
+      await settle(s.send({ content: 'second' }), b)
+      expect(b.rebuildCalls).toHaveLength(before)
+      expect(b.setAdditionalDirectoriesCalls).toEqual([])
+      // Still tracked: SuperOne's own file-read allowlists are derived from it.
+      expect(s.getAdditionalDirectoriesSnapshot()).toEqual(['/workspace', '/another'])
+    })
+
     it('reports only the caller half as the session scope, so the renderer cannot echo project folders back', async () => {
       const { session: s, backend: b } = withWorkspace(['/workspace'])
       await settle(s.send({ content: 'first', additionalDirs: ['/session'] }), b)
@@ -2249,8 +2271,6 @@ describe('Session persist hook', () => {
         skills: [{ name: `skill@${cwd}`, description: 'd', argumentHint: '', isSkill: true }],
         projectCommands: [{ name: `cmd@${cwd}`, description: '', argumentHint: '', isSkill: false }],
         projectAgents: [{ name: `agent@${cwd}`, description: '', source: 'project' as const }],
-        additionalDirectories: [`${cwd}/extra`],
-        additionalDirsScoped: { user: [], projectShared: [`${cwd}/extra`], projectLocal: [] },
       }
     }
 

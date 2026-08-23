@@ -29,7 +29,6 @@ const mockWindowAgent = {
   activateSession: vi.fn().mockResolvedValue(undefined),
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
-  readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
   respondToPermission: vi.fn().mockResolvedValue(undefined),
   answerQuestion: vi.fn().mockResolvedValue(undefined),
   dismissQuestion: vi.fn().mockResolvedValue(undefined),

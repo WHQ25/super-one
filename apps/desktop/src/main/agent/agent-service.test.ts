@@ -17,12 +17,6 @@ const { createdAgents } = vi.hoisted(() => ({
   }>,
 }))
 
-const codexAdditionalDirMocks = vi.hoisted(() => ({
-  read: vi.fn(() => ({ user: ['/codex-user'], projectShared: [], projectLocal: ['/codex-project'] })),
-  add: vi.fn(),
-  remove: vi.fn(),
-}))
-
 const dshMcpMocks = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
@@ -40,13 +34,6 @@ const remoteDshMcpMocks = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
-}))
-
-vi.mock('./project-additional-dirs', () => ({
-  readScopedAdditionalDirs: vi.fn(() => ({ user: [], projectShared: [], projectLocal: [] })),
-  readProjectAdditionalDirs: vi.fn(() => []),
-  addProjectAdditionalDir: vi.fn(),
-  removeProjectAdditionalDir: vi.fn(),
 }))
 
 vi.mock('./fuzzy-file-search', () => ({
@@ -108,9 +95,6 @@ vi.mock('../codex/codex-skills-rpc-singleton', () => ({
 
 vi.mock('../codex-config-service', () => ({
   listCodexMcpConfigs: vi.fn(),
-  readCodexScopedAdditionalDirs: codexAdditionalDirMocks.read,
-  addCodexProjectAdditionalDir: codexAdditionalDirMocks.add,
-  removeCodexProjectAdditionalDir: codexAdditionalDirMocks.remove,
 }))
 
 vi.mock('@superone/runtime/fs', () => ({

@@ -43,6 +43,7 @@ import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { MAX_PROJECT_EXTRA_DIRS } from '@superone/shared/project-extra-dirs'
 import { WorkflowSlashPopup, type WorkflowSlashPopupHandle, type WorkflowApplyPayload } from './WorkflowSlashPopup'
 import { parseWorkflowSlashLine } from './workflow-slash-suggest'
 // import { ProviderSlashPopup } from './ProviderSlashPopup' // /provider popup retired — kept for reference
@@ -338,9 +339,6 @@ export function ChatInput() {
       { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: '', isSkill: false },
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
-      ...(HARNESS_CAPABILITIES[activeProviderForResources]?.supportsAdditionalDirs
-        ? [{ name: 'add-dir', description: t('chat.codexCommands.addDirDesc'), argumentHint: '[project|session] [dir]', isSkill: false }]
-        : []),
       // /provider command retired — provider selection moved into the model selector (kept for reference)
       // { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
       { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
@@ -419,16 +417,28 @@ export function ChatInput() {
     }, [t, cursorFsSlashItems])
 
     // Each harness owns an explicit catalog and can never inherit Claude entries.
+    // `/add-dir` is the one exception: it is a host command over a harness-neutral
+    // folder set, so it is offered from a single gate rather than copied into
+    // every catalog that happens to support extra roots.
     const activeSlashCommands = useMemo(
-      () => resolveSlashCommandsForProvider(activeProviderForResources, {
-        claude: slashCommands,
-        codex: codexSlashCommands,
-        acp: acpSlashCommands,
-        opencode: openCodeSlashCommands,
-        cursor: cursorSlashCommands,
-        dsh: deepseekSlashCommands,
-      }),
-      [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands, deepseekSlashCommands],
+      () => {
+        const base = resolveSlashCommandsForProvider(activeProviderForResources, {
+          claude: slashCommands,
+          codex: codexSlashCommands,
+          acp: acpSlashCommands,
+          opencode: openCodeSlashCommands,
+          cursor: cursorSlashCommands,
+          dsh: deepseekSlashCommands,
+        })
+        if (!supportsAdditionalDirs || base.some((c) => c.name === 'add-dir')) return base
+        return [...base, {
+          name: 'add-dir',
+          description: t('chat.codexCommands.addDirDesc'),
+          argumentHint: '[project|session] [dir]',
+          isSkill: false,
+        }]
+      },
+      [t, supportsAdditionalDirs, activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands, deepseekSlashCommands],
     )
 
     const matchingCommands = useMemo(
@@ -605,14 +615,12 @@ export function ChatInput() {
     )
 
     const addDirParse = useMemo(() => {
-      if (activeProviderForResources !== 'claude' && activeProviderForResources !== 'codex') {
-        return { active: false, argsText: '' }
-      }
+      if (!supportsAdditionalDirs) return { active: false, argsText: '' }
       const firstLine = text.split('\n', 1)[0]
       const m = firstLine.match(/^\/add-dir(?:\s(.*))?$/)
       if (!m) return { active: false, argsText: '' }
       return { active: true, argsText: m[1] ?? '' }
-    }, [text, activeProviderForResources])
+    }, [text, supportsAdditionalDirs])
     const addDirActive = addDirParse.active
     const addDirArgsText = addDirParse.argsText
 
@@ -678,6 +686,15 @@ export function ChatInput() {
       const known = new Set([...projectExtraDirs, ...additionalDirs])
       if (known.has(absolutePath)) {
         toast.error(t('chat.addDir.errors.duplicate', { defaultValue: 'Directory is already added' }))
+        return false
+      }
+      // The catalog silently truncates past the cap, which would close the popup
+      // as if the folder had been added.
+      if (scope === 'project' && projectExtraDirs.length >= MAX_PROJECT_EXTRA_DIRS) {
+        toast.error(t('chat.addDir.errors.tooMany', {
+          defaultValue: `A project can hold at most ${MAX_PROJECT_EXTRA_DIRS} folders`,
+          count: MAX_PROJECT_EXTRA_DIRS,
+        }))
         return false
       }
       const res = await window.agent.validateAddDir(activeProject, absolutePath)

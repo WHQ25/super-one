@@ -3,6 +3,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AccountInfo, ClaudeResources, CodexResources, ModelOption } from '@superone/shared/agent-types'
 
+const toastMocks = vi.hoisted(() => ({ error: vi.fn(), info: vi.fn(), success: vi.fn() }))
+vi.mock('sonner', () => ({ toast: toastMocks }))
+vi.mock('i18next', () => ({ default: { t: (_k: string, o?: { defaultValue?: string }) => o?.defaultValue ?? _k } }))
+
 const localStorageState = new Map<string, string>()
 const mockLocalStorage = {
   getItem: vi.fn((key: string) => localStorageState.get(key) ?? null),
@@ -50,8 +54,6 @@ const mockWindowAgent = {
   setPermissionMode: vi.fn().mockResolvedValue(undefined),
   setSessionSettings: vi.fn().mockResolvedValue(undefined),
   setSessionApiProvider: vi.fn().mockResolvedValue(undefined),
-  addProjectAdditionalDir: vi.fn().mockResolvedValue(undefined),
-  removeProjectAdditionalDir: vi.fn().mockResolvedValue(undefined),
   setSandboxMode: vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: false }),
   sendMessage: vi.fn().mockResolvedValue(undefined),
   interrupt: vi.fn().mockResolvedValue(true),
@@ -60,7 +62,6 @@ const mockWindowAgent = {
   disconnectRemoteSession: vi.fn().mockResolvedValue(undefined),
   truncateAtCheckpoint: vi.fn().mockResolvedValue(undefined),
   dequeueMessage: vi.fn().mockResolvedValue(true),
-  readProjectAdditionalDirs: vi.fn().mockResolvedValue({ user: [], projectShared: [], projectLocal: [] }),
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
 }
@@ -120,6 +121,7 @@ vi.stubGlobal('window', {
 vi.stubGlobal('localStorage', mockLocalStorage)
 
 const { useChatStore } = await import('./chat')
+const { resetProjectExtraDirWrites } = await import('./chat-store/helpers/project-extra-dirs-write')
 
 const PATH = '/test-project'
 
@@ -183,11 +185,19 @@ function activeSession(path: string = PATH) {
   return proj._sessions[proj._activeSessionId!]
 }
 
+/** Drain the serialized catalog-write chain (commit → rpc → commit → reload). */
+async function flushProjectDirWrites() {
+  for (let i = 0; i < 8; i++) await Promise.resolve()
+  await new Promise((r) => setTimeout(r, 0))
+  for (let i = 0; i < 8; i++) await Promise.resolve()
+}
+
 function activeProjectState(path: string = PATH) {
   return useChatStore.getState().projectSessions[path]
 }
 
 beforeEach(() => {
+  resetProjectExtraDirWrites()
   resetStore()
   vi.clearAllMocks()
   mockLocalStorage.clear()
@@ -821,6 +831,54 @@ describe('addDir / removeDir', () => {
     useChatStore.getState().addDir('/x', 'session')
     useChatStore.getState().removeDir('/x', 'session')
     expect(mockWindowEnvironment.updateProject).not.toHaveBeenCalled()
+  })
+
+  it("addDir scope='project' shows the folder before the catalog answers", () => {
+    setupProject()
+    mockWindowEnvironment.updateProject.mockReturnValue(new Promise(() => {}))
+    useChatStore.getState().addDir('/shared', 'project')
+    expect(activeProjectState().projectExtraDirs).toEqual(['/shared'])
+  })
+
+  it("two addDir scope='project' calls in the same tick both survive", async () => {
+    setupProject()
+    const seen: string[][] = []
+    mockWindowEnvironment.updateProject.mockImplementation(async (_c: string, input: { extraDirs: string[] }) => {
+      seen.push([...input.extraDirs])
+      return { projectId: 'p', path: PATH, name: 'p', extraDirs: input.extraDirs }
+    })
+    useChatStore.getState().addDir('/a', 'project')
+    useChatStore.getState().addDir('/b', 'project')
+    await flushProjectDirWrites()
+    // The second call must compute from the first one's committed result, and
+    // the catalog must receive them in that order — `updateProject` replaces the
+    // whole array, so an overlap would drop whichever folder wrote first.
+    expect(seen).toEqual([['/a'], ['/a', '/b']])
+    expect(activeProjectState().projectExtraDirs).toEqual(['/a', '/b'])
+  })
+
+  it("addDir scope='project' adopts the catalog's normalized list over the optimistic one", async () => {
+    setupProject()
+    mockWindowEnvironment.updateProject.mockResolvedValue({
+      projectId: 'p', path: PATH, name: 'p', extraDirs: ['/resolved/shared'],
+    })
+    useChatStore.getState().addDir('/shared/', 'project')
+    await flushProjectDirWrites()
+    expect(activeProjectState().projectExtraDirs).toEqual(['/resolved/shared'])
+  })
+
+  it("addDir scope='project' re-reads the catalog when the write is rejected", async () => {
+    setupProject()
+    mockWindowEnvironment.updateProject.mockRejectedValue(new Error('lease denied'))
+    mockWindowEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'p', path: PATH, name: 'p', extraDirs: ['/already-there'] },
+    ])
+    useChatStore.getState().addDir('/shared', 'project')
+    await flushProjectDirWrites()
+    // A failed write must not leave the composer advertising a folder the agent
+    // will never receive.
+    expect(activeProjectState().projectExtraDirs).toEqual(['/already-there'])
+    expect(toastMocks.error).toHaveBeenCalled()
   })
 })
 

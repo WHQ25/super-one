@@ -47,7 +47,7 @@ const { createDefaultPerSessionState, createDefaultProjectState } = await import
 const {
   getActivePerSession,
   getProject,
-  mergeProjectAndSessionDirs,
+  mergeCallerScopedDirs,
   resolveActiveSessionId,
   schedulePrewarm,
   cancelPrewarm,
@@ -118,11 +118,11 @@ describe('getActivePerSession', () => {
   })
 })
 
-describe('mergeProjectAndSessionDirs', () => {
+describe('mergeCallerScopedDirs', () => {
   it('unions userAdditionalDirs + projectAdditionalDirs + session.additionalDirs, dedup-preserving order', () => {
     const proj = { ...createDefaultProjectState(), userAdditionalDirs: ['/a'], projectAdditionalDirs: ['/a', '/b'] }
     const sess = { ...createDefaultPerSessionState(), additionalDirs: ['/b', '/c'] }
-    expect(mergeProjectAndSessionDirs(proj, sess)).toEqual(['/a', '/b', '/c'])
+    expect(mergeCallerScopedDirs(proj, sess)).toEqual(['/a', '/b', '/c'])
   })
 
   it('uses only Codex project config for Codex sessions', () => {
@@ -138,10 +138,12 @@ describe('mergeProjectAndSessionDirs', () => {
       preferredProvider: 'codex' as const,
       additionalDirs: ['/session'],
     }
-    expect(mergeProjectAndSessionDirs(proj, sess)).toEqual(['/codex-user', '/codex-project', '/session'])
+    expect(mergeCallerScopedDirs(proj, sess)).toEqual(['/codex-user', '/codex-project', '/session'])
   })
 
-  it('puts project workspace folders first, ahead of every harness-scoped source', () => {
+  it('excludes the project workspace folders, which Session unions in itself', () => {
+    // Echoing them here would bake them into caller scope, where a later
+    // removal from Edit Project could never revoke access.
     const proj = {
       ...createDefaultProjectState(),
       projectExtraDirs: ['/workspace'],
@@ -149,29 +151,13 @@ describe('mergeProjectAndSessionDirs', () => {
       projectAdditionalDirs: ['/config'],
     }
     const sess = { ...createDefaultPerSessionState(), additionalDirs: ['/session'] }
-    expect(mergeProjectAndSessionDirs(proj, sess)).toEqual([
-      '/workspace', '/user', '/config', '/session',
-    ])
+    expect(mergeCallerScopedDirs(proj, sess)).toEqual(['/user', '/config', '/session'])
   })
 
-  it('keeps the same workspace folders when the session switches from claude to codex', () => {
-    const proj = {
-      ...createDefaultProjectState(),
-      projectExtraDirs: ['/workspace'],
-      projectAdditionalDirs: ['/claude-only'],
-      codexProjectAdditionalDirs: ['/codex-only'],
-    }
-    const claude = { ...createDefaultPerSessionState() }
+  it('excludes them for Codex sessions too — the project scope is harness-neutral', () => {
+    const proj = { ...createDefaultProjectState(), projectExtraDirs: ['/workspace'] }
     const codex = { ...createDefaultPerSessionState(), preferredProvider: 'codex' as const }
-
-    expect(mergeProjectAndSessionDirs(proj, claude)).toContain('/workspace')
-    expect(mergeProjectAndSessionDirs(proj, codex)).toContain('/workspace')
-  })
-
-  it('does not list a workspace folder twice when it is also a session dir', () => {
-    const proj = { ...createDefaultProjectState(), projectExtraDirs: ['/shared'] }
-    const sess = { ...createDefaultPerSessionState(), additionalDirs: ['/shared'] }
-    expect(mergeProjectAndSessionDirs(proj, sess)).toEqual(['/shared'])
+    expect(mergeCallerScopedDirs(proj, codex)).toEqual([])
   })
 })
 

@@ -527,6 +527,15 @@ describe('Session state machine', () => {
     })
   })
 
+  it('prewarm unions the project workspace folders onto the hint, like send does', () => {
+    // A hint carries the caller half only. Warming without the project's
+    // folders would produce a key the real turn can never match, so a renderer
+    // that has not hydrated would silently lose prewarm for good.
+    const { session: s, backend: b } = makeSession({ getProjectExtraDirs: () => ['/workspace'] })
+    s.prewarm({ additionalDirs: ['/session'] })
+    expect(b.prewarmCalls[0]).toMatchObject({ additionalDirectories: ['/workspace', '/session'] })
+  })
+
   it('send() syncs request.effort/model/additionalDirs into session state (so warmup key matches)', async () => {
     const p = session.send({
       content: 'hi',

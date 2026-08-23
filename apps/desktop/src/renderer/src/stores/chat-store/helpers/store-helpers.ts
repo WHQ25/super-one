@@ -30,10 +30,10 @@ export function getProjectDirsForProvider(
  * The half of the directory set this client owns: harness config scopes plus
  * the session's own `/add-dir` entries.
  *
- * Deliberately excludes the project's workspace folders. `Session.send` unions
- * those in on every turn, so echoing them here would bake them into the
- * session's caller scope — and a later removal from Edit Project could then
- * never revoke access, because the session would keep resending them.
+ * Deliberately excludes the project's workspace folders: `Session` unions
+ * those in from its own authoritative read, on both `send` and `prewarm`.
+ * Echoing them here would bake them into the session's caller scope, and a
+ * later removal from Edit Project could then never revoke access.
  */
 export function mergeCallerScopedDirs(
   project: ProjectState,
@@ -48,22 +48,6 @@ export function mergeCallerScopedDirs(
   ])]
 }
 
-/**
- * The full effective set, for callers that do NOT pass through `Session.send`
- * — currently only the prewarm hint, whose warmup key must match the set the
- * real turn will end up with.
- */
-export function mergeProjectAndSessionDirs(
-  project: ProjectState,
-  session: PerSessionState,
-  provider: 'claude' | 'codex' = resolveProvider(session) === 'codex' ? 'codex' : 'claude',
-): string[] {
-  return [...new Set([
-    ...project.projectExtraDirs,
-    ...mergeCallerScopedDirs(project, session, provider),
-  ])]
-}
-
 export function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
   const key = projectPath ?? state.activeProject
   if (!key) return
@@ -71,7 +55,7 @@ export function triggerPrewarm(state: ChatStore, projectPath?: string | null): v
   const session = getActivePerSession(state, key)
   const provider = resolveProvider(session)
   if (typeof window.agent?.prewarm !== 'function') return
-  const dirs = mergeProjectAndSessionDirs(getProject(state, key), session)
+  const dirs = mergeCallerScopedDirs(getProject(state, key), session)
   const project = getProject(state, key)
   const hint: AgentPrewarmHint = {
     provider,

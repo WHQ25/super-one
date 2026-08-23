@@ -1031,7 +1031,12 @@ export class Session implements SessionContract {
       if (hint?.acpAgentId) this.setAcpAgentId(hint.acpAgentId)
       else this.applyAcpAgentToConfig()
     }
-    const dirs = hint?.additionalDirs ?? this.additionalDirectories
+    // Same authority as `send`: a hint carries the caller half only, so the
+    // project's folders are unioned here too. Otherwise a renderer that has
+    // not hydrated warms a slot whose key can never match the real turn.
+    const dirs = hint?.additionalDirs === undefined
+      ? this.additionalDirectories
+      : withProjectExtraDirs(this.getProjectExtraDirs?.(this.projectPath), hint.additionalDirs)
     const opts: BackendStartOptions = {
       sessionId: this.id,
       projectPath: this.projectPath,

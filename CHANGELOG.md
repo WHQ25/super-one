@@ -4,6 +4,35 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.57.1-alpha] - 2026-08-23
+
+### Added
+
+- Mini-apps: a host stays alive after its last panel closes only when the
+  manifest declares `background: true`. Everything else is released with
+  the panel and comes back if the agent calls a tool later. Quit
+  confirmation and the project sidebar group now key on that flag instead
+  of `context.setStatus()`, and the group is labelled **Background apps**.
+- Mini-apps: `toolSlug` is gone. `appId` is the only tool identity;
+  leftover `toolSlug` on already-installed manifests is stripped so the
+  strict schema does not reject them.
+
+### Fixed
+
+- Sidebar: a mini-app host row no longer grows by 2px on hover (the
+  status text swapped for a slightly taller stop button and shifted every
+  row below it).
+
+### Performance
+
+- Packaged app is smaller again. Renderer-only packages already inlined
+  by Vite (mermaid, pdfjs-dist, katex, recharts, `@lobehub/*` and
+  friends) are excluded from the asar, and TypeScript sources, tests,
+  docs and better-sqlite3 C sources are stripped from `node_modules`.
+  afterPack now fails the build if a dynamically loaded must-ship module
+  is missing. Measured on macOS arm64: 792 MB → 558 MB (app.asar 410 →
+  211 MB).
+
 ## [0.57.0-alpha] - 2026-08-23
 
 ### Added

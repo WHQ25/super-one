@@ -2354,6 +2354,36 @@ export type Messages = {
           noChangeNeeded: string
         }
       }
+      listAgents: {
+        listing: string
+        listAgents: string
+        agentsListed: string
+        none: string
+        truncated_one: string
+        truncated_other: string
+        group: {
+          subagents: string
+          peers: string
+          others: string
+        }
+        count: {
+          subagents_one: string
+          subagents_other: string
+          peers_one: string
+          peers_other: string
+          others_one: string
+          others_other: string
+          agents_one: string
+          agents_other: string
+        }
+        status: {
+          running: string
+          waiting: string
+          idle: string
+          offline: string
+          unknown: string
+        }
+      }
     }
     subagent: {
       spawning: string
@@ -5784,6 +5814,36 @@ export const en: Messages = {
           fixed: 'Fixed',
           skipped: 'Skipped',
           noChangeNeeded: 'No change needed',
+        },
+      },
+      listAgents: {
+        listing: 'Listing agents',
+        listAgents: 'List Agents',
+        agentsListed: 'Agents Listed',
+        none: 'No reachable agents',
+        truncated_one: '+{{count}} more',
+        truncated_other: '+{{count}} more',
+        group: {
+          subagents: 'Subagents',
+          peers: 'Peer sessions',
+          others: 'Other sessions',
+        },
+        count: {
+          subagents_one: '{{count}} subagent',
+          subagents_other: '{{count}} subagents',
+          peers_one: '{{count}} peer',
+          peers_other: '{{count}} peers',
+          others_one: '{{count}} other session',
+          others_other: '{{count}} other sessions',
+          agents_one: '{{count}} agent',
+          agents_other: '{{count}} agents',
+        },
+        status: {
+          running: 'Running',
+          waiting: 'Waiting on a human',
+          idle: 'Idle',
+          offline: 'Offline',
+          unknown: 'Unknown',
         },
       },
     },

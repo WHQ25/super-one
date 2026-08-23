@@ -21,6 +21,7 @@ import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
 import { DeviceToolBlock } from './DeviceToolBlock'
 import { ReportFindingsToolBlock } from './ReportFindingsToolBlock'
+import { ListAgentsToolBlock } from './ListAgentsToolBlock'
 import { getDeviceOp } from './device-tool-display'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
@@ -1032,6 +1033,20 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         isDenied={isDenied}
         elapsedSeconds={elapsedSeconds}
         stallLevel={stallLevel}
+        allowExpand={allowExpand}
+      />
+    )
+  }
+  // The roster lives entirely in the result — the input is `{}` — so this dispatches on
+  // the output and shows a header-only row while the call is still in flight.
+  if (toolName === 'ListAgents') {
+    return (
+      <ListAgentsToolBlock
+        // A denial carries no roster, only the refusal sentence the badge already says.
+        result={isDenied ? undefined : cleanResult}
+        isStreaming={isStreaming}
+        isError={isError}
+        isDenied={isDenied}
         allowExpand={allowExpand}
       />
     )

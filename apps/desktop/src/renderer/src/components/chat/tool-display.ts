@@ -44,6 +44,7 @@ const TOOL_VERBS: Record<string, string> = {
   EnterPlanMode: 'Planning',
   ExitPlanMode: 'Reviewing',
   ReportFindings: 'Reporting findings',
+  ListAgents: 'Listing agents',
   KillTask: 'Stopping task',
   ImageGen: 'Generating image',
   ImageEdit: 'Editing image',
@@ -211,6 +212,10 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       // Compact surfaces get the top finding — the list is ranked most-severe first,
       // so the first entry is the one worth the single line they have room for.
       return { icon: 'clipboard-list', summary: topFindingSummary(input) }
+    // The roster is the result, not the args (which are usually `{}`), so the header
+    // stays empty here and `ListAgentsToolBlock` derives its summary from the output.
+    case 'ListAgents':
+      return { icon: 'bot', summary: '' }
     case 'Read': {
       const readPath = sp(String(input.file_path ?? ''))
       const readMeta = formatReadMeta(input)

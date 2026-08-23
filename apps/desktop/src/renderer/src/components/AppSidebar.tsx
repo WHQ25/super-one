@@ -39,6 +39,7 @@ import { DraftsSection } from '@/components/sidebar/DraftsSection'
 import { useScheduledSendsSync } from '@/hooks/useScheduledSendsSync'
 import { useDraftsStore } from '@/stores/drafts'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
+import { EditProjectDialog } from '@/components/sidebar/EditProjectDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
 import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
@@ -139,6 +140,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const [removeBusy, setRemoveBusy] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
+  const [editProjectTarget, setEditProjectTarget] = useState<RecentFolder | null>(null)
   const [hostItems, setHostItems] = useState<EnvironmentListItem[]>([])
   /** Connection whose node is being upgraded — its socket is about to bounce. */
   const [upgradingHostId, setUpgradingHostId] = useState<string | null>(null)
@@ -898,6 +900,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     onSwitchSession={handleSwitchSession}
                     onPinSession={handlePinSession}
                     onHideSession={handleHideSession}
+                    onEditProject={setEditProjectTarget}
                     onRemoveProject={handleRemoveProject}
                     onRenameSession={handleRequestRenameSession}
                     onDeleteSession={handleRequestDeleteSession}
@@ -1048,6 +1051,21 @@ export const AppSidebar = memo(function AppSidebar() {
         target={renameTarget}
         onClose={() => setRenameTarget(null)}
         onRenamed={(target) => { refreshFolderSessions(target.folderPath); refreshPinned() }}
+      />
+
+      <EditProjectDialog
+        target={editProjectTarget}
+        onClose={() => setEditProjectTarget(null)}
+        onSaved={(saved) => {
+          void fetchRecentFolders()
+          // Pinned rows label off the SQL join `p.name AS folder_name`, so a
+          // rename only shows there after a refetch.
+          refreshPinned()
+          void import('@/lib/host-projects-bus').then(({ notifyHostProjectsChanged }) => {
+            notifyHostProjectsChanged()
+          })
+          void useChatStore.getState().refreshProjectExtraDirs(saved.path)
+        }}
       />
     </div>
   )

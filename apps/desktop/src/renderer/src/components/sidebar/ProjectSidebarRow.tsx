@@ -121,6 +121,7 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   sessions: SessionHistoryEntry[]
   maxSessions: number
   onToggleExpand: (folderPath: string) => void
+  onEditProject: (folder: RecentFolder) => void
   onRemoveProject: (folder: RecentFolder) => void
   onNewSession: (folderPath: string) => void
 }
@@ -134,6 +135,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onSwitchSession,
   onPinSession,
   onHideSession,
+  onEditProject,
   onRemoveProject,
   onRenameSession,
   onDeleteSession,
@@ -332,6 +334,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     ...(!folder.missing
       ? ([
           { kind: 'item', id: 'history', label: t('sidebar.contextMenu.sessionHistory'), icon: History, onSelect: openHistory },
+          // Gated on !missing like history: with the root gone there is nothing
+          // meaningful to point workspace folders at.
+          { kind: 'item', id: 'edit-project', label: t('sidebar.contextMenu.editProject'), icon: Pencil, onSelect: () => onEditProject(folder) },
           { kind: 'separator' },
         ] as AdaptiveMenuEntry[])
       : []),

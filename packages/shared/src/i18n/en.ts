@@ -403,8 +403,19 @@ export type Messages = {
       agentLaunch: string
       toolFallback: string
     }
+    editProject: {
+      title: string
+      nameLabel: string
+      foldersLabel: string
+      addFolder: string
+      addFolderRemote: string
+      emptyFolders: string
+      removeFolder: string
+      restartNotice: string
+    }
     contextMenu: {
       sessionHistory: string
+      editProject: string
       removeProject: string
       automations: string
       miniApps: string
@@ -3790,8 +3801,20 @@ export const en: Messages = {
       agentLaunch: 'agent launch',
       toolFallback: 'tool',
     },
+    editProject: {
+      title: 'Edit Project',
+      nameLabel: 'Project Name',
+      foldersLabel: 'Workspace Folders',
+      addFolder: 'Add Folder',
+      addFolderRemote: 'Type a path on the host…',
+      emptyFolders: 'No workspace folders yet',
+      removeFolder: 'Remove Folder',
+      restartNotice:
+        'Removing a folder restarts any running Claude session on the next message. Codex and other harnesses pick it up on their next turn.',
+    },
     contextMenu: {
       sessionHistory: 'Session History',
+      editProject: 'Edit Project',
       removeProject: 'Remove Project',
       automations: 'Automations',
       miniApps: 'Background apps',

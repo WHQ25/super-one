@@ -66,6 +66,7 @@ vi.mock('./chat', () => {
           setHarnessResources: mockSetHarnessResources,
           initializeHarness: mockInitializeHarness,
           ensureSession: mockEnsureSession,
+          refreshProjectExtraDirs: vi.fn(async () => {}),
           switchSession: mockSwitchSession,
           focusProject: vi.fn(async (projectPath: string) => {
             state.activeProject = projectPath

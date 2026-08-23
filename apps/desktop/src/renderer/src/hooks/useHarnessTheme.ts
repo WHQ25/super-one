@@ -6,8 +6,11 @@ import {
   DESIGN_TOKENS,
   HARNESS_DEFAULT_BRAND_HUE,
   LCH_CHANNELS,
+  inkForFill,
+  resolveTokenLCH,
+  type DesignToken,
+  type LCH,
   type LCHChannel,
-  type LCHPartial,
   type TokenOverrides,
 } from '@superone/shared/harness-brand'
 import { shouldApplyLiquidGlassClass } from '@/lib/liquid-glass-platform'
@@ -30,61 +33,65 @@ export function useActiveHarness(): HarnessId {
   return useActiveSession((s) => s.sessionProvider ?? s.preferredProvider ?? 'claude')
 }
 
+/** Fills whose readable ink is derived, not authored. Value = the ink's token. */
+const DERIVED_INK: ReadonlyArray<readonly [DesignToken, string]> = [
+  ['--primary', '--primary-foreground'],
+  ['--sidebar-primary', '--sidebar-primary-foreground'],
+]
+
 interface AppliedSnapshot {
-  brandHue: number | null
-  overrides: TokenOverrides
-  dark: boolean
+  /** Every custom property this element currently owns, keyed by property name. */
+  props: Map<string, string>
 }
 
-const EMPTY_SNAPSHOT: AppliedSnapshot = { brandHue: null, overrides: {}, dark: false }
+const EMPTY_SNAPSHOT: AppliedSnapshot = { props: new Map() }
+
+/**
+ * The light palette this element should render, as flat custom properties.
+ *
+ * Every token is stamped, not just the ones the user overrode. The CSS fallbacks
+ * in `theme.css` cannot express `maxChromaInSRGB(l, hue)` — they have to pick one
+ * constant chroma, which silently clips on narrow hues and leaves wide ones (like
+ * claude's orange) visibly washed out. Resolving here is what actually delivers
+ * per-hue chroma to the DOM, and it makes `theme.css` and `buildHarnessDefaults`
+ * agree by construction rather than by two hand-maintained copies.
+ */
+function lightPaletteProps(harness: HarnessId, hue: number | null, overrides: TokenOverrides): Map<string, string> {
+  const props = new Map<string, string>()
+  if (hue !== null) props.set('--brand-hue', String(hue))
+
+  const resolved = {} as Record<DesignToken, LCH>
+  for (const token of DESIGN_TOKENS) {
+    const lch = resolveTokenLCH(harness, token, overrides[token], hue)
+    resolved[token] = lch
+    for (const ch of LCH_CHANNELS) props.set(`${token}-${ch}`, String(lch[ch]))
+  }
+  for (const [fill, ink] of DERIVED_INK) {
+    const lch = inkForFill(resolved[fill])
+    props.set(ink, `oklch(${lch.l} ${lch.c} ${lch.h})`)
+  }
+  return props
+}
 
 function syncBrandProps(
   el: HTMLElement,
+  harness: HarnessId,
   hue: number | null,
   overrides: TokenOverrides,
   dark: boolean,
   prev: AppliedSnapshot,
 ): AppliedSnapshot {
-  if (dark) {
-    if (!prev.dark) {
-      el.style.removeProperty('--brand-hue')
-      for (const token of DESIGN_TOKENS) {
-        for (const ch of LCH_CHANNELS) {
-          el.style.removeProperty(`${token}-${ch}`)
-        }
-      }
-    }
-    return { brandHue: null, overrides: {}, dark: true }
+  // Dark mode is hue-agnostic and fully authored in `.dark`, so every inline
+  // property has to go — an inline value would outrank the class rule.
+  const next = dark ? new Map<string, string>() : lightPaletteProps(harness, hue, overrides)
+
+  for (const name of prev.props.keys()) {
+    if (!next.has(name)) el.style.removeProperty(name)
   }
-
-  const prevBrandHue = prev.dark ? null : prev.brandHue
-  const prevOv = prev.dark ? {} : prev.overrides
-
-  if (hue !== prevBrandHue) {
-    if (hue !== null) {
-      el.style.setProperty('--brand-hue', String(hue))
-    } else {
-      el.style.removeProperty('--brand-hue')
-    }
+  for (const [name, value] of next) {
+    if (prev.props.get(name) !== value) el.style.setProperty(name, value)
   }
-
-  const allTokens = new Set([...Object.keys(prevOv), ...Object.keys(overrides)])
-  for (const tokenKey of allTokens) {
-    const cur = overrides[tokenKey as keyof TokenOverrides] as LCHPartial | undefined
-    const prv = prevOv[tokenKey as keyof TokenOverrides] as LCHPartial | undefined
-    for (const ch of LCH_CHANNELS) {
-      const newVal = cur?.[ch]
-      const oldVal = prv?.[ch]
-      if (newVal === oldVal) continue
-      if (newVal !== undefined) {
-        el.style.setProperty(`${tokenKey}-${ch}`, String(newVal))
-      } else {
-        el.style.removeProperty(`${tokenKey}-${ch}`)
-      }
-    }
-  }
-
-  return { brandHue: hue, overrides, dark: false }
+  return { props: next }
 }
 
 export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
@@ -103,7 +110,7 @@ export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
     el.classList.toggle('brand-scope', !dark)
     let raf: number | null = requestAnimationFrame(() => {
       raf = null
-      appliedRef.current = syncBrandProps(el, userHue, overrides, dark, appliedRef.current)
+      appliedRef.current = syncBrandProps(el, harness, userHue, overrides, dark, appliedRef.current)
     })
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)
@@ -145,7 +152,7 @@ export function useHarnessTheme(): void {
 
     let raf: number | null = requestAnimationFrame(() => {
       raf = null
-      appliedRef.current = syncBrandProps(root, userHue, overrides, dark, appliedRef.current)
+      appliedRef.current = syncBrandProps(root, harness, userHue, overrides, dark, appliedRef.current)
     })
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)

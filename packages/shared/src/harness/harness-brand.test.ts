@@ -2,16 +2,20 @@ import { describe, it, expect } from 'vitest'
 import {
   HARNESS_DEFAULT_BRAND_HUE,
   HARNESS_DEFAULT_TOKENS,
+  BRAND_HUE_CHROMA,
   BRAND_HUE_LIGHTNESS,
   brandHueToOklch,
   clampBrandHue,
   clampC,
   clampHue,
   clampL,
+  contrastRatio,
   countOverriddenHues,
+  inkForFill,
   listOverriddenHueTokens,
   lchToCss,
   maxChromaInSRGB,
+  oklchToLinearSRGB,
   resolveTokenLCH,
   sanitizeOverrides,
 } from './harness-brand'
@@ -248,5 +252,117 @@ describe('light-mode palette invariants', () => {
         ).toBeLessThanOrEqual(maxChromaInSRGB(lch.l, lch.h) + 1e-9)
       }
     }
+  })
+})
+
+describe('contrastRatio', () => {
+  it('returns 21 for pure black against pure white', () => {
+    const black = { l: 0, c: 0, h: 0, a: 1 }
+    const white = { l: 1, c: 0, h: 0, a: 1 }
+    expect(contrastRatio(black, white)).toBeCloseTo(21, 1)
+  })
+
+  it('is symmetric', () => {
+    const a = { l: 0.55, c: 0.16, h: 40, a: 1 }
+    const b = { l: 0.99, c: 0, h: 40, a: 1 }
+    expect(contrastRatio(a, b)).toBeCloseTo(contrastRatio(b, a), 10)
+  })
+
+  it('returns 1 for a colour against itself', () => {
+    const a = { l: 0.55, c: 0.16, h: 40, a: 1 }
+    expect(contrastRatio(a, a)).toBeCloseTo(1, 10)
+  })
+
+  it('clips out-of-gamut chroma instead of extrapolating past white', () => {
+    // 0.4 chroma at L 0.9 is far outside sRGB; without clipping the linear
+    // triple overshoots 1 and the ratio would read as better than it renders.
+    const wild = { l: 0.9, c: 0.4, h: 140, a: 1 }
+    const white = { l: 1, c: 0, h: 0, a: 1 }
+    expect(contrastRatio(wild, white)).toBeGreaterThanOrEqual(1)
+    expect(contrastRatio(wild, white)).toBeLessThan(1.6)
+  })
+})
+
+describe('oklchToLinearSRGB', () => {
+  it('maps L 1 achromatic to linear white', () => {
+    const [r, g, b] = oklchToLinearSRGB(1, 0, 0)
+    expect(r).toBeCloseTo(1, 3)
+    expect(g).toBeCloseTo(1, 3)
+    expect(b).toBeCloseTo(1, 3)
+  })
+
+  it('reports out-of-gamut components outside [0,1]', () => {
+    // Chroma 0.4 at hue 200 leaves sRGB through the RED floor, not the top —
+    // hence min, not max. Clipping either end is what contrastRatio relies on.
+    expect(Math.min(...oklchToLinearSRGB(0.68, 0.4, 200))).toBeLessThan(0)
+  })
+})
+
+describe('inkForFill', () => {
+  it('picks LIGHT ink for the deep --primary fill', () => {
+    for (const harness of Object.keys(HARNESS_DEFAULT_TOKENS) as (keyof typeof HARNESS_DEFAULT_TOKENS)[]) {
+      expect(inkForFill(HARNESS_DEFAULT_TOKENS[harness]['--primary']).l).toBeGreaterThan(0.9)
+    }
+  })
+
+  it('picks DARK ink for the bright --sidebar-primary fill', () => {
+    for (const harness of Object.keys(HARNESS_DEFAULT_TOKENS) as (keyof typeof HARNESS_DEFAULT_TOKENS)[]) {
+      expect(inkForFill(HARNESS_DEFAULT_TOKENS[harness]['--sidebar-primary']).l).toBeLessThan(0.3)
+    }
+  })
+
+  it('keeps every shipped brand fill readable', () => {
+    // 4.4, not 4.5: these fills carry semibold button labels, which WCAG scores
+    // under the 3:1 large-text bar. The tighter 4.4 floor is a regression guard —
+    // green (~h143) is the weakest hue for light ink and sits at 4.40 with
+    // --primary at L 0.55, so anything below that is a real palette regression.
+    for (const harness of Object.keys(HARNESS_DEFAULT_TOKENS) as (keyof typeof HARNESS_DEFAULT_TOKENS)[]) {
+      for (const token of ['--primary', '--sidebar-primary', '--sidebar-accent'] as const) {
+        const fill = HARNESS_DEFAULT_TOKENS[harness][token]
+        expect(contrastRatio(fill, inkForFill(fill)), `${harness} ${token}`).toBeGreaterThanOrEqual(4.4)
+      }
+    }
+  })
+
+  it('flips ink as a fill sweeps from deep to bright, and never picks the worse of the two', () => {
+    for (let l = 0.2; l <= 0.95; l += 0.05) {
+      const fill = { l, c: maxChromaInSRGB(l, 40) * 0.95, h: 40, a: 1 }
+      const chosen = inkForFill(fill)
+      const other = chosen.l > 0.9 ? { l: 0.2, c: 0.006, h: 40, a: 1 } : { l: 0.99, c: 0, h: 40, a: 1 }
+      expect(contrastRatio(fill, chosen)).toBeGreaterThanOrEqual(contrastRatio(fill, other))
+    }
+  })
+
+  it('carries the fill hue into dark ink so it never reads as a foreign grey', () => {
+    expect(inkForFill({ l: 0.9, c: 0.05, h: 137, a: 1 }).h).toBe(137)
+  })
+})
+
+describe('light brand fills use the per-hue sRGB ceiling', () => {
+  it('gives wide hues more chroma than narrow ones instead of one flat constant', () => {
+    const orange = HARNESS_DEFAULT_TOKENS.claude['--primary'].c
+    const teal = HARNESS_DEFAULT_TOKENS.cursor['--primary'].c
+    expect(orange).toBeGreaterThan(teal * 1.5)
+  })
+
+  it('stays inside sRGB for every token of every harness', () => {
+    for (const harness of Object.keys(HARNESS_DEFAULT_TOKENS) as (keyof typeof HARNESS_DEFAULT_TOKENS)[]) {
+      for (const [token, lch] of Object.entries(HARNESS_DEFAULT_TOKENS[harness])) {
+        expect(lch.c, `${harness} ${token}`).toBeLessThanOrEqual(maxChromaInSRGB(lch.l, lch.h) + 1e-9)
+      }
+    }
+  })
+})
+
+describe('vivid() caps the requested chroma at the sRGB ceiling', () => {
+  it('lets wide hues spend the full BRAND_HUE_CHROMA', () => {
+    // Violet at L 0.55 has room for 0.24; it should not be trimmed below it.
+    expect(HARNESS_DEFAULT_TOKENS.acp['--primary'].c).toBeCloseTo(BRAND_HUE_CHROMA, 4)
+  })
+
+  it('trims narrow hues instead of handing Chromium an unpaintable colour', () => {
+    const teal = HARNESS_DEFAULT_TOKENS.cursor['--primary']
+    expect(teal.c).toBeLessThan(BRAND_HUE_CHROMA)
+    expect(teal.c).toBeCloseTo(maxChromaInSRGB(teal.l, teal.h) * 0.95, 4)
   })
 })

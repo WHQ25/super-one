@@ -14,6 +14,7 @@ import {
   foldOutline,
   searchOutline,
 } from './outline'
+import { compactOutline, dropOccludedWebAreas } from './outline-compact'
 import { ComputerUsePolicy } from './policy'
 import { FakePlatformBackend } from './platform/fake-backend'
 import type { PlatformAdapter } from './platform/types'
@@ -526,7 +527,7 @@ export class ComputerUseService {
       }
       this.states.put(state)
 
-      const folded = foldOutline(look.outline)
+      const folded = foldOutline(compactOutline(dropOccludedWebAreas(look.outline)))
       return {
         stateId,
         root: identity,
@@ -535,6 +536,7 @@ export class ComputerUseService {
         truncation: {
           nodesOmitted: folded.nodesOmitted,
           maxDepth: folded.maxDepth,
+          ...(look.outlineTruncated ? { sourceTruncated: true } : {}),
         },
         coordinateSpace: look.coordinateSpace,
         mode,

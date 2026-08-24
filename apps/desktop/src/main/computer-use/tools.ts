@@ -13,6 +13,7 @@ import { persistComputerUseScreenshot, COMPUTER_USE_SCREENSHOT_DIR } from './scr
 import { releaseComputerUseViewfinder } from './viewfinder'
 import type { CapturedImage } from './types'
 import { encode as toonEncode } from '@toon-format/toon'
+import { outlineToToon } from './outline-toon'
 
 export const COMPUTER_USE_TOOL_NAMES = [
   'computer_apps',
@@ -226,6 +227,13 @@ const toolDefs: Array<{
       + 'mode=visual (and fused) saves the image to a temporary file and returns image.path (not base64). '
       + 'The image is NOT loaded into your context automatically; call Read on image.path if you need to look at pixels, or leave the path as a record for the user. '
       + 'mode=semantic returns accessibility outline with @eN refs (no image). mode=fused = screenshot + AX. '
+      + 'The outline is a TOON table, not JSON: a header row outline[N]{ref,depth,role,name,value,x,y,w,h,can,state}: '
+      + 'followed by one CSV-style row per node, in depth-first reading order. '
+      + 'depth is the nesting level (a row is a child of the nearest row above it with a smaller depth). '
+      + 'can lists only the supported actions, pipe-joined (press|setText|typeText|scroll|focus); empty means the node is inert. '
+      + 'state lists only non-default flags (disabled|focused). x,y,w,h are the frame in capture space, empty when the node reports none. '
+      + 'truncation.nodesOmitted > 0 means the returned outline was folded — reach the rest with computer_query, do not recapture. '
+      + 'truncation.sourceTruncated means the native accessibility walk itself hit a limit, so those nodes are missing from the full tree too and computer_query cannot reach them either — narrow the target with capture=window or a specific rootId instead. '
       + 'Use computer_query on the cached outline for search/expand/inspect without recapturing. '
       + 'capture=window (default) captures only the selected window; coordinates are local to that image and remain valid if the window moves. '
       + 'Use capture=display explicitly when the whole display is required. If the window is resized or moves to a different display scale, input fails closed and a successor observation is created.',
@@ -254,7 +262,8 @@ const toolDefs: Array<{
     name: 'computer_query',
     description:
       'Search / expand / inspect the cached outline for a stateId without recapturing the desktop. '
-      + 'Use this for progressive disclosure of deep accessibility trees.',
+      + 'Use this for progressive disclosure of deep accessibility trees. '
+      + 'expand/inspect return the subtree/element as the same TOON table computer_snapshot uses.',
     shape: {
       ...descriptionField,
       stateId: z.string(),
@@ -713,7 +722,9 @@ async function executeComputerUseToolInner(
         if (agentResult.image?.path) {
           service.alignStateVisual(result.stateId, agentResult.image)
         }
-        return textReply(agentResult)
+        // Outline goes out as a TOON table, not nested JSON — see outline-toon.ts.
+        // The envelope stays JSON so the chat UI keeps parsing stateId / bundleId.
+        return textReply({ ...agentResult, outline: outlineToToon(agentResult.outline) })
       }
       case 'computer_zoom': {
         const region = args.region as [number, number, number, number]
@@ -735,7 +746,11 @@ async function executeComputerUseToolInner(
             depth: args.depth as number | undefined,
           },
         )
-        return textReply(result)
+        return textReply({
+          ...result,
+          ...(result.subtree ? { subtree: outlineToToon(result.subtree) } : {}),
+          ...(result.element ? { element: outlineToToon(result.element) } : {}),
+        })
       }
       case 'computer_act': {
         await ensureGrantForState(sessionId, service, normalized, String(args.stateId))

@@ -101,18 +101,15 @@ export function BrowserMockView({ params }: { params: Record<string, unknown> })
   )
 }
 
-/** Prettified JSON code block with syntax highlighting and truncation. */
-export function PrettyJSONCodeBlock({ text }: { text: string }) {
+/** Code block that shows the first 20 lines and reveals the rest on demand. */
+export function TruncatedCodeBlock({ code, language }: { code: string; language: string }) {
   const { t } = useTranslation()
-  const jsonResult = useMemo(() => tryPrettifyJson(text), [text])
-  const prettified = jsonResult ?? text
-  const language = jsonResult ? 'json' : 'text'
-  const lines = prettified.split('\n')
+  const lines = code.split('\n')
   const previewLines = 20
   const isLong = lines.length > previewLines
   const [showAll, setShowAll] = useState(false)
   const hiddenCount = lines.length - previewLines
-  const visibleText = showAll || !isLong ? prettified : lines.slice(0, previewLines).join('\n')
+  const visibleText = showAll || !isLong ? code : lines.slice(0, previewLines).join('\n')
 
   return (
     <div className="-mx-2">
@@ -127,6 +124,14 @@ export function PrettyJSONCodeBlock({ text }: { text: string }) {
         </button>
       )}
     </div>
+  )
+}
+
+/** Prettified JSON code block with syntax highlighting and truncation. */
+export function PrettyJSONCodeBlock({ text }: { text: string }) {
+  const jsonResult = useMemo(() => tryPrettifyJson(text), [text])
+  return (
+    <TruncatedCodeBlock code={jsonResult ?? text} language={jsonResult ? 'json' : 'text'} />
   )
 }
 

@@ -1,9 +1,8 @@
-import { useMemo, useState, type MouseEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Ban,
   ChevronRight,
-  Code2,
   ImageIcon,
   MousePointer2,
   TriangleAlert,
@@ -20,7 +19,7 @@ import {
   type ComputerOp,
   type ComputerResultInfo,
 } from './computer-tool-display'
-import { PrettyJSONCodeBlock } from './tool-result-views'
+import { ComputerResultView } from './computer-result-view'
 import { ToolScreenshotView } from './ToolScreenshotView'
 import { ToolName } from './tool-row'
 
@@ -125,36 +124,6 @@ function LeadingIcon({
   return <MousePointer2 className="size-3 shrink-0 text-muted-foreground" />
 }
 
-function CollapsedJsonRow({
-  expanded,
-  onToggle,
-  label,
-}: {
-  expanded: boolean
-  onToggle: () => void
-  label: string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={(event: MouseEvent) => {
-        event.stopPropagation()
-        onToggle()
-      }}
-      className="flex w-full cursor-pointer items-center gap-1.5 rounded px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-    >
-      <Code2 className="size-3 shrink-0" />
-      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-      <ChevronRight
-        className={cn(
-          'size-3 shrink-0 transition-transform duration-200',
-          expanded && 'rotate-90',
-        )}
-      />
-    </button>
-  )
-}
-
 export function ComputerUseToolBlock({
   op,
   params,
@@ -168,7 +137,6 @@ export function ComputerUseToolBlock({
 }: ComputerUseToolBlockProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
-  const [jsonExpanded, setJsonExpanded] = useState(false)
   const info = useMemo(
     () => parseComputerResult(op, result, !!isError, params),
     [op, result, isError, params],
@@ -327,22 +295,8 @@ export function ComputerUseToolBlock({
                   )}
                 />
               )}
-              {expanded && hasScreenshot && hasResultJson && result && (
-                <div className="rounded bg-muted/30">
-                  <CollapsedJsonRow
-                    expanded={jsonExpanded}
-                    onToggle={() => setJsonExpanded((value) => !value)}
-                    label={t('chat.toolBlock.computer.json')}
-                  />
-                  {jsonExpanded && (
-                    <div className="px-1 pb-1">
-                      <PrettyJSONCodeBlock text={result} />
-                    </div>
-                  )}
-                </div>
-              )}
-              {expanded && !hasScreenshot && result && (
-                <PrettyJSONCodeBlock text={result} />
+              {expanded && hasResultJson && result && (
+                <ComputerResultView text={result} />
               )}
             </div>
           </div>

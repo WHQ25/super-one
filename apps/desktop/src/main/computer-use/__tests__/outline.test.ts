@@ -35,6 +35,27 @@ function tree(): UiOutlineNode {
 }
 
 describe('outline helpers', () => {
+  it('default fold reaches web content, not just the wrapper chain', () => {
+    // Shape of a real Electron window after the helper elides anonymous
+    // wrappers: chrome, then the web area, then the actual controls. A depth-2
+    // default used to stop above the webArea and hand the model empty groups.
+    let node: UiOutlineNode = { ref: '@e42', role: 'button', name: 'New Session' }
+    for (const [ref, role] of [
+      ['@e13', 'tabGroup'],
+      ['@e12', 'group'],
+      ['@e11', 'group'],
+      ['@e9', 'webArea'],
+      ['@e2', 'group'],
+      ['@e1', 'window'],
+    ] as const) {
+      node = { ref, role, children: [node] }
+    }
+
+    const { outline } = foldOutline(node)
+
+    expect(findNode(outline, '@e42')?.name).toBe('New Session')
+  })
+
   it('folds deep trees and reports omitted nodes', () => {
     const { outline, nodesOmitted, maxDepth } = foldOutline(tree(), {
       maxDepth: 1,
@@ -79,3 +100,4 @@ describe('outline helpers', () => {
     expect(d.changed.some((c) => c.ref === '@e5' && c.to === 'Final')).toBe(true)
   })
 })
+

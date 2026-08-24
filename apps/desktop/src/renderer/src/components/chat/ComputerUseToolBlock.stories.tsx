@@ -58,6 +58,47 @@ const meta: Meta = {
 export default meta
 type Story = StoryObj
 
+const TOON_OUTLINE = [
+  'outline[12]{ref,depth,role,name,value,x,y,w,h,can,state}:',
+  '  @e1,0,window,Kimi,"",0,0,1300,800,focus,""',
+  '  @e2,1,group,Kimi,"",0,0,1300,800,setText|typeText,""',
+  '  @e8,3,webArea,Kimi Agent,"",0,0,1300,800,typeText,""',
+  '  @e12,6,tabGroup,"","",8,48,224,36,"",""',
+  '  @e13,7,radioButton,Work,"1",10,50,110,32,press,""',
+  '  @e14,7,radioButton,Chat,"0",120,50,110,32,press,focused',
+  '  @e16,6,button,新建任务,"",8,96,224,40,press,""',
+  '  @e18,7,button,看板,"",8,144,224,40,press,""',
+  '  @e19,7,button,插件,"",8,184,224,40,press,""',
+  '  @e20,7,button,定时任务,"",8,224,224,40,press,""',
+  '  @e52,8,textArea,"",尽管问，或做个任务...,392,319,752,60,press|setText|typeText,""',
+  '  @e61,9,button,"","",1106,391,36,36,press,disabled',
+].join('\n')
+
+/**
+ * The outline ships to the model as one compact TOON string. Rendered naively
+ * that is a single 10k-character JSON line, so the block splits it back out
+ * into a real table — this story is what guards that.
+ */
+export const SemanticOutline: Story = {
+  render: () => (
+    <StoryShell>
+      {tool('snapshot', {
+        description: '读取 Kimi 窗口的语义大纲',
+        input: { mode: 'semantic' },
+        result: JSON.stringify({
+          stateId: 'S1',
+          root: { kind: 'window', app: 'Kimi', title: 'Kimi Agent', bundleId: 'com.moonshot.kimichat', rootId: '@r2' },
+          outline: TOON_OUTLINE,
+          truncation: { nodesOmitted: 0, maxDepth: 20 },
+          mode: 'semantic',
+          capture: 'window',
+        }),
+        elapsedSeconds: 2.1,
+      })}
+    </StoryShell>
+  ),
+}
+
 export const Gallery: Story = {
   render: () => (
     <StoryShell width={760}>

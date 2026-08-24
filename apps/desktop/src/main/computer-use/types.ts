@@ -332,8 +332,15 @@ export class ComputerUseError extends Error {
 }
 
 export const DEFAULT_STATE_LIMIT = 128
-export const DEFAULT_FOLD_DEPTH = 2
-export const DEFAULT_FOLD_MAX_NODES = 40
+// The helper elides anonymous wrapper nodes, so outline depth now tracks real
+// UI nesting instead of Chromium scaffolding — a depth-2 fold used to stop
+// above the AXWebArea and hand the model nothing but empty groups.
+// Sized against real windows now that the outline ships as a TOON table
+// (~42 bytes/node instead of ~278): 400 nodes costs ~2k tokens, which is less
+// than 120 nodes used to cost as nested JSON. Kimi (180) and SuperOne (197)
+// both fit whole; denser windows still report nodesOmitted for computer_query.
+export const DEFAULT_FOLD_DEPTH = 20
+export const DEFAULT_FOLD_MAX_NODES = 400
 export const DEFAULT_OUTPUT_MAX_CHARS = 48 * 1024
 export const DEFAULT_OUTPUT_PREVIEW_CHARS = 16 * 1024
 export const DEFAULT_MAX_ACTIONS = 20

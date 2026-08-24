@@ -2267,6 +2267,23 @@ export type Messages = {
         screenshot: string
         screenshotUnavailable: string
         json: string
+        section: {
+          tree: string
+          raw: string
+        }
+        field: {
+          app: string
+          window: string
+          nodes: string
+          omitted: string
+          matches: string
+          outcome: string
+          waitStatus: string
+          mode: string
+          state: string
+        }
+        nodesCount_one: string
+        nodesCount_other: string
         appsCount_one: string
         appsCount_other: string
         windowsCount_one: string
@@ -5765,6 +5782,23 @@ export const en: Messages = {
         screenshot: 'Desktop Screenshot',
         screenshotUnavailable: 'Screenshot No Longer Available',
         json: 'JSON',
+        section: {
+          tree: 'UI Structure',
+          raw: 'Raw Result',
+        },
+        field: {
+          app: 'App',
+          window: 'Window',
+          nodes: 'Nodes',
+          omitted: 'Omitted',
+          matches: 'Matches',
+          outcome: 'Outcome',
+          waitStatus: 'Wait',
+          mode: 'Mode',
+          state: 'State',
+        },
+        nodesCount_one: '{{count}} node',
+        nodesCount_other: '{{count}} nodes',
         appsCount_one: '{{count}} running app',
         appsCount_other: '{{count}} running apps',
         windowsCount_one: '{{count}} window',

@@ -70,7 +70,7 @@ const BRIDGED = [
 ].join('\n')
 
 const meta: Meta = {
-  title: 'SuperOne/Tool UI/List Agents',
+  title: 'Tool UI/General/List Agents',
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],
 }

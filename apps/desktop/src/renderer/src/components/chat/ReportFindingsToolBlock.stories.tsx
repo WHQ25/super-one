@@ -101,7 +101,7 @@ const FINDINGS = [
 ]
 
 const meta: Meta = {
-  title: 'SuperOne/Tool UI/Report Findings',
+  title: 'Tool UI/General/Report Findings',
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],
 }

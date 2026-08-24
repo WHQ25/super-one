@@ -11,7 +11,7 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
 }
 
 const meta: Meta<typeof DebugToolBlock> = {
-  title: 'ClaudeCode/DebugToolBlock',
+  title: 'Tool UI/General/DebugToolBlock',
   component: DebugToolBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

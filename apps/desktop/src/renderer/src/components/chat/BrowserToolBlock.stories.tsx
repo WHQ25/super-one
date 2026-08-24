@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { useLayoutEffect } from 'react'
 import { ToolBlock } from './ToolBlock'
 import type { BrowserOp } from './browser-tool-display'
@@ -8,16 +8,32 @@ import {
   createDefaultProjectState,
   useChatStore,
 } from '@/stores/chat'
+import { BROWSER_LEGACY_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 
 const SB_PROJECT = '__storybook__'
 const SB_SESSION = 'sb'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
-    <div className="@container space-y-2" style={{ maxWidth: width }}>
+    <div className="@container space-y-4" style={{ maxWidth: width }}>
       {children}
     </div>
   )
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-1.5">
+      <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h3>
+      <div className="space-y-1">{children}</div>
+    </section>
+  )
+}
+
+function Note({ children }: { children: ReactNode }) {
+  return <p className="text-xs leading-relaxed text-muted-foreground">{children}</p>
 }
 
 function mcp(op: BrowserOp): string {
@@ -42,6 +58,18 @@ function tool(
       result={opts.result}
       elapsedSeconds={opts.elapsedSeconds}
       isError={opts.isError}
+    />
+  )
+}
+
+function toolByName(name: string, input: Record<string, unknown>, result?: string): ReactElement {
+  return (
+    <ToolBlock
+      key={name}
+      toolName={`mcp__superone__${name}`}
+      input={JSON.stringify(input)}
+      status="complete"
+      result={result}
     />
   )
 }
@@ -113,9 +141,8 @@ const TOON_COOKIES = `cookies[2]{name,value,domain}:
   theme,dark,.example.com`
 
 const meta: Meta = {
-  title: 'SuperOne/MCP Tools/Browser',
+  title: 'Tool UI/SuperOne MCP/Browser',
   parameters: { layout: 'padded' },
-  decorators: [(Story) => <StoryShell><Story /></StoryShell>],
 }
 
 export default meta
@@ -125,273 +152,265 @@ type Story = StoryObj
 export const Gallery: Story = {
   render: () => (
     <StoryShell width={760}>
-      {tool('navigate', { input: { url: 'https://example.com/login', description: 'Open login page' }, result: JSON.stringify({ ok: true, url: 'https://example.com/login' }) })}
-      {tool('open', { input: { url: 'https://docs.example.com' }, result: JSON.stringify({ ok: true, tab: 't2', url: 'https://docs.example.com' }) })}
-      {tool('snapshot', { input: { filter: 'interactive' }, result: TOON_SNAPSHOT })}
-      {tool('query', { input: { role: 'button', text: 'Continue' }, result: TOON_QUERY })}
-      {tool('inspect', { input: { selector: '#email' }, result: JSON.stringify({ exists: true, tag: 'input', type: 'email', name: 'email' }) })}
-      {tool('click', { input: { selector: 'button.submit', description: 'Submit checkout' }, result: JSON.stringify({ ok: true }) })}
-      {tool('hover', { input: { text: 'Account' }, result: JSON.stringify({ ok: true }) })}
-      {tool('type', { input: { selector: '#email', text: 'ada@example.com', description: 'Fill email' }, result: JSON.stringify({ ok: true }) })}
-      {tool('press', { input: { key: 'Enter', modifiers: ['Meta'] }, result: JSON.stringify({ ok: true }) })}
-      {tool('scroll', { input: { deltaY: 400 }, result: JSON.stringify({ ok: true }) })}
-      {tool('drag', { input: { from: { selector: '#card' }, to: { selector: '#drop' } }, result: JSON.stringify({ ok: true }) })}
-      {tool('select', { input: { selector: 'select#country', value: 'US' }, result: JSON.stringify({ ok: true }) })}
-      {tool('wait_for', { input: { selectorGone: '.spinner', urlIncludes: '/done' }, result: JSON.stringify({ ok: true }) })}
-      {tool('tabs', { result: TOON_TABS })}
-      {tool('resize', { input: { preset: 'mobile' }, result: JSON.stringify({ ok: true, width: 375, height: 812 }) })}
-      {tool('evaluate', { input: { expression: 'document.title' }, result: JSON.stringify({ value: 'Checkout' }) })}
-      {tool('screenshot', { input: { selector: '#hero' }, result: JSON.stringify({ path: '/tmp/shot.png', width: 800, height: 600 }) })}
-      {tool('network_start', { input: { match: '/api', resourceTypes: ['XHR', 'Fetch'] }, result: 'recordingId: rec-1\ncapturing: true' })}
-      {tool('network_stop', { input: { recordingId: 'rec-1' }, result: TOON_NETWORK_STOP })}
-      {tool('network_wait', { input: { recordingId: 'rec-1', url: '/orders' }, result: TOON_NETWORK_WAIT })}
-      {tool('network_body', { input: { recordingId: 'rec-1', requestId: 'r2' }, result: TOON_NETWORK_BODY })}
-      {tool('cookies', { result: TOON_COOKIES })}
-      {tool('upload_file', { input: { selector: '#file', files: ['/tmp/a.pdf', '/tmp/b.pdf'] }, result: JSON.stringify({ ok: true, files: 2 }) })}
-      {tool('emulate', { input: { width: 390, height: 844, mobile: true }, result: JSON.stringify({ ok: true, reset: false }) })}
-      {tool('mock', { input: { url: '/api/me', status: 200, body: '{"ok":true}' }, result: JSON.stringify({ ok: true, mocking: '/api/me' }) })}
-      {tool('download', {
-        input: { url: 'https://cdn.example.com/report.pdf', description: 'Save quarterly report' },
-        result: JSON.stringify({
-          status: 'completed',
-          taskId: 'bdl_story1',
-          path: '/tmp/super-one-browser-downloads/uuid/report.pdf',
-          filename: 'report.pdf',
-          bytes: 245760,
-          mimeType: 'application/pdf',
-          url: 'https://cdn.example.com/report.pdf',
-        }),
-      })}
-      {tool('list_downloads', {
-        input: { state: 'completed', wait: false },
-        result: JSON.stringify({
-          count: 2,
-          downloads: [
-            { filename: 'export.csv', path: '/tmp/dl/export.csv', bytes: 4096, state: 'completed', url: 'https://example.com/export.csv', startedAt: 2 },
-            { filename: 'invoice.pdf', path: '/tmp/dl/invoice.pdf', bytes: 88200, state: 'completed', url: 'https://example.com/invoice.pdf', startedAt: 1 },
-          ],
-        }),
-      })}
+      <Note>Browser MCP states grouped by operation domain to match Automation's gallery style.</Note>
+      <Section title="Navigation">
+        {tool('navigate', { input: { url: 'https://example.com/login', description: 'Open login page' }, result: JSON.stringify({ ok: true, url: 'https://example.com/login' }) })}
+        {tool('open', { input: { url: 'https://docs.example.com' }, result: JSON.stringify({ ok: true, tab: 't2', url: 'https://docs.example.com' }) })}
+      </Section>
+      <Section title="Page snapshot and query">
+        {tool('snapshot', { input: { filter: 'interactive' }, result: TOON_SNAPSHOT })}
+        {tool('query', { input: { role: 'button', text: 'Continue' }, result: TOON_QUERY })}
+        {tool('inspect', { input: { selector: '#email' }, result: JSON.stringify({ exists: true, tag: 'input', type: 'email', name: 'email' }) })}
+        {tool('tabs', { result: TOON_TABS })}
+      </Section>
+      <Section title="Interaction">
+        {tool('click', { input: { selector: 'button.submit', description: 'Submit checkout' }, result: JSON.stringify({ ok: true }) })}
+        {tool('hover', { input: { text: 'Account' }, result: JSON.stringify({ ok: true }) })}
+        {tool('type', { input: { selector: '#email', text: 'ada@example.com', description: 'Fill email' }, result: JSON.stringify({ ok: true }) })}
+        {tool('press', { input: { key: 'Enter', modifiers: ['Meta'] }, result: JSON.stringify({ ok: true }) })}
+        {tool('scroll', { input: { deltaY: 400 }, result: JSON.stringify({ ok: true }) })}
+        {tool('drag', { input: { from: { selector: '#card' }, to: { selector: '#drop' } }, result: JSON.stringify({ ok: true }) })}
+        {tool('select', { input: { selector: 'select#country', value: 'US' }, result: JSON.stringify({ ok: true }) })}
+        {tool('wait_for', { input: { selectorGone: '.spinner', urlIncludes: '/done' }, result: JSON.stringify({ ok: true }) })}
+      </Section>
+      <Section title="State inspection">
+        {tool('evaluate', { input: { expression: 'document.title' }, result: JSON.stringify({ value: 'Checkout' }) })}
+        {tool('screenshot', { input: { selector: '#hero' }, result: JSON.stringify({ path: '/tmp/shot.png', width: 800, height: 600 }) })}
+      </Section>
+      <Section title="Network">
+        {tool('network_start', { input: { match: '/api', resourceTypes: ['XHR', 'Fetch'] }, result: 'recordingId: rec-1\ncapturing: true' })}
+        {tool('network_stop', { input: { recordingId: 'rec-1' }, result: TOON_NETWORK_STOP })}
+        {tool('network_wait', { input: { recordingId: 'rec-1', url: '/orders' }, result: TOON_NETWORK_WAIT })}
+        {tool('network_body', { input: { recordingId: 'rec-1', requestId: 'r2' }, result: TOON_NETWORK_BODY })}
+      </Section>
+      <Section title="Cookies / mocking / emulate">
+        {tool('cookies', { result: TOON_COOKIES })}
+        {tool('upload_file', { input: { selector: '#file', files: ['/tmp/a.pdf', '/tmp/b.pdf'] }, result: JSON.stringify({ ok: true, files: 2 }) })}
+        {tool('emulate', { input: { width: 390, height: 844, mobile: true }, result: JSON.stringify({ ok: true, reset: false }) })}
+        {tool('mock', { input: { url: '/api/me', status: 200, body: '{"ok":true}' }, result: JSON.stringify({ ok: true, mocking: '/api/me' }) })}
+      </Section>
+      <Section title="Downloads">
+        {tool('resize', { input: { preset: 'mobile' }, result: JSON.stringify({ ok: true, width: 375, height: 812 }) })}
+        {tool('download', {
+          input: { url: 'https://cdn.example.com/report.pdf', description: 'Save quarterly report' },
+          result: JSON.stringify({
+            status: 'completed',
+            taskId: 'bdl_story1',
+            path: '/tmp/super-one-browser-downloads/uuid/report.pdf',
+            filename: 'report.pdf',
+            bytes: 245760,
+            mimeType: 'application/pdf',
+            url: 'https://cdn.example.com/report.pdf',
+          }),
+        })}
+        {tool('list_downloads', {
+          input: { state: 'completed', wait: false },
+          result: JSON.stringify({
+            count: 2,
+            downloads: [
+              { filename: 'export.csv', path: '/tmp/dl/export.csv', bytes: 4096, state: 'completed', url: 'https://example.com/export.csv', startedAt: 2 },
+              { filename: 'invoice.pdf', path: '/tmp/dl/invoice.pdf', bytes: 88200, state: 'completed', url: 'https://example.com/invoice.pdf', startedAt: 1 },
+            ],
+          }),
+        })}
+      </Section>
     </StoryShell>
   ),
 }
 
-export const StreamingActions: Story = {
-  name: 'Streaming (actions)',
+export const BrowserSnapshot: Story = {
+  name: 'browser_snapshot',
+  render: () => <StoryShell>{tool('snapshot', { input: { filter: 'interactive' }, result: TOON_SNAPSHOT })}</StoryShell>,
+}
+
+export const BrowserQuery: Story = {
+  name: 'browser_query',
+  render: () => <StoryShell>{tool('query', { input: { role: 'button', text: 'Continue' }, result: TOON_QUERY })}</StoryShell>,
+}
+
+export const BrowserInspect: Story = {
+  name: 'browser_inspect',
+  render: () => <StoryShell>{tool('inspect', { input: { selector: '#email' }, result: JSON.stringify({ exists: true, tag: 'input', type: 'email' }) })}</StoryShell>,
+}
+
+export const BrowserScreenshot: Story = {
+  name: 'browser_screenshot',
+  render: () => <StoryShell>{tool('screenshot', { input: { selector: '#hero' }, result: JSON.stringify({ path: '/tmp/shot.png', width: 800, height: 600 }) })}</StoryShell>,
+}
+
+export const BrowserClick: Story = {
+  name: 'browser_click',
+  render: () => <StoryShell>{tool('click', { input: { selector: 'button.submit', description: 'Submit checkout' }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserHover: Story = {
+  name: 'browser_hover',
+  render: () => <StoryShell>{tool('hover', { input: { text: 'Account' }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserType: Story = {
+  name: 'browser_type',
+  render: () => <StoryShell>{tool('type', { input: { selector: '#email', text: 'ada@example.com', description: 'Fill email' }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserNavigate: Story = {
+  name: 'browser_navigate',
+  render: () => <StoryShell>{tool('navigate', { input: { url: 'https://example.com/login', description: 'Open login page' }, result: JSON.stringify({ ok: true, url: 'https://example.com/login' }) })}</StoryShell>,
+}
+
+export const BrowserWaitFor: Story = {
+  name: 'browser_wait_for',
+  render: () => <StoryShell>{tool('wait_for', { input: { selectorGone: '.spinner', urlIncludes: '/done' }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserPress: Story = {
+  name: 'browser_press',
+  render: () => <StoryShell>{tool('press', { input: { key: 'Enter', modifiers: ['Meta'] }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserScroll: Story = {
+  name: 'browser_scroll',
+  render: () => <StoryShell>{tool('scroll', { input: { deltaY: 400 }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserDrag: Story = {
+  name: 'browser_drag',
+  render: () => <StoryShell>{tool('drag', { input: { from: { selector: '#card' }, to: { selector: '#drop' } }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserSelect: Story = {
+  name: 'browser_select',
+  render: () => <StoryShell>{tool('select', { input: { selector: 'select#country', value: 'US' }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserOpen: Story = {
+  name: 'browser_open',
+  render: () => <StoryShell>{tool('open', { input: { url: 'https://docs.example.com' }, result: JSON.stringify({ ok: true, tab: 't2' }) })}</StoryShell>,
+}
+
+export const BrowserEvaluate: Story = {
+  name: 'browser_evaluate',
+  render: () => <StoryShell>{tool('evaluate', { input: { expression: 'document.title' }, result: JSON.stringify({ value: 'Checkout' }) })}</StoryShell>,
+}
+
+export const BrowserTabs: Story = {
+  name: 'browser_tabs',
+  render: () => <StoryShell>{tool('tabs', { result: TOON_TABS })}</StoryShell>,
+}
+
+export const BrowserResize: Story = {
+  name: 'browser_resize',
+  render: () => <StoryShell>{tool('resize', { input: { preset: 'mobile' }, result: JSON.stringify({ ok: true, width: 375, height: 812 }) })}</StoryShell>,
+}
+
+export const BrowserNetworkStart: Story = {
+  name: 'browser_network_start',
+  render: () => <StoryShell>{tool('network_start', { input: { match: '/api' }, result: 'recordingId: rec-1\ncapturing: true' })}</StoryShell>,
+}
+
+export const BrowserNetworkStop: Story = {
+  name: 'browser_network_stop',
+  render: () => <StoryShell>{tool('network_stop', { input: { recordingId: 'rec-1' }, result: TOON_NETWORK_STOP })}</StoryShell>,
+}
+
+export const BrowserNetworkWait: Story = {
+  name: 'browser_network_wait',
+  render: () => <StoryShell>{tool('network_wait', { input: { recordingId: 'rec-1', url: '/orders' }, result: TOON_NETWORK_WAIT })}</StoryShell>,
+}
+
+export const BrowserNetworkBody: Story = {
+  name: 'browser_network_body',
+  render: () => <StoryShell>{tool('network_body', { input: { recordingId: 'rec-1', requestId: 'r2' }, result: TOON_NETWORK_BODY })}</StoryShell>,
+}
+
+export const BrowserCookies: Story = {
+  name: 'browser_cookies',
+  render: () => <StoryShell>{tool('cookies', { result: TOON_COOKIES })}</StoryShell>,
+}
+
+export const BrowserUploadFile: Story = {
+  name: 'browser_upload_file',
+  render: () => <StoryShell>{tool('upload_file', { input: { selector: '#file', files: ['/tmp/a.pdf'] }, result: JSON.stringify({ ok: true, files: 1 }) })}</StoryShell>,
+}
+
+export const BrowserDownload: Story = {
+  name: 'browser_download',
+  render: () => <StoryShell>{tool('download', { input: { url: 'https://cdn.example.com/report.pdf', description: 'Save quarterly report' }, result: JSON.stringify({ status: 'completed', taskId: 'bdl_story1', filename: 'report.pdf' }) })}</StoryShell>,
+}
+
+export const BrowserListDownloads: Story = {
+  name: 'browser_list_downloads',
+  render: () => <StoryShell>{tool('list_downloads', { input: { state: 'completed', wait: false }, result: JSON.stringify({ count: 1, downloads: [{ filename: 'export.csv', state: 'completed' }] }) })}</StoryShell>,
+}
+
+export const BrowserEmulate: Story = {
+  name: 'browser_emulate',
+  render: () => <StoryShell>{tool('emulate', { input: { width: 390, height: 844, mobile: true }, result: JSON.stringify({ ok: true, reset: false }) })}</StoryShell>,
+}
+
+export const BrowserMock: Story = {
+  name: 'browser_mock',
+  render: () => <StoryShell>{tool('mock', { input: { url: '/api/me', status: 200, body: '{"ok":true}' }, result: JSON.stringify({ ok: true, mocking: '/api/me' }) })}</StoryShell>,
+}
+
+export const BrowserPerfMeasure: Story = {
+  name: 'browser_perf_measure',
+  render: () => <StoryShell>{toolByName('browser_perf_measure', { tool: 'browser_click' }, JSON.stringify({ durationMs: 42, calls: 1 }))}</StoryShell>,
+}
+
+export const BrowserActionList: Story = {
+  name: 'browser_action_list',
+  render: () => <StoryShell>{toolByName('browser_action_list', { domain: 'example.com' }, JSON.stringify({ actions: [{ name: 'checkout', domain: 'example.com' }] }))}</StoryShell>,
+}
+
+export const BrowserActionSave: Story = {
+  name: 'browser_action_save',
+  render: () => <StoryShell>{toolByName('browser_action_save', { domain: 'example.com', name: 'checkout', steps: [] }, JSON.stringify({ ok: true, name: 'checkout' }))}</StoryShell>,
+}
+
+export const BrowserActionDo: Story = {
+  name: 'browser_action_do',
+  render: () => <StoryShell>{toolByName('browser_action_do', { domain: 'example.com', name: 'checkout' }, JSON.stringify({ ok: true, steps: 3 }))}</StoryShell>,
+}
+
+export const BrowserAct: Story = {
+  name: 'browser_act',
+  render: () => <StoryShell>{toolByName('browser_act', { actions: [{ type: 'click', selector: 'button.submit' }] }, JSON.stringify({ ok: true, steps: 1 }))}</StoryShell>,
+}
+
+export const BrowserNetwork: Story = {
+  name: 'browser_network',
+  render: () => <StoryShell>{toolByName('browser_network', { action: 'stop', recordingId: 'rec-1' }, TOON_NETWORK_STOP)}</StoryShell>,
+}
+
+export const BrowserPerf: Story = {
+  name: 'browser_perf',
+  render: () => <StoryShell>{toolByName('browser_perf', { tool: 'browser_click' }, JSON.stringify({ durationMs: 42 }))}</StoryShell>,
+}
+
+export const BrowserAction: Story = {
+  name: 'browser_action',
+  render: () => <StoryShell>{toolByName('browser_action', { action: 'list', domain: 'example.com' }, JSON.stringify({ actions: [] }))}</StoryShell>,
+}
+
+export const LegacyPrimitives: Story = {
+  name: 'Legacy primitives',
   render: () => (
-    <>
-      {tool('navigate', { input: { url: 'https://example.com' }, status: 'streaming', elapsedSeconds: 2 })}
-      {tool('open', { input: { url: 'https://docs.example.com' }, status: 'streaming', elapsedSeconds: 1 })}
-      {tool('click', { input: { selector: '#submit', description: 'Click submit' }, status: 'streaming', elapsedSeconds: 1 })}
-      {tool('type', { input: { selector: '#password', text: 'hunter2' }, status: 'streaming', elapsedSeconds: 1 })}
-      {tool('wait_for', { input: { selector: '.ready' }, status: 'streaming', elapsedSeconds: 5 })}
-      {tool('upload_file', { input: { selector: '#file', files: ['/tmp/a.pdf'] }, status: 'streaming', elapsedSeconds: 2 })}
-      {tool('network_start', { input: { match: '/api' }, status: 'streaming', elapsedSeconds: 1 })}
-      {tool('network_wait', { input: { recordingId: 'rec-1', url: '/orders' }, status: 'streaming', elapsedSeconds: 3 })}
-      {tool('list_downloads', { input: { state: 'completed' }, status: 'streaming', elapsedSeconds: 2 })}
-      {tool('screenshot', { input: { selector: '#hero' }, status: 'streaming', elapsedSeconds: 1 })}
-      {tool('emulate', { input: { mobile: true }, status: 'streaming', elapsedSeconds: 1 })}
-      {tool('download', { input: { url: 'https://cdn.example.com/report.pdf' }, status: 'streaming', elapsedSeconds: 4 })}
-    </>
-  ),
-}
-
-export const ErrorsAndDenied: Story = {
-  render: () => (
-    <>
-      {tool('click', { input: { selector: '#gone' }, result: JSON.stringify({ ok: false, error: 'element not found' }) })}
-      {tool('inspect', { input: { selector: '#missing' }, result: JSON.stringify({ exists: false }) })}
-      {tool('network_wait', {
-        input: { recordingId: 'rec-1', url: '/gone', timeoutMs: 1000 },
-        result: '[Error] Timed out after 1000ms waiting for a request matching "/gone"',
-        isError: true,
-      })}
-      {tool('download', {
-        input: { url: 'https://example.com/missing.bin' },
-        result: '[Error] HTTP 404 Not Found',
-        isError: true,
-      })}
-      {tool('navigate', {
-        input: { url: 'https://internal.corp' },
-        result: '[denied] User denied permission',
-      })}
-    </>
-  ),
-}
-
-export const DownloadStreaming: Story = {
-  name: 'Download / Streaming',
-  render: () =>
-    tool('download', {
-      input: { url: 'https://cdn.example.com/large.zip', description: 'Fetch release archive' },
-      status: 'streaming',
-      elapsedSeconds: 4,
-    }),
-}
-
-export const DownloadCompleted: Story = {
-  name: 'Download / Completed',
-  render: () =>
-    tool('download', {
-      input: { url: 'https://cdn.example.com/report.pdf' },
-      result: JSON.stringify({
-        status: 'completed',
-        taskId: 'bdl_done',
-        path: '/tmp/super-one-browser-downloads/abc/report.pdf',
-        filename: 'report.pdf',
-        bytes: 245760,
-        mimeType: 'application/pdf',
-        url: 'https://cdn.example.com/report.pdf',
-      }),
-    }),
-}
-
-export const DownloadBackground: Story = {
-  name: 'Download / Background + progress',
-  render: () => {
-    function Seeded() {
-      useLayoutEffect(() => {
-        seedBrowserDownload('bdl_bg', {
-          status: 'progressing',
-          filename: 'dataset.csv',
-          bytes: 3_200_000,
-          totalBytes: 8_000_000,
-          mimeType: 'text/csv',
-          url: 'https://cdn.example.com/dataset.csv',
-        })
-      }, [])
-      return tool('download', {
-        input: { url: 'https://cdn.example.com/dataset.csv', timeoutMs: 200 },
-        result: JSON.stringify({
-          status: 'background',
-          taskId: 'bdl_bg',
-          url: 'https://cdn.example.com/dataset.csv',
-          message: 'Download still running after 200ms; moved to background as task bdl_bg.',
-        }),
-      })
-    }
-    return <Seeded />
-  },
-}
-
-export const DownloadFailed: Story = {
-  name: 'Download / Failed',
-  render: () =>
-    tool('download', {
-      input: { url: 'https://cdn.example.com/gone.bin' },
-      result: JSON.stringify({
-        status: 'failed',
-        taskId: 'bdl_fail',
-        url: 'https://cdn.example.com/gone.bin',
-        error: 'HTTP 404 Not Found',
-      }),
-      isError: true,
-    }),
-}
-
-export const ListDownloadsEmpty: Story = {
-  name: 'List downloads / Empty',
-  render: () =>
-    tool('list_downloads', {
-      input: { wait: true, timeoutMs: 3000, state: 'all' },
-      result: JSON.stringify({ count: 0, downloads: [] }),
-    }),
-}
-
-export const ListDownloadsWithItems: Story = {
-  name: 'List downloads / Items',
-  render: () =>
-    tool('list_downloads', {
-      input: { state: 'completed', wait: false },
-      result: JSON.stringify({
-        count: 3,
-        downloads: [
-          { filename: 'a.txt', path: '/tmp/dl/a.txt', bytes: 12, state: 'completed', url: 'https://x.test/a.txt', startedAt: 3 },
-          { filename: 'b.csv', path: '/tmp/dl/b.csv', bytes: 4096, state: 'completed', url: 'https://x.test/b.csv', startedAt: 2 },
-          { filename: 'c.pdf', path: '/tmp/dl/c.pdf', bytes: 99000, state: 'completed', url: 'https://x.test/c.pdf', startedAt: 1 },
-        ],
-      }),
-    }),
-}
-
-export const ListDownloadsMixed: Story = {
-  name: 'List downloads / Mixed states',
-  render: () =>
-    tool('list_downloads', {
-      input: { state: 'all', wait: false },
-      result: JSON.stringify({
-        count: 4,
-        downloads: [
-          { filename: 'report.pdf', path: '/tmp/dl/report.pdf', bytes: 245760, state: 'completed', url: 'https://cdn.example.com/report.pdf', startedAt: 4 },
-          { filename: 'export.csv', path: '/tmp/dl/export.csv', bytes: 18432, state: 'progressing', url: 'https://example.com/export.csv', startedAt: 3 },
-          { filename: 'invoice.pdf', path: '/tmp/dl/invoice.pdf', bytes: 0, state: 'interrupted', url: 'https://example.com/invoice.pdf', startedAt: 2 },
-          { filename: 'draft.zip', path: '/tmp/dl/draft.zip', bytes: 512, state: 'cancelled', url: 'https://example.com/draft.zip', startedAt: 1 },
-        ],
-      }),
-    }),
-}
-
-export const ListDownloadsProgressing: Story = {
-  name: 'List downloads / Progressing filter',
-  render: () =>
-    tool('list_downloads', {
-      input: { state: 'progressing', wait: true, timeoutMs: 5000 },
-      result: JSON.stringify({
-        count: 1,
-        downloads: [
-          { filename: 'big.bin', path: '/tmp/dl/big.bin', bytes: 1024, state: 'progressing', url: 'https://x.test/big.bin', startedAt: 1 },
-        ],
-      }),
-    }),
-}
-
-export const ReadOps: Story = {
-  name: 'Read ops (expandable)',
-  render: () => (
-    <>
-      {tool('snapshot', { input: { include: ['meta', 'elements'] }, result: TOON_SNAPSHOT })}
-      {tool('query', { input: { role: 'link', text: 'Docs' }, result: TOON_QUERY })}
-      {tool('tabs', { result: TOON_TABS })}
-      {tool('evaluate', { input: { expression: 'location.href' }, result: JSON.stringify({ value: 'https://example.com/app' }) })}
-      {tool('cookies', { input: { urls: ['https://example.com'] }, result: TOON_COOKIES })}
-      {tool('network_stop', { input: { recordingId: 'rec-1' }, result: TOON_NETWORK_STOP })}
-      {tool('network_body', { input: { recordingId: 'rec-1', requestId: 'r2' }, result: TOON_NETWORK_BODY })}
-    </>
-  ),
-}
-
-export const DeviceAndMock: Story = {
-  name: 'Emulate / Mock / Upload / Resize',
-  render: () => (
-    <>
-      {tool('resize', { input: { preset: 'tablet' }, result: JSON.stringify({ ok: true, width: 768, height: 1024 }) })}
-      {tool('resize', { input: { reset: true }, result: JSON.stringify({ ok: true, reset: true }) })}
-      {tool('emulate', { input: { width: 390, height: 844, mobile: true, colorScheme: 'dark' }, result: JSON.stringify({ ok: true }) })}
-      {tool('emulate', { input: { reset: true }, result: JSON.stringify({ ok: true, reset: true }) })}
-      {tool('mock', { input: { url: '/api/search', status: 200, contentType: 'application/json', body: '[]' }, result: JSON.stringify({ ok: true, mocking: '/api/search' }) })}
-      {tool('mock', { input: { clear: true }, result: JSON.stringify({ ok: true, clear: true }) })}
-      {tool('upload_file', { input: { selector: 'input[type=file]', files: ['/Users/me/docs/resume.pdf'] }, result: JSON.stringify({ ok: true, files: 1 }) })}
-    </>
-  ),
-}
-
-export const InteractionVariety: Story = {
-  name: 'Interactions (click / type / drag / select / press / scroll / hover)',
-  render: () => (
-    <>
-      {tool('click', { input: { selector: '#pay', description: 'Pay now' }, result: JSON.stringify({ ok: true }) })}
-      {tool('click', { input: { text: 'Log in' }, result: JSON.stringify({ ok: true }) })}
-      {tool('click', { input: { x: 120, y: 340 }, result: JSON.stringify({ ok: true }) })}
-      {tool('hover', { input: { selector: 'nav .menu' }, result: JSON.stringify({ ok: true }) })}
-      {tool('type', { input: { selector: '#email', text: 'ada@lovelace.dev', clear: true }, result: JSON.stringify({ ok: true }) })}
-      {tool('type', { input: { selector: '#password', text: 's3cret-value-here' }, result: JSON.stringify({ ok: true }) })}
-      {tool('press', { input: { key: 'Enter' }, result: JSON.stringify({ ok: true }) })}
-      {tool('press', { input: { key: 'k', modifiers: ['Meta'] }, result: JSON.stringify({ ok: true }) })}
-      {tool('scroll', { input: { deltaY: 800 }, result: JSON.stringify({ ok: true }) })}
-      {tool('scroll', { input: { selector: '#sidebar', deltaY: 200 }, result: JSON.stringify({ ok: true }) })}
-      {tool('drag', { input: { from: { text: 'Card A' }, to: { x: 40, y: 80 } }, result: JSON.stringify({ ok: true }) })}
-      {tool('select', { input: { selector: '#plan', label: 'Pro' }, result: JSON.stringify({ ok: true }) })}
-      {tool('select', { input: { selector: 'input[type=checkbox]', checked: true }, result: JSON.stringify({ ok: true }) })}
-    </>
+    <StoryShell width={720}>
+      <Section title="browser legacy names">
+        {BROWSER_LEGACY_TOOL_NAMES.map((tool) => {
+          if (tool.includes('navigate')) {
+            return toolByName(tool, { url: 'https://example.com' }, JSON.stringify({ ok: true, url: 'https://example.com' }))
+          }
+          if (tool.includes('download')) {
+            return toolByName(tool, { url: 'https://cdn.example.com/report.pdf' }, JSON.stringify({
+              taskId: 'legacy-download',
+              status: 'completed',
+            }))
+          }
+          return toolByName(tool, { description: tool }, JSON.stringify({ ok: true }))
+        })}
+      </Section>
+    </StoryShell>
   ),
 }

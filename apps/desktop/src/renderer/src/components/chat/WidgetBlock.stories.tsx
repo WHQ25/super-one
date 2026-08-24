@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
 import { WidgetBlock } from './WidgetBlock'
+import { ToolBlock } from './ToolBlock'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
@@ -10,8 +11,41 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
   )
 }
 
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-1.5">
+      <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <div className="space-y-1">{children}</div>
+    </section>
+  )
+}
+
+function Note({ children }: { children: ReactNode }) {
+  return <p className="text-xs leading-relaxed text-muted-foreground">{children}</p>
+}
+
+function block(data: { title: string; widget_code: string; width: number; height: number; isSVG: boolean }, streaming = false) {
+  return <WidgetBlock data={data} streaming={streaming} />
+}
+
+function mcpBlock(
+  tool: 'widget_list_templates' | 'widget_show',
+  input: Record<string, unknown>,
+  result?: string,
+  status: 'streaming' | 'complete' = 'complete',
+) {
+  return (
+    <ToolBlock
+      toolName={`mcp__superone__${tool}`}
+      input={JSON.stringify(input)}
+      status={status}
+      result={result}
+    />
+  )
+}
+
 const meta: Meta<typeof WidgetBlock> = {
-  title: 'SuperOne/MCP Tools/Widget',
+  title: 'Tool UI/SuperOne MCP/Widget',
   component: WidgetBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell width={820}><Story /></StoryShell>],
@@ -50,41 +84,73 @@ const HTML_CARD = `<!doctype html>
   </div>
 </body></html>`
 
-export const SvgWidgetComplete: Story = {
-  args: {
-    data: {
-      title: 'storybook_coverage_gauge',
-      widget_code: SVG_GAUGE,
-      width: 200,
-      height: 120,
-      isSVG: true,
-    },
-    streaming: false,
-  },
+export const Gallery: Story = {
+  name: 'Gallery',
+  render: () => (
+    <StoryShell width={780}>
+      <Note>SuperOne MCP widget rows should render both SVG and HTML widgets; streaming state should keep layout stable.</Note>
+      <Section title="widget_list_templates">
+        {mcpBlock('widget_list_templates', {}, JSON.stringify({ templates: [{ id: 'coverage', name: 'Coverage gauge' }] }))}
+      </Section>
+      <Section title="Widget output">
+        {block({
+          title: 'storybook_coverage_gauge',
+          widget_code: SVG_GAUGE,
+          width: 200,
+          height: 120,
+          isSVG: true,
+        })}
+        {block({
+          title: 'build_summary_card',
+          widget_code: HTML_CARD,
+          width: 480,
+          height: 220,
+          isSVG: false,
+        })}
+        {block({
+          title: 'streaming_widget',
+          widget_code: SVG_GAUGE,
+          width: 200,
+          height: 120,
+          isSVG: true,
+        }, true)}
+      </Section>
+    </StoryShell>
+  ),
 }
 
-export const HtmlWidgetComplete: Story = {
-  args: {
-    data: {
-      title: 'build_summary_card',
-      widget_code: HTML_CARD,
-      width: 480,
-      height: 220,
-      isSVG: false,
-    },
-    streaming: false,
-  },
+export const WidgetListTemplates: Story = {
+  name: 'widget_list_templates',
+  render: () => (
+    <StoryShell width={780}>
+      <Section title="widget_list_templates">
+        {mcpBlock('widget_list_templates', {}, undefined, 'streaming')}
+        {mcpBlock('widget_list_templates', {}, JSON.stringify({ templates: [{ id: 'coverage', name: 'Coverage gauge' }] }))}
+      </Section>
+    </StoryShell>
+  ),
 }
 
-export const StreamingShadow: Story = {
-  args: {
-    data: {
-      title: 'streaming_widget',
-      widget_code: SVG_GAUGE,
-      width: 200,
-      height: 120,
-      isSVG: true,
-    },
-    streaming: true,
-  },
+export const WidgetShow: Story = {
+  name: 'widget_show',
+  render: () => (
+    <StoryShell width={780}>
+      <Section title="widget_show">
+        {block({
+          title: 'storybook_coverage_gauge',
+          widget_code: SVG_GAUGE,
+          width: 200,
+          height: 120,
+          isSVG: true,
+        })}
+        {block({
+          title: 'streaming_widget',
+          widget_code: SVG_GAUGE,
+          width: 200,
+          height: 120,
+          isSVG: true,
+        }, true)}
+      </Section>
+    </StoryShell>
+  ),
 }

@@ -11,7 +11,7 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
 }
 
 const meta: Meta<typeof CodexCommandBlock> = {
-  title: 'Codex/CodexCommandBlock',
+  title: 'Tool UI/Codex/CodexCommandBlock',
   component: CodexCommandBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

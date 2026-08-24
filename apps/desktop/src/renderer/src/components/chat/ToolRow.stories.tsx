@@ -5,7 +5,7 @@ import { ToolName, ToolRow, ToolSummary } from './tool-row'
 const icon = <Terminal className="size-3 shrink-0 text-muted-foreground" />
 
 const meta: Meta<typeof ToolRow> = {
-  title: 'SuperOne/Tool UI/Row Primitive',
+  title: 'Tool UI/General/Row Primitive',
   component: ToolRow,
   parameters: { layout: 'padded' },
 }

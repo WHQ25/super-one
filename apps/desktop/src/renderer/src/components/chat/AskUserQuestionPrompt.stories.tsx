@@ -46,7 +46,7 @@ function SeedQuestion({ request }: { request: AskUserQuestionRequest | null }) {
 }
 
 const meta: Meta<typeof AskUserQuestionPrompt> = {
-  title: 'ClaudeCode/AskUserQuestionPrompt',
+  title: 'Tool UI/General/Ask User Question',
   component: AskUserQuestionPrompt,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell width={820}><Story /></StoryShell>],
@@ -56,6 +56,7 @@ export default meta
 type Story = StoryObj<typeof AskUserQuestionPrompt>
 
 export const SingleSelect: Story = {
+  name: 'Prompt · single select',
   decorators: [(Story) => (
     <>
       <SeedQuestion request={{
@@ -76,6 +77,7 @@ export const SingleSelect: Story = {
 }
 
 export const MultiSelect: Story = {
+  name: 'Prompt · multi select',
   decorators: [(Story) => (
     <>
       <SeedQuestion request={{
@@ -97,6 +99,7 @@ export const MultiSelect: Story = {
 }
 
 export const WithPreviews: Story = {
+  name: 'Prompt · previews',
   decorators: [(Story) => (
     <>
       <SeedQuestion request={{
@@ -130,6 +133,7 @@ export const WithPreviews: Story = {
 }
 
 export const MultipleQuestions: Story = {
+  name: 'Prompt · multiple questions',
   decorators: [(Story) => (
     <>
       <SeedQuestion request={{
@@ -163,6 +167,7 @@ export const MultipleQuestions: Story = {
 }
 
 export const NoPending: Story = {
+  name: 'Prompt · no pending question',
   decorators: [(Story) => (
     <>
       <SeedQuestion request={null} />

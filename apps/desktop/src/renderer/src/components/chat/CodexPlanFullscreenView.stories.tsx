@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
 
 const meta: Meta<typeof CodexPlanFullscreenView> = {
-  title: 'Codex/CodexPlanFullscreenView',
+  title: 'Tool UI/Codex/CodexPlanFullscreenView',
   component: CodexPlanFullscreenView,
   parameters: { layout: 'fullscreen' },
 }

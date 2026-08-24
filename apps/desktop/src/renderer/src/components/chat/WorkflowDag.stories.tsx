@@ -26,7 +26,7 @@ await pipeline(
 const graph = parseWorkflowGraph(SCRIPT)
 
 const meta: Meta<typeof WorkflowDag> = {
-  title: 'ClaudeCode/WorkflowDag',
+  title: 'Tool UI/General/WorkflowDag',
   component: WorkflowDag,
   parameters: { layout: 'padded' },
 }

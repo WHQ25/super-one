@@ -68,7 +68,7 @@ function FullViewHarness({ view }: { view: WorkflowViewState }) {
 }
 
 const meta: Meta<typeof FullViewHarness> = {
-  title: 'ClaudeCode/WorkflowFullView',
+  title: 'Tool UI/General/WorkflowFullView',
   component: FullViewHarness,
   parameters: { layout: 'padded' },
   decorators: [(Story) => { mockIpc('app', 'listWorkflowAgents', async () => FAKE_AGENTS); return <Story /> }],

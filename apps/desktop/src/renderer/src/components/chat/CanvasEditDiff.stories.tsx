@@ -11,7 +11,7 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
 }
 
 const meta: Meta<typeof CanvasEditDiff> = {
-  title: 'ClaudeCode/CanvasEditDiff',
+  title: 'Tool UI/Claude Code/CanvasEditDiff',
   component: CanvasEditDiff,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

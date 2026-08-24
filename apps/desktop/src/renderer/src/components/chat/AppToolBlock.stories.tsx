@@ -12,6 +12,19 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
   )
 }
 
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-1.5">
+      <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <div className="space-y-1">{children}</div>
+    </section>
+  )
+}
+
+function Note({ children }: { children: ReactNode }) {
+  return <p className="text-xs leading-relaxed text-muted-foreground">{children}</p>
+}
+
 const APP: MiniAppEntry = {
   id: 'crm-tools',
   installDir: '/Users/me/.superone/apps/crm-tools',
@@ -44,6 +57,18 @@ const APP: MiniAppEntry = {
   },
 }
 
+const SETUP_INPUT = {
+  name: 'palette-picker',
+  directory: '/Users/me/projects/palette-picker',
+  description: 'A small mini-app that picks colors from an image.',
+}
+
+function block(toolName: string, input: Record<string, unknown>, status: 'streaming' | 'complete' = 'complete', result?: string) {
+  return (
+    <ToolBlock toolName={toolName} input={JSON.stringify(input)} status={status} result={result} elapsedSeconds={status === 'streaming' ? 1 : undefined} />
+  )
+}
+
 function SeedApps({ children }: { children: ReactNode }) {
   useState(() => {
     useMiniAppStore.setState({ apps: [APP], loaded: true })
@@ -53,7 +78,7 @@ function SeedApps({ children }: { children: ReactNode }) {
 }
 
 const meta: Meta<typeof ToolBlock> = {
-  title: 'SuperOne/MCP Tools/Miniapp Call',
+  title: 'Tool UI/SuperOne MCP/Miniapp',
   component: ToolBlock,
   parameters: { layout: 'padded' },
   decorators: [
@@ -64,38 +89,62 @@ const meta: Meta<typeof ToolBlock> = {
 export default meta
 type Story = StoryObj<typeof ToolBlock>
 
-export const Streaming: Story = {
-  args: {
-    toolName: 'mcp__superone__crm__find_contact',
-    input: JSON.stringify({ query: 'alice@example.com' }),
-    status: 'streaming',
-    elapsedSeconds: 1,
-  },
+export const Gallery: Story = {
+  name: 'Gallery',
+  render: () => (
+    <StoryShell width={760}>
+      <Note>SuperOne MCP mini-app calls and development tools by variant and state (streaming / complete / fallback).</Note>
+      <Section title="Known app calls">
+        {block('mcp__superone__crm__find_contact', { query: 'alice@example.com' }, 'streaming')}
+        {block('mcp__superone__crm__find_contact', { query: 'alice@example.com' }, 'complete', JSON.stringify({ id: 'c-42', name: 'Alice Wong', company: 'Acme Co.', email: 'alice@example.com' }))}
+      </Section>
+      <Section title="Action tools">
+        {block('mcp__superone__crm__add_note', { contactId: 'c-42', body: 'Met at conference, follow up next week.' }, 'complete', JSON.stringify({ ok: true }))}
+        {block('mcp__superone__notinstalled__do_thing', { x: 1 }, 'complete', JSON.stringify({ note: 'plug icon fallback when app not found' }))}
+      </Section>
+      <Section title="miniapp_dev_setup">
+        {block('mcp__superone__miniapp_dev_setup', SETUP_INPUT, 'streaming')}
+        {block('mcp__superone__miniapp_dev_setup', SETUP_INPUT)}
+        {block('mcp__superone__miniapp_dev_setup', SETUP_INPUT, 'complete', JSON.stringify({
+          status: 'ok',
+          appId: 'palette-picker',
+        }))}
+        {block('mcp__superone__miniapp_dev_setup', SETUP_INPUT, 'complete', JSON.stringify({
+          status: 'error',
+          message:
+            'Directory already contains a manifest.json — refusing to overwrite. Delete the existing app first or pick a different directory.',
+        }))}
+      </Section>
+    </StoryShell>
+  ),
 }
 
-export const CompleteWithResult: Story = {
-  args: {
-    toolName: 'mcp__superone__crm__find_contact',
-    input: JSON.stringify({ query: 'alice@example.com' }),
-    status: 'complete',
-    result: JSON.stringify({ id: 'c-42', name: 'Alice Wong', company: 'Acme Co.', email: 'alice@example.com' }),
-  },
+export const MiniappList: Story = {
+  name: 'miniapp_list',
+  render: () => (
+    <StoryShell>
+      <Note>The fixed mini-app catalog is hidden from the transcript after it feeds tool discovery.</Note>
+      {block('mcp__superone__miniapp_list', {}, 'complete', JSON.stringify({ apps: [APP.manifest] }))}
+    </StoryShell>
+  ),
 }
 
-export const CompleteNoResultUI: Story = {
-  args: {
-    toolName: 'mcp__superone__crm__add_note',
-    input: JSON.stringify({ contactId: 'c-42', body: 'Met at conference, follow up next week.' }),
-    status: 'complete',
-    result: JSON.stringify({ ok: true }),
-  },
-}
-
-export const UnknownApp: Story = {
-  args: {
-    toolName: 'mcp__superone__notinstalled__do_thing',
-    input: JSON.stringify({ x: 1 }),
-    status: 'complete',
-    result: JSON.stringify({ note: 'plug icon fallback when app not found' }),
-  },
+export const MiniappCall: Story = {
+  name: 'miniapp_call',
+  render: () => (
+    <StoryShell>
+      <Section title="miniapp_call">
+        {block('mcp__superone__miniapp_call', {
+          appId: APP.id,
+          tool: 'find_contact',
+          input: { query: 'alice@example.com' },
+        }, 'streaming')}
+        {block('mcp__superone__miniapp_call', {
+          appId: APP.id,
+          tool: 'find_contact',
+          input: { query: 'alice@example.com' },
+        }, 'complete', JSON.stringify({ id: 'c-42', name: 'Alice Wong' }))}
+      </Section>
+    </StoryShell>
+  ),
 }

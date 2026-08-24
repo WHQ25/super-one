@@ -23,7 +23,7 @@ function ControlledForm({
 }
 
 const meta: Meta<typeof ElicitationForm> = {
-  title: 'Common/ElicitationForm',
+  title: 'Tool UI/General/Permission Prompt/Elicitation Form',
   component: ElicitationForm,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

@@ -16,7 +16,7 @@ import {
  * the stroke switches from `multiply` (light) to `screen` (dark) ink.
  */
 const meta: Meta = {
-  title: 'ClaudeCode/PlanStickyNotes',
+  title: 'Tool UI/Claude Code/PlanStickyNotes',
   parameters: { layout: 'padded' },
 }
 export default meta

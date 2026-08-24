@@ -5,6 +5,7 @@ import {
   SessionArchiveToolBlock,
   type SessionArchiveToolName,
 } from './SessionArchiveToolBlock'
+import { ToolBlock } from './ToolBlock'
 
 /**
  * SuperOne session archive tool UI — design preview (Storybook only).
@@ -65,46 +66,47 @@ function block(
   )
 }
 
+const PREFIX = 'mcp__superone__'
+
+function collabBlock(
+  tool: string,
+  input: Record<string, unknown>,
+  opts: {
+    status?: 'streaming' | 'complete'
+    result?: string
+    isError?: boolean
+    elapsedSeconds?: number
+  } = {},
+) {
+  return (
+    <ToolBlock
+      toolName={`${PREFIX}${tool}`}
+      input={JSON.stringify(input)}
+      status={opts.status ?? 'complete'}
+      result={opts.result}
+      isError={opts.isError}
+      elapsedSeconds={opts.elapsedSeconds}
+    />
+  )
+}
+
+function sessionBlock(
+  tool: 'session_rename' | 'session_tag' | 'session_tag_list',
+  input: Record<string, unknown>,
+  opts: { status?: 'streaming' | 'complete'; result?: string; isError?: boolean } = {},
+) {
+  return (
+    <ToolBlock
+      toolName={`${PREFIX}${tool}`}
+      input={JSON.stringify(input)}
+      status={opts.status ?? 'complete'}
+      result={opts.result}
+      isError={opts.isError}
+    />
+  )
+}
+
 // --- Fixtures (shape aligned with session-archive-tools handlers) ---
-
-const PROJECTS = [
-  {
-    id: 'proj-aaaaaaaa-1111-4000-8000-aaaaaaaaaaaa',
-    name: 'super-one',
-    path: '/Users/me/Developer/Projects/super-one',
-    lastActiveAt: '2026-08-10T12:00:00.000Z',
-    isCurrent: true,
-  },
-  {
-    id: 'proj-bbbbbbbb-2222-4000-8000-bbbbbbbbbbbb',
-    name: 'other-app',
-    path: '/Users/me/Developer/Projects/other-app',
-    lastActiveAt: '2026-07-01T09:00:00.000Z',
-  },
-  {
-    id: 'proj-cccccccc-3333-4000-8000-cccccccccccc',
-    name: 'missing-repo',
-    path: '/Volumes/gone/old-project',
-    lastActiveAt: '2025-12-01T00:00:00.000Z',
-    missing: true,
-  },
-]
-
-const PROJECT_LIST_TOON = toonEncode({
-  offset: 0,
-  limit: 50,
-  count: PROJECTS.length,
-  total: PROJECTS.length,
-  projects: PROJECTS,
-})
-
-const PROJECT_LIST_FILTERED_TOON = toonEncode({
-  offset: 0,
-  limit: 50,
-  count: 1,
-  total: 1,
-  projects: [PROJECTS[1]],
-})
 
 const SESSIONS = [
   {
@@ -296,58 +298,74 @@ const CLEANUP_DELETED = JSON.stringify({
   skippedSelf: [],
 })
 
+const LAUNCHES_ONE = {
+  launches: [
+    {
+      launchId: 'reviewer',
+      agentId: 'acp-base',
+      name: 'DiffBot',
+      role: 'Reviewer',
+      summary: 'Review the diff (read-only)',
+      task: 'Review the diff and report issues only.',
+    },
+  ],
+}
+
+const LAUNCHES_TWO = {
+  launches: [
+    {
+      launchId: 'alpha',
+      agentId: 'claude-base',
+      name: 'Alice',
+      role: 'Reviewer',
+      summary: 'Review focused test failures',
+      task: 'Review the focused test failures and report the root cause.',
+    },
+    {
+      launchId: 'beta',
+      agentId: 'codex-base',
+      name: 'Bob',
+      role: 'Implementer',
+      summary: 'Implement the approved fix',
+      task: 'Implement the approved fix.',
+    },
+  ],
+}
+
+const CRED_A = 's1sc_demo_credential_aaaa'
+const CRED_B = 's1sc_demo_credential_bbbb'
+
+const START_RESULT = {
+  status: 'started',
+  sessionId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  reused: false,
+  name: 'DiffBot',
+  role: 'Reviewer',
+  title: 'DiffBot - Reviewer',
+  config: {
+    model: 'grok-4.5',
+    effort: 'high',
+    permissionMode: 'default',
+    sandboxMode: 'off',
+    cwd: '/Users/me/projects/super-one',
+    name: 'DiffBot',
+    role: 'Reviewer',
+  },
+}
+
 const meta: Meta = {
-  title: 'SuperOne/MCP Tools/Archive',
+  title: 'Tool UI/SuperOne MCP/Session',
   parameters: { layout: 'padded' },
 }
 
 export default meta
 type Story = StoryObj
 
-export const DesignPrinciples: Story = {
-  name: '0 · Design principles',
-  render: () => (
-    <StoryShell width={680}>
-      <Note>
-        Casing like collab: streaming “Listing projects…”, done “Projects Listed” / “Sessions Listed”.
-        Summary slot holds counts, query quotes, session titles — not UUIDs.
-        project_list is the place for path/name; session rows only carry projectId.
-        Expand for detail. Cleanup: list first, then hide (no confirm) or delete (user dialog).
-      </Note>
-      <Section title="Collapsed stories (no expand needed to understand)">
-        {block('project_list', {}, { result: PROJECT_LIST_TOON })}
-        {block('session_list', { harness: 'claude' }, { status: 'streaming' })}
-        {block('session_list', {}, { result: LIST_RESULT_TOON })}
-        {block('session_search', { query: 'auth refresh' }, { result: SEARCH_RESULT_TOON })}
-        {block('session_read', { sessionId: SESSIONS[0].id, view: 'user' }, {
-          result: READ_USER_RESULT,
-        })}
-        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, {
-          result: CLEANUP_HIDDEN,
-        })}
-      </Section>
-    </StoryShell>
-  ),
-}
-
 export const Gallery: Story = {
-  name: 'Gallery (all tools)',
+  name: 'Gallery',
   render: () => (
     <StoryShell width={680}>
-      <Section title="project_list (TOON)">
-        {block('project_list', {}, { status: 'streaming' })}
-        {block('project_list', { query: 'other' }, { status: 'streaming' })}
-        {block('project_list', {}, { result: PROJECT_LIST_TOON })}
-        {block('project_list', { query: 'other' }, { result: PROJECT_LIST_FILTERED_TOON })}
-        {block('project_list', {}, {
-          isError: true,
-          result: JSON.stringify({
-            status: 'error',
-            message: 'Failed to read the session archive.',
-          }),
-        })}
-      </Section>
-
+      <Note>Session archive, lifecycle, and collaboration tools with streaming, complete, denied, and error states.</Note>
       <Section title="session_list (TOON)">
         {block('session_list', {}, { status: 'streaming' })}
         {block('session_list', { harness: 'claude' }, { status: 'streaming' })}
@@ -432,157 +450,203 @@ export const Gallery: Story = {
           }),
         })}
       </Section>
+
+      <Section title="session_rename">
+        {sessionBlock('session_rename', { title: 'Tool UI grouping' }, { result: JSON.stringify({ status: 'ok' }) })}
+      </Section>
+      <Section title="session_tag">
+        {sessionBlock('session_tag', { add: ['storybook', 'workflow'] }, { status: 'streaming' })}
+        {sessionBlock('session_tag', { remove: ['workflow'] }, { result: JSON.stringify({ action: 'remove', removed: 1 }) })}
+        {sessionBlock('session_tag', { add: ['private'] }, { result: '[denied] User denied permission', isError: true })}
+      </Section>
+      <Section title="session_tag_list">
+        {sessionBlock('session_tag_list', {}, { result: JSON.stringify({ tags: ['storybook', 'tool-ui'] }) })}
+      </Section>
+
+      <Section title="session_collab_request">
+        {collabBlock('session_collab_request', LAUNCHES_ONE, { status: 'streaming', elapsedSeconds: 1 })}
+        {collabBlock('session_collab_request', LAUNCHES_ONE, {
+          result: JSON.stringify({
+            status: 'approved',
+            launches: [{
+              launchId: 'reviewer',
+              agentId: 'acp-base',
+              name: 'DiffBot',
+              role: 'Reviewer',
+              title: 'DiffBot - Reviewer',
+              credential: CRED_A,
+            }],
+          }),
+        })}
+        {collabBlock('session_collab_request', LAUNCHES_TWO, { status: 'streaming', elapsedSeconds: 2 })}
+        {collabBlock('session_collab_request', LAUNCHES_TWO, {
+          result: JSON.stringify({
+            status: 'approved',
+            launches: [
+              { launchId: 'alpha', name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer', credential: CRED_A },
+              { launchId: 'beta', name: 'Bob', role: 'Implementer', title: 'Bob - Implementer', credential: CRED_B },
+            ],
+          }),
+        })}
+      </Section>
+
+      <Section title="session_collab_start">
+        {collabBlock('session_collab_start', { credential: CRED_A }, { status: 'streaming', elapsedSeconds: 4 })}
+        {collabBlock('session_collab_start', { credential: CRED_A }, { result: JSON.stringify(START_RESULT) })}
+      </Section>
+
+      <Section title="session_collab_send (Send icon) — To + Markdown body">
+        {collabBlock('session_collab_send', {
+          credential: CRED_A,
+          content: 'ping-1 — please reply with status.',
+        }, { status: 'streaming', elapsedSeconds: 1 })}
+        {collabBlock('session_collab_send', {
+          credential: CRED_A,
+          content: [
+            '## Auth review brief',
+            '',
+            'Please review the auth changes and **report issues only**.',
+            '',
+            '### Focus',
+            '- permission checks',
+            '- token expiry',
+            '- CSRF',
+            '',
+            'Ignore style nits. Return a short verdict plus `file:line` bullets when you find problems.',
+            '',
+            'This trailing paragraph is long enough that the Markdown body should clamp until expanded in the tool UI.',
+          ].join('\n'),
+        }, {
+          result: JSON.stringify({
+            status: 'sent',
+            messageId: 'msg-1',
+            sequence: 1,
+            peerSessionId: 'child-diffbot',
+            to: {
+              name: 'DiffBot',
+              role: 'Reviewer',
+              title: 'DiffBot - Reviewer',
+              sessionId: 'child-diffbot',
+            },
+          }),
+        })}
+      </Section>
+
+      <Section title="session_collab_retrieve (Inbox icon) — From + Markdown body">
+        {collabBlock('session_collab_retrieve', { credentials: [CRED_A] }, { status: 'streaming', elapsedSeconds: 1 })}
+        {collabBlock('session_collab_retrieve', { credentials: [CRED_A] }, {
+          result: JSON.stringify({
+            status: 'empty',
+            peers: [{
+              credential: CRED_A,
+              name: 'DiffBot',
+              role: 'Reviewer',
+              title: 'DiffBot - Reviewer',
+              sessionId: 'child-diffbot',
+            }],
+            messages: [],
+          }),
+        })}
+        {collabBlock('session_collab_retrieve', { credentials: [CRED_A] }, {
+          result: JSON.stringify({
+            status: 'messages',
+            peers: [{
+              credential: CRED_A,
+              name: 'DiffBot',
+              role: 'Reviewer',
+              title: 'DiffBot - Reviewer',
+              sessionId: 'child-diffbot',
+            }],
+            messages: [{
+              content: [
+                '## Verdict: **needs fix**',
+                '',
+                '| Area | Issue |',
+                '| --- | --- |',
+                '| Auth | missing CSRF on POST `/login` |',
+                '| Token | refresh path races logout |',
+                '',
+                '```ts',
+                'if (!csrf.valid(req)) return 403',
+                '```',
+                '',
+                'Line 4+ keeps going so clamp/expand is exerciseable in Storybook.',
+              ].join('\n'),
+              fromSessionId: 'child-diffbot',
+              from: {
+                name: 'DiffBot',
+                role: 'Reviewer',
+                title: 'DiffBot - Reviewer',
+                sessionId: 'child-diffbot',
+              },
+            }],
+          }),
+        })}
+      </Section>
     </StoryShell>
   ),
 }
 
-export const NestedNoExpand: Story = {
-  name: 'Nested allowExpand=false',
-  render: () => (
-    <StoryShell>
-      <Note>
-        Subagent cards force allowExpand=false — same content as a one-line Compact header, no
-        chevron / panel.
-      </Note>
-      {block('session_list', {}, { result: LIST_RESULT_TOON, allowExpand: false })}
-      {block('session_search', { query: 'auth refresh' }, {
-        result: SEARCH_RESULT_TOON,
-        allowExpand: false,
-      })}
-      {block('session_read', { sessionId: SESSIONS[0].id, view: 'user' }, {
-        result: READ_USER_RESULT,
-        allowExpand: false,
-      })}
-      {block('session_cleanup', {
-        action: 'hide',
-        sessionIds: [SESSIONS[3].id],
-      }, {
-        result: CLEANUP_HIDDEN,
-        allowExpand: false,
-      })}
-    </StoryShell>
-  ),
-}
-
-export const HeaderMustNotLeak: Story = {
-  name: 'Header must not leak tokens/paths',
-  render: () => (
-    <StoryShell>
-      <Note>
-        Expand list/cleanup — projectPath may exist in list payload but must not appear in the
-        collapsed summary line.
-      </Note>
-      {block('session_list', {}, { result: LIST_RESULT_TOON })}
-      {block('session_cleanup', {
-        action: 'hide',
-        sessionIds: [SESSIONS[3].id],
-      }, { result: CLEANUP_HIDDEN })}
-    </StoryShell>
-  ),
-}
-
-export const ListOnly: Story = {
+export const SessionList: Story = {
   name: 'session_list',
   render: () => (
     <StoryShell>
-      {block('session_list', {}, { status: 'streaming' })}
-      {block('session_list', { harness: 'claude', query: 'auth' }, { status: 'streaming' })}
-      {block('session_list', {}, { result: LIST_RESULT_TOON })}
-      {block('session_list', { query: 'auth' }, { result: LIST_FILTERED_TOON })}
+      <Section title="session_list">
+        {block('session_list', {}, { status: 'streaming' })}
+        {block('session_list', {}, { result: LIST_RESULT_TOON })}
+        {block('session_list', { query: 'auth' }, { result: LIST_FILTERED_TOON })}
+        {block('session_list', {}, {
+          isError: true,
+          result: JSON.stringify({ status: 'error', message: 'No project path for the current session.' }),
+        })}
+      </Section>
     </StoryShell>
   ),
 }
 
-export const SearchOnly: Story = {
+export const SessionSearch: Story = {
   name: 'session_search',
   render: () => (
     <StoryShell>
-      {block('session_search', { query: 'auth refresh' }, { status: 'streaming' })}
-      {block('session_search', { query: 'auth refresh' }, { result: SEARCH_RESULT_TOON })}
-      {block('session_search', { query: 'zzzz-no-match' }, { result: SEARCH_EMPTY_TOON })}
-    </StoryShell>
-  ),
-}
-
-export const ReadViews: Story = {
-  name: 'session_read views',
-  render: () => (
-    <StoryShell>
-      {block('session_read', { sessionId: SESSIONS[0].id, view: 'meta' }, {
-        result: READ_META_RESULT,
-      })}
-      {block('session_read', { sessionId: SESSIONS[0].id, view: 'user' }, {
-        result: READ_USER_RESULT,
-      })}
-      {block('session_read', { sessionId: SESSIONS[0].id, view: 'assistant' }, {
-        result: READ_ASSISTANT_RESULT,
-      })}
-      {block('session_read', { sessionId: SESSIONS[0].id, view: 'tools', messageId: 'msg-asst-13' }, {
-        result: READ_TOOLS_RESULT,
-      })}
-      {block('session_read', {
-        sessionId: SESSIONS[0].id,
-        view: 'tool_detail',
-        toolUseId: 'toolu_edit_01',
-      }, { result: READ_TOOL_DETAIL })}
-    </StoryShell>
-  ),
-}
-
-export const CleanupFlow: Story = {
-  name: 'session_cleanup flow',
-  render: () => (
-    <StoryShell>
-      <Section title="1. List (discover)">
-        {block('session_list', { order: 'last_active_asc' }, { result: LIST_RESULT_TOON })}
-      </Section>
-      <Section title="2. Soft hide (no confirm)">
-        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, {
-          result: CLEANUP_HIDDEN,
+      <Section title="session_search">
+        {block('session_search', { query: 'auth refresh' }, { status: 'streaming' })}
+        {block('session_search', { query: 'auth refresh' }, { result: SEARCH_RESULT_TOON })}
+        {block('session_search', { query: 'zzzz-no-match' }, { result: SEARCH_EMPTY_TOON })}
+        {block('session_search', { query: 'x' }, {
+          isError: true,
+          result: JSON.stringify({ status: 'error', message: 'query is required' }),
         })}
       </Section>
-      <Section title="3. Delete (user confirm dialog → done / cancelled)">
-        {block('session_cleanup', {
-          action: 'delete',
-          sessionIds: [SESSIONS[3].id],
-        }, { status: 'streaming' })}
-        {block('session_cleanup', {
-          action: 'delete',
-          sessionIds: [SESSIONS[3].id],
-        }, { result: CLEANUP_DELETED })}
+    </StoryShell>
+  ),
+}
+
+export const SessionRead: Story = {
+  name: 'session_read',
+  render: () => (
+    <StoryShell>
+      <Section title="session_read">
+        {block('session_read', { sessionId: SESSIONS[0].id, view: 'meta' }, { status: 'streaming' })}
+        {block('session_read', { sessionId: SESSIONS[0].id, view: 'meta' }, { result: READ_META_RESULT })}
+        {block('session_read', { sessionId: SESSIONS[0].id, view: 'user', limit: 20 }, { result: READ_USER_RESULT })}
+        {block('session_read', { sessionId: SESSIONS[0].id, view: 'tools', messageId: 'msg-asst-13' }, { result: READ_TOOLS_RESULT })}
+      </Section>
+    </StoryShell>
+  ),
+}
+
+export const SessionCleanup: Story = {
+  name: 'session_cleanup',
+  render: () => (
+    <StoryShell>
+      <Section title="session_cleanup">
+        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, { status: 'streaming' })}
+        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, { result: CLEANUP_HIDDEN })}
+        {block('session_cleanup', { action: 'delete', sessionIds: [SESSIONS[3].id] }, { result: CLEANUP_DELETED })}
         {block('session_cleanup', { action: 'delete', sessionIds: [SESSIONS[3].id] }, {
-          result: JSON.stringify({ status: 'cancelled', action: 'delete' }),
+          result: JSON.stringify({ status: 'cancelled', action: 'delete', message: 'User did not approve session deletion.' }),
         })}
       </Section>
-    </StoryShell>
-  ),
-}
-
-/** Typical handoff: list → search → read user → assistant → tools */
-export const HandoffRecipe: Story = {
-  name: 'Recipe: cross-harness handoff',
-  render: () => (
-    <StoryShell>
-      <Note>
-        Agent path for humans watching: locate prior work, pull user intent, then conclusions, tools
-        only if needed. Each row stays scannable when collapsed.
-      </Note>
-      {block('session_list', { harness: 'claude', limit: 10 }, { result: LIST_RESULT_TOON })}
-      {block('session_search', { query: 'auth refresh' }, { result: SEARCH_RESULT_TOON })}
-      {block('session_read', { sessionId: SESSIONS[0].id, view: 'user', limit: 30 }, {
-        result: READ_USER_RESULT,
-      })}
-      {block('session_read', {
-        sessionId: SESSIONS[0].id,
-        view: 'assistant',
-        messageId: 'msg-asst-13',
-        around: 0,
-      }, { result: READ_ASSISTANT_RESULT })}
-      {block('session_read', {
-        sessionId: SESSIONS[0].id,
-        view: 'tools',
-        messageId: 'msg-asst-13',
-      }, { result: READ_TOOLS_RESULT })}
     </StoryShell>
   ),
 }

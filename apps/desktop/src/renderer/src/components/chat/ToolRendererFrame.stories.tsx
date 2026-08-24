@@ -11,7 +11,7 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
 }
 
 const meta: Meta<typeof ToolRendererFrame> = {
-  title: 'Common/ToolRendererFrame',
+  title: 'Tool UI/General/ToolRendererFrame',
   component: ToolRendererFrame,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

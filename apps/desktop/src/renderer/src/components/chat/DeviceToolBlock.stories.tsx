@@ -12,6 +12,21 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
   )
 }
 
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-1.5">
+      <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h3>
+      <div className="space-y-1">{children}</div>
+    </section>
+  )
+}
+
+function Note({ children }: { children: ReactNode }) {
+  return <p className="text-xs leading-relaxed text-muted-foreground">{children}</p>
+}
+
 function tool(
   op: DeviceOp,
   options: {
@@ -153,258 +168,119 @@ const CONTROL_ALREADY = JSON.stringify({
 })
 
 const meta: Meta = {
-  title: 'SuperOne/MCP Tools/Device',
+  title: 'Tool UI/SuperOne MCP/Device',
   parameters: { layout: 'padded' },
-  decorators: [(Story) => <StoryShell><Story /></StoryShell>],
 }
 
 export default meta
 type Story = StoryObj
 
 /** How a run starts: read the catalog, then ask for one device by name. */
-export const DiscoveryAndControl: Story = {
+export const Gallery: Story = {
+  name: 'Gallery',
   render: () => (
-    <>
+    <StoryShell>
+      <Note>Device UI grouped in the same family-first format as Automation.</Note>
+      <Section title="Discovery">
+        {tool('list', { description: '', result: DEVICE_LIST })}
+      </Section>
+      <Section title="Control">
+        {tool('request_control', {
+          description: 'Drive the app on the simulator',
+          input: { device: '427A175E' },
+          result: CONTROL_GRANTED,
+        })}
+      </Section>
+      <Section title="Snapshot / wait">
+        {tool('snapshot', { description: 'Look at the Safari screen', result: SNAPSHOT })}
+        {tool('snapshot', {
+          description: 'Check the screen after rotating',
+          result: SNAPSHOT_LANDSCAPE,
+        })}
+        {tool('wait_for', {
+          description: 'Wait for the General row to appear',
+          input: { condition: { kind: 'exists', identifier: 'General' } },
+          result: WAIT_VERIFIED,
+        })}
+      </Section>
+      <Section title="Action">
+        {tool('act', {
+          description: 'Open the Settings app',
+          input: { stateId: 's2', actions: [{ type: 'tap', ref: '@e4' }] },
+          result: ACT_WORKED,
+        })}
+        {tool('act', {
+          description: 'Turn the device on its side',
+          input: { stateId: 's4', actions: [{ type: 'rotate', orientation: 'landscape-left' }] },
+          result: ACT_WORKED,
+        })}
+      </Section>
+      <Section title="Query">
+        {tool('query', {
+          description: 'Find the Settings icon',
+          input: { stateId: 's2', op: 'search', text: 'Settings' },
+          result: QUERY_HITS,
+        })}
+      </Section>
+    </StoryShell>
+  ),
+}
+
+export const DeviceList: Story = {
+  name: 'device_list',
+  render: () => (
+    <StoryShell>
       {tool('list', { description: '', result: DEVICE_LIST })}
       {tool('list', { description: '', result: DEVICE_LIST_EMPTY })}
-      {tool('request_control', {
-        description: 'Drive the app on the simulator',
-        input: { device: '427A175E' },
-        result: CONTROL_GRANTED,
-      })}
-      {tool('request_control', {
-        description: 'Keep using the simulator already attached',
-        input: { device: '427A175E' },
-        result: CONTROL_ALREADY,
-      })}
-      {tool('list', { description: '', status: 'streaming' })}
-      {tool('request_control', {
-        description: 'Drive the app on the simulator',
-        input: { device: 'iPhone 17 Pro Max' },
-        status: 'streaming',
-        elapsedSeconds: 6,
-      })}
-    </>
+    </StoryShell>
   ),
 }
 
-export const Snapshot: Story = {
+export const DeviceRequestControl: Story = {
+  name: 'device_request_control',
   render: () => (
-    <>
+    <StoryShell>
+      {tool('request_control', { description: 'Drive the app on the simulator', input: { device: '427A175E' }, result: CONTROL_GRANTED })}
+      {tool('request_control', { description: 'Drive the app on the simulator', input: { device: '427A175E' }, result: CONTROL_ALREADY })}
+    </StoryShell>
+  ),
+}
+
+export const DeviceSnapshot: Story = {
+  name: 'device_snapshot',
+  render: () => (
+    <StoryShell>
       {tool('snapshot', { description: 'Look at the Safari screen', result: SNAPSHOT })}
-      {tool('snapshot', {
-        description: 'Check the screen after rotating',
-        result: SNAPSHOT_LANDSCAPE,
-      })}
-      {tool('snapshot', {
-        description: 'Capture the page with a picture',
-        input: { mode: 'fused' },
-        result: FUSED,
-      })}
-    </>
+      {tool('snapshot', { description: 'Capture the settled screen', result: FUSED })}
+    </StoryShell>
   ),
 }
 
-export const Actions: Story = {
+export const DeviceQuery: Story = {
+  name: 'device_query',
   render: () => (
-    <>
-      {tool('act', {
-        description: 'Open the Settings app',
-        input: { stateId: 's2', actions: [{ type: 'tap', ref: '@e4' }] },
-        result: ACT_WORKED,
-      })}
-      {tool('act', {
-        description: 'Scroll down the settings list',
-        input: { stateId: 's4', actions: [{ type: 'swipe', ref: '@e0', direction: 'up' }] },
-        result: ACT_WORKED,
-      })}
-      {tool('act', {
-        description: 'Type the password into the field',
-        input: { stateId: 's4', actions: [{ type: 'type', text: 'hunter2' }] },
-        result: ACT_WORKED,
-      })}
-      {tool('act', {
-        description: 'Turn the device on its side',
-        input: { stateId: 's4', actions: [{ type: 'rotate', orientation: 'landscape-left' }] },
-        result: ACT_WORKED,
-      })}
-      {tool('act', {
-        description: 'Raise the on-screen keyboard',
-        input: { stateId: 's4', actions: [{ type: 'keyboard', connected: false }] },
-        result: ACT_WORKED,
-      })}
-      {tool('act', {
-        description: 'Focus the field and enter the search term',
-        input: {
-          stateId: 's4',
-          actions: [{ type: 'press', ref: '@e2' }, { type: 'type', text: 'weather' }],
-        },
-        result: ACT_WORKED,
-      })}
-    </>
+    <StoryShell>
+      {tool('query', { description: 'Find the Settings icon', input: { stateId: 's2', op: 'search', text: 'Settings' }, result: QUERY_HITS })}
+    </StoryShell>
   ),
 }
 
-/** The two results that look like success to a careless reader but are not. */
-export const OutcomesThatNeedAttention: Story = {
+export const DeviceAct: Story = {
+  name: 'device_act',
   render: () => (
-    <>
-      {tool('act', {
-        description: 'Open the Wi-Fi settings',
-        input: {
-          stateId: 's4',
-          actions: [{ type: 'tap', ref: '@e9' }],
-          expect: { kind: 'exists', label: 'Wi-Fi' },
-        },
-        result: ACT_DIDNT,
-      })}
-      {tool('act', {
-        description: 'Toggle the switch',
-        input: { stateId: 's4', actions: [{ type: 'tap', ref: '@e11' }] },
-        result: ACT_UNKNOWN,
-      })}
-      {tool('wait_for', {
-        description: 'Wait for the Wi-Fi row to appear',
-        input: { condition: { kind: 'exists', label: 'Wi-Fi' }, timeoutMs: 8000 },
-        result: WAIT_TIMEOUT,
-      })}
-    </>
+    <StoryShell>
+      {tool('act', { description: 'Open the Settings app', input: { stateId: 's2', actions: [{ type: 'tap', ref: '@e4' }] }, result: ACT_WORKED })}
+      {tool('act', { description: 'Turn the device on its side', input: { stateId: 's4', actions: [{ type: 'rotate', orientation: 'landscape-left' }] }, result: ACT_DIDNT })}
+    </StoryShell>
   ),
 }
 
-export const QueryAndWait: Story = {
+export const DeviceWaitFor: Story = {
+  name: 'device_wait_for',
   render: () => (
-    <>
-      {tool('query', {
-        description: 'Find the Settings icon',
-        input: { stateId: 's2', op: 'search', text: 'Settings' },
-        result: QUERY_HITS,
-      })}
-      {tool('query', {
-        description: 'Look at the address bar in detail',
-        input: { stateId: 's2', op: 'inspect', ref: '@e2' },
-        result: JSON.stringify({ stateId: 's2', node: '@e2 textField "Address" #URL' }),
-      })}
-      {tool('wait_for', {
-        description: 'Wait for the General row to appear',
-        input: { condition: { kind: 'exists', identifier: 'General' } },
-        result: WAIT_VERIFIED,
-      })}
-      {tool('wait_for', {
-        description: 'Check that Safari is already open',
-        input: { condition: { kind: 'exists', label: 'Safari' } },
-        result: WAIT_PREEXISTING,
-      })}
-    </>
-  ),
-}
-
-export const Streaming: Story = {
-  render: () => (
-    <>
-      {tool('snapshot', { description: 'Look at the screen', status: 'streaming' })}
-      {tool('act', {
-        description: 'Open the Settings app',
-        input: { stateId: 's2', actions: [{ type: 'tap', ref: '@e4' }] },
-        status: 'streaming',
-        elapsedSeconds: 3,
-      })}
-      {tool('wait_for', {
-        description: 'Wait for the list to load',
-        input: { condition: { kind: 'exists', label: 'General' } },
-        status: 'streaming',
-        elapsedSeconds: 12,
-      })}
-    </>
-  ),
-}
-
-export const Failures: Story = {
-  render: () => (
-    <>
-      {tool('snapshot', {
-        description: 'Look at the screen',
-        result: '[Error] NO_DEVICE: No simulator is ready for this session. Boot one from the Activity panel first.',
-        isError: true,
-      })}
-      {tool('act', {
-        description: 'Tap the Settings icon',
-        input: { stateId: 's1', actions: [{ type: 'tap', ref: '@e4' }] },
-        result: '[Error] STALE_STATE: s1 is no longer available. Take a new device_snapshot.',
-        isError: true,
-      })}
-      {tool('act', {
-        description: 'Turn the device on its side',
-        input: { stateId: 's2', actions: [{ type: 'rotate', orientation: 'landscape-left' }] },
-        result: '[denied] User declined the action.',
-      })}
-      {/* A refusal, not a fault: DECLINED carries the user's own words, so the row
-          reads as a decision and stays expandable enough to show them. */}
-      {tool('request_control', {
-        description: 'Drive the app on the simulator',
-        input: { device: 'iPhone 17 Pro Max' },
-        result: '[Error] DECLINED: The user declined to hand over iPhone 17 Pro Max. '
-          + 'They said: use the iPad instead. Do not ask again unless they bring it up.',
-        isError: true,
-      })}
-      {tool('list', {
-        description: '',
-        result: '[Error] NO_DEVICE: The device catalog could not be read.',
-        isError: true,
-      })}
-    </>
-  ),
-}
-
-/**
- * Nested under a subagent card: header only, no expand, no summary.
- *
- * `ToolBlock` takes `allowExpand` from nested-tool context rather than a prop, so
- * these mount the block directly.
- */
-export const InsideSubagent: Story = {
-  render: () => (
-    <div className="flex flex-col gap-1 rounded border border-border/60 p-2">
-      <DeviceToolBlock
-        op="act"
-        params={{ description: 'Open the Settings app', actions: [{ type: 'tap', ref: '@e4' }] }}
-        result={ACT_WORKED}
-        isStreaming={false}
-        stallLevel="normal"
-        allowExpand={false}
-      />
-      <DeviceToolBlock
-        op="snapshot"
-        params={{ description: 'Look at the screen' }}
-        result={SNAPSHOT_LANDSCAPE}
-        isStreaming={false}
-        stallLevel="normal"
-        allowExpand={false}
-      />
-      <DeviceToolBlock
-        op="wait_for"
-        params={{ description: 'Wait for the Wi-Fi row' }}
-        result={WAIT_TIMEOUT}
-        isStreaming={false}
-        stallLevel="normal"
-        allowExpand={false}
-      />
-      <DeviceToolBlock
-        op="list"
-        params={{}}
-        result={DEVICE_LIST}
-        isStreaming={false}
-        stallLevel="normal"
-        allowExpand={false}
-      />
-      <DeviceToolBlock
-        op="request_control"
-        params={{ description: 'Drive the app on the simulator', device: '427A175E' }}
-        result={CONTROL_GRANTED}
-        isStreaming={false}
-        stallLevel="normal"
-        allowExpand={false}
-      />
-    </div>
+    <StoryShell>
+      {tool('wait_for', { description: 'Wait for the General row to appear', input: { condition: { kind: 'exists', identifier: 'General' } }, result: WAIT_VERIFIED })}
+      {tool('wait_for', { description: 'Wait for Wi-Fi to appear', input: { condition: { kind: 'exists', identifier: 'Wi-Fi' } }, result: WAIT_TIMEOUT })}
+    </StoryShell>
   ),
 }

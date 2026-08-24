@@ -93,7 +93,7 @@ function Harness({ initial }: { initial: ScheduledSend | null }) {
 }
 
 const meta: Meta<typeof Harness> = {
-  title: 'ClaudeCode/ScheduledSendButton',
+  title: 'Tool UI/General/ScheduledSendButton',
   component: Harness,
   parameters: { layout: 'padded' },
 }

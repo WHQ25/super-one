@@ -103,7 +103,7 @@ function makeResultBlock(toolUseId: string): ContentBlock {
 }
 
 const meta: Meta<typeof WorkflowBlock> = {
-  title: 'ClaudeCode/WorkflowBlock',
+  title: 'Tool UI/General/WorkflowBlock',
   component: WorkflowBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => { mockIpc('app', 'listWorkflowAgents', async () => FAKE_AGENTS); return <StoryShell><Story /></StoryShell> }],

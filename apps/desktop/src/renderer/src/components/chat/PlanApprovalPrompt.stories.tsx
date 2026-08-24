@@ -93,7 +93,7 @@ const LONG_PLAN = [
 ].join('\n')
 
 const meta: Meta<typeof PlanApprovalPrompt> = {
-  title: 'ClaudeCode/PlanApprovalPrompt',
+  title: 'Tool UI/Claude Code/Plan Mode',
   component: PlanApprovalPrompt,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell width={820}><Story /></StoryShell>],
@@ -103,6 +103,7 @@ export default meta
 type Story = StoryObj<typeof PlanApprovalPrompt>
 
 export const ShortPlan: Story = {
+  name: 'Approval Prompt · short plan',
   decorators: [(Story) => (
     <>
       <SeedPlanApproval request={{
@@ -120,6 +121,7 @@ export const ShortPlan: Story = {
 }
 
 export const LongPlan: Story = {
+  name: 'Approval Prompt · long plan',
   decorators: [(Story) => (
     <>
       <SeedPlanApproval request={{
@@ -134,6 +136,7 @@ export const LongPlan: Story = {
 }
 
 export const AutoModeAfterApproval: Story = {
+  name: 'Approval Prompt · auto mode',
   decorators: [(Story) => (
     <>
       <SeedPlanApproval autoEligible request={{
@@ -148,6 +151,7 @@ export const AutoModeAfterApproval: Story = {
 }
 
 export const NoPending: Story = {
+  name: 'Approval Prompt · no pending plan',
   decorators: [(Story) => (
     <>
       <SeedPlanApproval request={null} />

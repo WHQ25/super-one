@@ -103,7 +103,7 @@ function turnMessage(id: string, items: CodexThreadItem[], streaming = false): C
 }
 
 const meta: Meta = {
-  title: 'Codex/Tool UI Gallery',
+  title: 'Tool UI/Codex/Gallery',
   parameters: {
     layout: 'padded',
     docs: {

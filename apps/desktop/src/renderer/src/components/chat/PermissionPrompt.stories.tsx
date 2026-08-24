@@ -49,7 +49,7 @@ function SeedPermission({ request }: { request: PermissionRequest | null }) {
 }
 
 const meta: Meta<typeof PermissionPrompt> = {
-  title: 'Common/PermissionPrompt',
+  title: 'Tool UI/General/Permission Prompt',
   component: PermissionPrompt,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell width={820}><Story /></StoryShell>],

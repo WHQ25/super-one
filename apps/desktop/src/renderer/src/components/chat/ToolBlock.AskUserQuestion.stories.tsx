@@ -11,7 +11,7 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
 }
 
 const meta: Meta = {
-  title: 'ClaudeCode/ToolBlock/AskUserQuestion (answered)',
+  title: 'Tool UI/General/Ask User Question',
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],
 }
@@ -20,6 +20,7 @@ export default meta
 type Story = StoryObj
 
 export const MarkdownPreview: Story = {
+  name: 'Answered · Markdown preview',
   render: () => (
     <ToolBlock
       toolName="AskUserQuestion"
@@ -51,6 +52,7 @@ export const MarkdownPreview: Story = {
 }
 
 export const HtmlPreview: Story = {
+  name: 'Answered · HTML preview',
   render: () => (
     <ToolBlock
       toolName="AskUserQuestion"
@@ -90,6 +92,7 @@ export const HtmlPreview: Story = {
 
 /** Older sessions recorded before annotations.preview existed — falls back to plain Q&A text. */
 export const LegacyWithoutPreview: Story = {
+  name: 'Answered · legacy without preview',
   render: () => (
     <ToolBlock
       toolName="AskUserQuestion"

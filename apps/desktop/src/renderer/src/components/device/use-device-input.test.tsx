@@ -102,6 +102,30 @@ describe('useDeviceInput keyboard', () => {
     expect(deviceInput).toHaveBeenCalledExactlyOnceWith('ios-sim:sim-a', { type: 'text', text: '\n' })
   })
 
+  it('lets Command-V raise a paste event and forwards the clipboard text directly', () => {
+    const { handlers } = mountKeyboard()
+    const keyPreventDefault = vi.fn()
+    const pastePreventDefault = vi.fn()
+
+    handlers.onKeyDown({
+      key: 'v', metaKey: true, ctrlKey: false, altKey: false,
+      nativeEvent: { isComposing: false }, preventDefault: keyPreventDefault,
+    } as never)
+    expect(keyPreventDefault).not.toHaveBeenCalled()
+    expect(deviceInput).not.toHaveBeenCalled()
+
+    handlers.onPaste({
+      clipboardData: { getData: () => '用户粘贴的文本' },
+      preventDefault: pastePreventDefault,
+    } as never)
+
+    expect(pastePreventDefault).toHaveBeenCalledOnce()
+    expect(deviceInput).toHaveBeenCalledExactlyOnceWith(
+      'ios-sim:sim-a',
+      { type: 'text', text: '用户粘贴的文本' },
+    )
+  })
+
   it('drops keystrokes that belong to the IME', () => {
     const { handlers } = mountKeyboard()
     const preventDefault = vi.fn()

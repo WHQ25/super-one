@@ -663,7 +663,7 @@ describe('IosSimulatorManager text input', () => {
     expect(simctl.writePasteboard).not.toHaveBeenCalled()
   })
 
-  it('routes text the simulated keyboard cannot spell through the device pasteboard', async () => {
+  it('inserts text the simulated keyboard cannot spell into the focused control', async () => {
     const { manager, native, simctl } = await readyManager()
 
     // The regression this guards: Indigo's keyboard channel only carries HID usage
@@ -671,18 +671,29 @@ describe('IosSimulatorManager text input', () => {
     // silently dropped.
     await manager.input('device-a', { type: 'text', text: '你好' })
 
-    expect(simctl.writePasteboard).toHaveBeenCalledWith('device-a', '你好')
-    expect(native.input).toHaveBeenCalledWith({ type: 'paste' })
+    expect(simctl.writePasteboard).not.toHaveBeenCalled()
+    expect(native.input).toHaveBeenCalledWith({ type: 'insertText', text: '你好' })
     expect(native.input).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'text' }))
   })
 
-  it('pastes a long ASCII block rather than holding the input queue for it', async () => {
+  it('inserts a long ASCII block rather than holding the input queue for it', async () => {
     const { manager, native, simctl } = await readyManager()
 
     await manager.input('device-a', { type: 'text', text: 'the quick brown fox' })
 
-    expect(simctl.writePasteboard).toHaveBeenCalledWith('device-a', 'the quick brown fox')
-    expect(native.input).toHaveBeenCalledWith({ type: 'paste' })
+    expect(simctl.writePasteboard).not.toHaveBeenCalled()
+    expect(native.input).toHaveBeenCalledWith({ type: 'insertText', text: 'the quick brown fox' })
+  })
+
+  it('falls back to HID for typeable text when direct insertion is unavailable', async () => {
+    const { manager, native } = await readyManager()
+    native.input.mockResolvedValueOnce({ ok: false, error: 'The focused control rejected AXValue.' })
+
+    const result = await manager.input('device-a', { type: 'text', text: 'long-password' })
+
+    expect(result).toEqual({ ok: true })
+    expect(native.input).toHaveBeenNthCalledWith(1, { type: 'insertText', text: 'long-password' })
+    expect(native.input).toHaveBeenNthCalledWith(2, { type: 'text', text: 'long-password' })
   })
 })
 

@@ -180,6 +180,19 @@ static NSError *S1AccessibilityError(NSInteger code, NSString *message) {
       translator, NSSelectorFromString(@"macPlatformElementFromTranslation:"), translation);
 }
 
+- (nullable id)frontmostApplicationElementWithError:(NSError **)error {
+  id translator = [self translatorWithError:error];
+  if (!translator) return nil;
+  id application = ((id (*)(id, SEL, unsigned int, id))objc_msgSend)(
+      translator, NSSelectorFromString(@"frontmostApplicationWithDisplayId:bridgeDelegateToken:"),
+      0, _token);
+  id element = [self platformElementFor:application translator:translator];
+  if (!element && error) {
+    *error = S1AccessibilityError(24, @"The guest reported no frontmost application.");
+  }
+  return element;
+}
+
 - (NSMutableDictionary<NSString *, id> *)describeElement:(id)element {
   NSMutableDictionary<NSString *, id> *node = [NSMutableDictionary dictionary];
   // One round trip for the whole attribute set. Asking per attribute costs a guest
@@ -245,17 +258,8 @@ static NSError *S1AccessibilityError(NSInteger code, NSString *message) {
 - (nullable NSDictionary<NSString *, id> *)dumpTreeWithMaxDepth:(NSInteger)maxDepth
                                                       maxNodes:(NSInteger)maxNodes
                                                          error:(NSError **)error {
-  id translator = [self translatorWithError:error];
-  if (!translator) return nil;
-
-  id application = ((id (*)(id, SEL, unsigned int, id))objc_msgSend)(
-      translator, NSSelectorFromString(@"frontmostApplicationWithDisplayId:bridgeDelegateToken:"),
-      0, _token);
-  id element = [self platformElementFor:application translator:translator];
-  if (!element) {
-    if (error) *error = S1AccessibilityError(24, @"The guest reported no frontmost application.");
-    return nil;
-  }
+  id element = [self frontmostApplicationElementWithError:error];
+  if (!element) return nil;
 
   // A dump invalidates the previous one wholesale: the uids it handed out named
   // elements that may no longer exist, and reusing them would land actions on
@@ -337,6 +341,44 @@ static NSError *S1AccessibilityError(NSInteger code, NSString *message) {
     return NO;
   }
   ((void (*)(id, SEL))objc_msgSend)(element, selector);
+  return YES;
+}
+
+- (BOOL)insertText:(NSString *)text error:(NSError **)error {
+  id application = [self frontmostApplicationElementWithError:error];
+  if (!application) return NO;
+
+  id focused = ((id (*)(id, SEL, id))objc_msgSend)(
+      application, NSSelectorFromString(@"accessibilityAttributeValue:"), @"AXFocusedUIElement");
+  if (!focused) {
+    if (error) *error = S1AccessibilityError(31, @"No guest input is focused.");
+    return NO;
+  }
+
+  BOOL settable = ((BOOL (*)(id, SEL, id))objc_msgSend)(
+      focused, NSSelectorFromString(@"accessibilityIsAttributeSettable:"), @"AXSelectedText");
+  if (settable) {
+    ((void (*)(id, SEL, id, id))objc_msgSend)(
+        focused, NSSelectorFromString(@"accessibilitySetValue:forAttribute:"), text, @"AXSelectedText");
+    return YES;
+  }
+
+  NSDictionary *values = ((id (*)(id, SEL, id))objc_msgSend)(
+      focused, NSSelectorFromString(@"accessibilityMultipleAttributes:"),
+      @[ @"AXValue", @"AXSelectedTextRange" ]);
+  NSString *value = [values[@"AXValue"] isKindOfClass:NSString.class] ? values[@"AXValue"] : nil;
+  NSValue *rangeValue = [values[@"AXSelectedTextRange"] isKindOfClass:NSValue.class]
+      ? values[@"AXSelectedTextRange"] : nil;
+  BOOL valueSettable = ((BOOL (*)(id, SEL, id))objc_msgSend)(
+      focused, NSSelectorFromString(@"accessibilityIsAttributeSettable:"), @"AXValue");
+  NSRange range = rangeValue.rangeValue;
+  if (!value || !rangeValue || !valueSettable || NSMaxRange(range) > value.length) {
+    if (error) *error = S1AccessibilityError(32, @"The focused guest control cannot accept text.");
+    return NO;
+  }
+  NSString *updated = [value stringByReplacingCharactersInRange:range withString:text];
+  ((void (*)(id, SEL, id, id))objc_msgSend)(
+      focused, NSSelectorFromString(@"accessibilitySetValue:forAttribute:"), updated, @"AXValue");
   return YES;
 }
 

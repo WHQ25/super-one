@@ -388,11 +388,16 @@ private final class HelperSession {
       let skipped = hid.type(text: text)
       try ensureDelivered(hid, before)
       return ["ok": true, "skippedCharacters": skipped]
-    case "paste":
-      let hid = try requireHID()
-      let before = hid.failedEventCount
-      hid.paste()
-      try ensureDelivered(hid, before)
+    case "insertText":
+      guard let text = params["text"] as? String else {
+        throw RequestError.invalid("insertText.text is required.")
+      }
+      let accessibility = try requireAccessibility()
+      do {
+        try accessibility.insert(text: text)
+      } catch {
+        throw RequestError.unavailable((error as NSError).localizedDescription)
+      }
       return ["ok": true]
     case "rotate":
       guard let name = params["orientation"] as? String else {

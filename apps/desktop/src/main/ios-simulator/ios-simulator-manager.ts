@@ -19,6 +19,7 @@ import type {
 import {
   canTypeIosSimulatorText,
   DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
+  isIosSimulatorTextTypeable,
   isIosSimulatorLandscape,
 } from '@superone/shared/ios-simulator'
 import type { IosSimulatorAccessibilityDump, IosSimulatorRawNode } from './a11y-tree'
@@ -446,12 +447,16 @@ export class IosSimulatorManager {
     if (!this.owners.has(udid)) return { ok: false, error: `${udid} is not bound to a session.` }
     try {
       const native = await this.ensureNativeSession(udid)
-      // Anything the simulated keyboard cannot spell — Chinese, emoji, or simply a
-      // long block — goes onto the device pasteboard and comes back as Command-V.
-      // Sending it as keystrokes would silently drop every non-ASCII character.
+      // Long or non-ASCII text goes straight into the focused control. HID usage
+      // codes cannot spell Chinese or emoji, and replaying a paragraph as individual
+      // keys needlessly holds the serial input queue for seconds.
       if (input.type === 'text' && !canTypeIosSimulatorText(input.text)) {
-        await this.simctl.writePasteboard(udid, input.text)
-        return native.client.input({ type: 'paste' })
+        const inserted = await native.client.input({ type: 'insertText', text: input.text })
+        if (inserted.ok || !isIosSimulatorTextTypeable(input.text)) return inserted
+        // Secure/custom controls commonly reject AXValue even though ordinary HID
+        // keystrokes still work. Long ASCII is slower that way, but must not become
+        // impossible merely because the fast path is unavailable.
+        return native.client.input(input)
       }
       const result = await native.client.input(input)
       if (input.type === 'rotate') return this.settleRotation(udid, input.orientation, result)

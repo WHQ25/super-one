@@ -53,6 +53,10 @@ NS_ASSUME_NONNULL_BEGIN
                 error:(NSError **)error
     NS_SWIFT_NAME(perform(action:generation:uid:));
 
+/** Replace the focused editable control's current selection with text. */
+- (BOOL)insertText:(NSString *)text error:(NSError **)error
+    NS_SWIFT_NAME(insert(text:));
+
 @end
 
 NS_ASSUME_NONNULL_END

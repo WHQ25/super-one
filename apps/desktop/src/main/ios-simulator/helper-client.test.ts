@@ -104,7 +104,7 @@ describe('IosSimulatorHelperRuntime lifetime', () => {
   it('reports the exit instead of answering from a helper that is gone', async () => {
     const runtime = new IosSimulatorHelperRuntime(DEAD_HELPER)
 
-    const first = await runtime.input({ type: 'paste' })
+    const first = await runtime.input({ type: 'insertText', text: 'hello' })
 
     expect(first.ok).toBe(false)
     expect(runtime.alive).toBe(false)
@@ -112,11 +112,11 @@ describe('IosSimulatorHelperRuntime lifetime', () => {
 
   it('refuses to respawn silently once the process has exited', async () => {
     const runtime = new IosSimulatorHelperRuntime(DEAD_HELPER)
-    await runtime.input({ type: 'paste' })
+    await runtime.input({ type: 'insertText', text: 'hello' })
 
     // A lazily restarted child would take input for a device nobody attached it to,
     // so the owner has to rebuild the runtime — which is what `alive` is read for.
-    const second = await runtime.input({ type: 'paste' })
+    const second = await runtime.input({ type: 'insertText', text: 'hello' })
 
     expect(second).toEqual({ ok: false, error: 'iOS helper runtime exited.' })
   })

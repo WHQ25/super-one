@@ -26,11 +26,6 @@ typedef S1Message *(*S1ButtonFunction)(int, int, int);
 typedef S1Message *(*S1KeyboardFunction)(uint32_t, int);
 typedef S1Message *(*S1MouseFunction)(CGPoint *, CGPoint *, double, double, int, int, BOOL);
 typedef S1Message *(*S1ArbitraryFunction)(int, uint32_t, uint32_t, int);
-// (modifierBit, down). The bit is an NSEventModifierFlags bit POSITION, 16..20, which
-// SimulatorKit maps through a five-entry table to the usage a real keyboard reports
-// in its modifier byte: 16 caps lock, 17 shift, 18 control, 19 option, 20 command.
-// A modifier sent as an ordinary usage instead is not treated as held.
-typedef S1Message *(*S1ModifierFunction)(uint32_t, int);
 // Which layout the guest should believe is plugged in. Simulator.app reads it the
 // same way and masks it to a byte before handing it over.
 typedef int (*S1KeyboardTypeFunction)(void);
@@ -41,8 +36,6 @@ static const int kDragged = 6;
 static const int kHardwareTarget = 0x33;
 static const int kTouchTarget = 0x32;
 static const uint32_t kConsumerPage = 0x0c;
-static const uint32_t kCommandModifierBit = 20;
-static const uint32_t kUsageV = 0x19;
 // SimulatorKit rate-limits motion inside IndigoHIDMessageForMouseNSEvent. It keeps
 // a process-global watermark of when it last built ANY message and, for a dragged
 // event type, returns NULL unless more than 15,999,999ns have elapsed; down and up
@@ -121,7 +114,6 @@ static uint32_t S1CharacterUsage(unichar character, BOOL *shifted) {
   S1KeyboardFunction _keyboard;
   S1MouseFunction _mouse;
   S1ArbitraryFunction _arbitrary;
-  S1ModifierFunction _modifier;
   NSInteger _failed;
   NSString *_lastFailure;
   NSInteger _touchIdentifiers[2];
@@ -185,9 +177,6 @@ static uint32_t S1CharacterUsage(unichar character, BOOL *shifted) {
   _button = (S1ButtonFunction)dlsym(kit, "IndigoHIDMessageForButton");
   _keyboard = (S1KeyboardFunction)dlsym(kit, "IndigoHIDMessageForKeyboardArbitrary");
   _mouse = (S1MouseFunction)dlsym(kit, "IndigoHIDMessageForMouseNSEvent");
-  // Not in the required set below: only paste needs it, and losing paste is a far
-  // smaller failure than refusing to attach at all.
-  _modifier = (S1ModifierFunction)dlsym(kit, "IndigoHIDMessageForModifierKeyBit");
   _keyboardType = (S1KeyboardTypeFunction)dlsym(kit, "IndigoHIDGetKeyboardType");
   if (!_arbitrary || !_button || !_keyboard || !_mouse) {
     if (error) *error = [NSError errorWithDomain:@"app.superone.ios-simulator" code:2 userInfo:@{NSLocalizedDescriptionKey: @"Required Indigo HID symbols are missing."}];
@@ -469,21 +458,6 @@ static uint32_t S1CharacterUsage(unichar character, BOOL *shifted) {
     usleep(12000);
   }
   return skipped;
-}
-
-- (void)paste {
-  dispatch_sync(_touchQueue, ^{ [self performPaste]; });
-}
-
-- (void)performPaste {
-  if (!_modifier) { [self recordFailure:@"paste:no-modifier"]; return; }
-  [self sendMessage:_modifier(kCommandModifierBit, kDown)];
-  usleep(8000);
-  [self sendKey:kUsageV down:YES];
-  usleep(20000);
-  [self sendKey:kUsageV down:NO];
-  usleep(8000);
-  [self sendMessage:_modifier(kCommandModifierBit, 0)];
 }
 
 - (void)tapButton:(S1HardwareButton)button {

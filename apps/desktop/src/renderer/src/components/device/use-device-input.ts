@@ -394,7 +394,7 @@ export function useDeviceInput(
     event.currentTarget.value = ''
     if (!enabled || !event.data) return
     // The whole committed string at once. Main routes anything the simulated
-    // keyboard cannot spell through the device pasteboard.
+    // keyboard cannot spell through direct insertion into the focused control.
     void sendInput({ type: 'text', text: event.data })
   }, [enabled, sendInput])
 

@@ -36,8 +36,6 @@ BOOL S1HardwareButtonFromName(NSString *name, S1HardwareButton *button);
     durationMs:(NSInteger)durationMs
     NS_SWIFT_NAME(drag(startX:startY:endX:endY:durationMs:));
 - (NSInteger)typeText:(NSString *)text NS_SWIFT_NAME(type(text:));
-/** Command-V. The text itself reaches the device through its own pasteboard. */
-- (void)paste NS_SWIFT_NAME(paste());
 - (void)tapButton:(S1HardwareButton)button NS_SWIFT_NAME(tapButton(_:));
 
 /**

@@ -29,7 +29,7 @@ export const stepIosSimulatorOrientation = stepDeviceOrientation
  * Indigo's keyboard channel carries HID usage codes and nothing else — even
  * `IndigoHIDMessageForKeyboardNSEvent` only reads the event's `keyCode` and looks the
  * usage up in a table, so no Unicode ever crosses it. Anything outside this set,
- * Chinese and emoji included, has to reach the device through its pasteboard.
+ * Chinese and emoji included, has to reach the device through direct insertion.
  *
  * Mirrors `S1CharacterUsage` in `HIDBridge.m`; widen both together.
  */
@@ -37,14 +37,18 @@ export const stepIosSimulatorOrientation = stepDeviceOrientation
 const TYPEABLE = /^[\u0008\u0009\u000a\u000d\u0020-\u007e\u007f]*$/
 
 /**
- * Below this, a keystroke goes out as a keystroke. Above it the pasteboard is both
+ * Below this, a keystroke goes out as a keystroke. Above it direct text insertion is
  * faster and less fragile: the helper holds its serial input queue for ~22ms per
- * character, so a pasted paragraph would otherwise block touches for seconds.
+ * character, so replaying a paragraph would otherwise block touches for seconds.
  */
 export const IOS_SIMULATOR_MAX_TYPED_CHARACTERS = 8
 
+export function isIosSimulatorTextTypeable(text: string): boolean {
+  return TYPEABLE.test(text)
+}
+
 export function canTypeIosSimulatorText(text: string): boolean {
-  return text.length <= IOS_SIMULATOR_MAX_TYPED_CHARACTERS && TYPEABLE.test(text)
+  return text.length <= IOS_SIMULATOR_MAX_TYPED_CHARACTERS && isIosSimulatorTextTypeable(text)
 }
 
 export type IosSimulatorPreviewMode = 'native-framebuffer' | 'native-h264'
@@ -153,8 +157,8 @@ export type IosSimulatorInput =
   | { type: 'tap'; xRatio: number; yRatio: number }
   | { type: 'drag'; startXRatio: number; startYRatio: number; endXRatio: number; endYRatio: number; durationMs?: number }
   | { type: 'text'; text: string }
-  /** Command-V. The host puts the text on the device's own pasteboard first. */
-  | { type: 'paste' }
+  /** Replace the focused editable control's selection without using the pasteboard. */
+  | { type: 'insertText'; text: string }
   | { type: 'rotate'; orientation: IosSimulatorOrientation }
   | { type: 'button'; button: 'home' | 'lock' | 'side' | 'volume-up' | 'volume-down' }
   /**

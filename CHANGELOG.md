@@ -4,6 +4,34 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.57.3-alpha] - 2026-08-24
+
+### Added
+
+- Desktop: records agent actions consistently across interactive surfaces,
+  and unifies agent picture-in-picture previews.
+- Projects: adds editing for project names and workspace folders, with those
+  folders passed to every harness turn.
+- Chat: adds a dedicated tool row for `ListAgents`.
+
+### Fixed
+
+- Session: uses actual turn state rather than the send call to determine
+  liveness, preventing premature lifecycle changes.
+- Codex: attributes usage to the model resolved by the server.
+- Desktop: inserts simulator text reliably without relying on Command-V.
+- ACP: preserves complete `computer_use` tool results.
+- Computer Use: reads Electron accessibility trees correctly.
+- Projects: serializes concurrent folder updates, keeps workspace folders
+  authoritative, and applies directory changes consistently across ACP and
+  node-backed sessions.
+- Chat: keeps a scheduled message armed from a new session.
+
+### Performance
+
+- Computer Use: compacts accessibility trees and encodes the outline in a
+  more compact table format before sending it to the agent.
+
 ## [0.57.2-alpha] - 2026-08-23
 
 ### Added

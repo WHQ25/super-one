@@ -36,7 +36,8 @@ import type {
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { trace } from '../../agent/event-trace'
-import type { BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
+import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
+import { QueuedUserMessageQueue } from '../queued-user-message-queue'
 import { readAppSettings } from '../../app-settings-service'
 import { ensureProxy, type ProxyUpstream } from '../../providers/llm-proxy-manager'
 import { getSandboxCapability } from '../../sandbox-platform'
@@ -95,7 +96,16 @@ export class ClaudeBackend implements SessionBackend {
   private providerSessionId: string | null = null
   /** Init id of a run that has not produced conversation content yet — see `stageProviderSessionId`. */
   private stagedProviderSessionId: string | null = null
-  private pendingQueued: Array<{ msg: SDKUserMessage; clientMessageId: string }> = []
+  /** SDK-inline machine notifications, released at the next step boundary. */
+  private pendingInlineNotifications: Array<{ msg: SDKUserMessage; clientMessageId: string }> = []
+  /** User messages stay under SuperOne control until their own turn or an explicit Steer. */
+  private readonly queuedUserMessages = new QueuedUserMessageQueue({
+    isBusy: () => this.turnResolves.size > 0,
+    isAlive: () => Boolean(this.bridge && this.query),
+    emit: (event) => this.emit(event),
+    send: (request) => this.send(request),
+    warn: (message, err) => log.warn('[ClaudeBackend] %s: %s', message, err instanceof Error ? err.message : String(err)),
+  })
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -301,7 +311,7 @@ export class ClaudeBackend implements SessionBackend {
         this.currentStartTime = Date.now()
         this.interrupted = false
       },
-      () => this.flushPendingQueued(),
+      () => this.flushPendingInlineNotifications(),
     )
 
     this.query = handle.query
@@ -339,7 +349,7 @@ export class ClaudeBackend implements SessionBackend {
     this.beginTurn()
     // Always handled in-process (queue or push) — never starts a Session-level turn.
     if (this.turnResolves.size > 0) {
-      this.pendingQueued.push({ msg: userMsg, clientMessageId: tag })
+      this.pendingInlineNotifications.push({ msg: userMsg, clientMessageId: tag })
     } else {
       this.bridge.push(userMsg, tag)
     }
@@ -347,26 +357,15 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async send(request: SendMessageRequest): Promise<void> {
+    if (this.queuedUserMessages.intercept(request)) return
     await this.ensureRuntime()
     if (!this.bridge || !this.query) throw new Error('ClaudeBackend not started')
 
-    const isQueued = request.priority === 'next'
-    if (isQueued) {
-      this.beginTurn()
-      const userMsg = buildUserMessage(request, this.providerSessionId ?? '')
-      const tag = request.clientMessageId
-      if (!tag) {
-        log.warn('[ClaudeBackend] queued send missing clientMessageId, pushing untagged')
-        this.bridge.push(userMsg)
-        return
-      }
-      if (this.turnResolves.size > 0) {
-        this.pendingQueued.push({ msg: userMsg, clientMessageId: tag })
-      } else {
-        this.bridge.push(userMsg, tag)
-      }
-      return
-    }
+    // A host-queued request starts a normal turn once it reaches the front. Do
+    // not leak its queue priority into the SDK, where it would become SDK-owned.
+    const turnRequest: SendMessageRequest = request.priority === 'next' || request.priority === 'later'
+      ? { ...request, priority: undefined }
+      : request
 
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.currentMessageId = messageId
@@ -390,25 +389,29 @@ export class ClaudeBackend implements SessionBackend {
       this.turnResolves.set(messageId, resolve)
     })
 
-    if (request.model) {
-      try { await this.query.setModel(request.model) } catch (err) {
+    if (turnRequest.model) {
+      try { await this.query.setModel(turnRequest.model) } catch (err) {
         log.debug('[ClaudeBackend] setModel skipped:', err)
       }
     }
 
-    const userMsg = buildUserMessage(request, this.providerSessionId ?? '')
+    const userMsg = buildUserMessage(turnRequest, this.providerSessionId ?? '')
     this.bridge.push(userMsg)
 
-    await turnDone
+    try {
+      await turnDone
+    } finally {
+      this.queuedUserMessages.flush()
+    }
   }
 
-  private flushPendingQueued(): void {
-    if (!this.bridge || this.pendingQueued.length === 0) return
+  private flushPendingInlineNotifications(): void {
+    if (!this.bridge || this.pendingInlineNotifications.length === 0) return
     this.beginTurn()
-    for (const item of this.pendingQueued) {
+    for (const item of this.pendingInlineNotifications) {
       this.bridge.push(item.msg, item.clientMessageId)
     }
-    this.pendingQueued = []
+    this.pendingInlineNotifications = []
   }
 
   /**
@@ -457,7 +460,8 @@ export class ClaudeBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     this.interrupted = true
-    this.pendingQueued = []
+    this.pendingInlineNotifications = []
+    this.queuedUserMessages.clear()
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, this.pendingElicitations, 'backend.interrupt')
     if (this.query) {
       try {
@@ -512,7 +516,8 @@ export class ClaudeBackend implements SessionBackend {
       || this.pendingPlanApprovals.size > 0
       || this.pendingElicitations.size > 0
       || this.turnResolves.size > 0
-      || this.pendingQueued.length > 0
+      || this.pendingInlineNotifications.length > 0
+      || this.queuedUserMessages.size > 0
       || this.hasActiveBackgroundTasks()
     )) return
     // A replaced runtime carries no in-flight turn: never let the latch outlive it.
@@ -548,7 +553,8 @@ export class ClaudeBackend implements SessionBackend {
     this.stagedProviderSessionId = null
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
-    this.pendingQueued = []
+    this.pendingInlineNotifications = []
+    this.queuedUserMessages.clear()
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, this.pendingElicitations, `backend.${reason}`)
     if (query) {
       const t1 = Date.now()
@@ -673,6 +679,27 @@ export class ClaudeBackend implements SessionBackend {
     await this.query.stopTask(taskId)
   }
 
+  async handleCommand(cmd: BackendCommand): Promise<void> {
+    if (cmd.kind !== 'claude.steer_queued') return
+    if (!this.bridge || !this.query || this.turnResolves.size === 0) {
+      throw new Error('Queued message can only steer an active Claude turn')
+    }
+
+    const taken = this.queuedUserMessages.take(cmd.clientMessageId)
+    if (!taken) throw new Error(`Queued Claude message not found: ${cmd.clientMessageId}`)
+
+    try {
+      const userMsg = buildUserMessage(
+        { ...taken.request, priority: 'now' },
+        this.providerSessionId ?? '',
+      )
+      this.bridge.push(userMsg, cmd.clientMessageId)
+    } catch (error) {
+      this.queuedUserMessages.restore(taken)
+      throw error
+    }
+  }
+
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
     if (decision === 'cancel') {
       if (rejectVideoConfirm(requestId, 'User cancelled')) return true
@@ -785,11 +812,9 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   dequeueMessage(clientMessageId: string): boolean {
-    const idx = this.pendingQueued.findIndex((p) => p.clientMessageId === clientMessageId)
-    if (idx !== -1) {
-      this.pendingQueued.splice(idx, 1)
-      return true
-    }
+    if (this.queuedUserMessages.dequeue(clientMessageId)) return true
+    const idx = this.pendingInlineNotifications.findIndex((p) => p.clientMessageId === clientMessageId)
+    if (idx !== -1) return this.pendingInlineNotifications.splice(idx, 1).length > 0
     return this.bridge?.dequeue(clientMessageId) ?? false
   }
 

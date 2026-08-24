@@ -147,6 +147,14 @@ export type BackendCommand =
       newUserText?: string
     }
   | {
+      kind: 'codex.steer_queued'
+      clientMessageId: string
+    }
+  | {
+      kind: 'claude.steer_queued'
+      clientMessageId: string
+    }
+  | {
       kind: 'codex.plan_approval'
       messageId: string
       status: 'approved' | 'rejected'

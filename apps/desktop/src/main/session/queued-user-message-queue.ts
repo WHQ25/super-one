@@ -1,11 +1,12 @@
 import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-types'
 
 /**
- * Mid-turn queue for user-typed messages on harnesses with **no steer**
- * (ACP/Grok, OpenCode). Claude injects at the SDK step boundary and Codex uses
- * `turn/steer`; these two can only run a queued message as its own turn once
- * the live one settles. Sending concurrently is actively harmful — Grok cancels
- * the live turn, OpenCode rejects the send outright.
+ * Host-owned mid-turn queue for user-typed messages. ACP/Grok and OpenCode
+ * always run a queued message as its own turn once the live one settles. Claude
+ * does the same by default, but can remove one item and inject it into the live
+ * SDK stream as `priority: 'now'`. Codex owns a separate durable Core queue.
+ * Sending concurrently is actively harmful — Grok cancels the live turn and
+ * OpenCode rejects the send outright.
  *
  * `Session.send` routes `priority: 'next'` straight to `backend.send`, so each
  * backend owns this policy. Wire it as:
@@ -46,7 +47,7 @@ export class QueuedUserMessageQueue {
    * the backend, so the event must fire on this path too.
    */
   intercept(request: SendMessageRequest): boolean {
-    if (request.priority !== 'next') return false
+    if (request.priority !== 'next' && request.priority !== 'later') return false
     if (this.host.isBusy()) {
       this.items.push(request)
       return true
@@ -72,10 +73,20 @@ export class QueuedUserMessageQueue {
 
   /** User cancelled a still-queued message from the composer. */
   dequeue(clientMessageId: string): boolean {
+    return this.take(clientMessageId) !== null
+  }
+
+  /** Remove and return one queued request for a harness-specific action. */
+  take(clientMessageId: string): { request: SendMessageRequest; index: number } | null {
     const idx = this.items.findIndex((r) => r.clientMessageId === clientMessageId)
-    if (idx === -1) return false
-    this.items.splice(idx, 1)
-    return true
+    if (idx === -1) return null
+    const request = this.items.splice(idx, 1)[0]
+    return request ? { request, index: idx } : null
+  }
+
+  /** Restore a request removed by `take()` when the follow-up action fails. */
+  restore(taken: { request: SendMessageRequest; index: number }): void {
+    this.items.splice(Math.min(taken.index, this.items.length), 0, taken.request)
   }
 
   clear(): void {

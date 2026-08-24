@@ -56,7 +56,7 @@ File-level touchpoints for each row: `references/experiences.md`. Minimum event 
 | Sandbox toggle | off/on/auto | folded into permission presets → selector returns `false` | none |
 | Compact | yes | yes | no |
 | Recap | no | no | Grok extension |
-| Mid-turn steer | — | yes | queue only |
+| Mid-turn steer | yes (`priority: now`) | yes | queue only |
 
 Flip `HARNESS_CAPABILITIES` only after the event is actually wired. Codex having no sandbox
 control is a deliverable, not a gap.

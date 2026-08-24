@@ -25,6 +25,7 @@ import type {
   AppServerUserInputQuestion,
   CodexApprovalDecision,
   CodexSession,
+  CodexSteerInput,
   PendingCodexApprovalResponse,
 } from './codex-session'
 import { tearDownForkRuntime } from './codex-session'
@@ -2025,10 +2026,10 @@ export async function streamTurnEvents(
         if (startedTurnId) {
           observedTurnId = startedTurnId
           session.activeTurnId = startedTurnId
-          session.steerFn = async (text: string) => {
+          session.steerFn = async (input: CodexSteerInput) => {
             await connection.request('turn/steer', {
               threadId: session.threadId,
-              input: [{ type: 'text', text }],
+              input: typeof input === 'string' ? [{ type: 'text', text: input }] : input,
               expectedTurnId: startedTurnId,
             })
           }
@@ -2446,11 +2447,11 @@ export async function runCodexTurn(
 
         session.activeTurnId = activeTurnId
         let steerSeq = 9000
-        session.steerFn = async (text: string) => {
+        session.steerFn = async (input: CodexSteerInput) => {
           steerSeq += 1
           await connection.request('turn/steer', {
             threadId: resolvedThreadId,
-            input: [{ type: 'text', text }],
+            input: typeof input === 'string' ? [{ type: 'text', text: input }] : input,
             expectedTurnId: activeTurnId,
           })
         }
@@ -2555,7 +2556,7 @@ export async function startCodexQueuedTurn(
   }
 }
 
-export async function steerCodex(session: CodexSession, input: string): Promise<void> {
+export async function steerCodex(session: CodexSession, input: CodexSteerInput): Promise<void> {
   if (!session.steerFn) {
     throw new Error('No active Codex turn to steer')
   }

@@ -398,6 +398,7 @@ export interface ChatStore {
 
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
+  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
 
   setDraftText: (text: string, target?: SessionWriteTarget) => void

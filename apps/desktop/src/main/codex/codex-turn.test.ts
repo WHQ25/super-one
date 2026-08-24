@@ -2261,6 +2261,7 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
     expect(session.activeTurnId).toBe('automatic-turn')
 
     await session.steerFn?.('Continue')
+    await session.steerFn?.([{ type: 'text', text: 'Queued follow-up', text_elements: [] }])
     await session.interruptFn?.()
 
     expect(mockConnection.request).toHaveBeenNthCalledWith(1, 'turn/steer', {
@@ -2268,7 +2269,12 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
       input: [{ type: 'text', text: 'Continue' }],
       expectedTurnId: 'automatic-turn',
     })
-    expect(mockConnection.request).toHaveBeenNthCalledWith(2, 'turn/interrupt', {
+    expect(mockConnection.request).toHaveBeenNthCalledWith(2, 'turn/steer', {
+      threadId: 'main-thread',
+      input: [{ type: 'text', text: 'Queued follow-up', text_elements: [] }],
+      expectedTurnId: 'automatic-turn',
+    })
+    expect(mockConnection.request).toHaveBeenNthCalledWith(3, 'turn/interrupt', {
       threadId: 'main-thread',
       turnId: 'automatic-turn',
     })

@@ -2038,6 +2038,48 @@ describe('Session message accumulation', () => {
     expect(session.snapshot.messages).toHaveLength(0)
     expect(backend.commandCalls[0]).toEqual({ kind: 'codex.steer', input: 'raw' })
   })
+
+  it('dispatchBackendCommand(codex.steer_queued) only forwards during an active Codex turn', async () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    const pending = session.send({ content: 'first' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    backend.emit({ type: 'status_change', status: 'streaming' })
+
+    await session.dispatchBackendCommand({ kind: 'codex.steer_queued', clientMessageId: 'queued-1' })
+    expect(backend.commandCalls[0]).toEqual({ kind: 'codex.steer_queued', clientMessageId: 'queued-1' })
+
+    backend.resolveSend?.()
+    await pending
+  })
+
+  it('dispatchBackendCommand(codex.steer_queued) rejects when the Codex turn is idle', async () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+
+    await expect(session.dispatchBackendCommand({ kind: 'codex.steer_queued', clientMessageId: 'queued-1' }))
+      .rejects.toThrow('active Codex turn')
+    expect(backend.commandCalls).toHaveLength(0)
+  })
+
+  it('dispatchBackendCommand(claude.steer_queued) only forwards during an active Claude turn', async () => {
+    const { session, backend } = makeSession({ harnessId: 'claude' })
+    const pending = session.send({ content: 'first' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    backend.emit({ type: 'status_change', status: 'streaming' })
+
+    await session.dispatchBackendCommand({ kind: 'claude.steer_queued', clientMessageId: 'queued-1' })
+    expect(backend.commandCalls[0]).toEqual({ kind: 'claude.steer_queued', clientMessageId: 'queued-1' })
+
+    backend.resolveSend?.()
+    await pending
+  })
+
+  it('dispatchBackendCommand(claude.steer_queued) rejects when the Claude turn is idle', async () => {
+    const { session, backend } = makeSession({ harnessId: 'claude' })
+
+    await expect(session.dispatchBackendCommand({ kind: 'claude.steer_queued', clientMessageId: 'queued-1' }))
+      .rejects.toThrow('active Claude turn')
+    expect(backend.commandCalls).toHaveLength(0)
+  })
 })
 
 describe('Session persist hook', () => {

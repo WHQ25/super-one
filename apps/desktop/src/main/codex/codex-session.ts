@@ -26,6 +26,8 @@ export type CodexApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 
 
 export type CodexElicitationAction = 'accept' | 'decline' | 'cancel'
 
+export type CodexSteerInput = string | Array<Record<string, unknown>>
+
 export interface CodexElicitationResponse {
   action: CodexElicitationAction
   content: Record<string, unknown> | null
@@ -60,7 +62,7 @@ export interface CodexSession {
   runningController: AbortController | null
   pendingApprovals: Map<string, PendingCodexApproval>
   activeTurnId: string | null
-  steerFn: ((input: string) => Promise<void>) | null
+  steerFn: ((input: CodexSteerInput) => Promise<void>) | null
   interruptFn: (() => Promise<void>) | null
   connectionHandle: AppServerConnectionHandle | null
   connectionAuth: CodexProjectAuth | null

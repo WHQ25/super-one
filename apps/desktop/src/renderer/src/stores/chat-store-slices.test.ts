@@ -39,6 +39,7 @@ const mockWindowAgent = {
   previewRewind: vi.fn().mockResolvedValue({ canRewind: true } as const),
   truncateAtCheckpoint: vi.fn().mockResolvedValue(undefined),
   dequeueMessage: vi.fn().mockResolvedValue(true),
+  steerQueuedMessage: vi.fn().mockResolvedValue(true),
   startQueuedMessages: vi.fn().mockResolvedValue(true),
   parkSession: vi.fn().mockResolvedValue(undefined),
 }
@@ -558,6 +559,26 @@ describe('session-slice: queued-message edit/delete', () => {
 
     await useChatStore.getState().deleteQueuedMessage('q1')
     expect(activeSession().queuedMessages.map((m) => m.id)).toEqual(['q1'])
+  })
+
+  it('steers a queued message through the scoped session without mutating it optimistically', async () => {
+    setupProject()
+    const sessionId = activeProjectState()._activeSessionId!
+    patchSession({ queuedMessages: [queued('q1', 'steer this')] })
+
+    await expect(useChatStore.getState().steerQueuedMessage('q1', { projectPath: PATH, sessionId })).resolves.toBe(true)
+
+    expect(mockWindowAgent.steerQueuedMessage).toHaveBeenCalledWith(PATH, 'q1', sessionId)
+    expect(activeSession().queuedMessages.map((m) => m.id)).toEqual(['q1'])
+  })
+
+  it('does not call steer IPC for an unknown queued message', async () => {
+    setupProject()
+    patchSession({ queuedMessages: [queued('q1', 'first')] })
+
+    await expect(useChatStore.getState().steerQueuedMessage('ghost')).resolves.toBe(false)
+
+    expect(mockWindowAgent.steerQueuedMessage).not.toHaveBeenCalled()
   })
 
   it('starts the durable queue for the scoped session', async () => {

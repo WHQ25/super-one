@@ -100,6 +100,12 @@ interface WarmCodexHandle {
   permissionPreset?: CodexPermissionPreset
 }
 
+interface DurableQueuedMessage {
+  submissionId: string | null
+  request: SendMessageRequest
+  input: Array<Record<string, unknown>>
+}
+
 function mapPermissionMode(mode: PermissionMode | undefined): CodexPermissionPreset {
   if (mode === 'auto') return 'auto-review'
   if (mode === 'bypassPermissions' || mode === 'acceptEdits') return 'full-access'
@@ -243,10 +249,8 @@ export class CodexBackend implements SessionBackend {
   private lastUsageSnapshot: CodexUsageInfo | null = null
   private turnUsage = new CodexTurnUsageAccumulator()
   private turnUsageRecorded = false
-  private readonly durableQueue = new Map<string, {
-    submissionId: string | null
-    request: SendMessageRequest
-  }>()
+  private readonly durableQueue = new Map<string, DurableQueuedMessage>()
+  private queueSteerInFlight = 0
   private queueRefreshPromise: Promise<void> | null = null
   private queueRefreshRequested = false
 
@@ -968,6 +972,10 @@ export class CodexBackend implements SessionBackend {
         await steerCodex(session, cmd.input)
         return
       }
+      case 'codex.steer_queued': {
+        await this.steerQueuedMessage(cmd.clientMessageId)
+        return
+      }
       case 'codex.plan_approval':
       case 'codex.collaboration_mode_change':
         return
@@ -1197,23 +1205,103 @@ export class CodexBackend implements SessionBackend {
     if (!clientMessageId || !session || !handle || !threadId) {
       throw new Error('Codex durable queue requires an active thread and client message id')
     }
-    this.durableQueue.set(clientMessageId, { submissionId: null, request })
+    const input = buildCodexQueuedInput(request.content, request.images)
+    this.durableQueue.set(clientMessageId, { submissionId: null, request, input })
     try {
-      const result = await handle.connection.request('thread/queue/add', {
-        threadId,
-        input: buildCodexQueuedInput(request.content, request.images),
-        clientUserMessageId: clientMessageId,
-      })
-      const submission = result.queuedSubmission && typeof result.queuedSubmission === 'object'
-        ? result.queuedSubmission as Record<string, unknown>
-        : null
-      const submissionId = typeof submission?.id === 'string' ? submission.id : null
-      if (!submissionId) throw new Error('Codex returned no durable queue submission id')
+      const submissionId = await this.addDurableSubmission(clientMessageId, input)
       const queued = this.durableQueue.get(clientMessageId)
       if (queued) queued.submissionId = submissionId
     } catch (err) {
       this.durableQueue.delete(clientMessageId)
       throw err
+    }
+  }
+
+  private async addDurableSubmission(
+    clientMessageId: string,
+    input: Array<Record<string, unknown>>,
+  ): Promise<string> {
+    const session = this.session
+    const handle = session?.connectionHandle
+    const threadId = session?.threadId
+    if (!handle || !threadId) throw new Error('Codex durable queue requires an active thread')
+    const result = await handle.connection.request('thread/queue/add', {
+      threadId,
+      input,
+      clientUserMessageId: clientMessageId,
+    })
+    const submission = result.queuedSubmission && typeof result.queuedSubmission === 'object'
+      ? result.queuedSubmission as Record<string, unknown>
+      : null
+    const submissionId = typeof submission?.id === 'string' ? submission.id : null
+    if (!submissionId) throw new Error('Codex returned no durable queue submission id')
+    return submissionId
+  }
+
+  private consumeDurableMessage(clientMessageId: string, rearmStreaming: boolean): void {
+    const queued = this.durableQueue.get(clientMessageId)
+    if (!queued) return
+    this.durableQueue.delete(clientMessageId)
+    this.emit({ type: 'queued_message_consumed', clientMessageId })
+    const nextMessageId = queued.request.assistantMessageId
+      ?? `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.emit({
+      type: 'message_start',
+      message: {
+        id: nextMessageId,
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'codex',
+      },
+    })
+    if (this.swapRunAssistantId) {
+      this.swapRunAssistantId(nextMessageId)
+    } else {
+      this.resetSegments(nextMessageId)
+      this.currentMessageId = nextMessageId
+    }
+    if (rearmStreaming) this.emit({ type: 'status_change', status: 'streaming' })
+  }
+
+  private async steerQueuedMessage(clientMessageId: string): Promise<void> {
+    if (this.queueRefreshPromise) await this.queueRefreshPromise
+    const queued = this.durableQueue.get(clientMessageId)
+    const session = this.session
+    const handle = session?.connectionHandle
+    const threadId = session?.threadId
+    if (!queued?.submissionId || !session?.steerFn || !handle || !threadId) {
+      throw new Error('Queued message can only steer an active Codex turn')
+    }
+
+    this.queueSteerInFlight += 1
+    let deleted = false
+    try {
+      try {
+        await handle.connection.request('thread/queue/delete', {
+          threadId,
+          queuedSubmissionId: queued.submissionId,
+        })
+        deleted = true
+        await steerCodex(session, queued.input)
+      } catch (error) {
+        if (deleted) {
+          try {
+            queued.submissionId = await this.addDurableSubmission(clientMessageId, queued.input)
+          } catch (restoreError) {
+            log.error(
+              '[CodexBackend] failed to restore queued message after steer failure: %s',
+              restoreError instanceof Error ? restoreError.message : String(restoreError),
+            )
+          }
+        }
+        throw error
+      }
+      this.consumeDurableMessage(clientMessageId, false)
+    } finally {
+      this.queueSteerInFlight -= 1
+      this.flushDurableQueueRefresh()
     }
   }
 
@@ -1224,7 +1312,7 @@ export class CodexBackend implements SessionBackend {
       const connection = await this.ensureManagementConnection()
       let cursor: string | null = null
       const restored: Array<{ clientMessageId: string; content: string }> = []
-      const nextQueue = new Map<string, { submissionId: string | null; request: SendMessageRequest }>()
+      const nextQueue = new Map<string, DurableQueuedMessage>()
       do {
         const result = await connection.request('thread/queue/list', {
           threadId,
@@ -1240,7 +1328,9 @@ export class CodexBackend implements SessionBackend {
             ? submission.clientUserMessageId
             : null
           if (!submissionId || !clientMessageId) continue
-          const input = Array.isArray(submission.input) ? submission.input : []
+          const input = Array.isArray(submission.input)
+            ? submission.input.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry))
+            : []
           const content = input.flatMap((entry) => {
             if (!entry || typeof entry !== 'object') return []
             const rec = entry as Record<string, unknown>
@@ -1253,7 +1343,7 @@ export class CodexBackend implements SessionBackend {
             assistantMessageId: `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             priority: 'next',
           }
-          nextQueue.set(clientMessageId, { submissionId, request })
+          nextQueue.set(clientMessageId, { submissionId, request, input })
           restored.push({ clientMessageId, content })
         }
         cursor = typeof result.nextCursor === 'string' ? result.nextCursor : null
@@ -1284,13 +1374,20 @@ export class CodexBackend implements SessionBackend {
   private scheduleDurableQueueRefresh(threadId: string): void {
     if (threadId !== (this.session?.threadId ?? this.providerSessionId)) return
     this.queueRefreshRequested = true
-    if (this.queueRefreshPromise) return
+    this.flushDurableQueueRefresh()
+  }
+
+  private flushDurableQueueRefresh(): void {
+    if (this.queueSteerInFlight > 0 || this.queueRefreshPromise || !this.queueRefreshRequested) return
     this.queueRefreshPromise = (async () => {
       while (this.queueRefreshRequested) {
         this.queueRefreshRequested = false
         await this.restoreDurableQueue()
       }
-    })().finally(() => { this.queueRefreshPromise = null })
+    })().finally(() => {
+      this.queueRefreshPromise = null
+      if (this.queueRefreshRequested) this.flushDurableQueueRefresh()
+    })
   }
 
   async dequeueMessage(_clientMessageId: string): Promise<boolean> {
@@ -1372,36 +1469,13 @@ export class CodexBackend implements SessionBackend {
     return {
       hasQueuedMessages: () => this.durableQueue.size > 0,
       onQueuedMessageConsumed: (clientMessageId) => {
-        const queued = this.durableQueue.get(clientMessageId)
-        if (!queued) return
-        this.durableQueue.delete(clientMessageId)
-        this.emit({ type: 'queued_message_consumed', clientMessageId })
-        const nextMessageId = queued.request.assistantMessageId
-          ?? `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-        this.emit({
-          type: 'message_start',
-          message: {
-            id: nextMessageId,
-            role: 'assistant',
-            status: 'streaming',
-            content: [],
-            createdAt: new Date().toISOString(),
-            providerId: 'codex',
-          },
-        })
-        if (this.swapRunAssistantId) {
-          this.swapRunAssistantId(nextMessageId)
-        } else {
-          this.resetSegments(nextMessageId)
-          this.currentMessageId = nextMessageId
-        }
         // Both branches, not just the cold one. The live-stream drain reaches
         // here after `onTurnCompleted` already emitted `message_complete` for
         // the previous segment, and the renderer settles a completed current
         // turn to idle — without re-arming, the queued turn (the one an auto
         // compaction pushes a message into) streams into a UI that thinks it
         // stopped, so Stop is not even offered.
-        this.emit({ type: 'status_change', status: 'streaming' })
+        this.consumeDurableMessage(clientMessageId, true)
       },
       onThreadStarted: (threadId: string) => {
         this.fireProviderSessionId(threadId)

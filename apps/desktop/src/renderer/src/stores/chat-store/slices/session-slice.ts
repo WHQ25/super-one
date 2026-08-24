@@ -12,6 +12,7 @@ import {
   updateActivePerSession,
   updatePerSession,
 } from '../index'
+import { toastSendFailure } from '../helpers/send-error-toast'
 
 /**
  * Per-session actions that touch a specific session's local state but
@@ -26,6 +27,7 @@ export interface SessionSlice {
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
+  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
   setDraftText: (text: string, target?: SessionWriteTarget) => void
   setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
@@ -101,6 +103,19 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     set((s) => commitPerSession(s, target, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
     })))
+  },
+
+  steerQueuedMessage: async (messageId, target) => {
+    const projectPath = target?.projectPath ?? get().activeProject
+    if (!projectPath) return false
+    const session = getScopedPerSession(get(), target)
+    if (!session.queuedMessages.some((message) => message.id === messageId)) return false
+    try {
+      return await window.agent.steerQueuedMessage(projectPath, messageId, target?.sessionId)
+    } catch (error) {
+      toastSendFailure(error)
+      return false
+    }
   },
 
   startQueuedMessages: async (target) => {

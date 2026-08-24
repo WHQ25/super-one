@@ -1293,6 +1293,7 @@ export type Messages = {
     dropToAttach: string
     queuedActions: {
       start: string
+      steer: string
       edit: string
       delete: string
     }
@@ -4796,6 +4797,7 @@ export const en: Messages = {
     dropToAttach: 'Drop images or PDFs to attach',
     queuedActions: {
       start: 'Start Queued Messages',
+      steer: 'Steer Now',
       edit: 'Edit Queued Message',
       delete: 'Delete Queued Message',
     },

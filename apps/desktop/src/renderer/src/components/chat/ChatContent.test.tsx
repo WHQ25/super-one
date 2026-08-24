@@ -59,7 +59,16 @@ const hoisted = vi.hoisted(() => {
       scrollMounts.count++
     }
   }
-  return { sessionState, isRemoteLocked: { value: false }, scope, scrollMounts, contentZoom, onScrollMount, startQueuedMessages: vi.fn() }
+  return {
+    sessionState,
+    isRemoteLocked: { value: false },
+    scope,
+    scrollMounts,
+    contentZoom,
+    onScrollMount,
+    steerQueuedMessage: vi.fn(),
+    startQueuedMessages: vi.fn(),
+  }
 })
 
 vi.mock('@/stores/chat', () => ({
@@ -67,6 +76,7 @@ vi.mock('@/stores/chat', () => ({
     (selector: (s: unknown) => unknown) => selector({
       editQueuedMessage: vi.fn(),
       deleteQueuedMessage: vi.fn(),
+      steerQueuedMessage: hoisted.steerQueuedMessage,
       startQueuedMessages: hoisted.startQueuedMessages,
       disconnectRemoteSession: vi.fn(),
       // Read by selectClaudeModels for model-fallback display names.
@@ -382,6 +392,25 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 })
 
 describe('ChatContent Codex durable queue', () => {
+  it('offers steer for every queued message while a local Codex turn is active', () => {
+    hoisted.steerQueuedMessage.mockClear()
+    hoisted.sessionState.messages = [{ id: 'm1' }]
+    hoisted.sessionState.queuedMessages = [
+      { id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'first' }], createdAt: '', providerId: 'codex' },
+      { id: 'u3', role: 'user', status: 'complete', content: [{ type: 'text', text: 'second' }], createdAt: '', providerId: 'codex' },
+    ]
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    hoisted.sessionState.status = 'streaming'
+
+    renderContent()
+    const steerButtons = screen.getAllByRole('button', { name: 'Steer Now' })
+    expect(steerButtons).toHaveLength(2)
+    fireEvent.click(steerButtons[1]!)
+
+    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u3', undefined)
+  })
+
   it('offers manual resume after an interrupted queued turn', () => {
     hoisted.startQueuedMessages.mockClear()
     hoisted.sessionState.messages = [{ id: 'm1' }]
@@ -396,6 +425,26 @@ describe('ChatContent Codex durable queue', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start Queued Messages' }))
 
     expect(hoisted.startQueuedMessages).toHaveBeenCalledWith(undefined)
+    expect(screen.queryByRole('button', { name: 'Steer Now' })).toBeNull()
+  })
+})
+
+describe('ChatContent Claude host queue', () => {
+  it('offers steer for a queued message while a local Claude turn is active', () => {
+    hoisted.steerQueuedMessage.mockClear()
+    hoisted.sessionState.messages = [{ id: 'm1' }]
+    hoisted.sessionState.queuedMessages = [{
+      id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'steer this' }], createdAt: '', providerId: 'claude',
+    }]
+    hoisted.sessionState.sessionProvider = 'claude'
+    hoisted.sessionState.preferredProvider = 'claude'
+    hoisted.sessionState.status = 'streaming'
+
+    renderContent()
+    fireEvent.click(screen.getByRole('button', { name: 'Steer Now' }))
+
+    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u2', undefined)
+    expect(screen.queryByRole('button', { name: 'Start Queued Messages' })).toBeNull()
   })
 })
 

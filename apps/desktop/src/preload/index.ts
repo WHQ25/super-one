@@ -41,6 +41,9 @@ const agentAPI = {
   dequeueMessage: (projectPath: string, clientMessageId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DEQUEUE_MESSAGE, projectPath, clientMessageId) as Promise<boolean>,
 
+  steerQueuedMessage: (projectPath: string, clientMessageId: string, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.STEER_QUEUED_MESSAGE, projectPath, clientMessageId, sessionId) as Promise<boolean>,
+
   startQueuedMessages: (projectPath: string, sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.START_QUEUED_MESSAGES, projectPath, sessionId) as Promise<boolean>,
 

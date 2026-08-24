@@ -18,6 +18,7 @@ describe('HARNESS_CAPABILITIES', () => {
     expect(c.supportsPlanMode).toBe(true)
     expect(c.supportsTodos).toBe(true)
     expect(c.supportsSubagents).toBe(true)
+    expect(c.supportsQueuedSteer).toBe(true)
   })
 
   it('advertises the Codex experiences wired through app-server', () => {
@@ -27,5 +28,6 @@ describe('HARNESS_CAPABILITIES', () => {
     expect(codex.supportsTodos).toBe(false)
     expect(codex.supportsSubagents).toBe(false)
     expect(codex.supportsCompact).toBe(true)
+    expect(codex.supportsQueuedSteer).toBe(true)
   })
 })

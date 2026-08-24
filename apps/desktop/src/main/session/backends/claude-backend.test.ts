@@ -95,6 +95,7 @@ vi.mock('../../agent/claude-query', () => ({
     message: { role: 'user', content: request.content },
     parent_tool_use_id: null,
     session_id: sessionId,
+    priority: request.priority,
   })),
 }))
 
@@ -538,14 +539,21 @@ describe('ClaudeBackend', () => {
 
       // The renderer still believes the session is streaming, so the next user
       // message arrives as priority=next. It must not inherit the stale latch.
-      await backend.send({ content: 'next turn', priority: 'next', clientMessageId: 'cm-1' })
+      const nextSend = backend.send({ content: 'next turn', priority: 'next', clientMessageId: 'cm-1' })
+      await new Promise((r) => setTimeout(r, 0))
 
       expect(hoisted.captured.getInterrupted?.()).toBe(false)
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
+      await nextSend
     })
   })
 
   describe('queued send (priority=next)', () => {
-    it('holds in pendingQueued while a turn is active and flushes on step boundary', async () => {
+    it('keeps user messages host-owned across step boundaries and starts one after the turn settles', async () => {
       const backend = new ClaudeBackend()
       const events: AgentEvent[] = []
       backend.onEvent((e) => events.push(e))
@@ -560,40 +568,90 @@ describe('ClaudeBackend', () => {
       expect(bridgePushSpy).not.toHaveBeenCalled()
 
       hoisted.captured.onStepBoundary?.()
-      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
-      const [, tag] = bridgePushSpy.mock.calls[0]!
-      expect(tag).toBe('user_2')
+      expect(bridgePushSpy).not.toHaveBeenCalled()
 
       const startEvt = events.find((e) => e.type === 'message_start') as Extract<AgentEvent, { type: 'message_start' }> | undefined
       hoisted.captured.emit?.({ type: 'message_complete', messageId: startEvt!.message.id, metadata: {} })
       await firstSend
-    })
-
-    it('pushes directly with tag when no turn is active', async () => {
-      const backend = new ClaudeBackend()
-      await backend.start(makeStartOpts())
-      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
-
-      await backend.send({ content: 'queued', clientMessageId: 'user_q', priority: 'next' })
+      await new Promise((r) => setTimeout(r, 0))
 
       expect(bridgePushSpy).toHaveBeenCalledTimes(1)
-      const [, tag] = bridgePushSpy.mock.calls[0]!
-      expect(tag).toBe('user_q')
+      const [message, tag] = bridgePushSpy.mock.calls[0]!
+      expect(tag).toBeUndefined()
+      expect(message).toMatchObject({ message: { content: 'queued' }, priority: undefined })
+      expect(events).toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'user_2' })
+
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
     })
 
-    it('does not emit message_start or status_change for queued sends', async () => {
+    it('promotes an idle queued request to a normal SDK turn without queue priority', async () => {
       const backend = new ClaudeBackend()
       const events: AgentEvent[] = []
       backend.onEvent((e) => events.push(e))
       await backend.start(makeStartOpts())
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
 
-      await backend.send({ content: 'queued', clientMessageId: 'user_q', priority: 'next' })
+      const sendPromise = backend.send({ content: 'queued', clientMessageId: 'user_q', priority: 'next' })
+      await new Promise((r) => setTimeout(r, 0))
 
-      expect(events.some((e) => e.type === 'message_start')).toBe(false)
-      expect(events.some((e) => e.type === 'status_change')).toBe(false)
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
+      const [message, tag] = bridgePushSpy.mock.calls[0]!
+      expect(tag).toBeUndefined()
+      expect(message).toMatchObject({ priority: undefined })
+      expect(events[0]).toEqual({ type: 'queued_message_consumed', clientMessageId: 'user_q' })
+      expect(events.some((e) => e.type === 'message_start')).toBe(true)
+
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
+      await sendPromise
     })
 
-    it('dequeueMessage removes a queued send held in pendingQueued before it reaches the bridge', async () => {
+    it('releases queued user messages one turn at a time', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      await backend.send({ content: 'turn 2', clientMessageId: 'user_2', priority: 'next' })
+      await backend.send({ content: 'turn 3', clientMessageId: 'user_3', priority: 'later' })
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
+      await firstSend
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
+      expect(bridgePushSpy.mock.calls[0]?.[0]).toMatchObject({ message: { content: 'turn 2' } })
+      hoisted.captured.onStepBoundary?.()
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
+
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(bridgePushSpy).toHaveBeenCalledTimes(2)
+      expect(bridgePushSpy.mock.calls[1]?.[0]).toMatchObject({ message: { content: 'turn 3' } })
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
+    })
+
+    it('dequeueMessage removes a host-owned queued send before the current turn settles', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
@@ -608,26 +666,56 @@ describe('ClaudeBackend', () => {
       hoisted.captured.onStepBoundary?.()
       expect(bridgePushSpy).not.toHaveBeenCalled()
 
-      hoisted.captured.emit?.({ type: 'message_complete', messageId: 'msg_any' })
-      hoisted.captured.iterationDone?.resolve()
-      await backend.close().catch(() => {})
-      await firstSend.catch(() => {})
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
+      await firstSend
+      await new Promise((r) => setTimeout(r, 0))
+      expect(bridgePushSpy).not.toHaveBeenCalled()
     })
 
-    it('emits queued_message_consumed when the bridge iterator consumes a tagged message', async () => {
+    it('converts one host-owned queued message to SDK priority now', async () => {
       const backend = new ClaudeBackend()
       const events: AgentEvent[] = []
       backend.onEvent((e) => events.push(e))
       await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
 
-      await backend.send({ content: 'queued', clientMessageId: 'user_q', priority: 'next' })
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2' })
+
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
+      const [message, tag] = bridgePushSpy.mock.calls[0]!
+      expect(tag).toBe('user_2')
+      expect(message).toMatchObject({ message: { content: 'steer this' }, priority: 'now' })
+
+      hoisted.captured.onStepBoundary?.()
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
 
       const bridge = hoisted.captured.bridge as AsyncIterable<unknown>
       const iterator = bridge[Symbol.asyncIterator]()
       await iterator.next()
+      await iterator.next()
+      expect(events).toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'user_2' })
 
-      const consumedEvent = events.find((e) => e.type === 'queued_message_consumed') as Extract<AgentEvent, { type: 'queued_message_consumed' }> | undefined
-      expect(consumedEvent?.clientMessageId).toBe('user_q')
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
+      await firstSend
+    })
+
+    it('rejects queued steer when there is no active Claude turn', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+
+      await expect(backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'missing' }))
+        .rejects.toThrow('active Claude turn')
     })
   })
 

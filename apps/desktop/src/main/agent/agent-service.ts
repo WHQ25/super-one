@@ -1793,6 +1793,21 @@ export class AgentService {
       return session.dequeueMessage(clientMessageId)
     })
 
+    ipcMain.handle(AgentIpcChannels.STEER_QUEUED_MESSAGE, async (_event, projectPath: string, clientMessageId: string, sessionId?: string) => {
+      this.throwIfRemoteLocked(projectPath)
+      const session = sessionId
+        ? this.sessionManager?.getSession(sessionId)
+        : this.sessionManager?.getActiveSession(projectPath)
+      if (!session || session.snapshot.projectPath !== projectPath) return false
+      const harnessId = session.snapshot.harnessId
+      if (harnessId !== 'claude' && harnessId !== 'codex') return false
+      await session.dispatchBackendCommand({
+        kind: harnessId === 'claude' ? 'claude.steer_queued' : 'codex.steer_queued',
+        clientMessageId,
+      })
+      return true
+    })
+
     ipcMain.handle(AgentIpcChannels.START_QUEUED_MESSAGES, async (_event, projectPath: string, sessionId?: string) => {
       this.throwIfRemoteLocked(projectPath)
       const session = sessionId
@@ -3112,6 +3127,7 @@ export class AgentService {
 
     ipcMain.removeHandler(AgentIpcChannels.SEND_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.DEQUEUE_MESSAGE)
+    ipcMain.removeHandler(AgentIpcChannels.STEER_QUEUED_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.START_QUEUED_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)

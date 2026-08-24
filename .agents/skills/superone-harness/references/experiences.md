@@ -44,7 +44,7 @@ same claim, and the two drift.
 | Sandbox toggle | ✅ off/on/auto | folded into presets | ❌ | ❌ | ✅ off/on | ❌ |
 | Slash commands | ✅ | ✅ | ✅ | ✅ | host + `.cursor` FS | ❌ |
 | Session recap | ❌ | ❌ | ✅ grok only | ❌ | ❌ | ❌ |
-| Steer mid-turn | — | ✅ | ❌ queue only | — | — | — |
+| Steer mid-turn | ✅ `priority: now` | ✅ | ❌ queue only | — | — | — |
 | Typed failure code | ✅ SDK enum | ⚠️ text + retry count | ⚠️ JSON-RPC code + status | ⚠️ SDK error name | ⚠️ text only | ⚠️ text only |
 
 ---

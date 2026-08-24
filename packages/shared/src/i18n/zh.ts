@@ -1363,6 +1363,7 @@ export const zh: Messages = {
     dropToAttach: '拖入图片或 PDF 以添加附件',
     queuedActions: {
       start: '开始处理排队消息',
+      steer: '立即引导',
       edit: '编辑排队消息',
       delete: '删除排队消息',
     },

@@ -25,6 +25,8 @@ export interface HarnessCapabilities {
   supportsCompact: boolean
   /** Streams content via streaming tool input previews (Edit/Write/etc). */
   supportsStreamingToolInput: boolean
+  /** Can convert a SuperOne-held queued user message into an active-turn steer. */
+  supportsQueuedSteer: boolean
   /**
    * Accepts working directories beyond the session cwd.
    *
@@ -45,6 +47,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsCompact: true,
     supportsStreamingToolInput: true,
+    supportsQueuedSteer: true,
     // SDK `additionalDirectories`.
     supportsAdditionalDirs: true,
     displayName: 'Claude',
@@ -56,6 +59,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: false,
     supportsCompact: true,
     supportsStreamingToolInput: false,
+    supportsQueuedSteer: true,
     // sandbox_workspace_write.writable_roots, re-sent every turn.
     supportsAdditionalDirs: true,
     displayName: 'Codex',
@@ -70,6 +74,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: false,
     supportsCompact: false,
     supportsStreamingToolInput: false,
+    supportsQueuedSteer: false,
     // session/new additionalDirectories, gated per agent capability.
     supportsAdditionalDirs: true,
     displayName: 'Others',
@@ -81,6 +86,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsCompact: true,
     supportsStreamingToolInput: false,
+    supportsQueuedSteer: false,
     // Single `directory` only.
     supportsAdditionalDirs: false,
     displayName: 'OpenCode',
@@ -93,6 +99,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsCompact: false,
     supportsStreamingToolInput: true,
+    supportsQueuedSteer: false,
     // Single cwd; multi-root parked in the harness design doc.
     supportsAdditionalDirs: false,
     displayName: 'Cursor',
@@ -114,6 +121,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsCompact: true,
     supportsStreamingToolInput: false,
+    supportsQueuedSteer: false,
     // Single cwd.
     supportsAdditionalDirs: false,
     displayName: 'DeepSeek',

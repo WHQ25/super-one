@@ -777,6 +777,125 @@ describe('CodexBackend send()', () => {
     await pending
   })
 
+  it('removes a durable queued message and steers it into the active turn', async () => {
+    service.steerMock.mockClear()
+    const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
+    const request = vi.fn(async (method: string) => method === 'thread/queue/add'
+      ? { queuedSubmission: { id: 'submission-2' } }
+      : {})
+    const session = (backend as unknown as {
+      session: {
+        connectionHandle: unknown
+        threadId: string | null
+        steerFn: ((input: unknown) => Promise<void>) | null
+      }
+    }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-1'
+    session.steerFn = async () => {}
+
+    await backend.send({ content: 'second', priority: 'next', clientMessageId: 'u2', assistantMessageId: 'a2' })
+    await backend.handleCommand({ kind: 'codex.steer_queued', clientMessageId: 'u2' })
+
+    expect(request).toHaveBeenCalledWith('thread/queue/delete', {
+      threadId: 'thread-1', queuedSubmissionId: 'submission-2',
+    })
+    expect(service.steerMock).toHaveBeenCalledWith(session, [
+      { type: 'text', text: 'second', text_elements: [] },
+    ])
+    expect(events).toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'u2' })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_start',
+      message: expect.objectContaining({ id: 'a2' }),
+    }))
+    expect(service.capturedCallbacks?.hasQueuedMessages?.()).toBe(false)
+
+    service.resolveRun(makeResult())
+    await pending
+  })
+
+  it('defers queue refresh notifications until an in-flight steer conversion settles', async () => {
+    let resolveSteer!: () => void
+    service.steerMock.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSteer = resolve }))
+    const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
+    const request = vi.fn(async (method: string) => {
+      if (method === 'thread/queue/add') return { queuedSubmission: { id: 'submission-2' } }
+      if (method === 'thread/queue/list') return { data: [], nextCursor: null }
+      return {}
+    })
+    const session = (backend as unknown as {
+      session: {
+        connectionHandle: unknown
+        threadId: string | null
+        steerFn: ((input: unknown) => Promise<void>) | null
+        queueChangedFn: ((threadId: string) => void) | null
+      }
+    }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-1'
+    session.steerFn = async () => {}
+
+    await backend.send({ content: 'second', priority: 'next', clientMessageId: 'u2', assistantMessageId: 'a2' })
+    const steering = backend.handleCommand({ kind: 'codex.steer_queued', clientMessageId: 'u2' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    session.queueChangedFn?.('thread-1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(request.mock.calls.some(([method]) => method === 'thread/queue/list')).toBe(false)
+
+    resolveSteer()
+    await steering
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(request.mock.calls.some(([method]) => method === 'thread/queue/list')).toBe(true)
+    expect(events.filter((event) => event.type === 'queued_message_consumed')).toHaveLength(1)
+    expect(service.capturedCallbacks?.hasQueuedMessages?.()).toBe(false)
+
+    service.resolveRun(makeResult())
+    await pending
+  })
+
+  it('restores the durable queue when converting it to steer fails', async () => {
+    service.steerMock.mockRejectedValueOnce(new Error('steer rejected'))
+    const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
+    let addCount = 0
+    const request = vi.fn(async (method: string) => {
+      if (method === 'thread/queue/add') {
+        addCount += 1
+        return { queuedSubmission: { id: `submission-${addCount}` } }
+      }
+      return {}
+    })
+    const session = (backend as unknown as {
+      session: {
+        connectionHandle: unknown
+        threadId: string | null
+        steerFn: ((input: unknown) => Promise<void>) | null
+      }
+    }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-1'
+    session.steerFn = async () => {}
+
+    await backend.send({ content: 'second', priority: 'next', clientMessageId: 'u2', assistantMessageId: 'a2' })
+    await expect(backend.handleCommand({ kind: 'codex.steer_queued', clientMessageId: 'u2' }))
+      .rejects.toThrow('steer rejected')
+
+    expect(request).toHaveBeenCalledTimes(3)
+    expect(request).toHaveBeenLastCalledWith('thread/queue/add', expect.objectContaining({
+      threadId: 'thread-1', clientUserMessageId: 'u2',
+    }))
+    expect(events).not.toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'u2' })
+    expect(service.capturedCallbacks?.hasQueuedMessages?.()).toBe(true)
+
+    await expect(backend.dequeueMessage('u2')).resolves.toBe(true)
+    expect(request).toHaveBeenLastCalledWith('thread/queue/delete', {
+      threadId: 'thread-1', queuedSubmissionId: 'submission-2',
+    })
+
+    service.resolveRun(makeResult())
+    await pending
+  })
+
   it('re-arms streaming when the live stream drains a queued message after a turn boundary', async () => {
     const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
     const request = vi.fn(async (method: string) => method === 'thread/queue/add'

@@ -1225,6 +1225,22 @@ export class Session implements SessionContract {
         await this.backend.handleCommand(cmd)
         return
       }
+      case 'codex.steer_queued': {
+        if (this.harnessId !== 'codex' || !this.isStreaming()) {
+          throw new Error('Queued message can only steer an active Codex turn')
+        }
+        if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
+        await this.backend.handleCommand(cmd)
+        return
+      }
+      case 'claude.steer_queued': {
+        if (this.harnessId !== 'claude' || !this.isStreaming()) {
+          throw new Error('Queued message can only steer an active Claude turn')
+        }
+        if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
+        await this.backend.handleCommand(cmd)
+        return
+      }
       case 'codex.plan_approval': {
         this.applyCodexPlanApprovalToMessage(cmd.messageId, { status: cmd.status, ...(cmd.feedback ? { feedback: cmd.feedback } : {}) })
         this.forwardEvent({

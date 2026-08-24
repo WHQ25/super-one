@@ -5,7 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useTranslation } from 'react-i18next'
-import { ArrowDown, GitFork, PenLine, Play, Smartphone, Trash2 } from 'lucide-react'
+import { ArrowDown, GitFork, PenLine, Play, ShipWheel, Smartphone, Trash2 } from 'lucide-react'
 import {
   catalogIdForSessionProvider,
   isCatalogHarnessDisabled,
@@ -43,6 +43,7 @@ import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 interface ChatContentProps {
@@ -212,16 +213,21 @@ function ChatTranscript({
     preferredProvider: s.preferredProvider,
   })))
 
-  const { editQueuedMessage, deleteQueuedMessage, startQueuedMessages, dismissCompactError } = useChatStore(useShallow((s) => ({
+  const { editQueuedMessage, deleteQueuedMessage, steerQueuedMessage, startQueuedMessages, dismissCompactError } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,
     deleteQueuedMessage: s.deleteQueuedMessage,
+    steerQueuedMessage: s.steerQueuedMessage,
     startQueuedMessages: s.startQueuedMessages,
     dismissCompactError: s.dismissCompactError,
   })))
   const queueTarget = scope ?? undefined
-  const canStartCodexQueue = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
-    && sessionStatus !== 'streaming'
-    && !parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')
+  const queueProvider = resolveProvider({ sessionProvider, preferredProvider })
+  const isLocalQueue = !parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')
+  const canSteerQueue = isLocalQueue
+    && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteer
+    && sessionStatus === 'streaming'
+  const isLocalCodexQueue = isLocalQueue && queueProvider === 'codex'
+  const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
 
   const prevScrollHeightRef = useRef(0)
   const [expandLevel, setExpandLevel] = useState(0)
@@ -422,6 +428,11 @@ function ChatTranscript({
                     {index === 0 && canStartCodexQueue && (
                       <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.start')} onClick={() => void startQueuedMessages(queueTarget)}>
                         <Play className="size-3" />
+                      </IconButton>
+                    )}
+                    {canSteerQueue && (
+                      <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steer')} onClick={() => void steerQueuedMessage(msg.id, queueTarget)}>
+                        <ShipWheel />
                       </IconButton>
                     )}
                     <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.edit')} onClick={() => editQueuedMessage(msg.id, queueTarget)}>

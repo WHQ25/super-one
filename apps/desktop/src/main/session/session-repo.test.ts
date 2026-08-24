@@ -480,6 +480,58 @@ describe('session-repo', () => {
     })
   })
 
+  describe('selected_model / selected_effort persistence', () => {
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
+    ]
+
+    it('round-trips the per-session model + effort pick', () => {
+      saveSessionStateBySid({
+        sid: 's-model', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages, totalCostUsd: 0, contextTokens: 0,
+        selectedModel: 'claude-opus-5', selectedEffort: 'high',
+      })
+      const loaded = loadSessionStateBySid('s-model')
+      expect(loaded?.record.selectedModel).toBe('claude-opus-5')
+      expect(loaded?.record.selectedEffort).toBe('high')
+    })
+
+    it('persists an explicit effort clear instead of resurrecting the old one', () => {
+      saveSessionStateBySid({
+        sid: 's-clear-effort', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages, totalCostUsd: 0, contextTokens: 0,
+        selectedModel: 'claude-opus-5', selectedEffort: 'high',
+      })
+      // setSelectedEffort(undefined) / picking a model with no default effort both
+      // reach setSessionSettings as `effort: null`. A COALESCE guard here would
+      // swallow that and cold restore would revive 'high'.
+      saveSessionStateBySid({
+        sid: 's-clear-effort', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages, totalCostUsd: 0, contextTokens: 10,
+        selectedModel: 'claude-opus-5', selectedEffort: null,
+      })
+      const loaded = loadSessionStateBySid('s-clear-effort')
+      expect(loaded?.record.selectedModel).toBe('claude-opus-5')
+      expect(loaded?.record.selectedEffort).toBeNull()
+    })
+
+    it('clears the pick on a harness switch — a Claude model id is meaningless under Codex', () => {
+      saveSessionStateBySid({
+        sid: 's-switch-model', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages, totalCostUsd: 0, contextTokens: 0,
+        selectedModel: 'claude-opus-5', selectedEffort: 'high',
+      })
+      saveSessionStateBySid({
+        sid: 's-switch-model', projectPath: '/tmp/proj', providerId: 'codex-base',
+        messages, totalCostUsd: 0, contextTokens: 0,
+        selectedModel: null, selectedEffort: null,
+      })
+      const loaded = loadSessionStateBySid('s-switch-model')
+      expect(loaded?.record.selectedModel).toBeNull()
+      expect(loaded?.record.selectedEffort).toBeNull()
+    })
+  })
+
   describe('listSessionRecordsByProject', () => {
     it('returns empty for unknown project', () => {
       getProjectIdMock.mockReturnValue(null)

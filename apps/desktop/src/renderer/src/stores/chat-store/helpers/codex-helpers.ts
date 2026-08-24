@@ -10,6 +10,7 @@ import type {
   ModelOption,
 } from '@superone/shared/agent-types'
 import type { ChatStore, PerSessionState, ProjectState } from '../types'
+import { findLatestCodexUsage, hasValidCodexUsageSnapshot } from './codex-usage'
 import { _getEffectiveSessionId } from './persistence'
 import { defaultPrefsCache } from './prefs-cache'
 import { resolveProvider } from './provider-routing'
@@ -45,18 +46,6 @@ export function getCodexUsageStepTokens(usage: CodexUsageInfo): { input: number;
   }
 }
 
-export function hasValidCodexUsageSnapshot(usage: CodexUsageInfo | null): usage is CodexUsageInfo {
-  return Boolean(
-    usage
-      && Number.isFinite(usage.totalInputTokens)
-      && Number.isFinite(usage.totalCachedInputTokens)
-      && Number.isFinite(usage.totalOutputTokens)
-      && Number.isFinite(usage.lastInputTokens)
-      && Number.isFinite(usage.lastCachedInputTokens)
-      && Number.isFinite(usage.lastOutputTokens)
-  )
-}
-
 function isSameCodexUsageSnapshot(a: CodexUsageInfo | null, b: CodexUsageInfo | null): boolean {
   return Boolean(
     hasValidCodexUsageSnapshot(a)
@@ -83,14 +72,6 @@ export function accumulateCodexFooterTokens(
     input: current.input + step.input,
     output: current.output + step.output,
   }
-}
-
-export function findLatestCodexUsage(messages: ChatMessage[]): CodexUsageInfo | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const usage = messages[i].metadata?.codex?.usage
-    if (hasValidCodexUsageSnapshot(usage as CodexUsageInfo | null)) return usage as CodexUsageInfo
-  }
-  return null
 }
 
 export function parseCodexCommand(input: string): CodexCommand | null {
@@ -413,3 +394,6 @@ export function updateCodexPlanApproval(
     }),
   }
 }
+
+// Re-exported from the leaf module; importers below still take them from here.
+export { findLatestCodexUsage, hasValidCodexUsageSnapshot }

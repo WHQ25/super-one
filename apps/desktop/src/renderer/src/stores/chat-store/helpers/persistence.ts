@@ -2,6 +2,7 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 import { videoGenStatusesFromMessages } from '@/components/chat/media-generation'
 import type { ChatStore, PerSessionState, PersistedSessionState, ProjectState } from '../types'
 import { latestCodexTodoListFromMessages } from './codex-todo'
+import { findLatestCodexUsage } from './codex-usage'
 import { resolveActiveSessionId } from './store-helpers'
 
 /** Legacy SuperOne session ids minted with a codex_local_ prefix (pre-UUID unification). */
@@ -48,6 +49,9 @@ export function _mergePersistedMessages(savedMessages: ChatMessage[], runtimeMes
 export function _mergePersistedSessionState(session: PerSessionState, saved: PersistedSessionState): PerSessionState {
   const mergedMessages = _mergePersistedMessages(saved.messages, session.messages)
   const persistedProvider = saved.provider
+  // Derived Codex fields are not persisted as columns — rebuild from messages.
+  // A live snapshot outranks the rebuild: it can be newer than the last save.
+  const restoredCodexUsage = session.codexUsageSnapshot ?? findLatestCodexUsage(mergedMessages)
   return {
     ...session,
     _title: session._title ?? saved.title ?? null,
@@ -66,8 +70,24 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     openCodeAgentId: session.openCodeAgentId
       ?? saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent
       ?? null,
-    // Rebuild derived UI field — not persisted; cold restore must not leave todos blank.
+    // Durable per-session model/effort. The default stub carries selectedModel: ''
+    // (falsy but NOT nullish), so `??` would keep the empty string and let
+    // applySessionAgentDefaults overwrite the restored pick with a catalog default.
+    // `*UserChosen` guards a live pick made while this hydration was in flight.
+    ...(!session.modelUserChosen && saved.selectedModel
+      ? { selectedModel: saved.selectedModel, modelUserChosen: true }
+      : {}),
+    ...(!session.effortUserChosen && saved.selectedEffort
+      ? { selectedEffort: saved.selectedEffort, effortUserChosen: true }
+      : {}),
+    // Rebuild derived UI fields — not persisted; cold restore must not leave the
+    // todo popup blank or the Codex footer without a context window.
     _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),
+    codexUsageSnapshot: restoredCodexUsage,
+    contextWindow: session.contextWindow
+      ?? (restoredCodexUsage?.contextWindow && restoredCodexUsage.contextWindow > 0
+        ? restoredCodexUsage.contextWindow
+        : null),
     videoGenStatuses: {
       ...videoGenStatusesFromMessages(mergedMessages),
       ...session.videoGenStatuses,
@@ -99,6 +119,14 @@ export function _mergeHydratedSessionState(
     apiProviderId: session.apiProviderId ?? hydrated.apiProviderId,
     acpAgentId: session.acpAgentId ?? hydrated.acpAgentId,
     openCodeAgentId: session.openCodeAgentId ?? hydrated.openCodeAgentId,
+    // Same restore as _mergePersistedSessionState — `hydrated` already carries the
+    // persisted pick, and `...session` above would otherwise pin the stub's ''.
+    ...(!session.modelUserChosen && hydrated.selectedModel
+      ? { selectedModel: hydrated.selectedModel, modelUserChosen: hydrated.modelUserChosen }
+      : {}),
+    ...(!session.effortUserChosen && hydrated.selectedEffort
+      ? { selectedEffort: hydrated.selectedEffort, effortUserChosen: hydrated.effortUserChosen }
+      : {}),
     // Always re-derive: null means "cleared / all completed", not "unset".
     // `?? hydrated` would resurrect a finished list after a live clear.
     _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),

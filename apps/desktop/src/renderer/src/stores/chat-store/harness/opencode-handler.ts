@@ -8,6 +8,27 @@ export function resolveDefaultOpenCodeSelection(models: ModelOption[]): { modelI
   return { modelId: model?.id ?? '', effort }
 }
 
+/**
+ * Reconcile a session's OpenCode model/effort against the live catalog: keep the
+ * pick while the catalog still offers it, otherwise fall back to the default.
+ * Shared by applyOpenCodeResources and switchSession's cold restore — the reducer
+ * does not re-run for an already-loaded catalog, so restore must validate itself.
+ */
+export function reconcileOpenCodeSelection(
+  models: ModelOption[],
+  selectedModel: string | undefined,
+  selectedEffort: EffortLevel | undefined,
+): { modelId: string; effort?: EffortLevel; matched: boolean } {
+  const fallback = resolveDefaultOpenCodeSelection(models)
+  const matched = models.find((model) => model.id === selectedModel)
+  const model = matched ?? models.find((item) => item.id === fallback.modelId)
+  const levels = model?.supportedEffortLevels ?? []
+  const effort = selectedEffort && levels.includes(selectedEffort)
+    ? selectedEffort
+    : levels.includes('medium') ? 'medium' : levels[0]
+  return { modelId: model?.id ?? fallback.modelId, effort, matched: Boolean(matched) }
+}
+
 export function resolveDefaultOpenCodeAgent(agents: OpenCodeResources['agents']): string | null {
   return agents.find((agent) => agent.id === 'build')?.id ?? agents[0]?.id ?? null
 }
@@ -20,24 +41,22 @@ export function applyOpenCodeResources(s: ChatStore, resources: OpenCodeResource
     if (!activeSid) continue
     const active = activeSid ? project._sessions[activeSid] : undefined
     if (!active || (active.sessionProvider !== 'opencode' && active.preferredProvider !== 'opencode')) continue
-    const selected = resources.models.find((model) => model.id === active.selectedModel)
-    const fallback = resolveDefaultOpenCodeSelection(resources.models)
-    const model = selected ?? resources.models.find((item) => item.id === fallback.modelId)
-    const levels = model?.supportedEffortLevels ?? []
-    const effort = active.selectedEffort && levels.includes(active.selectedEffort)
-      ? active.selectedEffort
-      : levels.includes('medium') ? 'medium' : levels[0]
+    const { modelId, effort, matched } = reconcileOpenCodeSelection(
+      resources.models,
+      active.selectedModel,
+      active.selectedEffort,
+    )
     const agentId = resources.agents.some((agent) => agent.id === active.openCodeAgentId)
       ? active.openCodeAgentId
       : resolveDefaultOpenCodeAgent(resources.agents)
-    if (selected && active.selectedEffort === effort && active.openCodeAgentId === agentId) continue
+    if (matched && active.selectedEffort === effort && active.openCodeAgentId === agentId) continue
     projects[path] = {
       ...project,
       _sessions: {
         ...project._sessions,
         [activeSid]: {
           ...active,
-          selectedModel: model?.id ?? fallback.modelId,
+          selectedModel: modelId,
           selectedEffort: effort,
           openCodeAgentId: agentId,
         },

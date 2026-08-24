@@ -325,6 +325,20 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
         WHEN excluded.provider_id IS NOT sessions.provider_id THEN excluded.acp_agent_id
         ELSE COALESCE(excluded.acp_agent_id, sessions.acp_agent_id)
       END,
+      -- Deliberately NOT COALESCE-guarded, unlike provider_session_id / acp_agent_id
+      -- above, because clearing is reachable from the UI and must survive:
+      -- setSelectedEffort(undefined) sends effort: null, and setSelectedModel sends
+      -- effort: null when the new model has no default. COALESCE swallows both and
+      -- resurrects the old effort on cold restore, onto a model that may not support
+      -- it. A null here is the session's "cleared", not "not yet known".
+      --
+      -- On the successful same-provider hydration path Session.model/effort are
+      -- seeded from this row (SessionManager.createSession / resumeSession), so a
+      -- stale-undefined write is not the normal case. It is not an absolute
+      -- invariant: createSession swallows loadSession errors, and hydration is
+      -- skipped when provider_id differs. Distinguishing "unknown" from "cleared"
+      -- would need a dirty/known sentinel -- null alone cannot carry both, and
+      -- honouring the explicit clear is the behaviour users actually hit.
       selected_model = excluded.selected_model,
       selected_effort = excluded.selected_effort
   `)

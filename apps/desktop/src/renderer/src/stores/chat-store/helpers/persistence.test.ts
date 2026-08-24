@@ -166,6 +166,84 @@ describe('_mergePersistedSessionState', () => {
     const merged = _mergePersistedSessionState(sess, saved as never)
     expect(merged.lastAssistantMessageId).toBe('a2')
   })
+  it('restores selectedModel/selectedEffort so switchSession does not reapply catalog defaults', () => {
+    const sess = createDefaultPerSessionState()
+    expect(sess.selectedModel).toBe('')
+    const saved = {
+      messages: [], totalCostUsd: 0, contextTokens: 0,
+      isWorktree: false, gitBranch: null, worktreePath: null, provider: 'claude',
+      selectedModel: 'claude-opus-5',
+      selectedEffort: 'high',
+    }
+    const merged = _mergePersistedSessionState(sess, saved as never)
+    expect(merged.selectedModel).toBe('claude-opus-5')
+    expect(merged.selectedEffort).toBe('high')
+    // Without these flags _reapplyAgentDefaultsToSessions would clobber the pick.
+    expect(merged.modelUserChosen).toBe(true)
+    expect(merged.effortUserChosen).toBe(true)
+  })
+
+  it('keeps a live user pick made while hydration was in flight', () => {
+    const sess = { ...createDefaultPerSessionState(), selectedModel: 'chosen-live', modelUserChosen: true }
+    const saved = {
+      messages: [], totalCostUsd: 0, contextTokens: 0,
+      isWorktree: false, gitBranch: null, worktreePath: null, provider: 'claude',
+      selectedModel: 'claude-opus-5',
+    }
+    const merged = _mergePersistedSessionState(sess, saved as never)
+    expect(merged.selectedModel).toBe('chosen-live')
+  })
+
+  it('leaves model/effort untouched when the persisted row has none', () => {
+    const sess = createDefaultPerSessionState()
+    const saved = { messages: [], totalCostUsd: 0, contextTokens: 0,
+      isWorktree: false, gitBranch: null, worktreePath: null, provider: 'claude', }
+    const merged = _mergePersistedSessionState(sess, saved as never)
+    expect(merged.selectedModel).toBe('')
+    expect(merged.modelUserChosen).toBe(false)
+    expect(merged.effortUserChosen).toBe(false)
+  })
+  it('rebuilds codexUsageSnapshot + contextWindow from persisted messages', () => {
+    const sess = createDefaultPerSessionState()
+    const saved = {
+      messages: [{
+        id: 'a1', role: 'assistant' as const, status: 'complete' as const, createdAt: '', providerId: 'codex',
+        content: [],
+        metadata: {
+          codex: {
+            threadId: 't1',
+            usage: {
+              totalInputTokens: 1320345, totalCachedInputTokens: 1155840, totalOutputTokens: 4200,
+              lastInputTokens: 70105, lastCachedInputTokens: 69376, lastOutputTokens: 300,
+              reasoningOutputTokens: 120, contextWindow: 258400,
+            },
+            items: [],
+          },
+        },
+      }],
+      totalCostUsd: 0, contextTokens: 0,
+      isWorktree: false, gitBranch: null, worktreePath: null, provider: 'codex',
+    }
+    const merged = _mergePersistedSessionState(sess, saved as never)
+    expect(merged.codexUsageSnapshot?.lastCachedInputTokens).toBe(69376)
+    expect(merged.contextWindow).toBe(258400)
+  })
+
+  it('keeps a live codex usage snapshot over the persisted one', () => {
+    const live = {
+      totalInputTokens: 1, totalCachedInputTokens: 0, totalOutputTokens: 1,
+      lastInputTokens: 1, lastCachedInputTokens: 0, lastOutputTokens: 1,
+      reasoningOutputTokens: 0, contextWindow: 999,
+    }
+    const sess = { ...createDefaultPerSessionState(), codexUsageSnapshot: live, contextWindow: 999 }
+    const saved = {
+      messages: [], totalCostUsd: 0, contextTokens: 0,
+      isWorktree: false, gitBranch: null, worktreePath: null, provider: 'codex',
+    }
+    const merged = _mergePersistedSessionState(sess as never, saved as never)
+    expect(merged.contextWindow).toBe(999)
+    expect(merged.codexUsageSnapshot).toBe(live)
+  })
 })
 
 describe('_mergeHydratedSessionState', () => {
@@ -204,6 +282,22 @@ describe('_mergeHydratedSessionState', () => {
     // Newest message is live completed-only → derived null, not the hydrated open list.
     expect(merged._latestCodexTodoList).toBeNull()
   })
+  it('carries the persisted model/effort through the concurrent-modification merge path', () => {
+    const stub = createDefaultPerSessionState()
+    const hydrated = {
+      ...createDefaultPerSessionState(),
+      selectedModel: 'claude-opus-5',
+      selectedEffort: 'high' as const,
+      modelUserChosen: true,
+      effortUserChosen: true,
+      _historyHydrated: true,
+    }
+    const merged = _mergeHydratedSessionState(stub, hydrated)
+    expect(merged.selectedModel).toBe('claude-opus-5')
+    expect(merged.selectedEffort).toBe('high')
+    expect(merged.modelUserChosen).toBe(true)
+  })
+
 })
 
 describe('_ensureSessionHydrated', () => {

@@ -28,7 +28,6 @@ import {
 } from './helpers/provider-routing'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
-import { videoGenStatusesFromMessages } from '@/components/chat/media-generation'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '@superone/shared/agent-types'
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
@@ -222,6 +221,7 @@ import {
   _hydrateSessionState,
   _isLocalCodexSessionId,
   _mergeHydratedSessionState,
+  _mergePersistedSessionState,
 } from './helpers/persistence'
 
 export {
@@ -354,7 +354,7 @@ import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handle
 import { applyAcpResources, connectAcpResources, getCachedAcpCatalog, refreshAcpModels, sessionPatchFromAcpCatalog } from './harness/acp-handler'
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
-import { applyOpenCodeResources, resolveDefaultOpenCodeAgent, resolveDefaultOpenCodeSelection } from './harness/opencode-handler'
+import { applyOpenCodeResources, reconcileOpenCodeSelection, resolveDefaultOpenCodeAgent } from './harness/opencode-handler'
 import { applyCursorResources } from './harness/cursor-handler'
 import { applyDeepseekResources } from './harness/deepseek-handler'
 
@@ -877,13 +877,13 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     let savedProvider: string | null = null
     let savedApiProviderId: string | null = null
     let savedAcpAgentId: string | null = null
-    let savedSelectedModel: string | null = null
-    let savedSelectedEffort: import('@superone/shared/agent-types').EffortLevel | null = null
     let savedOpenCodeAgentId: string | null = null
     let savedTitle: string | null = null
+    let savedState: PersistedSessionState | null = null
     try {
       const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
       if (saved) {
+        savedState = saved
         savedMessages = saved.messages
         savedCost = saved.totalCostUsd
         savedTokens = saved.contextTokens
@@ -892,15 +892,12 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         savedWorktreePath = saved.worktreePath ?? undefined
         savedApiProviderId = saved.apiProviderId ?? null
         savedAcpAgentId = saved.acpAgentId ?? null
-        savedSelectedModel = saved.selectedModel ?? null
-        savedSelectedEffort = saved.selectedEffort ?? null
         savedOpenCodeAgentId = saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent ?? null
         savedTitle = saved.title ?? null
       }
     } catch (err) { console.warn('[chat] loadSessionState failed:', err) }
 
     const restoredProvider: ChatProvider = (savedProvider as ChatProvider) ?? DEFAULT_PROVIDER
-    const restoredCodexUsage = findLatestCodexUsage(savedMessages)
 
     const freshProject = getProject(get())
     const freshActiveSession = getActivePerSession(get())
@@ -909,41 +906,56 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
 
     const defaultPermissionMode = await _getDefaultPermissionMode()
-    const restoredSession: PerSessionState = {
+    const baseSession: PerSessionState = {
       ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
-      cwd: _getSessionCwd(activeProject, { _worktreePath: savedWorktreePath ?? null, _worktreeRemoved: false }),
-      messages: savedMessages,
-      totalCostUsd: savedCost,
-      contextTokens: savedTokens,
-      contextWindow: restoredCodexUsage?.contextWindow && restoredCodexUsage.contextWindow > 0
-        ? restoredCodexUsage.contextWindow
-        : null,
-      codexUsageSnapshot: restoredCodexUsage,
-      _gitBranch: savedGitBranch,
-      _worktreePath: savedWorktreePath ?? null,
-      preferredProvider: restoredProvider,
-      sessionProvider: restoredProvider,
-      lastAssistantMessageId:
-        savedMessages.findLast((m) => m.role === 'assistant' && m.providerId !== 'system')?.id ?? null,
-      apiProviderId: savedApiProviderId,
-      acpAgentId: restoredProvider === 'acp' ? savedAcpAgentId : null,
-      openCodeAgentId: restoredProvider === 'opencode'
-        ? savedOpenCodeAgentId ?? resolveDefaultOpenCodeAgent(get().harnessResources.opencode?.agents ?? [])
-        : null,
-      _title: savedTitle,
-      _historyHydrated: true,
-      videoGenStatuses: videoGenStatusesFromMessages(savedMessages),
       permissionMode: defaultPermissionMode,
-      ...(savedSelectedModel ? { selectedModel: savedSelectedModel, modelUserChosen: true } : {}),
-      ...(savedSelectedEffort ? { selectedEffort: savedSelectedEffort, effortUserChosen: true } : {}),
+      cwd: _getSessionCwd(activeProject, { _worktreePath: savedWorktreePath ?? null, _worktreeRemoved: false }),
     }
+    // ONE restore path. Everything derived from the persisted row + its messages
+    // (messages, cost, tokens, title, model/effort, codex usage + todo list,
+    // videoGenStatuses, …) is owned by _mergePersistedSessionState, shared with the
+    // lazy-hydration path in Case A. Building this object by hand is what let the
+    // two paths drift field by field. Only fields this call site alone can know
+    // stay below: the provider fallback and the provider-gated agent ids.
+    const restoredSession: PerSessionState = savedState
+      ? {
+          ..._mergePersistedSessionState(baseSession, savedState),
+          preferredProvider: restoredProvider,
+          sessionProvider: restoredProvider,
+          acpAgentId: restoredProvider === 'acp' ? savedAcpAgentId : null,
+          openCodeAgentId: restoredProvider === 'opencode'
+            ? savedOpenCodeAgentId ?? resolveDefaultOpenCodeAgent(get().harnessResources.opencode?.agents ?? [])
+            : null,
+        }
+      : {
+          ...baseSession,
+          preferredProvider: restoredProvider,
+          sessionProvider: restoredProvider,
+          _historyHydrated: true,
+        }
     if (restoredProvider === 'acp' && savedAcpAgentId) {
       const catalog = getCachedAcpCatalog(get().harnessResources.acp, savedAcpAgentId)
       if (catalog) Object.assign(restoredSession, sessionPatchFromAcpCatalog(catalog))
     } else if (restoredProvider === 'opencode') {
-      const selection = resolveDefaultOpenCodeSelection(get().harnessResources.opencode?.models ?? [])
-      if (selection.modelId) restoredSession.selectedModel = selection.modelId
-      restoredSession.selectedEffort = selection.effort
+      // A restored pick outranks the catalog default (assigning unconditionally
+      // here reopened every OpenCode session at default), but only while the
+      // catalog still offers it — applyOpenCodeResources does not re-run for an
+      // already-loaded catalog, so a removed model would otherwise stick.
+      //
+      // Gate on the resources object, NOT on models.length: null/undefined means
+      // "not probed yet" (keep the pick; that reducer reconciles on arrival),
+      // while a LOADED-but-empty catalog (no providers configured) is a real
+      // state that must clear the pick — exactly what the reducer does with it.
+      const openCodeResources = get().harnessResources.opencode
+      if (openCodeResources) {
+        const selection = reconcileOpenCodeSelection(
+          openCodeResources.models,
+          restoredSession.selectedModel,
+          restoredSession.selectedEffort,
+        )
+        restoredSession.selectedModel = selection.modelId
+        restoredSession.selectedEffort = selection.effort
+      }
     } else {
       Object.assign(
         restoredSession,

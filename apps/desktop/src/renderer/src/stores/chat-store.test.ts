@@ -2062,6 +2062,41 @@ describe('switchSession Case A (in _sessions)', () => {
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
   })
 
+  it('restores the persisted model/effort instead of catalog defaults on an unhydrated stub', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    // A sidebar / mosaic / live-sync stub: present in _sessions but never hydrated.
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          _sessions: {
+            'ses-a': createDefaultPerSessionState(),
+            'ses-stub': { ...createDefaultPerSessionState(), _historyHydrated: false },
+          },
+        },
+      },
+    })
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'claude',
+      selectedModel: 'claude-opus-5',
+      selectedEffort: 'high',
+    })
+    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+
+    await useChatStore.getState().switchSession('ses-stub')
+
+    const after = useChatStore.getState().projectSessions['/test']._sessions['ses-stub']
+    expect(after.selectedModel).toBe('claude-opus-5')
+    expect(after.selectedEffort).toBe('high')
+    expect(after.modelUserChosen).toBe(true)
+  })
+
   it('preserves the cached target session when switching does not change its state', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
@@ -4007,6 +4042,42 @@ describe('switchSession Case B codex usage restore', () => {
     expect(session.codexUsageSnapshot?.lastCachedInputTokens).toBe(69376)
     expect(mockWindowApp.resumeSession).toHaveBeenCalled()
   })
+
+  it('rebuilds the open codex todo list on cold restore', async () => {
+    setupProject('/test')
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [{
+        id: 'db-codex-todo',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'working' }],
+        status: 'complete',
+        createdAt: '',
+        providerId: 'codex',
+        metadata: {
+          codex: {
+            threadId: 'thread-todo',
+            usage: null,
+            items: [{
+              type: 'todo_list',
+              items: [
+                { text: 'step one', completed: true },
+                { text: 'step two', completed: false },
+              ],
+            }],
+          },
+        },
+      }] as never[],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'codex',
+    })
+
+    await useChatStore.getState().switchSession('db-codex-todo-session')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions['db-codex-todo-session']
+    expect(session._latestCodexTodoList?.items).toHaveLength(2)
+  })
 })
 
 describe('codex run session isolation', () => {
@@ -4153,6 +4224,66 @@ describe('resetSession codex handling', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(isDraftSession(after._activeSessionId)).toBe(true)
     expect(after._sessions[codexSid]).toBeDefined()
+  })
+})
+
+describe('switchSession Case B opencode restore', () => {
+  const models = [
+    { id: 'oc/keeper', name: 'Keeper', supportedEffortLevels: ['low', 'medium', 'high'] },
+    { id: 'oc/default', name: 'Default', isDefault: true, supportedEffortLevels: ['medium'] },
+  ]
+
+  function seedOpenCode(
+    saved: { selectedModel?: string; selectedEffort?: string },
+    resources: unknown = { models, agents: [{ id: 'build', name: 'Build' }] },
+  ): void {
+    setupProject('/test')
+    useChatStore.setState({
+      harnessResources: {
+        ...useChatStore.getState().harnessResources,
+        opencode: resources,
+      } as never,
+    })
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [], totalCostUsd: 0, contextTokens: 0, gitBranch: null,
+      provider: 'opencode', ...saved,
+    })
+  }
+
+  it('keeps a persisted pick the catalog still offers', async () => {
+    seedOpenCode({ selectedModel: 'oc/keeper', selectedEffort: 'high' })
+    await useChatStore.getState().switchSession('oc-keep')
+    const session = useChatStore.getState().projectSessions['/test']._sessions['oc-keep']
+    expect(session.selectedModel).toBe('oc/keeper')
+    expect(session.selectedEffort).toBe('high')
+  })
+
+  it('falls back when the persisted model was removed from the catalog', async () => {
+    seedOpenCode({ selectedModel: 'oc/deleted', selectedEffort: 'high' })
+    await useChatStore.getState().switchSession('oc-stale')
+    const session = useChatStore.getState().projectSessions['/test']._sessions['oc-stale']
+    expect(session.selectedModel).toBe('oc/default')
+    // 'high' is not in the fallback model's supported levels — must not carry over.
+    expect(session.selectedEffort).toBe('medium')
+  })
+
+  it('keeps the pick while the catalog has not been probed yet', async () => {
+    // null resources = not loaded. applyOpenCodeResources reconciles on arrival.
+    seedOpenCode({ selectedModel: 'oc/keeper', selectedEffort: 'high' }, null)
+    await useChatStore.getState().switchSession('oc-unprobed')
+    const session = useChatStore.getState().projectSessions['/test']._sessions['oc-unprobed']
+    expect(session.selectedModel).toBe('oc/keeper')
+    expect(session.selectedEffort).toBe('high')
+  })
+
+  it('clears the pick for a loaded-but-empty catalog', async () => {
+    // Distinct from "not probed": no providers configured. The reducer clears the
+    // selection here, and cold restore must not drift from it.
+    seedOpenCode({ selectedModel: 'oc/keeper', selectedEffort: 'high' }, { models: [], agents: [] })
+    await useChatStore.getState().switchSession('oc-empty')
+    const session = useChatStore.getState().projectSessions['/test']._sessions['oc-empty']
+    expect(session.selectedModel).toBe('')
+    expect(session.selectedEffort).toBeUndefined()
   })
 })
 

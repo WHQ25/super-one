@@ -2029,7 +2029,7 @@ export const zh: Messages = {
         collaborationRequested: '已请求协作',
         startingCollaborationSession: '正在启动会话',
         collaborationSessionStarted: '会话已启动',
-        sendingMessageTo: '正在发送消息给',
+        sendingMessage: '正在发送消息',
         messageSent: '消息已发送',
         retrievingMessages: '正在收信',
         messagesRetrieved: '已取信',

@@ -1942,7 +1942,7 @@ export type Messages = {
         collaborationRequested: string
         startingCollaborationSession: string
         collaborationSessionStarted: string
-        sendingMessageTo: string
+        sendingMessage: string
         messageSent: string
         retrievingMessages: string
         messagesRetrieved: string
@@ -5463,13 +5463,13 @@ export const en: Messages = {
         collaborationRequested: 'Collaboration Requested',
         startingCollaborationSession: 'Starting session',
         collaborationSessionStarted: 'Session Started',
-        sendingMessageTo: 'Sending message to',
+        sendingMessage: 'Sending message',
         messageSent: 'Message Sent',
         retrievingMessages: 'Retrieving messages',
         messagesRetrieved: 'Messages Retrieved',
         messageReceived: 'Message Received',
         receivedMessageCount: '{{count}} Messages Retrieved',
-        noMessages: 'No messages',
+        noMessages: 'No Messages',
         agentCount: '{{count}} agents',
         messageCount: '{{count}} messages',
         remainingCount: '{{count}} remaining',
@@ -5659,13 +5659,13 @@ export const en: Messages = {
         open: 'Open Tab',
         opening: 'Opening Tab',
         snapshot: 'Snapshot',
-        snapshotting: 'Taking snapshot…',
+        snapshotting: 'Taking snapshot',
         query: 'Query',
         querying: 'Querying',
         inspect: 'Inspect',
         inspecting: 'Inspecting',
         screenshot: 'Screenshot',
-        screenshotting: 'Taking screenshot…',
+        screenshotting: 'Taking screenshot',
         click: 'Click',
         clicking: 'Clicking',
         hover: 'Hover',
@@ -5762,7 +5762,7 @@ export const en: Messages = {
         launch: 'Launch App',
         launching: 'Launching App',
         snapshot: 'Snapshot',
-        snapshotting: 'Taking snapshot…',
+        snapshotting: 'Taking snapshot',
         zoom: 'Zoom',
         zooming: 'Zooming',
         query: 'Query',

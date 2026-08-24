@@ -101,7 +101,7 @@ function collabHeaderLabel(
   }
   if (isSend) {
     return isStreaming
-      ? t('chat.toolBlock.collab.sendingMessageTo')
+      ? t('chat.toolBlock.collab.sendingMessage')
       : t('chat.toolBlock.collab.messageSent')
   }
   if (isRetrieve) {
@@ -421,7 +421,7 @@ function SessionCollabToolBlock({
       summaryPeer = { title: peer, sessionId: peerSid }
     }
     label = isStreaming
-      ? t('chat.toolBlock.collab.sendingMessageTo')
+      ? t('chat.toolBlock.collab.sendingMessage')
       : t('chat.toolBlock.collab.messageSent')
     const content = String(params.content ?? '')
     if (content && !isStreaming) {

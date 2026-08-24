@@ -342,6 +342,20 @@ describe('resolveThread fallback', () => {
     }))
   })
 
+  it('stores the effective model returned by thread/start when no model was requested', async () => {
+    const session = makeSession()
+    const mockConnection = {
+      request: vi.fn().mockResolvedValueOnce({
+        thread: { id: 'fresh-thread' },
+        model: 'gpt-5.6-sol',
+      }),
+    } as never
+
+    await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
+
+    expect(session.model).toBe('gpt-5.6-sol')
+  })
+
   it('passes the shared HTTP MCP config into thread/start', async () => {
     const { setSuperoneMcpBridgeRuntime } = await import('../mcp/superone-mcp-stdio-state')
     const { deriveSuperoneMcpSessionToken } = await import('../mcp/superone-mcp-auth')

@@ -460,7 +460,7 @@ export class CodexBackend implements SessionBackend {
         projectPath: opts.projectPath,
         threadId,
         cwd: warm.cwd,
-        model: warm.model,
+        model: warmSession.model,
         reasoningEffort: warm.reasoningEffort,
         permissionPreset: warm.permissionPreset,
         durMs: Date.now() - startedAt,
@@ -471,7 +471,7 @@ export class CodexBackend implements SessionBackend {
         threadId,
         threadReady: true,
         effectiveCwd: warm.cwd,
-        model: warm.model,
+        model: warmSession.model,
         reasoningEffort: warm.reasoningEffort,
         permissionPreset: warm.permissionPreset,
       }
@@ -691,7 +691,7 @@ export class CodexBackend implements SessionBackend {
         turnUsage?: CodexRunResult['turnUsage']
       },
     ): void => {
-      this.finalizeMessage(messageId, { ...opts, model: resolvedModel, startedAt: runStart })
+      this.finalizeMessage(messageId, { ...opts, model: session.model ?? resolvedModel, startedAt: runStart })
     }
     this.swapRunAssistantId = (nextId: string) => {
       finalizeSegment(runningAssistantId, {
@@ -802,7 +802,7 @@ export class CodexBackend implements SessionBackend {
           itemsTail: summarizeCodexItemsForTrace(result.items),
         }, runningAssistantId)
         const turnUsage = this.completedTurnUsage(result.turnUsage)
-        this.recordTurnUsageStats(turnUsage, result.usage, resolvedModel)
+        this.recordTurnUsageStats(turnUsage, result.usage, session.model ?? resolvedModel)
         finalizeSegment(runningAssistantId, {
           finalResponseFallback: finalText,
           threadId: result.threadId,
@@ -819,7 +819,7 @@ export class CodexBackend implements SessionBackend {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        this.recordTurnUsageStats(this.completedTurnUsage(undefined), null, resolvedModel)
+        this.recordTurnUsageStats(this.completedTurnUsage(undefined), null, session.model ?? resolvedModel)
         const isInterrupt = /interrupt|abort/i.test(message)
         if (mode === 'compact' && !compactLifecycleSettled) {
           callbacks.onCompactionFailed?.(message)

@@ -313,6 +313,32 @@ describe('CodexBackend lifecycle', () => {
     expect(session.permissionPreset).toBe('full-access')
   })
 
+  it('preserves the server-resolved model when adopting a prewarmed thread', async () => {
+    const handle = {
+      connection: {},
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    const opts = makeStartOpts({ config: { apiKey: 'codex-key' } })
+    turnMocks.prewarmCodexConnection.mockResolvedValueOnce(handle as never)
+    turnMocks.prewarmCodexSession.mockImplementationOnce(async (
+      _handle: unknown,
+      session: { threadId: string | null; threadReady: boolean; model?: string },
+    ) => {
+      session.threadId = 'thread-prewarmed'
+      session.threadReady = true
+      session.model = 'gpt-5.6-sol'
+      return 'thread-prewarmed'
+    })
+
+    backend.prewarm(opts)
+    await backend.start(opts)
+
+    const session = (backend as unknown as { session: { model?: string } }).session
+    expect(session.model).toBe('gpt-5.6-sol')
+  })
+
   it('uses the shared project app-server pool for prewarm adoption when available', async () => {
     const close = vi.fn(async () => {})
     const handle = {
@@ -664,6 +690,36 @@ describe('CodexBackend send()', () => {
     expect(types[types.length - 1]).toBe('status_change')
   })
 
+  it('attributes partial failed-turn usage to the server-resolved model', async () => {
+    const pending = backend.send({ content: 'x' })
+    const session = (backend as unknown as { session: { model?: string } }).session
+    session.model = 'gpt-5.6-sol'
+    service.capturedCallbacks!.onUsageAccounted!('thread-xyz', {
+      totalInputTokens: 30,
+      totalCachedInputTokens: 10,
+      totalOutputTokens: 5,
+      lastInputTokens: 30,
+      lastCachedInputTokens: 10,
+      lastOutputTokens: 5,
+      reasoningOutputTokens: 0,
+      contextWindow: 128_000,
+    })
+    service.rejectRun(new Error('boom'))
+
+    await expect(pending).rejects.toThrow('boom')
+    expect(usageStatsMocks.recordCodexFromTurnUsage).toHaveBeenCalledWith(
+      {
+        inputTokens: 20,
+        outputTokens: 5,
+        cacheReadInputTokens: 10,
+        cacheCreationInputTokens: 0,
+      },
+      null,
+      'gpt-5.6-sol',
+      expect.any(Date),
+    )
+  })
+
   it('emits message_interrupted when error mentions interrupt/abort', async () => {
     const pending = backend.send({ content: 'x' })
     service.rejectRun(new Error('Codex run interrupted'))
@@ -883,6 +939,44 @@ describe('CodexBackend send()', () => {
       'gpt-5.4',
       expect.any(Date),
     )
+  })
+
+  it('attributes usage and message metadata to the server-resolved model', async () => {
+    await backend.close()
+    service = makeFakeService()
+    backend = new CodexBackend(service)
+    events = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(makeStartOpts({ config: { apiKey: 'codex-key' } }))
+
+    const usage = {
+      totalInputTokens: 30,
+      totalCachedInputTokens: 10,
+      totalOutputTokens: 5,
+      lastInputTokens: 30,
+      lastCachedInputTokens: 10,
+      lastOutputTokens: 5,
+      reasoningOutputTokens: 0,
+      contextWindow: 128_000,
+    }
+    const pending = backend.send({ content: 'use the server default' })
+    const session = (backend as unknown as { session: { model?: string } }).session
+    session.model = 'gpt-5.6-sol'
+    service.resolveRun(makeResult({ usage }))
+    await pending
+
+    expect(usageStatsMocks.recordCodexFromTurnUsage).toHaveBeenCalledWith(
+      undefined,
+      usage,
+      'gpt-5.6-sol',
+      expect.any(Date),
+    )
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_complete',
+      metadata: expect.objectContaining({
+        codex: expect.objectContaining({ model: 'gpt-5.6-sol' }),
+      }),
+    }))
   })
 
   it('providerSessionId listeners fire when onThreadStarted resolves a new thread id', async () => {

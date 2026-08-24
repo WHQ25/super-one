@@ -1402,6 +1402,8 @@ export async function resolveThread(
     throw new Error('Failed to resolve Codex thread id')
   }
 
+  const resolvedModel = readString(threadResult.model)
+  if (resolvedModel) session.model = resolvedModel
   session.threadId = resolvedThreadId
   session.threadReady = true
   return resolvedThreadId

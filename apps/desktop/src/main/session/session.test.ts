@@ -354,6 +354,151 @@ describe('Session state machine', () => {
     expect(backend.interruptCalls).toBe(0)
   })
 
+  it('interrupt() reaches the backend during a continuation turn the send() call no longer covers', async () => {
+    // Claude's queued send returns as soon as the message is pushed, so the turn
+    // it eventually runs streams with `_status === 'ended'`.
+    const sendPromise = session.send({ content: 'x' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await sendPromise
+    expect(session.snapshot.status).toBe('ended')
+
+    backend.emit({
+      type: 'message_start',
+      message: {
+        id: 'a_queued',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'claude',
+      },
+    })
+    expect(session.isStreaming()).toBe(true)
+
+    const interruptPromise = session.interrupt()
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveInterrupt?.()
+    expect(await interruptPromise).toBe(true)
+    expect(backend.interruptCalls).toBe(1)
+  })
+
+  it('an interrupt does not settle a turn that opened while it was awaiting the backend', async () => {
+    const { session, backend } = makeSession()
+    const openTurn = (id: string) => backend.emit({
+      type: 'message_start',
+      message: { id, role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    openTurn('a_first')
+
+    const interruptPromise = session.interrupt()
+    await new Promise((r) => setTimeout(r, 0))
+    // The backend admits a queued turn before it acks the interrupt.
+    openTurn('a_queued')
+    backend.resolveInterrupt?.()
+    await interruptPromise
+
+    // The new run must survive: it is live work the interrupt decision predates,
+    // and clearing it would make the *next* Stop a no-op all over again.
+    expect(session.isStreaming()).toBe(true)
+  })
+
+  it('an idle runtime release does not settle a turn a host wake opened during it', async () => {
+    const { session, backend } = makeSession()
+    let finishRelease!: () => void
+    const released = new Promise<void>((r) => { finishRelease = r })
+    backend.releaseRuntime = async () => {
+      backend.releaseRuntimeCalls += 1
+      await released
+    }
+
+    const releasePromise = session.releaseRuntime('idle')
+    await new Promise((r) => setTimeout(r, 0))
+
+    // A host wake (task notification / download settle) does not take
+    // `_runtimeRelease`, so it can stand a fresh runtime up mid-release.
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a_wake', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.activeRuntime = true
+    finishRelease()
+    await releasePromise
+
+    expect(session.isStreaming()).toBe(true)
+  })
+
+  it('an idle runtime release that succeeds ends the stream regardless of trailing events', async () => {
+    // Dual of the case above. Once the runtime is gone there is no stream left to
+    // protect, and nothing will ever emit a terminal event to correct the flag —
+    // so a turn that opened and died inside the teardown must not survive it.
+    const { session, backend } = makeSession()
+    let finishRelease!: () => void
+    const released = new Promise<void>((r) => { finishRelease = r })
+    backend.releaseRuntime = async () => {
+      backend.releaseRuntimeCalls += 1
+      await released
+    }
+
+    const releasePromise = session.releaseRuntime('idle')
+    await new Promise((r) => setTimeout(r, 0))
+
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a_tail', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.activeRuntime = false
+    finishRelease()
+
+    expect(await releasePromise).toBe(true)
+    expect(session.isStreaming()).toBe(false)
+  })
+
+  it('rebuilding the backend ends the stream it was running', async () => {
+    const { session, backend } = makeSession()
+    const p = session.send({ content: 'hi', clientMessageId: 'u0' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a_queued', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    expect(session.isStreaming()).toBe(true)
+
+    // Claude's SDK iterator just reaches EOF on rebuild — no terminal event ever
+    // arrives, so the session has to draw the conclusion itself.
+    const p2 = session.send({ content: 'after', clientMessageId: 'u1', effort: 'xhigh' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    backend.resolveSend?.()
+    await p2
+    expect(session.isStreaming()).toBe(false)
+  })
+
+  it('a backend idle event closes the continuation turn again', async () => {
+    backend.emit({
+      type: 'message_start',
+      message: {
+        id: 'a_queued',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'claude',
+      },
+    })
+    expect(session.isStreaming()).toBe(true)
+
+    // A queued-turn boundary is not the end of the run — only idle is.
+    backend.emit({ type: 'message_complete', messageId: 'a_queued' })
+    expect(session.isStreaming()).toBe(true)
+
+    backend.emit({ type: 'status_change', status: 'idle' })
+    expect(session.isStreaming()).toBe(false)
+    expect(backend.interruptCalls).toBe(0)
+  })
+
   it('reloadMcpServers forwards to the backend once started with no pending rebuild', async () => {
     const spy = vi.spyOn(backend, 'reloadMcpServers')
     const p = session.send({ content: 'x' })
@@ -1212,6 +1357,9 @@ describe('Session state machine', () => {
     b.sendShouldFail = null
     b.resolveSend?.()
     await first
+    // Every real backend closes a run with idle; the session now believes the
+    // stream over that event, not over the send() call. See `_backendStreaming`.
+    b.emit({ type: 'status_change', status: 'idle' })
     expect(s.isRuntimeIdle(Number.MAX_SAFE_INTEGER, 0)).toBe(true)
   })
 
@@ -2087,6 +2235,32 @@ describe('Session persist hook', () => {
     expect(backend.rebuildCalls[0].cwd).toBe('/tmp/proj/.worktrees/abc')
     backend.resolveSend?.()
     await p2
+  })
+
+  it('switchCwd defers rebuild during a continuation turn the send() call no longer covers', async () => {
+    const { session, backend } = makeSession()
+    const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await pending
+
+    // Queued turn: live stream, but `_status` is already 'ended'. Rebuilding here
+    // would kill it, and the SDK reports that as a silent EOF — no terminal event.
+    backend.emit({
+      type: 'message_start',
+      message: {
+        id: 'a_queued',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'claude',
+      },
+    })
+
+    await session.switchCwd('/tmp/proj/.worktrees/abc')
+    expect(backend.rebuildCalls).toHaveLength(0)
+    expect(session.cwd).toBe('/tmp/proj/.worktrees/abc')
   })
 
   it('switchCwd defers rebuild while background tasks are running so they are not killed', async () => {

@@ -777,6 +777,32 @@ describe('CodexBackend send()', () => {
     await pending
   })
 
+  it('re-arms streaming when the live stream drains a queued message after a turn boundary', async () => {
+    const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
+    const request = vi.fn(async (method: string) => method === 'thread/queue/add'
+      ? { queuedSubmission: { id: 'submission-2' } }
+      : {})
+    const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-1'
+    await backend.send({ content: 'second', priority: 'next', clientMessageId: 'u2', assistantMessageId: 'a2' })
+
+    // What an auto compaction produces: the turn closes, Core promotes the
+    // queued message into the next turn, and the stream keeps running.
+    service.capturedCallbacks?.onTurnCompleted?.({ turnId: 'turn-1' })
+    service.capturedCallbacks?.onQueuedMessageConsumed?.('u2')
+
+    const boundary = events.findIndex((e) => e.type === 'message_complete' && e.messageId === 'a1')
+    const rearm = events.findIndex((e, i) => i > boundary && e.type === 'status_change' && e.status === 'streaming')
+    expect(boundary).toBeGreaterThanOrEqual(0)
+    // Without this the renderer settles the completed turn to idle and never
+    // hears otherwise — streaming output with no Stop button.
+    expect(rearm).toBeGreaterThan(boundary)
+
+    service.resolveRun(makeResult())
+    await pending
+  })
+
   it('waits for Core to confirm durable queue deletion before removing it locally', async () => {
     const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
     const request = vi.fn(async (method: string) => method === 'thread/queue/add'

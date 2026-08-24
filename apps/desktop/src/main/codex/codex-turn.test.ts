@@ -976,6 +976,65 @@ describe('streamTurnEvents compaction lifecycle', () => {
   })
 })
 
+describe('streamTurnEvents auto-compaction with a queued message', () => {
+  it('drains the queued message into a new turn on the same stream', async () => {
+    // The user repro: streaming → user queues a message → context limit trips an
+    // auto compaction → Core promotes the queued message. The pump must survive
+    // `turn/completed` and report both the boundary and the queued consume, or
+    // the backend never re-arms streaming and the UI strands at idle.
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      {
+        method: 'item/started',
+        params: { threadId: 'main-thread', turnId: 'turn-1', startedAtMs: 1_000, item: { id: 'compact-item', type: 'contextCompaction' } },
+      },
+      {
+        method: 'item/completed',
+        params: { threadId: 'main-thread', turnId: 'turn-1', completedAtMs: 2_000, item: { id: 'compact-item', type: 'contextCompaction' } },
+      },
+      { method: 'thread/compacted', params: { threadId: 'main-thread', turnId: 'turn-1' } },
+      { method: 'turn/completed', params: { threadId: 'main-thread', turn: { id: 'turn-1', status: 'completed' } } },
+      { method: 'turn/started', params: { threadId: 'main-thread', turn: { id: 'turn-2' } } },
+      {
+        method: 'item/started',
+        params: { threadId: 'main-thread', turnId: 'turn-2', item: { id: 'user-2', type: 'userMessage', clientId: 'u2' } },
+      },
+      {
+        method: 'item/completed',
+        params: { threadId: 'main-thread', turnId: 'turn-2', item: { id: 'msg-2', type: 'agentMessage', text: 'queued reply' } },
+      },
+      { method: 'turn/completed', params: { threadId: 'main-thread', turn: { id: 'turn-2', status: 'completed' } } },
+    ]
+    const connection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const order: string[] = []
+    let queuedRemaining = 1
+    await streamTurnEvents(connection, session, 'turn-1', new AbortController(), {
+      hasQueuedMessages: () => queuedRemaining > 0,
+      onTurnCompleted: () => { order.push('turn_completed') },
+      onQueuedMessageConsumed: (clientMessageId) => {
+        queuedRemaining -= 1
+        order.push(`consumed:${clientMessageId}`)
+      },
+      onCompactionCompleted: () => { order.push('compaction_completed') },
+    })
+
+    // Exact order matters: the boundary `message_complete` the backend emits from
+    // `onTurnCompleted` is what settles the renderer to idle, so the consume that
+    // re-arms streaming has to come after it — and has to come at all.
+    expect(order).toEqual(['compaction_completed', 'turn_completed', 'consumed:u2'])
+  })
+})
+
 describe('streamTurnEvents child-thread routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()

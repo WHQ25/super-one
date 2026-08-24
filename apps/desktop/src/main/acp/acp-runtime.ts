@@ -825,8 +825,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   }
 
   const completeAgentInitiated = (
-    reason: 'complete' | 'interrupted' = 'complete',
-    options: { emitIdle?: boolean } = {},
+    reason: 'complete' | 'interrupted' | 'error' = 'complete',
+    options: { emitIdle?: boolean; error?: unknown } = {},
   ) => {
     const id = agentInitiatedMessageId
     if (!id || currentTurn) return
@@ -834,13 +834,21 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       deliver(ev)
     }
     wakeScope.openToolIds.clear()
-    if (reason === 'interrupted') {
+    if (reason === 'error') {
+      // The auto-wake rail has no `fail()` of its own, but a dead transport is
+      // not a user cancel: reporting it as `interrupted` hides the failure and
+      // reads as if the person pressed Stop. Mirror the prompt rail instead.
+      const raw = options.error instanceof Error
+        ? options.error.message
+        : String(options.error ?? 'ACP agent connection ended')
+      deliver({ type: 'message_error', messageId: id, error: raw, errorInfo: { raw } })
+    } else if (reason === 'interrupted') {
       deliver({ type: 'message_interrupted', messageId: id })
     } else {
       deliver({ type: 'message_complete', messageId: id })
     }
     if (options.emitIdle !== false) {
-      deliver({ type: 'status_change', status: 'idle' })
+      deliver({ type: 'status_change', status: reason === 'error' ? 'error' : 'idle' })
     }
     agentInitiatedMessageId = null
     // Drop agentMid→local maps so late chunks cannot re-home onto a completed bubble.
@@ -889,7 +897,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             return { type: 'closed' as const }
           }),
         ])
-        if (connectionClosed || next.type === 'closed' || closed || !pumping) break
+        if (connectionClosed || next.type === 'closed' || closed || !pumping) {
+          // An agent-initiated turn has no prompt rail to settle it, so leaving
+          // the loop here used to strand an open assistant bubble: streaming was
+          // announced, no terminal event ever followed.
+          //
+          // `pumping` is cleared only by `runtime.close()`, so it is the one
+          // signal that separates a teardown we asked for from the agent dying
+          // under us. `closed` cannot: the connection's own `.closed` sets it too.
+          completeAgentInitiated(pumping ? 'error' : 'interrupted')
+          break
+        }
         consecutiveErrors = 0
         const message = next.m
         if (message.kind === 'stop') {
@@ -986,6 +1004,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         consecutiveErrors += 1
         if (consecutiveErrors >= MAX_CONSECUTIVE_PUMP_ERRORS) {
           log.debug('[acp-runtime] update pump ended after %d errors:', consecutiveErrors, err)
+          completeAgentInitiated('error', { error: err })
           break
         }
         log.debug('[acp-runtime] update pump error %d/%d:', consecutiveErrors, MAX_CONSECUTIVE_PUMP_ERRORS, err)

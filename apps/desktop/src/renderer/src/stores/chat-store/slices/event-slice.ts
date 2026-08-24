@@ -17,6 +17,7 @@ import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
 import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
+import { shouldReviveStreaming } from '../event-reducer/stream-revive'
 import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
 import { startBashOutputLive } from '../helpers/bash-output-live'
 import {
@@ -313,6 +314,12 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       const targetSession = project._sessions[targetSid]
       const delta = applyEventToSession(targetSession, event)
       const updatedSession = { ...targetSession, ...delta }
+      // Stream traffic outranks a stale `idle`: a session that is still being
+      // written to is streaming, whatever the last status event claimed. This
+      // is what keeps Stop reachable when a harness misses a re-arm.
+      if (shouldReviveStreaming(updatedSession, event)) {
+        updatedSession.status = 'streaming'
+      }
 
       if (import.meta.env.DEV) {
         const codexItemTrace = event.type === 'codex_item_delta'

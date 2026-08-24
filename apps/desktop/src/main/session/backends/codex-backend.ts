@@ -1394,8 +1394,14 @@ export class CodexBackend implements SessionBackend {
         } else {
           this.resetSegments(nextMessageId)
           this.currentMessageId = nextMessageId
-          this.emit({ type: 'status_change', status: 'streaming' })
         }
+        // Both branches, not just the cold one. The live-stream drain reaches
+        // here after `onTurnCompleted` already emitted `message_complete` for
+        // the previous segment, and the renderer settles a completed current
+        // turn to idle — without re-arming, the queued turn (the one an auto
+        // compaction pushes a message into) streams into a UI that thinks it
+        // stopped, so Stop is not even offered.
+        this.emit({ type: 'status_change', status: 'streaming' })
       },
       onThreadStarted: (threadId: string) => {
         this.fireProviderSessionId(threadId)

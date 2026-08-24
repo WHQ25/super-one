@@ -552,3 +552,120 @@ describe('syncLiveSnapshots', () => {
     warnSpy.mockRestore()
   })
 })
+
+describe('stalled streaming status', () => {
+  function seedIdleSession(messages: ChatMessage[] = []) {
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid'
+    proj._sessions = {
+      sid: { ...createDefaultPerSessionState(), _historyHydrated: true, status: 'idle', messages },
+    }
+    useChatStore.setState({ projectSessions: { '/p': proj }, activeProject: '/p' })
+  }
+  const sessionAt = () => useChatStore.getState().projectSessions['/p']._sessions.sid
+
+  it('returns to streaming when a new assistant turn opens against an idle session', () => {
+    seedIdleSession()
+    useChatStore.getState().handleAgentEvent({
+      type: 'message_start',
+      projectPath: '/p',
+      sessionId: 'sid',
+      message: makeMessage('a2', 'assistant'),
+    } as AgentEvent)
+    expect(sessionAt().status).toBe('streaming')
+  })
+
+  it('returns to streaming on a delta for a message that is still streaming', () => {
+    seedIdleSession([makeMessage('a1', 'assistant')])
+    useChatStore.getState().handleAgentEvent({
+      type: 'content_delta',
+      projectPath: '/p',
+      sessionId: 'sid',
+      messageId: 'a1',
+      delta: { type: 'text', text: 'more' },
+    } as AgentEvent)
+    expect(sessionAt().status).toBe('streaming')
+  })
+
+  it('stays idle for a trailing delta against a finished message', () => {
+    seedIdleSession([{ ...makeMessage('a1', 'assistant'), status: 'complete' }])
+    useChatStore.getState().handleAgentEvent({
+      type: 'content_delta',
+      projectPath: '/p',
+      sessionId: 'sid',
+      messageId: 'a1',
+      delta: { type: 'text', text: 'late' },
+    } as AgentEvent)
+    expect(sessionAt().status).toBe('idle')
+  })
+
+  it('stays idle for replayed history deltas', () => {
+    seedIdleSession([makeMessage('a1', 'assistant')])
+    useChatStore.getState().handleAgentEvent({
+      type: 'content_delta',
+      projectPath: '/p',
+      sessionId: 'sid',
+      messageId: 'a1',
+      isReplay: true,
+      delta: { type: 'text', text: 'history' },
+    } as AgentEvent)
+    expect(sessionAt().status).toBe('idle')
+  })
+
+  it('stays idle when syncLiveSnapshots replays a pending permission onto a settled session', async () => {
+    // Drives the real path rather than a hand-dispatched event: syncLiveSnapshots
+    // writes idle from `isStreaming: false`, then re-delivers pendingInteractions
+    // through this same reducer. Reviving on those would invent liveness main
+    // just denied, and offer a Stop that Session.interrupt() refuses.
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid'
+    proj._sessions = { sid: { ...createDefaultPerSessionState(), _historyHydrated: true, status: 'streaming' } }
+    useChatStore.setState({ projectSessions: { '/p': proj }, activeProject: '/p' })
+
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      {
+        sid: 'sid',
+        projectPath: '/p',
+        isActive: true,
+        isStreaming: false,
+        permissionMode: 'default',
+        sandboxInfo: { enabled: true, autoAllowBash: false },
+        snapshot: {
+          id: 'sid',
+          projectPath: '/p',
+          cwd: '/p',
+          providerId: 'claude',
+          harnessId: 'claude',
+          status: 'idle',
+          providerSessionId: null,
+          currentMessageId: null,
+          createdAt: 0,
+          lastUserMessageAt: null,
+          messages: [],
+          totalCostUsd: 0,
+          contextTokens: 0,
+          title: null,
+          isWorktree: false,
+          worktreePath: null,
+          gitBranch: null,
+          worktreeMissing: false,
+          apiProviderId: null,
+        },
+        replayEvents: [],
+        pendingInteractions: [
+          {
+            type: 'permission_request',
+            projectPath: '/p',
+            sessionId: 'sid',
+            request: { requestId: 'perm-1', toolName: 'Bash', input: {}, suggestions: [] },
+          },
+        ],
+      },
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+
+    expect(sessionAt().status).toBe('idle')
+    expect(sessionAt().pendingPermissions).toHaveLength(1)
+  })
+})

@@ -180,6 +180,26 @@ export class Session implements SessionContract {
   private providerConfig: unknown
 
   private _status: SessionStatus = 'idle'
+  /**
+   * Backend-reported stream liveness, maintained from the event stream rather
+   * than from the `send()` call.
+   *
+   * `_status` only spans an awaited `Session.send`, and a *continuation* turn
+   * never comes back through it: Claude's `priority:'next'` send returns as
+   * soon as the message is pushed and the real turn is flushed at the next step
+   * boundary, `QueuedUserMessageQueue.flush()` re-enters `backend.send`
+   * directly, and Codex drains its durable queue inside the live stream. During
+   * those turns `_status` is already `'ended'`, which used to make
+   * `interrupt()` return false without ever reaching `backend.interrupt()` —
+   * Stop looked acknowledged while the agent kept writing.
+   */
+  private _backendStreaming = false
+  /**
+   * Bumped every time a run opens. `interrupt()` clears `_backendStreaming` in a
+   * `finally` that awaits the backend, so a turn started during that await would
+   * otherwise be cleared by a decision made before it existed.
+   */
+  private _streamGeneration = 0
   private _sendChain: Promise<void> = Promise.resolve()
   private _currentMessageId: string | null = null
   private _computerUseTurnGeneration = 0
@@ -315,7 +335,18 @@ export class Session implements SessionContract {
     if (this._runtimeRelease) return this._runtimeRelease
     const release = (async () => {
       await this.backend.releaseRuntime(reason)
+      // Whether the runtime survived is the authoritative answer, and it is only
+      // knowable after the await. A backend can decline to release: Claude waits
+      // on its old iterator, and a host wake (task notification / download
+      // settle) reaches `backend.injectTaskNotification` without taking
+      // `_runtimeRelease`, so a brand-new runtime with a live turn can exist by
+      // the time this resolves. Clearing then would erase it.
+      //
+      // The mirror case needs no such care: no runtime means no stream, whatever
+      // events the teardown flushed on the way out, and no terminal event will
+      // ever arrive to correct a flag left set here.
       if (this.backend.hasActiveRuntime()) return false
+      this._backendStreaming = false
       await afterRelease?.()
       return true
     })()
@@ -329,6 +360,36 @@ export class Session implements SessionContract {
 
   private async waitForRuntimeRelease(): Promise<void> {
     await this._runtimeRelease
+  }
+
+  /**
+   * The backend announced a run. Always a new generation, including when one was
+   * already in flight — the interrupt this must outrank was issued against the
+   * *previous* run, and that is exactly the case where the backend admits a
+   * queued turn before it acks the stop.
+   *
+   * Only monotonicity is contractual, not the count: a normal turn bumps twice
+   * (`message_start` then `status_change: 'streaming'`), and OpenCode re-announces
+   * on busy/retry. Every consumer asks "did this change while I was awaiting?",
+   * never "how many runs have there been".
+   */
+  private openBackendStream(): void {
+    this._streamGeneration += 1
+    this._backendStreaming = true
+  }
+
+  /**
+   * The only place a backend runtime is replaced.
+   *
+   * Replacing the runtime destroys whatever stream was running on it, and no
+   * backend reports that as a turn event — Claude's SDK iterator just reaches a
+   * clean EOF (`claude-query.ts`, "loop ended normally"), which emits nothing.
+   * Without clearing here the session would believe a killed stream is still
+   * live and never release its runtime again.
+   */
+  private async rebuildBackend(): Promise<void> {
+    this._backendStreaming = false
+    await this.backend.rebuild(this.buildBackendStartOpts())
   }
 
   private touchRuntimeActivity(): void {
@@ -649,7 +710,7 @@ export class Session implements SessionContract {
       }
       if (this.backendStarted && (effortChanged || dirsNeedRebuild || needsRebuild)) {
         log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s needsRebuild=%s', this.id, effortChanged, dirsChanged, needsRebuild)
-        await this.backend.rebuild(this.buildBackendStartOpts())
+        await this.rebuildBackend()
         this._needsRebuild = false
       } else {
         await this.ensureStarted()
@@ -659,7 +720,7 @@ export class Session implements SessionContract {
         // Claude's in-process MCP server reflects the live tool set, so it needs no rebuild.
         if (needsRebuild && this.harnessId === 'codex') {
           log.info('[Session] rebuilding codex backend post-start to pick up tools registered before first send sid=%s', this.id)
-          await this.backend.rebuild(this.buildBackendStartOpts())
+          await this.rebuildBackend()
         }
         this._needsRebuild = false
       }
@@ -677,9 +738,12 @@ export class Session implements SessionContract {
   async interrupt(): Promise<boolean> {
     if (this._status === 'disposed') return false
     if (this._status === 'interrupting') return true
-    if (this._status !== 'streaming' && this._status !== 'starting') return false
+    // Not `_status`-only: a continuation turn runs with `_status === 'ended'`,
+    // and refusing here is what let the agent keep streaming past Stop.
+    if (!this.isStreaming()) return false
     this.touchRuntimeActivity()
     const prev = this._status
+    const generation = this._streamGeneration
     this._status = 'interrupting'
     // Codex 149 persists queued submissions and pauses them after interruption.
     // Keep the host-side transcript entries so the user can resume or delete them.
@@ -697,6 +761,11 @@ export class Session implements SessionContract {
       if ((this._status as SessionStatus) !== 'disposed') {
         this._status = prev === 'starting' ? 'idle' : 'ended'
       }
+      // The backend owns the terminal event, but an interrupt that never lands
+      // one must not leave the session permanently "busy". Only clear the run we
+      // set out to stop: `backend.interrupt()` is awaited, and a queued turn that
+      // opened meanwhile is live work this decision predates.
+      if (this._streamGeneration === generation) this._backendStreaming = false
       // Agent no longer controlling — drop software cursor + menu-bar chip.
       void this.clearComputerUseVisuals('interrupt')
     }
@@ -1190,7 +1259,7 @@ export class Session implements SessionContract {
         const applied = (await this.backend.setAdditionalDirectories?.(nextDirs)) ?? false
         if (applied) return
         if (!this.isStreaming() && !this.backend.hasActiveBackgroundTasks?.()) {
-          await this.backend.rebuild(this.buildBackendStartOpts())
+          await this.rebuildBackend()
           this._needsRebuild = false
         } else {
           this._needsRebuild = true
@@ -1243,7 +1312,10 @@ export class Session implements SessionContract {
   }
 
   isStreaming(): boolean {
-    return this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting'
+    return this._status === 'streaming'
+      || this._status === 'starting'
+      || this._status === 'interrupting'
+      || this._backendStreaming
   }
 
   truncateMessagesAt(checkpointId: string): void {
@@ -1270,6 +1342,7 @@ export class Session implements SessionContract {
     }
     trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
     this._status = 'disposed'
+    this._backendStreaming = false
     this._pendingQueuedRequests.clear()
     void this.clearComputerUseVisuals('dispose')
     try { await this.waitForRuntimeRelease() } catch { /* backend close still needs to run */ }
@@ -1496,13 +1569,15 @@ export class Session implements SessionContract {
     this.emitInitReady()
     this.notifyStateChange()
     if (!this.backendStarted) return
-    if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting' || this.backend.hasActiveBackgroundTasks?.()) {
+    // isStreaming(), not an inline copy of it: a continuation turn runs with
+    // `_status === 'ended'`, and rebuilding under it kills the live stream.
+    if (this.isStreaming() || this.backend.hasActiveBackgroundTasks?.()) {
       this._needsRebuild = true
       return
     }
     await this.waitForRuntimeRelease()
     this.assertNotDisposed()
-    await this.backend.rebuild(this.buildBackendStartOpts())
+    await this.rebuildBackend()
   }
 
   private buildBackendStartOpts(): BackendStartOptions {
@@ -1550,6 +1625,21 @@ export class Session implements SessionContract {
   private forwardEvent(event: AgentEvent): AgentEvent {
     this._lastEventAt = Date.now()
     this.touchRuntimeActivity()
+    // Stream liveness follows the backend, not the send call — see `_backendStreaming`.
+    if (event.type === 'status_change') {
+      if (event.status === 'streaming') this.openBackendStream()
+      else this._backendStreaming = false
+    } else if (event.type === 'message_start' && event.message.role === 'assistant') {
+      this.openBackendStream()
+    } else if (
+      event.type === 'message_interrupted'
+      || event.type === 'message_error'
+    ) {
+      // A terminal event for the whole run. `message_complete` is deliberately
+      // absent: Codex fires one at every queued-turn boundary while the stream
+      // continues, and only `status_change: 'idle'` closes that run.
+      this._backendStreaming = false
+    }
     if (event.type === 'permission_request') {
       log.info('[Session.forwardEvent] permission_request sessionId=%s listeners=%d requestId=%s', this.id, this.eventListeners.size, event.request.requestId)
     }

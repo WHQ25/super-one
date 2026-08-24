@@ -870,6 +870,56 @@ describe('formatAcpRawOutput', () => {
     expect(() => JSON.parse((result as { delta: { summary: string } }).delta.summary)).not.toThrow()
   })
 
+  it('keeps a large computer_snapshot payload untruncated when the update carries the tool name', () => {
+    const rows = Array.from({ length: 180 }, (_, i) =>
+      `  @e${i + 1},${i % 9},button,label-${i},"",0,0,100,32,press,""`).join('\n')
+    const payload = JSON.stringify({
+      stateId: 'S1',
+      root: { kind: 'window', app: 'Kimi', bundleId: 'com.moonshot.kimichat' },
+      outline: `outline[180]{ref,depth,role,name,value,x,y,w,h,can,state}:\n${rows}`,
+      truncation: { nodesOmitted: 0, maxDepth: 20 },
+    })
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_snapshot',
+      status: 'completed',
+      rawOutput: {
+        type: 'MCP',
+        tool_name: 'computer_snapshot',
+        server_name: 'superone',
+        output: { OkayOutput: payload },
+      },
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    const summary = (result as { delta: { summary: string } }).delta.summary
+    // The chat UI JSON.parse()s this to find stateId / bundleId and to split the
+    // outline out into a table — a mid-string slice makes all of that fail.
+    expect(() => JSON.parse(summary)).not.toThrow()
+    expect(JSON.parse(summary).stateId).toBe('S1')
+  })
+
+  it('keeps a computer_snapshot payload untruncated on a sparse completion update (no tool name)', () => {
+    const rows = Array.from({ length: 180 }, (_, i) =>
+      `  @e${i + 1},${i % 9},button,label-${i},"",0,0,100,32,press,""`).join('\n')
+    const payload = JSON.stringify({
+      stateId: 'S1',
+      outline: `outline[180]{ref,depth,role,name,value,x,y,w,h,can,state}:\n${rows}`,
+    })
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_snapshot_sparse',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: payload } }],
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    const summary = (result as { delta: { summary: string } }).delta.summary
+    expect(() => JSON.parse(summary)).not.toThrow()
+  })
+
   it('still truncates an unrelated large JSON tool result at 4000 chars', () => {
     const payload = JSON.stringify({ status: 'ok', items: Array.from({ length: 400 }, (_, i) => `entry-${i}`) })
     expect(payload.length).toBeGreaterThan(4000)

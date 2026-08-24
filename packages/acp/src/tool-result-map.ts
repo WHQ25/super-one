@@ -6,6 +6,11 @@ import {
   looksLikeSessionArchiveJson,
   looksLikeSessionArchiveToon,
 } from '@superone/shared/session-archive-result-shape'
+import {
+  isComputerUseToolName,
+  looksLikeComputerUseOutline,
+  looksLikeComputerUseResult,
+} from '@superone/shared/computer-use-result-shape'
 import { formatAgentToolOutput } from '@superone/shared/tool-ui'
 import { normalizeAcpTool } from './tool-normalization'
 
@@ -145,6 +150,8 @@ function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (isCollabToolName(toolName)) return true
   if (isSessionArchiveToolName(toolName)) return true
   if (looksLikeSessionArchiveToon(summary)) return true
+  if (isComputerUseToolName(toolName)) return true
+  if (looksLikeComputerUseOutline(summary)) return true
   const trimmed = summary.trim()
   if (!trimmed.startsWith('{')) return false
   try {
@@ -152,6 +159,7 @@ function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
     return (typeof obj.widget_code === 'string' && obj.widget_code.length > 0)
       || looksLikeCollabResult(obj)
       || looksLikeSessionArchiveJson(obj)
+      || looksLikeComputerUseResult(obj)
   } catch {
     return false
   }

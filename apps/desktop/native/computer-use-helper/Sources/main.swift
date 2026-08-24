@@ -558,6 +558,17 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let activate = (params["activate"] as? Bool) ?? false
             try focusApp(query: app, activate: activate)
             return .success(id: request.id, result: ["ok": true, "activated": activate])
+        case "focus_window":
+            guard let pid = AnyCodable.int(params, "pid"),
+                  let windowId = AnyCodable.int(params, "windowId") else {
+                throw HelperError(code: "INVALID", message: "pid and windowId required")
+            }
+            try focusWindow(
+                pid: pid,
+                windowId: windowId,
+                windowTitle: AnyCodable.string(params, "windowTitle")
+            )
+            return .success(id: request.id, result: ["ok": true])
         case "launch_app":
             guard let app = AnyCodable.string(params, "app") else {
                 throw HelperError(code: "INVALID", message: "app required")
@@ -1001,7 +1012,16 @@ final class HelperEventBus {
     private static func writeLine(_ data: Data, to fd: Int32) {
         data.withUnsafeBytes { raw in
             guard let base = raw.baseAddress else { return }
-            _ = Darwin.write(fd, base, data.count)
+            var written = 0
+            while written < data.count {
+                let count = Darwin.write(fd, base.advanced(by: written), data.count - written)
+                if count > 0 {
+                    written += count
+                    continue
+                }
+                if count < 0 && errno == EINTR { continue }
+                return
+            }
         }
         _ = Darwin.write(fd, "\n", 1)
     }
@@ -1052,6 +1072,16 @@ final class SocketServer {
         while true {
             let client = accept(fd, nil, nil)
             if client < 0 { continue }
+            // Frame events are frequent and can race a renderer disconnect. Convert
+            // a closed peer into EPIPE instead of terminating the helper with SIGPIPE.
+            var noSigPipe: Int32 = 1
+            _ = setsockopt(
+                client,
+                SOL_SOCKET,
+                SO_NOSIGPIPE,
+                &noSigPipe,
+                socklen_t(MemoryLayout<Int32>.size)
+            )
             DispatchQueue.global(qos: .userInitiated).async {
                 self.handleClient(client)
             }

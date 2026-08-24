@@ -41,6 +41,8 @@ interface BrowserStore {
   activeAutomationId: string | null
   pendingPreviewBrowserId: string | null
   automationPreviewBrowserId: string | null
+  /** Ready automatic previews keyed by tab so background sessions do not overwrite each other. */
+  automationPreviewReady: Record<string, boolean>
   expandedBrowserId: string | null
   pinnedPipBrowserId: string | null
   hiddenPreviewBrowserId: string | null
@@ -59,7 +61,7 @@ interface BrowserStore {
   beginAutomation: (id: string) => void
   endAutomation: (id: string) => void
   markAutomationPreviewReady: (id: string) => void
-  clearAutomationPreview: () => void
+  clearAutomationPreview: (sessionId?: string) => void
   expandPreview: (id: string) => void
   shrinkPreview: (id: string) => void
   hidePreview: (id: string) => void
@@ -90,6 +92,7 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
   activeAutomationId: null,
   pendingPreviewBrowserId: null,
   automationPreviewBrowserId: null,
+  automationPreviewReady: {},
   expandedBrowserId: null,
   pinnedPipBrowserId: null,
   hiddenPreviewBrowserId: null,
@@ -116,6 +119,7 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       activeAutomationId: s.activeAutomationId === id ? null : s.activeAutomationId,
       pendingPreviewBrowserId: s.pendingPreviewBrowserId === id ? null : s.pendingPreviewBrowserId,
       automationPreviewBrowserId: s.automationPreviewBrowserId === id ? null : s.automationPreviewBrowserId,
+      automationPreviewReady: withoutKey(s.automationPreviewReady, id),
       expandedBrowserId: s.expandedBrowserId === id ? null : s.expandedBrowserId,
       pinnedPipBrowserId: s.pinnedPipBrowserId === id ? null : s.pinnedPipBrowserId,
       hiddenPreviewBrowserId: s.hiddenPreviewBrowserId === id ? null : s.hiddenPreviewBrowserId,
@@ -136,6 +140,7 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       automationCounts: { ...s.automationCounts, [id]: (s.automationCounts[id] ?? 0) + 1 },
       activeAutomationId: id,
       pendingPreviewBrowserId: id,
+      automationPreviewReady: withoutKey(s.automationPreviewReady, id),
       hiddenPreviewBrowserId: s.hiddenPreviewBrowserId === id ? null : s.hiddenPreviewBrowserId,
     })),
   endAutomation: (id) =>
@@ -150,12 +155,30 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       return { automationCounts, activeAutomationId }
     }),
   markAutomationPreviewReady: (id) =>
-    set((s) => s.pendingPreviewBrowserId === id && !s.tabs[id]?.loading
-      ? { pendingPreviewBrowserId: null, automationPreviewBrowserId: id }
+    set((s) => s.tabs[id] && !s.tabs[id].loading
+      ? {
+          pendingPreviewBrowserId: s.pendingPreviewBrowserId === id
+            ? null
+            : s.pendingPreviewBrowserId,
+          automationPreviewBrowserId: id,
+          automationPreviewReady: { ...s.automationPreviewReady, [id]: true },
+        }
       : s),
-  clearAutomationPreview: () => set({
-    pendingPreviewBrowserId: null,
-    automationPreviewBrowserId: null,
+  clearAutomationPreview: (sessionId) => set((s) => {
+    if (!sessionId) {
+      return { pendingPreviewBrowserId: null, automationPreviewBrowserId: null, automationPreviewReady: {} }
+    }
+    const automationPreviewReady = Object.fromEntries(
+      Object.entries(s.automationPreviewReady)
+        .filter(([id]) => s.tabs[id]?.owner !== sessionId),
+    )
+    const pending = s.pendingPreviewBrowserId
+    const automatic = s.automationPreviewBrowserId
+    return {
+      automationPreviewReady,
+      pendingPreviewBrowserId: pending && s.tabs[pending]?.owner === sessionId ? null : pending,
+      automationPreviewBrowserId: automatic && s.tabs[automatic]?.owner === sessionId ? null : automatic,
+    }
   }),
   expandPreview: (id) => set({
     expandedBrowserId: id,

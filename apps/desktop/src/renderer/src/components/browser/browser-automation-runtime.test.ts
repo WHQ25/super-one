@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { HELPERS, runBrowserOp, useBrowserAutomationHost } from './browser-automation-runtime'
 import { isBrowserFocusIsolationActive, _resetBrowserFocusIsolationForTests } from './browser-focus-isolation'
+import { selectViewfinderTarget, useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { useBrowserStore } from '@/stores/browser'
 
 interface Sone {
@@ -69,6 +70,7 @@ describe('dynamicToken', () => {
 
 describe('browser automation presentation activity', () => {
   it('marks the operated tab active for the duration of a browser call', async () => {
+    useAgentViewfinderStore.setState({ activeBySession: {} })
     useBrowserStore.setState({
       tabs: {},
       automationCounts: {},
@@ -90,6 +92,8 @@ describe('browser automation presentation activity', () => {
     expect(end).toHaveBeenCalledWith('browser-a')
     expect(useBrowserStore.getState().activeAutomationId).toBeNull()
     expect(useBrowserStore.getState().automationPreviewBrowserId).toBe('browser-a')
+    expect(selectViewfinderTarget(useAgentViewfinderStore.getState(), 'session-a'))
+      .toEqual({ kind: 'browser', targetId: 'browser-a' })
   })
 })
 

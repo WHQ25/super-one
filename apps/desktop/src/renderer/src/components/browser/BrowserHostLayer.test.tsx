@@ -31,6 +31,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }
 
 let useBrowserStore: typeof import('@/stores/browser').useBrowserStore
 let useActivityPanelStore: typeof import('@/stores/activity-panel').useActivityPanelStore
+let useAgentViewfinderStore: typeof import('@/stores/agent-viewfinder').useAgentViewfinderStore
 let BrowserHostLayer: typeof import('./BrowserHostLayer').BrowserHostLayer
 
 const RECT = { left: 120, top: 44, width: 560, height: 800 } as DOMRectReadOnly
@@ -40,7 +41,9 @@ beforeEach(async () => {
   vi.resetModules()
   ;({ useBrowserStore } = await import('@/stores/browser'))
   ;({ useActivityPanelStore } = await import('@/stores/activity-panel'))
+  ;({ useAgentViewfinderStore } = await import('@/stores/agent-viewfinder'))
   ;({ BrowserHostLayer } = await import('./BrowserHostLayer'))
+  useAgentViewfinderStore.setState({ activeBySession: {} })
   act(() => useActivityPanelStore.getState().setShowPanel(true))
 })
 
@@ -110,7 +113,7 @@ describe('BrowserHostLayer mosaic visibility', () => {
   it('moves an automated browser between picture-in-picture and the activity panel', () => {
     const { container } = render(<BrowserHostLayer />)
     act(() => {
-      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
+      useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
       useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
       useBrowserStore.getState().updateSlot('browser-a', 'pip', {
         left: 700,
@@ -120,6 +123,7 @@ describe('BrowserHostLayer mosaic visibility', () => {
       } as DOMRectReadOnly)
       useBrowserStore.getState().beginAutomation('browser-a')
       useBrowserStore.getState().markAutomationPreviewReady('browser-a')
+      useAgentViewfinderStore.getState().activate('session-a', 'browser', 'browser-a')
       useActivityPanelStore.getState().setShowPanel(false)
     })
 

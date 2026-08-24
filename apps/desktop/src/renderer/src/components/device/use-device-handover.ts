@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
 import { instanceHolding, useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
+import { selectViewfinderTarget, useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { hasDeviceTab, openDeviceTab } from '@/components/activity/activity-panel-api'
 import { useDevicePreview } from './use-device-preview'
 
@@ -50,8 +51,20 @@ export function useDeviceHandover(): void {
   const { t } = useTranslation()
   const openTabLabel = t('activity.device.title')
   const currentSessionId = useChatStore(selectActiveChatSessionId)
+  const activeTarget = useAgentViewfinderStore((state) => (
+    selectViewfinderTarget(state, currentSessionId)
+  ))
+  const targetedInstanceId = useDeviceInstanceStore((state) => {
+    if (activeTarget?.kind !== 'device' || !activeTarget.targetId) return null
+    return instanceHolding(state.byId, activeTarget.targetId)?.instanceId ?? null
+  })
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const { instanceId, sessionId, deviceOnScreen } = useDevicePreview()
+
+  useEffect(() => {
+    if (activeTarget?.kind !== 'device' || !targetedInstanceId) return
+    useDevicePipStore.getState().activateReady(targetedInstanceId)
+  }, [activeTarget?.kind, activeTarget?.targetId, targetedInstanceId])
 
   useEffect(() => {
     if (!currentSessionId) {
@@ -64,12 +77,12 @@ export function useDeviceHandover(): void {
       const store = useDevicePipStore.getState()
       const instances = useDeviceInstanceStore.getState()
       const watching = instanceHolding(instances.byId, state.deviceId)
-      const bound = state.owner === currentSessionId && state.phase === 'ready' ? state.device : null
+      const bound = state.owner && state.phase === 'ready' ? state.device : null
       if (!bound) {
         if (!watching) return
         // Only the tab the preview is actually showing may clear it. A session may
         // hold several devices, and another one going idle says nothing about this.
-        if (store.readyInstanceId === watching.instanceId) store.setReady(null)
+        store.forgetReady(watching.instanceId)
         // A tab in the dock keeps its picker; one that only ever existed to carry
         // the floating preview has nothing left to be.
         if (!hasDeviceTab(watching.instanceId)) instances.close(watching.instanceId)
@@ -78,7 +91,8 @@ export function useDeviceHandover(): void {
       // A grant that arrives from chat has no tab yet — `device_request_control` was
       // approved in the conversation, not in the dock — so the instance is opened
       // here, and `revealDeviceTab` below gives it a tab only if it needs one.
-      const instanceId = watching?.instanceId ?? instances.open(currentSessionId, bound.id)
+      const owner = state.owner!
+      const instanceId = watching?.instanceId ?? instances.open(owner, bound.id)
       // Only the transition into ready, never a republish: rotation and the hardware
       // keyboard push state through this same channel, and reacting to those would
       // yank the dock to the simulator tab every time the agent turned the device.
@@ -94,18 +108,23 @@ export function useDeviceHandover(): void {
       const swap = DEVICE_CAPABILITIES[bound.provider].rigidRotation && isDeviceLandscape(state.orientation)
       const width = (swap ? state.pixelHeight : state.pixelWidth) ?? 0
       const height = (swap ? state.pixelWidth : state.pixelHeight) ?? 0
-      store.setReady(instanceId, {
+      const previewDevice = {
         id: bound.id,
         provider: bound.provider,
         platform: bound.platform,
         width,
         height,
-      })
+      }
+      store.rememberReady(instanceId, previewDevice)
+      // Background sessions keep enough metadata to restore their PiP, but must not
+      // replace the device drawn in the conversation currently on screen.
+      if (owner !== currentSessionId) return
+      store.setReady(instanceId, previewDevice)
       // The preview is suppressed while the Activity panel is up, so a grant that
       // lands then would show the user nothing at all. Give it the tab instead —
       // whichever surface is available, approving a device has to reveal one.
       if (arriving && useActivityPanelStore.getState().showPanel) {
-        revealDeviceTab(instanceId, currentSessionId, openTabLabel)
+        revealDeviceTab(instanceId, owner, openTabLabel)
       }
     })
   }, [currentSessionId, openTabLabel])

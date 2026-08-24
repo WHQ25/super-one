@@ -58,6 +58,8 @@ interface DevicePipState {
 
   /** The instance whose device is bound and ready — the reason a preview exists at all. */
   readyInstanceId: string | null
+  /** Last ready metadata per instance, retained while another device owns the PiP. */
+  readyDevices: Record<string, DevicePipDevice>
   expandedInstanceId: string | null
   hiddenInstanceId: string | null
   /**
@@ -70,6 +72,9 @@ interface DevicePipState {
   updateSlot: (instanceId: string, mode: DeviceSlotMode, rect: DOMRectReadOnly) => void
   unregisterSlot: (instanceId: string, mode: DeviceSlotMode) => void
   setReady: (instanceId: string | null, device?: DevicePipDevice | null) => void
+  rememberReady: (instanceId: string, device: DevicePipDevice) => void
+  forgetReady: (instanceId: string) => void
+  activateReady: (instanceId: string) => void
   hidePreview: (instanceId: string) => void
   expandPreview: (instanceId: string) => void
   shrinkPreview: () => void
@@ -80,20 +85,50 @@ export const useDevicePipStore = create<DevicePipState>()((set) => ({
   pipSlots: {},
   overlaySlots: {},
   readyInstanceId: null,
+  readyDevices: {},
   expandedInstanceId: null,
   hiddenInstanceId: null,
   device: null,
 
   // A new grant is a new intent to watch, so it un-dismisses. Losing the device
   // clears the expanded state too, or the overlay would sit over nothing.
-  setReady: (instanceId, device = null) => set((state) => ({
-    readyInstanceId: instanceId,
-    hiddenInstanceId: instanceId && state.hiddenInstanceId === instanceId ? null : state.hiddenInstanceId,
-    expandedInstanceId: instanceId ? state.expandedInstanceId : null,
-    // Same device on a republish must be the same object, or every host push — a
-    // rotation, a keyboard toggle — would remeasure the box and fight a drag.
-    device: sameDevice(state.device, device) ? state.device : device,
+  setReady: (instanceId, device = null) => set((state) => {
+    const nextDevice = device ?? (instanceId ? state.readyDevices[instanceId] ?? null : null)
+    return {
+      readyInstanceId: instanceId,
+      readyDevices: instanceId && nextDevice
+        ? { ...state.readyDevices, [instanceId]: nextDevice }
+        : state.readyDevices,
+      hiddenInstanceId: instanceId && state.hiddenInstanceId === instanceId ? null : state.hiddenInstanceId,
+      expandedInstanceId: instanceId ? state.expandedInstanceId : null,
+      // Same device on a republish must be the same object, or every host push — a
+      // rotation, a keyboard toggle — would remeasure the box and fight a drag.
+      device: sameDevice(state.device, nextDevice) ? state.device : nextDevice,
+    }
+  }),
+  rememberReady: (instanceId, device) => set((state) => ({
+    readyDevices: sameDevice(state.readyDevices[instanceId] ?? null, device)
+      ? state.readyDevices
+      : { ...state.readyDevices, [instanceId]: device },
+    ...(state.readyInstanceId === instanceId && !sameDevice(state.device, device)
+      ? { device }
+      : {}),
   })),
+  forgetReady: (instanceId) => set((state) => ({
+    readyDevices: withoutKey(state.readyDevices, instanceId),
+    ...(state.readyInstanceId === instanceId
+      ? { readyInstanceId: null, expandedInstanceId: null, device: null }
+      : {}),
+  })),
+  activateReady: (instanceId) => set((state) => {
+    const device = state.readyDevices[instanceId]
+    if (!device) return state
+    return {
+      readyInstanceId: instanceId,
+      expandedInstanceId: state.expandedInstanceId === instanceId ? instanceId : null,
+      device,
+    }
+  }),
   updateSlot: (instanceId, mode, rect) =>
     set((state) => {
       const target = slotsFor(state, mode)

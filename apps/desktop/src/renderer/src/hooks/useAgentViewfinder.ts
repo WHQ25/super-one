@@ -1,35 +1,71 @@
 import { useEffect } from 'react'
 import {
-  selectViewfinderOwner,
   useAgentViewfinderStore,
+  viewfinderKindForToolName,
 } from '@/stores/agent-viewfinder'
+import { useBrowserStore } from '@/stores/browser'
+import { useComputerViewfinderStore } from '@/stores/computer-viewfinder'
+
+function targetIdFromInput(kind: 'device' | 'browser' | 'computer', input: string): string | null {
+  try {
+    const parsed = JSON.parse(input) as { tab?: unknown; device?: unknown }
+    if (kind === 'browser' && typeof parsed.tab === 'string') return parsed.tab
+    if (kind === 'device' && typeof parsed.device === 'string') return parsed.device
+  } catch {
+    // Streaming tool blocks may briefly carry incomplete JSON. The runtime/claim will
+    // refine the target id once it resolves the operation.
+  }
+  return null
+}
 
 /**
- * Computer Use's half of the shared floating preview, and the only half that lives
- * outside the renderer.
+ * Bridges the native Computer Use capture stream into renderer state.
  *
- * The device and browser previews report themselves from the components that draw
- * them, and stand down simply by not rendering. Computer Use cannot: its PiP is a
- * native macOS window, so this translates in both directions — main's claims become
- * store reports, and losing the arbitration becomes an instruction to hide.
- *
- * Mounted once, at the top of `App.tsx`, above every view branch. The arbitration has
- * to keep running while the user is in Settings, where neither of the other two
- * previews exists at all — otherwise a turn that ends there would leave the native
- * window suppressed with nothing to take its place.
+ * ScreenCaptureKit stays in the signed helper that already owns macOS recording
+ * permission. The visible preview does not: it is rendered by React inside the
+ * target session, alongside the browser and device previews.
  */
 export function useAgentViewfinder(): void {
-  useEffect(() => window.app.onComputerUseViewfinderClaim(({ active }) => {
-    // Never pinned: the native window has no chrome the user could pin it by, so it
-    // competes on recency alone — which is exactly right for a target the agent is
-    // touching right now.
-    useAgentViewfinderStore.getState().report('computer', { present: active })
+  useEffect(() => window.agent.onAgentEvent((event) => {
+    const sessionId = event.sessionId
+    if (!sessionId) return
+    if (event.type === 'status_change' && event.status !== 'streaming') {
+      useAgentViewfinderStore.getState().clear(sessionId)
+      useBrowserStore.getState().clearAutomationPreview(sessionId)
+      void window.app.hideComputerUseViewfinder(sessionId)
+      return
+    }
+    if (event.type !== 'content_delta' || event.delta.type !== 'tool_use') return
+    const kind = viewfinderKindForToolName(event.delta.toolName)
+    if (!kind) return
+    useAgentViewfinderStore.getState().activate(
+      sessionId,
+      kind,
+      targetIdFromInput(kind, event.delta.input),
+    )
+    // Computer Use's native stream has no visible consumer after another target wins.
+    // Stop it immediately instead of continuing JPEG/base64 work until turn cleanup.
+    if (kind !== 'computer') void window.app.hideComputerUseViewfinder(sessionId)
   }), [])
 
-  const owner = useAgentViewfinderStore(selectViewfinderOwner)
-  useEffect(() => {
-    // Yield only to a preview that actually won. `null` means nothing is on screen,
-    // and suppressing the native window then would leave the user watching nothing.
-    window.app.setComputerUseViewfinderYielded(owner !== null && owner !== 'computer')
-  }, [owner])
+  useEffect(() => window.app.onComputerUseViewfinderClaim((claim) => {
+    useComputerViewfinderStore.getState().applyClaim(claim)
+    if (claim.active && claim.sessionId && claim.windowId != null) {
+      if (useComputerViewfinderStore.getState().hiddenSessions[claim.sessionId]) {
+        void window.app.hideComputerUseViewfinder(claim.sessionId)
+        return
+      }
+      useAgentViewfinderStore.getState().activate(
+        claim.sessionId,
+        'computer',
+        String(claim.windowId),
+      )
+    } else if (claim.sessionId) {
+      useAgentViewfinderStore.getState().clear(claim.sessionId, { kind: 'computer' })
+    }
+  }), [])
+
+  useEffect(() => window.app.onComputerUseViewfinderFrame((frame) => {
+    useComputerViewfinderStore.getState().applyFrame(frame)
+  }), [])
 }

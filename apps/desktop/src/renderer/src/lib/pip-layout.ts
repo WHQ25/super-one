@@ -79,7 +79,7 @@ function fitPipSizeToAspect(
   aspect: number,
   box: ReturnType<typeof availablePipBox>,
 ): { width: number; height: number } {
-  const { maxWidth, maxHeight, minWidth, minHeight } = box
+  const { maxWidth, maxHeight, minWidth } = box
   let width = Math.min(desiredWidth, maxWidth, maxHeight * aspect)
   if (width < 0 || !Number.isFinite(width)) width = 0
   let height = aspect > 0 ? width / aspect : 0
@@ -87,10 +87,6 @@ function fitPipSizeToAspect(
   if (width < minWidth && minWidth / aspect <= maxHeight) {
     width = minWidth
     height = width / aspect
-  }
-  if (height < minHeight && minHeight * aspect <= maxWidth) {
-    height = minHeight
-    width = height * aspect
   }
   return { width, height }
 }
@@ -104,7 +100,11 @@ export function clampPipLayout(
 ): PipLayout {
   const box = availablePipBox(bounds, dims)
   if (options?.maxHeight != null) {
-    box.maxHeight = Math.min(box.maxHeight, options.maxHeight)
+    // A compact default ceiling must never undercut the advertised width floor when
+    // the chat itself has room. Portrait targets may need more height to remain 160px
+    // wide; only the physical boundary is allowed to force them below that minimum.
+    const minAspectHeight = aspect && aspect > 0 ? box.minWidth / aspect : 0
+    box.maxHeight = Math.min(box.maxHeight, Math.max(options.maxHeight, minAspectHeight))
   }
   const sized = aspect && aspect > 0 && Number.isFinite(aspect)
     ? fitPipSizeToAspect(layout.width, aspect, box)
@@ -138,6 +138,8 @@ export function createDefaultPipLayout(
     height: aspect && aspect > 0 ? width / aspect : dims.defaultHeight,
   }
   return clampPipLayout(initial, bounds, dims, aspect, {
-    maxHeight: defaultPipMaxHeight(bounds, dims),
+    // The initial width is a contract too. Raise the compact height ceiling when a
+    // portrait aspect needs it, while clampPipLayout still respects physical bounds.
+    maxHeight: Math.max(defaultPipMaxHeight(bounds, dims), initial.height),
   })
 }

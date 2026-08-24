@@ -343,7 +343,6 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
 export function materializeOwnedBrowserTabs(sessionId: string) {
   if (!dockApi) return
   const { tabs } = useBrowserStore.getState()
-  let added = false
   for (const [id, tab] of Object.entries(tabs)) {
     if (tab.owner !== sessionId) continue
     if (dockApi.panels.find((p) => p.id === id)) continue
@@ -356,10 +355,6 @@ export function materializeOwnedBrowserTabs(sessionId: string) {
       params: { browserId: id, url: tab.url },
       ...(position ? { position } : {}),
     })
-    added = true
-  }
-  if (added) {
-    ensureVisible()
   }
 }
 

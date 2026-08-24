@@ -515,13 +515,24 @@ function pushComputerUseDisplaysChanged(): void {
   safeSend(AgentIpcChannels.COMPUTER_USE_DISPLAYS_CHANGED)
 }
 
-// Computer Use's leg of the shared floating preview. It is a native window, so it
-// cannot be positioned by the renderer — it reports when it becomes the newest agent
-// target and is told to stand down when something pinned outranks it.
-void import('./computer-use/viewfinder').then(({ setComputerUseViewfinderClaimSink }) => {
+// Computer Use keeps capture in the signed helper, while the visible PiP belongs to
+// the session renderer alongside browser and device previews.
+void Promise.all([
+  import('./computer-use/viewfinder'),
+  import('./computer-use/platform/macos-helper-client'),
+]).then(([viewfinder, helper]) => {
+  const {
+    forwardComputerUseViewfinderFrame,
+    setComputerUseViewfinderClaimSink,
+    setComputerUseViewfinderFrameSink,
+  } = viewfinder
   setComputerUseViewfinderClaimSink((claim) => {
     safeSend(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_CLAIM, claim)
   })
+  setComputerUseViewfinderFrameSink((frame) => {
+    safeSend(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_FRAME, frame)
+  })
+  helper.getSharedHelperClient().onEvent(forwardComputerUseViewfinderFrame)
 })
 
 const rendererAgentEventTransport = createRendererAgentEventTransport((events) => {
@@ -682,6 +693,10 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
     }
   }
   if (patch?.computerUsePictureInPicture !== undefined) {
+    if (!result.computerUsePictureInPicture) {
+      const { releaseComputerUseViewfinder } = await import('./computer-use/viewfinder')
+      releaseComputerUseViewfinder()
+    }
     try {
       const { getSharedHelperClient } = await import('./computer-use/platform/macos-helper-client')
       await getSharedHelperClient().call('pip_set_enabled', {
@@ -3817,24 +3832,50 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_DISPLAYS, () => {
     return listComputerUseDisplays()
   })
-  /**
-   * The renderer owns the shared viewfinder arbitration, so it is the one that says
-   * when the native window has lost. Hidden immediately rather than only on the next
-   * action: the whole point of yielding is that something else is on screen NOW.
-   */
-  ipcMain.on(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_YIELD, (_event, yielded: boolean) => {
-    void (async () => {
-      const { setComputerUseViewfinderYielded } = await import('./computer-use/viewfinder')
-      if (!setComputerUseViewfinderYielded(yielded === true) || !yielded) return
-      if (process.platform !== 'darwin') return
+  ipcMain.handle(
+    AgentIpcChannels.COMPUTER_USE_VIEWFINDER_FOCUS,
+    async (_event, sessionId: string) => {
+      if (process.platform !== 'darwin' || typeof sessionId !== 'string' || !sessionId) return false
+      try {
+        const [{ getComputerUseViewfinderTarget }, { getSharedHelperClient }] = await Promise.all([
+          import('./computer-use/viewfinder'),
+          import('./computer-use/platform/macos-helper-client'),
+        ])
+        const target = getComputerUseViewfinderTarget(sessionId)
+        if (typeof target?.pid !== 'number' || typeof target.windowId !== 'number') return false
+        await getSharedHelperClient().call('focus_window', {
+          pid: target.pid,
+          windowId: target.windowId,
+          ...(target.title ? { windowTitle: target.title } : {}),
+        })
+        return true
+      } catch (err) {
+        log.warn(
+          '[computer-use] focus viewfinder target failed: %s',
+          err instanceof Error ? err.message : String(err),
+        )
+        return false
+      }
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.COMPUTER_USE_VIEWFINDER_HIDE,
+    async (_event, sessionId: string) => {
+      if (typeof sessionId !== 'string' || !sessionId) return false
+      if (process.platform !== 'darwin') return true
       try {
         const { getSharedHelperClient } = await import('./computer-use/platform/macos-helper-client')
-        await getSharedHelperClient().call('pip_hide', {})
-      } catch {
-        // helper offline or unsupported platform
+        await getSharedHelperClient().call('pip_hide', { sessionId })
+        return true
+      } catch (err) {
+        log.warn(
+          '[computer-use] hide viewfinder failed: %s',
+          err instanceof Error ? err.message : String(err),
+        )
+        return false
       }
-    })()
-  })
+    },
+  )
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS, async () => {
     if (process.platform !== 'darwin') return []
     try {

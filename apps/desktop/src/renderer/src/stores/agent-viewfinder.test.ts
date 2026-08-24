@@ -1,84 +1,63 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  selectViewfinderOwner,
+  selectViewfinderTarget,
   useAgentViewfinderStore,
-  type ViewfinderKind,
+  viewfinderKindForToolName,
 } from './agent-viewfinder'
 
-const report = (kind: ViewfinderKind, present: boolean, pinned = false) =>
-  useAgentViewfinderStore.getState().report(kind, { present, pinned })
-
-const owner = () => selectViewfinderOwner(useAgentViewfinderStore.getState())
+const target = (sessionId = 'session-a') => (
+  selectViewfinderTarget(useAgentViewfinderStore.getState(), sessionId)
+)
 
 beforeEach(() => {
-  const idle = { present: false, pinned: false, seq: 0 }
-  useAgentViewfinderStore.setState({ claims: { device: idle, browser: idle, computer: idle } })
+  useAgentViewfinderStore.setState({ activeBySession: {} })
 })
 
 describe('the shared agent viewfinder', () => {
   it('shows nothing until something asks for it', () => {
-    expect(owner()).toBeNull()
+    expect(target()).toBeNull()
   })
 
-  /**
-   * The whole reason this store exists. Three subsystems could each put a floating
-   * preview on screen, and two at once are not two useful views: separately draggable
-   * boxes over the same chat, at different z-layers, neither of them saying which one
-   * the agent is actually driving.
-   */
-  it('gives the slot to the target touched most recently', () => {
-    report('device', true)
-    report('browser', true)
+  it('keeps the latest exact target for a session', () => {
+    const store = useAgentViewfinderStore.getState()
+    store.activate('session-a', 'browser', 'browser-a')
+    store.activate('session-a', 'browser', 'browser-b')
 
-    expect(owner()).toBe('browser')
-
-    report('computer', true)
-    expect(owner()).toBe('computer')
+    expect(target()).toEqual({ kind: 'browser', targetId: 'browser-b' })
   })
 
-  it('lets a pinned target outrank a newer one, because a pin is a request', () => {
-    report('device', true, true)
-    report('computer', true)
+  it('shows nothing when the latest target exits instead of falling back', () => {
+    const store = useAgentViewfinderStore.getState()
+    store.activate('session-a', 'device', 'device-a')
+    store.activate('session-a', 'computer', '42')
+    store.clear('session-a', { kind: 'computer', targetId: '42' })
 
-    // The agent moving on to the desktop must not yank away a preview the user
-    // deliberately put on screen. Recency is only the default for "no preference".
-    expect(owner()).toBe('device')
+    expect(target()).toBeNull()
   })
 
-  it('hands the slot on the moment the pin is dropped', () => {
-    report('device', true, true)
-    report('computer', true)
-    report('device', true, false)
+  it('does not clear a newer target when an older target exits late', () => {
+    const store = useAgentViewfinderStore.getState()
+    store.activate('session-a', 'computer', '42')
+    store.activate('session-a', 'browser', 'browser-a')
+    store.clear('session-a', { kind: 'computer', targetId: '42' })
 
-    expect(owner()).toBe('computer')
+    expect(target()).toEqual({ kind: 'browser', targetId: 'browser-a' })
   })
 
-  it('falls back to whatever is left when the winner goes away', () => {
-    report('device', true)
-    report('computer', true)
-    expect(owner()).toBe('computer')
+  it('isolates recency between sessions', () => {
+    const store = useAgentViewfinderStore.getState()
+    store.activate('session-a', 'browser', 'browser-a')
+    store.activate('session-b', 'device', 'device-b')
 
-    // A turn ending is the common case: Computer Use releases and the device the
-    // session still holds should come back rather than the chat going blank.
-    report('computer', false)
-    expect(owner()).toBe('device')
+    expect(target('session-a')).toEqual({ kind: 'browser', targetId: 'browser-a' })
+    expect(target('session-b')).toEqual({ kind: 'device', targetId: 'device-b' })
   })
 
-  it('does not re-order the winner when a report says nothing new', () => {
-    report('device', true)
-    report('browser', true)
-    expect(owner()).toBe('browser')
-
-    // Every reporter fires on every render. An unchanged report that reshuffled the
-    // order would make the winner depend on which component happened to re-render.
-    report('device', true)
-    expect(owner()).toBe('browser')
-  })
-
-  it('ranks two pinned targets by which was pinned last', () => {
-    report('device', true, true)
-    report('browser', true, true)
-
-    expect(owner()).toBe('browser')
+  it('recognizes target-operating tools without treating catalog calls as activity', () => {
+    expect(viewfinderKindForToolName('mcp__superone__browser_click')).toBe('browser')
+    expect(viewfinderKindForToolName('mcp__superone__computer_act')).toBe('computer')
+    expect(viewfinderKindForToolName('mcp__superone__device_snapshot')).toBe('device')
+    expect(viewfinderKindForToolName('mcp__superone__computer_apps')).toBeNull()
+    expect(viewfinderKindForToolName('mcp__superone__device_list')).toBeNull()
   })
 })

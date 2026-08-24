@@ -25,6 +25,7 @@ import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicato
 import { MiniAppHostLayer } from '@/components/miniapp/MiniAppHostLayer'
 import { BrowserHostLayer } from '@/components/browser/BrowserHostLayer'
 import { DeviceHostLayer } from '@/components/device/DeviceHostLayer'
+import { ComputerUseHostLayer } from '@/components/computer-use/ComputerUseHostLayer'
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
@@ -69,8 +70,8 @@ function App(): React.JSX.Element {
   useMobileUploadToasts()
   useMiniAppHostActions()
   useMiniAppContextConsumedRelay()
-  // The floating preview is one slot shared by the device, the browser and Computer
-  // Use. This is the only leg that cannot report itself — see `useAgentViewfinder`.
+  // Native Computer Use frames enter the same renderer-owned viewfinder used by the
+  // browser and device previews.
   useAgentViewfinder()
   const devReactScan = useDevToolsStore((s) => s.reactScan)
   useReactScan(devReactScan)
@@ -489,6 +490,7 @@ function App(): React.JSX.Element {
         </div>
         <MiniAppHostLayer />
         <BrowserHostLayer />
+        <ComputerUseHostLayer />
         <DeviceHostLayer />
       </>
     )
@@ -527,6 +529,7 @@ function App(): React.JSX.Element {
         </div>
         <MiniAppHostLayer />
         <BrowserHostLayer />
+        <ComputerUseHostLayer />
         <DeviceHostLayer />
       </>
     )
@@ -685,6 +688,7 @@ function App(): React.JSX.Element {
     </div>
     <MiniAppHostLayer />
     <BrowserHostLayer />
+    <ComputerUseHostLayer />
     <DeviceHostLayer />
     {draggingSession && mosaicMode !== 'mosaic' && (
       <MosaicSingleDropOverlay wrapperRef={mainWrapperRef} canRestoreMosaic={canRestoreMosaic} />

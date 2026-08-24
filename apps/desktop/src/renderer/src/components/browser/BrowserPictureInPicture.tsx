@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { EyeOff, Maximize2, Minimize2 } from 'lucide-react'
+import { EyeOff, Minimize2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActivityPanelStore } from '@/stores/activity-panel'
-import { useAgentViewfinderStore, useOwnsViewfinder } from '@/stores/agent-viewfinder'
+import {
+  selectViewfinderTarget,
+  useAgentViewfinderStore,
+} from '@/stores/agent-viewfinder'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
@@ -33,6 +36,8 @@ const RESIZE_CORNERS: Array<{ corner: ResizeCorner; className: string }> = [
   { corner: 'se', className: '-bottom-1 -right-1 cursor-nwse-resize' },
 ]
 
+const CLICK_SLOP = 4
+
 const OVERLAY_BACKDROP_PANES: Array<{ key: string; style: React.CSSProperties }> = [
   { key: 'top', style: { left: 0, top: 0, width: '100vw', height: '5vh' } },
   { key: 'bottom', style: { left: 0, bottom: 0, width: '100vw', height: '5vh' } },
@@ -46,20 +51,31 @@ function browserPipBoundary(): HTMLElement | null {
 
 export function BrowserPictureInPicture() {
   const { t } = useTranslation()
-  const automationPreviewBrowserId = useBrowserStore((state) => state.automationPreviewBrowserId)
   const expandedBrowserId = useBrowserStore((state) => state.expandedBrowserId)
   const pinnedPipBrowserId = useBrowserStore((state) => state.pinnedPipBrowserId)
   const hiddenPreviewBrowserId = useBrowserStore((state) => state.hiddenPreviewBrowserId)
-  const automaticPreviewId = automationPreviewBrowserId !== hiddenPreviewBrowserId
-    ? automationPreviewBrowserId
+  const currentSessionId = useChatStore(selectActiveChatSessionId)
+  const activeTarget = useAgentViewfinderStore((state) => (
+    selectViewfinderTarget(state, currentSessionId)
+  ))
+  const operatedBrowserId = activeTarget?.kind === 'browser' ? activeTarget.targetId : null
+  const operatedBrowserReady = useBrowserStore((state) => (
+    operatedBrowserId ? state.automationPreviewReady?.[operatedBrowserId] === true : false
+  ))
+  const automaticPreviewId = operatedBrowserId && operatedBrowserReady
+    ? operatedBrowserId
     : null
-  const browserId = expandedBrowserId ?? pinnedPipBrowserId ?? automaticPreviewId
+  const visibleAutomaticPreviewId = automaticPreviewId !== hiddenPreviewBrowserId
+    ? automaticPreviewId
+    : null
+  // Agent recency outranks a manually expanded older tab. Otherwise a tool switching
+  // A -> B would keep drawing A merely because A happened to be expanded.
+  const browserId = visibleAutomaticPreviewId ?? expandedBrowserId ?? pinnedPipBrowserId
   const expanded = browserId != null && expandedBrowserId === browserId
   const owner = useBrowserStore((state) => browserId ? state.tabs[browserId]?.owner ?? null : null)
   const panelSlot = useBrowserStore((state) => browserId ? state.slots[browserId] : undefined)
   const emulation = useBrowserStore((state) => browserId ? state.emulations[browserId] : undefined)
   const pipAspect = browserPipAspect(resolveBrowserPipViewport(emulation, panelSlot))
-  const currentSessionId = useChatStore(selectActiveChatSessionId)
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const mosaicMode = useMosaicStore((state) => state.mode)
   const wanted = browserId != null
@@ -67,16 +83,9 @@ export function BrowserPictureInPicture() {
     && owner === currentSessionId
     && !activityShown
     && mosaicMode === 'single'
-  // One preview on screen, whichever target the agent touched last — see
-  // `stores/agent-viewfinder`. Pinned covers both deliberate states: expanded, and
-  // shrunk back rather than dismissed, which is the user saying "keep this".
-  const report = useAgentViewfinderStore((state) => state.report)
-  const pinned = expanded || (browserId != null && pinnedPipBrowserId === browserId)
-  useEffect(() => {
-    report('browser', { present: wanted, pinned })
-    return () => report('browser', { present: false })
-  }, [pinned, report, wanted])
-  const owns = useOwnsViewfinder('browser')
+  const owns = activeTarget?.kind === 'browser'
+    && activeTarget.targetId != null
+    && activeTarget.targetId === browserId
   const shouldShow = wanted && owns
   const showPip = shouldShow && !expanded
 
@@ -86,7 +95,7 @@ export function BrowserPictureInPicture() {
   const interactionCleanupRef = useRef<(() => void) | null>(null)
   const pipAspectRef = useRef(pipAspect)
 
-  useOnTurnCompleted(() => useBrowserStore.getState().clearAutomationPreview())
+  useOnTurnCompleted(() => useBrowserStore.getState().clearAutomationPreview(currentSessionId ?? undefined))
 
   useEffect(() => {
     if (!activityShown || !browserId) return
@@ -140,6 +149,7 @@ export function BrowserPictureInPicture() {
   const startInteraction = useCallback((
     cursor: string,
     onMove: (event: PointerEvent) => void,
+    onEnd?: () => void,
   ) => {
     interactionCleanupRef.current?.()
     setInteracting(true)
@@ -152,6 +162,7 @@ export function BrowserPictureInPicture() {
       capture.release()
       interactionCleanupRef.current = null
       setInteracting(false)
+      onEnd?.()
     }
     interactionCleanupRef.current = cleanup
     window.addEventListener('pointermove', onMove)
@@ -159,20 +170,39 @@ export function BrowserPictureInPicture() {
     window.addEventListener('pointercancel', cleanup)
   }, [])
 
+  const hidePreview = useCallback(() => {
+    if (browserId) useBrowserStore.getState().hidePreview(browserId)
+  }, [browserId])
+
+  const expandPreview = useCallback(() => {
+    if (browserId) useBrowserStore.getState().expandPreview(browserId)
+  }, [browserId])
+
+  const shrinkPreview = useCallback(() => {
+    if (browserId) useBrowserStore.getState().shrinkPreview(browserId)
+  }, [browserId])
+
   const onPreviewPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!bounds || !layout || event.button !== 0) return
     event.preventDefault()
     const startX = event.clientX
     const startY = event.clientY
     const start = layout
+    let dragging = false
     startInteraction('grabbing', (move) => {
+      const dx = move.clientX - startX
+      const dy = move.clientY - startY
+      if (!dragging && Math.abs(dx) <= CLICK_SLOP && Math.abs(dy) <= CLICK_SLOP) return
+      dragging = true
       setLayout(clampBrowserPipLayout({
         ...start,
-        left: start.left + move.clientX - startX,
-        top: start.top + move.clientY - startY,
+        left: start.left + dx,
+        top: start.top + dy,
       }, bounds, pipAspect))
+    }, () => {
+      if (!dragging) expandPreview()
     })
-  }, [bounds, layout, pipAspect, startInteraction])
+  }, [bounds, expandPreview, layout, pipAspect, startInteraction])
 
   const startResize = useCallback((corner: ResizeCorner, event: React.PointerEvent<HTMLDivElement>) => {
     if (!bounds || !layout || event.button !== 0) return
@@ -206,18 +236,6 @@ export function BrowserPictureInPicture() {
     })
   }, [bounds, layout, pipAspect, startInteraction])
 
-  const hidePreview = useCallback(() => {
-    if (browserId) useBrowserStore.getState().hidePreview(browserId)
-  }, [browserId])
-
-  const expandPreview = useCallback(() => {
-    if (browserId) useBrowserStore.getState().expandPreview(browserId)
-  }, [browserId])
-
-  const shrinkPreview = useCallback(() => {
-    if (browserId) useBrowserStore.getState().shrinkPreview(browserId)
-  }, [browserId])
-
   return (
     <AnimatePresence>
       {showPip && browserId && layout && (
@@ -249,8 +267,16 @@ export function BrowserPictureInPicture() {
           </div>
           <div
             data-browser-pip-drag-handle=""
-            className="pointer-events-auto absolute inset-0 cursor-grab active:cursor-grabbing"
+            role="button"
+            tabIndex={0}
+            aria-label={t('chat.browser.previewExpand')}
+            className="pointer-events-auto absolute inset-0 cursor-grab rounded-xl outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
             onPointerDown={onPreviewPointerDown}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              expandPreview()
+            }}
           />
           <div
             data-browser-pip-actions=""
@@ -265,16 +291,6 @@ export function BrowserPictureInPicture() {
               onClick={hidePreview}
             >
               <EyeOff />
-            </IconButton>
-            <IconButton
-              aria-label={t('chat.browser.previewExpand')}
-              tooltip={t('chat.browser.previewExpand')}
-              tooltipSide="bottom"
-              size="xs"
-              variant="ghost"
-              onClick={expandPreview}
-            >
-              <Maximize2 />
             </IconButton>
           </div>
           {RESIZE_CORNERS.map(({ corner, className }) => (

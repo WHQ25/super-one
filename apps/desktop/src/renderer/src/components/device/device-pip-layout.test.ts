@@ -36,6 +36,7 @@ describe('ios simulator pip layout', () => {
   it('opens portrait in the top-right corner, inside the chat', () => {
     const layout = createDefaultDevicePipLayout(CHAT)
 
+    expect(layout.width).toBe(180)
     expect(layout.width / layout.height).toBeCloseTo(DEVICE_PIP_ASPECT, 5)
     expect(layout.left + layout.width).toBeLessThanOrEqual(CHAT.width)
     expect(layout.top).toBeGreaterThanOrEqual(0)
@@ -49,6 +50,14 @@ describe('ios simulator pip layout', () => {
     expect(shoved.width / shoved.height).toBeCloseTo(DEVICE_PIP_ASPECT, 5)
     expect(shoved.left + shoved.width).toBeLessThanOrEqual(CHAT.width)
     expect(shoved.top + shoved.height).toBeLessThanOrEqual(CHAT.height)
+  })
+
+  it('allows user resizing down to 160px wide', () => {
+    const start = createDefaultDevicePipLayout(CHAT)
+    const layout = clampDevicePipLayout({ ...start, width: 80 }, CHAT)
+
+    expect(layout.width).toBe(160)
+    expect(layout.width / layout.height).toBeCloseTo(DEVICE_PIP_ASPECT, 5)
   })
 
   it('fits a portrait box into a chat too short for the default height', () => {

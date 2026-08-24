@@ -1107,6 +1107,32 @@ export interface ComputerUseDisplayInfo {
   internal: boolean
 }
 
+/** Metadata for the Computer Use target rendered in the owning session's PiP. */
+export interface ComputerUseViewfinderClaim {
+  sessionId: string
+  active: boolean
+  windowId?: number
+  pid?: number
+  app?: string
+  bundleId?: string
+  title?: string
+  sourceWidth?: number
+  sourceHeight?: number
+  cursorX?: number
+  cursorY?: number
+  pulse?: boolean
+}
+
+/** One compressed frame from the native ScreenCaptureKit stream. */
+export interface ComputerUseViewfinderFrame {
+  sessionId: string
+  windowId: number
+  width: number
+  height: number
+  /** Base64-encoded JPEG bytes, without a data-URI prefix. */
+  data: string
+}
+
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto' | 'agent'
 
 export type AccountApiProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'anthropicGoogleCloud' | 'mantle' | 'gateway'
@@ -3408,17 +3434,14 @@ export const AgentIpcChannels = {
   COMPUTER_USE_GRANT_SESSION_APPS: 'computer-use:grant-session-apps',
   /** Best-effort app icon data URI for a bundle id (UI only; cached in main). */
   COMPUTER_USE_RESOLVE_APP_ICON: 'computer-use:resolve-app-icon',
-  /**
-   * Main -> renderer: the native picture-in-picture just became the agent's most
-   * recently touched target, or stopped being one. Feeds the shared viewfinder
-   * arbitration the device and browser previews also report into.
-   */
+  /** Main -> renderer: Computer Use target metadata for the session-owned PiP. */
   COMPUTER_USE_VIEWFINDER_CLAIM: 'computer-use:viewfinder-claim',
-  /**
-   * Renderer -> main: a pinned device or browser preview outranks Computer Use, so
-   * the native window must stay off screen until this is cleared.
-   */
-  COMPUTER_USE_VIEWFINDER_YIELD: 'computer-use:viewfinder-yield',
+  /** Main -> renderer: compressed frame for the current Computer Use target. */
+  COMPUTER_USE_VIEWFINDER_FRAME: 'computer-use:viewfinder-frame',
+  /** Renderer -> main: focus the active window behind a Computer Use PiP. */
+  COMPUTER_USE_VIEWFINDER_FOCUS: 'computer-use:viewfinder-focus',
+  /** Renderer -> main: stop capture after the Computer Use PiP loses visibility. */
+  COMPUTER_USE_VIEWFINDER_HIDE: 'computer-use:viewfinder-hide',
   BROWSER_HISTORY_RECORD: 'app:browser-history-record',
   BROWSER_HISTORY_SUGGEST: 'app:browser-history-suggest',
   BROWSER_HISTORY_DELETE: 'app:browser-history-delete',

@@ -10,6 +10,7 @@ export type HelperMethod =
   | 'ax_tree'
   | 'ax_action'
   | 'focus_app'
+  | 'focus_window'
   | 'launch_app'
   | 'capture'
   | 'zoom'

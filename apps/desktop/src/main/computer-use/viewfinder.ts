@@ -1,28 +1,20 @@
 /**
- * Computer Use's leg of the shared agent viewfinder.
+ * Main-process bridge for Computer Use's renderer-owned viewfinder.
  *
- * The floating preview is one slot, shared with the device panel's and the browser's
- * — see `stores/agent-viewfinder` in the renderer, which owns the arbitration. This
- * side is different from the other two in one way that shapes everything here: the
- * PiP is a native macOS window owned by the helper, so the renderer can neither
- * position it nor stack it. It can only be told to stand down.
- *
- * Hence two one-way signals rather than shared state:
- *
- * - CLAIM, main to renderer. Emitted the moment Computer Use is about to show its
- *   viewfinder, which is exactly the moment it becomes the most recently touched
- *   target. The renderer stamps it and its own previews step aside.
- * - YIELD, renderer to main. Set while a pinned device or browser preview outranks
- *   Computer Use, which is the only way it loses — an ordinary agent action always
- *   arrives newer than whatever was on screen before it.
- *
- * The flag is consulted before every show rather than only when it changes, so a
- * yield that lands mid-turn takes effect on the next action without anything having
- * to remember to re-apply it.
+ * The signed helper still captures native windows with ScreenCaptureKit, but it no
+ * longer creates an NSPanel. Target metadata and compressed frames cross the existing
+ * helper event channel and are forwarded to the renderer that owns the session UI.
  */
 
-let yielded = false
-let claimSink: ((claim: { sessionId: string; active: boolean }) => void) | null = null
+import type {
+  ComputerUseViewfinderClaim,
+  ComputerUseViewfinderFrame,
+} from '@superone/shared/agent-types'
+import type { HelperEvent } from './platform/helper-protocol'
+
+let claimSink: ((claim: ComputerUseViewfinderClaim) => void) | null = null
+let frameSink: ((frame: ComputerUseViewfinderFrame) => void) | null = null
+const activeClaims = new Map<string, ComputerUseViewfinderClaim>()
 
 /**
  * How a claim reaches the renderer.
@@ -32,14 +24,24 @@ let claimSink: ((claim: { sessionId: string; active: boolean }) => void) | null 
  * would take the whole computer-use service down with it.
  */
 export function setComputerUseViewfinderClaimSink(
-  sink: ((claim: { sessionId: string; active: boolean }) => void) | null,
+  sink: ((claim: ComputerUseViewfinderClaim) => void) | null,
 ): void {
   claimSink = sink
 }
 
-/** Computer Use is about to show its viewfinder — it is now the newest target. */
-export function claimComputerUseViewfinder(sessionId: string): void {
-  claimSink?.({ sessionId, active: true })
+export function setComputerUseViewfinderFrameSink(
+  sink: ((frame: ComputerUseViewfinderFrame) => void) | null,
+): void {
+  frameSink = sink
+}
+
+/** Computer Use is about to show this target — it is now the newest target. */
+export function claimComputerUseViewfinder(
+  claim: Omit<ComputerUseViewfinderClaim, 'active'>,
+): void {
+  const activeClaim = { ...claim, active: true }
+  activeClaims.set(claim.sessionId, activeClaim)
+  claimSink?.(activeClaim)
 }
 
 /**
@@ -49,21 +51,38 @@ export function claimComputerUseViewfinder(sessionId: string): void {
  * moving, which is the same bug as showing the wrong one — just quieter.
  */
 export function releaseComputerUseViewfinder(sessionId = ''): void {
+  if (sessionId) activeClaims.delete(sessionId)
+  else activeClaims.clear()
   claimSink?.({ sessionId, active: false })
 }
 
-/**
- * Stand down, or resume.
- *
- * Returns whether the value changed, so the caller can hide the native window once
- * rather than on every report the renderer sends.
- */
-export function setComputerUseViewfinderYielded(next: boolean): boolean {
-  if (yielded === next) return false
-  yielded = next
-  return true
+/** Resolve a renderer click against helper-originated state, never renderer metadata. */
+export function getComputerUseViewfinderTarget(
+  sessionId: string,
+): ComputerUseViewfinderClaim | null {
+  return activeClaims.get(sessionId) ?? null
 }
 
-export function isComputerUseViewfinderYielded(): boolean {
-  return yielded
+/** Validate and forward one helper frame without exposing arbitrary helper events. */
+export function forwardComputerUseViewfinderFrame(event: HelperEvent): boolean {
+  const frame = event as Record<string, unknown>
+  if (event.event === 'computer_use_viewfinder_stopped') {
+    if (typeof frame.sessionId !== 'string') return false
+    releaseComputerUseViewfinder(frame.sessionId)
+    return true
+  }
+  if (event.event !== 'computer_use_viewfinder_frame') return false
+  if (typeof frame.sessionId !== 'string'
+    || typeof frame.windowId !== 'number'
+    || typeof frame.width !== 'number'
+    || typeof frame.height !== 'number'
+    || typeof frame.data !== 'string') return false
+  frameSink?.({
+    sessionId: frame.sessionId,
+    windowId: frame.windowId,
+    width: frame.width,
+    height: frame.height,
+    data: frame.data,
+  })
+  return true
 }

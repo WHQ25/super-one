@@ -1732,6 +1732,11 @@ export type Messages = {
       expand: string
       shrink: string
     }
+    computerUsePreview: {
+      label: string
+      hide: string
+      focus: string
+    }
     deviceLaunch: {
       badge: string
       title: string
@@ -4390,7 +4395,7 @@ export const en: Messages = {
       },
       pictureInPicture: {
         label: 'Live Picture in Picture',
-        description: 'Keep a floating, read-only preview of the app currently controlled by Computer Use.',
+        description: 'Show a read-only live preview at the top-right of the session currently using Computer Use.',
       },
       dedicatedDisplay: {
         label: 'Dedicated Display',
@@ -5251,6 +5256,11 @@ export const en: Messages = {
       hide: 'Hide device preview',
       expand: 'Expand device preview',
       shrink: 'Shrink device preview',
+    },
+    computerUsePreview: {
+      label: 'Computer Use picture in picture',
+      hide: 'Hide Computer Use preview',
+      focus: 'Focus controlled window',
     },
     deviceLaunch: {
       badge: 'Device',

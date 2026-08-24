@@ -1,10 +1,9 @@
 /**
  * The simulator preview's numbers. Geometry lives in `@/lib/pip-layout`.
  *
- * Sized very differently from the browser preview: a phone is tall and narrow, so the
- * width floor has to be small enough that a portrait box at that width still fits the
- * chat vertically — a 280px floor borrowed from the browser would demand ~560px of
- * height and get clamped into a shape no phone has.
+ * A phone is tall and narrow, so its default width needs a larger height ceiling
+ * than a browser window. Very short chats may still shrink below the width floor to
+ * preserve the device aspect instead of distorting it.
  */
 
 import type { IosSimulatorChrome } from '@superone/shared/ios-simulator'
@@ -31,13 +30,13 @@ export const DEVICE_PIP_ASPECT = 1320 / 2868
 
 const DEVICE_PIP_DIMENSIONS: PipDimensions = {
   margin: 12,
-  defaultWidth: 220,
-  defaultHeight: 440,
-  minWidth: 130,
+  defaultWidth: 180,
+  defaultHeight: 360,
+  minWidth: 160,
   minHeight: 200,
   maxWidthRatio: 0.6,
   maxHeightRatio: 0.8,
-  defaultMaxHeight: 520,
+  defaultMaxHeight: 540,
 }
 
 /**

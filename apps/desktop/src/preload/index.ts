@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { DshPluginInstallSource, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
@@ -1785,19 +1785,33 @@ const appAPI = {
     }
   },
   onComputerUseViewfinderClaim: (
-    callback: (claim: { sessionId: string; active: boolean }) => void,
+    callback: (claim: ComputerUseViewfinderClaim) => void,
   ) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      claim: { sessionId: string; active: boolean },
+      claim: ComputerUseViewfinderClaim,
     ): void => callback(claim)
     ipcRenderer.on(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_CLAIM, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_CLAIM, handler)
     }
   },
-  setComputerUseViewfinderYielded: (yielded: boolean) =>
-    ipcRenderer.send(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_YIELD, yielded),
+  onComputerUseViewfinderFrame: (
+    callback: (frame: ComputerUseViewfinderFrame) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      frame: ComputerUseViewfinderFrame,
+    ): void => callback(frame)
+    ipcRenderer.on(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_FRAME, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_FRAME, handler)
+    }
+  },
+  focusComputerUseViewfinder: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_FOCUS, sessionId) as Promise<boolean>,
+  hideComputerUseViewfinder: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_HIDE, sessionId) as Promise<boolean>,
   listComputerUseInstalledApps: () =>
     ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS) as Promise<
       Array<{ app: string; bundleId: string; aliases: string[] }>

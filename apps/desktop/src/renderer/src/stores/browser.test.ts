@@ -15,6 +15,7 @@ beforeEach(() => {
     activeAutomationId: null,
     pendingPreviewBrowserId: null,
     automationPreviewBrowserId: null,
+    automationPreviewReady: {},
     expandedBrowserId: null,
     pinnedPipBrowserId: null,
     hiddenPreviewBrowserId: null,
@@ -105,5 +106,28 @@ describe('browser automation activity', () => {
 
     store.clearAutomationPreview()
     expect(useBrowserStore.getState().automationPreviewBrowserId).toBeNull()
+  })
+
+  it('tracks readiness independently across sessions and invalidates only the new operation', () => {
+    const store = useBrowserStore.getState()
+    store.ensure('browser-a', 'https://a.example', 'session-a')
+    store.ensure('browser-b', 'https://b.example', 'session-b')
+    store.patch('browser-a', { loading: false })
+    store.patch('browser-b', { loading: false })
+    store.beginAutomation('browser-a')
+    store.beginAutomation('browser-b')
+    store.markAutomationPreviewReady('browser-a')
+    store.markAutomationPreviewReady('browser-b')
+
+    expect(useBrowserStore.getState().automationPreviewReady).toEqual({
+      'browser-a': true,
+      'browser-b': true,
+    })
+
+    store.beginAutomation('browser-a')
+    expect(useBrowserStore.getState().automationPreviewReady).toEqual({ 'browser-b': true })
+
+    store.clearAutomationPreview('session-b')
+    expect(useBrowserStore.getState().automationPreviewReady).toEqual({})
   })
 })

@@ -17,6 +17,7 @@ import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { ACTIVITY_PANEL_TRANSITION } from '@/lib/layout-constants'
 import { BrowserPictureInPicture } from './BrowserPictureInPicture'
 import { BROWSER_FALLBACK_VIEWPORT, resolveBrowserPipViewport } from './browser-pip-layout'
+import { selectViewfinderTarget, useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 
 export function BrowserHostLayer() {
   const ids = useBrowserStore(useShallow((s) => Object.keys(s.tabs)))
@@ -68,7 +69,12 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   const panelSlot = useBrowserStore((s) => s.slots[browserId])
   const pipSlot = useBrowserStore((s) => s.pipSlots[browserId])
   const overlaySlot = useBrowserStore((s) => s.overlaySlots[browserId])
-  const automationPreview = useBrowserStore((s) => s.automationPreviewBrowserId === browserId)
+  const owner = useBrowserStore((s) => s.tabs[browserId]?.owner ?? null)
+  const exactAutomationPreviewReady = useBrowserStore((s) => s.automationPreviewReady?.[browserId] === true)
+  const activeTarget = useAgentViewfinderStore((state) => selectViewfinderTarget(state, owner))
+  const automationPreview = activeTarget?.kind === 'browser'
+    && activeTarget.targetId === browserId
+    && exactAutomationPreviewReady
   const previewExpanded = useBrowserStore((s) => s.expandedBrowserId === browserId)
   const previewPinned = useBrowserStore((s) => s.pinnedPipBrowserId === browserId)
   const previewHidden = useBrowserStore((s) => s.hiddenPreviewBrowserId === browserId)

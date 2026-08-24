@@ -15,6 +15,7 @@ import {
 } from './browser-host-api'
 import { beginBrowserFocusIsolation, endBrowserFocusIsolation, withBrowserFocusIsolation } from './browser-focus-isolation'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
+import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 
 const MAX_SCREENSHOT_WIDTH = 1280
 
@@ -615,6 +616,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     const url = input.url ?? 'about:blank'
     const targetId = input.tab ?? `browser-${crypto.randomUUID()}`
     openBrowserTab(url, targetId, sessionId, { reveal: false })
+    useAgentViewfinderStore.getState().activate(sessionId, 'browser', targetId)
     const store = useBrowserStore.getState()
     store.patch(targetId, { loading: true })
     store.beginAutomation(targetId)
@@ -645,6 +647,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     return { tabs, count: tabs.length }
   }
   const id = resolveBrowserId(input.tab, sessionId)
+  useAgentViewfinderStore.getState().activate(sessionId, 'browser', id)
   const store = useBrowserStore.getState()
   store.beginAutomation(id)
   if (op !== 'navigate') store.markAutomationPreviewReady(id)

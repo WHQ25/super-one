@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { useBrowserStore } from '@/stores/browser'
 import { setDockApi } from '@/components/activity/activity-panel-api'
 
@@ -75,6 +76,7 @@ beforeEach(() => {
   })
   document.body.appendChild(boundary)
   useActivityPanelStore.setState({ showPanel: false })
+  useAgentViewfinderStore.setState({ activeBySession: {} })
   useBrowserStore.setState({
     tabs: {},
     slots: {},
@@ -84,6 +86,7 @@ beforeEach(() => {
     activeAutomationId: null,
     pendingPreviewBrowserId: null,
     automationPreviewBrowserId: null,
+    automationPreviewReady: {},
     expandedBrowserId: null,
     pinnedPipBrowserId: null,
     hiddenPreviewBrowserId: null,
@@ -96,6 +99,7 @@ function startReadyAutomation(): void {
   useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
   useBrowserStore.getState().beginAutomation('browser-a')
   useBrowserStore.getState().markAutomationPreviewReady('browser-a')
+  useAgentViewfinderStore.getState().activate('session-a', 'browser', 'browser-a')
 }
 
 describe('browser picture in picture', () => {
@@ -108,7 +112,7 @@ describe('browser picture in picture', () => {
     render(<BrowserPictureInPicture />)
 
     const pip = await screen.findByLabelText('Browser picture in picture')
-    expect(pip).toHaveStyle({ left: '728px', top: '62px', width: '360px', height: '225px' })
+    expect(pip).toHaveStyle({ left: '908px', top: '62px', width: '180px', height: '112.5px' })
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-mode', 'pip')
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-interactive', 'false')
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-show-chrome', 'false')
@@ -135,7 +139,10 @@ describe('browser picture in picture', () => {
     })
     render(<BrowserPictureInPicture />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Expand browser preview' }))
+    const pipHandle = (await screen.findByLabelText('Browser picture in picture'))
+      .querySelector('[data-browser-pip-drag-handle]') as HTMLElement
+    fireEvent.pointerDown(pipHandle, { button: 0, clientX: 700, clientY: 70 })
+    fireEvent.pointerUp(window, { clientX: 700, clientY: 70 })
     const overlay = await screen.findByRole('dialog', { name: 'Expanded browser preview' })
     expect(overlay).toHaveClass('rounded-none')
     expect(within(overlay).getByTestId('pip-browser-view')).toHaveAttribute('data-mode', 'overlay')
@@ -148,10 +155,30 @@ describe('browser picture in picture', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Expanded browser preview' })).not.toBeInTheDocument())
     expect(within(pip).getByTestId('pip-browser-view')).toHaveAttribute('data-mode', 'pip')
 
-    fireEvent.click(within(pip).getByRole('button', { name: 'Expand browser preview' }))
+    const reopenedHandle = pip.querySelector('[data-browser-pip-drag-handle]') as HTMLElement
+    fireEvent.pointerDown(reopenedHandle, { button: 0, clientX: 700, clientY: 70 })
+    fireEvent.pointerUp(window, { clientX: 700, clientY: 70 })
     const reopenedOverlay = await screen.findByRole('dialog', { name: 'Expanded browser preview' })
     fireEvent.click(within(reopenedOverlay).getByRole('button', { name: 'Hide browser preview' }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Expanded browser preview' })).not.toBeInTheDocument())
+  })
+
+  it('shows only Hide in the minimized action bar and does not expand after a drag', async () => {
+    act(() => {
+      startReadyAutomation()
+    })
+    render(<BrowserPictureInPicture />)
+
+    const pip = await screen.findByLabelText('Browser picture in picture')
+    const actions = pip.querySelector('[data-browser-pip-actions]') as HTMLElement
+    expect(within(actions).getAllByRole('button')).toHaveLength(1)
+    expect(within(actions).getByRole('button', { name: 'Hide browser preview' })).toBeInTheDocument()
+
+    const dragHandle = pip.querySelector('[data-browser-pip-drag-handle]') as HTMLElement
+    fireEvent.pointerDown(dragHandle, { button: 0, clientX: 700, clientY: 70 })
+    fireEvent.pointerMove(window, { clientX: 720, clientY: 90 })
+    fireEvent.pointerUp(window, { clientX: 720, clientY: 90 })
+    expect(screen.queryByRole('dialog', { name: 'Expanded browser preview' })).not.toBeInTheDocument()
   })
 
   it('keeps drag and resize results inside the chat bounds and under the 80% width cap', async () => {
@@ -167,7 +194,7 @@ describe('browser picture in picture', () => {
     fireEvent.pointerMove(window, { clientX: -500, clientY: 1000 })
     fireEvent.pointerUp(window)
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-track-bounds-continuously', 'false')
-    expect(pip).toHaveStyle({ left: '112px', top: '513px' })
+    expect(pip).toHaveStyle({ left: '112px', top: '625.5px' })
 
     const resize = pip.querySelector('[data-browser-pip-resize="se"]') as HTMLElement
     fireEvent.pointerDown(resize, { button: 0, clientX: 592, clientY: 738 })
@@ -189,7 +216,7 @@ describe('browser picture in picture', () => {
     render(<BrowserPictureInPicture />)
 
     const pip = await screen.findByLabelText('Browser picture in picture')
-    expect(pip).toHaveStyle({ width: '360px', height: '202.5px' })
+    expect(pip).toHaveStyle({ width: '180px', height: '101.25px' })
 
     act(() => {
       useBrowserStore.getState().updateSlot('browser-a', 'panel', {
@@ -199,7 +226,7 @@ describe('browser picture in picture', () => {
         height: 800,
       } as DOMRectReadOnly)
     })
-    expect(pip).toHaveStyle({ width: `${315 * 560 / 800}px`, height: '315px' })
+    expect(pip).toHaveStyle({ width: '180px', height: `${180 / (560 / 800)}px` })
   })
 
   it('waits for page readiness, stays between tool calls, and closes when the turn ends', async () => {
@@ -207,6 +234,7 @@ describe('browser picture in picture', () => {
       useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
       useBrowserStore.getState().patch('browser-a', { loading: true })
       useBrowserStore.getState().beginAutomation('browser-a')
+      useAgentViewfinderStore.getState().activate('session-a', 'browser', 'browser-a')
     })
     render(<BrowserPictureInPicture />)
     expect(screen.queryByLabelText('Browser picture in picture')).not.toBeInTheDocument()
@@ -221,6 +249,19 @@ describe('browser picture in picture', () => {
 
     act(() => turnCompletion.callback?.())
     await waitFor(() => expect(screen.queryByLabelText('Browser picture in picture')).not.toBeInTheDocument())
+  })
+
+  it('shows nothing while a newly operated browser target is still unresolved', () => {
+    act(() => {
+      startReadyAutomation()
+      useBrowserStore.getState().expandPreview('browser-a')
+      useAgentViewfinderStore.getState().activate('session-a', 'browser')
+    })
+
+    render(<BrowserPictureInPicture />)
+
+    expect(screen.queryByLabelText('Browser picture in picture')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Expanded browser preview' })).not.toBeInTheDocument()
   })
 
   it('reveals preview actions only on hover or keyboard focus', async () => {

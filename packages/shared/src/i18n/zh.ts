@@ -962,7 +962,7 @@ export const zh: Messages = {
       },
       pictureInPicture: {
         label: '实时画中画',
-        description: '悬浮显示「使用电脑」当前正在操控的应用，只用于监看，不会抢占键盘焦点。',
+        description: '在归属会话右上角实时显示「使用电脑」正在操控的应用，只用于监看，不会抢占键盘焦点。',
       },
       dedicatedDisplay: {
         label: '专用屏幕',
@@ -1822,6 +1822,11 @@ export const zh: Messages = {
       hide: '隐藏设备预览',
       expand: '放大设备预览',
       shrink: '缩小设备预览',
+    },
+    computerUsePreview: {
+      label: '使用电脑画中画',
+      hide: '隐藏使用电脑预览',
+      focus: '聚焦正在控制的窗口',
     },
     deviceLaunch: {
       badge: '设备',

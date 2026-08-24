@@ -19,10 +19,10 @@ export type BrowserPipLayout = PipLayout
 export type ClampBrowserPipOptions = ClampPipOptions
 
 export const BROWSER_PIP_MARGIN = 12
-export const BROWSER_PIP_DEFAULT_WIDTH = 360
-export const BROWSER_PIP_DEFAULT_HEIGHT = 240
-export const BROWSER_PIP_MIN_WIDTH = 280
-export const BROWSER_PIP_MIN_HEIGHT = 200
+export const BROWSER_PIP_DEFAULT_WIDTH = 180
+export const BROWSER_PIP_DEFAULT_HEIGHT = 112.5
+export const BROWSER_PIP_MIN_WIDTH = 160
+export const BROWSER_PIP_MIN_HEIGHT = 100
 export const BROWSER_PIP_MAX_WIDTH_RATIO = 0.8
 /** Default preview stays compact; user resize can still grow to the chat bounds. */
 export const BROWSER_PIP_MAX_HEIGHT_RATIO = 0.45

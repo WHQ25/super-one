@@ -9,6 +9,7 @@ import {
   stubIosSimulatorEnvironment,
 } from '../../../../test/fixtures/ios-simulator'
 import { useChatStore } from '@/stores/chat'
+import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
 import { DevicePictureInPicture } from './DevicePictureInPicture'
@@ -42,6 +43,7 @@ async function renderPreview() {
   useDevicePipStore.getState().setReady(INSTANCE_ID, {
     id: DEVICE.id, provider: DEVICE.provider, platform: DEVICE.platform, width: 1206, height: 2622,
   })
+  useAgentViewfinderStore.getState().activate(SESSION_ID, 'device', DEVICE.id)
   const view = render(<DevicePictureInPicture />)
   // The box cannot be laid out until the chat root has been measured and the device's
   // artwork has answered with the outline to fit — so this is the first moment there
@@ -54,9 +56,10 @@ beforeEach(() => {
   document.body.innerHTML = ''
   stubIosSimulatorEnvironment()
   useDevicePipStore.setState({
-    readyInstanceId: null, expandedInstanceId: null, hiddenInstanceId: null, device: null,
+    readyInstanceId: null, readyDevices: {}, expandedInstanceId: null, hiddenInstanceId: null, device: null,
     slots: {}, pipSlots: {}, overlaySlots: {},
   })
+  useAgentViewfinderStore.setState({ activeBySession: {} })
   useDeviceInstanceStore.setState({
     byId: { [INSTANCE_ID]: { instanceId: INSTANCE_ID, sessionId: SESSION_ID, deviceId: DEVICE.id } },
   })

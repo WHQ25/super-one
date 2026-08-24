@@ -1,4 +1,4 @@
-import type { Locale } from '@superone/shared/agent-types'
+import type { ComputerUseViewfinderClaim, Locale } from '@superone/shared/agent-types'
 import type {
   CapturedImage,
   CaptureScope,
@@ -47,17 +47,13 @@ export interface MacosAdapterOptions {
   getGrantedBundleIds?: () => string[]
   /** When true, capture excludes no applications. */
   getAllowAllApps?: () => boolean
-  /** Show a native live preview of the current window. */
+  /** Stream a live preview of the current window into the owning session. */
   getPictureInPictureEnabled?: () => boolean
   /**
-   * Called when this adapter is about to put its viewfinder on screen.
-   *
-   * Separate from the getter above, and always fired even when the answer turns out
-   * to be no: this is what says Computer Use is the most recently touched target,
-   * and the renderer's arbitration needs that whether or not the native window ends
-   * up being the one that draws.
+   * Called after the helper accepts the stream target. This both identifies the
+   * owning session and refreshes Computer Use's recency in the shared viewfinder.
    */
-  onViewfinderClaim?: () => void
+  onViewfinderClaim?: (claim: Omit<ComputerUseViewfinderClaim, 'active'>) => void
   /** Connected display used as a temporary workspace; null keeps the current display. */
   getDedicatedDisplayId?: () => string | null
   /**
@@ -81,7 +77,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   private readonly getGrantedBundleIds: () => string[]
   private readonly getAllowAllApps: () => boolean
   private readonly getPictureInPictureEnabled: () => boolean
-  private readonly onViewfinderClaim: () => void
+  private readonly onViewfinderClaim: (claim: Omit<ComputerUseViewfinderClaim, 'active'>) => void
   private readonly getDedicatedDisplayId: () => string | null
   private readonly getLocale: () => Locale
   private readonly sessionId: string
@@ -208,9 +204,6 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   }): Promise<void> {
     if (!this.visualOn()) return
     await this.syncIndicatorPref()
-    // Before the pref is read, not after: the claim is what makes this the newest
-    // target, and the pref may already be answering "no" because of an older one.
-    this.onViewfinderClaim()
     const showPictureInPicture = await this.syncPictureInPicturePref()
     try {
       await this.client.call('overlay_show_target', {
@@ -246,6 +239,19 @@ export class MacosPlatformAdapter implements PlatformAdapter {
             ? { cursorX: opts.cursorX, cursorY: opts.cursorY, pulse: opts.pulseRing ?? false }
             : {}),
           ...this.coordinatePayload(opts?.coordinateSpace),
+        })
+        this.onViewfinderClaim({
+          sessionId: this.sessionId,
+          windowId: root.windowId,
+          pid: root.pid,
+          app: root.app,
+          bundleId: root.bundleId,
+          title: root.title,
+          sourceWidth: opts?.coordinateSpace?.width ?? root.bounds.width,
+          sourceHeight: opts?.coordinateSpace?.height ?? root.bounds.height,
+          ...(opts?.cursorX != null && opts?.cursorY != null
+            ? { cursorX: opts.cursorX, cursorY: opts.cursorY, pulse: opts.pulseRing ?? false }
+            : {}),
         })
       }
     } catch {

@@ -324,7 +324,7 @@ describe('browser tabs stay confined to their owner session', () => {
     materializeOwnedBrowserTabs('sess-hidden')
 
     expect(dock.panels.map((p) => p.id)).toEqual(['browser-bg'])
-    expect(useActivityPanelStore.getState().showPanel).toBe(true)
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
 
     // Idempotent: a second restore does not duplicate the already-present panel.
     materializeOwnedBrowserTabs('sess-hidden')

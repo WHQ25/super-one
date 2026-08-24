@@ -25,18 +25,21 @@ function root(partial: Partial<UiRootIdentity> = {}): UiRootIdentity {
 
 describe('MacosPlatformAdapter (mocked client)', () => {
   const call = vi.fn()
+  const claim = vi.fn()
   let adapter: MacosPlatformAdapter
   let granted: string[]
   let locale: 'en' | 'zh'
 
   beforeEach(() => {
     call.mockReset()
+    claim.mockReset()
     granted = ['com.apple.TextEdit']
     locale = 'en'
     adapter = new MacosPlatformAdapter({
       client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
       getGrantedBundleIds: () => granted,
       getPictureInPictureEnabled: () => true,
+      onViewfinderClaim: claim,
       getDedicatedDisplayId: () => null,
       getLocale: () => locale,
       sessionId: 'session-a',
@@ -74,6 +77,16 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       windowId: 12345,
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
+    }))
+    expect(claim).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-a',
+      windowId: 12345,
+      pid: 42,
+      app: 'TextEdit',
+      bundleId: 'com.apple.TextEdit',
+      title: 'Untitled',
+      sourceWidth: 800,
+      sourceHeight: 600,
     }))
   })
 
@@ -141,6 +154,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
       getGrantedBundleIds: () => granted,
       getPictureInPictureEnabled: () => false,
+      onViewfinderClaim: claim,
       sessionId: 'session-a',
     })
     call.mockImplementation(async (method: string) => {
@@ -157,6 +171,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
 
     expect(call).toHaveBeenCalledWith('pip_set_enabled', { enabled: false })
     expect(call.mock.calls.some(([method]) => method === 'pip_show_target')).toBe(false)
+    expect(claim).not.toHaveBeenCalled()
   })
 
   it('listRoots preserves native dialog and modal metadata', async () => {

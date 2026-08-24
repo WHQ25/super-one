@@ -12,35 +12,34 @@ const BOUNDS = { left: 100, top: 50, width: 1000, height: 700 }
 describe('browser picture-in-picture layout', () => {
   it('starts in the top-right corner of the chat bounds', () => {
     expect(createDefaultBrowserPipLayout(BOUNDS)).toEqual({
-      left: 728,
+      left: 908,
       top: 62,
-      width: 360,
-      height: 240,
+      width: 180,
+      height: 112.5,
     })
   })
 
   it('sizes the default frame to the tab viewport aspect ratio', () => {
     const wide = createDefaultBrowserPipLayout(BOUNDS, 16 / 9)
     expect(wide).toEqual({
-      left: 728,
+      left: 908,
       top: 62,
-      width: 360,
-      height: 202.5,
+      width: 180,
+      height: 101.25,
     })
 
     const tall = createDefaultBrowserPipLayout(BOUNDS, 560 / 800)
-    expect(tall.height).toBe(315)
-    expect(tall.width).toBeCloseTo(315 * 560 / 800)
+    expect(tall.height).toBeCloseTo(180 / (560 / 800))
+    expect(tall.width).toBe(180)
     expect(tall.top).toBe(62)
     expect(tall.width / tall.height).toBeCloseTo(560 / 800)
   })
 
-  it('caps a portrait default below 45% of the chat height', () => {
+  it('keeps a portrait default at the requested 180px width', () => {
     const mobile = createDefaultBrowserPipLayout(BOUNDS, 375 / 812)
-    expect(mobile.height).toBe(315)
-    expect(mobile.width).toBeCloseTo(315 * 375 / 812)
+    expect(mobile.width).toBe(180)
+    expect(mobile.height).toBeCloseTo(180 / (375 / 812))
     expect(mobile.width / mobile.height).toBeCloseTo(375 / 812)
-    expect(mobile.height).toBeLessThan(BOUNDS.height * 0.5)
   })
 
   it('caps width at 80% and keeps the frame inside chat bounds', () => {
@@ -78,6 +77,17 @@ describe('browser picture-in-picture layout', () => {
     expect(layout.height).toBe(236)
     expect(layout.left).toBe(12)
     expect(layout.top).toBe(12)
+  })
+
+  it('allows user resizing down to 160px wide', () => {
+    const layout = clampBrowserPipLayout(
+      { left: 500, top: 100, width: 80, height: 50 },
+      BOUNDS,
+      16 / 9,
+    )
+
+    expect(layout.width).toBe(160)
+    expect(layout.height).toBe(90)
   })
 
   it('prefers emulation, then the panel slot, then the capture fallback', () => {

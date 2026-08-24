@@ -26,6 +26,7 @@ import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
+import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { resetDeviceSurfaces } from './device-surface'
 import { DeviceHostLayer } from './DeviceHostLayer'
 import { DeviceView } from './DeviceView'
@@ -106,6 +107,7 @@ async function renderReady(node: React.ReactElement = <DeviceHostLayer />) {
   useDevicePipStore.getState().setReady(INSTANCE_ID, {
     id: DEVICE.id, provider: DEVICE.provider, platform: DEVICE.platform, width: 1206, height: 2622,
   })
+  useAgentViewfinderStore.getState().activate(SESSION_ID, 'device', DEVICE.id)
   const view = render(node)
   // The canvas only mounts once `bind` has answered AND the artwork lookup has
   // settled, so this is the point where there is a stream to preserve at all.
@@ -131,9 +133,10 @@ beforeEach(() => {
   }
   useActivityPanelStore.setState({ showPanel: false, maximized: false, maximizedGroupId: null })
   useDevicePipStore.setState({
-    readyInstanceId: null, expandedInstanceId: null, hiddenInstanceId: null, device: null,
+    readyInstanceId: null, readyDevices: {}, expandedInstanceId: null, hiddenInstanceId: null, device: null,
     slots: {}, pipSlots: {}, overlaySlots: {},
   })
+  useAgentViewfinderStore.setState({ activeBySession: {} })
   useDeviceInstanceStore.setState({
     byId: { [INSTANCE_ID]: { instanceId: INSTANCE_ID, sessionId: SESSION_ID, deviceId: DEVICE.id } },
   })

@@ -1,6 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
-import type { ComputerUseDisplayInfo } from '@superone/shared/agent-types'
+import type { ComputerUseDisplayInfo, ComputerUseViewfinderClaim, ComputerUseViewfinderFrame } from '@superone/shared/agent-types'
 import type { OpenCodeResources } from '@superone/shared/agent-types'
 import type { DshPluginList, DshPluginInstallResult, DshPluginInstallSource } from '@superone/shared/agent-types'
 import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexCollaborationMode, CodexConfigRequirements, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, ProviderEndpointTestResponse, QuestionAnnotations, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
@@ -538,12 +538,18 @@ interface AppAPI {
   >
   listComputerUseDisplays(): Promise<ComputerUseDisplayInfo[]>
   onComputerUseDisplaysChanged(callback: () => void): () => void
-  /** The native picture-in-picture became — or stopped being — the newest agent target. */
+  /** Computer Use target metadata for the session-owned picture-in-picture. */
   onComputerUseViewfinderClaim(
-    callback: (claim: { sessionId: string; active: boolean }) => void,
+    callback: (claim: ComputerUseViewfinderClaim) => void,
   ): () => void
-  /** Keep the native picture-in-picture off screen while another preview outranks it. */
-  setComputerUseViewfinderYielded(yielded: boolean): void
+  /** Compressed frames from the native ScreenCaptureKit stream. */
+  onComputerUseViewfinderFrame(
+    callback: (frame: ComputerUseViewfinderFrame) => void,
+  ): () => void
+  /** Focus the exact native window currently shown for this session. */
+  focusComputerUseViewfinder(sessionId: string): Promise<boolean>
+  /** Stop native capture when this session's Computer Use preview is no longer visible. */
+  hideComputerUseViewfinder(sessionId: string): Promise<boolean>
   /** Best-effort PNG data URI for a macOS app bundle id; null when lookup fails. */
   listComputerUseInstalledApps(): Promise<
     Array<{ app: string; bundleId: string; aliases: string[] }>

@@ -476,7 +476,7 @@ export async function hideComputerUseVisuals(sessionId?: string): Promise<void> 
   // The viewfinder is a shared slot, so letting go of it is part of letting go of the
   // visuals — otherwise the device and browser previews go on standing aside for a
   // turn that ended.
-  releaseComputerUseViewfinder()
+  releaseComputerUseViewfinder(sessionId)
   if (sessionId) {
     const requestedGeneration = activityGenerations.get(sessionId) ?? 0
     await runInComputerUseLifecycle(sessionId, async () => {

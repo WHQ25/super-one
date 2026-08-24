@@ -139,6 +139,40 @@ func focusApp(query: String, activate: Bool = false) throws {
     if activate { match.activate() }
 }
 
+/// Bring one exact Computer Use target window to the front after its PiP is clicked.
+func focusWindow(pid: Int, windowId: Int, windowTitle: String? = nil) throws {
+    guard axTrusted() else {
+        throw HelperError(
+            code: "AX_MISSING",
+            message: "Accessibility permission not granted for Computer Use helper"
+        )
+    }
+    let processId = pid_t(pid)
+    guard let runningApp = NSRunningApplication(processIdentifier: processId) else {
+        throw HelperError(code: "APP_NOT_FOUND", message: "App process not found: \(pid)")
+    }
+    let target = try resolveAxWindow(
+        pid: processId,
+        windowId: windowId,
+        windowTitle: windowTitle
+    ).element
+    let app = AXUIElementCreateApplication(processId)
+
+    if runningApp.isHidden { runningApp.unhide() }
+    AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+    AXUIElementSetAttributeValue(target, kAXMainAttribute as CFString, kCFBooleanTrue)
+    AXUIElementSetAttributeValue(app, kAXFocusedWindowAttribute as CFString, target)
+    runningApp.activate()
+
+    let result = AXUIElementPerformAction(target, kAXRaiseAction as CFString)
+    if result != .success {
+        throw HelperError(
+            code: "AX_ACTION",
+            message: "Failed to raise window \(windowId) (\(result.rawValue))"
+        )
+    }
+}
+
 /// Launch without frontmost activation so Computer Use can work in the background.
 func launchApp(query: String, activate: Bool = false) throws {
     if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: query) {

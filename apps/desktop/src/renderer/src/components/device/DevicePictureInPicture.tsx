@@ -12,7 +12,7 @@ import type { PipBounds, PipLayout } from '@/lib/pip-layout'
 import { DeviceView } from './DeviceView'
 import { DEVICE_EXPANDED_BOX } from './DeviceOverlaySurface'
 import { useDevicePreview } from './use-device-preview'
-import { useAgentViewfinderStore, useOwnsViewfinder } from '@/stores/agent-viewfinder'
+import { useOwnsViewfinder } from '@/stores/agent-viewfinder'
 import {
   clampDevicePipLayout,
   createDefaultDevicePipLayout,
@@ -117,21 +117,11 @@ function useIosSimulatorChrome(device: DevicePipDevice | null): IosSimulatorChro
  */
 export function DevicePictureInPicture() {
   const { t } = useTranslation()
-  const { instanceId, shouldShow: wanted, expanded, showPip: wantsPip } = useDevicePreview()
-  // One preview on screen, whichever target the agent touched last — see
-  // `stores/agent-viewfinder`. Reported from here rather than from `useDevicePreview`
-  // because three components call that hook and the report must happen once.
-  const report = useAgentViewfinderStore((state) => state.report)
-  useEffect(() => {
-    report('device', { present: wanted, pinned: expanded })
-    // Reported as gone on unmount too: in Settings this component does not exist, and
-    // a claim left standing there would keep the native Computer Use window suppressed.
-    return () => report('device', { present: false })
-  }, [expanded, report, wanted])
-  const owns = useOwnsViewfinder('device')
+  const { instanceId, sessionId, shouldShow: wanted, expanded, showPip: wantsPip } = useDevicePreview()
+  const device = useDevicePipStore((state) => state.device)
+  const owns = useOwnsViewfinder('device', sessionId, device?.id ?? null)
   const shouldShow = wanted && owns
   const showPip = wantsPip && owns
-  const device = useDevicePipStore((state) => state.device)
   const chrome = useIosSimulatorChrome(device)
   const aspect = devicePipAspect(device, chrome)
 

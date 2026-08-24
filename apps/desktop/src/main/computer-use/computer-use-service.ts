@@ -635,9 +635,13 @@ export class ComputerUseService {
     options: {
       expect?: Condition
       delivery?: DeliveryMode
+      recordingPath?: string
+      signal?: AbortSignal
+      timeoutMs?: number
     } = {},
   ): Promise<ActResult> {
     this.requireEnabled()
+    throwIfAborted(options.signal)
     const base = this.requireState(stateId)
     this.requireGranted(base.root.bundleId)
 
@@ -663,10 +667,13 @@ export class ComputerUseService {
     // app-directed posts to the target PID and must not force activation.
     if (delivery === 'physical') {
       await this.assertFrontmost(base.root.bundleId)
+      throwIfAborted(options.signal)
     }
 
     return this.scheduler.runExclusive(base.resourceKey, async () => {
+      throwIfAborted(options.signal)
       await this.refreshRoots()
+      throwIfAborted(options.signal)
       const currentRoot = this.roots.get(base.root.rootId)
       const nativeIdentityChanged =
         !currentRoot
@@ -734,13 +741,28 @@ export class ComputerUseService {
       // Epoch already advanced — side effects may proceed.
       void claimedEpoch
 
-      const platformResult = await this.adapter.act({
-        root: base.root,
-        actions,
-        delivery,
-        coordinateSpace: base.coordinateSpace,
-        outline: base.outline,
-      })
+      let recording: Awaited<ReturnType<NonNullable<PlatformAdapter['stopRecording']>>> | undefined
+      let recordingActive = false
+      try {
+        if (options.recordingPath) {
+          if (!this.adapter.startRecording || !this.adapter.stopRecording) {
+            throw new ComputerUseError('INVALID_ACTION', 'Action recording is unavailable on this computer backend')
+          }
+          // Fail closed: the recorder must be running before the first side effect.
+          await this.adapter.startRecording(base.root, options.recordingPath)
+          recordingActive = true
+          throwIfAborted(options.signal)
+        }
+
+        throwIfAborted(options.signal)
+        const platformResult = await this.adapter.act({
+          root: base.root,
+          actions,
+          delivery,
+          coordinateSpace: base.coordinateSpace,
+          outline: base.outline,
+        })
+        throwIfAborted(options.signal)
 
       // Re-observe successor (same resource). Prefer fused/semantic so outcome
       // heuristics can read AX values; visual-only stays picture-only.
@@ -749,12 +771,15 @@ export class ComputerUseService {
       let look: PlatformLook
       try {
         look = await this.adapter.look(base.root, reobserveMode, base.capture)
+        throwIfAborted(options.signal)
       } catch (error) {
+        throwIfAborted(options.signal)
         if (!base.root.axRootId) throw error
-        const replacement = await this.waitForTransientSuccessor(base.root)
+        const replacement = await this.waitForTransientSuccessor(base.root, options.signal)
         if (!replacement) throw error
         successorRoot = replacement
         look = await this.adapter.look(successorRoot, reobserveMode, base.capture)
+        throwIfAborted(options.signal)
       }
 
       const mayCloseTransient = base.root.axRootId && actions.some(
@@ -763,14 +788,40 @@ export class ComputerUseService {
           || action.type === 'keypress',
       )
       if (mayCloseTransient && successorRoot.rootId === base.root.rootId) {
-        const replacement = await this.waitForTransientSuccessor(base.root)
+        const replacement = await this.waitForTransientSuccessor(base.root, options.signal)
         if (replacement) {
           successorRoot = replacement
           look = await this.adapter.look(successorRoot, reobserveMode, base.capture)
+          throwIfAborted(options.signal)
         }
       }
-      const identity: UiRootIdentity = { ...look.root, rootId: successorRoot.rootId }
-      this.roots.register(identity)
+        let identity: UiRootIdentity = { ...look.root, rootId: successorRoot.rootId }
+        this.roots.register(identity)
+
+        let expectHolds: boolean | null = null
+        if (options.expect) {
+          const binding = bindCondition(options.expect, base.outline)
+          expectHolds = evaluateBoundCondition(binding, look.outline)
+          const deadline = this.clock() + (options.timeoutMs ?? 5000)
+          while (!expectHolds && this.clock() < deadline) {
+            throwIfAborted(options.signal)
+            if (this.fake) this.fake.advanceTime(50)
+            else await sleep(50, options.signal)
+            look = await this.adapter.look(identity, reobserveMode, base.capture)
+            throwIfAborted(options.signal)
+            identity = { ...look.root, rootId: successorRoot.rootId }
+            this.roots.register(identity)
+            expectHolds = evaluateBoundCondition(binding, look.outline)
+          }
+        } else if (recordingActive) {
+          // Keep one visible tail frame when no explicit completion signal exists.
+          await sleep(250, options.signal)
+        }
+
+        if (recordingActive) {
+          recording = await this.adapter.stopRecording!()
+          recordingActive = false
+        }
 
       const successorEpoch = this.scheduler.epoch(base.resourceKey)
       const successorStateId = nextStateId()
@@ -797,12 +848,6 @@ export class ComputerUseService {
 
       const diff = buildDiff(base.outline, successor.outline)
 
-      let expectHolds: boolean | null = null
-      if (options.expect) {
-        const binding = bindCondition(options.expect, base.outline)
-        expectHolds = evaluateBoundCondition(binding, successor.outline)
-      }
-
       const finalOutcome = refineActOutcome({
         steps: platformResult.steps,
         actions,
@@ -821,6 +866,24 @@ export class ComputerUseService {
         successorImage: successor.image,
         successorCoordinateSpace: successor.coordinateSpace,
         diff,
+        ...(recording ? {
+          recording: {
+            savedPath: recording.path,
+            mimeType: recording.mimeType,
+            durationMs: recording.durationMs,
+            ...(recording.width ? { width: recording.width } : {}),
+            ...(recording.height ? { height: recording.height } : {}),
+          },
+        } : {}),
+      }
+      } finally {
+        if (recordingActive) {
+          try {
+            await this.adapter.stopRecording!()
+          } catch {
+            // Preserve the action or observation failure while closing best-effort.
+          }
+        }
       }
     })
   }
@@ -831,8 +894,10 @@ export class ComputerUseService {
     stateId: string,
     condition: Condition,
     timeoutMs = 5000,
+    signal?: AbortSignal,
   ): Promise<WaitResult> {
     this.requireEnabled()
+    throwIfAborted(signal)
     const base = this.requireState(stateId)
     this.requireGranted(base.root.bundleId)
     const binding = bindCondition(condition, base.outline)
@@ -841,6 +906,7 @@ export class ComputerUseService {
     if (evaluateBoundCondition(binding, base.outline)) {
       // Still produce a successor observation for a stable stateId contract.
       const obs = await this.observe(base.root.rootId, base.mode, base.capture)
+      throwIfAborted(signal)
       return {
         status: 'preexisting',
         successorStateId: obs.stateId,
@@ -851,10 +917,12 @@ export class ComputerUseService {
     const interval = 50
     const maxAttempts = Math.max(1, Math.ceil(timeoutMs / interval))
     for (let i = 0; i < maxAttempts; i++) {
+      throwIfAborted(signal)
       if (this.fake) this.fake.advanceTime(interval)
-      else await sleep(interval)
+      else await sleep(interval, signal)
 
       const obs = await this.observe(base.root.rootId, base.mode, base.capture)
+      throwIfAborted(signal)
       const state = this.requireState(obs.stateId)
       if (evaluateBoundCondition(binding, state.outline)) {
         return {
@@ -866,6 +934,7 @@ export class ComputerUseService {
     }
 
     const last = await this.observe(base.root.rootId, base.mode, base.capture)
+    throwIfAborted(signal)
     return {
       status: 'failed',
       successorStateId: last.stateId,
@@ -980,10 +1049,13 @@ export class ComputerUseService {
 
   private async waitForTransientSuccessor(
     transient: UiRootIdentity,
+    signal?: AbortSignal,
   ): Promise<UiRootIdentity | undefined> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (attempt > 0) await sleep(40)
+      throwIfAborted(signal)
+      if (attempt > 0) await sleep(40, signal)
       await this.refreshRoots()
+      throwIfAborted(signal)
       const refreshedTarget = this.roots.get(transient.rootId)
       if (refreshedTarget?.axRootId === transient.axRootId) continue
 
@@ -1170,6 +1242,28 @@ function boundsDistance(a: import('./types').Bounds, b: import('./types').Bounds
   return Math.hypot(ax - bx, ay - by, a.width - b.width, a.height - b.height)
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
+function abortError(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason
+  return new DOMException('The operation was aborted', 'AbortError')
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError(signal)
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
+  throwIfAborted(signal)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      reject(abortError(signal))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }

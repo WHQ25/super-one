@@ -16,6 +16,7 @@ import {
   parseDeviceId,
   DEVICE_CAPABILITIES,
   DEVICE_ROTATION_DEGREES,
+  deviceRecordingMaxDurationMs,
   stepDeviceOrientation,
 } from '@superone/shared/device'
 import { Button } from '@superone/ui/components/ui/button'
@@ -772,6 +773,7 @@ export function DeviceStage({
           deviceId={deviceId}
           disabled={!ready}
           canRecord={capabilities.recording}
+          maxDurationMs={device ? deviceRecordingMaxDurationMs(device) ?? undefined : undefined}
         />
       </div>}
     </div>

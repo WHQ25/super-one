@@ -13,6 +13,7 @@ import { persistComputerUseScreenshot, COMPUTER_USE_SCREENSHOT_DIR } from './scr
 import { releaseComputerUseViewfinder } from './viewfinder'
 import type { CapturedImage } from './types'
 import { encode as toonEncode } from '@toon-format/toon'
+import { createActionRecordingPath } from '../agent/action-recording-store'
 import { outlineToToon } from './outline-toon'
 
 export const COMPUTER_USE_TOOL_NAMES = [
@@ -288,6 +289,7 @@ const toolDefs: Array<{
       + 'worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; '
       + 'unknown only when applied but unprovable; didnt on hard failure or failed expect. '
       + 'When the successor has pixels, successorImage.path contains the fresh screenshot. '
+      + 'Set recording=true to save a short video containing only this action transaction. '
       + 'Stale stateId (UI changed since snapshot) is rejected before side effects. '
       + 'delivery=semantic never silently upgrades to app-directed/physical input.',
     shape: {
@@ -295,6 +297,9 @@ const toolDefs: Array<{
       stateId: z.string(),
       actions: z.array(actionSchema).min(1).max(20),
       expect: conditionSchema.optional().describe('Postcondition checked after actions'),
+      timeoutMs: z.number().int().min(100).max(60_000).optional()
+        .describe('Maximum wait for expect before the action is judged. Default 5000.'),
+      recording: z.boolean().optional().describe('Save a video of only this action transaction. Default false.'),
       delivery: z
         .enum(['semantic', 'app-directed', 'physical'])
         .optional()
@@ -366,10 +371,12 @@ export function registerComputerUseTools(
     server.registerTool(
       def.name,
       { description: def.description, inputSchema: def.shape },
-      async (args: Record<string, unknown>) => {
+      async (args: Record<string, unknown>, extra) => {
         try {
           const parsed = schema.parse(args ?? {}) as Record<string, unknown>
-          return await executeComputerUseTool(sessionId, def.name, parsed)
+          return await executeComputerUseTool(sessionId, def.name, parsed, {
+            signal: extra.signal,
+          })
         } catch (err) {
           return errorReply(err)
         }
@@ -388,10 +395,12 @@ export function registerComputerUseTools(
           '[Deprecated: use computer_snapshot] ' + snapshotDef.description,
         inputSchema: snapshotDef.shape,
       },
-      async (args: Record<string, unknown>) => {
+      async (args: Record<string, unknown>, extra) => {
         try {
           const parsed = schema.parse(args ?? {}) as Record<string, unknown>
-          return await executeComputerUseTool(sessionId, 'computer_snapshot', parsed)
+          return await executeComputerUseTool(sessionId, 'computer_snapshot', parsed, {
+            signal: extra.signal,
+          })
         } catch (err) {
           return errorReply(err)
         }
@@ -406,6 +415,7 @@ export interface ComputerUseToolHost {
 
 export interface ComputerUseToolExecutionContext {
   host?: ComputerUseToolHost
+  signal?: AbortSignal
 }
 
 const defaultServices = new Map<string, ComputerUseService>()
@@ -660,6 +670,7 @@ async function executeComputerUseToolInner(
       ),
     )
   }
+  context.signal?.throwIfAborted()
 
   let service: ComputerUseService
   try {
@@ -757,6 +768,11 @@ async function executeComputerUseToolInner(
         const result = await service.act(String(args.stateId), args.actions, {
           expect: parseCondition(args.expect),
           delivery: args.delivery as 'semantic' | 'app-directed' | 'physical' | undefined,
+          timeoutMs: args.timeoutMs as number | undefined,
+          signal: context.signal,
+          ...(args.recording === true
+            ? { recordingPath: createActionRecordingPath('computer', 'mp4') }
+            : {}),
         })
         const successorImage = toAgentImage(result.successorImage, screenshotDir)
         if (successorImage?.path) {
@@ -774,6 +790,7 @@ async function executeComputerUseToolInner(
           String(args.stateId),
           condition,
           typeof args.timeoutMs === 'number' ? args.timeoutMs : 5000,
+          context.signal,
         )
         return textReply(result)
       }

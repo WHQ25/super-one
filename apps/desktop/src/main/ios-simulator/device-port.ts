@@ -10,7 +10,9 @@
 
 import { formatDeviceId, parseDeviceId, type DeviceDescriptor } from '@superone/shared/device'
 import type { IosSimulatorDevice } from '@superone/shared/ios-simulator'
+import type { IosSimulatorFrame } from '@superone/shared/ios-simulator'
 import type { DevicePlatformPort } from '../device/platform-port'
+import { waitForFirstDeviceFrame } from '../device/preview-ready'
 
 /** The slice of `IosSimulatorManager` this needs, so tests need no Electron. */
 export interface IosSimulatorCatalogSource {
@@ -19,6 +21,7 @@ export interface IosSimulatorCatalogSource {
     sessionId: string,
     udid: string,
   ): Promise<{ phase: string; device?: IosSimulatorDevice | null }>
+  subscribe(udid: string, listener: (frame: IosSimulatorFrame) => void): () => void
 }
 
 const KINDS: Array<{ kind: string; name: string; match: RegExp }> = [
@@ -113,6 +116,14 @@ export class IosSimulatorDevicePort implements DevicePlatformPort {
     const udid = parseDeviceId(deviceId)?.native ?? deviceId
     const state = await this.source.boot(sessionId, udid)
     return state.phase === 'ready' && state.device ? toDeviceDescriptor(state.device) : null
+  }
+
+  waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void> {
+    const udid = parseDeviceId(deviceId)?.native ?? deviceId
+    return waitForFirstDeviceFrame(
+      (listener) => this.source.subscribe(udid, listener as (frame: IosSimulatorFrame) => void),
+      signal,
+    )
   }
 
   controlNote(device: DeviceDescriptor): string {

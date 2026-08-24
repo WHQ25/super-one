@@ -49,6 +49,10 @@ vi.mock('../agent/browser-artifact-store', () => ({
   persistTextArtifact: vi.fn(() => '/tmp/art.json'),
 }))
 
+vi.mock('../agent/action-recording-store', () => ({
+  persistActionRecording: vi.fn(() => '/tmp/action.webm'),
+}))
+
 vi.mock('../browser/browser-download-tasks', () => ({
   startUrlDownloadTask: vi.fn(() => ({
     taskId: 'bdl_1',
@@ -503,6 +507,49 @@ describe('compact browser surface', () => {
     })
     expect(bad.isError).toBe(true)
     expect(resultText(bad)).toMatch(/exactly one|failedAt/)
+  })
+
+  it('records only the browser_act transaction and returns a path, not video data', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall).mockReset()
+    vi.mocked(browserAutomationCall).mockImplementation(async (_sessionId, op) => {
+      if (op === 'recordStart') return { recordingId: 'recording-1', tab: 'browser-a' }
+      if (op === 'recordStop') {
+        return {
+          data: 'd2VibQ==',
+          mimeType: 'video/webm',
+          durationMs: 420,
+          width: 800,
+          height: 600,
+        }
+      }
+      return { ok: true, selector: '#save' }
+    })
+
+    const reply = await tools.get('browser_act')!({
+      recording: true,
+      actions: [{ type: 'click', selector: '#save' }],
+    })
+
+    expect(reply.isError).toBeUndefined()
+    expect(vi.mocked(browserAutomationCall).mock.calls.map((call) => call[1])).toEqual([
+      'recordStart',
+      'click',
+      'recordStop',
+    ])
+    expect(vi.mocked(browserAutomationCall).mock.calls[1]?.[2]).toEqual(
+      expect.objectContaining({ tab: 'browser-a' }),
+    )
+    expect(vi.mocked(browserAutomationCall).mock.calls[2]?.[2]).toEqual(
+      expect.objectContaining({ tab: 'browser-a' }),
+    )
+    const body = JSON.parse(resultText(reply))
+    expect(body.recording).toEqual(expect.objectContaining({
+      savedPath: '/tmp/action.webm',
+      mimeType: 'video/webm',
+      durationMs: 420,
+    }))
+    expect(body.recording.data).toBeUndefined()
   })
 
   it('maps browser_tabs navigate to the navigate primitive', async () => {

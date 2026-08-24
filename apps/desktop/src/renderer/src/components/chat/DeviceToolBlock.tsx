@@ -1,6 +1,6 @@
 import { useMemo, useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Code2, ImageIcon, Smartphone } from 'lucide-react'
+import { ChevronRight, Code2, ImageIcon, Smartphone, Video } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
 import {
@@ -21,6 +21,7 @@ import {
   ToolSummary,
   type ToolRowTone,
 } from './tool-row'
+import { ActionRecordingView, parseActionRecording } from './ActionRecordingView'
 
 interface DeviceToolBlockProps {
   op: DeviceOp
@@ -99,6 +100,7 @@ export function DeviceToolBlock({
     () => parseDeviceResult(op, result, !!isError),
     [op, result, isError],
   )
+  const recording = useMemo(() => parseActionRecording(result), [result])
 
   const declined = isDenied || info.status === 'denied'
   const failed = info.status === 'error' || declined
@@ -131,7 +133,7 @@ export function DeviceToolBlock({
   const hasCatalog = op === 'list' && !isStreaming && !failed && (info.groups?.length ?? 0) > 0
   // A rendered body is the reading; the raw JSON stays one more click away rather
   // than competing with it.
-  const rich = hasScreenshot || hasCatalog
+  const rich = hasScreenshot || hasCatalog || !!recording
   const hasResultJson = !isStreaming && !!result
   // `reason` explains a didnt; without it the user sees a warning row and no cause.
   const explanation = info.failure || (info.outcome === 'didnt' ? info.reason : undefined)
@@ -157,6 +159,7 @@ export function DeviceToolBlock({
             </span>
           )}
           {expanded && hasCatalog && info.groups && <DeviceCatalog groups={info.groups} />}
+          {expanded && recording && <ActionRecordingView recording={recording} />}
           {expanded && hasScreenshot && info.imagePath && (
             <ToolScreenshotView
               path={info.imagePath}
@@ -188,6 +191,9 @@ export function DeviceToolBlock({
               className="size-3 text-muted-foreground/70"
               aria-label={t('chat.toolBlock.device.screenshot')}
             />
+          )}
+          {recording && (
+            <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" />
           )}
           {info.settled === false && !failed && !isStreaming && (
             <span

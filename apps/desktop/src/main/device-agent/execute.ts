@@ -182,8 +182,9 @@ export class DeviceAgentSession {
     stateId: string
     actions: Array<Record<string, unknown>>
     expect?: unknown
-  }, signal?: AbortSignal): Promise<DeviceToolReply> {
-    return this.guard(() => this.runAct(args, signal), signal)
+    timeoutMs?: number
+  }, signal?: AbortSignal, beforeEffects?: () => Promise<void>): Promise<DeviceToolReply> {
+    return this.guard(() => this.runAct(args, signal, beforeEffects), signal)
   }
 
   waitFor(
@@ -271,7 +272,8 @@ export class DeviceAgentSession {
     stateId: string
     actions: Array<Record<string, unknown>>
     expect?: unknown
-  }, signal?: AbortSignal): Promise<DeviceToolReply> {
+    timeoutMs?: number
+  }, signal?: AbortSignal, beforeEffects?: () => Promise<void>): Promise<DeviceToolReply> {
     // Checked before any effect: acting on a superseded snapshot is how an agent
     // taps a control that has already moved and then reports success.
     const state = this.store.requireCurrent(args.stateId)
@@ -283,6 +285,8 @@ export class DeviceAgentSession {
     const expect = args.expect === undefined ? undefined : parseCondition(args.expect)
     assertBatchOrder(args.actions)
     const actions = args.actions.map((raw) => this.resolve(state.observation.root, raw))
+    throwIfDeviceOperationAborted(signal)
+    await beforeEffects?.()
     throwIfDeviceOperationAborted(signal)
 
     let applied = true
@@ -305,15 +309,39 @@ export class DeviceAgentSession {
     // The actions ran; this is only how the reply describes them. Letting it throw
     // turned a tap that landed into a tool error, and an agent reading that error
     // taps again — which is how a screen with no readable tree got double-tapped.
-    const after = await this.backend.observe({ tree: 'optional', ...(signal ? { signal } : {}) })
-    const nextState = this.store.put(after)
+    let after = await this.backend.observe({ tree: 'optional', ...(signal ? { signal } : {}) })
+    let nextState = this.store.put(after)
     throwIfDeviceOperationAborted(signal)
     // A postcondition is a question about the tree, so a missing tree makes it
     // unanswerable rather than false. Reporting `false` would say the action failed on
     // the evidence that we could not look.
-    const expectMet = expect && !after.treeUnavailable
+    let expectMet = expect && !after.treeUnavailable
       ? evaluateCondition(after.root, expect)
       : undefined
+    if (expect && expectMet === false) {
+      const timeoutMs = args.timeoutMs ?? 5000
+      const deadline = Date.now() + timeoutMs
+      while (Date.now() < deadline) {
+        await waitForDeviceDelay(Math.min(100, deadline - Date.now()), signal)
+        after = await this.backend.observe({
+          immediate: true,
+          tree: 'optional',
+          ...(signal ? { signal } : {}),
+        })
+        nextState = this.store.put(after)
+        throwIfDeviceOperationAborted(signal)
+        if (!after.treeUnavailable && evaluateCondition(after.root, expect)) {
+          after = await this.backend.observe({
+            tree: 'optional',
+            settleTimeoutMs: Math.max(0, deadline - Date.now()),
+            ...(signal ? { signal } : {}),
+          })
+          nextState = this.store.put(after)
+          expectMet = !after.treeUnavailable && evaluateCondition(after.root, expect)
+          if (expectMet) break
+        }
+      }
+    }
     const judgement = judgeOutcome({
       applied,
       changed: !observationFingerprintsMatch(observationDigest(after), before),

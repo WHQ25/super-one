@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import type { IosSimulatorDevice } from '@superone/shared/ios-simulator'
+import type { IosSimulatorDevice, IosSimulatorFrame } from '@superone/shared/ios-simulator'
 import type { DevicePlatformPort } from '../device/platform-port'
 import {
   IosSimulatorDevicePort,
@@ -33,6 +33,8 @@ function device(overrides: Partial<IosSimulatorDevice> & { udid: string; name: s
 class FakePort implements IosSimulatorCatalogSource {
   readonly booted: Array<{ sessionId: string; udid: string }> = []
   readonly ports: DevicePlatformPort[]
+  private readonly previewListeners = new Set<(frame: IosSimulatorFrame) => void>()
+  autoPreview = true
 
   constructor(private catalog: IosSimulatorDevice[]) {
     this.ports = [new IosSimulatorDevicePort(this)]
@@ -62,6 +64,21 @@ class FakePort implements IosSimulatorCatalogSource {
     const chosen = this.catalog.find((candidate) => candidate.udid === udid) ?? null
     return { phase: chosen ? 'ready' : 'idle', device: chosen }
   }
+
+  subscribe(_udid: string, listener: (frame: IosSimulatorFrame) => void): () => void {
+    this.previewListeners.add(listener)
+    if (this.autoPreview) queueMicrotask(() => this.emitPreviewFrame())
+    return () => { this.previewListeners.delete(listener) }
+  }
+
+  emitPreviewFrame(keyframe = true): void {
+    const frame: IosSimulatorFrame = {
+      deviceId: 'cold', sequence: 1, timestampMs: 1,
+      mimeType: 'video/avc', keyframe, codecConfig: false,
+      data: new Uint8Array([1]),
+    }
+    for (const listener of this.previewListeners) listener(frame)
+  }
 }
 
 /** Answer the prompt the moment it is emitted, the way the renderer would. */
@@ -84,6 +101,28 @@ afterEach(() => {
 })
 
 describe('requestDeviceControl', () => {
+  it('does not confirm control until the live preview has produced a frame', async () => {
+    const port = new FakePort([device({ udid: 'cold', name: 'iPhone 16' })])
+    port.autoPreview = false
+    const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
+    let settled = false
+
+    const request = requestDeviceControl({
+      sessionId: 's1', ports: port.ports, emitHostEvent: host.emit, request: { device: 'cold' },
+    }).finally(() => { settled = true })
+
+    await vi.waitFor(() => expect(port.booted).toEqual([{ sessionId: 's1', udid: 'cold' }]))
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    port.emitPreviewFrame(false)
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    port.emitPreviewFrame()
+    await expect(request).resolves.toMatchObject({ controlled: true })
+  })
+
   it('asks about the named device and boots exactly that one', async () => {
     const port = new FakePort([
       device({ udid: 'cold', name: 'iPhone 16' }),

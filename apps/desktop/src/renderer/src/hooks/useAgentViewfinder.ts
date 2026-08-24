@@ -48,6 +48,15 @@ export function useAgentViewfinder(): void {
     if (kind !== 'computer') void window.app.hideComputerUseViewfinder(sessionId)
   }), [])
 
+  useEffect(() => window.environment.onDeviceViewfinderClaim((claim) => {
+    useAgentViewfinderStore.getState().activate(
+      claim.sessionId,
+      'device',
+      claim.deviceId,
+    )
+    void window.app.hideComputerUseViewfinder(claim.sessionId)
+  }), [])
+
   useEffect(() => window.app.onComputerUseViewfinderClaim((claim) => {
     useComputerViewfinderStore.getState().applyClaim(claim)
     if (claim.active && claim.sessionId && claim.windowId != null) {

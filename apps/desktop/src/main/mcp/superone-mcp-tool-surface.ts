@@ -127,7 +127,7 @@ export async function executeSuperoneMcpTool(
         isError: true,
       }
     }
-    return executeComputerUseTool(sessionId, toolName, args)
+    return executeComputerUseTool(sessionId, toolName, args, { signal })
   }
 
   if (isDeviceAgentToolName(toolName)) {

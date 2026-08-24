@@ -89,6 +89,22 @@ describe('Adb command shape', () => {
 
     expect(calls[0]?.slice(0, 2)).toEqual(['-s', 'emulator-5554'])
   })
+
+  it('pulls captures directly through adb with a recording-sized timeout', async () => {
+    const timeouts: Array<number | undefined> = []
+    const calls: string[][] = []
+    const run: RunAdb = async (args, options) => {
+      calls.push([...args])
+      timeouts.push(options?.timeoutMs)
+      return { stdout: Buffer.from(''), stderr: '', code: 0 }
+    }
+    await new Adb(run).pull('emulator-5554', '/data/local/tmp/clip.mp4', '/tmp/clip.mp4')
+
+    expect(calls[0]).toEqual([
+      '-s', 'emulator-5554', 'pull', '/data/local/tmp/clip.mp4', '/tmp/clip.mp4',
+    ])
+    expect(timeouts[0]).toBe(60_000)
+  })
 })
 
 describe('Adb.forward', () => {

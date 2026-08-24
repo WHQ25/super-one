@@ -55,6 +55,8 @@ describe('Computer Use P0 contract', () => {
     }
     const observe = getComputerUseToolDescriptors().find((d) => d.name === 'computer_snapshot')!
     expect((observe.inputSchema as any).properties.capture.enum).toEqual(['window', 'display'])
+    const act = getComputerUseToolDescriptors().find((d) => d.name === 'computer_act')!
+    expect((act.inputSchema as any).properties.recording.type).toBe('boolean')
   })
 
   it('is disabled by default and not listed until enabled', async () => {

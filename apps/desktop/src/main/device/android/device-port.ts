@@ -23,6 +23,10 @@ export class AndroidDevicePort implements DevicePlatformPort {
     return this.manager.boot(sessionId, deviceId)
   }
 
+  waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void> {
+    return this.manager.waitForPreview(deviceId, signal)
+  }
+
   controlNote(device: DeviceDescriptor): string {
     // The serial, not the catalog id: `adb` has never heard of `android:avd:…`, and a
     // command the agent copies out of here has to run as written.

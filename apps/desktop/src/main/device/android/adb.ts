@@ -245,6 +245,11 @@ export class Adb {
     await this.raw(serial, ['push', local, remote], signal, 60_000)
   }
 
+  /** Copy a device-side capture to the host without passing it through a shell. */
+  async pull(serial: string, remote: string, local: string, signal?: AbortSignal): Promise<void> {
+    await this.raw(serial, ['pull', remote, local], signal, 60_000)
+  }
+
   /** Block until the device answers at all. Says nothing about whether it has booted. */
   async waitForDevice(serial: string, signal?: AbortSignal): Promise<void> {
     await this.raw(serial, ['wait-for-device'], signal, 120_000)

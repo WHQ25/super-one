@@ -30,9 +30,9 @@ export const DEVICE_PIP_ASPECT = 1320 / 2868
 
 const DEVICE_PIP_DIMENSIONS: PipDimensions = {
   margin: 12,
-  defaultWidth: 180,
+  defaultWidth: 200,
   defaultHeight: 360,
-  minWidth: 160,
+  minWidth: 200,
   minHeight: 200,
   maxWidthRatio: 0.6,
   maxHeightRatio: 0.8,

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { DEVICE_CAPABILITIES, type DeviceCapture } from '@superone/shared/device'
 import type { AndroidDeviceManager } from './android-device-manager'
 import type { ScrcpyConnection } from './scrcpy-server'
 import { faultFromServerLog } from './scrcpy-server'
@@ -17,12 +18,42 @@ function connectionWith(controlFault: string | null, send = vi.fn()): ScrcpyConn
   } as unknown as ScrcpyConnection
 }
 
-function managerWith(connection: ScrcpyConnection): AndroidDeviceManager {
+function managerWith(
+  connection: ScrcpyConnection,
+  overrides: Partial<AndroidDeviceManager> = {},
+): AndroidDeviceManager {
   return {
     serialFor: () => 'serial',
     connection: async () => connection,
+    ...overrides,
   } as unknown as AndroidDeviceManager
 }
+
+describe('recording an Android device', () => {
+  it('advertises the capability and delegates both ends to the shared manager', async () => {
+    const capture: DeviceCapture = {
+      kind: 'recording',
+      path: '/tmp/captures/android/clip.mp4',
+      fileName: 'clip.mp4',
+    }
+    const startRecording = vi.fn(async () => capture)
+    const stopRecording = vi.fn(async () => capture)
+    const isRecording = vi.fn(() => true)
+    const surface = createAndroidSurface(managerWith(connectionWith(null), {
+      startRecording,
+      stopRecording,
+      isRecording,
+    }), '/tmp/captures')
+
+    expect(DEVICE_CAPABILITIES.android.recording).toBe(true)
+    await expect(surface.startRecording('android:serial')).resolves.toEqual(capture)
+    await expect(surface.stopRecording('android:serial')).resolves.toEqual(capture)
+    expect(surface.isRecording('android:serial')).toBe(true)
+    expect(startRecording).toHaveBeenCalledWith('android:serial', '/tmp/captures')
+    expect(stopRecording).toHaveBeenCalledWith('android:serial')
+    expect(isRecording).toHaveBeenCalledWith('android:serial')
+  })
+})
 
 describe('touching a phone that refuses injected input', () => {
   // The regression: the control socket accepts every byte written to it and the

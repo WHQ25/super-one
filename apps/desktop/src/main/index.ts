@@ -535,6 +535,14 @@ void Promise.all([
   helper.getSharedHelperClient().onEvent(forwardComputerUseViewfinderFrame)
 })
 
+// Device PiP claims do not depend on the macOS Computer Use helper. Register them
+// independently so a helper import/startup failure cannot silence mobile previews.
+void import('./device-agent').then(({ setDeviceAgentViewfinderClaimSink }) => {
+  setDeviceAgentViewfinderClaimSink((claim) => {
+    safeSend(AgentIpcChannels.ENVIRONMENT_DEVICE_VIEWFINDER_CLAIM, claim)
+  })
+})
+
 const rendererAgentEventTransport = createRendererAgentEventTransport((events) => {
   safeSend(AgentIpcChannels.EVENT, events)
 })

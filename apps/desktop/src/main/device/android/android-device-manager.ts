@@ -12,7 +12,7 @@
  * appear, ask each new one its AVD name, and only then know which device was started.
  */
 
-import type { DeviceDescriptor, DeviceFrame, DeviceState } from '@superone/shared/device'
+import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceState } from '@superone/shared/device'
 import type { DeviceOrientation } from '@superone/shared/device-agent'
 import log from '../../logger'
 import { Adb, adbPath, emulatorPath, spawnTool, type AdbDevice } from './adb'
@@ -21,6 +21,8 @@ import { encodeResetVideo } from './scrcpy-control'
 import { connectScrcpy, type ScrcpyConnection } from './scrcpy-server'
 import { orientationForRotation } from './uiautomator'
 import { AndroidVideoStream } from './video-frames'
+import { waitForFirstDeviceFrame } from '../preview-ready'
+import { AndroidScreenRecorder } from './screen-recording'
 import {
   avdDeviceId,
   mergeAndroidDevices,
@@ -75,6 +77,11 @@ export interface AndroidToolchain {
   adbBinary: string
 }
 
+export type AndroidScreenRecordingController = Pick<
+  AndroidScreenRecorder,
+  'isRecording' | 'start' | 'stop' | 'stopAll'
+>
+
 /** Stands in for the emulator binary when only platform-tools is installed. */
 const notInstalled = async () => ({ stdout: Buffer.from(''), stderr: '', code: 0 })
 
@@ -117,8 +124,15 @@ export class AndroidDeviceManager {
   private readonly videos = new Map<string, AndroidVideoStream>()
   private readonly viewers = new Map<string, Set<(frame: DeviceFrame) => void>>()
   private lastDevices: DeviceDescriptor[] = []
+  private readonly screenRecorder: AndroidScreenRecordingController
 
-  constructor(private readonly toolchain: AndroidToolchain) {}
+  constructor(
+    private readonly toolchain: AndroidToolchain,
+    screenRecorder?: AndroidScreenRecordingController,
+  ) {
+    this.screenRecorder = screenRecorder
+      ?? new AndroidScreenRecorder(toolchain.adb, toolchain.adbBinary)
+  }
 
   /**
    * The adb client, for callers that address the device directly.
@@ -252,12 +266,13 @@ export class AndroidDeviceManager {
     const serial = this.serialFor(deviceId)
     if (!serial) throw new Error(`${deviceId} is not a running Android device.`)
 
-    const opening = connectScrcpy({
+    const connect = () => connectScrcpy({
       adb: this.toolchain.adb,
       adbBinary: this.toolchain.adbBinary,
       serial,
       maxSize: SCRCPY_MAX_SIZE,
-    }).then((connection) => {
+    })
+    const attach = (connection: ScrcpyConnection) => {
       this.connectionFlights.delete(deviceId)
       this.connections.set(deviceId, connection)
       this.pump(deviceId, connection)
@@ -266,12 +281,31 @@ export class AndroidDeviceManager {
         this.videos.delete(deviceId)
       })
       return connection
+    }
+    // Keep the first successful path direct: scrcpy can deliver its config packet in
+    // the same tick that the promise resolves, so `pump` must attach before another
+    // promise hop. The connection itself buffers that gap in production; keeping it
+    // direct also makes the ownership explicit here.
+    const first = connect().then(attach)
+    const opening = first.catch((cause: unknown) => {
+      // ADB can accept a forward just before scrcpy's abstract socket is ready, then
+      // close it after the apparent connection. A fresh server succeeds immediately
+      // in practice; retry here instead of making the user or the next agent action
+      // pay for that recovery a minute later.
+      log.warn('[android] preview connection failed; retrying once', cause)
+      return connect().then(attach)
     }).catch((error: unknown) => {
       this.connectionFlights.delete(deviceId)
       throw error
     })
     this.connectionFlights.set(deviceId, opening)
     return opening
+  }
+
+  /** Start the shared scrcpy stream now and wait until it can actually be drawn. */
+  async waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void> {
+    await this.connection(deviceId)
+    await waitForFirstDeviceFrame((listener) => this.subscribe(deviceId, listener), signal)
   }
 
   /**
@@ -392,6 +426,9 @@ export class AndroidDeviceManager {
   async stopDevice(deviceId: string): Promise<void> {
     const serial = this.serialFor(deviceId)
     const avdId = avdIdFromDeviceId(deviceId)
+    await this.screenRecorder.stop(deviceId).catch((error: unknown) => {
+      log.warn('[android] could not finalize recording before stopping device', deviceId, error)
+    })
     await this.closeConnection(deviceId)
     if (serial?.startsWith('emulator-')) {
       await this.toolchain.adb.emu(serial, ['kill'])
@@ -400,7 +437,7 @@ export class AndroidDeviceManager {
       this.serials.delete(deviceId)
     }
     if (avdId) this.launched.delete(avdId)
-    this.release(deviceId)
+    await this.release(deviceId)
   }
 
   /**
@@ -512,6 +549,12 @@ export class AndroidDeviceManager {
     const device = devices.find((candidate) => candidate.id === deviceId)
     if (!device) return null
 
+    const previousOwner = this.owners.get(deviceId)
+    if (previousOwner && previousOwner !== sessionId) {
+      await this.screenRecorder.stop(deviceId).catch((error: unknown) => {
+        log.warn('[android] could not finalize recording during device takeover', deviceId, error)
+      })
+    }
     this.bind(sessionId, deviceId)
     // Re-read so the descriptor handed back carries the ownership just recorded,
     // rather than the state from a moment before the grant.
@@ -537,12 +580,41 @@ export class AndroidDeviceManager {
     this.announce(deviceId)
   }
 
-  /** Give a device up, and stop paying for its stream. */
-  release(deviceId: string): void {
+  /** Give a device up, and stop paying for its stream or recorder. */
+  async release(deviceId: string): Promise<void> {
     if (!this.owners.delete(deviceId)) return
-    // The encoder on the guest runs for whoever is watching. Nobody is now.
-    void this.closeConnection(deviceId)
+    // Both guest encoders run for whoever is watching. Nobody is now. Start both
+    // shutdowns before awaiting either so a slow MP4 finalization does not leave the
+    // preview encoder alive unnecessarily.
+    const closeConnection = this.closeConnection(deviceId)
+    const stopRecording = this.screenRecorder.stop(deviceId)
     this.orientations.delete(deviceId)
+    const [, recording] = await Promise.allSettled([closeConnection, stopRecording])
+    if (recording.status === 'rejected') {
+      log.warn('[android] could not finalize recording while releasing device', deviceId, recording.reason)
+    }
+  }
+
+  isRecording(deviceId: string): boolean {
+    return this.screenRecorder.isRecording(deviceId)
+  }
+
+  async startRecording(deviceId: string, captureRoot: string): Promise<DeviceCapture> {
+    const serial = this.serialFor(deviceId)
+    if (!serial) throw new Error(`${deviceId} is not a running Android device.`)
+    if (!this.owners.has(deviceId)) throw new Error(`${deviceId} is not bound to a session.`)
+    const descriptor = this.descriptorFor(deviceId)
+    return this.screenRecorder.start({
+      deviceId,
+      serial,
+      deviceName: descriptor?.name ?? 'android',
+      captureRoot,
+      ...(descriptor?.versionRank ? { apiLevel: descriptor.versionRank } : {}),
+    })
+  }
+
+  stopRecording(deviceId: string): Promise<DeviceCapture | null> {
+    return this.screenRecorder.stop(deviceId)
   }
 
   /**
@@ -597,6 +669,7 @@ export class AndroidDeviceManager {
 
   /** Shut down only the emulators this app started. */
   async dispose(): Promise<void> {
+    await this.screenRecorder.stopAll()
     await Promise.all([...this.connections.keys()].map((id) => this.closeConnection(id)))
     for (const launch of this.launched.values()) launch.stop()
     this.launched.clear()

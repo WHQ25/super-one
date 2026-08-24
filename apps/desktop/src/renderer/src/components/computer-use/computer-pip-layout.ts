@@ -7,8 +7,8 @@ import {
   type PipLayout,
 } from '@/lib/pip-layout'
 
-export const COMPUTER_PIP_DEFAULT_WIDTH = 180
-export const COMPUTER_PIP_MIN_WIDTH = 160
+export const COMPUTER_PIP_DEFAULT_WIDTH = 200
+export const COMPUTER_PIP_MIN_WIDTH = 200
 
 const DIMENSIONS: PipDimensions = {
   margin: 12,

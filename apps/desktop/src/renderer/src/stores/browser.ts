@@ -6,6 +6,7 @@ export interface BrowserTabState {
   title: string
   favicon: string | null
   loading: boolean
+  hasCustomBlankContent: boolean
   canGoBack: boolean
   canGoForward: boolean
   owner: string | null
@@ -75,6 +76,7 @@ const DEFAULT_TAB: BrowserTabState = {
   title: '',
   favicon: null,
   loading: false,
+  hasCustomBlankContent: false,
   canGoBack: false,
   canGoForward: false,
   owner: null,

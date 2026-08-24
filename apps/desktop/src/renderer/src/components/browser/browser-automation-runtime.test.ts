@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { HELPERS, runBrowserOp, useBrowserAutomationHost } from './browser-automation-runtime'
 import { isBrowserFocusIsolationActive, _resetBrowserFocusIsolationForTests } from './browser-focus-isolation'
+import { registerBrowserWebview } from './browser-host-api'
 import { selectViewfinderTarget, useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { useBrowserStore } from '@/stores/browser'
 
@@ -94,6 +95,35 @@ describe('browser automation presentation activity', () => {
     expect(useBrowserStore.getState().automationPreviewBrowserId).toBe('browser-a')
     expect(selectViewfinderTarget(useAgentViewfinderStore.getState(), 'session-a'))
       .toEqual({ kind: 'browser', targetId: 'browser-a' })
+  })
+
+  it('marks content injected into about:blank as visible guest content', async () => {
+    useBrowserStore.setState({
+      tabs: {},
+      automationCounts: {},
+      activeAutomationId: null,
+      pendingPreviewBrowserId: null,
+      automationPreviewBrowserId: null,
+    })
+    useBrowserStore.getState().ensure('browser-blank', 'about:blank', 'session-a')
+    const executeJavaScript = vi.fn()
+      .mockResolvedValueOnce({ installed: true })
+      .mockResolvedValueOnce(true)
+    const unregister = registerBrowserWebview('browser-blank', {
+      executeJavaScript,
+    } as unknown as Electron.WebviewTag)
+
+    try {
+      await runBrowserOp('session-a', 'evaluate', {
+        tab: 'browser-blank',
+        expression: 'document.body.innerHTML = "<button>Start</button>"',
+      })
+
+      expect(useBrowserStore.getState().tabs['browser-blank']?.hasCustomBlankContent).toBe(true)
+      expect(executeJavaScript).toHaveBeenCalledTimes(2)
+    } finally {
+      unregister()
+    }
   })
 })
 

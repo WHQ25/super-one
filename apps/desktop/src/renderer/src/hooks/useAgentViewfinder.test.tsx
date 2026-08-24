@@ -14,10 +14,12 @@ import { useAgentViewfinder } from './useAgentViewfinder'
 
 let agentEventListener: ((event: never) => void) | null = null
 let computerClaimListener: ((claim: never) => void) | null = null
+let deviceClaimListener: ((claim: never) => void) | null = null
 
 beforeEach(() => {
   agentEventListener = null
   computerClaimListener = null
+  deviceClaimListener = null
   Object.assign(window.agent, {
     onAgentEvent: vi.fn((listener: (event: never) => void) => {
       agentEventListener = listener
@@ -31,6 +33,12 @@ beforeEach(() => {
     }),
     onComputerUseViewfinderFrame: vi.fn(() => () => undefined),
     hideComputerUseViewfinder: vi.fn(async () => true),
+  })
+  Object.assign(window.environment, {
+    onDeviceViewfinderClaim: vi.fn((listener: (claim: never) => void) => {
+      deviceClaimListener = listener
+      return () => { deviceClaimListener = null }
+    }),
   })
   useChatStore.setState({
     activeProject: '/project',
@@ -48,6 +56,19 @@ beforeEach(() => {
 })
 
 describe('agent viewfinder activity bridge', () => {
+  it('uses the execution-layer device claim when the harness tool event is absent', () => {
+    renderHook(() => useAgentViewfinder())
+
+    act(() => deviceClaimListener?.({
+      sessionId: 'session-a',
+      deviceId: 'android:emulator-5554',
+    } as never))
+
+    expect(selectViewfinderTarget(useAgentViewfinderStore.getState(), 'session-a'))
+      .toEqual({ kind: 'device', targetId: 'android:emulator-5554' })
+    expect(window.app.hideComputerUseViewfinder).toHaveBeenCalledWith('session-a')
+  })
+
   it('reactivates a still-present device when the agent operates it again', () => {
     renderHook(() => useAgentViewfinder())
 

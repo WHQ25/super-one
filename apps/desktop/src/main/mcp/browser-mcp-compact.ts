@@ -7,6 +7,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { browserErrorReply, browserTextReply, type BrowserToolReply } from './browser-mcp-replies'
 import { browserActionSchema } from '../browser/browser-actions'
+import { browserAutomationCall } from '../browser/browser-automation-bridge'
+import { persistActionRecording } from '../agent/action-recording-store'
 
 const tabField = {
   tab: z
@@ -154,6 +156,8 @@ export const BROWSER_ACT_DESCRIPTION =
   'Submit 1–20 page actions as one call: click, hover, type, press, scroll, drag, select, upload. '
   + 'Prefer a CSS selector from snapshot/query; click/hover also accept text or x/y. '
   + 'engine=auto|cdp|synthetic (default auto). description is shown to the user instead of raw selectors. '
+  + 'Set recording=true to save a short video containing only this action transaction. '
+  + 'Optional expect keeps the recording open until an explicit page condition is met. '
   + 'Do not use this to navigate (browser_tabs), wait (browser_wait_for), or run JS (browser_evaluate). Fail-fast: stops at the first error.'
 
 export const BROWSER_PERF_DESCRIPTION =
@@ -181,7 +185,7 @@ export const BROWSER_EVALUATE_DESCRIPTION =
 
 export function registerCompactBrowserTools(
   server: McpServer,
-  _sessionId: string,
+  sessionId: string,
   runPrimitive: PrimitiveRunner,
 ): void {
   server.registerTool(
@@ -352,46 +356,136 @@ export function registerCompactBrowserTools(
         ...tabField,
         ...descriptionField,
         actions: z.array(actItemSchema).min(1).max(20).describe('1–20 related actions, run in order, fail-fast.'),
+        recording: z.boolean().optional().describe('Save a video of only this action transaction. Default false.'),
+        expect: z.object({
+          selector: z.string().optional(),
+          selectorGone: z.string().optional(),
+          text: z.string().optional(),
+          urlIncludes: z.string().optional(),
+        }).optional().describe('Explicit completion condition checked before recording stops.'),
+        timeoutMs: z.number().int().min(100).max(60_000).optional()
+          .describe('Maximum wait for expect. Default 15000.'),
       },
     },
     async (args) => {
       const actions = args.actions as Array<Record<string, unknown>>
       const description = args.description
       const tab = args.tab
-      const executed: Array<{ type: string; ok: true }> = []
-      let last: unknown = null
-      for (const action of actions) {
-        const type = action.type as ActType
-        const primitive = ACT_PRIMITIVE[type]
-        if (!primitive) return browserErrorReply(new Error(`Unknown action type: ${String(action.type)}`))
-        const { type: _t, ...rest } = action
-        // type/press primitive schemas are synthetic|cdp (no auto). Treat auto as omit
-        // so the primitive default (synthetic) applies instead of a Zod error.
-        if ((type === 'type' || type === 'press') && rest.engine === 'auto') {
-          delete rest.engine
-        }
-        const reply = await runPrimitive(primitive, { ...rest, tab, description })
-        const parsed = parseJson(reply)
-        const failed = reply.isError || isExplicitFailure(parsed)
-        if (failed) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                ok: false,
-                failedAt: type,
-                step: executed.length,
-                executed,
-                error: failureMessage(reply, parsed),
-              }),
-            }],
-            isError: true,
+      let recordingId: string | undefined
+      let recordingTab: string | undefined
+      if (args.recording === true) {
+        try {
+          const started = await browserAutomationCall(sessionId, 'recordStart', { tab }) as {
+            recordingId?: string
+            tab?: string
           }
+          if (!started.recordingId) throw new Error('Browser recording did not start')
+          recordingId = started.recordingId
+          recordingTab = started.tab
+        } catch (error) {
+          return browserErrorReply(error)
         }
-        executed.push({ type, ok: true })
-        last = parseJson(reply)
       }
-      return browserTextReply({ ok: true, stepsExecuted: executed.length, last })
+      const operationTab = recordingTab ?? tab
+
+      let actionReply: BrowserToolReply = browserTextReply({ ok: false, error: 'Action did not run' })
+      try {
+        const executed: Array<{ type: string; ok: true }> = []
+        let last: unknown = null
+        actionReply = browserTextReply({ ok: true, stepsExecuted: 0, last })
+        for (const action of actions) {
+          const type = action.type as ActType
+          const primitive = ACT_PRIMITIVE[type]
+          if (!primitive) {
+            actionReply = browserErrorReply(new Error(`Unknown action type: ${String(action.type)}`))
+            break
+          }
+          const { type: _t, ...rest } = action
+          if ((type === 'type' || type === 'press') && rest.engine === 'auto') {
+            delete rest.engine
+          }
+          const reply = await runPrimitive(primitive, { ...rest, tab: operationTab, description })
+          const parsed = parseJson(reply)
+          const failed = reply.isError || isExplicitFailure(parsed)
+          if (failed) {
+            actionReply = {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  ok: false,
+                  failedAt: type,
+                  step: executed.length,
+                  executed,
+                  error: failureMessage(reply, parsed),
+                }),
+              }],
+              isError: true,
+            }
+            break
+          }
+          executed.push({ type, ok: true })
+          last = parsed
+          actionReply = browserTextReply({ ok: true, stepsExecuted: executed.length, last })
+        }
+
+        if (!actionReply.isError && args.expect) {
+          const waitReply = await runPrimitive('browser_wait_for', {
+            tab: operationTab,
+            description,
+            ...(args.expect as Record<string, unknown>),
+            timeoutMs: args.timeoutMs,
+          })
+          if (waitReply.isError || isExplicitFailure(parseJson(waitReply))) {
+            actionReply = waitReply
+          } else {
+            actionReply = browserTextReply({
+              ...(parseJson(actionReply) as Record<string, unknown>),
+              completion: parseJson(waitReply),
+            })
+          }
+        } else if (!actionReply.isError && recordingId) {
+          await new Promise((resolve) => setTimeout(resolve, 250))
+        }
+      } catch (error) {
+        actionReply = browserErrorReply(error)
+      }
+
+      if (!recordingId) return actionReply
+      try {
+        const stopped = await browserAutomationCall(sessionId, 'recordStop', {
+          tab: operationTab,
+          recordingId,
+        }) as {
+          data: string
+          mimeType: string
+          durationMs: number
+          width: number
+          height: number
+        }
+        const path = persistActionRecording('web', stopped.data, stopped.mimeType)
+        if (!path) throw new Error('Browser recording could not be saved')
+        const parsed = parseJson(actionReply)
+        const body = parsed && typeof parsed === 'object'
+          ? parsed as Record<string, unknown>
+          : { result: parsed }
+        return {
+          ...browserTextReply({
+            ...body,
+            recording: {
+              savedPath: path,
+              mimeType: stopped.mimeType,
+              durationMs: stopped.durationMs,
+              width: stopped.width,
+              height: stopped.height,
+            },
+          }),
+          ...(actionReply.isError ? { isError: true } : {}),
+        }
+      } catch (error) {
+        return browserErrorReply(new Error(
+          `The browser action ran, but its recording could not be finalized: ${error instanceof Error ? error.message : String(error)}`,
+        ))
+      }
     },
   )
 

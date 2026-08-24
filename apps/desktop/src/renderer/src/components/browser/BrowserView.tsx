@@ -26,7 +26,10 @@ export function BrowserView({
   trackBoundsContinuously = false,
 }: BrowserViewProps) {
   const contentRef = useRef<HTMLDivElement>(null)
-  const isHome = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
+  const isHome = useBrowserStore((s) => {
+    const tab = s.tabs[browserId]
+    return isBlankUrl(tab?.url ?? '') && !tab?.hasCustomBlankContent
+  })
   const certError = useBrowserStore((s) => s.tabs[browserId]?.certError ?? null)
 
   useSlotBounds(

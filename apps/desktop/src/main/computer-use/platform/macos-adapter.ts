@@ -17,6 +17,7 @@ import type {
   PlatformActStepResult,
   PlatformAdapter,
   PlatformLook,
+  PlatformRecordingResult,
 } from './types'
 import {
   getSharedHelperClient,
@@ -613,6 +614,21 @@ export class MacosPlatformAdapter implements PlatformAdapter {
 
     // Do not auto-hide after act — session idle / interrupt / dispose clears visuals.
     return { steps, stoppedAt }
+  }
+
+  async startRecording(root: UiRootIdentity, outputPath: string): Promise<void> {
+    if (typeof root.windowId !== 'number') {
+      throw new ComputerUseError('INVALID_ACTION', 'Action recording requires a capturable window')
+    }
+    await this.client.call('record_start', {
+      windowId: root.windowId,
+      outputPath,
+      maxWidth: this.maxCaptureWidth,
+    })
+  }
+
+  async stopRecording(): Promise<PlatformRecordingResult> {
+    return this.client.call<PlatformRecordingResult>('record_stop')
   }
 
   async zoom(

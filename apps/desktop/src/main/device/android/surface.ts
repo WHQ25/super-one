@@ -64,7 +64,7 @@ export function createAndroidSurface(
       // Lets go of the device and its stream, and deliberately leaves the device
       // running: someone else may want it, and on Android that may be a phone on
       // somebody's desk.
-      manager.release(deviceId)
+      await manager.release(deviceId)
       return manager.deviceState(deviceId)
     },
 
@@ -77,7 +77,7 @@ export function createAndroidSurface(
       // Same as `detach` here: nothing SuperOne starts on Android is stopped when a
       // panel closes. An AVD takes tens of seconds to boot and a plugged-in phone is
       // not ours to switch off, so both are left running for whoever wants them next.
-      manager.release(deviceId)
+      await manager.release(deviceId)
     },
 
     async input(deviceId, input: DeviceInput): Promise<DeviceInputResult> {
@@ -125,19 +125,14 @@ export function createAndroidSurface(
       return { path, fileName, kind: 'screenshot' }
     },
 
-    // Recording is not wired up yet. `adb shell screenrecord` can do it, but it needs
-    // its own lifecycle — a device-side process, a 3-minute cap to work around, and a
-    // pull when it stops — and none of that is shared with the simulator's path.
-    // Declared absent in `DEVICE_CAPABILITIES` so the button is disabled rather than
-    // offered and then refused.
-    async startRecording(): Promise<DeviceCapture> {
-      throw new Error('Screen recording is not available for Android devices yet.')
+    async startRecording(deviceId): Promise<DeviceCapture> {
+      return manager.startRecording(deviceId, captureRoot)
     },
-    async stopRecording(): Promise<DeviceCapture | null> {
-      return null
+    async stopRecording(deviceId): Promise<DeviceCapture | null> {
+      return manager.stopRecording(deviceId)
     },
-    isRecording() {
-      return false
+    isRecording(deviceId) {
+      return manager.isRecording(deviceId)
     },
 
     subscribe(deviceId, listener: (frame: DeviceFrame) => void) {

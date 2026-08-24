@@ -88,7 +88,14 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   const roundLeft = !isFullscreen || showSidebar
   const roundRight = !isFullscreen
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
-  const home = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
+  const home = useBrowserStore((s) => {
+    const tab = s.tabs[browserId]
+    return isBlankUrl(tab?.url ?? '') && !tab?.hasCustomBlankContent
+  })
+  const customBlank = useBrowserStore((s) => {
+    const tab = s.tabs[browserId]
+    return isBlankUrl(tab?.url ?? '') && tab?.hasCustomBlankContent === true
+  })
   const certErrored = useBrowserStore((s) => s.tabs[browserId]?.certError != null)
   const webviewRef = useRef<Electron.WebviewTag>(null)
   const lastRecordedUrl = useRef<string | null>(null)
@@ -187,6 +194,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
     const onConsole = (e: Electron.ConsoleMessageEvent) => pushBrowserConsole(browserId, e.level, e.message)
     const onNavigateClearConsole = (e: Electron.DidStartNavigationEvent) => {
       clearBrowserConsole(browserId)
+      if (e.isMainFrame) patch(browserId, { hasCustomBlankContent: false })
       if (e.isMainFrame && useBrowserStore.getState().tabs[browserId]?.certError) patch(browserId, { certError: null })
     }
     const onContextMenu = (e: Electron.ContextMenuEvent) => contextMenuRef.current(wv, e)
@@ -298,6 +306,10 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
           : `clip-path ${ACTIVITY_PANEL_TRANSITION.durationMs}ms ${ACTIVITY_PANEL_TRANSITION.easing}`,
         pointerEvents: visible && slot?.mode !== 'pip' && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
+        // Electron composites about:blank transparency through the webview. Use the
+        // normal browser canvas colour behind injected content, without mutating the
+        // page or overriding a background the injected CSS deliberately supplies.
+        backgroundColor: customBlank ? 'white' : undefined,
         borderTopLeftRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
         borderTopRightRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
         borderBottomLeftRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundLeft && activitySide === 'left') ? 'var(--radius-xl)' : undefined,

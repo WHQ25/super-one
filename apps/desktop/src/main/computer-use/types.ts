@@ -174,6 +174,13 @@ export interface ActResult {
   successorImage?: CapturedImage
   successorCoordinateSpace: CoordinateSpace
   diff?: StateDiff
+  recording?: {
+    savedPath: string
+    mimeType: string
+    durationMs: number
+    width?: number
+    height?: number
+  }
 }
 
 export interface WaitResult {

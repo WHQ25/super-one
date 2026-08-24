@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { formatDeviceId, parseDeviceId } from '@superone/shared/device'
+import { formatDeviceId, parseDeviceId, type DeviceViewfinderClaim } from '@superone/shared/device'
 import { getIosSimulatorManager } from '../ios-simulator'
 import { DeviceAgentSession, errorReply, reply, type DeviceToolReply } from './execute'
 import { IosSimulatorBackend } from './ios-backend'
@@ -10,13 +10,14 @@ import { MirrorBackend } from './mirror-backend'
 import { requestDeviceControl } from './control'
 import { listDeviceCatalog } from './device-catalog'
 import type { DevicePlatformPort } from '../device/platform-port'
-import { devicePlatformPorts } from '../device/registry'
+import { devicePlatformPorts, deviceSurfaces } from '../device/registry'
 import { getAndroidDeviceManager } from '../device/android'
 import { getMirrorDeviceManager } from '../device/ios-mirror'
 import { createDeviceRecents, type DeviceRecentsPort } from './device-recents'
 import { resolveHeldDevice, type HeldDevice } from './target'
 import type { DeviceAgentToolName } from './tools'
 import type { TouchDeviceBackend } from './types'
+import { actionRecordingFromPath, adoptActionRecording } from '../agent/action-recording-store'
 
 export {
   DEVICE_AGENT_TOOL_NAMES,
@@ -138,10 +139,19 @@ export function setDeviceAgentRecentsFactory(factory: (sessionId: string) => Dev
  */
 let emitHostEventFor: (sessionId: string) => ((event: AgentEvent) => void) | null = () => null
 
+/** Direct execution-layer signal; unlike chat tool deltas this is harness-independent. */
+let viewfinderClaimSink: ((claim: DeviceViewfinderClaim) => void) | null = null
+
 export function setDeviceAgentHostEventResolver(
   resolver: (sessionId: string) => ((event: AgentEvent) => void) | null,
 ): void {
   emitHostEventFor = resolver
+}
+
+export function setDeviceAgentViewfinderClaimSink(
+  sink: ((claim: DeviceViewfinderClaim) => void) | null,
+): void {
+  viewfinderClaimSink = sink
 }
 
 function sessionFor(sessionId: string, deviceId: string): DeviceAgentSession {
@@ -150,6 +160,29 @@ function sessionFor(sessionId: string, deviceId: string): DeviceAgentSession {
   const session = new DeviceAgentSession(buildBackend(deviceId))
   sessions.set(deviceId, { session, sessionId })
   return session
+}
+
+function withRecording(
+  replyValue: DeviceToolReply,
+  recording: ReturnType<typeof actionRecordingFromPath>,
+): DeviceToolReply {
+  const text = replyValue.content.find((item) => item.type === 'text')?.text
+  let result: unknown
+  try {
+    result = text ? JSON.parse(text) : null
+  } catch {
+    result = text
+  }
+  const body = result && typeof result === 'object'
+    ? result as Record<string, unknown>
+    : { result }
+  return {
+    ...replyValue,
+    content: [
+      { type: 'text', text: JSON.stringify({ ...body, recording }) },
+      ...replyValue.content.filter((item) => item.type !== 'text'),
+    ],
+  }
 }
 
 /**
@@ -199,14 +232,50 @@ export async function executeDeviceAgentTool(
     // Every remaining tool drives one device, so which one is settled first — and
     // refused rather than guessed when the session holds more than one.
     const { device } = args as { device?: string }
-    const session = sessionFor(sessionId, resolveHeldDevice(heldDevicesFor(sessionId), device))
+    const deviceId = resolveHeldDevice(heldDevicesFor(sessionId), device)
+    viewfinderClaimSink?.({ sessionId, deviceId })
+    const session = sessionFor(sessionId, deviceId)
     switch (name) {
       case 'device_snapshot':
         return await session.snapshot(args as { mode?: string; maxNodes?: number }, signal)
       case 'device_query':
         return await session.query(args as { stateId: string; op: string; text?: string; ref?: string })
       case 'device_act':
-        return await session.act(args as Parameters<DeviceAgentSession['act']>[0], signal)
+        if (args.recording !== true) {
+          return await session.act(args as Parameters<DeviceAgentSession['act']>[0], signal)
+        }
+        if (backendFactory) {
+          throw new Error('Action recording is unavailable for the injected device backend.')
+        }
+        {
+          const provider = parseDeviceId(deviceId)?.provider
+          const surface = deviceSurfaces(app.getPath('userData')).find((candidate) => candidate.provider === provider)
+          if (!surface) throw new Error(`Action recording is unavailable for device ${deviceId}.`)
+          const startedAt = Date.now()
+          let recordingStarted = false
+          let actReply: DeviceToolReply
+          try {
+            actReply = await session.act(
+              args as Parameters<DeviceAgentSession['act']>[0],
+              signal,
+              async () => {
+                await surface.startRecording(deviceId)
+                recordingStarted = true
+              },
+            )
+          } catch (error) {
+            // An interrupted or failed action must not leave Android's device-side
+            // screenrecord process (or simctl) running indefinitely.
+            if (recordingStarted) await surface.stopRecording(deviceId).catch(() => null)
+            throw error
+          }
+          if (!recordingStarted) return actReply
+          const capture = await surface.stopRecording(deviceId)
+          if (!capture) {
+            throw new Error('The device action ran, but its recording could not be finalized.')
+          }
+          return withRecording(actReply, adoptActionRecording('device', capture.path, startedAt))
+        }
       case 'device_wait_for':
         return await session.waitFor(args as Parameters<DeviceAgentSession['waitFor']>[0], signal)
     }

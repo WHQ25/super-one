@@ -27,6 +27,8 @@ export type BrowserAutomationOp =
   | 'focusView'
   | 'focusGuardBegin'
   | 'focusGuardEnd'
+  | 'recordStart'
+  | 'recordStop'
 
 interface PendingCall {
   resolve: (result: unknown) => void

@@ -420,7 +420,7 @@ describe('Android device stage', () => {
     expect(screen.getByRole('button', { name: 'Recent Apps' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Preview Quality' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Software Keyboard/ })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Record Screen' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Record Screen' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Screenshot' })).toBeEnabled()
   })
 })

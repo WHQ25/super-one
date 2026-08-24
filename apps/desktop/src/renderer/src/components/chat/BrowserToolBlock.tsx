@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Ban, TriangleAlert, ImageIcon, Download as DownloadIcon } from 'lucide-react'
+import { ChevronRight, Ban, TriangleAlert, ImageIcon, Video, Download as DownloadIcon } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Button } from '@superone/ui/components/ui/button'
 import { ToolIcon } from './ToolIcon'
@@ -12,6 +12,7 @@ import { browserVerbKey, browserInputSummary, parseBrowserResult, isReadBrowserO
 import { useChatStore } from '@/stores/chat-store'
 import { ToolScreenshotView } from './ToolScreenshotView'
 import { ToolName } from './tool-row'
+import { ActionRecordingView, parseActionRecording } from './ActionRecordingView'
 
 interface BrowserToolBlockProps {
   op: BrowserOp
@@ -54,6 +55,7 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
   const description = typeof params.description === 'string' ? params.description.trim() : ''
   const inputSummary = browserInputSummary(op, params)
   const info = useMemo(() => parseBrowserResult(op, result, !!isError), [op, result, isError])
+  const recording = useMemo(() => parseActionRecording(result), [result])
 
   const failed = info.status === 'error' || !!isDenied
   const hasScreenshot = op === 'screenshot' && !!info.imagePath && !isStreaming && !failed
@@ -74,7 +76,7 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
   const isMockDetail = op === 'mock' && params.clear !== true && !failed
   const expandable = allowExpand
     && !isStreaming
-    && (isMockDetail || (!!result && (isReadBrowserOp(op) || info.status === 'error' || hasScreenshot)))
+    && (isMockDetail || (!!result && (isReadBrowserOp(op) || info.status === 'error' || hasScreenshot || !!recording)))
 
   return (
     <div
@@ -113,6 +115,7 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {rightCount && <span className="text-muted-foreground/70">{rightCount}</span>}
+          {recording && <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" />}
           {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
             <span className={cn('transition-colors duration-500', getStallColor(stallLevel))}>{Math.round(elapsedSeconds)}s</span>
           )}
@@ -135,7 +138,8 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
         >
           <div className="overflow-hidden">
             <div className="px-2 pb-1.5">
-              {expanded && (hasScreenshot
+              {expanded && recording && <ActionRecordingView recording={recording} />}
+              {expanded && !recording && (hasScreenshot
                 ? (
                     <ToolScreenshotView
                       path={info.imagePath!}

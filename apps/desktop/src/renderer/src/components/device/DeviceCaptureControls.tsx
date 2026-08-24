@@ -21,19 +21,26 @@ interface DeviceCaptureControlsProps {
   deviceId: string
   /** Set while no device is streaming — the buttons stay in place, just unusable. */
   disabled?: boolean
-  /** Android capture currently supports screenshots but not recording. */
+  /** False for providers that expose a preview but no native recorder. */
   canRecord?: boolean
+  /** Natural platform limit; reaching it finalizes and saves the recording. */
+  maxDurationMs?: number
 }
 
 /**
- * Screenshot and screen recording for the bound device. Both read the simulator's
- * own display through the main process rather than the preview canvas, so the file
+ * Screenshot and screen recording for the bound device. Both read the device's own
+ * display through the main process rather than the preview canvas, so the file
  * is at native resolution and carries no device chrome.
  */
-export function DeviceCaptureControls({ deviceId, disabled, canRecord = true }: DeviceCaptureControlsProps) {
+export function DeviceCaptureControls({
+  deviceId,
+  disabled,
+  canRecord = true,
+  maxDurationMs,
+}: DeviceCaptureControlsProps) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
-  // When simctl confirmed frames were flowing, so the clock counts the recording
+  // When the provider confirmed frames were flowing, so the clock counts the recording
   // rather than the button press. `null` whenever nothing is being recorded — which
   // makes it the recording flag too, rather than a second state to keep in step.
   const [startedAt, setStartedAt] = useState<number | null>(null)
@@ -74,17 +81,32 @@ export function DeviceCaptureControls({ deviceId, disabled, canRecord = true }: 
     }
   }, [announce, deviceId])
 
-  const toggleRecording = useCallback(async () => {
+  const finishRecording = useCallback(async () => {
+    if (!recordingRef.current) return
+    // Claim the stop before awaiting so the duration timer, button, and unmount
+    // cleanup cannot race two finalization/pull operations for one device file.
+    recordingRef.current = false
     setBusy(true)
     try {
-      if (recordingRef.current) {
-        const capture = await window.environment.deviceRecordStop(deviceId)
-        recordingRef.current = false
-        setStartedAt(null)
-        if (capture) announce(capture)
-        return
-      }
-      // Resolves only once simctl confirms frames are flowing, so the button never
+      const capture = await window.environment.deviceRecordStop(deviceId)
+      setStartedAt(null)
+      if (capture) announce(capture)
+    } catch (cause) {
+      setStartedAt(null)
+      reportDeviceError(messageOf(cause))
+    } finally {
+      setBusy(false)
+    }
+  }, [announce, deviceId])
+
+  const toggleRecording = useCallback(async () => {
+    if (recordingRef.current) {
+      await finishRecording()
+      return
+    }
+    setBusy(true)
+    try {
+      // Resolves only once the provider confirms recording, so the button never
       // claims to be recording a stream that failed to start.
       await window.environment.deviceRecordStart(deviceId)
       recordingRef.current = true
@@ -96,7 +118,14 @@ export function DeviceCaptureControls({ deviceId, disabled, canRecord = true }: 
     } finally {
       setBusy(false)
     }
-  }, [announce, deviceId])
+  }, [deviceId, finishRecording])
+
+  useEffect(() => {
+    if (startedAt === null || maxDurationMs === undefined) return
+    const remaining = Math.max(0, startedAt + maxDurationMs - Date.now())
+    const timer = setTimeout(() => { void finishRecording() }, remaining)
+    return () => clearTimeout(timer)
+  }, [finishRecording, maxDurationMs, startedAt])
 
   // Leaving the stage takes the stop button with it. Ending the recording here
   // keeps it from running on unattended until the session detaches.

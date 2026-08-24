@@ -53,4 +53,13 @@ describe('registerDeviceAgentTools', () => {
     const properties = (waitFor?.inputSchema as { properties?: Record<string, unknown> }).properties
     expect(properties?.condition).toBeTruthy()
   })
+
+  it('exposes recording only on device_act', () => {
+    const descriptors = getDeviceAgentToolDescriptors()
+    const act = descriptors.find((tool) => tool.name === 'device_act')
+    const properties = (act?.inputSchema as { properties?: Record<string, unknown> }).properties
+    expect(properties?.recording).toMatchObject({ type: 'boolean' })
+    expect(descriptors.find((tool) => tool.name === 'device_snapshot')?.inputSchema)
+      .not.toMatchObject({ properties: { recording: expect.anything() } })
+  })
 })

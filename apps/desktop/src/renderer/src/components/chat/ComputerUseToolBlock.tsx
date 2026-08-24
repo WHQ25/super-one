@@ -6,6 +6,7 @@ import {
   ImageIcon,
   MousePointer2,
   TriangleAlert,
+  Video,
 } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppIcon } from '@/hooks/use-app-icon'
@@ -22,6 +23,7 @@ import {
 import { ComputerResultView } from './computer-result-view'
 import { ToolScreenshotView } from './ToolScreenshotView'
 import { ToolName } from './tool-row'
+import { ActionRecordingView, parseActionRecording } from './ActionRecordingView'
 
 interface ComputerUseToolBlockProps {
   op: ComputerOp
@@ -141,6 +143,7 @@ export function ComputerUseToolBlock({
     () => parseComputerResult(op, result, !!isError, params),
     [op, result, isError, params],
   )
+  const recording = useMemo(() => parseActionRecording(result), [result])
   // list → Computer Use glyph; launch/focus/observe/act → target app icon.
   // Never use frontmost (often SuperOne after background launch).
   const bundleId = useMemo(
@@ -238,6 +241,9 @@ export function ComputerUseToolBlock({
               aria-label={t('chat.toolBlock.computer.screenshot')}
             />
           )}
+          {recording && (
+            <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" />
+          )}
           {rightSummary && (
             <span
               className={cn(
@@ -295,6 +301,7 @@ export function ComputerUseToolBlock({
                   )}
                 />
               )}
+              {expanded && recording && <ActionRecordingView recording={recording} />}
               {expanded && hasResultJson && result && (
                 <ComputerResultView text={result} />
               )}

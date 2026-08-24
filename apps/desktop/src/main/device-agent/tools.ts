@@ -182,17 +182,19 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
     description:
       'Run 1-10 touch actions against a snapshot, then re-observe to judge if they worked. '
       + 'Actions: tap, doubleTap, longPress, swipe(direction|toX/toY), pinch(scale), press(ref), type, key, rotate, keyboard. '
-      + 'Prefer press for a ref-backed control; it goes through accessibility, immune to animation, rotation and scale '
-      + '(not on a source=ocr snapshot — tap there). Aim touch actions at refs too; raw x/y is a last resort. '
-      + 'The whole batch, stale stateId included, is validated up front. '
-      + 'rotate ends the snapshot it is in: put it last, then re-snapshot — a later ref or coordinate is refused. '
-      + 'Returns worked|didnt|unknown; unknown means input landed but nothing visibly changed. Pass expect to define success.',
+      + 'Prefer refs; press uses accessibility and is resilient to animation (use tap for source=ocr). Raw x/y is a last resort. '
+      + 'The batch and stale stateId are validated before side effects. rotate must be last; re-snapshot afterwards. '
+      + 'Set recording=true to save a short video containing only this action transaction. '
+      + 'Returns worked|didnt|unknown. Pass expect to define and wait for success.',
     shape: {
       ...descriptionField,
       ...deviceField,
       stateId: z.string(),
       actions: z.array(actionSchema).min(1).max(10),
       expect: conditionSchema.optional().describe('Postcondition checked after the actions run.'),
+      timeoutMs: z.number().int().min(100).max(60_000).optional()
+        .describe('Maximum wait for expect before the action is judged. Default 5000.'),
+      recording: z.boolean().optional().describe('Save a video of only this action transaction. Default false.'),
     },
   },
   {

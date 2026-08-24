@@ -42,7 +42,7 @@ beforeEach(() => {
 })
 
 describe('Computer Use picture in picture', () => {
-  it('renders the native stream at the owning session top-right at 180px wide', async () => {
+  it('renders the native stream at the owning session top-right at 200px wide', async () => {
     act(() => {
       useComputerViewfinderStore.getState().applyClaim({
         sessionId: 'session-a', active: true, windowId: 42,
@@ -56,7 +56,7 @@ describe('Computer Use picture in picture', () => {
     render(<ComputerUsePictureInPicture />)
 
     const pip = await screen.findByLabelText('Computer Use picture in picture')
-    expect(pip).toHaveStyle({ left: '908px', top: '62px', width: '180px', height: '120px' })
+    expect(pip).toHaveStyle({ left: '888px', top: '62px', width: '200px', height: `${200 / (3 / 2)}px` })
     expect(pip.querySelector('img')).toHaveAttribute('src', 'data:image/jpeg;base64,jpeg')
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide Computer Use preview' }))

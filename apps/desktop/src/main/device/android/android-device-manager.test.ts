@@ -5,6 +5,7 @@ import { Avd } from './avd'
 import {
   AndroidDeviceManager,
   avdIdFromDeviceId,
+  type AndroidScreenRecordingController,
   type AndroidToolchain,
 } from './android-device-manager'
 
@@ -30,6 +31,7 @@ ${PHONE_SERIAL}          device product:a54x model:SM_A546B device:a54x transpor
  * test can assert on the one that should have been taken down.
  */
 const scrcpy = vi.hoisted(() => ({
+  failures: 0,
   connections: [] as {
     serial: string
     closed: boolean
@@ -40,6 +42,10 @@ const scrcpy = vi.hoisted(() => ({
 
 vi.mock('./scrcpy-server', () => ({
   connectScrcpy: vi.fn(async (options: { serial: string }) => {
+    if (scrcpy.failures > 0) {
+      scrcpy.failures -= 1
+      throw new Error('video socket closed before its header arrived')
+    }
     const listeners = new Set<(packet: unknown) => void>()
     const connection = {
       serial: options.serial,
@@ -230,6 +236,34 @@ describe('ownership', () => {
   })
 })
 
+describe('recording lifecycle', () => {
+  it('addresses the bound serial and finalizes recording when the device is released', async () => {
+    const capture = { kind: 'recording' as const, path: '/tmp/clip.mp4', fileName: 'clip.mp4' }
+    const recorder: AndroidScreenRecordingController = {
+      isRecording: vi.fn(() => true),
+      start: vi.fn(async () => capture),
+      stop: vi.fn(async () => capture),
+      stopAll: vi.fn(async () => {}),
+    }
+    const { toolchain: tools } = toolchain()
+    const manager = new AndroidDeviceManager(tools, recorder)
+    const deviceId = `android:avd:${AVD_ID}`
+    await manager.boot('session-1', deviceId)
+
+    await expect(manager.startRecording(deviceId, '/tmp/captures')).resolves.toEqual(capture)
+    expect(recorder.start).toHaveBeenCalledWith(expect.objectContaining({
+      deviceId,
+      serial: SERIAL,
+      captureRoot: '/tmp/captures',
+    }))
+
+    await manager.release(deviceId)
+    expect(recorder.stop).toHaveBeenCalledWith(deviceId)
+    await manager.dispose()
+    expect(recorder.stopAll).toHaveBeenCalledOnce()
+  })
+})
+
 
 describe('rebinding a session', () => {
   const PHONE_ID = `android:${PHONE_SERIAL}`
@@ -267,6 +301,18 @@ describe('rebinding a session', () => {
     // touches arriving out of order.
     expect(scrcpy.connections).toHaveLength(1)
     expect(scrcpy.connections[0]!.closed).toBe(false)
+  })
+
+  it('retries a transient scrcpy startup failure without waiting for another action', async () => {
+    const android = manager()
+    await android.boot('session-1', AVD_DEVICE_ID)
+    scrcpy.failures = 1
+
+    await expect(android.connection(AVD_DEVICE_ID)).resolves.toMatchObject({
+      deviceName: SERIAL,
+    })
+    expect(scrcpy.failures).toBe(0)
+    expect(scrcpy.connections).toHaveLength(1)
   })
 
   it('closes the connection when a device is given up', async () => {

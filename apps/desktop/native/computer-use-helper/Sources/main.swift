@@ -617,6 +617,9 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 throw HelperError(code: "INVALID", message: "capture must be window or display")
             }
             return .success(id: request.id, result: result)
+        case "record_start", "record_stop":
+            let result = try await handleActionRecordingCommand(request.method, params: params)
+            return .success(id: request.id, result: result)
         case "zoom":
             let granted = AnyCodable.stringArray(params, "grantedBundleIds")
             let allowAll = (params["allowAllApps"] as? Bool) ?? false

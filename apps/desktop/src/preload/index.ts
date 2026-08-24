@@ -6,7 +6,7 @@ import type { DshPluginInstallSource, ScheduledSend, ScheduledSendPatch, Schedul
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
-import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions } from '@superone/shared/device'
+import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import { forEachAgentEventPayload } from './agent-event-payload'
 import { isGlassPlatformSupported } from '../main/window-glass'
@@ -269,6 +269,15 @@ const environmentAPI = {
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE, handler)
+    }
+  },
+  onDeviceViewfinderClaim: (callback: (claim: DeviceViewfinderClaim) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, claim: DeviceViewfinderClaim): void => {
+      callback(claim)
+    }
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_DEVICE_VIEWFINDER_CLAIM, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_DEVICE_VIEWFINDER_CLAIM, handler)
     }
   },
   onDeviceRotateGesture: (callback: (rotation: number) => void) => {

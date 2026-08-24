@@ -112,6 +112,24 @@ describe('iOS Simulator capture controls', () => {
     expect(screen.queryByRole('timer')).toBeNull()
   })
 
+  it('finalizes and saves when the platform recording limit is reached', async () => {
+    vi.useFakeTimers()
+    const api = stubEnvironment()
+    render(<DeviceCaptureControls deviceId="android:emulator-5554" maxDurationMs={1_000} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record Screen' }))
+    await act(async () => {})
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(999) })
+    expect(api.deviceRecordStop).not.toHaveBeenCalled()
+    expect(screen.getByRole('timer', { name: 'Recording…' })).toBeInTheDocument()
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(api.deviceRecordStop).toHaveBeenCalledTimes(1)
+    expect(api.deviceRecordStop).toHaveBeenCalledWith('android:emulator-5554')
+    expect(screen.queryByRole('timer')).toBeNull()
+  })
+
   it('ends an open recording when the stage goes away', async () => {
     const api = stubEnvironment()
     const view = render(<DeviceCaptureControls deviceId="ios-sim:sim-1" />)

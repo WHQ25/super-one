@@ -94,6 +94,30 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.display).toBe('none')
   })
 
+  it('reveals agent-injected about:blank content in picture-in-picture', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-blank', 'about:blank', 'session-a')
+      useBrowserStore.getState().updateSlot('browser-blank', 'pip', {
+        left: 700,
+        top: 80,
+        width: 360,
+        height: 240,
+      } as DOMRectReadOnly)
+      useBrowserStore.getState().beginAutomation('browser-blank')
+      useBrowserStore.getState().markAutomationPreviewReady('browser-blank')
+      useAgentViewfinderStore.getState().activate('session-a', 'browser', 'browser-blank')
+      useActivityPanelStore.getState().setShowPanel(false)
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-blank"]') as HTMLElement
+    expect(host.style.opacity).toBe('0')
+
+    act(() => useBrowserStore.getState().patch('browser-blank', { hasCustomBlankContent: true }))
+    expect(host.style.opacity).toBe('1')
+    expect(host.style.backgroundColor).toBe('white')
+  })
+
   it('reveals a right-docked browser from the right activity edge', () => {
     const { container } = render(<BrowserHostLayer />)
     act(() => {

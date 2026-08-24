@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { DeviceUiNode } from '@superone/shared/device-agent'
 import { DeviceAgentSession } from './execute'
 import {
@@ -75,13 +75,15 @@ describe('device_act staleness', () => {
     // The whole point of stateId: after the screen moved on, @e1 may name a
     // different control, so acting on the old snapshot must fail loudly rather than
     // tap whatever now occupies that slot.
+    const startRecording = vi.fn(async () => {})
     const result = await session.act({
       stateId: String(first.stateId),
       actions: [{ type: 'tap', ref: '@e1' }],
-    })
+    }, undefined, startRecording)
     expect(result.isError).toBe(true)
     expect(result.content[0]!.text).toContain('STALE_STATE')
     expect(backend.performed).toHaveLength(0)
+    expect(startRecording).not.toHaveBeenCalled()
   })
 
   it('accepts the newest snapshot', async () => {
@@ -172,6 +174,7 @@ describe('device_act outcome', () => {
       stateId: String(snap.stateId),
       actions: [{ type: 'tap', ref: '@e1' }],
       expect: { kind: 'exists', label: 'Never appears' },
+      timeoutMs: 100,
     }))
     expect(result.outcome).toBe('didnt')
     expect(result.expectMet).toBe(false)

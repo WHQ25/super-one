@@ -3746,6 +3746,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_DEVICE_STREAM_CLOSE: 'environment:deviceStreamClose',
   ENVIRONMENT_DEVICE_STREAM_PORT: 'environment:deviceStreamPort',
   ENVIRONMENT_DEVICE_STATE: 'environment:deviceState',
+  /** Main -> renderer: the concrete device currently operated by an agent tool. */
+  ENVIRONMENT_DEVICE_VIEWFINDER_CLAIM: 'environment:deviceViewfinderClaim',
   ENVIRONMENT_DEVICE_ROTATE_GESTURE: 'environment:deviceRotateGesture',
 
   // Local desktop harness installation catalog (Settings → Harnesses)

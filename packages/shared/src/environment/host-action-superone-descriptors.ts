@@ -2829,7 +2829,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "browser_act",
-    "description": "Submit 1–20 page actions as one call: click, hover, type, press, scroll, drag, select, upload. Prefer a CSS selector from snapshot/query; click/hover also accept text or x/y. engine=auto|cdp|synthetic (default auto). description is shown to the user instead of raw selectors. Do not use this to navigate (browser_tabs), wait (browser_wait_for), or run JS (browser_evaluate). Fail-fast: stops at the first error.",
+    "description": "Submit 1–20 page actions as one call: click, hover, type, press, scroll, drag, select, upload. Prefer a CSS selector from snapshot/query; click/hover also accept text or x/y. engine=auto|cdp|synthetic (default auto). description is shown to the user instead of raw selectors. Set recording=true to save a short video containing only this action transaction. Optional expect keeps the recording open until an explicit page condition is met. Do not use this to navigate (browser_tabs), wait (browser_wait_for), or run JS (browser_evaluate). Fail-fast: stops at the first error.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2847,7 +2847,19 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
             "required": ["type"],
             "additionalProperties": true
           }
-        }
+        },
+        "recording": { "type": "boolean", "description": "Save a video of only this action transaction. Default false." },
+        "expect": {
+          "type": "object",
+          "properties": {
+            "selector": { "type": "string" },
+            "selectorGone": { "type": "string" },
+            "text": { "type": "string" },
+            "urlIncludes": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 60000 }
       },
       "required": ["actions"],
       "additionalProperties": false
@@ -3116,7 +3128,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "computer_act",
-    "description": "Submit 1\u201320 related UI actions as a checked transaction against a stateId. Delivery policy (pick explicitly when possible): (1) Prefer delivery=semantic whenever actions use @eN refs and the action is press/setText/click(ref)/typeText(ref) \u2014 pure AX, most reliable for labeled controls. (2) Use delivery=app-directed (runtime default if omitted) for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists \u2014 posts CGEvent to the target app PID in the background without stealing frontmost. (3) Use delivery=physical only when app-directed fails and global HID is required (requires frontmost; disruptive). Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path\u22652 points), moveMouse, press/setText (AX). scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. drag: path is capture-space points; virtual cursor animates along the path. Returns outcome worked|didnt|unknown based on re-observation (not API success codes): worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; unknown only when applied but unprovable; didnt on hard failure or failed expect. When the successor has pixels, successorImage.path contains the fresh screenshot. Stale stateId (UI changed since snapshot) is rejected before side effects. delivery=semantic never silently upgrades to app-directed/physical input.",
+    "description": "Submit 1\u201320 related UI actions as a checked transaction against a stateId. Delivery policy (pick explicitly when possible): (1) Prefer delivery=semantic whenever actions use @eN refs and the action is press/setText/click(ref)/typeText(ref) \u2014 pure AX, most reliable for labeled controls. (2) Use delivery=app-directed (runtime default if omitted) for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists \u2014 posts CGEvent to the target app PID in the background without stealing frontmost. (3) Use delivery=physical only when app-directed fails and global HID is required (requires frontmost; disruptive). Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path\u22652 points), moveMouse, press/setText (AX). scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. drag: path is capture-space points; virtual cursor animates along the path. Returns outcome worked|didnt|unknown based on re-observation (not API success codes): worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; unknown only when applied but unprovable; didnt on hard failure or failed expect. When the successor has pixels, successorImage.path contains the fresh screenshot. Set recording=true to save a short video containing only this action transaction. Stale stateId (UI changed since snapshot) is rejected before side effects. delivery=semantic never silently upgrades to app-directed/physical input.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3234,6 +3246,16 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
             "kind"
           ],
           "additionalProperties": false
+        },
+        "recording": {
+          "description": "Save a video of only this action transaction. Default false.",
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "description": "Maximum wait for expect before the action is judged. Default 5000.",
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
         },
         "delivery": {
           "description": "Prefer semantic when actions target @eN refs (press/setText/click/typeText). Omit or app-directed = background postToPid (default). physical = global HID + frontmost only as last resort.",
@@ -3639,7 +3661,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "device_act",
-    "description": "Run 1-10 touch actions against a snapshot, then re-observe to judge if they worked. Actions: tap, doubleTap, longPress, swipe(direction|toX/toY), pinch(scale), press(ref), type, key, rotate, keyboard. Prefer press for a ref-backed control; it goes through accessibility, immune to animation, rotation and scale (not on a source=ocr snapshot — tap there). Aim touch actions at refs too; raw x/y is a last resort. The whole batch, stale stateId included, is validated up front. rotate ends the snapshot it is in: put it last, then re-snapshot — a later ref or coordinate is refused. Returns worked|didnt|unknown; unknown means input landed but nothing visibly changed. Pass expect to define success.",
+    "description": "Run 1-10 touch actions against a snapshot, then re-observe to judge if they worked. Actions: tap, doubleTap, longPress, swipe(direction|toX/toY), pinch(scale), press(ref), type, key, rotate, keyboard. Prefer refs; press uses accessibility and is resilient to animation (use tap for source=ocr). Raw x/y is a last resort. The batch and stale stateId are validated before side effects. rotate must be last; re-snapshot afterwards. Set recording=true to save a short video containing only this action transaction. Returns worked|didnt|unknown. Pass expect to define and wait for success.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3647,7 +3669,9 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
         "device": deviceTargetProperty,
         "stateId": { "type": "string" },
         "actions": { "minItems": 1, "maxItems": 10, "type": "array", "items": deviceActionSchema },
-        "expect": { "description": "Postcondition checked after the actions run.", ...deviceConditionSchema }
+        "expect": { "description": "Postcondition checked after the actions run.", ...deviceConditionSchema },
+        "timeoutMs": { "description": "Maximum wait for expect before the action is judged. Default 5000.", "type": "integer", "minimum": 100, "maximum": 60000 },
+        "recording": { "description": "Save a video of only this action transaction. Default false.", "type": "boolean" }
       },
       "required": ["description", "stateId", "actions"],
       "additionalProperties": false

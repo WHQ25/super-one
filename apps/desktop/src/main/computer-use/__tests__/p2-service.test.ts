@@ -110,6 +110,63 @@ describe('P2 service policy + foreground gate', () => {
     expect(adapter.frontmost).not.toHaveBeenCalled()
   })
 
+  it('fails closed when recording cannot start and finalizes after the action', async () => {
+    const obs = await service.observe()
+    adapter.startRecording = vi.fn(async () => {})
+    adapter.stopRecording = vi.fn(async () => ({
+      path: '/tmp/action.mp4',
+      mimeType: 'video/mp4',
+      durationMs: 300,
+    }))
+
+    const result = await service.act(
+      obs.stateId,
+      [{ type: 'click', x: 10, y: 20 }],
+      { recordingPath: '/tmp/action.mp4' },
+    )
+    expect(vi.mocked(adapter.startRecording).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(adapter.act).mock.invocationCallOrder[0]!)
+    expect(vi.mocked(adapter.stopRecording).mock.invocationCallOrder[0])
+      .toBeGreaterThan(vi.mocked(adapter.act).mock.invocationCallOrder[0]!)
+    expect(result.recording?.savedPath).toBe('/tmp/action.mp4')
+
+    const next = await service.observe()
+    vi.mocked(adapter.startRecording).mockRejectedValueOnce(new Error('encoder unavailable'))
+    await expect(service.act(
+      next.stateId,
+      [{ type: 'click', x: 10, y: 20 }],
+      { recordingPath: '/tmp/failed.mp4' },
+    )).rejects.toThrow('encoder unavailable')
+    expect(adapter.act).toHaveBeenCalledTimes(1)
+  })
+
+  it('aborts expect polling and still finalizes an active recording', async () => {
+    const obs = await service.observe()
+    adapter.startRecording = vi.fn(async () => {})
+    adapter.stopRecording = vi.fn(async () => ({
+      path: '/tmp/action.mp4',
+      mimeType: 'video/mp4',
+      durationMs: 100,
+    }))
+    const controller = new AbortController()
+
+    const acting = service.act(
+      obs.stateId,
+      [{ type: 'click', x: 10, y: 20 }],
+      {
+        expect: { kind: 'textEquals', ref: '@e1', text: 'Never appears' },
+        recordingPath: '/tmp/action.mp4',
+        timeoutMs: 60_000,
+        signal: controller.signal,
+      },
+    )
+    await vi.waitFor(() => expect(adapter.act).toHaveBeenCalled())
+    controller.abort()
+
+    await expect(acting).rejects.toMatchObject({ name: 'AbortError' })
+    expect(adapter.stopRecording).toHaveBeenCalledTimes(1)
+  })
+
   it('promotes unknown press to worked when re-observe shows a structural outline diff', async () => {
     const root = makeRoot()
     let lookCount = 0

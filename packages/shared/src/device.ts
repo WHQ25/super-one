@@ -71,10 +71,8 @@ export interface DeviceCapabilities {
   /**
    * Whether the screen can be recorded to a file.
    *
-   * `simctl io recordVideo` does it directly. Android's `adb shell screenrecord`
-   * could, but it needs a lifecycle of its own — a device-side process, a three-minute
-   * cap to work around, and a pull when it stops — none of it shared with the
-   * simulator's path.
+   * Simulator video comes from `simctl io recordVideo`; Android uses the platform
+   * `screenrecord` command and pulls the finalized MP4 back through adb.
    */
   recording: boolean
   /**
@@ -117,7 +115,7 @@ export interface DeviceCapabilities {
 
 export const DEVICE_CAPABILITIES: Record<DeviceProvider, DeviceCapabilities> = {
   'ios-sim': { rigidRotation: true, recording: true, previewQuality: true, hardwareKeyboard: true, rotation: true, semanticTree: true },
-  'android': { rigidRotation: false, recording: false, previewQuality: false, hardwareKeyboard: false, rotation: true, semanticTree: true },
+  'android': { rigidRotation: false, recording: true, previewQuality: false, hardwareKeyboard: false, rotation: true, semanticTree: true },
   // Every false here is a property of reaching a phone through somebody else's window.
   // The picture is whatever size that window happens to be, it turns only when the
   // phone does, there is no recorder behind it, and no tree inside it.
@@ -189,6 +187,23 @@ export interface DeviceDescriptor {
   boundSessionId?: string
 }
 
+/** Android 14 removed screenrecord's historical three-minute ceiling. */
+export const ANDROID_UNLIMITED_SCREEN_RECORDING_API_LEVEL = 34
+export const ANDROID_LEGACY_SCREEN_RECORDING_LIMIT_SECONDS = 180
+
+/** Natural platform recording limit, or null when the provider records indefinitely. */
+export function deviceRecordingMaxDurationMs(
+  device: Pick<DeviceDescriptor, 'provider' | 'versionRank'>,
+): number | null {
+  if (
+    device.provider !== 'android'
+    || device.versionRank >= ANDROID_UNLIMITED_SCREEN_RECORDING_API_LEVEL
+  ) {
+    return null
+  }
+  return ANDROID_LEGACY_SCREEN_RECORDING_LIMIT_SECONDS * 1000
+}
+
 /**
  * Split `ios-sim:UDID` back into its parts. Null when the handle names no provider.
  *
@@ -207,6 +222,17 @@ export function parseDeviceId(
   const provider = prefix === 'ios' ? 'ios-sim' : prefix
   if (!DEVICE_PROVIDERS.includes(provider as DeviceProvider)) return null
   return { provider: provider as DeviceProvider, native }
+}
+
+/** Whether an agent-facing id/name reference names this descriptor. */
+export function deviceMatchesReference(device: DeviceDescriptor, ref: string): boolean {
+  const needle = ref.trim().toLowerCase()
+  if (!needle) return false
+  if (device.id.toLowerCase() === needle) return true
+  if (parseDeviceId(device.id)?.native.toLowerCase() === needle) return true
+  if (device.name.toLowerCase() === needle) return true
+  const label = `${device.name} ${device.platformVersion}`.toLowerCase()
+  return label.includes(needle) || needle.includes(device.name.toLowerCase())
 }
 
 export function formatDeviceId(provider: DeviceProvider, native: string): string {
@@ -337,6 +363,12 @@ export interface DeviceInputResult {
   ok: boolean
   skippedCharacters?: number
   error?: string
+}
+
+/** The concrete device an agent tool resolved, used to select the session PiP. */
+export interface DeviceViewfinderClaim {
+  sessionId: string
+  deviceId: string
 }
 
 /**

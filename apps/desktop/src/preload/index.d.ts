@@ -18,7 +18,7 @@ import type {
   SupervisorSnapshot,
 } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
-import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions } from '@superone/shared/device'
+import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
@@ -806,6 +806,8 @@ export interface EnvironmentAPI {
   ): () => void
   /** Every device's state. For readers that do not yet know which device to watch. */
   onAnyDeviceState(callback: (state: DeviceState) => void): () => void
+  /** Concrete device resolved by the agent tool, independent of harness event shape. */
+  onDeviceViewfinderClaim(callback: (claim: DeviceViewfinderClaim) => void): () => void
   /** The host trackpad's two-finger twist, not anything the device reported. */
   onDeviceRotateGesture(callback: (rotation: number) => void): () => void
   workspaceListDir(

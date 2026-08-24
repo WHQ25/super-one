@@ -205,6 +205,60 @@ describe('iOS Simulator surface handover', () => {
     expect(host()!.style.left).toBe(`${SLOT_RECTS.pip!.left}px`)
   })
 
+  it('shows a granted device when the agent addressed it by name', async () => {
+    let announce: ((state: import('@superone/shared/device').DeviceState) => void) | null = null
+    stubEnvironment()
+    window.environment.onAnyDeviceState = vi.fn((listener) => {
+      announce = listener
+      return () => { announce = null }
+    })
+    mountChatRoot()
+    useChatStore.setState({
+      activeProject: '/project',
+      projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
+    } as unknown as Parameters<typeof useChatStore.setState>[0])
+    useDeviceInstanceStore.setState({ byId: {} })
+    useAgentViewfinderStore.getState().activate(SESSION_ID, 'device', DEVICE.name)
+    render(<DeviceHostLayer />)
+
+    act(() => announce?.({
+      deviceId: DEVICE.id,
+      owner: SESSION_ID,
+      device: DEVICE,
+      phase: 'ready',
+      interactive: true,
+      orientation: 'portrait',
+      pixelWidth: 1206,
+      pixelHeight: 2622,
+    }))
+
+    await waitFor(() => expect(document.querySelector('[data-device-pip]')).not.toBeNull())
+    expect(useAgentViewfinderStore.getState().activeBySession[SESSION_ID])
+      .toEqual({ kind: 'device', targetId: DEVICE.id })
+  })
+
+  it('restores the session device when device_act omits its sole device id', async () => {
+    stubEnvironment()
+    await renderReady()
+    await waitFor(() => expect(document.querySelector('[data-device-pip]')).not.toBeNull())
+
+    // Switching targets/sessions clears the current PiP pointer but deliberately
+    // retains per-instance ready metadata. device_act normally omits `device` when
+    // this session holds exactly one; that null target still has one safe answer.
+    act(() => {
+      useAgentViewfinderStore.getState().activate(SESSION_ID, 'browser', 'browser-a')
+      useDevicePipStore.getState().setReady(null)
+    })
+    await waitFor(() => expect(document.querySelector('[data-device-pip]')).toBeNull())
+
+    act(() => {
+      useAgentViewfinderStore.getState().activate(SESSION_ID, 'device', null)
+    })
+
+    await waitFor(() => expect(document.querySelector('[data-device-pip]')).not.toBeNull())
+    expect(useDevicePipStore.getState().readyInstanceId).toBe(INSTANCE_ID)
+  })
+
   it('survives a switch to Settings and back, but only at a matching child index', async () => {
     stubEnvironment()
 

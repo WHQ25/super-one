@@ -13,6 +13,8 @@ export type HelperMethod =
   | 'focus_window'
   | 'launch_app'
   | 'capture'
+  | 'record_start'
+  | 'record_stop'
   | 'zoom'
   | 'validate_geometry'
   | 'click'

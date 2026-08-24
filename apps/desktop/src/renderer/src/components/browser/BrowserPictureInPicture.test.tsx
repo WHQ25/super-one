@@ -112,7 +112,7 @@ describe('browser picture in picture', () => {
     render(<BrowserPictureInPicture />)
 
     const pip = await screen.findByLabelText('Browser picture in picture')
-    expect(pip).toHaveStyle({ left: '908px', top: '62px', width: '180px', height: '112.5px' })
+    expect(pip).toHaveStyle({ left: '888px', top: '62px', width: '200px', height: '125px' })
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-mode', 'pip')
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-interactive', 'false')
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-show-chrome', 'false')
@@ -194,7 +194,7 @@ describe('browser picture in picture', () => {
     fireEvent.pointerMove(window, { clientX: -500, clientY: 1000 })
     fireEvent.pointerUp(window)
     expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-track-bounds-continuously', 'false')
-    expect(pip).toHaveStyle({ left: '112px', top: '625.5px' })
+    expect(pip).toHaveStyle({ left: '112px', top: '613px' })
 
     const resize = pip.querySelector('[data-browser-pip-resize="se"]') as HTMLElement
     fireEvent.pointerDown(resize, { button: 0, clientX: 592, clientY: 738 })
@@ -216,7 +216,7 @@ describe('browser picture in picture', () => {
     render(<BrowserPictureInPicture />)
 
     const pip = await screen.findByLabelText('Browser picture in picture')
-    expect(pip).toHaveStyle({ width: '180px', height: '101.25px' })
+    expect(pip).toHaveStyle({ width: '200px', height: '112.5px' })
 
     act(() => {
       useBrowserStore.getState().updateSlot('browser-a', 'panel', {
@@ -226,7 +226,7 @@ describe('browser picture in picture', () => {
         height: 800,
       } as DOMRectReadOnly)
     })
-    expect(pip).toHaveStyle({ width: '180px', height: `${180 / (560 / 800)}px` })
+    expect(pip).toHaveStyle({ width: '200px', height: `${200 / (560 / 800)}px` })
   })
 
   it('waits for page readiness, stays between tool calls, and closes when the turn ends', async () => {

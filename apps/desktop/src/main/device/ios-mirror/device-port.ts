@@ -31,6 +31,13 @@ export class MirrorDevicePort implements DevicePlatformPort {
     }
   }
 
+  async waitForPreview(_deviceId: string, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error('Cancelled.')
+    // This provider is a capture loop rather than a socket stream. A successful
+    // capture is its equivalent of a first frame and primes input geometry too.
+    await this.manager.capture()
+  }
+
   /**
    * What the agent must know before its first action.
    *

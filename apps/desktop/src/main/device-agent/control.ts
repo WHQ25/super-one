@@ -41,6 +41,22 @@ function readyResult(
   }
 }
 
+async function waitForPreview(
+  device: DeviceDescriptor,
+  port: DevicePlatformPort,
+  signal?: AbortSignal,
+): Promise<void> {
+  try {
+    await port.waitForPreview(device.id, signal)
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    throw new DeviceAgentError(
+      'NO_DEVICE',
+      `${device.name} is under control, but its live preview is not ready: ${detail}`,
+    )
+  }
+}
+
 function portFor(
   ports: readonly DevicePlatformPort[],
   device: DeviceDescriptor,
@@ -100,6 +116,7 @@ export async function requestDeviceControl(options: {
   // be told what is already in hand.
   const current = controlledDevices(all, sessionId).find((device) => device.id === chosen.id)
   if (current) {
+    await waitForPreview(current, port, signal)
     recents.remember(chosen.id)
     return readyResult(current, port, true)
   }
@@ -149,6 +166,7 @@ export async function requestDeviceControl(options: {
       `${chosen.name} was approved but did not come up.`,
     )
   }
+  await waitForPreview(booted, port, signal)
   // Recorded only once the device is actually in hand: a declined or failed request
   // is not something the next `device_list` should recommend.
   recents.remember(booted.id)

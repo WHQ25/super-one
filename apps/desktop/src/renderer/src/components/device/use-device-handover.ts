@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DEVICE_CAPABILITIES, isDeviceLandscape } from '@superone/shared/device'
+import { DEVICE_CAPABILITIES, deviceMatchesReference, isDeviceLandscape, parseDeviceId } from '@superone/shared/device'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
@@ -54,9 +54,19 @@ export function useDeviceHandover(): void {
   const activeTarget = useAgentViewfinderStore((state) => (
     selectViewfinderTarget(state, currentSessionId)
   ))
+  const readyDevices = useDevicePipStore((state) => state.readyDevices)
   const targetedInstanceId = useDeviceInstanceStore((state) => {
-    if (activeTarget?.kind !== 'device' || !activeTarget.targetId) return null
-    return instanceHolding(state.byId, activeTarget.targetId)?.instanceId ?? null
+    if (activeTarget?.kind !== 'device' || !currentSessionId) return null
+    const readyInSession = Object.values(state.byId).filter((instance) => (
+      instance.sessionId === currentSessionId && readyDevices[instance.instanceId]
+    ))
+    if (activeTarget.targetId) {
+      return readyInSession.find((instance) => instance.deviceId === activeTarget.targetId)?.instanceId ?? null
+    }
+    // The tool backend applies the same rule: omitting `device` is valid only while
+    // the session holds exactly one. Recover that one from retained ready metadata
+    // after a session/target switch; with two, refuse to guess just as the backend does.
+    return readyInSession.length === 1 ? readyInSession[0]!.instanceId : null
   })
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const { instanceId, sessionId, deviceOnScreen } = useDevicePreview()
@@ -93,6 +103,27 @@ export function useDeviceHandover(): void {
       // here, and `revealDeviceTab` below gives it a tab only if it needs one.
       const owner = state.owner!
       const instanceId = watching?.instanceId ?? instances.open(owner, bound.id)
+      // Tool input accepts either the stable id or a human device name. The state
+      // event is the first place both the resolved descriptor and the active tool are
+      // available, so refine the viewfinder target here before strict PiP ownership
+      // compares them. Without this, `Pixel 9` could successfully bind
+      // `android:avd:Pixel_9` and then hide its own preview as a different target.
+      const target = selectViewfinderTarget(useAgentViewfinderStore.getState(), owner)
+      const targetRef = target?.targetId?.trim().toLowerCase() ?? null
+      const exactTarget = targetRef != null && (
+        targetRef === bound.id.toLowerCase()
+        || targetRef === bound.name.toLowerCase()
+        || targetRef === parseDeviceId(bound.id)?.native.toLowerCase()
+      )
+      if (target?.kind === 'device'
+        && target.targetId !== bound.id
+        && (target.targetId == null
+          || exactTarget
+          // Loose references are safe only on the grant that creates the instance.
+          // A later rotation from a similarly named second device must not steal it.
+          || (!watching && deviceMatchesReference(bound, target.targetId)))) {
+        useAgentViewfinderStore.getState().activate(owner, 'device', bound.id)
+      }
       // Only the transition into ready, never a republish: rotation and the hardware
       // keyboard push state through this same channel, and reacting to those would
       // yank the dock to the simulator tab every time the agent turned the device.

@@ -30,6 +30,9 @@ export interface DevicePlatformPort {
    */
   boot(sessionId: string, deviceId: string): Promise<DeviceDescriptor | null>
 
+  /** Resolve only after the live preview has delivered its first drawable frame. */
+  waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void>
+
   /**
    * What the agent can do now that it holds a device here — how to install a build,
    * how to launch it, and which commands it must not run.

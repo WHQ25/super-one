@@ -55,6 +55,14 @@ export interface PlatformActResult {
   stoppedAt?: number
 }
 
+export interface PlatformRecordingResult {
+  path: string
+  mimeType: string
+  durationMs: number
+  width?: number
+  height?: number
+}
+
 /**
  * OS adapter boundary. P0 uses FakePlatformBackend only.
  * Real helpers implement the same surface over unix socket / UIA / AT-SPI.
@@ -63,6 +71,9 @@ export interface PlatformAdapter {
   listRoots(): Promise<Array<Omit<UiRootIdentity, 'rootId'>>>
   look(root: UiRootIdentity, mode: ObserveMode, capture: CaptureScope): Promise<PlatformLook>
   act(req: PlatformActRequest): Promise<PlatformActResult>
+  /** Optional fail-closed recording around one action transaction. */
+  startRecording?(root: UiRootIdentity, outputPath: string): Promise<void>
+  stopRecording?(): Promise<PlatformRecordingResult>
   /** Capture a sub-region of the last look for a root without changing coordinate space. */
   zoom?(
     root: UiRootIdentity,

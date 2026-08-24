@@ -148,6 +148,8 @@ export interface HelperAxNode {
   bounds?: { x: number; y: number; width: number; height: number }
   enabled?: boolean
   focused?: boolean
+  /** True on the single element the application reports as AXFocusedUIElement. */
+  appFocused?: boolean
   settable?: boolean
   actions?: string[]
   children?: HelperAxNode[]
@@ -156,6 +158,12 @@ export interface HelperAxNode {
 export interface HelperAxTreeResult {
   tree: HelperAxNode
   nodeCount: number
+  /**
+   * Set by the helper when a node budget or the depth limit cut the walk short.
+   * Not inferable from `nodeCount`: depth pruning can stop well under the
+   * budget, and a tree that fills it exactly is complete.
+   */
+  truncated?: boolean
   maxNodes: number
   maxDepth: number
   display: { width: number; height: number }

@@ -102,6 +102,13 @@ export interface UiOutlineNode {
   bounds?: Bounds
   enabled?: boolean
   focused?: boolean
+  /**
+   * This element is the application's AXFocusedUIElement — the one place
+   * keyboard input goes. Unlike `focused`, which each web view reports for its
+   * own subtree, only one node in the whole app carries it, which is what makes
+   * it usable for telling a visible page from an occluded one.
+   */
+  appFocused?: boolean
   /** When true, visual-only; cannot be a semantic action target. */
   pictureOnly?: boolean
   capabilities?: UiNodeCapabilities
@@ -263,7 +270,15 @@ export interface ObserveResult {
   image?: CapturedImage
   /** Folded outline returned to the model (not the full internal tree). */
   outline: UiOutlineNode
-  truncation: { nodesOmitted: number; maxDepth: number }
+  truncation: {
+    nodesOmitted: number
+    maxDepth: number
+    /**
+     * The native accessibility walk itself hit a limit, so nodes are missing
+     * from the complete outline too — `computer_query` cannot recover them.
+     */
+    sourceTruncated?: boolean
+  }
   coordinateSpace: CoordinateSpace
   mode: ObserveMode
   capture: CaptureScope

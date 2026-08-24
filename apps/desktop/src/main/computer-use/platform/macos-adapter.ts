@@ -422,6 +422,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         image,
         coordinateSpace,
         nativeLookId: `mac-look-${this.lookSeq}`,
+        outlineTruncated: axBootstrap.truncated,
       }
     }
 
@@ -452,6 +453,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     }
 
     let outline: UiOutlineNode
+    let outlineTruncated = false
     if (mode === 'visual') {
       outline = pictureOnlyOutline(
         targetRoot.title || targetRoot.app,
@@ -463,6 +465,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       try {
         const ax = await this.fetchAxOutline(targetRoot, coordinateSpace)
         outline = ax.outline
+        outlineTruncated = ax.truncated
       } catch {
         outline = pictureOnlyOutline(
           targetRoot.title || targetRoot.app,
@@ -484,17 +487,20 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       image,
       coordinateSpace,
       nativeLookId: `mac-look-${this.lookSeq}`,
+      outlineTruncated,
     }
   }
 
   private async fetchAxOutline(
     root: UiRootIdentity,
     captureSpace: CoordinateSpace | undefined,
-  ): Promise<{ outline: UiOutlineNode; coordinateSpace: CoordinateSpace }> {
+  ): Promise<{ outline: UiOutlineNode; coordinateSpace: CoordinateSpace; truncated: boolean }> {
     const res = await this.client.call<HelperAxTreeResult>('ax_tree', {
       pid: root.pid,
-      maxNodes: 400,
-      maxDepth: 24,
+      // Budget spent on emitted nodes only (the helper drops wrapper groups),
+      // so this is real content rather than Chromium nesting.
+      maxNodes: 1200,
+      maxDepth: 64,
       ...(captureSpace
         ? {
             captureWidth: captureSpace.width,
@@ -521,7 +527,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       fullScreen: captureSpace?.fullScreen ?? true,
       ...(captureSpace ?? { kind: 'display' as const }),
     }
-    return { outline, coordinateSpace }
+    return { outline, coordinateSpace, truncated: !!res.truncated }
   }
 
   async act(req: PlatformActRequest): Promise<PlatformActResult> {
@@ -1037,12 +1043,13 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         }
       } else if (action === 'press') {
         // Press has no reliable readback without a richer diff — leave unknown
-        // unless the node value/name changed.
-        if (
-          res.afterValue !== undefined
-          && res.beforeValue !== undefined
-          && res.afterValue !== res.beforeValue
-        ) {
+        // unless the node changed. Value covers toggle-shaped controls (a radio
+        // flipping 0 → 1); name covers controls that relabel instead
+        // (Play → Pause). Both must be read, because a control that has no
+        // value now correctly reports undefined rather than echoing its title.
+        const changed = (a: string | undefined, b: string | undefined) =>
+          a !== undefined && b !== undefined && a !== b
+        if (changed(res.afterValue, res.beforeValue) || changed(res.afterName, res.beforeName)) {
           unknown = false
         }
       }

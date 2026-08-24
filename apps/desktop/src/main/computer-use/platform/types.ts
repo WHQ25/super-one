@@ -15,6 +15,12 @@ export interface PlatformLook {
   image?: CapturedImage
   coordinateSpace: CoordinateSpace
   nativeLookId: string
+  /**
+   * The native walk stopped short of the real tree. Distinct from the fold
+   * budget: this happened before TypeScript ever saw the nodes, so no amount of
+   * compaction recovers them and `computer_query` cannot find them either.
+   */
+  outlineTruncated?: boolean
 }
 
 export interface PlatformActRequest {

@@ -48,6 +48,10 @@ struct AxCoordinateTransform {
 private final class AxWalkState {
     var index = 0
     var count = 0
+    /// Set when a node budget or the depth limit stopped the walk short. The
+    /// caller cannot infer this: a depth-pruned tree can finish well under
+    /// maxNodes, and a tree that happens to fill the budget exactly is complete.
+    var truncated = false
     let limits: AxWalkLimits
     init(limits: AxWalkLimits) { self.limits = limits }
 }
@@ -108,6 +112,21 @@ func axChildren(_ el: AXUIElement) -> [AXUIElement] {
     return arr
 }
 
+/// Read AXValue as text.
+///
+/// Not just `axString`: AXValue is a CFNumber on every toggle-shaped control
+/// (radio, checkbox, tab, slider), and a String-only read returns nil there.
+/// The snapshot walk and the post-action readback must agree on this, or an
+/// action's "did it work?" check compares two different notions of value.
+func axValueString(_ el: AXUIElement) -> String? {
+    if let s = axString(el, kAXValueAttribute as String) { return s }
+    var raw: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &raw) == .success,
+          let v = raw else { return nil }
+    if let n = v as? NSNumber { return n.stringValue }
+    return String(describing: v)
+}
+
 private func axActions(_ el: AXUIElement) -> [String] {
     var raw: CFArray?
     guard AXUIElementCopyActionNames(el, &raw) == .success,
@@ -140,31 +159,95 @@ func mapAxBoundsToCapture(
     ]
 }
 
-private func nodeDict(
+/// Roles Chromium and AppKit emit purely as layout scaffolding.
+private let axGenericWrapperRoles: Set<String> = ["AXGroup", "AXUnknown"]
+
+/// Actions Chromium hangs off nearly every node; they carry no interaction signal.
+private let axAmbientActions: Set<String> = [
+    "AXShowMenu",
+    "AXScrollToVisible",
+    "AXShowDefaultUI",
+    "AXShowAlternateUI",
+]
+
+/// A wrapper carries no information of its own: no label, no value, nothing to
+/// act on. Dropping it and hoisting its children is what keeps a web-heavy tree
+/// inside the node budget — Electron nests 6–8 anonymous `AXGroup`s above the
+/// `AXWebArea` alone.
+func axNodeIsElidableWrapper(
+    role: String,
+    name: String?,
+    value: String?,
+    actions: [String],
+    settable: Bool,
+    childCount: Int,
+    insideWebArea: Bool
+) -> Bool {
+    guard axGenericWrapperRoles.contains(role) else { return false }
+    if let name, !name.isEmpty { return false }
+    if let value, !value.isEmpty { return false }
+    if actions.contains(where: { !axAmbientActions.contains($0) }) { return false }
+    // Chromium reports AXValue as writable on almost every container, so
+    // `settable` alone says nothing. Only trust it to mean "real control" when
+    // the node is not a single-child pass-through.
+    if settable, childCount != 1 { return false }
+    // Inside web content a container holding several children is real structure
+    // (a toolbar, a list), not scaffolding — keep it so siblings stay grouped.
+    if insideWebArea, childCount > 1 { return false }
+    return true
+}
+
+/// The one element the application reports as holding keyboard focus.
+///
+/// Each Chromium web view reports `AXFocused` inside its own subtree, so in a
+/// window stacking several of them every view claims focus. Only the
+/// application answers with a single element, which is what lets the outline
+/// tell a visible page from one parked behind it.
+private func axAppFocusedElement(_ app: AXUIElement) -> AXUIElement? {
+    var raw: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &raw) == .success,
+          let value = raw,
+          CFGetTypeID(value) == AXUIElementGetTypeID()
+    else { return nil }
+    return (value as! AXUIElement)
+}
+
+/// Node count of a full DFS walk. Deliberately mirrors `findByIndex` — including
+/// its lack of a depth guard — because DFS indices must line up between the
+/// snapshot and the later `ax_action` lookup even across pruned subtrees.
+private func axSubtreeSize(_ el: AXUIElement) -> Int {
+    var total = 1
+    for child in axChildren(el) { total += axSubtreeSize(child) }
+    return total
+}
+
+/// Walk one element into zero or more wire nodes.
+///
+/// Returns an array, not an optional, because an elided wrapper contributes its
+/// children in its own place. `state.index` tracks the *uncompressed* DFS
+/// position (the contract `ax_action` resolves against) while `state.count`
+/// only counts nodes we actually emit, so the node budget is spent on content.
+private func nodeDicts(
     el: AXUIElement,
     state: AxWalkState,
     depth: Int,
-    coordinateTransform: AxCoordinateTransform
-) -> [String: Any]? {
-    if state.count >= state.limits.maxNodes { return nil }
-    if depth > state.limits.maxDepth { return nil }
+    insideWebArea: Bool,
+    coordinateTransform: AxCoordinateTransform,
+    focusedElement: AXUIElement?
+) -> [[String: Any]] {
+    if state.count >= state.limits.maxNodes {
+        state.truncated = true
+        return []
+    }
 
     state.index += 1
-    state.count += 1
     let idx = state.index
 
     let role = axRole(el)
     let name = axString(el, kAXTitleAttribute as String)
         ?? axString(el, kAXDescriptionAttribute as String)
         ?? axString(el, "AXLabel")
-    let value: String? = {
-        if let s = axString(el, kAXValueAttribute as String) { return s }
-        var raw: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &raw) == .success,
-              let v = raw else { return nil }
-        if let n = v as? NSNumber { return n.stringValue }
-        return String(describing: v)
-    }()
+    let value = axValueString(el)
 
     let pos = axCGPoint(el, kAXPositionAttribute as String)
     let size = axCGSize(el, kAXSizeAttribute as String)
@@ -185,18 +268,42 @@ private func nodeDict(
         return err == .success && settable.boolValue
     }()
 
+    let childElements = axChildren(el)
+    // The root is the caller's chosen observation scope; never dissolve it.
+    let elide = depth > 0 && axNodeIsElidableWrapper(
+        role: role,
+        name: name,
+        value: value,
+        actions: actions,
+        settable: settable,
+        childCount: childElements.count,
+        insideWebArea: insideWebArea
+    )
+    if !elide { state.count += 1 }
+
     var kids: [[String: Any]] = []
     if depth < state.limits.maxDepth {
-        for child in axChildren(el) {
-            if state.count >= state.limits.maxNodes { break }
-            if let d = nodeDict(
-                el: child, state: state, depth: depth + 1,
-                coordinateTransform: coordinateTransform
-            ) {
-                kids.append(d)
+        let childrenInWebArea = insideWebArea || role == "AXWebArea"
+        for child in childElements {
+            if state.count >= state.limits.maxNodes {
+                state.truncated = true
+                break
             }
+            kids.append(contentsOf: nodeDicts(
+                el: child, state: state, depth: depth + 1,
+                insideWebArea: childrenInWebArea,
+                coordinateTransform: coordinateTransform,
+                focusedElement: focusedElement
+            ))
         }
+    } else {
+        // Depth-pruned subtree: still advance the index past it, or every node
+        // emitted afterwards would resolve to the wrong element.
+        if !childElements.isEmpty { state.truncated = true }
+        for child in childElements { state.index += axSubtreeSize(child) }
     }
+
+    if elide { return kids }
 
     var dict: [String: Any] = [
         "index": idx,
@@ -206,6 +313,7 @@ private func nodeDict(
         "focused": axBool(el, kAXFocusedAttribute as String) ?? false,
         "settable": settable,
     ]
+    if let focusedElement, CFEqual(el, focusedElement) { dict["appFocused"] = true }
     if let name, !name.isEmpty { dict["name"] = name }
     if let value, !value.isEmpty {
         // Cap value length to keep wire JSON small.
@@ -213,7 +321,7 @@ private func nodeDict(
     }
     if let bounds { dict["bounds"] = bounds }
     if !kids.isEmpty { dict["children"] = kids }
-    return dict
+    return [dict]
 }
 
 private func focusedOrFirstWindow(app: AXUIElement) -> AXUIElement? {
@@ -518,6 +626,90 @@ private func resolveAxRoot(
     return focusedOrFirstWindow(app: app) ?? app
 }
 
+// MARK: - Chromium / Electron lazy accessibility
+
+/// Chromium keeps its accessibility tree unbuilt until an assistive technology
+/// asks for it, so an Electron window that renders fine reports a handful of
+/// empty `AXGroup`s and no `AXWebArea` at all. Electron documents
+/// `AXManualAccessibility` as the opt-in switch; `AXEnhancedUserInterface` is
+/// the older AppKit-side equivalent some Chromium builds still honour.
+///
+/// Both are per-process and sticky, which is also why the bug looked flaky:
+/// once any other tool (VoiceOver, a dictation app, another agent) flipped the
+/// switch, our snapshots started working for that process only.
+final class ChromiumAccessibilityActivator: @unchecked Sendable {
+    static let shared = ChromiumAccessibilityActivator()
+
+    private let lock = NSLock()
+    private var activated = Set<String>()
+    private var chromiumByProcess: [String: Bool] = [:]
+
+    /// Returns true when this call flipped the switch on a Chromium app — the
+    /// only case where an empty tree is worth waiting on.
+    func activate(pid: pid_t, app: AXUIElement) -> Bool {
+        let running = NSRunningApplication(processIdentifier: pid)
+        // Keyed by launch date as well as pid: a recycled pid is a different
+        // process and must be activated again.
+        let key = "\(pid):\(running?.launchDate?.timeIntervalSince1970 ?? 0)"
+
+        lock.lock()
+        let alreadyActivated = activated.contains(key)
+        lock.unlock()
+        guard !alreadyActivated else { return false }
+
+        // The two attributes are alternative spellings of the same switch, and
+        // which one a build answers to varies. Either landing is enough.
+        let manual = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        let enhanced = AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        guard manual == .success || enhanced == .success else {
+            // An app that is still launching answers .cannotComplete. Leaving the
+            // key uncached is what lets the next snapshot try again instead of
+            // writing the process off for its whole lifetime.
+            return false
+        }
+
+        lock.lock()
+        activated.insert(key)
+        lock.unlock()
+        return isChromium(key: key, bundleURL: running?.bundleURL)
+    }
+
+    private func isChromium(key: String, bundleURL: URL?) -> Bool {
+        lock.lock()
+        let cached = chromiumByProcess[key]
+        lock.unlock()
+        if let cached { return cached }
+
+        var result = false
+        if let bundleURL {
+            let frameworks = bundleURL.appendingPathComponent("Contents/Frameworks").path
+            let entries = (try? FileManager.default.contentsOfDirectory(atPath: frameworks)) ?? []
+            result = entries.contains {
+                $0.hasSuffix(".framework")
+                    && ($0.contains("Electron") || $0.contains("Chromium") || $0.contains("Chrome"))
+            }
+        }
+
+        lock.lock()
+        chromiumByProcess[key] = result
+        lock.unlock()
+        return result
+    }
+}
+
+/// How long a freshly-activated Chromium app may take to publish its tree.
+private let axChromiumSettleTimeout: TimeInterval = 2.5
+private let axChromiumSettlePoll: TimeInterval = 0.15
+
+/// True once the tree carries web content — the signal that Chromium finished
+/// building it. Native chrome (title bar, menus) shows up long before this.
+private func axContainsWebArea(_ el: AXUIElement, depth: Int = 0) -> Bool {
+    if depth > 24 { return false }
+    if axRole(el) == "AXWebArea" { return true }
+    for child in axChildren(el) where axContainsWebArea(child, depth: depth + 1) { return true }
+    return false
+}
+
 /// Snapshot AX tree for a process, scoped to a validated native window when available.
 func axTreeSnapshot(
     pid: pid_t,
@@ -537,7 +729,42 @@ func axTreeSnapshot(
         throw HelperError(code: "AX_MISSING", message: "Accessibility permission not granted for Computer Use helper")
     }
     let app = AXUIElementCreateApplication(pid)
-    let rootEl = try resolveAxRoot(
+    let needsSettle = ChromiumAccessibilityActivator.shared.activate(pid: pid, app: app)
+
+    func tryResolveRoot() -> AXUIElement? {
+        try? resolveAxRoot(
+            app: app,
+            pid: pid,
+            axRootId: axRootId,
+            windowId: windowId,
+            windowTitle: windowTitle
+        )
+    }
+
+    var candidate = tryResolveRoot()
+    if needsSettle {
+        // Chromium publishes its tree asynchronously after activation. Until it
+        // does the app may expose no AXWindows at all, so root resolution fails
+        // too — poll both. Web content appearing is the definitive signal; a
+        // tree that stops growing is the fallback, because an Electron app's
+        // native windows (file panels, alerts) never grow an AXWebArea and must
+        // not burn the whole timeout.
+        let deadline = Date().addingTimeInterval(axChromiumSettleTimeout)
+        while Date() < deadline {
+            if let candidate {
+                if axContainsWebArea(candidate) { break }
+                // Sheets, dialogs, menus and popovers are native AppKit chrome
+                // even inside an Electron app — they never grow a web area, so
+                // waiting on one would burn the whole timeout for nothing.
+                if classifyAxWindow(windowMetadata(candidate)).kind != "window" { break }
+            }
+            Thread.sleep(forTimeInterval: axChromiumSettlePoll)
+            candidate = tryResolveRoot()
+        }
+    }
+
+    // Re-resolve on failure so the caller sees the real resolution error.
+    let rootEl = try candidate ?? resolveAxRoot(
         app: app,
         pid: pid,
         axRootId: axRootId,
@@ -555,15 +782,18 @@ func axTreeSnapshot(
         coordinateWidth: captureWidth ?? display.width,
         coordinateHeight: captureHeight ?? display.height
     )
-    guard let tree = nodeDict(
-        el: rootEl, state: state, depth: 0,
-        coordinateTransform: coordinateTransform
-    ) else {
+    let nodes = nodeDicts(
+        el: rootEl, state: state, depth: 0, insideWebArea: false,
+        coordinateTransform: coordinateTransform,
+        focusedElement: axAppFocusedElement(app)
+    )
+    guard let tree = nodes.first else {
         throw HelperError(code: "AX_EMPTY", message: "No accessibility nodes for pid \(pid)")
     }
     return [
         "tree": tree,
         "nodeCount": state.count,
+        "truncated": state.truncated,
         "maxNodes": maxNodes,
         "maxDepth": maxDepth,
         "display": ["width": display.width, "height": display.height],
@@ -603,8 +833,10 @@ private func axElementName(_ el: AXUIElement) -> String? {
 }
 
 private func axElementValue(_ el: AXUIElement) -> String? {
-    axString(el, kAXValueAttribute as String)
-        ?? axString(el, kAXTitleAttribute as String)
+    // Deliberately no title fallback: the title is already reported separately
+    // as `name`, and letting it stand in for a missing value made every
+    // valueless control look like "value unchanged" instead of "no value".
+    axValueString(el)
 }
 
 private func axElementBounds(_ el: AXUIElement, hint: AxTargetHint) -> CGRect? {
@@ -716,8 +948,7 @@ func axPerform(
     let resolved = try resolveTarget(root: rootEl, requestedIndex: index, hint: targetHint)
     let el = resolved.element
 
-    let beforeValue = axString(el, kAXValueAttribute as String)
-        ?? axString(el, kAXTitleAttribute as String)
+    let beforeValue = axElementValue(el)
     let beforeName = axString(el, kAXTitleAttribute as String)
         ?? axString(el, kAXDescriptionAttribute as String)
 

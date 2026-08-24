@@ -574,6 +574,48 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(res.steps[0]?.unknown).toBe(false)
   })
 
+  it('press on a relabeling control counts the name change as evidence', async () => {
+    // A control that has no AXValue now reports undefined instead of echoing
+    // its title, so a title flip is the only evidence that the press landed.
+    call.mockImplementation(async (method: string) => {
+      if (method === 'ax_action') {
+        return { ok: true, index: 3, action: 'press', beforeName: 'Play', afterName: 'Pause' }
+      }
+      return { ok: true }
+    })
+    const res = await adapter.act({
+      root: root(),
+      actions: [{ type: 'press', ref: '@e3' }],
+      delivery: 'semantic',
+      outline: {
+        ref: '@e1',
+        role: 'window',
+        children: [{ ref: '@e3', role: 'button', name: 'Play', capabilities: { press: true } }],
+      },
+    })
+    expect(res.steps[0]?.unknown).toBe(false)
+  })
+
+  it('press on an inert control stays unknown', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'ax_action') {
+        return { ok: true, index: 3, action: 'press', beforeName: 'OK', afterName: 'OK' }
+      }
+      return { ok: true }
+    })
+    const res = await adapter.act({
+      root: root(),
+      actions: [{ type: 'press', ref: '@e3' }],
+      delivery: 'semantic',
+      outline: {
+        ref: '@e1',
+        role: 'window',
+        children: [{ ref: '@e3', role: 'button', name: 'OK', capabilities: { press: true } }],
+      },
+    })
+    expect(res.steps[0]?.unknown).toBe(true)
+  })
+
   it('acts semantically within an AX-only root', async () => {
     call.mockImplementation(async (method: string) => {
       if (method === 'ax_action') {
@@ -1118,5 +1160,59 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     await adapter.launchApp('TextEdit')
     expect(call).toHaveBeenCalledWith('focus_app', { app: 'TextEdit', activate: false })
     expect(call).toHaveBeenCalledWith('launch_app', { app: 'TextEdit', activate: false })
+  })
+})
+
+describe('native walk truncation', () => {
+  const call = vi.fn()
+  let adapter: MacosPlatformAdapter
+
+  beforeEach(() => {
+    call.mockReset()
+    adapter = new MacosPlatformAdapter({
+      client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
+      getGrantedBundleIds: () => ['com.apple.TextEdit'],
+      getPictureInPictureEnabled: () => false,
+      getDedicatedDisplayId: () => null,
+      getLocale: () => 'en' as const,
+      sessionId: 'session-truncation',
+      maxCaptureWidth: 800,
+    })
+  })
+
+  function replyWith(truncated: boolean | undefined) {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'ax_tree') {
+        return {
+          tree: { index: 1, role: 'AXWindow', name: 'Untitled', actions: [] },
+          nodeCount: 1,
+          maxNodes: 1200,
+          maxDepth: 64,
+          display: { width: 1440, height: 900 },
+          pid: 42,
+          ...(truncated === undefined ? {} : { truncated }),
+        }
+      }
+      return {}
+    })
+  }
+
+  it('reports a native walk that stopped short, which no fold count can express', async () => {
+    // The helper can cut the tree before TypeScript ever sees it. Compaction
+    // then shrinks what is left under the fold budget, so nodesOmitted reads 0
+    // and the loss becomes invisible — including to computer_query.
+    replyWith(true)
+    const look = await adapter.look(root(), 'semantic')
+    expect(look.outlineTruncated).toBe(true)
+  })
+
+  it('does not claim truncation when the helper walked the whole tree', async () => {
+    replyWith(false)
+    expect((await adapter.look(root(), 'semantic')).outlineTruncated).toBe(false)
+  })
+
+  it('treats an older helper that omits the flag as untruncated', async () => {
+    replyWith(undefined)
+    expect((await adapter.look(root(), 'semantic')).outlineTruncated).toBe(false)
   })
 })

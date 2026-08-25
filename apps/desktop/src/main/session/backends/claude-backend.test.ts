@@ -710,6 +710,49 @@ describe('ClaudeBackend', () => {
       await firstSend
     })
 
+    it('does not flag the steered turn as aborted', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
+      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2' })
+
+      // priority:'now' aborts the in-flight tools, so the SDK closes the turn
+      // with a successful result carrying terminal_reason 'aborted_tools'.
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: { terminalReason: 'aborted_tools', durationMs: 42 },
+      })
+      await firstSend
+
+      const complete = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }>
+      expect(complete.metadata?.terminalReason).toBeUndefined()
+      expect(complete.metadata?.durationMs).toBe(42)
+    })
+
+    it('still reports an aborted_tools turn that no steer caused', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+      const send = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: { terminalReason: 'aborted_tools' },
+      })
+      await send
+
+      const complete = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }>
+      expect(complete.metadata?.terminalReason).toBe('aborted_tools')
+    })
+
     it('rejects queued steer when there is no active Claude turn', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())

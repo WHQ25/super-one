@@ -92,6 +92,8 @@ export class ClaudeBackend implements SessionBackend {
   private currentStartTime = 0
   private interrupted = false
   private interruptSettleTimer: ReturnType<typeof setTimeout> | null = null
+  /** Turn whose tools this backend aborted itself by steering — see `stripSteerAbort`. */
+  private steeredTurnMessageId: string | null = null
   private turnResolves = new Map<string, () => void>()
   private providerSessionId: string | null = null
   /** Init id of a run that has not produced conversation content yet — see `stageProviderSessionId`. */
@@ -694,6 +696,7 @@ export class ClaudeBackend implements SessionBackend {
         this.providerSessionId ?? '',
       )
       this.bridge.push(userMsg, cmd.clientMessageId)
+      this.steeredTurnMessageId = this.currentMessageId || null
     } catch (error) {
       this.queuedUserMessages.restore(taken)
       throw error
@@ -852,7 +855,25 @@ export class ClaudeBackend implements SessionBackend {
     return sid ? hasRunningDownloadTasks(sid) : false
   }
 
-  private emit(event: AgentEvent): void {
+  /**
+   * `claude.steer_queued` injects with SDK `priority: 'now'`, which by design
+   * aborts the in-flight tools; the SDK then closes that turn with
+   * `terminal_reason: 'aborted_tools'` on an otherwise successful result
+   * (`subtype: 'success'`, `is_error` false), so it lands in `message_complete`
+   * and the footer flags the user's own steer as a warning. Stop pressed by the
+   * user is a different shape (`message_interrupted`) and still reports.
+   */
+  private stripSteerAbort(event: AgentEvent): AgentEvent {
+    if (!this.steeredTurnMessageId) return event
+    if (event.type !== 'message_complete') return event
+    if (event.messageId !== this.steeredTurnMessageId) return event
+    if (event.metadata?.terminalReason !== 'aborted_tools') return event
+    const { terminalReason: _steered, ...metadata } = event.metadata
+    return { ...event, metadata }
+  }
+
+  private emit(rawEvent: AgentEvent): void {
+    const event = this.stripSteerAbort(rawEvent)
     if (
       this.stagedProviderSessionId
       && (event.type === 'content_delta' || event.type === 'message_complete' || event.type === 'message_interrupted')
@@ -874,6 +895,7 @@ export class ClaudeBackend implements SessionBackend {
       // The turn is over: the latch has served its purpose and must not leak
       // into the next one (see beginTurn).
       this.beginTurn()
+      this.steeredTurnMessageId = null
       const resolve = this.turnResolves.get(mid)
       if (resolve) {
         resolve()

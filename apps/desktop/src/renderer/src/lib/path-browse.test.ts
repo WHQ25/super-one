@@ -4,6 +4,7 @@ import {
   getBrowseDirectoryPath,
   getBrowseLeafPathSegment,
   getBrowseParentPath,
+  getClonePreviewGhost,
   getPathInlineGhost,
   getPathInlineGhostSuffix,
   isBareHomePath,
@@ -45,6 +46,25 @@ describe('bare home path (~)', () => {
   })
 })
 
+describe('getClonePreviewGhost', () => {
+  it('previews the repo folder at a directory boundary', () => {
+    expect(getClonePreviewGhost('~/Developer/Github/', 'new-api')).toEqual({
+      kind: 'preview',
+      text: 'new-api',
+    })
+    expect(getClonePreviewGhost('~', 'new-api')).toEqual({ kind: 'preview', text: 'new-api' })
+  })
+
+  it('yields to path completion once a segment is being typed', () => {
+    expect(getClonePreviewGhost('~/Developer/Git', 'new-api')).toBeNull()
+  })
+
+  it('returns null without a repo name', () => {
+    expect(getClonePreviewGhost('~/Developer/Github/', '')).toBeNull()
+    expect(getClonePreviewGhost('~/Developer/Github/', null)).toBeNull()
+  })
+})
+
 describe('getPathInlineGhost', () => {
   it('uses suffix mode for a prefix match', () => {
     expect(getPathInlineGhost('~/Deve', 'Developer')).toEqual({
@@ -75,15 +95,10 @@ describe('getPathInlineGhost', () => {
     })
   })
 
-  it('ghosts the full child name at a directory boundary', () => {
-    expect(getPathInlineGhost('~/', 'Developer')).toEqual({
-      kind: 'suffix',
-      text: 'Developer/',
-    })
-    expect(getPathInlineGhost('~/Projects/', 'super-one')).toEqual({
-      kind: 'suffix',
-      text: 'super-one/',
-    })
+  it('stays silent at a directory boundary — nothing has been typed to complete', () => {
+    expect(getPathInlineGhost('~/', 'Developer')).toBeNull()
+    expect(getPathInlineGhost('~', 'Developer')).toBeNull()
+    expect(getPathInlineGhost('~/Projects/', 'super-one')).toBeNull()
   })
 
   it('does not ghost a non-prefix fuzzy match', () => {

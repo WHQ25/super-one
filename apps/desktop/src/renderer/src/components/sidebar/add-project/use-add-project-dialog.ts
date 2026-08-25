@@ -28,6 +28,7 @@ import {
   ensureBrowseDirectoryPath,
   getBrowseDirectoryPath,
   getBrowseLeafPathSegment,
+  getClonePreviewGhost,
   getPathInlineGhost,
   hasTrailingPathSeparator,
   isBrowseablePathQuery,
@@ -773,6 +774,28 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   )
 
   /**
+   * A paste is an explicit "this is the whole thing" gesture, unlike typing
+   * where every keystroke is a half-finished fragment. Armed on paste and
+   * consumed by the very next query change, so a pasted repo link resolves
+   * straight through to the destination step instead of parking on the repo
+   * step the user has nothing left to do on.
+   */
+  const pastedRepoInputRef = useRef(false)
+  const notePastedInput = useCallback(() => {
+    pastedRepoInputRef.current = true
+  }, [])
+
+  useEffect(() => {
+    if (!open || step.kind !== 'repo' || !pastedRepoInputRef.current) return
+    // Consume the arm on the first change after the paste: text typed on top of
+    // an unresolvable paste must not jump mid-word (`WHQ25` + `/s`).
+    pastedRepoInputRef.current = false
+    const resolved = resolveRepoInput(step.source, query)
+    if (!resolved) return
+    continueWithRepo(step.source, query.trim(), resolved.remoteUrl, resolved.repoName)
+  }, [open, step, query, continueWithRepo])
+
+  /**
    * Concrete path / repository text skips the source picker entirely.
    * Debounced so a multi-character paste settles as one jump, and so mid-type
    * fragments (e.g. a half-typed URL) do not thrash the step machine.
@@ -802,23 +825,6 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     if (query.trim() !== '') return
     goToStep({ kind: 'source' }, '')
   }, [open, step.kind, query, goToStep])
-
-  /**
-   * `carry` is the already-typed text when it matched this source — it moves on
-   * verbatim (no separator fixups) so a half-typed leaf still resolves against
-   * the parent listing on the next step.
-   */
-  const pickSource = useCallback(
-    (source: AddProjectSource, carry = '') => {
-      const text = carry.trim()
-      if (source === 'local') {
-        goToStep({ kind: 'browse' }, text || initialPath)
-        return
-      }
-      goToStep({ kind: 'repo', source }, text)
-    },
-    [goToStep, initialPath],
-  )
 
   /**
    * Enter a directory: the same Tab-completion behaviour as MentionPopup.
@@ -853,6 +859,36 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       }
     },
     [connectionId, onOpened, onOpenChange, t],
+  )
+
+  /**
+   * `carry` is the already-typed text when it matched this source — it moves on
+   * verbatim (no separator fixups) so a half-typed leaf still resolves against
+   * the parent listing on the next step.
+   */
+  const pickSource = useCallback(
+    (source: AddProjectSource, carry = '') => {
+      const text = carry.trim()
+      if (source === 'local') {
+        // This machine already has a file manager the user knows — open it
+        // rather than making them re-browse the same tree in a text field.
+        // Two cases keep the in-app browser: a remote host (no native picker
+        // can see its filesystem) and text already typed (a path in progress
+        // the picker would throw away).
+        if (isLocal && !text) {
+          void window.app.selectFolder().then((picked) => {
+            // Cancelled — stay on the source picker instead of dropping the
+            // user into a browser they never asked for.
+            if (picked) void addProject(picked, false)
+          })
+          return
+        }
+        goToStep({ kind: 'browse' }, text || initialPath)
+        return
+      }
+      goToStep({ kind: 'repo', source }, text)
+    },
+    [goToStep, initialPath, isLocal, addProject],
   )
 
   /**
@@ -1012,13 +1048,21 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     continueWithRepo,
   ])
 
-  /** Inline ghost for a prefix match on the highlighted directory (`~/Deve` + dim `loper`). */
+  /**
+   * Inline ghost for a prefix match on the highlighted directory
+   * (`~/Deve` + dim `loper`). Before the user types a segment there is nothing
+   * to complete: on the destination step preview the repo folder the clone
+   * actually creates, and stay silent while browsing.
+   */
   const pathInlineGhost = useMemo(() => {
     if (!isPathStep) return null
+    if (!getBrowseLeafPathSegment(query)) {
+      return step.kind === 'destination' ? getClonePreviewGhost(query, step.repoName) : null
+    }
     const item = items[safeSelectedIndex]
     if (!item || item.key === CREATE_ROW_KEY) return null
     return getPathInlineGhost(query, item.key)
-  }, [isPathStep, items, safeSelectedIndex, query])
+  }, [isPathStep, step, items, safeSelectedIndex, query])
 
   /** Tab commits the ghost / selected directory into the input (never submits). */
   const completePath = useCallback(() => {
@@ -1133,6 +1177,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     canSubmit,
     activateItem,
     completePath,
+    notePastedInput,
     goBack,
     submit,
     commitCurrentPath,

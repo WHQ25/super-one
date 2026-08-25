@@ -33,7 +33,7 @@ import { useAddProjectDialog } from './use-add-project-dialog'
 function GithubOwnerAvatar({ owner, className }: { owner: string; className?: string }) {
   return (
     <img
-      src={githubOwnerAvatarUrl(owner, 40)}
+      src={githubOwnerAvatarUrl(owner, 80)}
       alt=""
       className={cn('size-4 rounded-sm object-cover', className)}
       loading="lazy"
@@ -292,7 +292,10 @@ export function AddProjectDialog({
                 <span className="whitespace-pre text-foreground">{flow.query}</span>
                 {/* Caret at end of typed input — always before the ghost tail. */}
                 <span className="h-4 w-px shrink-0 self-center bg-foreground" />
-                <span className="whitespace-pre text-muted-foreground/40">
+                <span
+                  data-testid="path-inline-ghost"
+                  className="whitespace-pre text-muted-foreground/40"
+                >
                   {flow.pathInlineGhost.text}
                 </span>
               </div>
@@ -308,6 +311,9 @@ export function AddProjectDialog({
               onScroll={(e) => {
                 setInputScrollLeft(e.currentTarget.scrollLeft)
               }}
+              // A pasted repo link is already complete — arm the repo step to
+              // continue straight to the clone destination.
+              onPaste={flow.notePastedInput}
               placeholder={placeholder}
               disabled={flow.busy}
               spellCheck={false}
@@ -421,12 +427,14 @@ export function AddProjectDialog({
               {t('sidebar.addProject.repository')}
             </div>
             <div className="flex items-center gap-2">
-              <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+              {/* Sized against the two-line title+URL block beside it, not the
+                  16px list-row icons — a size-4 avatar reads as a stray dot. */}
+              <span className="flex size-8 shrink-0 items-center justify-center text-muted-foreground">
                 {(() => {
                   const ref =
                     step.source === 'github' ? parseGitHubRepoInput(step.repoInput) : null
                   return ref ? (
-                    <GithubOwnerAvatar owner={ref.owner} />
+                    <GithubOwnerAvatar owner={ref.owner} className="size-8 rounded-md" />
                   ) : (
                     SOURCE_ICONS[step.source]
                   )

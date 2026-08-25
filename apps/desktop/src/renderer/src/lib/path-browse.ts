@@ -50,6 +50,15 @@ export function getBrowseLeafPathSegment(currentPath: string): string {
   return currentPath.slice(i + 1)
 }
 
+/**
+ * True when the path already points at a directory (`~`, `~/`, `./foo/`) so the
+ * next character typed starts a brand-new segment.
+ */
+export function isBrowseDirectoryBoundary(currentPath: string): boolean {
+  const trimmed = currentPath.trim()
+  return hasTrailingPathSeparator(trimmed) || isBareHomePath(trimmed)
+}
+
 export function ensureBrowseDirectoryPath(currentPath: string): string {
   const trimmed = currentPath.trim()
   if (!trimmed || hasTrailingPathSeparator(trimmed)) return trimmed
@@ -109,7 +118,11 @@ export function isBrowseablePathQuery(value: string): boolean {
  * Prefix match only: typed query stays solid; muted text is painted after it
  * (e.g. `~/Deve` + ghost `loper`). Fuzzy hits stay in the list, not the input.
  */
-export type PathInlineGhost = { kind: 'suffix'; text: string }
+export type PathInlineGhost =
+  /** Tab-completable remainder of the highlighted directory name. */
+  | { kind: 'suffix'; text: string }
+  /** Read-only preview of what submitting would append (not Tab-completable). */
+  | { kind: 'preview'; text: string }
 
 /**
  * Build the inline ghost for the highlighted directory candidate.
@@ -124,13 +137,11 @@ export function getPathInlineGhost(
   const leaf = getBrowseLeafPathSegment(query)
   const sep = preferredPathSeparator(query || '/')
 
-  if (!leaf) {
-    // At a directory boundary (`~/`, `./foo/`) ghost the selected child + sep.
-    if (hasTrailingPathSeparator(query.trim()) || isBareHomePath(query.trim())) {
-      return { kind: 'suffix', text: `${selectedDirectoryName}${sep}` }
-    }
-    return null
-  }
+  // At a directory boundary nothing has been typed for this segment yet, so
+  // ghosting the highlighted child would read as "this is the path you are
+  // about to use" — misleading, since submit uses the typed path, not the
+  // highlighted row. Callers preview their own target instead.
+  if (!leaf) return null
 
   const nameLower = selectedDirectoryName.toLowerCase()
   const leafLower = leaf.toLowerCase()
@@ -140,6 +151,20 @@ export function getPathInlineGhost(
     return { kind: 'suffix', text: sep }
   }
   return { kind: 'suffix', text: selectedDirectoryName.slice(leaf.length) }
+}
+
+/**
+ * Ghost for the clone destination step. At a directory boundary the repository
+ * is cloned into `<query><repoName>`, so preview that folder name rather than a
+ * sibling directory the user never chose.
+ */
+export function getClonePreviewGhost(
+  query: string,
+  repoName: string | null | undefined,
+): PathInlineGhost | null {
+  if (!repoName) return null
+  if (!isBrowseDirectoryBoundary(query)) return null
+  return { kind: 'preview', text: repoName }
 }
 
 /** @deprecated Prefer getPathInlineGhost — kept for callers that only need suffix text. */

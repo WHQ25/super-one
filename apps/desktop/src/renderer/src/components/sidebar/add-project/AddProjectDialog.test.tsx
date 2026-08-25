@@ -31,6 +31,14 @@ function renderDialog(connectionId = 'local') {
 
 const input = () => screen.getByRole('textbox') as HTMLInputElement
 /**
+ * Enter the in-app path browser. The Local Folder source row opens the native
+ * picker on this machine, so browsing is reached by typing a path — which
+ * auto-advances to the browse step.
+ */
+const openLocalBrowser = () => {
+  fireEvent.change(input(), { target: { value: '~/' } })
+}
+/**
  * Row text read off the DOM: fuzzy highlighting splits a label into several
  * spans, which strips the spaces out of the computed accessible name.
  */
@@ -140,8 +148,12 @@ describe('add-project dialog', () => {
     renderDialog()
     expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('Local Folder'))
-    expect(screen.getByRole('heading', { name: 'Open or Create a Folder' })).toBeInTheDocument()
+    openLocalBrowser()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Open or Create a Folder' }),
+      ).toBeInTheDocument(),
+    )
 
     fireEvent.change(input(), { target: { value: '' } })
     await waitFor(() =>
@@ -167,10 +179,46 @@ describe('add-project dialog', () => {
     expect(screen.getByRole('heading', { name: 'Enter a Git URL' })).toBeInTheDocument()
   })
 
+  it('opens the native picker straight from the Local Folder row', async () => {
+    const { onOpened } = renderDialog()
+    selectFolder.mockResolvedValueOnce('/Users/dev/Projects/notes')
+
+    fireEvent.click(screen.getByText('Local Folder'))
+
+    await waitFor(() =>
+      expect(openProject).toHaveBeenCalledWith('local', '/Users/dev/Projects/notes', {
+        createIfMissing: false,
+      }),
+    )
+    await waitFor(() => expect(onOpened).toHaveBeenCalled())
+    // Straight to Finder — the in-app browser never listed anything.
+    expect(browsePath).not.toHaveBeenCalled()
+  })
+
+  it('stays on the source picker when the native picker is cancelled', async () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByText('Local Folder'))
+
+    await waitFor(() => expect(selectFolder).toHaveBeenCalled())
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
+    expect(screen.getByText('GitHub Repository')).toBeInTheDocument()
+    expect(openProject).not.toHaveBeenCalled()
+  })
+
+  it('keeps the in-app browser for a remote host, which has no native picker', async () => {
+    renderDialog('remote-1')
+
+    fireEvent.click(screen.getByText('Local Folder'))
+
+    await waitFor(() => expect(browsePath).toHaveBeenCalledWith('remote-1', '~/'))
+    expect(selectFolder).not.toHaveBeenCalled()
+  })
+
   it('adds an existing folder picked from the local browser', async () => {
     const { onOpened } = renderDialog()
 
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/'))
     await screen.findByText('notes')
 
@@ -192,7 +240,7 @@ describe('add-project dialog', () => {
 
   it('labels Enter as enter and Shift+Enter confirms the current path', async () => {
     const { onOpened } = renderDialog()
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await screen.findByText('notes')
     expect(screen.queryByText('Add This Folder')).not.toBeInTheDocument()
     expect(footerText()).toMatch(/↵\s+open/)
@@ -210,7 +258,7 @@ describe('add-project dialog', () => {
 
   it('Enter still navigates into the highlighted folder', async () => {
     renderDialog()
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await screen.findByText('notes')
     fireEvent.change(input(), { target: { value: '~/no' } })
     await screen.findByRole('button', { name: /notes/ })
@@ -225,7 +273,7 @@ describe('add-project dialog', () => {
     const { onOpened } = renderDialog()
     selectFolder.mockResolvedValueOnce('/Users/dev/Projects/notes')
 
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/'))
     await screen.findByText('notes')
 
@@ -244,7 +292,7 @@ describe('add-project dialog', () => {
 
   it('keeps typed and absolute prefixes as they are while navigating', async () => {
     renderDialog()
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await screen.findByText('notes')
 
     // Tab completion into the highlighted row keeps the `~/` prefix.
@@ -265,7 +313,7 @@ describe('add-project dialog', () => {
 
   it('does not show a parent-directory row in the path list', async () => {
     renderDialog()
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await screen.findByText('notes')
     expect(screen.queryByText('..')).not.toBeInTheDocument()
     expect(screen.queryByText('Parent Directory')).not.toBeInTheDocument()
@@ -273,7 +321,7 @@ describe('add-project dialog', () => {
 
   it('offers to create a folder that does not exist yet', async () => {
     renderDialog()
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await screen.findByText('notes')
 
     fireEvent.change(input(), { target: { value: '~/Projects/brand-new' } })
@@ -320,6 +368,62 @@ describe('add-project dialog', () => {
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
+  })
+
+  it('ghosts the clone target, not a sibling directory, before a path segment is typed', async () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    fireEvent.change(input(), { target: { value: 'WHQ25/notes' } })
+    await screen.findByRole('button', { name: /WHQ25\/notes/ })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText(/Clones into/)
+
+    // At `~/` nothing has been typed for this segment: the ghost previews the
+    // folder the clone creates, never the highlighted directory row.
+    await waitFor(() =>
+      expect(screen.getByTestId('path-inline-ghost')).toHaveTextContent('notes'),
+    )
+    expect(screen.getByTestId('path-inline-ghost')).not.toHaveTextContent('super-one')
+
+    // Typing a segment hands the ghost back to directory completion.
+    fireEvent.change(input(), { target: { value: '~/super' } })
+    await waitFor(() => expect(screen.getByTestId('path-inline-ghost')).toHaveTextContent('-one'))
+  })
+
+  it('continues to the clone location when a repo link is pasted', async () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    fireEvent.paste(input())
+    fireEvent.change(input(), {
+      target: { value: 'https://github.com/WHQ25/super-one' },
+    })
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Choose Clone Location' })).toBeInTheDocument(),
+    )
+    expect(screen.getByText('https://github.com/WHQ25/super-one.git')).toBeInTheDocument()
+  })
+
+  it('keeps typed repo input on the repo step, even after an unresolvable paste', async () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    // Typing a full URL must not jump — every keystroke is a fragment.
+    fireEvent.change(input(), { target: { value: 'https://github.com/WHQ25/super-one' } })
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Search GitHub' })).toBeInTheDocument(),
+    )
+
+    // Pasting an owner arms nothing: the arm is consumed by that change, so the
+    // rest typed on top of it stays put instead of jumping at `WHQ25/s`.
+    fireEvent.change(input(), { target: { value: '' } })
+    fireEvent.paste(input())
+    fireEvent.change(input(), { target: { value: 'WHQ25' } })
+    fireEvent.change(input(), { target: { value: 'WHQ25/s' } })
+    await waitFor(() => expect(input().value).toBe('WHQ25/s'))
+    expect(screen.getByRole('heading', { name: 'Search GitHub' })).toBeInTheDocument()
   })
 
   it('does not auto-route GitHub or Git URL from free typing on the source step', async () => {
@@ -534,7 +638,7 @@ describe('add-project dialog', () => {
 
   it('hides the create-directory candidate when the path already exists', async () => {
     renderDialog()
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await screen.findByText('notes')
 
     fireEvent.change(input(), { target: { value: '~/Projects/notes' } })
@@ -686,7 +790,7 @@ describe('add-project dialog', () => {
 
   it('hides the back control on local browse and returns home when the path is cleared', async () => {
     renderDialog()
-    fireEvent.click(screen.getByText('Local Folder'))
+    openLocalBrowser()
     await waitFor(() => expect(browsePath).toHaveBeenCalled())
     // Path is prefilled with ~/ — footer has no ⌫ back hint on browse.
     expect(screen.queryByText('back')).not.toBeInTheDocument()

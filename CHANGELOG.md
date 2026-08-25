@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.57.4-alpha] - 2026-08-25
+
+### Added
+
+- Desktop: mini windows fold and unfold in place, keeping chat mounted so
+  content reflows without a reload flash.
+- Chat: queued Claude follow-ups stay editable until the active turn
+  settles, and queue entries can be converted into active-turn steering
+  for Claude and Codex.
+
+### Fixed
+
+- Claude: exhausted usage windows now surface as turn failures with the
+  resume-on-reset offer, instead of looking like a successful turn.
+- Chat: switching sessions restores that session's model and effort
+  instead of resetting to the catalog default; Codex context window and
+  todos also restore on both lazy and cold loads.
+- Chat: collab send status no longer implies a recipient, and snapshot
+  progress text no longer trails off with ellipses.
+- UI: Claude icon silhouette stays continuous at fractional sizes.
+
 ## [0.57.3-alpha] - 2026-08-24
 
 ### Added

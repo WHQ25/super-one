@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { render, act } from '@testing-library/react'
+import { render, act, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { HeaderSessionMenu } from './HeaderSessionMenu'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
@@ -64,5 +65,35 @@ describe('HeaderSessionMenu data source', () => {
     seedProject({ active: 'other', sessions: [], live: false })
     const { container } = render(<HeaderSessionMenu sessionId="ghost" folderPath={FOLDER} />)
     expect(trigger(container)).toBeNull()
+  })
+})
+
+describe('HeaderSessionMenu item set', () => {
+  beforeEach(() => {
+    useChatStore.setState({ projectSessions: {}, activeProject: null })
+  })
+
+  // The header menu acts on the session already open, so it deliberately carries a
+  // smaller set than the sidebar row menu it shares a builder with.
+  it('drops Hide and Add to Chat and converts this window instead of opening a new one', async () => {
+    const persisted: SessionHistoryEntry = {
+      sessionId: 'saved-1',
+      title: 'Saved',
+      lastActiveAt: '2026-01-01',
+      messageCount: 3,
+    }
+    seedProject({ active: 'saved-1', sessions: [persisted] })
+    const user = userEvent.setup()
+    const { container } = render(<HeaderSessionMenu sessionId="saved-1" folderPath={FOLDER} />)
+
+    await user.click(trigger(container) as HTMLElement)
+
+    expect(await screen.findByRole('menuitem', { name: 'Convert to Mini Window' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Open in Mini Window' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Hide Session' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Add to Chat' })).toBeNull()
+    // Still the shared actions the sidebar row has.
+    expect(screen.getByRole('menuitem', { name: 'Rename Session' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Pin Session' })).toBeInTheDocument()
   })
 })

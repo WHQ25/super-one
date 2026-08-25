@@ -191,7 +191,9 @@ import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { getInstallId } from './install-id'
-import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
+import { foldWindow, unfoldWindow } from './window-fold'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
@@ -488,6 +490,25 @@ let currentDarkTheme = true
 
 const sessionWindowKey = (projectPath: string, sessionId: string): string =>
   `${projectPath}::${sessionId}`
+
+
+/**
+ * Windows that were shrunk into a mini session window in place ("Convert to Mini
+ * Window" in the chat header menu) rather than spawned as one. Holds what it takes
+ * to grow them back; weak so a closed window is not retained.
+ */
+const convertedMiniWindows = new WeakMap<
+  BrowserWindow,
+  {
+    bounds: Electron.Rectangle
+    minSize: [number, number]
+    wasMaximized: boolean
+    mode: WindowMiniMode
+    /** The fold's choreography, kept so the unfold can retrace it edge for edge. */
+    steps: WindowFoldStep[]
+    trail: Electron.Rectangle[]
+  }
+>()
 
 function getMainWindow(): BrowserWindow {
   if (!mainWindow) throw new Error('Main window not created yet')
@@ -811,6 +832,8 @@ function windowChromeColors(surface: ChromeSurface): { backgroundColor: string; 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/
 
 function isSessionWindow(win: BrowserWindow): boolean {
+  // A converted window renders the same mini chrome, so it wants the same `card` surface.
+  if (convertedMiniWindows.has(win)) return true
   for (const w of sessionWindows.values()) {
     if (w === win) return true
   }
@@ -887,7 +910,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1120, // MIN_MAIN + MIN_SIDEBAR + MIN_AP
+    minWidth: 1080, // MIN_MAIN + MIN_SIDEBAR + MIN_AP
     minHeight: 700,
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 }, ...glassWindowOptions() }
@@ -981,10 +1004,98 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 
+  loadWindowRoute(mainWindow, '')
+}
+
+/** `''` loads the full app; a mini query loads MiniWindowApp. Dev serves from the vite URL. */
+function loadWindowRoute(win: BrowserWindow, query: string): void {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/${query}`)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'), query ? { search: query.slice(1) } : {})
+  }
+}
+
+/** Boot route for a *spawned* mini window. A converted window keeps its URL and App tree. */
+function miniWindowQuery(projectPath: string, sessionId: string, title: string | undefined): string {
+  const titleQuery = title ? `&title=${encodeURIComponent(title)}` : ''
+  return `?mode=miniwindow&project=${encodeURIComponent(projectPath)}&session=${encodeURIComponent(sessionId)}${titleQuery}`
+}
+
+/**
+ * Fold an existing window down into a mini session window in place.
+ *
+ * Deliberately NOT a reload: re-running the renderer entry costs a full bundle parse,
+ * store rebuild and session boot — seconds of frozen window. The renderer keeps its
+ * shell mounted and collapses it panel by panel; main moves the window edges along the
+ * beats it was handed, so the two read as one motion. Reversible via
+ * {@link restoreWindowFromMini}, which retraces the same path backwards.
+ *
+ * Resolves once the window has actually landed — the renderer waits on this before
+ * switching its surrounding shell, so the endpoint stays aligned with native chrome.
+ */
+async function convertWindowToMini(
+  win: BrowserWindow,
+  projectPath: string,
+  sessionId: string,
+  title?: string,
+  steps: WindowFoldStep[] = [],
+): Promise<void> {
+  if (convertedMiniWindows.has(win)) return
+  if (win.isFullScreen()) win.setFullScreen(false)
+  const wasMaximized = win.isMaximized()
+  if (wasMaximized) win.unmaximize()
+  const [minWidth, minHeight] = win.getMinimumSize()
+  const mode: WindowMiniMode = { projectPath, sessionId, ...(title ? { title } : {}) }
+  const bounds = win.getBounds()
+  convertedMiniWindows.set(win, { bounds, minSize: [minWidth, minHeight], wasMaximized, mode, steps, trail: [bounds] })
+
+  // Minimum first: shrinking below the current minimum is a no-op otherwise.
+  win.setMinimumSize(MINI_WINDOW_SIZE.minWidth, MINI_WINDOW_SIZE.minHeight)
+  // Keep the native window's origin fixed. Moving x while resizing makes the compositor
+  // briefly shift stale content frames, which is especially visible as text jitter.
+  const final = {
+    x: bounds.x,
+    y: bounds.y,
+    width: MINI_WINDOW_SIZE.width,
+    height: MINI_WINDOW_SIZE.height,
+  }
+  const trail = await foldWindow(win, steps, final)
+  if (win.isDestroyed()) return
+  // Switch native chrome only after the resize. Changing caption geometry before the
+  // first moving frame was the small flash at the beginning of every conversion.
+  applyMiniChrome(win, true)
+  const state = convertedMiniWindows.get(win)
+  if (state) state.trail = trail
+}
+
+/** Repositions first, then resolves once the window has grown back — see {@link convertWindowToMini}. */
+async function restoreWindowFromMini(win: BrowserWindow): Promise<void> {
+  const prior = convertedMiniWindows.get(win)
+  if (!prior) return
+  convertedMiniWindows.delete(win)
+  // The mini title bar's pin has no counterpart in the full app window.
+  win.setAlwaysOnTop(false)
+  await unfoldWindow(win, prior.trail, prior.steps)
+  if (win.isDestroyed()) return
+  // Only after the animation: restoring the app's minimum while the window is still
+  // mini-sized makes the OS clamp it to that minimum *instantly* — the window popped
+  // half open on frame one and the unfold played only the remainder.
+  win.setMinimumSize(prior.minSize[0], prior.minSize[1])
+  if (prior.wasMaximized) win.maximize()
+  // Keep mini chrome for the whole unfold, then hand both native and renderer shells
+  // back together once the original geometry is stable.
+  applyMiniChrome(win, false)
+  win.webContents.send(AgentIpcChannels.WINDOW_MINI_MODE_CHANGED, null)
+}
+
+/** Traffic lights / caption overlay differ between the 36px mini strip and the 40px app header. */
+function applyMiniChrome(win: BrowserWindow, mini: boolean): void {
+  if (process.platform === 'darwin') {
+    win.setWindowButtonPosition(mini ? { x: 12, y: 12 } : { x: 16, y: 16 })
+  } else if (process.platform === 'win32') {
+    applyWindowChromeColors(win, windowChromeColors(mini ? 'card' : 'sidebar'))
+    win.setTitleBarOverlay({ height: mini ? 36 : 40 })
   }
 }
 
@@ -998,10 +1109,10 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
   }
 
   const win = new BrowserWindow({
-    width: 380,
-    height: 640,
-    minWidth: 380,
-    minHeight: 480,
+    width: MINI_WINDOW_SIZE.width,
+    height: MINI_WINDOW_SIZE.height,
+    minWidth: MINI_WINDOW_SIZE.minWidth,
+    minHeight: MINI_WINDOW_SIZE.minHeight,
     ...(position ? { x: Math.round(position.x), y: Math.round(position.y) } : {}),
     title: title ?? 'Session',
     ...(process.platform === 'darwin'
@@ -1047,13 +1158,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     if (sessionWindows.get(key) === win) sessionWindows.delete(key)
   })
 
-  const titleQuery = title ? `&title=${encodeURIComponent(title)}` : ''
-  const query = `?mode=miniwindow&project=${encodeURIComponent(projectPath)}&session=${encodeURIComponent(sessionId)}${titleQuery}`
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/${query}`)
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'), { search: query.slice(1) })
-  }
+  loadWindowRoute(win, miniWindowQuery(projectPath, sessionId, title))
 }
 
 const DRAG_PREVIEW_WIDTH = 260
@@ -4119,6 +4224,28 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.OPEN_SESSION_WINDOW, (_e, projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }) => {
     if (!projectPath || !sessionId) return
     createSessionWindow(projectPath, sessionId, title, position)
+  })
+
+  // Both resolve when the window animation has landed — the renderer sequences its
+  // shell switch off that, so keep these returning the promise.
+  ipcMain.handle(AgentIpcChannels.CONVERT_WINDOW_TO_MINI, (_e, projectPath: string, sessionId: string, title?: string, steps?: WindowFoldStep[]) => {
+    if (!projectPath || !sessionId) return
+    const win = BrowserWindow.fromWebContents(_e.sender)
+    if (!win || win.isDestroyed()) return
+    return convertWindowToMini(win, projectPath, sessionId, title, Array.isArray(steps) ? steps : [])
+  })
+
+  ipcMain.handle(AgentIpcChannels.RESTORE_WINDOW_FROM_MINI, (_e) => {
+    const win = BrowserWindow.fromWebContents(_e.sender)
+    if (!win || win.isDestroyed()) return
+    return restoreWindowFromMini(win)
+  })
+
+  // A renderer reload (dev HMR, Cmd+R) loses the in-memory swap — main stays authoritative.
+  ipcMain.handle(AgentIpcChannels.GET_WINDOW_MINI_MODE, (_e): WindowMiniMode | null => {
+    const win = BrowserWindow.fromWebContents(_e.sender)
+    if (!win || win.isDestroyed()) return null
+    return convertedMiniWindows.get(win)?.mode ?? null
   })
 
   ipcMain.handle(AgentIpcChannels.DRAG_PREVIEW_START, (_e, title: string) => {

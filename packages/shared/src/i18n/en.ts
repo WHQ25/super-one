@@ -447,6 +447,8 @@ export type Messages = {
       copyWorkingDirectory: string
       openFolder: string
       openInMiniWindow: string
+      /** Header menu: turns the current window into a mini window in place. */
+      convertToMiniWindow: string
       dragToMiniWindow: string
       forkToWorktree: string
       /** @deprecated Prefer forkToSameWorktree — kept for older UI strings. */
@@ -3888,6 +3890,7 @@ export const en: Messages = {
       copyWorkingDirectory: 'Copy Working Directory',
       openFolder: 'Open Folder',
       openInMiniWindow: 'Open in Mini Window',
+      convertToMiniWindow: 'Convert to Mini Window',
       dragToMiniWindow: 'Release to open as mini window',
       forkToWorktree: 'Fork to New Worktree',
       forkToLocal: 'Fork to Same Worktree',

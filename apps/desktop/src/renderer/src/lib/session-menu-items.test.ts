@@ -10,11 +10,16 @@ import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 const getSession = vi.fn()
 
 vi.stubGlobal('window', {
+  // The convert path starts the fold, which tracks panel widths against window resizes.
+  innerWidth: 1440,
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
   environment: {
     getSession,
   },
   app: {
     openSessionWindow: vi.fn(),
+    convertWindowToMini: vi.fn(),
     showInFolder: vi.fn(),
   },
 })
@@ -94,6 +99,39 @@ describe('buildSessionMenuItems remote vs local', () => {
   it('places addToChat above copySessionId', () => {
     const ids = itemIds('/Users/me/app')
     expect(ids.indexOf('addToChat')).toBeLessThan(ids.indexOf('copyId'))
+  })
+})
+
+describe('buildSessionMenuItems header vs sidebar shape', () => {
+  function item(items: ReturnType<typeof buildSessionMenuItems>, id: string) {
+    return items.find((e): e is Extract<typeof e, { kind: 'item' }> => e.kind === 'item' && e.id === id)
+  }
+
+  it('omits hide when no hide handler is given (chat header menu)', () => {
+    const { onHide: _, onAddToChat: __, ...rest } = handlers
+    const ids = buildSessionMenuItems(base, '/Users/me/app', t, rest, { miniWindow: 'convert' })
+      .filter((e): e is Extract<typeof e, { kind: 'item' }> => e.kind === 'item')
+      .map((e) => e.id)
+    expect(ids).not.toContain('hide')
+    expect(ids).not.toContain('addToChat')
+    expect(ids).toContain('mini')
+  })
+
+  it('converts this window instead of spawning one when miniWindow is convert', () => {
+    const items = buildSessionMenuItems(base, '/Users/me/app', t, handlers, { miniWindow: 'convert' })
+    const mini = item(items, 'mini')
+    expect(mini?.label).toBe('sidebar.contextMenu.convertToMiniWindow')
+    mini?.onSelect()
+    // Fourth argument is the measured fold choreography — covered by the store's test.
+    expect(window.app.convertWindowToMini).toHaveBeenCalledWith('/Users/me/app', 'sid-1', 'Chat', expect.any(Array))
+    expect(window.app.openSessionWindow).not.toHaveBeenCalled()
+  })
+
+  it('spawns a separate mini window by default (sidebar rows)', () => {
+    const mini = item(buildSessionMenuItems(base, '/Users/me/app', t, handlers), 'mini')
+    expect(mini?.label).toBe('sidebar.contextMenu.openInMiniWindow')
+    mini?.onSelect()
+    expect(window.app.openSessionWindow).toHaveBeenCalledWith('/Users/me/app', 'sid-1', 'Chat')
   })
 })
 

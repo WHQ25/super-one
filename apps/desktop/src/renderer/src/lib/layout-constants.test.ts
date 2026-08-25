@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { MIN_CHAT_WIDTH } from '@superone/shared/agent-types'
 import { LAYOUT, maxSidebarWidth } from './layout-constants'
 import { makeLeaf, measureMin, MIN_TILE_W, DIVIDER_SIZE, type MosaicBranch } from '@/components/mosaic/mosaic-tree'
 
@@ -11,16 +12,22 @@ const twoColumns: MosaicBranch = {
 }
 
 describe('maxSidebarWidth in mosaic mode', () => {
+  it('allows the chat area to shrink to 360px', () => {
+    expect(MIN_CHAT_WIDTH).toBe(360)
+    expect(LAYOUT.MIN_MAIN).toBe(MIN_CHAT_WIDTH)
+    expect(LAYOUT.MIN_SIDEBAR).toBe(320)
+  })
+
   it('reserves the mosaic split minimum so a two-column layout is never clipped', () => {
-    const innerWidth = 1200
-    const mosaicMinW = measureMin(twoColumns).w // 360 + 360 + 1 = 721
+    const innerWidth = 1100
+    const mosaicMinW = measureMin(twoColumns).w
     expect(mosaicMinW).toBe(2 * MIN_TILE_W + DIVIDER_SIZE)
 
     const mainMin = Math.max(LAYOUT.MIN_MAIN, mosaicMinW)
     const maxSw = maxSidebarWidth(innerWidth, mainMin, 0)
 
     // The sidebar must be capped low enough that the remaining main area still
-    // fits the mosaic minimum — i.e. tiles keep their 360px floor.
+    // fits the mosaic minimum — i.e. tiles keep the shared chat-width floor.
     expect(innerWidth - maxSw - LAYOUT.CARD_GUTTER).toBeGreaterThanOrEqual(mosaicMinW)
     // Regression: the old MIN_MAIN-only formula would have allowed the hard cap.
     const buggyMax = maxSidebarWidth(innerWidth, LAYOUT.MIN_MAIN, 0)
@@ -28,8 +35,9 @@ describe('maxSidebarWidth in mosaic mode', () => {
     expect(maxSw).toBeLessThan(buggyMax)
   })
 
-  it('falls back to MIN_MAIN for a single tile (no extra reservation)', () => {
+  it('uses the chat minimum for a single mosaic tile', () => {
     const mainMin = Math.max(LAYOUT.MIN_MAIN, measureMin(makeLeaf('A', '/p', 'A')).w)
+    expect(MIN_TILE_W).toBe(MIN_CHAT_WIDTH)
     expect(mainMin).toBe(LAYOUT.MIN_MAIN)
     expect(maxSidebarWidth(1200, mainMin, 0)).toBe(LAYOUT.MAX_SIDEBAR)
   })

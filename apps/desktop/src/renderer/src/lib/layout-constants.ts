@@ -1,5 +1,7 @@
+import { MIN_CHAT_WIDTH } from '@superone/shared/agent-types'
+
 export const LAYOUT = {
-  MIN_MAIN: 400,
+  MIN_MAIN: MIN_CHAT_WIDTH,
   MIN_SIDEBAR: 320,
   MAX_SIDEBAR: 500,
   /**

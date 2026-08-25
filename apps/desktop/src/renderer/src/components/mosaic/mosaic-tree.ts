@@ -1,3 +1,5 @@
+import { MIN_CHAT_WIDTH } from '@superone/shared/agent-types'
+
 export type DropEdge = 'left' | 'right' | 'top' | 'bottom'
 
 export interface MosaicLeaf {
@@ -21,7 +23,7 @@ export type MosaicPath = ('first' | 'second')[]
 export const MIN_RATIO = 0.05
 export const MAX_RATIO = 0.95
 
-export const MIN_TILE_W = 360
+export const MIN_TILE_W = MIN_CHAT_WIDTH
 export const MIN_TILE_H = 420
 export const DIVIDER_SIZE = 1
 

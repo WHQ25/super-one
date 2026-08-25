@@ -18,7 +18,6 @@ import {
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
 import { showNativeContextMenu, toNativeMenu, type AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { RenameSessionDialog, type RenameSessionTarget } from '@/components/sidebar/RenameSessionDialog'
@@ -111,40 +110,32 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
 
   if (!entry) return null
 
-  const items = buildSessionMenuItems(entry, folderPath, t, {
-    onRename: () => setRenameTarget({ sessionId: entry.sessionId, title: entry.title, folderPath }),
-    onPin: async () => {
-      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-      const remote = parseRemoteProjectKey(folderPath)
-      if (remote) {
-        await window.environment.setSessionUiFlags(remote.connectionId, entry.sessionId, {
-          isPinned: !entry.isPinned,
-        })
-      } else {
-        await window.app.pinSession(entry.sessionId, !entry.isPinned)
-      }
-      await afterMutate()
+  // Header menu acts on the session you are already reading, so it deliberately
+  // diverges from the sidebar row menu: no Hide (it would hide the open session),
+  // no Add to Chat (mentioning the session you are typing in is a no-op), and the
+  // mini window converts this window instead of spawning a second one.
+  const items = buildSessionMenuItems(
+    entry,
+    folderPath,
+    t,
+    {
+      onRename: () => setRenameTarget({ sessionId: entry.sessionId, title: entry.title, folderPath }),
+      onPin: async () => {
+        const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+        const remote = parseRemoteProjectKey(folderPath)
+        if (remote) {
+          await window.environment.setSessionUiFlags(remote.connectionId, entry.sessionId, {
+            isPinned: !entry.isPinned,
+          })
+        } else {
+          await window.app.pinSession(entry.sessionId, !entry.isPinned)
+        }
+        await afterMutate()
+      },
+      onFork: handleFork,
     },
-    onHide: async () => {
-      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-      const remote = parseRemoteProjectKey(folderPath)
-      if (remote) {
-        await window.environment.setSessionUiFlags(remote.connectionId, entry.sessionId, {
-          isHidden: !entry.isHidden,
-        })
-      } else {
-        await window.app.hideSession(entry.sessionId, !entry.isHidden)
-      }
-      await afterMutate()
-    },
-    onFork: handleFork,
-    onAddToChat: () => {
-      // Same chip as @session mention (History icon / blended), not mini-app context inject.
-      // Chip insert is enough feedback — no toast.
-      const title = (entry.title || 'Untitled').trim()
-      chatInputAPI.insertMention?.('session', entry.sessionId, title)
-    },
-  })
+    { miniWindow: 'convert' },
+  )
 
   const dialog = (
     <RenameSessionDialog target={renameTarget} onClose={() => setRenameTarget(null)} onRenamed={() => void afterMutate()} />

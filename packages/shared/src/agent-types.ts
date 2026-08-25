@@ -3064,6 +3064,38 @@ export interface SavedWidgetTemplate {
   version: number
 }
 
+/**
+ * The session a window converted by "Convert to Mini Window" is showing.
+ * `null` on the wire means the window is (back) in full-app mode.
+ */
+export interface WindowMiniMode {
+  projectPath: string
+  sessionId: string
+  title?: string
+}
+
+/** Minimum width of a single chat column, shared by the app layout and mini windows. */
+export const MIN_CHAT_WIDTH = 360
+
+/** The window a converted session folds down to. Shared so the renderer can aim at it. */
+export const MINI_WINDOW_SIZE = {
+  width: MIN_CHAT_WIDTH,
+  height: 640,
+  minWidth: MIN_CHAT_WIDTH,
+  minHeight: 480,
+} as const
+
+/**
+ * One beat of the mini-window fold. The renderer measures its own layout and emits the
+ * beats; main only plays them, so panel widths never have to be known outside the shell.
+ * Deltas are signed px; `height` is absolute (the last beat drops to mini height).
+ */
+export interface WindowFoldStep {
+  durationMs: number
+  widthDelta?: number
+  height?: number
+}
+
 export const AgentIpcChannels = {
   // App-level channels
   CONNECT_CLAUDE: 'app:connect-claude',
@@ -3341,6 +3373,12 @@ export const AgentIpcChannels = {
   FULLSCREEN_CHANGED: 'app:fullscreen-changed',
   SET_MIN_WINDOW_SIZE: 'app:set-min-window-size',
   OPEN_SESSION_WINDOW: 'app:open-session-window',
+  /** Turn the *sender's own* window into a mini session window (and back). */
+  CONVERT_WINDOW_TO_MINI: 'app:convert-window-to-mini',
+  RESTORE_WINDOW_FROM_MINI: 'app:restore-window-from-mini',
+  /** Push + pull of "is this window currently converted, and onto which session". */
+  WINDOW_MINI_MODE_CHANGED: 'app:window-mini-mode-changed',
+  GET_WINDOW_MINI_MODE: 'app:get-window-mini-mode',
   DRAG_PREVIEW_START: 'app:drag-preview-start',
   DRAG_PREVIEW_END: 'app:drag-preview-end',
   DRAG_PREVIEW_UPDATE: 'app:drag-preview-update',

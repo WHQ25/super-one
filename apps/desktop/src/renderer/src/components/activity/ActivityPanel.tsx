@@ -24,6 +24,8 @@ import { cn } from '@superone/ui/lib/utils'
 interface ActivityPanelProps {
   getMaxWidth: () => number
   hidden?: boolean
+  /** Overrides the idle transition — the mini-window fold runs the panels on its own clock. */
+  transitionMs?: number
 }
 
 function ActivityPrefixActions() {
@@ -82,7 +84,7 @@ function ActivityNewTabAction() {
   )
 }
 
-export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
+export function ActivityPanel({ getMaxWidth, hidden, transitionMs }: ActivityPanelProps) {
   const { showPanel, side, panelWidth, setPanelWidthByUser, maximized } = useActivityPanelStore()
   const visible = showPanel && !hidden
   const outerRef = useRef<HTMLDivElement>(null)
@@ -223,7 +225,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
         style={{
           width: visible ? (maximized ? '100%' : panelWidth) : 0,
           order: side === 'left' ? 0 : 2,
-          transitionDuration: `${ACTIVITY_PANEL_TRANSITION.durationMs}ms`,
+          transitionDuration: `${transitionMs ?? ACTIVITY_PANEL_TRANSITION.durationMs}ms`,
           transitionTimingFunction: ACTIVITY_PANEL_TRANSITION.easing,
         }}
       >

@@ -5,15 +5,26 @@ import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agen
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { enterMiniWindow } from '@/stores/window-mini-mode'
 
 export interface SessionMenuHandlers {
   onRename: () => void
   onPin: () => void
-  onHide: () => void
   onFork: (mode: SessionForkMode) => void
+  /** Sidebar-list affordance — omitted by the chat header menu (you cannot hide the session you are in). */
+  onHide?: () => void
   onDelete?: () => void
   /** Insert a `@session` mention chip into the active chat composer. */
   onAddToChat?: () => void
+}
+
+export interface SessionMenuOptions {
+  /**
+   * `open` spawns a separate mini window for the session (sidebar rows, which
+   * point at *other* sessions). `convert` turns the window the menu lives in
+   * into a mini window for the session it is already showing (chat header).
+   */
+  miniWindow?: 'open' | 'convert'
 }
 
 export function providerLabelFor(session: SessionHistoryEntry): string {
@@ -67,6 +78,7 @@ export function buildSessionMenuItems(
   folderPath: string,
   t: TFunction,
   handlers: SessionMenuHandlers,
+  options: SessionMenuOptions = {},
 ): AdaptiveMenuEntry[] {
   const isRemoteHost = folderPath.startsWith('remote:')
   // Host absolute path for clipboard when project is keyed as remote:<conn>:<path>
@@ -75,10 +87,15 @@ export function buildSessionMenuItems(
     : folderPath
   const tags = session.tags ?? []
 
+  const onHide = handlers.onHide
+  const miniMode = options.miniWindow ?? 'open'
+
   const items: AdaptiveMenuEntry[] = [
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: handlers.onRename },
     { kind: 'item', id: 'pin', label: session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin'), icon: Pin, onSelect: handlers.onPin },
-    { kind: 'item', id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: handlers.onHide },
+    ...(onHide
+      ? [{ kind: 'item' as const, id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: onHide }]
+      : []),
     {
       kind: 'submenu',
       id: 'tags',
@@ -107,9 +124,15 @@ export function buildSessionMenuItems(
     {
       kind: 'item',
       id: 'mini',
-      label: t('sidebar.contextMenu.openInMiniWindow'),
+      label: t(miniMode === 'convert' ? 'sidebar.contextMenu.convertToMiniWindow' : 'sidebar.contextMenu.openInMiniWindow'),
       icon: PictureInPicture2,
-      onSelect: () => window.app.openSessionWindow(folderPath, session.sessionId, session.title),
+      onSelect: () => {
+        if (miniMode === 'convert') {
+          enterMiniWindow({ projectPath: folderPath, sessionId: session.sessionId, title: session.title })
+        } else {
+          void window.app.openSessionWindow(folderPath, session.sessionId, session.title)
+        }
+      },
     },
     { kind: 'separator' },
   ]

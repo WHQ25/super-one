@@ -129,7 +129,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   capturedHandler = null
   appStateRef.showSidebar = true
-  appStateRef.sidebarWidth = 320
+  appStateRef.sidebarWidth = LAYOUT.MIN_SIDEBAR
   appStateRef.currentProjectId = 'proj-id-1'
   mockIsInstanceReferenced.mockReturnValue(false)
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 })
@@ -431,7 +431,7 @@ describe('miniapp store preferWidth', () => {
 
   it('clamps preferWidth to available space when room is tight', async () => {
     // Derived, not hand-computed: the numbers move whenever a LAYOUT floor does.
-    const sidebarWidth = 320
+    const sidebarWidth = LAYOUT.MIN_SIDEBAR
     const available = LAYOUT.MIN_AP + 68
     Object.defineProperty(window, 'innerWidth', {
       configurable: true,
@@ -448,7 +448,7 @@ describe('miniapp store preferWidth', () => {
 
   it('skips applying when there is no room (max < MIN_AP)', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 700 })
-    appStateRef.sidebarWidth = 320
+    appStateRef.sidebarWidth = LAYOUT.MIN_SIDEBAR
     const app = entry('panel-app', 480)
 
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
@@ -481,7 +481,7 @@ describe('miniapp store preferWidth', () => {
 
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
 
-    expect(mockSetPanelWidth).toHaveBeenCalledWith(588)
+    expect(mockSetPanelWidth).toHaveBeenCalledWith(1000 - LAYOUT.MIN_MAIN - LAYOUT.CARD_GUTTER)
   })
 })
 

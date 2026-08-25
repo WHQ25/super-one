@@ -2,7 +2,7 @@ import log from 'electron-log/renderer'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
-import App from './App'
+import { RootApp } from './components/RootApp'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { MiniWindowApp } from './components/MiniWindowApp'
 import { DragPreviewApp } from './components/DragPreviewApp'
@@ -61,7 +61,7 @@ void Promise.race([
               )
               : (
                 <>
-                  <App />
+                  <RootApp />
                   <Toaster position="bottom-center" />
                 </>
               )}

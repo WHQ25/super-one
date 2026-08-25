@@ -22,6 +22,7 @@ import { HarnessAlignPage } from '@/components/onboarding/HarnessAlignPage'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
+import { MiniWindowHeader } from '@/components/MiniWindowApp'
 import { MiniAppHostLayer } from '@/components/miniapp/MiniAppHostLayer'
 import { BrowserHostLayer } from '@/components/browser/BrowserHostLayer'
 import { DeviceHostLayer } from '@/components/device/DeviceHostLayer'
@@ -40,6 +41,7 @@ import { useMiniAppHostActions } from '@/hooks/useMiniAppHostActions'
 import { useMiniAppContextConsumedRelay } from '@/hooks/useContextConsumedEvent'
 import { useMobileUploadToasts } from '@/hooks/useMobileUploadToasts'
 import { useAppStore, startProjectMirror } from '@/stores/app'
+import { FOLD_PANEL_MS, selectMiniDriven, selectPanelsFolded, useWindowMiniModeStore } from '@/stores/window-mini-mode'
 import { useDevToolsStore } from '@/stores/dev-tools'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
@@ -305,7 +307,18 @@ function App(): React.JSX.Element {
   const mosaicMin = mosaicMode === 'mosaic' && mosaicRoot ? measureMin(mosaicRoot) : null
   const mosaicMinW = mosaicMin?.w ?? 0
   const mosaicMinH = mosaicMin?.h ?? 0
+  // The mini-window fold drives the window itself: panels shut, window narrows to one
+  // chat column, and back. Layout code that reacts to window size has to sit that out
+  // — clamping against those intermediate widths would rewrite the user's panel widths,
+  // and re-asserting the 1120px floor would shove the window back open mid-animation.
+  const inMiniWindow = useWindowMiniModeStore(selectMiniDriven)
+  // Keep the compact shell through the entire unfold, then restore the full shell only
+  // after the native window has reached its original bounds.
+  const compactMiniShell = useWindowMiniModeStore((s) => s.phase === 'mini' || s.phase === 'unfolding')
+  // Both side panels shed as one move, from both edges at once.
+  const panelsFolded = useWindowMiniModeStore(selectPanelsFolded)
   useEffect(() => {
+    if (inMiniWindow) return
     let minW = view === 'main'
       ? (activityMaximized ? LAYOUT.MIN_AP : LAYOUT.MIN_MAIN + (showActivityPanel ? LAYOUT.MIN_AP : 0))
         + (showSidebar ? LAYOUT.MIN_SIDEBAR : 0)
@@ -319,7 +332,7 @@ function App(): React.JSX.Element {
       minH = Math.max(minH, mosaicMinH + 10)
     }
     window.app.setMinWindowSize(minW, minH)
-  }, [view, showSidebar, showActivityPanel, activityMaximized, mosaicMinW, mosaicMinH])
+  }, [view, showSidebar, showActivityPanel, activityMaximized, mosaicMinW, mosaicMinH, inMiniWindow])
 
   const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP, CARD_GUTTER } = LAYOUT
   // In mosaic mode the main area can't shrink below what the current split needs,
@@ -390,6 +403,7 @@ function App(): React.JSX.Element {
     let restoreTimer = 0
     let prevWidth = window.innerWidth
     const clampBody = () => {
+      if (selectMiniDriven(useWindowMiniModeStore.getState())) return
       const { showSidebar: sb, sidebarWidth: sw, setSidebarWidth: setSW } = useAppStore.getState()
       const ap = useActivityPanelStore.getState()
       const curWidth = window.innerWidth
@@ -426,6 +440,9 @@ function App(): React.JSX.Element {
       raf = requestAnimationFrame(clampBody)
     }
     const onWindowResize = () => {
+      // The fold resizes the window on purpose, and killing the panels' width
+      // transition here is exactly what would make them snap instead of slide.
+      if (selectMiniDriven(useWindowMiniModeStore.getState())) return
       const outers = document.querySelectorAll<HTMLElement>('[data-activity-outer],[data-sidebar-outer]')
       outers.forEach((el) => { el.style.transition = 'none' })
       clearTimeout(restoreTimer)
@@ -538,21 +555,25 @@ function App(): React.JSX.Element {
   // Main view: sidebar + content
   return (
     <>
-    <div className="flex h-screen flex-col overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
-      <WindowsTitleBar />
+    <div className={cn(
+      'flex h-screen flex-col overflow-hidden text-foreground',
+      compactMiniShell ? (liquidGlass ? 'bg-transparent' : 'bg-card') : 'bg-sidebar',
+    )} style={enterAnimation}>
+      {!compactMiniShell && <WindowsTitleBar />}
       <div className="group/coding flex min-h-0 flex-1 overflow-hidden">
       <GitAutoRefresh />
       <>
       <div className="relative flex shrink-0">
       <SidebarFrame
-        open={showSidebar}
+        open={showSidebar && !panelsFolded}
         width={sidebarWidth}
+        durationMs={inMiniWindow ? FOLD_PANEL_MS : undefined}
         outerRef={sidebarRef}
         innerRef={sidebarInnerRef}
       >
         <AppSidebar />
       </SidebarFrame>
-        {showSidebar && (
+        {showSidebar && !panelsFolded && (
           <div
             data-resize-handle
             onMouseDown={onResizeStart}
@@ -567,7 +588,9 @@ function App(): React.JSX.Element {
           (keep left radius only while the sidebar is open to soften that seam). */}
       <div ref={mainWrapperRef} className={cn(
         'relative z-20 flex min-w-0 flex-1 overflow-hidden bg-card',
-        isFullscreen
+        compactMiniShell
+          ? 'rounded-none border-0 shadow-none'
+          : isFullscreen
           ? cn(
               'rounded-r-none border-0 shadow-none',
               showSidebar ? 'rounded-l-xl' : 'rounded-none',
@@ -583,16 +606,22 @@ function App(): React.JSX.Element {
                 : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
             ),
       )}>
-        <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={mosaicMode === 'mosaic'} />
+        <ActivityPanel
+          getMaxWidth={getActivityMaxWidth}
+          hidden={mosaicMode === 'mosaic' || panelsFolded}
+          transitionMs={inMiniWindow ? FOLD_PANEL_MS : undefined}
+        />
 
         {/* Main area */}
         <div data-main-area="" className={cn(
-          'relative z-10 min-w-[400px] flex-1 flex-col overflow-hidden',
-          activityMaximized ? 'hidden' : 'flex',
-          showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
-        )} style={{ order: 1 }}>
+          'relative z-10 flex-1 flex-col overflow-hidden',
+          activityMaximized && !inMiniWindow ? 'hidden' : 'flex',
+          showActivityPanel && !panelsFolded && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
+        )} style={{ order: 1, minWidth: inMiniWindow ? 0 : MIN_MAIN }}>
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
-        {mosaicMode !== 'mosaic' && (
+        {compactMiniShell
+          ? <MiniWindowHeader initialTitle={sessionFallback ?? undefined} canRestore transparentBackground={liquidGlass} />
+          : mosaicMode !== 'mosaic' && (
         <div
           className={cn('flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
@@ -674,13 +703,13 @@ function App(): React.JSX.Element {
         {/* Content */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {!liquidGlass && mosaicMode !== 'mosaic' && <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
-          <CodingWorkspace mosaicMode={mosaicMode} />
+          <CodingWorkspace mosaicMode={mosaicMode} compact={compactMiniShell} />
         </div>
         {draggingSession && mosaicMode === 'mosaic' && <MosaicDropPreview />}
       </div>
       </div>
       </>
-      {activityMaximized && <ChatPanel anchorBoundaryRef={mainWrapperRef} />}
+      {activityMaximized && !inMiniWindow && <ChatPanel anchorBoundaryRef={mainWrapperRef} />}
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}

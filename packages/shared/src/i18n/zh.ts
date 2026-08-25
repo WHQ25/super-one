@@ -466,6 +466,7 @@ export const zh: Messages = {
       copyWorkingDirectory: '复制工作目录',
       openFolder: '打开文件夹',
       openInMiniWindow: '在迷你窗口中打开',
+      convertToMiniWindow: '转为迷你窗口',
       dragToMiniWindow: '松开打开为小窗',
       forkToWorktree: 'Fork 到新 Worktree',
       forkToLocal: 'Fork 到同一 Worktree',

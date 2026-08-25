@@ -10,12 +10,12 @@ import { toggleSidebar, toggleActivitySide } from './layout-actions'
 describe('sidebar toggle width compensation', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'innerWidth', { value: 1600, configurable: true })
-    useAppStore.setState({ showSidebar: true, sidebarWidth: 320 })
+    useAppStore.setState({ showSidebar: true, sidebarWidth: LAYOUT.MIN_SIDEBAR })
     useActivityPanelStore.setState({ showPanel: true, panelWidth: 400 })
   })
 
   it('keeps the main area width constant when hiding the sidebar with the panel open', () => {
-    const mainBefore = window.innerWidth - 320 - 400
+    const mainBefore = window.innerWidth - LAYOUT.MIN_SIDEBAR - 400
 
     toggleSidebar()
 
@@ -52,7 +52,7 @@ describe('sidebar toggle width compensation', () => {
   })
 
   it('never shrinks the panel below its minimum when showing the sidebar', () => {
-    useAppStore.setState({ showSidebar: false, sidebarWidth: 320 })
+    useAppStore.setState({ showSidebar: false, sidebarWidth: LAYOUT.MIN_SIDEBAR })
     useActivityPanelStore.setState({ showPanel: true, panelWidth: LAYOUT.MIN_AP + 40 })
 
     toggleSidebar()

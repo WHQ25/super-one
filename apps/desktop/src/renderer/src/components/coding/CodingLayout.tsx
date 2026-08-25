@@ -19,6 +19,8 @@ const TerminalPanel = lazy(() => import('@/components/coding/TerminalPanel').the
 interface CodingLayoutProps {
   foreground?: boolean
   scope?: SessionScope
+  /** Collapse terminal chrome while preserving this component and SessionPane. */
+  compact?: boolean
 }
 
 // Closing the active dock tab is not a plain `api.close()`: browser/mini-app/terminal
@@ -35,7 +37,7 @@ function closeActiveDockTab(): void {
   else closeBrowserTab(id)
 }
 
-export const CodingLayout = memo(function CodingLayout({ foreground = true, scope }: CodingLayoutProps) {
+export const CodingLayout = memo(function CodingLayout({ foreground = true, scope, compact = false }: CodingLayoutProps) {
   const chatScopeRef = useRef<HTMLDivElement>(null)
   const termSurfaceRef = useRef<HTMLDivElement>(null)
 
@@ -112,7 +114,7 @@ export const CodingLayout = memo(function CodingLayout({ foreground = true, scop
       <div
         ref={termSurfaceRef}
         className="relative shrink-0 overflow-hidden transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-        style={{ height: termOpen ? termHeight : 0 }}
+        style={{ height: !compact && termOpen ? termHeight : 0 }}
       >
         <div
           className="coding-terminal-surface flex flex-col border-t border-border bg-card"
@@ -128,7 +130,7 @@ export const CodingLayout = memo(function CodingLayout({ foreground = true, scop
         </div>
       </div>
 
-      {termOpen && (
+      {termOpen && !compact && (
         <div
           onPointerDown={startResize}
           className="group absolute inset-x-0 z-10 h-2 cursor-row-resize"

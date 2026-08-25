@@ -48,6 +48,11 @@ export function useStandaloneSessionBoot(projectPath: string, sessionId: string)
         if (useChatStore.getState().projectSessions[projectPath]?._activeSessionId !== sessionId) {
           await switchSession(sessionId)
         }
+        if (cancelled) return
+        // Sessions restored from a live snapshot are flagged `_historyHydrated` without
+        // ever loading the persisted title, which would leave this window titled after
+        // the first user message. mountSession owns that DB back-fill.
+        await useChatStore.getState().mountSession(projectPath, sessionId)
       } catch (err) {
         console.warn('[session-boot] init failed', err)
       }

@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
-import type { DshPluginInstallSource, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit } from '@superone/shared/agent-types'
+import type { DshPluginInstallSource, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
@@ -2008,6 +2008,21 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SET_MIN_WINDOW_SIZE, width, height) as Promise<void>,
   openSessionWindow: (projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }) =>
     ipcRenderer.invoke(AgentIpcChannels.OPEN_SESSION_WINDOW, projectPath, sessionId, title, position) as Promise<void>,
+  convertWindowToMini: (projectPath: string, sessionId: string, title?: string, steps?: WindowFoldStep[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.CONVERT_WINDOW_TO_MINI, projectPath, sessionId, title, steps) as Promise<void>,
+  restoreWindowFromMini: () =>
+    ipcRenderer.invoke(AgentIpcChannels.RESTORE_WINDOW_FROM_MINI) as Promise<void>,
+  getWindowMiniMode: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_WINDOW_MINI_MODE) as Promise<WindowMiniMode | null>,
+  onWindowMiniModeChanged: (callback: (mode: WindowMiniMode | null) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, mode: WindowMiniMode | null): void => {
+      callback(mode)
+    }
+    ipcRenderer.on(AgentIpcChannels.WINDOW_MINI_MODE_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.WINDOW_MINI_MODE_CHANGED, handler)
+    }
+  },
   startDragPreview: (title: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DRAG_PREVIEW_START, title) as Promise<void>,
   endDragPreview: () =>

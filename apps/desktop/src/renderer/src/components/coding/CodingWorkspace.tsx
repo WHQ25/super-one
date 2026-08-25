@@ -6,9 +6,11 @@ import { CodingLayout } from './CodingLayout'
 
 interface CodingWorkspaceProps {
   mosaicMode: 'single' | 'mosaic'
+  /** Mini shell hides auxiliary surfaces without remounting the active SessionPane. */
+  compact?: boolean
 }
 
-export function CodingWorkspace({ mosaicMode }: CodingWorkspaceProps) {
+export function CodingWorkspace({ mosaicMode, compact = false }: CodingWorkspaceProps) {
   const activeProject = useChatStore((s) => s.activeProject)
   const activeSessionId = useChatStore((s) => activeProject ? s.projectSessions[activeProject]?._activeSessionId ?? null : null)
   const activeScope = useMemo<SessionScope | undefined>(
@@ -28,7 +30,7 @@ export function CodingWorkspace({ mosaicMode }: CodingWorkspaceProps) {
   return (
     <>
       <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', mosaicMode === 'mosaic' && 'hidden')}>
-        <CodingLayout foreground={mosaicMode !== 'mosaic'} scope={singleScope} />
+        <CodingLayout foreground={mosaicMode !== 'mosaic'} scope={singleScope} compact={compact} />
       </div>
       <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', mosaicMode !== 'mosaic' && 'hidden')}>
         <SessionMosaic foreground={mosaicMode === 'mosaic'} />

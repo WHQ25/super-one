@@ -15,8 +15,8 @@ vi.mock('@/stores/chat', () => ({
 }))
 
 vi.mock('./CodingLayout', () => ({
-  CodingLayout: ({ foreground, scope }: { foreground: boolean; scope?: { projectPath: string; sessionId: string } }) => (
-    <div data-testid="single" data-foreground={foreground} data-session-id={scope?.sessionId} />
+  CodingLayout: ({ foreground, scope, compact }: { foreground: boolean; scope?: { projectPath: string; sessionId: string }; compact?: boolean }) => (
+    <div data-testid="single" data-foreground={foreground} data-session-id={scope?.sessionId} data-compact={compact} />
   ),
 }))
 vi.mock('@/components/mosaic/SessionMosaic', () => ({
@@ -52,5 +52,14 @@ describe('CodingWorkspace', () => {
 
     rerender(<CodingWorkspace mosaicMode="single" />)
     expect(screen.getByTestId('single')).toHaveAttribute('data-session-id', 'sid-2')
+  })
+
+  it('switches to compact chrome without replacing the single session layout', () => {
+    const { rerender } = render(<CodingWorkspace mosaicMode="single" />)
+    const single = screen.getByTestId('single')
+
+    rerender(<CodingWorkspace mosaicMode="single" compact />)
+    expect(screen.getByTestId('single')).toBe(single)
+    expect(single).toHaveAttribute('data-compact', 'true')
   })
 })

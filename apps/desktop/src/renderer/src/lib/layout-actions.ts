@@ -15,7 +15,7 @@ const HOST_SELECTORS = ['[data-miniapp-host]', '[data-browser-host]'] as const
  * panel in the **same commit**, so the two `transition-[width]` animations run
  * in lockstep and the flex-1 main area keeps a constant width — no reflow, no
  * jitter in chat. Compensating a frame later (via rAF) leaves one frame where
- * main is `sidebarWidth` too wide, which is a visible jump at 320px+.
+ * main is `sidebarWidth` too wide, which is a visible jump at the sidebar's full width.
  */
 export function toggleSidebar(): void {
   const { showSidebar, sidebarWidth, setShowSidebar } = useAppStore.getState()

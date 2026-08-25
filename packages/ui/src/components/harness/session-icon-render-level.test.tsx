@@ -21,6 +21,16 @@ function classesOf(container: HTMLElement): string {
 }
 
 describe('session icon render levels', () => {
+  it('keeps the Claude body seamless and aligns its outer legs to the body edges', () => {
+    const { container } = render(<ClaudeSessionIcon status="default" size={118} renderLevel="compact" />)
+
+    expect(container.querySelector('path')).toHaveAttribute('d', 'M10 0H100V20H110V40H100V60H10V40H0V20H10Z')
+
+    const legs = Array.from(container.querySelectorAll<HTMLElement>('.claude-session-idle-leg'))
+    expect(legs.map((leg) => leg.style.left)).toEqual(['13px', '33px', '73px', '93px'])
+    expect(legs.map((leg) => leg.style.top)).toEqual(['72px', '72px', '72px', '72px'])
+  })
+
   it('drops the Claude float and leg wiggle on a resting compact icon but keeps the blink', () => {
     const { container } = render(<ClaudeSessionIcon status="default" renderLevel="compact" />)
     const classes = classesOf(container)

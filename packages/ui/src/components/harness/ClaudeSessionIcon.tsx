@@ -13,6 +13,7 @@ export interface SessionIconProps {
 
 const BODY_COLOR = '#E07B4A'
 const EYE_COLOR = '#1a1a1a'
+const BODY_PATH = 'M10 0H100V20H110V40H100V60H10V40H0V20H10Z'
 
 const FLASH_KEYS: { x: number; alt: string }[] = [
   { x: 6, alt: '#71717a' },
@@ -40,9 +41,9 @@ function idleLegStyle(x: number, size?: number): React.CSSProperties {
   const yOffset = (n - 90 * scale) / 2
   return {
     left: (x + 3) * scale,
-    top: yOffset + 61 * scale,
+    top: yOffset + 59 * scale,
     width: 10 * scale,
-    height: 22 * scale,
+    height: 24 * scale,
   }
 }
 
@@ -88,11 +89,7 @@ export function ClaudeSessionIcon({ status, size, renderLevel = 'rich' }: Sessio
         <span className={status === 'background' ? 'claude-session-bg-motion' : idleMotionClass(renderLevel)}>
           <span className="claude-session-idle-stage" style={idleStageStyle(size)}>
             <svg viewBox="-3 -3 116 90" className="w-3 h-3 overflow-visible" style={svgStyle} aria-hidden>
-              <g fill={BODY_COLOR}>
-                <rect x="10" y="0" width="90" height="60" />
-                <rect x="0" y="20" width="10" height="20" />
-                <rect x="100" y="20" width="10" height="20" />
-              </g>
+              <path d={BODY_PATH} fill={BODY_COLOR} />
               <g className="claude-session-idle-eyes" fill={EYE_COLOR}>
                 <rect x="20" y="20" width="10" height="10" />
                 <rect x="80" y="20" width="10" height="10" />
@@ -129,11 +126,7 @@ export function ClaudeSessionIcon({ status, size, renderLevel = 'rich' }: Sessio
         <span className="claude-session-layer claude-session-jump">
           <svg viewBox="-3 -3 116 90" className="w-3 h-3 overflow-visible" style={svgStyle} aria-hidden>
             <g transform="translate(8, -2) scale(0.85)">
-              <g fill={BODY_COLOR}>
-                <rect x="10" y="0" width="90" height="60" />
-                <rect x="0" y="20" width="10" height="20" />
-                <rect x="100" y="20" width="10" height="20" />
-              </g>
+              <path d={BODY_PATH} fill={BODY_COLOR} />
               <g fill={EYE_COLOR}>
                 <rect x="20" y="20" width="10" height="10" />
                 <rect x="80" y="20" width="10" height="10" />

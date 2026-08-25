@@ -26,6 +26,12 @@ export {
   type ClaudeAgentEventMapperOptions,
 } from './agent-event-mapper'
 export {
+  buildClaudeResultFailure,
+  isClaudeResultError,
+  type ClaudeResultFailure,
+  type ClaudeResultFailureContext,
+} from './result-failure'
+export {
   resolveSdkClaudeBinary,
   resetSdkClaudeBinaryCacheForTests,
 } from './resolve-sdk-binary'

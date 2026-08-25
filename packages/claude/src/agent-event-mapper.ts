@@ -9,6 +9,7 @@ import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
 import { mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import { buildClaudeResultFailure, isClaudeResultError } from './result-failure'
 
 type Raw = Record<string, any>
 
@@ -185,23 +186,6 @@ export function isResumeDropsTurnRefusal(error: string): boolean {
   return error.includes(RESUME_DROPS_TURN_REFUSAL_PREFIX)
 }
 
-function resultErrorText(result: Raw): string {
-  if (Array.isArray(result.errors)) return result.errors.join('; ') || 'Unknown error'
-  if (typeof result.errors === 'string' && result.errors) return result.errors
-  if (typeof result.result === 'string' && result.result) return result.result
-  return 'Unknown error'
-}
-
-function decorateMessageErrorText(
-  rawError: string,
-  typedCode: string | undefined,
-  apiStatus: number | null | undefined,
-): string {
-  if (typedCode !== 'model_not_found') return rawError
-  const suffix = apiStatus ? ` (HTTP ${apiStatus})` : ''
-  return `Model not available for this provider${suffix}: ${rawError}`
-}
-
 export function createClaudeAgentEventMapper(
   options: ClaudeAgentEventMapperOptions,
 ): ClaudeAgentEventMapper {
@@ -223,6 +207,12 @@ export function createClaudeAgentEventMapper(
     [...new Set(uuids.map((uuid) => wireUuidToMessageId.get(uuid)).filter((id): id is string => !!id))]
   let lastReplayCheckpointId = ''
   let lastAssistantTypedError: string | undefined
+  let lastAssistantRequestId: string | undefined
+  let lastAssistantModel: string | undefined
+  const retryDelaysMs: number[] = []
+  let retryMaxRetries: number | undefined
+  let rejectedRateLimitResetsAt: number | undefined
+  let hasRejectedRateLimit = false
   let pendingSlashOutput = ''
   let messageInputTokens = 0
   let messageOutputTokens = 0
@@ -459,6 +449,9 @@ export function createClaudeAgentEventMapper(
         })
         break
       case 'api_retry':
+        retryDelaysMs.push(system.retry_delay_ms ?? 0)
+        retryMaxRetries = system.max_retries ?? 3
+        if (system.error) lastAssistantTypedError = String(system.error)
         emit({
           type: 'api_retry',
           attempt: system.attempt ?? 1,
@@ -544,6 +537,9 @@ export function createClaudeAgentEventMapper(
           const usage = raw.message?.usage
           if (usage) lastAssistantUsage = usage
           if (raw.error) lastAssistantTypedError = String(raw.error)
+          const requestId = raw.request_id ?? raw.requestId
+          if (requestId) lastAssistantRequestId = String(requestId)
+          if (raw.message?.model) lastAssistantModel = String(raw.message.model)
           if (!assistantParent) {
             lastTopLevelAssistantUuid = raw.uuid ?? ''
             if (lastTopLevelAssistantUuid) wireUuidToMessageId.set(lastTopLevelAssistantUuid, messageId)
@@ -705,9 +701,17 @@ export function createClaudeAgentEventMapper(
           )
           if (lastTopLevelAssistantUuid) metadata.forkAnchorId = lastTopLevelAssistantUuid
           const interrupted = options.isInterrupted?.() === true
-          const resultIsError = raw.is_error === true || raw.subtype !== 'success'
-          const rawError = resultErrorText(raw)
-          const decoratedError = decorateMessageErrorText(rawError, lastAssistantTypedError, metadata.apiErrorStatus)
+          const resultIsError = isClaudeResultError(raw, hasRejectedRateLimit)
+          const failure = buildClaudeResultFailure(raw, {
+            typedCode: lastAssistantTypedError,
+            model: lastAssistantModel,
+            requestId: lastAssistantRequestId,
+            retries: retryDelaysMs.length > 0
+              ? { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) }
+              : undefined,
+            rejectedRateLimit: hasRejectedRateLimit,
+            resetsAt: rejectedRateLimitResetsAt,
+          })
           if (interrupted) {
             emit({ type: 'message_interrupted', messageId, metadata })
             activeBackgroundTasks.clear()
@@ -716,9 +720,16 @@ export function createClaudeAgentEventMapper(
             emit({ type: 'message_complete', messageId, metadata })
           } else {
             // Hosts: if isResumeDropsTurnRefusal(error), clear fork target + full-resume only (never retry same args).
-            emit({ type: 'message_error', messageId, error: decoratedError })
+            metadata.errorInfo = failure.errorInfo
+            emit({ type: 'message_error', messageId, error: failure.error, errorInfo: failure.errorInfo })
           }
           lastAssistantTypedError = undefined
+          lastAssistantRequestId = undefined
+          lastAssistantModel = undefined
+          retryDelaysMs.length = 0
+          retryMaxRetries = undefined
+          hasRejectedRateLimit = false
+          rejectedRateLimitResetsAt = undefined
           pendingSlashOutput = ''
           resultSeen = true
           options.onStepBoundary?.()
@@ -729,7 +740,7 @@ export function createClaudeAgentEventMapper(
             isResult: true,
             resultIsError,
             resultText: typeof raw.result === 'string' ? raw.result : null,
-            resultError: resultIsError ? decoratedError : null,
+            resultError: resultIsError ? failure.error : null,
           }
         }
         case 'prompt_suggestion':
@@ -738,6 +749,10 @@ export function createClaudeAgentEventMapper(
         case 'rate_limit_event': {
           const info = raw.rate_limit_info
           if (info) {
+            hasRejectedRateLimit = info.status === 'rejected'
+            rejectedRateLimitResetsAt = hasRejectedRateLimit && typeof info.resetsAt === 'number'
+              ? info.resetsAt
+              : undefined
             emit({
               type: 'rate_limit',
               status: info.status,

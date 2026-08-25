@@ -1,9 +1,12 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import type { AgentErrorInfo, AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import { mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import {
+  buildClaudeResultFailure,
+  buildClaudeResultMetadata,
+  isClaudeResultError,
   isResumeDropsTurnRefusal,
   RESUME_DROPS_TURN_REFUSAL_PREFIX,
 } from '@superone/claude'
@@ -294,6 +297,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   // and copied onto a rate-limit failure — that is what lets the UI say when the
   // quota returns, and lets auto-resume know when to fire.
   let lastRateLimitResetsAt: number | undefined
+  let hasRejectedRateLimit = false
   let pendingSlashOutput = ''
   // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
@@ -718,7 +722,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             lastAssistantTypedError = String(assistantError)
           }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const assistantRequestId = (msg as any).request_id
+          const assistantRequestId = (msg as any).request_id ?? (msg as any).requestId
           if (assistantRequestId) lastAssistantRequestId = String(assistantRequestId)
           if (msg.message?.model) lastAssistantModel = msg.message.model
 
@@ -1000,7 +1004,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = msg as any
           log.debug(`[iterateMessages] result subtype=${result.subtype} session_id=${result.session_id ?? '(none)'}`)
-          const metadata = buildResultMetadata(result, getCurrentStartTime(), timing.pausedMs, lastAssistantUsage)
+          const metadata = buildClaudeResultMetadata(result, getCurrentStartTime(), timing.pausedMs, lastAssistantUsage)
           if (lastTopLevelAssistantUuid) metadata.forkAnchorId = lastTopLevelAssistantUuid
 
           try {
@@ -1022,37 +1026,30 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           if (getInterrupted()) {
             emit({ type: 'message_interrupted', messageId, metadata })
             activeBackgroundTasks.clear()
-          } else if (result.subtype === 'success') {
+          } else if (!isClaudeResultError(result, hasRejectedRateLimit)) {
             if (pendingSlashOutput) {
               emit({ type: 'slash_command_output', messageId, content: pendingSlashOutput })
             }
             emit({ type: 'message_complete', messageId, metadata })
           } else {
-            // `errors` is frequently an empty array on api_error results — join
-            // would yield '' and strand the user with a blank failure.
-            const rawError = result.errors?.join('; ') || lastAssistantTypedError || 'Unknown error'
-            const decorated = decorateMessageErrorText(rawError, lastAssistantTypedError, metadata.apiErrorStatus)
-            const errorInfo: AgentErrorInfo = {
-              raw: rawError,
-              ...(lastAssistantTypedError ? { code: lastAssistantTypedError } : {}),
-              ...(typeof metadata.apiErrorStatus === 'number' ? { httpStatus: metadata.apiErrorStatus } : {}),
-              ...(result.terminal_reason ? { terminalReason: String(result.terminal_reason) } : {}),
-              ...(result.subtype ? { subtype: String(result.subtype) } : {}),
-              ...(lastAssistantModel ? { model: lastAssistantModel } : {}),
-              ...(lastAssistantRequestId ? { requestId: lastAssistantRequestId } : {}),
-              ...(retryDelaysMs.length > 0
-                ? { retries: { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) } }
-                : {}),
-              ...(lastRateLimitResetsAt === undefined ? {} : { resetsAt: lastRateLimitResetsAt }),
-            }
-            metadata.errorInfo = errorInfo
-            if (isResumeDropsTurnRefusal(rawError)) {
+            const failure = buildClaudeResultFailure(result, {
+              typedCode: lastAssistantTypedError,
+              model: lastAssistantModel,
+              requestId: lastAssistantRequestId,
+              retries: retryDelaysMs.length > 0
+                ? { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) }
+                : undefined,
+              rejectedRateLimit: hasRejectedRateLimit,
+              resetsAt: lastRateLimitResetsAt,
+            })
+            metadata.errorInfo = failure.errorInfo
+            if (isResumeDropsTurnRefusal(failure.errorInfo.raw)) {
               // Deterministic refusal: clear any truncating fork target and full-resume only.
               // Re-sending the same resumeSessionAt + resumeDropsTurn pair fails forever.
               log.warn(
                 '[claude-query] resume-drops-turn refused session=%s — clear fork target, full resume, do not retry same args: %s',
                 opts.superoneSessionId,
-                rawError,
+                failure.errorInfo.raw,
               )
             }
             if (result.terminal_reason === 'api_error') {
@@ -1061,15 +1058,17 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 opts.superoneSessionId,
                 messageId,
                 metadata.apiErrorStatus ?? 'unknown',
-                decorated,
+                failure.error,
               )
             }
-            emit({ type: 'message_error', messageId, error: decorated, errorInfo })
+            emit({ type: 'message_error', messageId, error: failure.error, errorInfo: failure.errorInfo })
           }
           lastAssistantTypedError = undefined
           lastAssistantRequestId = undefined
           retryDelaysMs.length = 0
           retryMaxRetries = undefined
+          hasRejectedRateLimit = false
+          lastRateLimitResetsAt = undefined
           pendingSlashOutput = ''
 
           resultSeen = true
@@ -1097,7 +1096,10 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const rl = (msg as any).rate_limit_info
           if (rl) {
-            if (typeof rl.resetsAt === 'number') lastRateLimitResetsAt = rl.resetsAt
+            hasRejectedRateLimit = rl.status === 'rejected'
+            lastRateLimitResetsAt = hasRejectedRateLimit && typeof rl.resetsAt === 'number'
+              ? rl.resetsAt
+              : undefined
             emit({
               type: 'rate_limit',
               status: rl.status,
@@ -1147,76 +1149,6 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
     })
     emit({ type: 'status_change', status: 'error' })
   }
-}
-
-function decorateMessageErrorText(rawError: string, typedCode: string | undefined, apiStatus: number | null | undefined): string {
-  if (typedCode === 'model_not_found') {
-    const suffix = apiStatus ? ` (HTTP ${apiStatus})` : ''
-    return `Model not available for this provider${suffix}: ${rawError}`
-  }
-  return rawError
-}
-
-/** Extract rich metadata from an SDK result message. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildResultMetadata(result: any, startTime: number, pausedMs: number, lastAssistantUsage?: any): MessageMetadata {
-  const metadata: MessageMetadata = {
-    durationMs: Date.now() - startTime - pausedMs,
-    durationApiMs: result.duration_api_ms,
-    costUsd: result.total_cost_usd,
-    numTurns: result.num_turns,
-    stopReason: result.stop_reason ?? null,
-    terminalReason: result.terminal_reason,
-    resultText: result.result,
-    fastModeState: result.fast_mode_state,
-    fastModeDisabledReason: result.fast_mode_disabled_reason,
-    errorSubtype: result.subtype !== 'success' ? result.subtype : undefined,
-    structuredOutput: result.structured_output,
-    isError: result.is_error || undefined,
-    apiErrorStatus: result.api_error_status ?? undefined,
-  }
-
-  if (result.permission_denials?.length > 0) {
-    metadata.permissionDenials = result.permission_denials.map((d: any) => ({
-      toolName: d.tool_name,
-      toolUseId: d.tool_use_id,
-      toolInput: d.tool_input ?? {},
-    }))
-  }
-
-  // Use the last assistant message's usage as context window snapshot
-  // (result.usage is cumulative across all turns, not a context window size)
-  const u = lastAssistantUsage ?? result.usage
-  if (u) {
-    metadata.usage = {
-      inputTokens: u.input_tokens ?? 0,
-      outputTokens: u.output_tokens ?? 0,
-      cacheReadInputTokens: u.cache_read_input_tokens ?? 0,
-      cacheCreationInputTokens: u.cache_creation_input_tokens ?? 0,
-    }
-  }
-
-  if (result.modelUsage) {
-    metadata.modelUsage = {}
-    for (const [model, usage] of Object.entries(result.modelUsage)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const u = usage as any
-      metadata.modelUsage[model] = {
-        inputTokens: u.inputTokens ?? 0,
-        outputTokens: u.outputTokens ?? 0,
-        cacheReadInputTokens: u.cacheReadInputTokens ?? 0,
-        cacheCreationInputTokens: u.cacheCreationInputTokens ?? 0,
-        costUSD: u.costUSD ?? 0,
-        webSearchRequests: u.webSearchRequests || undefined,
-        contextWindow: u.contextWindow || undefined,
-        maxOutputTokens: u.maxOutputTokens || undefined,
-        canonicalModel: typeof u.canonicalModel === 'string' ? u.canonicalModel : undefined,
-        provider: typeof u.provider === 'string' ? u.provider : undefined,
-      }
-    }
-  }
-
-  return metadata
 }
 
 /** Extract readable text from a tool_result content field. */

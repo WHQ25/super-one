@@ -518,6 +518,78 @@ describe('createSessionQuery', () => {
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
   })
 
+  it('treats a rejected rate-limit result with success subtype as an error', async () => {
+    const resetsAt = 1_787_635_200
+    state.messages = [
+      {
+        type: 'rate_limit_event',
+        rate_limit_info: { status: 'rejected', resetsAt, rateLimitType: 'five_hour' },
+      },
+      {
+        type: 'assistant',
+        error: 'rate_limit',
+        message: { id: 'step-rate-limit', model: '<synthetic>', content: [] },
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        is_error: true,
+        terminal_reason: 'api_error',
+        api_error_status: 429,
+        errors: [],
+        result: "You've hit your session limit · resets 1:20pm (Asia/Shanghai)",
+      },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { superoneSessionId: 'session-rate-limit', cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-rate-limit-recorded',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events.find((event) => event.type === 'message_complete')).toBeUndefined()
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_error',
+      messageId: 'msg-rate-limit-recorded',
+      error: "You've hit your session limit · resets 1:20pm (Asia/Shanghai)",
+      errorInfo: expect.objectContaining({
+        code: 'rate_limit',
+        httpStatus: 429,
+        terminalReason: 'api_error',
+        resetsAt,
+      }),
+    }))
+  })
+
+  it('keeps an allowed-warning rate-limit event on the successful path', async () => {
+    state.messages = [
+      {
+        type: 'rate_limit_event',
+        rate_limit_info: { status: 'allowed_warning', resetsAt: 1_787_635_200, utilization: 0.8 },
+      },
+      { type: 'result', subtype: 'success', result: 'done' },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-rate-limit-warning',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events).toContainEqual(expect.objectContaining({ type: 'message_complete', messageId: 'msg-rate-limit-warning' }))
+    expect(events.find((event) => event.type === 'message_error')).toBeUndefined()
+  })
+
   it('detects resume-drops-turn refusal and logs recovery guidance without changing the error text', async () => {
     const refusal = `${RESUME_DROPS_TURN_REFUSAL_PREFIX} discarded range has extra user message`
     expect(isResumeDropsTurnRefusal(refusal)).toBe(true)

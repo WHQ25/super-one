@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ScheduledSend, ScheduledSendPatch } from '@superone/shared/agent-types'
+import { createClaudeAgentEventMapper } from '@superone/claude'
 
 /**
  * SQLite is the only thing stubbed — the row store below behaves exactly like
@@ -130,6 +131,39 @@ describe('scheduled send — rate-limit offer', () => {
     service.observe(SID, { type: 'rate_limit', resetsAt: IN_ONE_HOUR / 1000 } as AgentEvent)
     service.observe(SID, rateLimitFailure())
     expect(store.get(SID)?.sendAt).toBe(IN_ONE_HOUR + RESET_BUFFER_MS)
+  })
+
+  it('offers resume for the recorded Claude rejected-limit event sequence', () => {
+    const { service } = setup()
+    const mapper = createClaudeAgentEventMapper({
+      messageId: 'm-recorded-rate-limit',
+      emit: (event) => service.observe(SID, event),
+    })
+
+    mapper.apply({
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', resetsAt: IN_ONE_HOUR / 1000, rateLimitType: 'five_hour' },
+    })
+    mapper.apply({
+      type: 'assistant',
+      error: 'rate_limit',
+      message: { id: 'step-rate-limit', model: '<synthetic>', content: [] },
+    })
+    mapper.apply({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      terminal_reason: 'api_error',
+      api_error_status: 429,
+      errors: [],
+      result: "You've hit your session limit",
+    })
+
+    expect(store.get(SID)).toMatchObject({
+      sendAt: IN_ONE_HOUR + RESET_BUFFER_MS,
+      armed: false,
+      source: 'rate_limit',
+    })
   })
 
   it('writes no offer at all when the only reset time has already elapsed', () => {

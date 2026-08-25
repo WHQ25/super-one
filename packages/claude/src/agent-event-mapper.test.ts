@@ -175,6 +175,60 @@ describe('createClaudeAgentEventMapper', () => {
     ]))
   })
 
+  it('maps a rejected rate-limit result with success subtype to a typed failure', () => {
+    const resetsAt = 1_787_635_200
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm-rate-limit', emit: (event) => events.push(event) })
+
+    mapper.apply({
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', resetsAt, rateLimitType: 'five_hour' },
+    })
+    mapper.apply({
+      type: 'assistant',
+      error: 'rate_limit',
+      message: { id: 'step-rate-limit', model: '<synthetic>', content: [] },
+    })
+    const result = mapper.apply({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      terminal_reason: 'api_error',
+      api_error_status: 429,
+      errors: [],
+      result: "You've hit your session limit · resets 1:20pm (Asia/Shanghai)",
+    })
+
+    expect(result.resultIsError).toBe(true)
+    expect(events.find((event) => event.type === 'message_complete')).toBeUndefined()
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_error',
+      messageId: 'm-rate-limit',
+      error: "You've hit your session limit · resets 1:20pm (Asia/Shanghai)",
+      errorInfo: expect.objectContaining({
+        code: 'rate_limit',
+        httpStatus: 429,
+        terminalReason: 'api_error',
+        resetsAt,
+      }),
+    }))
+  })
+
+  it('does not turn an allowed-warning rate-limit event into a failed turn', () => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm-warning', emit: (event) => events.push(event) })
+
+    mapper.apply({
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'allowed_warning', resetsAt: 1_787_635_200, utilization: 0.8 },
+    })
+    const result = mapper.apply({ type: 'result', subtype: 'success', result: 'done' })
+
+    expect(result.resultIsError).toBe(false)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'message_complete', messageId: 'm-warning' }))
+    expect(events.find((event) => event.type === 'message_error')).toBeUndefined()
+  })
+
   it('maps session_init fastModeDisabledReason from system/init', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })

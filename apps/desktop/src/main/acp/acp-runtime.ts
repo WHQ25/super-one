@@ -7,6 +7,7 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type SessionConfigOption,
+  type SessionUpdate,
   type Stream,
 } from '@agentclientprotocol/sdk'
 import log from '../logger'
@@ -244,10 +245,7 @@ function isAgentInitiatedContentUpdate(update: { sessionUpdate?: string }): bool
     || kind === 'plan'
 }
 
-function peekChunkText(update: {
-  sessionUpdate?: string
-  content?: { type?: string; text?: string }
-}): string {
+function peekChunkText(update: SessionUpdate): string {
   if (update.sessionUpdate !== 'agent_message_chunk' && update.sessionUpdate !== 'agent_thought_chunk') {
     return ''
   }
@@ -264,10 +262,7 @@ function peekChunkText(update: {
  * Real auto-wakes (workflow / task / notification drain) start with text or
  * a new `tool_call`.
  */
-function isAgentInitiatedWakeStarter(update: {
-  sessionUpdate?: string
-  content?: { type?: string; text?: string }
-}): boolean {
+function isAgentInitiatedWakeStarter(update: SessionUpdate): boolean {
   const kind = update.sessionUpdate
   if (kind === 'tool_call') return true
   if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {

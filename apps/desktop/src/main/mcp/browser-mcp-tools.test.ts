@@ -115,6 +115,7 @@ import { cdpClick, cdpHover } from '../browser/browser-cdp'
 import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
 import { resolveWebmcpCallConfirm } from './browser-webmcp-confirm'
+import { BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION } from './browser-webmcp-tool-defs'
 
 type Handler = (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text?: string }>; isError?: boolean }>
 
@@ -170,6 +171,19 @@ describe('browser tool registration under experimental gates', () => {
       expect(d.inputSchema).toMatchObject({ type: 'object' })
       expect(isBrowserToolName(d.name)).toBe(true)
     }
+  })
+
+  it('offers an optional human summary on browser_tools_call for the chat row', () => {
+    gates.webmcp = true
+    setBrowserToolSurfaceForTests('legacy')
+    const schema = getBrowserToolDescriptors()
+      .find(({ name }) => name === 'browser_tools_call')?.inputSchema as {
+        properties?: Record<string, { description?: string }>
+        required?: string[]
+      }
+    expect(schema.properties?.description?.description).toBe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION)
+    // Optional: a page tool call must never stall waiting for the model to narrate it.
+    expect(schema.required).toEqual(['name', 'input'])
   })
 
   it('does not advertise browser_tools_list when WebMCP is disabled', () => {

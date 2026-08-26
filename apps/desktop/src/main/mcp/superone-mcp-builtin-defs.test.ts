@@ -4,6 +4,7 @@ import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environm
 import { classifyHostActionTool } from '@superone/shared/environment/host-action-browser-catalog'
 import {
   BROWSER_TOOLS_CALL_DESCRIPTION,
+  BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION,
   BROWSER_TOOLS_LIST_DESCRIPTION,
 } from './browser-webmcp-tool-defs'
 import {
@@ -86,6 +87,10 @@ describe('built-in superone tool registration surfaces', () => {
     expect(list?.inputSchema.required).toBeUndefined()
     expect(call?.description).toBe(BROWSER_TOOLS_CALL_DESCRIPTION)
     expect(call?.inputSchema.required).toEqual(['name', 'input'])
+    // The chat row shows this summary instead of the page-author tool name, so a remote node
+    // that dropped the field would silently degrade the desktop UI it feeds.
+    const callProps = call?.inputSchema.properties as Record<string, { description?: string }>
+    expect(callProps.description?.description).toBe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION)
     expect(classifyHostActionTool('browser_tools_list')).toMatchObject({
       toolGroup: 'browser.read',
       replayPolicy: 'safe',

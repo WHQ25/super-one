@@ -1622,6 +1622,10 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         },
+        "description": {
+          "description": "A short, human-friendly explanation of what this page tool call accomplishes, phrased for the end user watching (e.g. 'Add the shirt to the cart', 'Submit the quote request'). Shown in the UI next to the tool name. Write it in the conversation's language.",
+          "type": "string"
+        },
         "name": {
           "type": "string",
           "description": "Tool name from browser_tools_list."

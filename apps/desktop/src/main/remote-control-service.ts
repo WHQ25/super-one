@@ -3,6 +3,7 @@ import { hostname } from 'node:os'
 import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
+import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 
@@ -329,7 +330,11 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         break
     }
     if (!summary && block.toolName.endsWith('__browser_tools_call')) {
-      summary = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : undefined
+      // The agent's own `description` reads like a sentence; the page-tool name is the fallback,
+      // humanized with the same helper the desktop row uses so both surfaces name one call alike.
+      const written = typeof p.description === 'string' ? p.description.trim() : ''
+      const named = typeof p.name === 'string' ? humanizePageToolName(p.name) : ''
+      summary = written || named || undefined
     }
     // The phone gets `input` blanked, so a tool whose whole human story lives in an
     // argument arrives with nothing to show. `device_*` asks the agent for a

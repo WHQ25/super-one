@@ -2245,6 +2245,10 @@ export type Messages = {
         listingPageTools: string
         toolsCall: string
         callingPageTool: string
+        pageToolsListed_one: string
+        pageToolsListed_other: string
+        pageToolsEmpty: string
+        pageToolArguments: string
         elements_one: string
         elements_other: string
         matches_one: string
@@ -5812,6 +5816,10 @@ export const en: Messages = {
         listingPageTools: 'Listing Page Tools',
         toolsCall: 'Call Page Tool',
         callingPageTool: 'Calling Page Tool',
+        pageToolsListed_one: 'Listed {{count}} Tool',
+        pageToolsListed_other: 'Listed {{count}} Tools',
+        pageToolsEmpty: 'No Page Tools',
+        pageToolArguments: 'Arguments',
         elements_one: '{{count}} element',
         elements_other: '{{count}} elements',
         matches_one: '{{count}} match',

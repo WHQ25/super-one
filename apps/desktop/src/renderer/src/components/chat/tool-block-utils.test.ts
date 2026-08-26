@@ -1,4 +1,5 @@
 import {
+  unwrapMcpResultText,
   tryPrettifyJson,
   parseQAPairs,
   countUnifiedDiffDelta,
@@ -261,5 +262,37 @@ describe('computeStreamingEditDelta', () => {
     const finalResult = computeLineDelta('Edit', { old_string: oldStr, new_string: newStr })
     expect(streamingResult).toEqual({ added: 2, removed: 2 })
     expect(finalResult).toEqual(streamingResult)
+  })
+})
+
+
+describe('unwrapMcpResultText', () => {
+  it('pulls the tool text out of the MCP reply envelope Claude reports', () => {
+    const envelope = JSON.stringify({
+      content: [{ text: { text: '{"origin":"https://shop.test","count":2}' } }],
+      isError: false,
+    })
+    expect(unwrapMcpResultText(envelope)).toBe('{"origin":"https://shop.test","count":2}')
+  })
+
+  it('also reads the flat {type,text} content shape', () => {
+    const envelope = JSON.stringify({ content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }] })
+    expect(unwrapMcpResultText(envelope)).toBe('first\nsecond')
+  })
+
+  it('leaves plain text and ordinary tool JSON untouched', () => {
+    expect(unwrapMcpResultText('just text')).toBe('just text')
+    expect(unwrapMcpResultText('{"ok":true}')).toBe('{"ok":true}')
+    expect(unwrapMcpResultText('not json {')).toBe('not json {')
+  })
+
+  it('does not mistake a tool result that has its own content array for an envelope', () => {
+    const real = JSON.stringify({ content: [{ text: 'hi' }], path: '/tmp/a.md' })
+    expect(unwrapMcpResultText(real)).toBe(real)
+  })
+
+  it('keeps the envelope when it carries no text parts to show', () => {
+    const imageOnly = JSON.stringify({ content: [{ image: { data: 'AAAA' } }], isError: false })
+    expect(unwrapMcpResultText(imageOnly)).toBe(imageOnly)
   })
 })

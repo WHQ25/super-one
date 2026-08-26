@@ -9,7 +9,7 @@ import { codePlugin, streamdownPlugins, streamdownRehypePlugins, streamdownContr
 import { tryPrettifyJson, parseQAPairs } from './tool-block-utils'
 import type { QuestionAnnotations, QuestionPreviewFormat, UserQuestion } from '@superone/shared/agent-types'
 
-function SectionLabel({ children }: { children: string }) {
+export function SectionLabel({ children }: { children: string }) {
   return <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground/70">{children}</div>
 }
 

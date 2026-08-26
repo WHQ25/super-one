@@ -33,6 +33,7 @@ import { awaitWebmcpCallConfirm } from './browser-webmcp-confirm'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import {
   BROWSER_TOOLS_CALL_DESCRIPTION,
+  BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION,
   BROWSER_TOOLS_LIST_DESCRIPTION,
 } from './browser-webmcp-tool-defs'
 import {
@@ -258,7 +259,7 @@ function persistWebMcpPreapproval(origin: string, toolName: string): Promise<voi
 
 async function executeWebMcpCall(
   sessionId: string,
-  args: { tab?: string; name: string; input: Record<string, unknown> },
+  args: { tab?: string; description?: string; name: string; input: Record<string, unknown> },
 ): Promise<ToolReply> {
   if (!isWebMcpEnabled()) {
     return textReply({ status: 'disabled', hint: 'WebMCP is disabled in Settings → Browser.' })
@@ -598,6 +599,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         description: BROWSER_TOOLS_CALL_DESCRIPTION,
         inputSchema: {
           ...tabField,
+          description: z.string().optional().describe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION),
           name: z.string().describe('Tool name from browser_tools_list.'),
           input: z
             .record(z.string(), z.unknown())

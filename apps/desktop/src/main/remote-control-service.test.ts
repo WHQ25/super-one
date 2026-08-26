@@ -190,13 +190,25 @@ describe('stripProjectPath', () => {
 
 describe('computeToolMeta', () => {
   describe('WebMCP browser tools', () => {
-    it('uses the called page-tool name as the mobile summary', () => {
+    it('humanizes the called page-tool name for the mobile summary', () => {
       const block = toolUseBlock('mcp__superone__browser_tools_call', {
         name: 'add-todo',
         input: { text: 'Buy milk' },
       })
 
-      expect(computeToolMeta(block).toolSummary).toBe('add-todo')
+      // Same helper the desktop row uses — the phone must not call it `add-todo` while the
+      // desktop calls it `Add Todo`.
+      expect(computeToolMeta(block).toolSummary).toBe('Add Todo')
+    })
+
+    it('prefers the agent-written description over the page-tool name', () => {
+      const block = toolUseBlock('mcp__superone__browser_tools_call', {
+        name: 'add-todo',
+        description: 'Add “Buy milk” to the page todo list',
+        input: { text: 'Buy milk' },
+      })
+
+      expect(computeToolMeta(block).toolSummary).toBe('Add “Buy milk” to the page todo list')
     })
 
     it('leaves the discovery summary empty', () => {
@@ -568,7 +580,7 @@ describe('stripMessagesForRemote', () => {
 
     const [result] = stripMessagesForRemote([msg])
 
-    expect(result.content[0]).toMatchObject({ input: '', toolSummary: 'add-todo' })
+    expect(result.content[0]).toMatchObject({ input: '', toolSummary: 'Add Todo' })
   })
 
   it('should convert Bash tool_result to bash_result with command prefix', () => {

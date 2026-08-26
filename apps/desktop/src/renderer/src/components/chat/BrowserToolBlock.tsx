@@ -13,6 +13,7 @@ import { useChatStore } from '@/stores/chat-store'
 import { ToolScreenshotView } from './ToolScreenshotView'
 import { ToolName } from './tool-row'
 import { ActionRecordingView, parseActionRecording } from './ActionRecordingView'
+import { BrowserPageToolCallBlock, BrowserPageToolsListBlock } from './BrowserPageToolsBlock'
 
 interface BrowserToolBlockProps {
   op: BrowserOp
@@ -34,6 +35,22 @@ function formatBytes(n: number): string {
 }
 
 export function BrowserToolBlock({ op, params, result, isStreaming, isError, isDenied, elapsedSeconds, stallLevel, allowExpand = true }: BrowserToolBlockProps) {
+  if (op === 'tools_list' || op === 'tools_call') {
+    const Block = op === 'tools_list' ? BrowserPageToolsListBlock : BrowserPageToolCallBlock
+    return (
+      <Block
+        params={params}
+        result={result}
+        isStreaming={isStreaming}
+        isError={isError}
+        isDenied={isDenied}
+        elapsedSeconds={elapsedSeconds}
+        stallLevel={stallLevel}
+        allowExpand={allowExpand}
+      />
+    )
+  }
+
   if (op === 'download') {
     return (
       <BrowserDownloadBlock

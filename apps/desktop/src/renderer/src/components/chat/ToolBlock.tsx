@@ -31,7 +31,7 @@ import { getBrowserOp } from './browser-tool-display'
 import { getComputerOp } from './computer-tool-display'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
-import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, computeStreamingEditDelta, tryPrettifyJson, extractToolError } from './tool-block-utils'
+import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, computeStreamingEditDelta, tryPrettifyJson, extractToolError, unwrapMcpResultText } from './tool-block-utils'
 import { WidgetBlock } from './WidgetBlock'
 import { useNestedToolDefaults } from './nested-tool-context'
 import { CanvasEditDiff } from './CanvasEditDiff'
@@ -920,7 +920,13 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
   const miniApps = useMiniAppStore((s) => s.apps)
 
   const isDenied = !!result && result.startsWith('[denied] ')
-  const cleanResult = isDenied ? result.slice('[denied] '.length) : result
+  const rawResult = isDenied ? result.slice('[denied] '.length) : result
+  // MCP tools report their outcome as a serialized reply envelope; native tools report plain text.
+  // Unwrap here so every downstream block parses one shape.
+  const cleanResult = useMemo(
+    () => (isMcp && rawResult ? unwrapMcpResultText(rawResult) : rawResult),
+    [isMcp, rawResult],
+  )
   const artifactLink = useMemo(
     () => (toolName === 'Artifact' ? resolveArtifactLink(params, isDenied ? null : cleanResult) : null),
     [toolName, params, isDenied, cleanResult],

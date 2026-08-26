@@ -158,3 +158,35 @@ export function parseQAPairs(text: string): Array<{ question: string; answer: st
   }
   return pairs
 }
+
+/** Keys the MCP reply envelope is allowed to carry — anything else means it is real tool JSON. */
+const MCP_ENVELOPE_KEYS = new Set(['content', 'isError', 'structuredContent', '_meta'])
+
+/**
+ * Claude reports an MCP tool's outcome as the serialized MCP reply envelope
+ * (`{"content":[{"text":{"text":"…"}}],"isError":false}`), while native tools report the plain
+ * text they returned. Every block that parses a result — counts, origins, pretty-printed output —
+ * would otherwise inspect the wrapper and silently find nothing, so unwrap once at the ToolBlock
+ * boundary. The key allowlist keeps a tool that genuinely returns `{content:[…]}` from being
+ * mistaken for an envelope, and anything unrecognized passes through untouched.
+ */
+export function unwrapMcpResultText(result: string): string {
+  if (!result.trimStart().startsWith('{')) return result
+  let data: unknown
+  try { data = JSON.parse(result) } catch { return result }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return result
+  const envelope = data as Record<string, unknown>
+  if (!Array.isArray(envelope.content)) return result
+  if (Object.keys(envelope).some((key) => !MCP_ENVELOPE_KEYS.has(key))) return result
+
+  const parts: string[] = []
+  for (const item of envelope.content) {
+    if (!item || typeof item !== 'object') continue
+    const text = (item as { text?: unknown }).text
+    if (typeof text === 'string') parts.push(text)
+    else if (text && typeof text === 'object' && typeof (text as { text?: unknown }).text === 'string') {
+      parts.push((text as { text: string }).text)
+    }
+  }
+  return parts.length > 0 ? parts.join('\n') : result
+}

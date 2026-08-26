@@ -65,13 +65,17 @@ describe('superone host-owned tool auto-approve matrix', () => {
   })
 
   it('gates WebMCP auto-allow while continuing to recognize its bare name', () => {
-    expect(isHostOwnedSuperoneBareName('browser_tools_list')).toBe(true)
-    expect(isBuiltInSuperoneToolQualified('mcp__superone__browser_tools_list')).toBe(false)
-    expect(listOpenCodeAutoAllowSuperoneBareNames()).not.toContain('browser_tools_list')
+    for (const name of ['browser_tools_list', 'browser_tools_call']) {
+      expect(isHostOwnedSuperoneBareName(name)).toBe(true)
+      expect(isBuiltInSuperoneToolQualified(`mcp__superone__${name}`)).toBe(false)
+      expect(listOpenCodeAutoAllowSuperoneBareNames()).not.toContain(name)
+    }
 
     gates.webmcp = true
-    expect(isBuiltInSuperoneToolQualified('mcp__superone__browser_tools_list')).toBe(true)
-    expect(listOpenCodeAutoAllowSuperoneBareNames()).toContain('browser_tools_list')
+    for (const name of ['browser_tools_list', 'browser_tools_call']) {
+      expect(isBuiltInSuperoneToolQualified(`mcp__superone__${name}`)).toBe(true)
+      expect(listOpenCodeAutoAllowSuperoneBareNames()).toContain(name)
+    }
   })
 
   it('does not treat mini-app or third-party bare names as host-owned', () => {

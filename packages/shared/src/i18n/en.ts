@@ -2236,6 +2236,10 @@ export type Messages = {
         savingAction: string
         actionDo: string
         doingAction: string
+        toolsList: string
+        listingPageTools: string
+        toolsCall: string
+        callingPageTool: string
         elements_one: string
         elements_other: string
         matches_one: string
@@ -5794,6 +5798,10 @@ export const en: Messages = {
         savingAction: 'Saving Browser Action',
         actionDo: 'Run Browser Action',
         doingAction: 'Running Browser Action',
+        toolsList: 'List Page Tools',
+        listingPageTools: 'Listing Page Tools',
+        toolsCall: 'Call Page Tool',
+        callingPageTool: 'Calling Page Tool',
         elements_one: '{{count}} element',
         elements_other: '{{count}} elements',
         matches_one: '{{count}} match',

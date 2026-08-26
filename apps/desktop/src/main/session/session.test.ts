@@ -30,6 +30,13 @@ vi.mock('../mcp/miniapp-call-confirm', () => ({
   rejectMiniappCallConfirm: () => false,
 }))
 
+const resolveWebmcpCallConfirmMock = vi.fn(() => false)
+const rejectWebmcpCallConfirmMock = vi.fn(() => false)
+vi.mock('../mcp/browser-webmcp-confirm', () => ({
+  resolveWebmcpCallConfirm: (...args: unknown[]) => resolveWebmcpCallConfirmMock(...args),
+  rejectWebmcpCallConfirm: (...args: unknown[]) => rejectWebmcpCallConfirmMock(...args),
+}))
+
 vi.mock('./session-collaboration-confirm', () => ({
   resolveSessionAgentsConfirm: () => false,
   rejectSessionAgentsConfirm: () => false,
@@ -238,6 +245,8 @@ describe('Session.respondToPermission host confirms', () => {
     rejectConfigConfirmMock.mockReset().mockReturnValue(false)
     resolveVideoConfirmMock.mockReset().mockReturnValue(false)
     rejectVideoConfirmMock.mockReset().mockReturnValue(false)
+    resolveWebmcpCallConfirmMock.mockReset().mockReturnValue(false)
+    rejectWebmcpCallConfirmMock.mockReset().mockReturnValue(false)
   })
 
   it('resolves config_confirm before backends so OpenCode/ACP unblocks config_apply', () => {
@@ -260,6 +269,40 @@ describe('Session.respondToPermission host confirms', () => {
 
     expect(handled).toBe(true)
     expect(rejectConfigConfirmMock).toHaveBeenCalledWith('configconfirm_2', 'User cancelled')
+    expect(backend.respondToPermissionCalls).toHaveLength(0)
+  })
+
+  it('resolves WebMCP confirm with alwaysAllow before reaching the backend', () => {
+    const { session, backend } = makeSession({ harnessId: 'opencode' as never })
+    resolveWebmcpCallConfirmMock.mockReturnValue(true)
+
+    const handled = session.respondToPermission('webmcpcall_1', true, true, 'approved')
+
+    expect(handled).toBe(true)
+    expect(resolveWebmcpCallConfirmMock).toHaveBeenCalledWith(
+      'webmcpcall_1',
+      'accept',
+      true,
+      'approved',
+    )
+    expect(backend.respondToPermissionCalls).toHaveLength(0)
+  })
+
+  it('rejects WebMCP confirm on cancel without reaching the backend', () => {
+    const { session, backend } = makeSession()
+    rejectWebmcpCallConfirmMock.mockReturnValue(true)
+
+    const handled = session.respondToPermission(
+      'webmcpcall_2',
+      false,
+      undefined,
+      'closed prompt',
+      undefined,
+      'cancel',
+    )
+
+    expect(handled).toBe(true)
+    expect(rejectWebmcpCallConfirmMock).toHaveBeenCalledWith('webmcpcall_2', 'closed prompt')
     expect(backend.respondToPermissionCalls).toHaveLength(0)
   })
 

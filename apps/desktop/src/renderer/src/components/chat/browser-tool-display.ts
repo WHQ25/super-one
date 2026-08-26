@@ -29,19 +29,22 @@ export type BrowserOp =
   | 'action_list'
   | 'action_save'
   | 'action_do'
+  | 'tools_list'
+  | 'tools_call'
 
 const BROWSER_OPS = new Set<BrowserOp>([
   'snapshot', 'query', 'inspect', 'screenshot', 'click', 'hover', 'type', 'navigate',
   'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs', 'resize',
   'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file',
   'download', 'list_downloads', 'emulate', 'mock', 'action_list', 'action_save', 'action_do',
+  'tools_list', 'tools_call',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
-const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list'])
+const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list', 'tools_list'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
-const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do'])
+const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do', 'tools_call'])
 
 const NETWORK_ACTION_OP: Record<string, BrowserOp> = {
   start: 'network_start',
@@ -136,6 +139,8 @@ const VERB_BASE: Record<BrowserOp, string> = {
   action_list: 'actionList',
   action_save: 'actionSave',
   action_do: 'actionDo',
+  tools_list: 'toolsList',
+  tools_call: 'toolsCall',
 }
 
 const VERB_STREAMING: Record<BrowserOp, string> = {
@@ -169,6 +174,8 @@ const VERB_STREAMING: Record<BrowserOp, string> = {
   action_list: 'listingActions',
   action_save: 'savingAction',
   action_do: 'doingAction',
+  tools_list: 'listingPageTools',
+  tools_call: 'callingPageTool',
 }
 
 /** i18n key suffix (under chat.toolBlock.browser) for the op's verb label. */
@@ -311,6 +318,10 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
     case 'action_save':
     case 'action_do':
       return [s(p.domain), s(p.name)].filter(Boolean).join('/')
+    case 'tools_list':
+      return ''
+    case 'tools_call':
+      return s(p.name)
   }
 }
 
@@ -327,7 +338,7 @@ export interface BrowserDownloadInfo {
 }
 
 export interface BrowserResultInfo {
-  status: 'ok' | 'error' | 'neutral'
+  status: 'ok' | 'error' | 'denied' | 'neutral'
   errorText?: string
   count?: { kind: 'elements' | 'matches' | 'tabs' | 'requests' | 'cookies' | 'downloads' | 'actions'; n: number }
   notFound?: boolean
@@ -386,6 +397,12 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
 
   if (obj && obj.ok === false) {
     return { status: 'error', errorText: obj.error != null ? String(obj.error) : undefined }
+  }
+  if (obj?.status === 'denied' || obj?.status === 'cancelled') {
+    return {
+      status: 'denied',
+      errorText: typeof obj.reason === 'string' ? obj.reason : undefined,
+    }
   }
 
   switch (op) {

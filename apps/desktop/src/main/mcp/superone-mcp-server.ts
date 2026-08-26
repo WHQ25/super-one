@@ -19,7 +19,11 @@ import {
   MOBILE_SHARE_FILE_INPUT_SCHEMA,
 } from './superone-mcp-builtin-defs'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
-import { clearBrowserToolHandlers, registerBrowserTools } from './browser-mcp-tools'
+import {
+  clearBrowserToolHandlers,
+  registerBrowserTools,
+  setBrowserWebMcpHostEventResolver,
+} from './browser-mcp-tools'
 import { registerComputerUseTools } from '../computer-use/tools'
 import {
   executeDeviceAgentTool,
@@ -220,6 +224,11 @@ let sessionHostProvider: (() => SessionTitleHost | null) | null = null
 
 export function setSessionHostProvider(provider: (() => SessionTitleHost | null) | null): void {
   sessionHostProvider = provider
+  setBrowserWebMcpHostEventResolver((sessionId) => {
+    const session = sessionHostProvider?.()?.getSession(sessionId)
+    if (!session?.emitHostEvent) return null
+    return (event) => session.emitHostEvent!(event)
+  })
   // device_request_control prompts the user from inside its executor, which lives a
   // layer below this one. Handing it the resolver here — rather than letting it
   // import getSessionHost — keeps that dependency pointing one way.

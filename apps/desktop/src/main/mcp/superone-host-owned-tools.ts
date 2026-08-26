@@ -37,6 +37,7 @@ export {
 
 /** Deprecated alias still registered on the MCP server for one release. */
 const COMPUTER_USE_REGISTERED_ALIASES = ['computer_observe'] as const
+const WEBMCP_TOOL_NAMES = new Set(['browser_tools_list', 'browser_tools_call'])
 
 /**
  * Whether a bare tool name (no mcp__superone__ prefix) is SuperOne host-owned.
@@ -63,7 +64,7 @@ export function toQualifiedSuperoneToolName(bare: string): string {
 export function isBuiltInSuperoneToolQualified(qualifiedName: string): boolean {
   if (!qualifiedName.startsWith(MCP_SUPERONE_TOOL_PREFIX)) return false
   const bare = qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length)
-  if (bare === 'browser_tools_list') return isWebMcpEnabled()
+  if (WEBMCP_TOOL_NAMES.has(bare)) return isWebMcpEnabled()
   if (isStaticHostOwnedSuperoneBareName(bare)) return true
   if (isComputerUseEnabled() && normalizeComputerUseToolName(bare) != null) return true
   return false
@@ -76,7 +77,9 @@ export function isBuiltInSuperoneToolQualified(qualifiedName: string): boolean {
  */
 export function listOpenCodeAutoAllowSuperoneBareNames(): string[] {
   const names: string[] = [
-    ...BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name !== 'browser_tools_list' || isWebMcpEnabled()),
+    ...BUILT_IN_SUPERONE_TOOL_NAMES.filter(
+      (name) => !WEBMCP_TOOL_NAMES.has(name) || isWebMcpEnabled(),
+    ),
     MOBILE_SHARE_FILE_TOOL_NAME,
     MINIAPP_LIST_BARE_NAME,
     MINIAPP_CALL_BARE_NAME,

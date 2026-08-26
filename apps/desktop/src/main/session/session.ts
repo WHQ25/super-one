@@ -37,6 +37,7 @@ import { renameSession as dbRenameSession } from '../db-sessions'
 import { updateAcpAgentId as dbUpdateAcpAgentId } from './session-repo'
 import { rejectSessionAgentsConfirm, resolveSessionAgentsConfirm } from './session-collaboration-confirm'
 import { resolveMiniappCallConfirm, rejectMiniappCallConfirm } from '../mcp/miniapp-call-confirm'
+import { resolveWebmcpCallConfirm, rejectWebmcpCallConfirm } from '../mcp/browser-webmcp-confirm'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mcp/session-archive-tools'
@@ -935,12 +936,13 @@ export class Session implements SessionContract {
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
-    // Host-owned confirms (config / video / miniapp / collab) must resolve here
+    // Host-owned confirms (config / video / miniapp / WebMCP / collab) must resolve here
     // *before* backends so every harness unblocks the waiting tool executor.
     // Claude/Codex backends also call these for history; second resolve is a no-op.
     if (decision === 'cancel') {
       if (rejectSessionAgentsConfirm(requestId, 'User cancelled')) return true
       if (rejectMiniappCallConfirm(requestId, reason ?? 'User cancelled')) return true
+      if (rejectWebmcpCallConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectConfigConfirm(requestId, 'User cancelled')) return true
       if (rejectVideoConfirm(requestId, 'User cancelled')) return true
       if (rejectSessionCleanupConfirm(requestId, reason ?? 'User cancelled')) return true
@@ -949,6 +951,13 @@ export class Session implements SessionContract {
     } else if (resolveSessionAgentsConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveMiniappCallConfirm(
+      requestId,
+      allow ? 'accept' : 'decline',
+      alwaysAllow === true,
+      reason,
+    )) {
+      return true
+    } else if (resolveWebmcpCallConfirm(
       requestId,
       allow ? 'accept' : 'decline',
       alwaysAllow === true,

@@ -57,7 +57,8 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
   const info = useMemo(() => parseBrowserResult(op, result, !!isError), [op, result, isError])
   const recording = useMemo(() => parseActionRecording(result), [result])
 
-  const failed = info.status === 'error' || !!isDenied
+  const denied = !!isDenied || info.status === 'denied'
+  const failed = info.status === 'error' || denied
   const hasScreenshot = op === 'screenshot' && !!info.imagePath && !isStreaming && !failed
 
   const countLabel = info.count
@@ -67,7 +68,7 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
       : ''
 
   const primary = failed
-    ? (isDenied ? (description || inputSummary) : (info.errorText || description || inputSummary))
+    ? (denied ? (description || inputSummary) : (info.errorText || description || inputSummary))
     : (description || inputSummary)
   const middle = primary || countLabel
   const rightCount = !failed && primary && countLabel ? countLabel : ''
@@ -76,22 +77,22 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
   const isMockDetail = op === 'mock' && params.clear !== true && !failed
   const expandable = allowExpand
     && !isStreaming
-    && (isMockDetail || (!!result && (isReadBrowserOp(op) || info.status === 'error' || hasScreenshot || !!recording)))
+    && (isMockDetail || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording)))
 
   return (
     <div
       className={cn(
         'tool-node my-0.5 rounded transition-colors',
-        isDenied ? 'denied bg-error/10' : failed ? 'errored bg-warning/10' : 'bg-muted/20',
+        denied ? 'denied bg-error/10' : failed ? 'errored bg-warning/10' : 'bg-muted/20',
         expandable && 'cursor-pointer',
-        expandable && (isDenied ? 'hover:bg-error/20' : failed ? 'hover:bg-warning/20' : 'hover:bg-muted/40'),
+        expandable && (denied ? 'hover:bg-error/20' : failed ? 'hover:bg-warning/20' : 'hover:bg-muted/40'),
       )}
     >
       <div
         className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
-        {isDenied ? (
+        {denied ? (
           <Ban className="size-3 shrink-0 text-error" />
         ) : failed ? (
           <TriangleAlert className="size-3 shrink-0 text-warning" />
@@ -99,8 +100,8 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
           <ToolIcon icon="globe" className="size-3 shrink-0 text-muted-foreground" />
         )}
         <ToolName
-          streaming={isStreaming && !isDenied}
-          tone={isDenied ? 'denied' : failed ? 'error' : 'default'}
+          streaming={isStreaming && !denied}
+          tone={denied ? 'denied' : failed ? 'error' : 'default'}
         >
           {isStreaming ? <>{verb}…</> : verb}
         </ToolName>
@@ -119,10 +120,10 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
           {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
             <span className={cn('transition-colors duration-500', getStallColor(stallLevel))}>{Math.round(elapsedSeconds)}s</span>
           )}
-          {!isStreaming && isDenied && (
+          {!isStreaming && denied && (
             <span className="rounded bg-error/20 px-1 py-px text-xs text-error">{t('chat.toolBlock.denied')}</span>
           )}
-          {!isStreaming && !isDenied && info.status === 'error' && (
+          {!isStreaming && !denied && info.status === 'error' && (
             <span className="rounded bg-warning/20 px-1 py-px text-xs text-warning">{t('chat.toolBlock.error')}</span>
           )}
           {expandable && (

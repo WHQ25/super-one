@@ -9,6 +9,10 @@ import { browserErrorReply, browserTextReply, type BrowserToolReply } from './br
 import { browserActionSchema } from '../browser/browser-actions'
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { persistActionRecording } from '../agent/action-recording-store'
+import {
+  BROWSER_TOOLS_CALL_DESCRIPTION,
+  BROWSER_TOOLS_LIST_DESCRIPTION,
+} from './browser-webmcp-tool-defs'
 
 const tabField = {
   tab: z
@@ -193,10 +197,25 @@ export function registerCompactBrowserTools(
     server.registerTool(
       'browser_tools_list',
       {
-        description: 'List WebMCP tools registered by the current secure page. Use this to discover page-provided actions; this phase lists metadata only and cannot call them.',
+        description: BROWSER_TOOLS_LIST_DESCRIPTION,
         inputSchema: { ...tabField },
       },
       (args) => runPrimitive('browser_tools_list', args),
+    )
+    server.registerTool(
+      'browser_tools_call',
+      {
+        description: BROWSER_TOOLS_CALL_DESCRIPTION,
+        inputSchema: {
+          ...tabField,
+          name: z.string().describe('Tool name from browser_tools_list.'),
+          input: z
+            .record(z.string(), z.unknown())
+            .default({})
+            .describe('Arguments; validated against the page-declared inputSchema at dispatch time.'),
+        },
+      },
+      (args) => runPrimitive('browser_tools_call', args),
     )
   }
 

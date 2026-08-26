@@ -60,13 +60,15 @@ describe('browser tool surface', () => {
     expect(resolveBrowserToolSurface('sess-a')).toBe('legacy')
   })
 
-  it('includes browser_tools_list in both browser surfaces', () => {
-    expect(advertisedBrowserToolNames('compact')).toHaveLength(10)
-    expect(advertisedBrowserToolNames('legacy')).toHaveLength(32)
+  it('includes both WebMCP tools in both browser surfaces', () => {
+    expect(advertisedBrowserToolNames('compact')).toHaveLength(11)
+    expect(advertisedBrowserToolNames('legacy')).toHaveLength(33)
     expect(advertisedBrowserToolNames('compact')).toContain('browser_act')
     expect(advertisedBrowserToolNames('compact')).toContain('browser_tools_list')
+    expect(advertisedBrowserToolNames('compact')).toContain('browser_tools_call')
     expect(advertisedBrowserToolNames('legacy')).toContain('browser_click')
     expect(advertisedBrowserToolNames('legacy')).toContain('browser_tools_list')
+    expect(advertisedBrowserToolNames('legacy')).toContain('browser_tools_call')
     expect(advertisedBrowserToolNames('legacy')).not.toContain('browser_act')
   })
 })

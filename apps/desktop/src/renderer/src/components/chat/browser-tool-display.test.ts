@@ -5,6 +5,8 @@ describe('getBrowserOp', () => {
   it('strips the browser_ prefix for known ops', () => {
     expect(getBrowserOp('browser_click')).toBe('click')
     expect(getBrowserOp('browser_wait_for')).toBe('wait_for')
+    expect(getBrowserOp('browser_tools_list')).toBe('tools_list')
+    expect(getBrowserOp('browser_tools_call')).toBe('tools_call')
   })
 
   it('recognizes the CDP-only ops', () => {
@@ -54,6 +56,8 @@ describe('browserVerbKey', () => {
     expect(browserVerbKey('action_list')).toBe('actionList')
     expect(browserVerbKey('action_save')).toBe('actionSave')
     expect(browserVerbKey('action_do')).toBe('actionDo')
+    expect(browserVerbKey('tools_list')).toBe('toolsList')
+    expect(browserVerbKey('tools_call')).toBe('toolsCall')
   })
 
   it('returns progressive keys when streaming', () => {
@@ -66,6 +70,8 @@ describe('browserVerbKey', () => {
     expect(browserVerbKey('action_list', true)).toBe('listingActions')
     expect(browserVerbKey('action_save', true)).toBe('savingAction')
     expect(browserVerbKey('action_do', true)).toBe('doingAction')
+    expect(browserVerbKey('tools_list', true)).toBe('listingPageTools')
+    expect(browserVerbKey('tools_call', true)).toBe('callingPageTool')
   })
 })
 
@@ -79,8 +85,27 @@ describe('isReadBrowserOp', () => {
     expect(isReadBrowserOp('click')).toBe(false)
     expect(isReadBrowserOp('emulate')).toBe(false)
     expect(isReadBrowserOp('action_list')).toBe(true)
+    expect(isReadBrowserOp('tools_list')).toBe(true)
+    expect(isReadBrowserOp('tools_call')).toBe(false)
     expect(isReadBrowserOp('action_save')).toBe(false)
     expect(isReadBrowserOp('action_do')).toBe(false)
+  })
+})
+
+describe('WebMCP display', () => {
+  it('summarizes a page-tool call by its page-declared name', () => {
+    expect(browserInputSummary('tools_list', {})).toBe('')
+    expect(browserInputSummary('tools_call', { name: 'add-todo' })).toBe('add-todo')
+  })
+
+  it('treats neutral permission outcomes as denied UI state', () => {
+    expect(parseBrowserResult('tools_call', JSON.stringify({
+      status: 'denied',
+      reason: 'No',
+    }), false)).toEqual({ status: 'denied', errorText: 'No' })
+    expect(parseBrowserResult('tools_call', JSON.stringify({
+      status: 'cancelled',
+    }), false)).toEqual({ status: 'denied', errorText: undefined })
   })
 })
 

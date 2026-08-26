@@ -30,11 +30,14 @@ function initialize(): void {
         let inputSchema: string
         let truncated = false
         try {
-          const serialized = JSON.stringify(tool.inputSchema)
+          const serialized = typeof tool.inputSchema === 'string'
+            ? tool.inputSchema
+            : JSON.stringify(tool.inputSchema)
           if (typeof serialized !== 'string' || encoder.encode(serialized).byteLength > MAX_SCHEMA_BYTES) {
             inputSchema = FALLBACK_SCHEMA
             truncated = true
           } else {
+            JSON.parse(serialized)
             inputSchema = serialized
           }
         } catch {

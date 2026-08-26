@@ -160,22 +160,36 @@ describe('browser tool registration under experimental gates', () => {
     vi.mocked(resolveBrowserWebContentsId).mockResolvedValueOnce(7)
     webMcpMocks.getWebMcpTools.mockReturnValueOnce({
       origin: 'https://example.com',
-      tools: [{
-        name: 'add-todo',
-        description: 'Add a todo item.',
-        inputSchema: '{"type":"object"}',
-        truncated: true,
-      }],
+      tools: [
+        {
+          name: 'add-todo',
+          description: 'Add a todo item.',
+          inputSchema: '{"type":"object"}',
+          truncated: true,
+        },
+        {
+          name: 'invalid-schema',
+          description: 'Has a malformed schema.',
+          inputSchema: 'not-json',
+        },
+      ],
     })
     const reply = await buildTools().get('browser_tools_list')!({ tab: 'tab-1' })
     expect(JSON.parse(resultText(reply))).toEqual({
       origin: 'https://example.com',
-      count: 1,
-      tools: [{
-        name: 'add-todo',
-        description: 'Add a todo item.',
-        inputSchema: '{"type":"object"}',
-      }],
+      count: 2,
+      tools: [
+        {
+          name: 'add-todo',
+          description: 'Add a todo item.',
+          inputSchema: { type: 'object' },
+        },
+        {
+          name: 'invalid-schema',
+          description: 'Has a malformed schema.',
+          inputSchema: 'not-json',
+        },
+      ],
     })
     expect(resolveBrowserWebContentsId).toHaveBeenCalledWith('sess-1', 'tab-1')
   })

@@ -149,6 +149,14 @@ function assertExperimental(enabled: boolean, setting: string): void {
   if (!enabled) throw new Error(`The '${setting}' experimental browser tool is disabled. Enable it in Settings → Browser → Experimental Tools.`)
 }
 
+function parseWebMcpInputSchema(inputSchema: string): unknown {
+  try {
+    return JSON.parse(inputSchema)
+  } catch {
+    return inputSchema
+  }
+}
+
 const tabField = {
   tab: z
     .string()
@@ -367,7 +375,11 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
           return textReply({
             origin: entry.origin,
             count: entry.tools.length,
-            tools: entry.tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+            tools: entry.tools.map(({ name, description, inputSchema }) => ({
+              name,
+              description,
+              inputSchema: parseWebMcpInputSchema(inputSchema),
+            })),
           })
         } catch (err) {
           return errorReply(err)

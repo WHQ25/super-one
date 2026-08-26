@@ -34,7 +34,7 @@ export interface VideoGenerationState {
  * survivable: `readVideoGeneration` can pick any submitted job back up whenever it is next asked.
  */
 export async function submitVideoGeneration(params: SubmitVideoParams): Promise<string> {
-  const provider = await resolveVideoProvider(params.providerId)
+  const provider = await resolveVideoProvider(params.providerId, params.model)
   const generationId = randomUUID()
   const { taskId, warnings } = await submitVideoTask({ ...params, provider, model: params.model })
 
@@ -111,7 +111,7 @@ export async function readVideoGeneration(generationId: string): Promise<VideoGe
     return settle(generationId, { status: 'failed', error: 'Generation was recorded without a provider task id.' })
   }
 
-  const provider = await resolveVideoProvider(row.providerId)
+  const provider = await resolveVideoProvider(row.providerId, row.model)
   const task = await fetchVideoTask(provider, row.model, row.upstreamTaskId)
 
   if (task.status === 'succeeded') {

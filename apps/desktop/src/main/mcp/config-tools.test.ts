@@ -144,7 +144,12 @@ describe('config_apply — ai-provider / custom-platform resources (global, not 
 
     const result = parseResult(await handlerPromise)
     expect(result.status).toBe('applied')
-    const savedOverrides = JSON.parse(runMock.mock.calls.at(-1)![3] as string) as Record<string, Record<string, unknown>>
+    // Positional, so adding a column shifts it — find the overrides payload by shape instead.
+    const savedOverrides = JSON.parse(
+      (runMock.mock.calls.at(-1)! as unknown[]).find(
+        (a): a is string => typeof a === 'string' && a.includes('"modelMapping"'),
+      )!,
+    ) as Record<string, Record<string, unknown>>
     expect(savedOverrides.anthropic.modelMapping).toEqual({ opus: { id: 'glm-4.5' }, sonnet: { id: 'glm-4.6' } })
     expect(savedOverrides.anthropic.extraEnv).toEqual({ KEEP_ME: '1' })
   })
@@ -154,7 +159,7 @@ describe('config_apply — ai-provider / custom-platform resources (global, not 
     const values = {
       name: 'My Relay',
       baseUrl: 'https://relay.example.com',
-      capabilities: { families: ['openai'], tasks: { openai: ['chat', 'image'] } },
+      capabilities: { protocols: ['openai-chat', 'openai-images'] },
     }
 
     const emitHostEvent = vi.fn()
@@ -170,10 +175,11 @@ describe('config_apply — ai-provider / custom-platform resources (global, not 
 
     const result = parseResult(await handlerPromise)
     expect(result.status).toBe('applied')
-    const record = result.record as { id: string; plans: Array<{ endpoints: Array<{ baseUrl: string; protocols: string[] }> }> }
+    const record = result.record as { id: string; plans: Array<{ baseUrl: string; endpoints: Array<{ protocols: string[] }> }> }
     expect(record.id.startsWith('custom:')).toBe(true)
+    // The base URL is the plan's; the endpoint says only which wires it speaks.
+    expect(record.plans[0].baseUrl).toBe('https://relay.example.com')
     expect(record.plans[0].endpoints).toHaveLength(1)
-    expect(record.plans[0].endpoints[0].baseUrl).toBe('https://relay.example.com/v1')
     expect(record.plans[0].endpoints[0].protocols).toEqual(['openai-chat', 'openai-images'])
   })
 

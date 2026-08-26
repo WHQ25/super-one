@@ -5,9 +5,10 @@ import type {
   ConfigConfirmPayload,
 } from "@superone/shared/agent-types";
 import {
-  customPlatformEndpoints,
+  customEndpointsFor,
   type Credential,
   type Platform,
+  type ServiceEndpoint,
 } from "@superone/shared/platform-registry";
 import { mockIpc } from "../../../../../.storybook/mock-ipc";
 import { ConfigConfirmPrompt } from "./ConfigConfirmPrompt";
@@ -22,10 +23,8 @@ const RELAY: Platform = {
       id: "api",
       name: "API",
       auth: "api-key",
-      endpoints: customPlatformEndpoints(
-        { openai: ["chat", "image"] },
-        "https://relay.example.com",
-      ).map((endpoint) => ({
+      baseUrl: "https://relay.example.com",
+      endpoints: customEndpointsFor(["openai-chat", "openai-images"]).map((endpoint: ServiceEndpoint) => ({
         ...endpoint,
         defaults: {
           extraEnv: { ANTHROPIC_API_TIMEOUT_MS: "60000", KEEP_ME: "1" },

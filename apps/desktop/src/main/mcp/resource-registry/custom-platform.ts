@@ -3,17 +3,13 @@ import type { ProviderModelEnv } from '@superone/shared/agent-types'
 import {
   applyCapabilitiesToPlan,
   capabilityEndpoints,
-  CAPABILITY_ORDER,
-  FAMILY_EXTRA_PROTOCOLS,
-  FAMILY_TASKS,
   planCapabilities,
-  PROTOCOL_FAMILIES,
-  type CapabilityTask,
+  PROTOCOL_TASKS,
+  WIRE_PROTOCOLS,
   type EndpointDefaults,
   type Plan,
   type PlanCapabilities,
   type Platform,
-  type ProtocolFamily,
   type ServiceEndpoint,
   type WireProtocol,
 } from '@superone/shared/platform-registry'
@@ -65,47 +61,22 @@ function withExtraEnv(endpoints: ServiceEndpoint[], patch: Record<string, unknow
   return endpoints.map((e) => withDefaults(e, { ...e.defaults, extraEnv: mergeMap<string>(e.defaults?.extraEnv, patch) }))
 }
 
+/**
+ * Parse the `capabilities` field into a protocol list.
+ *
+ * Accepts a bare array as well as `{ protocols: [...] }` — the field carries exactly one list now, so
+ * the wrapper object is ceremony an agent should not have to guess at.
+ */
 function coerceCapabilities(raw: unknown): PlanCapabilities {
-  const obj = asRecord(raw, 'capabilities')
-  const families = asArray(obj.families ?? [], 'capabilities.families').map((f) => {
-    if (typeof f !== 'string' || !PROTOCOL_FAMILIES.includes(f as ProtocolFamily)) {
-      throw new Error(`unknown format "${String(f)}" — expected one of: ${PROTOCOL_FAMILIES.join(', ')}`)
+  const list = Array.isArray(raw) ? raw : asRecord(raw, 'capabilities').protocols
+  const protocols = asArray(list ?? [], 'capabilities.protocols').map((p) => {
+    if (typeof p !== 'string' || !WIRE_PROTOCOLS.includes(p as WireProtocol)) {
+      throw new Error(`unknown wire protocol "${String(p)}" — expected one of: ${WIRE_PROTOCOLS.join(', ')}`)
     }
-    return f as ProtocolFamily
+    return p as WireProtocol
   })
-  if (families.length === 0) throw new Error('`capabilities.families` must list at least one format')
-
-  const tasks: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
-  const rawTasks = obj.tasks === undefined ? {} : asRecord(obj.tasks, 'capabilities.tasks')
-  for (const family of families) {
-    const picked = asArray(rawTasks[family] ?? FAMILY_TASKS[family], `capabilities.tasks.${family}`).map((t) => {
-      if (typeof t !== 'string' || !CAPABILITY_ORDER.includes(t as CapabilityTask)) {
-        throw new Error(`unknown capability "${String(t)}" — expected one of: ${CAPABILITY_ORDER.join(', ')}`)
-      }
-      if (!FAMILY_TASKS[family].includes(t as CapabilityTask)) {
-        throw new Error(`format "${family}" cannot serve "${t}" — it supports: ${FAMILY_TASKS[family].join(', ')}`)
-      }
-      return t as CapabilityTask
-    })
-    tasks[family] = picked
-  }
-
-  const extras: Partial<Record<ProtocolFamily, WireProtocol[]>> = {}
-  const rawExtras = obj.extras === undefined ? {} : asRecord(obj.extras, 'capabilities.extras')
-  for (const family of families) {
-    if (rawExtras[family] === undefined) continue
-    const picked = asArray(rawExtras[family], `capabilities.extras.${family}`).map((p) => {
-      if (typeof p !== 'string' || !FAMILY_EXTRA_PROTOCOLS[family].includes(p as WireProtocol)) {
-        throw new Error(
-          `unknown extra wire "${String(p)}" for format "${family}" — expected one of: ${FAMILY_EXTRA_PROTOCOLS[family].join(', ') || '(none)'}`,
-        )
-      }
-      return p as WireProtocol
-    })
-    if (picked.length > 0) extras[family] = picked
-  }
-
-  return { families, tasks, extras }
+  if (protocols.length === 0) throw new Error('`capabilities.protocols` must list at least one wire protocol')
+  return { protocols }
 }
 
 function applyEndpointDefaults(endpoints: ServiceEndpoint[], values: Record<string, unknown>): ServiceEndpoint[] {
@@ -119,7 +90,7 @@ export const customPlatformResourceDef: ResourceDef<Platform> = {
   resource: 'custom-platform',
   label: 'Custom Provider',
   description:
-    'User-defined AI provider platforms (Settings → AI Provider → +). Described the same way the settings form does: one shared base URL plus the wire formats and capabilities the provider exposes — endpoints are derived, never written by hand. Every field is independent: send only the one you are changing.',
+    'User-defined AI provider platforms (Settings → AI Provider → +). Described the same way the settings form does: one shared base URL plus the wire protocols the provider speaks — endpoints are derived, never written by hand. Every field is independent: send only the one you are changing.',
   projectScoped: false,
   fields: [
     { key: 'name', label: 'Name', type: 'string', required: true },
@@ -133,10 +104,10 @@ export const customPlatformResourceDef: ResourceDef<Platform> = {
     },
     {
       key: 'capabilities',
-      label: 'Formats & Capabilities',
+      label: 'Wire Protocols',
       type: 'capabilities',
       required: true,
-      note: `{ families: ("${PROTOCOL_FAMILIES.join('" | "')}")[], tasks?: { <family>: ("chat"|"image"|"video"|"tts"|"asr")[] }, extras?: { openai?: ["openai-responses"] } }. Omitting tasks for a family selects everything it can serve.`,
+      note: `{ protocols: WireProtocol[] } (a bare array is accepted too). Each protocol implies the capabilities it serves — ${WIRE_PROTOCOLS.map((p) => `${p} → ${PROTOCOL_TASKS[p].join('/')}`).join('; ')}. Endpoints are derived: one per vendor family for non-video wires, one per video wire.`,
     },
     {
       key: 'modelMapping',
@@ -164,9 +135,9 @@ export const customPlatformResourceDef: ResourceDef<Platform> = {
     const caps = planCapabilities(plan)
     switch (key) {
       case 'baseUrl':
-        return caps.baseUrl
+        return plan.baseUrl
       case 'capabilities':
-        return { families: caps.families, tasks: caps.tasks, extras: caps.extras }
+        return { protocols: caps.protocols }
       case 'modelMapping': {
         const targetId = mappingEndpointId(plan.endpoints)
         return plan.endpoints.find((e) => e.id === targetId)?.defaults?.modelMapping ?? {}
@@ -182,10 +153,10 @@ export const customPlatformResourceDef: ResourceDef<Platform> = {
   },
   create: (_projectPath, values) => {
     const baseUrl = requireString(values, 'baseUrl')
-    const endpoints = applyEndpointDefaults(capabilityEndpoints(coerceCapabilities(values.capabilities), baseUrl), values)
+    const endpoints = applyEndpointDefaults(capabilityEndpoints(coerceCapabilities(values.capabilities)), values)
     if (endpoints.length === 0) throw new Error('`capabilities` must select at least one format with a capability')
     const id = `custom:${randomUUID()}`
-    const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints }
+    const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', baseUrl, endpoints }
     const platform = upsertCustomPlatform({
       id,
       brand: optionalString(values, 'brand') ?? 'custom',
@@ -201,6 +172,9 @@ export const customPlatformResourceDef: ResourceDef<Platform> = {
         planId: plan.id,
         name: optionalString(values, 'keyName') || DEFAULT_KEY_NAME,
         secret: apiKey,
+        // Custom keys own their site root, same as one created from the settings form — otherwise
+        // this key silently follows later edits to the plan while UI-created siblings do not.
+        baseUrl,
       })
     }
     return platform
@@ -210,11 +184,9 @@ export const customPlatformResourceDef: ResourceDef<Platform> = {
     if (!existing) return undefined
     const plan = mainPlan(existing)
     let endpoints = plan.endpoints
-    if ('capabilities' in values || 'baseUrl' in values) {
-      const current = planCapabilities(plan)
-      const caps = 'capabilities' in values ? coerceCapabilities(values.capabilities) : current
-      const baseUrl = 'baseUrl' in values ? requireString(values, 'baseUrl') : current.baseUrl
-      endpoints = applyCapabilitiesToPlan(plan, caps, baseUrl)
+    const baseUrl = 'baseUrl' in values ? requireString(values, 'baseUrl') : plan.baseUrl
+    if ('capabilities' in values) {
+      endpoints = applyCapabilitiesToPlan(plan, coerceCapabilities(values.capabilities))
       if (endpoints.length === 0) throw new Error('`capabilities` must select at least one format with a capability')
     }
     endpoints = applyEndpointDefaults(endpoints, values)
@@ -224,7 +196,7 @@ export const customPlatformResourceDef: ResourceDef<Platform> = {
       ...('name' in values ? { name: requireString(values, 'name') } : {}),
       ...('description' in values ? { description: optionalString(values, 'description') } : {}),
       ...('catalogProviderId' in values ? { catalogProviderId: optionalString(values, 'catalogProviderId') } : {}),
-      plans: existing.plans.map((p) => (p.id === plan.id ? { ...p, endpoints } : p)),
+      plans: existing.plans.map((p) => (p.id === plan.id ? { ...p, baseUrl, endpoints } : p)),
     })
   },
   delete: (id) => deleteCustomPlatform(id),

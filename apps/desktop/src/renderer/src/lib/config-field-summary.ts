@@ -1,5 +1,5 @@
 import type { ConfigFieldType } from '@superone/shared/agent-types'
-import { FAMILY_TASKS, type CapabilityTask, type EndpointModel, type PlanCapabilities, type ProtocolFamily } from '@superone/shared/platform-registry'
+import { PROTOCOL_FAMILY, type EndpointModel, type PlanCapabilities, type ProtocolFamily, type WireProtocol } from '@superone/shared/platform-registry'
 import { getMermaidThemeOption } from '@/components/chat/mermaid-themes'
 import { mermaidThemeSchemeForKey } from '@/components/settings/MermaidThemePicker'
 import { getTerminalPalette } from '@/components/coding/terminal-palettes'
@@ -19,7 +19,8 @@ import {
 const FAMILY_LABEL: Record<ProtocolFamily, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
-  newapi: 'NewAPI',
+  volcengine: 'Volcengine',
+  newapi: 'New API',
   google: 'Google',
 }
 
@@ -38,16 +39,17 @@ function slotText(value: unknown): string {
   return id || name || String(value)
 }
 
+/** Protocols grouped under their vendor, e.g. "OpenAI · chat, images / 火山引擎 · ark-video". */
 function capabilitiesText(value: unknown): string {
   const caps = value as PlanCapabilities | undefined
-  if (!caps?.families?.length) return ''
-  return caps.families
-    .map((family) => {
-      const tasks = caps.tasks?.[family] ?? FAMILY_TASKS[family]
-      const extras = caps.extras?.[family] ?? []
-      const parts = [...tasks, ...extras]
-      return parts.length > 0 ? `${FAMILY_LABEL[family]} · ${parts.join(', ')}` : FAMILY_LABEL[family]
-    })
+  if (!caps?.protocols?.length) return ''
+  const byFamily = new Map<ProtocolFamily, WireProtocol[]>()
+  for (const protocol of caps.protocols) {
+    const family = PROTOCOL_FAMILY[protocol]
+    byFamily.set(family, [...(byFamily.get(family) ?? []), protocol])
+  }
+  return [...byFamily]
+    .map(([family, protocols]) => `${FAMILY_LABEL[family]} · ${protocols.join(', ')}`)
     .join(' / ')
 }
 
@@ -151,11 +153,9 @@ export function diffConfigFieldValue(type: ConfigFieldType, oldValue: unknown, n
   }
 }
 
+/** One part per protocol, so a diff names exactly the wires that were added or removed. */
 function capabilitiesParts(value: unknown): string[] {
   const caps = value as PlanCapabilities | undefined
-  if (!caps?.families?.length) return []
-  return caps.families.flatMap((family) => {
-    const tasks: (CapabilityTask | string)[] = caps.tasks?.[family] ?? FAMILY_TASKS[family]
-    return [...tasks, ...(caps.extras?.[family] ?? [])].map((part) => `${FAMILY_LABEL[family]}·${part}`)
-  })
+  if (!caps?.protocols?.length) return []
+  return caps.protocols.map((protocol) => `${FAMILY_LABEL[PROTOCOL_FAMILY[protocol]]}·${protocol}`)
 }

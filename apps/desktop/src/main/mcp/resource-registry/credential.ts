@@ -19,7 +19,7 @@ import { getPlatforms } from '../../providers/registry'
 import { asArray, asRecord, mergeMap, optionalString, requireString, type ResourceDef } from './types'
 
 /** Fields that live inside `overrides[endpointId]` rather than on the credential row itself. */
-const OVERRIDE_FIELDS = ['baseUrl', 'models', 'modelMapping', 'extraEnv'] as const
+const OVERRIDE_FIELDS = ['endpointBaseUrl', 'routes', 'models', 'modelMapping', 'extraEnv'] as const
 
 function planEndpointIds(platformId: string | undefined, planId: string | undefined): string[] {
   if (!platformId || !planId) return []
@@ -55,6 +55,7 @@ function coerceModels(raw: unknown): EndpointModel[] {
 function pruneOverride(o: EndpointOverride): EndpointOverride {
   const out: EndpointOverride = {}
   if (o.baseUrl?.trim()) out.baseUrl = o.baseUrl.trim()
+  if (o.routes && Object.keys(o.routes).length > 0) out.routes = o.routes
   if (o.models && o.models.length > 0) out.models = o.models
   if (o.extraEnv && Object.keys(o.extraEnv).length > 0) out.extraEnv = o.extraEnv
   if (o.modelMapping && Object.keys(o.modelMapping).length > 0) out.modelMapping = o.modelMapping
@@ -69,7 +70,11 @@ function mergeOverrides(
 ): Record<string, EndpointOverride> {
   const overrides = { ...(current ?? {}) }
   const target: EndpointOverride = { ...(overrides[endpointId] ?? {}) }
-  if ('baseUrl' in values) target.baseUrl = optionalString(values, 'baseUrl') ?? ''
+  if ('endpointBaseUrl' in values) target.baseUrl = optionalString(values, 'endpointBaseUrl') ?? ''
+  if ('routes' in values) {
+    const merged = mergeMap<string>(target.routes as Record<string, string> | undefined, asRecord(values.routes, 'routes'))
+    target.routes = Object.keys(merged).length > 0 ? (merged as EndpointOverride['routes']) : undefined
+  }
   if ('models' in values) target.models = coerceModels(values.models)
   if ('modelMapping' in values) {
     target.modelMapping = mergeMap<ProviderModelEnv[keyof ProviderModelEnv]>(
@@ -88,7 +93,7 @@ export const credentialResourceDef: ResourceDef<Credential> = {
   resource: 'ai-provider',
   label: 'AI Provider Key',
   description:
-    'API keys bound to a provider platform + plan, plus that key\'s per-endpoint overrides (Settings → AI Provider). The `secret` is masked on read as "***last6" — send a new value to replace it, or omit it to keep the stored one. Override fields (baseUrl / models / modelMapping / extraEnv) target one endpoint via `endpointId` and are merged, so send only what changes.',
+    'API keys bound to a provider platform + plan, plus that key\'s per-endpoint overrides (Settings → AI Provider). The `secret` is masked on read as "***last6" — send a new value to replace it, or omit it to keep the stored one. `baseUrl` is the key\'s site root. Override fields (endpointBaseUrl / routes / models / modelMapping / extraEnv) target one endpoint via `endpointId` and are merged, so send only what changes.',
   projectScoped: false,
   fields: [
     { key: 'platformId', label: 'Platform', type: 'string', required: true, note: 'Platform id, e.g. "zhipu-cn" or "custom:<uuid>". Call config_read first to list them.' },
@@ -104,7 +109,9 @@ export const credentialResourceDef: ResourceDef<Credential> = {
       selector: true,
       note: 'Which endpoint the override fields below target. Optional when the plan has exactly one endpoint.',
     },
-    { key: 'baseUrl', label: 'Base URL Override', type: 'string', note: 'Replaces the endpoint\'s built-in base URL. Empty string clears the override.' },
+    { key: 'baseUrl', label: 'Base URL', type: 'string', note: 'The site root this key points at, replacing the plan\'s. Every endpoint below hangs off it by route. Empty string clears it.' },
+    { key: 'endpointBaseUrl', label: 'Endpoint Host Override', type: 'string', note: 'Rare — only when one endpoint answers from a different origin than the rest. Normally leave empty and set `routes` instead.' },
+    { key: 'routes', label: 'Route Overrides', type: 'env', note: 'Per-protocol request path, e.g. { "anthropic-messages": "/api/anthropic/v1/messages" }. Measured from the base URL origin. Merged key by key; pass null for a protocol to restore its default.' },
     { key: 'models', label: 'Enabled Models', type: 'models', note: '{ id, name?, tasks? }[] — the models enabled on this endpoint. Replaces the list.' },
     { key: 'modelMapping', label: 'Model Mapping', type: 'model-mapping', note: 'Claude-harness slots → { default|opus|sonnet|haiku|subagent: { id, name? } }. Merged slot by slot; pass null for a slot to clear it.' },
     { key: 'extraEnv', label: 'Environment Variables', type: 'env', note: 'Merged key by key; pass null for a key to remove it.' },
@@ -123,8 +130,10 @@ export const credentialResourceDef: ResourceDef<Credential> = {
     if (!(OVERRIDE_FIELDS as readonly string[]).includes(key)) return (record as unknown as Record<string, unknown>)[key]
     const override = ctx.endpointId ? record.overrides?.[ctx.endpointId] : undefined
     switch (key) {
-      case 'baseUrl':
+      case 'endpointBaseUrl':
         return override?.baseUrl ?? ''
+      case 'routes':
+        return override?.routes ?? {}
       case 'models':
         return override?.models ?? []
       case 'modelMapping':
@@ -141,6 +150,7 @@ export const credentialResourceDef: ResourceDef<Credential> = {
       name: requireString(values, 'name'),
       secret: optionalString(values, 'secret'),
       secretEnv: optionalString(values, 'secretEnv'),
+      baseUrl: optionalString(values, 'baseUrl'),
       overrides: hasOverrides ? mergeOverrides(undefined, values, requireEndpointId(ctx)) : undefined,
       notes: optionalString(values, 'notes'),
     })
@@ -150,6 +160,7 @@ export const credentialResourceDef: ResourceDef<Credential> = {
     if ('name' in values) patch.name = requireString(values, 'name')
     if ('secret' in values) patch.secret = optionalString(values, 'secret')
     if ('secretEnv' in values) patch.secretEnv = optionalString(values, 'secretEnv')
+    if ('baseUrl' in values) patch.baseUrl = optionalString(values, 'baseUrl') ?? ''
     if ('notes' in values) patch.notes = optionalString(values, 'notes')
     if (OVERRIDE_FIELDS.some((k) => k in values)) {
       const existing = listCredentials().find((c) => c.id === id)

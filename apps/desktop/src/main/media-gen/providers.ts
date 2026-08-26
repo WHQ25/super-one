@@ -1,7 +1,7 @@
 import type { CapabilityTask } from '@superone/shared/agent-types'
 import { type ConsumerId, type EndpointModel, type ResolvedService } from '@superone/shared/platform-registry'
 import { listCredentials } from '../providers/credential-store'
-import { resolveService } from '../providers/resolver'
+import { listServiceModels, resolveService } from '../providers/resolver'
 import type { MediaProviderConfig, MediaProviderKind } from './types'
 
 function officialOpenAI(resolved: ResolvedService): boolean {
@@ -81,8 +81,12 @@ function toConfig(resolved: ResolvedService, spec: MediaConsumerSpec): MediaProv
   }
 }
 
-function resolveProvider(spec: MediaConsumerSpec, credentialId?: string | null): MediaProviderConfig {
-  const resolved = resolveService(spec.consumer, { credentialId })
+function resolveProvider(
+  spec: MediaConsumerSpec,
+  credentialId?: string | null,
+  modelId?: string | null,
+): MediaProviderConfig {
+  const resolved = resolveService(spec.consumer, { credentialId, modelId: modelId ?? undefined })
   if (!resolved) {
     throw new Error(`No ${spec.label} provider is configured. Ask the user to add one in Settings → Providers.`)
   }
@@ -92,9 +96,14 @@ function resolveProvider(spec: MediaConsumerSpec, credentialId?: string | null):
   return toConfig(resolved, spec)
 }
 
+/**
+ * The default model for a capability: the first enabled model across every endpoint that serves it,
+ * not just the endpoint that happens to resolve — with video wires split one endpoint per wire, the
+ * resolved endpoint is only one of several the key can reach.
+ */
 function resolveDefaultModelFor(spec: MediaConsumerSpec, credentialId?: string | null): string {
   const resolved = resolveService(spec.consumer, { credentialId })
-  const first = resolved ? modelsForTask(resolved, spec.task)[0]?.id : undefined
+  const first = resolved ? listServiceModels(spec.consumer, resolved.credentialId)[0]?.id : undefined
   if (!first) throw new Error(`No default model available for the ${spec.label} provider`)
   return first
 }
@@ -123,9 +132,18 @@ export async function resolveDefaultProviderId(): Promise<string> {
   return resolveDefaultProviderIdFor(IMAGE)
 }
 
-/** Resolve a video provider from a credential id (or the global `media:video` binding when omitted). */
-export async function resolveVideoProvider(credentialId?: string | null): Promise<MediaProviderConfig> {
-  return resolveProvider(VIDEO, credentialId)
+/**
+ * Resolve a video provider from a credential id (or the global `media:video` binding when omitted).
+ *
+ * `modelId` is what separates the video wires a single credential may expose: Seedance on Ark's own
+ * endpoint and Sora on `/videos` live under one key, and only the model says which to submit to.
+ * Omitting it falls back to the credential's first video-serving endpoint.
+ */
+export async function resolveVideoProvider(
+  credentialId?: string | null,
+  modelId?: string | null,
+): Promise<MediaProviderConfig> {
+  return resolveProvider(VIDEO, credentialId, modelId)
 }
 
 export async function resolveDefaultVideoModel(credentialId?: string | null): Promise<string> {

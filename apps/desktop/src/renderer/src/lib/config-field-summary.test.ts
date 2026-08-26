@@ -23,13 +23,22 @@ describe('config field summaries', () => {
     expect(diff).toBe('+c, −a')
   })
 
-  it('summarizes a capability change per format', () => {
+  it('summarizes a protocol change wire by wire', () => {
     const diff = diffConfigFieldValue(
       'capabilities',
-      { families: ['openai'], tasks: { openai: ['chat'] }, extras: {} },
-      { families: ['openai'], tasks: { openai: ['chat', 'image'] }, extras: {} },
+      { protocols: ['openai-chat'] },
+      { protocols: ['openai-chat', 'openai-images'] },
     )
-    expect(diff).toBe('+OpenAI·image')
+    expect(diff).toBe('+OpenAI·openai-images')
+  })
+
+  it('names the vendor family a newly added wire belongs to', () => {
+    const diff = diffConfigFieldValue(
+      'capabilities',
+      { protocols: ['openai-chat'] },
+      { protocols: ['openai-chat', 'ark-video'] },
+    )
+    expect(diff).toBe('+Volcengine·ark-video')
   })
 
   it('has no diff for scalars, leaving the caller to show old → new', () => {
@@ -41,8 +50,8 @@ describe('config field summaries', () => {
     expect(formatConfigFieldValue('env', { A: '1', B: '2' }, EMPTY)).toBe('A=1, B=2')
     expect(formatConfigFieldValue('models', [{ id: 'glm-4.6', name: 'GLM 4.6' }], EMPTY)).toBe('GLM 4.6')
     expect(
-      formatConfigFieldValue('capabilities', { families: ['openai'], tasks: { openai: ['chat', 'image'] }, extras: {} }, EMPTY),
-    ).toBe('OpenAI · chat, image')
+      formatConfigFieldValue('capabilities', { protocols: ['openai-chat', 'openai-images'] }, EMPTY),
+    ).toBe('OpenAI · openai-chat, openai-images')
     expect(formatConfigFieldValue('env', {}, EMPTY)).toBe(EMPTY)
   })
 

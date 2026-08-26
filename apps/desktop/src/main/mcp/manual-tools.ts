@@ -97,7 +97,7 @@ const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
 const MEDIA_TOPIC_SUMMARIES: Record<MediaGuideTopic, string> = {
   overview: 'provider routing, shared fields, and warning behavior',
   'ark-image': 'Seedream image options through the Ark adapter',
-  'ark-video': 'Seedance video options through the Ark adapter',
+  'ark-video': "Seedance video options over Volcengine Ark's native wire (direct only — relays speak newapi-video)",
   'openai-image': 'DALL-E and GPT Image options',
   'openai-video': 'Sora video options',
   'google-image': 'Imagen and Gemini image options',

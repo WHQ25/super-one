@@ -2,8 +2,8 @@ import type { MediaProviderStatus } from '@superone/shared/agent-types'
 import { findPlatform } from '@superone/shared/platform-registry'
 import { listCredentials } from '../providers/credential-store'
 import { getPlatforms } from '../providers/registry'
-import { resolveService } from '../providers/resolver'
-import { imageModelsFor, mediaKindFor, videoKindFor, videoModelsFor } from './providers'
+import { listServiceModels, resolveService } from '../providers/resolver'
+import { mediaKindFor, videoKindFor } from './providers'
 
 /**
  * Every credential that resolves to an image or video service, projected to the media-gen status shape.
@@ -12,6 +12,10 @@ import { imageModelsFor, mediaKindFor, videoKindFor, videoModelsFor } from './pr
  * endpoints — so each capability resolves independently and the results merge into one row.
  * `categories` is what `media_list_providers` filters on, so it has to reflect what actually resolved
  * rather than being hardcoded.
+ *
+ * Models come from `listServiceModels`, not from the resolved service: video wires each own an
+ * endpoint, so a key with both Sora and Seedance enabled resolves to only one of them while the row
+ * must advertise every model the key can actually reach.
  */
 export async function getMediaProviderStatuses(): Promise<MediaProviderStatus[]> {
   const rows = await Promise.all(
@@ -21,7 +25,10 @@ export async function getMediaProviderStatuses(): Promise<MediaProviderStatus[]>
       const resolved = image ?? video
       if (!resolved) return null
 
-      const models = [...(image ? imageModelsFor(image) : []), ...(video ? videoModelsFor(video) : [])]
+      const models = [
+        ...(image ? listServiceModels('media:image', cred.id) : []),
+        ...(video ? listServiceModels('media:video', cred.id) : []),
+      ]
 
       return {
         id: cred.id,

@@ -928,13 +928,18 @@ export const zh: Messages = {
       subtitle: '配置内置浏览器及其自动化工具',
       surface: {
         label: '精简工具面',
-        description: '向智能体暴露 8 个阶段工具（tabs / snapshot / query / act / wait / evaluate / network / action），而不是经典的逐动词列表。新会话生效。关闭则恢复经典列表。',
-        compact: '精简（8 个工具）',
+        description: '向智能体暴露阶段化工具，而不是经典的逐动词列表。新会话生效。关闭则恢复经典列表。',
+        compact: '精简',
         legacy: '经典（30 个工具）',
       },
       cdp: {
         label: 'Chrome 开发者工具协议 (CDP)',
         description: '内置浏览器工具将路由到 CDP 实现,并解锁文件上传工具。',
+      },
+      webmcp: {
+        title: 'WebMCP 页面工具',
+        description: '允许智能体发现内置浏览器中安全页面注册的工具。',
+        restartNote: '更改此设置后需要重启 SuperOne。',
       },
       experimental: {
         title: '实验工具',

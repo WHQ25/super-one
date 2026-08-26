@@ -63,6 +63,16 @@ export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp
   })
 }
 
+export async function resolveBrowserWebContentsId(sessionId: string, tab?: string): Promise<number> {
+  const result = await browserAutomationCall(sessionId, 'resolveWebContentsId', { tab }) as {
+    webContentsId?: number
+  }
+  if (typeof result.webContentsId !== 'number' || result.webContentsId < 0) {
+    throw new Error('Could not resolve the target browser view')
+  }
+  return result.webContentsId
+}
+
 /**
  * Hold (or release) the renderer's host-focus guard around agent-driven input.
  *

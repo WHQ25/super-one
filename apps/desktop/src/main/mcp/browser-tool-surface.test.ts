@@ -60,11 +60,13 @@ describe('browser tool surface', () => {
     expect(resolveBrowserToolSurface('sess-a')).toBe('legacy')
   })
 
-  it('advertises 9 compact names and 31 legacy names', () => {
-    expect(advertisedBrowserToolNames('compact')).toHaveLength(9)
-    expect(advertisedBrowserToolNames('legacy')).toHaveLength(31)
+  it('includes browser_tools_list in both browser surfaces', () => {
+    expect(advertisedBrowserToolNames('compact')).toHaveLength(10)
+    expect(advertisedBrowserToolNames('legacy')).toHaveLength(32)
     expect(advertisedBrowserToolNames('compact')).toContain('browser_act')
+    expect(advertisedBrowserToolNames('compact')).toContain('browser_tools_list')
     expect(advertisedBrowserToolNames('legacy')).toContain('browser_click')
+    expect(advertisedBrowserToolNames('legacy')).toContain('browser_tools_list')
     expect(advertisedBrowserToolNames('legacy')).not.toContain('browser_act')
   })
 })

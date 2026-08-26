@@ -88,11 +88,12 @@ describe('app-settings-service', () => {
     onboardingCompletedAt: null,
     onboardingEpoch: 0,
     cdpEnabled: false,
-        computerUseEnabled: false,
-        computerUsePictureInPicture: true,
-        computerUseDedicatedDisplayId: null,
-        computerUseAllowAllApps: false,
-        computerUseAlwaysAllowApps: [],
+    webmcpEnabled: false,
+    computerUseEnabled: false,
+    computerUsePictureInPicture: true,
+    computerUseDedicatedDisplayId: null,
+    computerUseAllowAllApps: false,
+    computerUseAlwaysAllowApps: [],
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
@@ -163,6 +164,7 @@ describe('app-settings-service', () => {
         onboardingCompletedAt: null,
         onboardingEpoch: 0,
         cdpEnabled: false,
+        webmcpEnabled: false,
         computerUseEnabled: false,
         computerUsePictureInPicture: true,
         computerUseDedicatedDisplayId: null,
@@ -292,6 +294,7 @@ describe('app-settings-service', () => {
         onboardingCompletedAt: null,
         onboardingEpoch: 0,
         cdpEnabled: false,
+        webmcpEnabled: false,
         computerUseEnabled: false,
         computerUsePictureInPicture: true,
         computerUseDedicatedDisplayId: null,
@@ -445,6 +448,13 @@ describe('app-settings-service', () => {
   })
 
   describe('saveAppSettings', () => {
+    it('persists the WebMCP feature flag independently of CDP', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      const saved = saveAppSettings({ webmcpEnabled: true })
+      expect(saved.webmcpEnabled).toBe(true)
+      expect(saved.cdpEnabled).toBe(false)
+    })
+
     it('persists the selected power mode', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)
       saveAppSettings({ powerMode: 'lid-closed-on-ac' })

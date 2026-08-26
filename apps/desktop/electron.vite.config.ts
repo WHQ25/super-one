@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
         input: {
           index: resolve('src/preload/index.ts'),
           'miniapp-preload': resolve('src/preload/miniapp-preload.ts'),
+          'webmcp-preload': resolve('src/preload/webmcp-preload.ts'),
         },
         output: {
           format: 'cjs',

@@ -32,6 +32,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     uiFontFamily: null,
     liquidGlass: false,
     cdpEnabled: false,
+    webmcpEnabled: false,
     computerUseEnabled: false,
     computerUsePictureInPicture: true,
     computerUseDedicatedDisplayId: null,
@@ -152,6 +153,15 @@ describe('settings registry validation', () => {
 })
 
 describe('settings registry patch building', () => {
+  it('builds an independent WebMCP browser patch', () => {
+    const { patch, applied, rejected } = buildPatchFromValues({ webmcpEnabled: true }, makeSettings())
+    expect(patch).toEqual({ webmcpEnabled: true })
+    expect(applied).toEqual([
+      { key: 'webmcpEnabled', label: 'Enable WebMCP page tools', oldValue: false, newValue: true },
+    ])
+    expect(rejected).toEqual([])
+  })
+
   it('builds a top-level patch and applied list', () => {
     const { patch, applied } = buildPatchFromValues({ liquidGlass: true, terminalFontSize: 20 }, makeSettings())
     expect(patch).toMatchObject({ liquidGlass: true, terminalFontSize: 20 })

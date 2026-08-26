@@ -187,7 +187,19 @@ export function registerCompactBrowserTools(
   server: McpServer,
   sessionId: string,
   runPrimitive: PrimitiveRunner,
+  webMcpEnabled: boolean,
 ): void {
+  if (webMcpEnabled) {
+    server.registerTool(
+      'browser_tools_list',
+      {
+        description: 'List WebMCP tools registered by the current secure page. Use this to discover page-provided actions; this phase lists metadata only and cannot call them.',
+        inputSchema: { ...tabField },
+      },
+      (args) => runPrimitive('browser_tools_list', args),
+    )
+  }
+
   server.registerTool(
     'browser_wait_for',
     {

@@ -878,6 +878,11 @@ export type Messages = {
         label: string
         description: string
       }
+      webmcp: {
+        title: string
+        description: string
+        restartNote: string
+      }
       experimental: {
         title: string
         description: string
@@ -4395,13 +4400,18 @@ export const en: Messages = {
       subtitle: 'Configure the built-in browser and its automation tools',
       surface: {
         label: 'Compact tool surface',
-        description: 'Advertise 8 phase tools (tabs / snapshot / query / act / wait / evaluate / network / action) instead of the classic per-verb list. Takes effect in new chat sessions. Turn off to restore the classic list.',
-        compact: 'Compact (8 tools)',
+        description: 'Advertise phase-oriented tools instead of the classic per-verb list. Takes effect in new chat sessions. Turn off to restore the classic list.',
+        compact: 'Compact',
         legacy: 'Classic (30 tools)',
       },
       cdp: {
         label: 'Chrome DevTools Protocol (CDP)',
         description: 'Routes the built-in browser tools to their CDP implementation, and unlocks the file-upload tool.',
+      },
+      webmcp: {
+        title: 'WebMCP page tools',
+        description: 'Let the agent discover tools registered by secure pages in the built-in browser.',
+        restartNote: 'Restart SuperOne after changing this setting.',
       },
       experimental: {
         title: 'Experimental Tools',

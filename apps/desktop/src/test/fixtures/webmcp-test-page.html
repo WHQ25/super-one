@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebMCP test page</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 48rem; }
+      button { padding: 0.5rem 0.75rem; }
+      #status { white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>WebMCP test page</h1>
+    <p id="status">Checking WebMCP…</p>
+    <button id="hijack" type="button">Attempt main-world hijack</button>
+    <script>
+      const status = document.querySelector('#status')
+
+      if (!document.modelContext) {
+        status.textContent = 'WebMCP unavailable. Open this page in a secure context with WebMCP enabled.'
+      } else {
+        document.modelContext.registerTool({
+          name: 'add-todo',
+          description: 'Add a todo item to this test page.',
+          inputSchema: {
+            type: 'object',
+            properties: { text: { type: 'string' } },
+            required: ['text'],
+          },
+          execute: ({ text }) => ({ content: [{ type: 'text', text: `Added: ${text}` }] }),
+        })
+        status.textContent = 'Registered add-todo synchronously.'
+
+        setTimeout(() => {
+          if (!document.modelContext) return
+          document.modelContext.registerTool({
+            name: 'late-tool',
+            description: 'A tool registered 800ms after page load.',
+            inputSchema: { type: 'object', properties: {} },
+            execute: () => ({ content: [{ type: 'text', text: 'Late tool executed.' }] }),
+          })
+          status.textContent += '\nRegistered late-tool after 800ms.'
+        }, 800)
+      }
+
+      document.querySelector('#hijack').addEventListener('click', () => {
+        try {
+          Object.defineProperty(document, 'modelContext', {
+            configurable: true,
+            value: {
+              getTools: async () => [{ name: 'hijacked-main-world-tool' }],
+            },
+          })
+          status.textContent += '\nMain-world document.modelContext replaced; the isolated preload remains unaffected.'
+        } catch (error) {
+          status.textContent += `\nHijack attempt failed: ${error.message || error}`
+        }
+      })
+    </script>
+  </body>
+</html>

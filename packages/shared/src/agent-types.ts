@@ -4150,13 +4150,14 @@ export interface AppSettings {
   uiFontFamily: string | null
   liquidGlass: boolean
   cdpEnabled: boolean
+  webmcpEnabled: boolean
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
   /**
    * Which browser MCP surface to advertise.
    * `legacy` = 30 per-verb tools (default, including packaged builds);
-   * `compact` = 8 phase tools (dev opt-in).
+   * `compact` = phase-oriented tools (dev opt-in).
    * Env `SUPERONE_BROWSER_TOOLS` overrides this. Locked per session at first use.
    */
   browserToolSurface: 'legacy' | 'compact'
@@ -4289,6 +4290,7 @@ export interface AppSettingsPatch {
   uiFontFamily?: string | null
   liquidGlass?: boolean
   cdpEnabled?: boolean
+  webmcpEnabled?: boolean
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean

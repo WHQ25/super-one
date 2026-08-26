@@ -302,6 +302,13 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ cdpEnabled: v as boolean }),
       },
       {
+        key: 'webmcpEnabled',
+        label: 'Enable WebMCP page tools',
+        type: 'boolean',
+        read: (s) => s.webmcpEnabled,
+        toPatch: (v) => ({ webmcpEnabled: v as boolean }),
+      },
+      {
         key: 'cdpCookiesEnabled',
         label: 'CDP Cookies Access',
         type: 'boolean',

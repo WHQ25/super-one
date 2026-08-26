@@ -6,6 +6,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 vi.mock('../browser/browser-automation-bridge', () => ({
   browserAutomationCall: vi.fn(),
   browserFocusGuard: vi.fn(async () => {}),
+  resolveBrowserWebContentsId: vi.fn(async () => 7),
 }))
 
 const gates = {
@@ -13,7 +14,15 @@ const gates = {
   cookies: false,
   mock: false,
   emulate: false,
+  webmcp: false,
 }
+
+const webMcpMocks = vi.hoisted(() => ({ getWebMcpTools: vi.fn() }))
+
+vi.mock('../browser/browser-webmcp', () => ({
+  isWebMcpEnabled: () => gates.webmcp,
+  getWebMcpTools: webMcpMocks.getWebMcpTools,
+}))
 
 vi.mock('../browser/browser-cdp', () => ({
   isCdpEnabled: () => gates.cdp,
@@ -86,7 +95,7 @@ import {
 } from './browser-mcp-tools'
 import { setBrowserToolSurfaceForTests, clearBrowserToolSurfaceLocks } from './browser-tool-surface'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
-import { browserAutomationCall, browserFocusGuard } from '../browser/browser-automation-bridge'
+import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId } from '../browser/browser-automation-bridge'
 import { cdpClick, cdpHover } from '../browser/browser-cdp'
 import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
@@ -115,12 +124,14 @@ describe('browser tool registration under experimental gates', () => {
     gates.cookies = false
     gates.mock = false
     gates.emulate = false
+    gates.webmcp = false
     vi.clearAllMocks()
     clearBrowserToolSurfaceLocks()
     setBrowserToolSurfaceForTests('legacy')
   })
 
   it('registers every browser tool even when all CDP settings are off', () => {
+    gates.webmcp = true
     const tools = buildTools()
     for (const name of BROWSER_LEGACY_TOOL_NAMES) {
       expect(tools.has(name), name).toBe(true)
@@ -128,6 +139,7 @@ describe('browser tool registration under experimental gates', () => {
   })
 
   it('exports descriptors for every browser tool with object input schemas', () => {
+    gates.webmcp = true
     setBrowserToolSurfaceForTests('legacy')
     const descriptors = getBrowserToolDescriptors()
     expect(descriptors.map((d) => d.name).sort()).toEqual([...BROWSER_LEGACY_TOOL_NAMES].sort())
@@ -136,6 +148,46 @@ describe('browser tool registration under experimental gates', () => {
       expect(d.inputSchema).toMatchObject({ type: 'object' })
       expect(isBrowserToolName(d.name)).toBe(true)
     }
+  })
+
+  it('does not advertise browser_tools_list when WebMCP is disabled', () => {
+    expect(buildTools().has('browser_tools_list')).toBe(false)
+    expect(getBrowserToolDescriptors().some((descriptor) => descriptor.name === 'browser_tools_list')).toBe(false)
+  })
+
+  it('lists page WebMCP tool metadata without exposing invocation', async () => {
+    gates.webmcp = true
+    vi.mocked(resolveBrowserWebContentsId).mockResolvedValueOnce(7)
+    webMcpMocks.getWebMcpTools.mockReturnValueOnce({
+      origin: 'https://example.com',
+      tools: [{
+        name: 'add-todo',
+        description: 'Add a todo item.',
+        inputSchema: '{"type":"object"}',
+        truncated: true,
+      }],
+    })
+    const reply = await buildTools().get('browser_tools_list')!({ tab: 'tab-1' })
+    expect(JSON.parse(resultText(reply))).toEqual({
+      origin: 'https://example.com',
+      count: 1,
+      tools: [{
+        name: 'add-todo',
+        description: 'Add a todo item.',
+        inputSchema: '{"type":"object"}',
+      }],
+    })
+    expect(resolveBrowserWebContentsId).toHaveBeenCalledWith('sess-1', 'tab-1')
+  })
+
+  it('returns a non-error disabled hint for a stale browser_tools_list call', async () => {
+    clearBrowserToolHandlers('sess-disabled-webmcp')
+    const reply = await executeBrowserTool('sess-disabled-webmcp', 'browser_tools_list', {})
+    expect(reply.isError).not.toBe(true)
+    expect(JSON.parse(resultText(reply))).toEqual({
+      count: 0,
+      hint: 'WebMCP is disabled in Settings → Browser.',
+    })
   })
 
   it('executes browser tools via the stdio-facing dispatcher', async () => {
@@ -402,6 +454,7 @@ describe('browser_list_downloads', () => {
 describe('compact browser surface', () => {
   beforeEach(() => {
     gates.cdp = false
+    gates.webmcp = true
     vi.clearAllMocks()
     clearBrowserToolHandlers('sess-1')
     clearBrowserToolHandlers('__descriptor__')

@@ -42,6 +42,7 @@ export const BROWSER_PRIMITIVE_TOOL_NAMES = [
   'browser_emulate',
   'browser_mock',
   'browser_perf_measure',
+  'browser_tools_list',
 ] as const
 
 export const BROWSER_ACTION_TOOL_NAMES = [
@@ -55,7 +56,7 @@ export const BROWSER_LEGACY_TOOL_NAMES = [
   ...BROWSER_ACTION_TOOL_NAMES,
 ] as const
 
-/** 9-tool surface: observe / query / act / wait + tabs / evaluate / network / perf / saved actions. */
+/** Compact surface union; WebMCP registration is feature-gated by the desktop host. */
 export const BROWSER_COMPACT_TOOL_NAMES = [
   'browser_tabs',
   'browser_snapshot',
@@ -66,6 +67,7 @@ export const BROWSER_COMPACT_TOOL_NAMES = [
   'browser_network',
   'browser_perf',
   'browser_action',
+  'browser_tools_list',
 ] as const
 
 export const BROWSER_TOOL_NAMES = [

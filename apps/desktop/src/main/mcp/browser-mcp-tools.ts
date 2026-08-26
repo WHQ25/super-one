@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z, toJSONSchema, type ZodTypeAny } from 'zod'
-import { browserAutomationCall, browserFocusGuard, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
+import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
 import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpScreenshot, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
 import { encode as toonEncode } from '@toon-format/toon'
@@ -27,6 +27,7 @@ import {
   BROWSER_TOOL_NAMES,
 } from './superone-mcp-builtin-defs'
 import { registerCompactBrowserTools } from './browser-mcp-compact'
+import { getWebMcpTools, isWebMcpEnabled } from '../browser/browser-webmcp'
 import {
   type BrowserToolSurface,
   resolveBrowserToolSurface,
@@ -176,7 +177,7 @@ interface CapturingServer {
 
 const browserHandlerCache = new Map<string, Map<string, BrowserToolHandler>>()
 const primitiveHandlerCache = new Map<string, Map<string, BrowserToolHandler>>()
-const browserToolDescriptors: Partial<Record<BrowserToolSurface, SuperoneMcpToolDescriptor[]>> = {}
+const browserToolDescriptors = new Map<string, SuperoneMcpToolDescriptor[]>()
 
 function zodShapeToJsonSchema(shape: Record<string, ZodTypeAny> | undefined): Record<string, unknown> {
   const schema = toJSONSchema(z.object(shape ?? {})) as Record<string, unknown>
@@ -214,12 +215,12 @@ function makeCapturingServer(): {
   return { server, descriptors, handlers }
 }
 
-function captureLegacyTools(sessionId: string): {
+function captureLegacyTools(sessionId: string, webMcpEnabled: boolean): {
   descriptors: SuperoneMcpToolDescriptor[]
   handlers: Map<string, BrowserToolHandler>
 } {
   const capturing = makeCapturingServer()
-  registerLegacyBrowserTools(capturing.server as unknown as McpServer, sessionId)
+  registerLegacyBrowserTools(capturing.server as unknown as McpServer, sessionId, webMcpEnabled)
   return { descriptors: capturing.descriptors, handlers: capturing.handlers }
 }
 
@@ -230,7 +231,7 @@ function runPrimitive(
 ): Promise<ToolReply> {
   let primitives = primitiveHandlerCache.get(sessionId)
   if (!primitives) {
-    primitives = captureLegacyTools(sessionId).handlers
+    primitives = captureLegacyTools(sessionId, true).handlers
     primitiveHandlerCache.set(sessionId, primitives)
   }
   const handler = primitives.get(name)
@@ -238,7 +239,7 @@ function runPrimitive(
   return handler(args)
 }
 
-function captureCompactTools(sessionId: string): {
+function captureCompactTools(sessionId: string, webMcpEnabled: boolean): {
   descriptors: SuperoneMcpToolDescriptor[]
   handlers: Map<string, BrowserToolHandler>
 } {
@@ -247,6 +248,7 @@ function captureCompactTools(sessionId: string): {
     capturing.server as unknown as McpServer,
     sessionId,
     (name, args) => runPrimitive(sessionId, name, args),
+    webMcpEnabled,
   )
   return { descriptors: capturing.descriptors, handlers: capturing.handlers }
 }
@@ -254,9 +256,9 @@ function captureCompactTools(sessionId: string): {
 function ensureAllHandlers(sessionId: string): Map<string, BrowserToolHandler> {
   let handlers = browserHandlerCache.get(sessionId)
   if (handlers) return handlers
-  const primitives = captureLegacyTools(sessionId).handlers
+  const primitives = captureLegacyTools(sessionId, true).handlers
   primitiveHandlerCache.set(sessionId, primitives)
-  const compact = captureCompactTools(sessionId).handlers
+  const compact = captureCompactTools(sessionId, true).handlers
   // Compact supersets overwrite snapshot/query/tabs; primitives remain as aliases.
   handlers = new Map([...primitives, ...compact])
   browserHandlerCache.set(sessionId, handlers)
@@ -265,12 +267,14 @@ function ensureAllHandlers(sessionId: string): Map<string, BrowserToolHandler> {
 
 export function getBrowserToolDescriptors(sessionId?: string): SuperoneMcpToolDescriptor[] {
   const surface = resolveBrowserToolSurface(sessionId)
-  const cached = browserToolDescriptors[surface]
+  const webMcpEnabled = isWebMcpEnabled()
+  const cacheKey = `${surface}:${webMcpEnabled}`
+  const cached = browserToolDescriptors.get(cacheKey)
   if (cached) return cached
   const captured = surface === 'compact'
-    ? captureCompactTools('__descriptor__')
-    : captureLegacyTools('__descriptor__')
-  browserToolDescriptors[surface] = captured.descriptors
+    ? captureCompactTools('__descriptor__', webMcpEnabled)
+    : captureLegacyTools('__descriptor__', webMcpEnabled)
+  browserToolDescriptors.set(cacheKey, captured.descriptors)
   return captured.descriptors
 }
 
@@ -299,14 +303,16 @@ export function registerBrowserTools(
   surface?: BrowserToolSurface,
 ): void {
   const resolved = surface ?? resolveBrowserToolSurface(sessionId)
+  const webMcpEnabled = isWebMcpEnabled()
   if (resolved === 'compact') {
-    registerCompactBrowserTools(server, sessionId, (name, args) => runPrimitive(sessionId, name, args))
+    registerCompactBrowserTools(server, sessionId, (name, args) => runPrimitive(sessionId, name, args), webMcpEnabled)
     // List stays compact. Legacy names remain callable (stdio already uses
     // executeBrowserTool; this fallback covers the in-process Claude SDK server).
     installBrowserAliasCallFallback(server, sessionId)
     return
   }
-  registerLegacyBrowserTools(server, sessionId)
+  registerLegacyBrowserTools(server, sessionId, webMcpEnabled)
+  if (!webMcpEnabled) installBrowserAliasCallFallback(server, sessionId)
 }
 
 type ProtocolCallHandler = (request: unknown, extra: unknown) => Promise<unknown>
@@ -338,8 +344,37 @@ function installBrowserAliasCallFallback(server: McpServer, sessionId: string): 
   })
 }
 
-function registerLegacyBrowserTools(server: McpServer, sessionId: string): void {
+function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcpEnabled: boolean): void {
   registerBrowserActionTools(server, sessionId, executeBrowserTool)
+
+  if (webMcpEnabled) {
+    server.registerTool(
+      'browser_tools_list',
+      {
+        description: 'List WebMCP tools registered by the current secure page. Use this to discover page-provided actions; this phase lists metadata only and cannot call them.',
+        inputSchema: { ...tabField },
+      },
+      async (args) => {
+        if (!isWebMcpEnabled()) {
+          return textReply({ count: 0, hint: 'WebMCP is disabled in Settings → Browser.' })
+        }
+        try {
+          const webContentsId = await resolveBrowserWebContentsId(sessionId, args.tab)
+          const entry = getWebMcpTools(webContentsId)
+          if (!entry || entry.tools.length === 0) {
+            return textReply({ count: 0, hint: 'This page has not registered any WebMCP tools.' })
+          }
+          return textReply({
+            origin: entry.origin,
+            count: entry.tools.length,
+            tools: entry.tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+          })
+        } catch (err) {
+          return errorReply(err)
+        }
+      },
+    )
+  }
 
   server.registerTool(
     'browser_snapshot',

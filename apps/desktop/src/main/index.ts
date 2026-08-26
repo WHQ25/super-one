@@ -196,6 +196,7 @@ import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, Schedu
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
 import { foldWindow, unfoldWindow } from './window-fold'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
+import { initBrowserWebmcp } from './browser/browser-webmcp'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
 import {
@@ -243,8 +244,6 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
 ])
 
-app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport')
-
 app.setName('SuperOne')
 if (is.dev) {
   app.setPath('userData', join(process.cwd(), '.dev-data'))
@@ -261,6 +260,10 @@ if (is.dev) {
   }
   app.setPath('userData', resolved.path)
 }
+
+const chromiumFeatures = ['PlatformHEVCDecoderSupport']
+if (readAppSettings().webmcpEnabled === true) chromiumFeatures.push('WebMCP')
+app.commandLine.appendSwitch('enable-features', chromiumFeatures.join(','))
 
 /**
  * Read-only git calls behind the polling status bar. Without a timeout a git
@@ -5439,6 +5442,7 @@ app.whenReady().then(async () => {
     }
   })()
   registerIpcHandlers()
+  if (readAppSettings().webmcpEnabled === true) initBrowserWebmcp()
   screen.on('display-added', pushComputerUseDisplaysChanged)
   screen.on('display-removed', pushComputerUseDisplaysChanged)
   screen.on('display-metrics-changed', pushComputerUseDisplaysChanged)

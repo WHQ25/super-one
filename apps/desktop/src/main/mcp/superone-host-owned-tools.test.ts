@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const gates = vi.hoisted(() => ({ webmcp: false }))
+
+vi.mock('../browser/browser-webmcp', () => ({
+  isWebMcpEnabled: () => gates.webmcp,
+}))
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from './superone-mcp-builtin-defs'
 import { COMPUTER_USE_TOOL_NAMES, setComputerUseEnabledForTests } from '../computer-use/tools'
 import {
@@ -20,6 +26,7 @@ import {
 describe('superone host-owned tool auto-approve matrix', () => {
   afterEach(() => {
     setComputerUseEnabledForTests(null)
+    gates.webmcp = false
   })
 
   it('lists every static builtin + mobile_share + computer tools for recognition', () => {
@@ -51,9 +58,20 @@ describe('superone host-owned tool auto-approve matrix', () => {
   })
 
   it('auto-allows every static builtin when qualified (Claude/ACP path)', () => {
+    gates.webmcp = true
     for (const bare of BUILT_IN_SUPERONE_TOOL_NAMES) {
       expect(isBuiltInSuperoneToolQualified(toQualifiedSuperoneToolName(bare)), bare).toBe(true)
     }
+  })
+
+  it('gates WebMCP auto-allow while continuing to recognize its bare name', () => {
+    expect(isHostOwnedSuperoneBareName('browser_tools_list')).toBe(true)
+    expect(isBuiltInSuperoneToolQualified('mcp__superone__browser_tools_list')).toBe(false)
+    expect(listOpenCodeAutoAllowSuperoneBareNames()).not.toContain('browser_tools_list')
+
+    gates.webmcp = true
+    expect(isBuiltInSuperoneToolQualified('mcp__superone__browser_tools_list')).toBe(true)
+    expect(listOpenCodeAutoAllowSuperoneBareNames()).toContain('browser_tools_list')
   })
 
   it('does not treat mini-app or third-party bare names as host-owned', () => {
@@ -72,6 +90,7 @@ describe('superone host-owned tool auto-approve matrix', () => {
   describe('OpenCode allow-name list', () => {
     it('includes static builtins + mobile_share always; computer only when enabled', () => {
       setComputerUseEnabledForTests(false)
+      gates.webmcp = true
       const off = listOpenCodeAutoAllowSuperoneBareNames()
       for (const bare of [...BUILT_IN_SUPERONE_TOOL_NAMES, 'mobile_share_file']) {
         expect(off).toContain(bare)

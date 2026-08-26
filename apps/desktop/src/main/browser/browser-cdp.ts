@@ -1,6 +1,6 @@
 import { webContents, type WebContents } from 'electron'
 import { readAppSettings } from '../app-settings-service'
-import { browserAutomationCall } from './browser-automation-bridge'
+import { resolveBrowserWebContentsId } from './browser-automation-bridge'
 import log from '../logger'
 
 export function isCdpEnabled(): boolean {
@@ -125,11 +125,7 @@ export function ensureAttachedById(webContentsId: number): WebContents {
 }
 
 export async function resolveCdpTarget(sessionId: string, tab?: string): Promise<number> {
-  const res = (await browserAutomationCall(sessionId, 'resolveWebContentsId', { tab })) as { webContentsId?: number }
-  if (typeof res?.webContentsId !== 'number' || res.webContentsId < 0) {
-    throw new Error('Could not resolve the target browser view for CDP')
-  }
-  return res.webContentsId
+  return resolveBrowserWebContentsId(sessionId, tab)
 }
 
 interface Viewport {

@@ -28,6 +28,7 @@ import {
   isComputerUseEnabled,
   normalizeComputerUseToolName,
 } from '../computer-use/tools'
+import { isWebMcpEnabled } from '../browser/browser-webmcp'
 
 export {
   MCP_SUPERONE_TOOL_PREFIX,
@@ -62,6 +63,7 @@ export function toQualifiedSuperoneToolName(bare: string): string {
 export function isBuiltInSuperoneToolQualified(qualifiedName: string): boolean {
   if (!qualifiedName.startsWith(MCP_SUPERONE_TOOL_PREFIX)) return false
   const bare = qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length)
+  if (bare === 'browser_tools_list') return isWebMcpEnabled()
   if (isStaticHostOwnedSuperoneBareName(bare)) return true
   if (isComputerUseEnabled() && normalizeComputerUseToolName(bare) != null) return true
   return false
@@ -74,7 +76,7 @@ export function isBuiltInSuperoneToolQualified(qualifiedName: string): boolean {
  */
 export function listOpenCodeAutoAllowSuperoneBareNames(): string[] {
   const names: string[] = [
-    ...BUILT_IN_SUPERONE_TOOL_NAMES,
+    ...BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name !== 'browser_tools_list' || isWebMcpEnabled()),
     MOBILE_SHARE_FILE_TOOL_NAME,
     MINIAPP_LIST_BARE_NAME,
     MINIAPP_CALL_BARE_NAME,

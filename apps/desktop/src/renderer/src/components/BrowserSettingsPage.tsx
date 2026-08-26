@@ -32,6 +32,7 @@ function ExperimentalRow({
 export function BrowserSettingsPage() {
   const { t } = useTranslation()
   const [cdpEnabled, setCdpEnabled] = useState(false)
+  const [webmcpEnabled, setWebmcpEnabled] = useState(false)
   const [cookiesEnabled, setCookiesEnabled] = useState(false)
   const [mockEnabled, setMockEnabled] = useState(false)
   const [emulateEnabled, setEmulateEnabled] = useState(false)
@@ -43,6 +44,7 @@ export function BrowserSettingsPage() {
     window.app.getAppSettings().then((settings) => {
       if (!mounted) return
       setCdpEnabled(settings.cdpEnabled)
+      setWebmcpEnabled(settings.webmcpEnabled)
       setCookiesEnabled(settings.cdpCookiesEnabled)
       setMockEnabled(settings.cdpMockEnabled)
       setEmulateEnabled(settings.cdpEmulateEnabled)
@@ -103,6 +105,28 @@ export function BrowserSettingsPage() {
           <Switch
             checked={cdpEnabled}
             onCheckedChange={handleCdpToggle}
+            disabled={loading}
+          />
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-lg border border-border">
+        <div className="flex items-start justify-between gap-4 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{t('settings.browser.webmcp.title')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t('settings.browser.webmcp.description')}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t('settings.browser.webmcp.restartNote')}
+            </p>
+          </div>
+          <Switch
+            checked={webmcpEnabled}
+            onCheckedChange={async (enabled) => {
+              const result = await window.app.saveAppSettings({ webmcpEnabled: enabled })
+              setWebmcpEnabled(result.webmcpEnabled)
+            }}
             disabled={loading}
           />
         </div>

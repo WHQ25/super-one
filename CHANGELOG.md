@@ -4,6 +4,64 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.57.5-alpha] - 2026-08-26
+
+### Added
+
+- Settings: tiered power modes — sleep prevention moved out of Remote
+  Control so it applies whenever SuperOne is open, with the legacy remote
+  toggle migrated and closed-lid operation behind a confirmation.
+- Providers: endpoints are addressed by route instead of a stored base URL.
+  The site root lives once on the plan (or on a key that overrides it) and
+  each endpoint carries only the paths that differ from its protocol default.
+- Providers: relay endpoints are identified by the path they publish rather
+  than guessed from model ids, so one relay root can serve Sora, Ark and
+  New API video wires side by side.
+- MCP: config tools can manage a key's site root and per-protocol routes.
+- Claude: Stop aborts the current turn only, leaving background agents,
+  workflows and Bash to their own per-task stop controls.
+- Add project: Local Folder opens the native Finder / File Explorer picker,
+  and a pasted repo link continues to the clone destination.
+
+### Fixed
+
+- Claude: a turn failure lands on the message that caused it instead of
+  whichever turn is current when the result arrives.
+- Claude: a turn stays open while queued sends are still pending, so the
+  composer and the Stop button no longer flicker between queued turns.
+- Claude: steering a queued message no longer flags the turn it steered as
+  aborted.
+- Chat: the running-command footer retires once the turn produces output,
+  instead of labelling every slash command for its whole run.
+- Chat: a file citation renders its line range instead of stranding it on
+  the path, and a file chip takes its icon from the path rather than from a
+  prose link label.
+- Providers: stored endpoint base URLs migrate to routes through a verified,
+  byte-identical conversion.
+- Providers: a model a relay publishes on two wires is listed under both,
+  with vendor-official video wires outranking a relay's own.
+- Providers: a custom platform's favicon shows in every provider picker, not
+  just the settings page.
+- Scheduled send: a delivered row retires when its text lands, so the
+  composer no longer holds a stale "Send at …" chip that blocks steering the
+  turn that schedule started.
+- CLI: a killed terminal no longer writes its exit to an already-closed
+  database.
+
+### Changed
+
+- Claude Agent SDK upgraded to 0.3.246; reading a PDF no longer pushes its
+  base64 payload through the legacy turn-event stream. Managed installs —
+  remote nodes and the registry-installed CLI — pin the same version.
+- Providers: the New API video wire is named after New API rather than
+  labelled "Relay Video".
+
+### Tests
+
+- Providers: video routing is covered for a relay serving two wires — the
+  vendor-official wire wins by default, an explicit binding overrides it,
+  and a model id overrides the binding.
+
 ## [0.57.4-alpha] - 2026-08-25
 
 ### Added

@@ -558,6 +558,13 @@ export interface MessageMetadata {
   modelUsage?: Record<string, ModelUsageInfo>
   stopReason?: string | null
   terminalReason?: string
+  /**
+   * Queued user sends still pending when this result was produced (SDK
+   * `queued_turn_count`, 0.3.243+). Non-zero means another turn and another
+   * result still follow, so the turn has not actually settled. Absent on
+   * harnesses and SDK builds that do not report it.
+   */
+  queuedTurnCount?: number
   consumedTokens?: { input: number; output: number }
   codex?: CodexTurnInfo
   resultText?: string

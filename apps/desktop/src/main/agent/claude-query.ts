@@ -314,6 +314,8 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let turnMessageId = getCurrentMessageId()
   let turnActive = false
   let resultSeen = false
+  /** Queued sends still pending per the last result (SDK `queued_turn_count`). */
+  let pendingQueuedTurns = 0
   let turnUserEchoSeen = false
   const timestampAppliedIds = new Set<string>()
 
@@ -335,7 +337,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   const resolveCreatedAt = (raw: unknown): string =>
     resolveSdkTimestamp(raw) ?? new Date().toISOString()
   const maybeEmitDeferredIdle = () => {
-    if (resultSeen && activeBackgroundTasks.size === 0 && turnMessageId === getCurrentMessageId()) {
+    if (resultSeen && pendingQueuedTurns === 0 && activeBackgroundTasks.size === 0 && turnMessageId === getCurrentMessageId()) {
       emit({ type: 'status_change', status: 'idle' })
     }
   }
@@ -1073,11 +1075,19 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
 
           resultSeen = true
           turnActive = false
+          // A result produced while queued sends remain is not the end of the
+          // conversation turn — another turn and another result still follow.
+          // Settling to idle here would flash the composer open and drop the
+          // Stop button between queued turns. An interrupt drains the queue, so
+          // its result is always terminal.
+          pendingQueuedTurns = getInterrupted() ? 0 : (metadata.queuedTurnCount ?? 0)
           onStepBoundary?.()
           if (messageId === getCurrentMessageId()) {
             emit({
               type: 'status_change',
-              status: activeBackgroundTasks.size === 0 ? 'idle' : 'background',
+              status: pendingQueuedTurns > 0
+                ? 'streaming'
+                : activeBackgroundTasks.size === 0 ? 'idle' : 'background',
             })
           }
           break

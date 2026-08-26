@@ -58,6 +58,28 @@ describe('reduceMessageComplete: status settle', () => {
     expect(patch.streamingTokens).toBeUndefined()
   })
 
+  it('does not settle while the result reports queued sends still pending', () => {
+    // The turn completed, but SDK `queued_turn_count` says another turn follows —
+    // settling here would flash the composer open between queued turns.
+    const session = createDefaultPerSessionState()
+    session.status = 'streaming'
+    session.messages = [assistant('m1')]
+    const patch = reduceMessageComplete(session, {
+      type: 'message_complete', messageId: 'm1', metadata: { queuedTurnCount: 1 },
+    } as never)
+    expect(patch.status).toBeUndefined()
+  })
+
+  it('settles once the result reports the queue drained', () => {
+    const session = createDefaultPerSessionState()
+    session.status = 'streaming'
+    session.messages = [assistant('m1')]
+    const patch = reduceMessageComplete(session, {
+      type: 'message_complete', messageId: 'm1', metadata: { queuedTurnCount: 0 },
+    } as never)
+    expect(patch.status).toBe('idle')
+  })
+
   it("does not settle when status is 'background' (background streaming stays parked)", () => {
     const session = createDefaultPerSessionState()
     session.status = 'background'

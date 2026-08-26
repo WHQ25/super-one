@@ -41,7 +41,11 @@ export function reduceMessageComplete(session: PerSessionState, event: MessageCo
   // queued turn it can fail to deliver that final idle (Bug B), leaving
   // the UI frozen. Reconciling here removes that single point of failure;
   // it does not touch 'background' or non-current-turn completions.
-  const settleStatusIdle = isCurrentTurn && !hasUncompletedAgents && session.status === 'streaming'
+  // `queuedTurnCount` is the backend's authoritative "another turn follows" signal
+  // (SDK 0.3.243+). While it is non-zero the turn has not settled, so neither the
+  // reconciliation above nor the backend's own status_change should go idle.
+  const queuedTurnsPending = (event.metadata?.queuedTurnCount ?? 0) > 0
+  const settleStatusIdle = isCurrentTurn && !hasUncompletedAgents && !queuedTurnsPending && session.status === 'streaming'
   return {
     ...(settleStatusIdle ? { status: 'idle' as const } : {}),
     ...(previewsChanged ? { _streamingToolInputPreviews: nextPreviews } : {}),

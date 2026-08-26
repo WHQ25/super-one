@@ -1778,3 +1778,89 @@ describe('tool_result error classification', () => {
     expect(resultFor(events, 'edit-1')?.isError).toBe(true)
   })
 })
+
+describe('queued_turn_count keeps the turn from settling early', () => {
+  it('stays streaming when the result reports queued sends still pending', async () => {
+    // SDK 0.3.243+: a result produced while queued sends remain reports how many
+    // turns still follow, so the UI must not fall back to idle between them.
+    state.messages = [
+      { type: 'result', subtype: 'success', usage: {}, queued_turn_count: 1 },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-queued',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events).not.toContainEqual({ type: 'status_change', status: 'idle' })
+    expect(events).toContainEqual({ type: 'status_change', status: 'streaming' })
+  })
+
+  it('settles to idle when the result reports no queued sends left', async () => {
+    state.messages = [
+      { type: 'result', subtype: 'success', usage: {}, queued_turn_count: 0 },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-drained',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
+  })
+
+  it('reports the pending count on message_complete so the reducer can hold the turn open', async () => {
+    state.messages = [
+      { type: 'result', subtype: 'success', usage: {}, queued_turn_count: 2 },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-pending',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const complete = events.find((e) => e.type === 'message_complete') as
+      | { metadata?: { queuedTurnCount?: number } }
+      | undefined
+    expect(complete?.metadata?.queuedTurnCount).toBe(2)
+  })
+
+  it('still settles to idle on a legacy result that omits the field', async () => {
+    state.messages = [{ type: 'result', subtype: 'success', usage: {} }]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-legacy',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
+    const complete = events.find((e) => e.type === 'message_complete') as
+      | { metadata?: { queuedTurnCount?: number } }
+      | undefined
+    expect(complete?.metadata?.queuedTurnCount).toBeUndefined()
+  })
+})

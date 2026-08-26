@@ -131,6 +131,7 @@ export function buildClaudeResultMetadata(
     numTurns: result.num_turns,
     stopReason: result.stop_reason ?? null,
     terminalReason: result.terminal_reason,
+    queuedTurnCount: typeof result.queued_turn_count === 'number' ? result.queued_turn_count : undefined,
     resultText: result.result,
     fastModeState: result.fast_mode_state,
     fastModeDisabledReason: result.fast_mode_disabled_reason,

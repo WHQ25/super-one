@@ -371,6 +371,39 @@ describe('declared routes override endpoint-type names', () => {
     ])
   })
 
+  // Real shape from a New API relay that added an Ark ingress: the same Seedance model is reachable
+  // at Ark's official path and at the relay's own, and the two accept different parameters.
+  it('lists a model under every wire the relay publishes it on, official shape first', () => {
+    const json = {
+      supported_endpoint: {
+        'openai-video': { path: '/v1/video/generations', method: 'POST' },
+        'ark-video': { path: '/api/v3/contents/generations/tasks', method: 'POST' },
+      },
+      data: [
+        {
+          model_name: 'doubao-seedance-2-0-260128',
+          supported_endpoint_types: ['openai-video', 'ark-video'],
+        },
+      ],
+    }
+    const [model] = parseNewApiPricing(json)!
+    // Both wires survive — collapsing to one hid the endpoint the relay had just declared.
+    expect(Object.keys(model.byFamily)).toEqual(['ark-video', 'newapi-video'])
+    expect(model.byFamily).toEqual({ 'ark-video': ['video'], 'newapi-video': ['video'] })
+  })
+
+  it('ranks a vendor-official video wire above the relay\'s own', () => {
+    const json = {
+      supported_endpoint: {
+        a: { path: '/v1/video/generations', method: 'POST' },
+        b: { path: '/v1/videos', method: 'POST' },
+      },
+      data: [{ model_name: 'sora-2', supported_endpoint_types: ['a', 'b'] }],
+    }
+    const [model] = parseNewApiPricing(json)!
+    expect(Object.keys(model.byFamily)).toEqual(['openai-video', 'newapi-video'])
+  })
+
   it('recognises a name it has no convention for, purely from the published path', () => {
     const json = {
       supported_endpoint: { 'ark-native': { path: '/api/v3/contents/generations/tasks' } },

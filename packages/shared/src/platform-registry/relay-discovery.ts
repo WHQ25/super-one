@@ -231,20 +231,26 @@ const SLOT_PREFERENCE: EndpointSlot[] = [
   'volcengine',
   'newapi',
   'openai-video',
-  'newapi-video',
   'ark-video',
   'google-video',
+  // A relay's own video wire ranks last: it works, but it is the one shape a customer cannot also
+  // send to the vendor directly, so it is the fallback rather than the default.
+  'newapi-video',
 ]
 
 /**
- * Which of `slots` can carry `task`. Chat rides every one of them (a model reachable on both the
- * OpenAI and Anthropic wires should appear under both); single-wire tasks take the leader.
+ * Which of `slots` can carry `task`, most preferred first.
+ *
+ * Every one of them: a model the relay publishes on several wires is genuinely reachable on each,
+ * and which to use is the user's call — a relay can serve one Seedance model at both Ark's
+ * `/contents/generations/tasks` and its own `/video/generations`, and the two accept different
+ * parameters. Collapsing to the leader here hid the second endpoint entirely, so the model never
+ * appeared under it even after the relay declared it.
  */
 function slotsForTask(task: CapabilityTask, slots: EndpointSlot[]): EndpointSlot[] {
-  const able = slots
+  return slots
     .filter((slot) => slotTasks(slot).includes(task))
     .sort((a, b) => SLOT_PREFERENCE.indexOf(a) - SLOT_PREFERENCE.indexOf(b))
-  return task === 'chat' ? able : able.slice(0, 1)
 }
 
 function tasksForModel(

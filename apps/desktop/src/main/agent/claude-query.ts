@@ -106,6 +106,12 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       : undefined,
     enableFileCheckpointing: true,
     agentProgressSummaries: true,
+    // ChatStatusBar lists every running background Bash/agent/workflow with its
+    // own stop control, wired through to `query.stopTask`. Declaring that lets
+    // Stop abort only the current turn instead of taking the whole workflow with
+    // it. The CLI fails closed without this — it assumes a spared task would be
+    // unstoppable from the consumer, which is exactly what we do offer.
+    perTaskStopAffordance: true,
     taskBudget: opts.taskBudget ? { total: opts.taskBudget } : undefined,
     extraArgs: { 'replay-user-messages': null },
     settingSources: ['user', 'project', 'local'],

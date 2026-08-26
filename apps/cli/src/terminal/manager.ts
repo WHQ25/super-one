@@ -110,6 +110,12 @@ export class NodeTerminalManager {
       info.exitCode = exitCode
       info.updatedAt = info.exitedAt
       live.proc = null
+      // node-pty delivers this asynchronously, so for a terminal we killed it
+      // arrives after `kill()` already dropped it from `byId` and recorded the
+      // exit. On shutdown that is also after `db.close()` (runtime.stop runs
+      // `killAll()` then closes), which would throw on a closed connection.
+      // Only a self-exit still owns a row here.
+      if (this.byId.get(terminalId) !== live) return
       this.db
         .prepare(
           `UPDATE terminals SET updated_at = ?, exited_at = ?, exit_code = ? WHERE terminal_id = ?`,

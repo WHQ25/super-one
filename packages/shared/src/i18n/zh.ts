@@ -2878,7 +2878,7 @@ export const zh: Messages = {
       protocolArkImages: 'Seedream 图像',
       endpointRoute: '路径',
       protocolArkVideo: 'Seedance 视频',
-      protocolNewapiVideo: '视频中转',
+      protocolNewapiVideo: 'NewAPI 视频',
       protocolGoogleGenerative: 'generateContent',
       protocolGoogleVideo: 'Veo 视频',
       taskChat: '对话',

@@ -6349,7 +6349,7 @@ export const en: Messages = {
       protocolArkImages: 'Seedream Images',
       endpointRoute: 'Route',
       protocolArkVideo: 'Seedance Video',
-      protocolNewapiVideo: 'Relay Video',
+      protocolNewapiVideo: 'NewAPI Video',
       protocolGoogleGenerative: 'generateContent',
       protocolGoogleVideo: 'Veo Video',
       taskChat: 'Chat',

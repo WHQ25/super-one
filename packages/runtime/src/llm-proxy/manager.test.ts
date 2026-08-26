@@ -47,6 +47,7 @@ describe('proxyUpstreamFromResolved', () => {
       baseUrl: 'https://api.anthropic.com',
       apiKey: 'sk-ant',
       auth: 'api-key',
+      models: [{ id: 'claude-sonnet-5', name: 'Claude Sonnet 5' }],
     }
     expect(proxyUpstreamFromResolved(resolved)).toBeNull()
   })

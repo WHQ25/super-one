@@ -336,8 +336,8 @@ describe('isLiveSession', () => {
 describe('getSessionTitle', () => {
   it('returns first user text', () => {
     const messages: ChatMessage[] = [
-      { id: '1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: 0 },
-      { id: '2', role: 'user', status: 'complete', content: [{ type: 'text', text: '  Hello world  ' }], createdAt: 1 },
+      { id: '1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-03-02T00:00:00.000Z', providerId: 'claude' },
+      { id: '2', role: 'user', status: 'complete', content: [{ type: 'text', text: '  Hello world  ' }], createdAt: '2026-03-02T00:00:01.000Z', providerId: 'claude' },
     ]
     expect(getSessionTitle(messages)).toBe('Hello world')
   })
@@ -352,7 +352,7 @@ describe('resolveSessionTitle', () => {
   it('prefers agent title then message then db then terminal', () => {
     expect(resolveSessionTitle('Agent', undefined, 'DB', 'term')).toBe('Agent')
     expect(resolveSessionTitle(null, [
-      { id: '1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'From msg' }], createdAt: 0 },
+      { id: '1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'From msg' }], createdAt: '2026-03-02T00:00:00.000Z', providerId: 'claude' },
     ], 'DB', 'term')).toBe('From msg')
     expect(resolveSessionTitle(null, undefined, 'DB', 'term')).toBe('DB')
     expect(resolveSessionTitle(null, undefined, null, 'term')).toBe('term')

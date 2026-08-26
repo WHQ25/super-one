@@ -24,10 +24,10 @@ afterEach(() => {
 function client(scopes: AuthenticatedClient['scopes']): AuthenticatedClient {
   return {
     clientSessionId: 'c1',
-    deviceId: 'd1',
     scopes,
-    pairedAt: Date.now(),
-  } as AuthenticatedClient
+    devicePublicKeyFingerprint: 'fp-d1',
+    devicePublicKeyPem: '-----BEGIN PUBLIC KEY-----\nd1\n-----END PUBLIC KEY-----\n',
+  }
 }
 
 function boot() {

@@ -9,10 +9,10 @@ import { dispatchResourceRpc } from './resource-handlers'
 function client(scopes: AuthenticatedClient['scopes']): AuthenticatedClient {
   return {
     clientSessionId: 'c1',
-    deviceId: 'd1',
     scopes,
-    pairedAt: Date.now(),
-  } as AuthenticatedClient
+    devicePublicKeyFingerprint: 'fp-d1',
+    devicePublicKeyPem: '-----BEGIN PUBLIC KEY-----\nd1\n-----END PUBLIC KEY-----\n',
+  }
 }
 
 describe('resource RPC handlers', () => {
@@ -43,10 +43,10 @@ describe('resource RPC handlers', () => {
     }
   }
 
-  it('installs and lists a skill via skills.* RPC', () => {
+  it('installs and lists a skill via skills.* RPC', async () => {
     const ctx = ctxFor(['workspace:read', 'workspace:write'])
 
-    const installed = dispatchResourceRpc(
+    const installed = await dispatchResourceRpc(
       'skills.install',
       {
         projectId: 'p1',
@@ -61,7 +61,7 @@ describe('resource RPC handlers', () => {
     const skill = (installed?.result as { skill: { name: string; sourcePath: string } }).skill
     expect(skill.name).toBe('demo')
 
-    const listed = dispatchResourceRpc(
+    const listed = await dispatchResourceRpc(
       'skills.list',
       { projectId: 'p1', provider: 'claude' },
       ctx,
@@ -69,7 +69,7 @@ describe('resource RPC handlers', () => {
     const skills = (listed?.result as { skills: Array<{ name: string }> }).skills
     expect(skills.some((s) => s.name === 'demo')).toBe(true)
 
-    const deleted = dispatchResourceRpc(
+    const deleted = await dispatchResourceRpc(
       'skills.delete',
       { projectId: 'p1', provider: 'claude', sourcePath: skill.sourcePath },
       ctx,
@@ -77,10 +77,10 @@ describe('resource RPC handlers', () => {
     expect(deleted?.result).toEqual({ ok: true, provider: 'claude' })
   })
 
-  it('saves and lists claude MCP via mcp.* RPC', () => {
+  it('saves and lists claude MCP via mcp.* RPC', async () => {
     const ctx = ctxFor(['workspace:read', 'workspace:write'])
 
-    const saved = dispatchResourceRpc(
+    const saved = await dispatchResourceRpc(
       'mcp.save',
       {
         projectId: 'p1',
@@ -93,7 +93,7 @@ describe('resource RPC handlers', () => {
     )
     expect(saved?.error).toBeUndefined()
 
-    const listed = dispatchResourceRpc(
+    const listed = await dispatchResourceRpc(
       'mcp.list',
       { projectId: 'p1', provider: 'claude' },
       ctx,
@@ -102,7 +102,7 @@ describe('resource RPC handlers', () => {
       .servers
     expect(servers.some((s) => s.name === 'tools' && s.command === 'node')).toBe(true)
 
-    const toggled = dispatchResourceRpc(
+    const toggled = await dispatchResourceRpc(
       'mcp.toggle',
       {
         projectId: 'p1',
@@ -115,7 +115,7 @@ describe('resource RPC handlers', () => {
     )
     expect(toggled?.error).toBeUndefined()
 
-    const deleted = dispatchResourceRpc(
+    const deleted = await dispatchResourceRpc(
       'mcp.delete',
       { projectId: 'p1', provider: 'claude', name: 'tools', scope: 'project' },
       ctx,
@@ -124,9 +124,9 @@ describe('resource RPC handlers', () => {
   })
 
 
-  it('forbids write without workspace:write', () => {
+  it('forbids write without workspace:write', async () => {
     const ctx = ctxFor(['workspace:read'])
-    const res = dispatchResourceRpc(
+    const res = await dispatchResourceRpc(
       'skills.install',
       {
         projectId: 'p1',
@@ -139,15 +139,15 @@ describe('resource RPC handlers', () => {
     expect(res?.error?.code).toBe('forbidden')
   })
 
-  it('requires provider for mcp.list', () => {
+  it('requires provider for mcp.list', async () => {
     const ctx = ctxFor(['workspace:read'])
-    const res = dispatchResourceRpc('mcp.list', { projectId: 'p1' }, ctx)
+    const res = await dispatchResourceRpc('mcp.list', { projectId: 'p1' }, ctx)
     expect(res?.error?.code).toBe('invalid_argument')
   })
 
-  it('does not expose MCP env or headers without node:admin', () => {
+  it('does not expose MCP env or headers without node:admin', async () => {
     const ctx = ctxFor(['workspace:read', 'workspace:write'])
-    const saved = dispatchResourceRpc(
+    const saved = await dispatchResourceRpc(
       'mcp.save',
       {
         projectId: 'p1',
@@ -164,7 +164,7 @@ describe('resource RPC handlers', () => {
     )
     expect(saved?.error).toBeUndefined()
 
-    const listed = dispatchResourceRpc(
+    const listed = await dispatchResourceRpc(
       'mcp.list',
       { projectId: 'p1', provider: 'claude' },
       ctx,
@@ -176,9 +176,9 @@ describe('resource RPC handlers', () => {
     expect(server).not.toHaveProperty('headers')
   })
 
-  it('requires node:admin for user-scope writes', () => {
+  it('requires node:admin for user-scope writes', async () => {
     const ctx = ctxFor(['workspace:read', 'workspace:write'])
-    const result = dispatchResourceRpc(
+    const result = await dispatchResourceRpc(
       'mcp.save',
       {
         projectId: 'p1',
@@ -192,9 +192,9 @@ describe('resource RPC handlers', () => {
     expect(result?.error?.code).toBe('forbidden')
   })
 
-  it('rejects an unknown skills provider instead of defaulting to Claude', () => {
+  it('rejects an unknown skills provider instead of defaulting to Claude', async () => {
     const ctx = ctxFor(['workspace:read'])
-    const res = dispatchResourceRpc('skills.list', { projectId: 'p1', provider: 'other' }, ctx)
+    const res = await dispatchResourceRpc('skills.list', { projectId: 'p1', provider: 'other' }, ctx)
     expect(res?.error?.code).toBe('invalid_argument')
   })
 
@@ -228,17 +228,12 @@ describe('resource RPC handlers', () => {
     )
 
     const ctx = ctxFor(['workspace:read'])
-    // plugins.list is async (codex path uses dynamic import); always await.
-    const pluginsRes = await Promise.resolve(
-      dispatchResourceRpc('plugins.list', { projectId: 'p1', provider: 'claude' }, ctx),
-    )
+    const pluginsRes = await dispatchResourceRpc('plugins.list', { projectId: 'p1', provider: 'claude' }, ctx)
     expect(pluginsRes?.error).toBeUndefined()
     const plugins = (pluginsRes?.result as { plugins: Array<{ name: string }> }).plugins
     expect(plugins.some((p) => p.name === 'demo')).toBe(true)
 
-    const agentsRes = await Promise.resolve(
-      dispatchResourceRpc('agents.list', { projectId: 'p1' }, ctx),
-    )
+    const agentsRes = await dispatchResourceRpc('agents.list', { projectId: 'p1' }, ctx)
     expect(agentsRes?.error).toBeUndefined()
     const agents = (agentsRes?.result as { agents: Array<{ name: string; scope: string }> })
       .agents
@@ -250,7 +245,7 @@ describe('resource RPC handlers', () => {
     const { join } = await import('node:path')
     const ctx = ctxFor(['workspace:read', 'workspace:write'])
 
-    const saved = dispatchResourceRpc(
+    const saved = await dispatchResourceRpc(
       'hooks.save',
       {
         projectId: 'p1',
@@ -272,11 +267,11 @@ describe('resource RPC handlers', () => {
     }
     expect(data.hooks.Stop[0]!.hooks[0]!.command).toBe('echo stop')
 
-    const listed = dispatchResourceRpc('hooks.list', { projectId: 'p1' }, ctx)
+    const listed = await dispatchResourceRpc('hooks.list', { projectId: 'p1' }, ctx)
     const hooks = (listed?.result as { hooks: Array<{ id: string }> }).hooks
     expect(hooks).toHaveLength(1)
 
-    const deleted = dispatchResourceRpc(
+    const deleted = await dispatchResourceRpc(
       'hooks.delete',
       { projectId: 'p1', id: hooks[0]!.id },
       ctx,
@@ -284,9 +279,9 @@ describe('resource RPC handlers', () => {
     expect(deleted?.result).toEqual({ ok: true })
   })
 
-  it('requires node:admin for user-scope hooks.save', () => {
+  it('requires node:admin for user-scope hooks.save', async () => {
     const ctx = ctxFor(['workspace:read', 'workspace:write'])
-    const res = dispatchResourceRpc(
+    const res = await dispatchResourceRpc(
       'hooks.save',
       {
         projectId: 'p1',
@@ -306,7 +301,7 @@ describe('resource RPC handlers', () => {
     const { join } = await import('node:path')
     const ctx = ctxFor(['workspace:read', 'workspace:write', 'node:admin'])
 
-    const saved = dispatchResourceRpc(
+    const saved = await dispatchResourceRpc(
       'hooks.save',
       {
         projectId: 'p1',

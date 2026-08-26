@@ -54,7 +54,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     chmodSync(binary, 0o755)
     // Long-lived ClaudeLiveSession feeds the bridge; mock must wait for
     // each user message like the real Agent SDK query({ prompt: bridge }).
-    const queryFn = (({ prompt }) =>
+    const queryFn = (({ prompt }: { prompt: unknown }) =>
       (async function* () {
         for await (const _user of prompt as AsyncIterable<unknown>) {
           yield {

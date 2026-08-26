@@ -4,6 +4,7 @@ import { createEvent, fireEvent, render, screen, waitFor } from '@testing-librar
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HTMLAttributes, ReactNode } from 'react'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
+import type { EnvironmentListItem } from '@superone/shared/environment'
 
 let sessionsByFolder: Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; parentSessionId?: string }>> = {}
 
@@ -61,11 +62,10 @@ const mockWindowApp = {
 }
 
 const mockEnvironment = {
-  listItems: vi.fn(async (): Promise<Array<{
-    connectionId: string
-    state: string
-    label: string
-  }>> => []),
+  // Partial of the real type rather than a hand-written shape: these fixtures
+  // set only the fields a case exercises, but field names and value types are
+  // still checked against what the sidebar actually receives.
+  listItems: vi.fn(async (): Promise<Array<Partial<EnvironmentListItem>>> => []),
   onStatusEvent: vi.fn(() => () => {}),
   connect: vi.fn(async () => {}),
   upgradeNode: vi.fn(async () => ({ version: '0.50.3-alpha', warnings: [] as string[] })),

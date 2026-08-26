@@ -116,7 +116,7 @@ describe('ProviderLabel tight combine', () => {
     const { container } = render(<ProviderLabel brandKey="openai" combine size={28} />)
     const svgs = [...container.querySelectorAll('svg')]
     expect(svgs.length).toBeGreaterThanOrEqual(2)
-    expect(svgs.some((el) => (el as HTMLElement).style.marginRight)).toBe(false)
+    expect(svgs.some((el) => el.style.marginRight)).toBe(false)
     expect(container.firstElementChild).toHaveStyle({ gap: `${28 * TIGHT_COMBINE_SPACE_MULTIPLE}px` })
   })
 

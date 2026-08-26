@@ -291,7 +291,7 @@ describe('session agents confirm prompt', () => {
         task: 'Please confirm the request body.',
         name: 'API review session',
         role: 'Peer',
-        config: { name: 'API review session', role: 'Peer', summary: 'Sync on API types' },
+        config: { name: 'API review session', role: 'Peer' },
       }],
     }
 

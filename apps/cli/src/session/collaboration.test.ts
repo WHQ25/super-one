@@ -227,7 +227,7 @@ describe('collaboration grants + mailbox', () => {
           config: {
             cwd: projectDir,
             permissionMode: 'bypassPermissions',
-            sandboxMode: 'danger-full-access',
+            sandboxMode: 'off',
           },
         },
       ],

@@ -44,7 +44,7 @@ describe('CodexResponsesTransformer (@musistudio endpoint surface)', () => {
       choices: [{ message: { role: 'assistant', content: 'Hello there' }, finish_reason: 'stop' }],
     })
     const out = await transformer.transformResponseIn(upstream)
-    const body = await out.json()
+    const body = await out.json() as Record<string, unknown>
     expect(body.object).toBe('response')
     expect(body.status).toBe('completed')
     const message = (body.output as Record<string, unknown>[]).find((o) => o.type === 'message') as Record<string, unknown>
@@ -55,7 +55,7 @@ describe('CodexResponsesTransformer (@musistudio endpoint surface)', () => {
     const upstream = jsonResponse({ error: { message: 'bad key', type: 'invalid_request_error' } }, 401)
     const out = await transformer.transformResponseIn(upstream)
     expect(out.status).toBe(401)
-    const body = await out.json()
+    const body = await out.json() as { error: Record<string, unknown> }
     expect(body.error.message).toBe('bad key')
     expect(body.error.type).toBe('invalid_request_error')
   })

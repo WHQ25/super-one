@@ -20,6 +20,14 @@ export interface DebugMentionDecorationStorage {
   hint: string
 }
 
+// Tiptap ships `interface Storage {}` empty for extensions to augment; without
+// this `editor.storage.debugMentionDecoration` is not a known property.
+declare module '@tiptap/core' {
+  interface Storage {
+    debugMentionDecoration: DebugMentionDecorationStorage
+  }
+}
+
 function firstLineGhost(paragraph: PMNode): {
   pieces: DebugGhostPiece[]
   widgetOffset: number

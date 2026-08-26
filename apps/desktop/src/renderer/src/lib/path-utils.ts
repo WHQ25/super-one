@@ -133,7 +133,9 @@ export function subscribeMediaServerPort(listener: (port: number) => void): () =
   return () => { _portListeners.delete(listener) }
 }
 
-if (typeof window !== 'undefined' && window.app?.getMediaServerPort) {
+// Guards the module being imported outside a renderer (tests, node tooling).
+// `window.app` is injected by preload, so its methods are always present there.
+if (typeof window !== 'undefined' && window.app) {
   void ensureMediaServerPort()
 }
 

@@ -295,11 +295,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     // Debounce + keep previous rows while loading to avoid list flash.
     useEffect(() => {
       const phase = parsedSessionQuery?.phase
-      const canLoadSessions =
-        parsedSessionQuery
-        && parsedSessionQuery.scope
-        && (phase === 'need-title' || phase === 'search')
-      if (!canLoadSessions) {
+      const scope = parsedSessionQuery?.scope
+      // Inlined rather than held in a `canLoadSessions` const so the compiler
+      // carries the non-null `scope` through to the load call below.
+      if (!parsedSessionQuery || !scope || (phase !== 'need-title' && phase !== 'search')) {
         if (!parsedSessionQuery || phase === 'pick-project') {
           setSessionRows([])
           setSessionLoadState(initialSessionMentionLoadState())
@@ -310,7 +309,6 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
         return
       }
-      const scope = parsedSessionQuery.scope
       const titleQuery = parsedSessionQuery.titleQuery
       const gen = ++sessionLoadGenRef.current
       setSessionLoading(true)

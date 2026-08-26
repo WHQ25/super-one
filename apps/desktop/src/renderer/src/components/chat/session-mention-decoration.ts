@@ -31,6 +31,14 @@ export interface SessionMentionDecorationStorage {
   dismissedAtPositions: Set<number>
 }
 
+// Tiptap ships `interface Storage {}` empty for extensions to augment; without
+// this `editor.storage.sessionMentionDecoration` is not a known property.
+declare module '@tiptap/core' {
+  interface Storage {
+    sessionMentionDecoration: SessionMentionDecorationStorage
+  }
+}
+
 export const SessionMentionDecoration = Extension.create<
   SessionMentionDecorationOptions,
   SessionMentionDecorationStorage

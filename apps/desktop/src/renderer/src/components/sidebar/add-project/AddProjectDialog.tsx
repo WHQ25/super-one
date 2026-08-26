@@ -352,12 +352,12 @@ export function AddProjectDialog({
               }}
               onKeyDown={(e) => {
                 // IME composition (e.g. Chinese/Japanese): Enter confirms a candidate,
-                // not the dialog step. Check both React and native flags; keyCode 229
-                // covers older engines that omit isComposing.
+                // not the dialog step. React's synthetic event does not carry
+                // `isComposing`, so read it off the native event; keyCode 229 covers
+                // older engines that omit the flag entirely.
                 if (
                   imeComposingRef.current ||
                   e.nativeEvent.isComposing ||
-                  e.isComposing ||
                   e.keyCode === 229
                 ) {
                   return

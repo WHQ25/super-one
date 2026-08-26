@@ -104,7 +104,11 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
     lastIdentityKey.current = key
     setIdentityUrl(relaySiteRoot(trimmed) || trimmed)
     setIdentityBusy(true)
-    const pending = (async () => {
+    // Declared ahead of the IIFE because its `finally` compares against it. That
+    // only runs after the first await, so the binding is assigned by then, but
+    // the compiler cannot prove it from a closure.
+    let pending: Promise<void> | undefined
+    pending = (async () => {
       try {
         const identity = await window.app.resolveSiteIdentity(trimmed, isDark)
         if (gen !== identityGen.current) return

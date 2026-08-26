@@ -174,7 +174,9 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
     }
     return undefined
   })
-  const agents = useMemo(() => {
+  // Annotated because the live-only branch omits the optional prompt/result
+  // fields, which would otherwise widen this into a union that drops them.
+  const agents = useMemo<WorkflowAgentInfo[]>(() => {
     if (!liveRows?.length) return diskAgents
     if (diskAgents.length === 0) {
       return liveRows.map((a, i) => ({

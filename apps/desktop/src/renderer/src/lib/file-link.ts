@@ -1,23 +1,31 @@
 import { displayHostPath } from '@superone/shared/remote-resource-key'
 
-export function parseFileLinkTarget(target: string): { filePath: string; lineNumber?: number } {
-  const hashMatch = target.match(/^(.*)#L(\d+)$/)
-  if (hashMatch) {
-    return {
-      filePath: hashMatch[1],
-      lineNumber: Number.parseInt(hashMatch[2], 10),
-    }
-  }
+export type FileLinkTarget = { filePath: string; lineNumber?: number; endLine?: number }
 
-  const colonMatch = target.match(/^(.*):(\d+)$/)
-  if (colonMatch) {
-    return {
-      filePath: colonMatch[1],
-      lineNumber: Number.parseInt(colonMatch[2], 10),
-    }
-  }
+/**
+ * Split a trailing line annotation off a path. Both single lines and ranges are
+ * accepted, in the forms citations actually use:
+ * `#L10`, `#L10-20`, `#L10-L20`, `:10`, `:10-20`.
+ *
+ * A range whose end does not extend the start (`#L10-10`, `#L10-4`) collapses to
+ * a single line so the chip never renders a degenerate range.
+ */
+export function parseFileLinkTarget(target: string): FileLinkTarget {
+  const match = target.match(/^(.*)(?:#L|:)(\d+)(?:-L?(\d+))?$/)
+  if (!match) return { filePath: target }
 
-  return { filePath: target }
+  const lineNumber = Number.parseInt(match[2], 10)
+  const end = match[3] != null ? Number.parseInt(match[3], 10) : undefined
+  return {
+    filePath: match[1],
+    lineNumber,
+    ...(end != null && end > lineNumber ? { endLine: end } : {}),
+  }
+}
+
+/** Chip suffix for a parsed line annotation: `#L10` or `#L10-20`. */
+export function formatLineRange(lineNumber: number, endLine?: number): string {
+  return endLine != null && endLine > lineNumber ? `#L${lineNumber}-${endLine}` : `#L${lineNumber}`
 }
 
 export function normalizeFileLinkTarget(target: string): string {
@@ -118,7 +126,7 @@ export function resolveProjectFileHref(
   rawHref: string,
   projectRoot: string,
   homeDir?: string | null,
-): { filePath: string; lineNumber?: number } | null {
+): FileLinkTarget | null {
   if (!rawHref) return null
 
   let href = rawHref
@@ -146,20 +154,20 @@ export function resolveProjectFileHref(
     }
   }
 
-  const { filePath: rawPath, lineNumber } = parseFileLinkTarget(href)
+  const { filePath: rawPath, lineNumber, endLine } = parseFileLinkTarget(href)
   const filePath = expandHomeInPath(safeDecodeFilePath(rawPath), homeDir)
 
   // Absolute local paths open in the editor whether or not they sit under the
   // current project (e.g. ~/.grok workflow artifacts, dependency sources).
   if (isAbsoluteLocalPath(filePath) || filePath.startsWith('/')) {
-    return { filePath, lineNumber }
+    return { filePath, lineNumber, endLine }
   }
 
   // Project-relative (including ./prefix). Never invent a path without a root.
   if (!projectRoot) return null
   const relative = filePath.replace(/^\.\//, '')
   if (!relative) return null
-  return { filePath: `${projectRoot}/${relative}`, lineNumber }
+  return { filePath: `${projectRoot}/${relative}`, lineNumber, endLine }
 }
 
 export function clickReleasedOnSelection(target: EventTarget | null): boolean {

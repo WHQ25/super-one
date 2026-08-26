@@ -6,18 +6,20 @@ import { DraggableFileIcon } from './DraggableFileIcon'
 import { useFileChipContextMenu } from './file-chip-context-menu'
 import { useChatStore } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
-import { clickReleasedOnSelection, parseFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
+import { clickReleasedOnSelection, formatLineRange, parseFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
 
-export function FileChip({ name, title, filePath, lineNumber, className }: {
+export function FileChip({ name, title, filePath, lineNumber, endLine, className }: {
   name: string
   title: string
   filePath?: string
   lineNumber?: number
+  endLine?: number
   className?: string
 }) {
   const parsed = filePath ? parseFileLinkTarget(filePath) : null
   const targetPath = parsed?.filePath
   const targetLineNumber = lineNumber ?? parsed?.lineNumber
+  const targetEndLine = lineNumber != null ? endLine : parsed?.endLine
   const dragEndRef = useRef(0)
   const menuItems = useFileChipContextMenu(targetPath, name)
 
@@ -42,7 +44,9 @@ export function FileChip({ name, title, filePath, lineNumber, className }: {
     >
       <DraggableFileIcon name={name} filePath={targetPath} dragEndRef={dragEndRef} className="shrink-0" />
       <span className={cn('truncate', className)}>{name}</span>
-      {targetLineNumber != null && <span className="text-muted-foreground text-xs">#L{targetLineNumber}</span>}
+      {targetLineNumber != null && (
+        <span className="text-muted-foreground text-xs">{formatLineRange(targetLineNumber, targetEndLine)}</span>
+      )}
     </span>
   )
 

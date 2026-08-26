@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatLineRange,
   isHtmlFilePath,
   normalizeFileLinkTarget,
   parseFileLinkTarget,
@@ -26,11 +27,46 @@ describe('parseFileLinkTarget', () => {
   it('leaves plain paths unchanged', () => {
     expect(parseFileLinkTarget('/tmp/app.ts')).toEqual({ filePath: '/tmp/app.ts' })
   })
+
+  it('parses a line range instead of leaving it on the path', () => {
+    expect(parseFileLinkTarget('/tmp/app.ts#L10-20')).toEqual({
+      filePath: '/tmp/app.ts',
+      lineNumber: 10,
+      endLine: 20,
+    })
+    expect(parseFileLinkTarget('/tmp/app.ts#L10-L20')).toEqual({
+      filePath: '/tmp/app.ts',
+      lineNumber: 10,
+      endLine: 20,
+    })
+    expect(parseFileLinkTarget('/tmp/app.ts:10-20')).toEqual({
+      filePath: '/tmp/app.ts',
+      lineNumber: 10,
+      endLine: 20,
+    })
+  })
+
+  it('collapses a range that does not extend past its start', () => {
+    expect(parseFileLinkTarget('/tmp/app.ts#L10-10').endLine).toBeUndefined()
+    expect(parseFileLinkTarget('/tmp/app.ts#L10-4')).toEqual({ filePath: '/tmp/app.ts', lineNumber: 10 })
+  })
+})
+
+describe('formatLineRange', () => {
+  it('renders a single line or a range', () => {
+    expect(formatLineRange(10)).toBe('#L10')
+    expect(formatLineRange(10, 20)).toBe('#L10-20')
+    expect(formatLineRange(10, 10)).toBe('#L10')
+  })
 })
 
 describe('normalizeFileLinkTarget', () => {
   it('strips the line suffix from a file target', () => {
     expect(normalizeFileLinkTarget('/tmp/app.ts:12')).toBe('/tmp/app.ts')
+  })
+
+  it('strips a line range so the editor never opens a path with #L10-20 on it', () => {
+    expect(normalizeFileLinkTarget('/tmp/app.ts#L10-20')).toBe('/tmp/app.ts')
   })
 })
 
@@ -58,6 +94,14 @@ describe('resolveProjectFileHref', () => {
     expect(resolveProjectFileHref(`${PROJECT}/apps/desktop/src/x.ts#L42`, PROJECT)).toEqual({
       filePath: `${PROJECT}/apps/desktop/src/x.ts`,
       lineNumber: 42,
+    })
+  })
+
+  it('carries a line range through to the chip instead of leaving it on the path', () => {
+    expect(resolveProjectFileHref('apps/desktop/src/x.tsx#L10-20', PROJECT)).toEqual({
+      filePath: `${PROJECT}/apps/desktop/src/x.tsx`,
+      lineNumber: 10,
+      endLine: 20,
     })
   })
 

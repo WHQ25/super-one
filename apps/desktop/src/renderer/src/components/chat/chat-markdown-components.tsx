@@ -9,10 +9,10 @@ import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
 import { useFileChipContextMenu } from '@/components/chat/file-chip-context-menu'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
-import { clickReleasedOnSelection, resolveProjectFileHref, toProjectRelativePath } from '@/lib/file-link'
+import { clickReleasedOnSelection, formatLineRange, resolveProjectFileHref, toProjectRelativePath } from '@/lib/file-link'
 import { requestOpenExternalLink } from '@/lib/external-link'
 
-export function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
+export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: string; filePath: string; lineNumber?: number; endLine?: number }) {
   const dragEndRef = useRef(0)
   const menuItems = useFileChipContextMenu(filePath, name)
   const handleClick = (e: React.MouseEvent): void => {
@@ -38,7 +38,9 @@ export function InlineFileChip({ name, filePath, lineNumber }: { name: string; f
         >
           <DraggableFileIcon name={name} filePath={filePath} dragEndRef={dragEndRef} />
           <span>{name}</span>
-          {lineNumber != null && <span className="text-muted-foreground text-[0.85em]">#L{lineNumber}</span>}
+          {lineNumber != null && (
+            <span className="text-muted-foreground text-[0.85em]">{formatLineRange(lineNumber, endLine)}</span>
+          )}
         </span>
     </AdaptiveContextMenu>
   )
@@ -178,9 +180,9 @@ export function fileChipLabel(
   const linkText = linkTextContent(children).trim()
   if (!linkText || linkText === rawHref) return basename
   // Pure line-range labels from code citations — not a filename.
-  if (/^L\d+(?:\s*[-–—]\s*\d+)?$/i.test(linkText)) return basename
+  if (/^L\d+(?:\s*[-–—]\s*L?\d+)?$/i.test(linkText)) return basename
   // "file.ts:12" / "file.ts#L12" → use the name portion (chip renders #L separately).
-  const withoutLine = linkText.replace(/(?::\d+|#L\d+)(?:-\d+)*$/i, '').trim()
+  const withoutLine = linkText.replace(/(?::\d+|#L\d+)(?:\s*[-–—]\s*L?\d+)?$/i, '').trim()
   return withoutLine || basename
 }
 
@@ -196,7 +198,14 @@ function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
     const resolved = resolveProjectFileHref(rawHref, projectRoot, homeDir)
     if (resolved) {
       const name = fileChipLabel(children, rawHref, resolved.filePath)
-      return <InlineFileChip name={name} filePath={resolved.filePath} lineNumber={resolved.lineNumber} />
+      return (
+        <InlineFileChip
+          name={name}
+          filePath={resolved.filePath}
+          lineNumber={resolved.lineNumber}
+          endLine={resolved.endLine}
+        />
+      )
     }
   }
   return (

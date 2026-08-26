@@ -1,8 +1,8 @@
 import type { CapabilityTask } from '../agent-types'
 import type { CatalogModel, ModelCatalog } from '../model-catalog-types'
 import { MODEL_TASK_ORDER, modelTasks } from '../model-tasks'
-import type { ProtocolFamily } from './protocols'
-import { FAMILY_TASKS } from './protocols'
+import type { EndpointSlot, ProtocolFamily, WireProtocol } from './protocols'
+import { endpointIdFor, protocolForRoute, slotTasks } from './protocols'
 import {
   classifyModelById,
   fallbackByFamily,
@@ -14,38 +14,82 @@ import {
 export interface DiscoveredModel {
   id: string
   name?: string
-  byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>
+  byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>>
 }
 
 export const MAX_DISCOVERED_MODELS = 500
 
 /**
- * NewAPI/one-api `supported_endpoint_types` → the wire family that type speaks.
- * Tasks are NOT inferred here — they come from the official catalog / model id.
- * `jina-rerank` / `embeddings` have no SuperOne family and are ignored.
+ * Conventional reading of a New API `supported_endpoint_types` **name**.
+ *
+ * This field is New API's own extension — upstream One API has no notion of a model being reachable
+ * on more than one endpoint, so it never emits one.
+ *
+ * Names are each relay's own vocabulary and are only a convention — when a site publishes the real
+ * route paths, {@link parseRelayEndpointRoutes} overrides this per site. Tasks are NOT inferred
+ * here; they come from the official catalog / model id. `jina-rerank` / `embeddings` have no
+ * SuperOne protocol and are deliberately absent.
+ *
+ * `openai-video` reads as Sora's wire because that is what the name says. New API reuses the same
+ * name for its own `/video/generations`, which is a different wire — only a published route tells
+ * the two apart, which is exactly what {@link parseRelayEndpointRoutes} recovers.
  */
-export const ENDPOINT_TYPE_FAMILY: Record<string, ProtocolFamily> = {
-  openai: 'openai',
-  'openai-response': 'openai',
-  'openai-response-compact': 'openai',
-  anthropic: 'anthropic',
-  gemini: 'google',
-  'image-generation': 'openai',
-  'openai-video': 'openai',
+export const ENDPOINT_TYPE_PROTOCOL: Record<string, WireProtocol> = {
+  openai: 'openai-chat',
+  'openai-response': 'openai-responses',
+  'openai-response-compact': 'openai-responses',
+  anthropic: 'anthropic-messages',
+  gemini: 'google-generative',
+  'image-generation': 'openai-images',
+  'openai-video': 'openai-video',
 }
 
-/** @deprecated Use ENDPOINT_TYPE_FAMILY + catalog tasks. Kept so older callers still typecheck. */
-export const ENDPOINT_TYPE_MAP: Record<string, { family: ProtocolFamily; task: CapabilityTask }> = {
-  openai: { family: 'openai', task: 'chat' },
-  'openai-response': { family: 'openai', task: 'chat' },
-  'openai-response-compact': { family: 'openai', task: 'chat' },
-  anthropic: { family: 'anthropic', task: 'chat' },
-  gemini: { family: 'google', task: 'chat' },
-  'image-generation': { family: 'openai', task: 'image' },
-  'openai-video': { family: 'openai', task: 'video' },
+/** A relay's endpoint-type names resolved to protocols via the route paths it publishes. */
+export type RelayEndpointRoutes = Record<string, WireProtocol>
+
+/** What discovery learned about a relay as a whole, applied while classifying its models. */
+export interface RelayContext {
+  /** Endpoint-type name → protocol, read from the site's published route paths. */
+  routes?: RelayEndpointRoutes
+  /**
+   * Family to assume for a model no other signal can place — see `keyBoundFamily`. Set only for
+   * relays where one key speaks one wire (Sub2API); leaving it undefined keeps the openai default.
+   */
+  defaultFamily?: ProtocolFamily
 }
 
-function addTask(byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>, family: ProtocolFamily, task: CapabilityTask): void {
+/**
+ * Read New API's site-level `supported_endpoint` map off an `/api/pricing` payload and resolve each
+ * declared path to the protocol that actually speaks it.
+ *
+ * This is the strongest endpoint signal a relay emits. The `supported_endpoint_types` names on each
+ * model say which of these entries apply; this map says what each entry *is*. Paths we don't
+ * implement are dropped so the caller falls back to {@link ENDPOINT_TYPE_PROTOCOL}.
+ *
+ * Shape: `{ "openai": { "path": "/v1/chat/completions", "method": "POST" }, … }`. A bare string
+ * value is accepted too — New API's per-model endpoint override allows that form.
+ */
+export function parseRelayEndpointRoutes(json: unknown): RelayEndpointRoutes {
+  const root = json && typeof json === 'object' ? (json as Record<string, unknown>) : null
+  const declared = root?.supported_endpoint
+  if (!declared || typeof declared !== 'object' || Array.isArray(declared)) return {}
+  const routes: RelayEndpointRoutes = {}
+  for (const [name, value] of Object.entries(declared as Record<string, unknown>)) {
+    const path = typeof value === 'string' ? value : asRoutePath(value)
+    if (!path) continue
+    const protocol = protocolForRoute(path)
+    if (protocol) routes[name] = protocol
+  }
+  return routes
+}
+
+function asRoutePath(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const path = (value as Record<string, unknown>).path
+  return typeof path === 'string' && path.trim() ? path : undefined
+}
+
+function addTask(byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>>, family: EndpointSlot, task: CapabilityTask): void {
   const tasks = byFamily[family] ?? []
   if (!tasks.includes(task)) tasks.push(task)
   byFamily[family] = tasks
@@ -156,40 +200,51 @@ function endpointTypeList(endpointTypes: unknown): string[] {
   return endpointTypes.filter((t): t is string => typeof t === 'string' && t.length > 0)
 }
 
-function declaredFamilies(types: string[]): Set<ProtocolFamily> {
-  const out = new Set<ProtocolFamily>()
-  for (const t of types) {
-    const family = ENDPOINT_TYPE_FAMILY[t]
-    if (family) out.add(family)
+/** The endpoint a declared type name lands on: its published route first, its conventional name second. */
+function slotForEndpointType(type: string, routes?: RelayEndpointRoutes): EndpointSlot | undefined {
+  const protocol = routes?.[type] ?? ENDPOINT_TYPE_PROTOCOL[type]
+  return protocol ? endpointIdFor(protocol) : undefined
+}
+
+/** Distinct endpoints the relay says this model is reachable on, in declaration order. */
+function declaredSlots(types: string[], routes?: RelayEndpointRoutes): EndpointSlot[] {
+  const out: EndpointSlot[] = []
+  for (const type of types) {
+    const slot = slotForEndpointType(type, routes)
+    if (slot && !out.includes(slot)) out.push(slot)
   }
   return out
 }
 
 /**
- * Which wires from `types` can carry `task`. Order is preference (first wins for
- * single-wire tasks). Chat may ride every listed chat wire.
+ * Preference when several declared endpoints can carry the same task.
+ *
+ * OpenAI leads because an OpenAI-compatible relay's own wire is the one it implements end to end;
+ * a native-format endpoint next to it is a translation layer. Declaration order is deliberately NOT
+ * used — relays list types in their own order and a model reachable on both `openai` and `gemini`
+ * should route the same way on every relay.
  */
-function familiesForTask(task: CapabilityTask, types: ReadonlySet<string>): ProtocolFamily[] {
-  switch (task) {
-    case 'chat': {
-      const out: ProtocolFamily[] = []
-      if (types.has('openai') || types.has('openai-response') || types.has('openai-response-compact')) out.push('openai')
-      if (types.has('anthropic')) out.push('anthropic')
-      if (types.has('gemini')) out.push('google')
-      return out
-    }
-    case 'image':
-      if (types.has('image-generation') || types.has('openai')) return ['openai']
-      if (types.has('gemini')) return ['google']
-      return []
-    case 'video':
-      if (types.has('openai-video')) return ['openai']
-      return []
-    case 'tts':
-    case 'asr':
-      if (types.has('openai')) return ['openai']
-      return []
-  }
+const SLOT_PREFERENCE: EndpointSlot[] = [
+  'openai',
+  'anthropic',
+  'google',
+  'volcengine',
+  'newapi',
+  'openai-video',
+  'newapi-video',
+  'ark-video',
+  'google-video',
+]
+
+/**
+ * Which of `slots` can carry `task`. Chat rides every one of them (a model reachable on both the
+ * OpenAI and Anthropic wires should appear under both); single-wire tasks take the leader.
+ */
+function slotsForTask(task: CapabilityTask, slots: EndpointSlot[]): EndpointSlot[] {
+  const able = slots
+    .filter((slot) => slotTasks(slot).includes(task))
+    .sort((a, b) => SLOT_PREFERENCE.indexOf(a) - SLOT_PREFERENCE.indexOf(b))
+  return task === 'chat' ? able : able.slice(0, 1)
 }
 
 function tasksForModel(
@@ -220,9 +275,10 @@ function stringHint(row: Record<string, unknown>, ...keys: string[]): string | u
 }
 
 /**
- * Tasks come from the official catalog (then id / tags). `supported_endpoint_types`
- * only decide which family wire each task rides. When types cannot carry a video
- * task, fall back to newapi-video (Seedance/Kling on a chat-only type list).
+ * Tasks come from the official catalog (then id / tags). `supported_endpoint_types` only decide
+ * which endpoint each task rides — resolved through the relay's published routes when it has any,
+ * else through the name convention. When no declared endpoint can carry a video task, fall back to
+ * newapi-video (Seedance/Kling listed under a chat-only type list, which is the common case).
  */
 function resolveByFamily(
   id: string,
@@ -234,25 +290,28 @@ function resolveByFamily(
     outputModalities?: unknown
     catalogTasks?: CapabilityTask[]
   },
-): Partial<Record<ProtocolFamily, CapabilityTask[]>> | null {
+  context?: RelayContext,
+): Partial<Record<EndpointSlot, CapabilityTask[]>> | null {
   const types = endpointTypeList(hints.endpointTypes)
   const tasks = tasksForModel(id, hints)
 
   if (types.length === 0) {
-    return fallbackByFamily(id, tasks, familyFromOwner(hints.ownedBy))
+    // `owned_by` names the upstream for this one model and wins; the relay-wide default only
+    // catches what it leaves unplaced (renamed aliases on a key bound to a single vendor).
+    return fallbackByFamily(id, tasks, familyFromOwner(hints.ownedBy) ?? context?.defaultFamily)
   }
 
-  if (declaredFamilies(types).size === 0) return null
+  const slots = declaredSlots(types, context?.routes)
+  if (slots.length === 0) return null
 
-  const typeSet = new Set(types)
-  const byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
+  const byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
   for (const task of tasks) {
-    const families = familiesForTask(task, typeSet)
-    if (families.length === 0) {
-      if (task === 'video') addTask(byFamily, 'newapi', 'video')
+    const picked = slotsForTask(task, slots)
+    if (picked.length === 0) {
+      if (task === 'video') addTask(byFamily, 'newapi-video', 'video')
       continue
     }
-    for (const family of families) addTask(byFamily, family, task)
+    for (const slot of picked) addTask(byFamily, slot, task)
   }
   return Object.keys(byFamily).length > 0 ? byFamily : null
 }
@@ -266,7 +325,7 @@ function mergeById(models: DiscoveredModel[]): DiscoveredModel[] {
       continue
     }
     if (!existing.name && m.name) existing.name = m.name
-    for (const [family, tasks] of Object.entries(m.byFamily) as [ProtocolFamily, CapabilityTask[]][]) {
+    for (const [family, tasks] of Object.entries(m.byFamily) as [EndpointSlot, CapabilityTask[]][]) {
       for (const task of tasks) addTask(existing.byFamily, family, task)
     }
   }
@@ -274,7 +333,7 @@ function mergeById(models: DiscoveredModel[]): DiscoveredModel[] {
 }
 
 /** Flatten + order tasks across families for UI display / tab filters. */
-export function flattenDiscoveredTasks(byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>): CapabilityTask[] {
+export function flattenDiscoveredTasks(byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>>): CapabilityTask[] {
   const set = new Set<CapabilityTask>()
   for (const tasks of Object.values(byFamily)) {
     for (const t of tasks ?? []) set.add(t)
@@ -284,11 +343,11 @@ export function flattenDiscoveredTasks(byFamily: Partial<Record<ProtocolFamily, 
 
 /** Drop tasks a family cannot serve and empty families. */
 export function sanitizeDiscoveredByFamily(
-  byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>,
-): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
-  const next: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
-  for (const [family, tasks] of Object.entries(byFamily) as [ProtocolFamily, CapabilityTask[]][]) {
-    const allowed = new Set(FAMILY_TASKS[family])
+  byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>>,
+): Partial<Record<EndpointSlot, CapabilityTask[]>> {
+  const next: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
+  for (const [family, tasks] of Object.entries(byFamily) as [EndpointSlot, CapabilityTask[]][]) {
+    const allowed = new Set(slotTasks(family))
     const cleaned = tasks.filter((t) => allowed.has(t))
     if (cleaned.length > 0) next[family] = cleaned
   }
@@ -296,31 +355,40 @@ export function sanitizeDiscoveredByFamily(
 }
 
 /**
- * Parse a NewAPI/one-api-lineage `GET {site root}/api/pricing` response into capability-tagged models.
+ * Parse a New API `GET {site root}/api/pricing` response into capability-tagged models.
  * Returns `null` when the shape doesn't match (not a NewAPI-style gateway) so the caller can fall back
  * to the generic OpenAI models list. Entries whose endpoint types map to nothing usable (rerank,
  * embeddings) are dropped; duplicate `model_name` rows (one per billing channel) are merged, unioning
  * their capabilities.
  */
-export function parseNewApiPricing(json: unknown, catalogIndex?: Map<string, CapabilityTask[]>): DiscoveredModel[] | null {
+export function parseNewApiPricing(
+  json: unknown,
+  catalogIndex?: Map<string, CapabilityTask[]>,
+  relayContext?: RelayContext,
+): DiscoveredModel[] | null {
   if (!json || typeof json !== 'object') return null
   const data = (json as Record<string, unknown>).data
   if (!Array.isArray(data)) return null
 
+  const context = { ...relayContext, routes: relayContext?.routes ?? parseRelayEndpointRoutes(json) }
   const models: DiscoveredModel[] = []
   for (const entry of data) {
     if (!entry || typeof entry !== 'object') continue
     const row = entry as Record<string, unknown>
     const id = row.model_name
     if (typeof id !== 'string' || !id) continue
-    const byFamily = resolveByFamily(id, {
-      endpointTypes: row.supported_endpoint_types,
-      ownedBy: stringHint(row, 'owner_by', 'owned_by', 'vendor_name'),
-      tags: stringHint(row, 'tags'),
-      inputModalities: row.input_modalities,
-      outputModalities: row.output_modalities,
-      catalogTasks: catalogIndex?.get(normalizeModelId(id)),
-    })
+    const byFamily = resolveByFamily(
+      id,
+      {
+        endpointTypes: row.supported_endpoint_types,
+        ownedBy: stringHint(row, 'owner_by', 'owned_by', 'vendor_name'),
+        tags: stringHint(row, 'tags'),
+        inputModalities: row.input_modalities,
+        outputModalities: row.output_modalities,
+        catalogTasks: catalogIndex?.get(normalizeModelId(id)),
+      },
+      context,
+    )
     if (!byFamily || Object.keys(byFamily).length === 0) continue
     const name = stringHint(row, 'description', 'name')
     models.push({ id, name, byFamily })
@@ -329,10 +397,16 @@ export function parseNewApiPricing(json: unknown, catalogIndex?: Map<string, Cap
 }
 
 /**
- * Original One API `GET {site}/api/pricing` object form (`data.model_ratio` is a name→multiplier
- * map, no `supported_endpoint_types`). Returns `null` when the shape is not that object.
+ * The `{ data: { model_ratio: { "<model>": <multiplier> } } }` pricing shape, which gives model
+ * names and nothing else — no endpoint types, no tasks, no owner.
+ *
+ * Despite the name this is NOT upstream One API: `songquanpeng/one-api` registers no `/api/pricing`
+ * route at all (only `/api/status` and an authenticated `/api/models`) and never exposes
+ * `model_ratio` to clients. The shape comes from the many One API forks that add a public pricing
+ * page, and we keep parsing it because those forks are common and it costs one probe we already
+ * make. Returns `null` when the shape is not that object.
  */
-export function parseOneApiRatioPricing(json: unknown): DiscoveredModel[] | null {
+export function parseOneApiRatioPricing(json: unknown, relayContext?: RelayContext): DiscoveredModel[] | null {
   if (!json || typeof json !== 'object') return null
   const data = (json as Record<string, unknown>).data
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null
@@ -342,7 +416,7 @@ export function parseOneApiRatioPricing(json: unknown): DiscoveredModel[] | null
   const models: DiscoveredModel[] = []
   for (const id of Object.keys(ratio as Record<string, unknown>)) {
     if (!id) continue
-    const byFamily = fallbackByFamily(id)
+    const byFamily = fallbackByFamily(id, undefined, relayContext?.defaultFamily)
     if (Object.keys(byFamily).length === 0) continue
     models.push({ id, byFamily })
   }
@@ -350,8 +424,12 @@ export function parseOneApiRatioPricing(json: unknown): DiscoveredModel[] | null
 }
 
 /** New API array first; One API `model_ratio` object as fallback. `null` when neither matches. */
-export function parseRelayPricing(json: unknown, catalogIndex?: Map<string, CapabilityTask[]>): DiscoveredModel[] | null {
-  return parseNewApiPricing(json, catalogIndex) ?? parseOneApiRatioPricing(json)
+export function parseRelayPricing(
+  json: unknown,
+  catalogIndex?: Map<string, CapabilityTask[]>,
+  relayContext?: RelayContext,
+): DiscoveredModel[] | null {
+  return parseNewApiPricing(json, catalogIndex, relayContext) ?? parseOneApiRatioPricing(json, relayContext)
 }
 
 /**
@@ -359,7 +437,11 @@ export function parseRelayPricing(json: unknown, catalogIndex?: Map<string, Capa
  * Tasks come from `catalogIndex` (models.dev) then id heuristics; `supported_endpoint_types`
  * only choose which family wire each task rides.
  */
-export function parseOpenAiModelsList(json: unknown, catalogIndex?: Map<string, CapabilityTask[]>): DiscoveredModel[] | null {
+export function parseOpenAiModelsList(
+  json: unknown,
+  catalogIndex?: Map<string, CapabilityTask[]>,
+  context?: RelayContext,
+): DiscoveredModel[] | null {
   if (!json || typeof json !== 'object') return null
   const data = (json as Record<string, unknown>).data
   if (!Array.isArray(data)) return null
@@ -370,14 +452,18 @@ export function parseOpenAiModelsList(json: unknown, catalogIndex?: Map<string, 
     const row = entry as Record<string, unknown>
     const id = row.id
     if (typeof id !== 'string' || !id) continue
-    const byFamily = resolveByFamily(id, {
-      endpointTypes: row.supported_endpoint_types,
-      ownedBy: stringHint(row, 'owned_by', 'owner_by', 'ownedBy'),
-      tags: stringHint(row, 'tags'),
-      inputModalities: row.input_modalities,
-      outputModalities: row.output_modalities,
-      catalogTasks: catalogIndex?.get(normalizeModelId(id)),
-    })
+    const byFamily = resolveByFamily(
+      id,
+      {
+        endpointTypes: row.supported_endpoint_types,
+        ownedBy: stringHint(row, 'owned_by', 'owner_by', 'ownedBy'),
+        tags: stringHint(row, 'tags'),
+        inputModalities: row.input_modalities,
+        outputModalities: row.output_modalities,
+        catalogTasks: catalogIndex?.get(normalizeModelId(id)),
+      },
+      context,
+    )
     if (!byFamily || Object.keys(byFamily).length === 0) continue
     const name = stringHint(row, 'name', 'display_name', 'description')
     models.push({ id, name, byFamily })

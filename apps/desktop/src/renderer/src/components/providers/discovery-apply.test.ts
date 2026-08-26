@@ -9,29 +9,28 @@ import {
   discoveryEndpoint,
   excludeDiscoveredIds,
   mergeDiscoveredIntoCustomModels,
+  modelSlotsByTask,
   patchDiscoveredModel,
+  slotOptionsForTask,
   widenedOpenAiEndpoint,
   widenedPlanEndpoints,
 } from './discovery-apply'
 import type { CustomModel } from './custom-models'
 
 function plan(endpoints: ServiceEndpoint[]): Plan {
-  return { id: 'api', name: 'API', auth: 'api-key', endpoints }
+  return { id: 'api', name: 'API', auth: 'api-key', baseUrl: 'https://relay.com', endpoints }
 }
 
 describe('discoveryEndpoint', () => {
   it('finds the openai-family endpoint among mixed protocol endpoints', () => {
-    const anthropicEp: ServiceEndpoint = { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'] }
-    const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
+    const anthropicEp: ServiceEndpoint = { id: 'anthropic', protocols: ['anthropic-messages'] }
+    const openaiEp: ServiceEndpoint = { id: 'openai', protocols: ['openai-chat'] }
     expect(discoveryEndpoint(plan([anthropicEp, openaiEp]))).toEqual(openaiEp)
   })
 
   it('synthesizes an openai probe endpoint when the plan has only other families', () => {
-    const anthropicEp: ServiceEndpoint = { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'] }
-    expect(discoveryEndpoint(plan([anthropicEp]))).toEqual({
-      id: 'openai',
-      baseUrl: 'https://relay.com/v1',
-      protocols: ['openai-chat'],
+    const anthropicEp: ServiceEndpoint = { id: 'anthropic', protocols: ['anthropic-messages'] }
+    expect(discoveryEndpoint(plan([anthropicEp]))).toEqual({ id: 'openai', protocols: ['openai-chat'],
     })
   })
 
@@ -44,7 +43,7 @@ describe('widenedOpenAiEndpoint', () => {
   const models: DiscoveredOpenAiModel[] = [{ id: 'gpt-image-1', tasks: ['image'], byFamily: { openai: ['image'] } }]
 
   it('returns undefined when nothing is needed (no discovered models)', () => {
-    const ep: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
+    const ep: ServiceEndpoint = { id: 'openai', protocols: ['openai-chat'] }
     expect(widenedOpenAiEndpoint(ep, 'https://relay.com/v1', [])).toBeUndefined()
   })
 
@@ -54,14 +53,14 @@ describe('widenedOpenAiEndpoint', () => {
   })
 
   it('widens protocols (only additive) when a discovered model needs an unserved task', () => {
-    const ep: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
+    const ep: ServiceEndpoint = { id: 'openai', protocols: ['openai-chat'] }
     const widened = widenedOpenAiEndpoint(ep, 'https://relay.com/v1', models)
-    expect(widened).toEqual({ id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat', 'openai-images'] })
+    expect(widened).toEqual({ id: 'openai', protocols: ['openai-chat', 'openai-images'] })
   })
 
   it('synthesizes a brand-new endpoint when the plan has none yet', () => {
     const widened = widenedOpenAiEndpoint(undefined, 'https://relay.com/v1', models)
-    expect(widened).toEqual({ id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-images'] })
+    expect(widened).toEqual({ id: 'openai', protocols: ['openai-images'] })
   })
 
   it('never drops an existing protocol the endpoint already speaks', () => {
@@ -73,56 +72,63 @@ describe('widenedOpenAiEndpoint', () => {
 
 describe('widenedPlanEndpoints', () => {
   it('adds anthropic and google endpoints when discovered models need them', () => {
-    const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
+    const openaiEp: ServiceEndpoint = { id: 'openai', protocols: ['openai-chat'] }
     const models: DiscoveredOpenAiModel[] = [
       { id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } },
       { id: 'claude-opus', tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
       { id: 'gemini-pro', tasks: ['chat'], byFamily: { google: ['chat'] } },
     ]
-    const next = widenedPlanEndpoints(plan([openaiEp]), 'https://relay.com/v1', models)
+    const next = widenedPlanEndpoints(plan([openaiEp]), models)
     expect(next?.map((e) => e.id).sort()).toEqual(['anthropic', 'google', 'openai'])
-    expect(next?.find((e) => e.id === 'anthropic')).toEqual({
-      id: 'anthropic',
-      baseUrl: 'https://relay.com',
-      protocols: ['anthropic-messages'],
+    // Widening now goes through capabilityEndpoints, so a synthesized anthropic endpoint gets the
+    // same tool-search default a hand-picked one does — it used to skip that stamp.
+    expect(next?.find((e) => e.id === 'anthropic')).toEqual({ id: 'anthropic', protocols: ['anthropic-messages'],
+      defaults: { extraEnv: { ENABLE_TOOL_SEARCH: 'true' } },
     })
-    expect(next?.find((e) => e.id === 'google')).toEqual({
-      id: 'google',
-      baseUrl: 'https://relay.com/v1beta',
-      protocols: ['google-generative'],
+    expect(next?.find((e) => e.id === 'google')).toEqual({ id: 'google', protocols: ['google-generative'],
     })
   })
 
   it('returns undefined when all needed families/tasks already exist', () => {
     const endpoints: ServiceEndpoint[] = [
-      { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] },
-      { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'] },
+      { id: 'openai', protocols: ['openai-chat'] },
+      { id: 'anthropic', protocols: ['anthropic-messages'] },
     ]
     const models: DiscoveredOpenAiModel[] = [
       { id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } },
       { id: 'claude-opus', tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
     ]
-    expect(widenedPlanEndpoints(plan(endpoints), 'https://relay.com', models)).toBeUndefined()
+    expect(widenedPlanEndpoints(plan(endpoints), models)).toBeUndefined()
   })
 
-  it('adds a newapi video endpoint and openai-responses when extras/models need them', () => {
-    const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
+  it('adds a newapi-video endpoint and openai-responses when extras/models need them', () => {
+    const openaiEp: ServiceEndpoint = { id: 'openai', protocols: ['openai-chat'] }
     const models: DiscoveredOpenAiModel[] = [
-      { id: 'doubao-seedance-1-5-pro', tasks: ['video'], byFamily: { newapi: ['video'] } },
+      { id: 'doubao-seedance-1-5-pro', tasks: ['video'], byFamily: { 'newapi-video': ['video'] } },
     ]
-    const next = widenedPlanEndpoints(plan([openaiEp]), 'https://relay.com/v1', models, ['openai-responses'])
-    expect(next?.find((e) => e.id === 'newapi')).toEqual({
-      id: 'newapi',
-      baseUrl: 'https://relay.com/v1',
-      protocols: ['newapi-video'],
+    const next = widenedPlanEndpoints(plan([openaiEp]), models, ['openai-responses'])
+    expect(next?.find((e) => e.id === 'newapi-video')).toEqual({ id: 'newapi-video', protocols: ['newapi-video'],
     })
     expect(next?.find((e) => e.id === 'openai')?.protocols).toEqual(['openai-responses', 'openai-chat'])
+  })
+
+  it('gives each video wire its own endpoint so one relay can serve Sora and Seedance at once', () => {
+    const openaiEp: ServiceEndpoint = { id: 'openai', protocols: ['openai-chat'] }
+    const models: DiscoveredOpenAiModel[] = [
+      { id: 'sora-2', tasks: ['video'], byFamily: { 'openai-video': ['video'] } },
+      { id: 'doubao-seedance-2-0-260128', tasks: ['video'], byFamily: { 'newapi-video': ['video'] } },
+    ]
+    const next = widenedPlanEndpoints(plan([openaiEp]), models)
+    expect(next?.find((e) => e.id === 'openai-video')?.protocols).toEqual(['openai-video'])
+    expect(next?.find((e) => e.id === 'newapi-video')?.protocols).toEqual(['newapi-video'])
+    // The shared family endpoint must not absorb either wire, or per-model routing has nothing to pick from.
+    expect(next?.find((e) => e.id === 'openai')?.protocols).toEqual(['openai-chat'])
   })
 })
 
 describe('applyDiscoveredModels', () => {
   const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat', 'openai-images'] }
-  const anthropicEp: ServiceEndpoint = { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'] }
+  const anthropicEp: ServiceEndpoint = { id: 'anthropic', protocols: ['anthropic-messages'] }
 
   it('writes every discovered model into the endpoint override in one batch', () => {
     const models: DiscoveredOpenAiModel[] = [
@@ -247,8 +253,8 @@ describe('patchDiscoveredModel', () => {
 describe('discoveredFromEndpoints', () => {
   it('rebuilds a discovered list from enabled endpoint models', () => {
     const endpoints: ServiceEndpoint[] = [
-      { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'], models: [{ id: 'gpt-5', name: 'GPT-5', tasks: ['chat'] }] },
-      { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'], models: [{ id: 'claude-opus', tasks: ['chat'] }] },
+      { id: 'openai', protocols: ['openai-chat'], models: [{ id: 'gpt-5', name: 'GPT-5', tasks: ['chat'] }] },
+      { id: 'anthropic', protocols: ['anthropic-messages'], models: [{ id: 'claude-opus', tasks: ['chat'] }] },
     ]
     expect(discoveredFromEndpoints(endpoints)).toEqual([
       { id: 'gpt-5', name: 'GPT-5', tasks: ['chat'], byFamily: { openai: ['chat'] } },
@@ -258,8 +264,8 @@ describe('discoveredFromEndpoints', () => {
 
   it('unions the same model id across families', () => {
     const endpoints: ServiceEndpoint[] = [
-      { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'], models: [{ id: 'glm-5', tasks: ['chat'] }] },
-      { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'], models: [{ id: 'glm-5', tasks: ['chat'] }] },
+      { id: 'openai', protocols: ['openai-chat'], models: [{ id: 'glm-5', tasks: ['chat'] }] },
+      { id: 'anthropic', protocols: ['anthropic-messages'], models: [{ id: 'glm-5', tasks: ['chat'] }] },
     ]
     expect(discoveredFromEndpoints(endpoints)).toEqual([
       { id: 'glm-5', name: undefined, tasks: ['chat'], byFamily: { openai: ['chat'], anthropic: ['chat'] } },
@@ -271,17 +277,62 @@ describe('cachedDiscoveredModels', () => {
   it('prefers the persisted cache over endpoint inference', () => {
     const cached: DiscoveredOpenAiModel[] = [{ id: 'gpt-5', tasks: ['chat'], byFamily: { openai: ['chat'] } }]
     const endpoints: ServiceEndpoint[] = [
-      { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'], models: [{ id: 'other', tasks: ['chat'] }] },
+      { id: 'openai', protocols: ['openai-chat'], models: [{ id: 'other', tasks: ['chat'] }] },
     ]
     expect(cachedDiscoveredModels(cached, endpoints)).toBe(cached)
   })
 
   it('falls back to endpoint models when the cache is empty', () => {
     const endpoints: ServiceEndpoint[] = [
-      { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'], models: [{ id: 'gpt-5', tasks: ['chat'] }] },
+      { id: 'openai', protocols: ['openai-chat'], models: [{ id: 'gpt-5', tasks: ['chat'] }] },
     ]
     expect(cachedDiscoveredModels([], endpoints)).toEqual([
       { id: 'gpt-5', name: undefined, tasks: ['chat'], byFamily: { openai: ['chat'] } },
     ])
+  })
+})
+
+describe('pinning a model to an endpoint', () => {
+  const seedance: DiscoveredOpenAiModel = {
+    id: 'doubao-seedance-2-0-260128',
+    tasks: ['video'],
+    byFamily: { 'newapi-video': ['video'] },
+  }
+
+  it('reports the endpoint currently serving each task', () => {
+    expect(modelSlotsByTask(seedance)).toEqual({ video: 'newapi-video' })
+  })
+
+  it('moves the model onto the endpoint the user picked', () => {
+    const next = patchDiscoveredModel(seedance, { tasks: ['video'], slots: { video: 'ark-video' } })
+    expect(next.byFamily).toEqual({ 'ark-video': ['video'] })
+    expect(next.tasks).toEqual(['video'])
+  })
+
+  it('keeps inferring when no pin is given, rather than resetting to a default wire', () => {
+    const next = patchDiscoveredModel(seedance, { tasks: ['video'] })
+    expect(next.byFamily).toEqual({ 'newapi-video': ['video'] })
+  })
+
+  it('drops a pin for a task the user unticked', () => {
+    const both: DiscoveredOpenAiModel = {
+      id: 'omni',
+      tasks: ['image', 'video'],
+      byFamily: { openai: ['image'], 'ark-video': ['video'] },
+    }
+    const next = patchDiscoveredModel(both, { tasks: ['image'], slots: { image: 'openai' } })
+    expect(next.byFamily).toEqual({ openai: ['image'] })
+    expect(next.tasks).toEqual(['image'])
+  })
+
+  it('offers only endpoints this key actually has, and never an archived one', () => {
+    const endpoints: ServiceEndpoint[] = [
+      { id: 'openai-video', protocols: ['openai-video'] },
+      { id: 'newapi-video', protocols: ['newapi-video'] },
+      { id: 'ark-video', protocols: ['ark-video'], disabled: true },
+      { id: 'openai', protocols: ['openai-chat'] },
+    ]
+    expect(slotOptionsForTask(endpoints, 'video')).toEqual(['openai-video', 'newapi-video'])
+    expect(slotOptionsForTask(endpoints, 'chat')).toEqual(['openai'])
   })
 })

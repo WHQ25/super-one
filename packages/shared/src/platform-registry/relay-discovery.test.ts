@@ -10,6 +10,7 @@ import {
   parseNewApiPricing,
   parseOneApiRatioPricing,
   parseOpenAiModelsList,
+  parseRelayEndpointRoutes,
   parseRelayPricing,
   type DiscoveredModel,
 } from './relay-discovery'
@@ -92,7 +93,7 @@ describe('parseNewApiPricing', () => {
       data: [{ model_name: 'doubao-seedance-1-5-pro', supported_endpoint_types: ['openai-video'] }],
     }
     expect(parseNewApiPricing(json)).toEqual([
-      { id: 'doubao-seedance-1-5-pro', name: undefined, byFamily: { openai: ['video'] } },
+      { id: 'doubao-seedance-1-5-pro', name: undefined, byFamily: { 'openai-video': ['video'] } },
     ])
   })
 
@@ -104,7 +105,7 @@ describe('parseNewApiPricing', () => {
       }],
     }
     expect(parseNewApiPricing(json)).toEqual([
-      { id: 'doubao-seedance-2-0-260128', name: undefined, byFamily: { newapi: ['video'] } },
+      { id: 'doubao-seedance-2-0-260128', name: undefined, byFamily: { 'newapi-video': ['video'] } },
     ])
   })
 
@@ -131,7 +132,7 @@ describe('parseNewApiPricing', () => {
     }
     expect(parseNewApiPricing(json)).toEqual([
       { id: 'gpt-image-alias', name: undefined, byFamily: { openai: ['image'] } },
-      { id: 'dreamina-seedance-2', name: undefined, byFamily: { newapi: ['video'] } },
+      { id: 'dreamina-seedance-2', name: undefined, byFamily: { 'newapi-video': ['video'] } },
     ])
   })
 })
@@ -282,14 +283,14 @@ describe('parseOpenAiModelsList', () => {
       }],
     }
     expect(parseOpenAiModelsList(json)).toEqual([
-      { id: 'doubao-seedance-2-0-260128', name: undefined, byFamily: { newapi: ['video'] } },
+      { id: 'doubao-seedance-2-0-260128', name: undefined, byFamily: { 'newapi-video': ['video'] } },
     ])
   })
 
   it('rides openai-video when the list actually tags Seedance as openai-video', () => {
     const json = { data: [{ id: 'doubao-seedance-1-5-pro', supported_endpoint_types: ['openai-video'] }] }
     expect(parseOpenAiModelsList(json)).toEqual([
-      { id: 'doubao-seedance-1-5-pro', name: undefined, byFamily: { openai: ['video'] } },
+      { id: 'doubao-seedance-1-5-pro', name: undefined, byFamily: { 'openai-video': ['video'] } },
     ])
   })
 
@@ -297,6 +298,86 @@ describe('parseOpenAiModelsList', () => {
     const json = { data: [{ id: 'cc-sonnet', owned_by: 'anthropic', object: 'model' }] }
     expect(parseOpenAiModelsList(json)).toEqual([
       { id: 'cc-sonnet', name: undefined, byFamily: { anthropic: ['chat'] } },
+    ])
+  })
+})
+
+describe('parseRelayEndpointRoutes', () => {
+  it('resolves each declared path to the protocol that speaks it', () => {
+    const json = {
+      supported_endpoint: {
+        anthropic: { path: '/v1/messages', method: 'POST' },
+        openai: { path: '/v1/chat/completions', method: 'POST' },
+      },
+    }
+    expect(parseRelayEndpointRoutes(json)).toEqual({
+      anthropic: 'anthropic-messages',
+      openai: 'openai-chat',
+    })
+  })
+
+  it("reads through a relay's own naming: the path decides, not the type name", () => {
+    // New API has one `openai-video` type name for two different wires. A site that publishes
+    // `/v1/video/generations` under that name is declaring the New API wire, not Sora's.
+    const json = { supported_endpoint: { 'openai-video': { path: '/v1/video/generations' } } }
+    expect(parseRelayEndpointRoutes(json)).toEqual({ 'openai-video': 'newapi-video' })
+  })
+
+  it('accepts a bare string value and drops paths we do not implement', () => {
+    const json = {
+      supported_endpoint: {
+        openai: '/v1/chat/completions',
+        'jina-rerank': { path: '/v1/rerank' },
+        broken: { method: 'POST' },
+      },
+    }
+    expect(parseRelayEndpointRoutes(json)).toEqual({ openai: 'openai-chat' })
+  })
+
+  it('returns an empty map when the site publishes nothing (One API, Sub2API)', () => {
+    expect(parseRelayEndpointRoutes({ data: [] })).toEqual({})
+    expect(parseRelayEndpointRoutes(null)).toEqual({})
+  })
+})
+
+describe('declared routes override endpoint-type names', () => {
+  it('routes Seedance onto newapi-video when the site publishes that path under openai-video', () => {
+    const json = {
+      supported_endpoint: { 'openai-video': { path: '/v1/video/generations', method: 'POST' } },
+      data: [{ model_name: 'doubao-seedance-2-0-260128', supported_endpoint_types: ['openai-video'] }],
+    }
+    expect(parseNewApiPricing(json)).toEqual([
+      { id: 'doubao-seedance-2-0-260128', name: undefined, byFamily: { 'newapi-video': ['video'] } },
+    ])
+  })
+
+  it('keeps Sora on openai-video when the site publishes /v1/videos under the same name', () => {
+    const json = {
+      supported_endpoint: { 'openai-video': { path: '/v1/videos', method: 'POST' } },
+      data: [{ model_name: 'sora-2', supported_endpoint_types: ['openai-video'] }],
+    }
+    expect(parseNewApiPricing(json)).toEqual([
+      { id: 'sora-2', name: undefined, byFamily: { 'openai-video': ['video'] } },
+    ])
+  })
+
+  it('applies pricing routes to the models list, which carries no routes of its own', () => {
+    const routes = parseRelayEndpointRoutes({
+      supported_endpoint: { 'openai-video': { path: '/v1/video/generations' } },
+    })
+    const json = { data: [{ id: 'kling-v2', supported_endpoint_types: ['openai-video'] }] }
+    expect(parseOpenAiModelsList(json, undefined, { routes })).toEqual([
+      { id: 'kling-v2', name: undefined, byFamily: { 'newapi-video': ['video'] } },
+    ])
+  })
+
+  it('recognises a name it has no convention for, purely from the published path', () => {
+    const json = {
+      supported_endpoint: { 'ark-native': { path: '/api/v3/contents/generations/tasks' } },
+      data: [{ model_name: 'doubao-seedance-2-0-260128', supported_endpoint_types: ['ark-native'] }],
+    }
+    expect(parseNewApiPricing(json)).toEqual([
+      { id: 'doubao-seedance-2-0-260128', name: undefined, byFamily: { 'ark-video': ['video'] } },
     ])
   })
 })

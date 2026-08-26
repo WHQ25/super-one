@@ -80,7 +80,7 @@ export function DraftDiscoveredModels({
     try {
       const result = await window.app.discoverProviderModels({
         apiKey: trimmedKey,
-        endpoint: { id: 'openai', baseUrl: trimmedBase, protocols: ['openai-chat'] },
+        baseUrl: trimmedBase,
       })
       if (id !== requestId.current) return
       lastResult.current = result
@@ -272,7 +272,7 @@ function DraftRow({
           <EditDiscoveredModelPopover
             name={model.name || catModel?.name || ''}
             tasks={model.tasks}
-            onSave={({ name, tasks }) => onPatch(patchDiscoveredModel(model, { name, tasks }))}
+            onSave={({ name, tasks, slots }) => onPatch(patchDiscoveredModel(model, { name, tasks, slots }))}
           />
         </span>
       }

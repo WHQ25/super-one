@@ -1,16 +1,21 @@
-import type { CapabilityTask, DiscoveredExtraProtocol, DiscoveredOpenAiModel, DiscoveredProtocolFamily } from '@superone/shared/agent-types'
+import type { CapabilityTask, DiscoveredExtraProtocol, DiscoveredOpenAiModel } from '@superone/shared/agent-types'
 import {
-  customEndpointsFor,
+  applyCapabilitiesToPlan,
   endpointServes,
-  FAMILY_TASKS,
   familyBaseUrl,
   flattenDiscoveredTasks,
+  isVideoWire,
   normalizeModelId,
   PROTOCOL_FAMILY,
   PROTOCOL_FAMILIES,
-  PROTOCOL_ORDER,
+  protocolsForSlot,
   relaySiteRoot,
+  slotForTask,
+  slotTasks,
+  VIDEO_WIRES,
+  WIRE_PROTOCOLS,
   type EndpointOverride,
+  type EndpointSlot,
   type Plan,
   type ProtocolFamily,
   type ServiceEndpoint,
@@ -27,90 +32,101 @@ function siteRootFrom(baseUrl: string): string {
 export function discoveryEndpoint(plan: Plan): ServiceEndpoint | undefined {
   const openai = plan.endpoints.find((e) => PROTOCOL_FAMILY[e.protocols[0]] === 'openai')
   if (openai) return openai
-  const first = plan.endpoints[0]
-  if (!first) return undefined
-  return { id: 'openai', baseUrl: familyBaseUrl('openai', first.baseUrl), protocols: ['openai-chat'] }
+  return plan.endpoints[0] ? { id: 'openai', protocols: ['openai-chat'] } : undefined
 }
 
 function familyOf(endpoint: ServiceEndpoint): ProtocolFamily {
   return PROTOCOL_FAMILY[endpoint.protocols[0]]
 }
 
-function findFamilyEndpoint(endpoints: ServiceEndpoint[], family: ProtocolFamily): ServiceEndpoint | undefined {
-  return endpoints.find((e) => e.id === family || familyOf(e) === family)
-}
-
-function modelByFamily(model: DiscoveredOpenAiModel): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
-  if (model.byFamily && Object.keys(model.byFamily).length > 0) {
-    return model.byFamily as Partial<Record<ProtocolFamily, CapabilityTask[]>>
-  }
-  // Legacy / create-flow entries without byFamily — treat tasks as openai-only.
-  return model.tasks.length > 0 ? { openai: model.tasks } : {}
-}
-
-function collectNeededTasksByFamily(models: DiscoveredOpenAiModel[]): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
-  const needed: Partial<Record<ProtocolFamily, Set<CapabilityTask>>> = {}
-  for (const m of models) {
-    for (const [family, tasks] of Object.entries(modelByFamily(m)) as [ProtocolFamily, CapabilityTask[]][]) {
-      if (!tasks?.length) continue
-      const set = needed[family] ?? new Set<CapabilityTask>()
-      for (const t of tasks) set.add(t)
-      needed[family] = set
-    }
-  }
-  const out: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
-  for (const family of PROTOCOL_FAMILIES) {
-    const set = needed[family]
-    if (set && set.size > 0) out[family] = [...set]
-  }
-  return out
-}
-
-function extrasByFamily(extras?: readonly DiscoveredExtraProtocol[]): Partial<Record<ProtocolFamily, WireProtocol[]>> {
-  const out: Partial<Record<ProtocolFamily, WireProtocol[]>> = {}
-  if (extras?.includes('openai-responses')) out.openai = ['openai-responses']
-  return out
+/**
+ * The endpoint a slot names. Video wires own an endpoint each (id = the wire), so an exact id match
+ * comes first; a family slot falls back to whichever endpoint speaks that family's non-video wires.
+ */
+function findSlotEndpoint(endpoints: ServiceEndpoint[], slot: EndpointSlot): ServiceEndpoint | undefined {
+  const exact = endpoints.find((e) => e.id === slot)
+  if (exact) return exact
+  if (isVideoWire(slot)) return endpoints.find((e) => e.protocols.includes(slot))
+  return endpoints.find((e) => familyOf(e) === slot && !e.protocols.every((p) => isVideoWire(p)))
 }
 
 /**
- * Widen / synthesize plan endpoints so every family+task required by the given models is served.
- * Additive only. Returns undefined when the plan already covers everything.
+ * A model's slot→tasks map. A hand-entered model arrives with no `byFamily` at all and a bare family
+ * can never carry video, so both cases are normalized onto a wire slot here rather than at each use.
+ */
+function modelByFamily(model: DiscoveredOpenAiModel): Partial<Record<EndpointSlot, CapabilityTask[]>> {
+  const raw = (model.byFamily ?? {}) as Partial<Record<EndpointSlot, CapabilityTask[]>>
+  if (Object.keys(raw).length === 0) {
+    // Legacy / create-flow entries without byFamily — treat tasks as openai-only.
+    return model.tasks.length > 0 ? { openai: model.tasks } : {}
+  }
+  const out: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
+  const add = (slot: EndpointSlot, tasks: CapabilityTask[]): void => {
+    if (tasks.length > 0) out[slot] = [...new Set([...(out[slot] ?? []), ...tasks])]
+  }
+  for (const [slot, tasks] of Object.entries(raw) as [EndpointSlot, CapabilityTask[]][]) {
+    if (!tasks?.length) continue
+    if (isVideoWire(slot)) {
+      add(slot, tasks.filter((t) => t === 'video'))
+      continue
+    }
+    add(slot, tasks.filter((t) => t !== 'video'))
+    if (tasks.includes('video')) add(slotForTask(slot, 'video'), ['video'])
+  }
+  return out
+}
+
+/** Slots the given models need, in canonical order (families first, then video wires). */
+function collectNeededTasksBySlot(models: DiscoveredOpenAiModel[]): Partial<Record<EndpointSlot, CapabilityTask[]>> {
+  const needed: Partial<Record<EndpointSlot, Set<CapabilityTask>>> = {}
+  for (const m of models) {
+    for (const [slot, tasks] of Object.entries(modelByFamily(m)) as [EndpointSlot, CapabilityTask[]][]) {
+      if (!tasks?.length) continue
+      const set = needed[slot] ?? new Set<CapabilityTask>()
+      for (const t of tasks) set.add(t)
+      needed[slot] = set
+    }
+  }
+  const out: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
+  for (const slot of [...PROTOCOL_FAMILIES, ...VIDEO_WIRES] as EndpointSlot[]) {
+    const set = needed[slot]
+    if (set && set.size > 0) out[slot] = slotTasks(slot).filter((t) => set.has(t))
+  }
+  return out
+}
+
+/** Every wire protocol the discovered models (plus any explicitly reported opt-in wires) require. */
+export function protocolsForDiscoveredSlots(
+  models: DiscoveredOpenAiModel[],
+  extras?: readonly DiscoveredExtraProtocol[],
+): WireProtocol[] {
+  const needed = collectNeededTasksBySlot(models)
+  const out = new Set<WireProtocol>()
+  for (const [slot, tasks] of Object.entries(needed) as [EndpointSlot, CapabilityTask[]][]) {
+    for (const protocol of protocolsForSlot(slot, tasks)) out.add(protocol)
+  }
+  if (extras?.includes('openai-responses')) out.add('openai-responses')
+  return WIRE_PROTOCOLS.filter((p) => out.has(p))
+}
+
+/**
+ * Widen plan endpoints so every protocol the discovered models need is spoken. Additive only —
+ * returns undefined when the plan already covers everything.
+ *
+ * Widening is just "the union of current and needed protocols, re-derived", so it delegates to
+ * `applyCapabilitiesToPlan` and inherits its preservation of models, defaults, and any base URL the
+ * user moved off the derived one.
  */
 export function widenedPlanEndpoints(
   plan: Plan,
-  siteBaseUrl: string,
   models: DiscoveredOpenAiModel[],
   extras?: readonly DiscoveredExtraProtocol[],
 ): ServiceEndpoint[] | undefined {
-  const needed = collectNeededTasksByFamily(models)
-  const extra = extrasByFamily(extras)
-  if (Object.keys(needed).length === 0 && Object.keys(extra).length === 0) return undefined
-
-  const root = siteRootFrom(siteBaseUrl)
-  let endpoints = [...plan.endpoints]
-  let changed = false
-
-  for (const family of PROTOCOL_FAMILIES) {
-    const tasks = needed[family] ?? []
-    const extraProtocols = extra[family] ?? []
-    if (tasks.length === 0 && extraProtocols.length === 0) continue
-    const built = customEndpointsFor(family, tasks, root, extraProtocols)[0]
-    if (!built) continue
-    const existing = findFamilyEndpoint(endpoints, family)
-    if (!existing) {
-      endpoints = [...endpoints, built]
-      changed = true
-      continue
-    }
-    const protocols = [...new Set([...existing.protocols, ...built.protocols])].sort(
-      (a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b),
-    )
-    if (protocols.length === existing.protocols.length && protocols.every((p, i) => p === existing.protocols[i])) continue
-    endpoints = endpoints.map((e) => (e.id === existing.id ? { ...existing, protocols } : e))
-    changed = true
-  }
-
-  return changed ? endpoints : undefined
+  const current = new Set(plan.endpoints.flatMap((e) => e.protocols))
+  const wanted = protocolsForDiscoveredSlots(models, extras)
+  if (wanted.every((p) => current.has(p))) return undefined
+  const union = WIRE_PROTOCOLS.filter((p) => current.has(p) || wanted.includes(p))
+  return applyCapabilitiesToPlan(plan, { protocols: union })
 }
 
 /** @deprecated Prefer widenedPlanEndpoints — kept as a thin openai-only wrapper for older tests/call sites. */
@@ -123,9 +139,10 @@ export function widenedOpenAiEndpoint(
     id: 'api',
     name: 'API',
     auth: 'api-key',
+    baseUrl,
     endpoints: endpoint ? [endpoint] : [],
   }
-  const next = widenedPlanEndpoints(plan, baseUrl, models)
+  const next = widenedPlanEndpoints(plan, models)
   if (!next) return undefined
   return next.find((e) => e.id === 'openai' || familyOf(e) === 'openai')
 }
@@ -162,9 +179,9 @@ export function applyDiscoveredModels(
     if (!id) continue
     const byFamily = modelByFamily(m)
     next = dropModel(next, id)
-    for (const [family, tasks] of Object.entries(byFamily) as [DiscoveredProtocolFamily, CapabilityTask[]][]) {
+    for (const [family, tasks] of Object.entries(byFamily) as [EndpointSlot, CapabilityTask[]][]) {
       if (!tasks?.length) continue
-      const ep = findFamilyEndpoint(plan.endpoints, family)
+      const ep = findSlotEndpoint(plan.endpoints, family)
       if (!ep) continue
       const served = tasks.filter((t) => endpointServes(ep, t))
       if (served.length === 0) continue
@@ -204,8 +221,11 @@ export function excludeDiscoveredIds(customModels: CustomModel[], discovered: Di
 export function discoveredFromEndpoints(endpoints: ServiceEndpoint[]): DiscoveredOpenAiModel[] {
   const byId = new Map<string, DiscoveredOpenAiModel>()
   for (const e of endpoints) {
-    const family = PROTOCOL_FAMILY[e.protocols[0]]
+    const wire = e.protocols[0]
+    const family = PROTOCOL_FAMILY[wire]
     if (!family) continue
+    // A video endpoint's slot is its wire, so a rebuilt list routes back to the same endpoint.
+    const slot: EndpointSlot = isVideoWire(wire) ? wire : family
     for (const m of e.models ?? []) {
       const id = m.id.trim()
       if (!id) continue
@@ -213,7 +233,7 @@ export function discoveredFromEndpoints(endpoints: ServiceEndpoint[]): Discovere
       if (!cur.name && m.name) cur.name = m.name
       const tasks = m.tasks ?? []
       if (tasks.length > 0) {
-        cur.byFamily = { ...cur.byFamily, [family]: tasks }
+        cur.byFamily = { ...cur.byFamily, [slot]: tasks }
         cur.tasks = flattenDiscoveredTasks(cur.byFamily)
       }
       byId.set(id, cur)
@@ -252,34 +272,81 @@ export function applyCatalogDisplayNames(
   return changed ? next : models
 }
 
+/**
+ * Re-home a model's tasks onto slots after the user edits its task tags, keeping the routing it
+ * already had wherever possible.
+ *
+ * A video task stays on the wire it was already classified onto: re-tagging a Seedance model must not
+ * silently move it from the New API relay wire to Sora's, which would change which endpoint submits
+ * it. Only a model with no prior video wire falls back to its family's default.
+ */
 function redistributeByFamily(
-  existing: Partial<Record<DiscoveredProtocolFamily, CapabilityTask[]>>,
+  existing: Partial<Record<EndpointSlot, CapabilityTask[]>>,
   tasks: CapabilityTask[],
-): Partial<Record<DiscoveredProtocolFamily, CapabilityTask[]>> {
-  const byFamily: Partial<Record<DiscoveredProtocolFamily, CapabilityTask[]>> = {}
-  const homes = PROTOCOL_FAMILIES.filter((f) => (existing[f]?.length ?? 0) > 0)
-  const preferred = homes.length > 0 ? homes : (['openai'] as ProtocolFamily[])
+  pinned?: Partial<Record<CapabilityTask, EndpointSlot>>,
+): Partial<Record<EndpointSlot, CapabilityTask[]>> {
+  const bySlot: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
+  const occupied = ([...PROTOCOL_FAMILIES, ...VIDEO_WIRES] as EndpointSlot[]).filter(
+    (slot) => (existing[slot]?.length ?? 0) > 0,
+  )
+  const occupiedFamilies = occupied.filter((slot) => !isVideoWire(slot)) as ProtocolFamily[]
+  const preferred = occupiedFamilies.length > 0 ? occupiedFamilies : (['openai'] as ProtocolFamily[])
+  const priorWire = occupied.find(isVideoWire)
   for (const task of tasks) {
+    // An explicit pick wins over every inference — this is the user stating which wire a model speaks,
+    // which for a relay exposing two video wires is something no heuristic can know.
+    const pin = pinned?.[task]
+    if (pin) {
+      bySlot[pin] = [...(bySlot[pin] ?? []), task]
+      continue
+    }
+    if (task === 'video') {
+      const slot = priorWire ?? slotForTask(preferred.find((f) => slotTasks(f).includes('video')) ?? 'openai', 'video')
+      bySlot[slot] = [...(bySlot[slot] ?? []), task]
+      continue
+    }
     const home =
-      preferred.find((f) => FAMILY_TASKS[f]?.includes(task)) ??
-      PROTOCOL_FAMILIES.find((f) => FAMILY_TASKS[f].includes(task)) ??
+      preferred.find((f) => slotTasks(f).includes(task)) ??
+      PROTOCOL_FAMILIES.find((f) => slotTasks(f).includes(task)) ??
       'openai'
-    byFamily[home] = [...(byFamily[home] ?? []), task]
+    bySlot[home] = [...(bySlot[home] ?? []), task]
   }
-  return byFamily
+  return bySlot
 }
 
 /** Apply a user edit to display name + supported tasks, keeping protocol-family routing. */
 export function patchDiscoveredModel(
   model: DiscoveredOpenAiModel,
-  patch: { name?: string; tasks: CapabilityTask[] },
+  patch: { name?: string; tasks: CapabilityTask[]; slots?: Partial<Record<CapabilityTask, EndpointSlot>> },
 ): DiscoveredOpenAiModel {
   const tasks = MODEL_TASK_ORDER.filter((t) => patch.tasks.includes(t))
-  const byFamily = redistributeByFamily(model.byFamily, tasks)
+  const byFamily = redistributeByFamily(modelByFamily(model), tasks, patch.slots)
   return {
     ...model,
     name: patch.name?.trim() || undefined,
     tasks: flattenDiscoveredTasks(byFamily),
     byFamily,
   }
+}
+
+/** The endpoint slot currently serving each of a model's tasks — what the model editor preselects. */
+export function modelSlotsByTask(model: DiscoveredOpenAiModel): Partial<Record<CapabilityTask, EndpointSlot>> {
+  const out: Partial<Record<CapabilityTask, EndpointSlot>> = {}
+  for (const [slot, tasks] of Object.entries(modelByFamily(model)) as [EndpointSlot, CapabilityTask[]][]) {
+    for (const task of tasks) out[task] ??= slot
+  }
+  return out
+}
+
+/**
+ * Endpoints that could serve a task, offered as slot choices in the model editor.
+ *
+ * Reads the plan's real endpoints rather than the protocol table, so the list reflects what this key
+ * is actually configured for — offering Sora on a key that only speaks the New API relay wire would
+ * just produce a model that never resolves.
+ */
+export function slotOptionsForTask(endpoints: ServiceEndpoint[], task: CapabilityTask): EndpointSlot[] {
+  return endpoints
+    .filter((e) => !e.disabled && endpointServes(e, task))
+    .map((e) => e.id as EndpointSlot)
 }

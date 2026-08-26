@@ -15,7 +15,7 @@ function stubApp(overrides: Record<string, unknown>): void {
 }
 
 function makePlatform(endpoints: ServiceEndpoint[]): { platform: Platform; plan: Plan } {
-  const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints }
+  const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', baseUrl: 'https://relay.com', endpoints }
   const platform: Platform = { id: 'custom:test', brand: 'custom', name: 'Test Relay', plans: [plan] }
   return { platform, plan }
 }
@@ -223,7 +223,7 @@ describe('useModelDiscovery', () => {
     expect(discoverProviderModels).toHaveBeenCalledWith({
       apiKey: '',
       credentialId: 'cred-1',
-      endpoint: { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] },
+      baseUrl: 'https://relay.com',
     })
     expect(result.current.discovered).toEqual([
       { id: 'claude-opus', tasks: ['chat'], byFamily: { anthropic: ['chat'] } },

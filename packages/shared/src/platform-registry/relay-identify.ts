@@ -1,5 +1,5 @@
 import type { CapabilityTask, DiscoveredExtraProtocol, RelayFingerprint, RelayKind } from '../agent-types'
-import { FAMILY_TASKS, type ProtocolFamily } from './protocols'
+import { slotTasks, type EndpointSlot, type ProtocolFamily } from './protocols'
 
 const NEWAPI_VIDEO_RE = /seedance|kling|jimeng|wanx|wan2|vidu|hailuo|dreamina/
 const SORA_RE = /\bsora\b/
@@ -26,8 +26,8 @@ const SUB2_SETTINGS_KEYS = ['custom_endpoints', 'compact_home_enabled', 'hide_cc
 export const RELAY_KINDS_WITH_RESPONSES: readonly RelayKind[] = ['new-api', 'one-api', 'sub2api']
 
 function addTask(
-  byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>,
-  family: ProtocolFamily,
+  byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>>,
+  family: EndpointSlot,
   task: CapabilityTask,
 ): void {
   const tasks = byFamily[family] ?? []
@@ -51,15 +51,15 @@ export function isNewApiVideoId(id: string): boolean {
  * `supported_endpoint_types` (One API, Sub2API, plain `/v1/models`).
  * Returns `{}` when the id is not distinctive — caller should fall back to catalog / openai-chat.
  */
-export function classifyModelById(id: string): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
+export function classifyModelById(id: string): Partial<Record<EndpointSlot, CapabilityTask[]>> {
   const bare = normalizeRelayModelId(id)
-  const byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
+  const byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
   if (CLAUDE_RE.test(bare)) addTask(byFamily, 'anthropic', 'chat')
-  if (VEO_RE.test(bare)) addTask(byFamily, 'google', 'video')
+  if (VEO_RE.test(bare)) addTask(byFamily, 'google-video', 'video')
   if (GOOGLE_IMAGE_RE.test(bare)) addTask(byFamily, 'google', 'image')
   else if (GEMINI_CHAT_RE.test(bare)) addTask(byFamily, 'google', 'chat')
-  if (SORA_RE.test(bare)) addTask(byFamily, 'openai', 'video')
-  if (isNewApiVideoId(bare)) addTask(byFamily, 'newapi', 'video')
+  if (SORA_RE.test(bare)) addTask(byFamily, 'openai-video', 'video')
+  if (isNewApiVideoId(bare)) addTask(byFamily, 'newapi-video', 'video')
   if (OPENAI_IMAGE_RE.test(bare) && !byFamily.google) addTask(byFamily, 'openai', 'image')
   if (TTS_RE.test(bare)) addTask(byFamily, 'openai', 'tts')
   if (ASR_RE.test(bare)) addTask(byFamily, 'openai', 'asr')
@@ -76,51 +76,49 @@ export function idImpliesSpecializedMedia(id: string): boolean {
  * chat task that only came from a generic `gemini`/`openai` endpoint type or owned_by hint.
  */
 export function mergeSpecializedIdHints(
-  byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>,
+  byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>>,
   id: string,
-): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
+): Partial<Record<EndpointSlot, CapabilityTask[]>> {
   const hint = classifyModelById(id)
   if (!Object.values(hint).some((tasks) => tasks.some((t) => t !== 'chat'))) return byFamily
-  const next: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
-  for (const [family, tasks] of Object.entries(byFamily) as [ProtocolFamily, CapabilityTask[]][]) {
+  const next: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
+  for (const [family, tasks] of Object.entries(byFamily) as [EndpointSlot, CapabilityTask[]][]) {
     const kept = tasks.filter((t) => t !== 'chat')
     if (kept.length > 0) next[family] = [...kept]
   }
-  for (const [family, tasks] of Object.entries(hint) as [ProtocolFamily, CapabilityTask[]][]) {
+  for (const [family, tasks] of Object.entries(hint) as [EndpointSlot, CapabilityTask[]][]) {
     for (const task of tasks) addTask(next, family, task)
   }
   return next
 }
 
 /**
- * Move Seedance/Kling/… video off the Sora-shaped openai-video wire onto newapi-video.
- * New API reports those as `openai-video` even though they speak `/video/generations`.
+ * Move Seedance/Kling/… video off the Sora-shaped `openai-video` wire onto `newapi-video`.
+ * New API reports those under its single `openai-video` endpoint type even though submission speaks
+ * `/video/generations` — the model id is the only signal separating the two wires.
  */
 export function reclassifyVideoFamily(
-  byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>,
+  byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>>,
   id: string,
-): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
+): Partial<Record<EndpointSlot, CapabilityTask[]>> {
   if (!isNewApiVideoId(id)) return byFamily
-  const next: Partial<Record<ProtocolFamily, CapabilityTask[]>> = { ...byFamily }
-  const openaiTasks = next.openai
-  if (openaiTasks?.includes('video')) {
-    const rest = openaiTasks.filter((t) => t !== 'video')
-    if (rest.length > 0) next.openai = rest
-    else delete next.openai
-  }
-  addTask(next, 'newapi', 'video')
+  const next: Partial<Record<EndpointSlot, CapabilityTask[]>> = { ...byFamily }
+  delete next['openai-video']
+  addTask(next, 'newapi-video', 'video')
   return next
 }
 
 function homeForTask(
   task: CapabilityTask,
-  heuristic: Partial<Record<ProtocolFamily, CapabilityTask[]>>,
+  heuristic: Partial<Record<EndpointSlot, CapabilityTask[]>>,
   ownerFamily?: ProtocolFamily,
-): ProtocolFamily {
-  const hinted = (Object.keys(heuristic) as ProtocolFamily[]).find((f) => FAMILY_TASKS[f]?.includes(task))
+): EndpointSlot {
+  const hinted = (Object.keys(heuristic) as EndpointSlot[]).find((f) => slotTasks(f).includes(task))
   if (hinted) return hinted
-  if (ownerFamily && FAMILY_TASKS[ownerFamily]?.includes(task)) return ownerFamily
-  return 'openai'
+  if (ownerFamily && slotTasks(ownerFamily).includes(task)) return ownerFamily
+  // A video task with no wire hint belongs on a wire slot, not on the bare family — the family
+  // endpoint carries no video protocol at all now that each wire owns its own.
+  return task === 'video' ? 'openai-video' : 'openai'
 }
 
 /** Heuristic classification, else catalog tasks, else owner/openai chat. */
@@ -128,10 +126,10 @@ export function fallbackByFamily(
   id: string,
   catalogTasks?: CapabilityTask[],
   ownerFamily?: ProtocolFamily,
-): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
+): Partial<Record<EndpointSlot, CapabilityTask[]>> {
   const heuristic = classifyModelById(id)
-  const byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
-  for (const [family, tasks] of Object.entries(heuristic) as [ProtocolFamily, CapabilityTask[]][]) {
+  const byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
+  for (const [family, tasks] of Object.entries(heuristic) as [EndpointSlot, CapabilityTask[]][]) {
     for (const task of tasks) addTask(byFamily, family, task)
   }
   const specialized = idImpliesSpecializedMedia(id)
@@ -155,6 +153,62 @@ export function familyFromOwner(owner: string | undefined): ProtocolFamily | und
   if (/anthropic|claude/.test(s)) return 'anthropic'
   if (/gemini|google|vertex/.test(s)) return 'google'
   if (/openai|azure|\bgpt\b/.test(s)) return 'openai'
+  // xAI ships an OpenAI-compatible wire and no format of its own, so its models belong on the
+  // openai endpoint. Sub2API's Grok model list stamps every row `owned_by: "xai"`.
+  if (/\bxai\b|grok/.test(s)) return 'openai'
+  return undefined
+}
+
+/**
+ * Which model-list dialect a `/v1/models` response is written in.
+ *
+ * A relay that fronts one upstream vendor answers in that vendor's shape: OpenAI's is
+ * `{object:"model", owned_by}`, Anthropic's is `{type:"model", display_name, created_at}`. OpenAI
+ * markers are checked first because Grok's list carries both (`object` + `display_name`).
+ *
+ * Only meaningful on a relay whose key is bound to a single upstream — see {@link keyBoundFamily}.
+ */
+export function detectModelsListDialect(json: unknown): 'anthropic' | 'openai' | undefined {
+  const data = (json && typeof json === 'object' ? (json as Record<string, unknown>).data : null)
+  if (!Array.isArray(data)) return undefined
+  for (const entry of data) {
+    if (!entry || typeof entry !== 'object') continue
+    const row = entry as Record<string, unknown>
+    if (row.object === 'model' || typeof row.owned_by === 'string') return 'openai'
+    if (row.type === 'model' || typeof row.display_name === 'string') return 'anthropic'
+  }
+  return undefined
+}
+
+/** Google's native `GET /v1beta/models` envelope: `{ models: [...] }`, not `{ data: [...] }`. */
+export function isGeminiModelsList(json: unknown): boolean {
+  const models = json && typeof json === 'object' ? (json as Record<string, unknown>).models : null
+  return Array.isArray(models)
+}
+
+/**
+ * The upstream family an API key is bound to, for relays where a key speaks exactly one wire.
+ *
+ * Sub2API is the case that needs this: it resells vendor subscriptions, so a key belongs to a group
+ * with one `platform` (claude / openai / gemini / grok / composite) and every endpoint checks it.
+ * Nothing in its client-facing API names that platform — `/api/v1/settings/public` is site-level and
+ * `/v1/sub2api/billing` carries only rate multipliers — so it has to be observed:
+ *
+ * - `GET /v1beta/models` is hard-gated (`API key group platform is not gemini`, HTTP 400), so a
+ *   Gemini-shaped body there is proof.
+ * - Otherwise the `/v1/models` dialect gives it away, because Sub2API renders the list with the
+ *   upstream vendor's own model struct.
+ *
+ * Do NOT apply this to New API / One API: there a key reaches every wire at once, so "the list came
+ * back in OpenAI shape" says nothing about which endpoint a given model wants.
+ */
+export function keyBoundFamily(input: {
+  dialect?: 'anthropic' | 'openai'
+  geminiListOk: boolean
+}): ProtocolFamily | undefined {
+  if (input.geminiListOk) return 'google'
+  if (input.dialect === 'anthropic') return 'anthropic'
+  if (input.dialect === 'openai') return 'openai'
   return undefined
 }
 
@@ -259,8 +313,9 @@ export function relaySiteRoot(baseUrl: string): string {
     // keep as-is — callers may pass a host-less path in tests
   }
   let u = raw.replace(/\/+$/, '')
+  // `api/` is optional so Ark's `/api/v3` (the ark-video wire's own path) strips back to the root.
   u = u.replace(
-    /\/(?:v1beta|v1alpha|v\d+)(?:\/(?:chat\/completions|completions|messages|models|responses|images(?:\/(?:generations|edits))?|videos(?:\/generations)?))?$/i,
+    /\/(?:api\/)?(?:v1beta|v1alpha|v\d+)(?:\/(?:chat\/completions|completions|messages|models|responses|images(?:\/(?:generations|edits))?|videos(?:\/generations)?|contents\/generations\/tasks))?$/i,
     '',
   )
   u = u.replace(/\/anthropic$/i, '')

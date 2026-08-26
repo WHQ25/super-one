@@ -27,6 +27,7 @@ import {
   resolveEndpointModels,
   type Credential,
   type EndpointModel,
+  type EndpointSlot,
   type Plan,
   type Platform,
   type ServiceEndpoint,
@@ -45,7 +46,13 @@ import {
   upsertCustomModel,
   type CustomModel,
 } from './custom-models'
-import { applyCatalogDisplayNames, excludeDiscoveredIds, patchDiscoveredModel } from './discovery-apply'
+import {
+  applyCatalogDisplayNames,
+  excludeDiscoveredIds,
+  modelSlotsByTask,
+  patchDiscoveredModel,
+  slotOptionsForTask,
+} from './discovery-apply'
 import { EditDiscoveredModelPopover } from './EditDiscoveredModelPopover'
 import { useModelDiscovery } from './useModelDiscovery'
 
@@ -288,6 +295,16 @@ export function PlatformModelsPanel({
     return excludeDiscoveredIds(listCustomModels(selectedCred?.overrides, isCatalogModel), discovered)
   }, [isCustom, liveEndpoints, selectedCred, isCatalogModel, discovered])
   const supportedTasks = useMemo(() => planSupportedTasks(livePlan), [livePlan])
+  // Which endpoints could serve each task on this key — the choices the model editor offers when a
+  // task has more than one (a relay exposing both Sora and the New API video wire, say).
+  const slotOptions = useMemo(() => {
+    const out: Partial<Record<CapabilityTask, EndpointSlot[]>> = {}
+    for (const task of MODEL_TASK_ORDER) {
+      const options = slotOptionsForTask(liveEndpoints, task)
+      if (options.length > 0) out[task] = options
+    }
+    return out
+  }, [liveEndpoints])
 
   const addCustom = useCallback(
     (model: CustomModel) => {
@@ -486,7 +503,9 @@ export function PlatformModelsPanel({
             <EditDiscoveredModelPopover
               name={d.name || catModel?.name || ''}
               tasks={d.tasks}
-              onSave={({ name, tasks }) => editDiscovered(patchDiscoveredModel(d, { name, tasks }))}
+              slots={modelSlotsByTask(d)}
+              slotOptions={slotOptions}
+              onSave={({ name, tasks, slots }) => editDiscovered(patchDiscoveredModel(d, { name, tasks, slots }))}
             />
           </span>
         }

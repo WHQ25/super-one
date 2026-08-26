@@ -2819,8 +2819,22 @@ export interface ProviderEndpointTestResponse {
   results: EndpointTestResult[]
 }
 
-/** Protocol families a discovered relay model can be reached over (mirrors platform-registry ProtocolFamily). */
-export type DiscoveredProtocolFamily = 'anthropic' | 'openai' | 'google' | 'newapi'
+/**
+ * Which endpoint a discovered relay model belongs on (mirrors platform-registry `EndpointSlot`).
+ *
+ * Non-video protocols share one endpoint per vendor family, so the family name is the slot. Video
+ * wires each own an endpoint — one relay root can expose Sora's `/videos`, Ark's
+ * `/contents/generations/tasks` and New API's `/video/generations` at the same time — so a video
+ * model names its wire instead.
+ */
+export type DiscoveredProtocolFamily =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'openai-video'
+  | 'ark-video'
+  | 'newapi-video'
+  | 'google-video'
 
 /** Opt-in extra wires the discover pass can turn on (Codex Responses, etc.). */
 export type DiscoveredExtraProtocol = 'openai-responses'

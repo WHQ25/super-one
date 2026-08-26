@@ -29,10 +29,8 @@ function siteRootFrom(baseUrl: string): string {
   return relaySiteRoot(baseUrl)
 }
 
-function endpointsSiteRoot(endpoints: ServiceEndpoint[], probeBaseUrl?: string): string {
-  if (probeBaseUrl) return siteRootFrom(probeBaseUrl)
-  const first = endpoints[0]
-  return first ? siteRootFrom(first.baseUrl) : ''
+function endpointsSiteRoot(planBaseUrl: string, probeBaseUrl?: string): string {
+  return siteRootFrom(probeBaseUrl || planBaseUrl)
 }
 
 /**
@@ -51,7 +49,7 @@ export function useModelDiscovery({
   credential: Credential | undefined
   updateCredential: (
     id: string,
-    patch: { overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[] },
+    patch: { baseUrl?: string; overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[] },
   ) => Promise<void>
   updateCustomPlatform: (def: Platform) => Promise<void>
 }) {
@@ -82,20 +80,17 @@ export function useModelDiscovery({
     if (!endpoint || !credential) return
     setState({ status: 'loading' })
     try {
-      const existing = liveEndpoints.find((e) => e.id === endpoint.id)
-      const effectiveBaseUrl = existing
-        ? mergeEndpoint(existing, credential.overrides?.[existing.id]).baseUrl
-        : endpoint.baseUrl
+      const effectiveBaseUrl = credential.baseUrl || livePlan.baseUrl
       const result = await window.app.discoverProviderModels({
         apiKey: '',
         credentialId: credential.id,
-        endpoint: { ...endpoint, baseUrl: effectiveBaseUrl },
+        baseUrl: effectiveBaseUrl,
       })
       setDiscovered(result.models)
       setExtras(result.extras ?? [])
       setRelay(result.relay)
-      const siteRoot = endpointsSiteRoot(liveEndpoints, effectiveBaseUrl)
-      const widened = widenedPlanEndpoints(livePlan, siteRoot, result.models, result.extras)
+      const siteRoot = endpointsSiteRoot(livePlan.baseUrl, effectiveBaseUrl)
+      const widened = widenedPlanEndpoints(livePlan, result.models, result.extras)
       if (custom) {
         await persistDiscovered(result.models)
         if (widened) await updateCredential(credential.id, { endpoints: widened })
@@ -116,21 +111,24 @@ export function useModelDiscovery({
                 credential.overrides?.[endpoint.id],
               ).baseUrl
             : endpoint.baseUrl)
-        : familyBaseUrl('openai', endpointsSiteRoot(liveEndpoints))
-      const siteRoot = endpointsSiteRoot(liveEndpoints, probeBase)
-      const widenedEndpoints = widenedPlanEndpoints(livePlan, siteRoot, models, extras)
+        : familyBaseUrl('openai', endpointsSiteRoot(livePlan.baseUrl))
+      const siteRoot = endpointsSiteRoot(livePlan.baseUrl, probeBase)
+      const widenedEndpoints = widenedPlanEndpoints(livePlan, models, extras)
 
       if (custom) {
         const nextEndpoints = widenedEndpoints ?? liveEndpoints
         const nextPlan = { ...plan, endpoints: nextEndpoints }
         const overrides = applyDiscoveredModels(credential.overrides, nextPlan, models)
-        // Fold enabled models into the key's endpoint list.
+        // Fold enabled models into the key's endpoint list. Every incoming id is stripped from EVERY
+        // endpoint before being re-added to the one its slot names — otherwise re-pointing a model at
+        // a different wire would leave a stale copy behind on the old endpoint, and it would resolve
+        // to whichever came first.
+        const incomingIds = new Set(models.map((m) => m.id))
         const folded = nextEndpoints.map((e) => {
-          const ov = overrides[e.id]
-          if (!ov?.models) return e
-          const incomingIds = new Set(ov.models.map((m) => m.id))
           const kept = (e.models ?? []).filter((m) => !incomingIds.has(m.id))
-          return { ...e, models: [...kept, ...ov.models] }
+          const added = overrides[e.id]?.models ?? []
+          if (kept.length === (e.models?.length ?? 0) && added.length === 0) return e
+          return { ...e, models: [...kept, ...added] }
         })
         await updateCredential(credential.id, { endpoints: folded, overrides: {} })
         return

@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ServiceEndpoint } from '@superone/shared/platform-registry'
 import { discoverModels } from './model-discovery'
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
@@ -12,7 +11,7 @@ function htmlResponse(status = 404): Response {
   return new Response('<html><body>not found</body></html>', { status, headers: { 'content-type': 'text/html' } })
 }
 
-const endpoint: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
+const baseUrl = 'https://relay.com/v1'
 
 function stubFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => handler(url, init))
@@ -55,7 +54,7 @@ describe('discoverModels', () => {
       }),
     )
 
-    const result = await discoverModels(endpoint, 'sk-key')
+    const result = await discoverModels(baseUrl, 'sk-key')
 
     expect(result.sources).toEqual({ pricing: 'ok', modelsList: 'ok' })
     expect(result.truncated).toBe(false)
@@ -79,7 +78,7 @@ describe('discoverModels', () => {
       return jsonResponse({ data: [] })
     })
 
-    await discoverModels(endpoint, 'sk-key')
+    await discoverModels(baseUrl, 'sk-key')
     expect(fetchMock).toHaveBeenCalled()
   })
 
@@ -92,7 +91,7 @@ describe('discoverModels', () => {
       return jsonResponse({ data: [] })
     })
 
-    await discoverModels(endpoint, 'sk-key')
+    await discoverModels(baseUrl, 'sk-key')
   })
 
   it('falls back to models-list when pricing returns a non-NewAPI shape (404 HTML)', async () => {
@@ -103,7 +102,7 @@ describe('discoverModels', () => {
       }),
     )
 
-    const result = await discoverModels(endpoint, 'sk-key')
+    const result = await discoverModels(baseUrl, 'sk-key')
     expect(result.sources).toEqual({ pricing: 'unavailable', modelsList: 'ok' })
     expect(result.models).toEqual([{ id: 'gpt-5', name: undefined, tasks: ['chat'], byFamily: { openai: ['chat'] } }])
   })
@@ -113,7 +112,7 @@ describe('discoverModels', () => {
       throw new Error('network down')
     })
 
-    const result = await discoverModels(endpoint, 'sk-key')
+    const result = await discoverModels(baseUrl, 'sk-key')
     expect(result.sources).toEqual({ pricing: 'unavailable', modelsList: 'unavailable' })
     expect(result.models).toEqual([])
     expect(result.relay?.kind).toBe('openai-compatible')
@@ -128,7 +127,7 @@ describe('discoverModels', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const pending = discoverModels(endpoint, 'sk-key')
+    const pending = discoverModels(baseUrl, 'sk-key')
     await vi.runAllTimersAsync()
     const result = await pending
 
@@ -146,7 +145,7 @@ describe('discoverModels', () => {
       }),
     )
 
-    const result = await discoverModels(endpoint, 'sk-key')
+    const result = await discoverModels(baseUrl, 'sk-key')
     expect(result.models).toEqual([
       { id: 'claude-opus', name: undefined, tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
     ])
@@ -164,7 +163,7 @@ describe('discoverModels', () => {
       }),
     )
 
-    const result = await discoverModels(endpoint, 'sk-key')
+    const result = await discoverModels(baseUrl, 'sk-key')
     expect(result.relay).toEqual({ kind: 'new-api', name: 'HiFlowt' })
     expect(result.extras).toEqual(['openai-responses'])
   })
@@ -181,13 +180,77 @@ describe('discoverModels', () => {
       }),
     )
 
-    const result = await discoverModels(endpoint, 'sk-key')
+    const result = await discoverModels(baseUrl, 'sk-key')
     expect(result.relay).toEqual({ kind: 'sub2api', name: 'Team Sub' })
     expect(result.extras).toEqual(['openai-responses'])
     expect(result.models).toEqual([
       { id: 'claude-sonnet-4-5', name: undefined, tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
       { id: 'gemini-2.5-pro', name: undefined, tasks: ['chat'], byFamily: { google: ['chat'] } },
       { id: 'gpt-5', name: undefined, tasks: ['chat'], byFamily: { openai: ['chat'] } },
+    ])
+  })
+
+  it('places renamed Sub2API models on the wire its key is bound to, not on openai', async () => {
+    // A claude-platform Sub2API key with a custom model list: the ids say nothing, and Sub2API
+    // sends no supported_endpoint_types or owned_by at all. Without a key-bound family these
+    // would all default to openai/chat and be unusable.
+    stubFetch(
+      routes({
+        '/api/v1/settings/public': () => jsonResponse({ site_name: 'Team Sub', custom_endpoints: [] }),
+        '/v1beta/models': () => jsonResponse({ error: { message: 'API key group platform is not gemini' } }, 400),
+        '/v1/models': () =>
+          jsonResponse({
+            object: 'list',
+            data: [
+              { id: 'sonnet-max', type: 'model', display_name: 'Sonnet Max' },
+              { id: 'opus-thinking', type: 'model', display_name: 'Opus Thinking' },
+            ],
+          }),
+      }),
+    )
+
+    const result = await discoverModels(baseUrl, 'sk-key')
+    expect(result.relay?.kind).toBe('sub2api')
+    expect(result.models).toEqual([
+      { id: 'sonnet-max', name: 'Sonnet Max', tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
+      { id: 'opus-thinking', name: 'Opus Thinking', tasks: ['chat'], byFamily: { anthropic: ['chat'] } },
+    ])
+  })
+
+  it('routes a gemini-platform Sub2API key to google even though the list is Anthropic-shaped', async () => {
+    // Sub2API renders gemini-platform lists with the same Anthropic model struct, so only
+    // /v1beta/models answering at all separates this from the claude case above.
+    stubFetch(
+      routes({
+        '/api/v1/settings/public': () => jsonResponse({ site_name: 'Team Sub', custom_endpoints: [] }),
+        '/v1beta/models': () => jsonResponse({ models: [{ name: 'models/gemini-3-pro' }] }),
+        '/v1/models': () =>
+          jsonResponse({ object: 'list', data: [{ id: 'pro-max', type: 'model', display_name: 'Pro Max' }] }),
+      }),
+    )
+
+    const result = await discoverModels(baseUrl, 'sk-key')
+    expect(result.models).toEqual([
+      { id: 'pro-max', name: 'Pro Max', tasks: ['chat'], byFamily: { google: ['chat'] } },
+    ])
+  })
+
+  it('ignores the gemini probe on New API, where one key reaches every wire', async () => {
+    // New API answers /v1beta/models with its whole catalog restated in Gemini shape. Treating
+    // that as "this key is a Google key" would drag every unplaceable model onto the Google
+    // endpoint, so the key-bound family is only ever derived for Sub2API.
+    stubFetch(
+      routes({
+        '/api/status': () => jsonResponse({ data: { version: 'v0.9', system_name: 'Relay', enable_task: true } }),
+        '/v1beta/models': () => jsonResponse({ models: [{ name: 'models/my-pool-alias' }] }),
+        '/v1/models': () => jsonResponse({ data: [{ id: 'my-pool-alias' }] }),
+      }),
+    )
+
+    const result = await discoverModels(baseUrl, 'sk-key')
+    expect(result.relay?.kind).toBe('new-api')
+    expect(result.models).toEqual([
+      { id: 'my-pool-alias', name: undefined, tasks: ['chat'], byFamily: { openai: ['chat'] } },
     ])
   })
 
@@ -203,7 +266,7 @@ describe('discoverModels', () => {
       }),
     )
 
-    const result = await discoverModels(endpoint, 'sk-key')
+    const result = await discoverModels(baseUrl, 'sk-key')
     expect(result.relay).toEqual({ kind: 'one-api', name: 'One API' })
     expect(result.sources.pricing).toBe('ok')
     expect(result.models).toEqual([
@@ -220,10 +283,7 @@ describe('discoverModels', () => {
       }),
     )
 
-    await discoverModels(
-      { id: 'openai', baseUrl: 'https://relay.com/v1/chat/completions', protocols: ['openai-chat'] },
-      'sk-key',
-    )
+    await discoverModels('https://relay.com/v1/chat/completions', 'sk-key')
 
     const urls = fetchMock.mock.calls.map((c) => c[0] as string)
     expect(urls).toContain('https://relay.com/api/pricing')
@@ -231,6 +291,34 @@ describe('discoverModels', () => {
     expect(urls).toContain('https://relay.com/api/status')
     expect(urls).toContain('https://relay.com/api/v1/settings/public')
     expect(urls.some((u) => u.includes('/chat/completions'))).toBe(false)
+  })
+
+  it("applies the site's published routes to the models list, which never carries them", async () => {
+    // The two sources are fetched in parallel but parsed together: `supported_endpoint` lives only
+    // in the pricing payload, while `supported_endpoint_types` lives only on each model. Here the
+    // site calls its wire `openai-video` (Sora's name) but publishes New API's own path under it.
+    stubFetch(
+      routes({
+        '/api/pricing': () =>
+          jsonResponse({
+            data: [],
+            supported_endpoint: { 'openai-video': { path: '/v1/video/generations', method: 'POST' } },
+          }),
+        '/v1/models': () =>
+          jsonResponse({
+            data: [
+              { id: 'doubao-seedance-2-0-260128', supported_endpoint_types: ['openai-video'] },
+              { id: 'gpt-5', supported_endpoint_types: ['openai'] },
+            ],
+          }),
+      }),
+    )
+
+    const result = await discoverModels(baseUrl, 'sk-key')
+    expect(result.models).toEqual([
+      { id: 'doubao-seedance-2-0-260128', name: undefined, tasks: ['video'], byFamily: { 'newapi-video': ['video'] } },
+      { id: 'gpt-5', name: undefined, tasks: ['chat'], byFamily: { openai: ['chat'] } },
+    ])
   })
 
   it('tags Sora as openai-video and Seedance as newapi-video when types are chat-only', async () => {
@@ -250,10 +338,10 @@ describe('discoverModels', () => {
       }),
     )
 
-    const result = await discoverModels(endpoint, 'sk-key')
+    const result = await discoverModels(baseUrl, 'sk-key')
     expect(result.models).toEqual([
-      { id: 'doubao-seedance-1-5-pro', name: undefined, tasks: ['video'], byFamily: { newapi: ['video'] } },
-      { id: 'sora-2', name: undefined, tasks: ['video'], byFamily: { openai: ['video'] } },
+      { id: 'doubao-seedance-1-5-pro', name: undefined, tasks: ['video'], byFamily: { 'newapi-video': ['video'] } },
+      { id: 'sora-2', name: undefined, tasks: ['video'], byFamily: { 'openai-video': ['video'] } },
     ])
   })
 })

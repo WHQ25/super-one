@@ -4,18 +4,23 @@ import {
   extrasForRelayKind,
   extrasFromRelayData,
   familyBaseUrl,
+  isGeminiModelsList,
+  keyBoundFamily,
+  detectModelsListDialect,
   flattenDiscoveredTasks,
   inferRelayKind,
   mergeDiscovered,
   mergeDiscoveredExtras,
   parseNewApiStatus,
   parseOpenAiModelsList,
+  parseRelayEndpointRoutes,
   parseRelayPricing,
   parseSub2ApiPublicSettings,
   pricingHasEndpointTypes,
   relaySiteRoot,
   sanitizeDiscoveredByFamily,
   type DiscoveredModel,
+  type RelayContext,
   type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
 import log from '../logger'
@@ -78,27 +83,32 @@ async function fetchJson(url: string, init?: RequestInit): Promise<FetchJsonResu
 }
 
 /** NewAPI/one-api pricing is a public, unauthenticated endpoint — no key sent. */
-async function fetchPricing(
-  siteRoot: string,
-  catalogIndex?: Map<string, CapabilityTask[]>,
-): Promise<{ models: DiscoveredModel[] | null; json: unknown | null }> {
+async function fetchPricingJson(siteRoot: string): Promise<unknown | null> {
   const url = `${siteRoot}/api/pricing`
   const result = await fetchJson(url)
   if (!result.ok) {
     log.info('[discover-models] pricing unavailable url=%s reason=%s', url, result.error)
-    return { models: null, json: null }
+    return null
   }
-  const parsed = parseRelayPricing(result.json, catalogIndex)
+  return result.json
+}
+
+function parsePricing(
+  json: unknown | null,
+  catalogIndex?: Map<string, CapabilityTask[]>,
+  context?: RelayContext,
+): DiscoveredModel[] | null {
+  if (json == null) return null
+  const parsed = parseRelayPricing(json, catalogIndex, context)
   if (!parsed) {
     log.warn(
-      '[discover-models] pricing parse returned null (shape mismatch) url=%s keys=%s',
-      url,
-      result.json && typeof result.json === 'object' ? Object.keys(result.json as object).join(',') : typeof result.json,
+      '[discover-models] pricing parse returned null (shape mismatch) keys=%s',
+      typeof json === 'object' ? Object.keys(json as object).join(',') : typeof json,
     )
-    return { models: null, json: result.json }
+    return null
   }
   log.info('[discover-models] pricing ok count=%d sample=%j', parsed.length, parsed.slice(0, 3))
-  return { models: parsed, json: result.json }
+  return parsed
 }
 
 async function fetchStatusFingerprint(siteRoot: string) {
@@ -115,6 +125,25 @@ async function fetchStatusFingerprint(siteRoot: string) {
   }
   log.info('[discover-models] status ok kind=%s name=%s', parsed.kind, parsed.name ?? '')
   return parsed
+}
+
+/**
+ * Sub2API gates `GET /v1beta/models` on the key's group platform (400 "API key group platform is
+ * not gemini" otherwise), so a Gemini-shaped body proves the key speaks the Google wire. On relays
+ * where every key reaches every wire this answers 200 for everyone and is therefore ignored — see
+ * `keyBoundFamily`. Never a model source: New API answers here with its whole catalog restated in
+ * Gemini shape, which would drag every chat model onto the Google endpoint.
+ */
+async function probeGeminiModelsList(siteRoot: string, apiKey: string): Promise<boolean> {
+  const url = modelsUrl('google', siteRoot)
+  const result = await fetchJson(url, { headers: authHeaders('google', apiKey) })
+  if (!result.ok) {
+    log.info('[discover-models] gemini probe unavailable url=%s reason=%s', url, result.error)
+    return false
+  }
+  const ok = isGeminiModelsList(result.json)
+  log.info('[discover-models] gemini probe url=%s geminiShape=%s', url, ok)
+  return ok
 }
 
 async function fetchSub2Fingerprint(siteRoot: string) {
@@ -134,40 +163,44 @@ async function fetchSub2Fingerprint(siteRoot: string) {
 }
 
 /** Single OpenAI-format list — NewAPI returns all families here with supported_endpoint_types. */
-async function fetchOpenAiModelsList(
-  baseUrl: string,
-  apiKey: string,
-  catalogIndex?: Map<string, CapabilityTask[]>,
-): Promise<{ models: DiscoveredModel[] | null; json: unknown | null }> {
+async function fetchModelsListJson(baseUrl: string, apiKey: string): Promise<unknown | null> {
   const url = modelsUrl('openai', baseUrl)
   const result = await fetchJson(url, { headers: authHeaders('openai', apiKey) })
   if (!result.ok) {
     log.info('[discover-models] modelsList unavailable url=%s reason=%s', url, result.error)
-    return { models: null, json: null }
+    return null
   }
-  const parsed = parseOpenAiModelsList(result.json, catalogIndex)
+  return result.json
+}
+
+function parseModelsList(
+  json: unknown | null,
+  catalogIndex?: Map<string, CapabilityTask[]>,
+  context?: RelayContext,
+): DiscoveredModel[] | null {
+  if (json == null) return null
+  const parsed = parseOpenAiModelsList(json, catalogIndex, context)
   if (!parsed) {
     log.warn(
-      '[discover-models] modelsList parse returned null (shape mismatch) url=%s keys=%s sample=%j',
-      url,
-      result.json && typeof result.json === 'object' ? Object.keys(result.json as object).join(',') : typeof result.json,
-      result.json && typeof result.json === 'object'
+      '[discover-models] modelsList parse returned null (shape mismatch) keys=%s sample=%j',
+      typeof json === 'object' ? Object.keys(json as object).join(',') : typeof json,
+      typeof json === 'object' && json !== null
         ? {
-            ...(result.json as Record<string, unknown>),
-            data: Array.isArray((result.json as Record<string, unknown>).data)
-              ? ((result.json as Record<string, unknown>).data as unknown[]).slice(0, 2)
-              : (result.json as Record<string, unknown>).data,
+            ...(json as Record<string, unknown>),
+            data: Array.isArray((json as Record<string, unknown>).data)
+              ? ((json as Record<string, unknown>).data as unknown[]).slice(0, 2)
+              : (json as Record<string, unknown>).data,
           }
-        : result.json,
+        : json,
     )
-    return { models: null, json: result.json }
+    return null
   }
   log.info(
     '[discover-models] modelsList ok count=%d sample=%j',
     parsed.length,
     parsed.slice(0, 3).map((m) => ({ id: m.id, byFamily: m.byFamily })),
   )
-  return { models: parsed, json: result.json }
+  return parsed
 }
 
 function toResultModel(m: DiscoveredModel): DiscoveredOpenAiModel | null {
@@ -184,17 +217,16 @@ function toResultModel(m: DiscoveredModel): DiscoveredOpenAiModel | null {
  * Never throws: either source failing degrades to 'unavailable', never blocks the other.
  */
 export async function discoverModels(
-  endpoint: ServiceEndpoint,
+  baseUrl: string,
   apiKey: string,
   catalogIndex?: Map<string, CapabilityTask[]>,
 ): Promise<DiscoverModelsResult> {
-  const siteRoot = siteRootFrom(endpoint.baseUrl)
+  const siteRoot = siteRootFrom(baseUrl)
   const openaiBase = familyBaseUrl('openai', siteRoot)
   const listUrl = modelsUrl('openai', openaiBase)
   log.info(
-    '[discover-models] start endpointId=%s baseUrl=%s siteRoot=%s listUrl=%s pricingUrl=%s keyLen=%d keyPrefix=%s',
-    endpoint.id,
-    endpoint.baseUrl,
+    '[discover-models] start baseUrl=%s siteRoot=%s listUrl=%s pricingUrl=%s keyLen=%d keyPrefix=%s',
+    baseUrl,
     siteRoot,
     listUrl,
     `${siteRoot}/api/pricing`,
@@ -202,12 +234,30 @@ export async function discoverModels(
     apiKey ? `${apiKey.slice(0, 4)}…` : '(empty)',
   )
 
-  const [pricing, modelsList, status, sub2] = await Promise.all([
-    fetchPricing(siteRoot, catalogIndex),
-    fetchOpenAiModelsList(openaiBase, apiKey, catalogIndex),
+  const [pricingJson, modelsListJson, status, sub2, geminiListOk] = await Promise.all([
+    fetchPricingJson(siteRoot),
+    fetchModelsListJson(openaiBase, apiKey),
     fetchStatusFingerprint(siteRoot),
     fetchSub2Fingerprint(siteRoot),
+    probeGeminiModelsList(siteRoot, apiKey),
   ])
+
+  // The site's published route paths name each endpoint type outright, so they outrank the type
+  // names on every model. They live in the pricing payload, which is why parsing waits for both.
+  const routes = parseRelayEndpointRoutes(pricingJson)
+  if (Object.keys(routes).length > 0) log.info('[discover-models] declared routes=%j', routes)
+
+  // Only Sub2API binds a key to a single upstream, so only there does the list dialect / gemini
+  // probe tell us where an otherwise unplaceable model id belongs. `sub2` is its own fingerprint
+  // probe, so this does not wait on the relay-kind inference below.
+  const defaultFamily = sub2
+    ? keyBoundFamily({ dialect: detectModelsListDialect(modelsListJson), geminiListOk })
+    : undefined
+  if (defaultFamily) log.info('[discover-models] key-bound family=%s geminiListOk=%s', defaultFamily, geminiListOk)
+
+  const context = { routes, defaultFamily }
+  const pricing = { models: parsePricing(pricingJson, catalogIndex, context), json: pricingJson }
+  const modelsList = { models: parseModelsList(modelsListJson, catalogIndex, context), json: modelsListJson }
 
   const merged = mergeDiscovered(pricing.models, modelsList.models)
   const models: DiscoveredOpenAiModel[] = []

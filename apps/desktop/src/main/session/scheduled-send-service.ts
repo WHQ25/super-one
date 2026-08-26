@@ -86,12 +86,13 @@ export class ScheduledSendService {
   /** Latest `resetsAt` (epoch ms) seen per session, as a fallback when the failure carries none. */
   private readonly lastResetsAt = new Map<string, number>()
   /**
-   * Sessions whose queued text is in flight. Consumed by the very
-   * `user_message_appended` that text raises, which is the only moment it is
-   * known to have landed — a broadcast from anything else (a cancel racing the
-   * send, a re-time) must not tell the composer its draft went out.
+   * Sessions whose queued text is in flight, against the `sendAt` that was
+   * delivered. Consumed by the very `user_message_appended` that text raises,
+   * which is the only moment it is known to have landed — a broadcast from
+   * anything else (a cancel racing the send, a re-time) must not tell the
+   * composer its draft went out, and no earlier moment may retire the row.
    */
-  private readonly delivering = new Set<string>()
+  private readonly delivering = new Map<string, number>()
   /** Consecutive resolve failures per session, so a permanent one is bounded. */
   private readonly resolveFailures = new Map<string, number>()
 
@@ -253,6 +254,38 @@ export class ScheduledSendService {
     this.retire(sessionId)
   }
 
+  /**
+   * The queued text has landed in the transcript — the promise is kept.
+   *
+   * Retiring here rather than at the turn's terminal event is the whole point:
+   * a turn routinely runs for many minutes, and for all of them the row would
+   * otherwise still read `armed` at a `sendAt` that is now in the past. The
+   * composer would keep showing "Send at 13:31" long after 13:31, the sidebar
+   * would keep its clock, and — because any queued row blocks an immediate
+   * send — the user could not so much as steer the turn their own schedule
+   * started.
+   *
+   * `sendAt` is the identity check, same as `retireIfUnchanged`: a re-time
+   * during the send makes it a different promise, which this delivery did not
+   * keep. And the auto-resume chain survives because it lives in `autoRearm`,
+   * not in the row — if this turn rate-limits again, `offerResume` writes the
+   * next offer already re-armed, on a row this one is no longer racing to
+   * delete.
+   *
+   * `delivered` on the broadcast either way: it is what tells the composer its
+   * mirrored draft actually went out, and that is true whether or not the row
+   * it was mirroring is still the one on file.
+   */
+  private retireDelivered(sessionId: string, sendAt: number): void {
+    const current = getScheduledSend(sessionId)
+    if (current?.sendAt !== sendAt) {
+      this.deps.broadcast(sessionId, current, true)
+      return
+    }
+    deleteScheduledSend(sessionId)
+    this.deps.broadcast(sessionId, null, true)
+  }
+
   /** Wire to `sessionManager.onAny`. */
   observe(sessionId: string, event: AgentEvent): void {
     switch (event.type) {
@@ -275,14 +308,17 @@ export class ScheduledSendService {
         return
       }
       case 'user_message_appended': {
-        // Not a retirement signal — `appendTranscriptMessage` raises this for a
-        // mailbox bubble that never reaches the model, so a peer message
-        // arriving mid-stall must not retire an offer nobody answered. It is,
-        // however, the exact moment a delivery's text lands in the transcript,
-        // which is the only safe cue for emptying the composer that mirrors it.
-        if (this.delivering.delete(sessionId)) {
-          this.deps.broadcast(sessionId, getScheduledSend(sessionId), true)
-        }
+        // Only a retirement signal for a delivery of *ours* —
+        // `appendTranscriptMessage` raises this for a mailbox bubble that never
+        // reaches the model, so a peer message arriving mid-stall must not
+        // retire an offer nobody answered. When it *is* ours it is the exact
+        // moment the queued text lands in the transcript, which makes it both
+        // the only safe cue for emptying the composer that mirrors it and the
+        // moment the promise stops being owed.
+        const delivered = this.delivering.get(sessionId)
+        if (delivered === undefined) return
+        this.delivering.delete(sessionId)
+        this.retireDelivered(sessionId, delivered)
         return
       }
       case 'agent_setting_change': {
@@ -401,7 +437,7 @@ export class ScheduledSendService {
       if (fresh.source === 'rate_limit') this.autoRearm.set(sessionId, fresh.message)
       this.reveal(sessionId)
       log.info('[scheduled-send] delivering queued send for session %s', sessionId)
-      this.delivering.add(sessionId)
+      this.delivering.set(sessionId, fresh.sendAt)
       try {
         // A stable id makes the transcript append idempotent. Without it every
         // retry of a send that fails *after* the bubble is appended (backend
@@ -413,11 +449,12 @@ export class ScheduledSendService {
         // before ever reaching the transcript.
         this.delivering.delete(sessionId)
       }
-      // A rate-limit row is retired by the turn's own terminal event, and must
-      // not be retired here: if that turn rate-limits again, `offerResume` has
-      // already written the *next* offer by the time this send resolves, and
-      // deleting it would end the auto-resume chain at its first link.
-      if (fresh.source === 'manual') this.retireIfUnchanged(sessionId, fresh.sendAt)
+      // Normally already retired, by the `user_message_appended` this send
+      // raised. This is the belt-and-braces path for a send that somehow got
+      // through without one — the `sendAt` guard makes it a no-op otherwise,
+      // and in particular keeps it off the *next* offer, which a turn that
+      // rate-limited again has already written by the time this resolves.
+      this.retireIfUnchanged(sessionId, fresh.sendAt)
     } catch (err) {
       // Keep the row armed: a failed send is usually the quota still being out,
       // and the next tick is a cheap retry.

@@ -495,6 +495,57 @@ describe('scheduled send — delivery', () => {
     service.stop()
   })
 
+  it('retires a rate-limit row the moment its text lands, not when the turn ends', async () => {
+    const { service, send } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    service.set(SID, { armed: true, message: 'finish the migration' })
+
+    // The append is at the head of the turn; `Session.send` then runs for as
+    // long as the turn does, which is routinely many minutes. A row that
+    // survives that gap keeps the composer showing a promise it already kept —
+    // an armed chip reading "Send at 13:31" at 13:45, a clock in the sidebar,
+    // and no way to send into the session the schedule itself just woke.
+    let rowMidTurn: unknown = 'unread'
+    send.mockImplementation(async () => {
+      service.observe(SID, { type: 'user_message_appended', message: { id: 'm1' } } as unknown as AgentEvent)
+      rowMidTurn = store.get(SID)
+    })
+
+    vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    service.stop()
+
+    expect(rowMidTurn).toBeUndefined()
+  })
+
+  it('still re-arms the chain after the delivered row is retired mid-turn', async () => {
+    const { service, send } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    service.set(SID, { armed: true, message: 'finish the migration' })
+
+    const later = IN_ONE_HOUR + 3_600_000
+    // Retiring on the append must not cost the consent to keep going: that
+    // lives in `autoRearm`, not in the row, so the next stall inside the same
+    // turn still writes an offer that is already armed with the same message.
+    send.mockImplementation(async () => {
+      service.observe(SID, { type: 'user_message_appended', message: { id: 'm1' } } as unknown as AgentEvent)
+      service.observe(SID, rateLimitFailure(later / 1000))
+    })
+
+    vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    await vi.waitFor(() =>
+      expect(store.get(SID)).toMatchObject({
+        armed: true,
+        message: 'finish the migration',
+        sendAt: later + RESET_BUFFER_MS,
+      }),
+    )
+    service.stop()
+  })
+
   it('keeps the re-armed row when the resumed turn rate-limits inside the send', async () => {
     const { service, send } = setup()
     service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))

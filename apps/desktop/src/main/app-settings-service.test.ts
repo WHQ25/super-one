@@ -57,6 +57,7 @@ describe('app-settings-service', () => {
   const defaultBrandOnly = { brandHue: null, tokenOverrides: {} }
   const defaultSettings = {
     analyticsEnabled: true,
+    powerMode: 'system',
     experimentalAgentsEnabled: false,
     enabledExperimentalAgents: [],
     experimentalClaudeOpenAiChatEnabled: false,
@@ -131,6 +132,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        powerMode: 'system',
         experimentalAgentsEnabled: false,
         enabledExperimentalAgents: [],
         experimentalClaudeOpenAiChatEnabled: false,
@@ -201,6 +203,11 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual(defaultSettings)
     })
 
+    it('migrates the legacy closed-lid boolean to the highest power mode', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ keepRunningWithLidClosedOnAc: true }))
+      expect(readAppSettings().powerMode).toBe('lid-closed-on-ac')
+    })
+
     it('migrates the legacy ACP flag to experimental agents', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         agentPreference: { acp: { enabled: true } },
@@ -254,6 +261,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        powerMode: 'system',
         experimentalAgentsEnabled: false,
         enabledExperimentalAgents: [],
         experimentalClaudeOpenAiChatEnabled: false,
@@ -437,6 +445,15 @@ describe('app-settings-service', () => {
   })
 
   describe('saveAppSettings', () => {
+    it('persists the selected power mode', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      saveAppSettings({ powerMode: 'lid-closed-on-ac' })
+      const written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+
+      expect(readAppSettings().powerMode).toBe('lid-closed-on-ac')
+    })
+
     it('maps a legacy ACP patch to experimental agents', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)
       const result = saveAppSettings({ agentPreference: { acp: { enabled: true } } })

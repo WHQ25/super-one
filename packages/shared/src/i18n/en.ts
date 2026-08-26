@@ -959,6 +959,7 @@ export type Messages = {
       privacy: string
       appearance: string
       updates: string
+      power: string
       languageRegion: string
       terminal: string
       terminalTheme: {
@@ -990,6 +991,23 @@ export type Messages = {
         description: string
         enabled: string
         disabled: string
+      }
+      powerMode: {
+        label: string
+        system: string
+        systemDescription: string
+        preventIdleSleep: string
+        preventIdleSleepDescription: string
+        lidClosedOnAc: string
+        lidClosedOnAcDescription: string
+        updated: string
+        confirmTitle: string
+        confirmDescription: string
+        warning: string
+        macPermission: string
+        linuxNote: string
+        confirm: string
+        failed: string
       }
       media: string
       imageProvider: {
@@ -3223,8 +3241,6 @@ export type Messages = {
       subtitle: string
       enableLabel: string
       enableDescription: string
-      preventSleepLabel: string
-      preventSleepDescription: string
       pairNewDevice: string
       pairNewPhone: string
       pairNewDesktop: string
@@ -4477,6 +4493,7 @@ export const en: Messages = {
       privacy: 'Privacy',
       appearance: 'Appearance',
       updates: 'Updates',
+      power: 'Power',
       languageRegion: 'Language & Region',
       terminal: 'Terminal',
       terminalTheme: {
@@ -4508,6 +4525,23 @@ export const en: Messages = {
         description: 'Send anonymous usage data to help improve SuperOne. No personal data or conversation content is collected.',
         enabled: 'Analytics enabled',
         disabled: 'Analytics disabled',
+      },
+      powerMode: {
+        label: 'Power mode',
+        system: 'System Default',
+        systemDescription: 'Follow the system sleep settings. Work pauses when the computer sleeps.',
+        preventIdleSleep: 'Keep Running with Screen Off',
+        preventIdleSleepDescription: 'Prevent idle sleep while SuperOne is open. Closing a laptop lid still sleeps normally.',
+        lidClosedOnAc: 'Keep Running with Lid Closed on Power',
+        lidClosedOnAcDescription: 'Includes screen-off operation and also keeps running with the lid closed while connected to external power.',
+        updated: 'Power mode updated',
+        confirmTitle: 'Allow closed-lid operation?',
+        confirmDescription: 'SuperOne will prevent idle sleep while open. When connected to external power, it will also change the lid-close policy. Disconnecting power restores normal lid behavior; quitting SuperOne restores all normal sleep behavior.',
+        warning: 'A closed laptop can remain warm. Keep it ventilated and never place it in a bag while this setting is active.',
+        macPermission: 'macOS will request administrator approval once to install SuperOne’s restricted power helper.',
+        linuxNote: 'Linux support requires systemd-logind and a desktop policy that honors lid-switch inhibitors.',
+        confirm: 'I Understand, Enable',
+        failed: 'Could not update the power mode',
       },
       media: 'Media',
       imageProvider: {
@@ -6760,8 +6794,6 @@ export const en: Messages = {
       subtitle: 'Allow a mobile device to monitor and control this SuperOne instance.',
       enableLabel: 'Allow Control',
       enableDescription: 'Expose this device for remote pairing',
-      preventSleepLabel: 'Prevent System Sleep',
-      preventSleepDescription: 'Prevent idle sleep when the screen is open. Does not apply when the lid is closed.',
       pairNewDevice: 'Pair New Device',
       pairNewPhone: 'Pair New Phone',
       pairNewDesktop: 'Pair New Desktop',

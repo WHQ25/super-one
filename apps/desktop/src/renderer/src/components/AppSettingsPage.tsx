@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Button } from '@superone/ui/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@superone/ui/components/ui/dialog'
 import { cn } from '@superone/ui/lib/utils'
 import {
   DropdownMenu,
@@ -17,6 +25,7 @@ import { useAppStore } from '@/stores/app'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import type {
   Locale,
+  PowerMode,
   UpdateChannel,
 } from '@superone/shared/agent-types'
 import { AVAILABLE_UPDATE_CHANNELS, channelFromVersion } from '@superone/shared/update-channels'
@@ -28,6 +37,9 @@ export function AppSettingsPage() {
   const [savingLocale, setSavingLocale] = useState(false)
   const [updateChannel, setUpdateChannel] = useState<UpdateChannel | null>(null)
   const [savingChannel, setSavingChannel] = useState(false)
+  const [powerMode, setPowerMode] = useState<PowerMode>('system')
+  const [savingPowerMode, setSavingPowerMode] = useState(false)
+  const [confirmPowerMode, setConfirmPowerMode] = useState(false)
   const appVersion = useAppStore((s) => s.appVersion)
 
   const currentLocale: Locale = i18n.language === 'zh' ? 'zh' : 'en'
@@ -59,6 +71,7 @@ export function AppSettingsPage() {
       if (!mounted) return
       setAnalyticsEnabled(settings.analyticsEnabled)
       setUpdateChannel(settings.updateChannel)
+      setPowerMode(settings.powerMode)
       setLoading(false)
     })
     return () => {
@@ -91,7 +104,45 @@ export function AppSettingsPage() {
       : 'settings.general.experimentalRemoteNodes.disabled'))
   }
 
+  async function savePowerMode(mode: PowerMode) {
+    if (savingPowerMode || mode === powerMode) return
+    setSavingPowerMode(true)
+    try {
+      const result = await window.app.saveAppSettings({ powerMode: mode })
+      setPowerMode(result.powerMode)
+      setConfirmPowerMode(false)
+      toast.success(t('settings.general.powerMode.updated'))
+    } catch (error) {
+      toast.error(t('settings.general.powerMode.failed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setSavingPowerMode(false)
+    }
+  }
+
   const effectiveChannel: UpdateChannel = updateChannel ?? channelFromVersion(appVersion)
+  const powerModeOptions: Array<{
+    value: PowerMode
+    label: string
+    description: string
+  }> = [
+    {
+      value: 'system',
+      label: t('settings.general.powerMode.system'),
+      description: t('settings.general.powerMode.systemDescription'),
+    },
+    {
+      value: 'prevent-idle-sleep',
+      label: t('settings.general.powerMode.preventIdleSleep'),
+      description: t('settings.general.powerMode.preventIdleSleepDescription'),
+    },
+    {
+      value: 'lid-closed-on-ac',
+      label: t('settings.general.powerMode.lidClosedOnAc'),
+      description: t('settings.general.powerMode.lidClosedOnAcDescription'),
+    },
+  ]
 
   async function handleChannelSelect(channel: UpdateChannel) {
     if (savingChannel || effectiveChannel === channel) return
@@ -232,6 +283,49 @@ export function AppSettingsPage() {
 
         <div className="rounded-lg border border-border">
           <div className="border-b border-border px-4 py-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.power')}</p>
+          </div>
+          <div role="radiogroup" aria-label={t('settings.general.powerMode.label')}>
+            {powerModeOptions.map((option, index) => {
+              const selected = powerMode === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={loading || savingPowerMode}
+                  onClick={() => {
+                    if (selected) return
+                    if (option.value === 'lid-closed-on-ac') setConfirmPowerMode(true)
+                    else void savePowerMode(option.value)
+                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60',
+                    index > 0 && 'border-t border-border',
+                    selected && 'bg-muted/40',
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{option.label}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{option.description}</p>
+                  </div>
+                  <span
+                    className={cn(
+                      'flex size-4 shrink-0 items-center justify-center rounded-full border',
+                      selected ? 'border-primary' : 'border-muted-foreground/50',
+                    )}
+                  >
+                    {selected && <span className="size-2 rounded-full bg-primary" />}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border">
+          <div className="border-b border-border px-4 py-2">
             <p className="text-xs font-medium text-muted-foreground">{t('settings.general.experimental')}</p>
           </div>
           <div className="flex items-center justify-between gap-4 p-4">
@@ -262,6 +356,47 @@ export function AppSettingsPage() {
           </div>
         </div>
       </div>
+      <Dialog
+        open={confirmPowerMode}
+        onOpenChange={(open) => {
+          if (!savingPowerMode) setConfirmPowerMode(open)
+        }}
+      >
+        <DialogContent showCloseButton={false} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('settings.general.powerMode.confirmTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('settings.general.powerMode.confirmDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-foreground">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+            <span>{t('settings.general.powerMode.warning')}</span>
+          </div>
+          {window.app.platform === 'darwin' && (
+            <p className="text-xs text-muted-foreground">
+              {t('settings.general.powerMode.macPermission')}
+            </p>
+          )}
+          {window.app.platform === 'linux' && (
+            <p className="text-xs text-muted-foreground">
+              {t('settings.general.powerMode.linuxNote')}
+            </p>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={savingPowerMode}
+              onClick={() => setConfirmPowerMode(false)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button disabled={savingPowerMode} onClick={() => void savePowerMode('lid-closed-on-ac')}>
+              {t('settings.general.powerMode.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

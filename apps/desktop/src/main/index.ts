@@ -185,6 +185,7 @@ import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from '
 import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService, bindAutomationService, notifyAutomationsListChanged } from './automation-service'
 import { ScheduledSendService } from './session/scheduled-send-service'
+import { createPowerManagementService, resolveLegacyRemotePowerMode } from './power-management-service'
 import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation, getAutomation as dbGetAutomation } from './db-automations'
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
@@ -429,6 +430,44 @@ const scheduledSendService = new ScheduledSendService({
     safeSend(AgentIpcChannels.SCHEDULED_SEND_CHANGED, { sessionId, scheduled, delivered }),
   resumeDefaults: () => agentService.readDefaultSessionPrefs(),
 })
+const powerManagementService = createPowerManagementService()
+
+function getRemoteConfigPath(): string {
+  return join(app.getPath('userData'), 'remote-config.json')
+}
+
+function readRemoteConfig(): RemoteDeviceConfig | null {
+  try {
+    const raw = JSON.parse(readFileSync(getRemoteConfigPath(), 'utf-8')) as Record<string, unknown>
+    const { preventSleep: _legacyPreventSleep, ...config } = raw
+    return { relayUrl: '', ...config } as RemoteDeviceConfig
+  } catch {
+    return null
+  }
+}
+
+function migrateLegacyRemotePowerMode(): AppSettings {
+  const current = readAppSettings()
+  try {
+    const path = getRemoteConfigPath()
+    const raw = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>
+    if (!Object.hasOwn(raw, 'preventSleep')) return current
+
+    const migratedMode = resolveLegacyRemotePowerMode(current.powerMode, raw.preventSleep)
+    const next = migratedMode === current.powerMode
+      ? current
+      : saveAppSettings({ powerMode: migratedMode })
+    delete raw.preventSleep
+    writeFileSync(path, JSON.stringify(raw))
+    if (migratedMode !== current.powerMode) {
+      log.info('[power] migrated Remote Control preventSleep to global idle-sleep mode')
+    }
+    return next
+  } catch {
+    // Missing or invalid legacy Remote Control config needs no migration.
+  }
+  return current
+}
 sessionManager.onAny((_sid, event) => {
   if (event.type === 'permission_request') {
     const alive = !!mainWindow && !mainWindow.isDestroyed()
@@ -696,7 +735,23 @@ function applyLiquidGlass(): void {
 }
 
 async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettings> {
-  const result = saveAppSettings(patch)
+  const requestedPowerMode = patch.powerMode
+  const previousPowerMode = requestedPowerMode === undefined
+    ? undefined
+    : readAppSettings().powerMode
+  if (requestedPowerMode !== undefined) {
+    await powerManagementService.setMode(requestedPowerMode, true)
+  }
+
+  let result: AppSettings
+  try {
+    result = saveAppSettings(patch)
+  } catch (error) {
+    if (previousPowerMode !== undefined) {
+      await powerManagementService.setMode(previousPowerMode, false).catch(() => {})
+    }
+    throw error
+  }
   if (result.locale) {
     await applyLocale(result.locale)
   }
@@ -4148,21 +4203,12 @@ function registerIpcHandlers(): void {
     return getBackfillStatus()
   })
 
-  const remoteConfigPath = join(app.getPath('userData'), 'remote-config.json')
-  function readRemoteConfig(): RemoteDeviceConfig | null {
-    try {
-      const raw = JSON.parse(readFileSync(remoteConfigPath, 'utf-8'))
-      return { preventSleep: false, relayUrl: '', ...raw }
-    } catch {
-      return null
-    }
-  }
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_RELAY_STATUS, () => remoteControlService.isRelayConnected())
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_LAN_STATUS, () => remoteControlService.isLanActive())
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_HOSTNAME, () => hostname())
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_CONFIG, readRemoteConfig)
   ipcMain.handle(AgentIpcChannels.REMOTE_SAVE_CONFIG, (_, config: RemoteDeviceConfig) => {
-    writeFileSync(remoteConfigPath, JSON.stringify(config))
+    writeFileSync(getRemoteConfigPath(), JSON.stringify(config))
     remoteControlService.start(config)
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_LIST_PAIRED, (): PairedDevice[] => {
@@ -5260,6 +5306,16 @@ app.whenReady().then(async () => {
     log.transports.file.getFile().path,
   )
 
+  const savedPowerMode = migrateLegacyRemotePowerMode().powerMode
+  const restoredPowerMode = await powerManagementService.start(savedPowerMode)
+  if (!restoredPowerMode) {
+    const fallbackMode = savedPowerMode === 'lid-closed-on-ac'
+      ? 'prevent-idle-sleep'
+      : 'system'
+    await powerManagementService.setMode(fallbackMode, false).catch(() => {})
+    saveAppSettings({ powerMode: fallbackMode })
+  }
+
   // Older builds spawned detached `opencode serve` processes that survived force-quit.
   const reaped = reapOrphanOpenCodeServers()
   if (reaped > 0) log.info('[startup] reaped %d orphan opencode serve process(es)', reaped)
@@ -5580,6 +5636,7 @@ function performQuit(): void {
   ]).catch(() => {})
   Promise.allSettled([
     remoteStop,
+    powerManagementService.dispose(),
     disposeIosSimulatorManager(),
     // Shuts down only emulators SuperOne started. Without this they survive the app
     // as headless orphans — no window to find them by, and the next launch fights
@@ -5619,6 +5676,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   closeAllMiniAppState()
   Promise.allSettled([
     remoteControlService.stop(),
+    powerManagementService.dispose(),
     disposeIosSimulatorManager(),
     // Shuts down only emulators SuperOne started. Without this they survive the app
     // as headless orphans — no window to find them by, and the next launch fights

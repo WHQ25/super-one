@@ -12,6 +12,7 @@ import {
 function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
     analyticsEnabled: true,
+    powerMode: 'system',
     experimentalAgentsEnabled: false,
     enabledExperimentalAgents: [],
     experimentalClaudeOpenAiChatEnabled: false,

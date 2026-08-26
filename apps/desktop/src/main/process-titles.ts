@@ -21,7 +21,6 @@ export const ProcessTitle = {
   Claude: 'SuperOne Claude',
   Codex: 'SuperOne Codex',
   Mdns: 'SuperOne mDNS',
-  SleepBlocker: 'SuperOne Sleep Blocker',
   Installer: 'SuperOne Installer',
   LlmProxy: 'SuperOne LLM Proxy',
   McpBridge: 'SuperOne MCP Bridge',

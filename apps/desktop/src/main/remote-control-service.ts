@@ -1,11 +1,8 @@
 import { webcrypto } from 'node:crypto'
-import { spawn, type ChildProcess } from 'node:child_process'
 import { hostname } from 'node:os'
-import { powerSaveBlocker } from 'electron'
 import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
-import { ProcessTitle } from './process-titles'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 
@@ -702,8 +699,6 @@ export class RemoteControlService {
   private lanServer: LanServer | null = null
   private lanAdvertiser: LanAdvertiser | null = null
   private currentConfig: RemoteDeviceConfig | null = null
-  private sleepBlockerProcess: ChildProcess | null = null
-  private powerBlockerId: number | null = null
   private pairingSession: PairingSession | null = null
 
   private sendQueue: Promise<void> = Promise.resolve()
@@ -846,40 +841,6 @@ export class RemoteControlService {
     }
   }
 
-  private acquirePowerLock(): void {
-    if (process.platform === 'darwin') {
-      if (this.sleepBlockerProcess) return
-      this.sleepBlockerProcess = spawn('caffeinate', ['-s', '-i'], { argv0: ProcessTitle.SleepBlocker })
-      this.sleepBlockerProcess.on('exit', () => { this.sleepBlockerProcess = null })
-      log.info('[RemoteControl] caffeinate started')
-    } else if (process.platform === 'linux') {
-      if (this.sleepBlockerProcess) return
-      this.sleepBlockerProcess = spawn('systemd-inhibit', [
-        '--what=sleep', '--who=SuperOne', '--why=Remote control active', '--mode=block',
-        'sleep', 'infinity',
-      ], { argv0: ProcessTitle.SleepBlocker })
-      this.sleepBlockerProcess.on('exit', () => { this.sleepBlockerProcess = null })
-      log.info('[RemoteControl] systemd-inhibit started')
-    } else if (process.platform === 'win32') {
-      if (this.powerBlockerId !== null) return
-      this.powerBlockerId = powerSaveBlocker.start('prevent-app-suspension')
-      log.info('[RemoteControl] powerSaveBlocker started:', this.powerBlockerId)
-    }
-  }
-
-  private releasePowerLock(): void {
-    if (this.sleepBlockerProcess) {
-      this.sleepBlockerProcess.kill()
-      this.sleepBlockerProcess = null
-      log.info('[RemoteControl] sleep blocker process stopped')
-    }
-    if (this.powerBlockerId !== null) {
-      powerSaveBlocker.stop(this.powerBlockerId)
-      this.powerBlockerId = null
-      log.info('[RemoteControl] powerSaveBlocker stopped')
-    }
-  }
-
   async start(config: RemoteDeviceConfig): Promise<void> {
     await this.stop()
     this.currentConfig = config
@@ -897,7 +858,6 @@ export class RemoteControlService {
     this.intentionallyClosed = false
     await this.connectRelay()
     await this.startLanServer()
-    if (config.preventSleep) this.acquirePowerLock()
     log.info('[RemoteControl] Started for device:', config.deviceId)
   }
 
@@ -1003,7 +963,6 @@ export class RemoteControlService {
     this.keys = null
     this.fileTokenSigner = null
     this.lanFrameSeq = 0
-    this.releasePowerLock()
   }
 
   private async broadcastShutdown(): Promise<void> {

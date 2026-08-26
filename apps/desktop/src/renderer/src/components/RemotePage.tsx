@@ -266,19 +266,6 @@ function ThisDevicePanel() {
             onCheckedChange={(checked) => updateConfig({ enabled: checked })}
           />
         </div>
-
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium">{t('resources.remote.preventSleepLabel')}</p>
-            <p className="text-xs text-muted-foreground">
-              {t('resources.remote.preventSleepDescription')}
-            </p>
-          </div>
-          <Switch
-            checked={config?.preventSleep ?? false}
-            onCheckedChange={(checked) => updateConfig({ preventSleep: checked })}
-          />
-        </div>
       </div>
 
       <div className="grid gap-4">

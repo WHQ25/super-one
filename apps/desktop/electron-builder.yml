@@ -64,6 +64,13 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  # User-approved closed-lid mode installs the narrow macOS root watchdog from
+  # these signed package resources. Windows and Linux ignore the two tiny files.
+  - from: resources/lid-keep-awake
+    to: lid-keep-awake
+    filter:
+      - "macos-helper.sh"
+      - "com.superone.lid-keep-awake.plist"
   # iOS Simulator private APIs move with Xcode. Ship source and compile the
   # small helper into userData against the user's selected toolchain.
   - from: native/ios-simulator-helper

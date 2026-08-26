@@ -12,6 +12,7 @@ import type {
   HarnessId,
   Locale,
   PermissionMode,
+  PowerMode,
   QuestionPreviewFormat,
   SandboxMode,
   SuggestionHarnessPreference,
@@ -48,8 +49,20 @@ function normalizeComputerUseDisplayId(value: unknown): string | null {
   return displayId || null
 }
 
+function readPowerMode(data: Record<string, unknown>): PowerMode {
+  if (data.powerMode === 'system'
+    || data.powerMode === 'prevent-idle-sleep'
+    || data.powerMode === 'lid-closed-on-ac') {
+    return data.powerMode
+  }
+  // Compatibility with builds that briefly exposed the closed-lid boolean.
+  if (data.keepRunningWithLidClosedOnAc === true) return 'lid-closed-on-ac'
+  return 'system'
+}
+
 const defaults: AppSettings = {
   analyticsEnabled: true,
+  powerMode: 'system',
   experimentalAgentsEnabled: false,
   enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,
@@ -445,6 +458,7 @@ export function readAppSettings(): AppSettings {
     const data = JSON.parse(readFileSync(getSettingsPath(), 'utf-8'))
     return {
       analyticsEnabled: typeof data.analyticsEnabled === 'boolean' ? data.analyticsEnabled : defaults.analyticsEnabled,
+      powerMode: readPowerMode(data),
       experimentalAgentsEnabled: typeof data.experimentalAgentsEnabled === 'boolean'
         ? data.experimentalAgentsEnabled
         : readAcpPreference(data).enabled,
@@ -533,6 +547,7 @@ export function readAppSettings(): AppSettings {
   } catch {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
+      powerMode: defaults.powerMode,
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
       enabledExperimentalAgents: [],
       experimentalClaudeOpenAiChatEnabled: defaults.experimentalClaudeOpenAiChatEnabled,
@@ -644,6 +659,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
 
   const merged: AppSettings = {
     analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
+    powerMode: patch.powerMode ?? current.powerMode,
     experimentalAgentsEnabled: patch.experimentalAgentsEnabled
       ?? patch.agentPreference?.acp?.enabled
       ?? current.experimentalAgentsEnabled,

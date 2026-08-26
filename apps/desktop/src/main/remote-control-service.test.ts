@@ -685,7 +685,6 @@ describe('RemoteControlService LAN frame seq', () => {
       enabled: true,
       masterSecret,
       deviceId: 'desktop-test',
-      preventSleep: false,
       relayUrl: 'ws://127.0.0.1:1',
     })
 
@@ -740,7 +739,6 @@ describe('RemoteControlService LAN frame seq', () => {
       enabled: true,
       masterSecret,
       deviceId: 'desktop-test',
-      preventSleep: false,
       relayUrl: 'ws://127.0.0.1:1',
     })
 
@@ -792,7 +790,6 @@ describe('RemoteControlService LAN frame seq', () => {
       enabled: true,
       masterSecret,
       deviceId: 'desktop-test',
-      preventSleep: false,
       relayUrl: 'ws://127.0.0.1:1',
     }
     await service.start(config)

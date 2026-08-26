@@ -4027,7 +4027,6 @@ export interface RemoteDeviceConfig {
   enabled: boolean
   masterSecret: string
   deviceId: string
-  preventSleep: boolean
   relayUrl: string
 }
 
@@ -4036,6 +4035,9 @@ export type Locale = 'en' | 'zh'
 export type UpdateChannel = 'alpha' | 'beta' | 'stable'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
+
+/** SuperOne's global system-sleep policy, ordered from least to most permissive. */
+export type PowerMode = 'system' | 'prevent-idle-sleep' | 'lid-closed-on-ac'
 
 export interface BrowserBookmark {
   id: string
@@ -4085,6 +4087,8 @@ export interface BrandOnlyAgentPreference {
 
 export interface AppSettings {
   analyticsEnabled: boolean
+  /** Global sleep policy. The highest level requires explicit user consent. */
+  powerMode: PowerMode
   /**
    * Legacy master switch for experimental agents (OpenCode + non-Grok ACP).
    * Still honored as an OR when set, but the Settings UI no longer exposes it —
@@ -4258,6 +4262,7 @@ export interface HarnessSessionRank {
 
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
+  powerMode?: PowerMode
   experimentalAgentsEnabled?: boolean
   enabledExperimentalAgents?: string[]
   experimentalClaudeOpenAiChatEnabled?: boolean

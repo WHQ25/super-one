@@ -96,7 +96,6 @@ function createRemoteDeviceConfig(): RemoteDeviceConfig {
       .map((b) => b.toString(16).padStart(2, '0'))
       .join(''),
     deviceId: crypto.randomUUID(),
-    preventSleep: false,
     relayUrl: '',
   }
 }
@@ -104,7 +103,6 @@ function createRemoteDeviceConfig(): RemoteDeviceConfig {
 function normalizeRemoteDeviceConfig(config: RemoteDeviceConfig): RemoteDeviceConfig {
   return {
     ...config,
-    preventSleep: config.preventSleep ?? false,
     relayUrl: config.relayUrl ?? '',
   }
 }

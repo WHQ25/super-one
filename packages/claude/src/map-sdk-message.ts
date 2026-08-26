@@ -7,6 +7,7 @@
 
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import { extractClaudeToolResultText } from './agent-event-mapper'
 
 export interface OpenTool {
   toolUseId: string
@@ -70,6 +71,12 @@ function stringifyInput(input: unknown): string {
 function stringifyOutput(content: unknown): string | undefined {
   if (typeof content === 'string') return content
   if (content == null) return undefined
+  // Since SDK 0.3.243 a Read on a PDF puts its `document` block — or one `image`
+  // block per page — inside the tool_result content instead of a separate user
+  // message trailing it. Serializing those verbatim pushes megabytes of base64
+  // into the event stream, so keep only the text blocks, matching what the
+  // lossless agent-event path already does.
+  if (Array.isArray(content)) return extractClaudeToolResultText(content) || undefined
   try {
     return JSON.stringify(content)
   } catch {

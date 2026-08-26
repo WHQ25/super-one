@@ -6,6 +6,11 @@ import {
   PROTOCOL_FAMILIES,
   PROTOCOL_FAMILY,
   PROTOCOL_ORDER,
+  modernizeEndpoints,
+  rebaseLegacyPlans,
+  CONSUMER_TASK,
+  type SlotRemap,
+  type ConsumerId,
   type EndpointDefaults,
   type EndpointModel,
   type EndpointOverride,
@@ -290,6 +295,8 @@ function applyMigrations(db: Database.Database): void {
   migrateEndpointProtocols(db)
   migrateKimiMoonshotPlatforms(db)
   migrateCredentialEndpoints(db)
+  migrateCredentialBaseUrl(db)
+  migrateEndpointBaseUrlToRoutes(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS harness_resource_cache (
@@ -853,7 +860,9 @@ export function buildLegacyProviderMigration(row: LegacyApiProviderRow): LegacyP
     id: `custom:${row.id}`,
     brand: 'custom',
     name: row.name || 'Provider',
-    plans: [{ id: 'api', name: 'API', auth: 'api-key', endpoints }],
+    // Legacy rows carried one base URL per agent with no shared root, so each endpoint keeps its
+    // own as a host override and the plan root stays empty.
+    plans: [{ id: 'api', name: 'API', auth: 'api-key', baseUrl: '', endpoints }],
   }
   return { platform, bindings }
 }
@@ -905,11 +914,14 @@ function migrateLegacyApiProviders(db: Database.Database): void {
 
 export interface OldServiceEndpoint {
   id: string
-  baseUrl: string
+  /** Absent on current-shape endpoints, which hang off the plan's site root by route instead. */
+  baseUrl?: string
   protocol?: WireProtocol // pre-migration single protocol
   protocols?: WireProtocol[] // post-migration
+  routes?: Partial<Record<WireProtocol, string>>
   models?: EndpointModel[]
   defaults?: EndpointDefaults
+  disabled?: boolean
 }
 
 // Endpoint id remap for the builtin `openai` media platform, whose images/responses/audio endpoints
@@ -921,6 +933,8 @@ function mergeOverride(a: EndpointOverride, b: EndpointOverride): EndpointOverri
   const out: EndpointOverride = {}
   const baseUrl = b.baseUrl ?? a.baseUrl
   if (baseUrl) out.baseUrl = baseUrl
+  const routes = { ...a.routes, ...b.routes }
+  if (Object.keys(routes).length > 0) out.routes = routes
   const models = [...(a.models ?? []), ...(b.models ?? [])]
   const byId = new Map<string, EndpointModel>()
   for (const m of models) byId.set(m.id, m)
@@ -946,24 +960,54 @@ export function remapOverrides(
 
 // Regroup a plan's endpoints by protocol family into one endpoint each (id = family), returning the
 // rebuilt endpoints and the old→new id remap. Defaults/models merge across a collapsed family.
+/**
+ * Whether an endpoint list still carries the pre-`protocols[]` shape this migration exists to fix.
+ *
+ * The singular `protocol` field is the only reliable marker: everything written since then stores
+ * `protocols[]`. Gating on it matters because the migration runs on every startup, and regrouping
+ * current data is not harmless — a combined `openai` endpoint holding `openai-video` would have to
+ * split, and one old endpoint id cannot remap to two new ones without stranding the overrides and
+ * bindings that point at it.
+ */
+export function needsProtocolRegroup(endpoints: OldServiceEndpoint[]): boolean {
+  return endpoints.some((e) => !!e.protocol)
+}
+
 export function regroupPlanEndpoints(oldEndpoints: OldServiceEndpoint[]): {
   endpoints: ServiceEndpoint[]
   remap: Record<string, string>
 } {
+  // Grouped by family, one endpoint id per family — the shape this migration was written to produce.
+  // It deliberately does NOT split video wires into their own slot: a combined `openai` endpoint
+  // holding `openai-video` is normal pre-existing data, and splitting it would make one old id map
+  // to two new ones, which a single-valued remap cannot express without dropping overrides and
+  // bindings on the floor. Current-shape plans are skipped by the caller instead.
   const groups = new Map<
     ProtocolFamily,
-    { protocols: Set<WireProtocol>; baseUrl: string; models: EndpointModel[]; defaults: EndpointDefaults; ids: string[] }
+    {
+      protocols: Set<WireProtocol>
+      baseUrl: string
+      routes: Partial<Record<WireProtocol, string>>
+      models: EndpointModel[]
+      defaults: EndpointDefaults
+      disabled: boolean
+      ids: string[]
+    }
   >()
   for (const e of oldEndpoints) {
     const protocols = e.protocols ?? (e.protocol ? [e.protocol] : [])
     if (protocols.length === 0) continue
     const family = PROTOCOL_FAMILY[protocols[0]]
-    const g = groups.get(family) ?? { protocols: new Set(), baseUrl: '', models: [], defaults: {}, ids: [] }
+    const g =
+      groups.get(family) ??
+      { protocols: new Set(), baseUrl: '', routes: {}, models: [], defaults: {}, disabled: true, ids: [] }
     for (const p of protocols) g.protocols.add(p)
-    if (!g.baseUrl) g.baseUrl = e.baseUrl
+    if (!g.baseUrl && e.baseUrl) g.baseUrl = e.baseUrl
+    Object.assign(g.routes, e.routes)
     if (e.models) g.models.push(...e.models)
     if (e.defaults?.modelMapping) g.defaults.modelMapping = mergeModelMapping(g.defaults.modelMapping, e.defaults.modelMapping)
     if (e.defaults?.extraEnv) g.defaults.extraEnv = mergeExtraEnv(g.defaults.extraEnv, e.defaults.extraEnv)
+    if (!e.disabled) g.disabled = false
     g.ids.push(e.id)
     groups.set(family, g)
   }
@@ -973,9 +1017,12 @@ export function regroupPlanEndpoints(oldEndpoints: OldServiceEndpoint[]): {
     const g = groups.get(family)
     if (!g) continue
     const protocols = [...g.protocols].sort((a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))
-    const endpoint: ServiceEndpoint = { id: family, baseUrl: g.baseUrl, protocols }
+    const endpoint: ServiceEndpoint = { id: family, protocols }
+    if (g.baseUrl) endpoint.baseUrl = g.baseUrl
+    if (Object.keys(g.routes).length > 0) endpoint.routes = g.routes
     if (g.models.length > 0) endpoint.models = g.models
     if (g.defaults.modelMapping || g.defaults.extraEnv) endpoint.defaults = g.defaults
+    if (g.disabled) endpoint.disabled = true
     endpoints.push(endpoint)
     for (const oldId of g.ids) remap[oldId] = family
   }
@@ -1004,6 +1051,7 @@ function migrateEndpointProtocols(db: Database.Database): void {
     let changed = false
     for (const plan of platform.plans) {
       const oldEndpoints = plan.endpoints as unknown as OldServiceEndpoint[]
+      if (!needsProtocolRegroup(oldEndpoints)) continue
       const { endpoints, remap: planRemap } = regroupPlanEndpoints(oldEndpoints)
       Object.assign(remap, planRemap)
       if (JSON.stringify(plan.endpoints) !== JSON.stringify(endpoints)) changed = true
@@ -1066,6 +1114,91 @@ function migrateKimiMoonshotPlatforms(db: Database.Database): void {
   ]
   for (const r of remaps) {
     update.run(r.toPlatform, r.toPlan, now, r.fromPlatform, r.fromPlan)
+  }
+}
+
+/**
+ * Endpoints used to each store a whole base URL (`https://relay.com/v1`). They now store a route
+ * hanging off one site root held by the plan or the key. The conversion itself lives in
+ * `@superone/shared` so the node/CLI database can run the identical rewrite on its own tables.
+ *
+ * Without this, a legacy `openai` endpoint at `https://relay.com/v1` resolves to `.../v1/v1`, and a
+ * legacy plan (which had no `baseUrl` field at all) leaves the settings page with nothing to render.
+ * Idempotent: an endpoint that already carries `routes` is left alone.
+ */
+function migrateEndpointBaseUrlToRoutes(db: Database.Database): void {
+  const now = new Date().toISOString()
+  // platform_id → (old endpoint id → task → new endpoint id), for the bindings pass below.
+  const remapByPlatform = new Map<string, SlotRemap>()
+
+  const platforms = db.prepare('SELECT id, definition_json FROM custom_platforms').all() as Array<{
+    id: string
+    definition_json: string
+  }>
+  const updatePlatform = db.prepare('UPDATE custom_platforms SET definition_json = ?, updated_at = ? WHERE id = ?')
+  for (const row of platforms) {
+    let platform: Platform
+    try {
+      platform = JSON.parse(row.definition_json) as Platform
+    } catch {
+      continue
+    }
+    const remap = rebaseLegacyPlans(platform.plans)
+    if (!remap) continue
+    remapByPlatform.set(row.id, remap)
+    updatePlatform.run(JSON.stringify(platform), now, row.id)
+  }
+
+  const creds = db
+    .prepare('SELECT id, platform_id, base_url, endpoints_json FROM credentials WHERE endpoints_json IS NOT NULL')
+    .all() as Array<{ id: string; platform_id: string; base_url: string; endpoints_json: string | null }>
+  const updateCred = db.prepare('UPDATE credentials SET base_url = ?, endpoints_json = ?, updated_at = ? WHERE id = ?')
+  const credRemap = new Map<string, SlotRemap>()
+  for (const row of creds) {
+    let endpoints: ServiceEndpoint[]
+    try {
+      const parsed = JSON.parse(row.endpoints_json ?? 'null') as unknown
+      if (!Array.isArray(parsed)) continue
+      endpoints = parsed as ServiceEndpoint[]
+    } catch {
+      continue
+    }
+    // A key owns its endpoint list outright, so its own split is what its bindings must follow —
+    // the plan's remap can differ if the key was edited independently.
+    const converted = modernizeEndpoints(endpoints, row.base_url)
+    if (!converted) continue
+    credRemap.set(row.id, converted.remap)
+    updateCred.run(converted.siteRoot, JSON.stringify(converted.endpoints), now, row.id)
+  }
+
+  // A binding names one endpoint id. When that endpoint split, the consumer follows the half that
+  // still serves its task — a video consumer bound to the old combined `openai` moves to
+  // `openai-video`, while the chat consumer stays put.
+  const bindings = db
+    .prepare(
+      `SELECT b.consumer, b.endpoint_id, c.id AS credential_id, c.platform_id
+       FROM consumer_bindings b JOIN credentials c ON c.id = b.credential_id
+       WHERE b.endpoint_id IS NOT NULL`,
+    )
+    .all() as Array<{ consumer: ConsumerId; endpoint_id: string; credential_id: string; platform_id: string }>
+  const updateBinding = db.prepare('UPDATE consumer_bindings SET endpoint_id = ? WHERE consumer = ?')
+  for (const row of bindings) {
+    const remap = credRemap.get(row.credential_id) ?? remapByPlatform.get(row.platform_id)
+    const next = remap?.[row.endpoint_id]?.[CONSUMER_TASK[row.consumer]]
+    if (next && next !== row.endpoint_id) updateBinding.run(next, row.consumer)
+  }
+}
+
+
+/**
+ * The site root a key points at moved from each endpoint's `baseUrl` to one column on the key,
+ * since every endpoint under a plan shares an origin. Column-only: existing rows keep whatever
+ * `endpoints_json` already holds. Idempotent.
+ */
+function migrateCredentialBaseUrl(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(credentials)').all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === 'base_url')) {
+    db.exec("ALTER TABLE credentials ADD COLUMN base_url TEXT NOT NULL DEFAULT ''")
   }
 }
 

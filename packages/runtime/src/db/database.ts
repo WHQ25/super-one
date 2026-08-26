@@ -3,6 +3,15 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { SCHEMA_GENERATION, SCHEMA_SQL } from './schema'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
+import {
+  CONSUMER_TASK,
+  modernizeEndpoints,
+  rebaseLegacyPlans,
+  type ConsumerId,
+  type Platform,
+  type ServiceEndpoint,
+  type SlotRemap,
+} from '@superone/shared/platform-registry'
 
 export type NodeDatabase = Database.Database
 
@@ -105,6 +114,7 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
   name TEXT NOT NULL,
   secret TEXT NOT NULL DEFAULT '',
   secret_env TEXT NOT NULL DEFAULT '',
+  base_url TEXT NOT NULL DEFAULT '',
   overrides_json TEXT NOT NULL DEFAULT '{}',
   endpoints_json TEXT,
   notes TEXT NOT NULL DEFAULT '',
@@ -125,6 +135,82 @@ CREATE TABLE IF NOT EXISTS provider_custom_platforms (
   updated_at TEXT NOT NULL DEFAULT ''
 );
 `)
+
+  // The site root a key points at lives on the key, not on each endpoint under it.
+  const credCols = db.prepare(`PRAGMA table_info(provider_credentials)`).all() as Array<{ name: string }>
+  if (!credCols.some((c) => c.name === 'base_url')) {
+    db.exec(`ALTER TABLE provider_credentials ADD COLUMN base_url TEXT NOT NULL DEFAULT ''`)
+  }
+  migrateProviderEndpointRoutes(db)
+}
+
+/**
+ * Same conversion the desktop database runs, on the node's own provider tables: endpoints that
+ * stored a whole base URL become routes hanging off one site root. A node paired with an upgraded
+ * desktop resolves the same addresses only if both sides have been converted.
+ *
+ * Idempotent — `rebaseLegacyEndpoints` returns undefined once nothing is in the old shape.
+ */
+function migrateProviderEndpointRoutes(db: NodeDatabase): void {
+  const now = new Date().toISOString()
+  const remapByPlatform = new Map<string, SlotRemap>()
+
+  const platforms = db
+    .prepare(`SELECT id, definition_json FROM provider_custom_platforms`)
+    .all() as Array<{ id: string; definition_json: string }>
+  const updatePlatform = db.prepare(
+    `UPDATE provider_custom_platforms SET definition_json = ?, updated_at = ? WHERE id = ?`,
+  )
+  for (const row of platforms) {
+    let platform: Platform
+    try {
+      platform = JSON.parse(row.definition_json) as Platform
+    } catch {
+      continue
+    }
+    const remap = rebaseLegacyPlans(platform.plans)
+    if (!remap) continue
+    remapByPlatform.set(row.id, remap)
+    updatePlatform.run(JSON.stringify(platform), now, row.id)
+  }
+
+  const creds = db
+    .prepare(
+      `SELECT id, platform_id, base_url, endpoints_json FROM provider_credentials WHERE endpoints_json IS NOT NULL`,
+    )
+    .all() as Array<{ id: string; platform_id: string; base_url: string; endpoints_json: string | null }>
+  const updateCred = db.prepare(
+    `UPDATE provider_credentials SET base_url = ?, endpoints_json = ?, updated_at = ? WHERE id = ?`,
+  )
+  const credRemap = new Map<string, SlotRemap>()
+  for (const row of creds) {
+    let endpoints: ServiceEndpoint[]
+    try {
+      const parsed = JSON.parse(row.endpoints_json ?? 'null') as unknown
+      if (!Array.isArray(parsed)) continue
+      endpoints = parsed as ServiceEndpoint[]
+    } catch {
+      continue
+    }
+    const converted = modernizeEndpoints(endpoints, row.base_url)
+    if (!converted) continue
+    credRemap.set(row.id, converted.remap)
+    updateCred.run(converted.siteRoot, JSON.stringify(converted.endpoints), now, row.id)
+  }
+
+  const bindings = db
+    .prepare(
+      `SELECT b.consumer, b.endpoint_id, c.id AS credential_id, c.platform_id
+       FROM provider_bindings b JOIN provider_credentials c ON c.id = b.credential_id
+       WHERE b.endpoint_id IS NOT NULL`,
+    )
+    .all() as Array<{ consumer: ConsumerId; endpoint_id: string; credential_id: string; platform_id: string }>
+  const updateBinding = db.prepare(`UPDATE provider_bindings SET endpoint_id = ? WHERE consumer = ?`)
+  for (const row of bindings) {
+    const remap = credRemap.get(row.credential_id) ?? remapByPlatform.get(row.platform_id)
+    const next = remap?.[row.endpoint_id]?.[CONSUMER_TASK[row.consumer]]
+    if (next && next !== row.endpoint_id) updateBinding.run(next, row.consumer)
+  }
 }
 
 /**

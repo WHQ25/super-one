@@ -42,6 +42,8 @@ export interface SelectorProviderOption {
   id: string | null
   name: string
   brand?: string | null
+  /** Custom platforms have no brand icon — their site favicon (data URL) is the only mark. */
+  icon?: string | null
   keyName?: string
   description?: string
 }
@@ -801,7 +803,7 @@ export function GroupedModelEffortSelector({
                         }}
                         className={cn('justify-between gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
                       >
-                        <ProviderOptionLabel brandKey={provider.brand ?? ''} name={provider.name} />
+                        <ProviderOptionLabel brandKey={provider.brand} name={provider.name} icon={provider.icon} />
                         <span className="flex min-w-0 shrink-0 items-center gap-1.5">
                           {provider.keyName && <span className="truncate text-xs text-muted-foreground">{provider.keyName}</span>}
                           {selected && <Check className="size-4 shrink-0 text-primary" />}
@@ -833,7 +835,7 @@ export function GroupedModelEffortSelector({
                   {selectedProvider ? (
                     <>
                       <span className="flex min-w-0 flex-1 items-center">
-                        <ProviderOptionLabel brandKey={selectedProvider.brand ?? ''} name={selectedProvider.name} />
+                        <ProviderOptionLabel brandKey={selectedProvider.brand} name={selectedProvider.name} icon={selectedProvider.icon} />
                       </span>
                       {selectedProvider.keyName && (
                         <span className="truncate text-xs text-muted-foreground">{selectedProvider.keyName}</span>

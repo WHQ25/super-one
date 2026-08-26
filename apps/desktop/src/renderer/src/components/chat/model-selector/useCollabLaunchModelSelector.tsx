@@ -7,14 +7,13 @@ import type {
   ProviderModelEnv,
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
-import { findPlatform } from '@superone/shared/platform-registry'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import {
-  brandOfCredential,
   consumerForHarness,
   credentialsForConsumer,
+  providerDisplayForCredential,
   resolveEffective,
 } from '@/lib/provider-resolve'
 import {
@@ -207,11 +206,12 @@ export function useCollabLaunchModelSelector(args: {
     return credentialsForConsumer(platforms, credentials, consumer, {
       experimentalClaudeOpenAiChatEnabled,
     }).map((credential) => {
-      const name = findPlatform(platforms, credential.platformId)?.name ?? credential.name
+      const { brand, name, icon } = providerDisplayForCredential(platforms, credential)
       return {
         id: credential.id,
-        brand: brandOfCredential(platforms, credential),
+        brand,
         name,
+        icon,
         keyName: credential.name,
       }
     })

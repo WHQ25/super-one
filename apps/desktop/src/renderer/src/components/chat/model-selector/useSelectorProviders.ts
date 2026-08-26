@@ -1,11 +1,11 @@
 import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { HarnessId } from '@superone/shared/agent-types'
-import { findPlatform, type Credential } from '@superone/shared/platform-registry'
+import { type Credential } from '@superone/shared/platform-registry'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
-import { brandOfCredential, consumerForHarness, credentialsForConsumer, resolveEffective } from '@/lib/provider-resolve'
+import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential, resolveEffective } from '@/lib/provider-resolve'
 import type { SelectorProviderOption } from './GroupedModelEffortSelector'
 
 export function useSelectorProviders(harness: HarnessId) {
@@ -60,8 +60,8 @@ export function useSelectorProviders(harness: HarnessId) {
       { id: null, brand: harness === 'codex' ? 'openai' : 'claude', name: defaultLabel },
     ]
     for (const c of filtered) {
-      const name = findPlatform(platforms, c.platformId)?.name ?? c.name
-      list.push({ id: c.id, brand: brandOfCredential(platforms, c), name, keyName: c.name })
+      const { brand, name, icon } = providerDisplayForCredential(platforms, c)
+      list.push({ id: c.id, brand, name, icon, keyName: c.name })
     }
     return list
   }, [filtered, platforms, harness, t])

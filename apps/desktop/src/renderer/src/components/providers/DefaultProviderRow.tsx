@@ -1,6 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
-import { findPlatform, type ConsumerId, type Credential } from '@superone/shared/platform-registry'
+import { type ConsumerId, type Credential } from '@superone/shared/platform-registry'
 import { Badge } from '@superone/ui/components/ui/badge'
 import {
   DropdownMenu,
@@ -13,14 +13,14 @@ import {
 } from '@superone/ui/components/ui/dropdown-menu'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
-import { credentialsForConsumer } from '@/lib/provider-resolve'
+import { credentialsForConsumer, providerDisplayForCredential } from '@/lib/provider-resolve'
 import { ProviderLabel } from '@/components/ProviderLabel'
 
-export function ProviderOptionLabel({ brandKey, name, keyName }: { brandKey: string; name?: string; keyName?: string }) {
+export function ProviderOptionLabel({ brandKey, name, keyName, icon }: { brandKey?: string | null; name?: string; keyName?: string; icon?: string | null }) {
   return (
     <span className="flex min-w-0 items-center gap-2 whitespace-nowrap [&_svg]:!size-auto">
       <span className="flex min-w-0 shrink items-center overflow-hidden">
-        <ProviderLabel brandKey={brandKey} fallback={name} combine size={20} />
+        <ProviderLabel brandKey={brandKey} fallback={name} icon={icon} combine size={20} />
       </span>
       {keyName && <Badge variant="secondary" className="max-w-24 shrink-0 truncate font-normal">{keyName}</Badge>}
     </span>
@@ -70,8 +70,11 @@ export function DefaultProviderRow({
   }, [candidates])
   const currentId = bindings.find((b) => b.consumer === consumer)?.credentialId ?? ''
   const current = candidates.find((c) => c.id === currentId)
-  const brandFor = (c: Credential): string => findPlatform(platforms, c.platformId)?.brand ?? 'custom'
-  const nameFor = (c: Credential): string | undefined => findPlatform(platforms, c.platformId)?.name
+  /** Platform-derived label props; `icon` is what custom platforms (no brand icon) render. */
+  const optionProps = (c: Credential) => {
+    const { brand, name, icon } = providerDisplayForCredential(platforms, c)
+    return { brandKey: brand, name, icon }
+  }
 
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border p-4 last:border-b-0">
@@ -83,7 +86,7 @@ export function DefaultProviderRow({
         <DropdownMenuTrigger asChild>
           <button className="flex min-w-0 max-w-64 shrink-0 items-center gap-2 overflow-hidden rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
             <span className="min-w-0 flex-1 overflow-hidden">
-              {current ? <ProviderOptionLabel brandKey={brandFor(current)} name={nameFor(current)} keyName={current.name} /> : fallback}
+              {current ? <ProviderOptionLabel {...optionProps(current)} keyName={current.name} /> : fallback}
             </span>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </button>
@@ -102,7 +105,7 @@ export function DefaultProviderRow({
                   onClick={() => void setBinding({ consumer, credentialId: c.id })}
                   className="flex items-center justify-between gap-2"
                 >
-                  <ProviderOptionLabel brandKey={brandFor(c)} name={nameFor(c)} />
+                  <ProviderOptionLabel {...optionProps(c)} />
                   {currentId === c.id && <Check className="size-4 shrink-0 text-muted-foreground" />}
                 </DropdownMenuItem>
               )
@@ -111,7 +114,7 @@ export function DefaultProviderRow({
             return (
               <DropdownMenuSub key={group[0].platformId}>
                 <DropdownMenuSubTrigger>
-                  <ProviderOptionLabel brandKey={brandFor(group[0])} name={nameFor(group[0])} />
+                  <ProviderOptionLabel {...optionProps(group[0])} />
                   {groupHasCurrent && <Check className="ml-auto size-4 shrink-0 text-muted-foreground" />}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-56">
@@ -121,7 +124,7 @@ export function DefaultProviderRow({
                       onClick={() => void setBinding({ consumer, credentialId: c.id })}
                       className="flex items-center justify-between gap-2"
                     >
-                      <ProviderOptionLabel brandKey={brandFor(c)} name={nameFor(c)} keyName={c.name} />
+                      <ProviderOptionLabel {...optionProps(c)} keyName={c.name} />
                       {currentId === c.id && <Check className="size-4 shrink-0 text-muted-foreground" />}
                     </DropdownMenuItem>
                   ))}

@@ -100,6 +100,19 @@ export function brandOfCredential(platforms: Platform[], credential: Credential)
   return findPlatform(platforms, credential.platformId)?.brand ?? null
 }
 
+/**
+ * Display identity of a credential's platform for provider pickers: brand key (icon lookup),
+ * platform name (label / icon-less fallback) and, for custom platforms, the site favicon.
+ * Custom platforms have no `BRANDS` entry, so `icon` is the only mark they can render.
+ */
+export function providerDisplayForCredential(
+  platforms: Platform[],
+  credential: Credential,
+): { brand: string | null; name: string; icon?: string } {
+  const platform = findPlatform(platforms, credential.platformId)
+  return { brand: platform?.brand ?? null, name: platform?.name ?? credential.name, icon: platform?.icon }
+}
+
 /** Consumers this platform can serve (has at least one matching endpoint across its plans). */
 export function platformConsumers(platform: Platform): ConsumerId[] {
   return CONSUMER_IDS.filter((consumer) => platform.plans.some((plan) => !!selectEndpoint(plan, consumer)))

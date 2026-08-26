@@ -702,6 +702,7 @@ function ActiveProviderHint() {
       <ProviderLabel
         brandKey={effective?.brand ?? defaultBrand}
         fallback={effective?.platform.name ?? defaultLabel}
+        icon={effective?.platform.icon}
         size={12}
         compactFallback
       />

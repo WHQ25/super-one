@@ -1334,8 +1334,18 @@ function DurationFooter({
   // A local slash command (/code-review) can run for minutes emitting nothing at
   // all — no text, no tools — so without this the turn is indistinguishable from
   // a hang. The footer already owns this "nothing to show yet, but work is
-  // happening" slot for MCP startup.
-  const showSlashCommand = isStreaming && !!runningSlashCommand
+  // happening" slot for MCP startup. Once the turn produces anything the output
+  // is itself the progress signal, so the notice retires — same rule as
+  // showMcpStartup deferring to hasCodexItems. Blank text does not count: a
+  // streaming turn opens with an empty block before the first token lands.
+  const hasTurnOutput = message.content.some((block) =>
+    block.type === 'text'
+      ? block.text.trim().length > 0
+      : block.type === 'thinking'
+        ? block.thinking.trim().length > 0
+        : true,
+  )
+  const showSlashCommand = isStreaming && !!runningSlashCommand && !hasTurnOutput
   if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !showMcpStartup && !showMcpFailure && !showSlashCommand) return null
 
   const seconds = durationMs ? Math.round(durationMs / 1000) : 0

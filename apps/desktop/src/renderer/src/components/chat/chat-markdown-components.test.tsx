@@ -51,6 +51,29 @@ describe('FileLink chip rendering', () => {
     expect(chip.textContent).not.toContain('L266-268')
   })
 
+  it('renders a line range instead of leaving it stuck on the file path', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    render(
+      <FileLink href={`${PROJECT}/apps/desktop/src/MentionPopup.tsx#L10-20`}>
+        MentionPopup.tsx
+      </FileLink>,
+    )
+    const chip = screen.getByRole('button')
+    expect(chip).toHaveTextContent('MentionPopup.tsx#L10-20')
+    // title carries the path handed to the editor — the range must be off it.
+    expect(chip.getAttribute('title')).toBe(`${PROJECT}/apps/desktop/src/MentionPopup.tsx`)
+  })
+
+  it('picks the icon from the file path, not from a prose link label', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    const href = `${PROJECT}/apps/desktop/src/MentionPopup.tsx`
+    const { container: labelled } = render(<FileLink href={href}>通用电源设置 UI</FileLink>)
+    const { container: bare } = render(<FileLink href={href}>MentionPopup.tsx</FileLink>)
+    const iconOf = (root: HTMLElement): string => root.querySelector('svg')?.outerHTML ?? ''
+    expect(iconOf(labelled)).not.toBe('')
+    expect(iconOf(labelled)).toBe(iconOf(bare))
+  })
+
   it('falls back to a plain anchor for links outside the project', () => {
     useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
     render(<FileLink href="https://example.com">docs</FileLink>)

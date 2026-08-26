@@ -19,8 +19,12 @@ export function DraggableFileIcon({
   dragEndRef?: MutableRefObject<number>
 }) {
   const dragIconRef = useRef<HTMLImageElement | null>(null)
+  // `name` is the display label, which markdown links may override with prose
+  // ("通用电源设置 UI"). The extension lives on the path — resolve the icon from
+  // there so a custom link text can't downgrade the chip to the default icon.
+  const iconName = filePath?.split(/[/\\]/).pop() || name
 
-  if (!filePath) return <FileIcon name={name} size={size} className={cn('shrink-0', className)} />
+  if (!filePath) return <FileIcon name={iconName} size={size} className={cn('shrink-0', className)} />
 
   const handleMouseDown = (e: React.MouseEvent): void => {
     if (e.button !== 0) return
@@ -49,7 +53,7 @@ export function DraggableFileIcon({
       onDragStart={handleDragStart}
       className={cn('inline-flex items-center cursor-grab active:cursor-grabbing', className)}
     >
-      <FileIcon name={name} size={size} className="shrink-0" />
+      <FileIcon name={iconName} size={size} className="shrink-0" />
     </span>
   )
 }

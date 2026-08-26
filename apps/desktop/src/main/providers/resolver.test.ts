@@ -257,3 +257,74 @@ describe('buildRemoteActiveService', () => {
     expect(remote?.id).toBe('cred1')
   })
 })
+
+/**
+ * A relay that publishes both Ark's official video path and its own serves the same Seedance model
+ * on two wires. Which one a generation actually takes is decided here, and the answer has to survive
+ * all the way to the driver — `videoKindFor` reads only the protocol, so picking the wrong endpoint
+ * silently sends an Ark-shaped request to a New API-shaped route.
+ */
+describe('media:video on a relay serving two video wires', () => {
+  const seedance = { id: 'doubao-seedance-2-0-fast-260128' }
+  const sora = { id: 'sora-2' }
+
+  const relay: Platform = {
+    id: 'custom:relay',
+    brand: 'custom',
+    name: 'Relay',
+    plans: [{
+      id: 'api',
+      name: 'API',
+      auth: 'api-key',
+      baseUrl: 'https://super-api.dev',
+      endpoints: [
+        // Order as customEndpointsFor() derives it — volcengine before newapi.
+        { id: 'ark-video', protocols: ['ark-video'], routes: { 'ark-video': '/api/v3/contents/generations/tasks' } },
+        { id: 'newapi-video', protocols: ['newapi-video'] },
+      ],
+    }],
+  }
+  const relayCred: Credential = {
+    id: 'relay-key',
+    platformId: 'custom:relay',
+    planId: 'api',
+    name: 'relay',
+    secret: 'sk-relay',
+    baseUrl: 'https://super-api.dev',
+    endpoints: [
+      { id: 'ark-video', protocols: ['ark-video'], routes: { 'ark-video': '/api/v3/contents/generations/tasks' }, models: [seedance] },
+      { id: 'newapi-video', protocols: ['newapi-video'], models: [seedance, sora] },
+    ],
+    notes: '',
+    sortOrder: 0,
+  }
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('prefers the vendor-official wire when nothing pins an endpoint', () => {
+    bind({ consumer: 'media:video', credentialId: 'relay-key' }, [relayCred])
+    mockedGetPlatforms.mockReturnValue([relay])
+    const resolved = resolveService('media:video')
+    expect(resolved?.endpointId).toBe('ark-video')
+    expect(resolved?.protocol).toBe('ark-video')
+    // The site root plus the relay's published route, minus what the Ark driver re-appends.
+    expect(resolved?.baseUrl).toBe('https://super-api.dev/api/v3')
+  })
+
+  it('honours a binding that pins the relay wire instead', () => {
+    bind({ consumer: 'media:video', credentialId: 'relay-key', endpointId: 'newapi-video' }, [relayCred])
+    mockedGetPlatforms.mockReturnValue([relay])
+    const resolved = resolveService('media:video')
+    expect(resolved?.endpointId).toBe('newapi-video')
+    expect(resolved?.protocol).toBe('newapi-video')
+    expect(resolved?.baseUrl).toBe('https://super-api.dev/v1')
+  })
+
+  it('routes by model id over the bound endpoint, so Sora does not ride the Ark wire', () => {
+    bind({ consumer: 'media:video', credentialId: 'relay-key', endpointId: 'ark-video' }, [relayCred])
+    mockedGetPlatforms.mockReturnValue([relay])
+    const resolved = resolveService('media:video', { modelId: 'sora-2' })
+    expect(resolved?.endpointId).toBe('newapi-video')
+    expect(resolved?.protocol).toBe('newapi-video')
+  })
+})

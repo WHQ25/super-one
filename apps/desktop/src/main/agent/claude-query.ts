@@ -282,6 +282,22 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   const wireUuidToMessageId = new Map<string, string>()
   const resolveRetractedMessageIds = (uuids: string[]): string[] =>
     [...new Set(uuids.map((uuid) => wireUuidToMessageId.get(uuid)).filter((id): id is string => !!id))]
+  /**
+   * Remember which of our messages a turn's triggering user message belongs to.
+   * SDK 0.3.246+ stamps `user_message_uuid` on each turn's first assistant
+   * message / stream_event and on its error result, which is what lets a failure
+   * land on the bubble that caused it instead of wherever the pointer has moved.
+   */
+  const rememberUserMessageAnchor = (raw: unknown, ourMessageId: string): void => {
+    const uuid = (raw as { user_message_uuid?: unknown } | null)?.user_message_uuid
+    if (typeof uuid !== 'string' || !uuid || wireUuidToMessageId.has(uuid)) return
+    wireUuidToMessageId.set(uuid, ourMessageId)
+  }
+  /** Our message id for the user message a result blames, when we saw that turn. */
+  const resolveUserMessageAnchor = (raw: unknown): string | undefined => {
+    const uuid = (raw as { user_message_uuid?: unknown } | null)?.user_message_uuid
+    return typeof uuid === 'string' && uuid ? wireUuidToMessageId.get(uuid) : undefined
+  }
   // Last replay user message UUID — SDK creates file-history snapshots for replay UUIDs only
   let lastReplayCheckpointId = ''
   let lastAssistantTypedError: string | undefined
@@ -732,6 +748,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             lastTopLevelAssistantUuid = (msg as any).uuid ?? ''
             if (lastTopLevelAssistantUuid) wireUuidToMessageId.set(lastTopLevelAssistantUuid, messageId)
+            rememberUserMessageAnchor(msg, messageId)
             seedMessageTimestamp(messageId, msg)
           }
 
@@ -856,6 +873,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           const event = streamMsg.event
           if (!event) break
           const streamParent = streamMsg.parent_tool_use_id ?? null
+          if (!streamParent) rememberUserMessageAnchor(streamMsg, messageId)
 
           if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
             // Track index → toolUseId for input_json_delta correlation
@@ -1063,7 +1081,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 failure.error,
               )
             }
-            emit({ type: 'message_error', messageId, error: failure.error, errorInfo: failure.errorInfo })
+            emit({
+              type: 'message_error',
+              messageId: resolveUserMessageAnchor(result) ?? messageId,
+              error: failure.error,
+              errorInfo: failure.errorInfo,
+            })
           }
           lastAssistantTypedError = undefined
           lastAssistantRequestId = undefined

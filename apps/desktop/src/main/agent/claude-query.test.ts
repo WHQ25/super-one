@@ -1864,3 +1864,80 @@ describe('queued_turn_count keeps the turn from settling early', () => {
     expect(complete?.metadata?.queuedTurnCount).toBeUndefined()
   })
 })
+
+describe('user_message_uuid anchors a failure to the turn that caused it', () => {
+  it('attributes an error result to the queued turn it names, not the current pointer', async () => {
+    // SDK 0.3.246+ stamps each turn's first assistant message and its error
+    // result with the uuid of the user message that triggered them, so a failure
+    // arriving after the pointer moved on still lands on the right bubble.
+    state.messages = [
+      { type: 'user', message: { role: 'user', content: 'original message' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'assistant', user_message_uuid: 'u-1', uuid: 'a-1', message: { content: [{ type: 'text', text: 'turn 1' }] } },
+      { type: 'user', message: { role: 'user', content: 'queued message' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'assistant', user_message_uuid: 'u-2', uuid: 'a-2', message: { content: [{ type: 'text', text: 'turn 2' }] } },
+      { type: 'result', subtype: 'error', errors: ['boom'], user_message_uuid: 'u-1', usage: {} },
+    ]
+
+    const consumedTags = ['queued-tag-1']
+    let currentId = 'msg-A'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags, drainConsumedTag: () => consumedTags.shift() } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      (id: string) => { currentId = id },
+    )
+    await handle.iterationDone
+
+    const error = events.find((e) => e.type === 'message_error') as { messageId?: string } | undefined
+    expect(error).toBeDefined()
+    expect(currentId).not.toBe('msg-A')
+    expect(error?.messageId).toBe('msg-A')
+  })
+
+  it('falls back to the current message when the result names no user message', async () => {
+    state.messages = [
+      { type: 'assistant', uuid: 'a-1', message: { content: [{ type: 'text', text: 'turn 1' }] } },
+      { type: 'result', subtype: 'error', errors: ['boom'], usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-only',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const error = events.find((e) => e.type === 'message_error') as { messageId?: string } | undefined
+    expect(error?.messageId).toBe('msg-only')
+  })
+
+  it('falls back to the current message when the named user message was never seen', async () => {
+    state.messages = [
+      { type: 'assistant', user_message_uuid: 'u-1', uuid: 'a-1', message: { content: [{ type: 'text', text: 'turn 1' }] } },
+      { type: 'result', subtype: 'error', errors: ['boom'], user_message_uuid: 'u-unknown', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-only',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const error = events.find((e) => e.type === 'message_error') as { messageId?: string } | undefined
+    expect(error?.messageId).toBe('msg-only')
+  })
+})

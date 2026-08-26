@@ -1,4 +1,5 @@
 import { MODEL_BUCKETS, type ProviderModelEnv } from '../agent-types'
+import type { WireProtocol } from './protocols'
 import type { BindingConfig, EndpointDefaults, EndpointModel, EndpointOverride, ServiceEndpoint } from './types'
 
 /** Key-level merge; later sources win. Undefined inputs are ignored. */
@@ -24,7 +25,10 @@ export function mergeModelMapping(...layers: Array<ProviderModelEnv | undefined>
 }
 
 export interface MergedEndpoint {
-  baseUrl: string
+  /** Host override; empty means "the plan/credential site root". */
+  baseUrl?: string
+  /** Per-protocol route overrides, layered endpoint ← credential. */
+  routes?: Partial<Record<WireProtocol, string>>
   models: EndpointModel[]
   extraEnv: Record<string, string>
   modelMapping: ProviderModelEnv
@@ -33,16 +37,18 @@ export interface MergedEndpoint {
 /**
  * Resolve an endpoint's effective config by layering:
  *   endpoint.defaults ← credential.overrides[endpointId] ← binding.config
- * baseUrl / models: whole-value replace. extraEnv: key-level merge. modelMapping: slot-level merge.
+ * baseUrl / models: whole-value replace. routes / extraEnv: key-level merge. modelMapping: slot-level.
  */
 export function mergeEndpoint(
-  endpoint: Pick<ServiceEndpoint, 'baseUrl' | 'models' | 'defaults'>,
+  endpoint: Pick<ServiceEndpoint, 'baseUrl' | 'routes' | 'models' | 'defaults'>,
   override?: EndpointOverride,
   bindingConfig?: BindingConfig,
 ): MergedEndpoint {
   const defaults: EndpointDefaults = endpoint.defaults ?? {}
+  const routes = { ...endpoint.routes, ...override?.routes }
   return {
     baseUrl: override?.baseUrl ?? endpoint.baseUrl,
+    routes: Object.keys(routes).length > 0 ? routes : undefined,
     models: override?.models ?? endpoint.models ?? [],
     extraEnv: mergeExtraEnv(defaults.extraEnv, override?.extraEnv),
     modelMapping: mergeModelMapping(defaults.modelMapping, override?.modelMapping, bindingConfig?.modelMapping),

@@ -9,7 +9,6 @@ import {
   cloneEndpoints,
   foldOverridesIntoEndpoints,
   isCustomPlatformId,
-  rebaseEndpoints,
   type Credential,
   type EndpointOverride,
   type Plan,
@@ -17,7 +16,7 @@ import {
 } from '@superone/shared/platform-registry'
 import { useSettingsStore } from '@/stores/settings'
 import { pruneOverrides } from './CredentialConfig'
-import { baseUrlHasHost, ensureHttpsPrefix, siteRootFromEndpoints } from './site-url'
+import { baseUrlHasHost, ensureHttpsPrefix, siteRootOf } from './site-url'
 import { planTestEndpoints, useEndpointTest } from './test-endpoints'
 import { TestConnectionButton, TestConnectionStatus } from './TestConnection'
 
@@ -90,6 +89,7 @@ function KeyForm({
   const test = useCallback(
     () =>
       void runTest(
+        ensureHttpsPrefix(baseUrl) || credential?.baseUrl || plan.baseUrl,
         planTestEndpoints(plan, overrides, {
           platform,
           credential: credential ?? { overrides, endpoints: seedFromCredential?.endpoints },
@@ -97,7 +97,7 @@ function KeyForm({
         secret.trim(),
         credential?.id,
       ),
-    [runTest, plan, overrides, secret, credential, platform, seedFromCredential?.endpoints],
+    [runTest, plan, baseUrl, overrides, secret, credential, platform, seedFromCredential?.endpoints],
   )
 
   const effectiveName = name.trim() || credential?.name || 'Key'
@@ -135,19 +135,14 @@ function KeyForm({
             : cloneEndpoints(plan.endpoints)
         const folded = isCustom ? foldOverridesIntoEndpoints(nextSeed, pruned) : undefined
         const trimmedBase = ensureHttpsPrefix(baseUrl)
-        const keyEndpoints =
-          isCustom && folded
-            ? baseUrlHasHost(trimmedBase)
-              ? rebaseEndpoints(folded, trimmedBase)
-              : folded
-            : undefined
+        const keyEndpoints = isCustom ? folded : undefined
         const created = await createCredential({
           platformId,
           planId,
           name: effectiveName,
           secret: secret.trim(),
           ...(isCustom
-            ? { endpoints: keyEndpoints }
+            ? { endpoints: keyEndpoints, baseUrl: trimmedBase || plan.baseUrl }
             : Object.keys(pruned).length > 0
               ? { overrides: pruned }
               : {}),
@@ -282,13 +277,8 @@ export function CredentialTabs({
   // When adding, seed from the previously selected key if any.
   const seedFrom = planCreds.find((c) => c.id === selectedKeyId) ?? planCreds[0]
   const isCustom = isCustomPlatformId(platformId)
-  const sourceEndpoints = selected?.endpoints?.length
-    ? selected.endpoints
-    : seedFrom?.endpoints?.length
-      ? seedFrom.endpoints
-      : plan.endpoints
   const urlKey = selected?.id ?? `add:${seedFrom?.id ?? 'none'}`
-  const nextRoot = siteRootFromEndpoints(sourceEndpoints)
+  const nextRoot = siteRootOf(selected?.baseUrl || seedFrom?.baseUrl || plan.baseUrl)
   const [heldUrlKey, setHeldUrlKey] = useState(urlKey)
   const [baseUrl, setBaseUrl] = useState(nextRoot)
   if (heldUrlKey !== urlKey) {
@@ -316,11 +306,11 @@ export function CredentialTabs({
       return
     }
     setBaseUrl(next)
-    const current = selected.endpoints?.length ? selected.endpoints : plan.endpoints
-    const rebased = rebaseEndpoints(current, next)
-    if (JSON.stringify(rebased) === JSON.stringify(current)) return
-    await updateCredential(selected.id, { endpoints: rebased })
-  }, [baseUrl, isCustom, selected, storedRoot, plan.endpoints, updateCredential])
+    // Endpoints hang off this root by route, so moving the site is a one-field write — nothing
+    // stored per endpoint is relative to the old host any more.
+    if (next === (selected.baseUrl ?? plan.baseUrl)) return
+    await updateCredential(selected.id, { baseUrl: next })
+  }, [baseUrl, isCustom, selected, plan.baseUrl, updateCredential])
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-3">

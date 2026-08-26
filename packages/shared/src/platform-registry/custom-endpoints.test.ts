@@ -1,161 +1,224 @@
 import { describe, expect, it } from 'vitest'
-import { customEndpointsFor, customPlatformEndpoints, familyBaseUrl } from './protocols'
+import {
+  customEndpointsFor,
+  endpointBaseUrl,
+  endpointIdFor,
+  endpointRoute,
+  familyBaseUrl,
+  isInferableProtocol,
+  PROTOCOL_FAMILY,
+  PROTOCOL_ROUTE,
+  protocolForRoute,
+  protocolRoute,
+  protocolsForSlot,
+  slotTasks,
+  WIRE_PROTOCOLS,
+} from './protocols'
 
 describe('customEndpointsFor', () => {
   it('maps anthropic chat to a single messages endpoint keyed by family', () => {
-    expect(customEndpointsFor('anthropic', ['chat'], 'https://x/v1')).toEqual([
-      { id: 'anthropic', baseUrl: 'https://x/v1', protocols: ['anthropic-messages'] },
+    expect(customEndpointsFor(['anthropic-messages'])).toEqual([
+      { id: 'anthropic', protocols: ['anthropic-messages'] },
     ])
   })
 
-  it('collapses openai chat + image into one endpoint speaking both protocols in priority order', () => {
-    expect(customEndpointsFor('openai', ['image', 'chat'], 'https://x/v1')).toEqual([
-      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-chat', 'openai-images'] },
+  it("collapses a family's non-video protocols into one endpoint, in priority order", () => {
+    expect(customEndpointsFor(['openai-images', 'openai-chat', 'openai-responses'])).toEqual([
+      { id: 'openai', protocols: ['openai-responses', 'openai-chat', 'openai-images'] },
     ])
   })
 
-  it('collapses openai tts + asr into one endpoint (both served by the audio protocol)', () => {
-    expect(customEndpointsFor('openai', ['tts', 'asr'], 'https://x/v1')).toEqual([
-      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-audio'] },
+  it('emits one endpoint per family when several are picked', () => {
+    expect(customEndpointsFor(['anthropic-messages', 'openai-chat'])).toEqual([
+      { id: 'anthropic', protocols: ['anthropic-messages'] },
+      { id: 'openai', protocols: ['openai-chat'] },
     ])
   })
 
-  it('does not carry a narrowing field when only one of tts/asr is picked (narrowing is by models)', () => {
-    expect(customEndpointsFor('openai', ['tts'], 'https://x/v1')).toEqual([
-      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-audio'] },
+  it('gives every video wire an endpoint of its own so per-model routing can tell them apart', () => {
+    expect(customEndpointsFor(['openai-video', 'ark-video', 'newapi-video'])).toEqual([
+      { id: 'openai-video', protocols: ['openai-video'] },
+      { id: 'ark-video', protocols: ['ark-video'] },
+      { id: 'newapi-video', protocols: ['newapi-video'] },
     ])
   })
 
-  it('collapses gemini capabilities into one generative endpoint', () => {
-    expect(customEndpointsFor('google', ['chat', 'tts'], 'https://x/v1')).toEqual([
-      { id: 'google', baseUrl: 'https://x/v1', protocols: ['google-generative'] },
+  it('splits veo off the generateContent endpoint so a curated Veo list never replaces the catalog one', () => {
+    expect(customEndpointsFor(['google-generative', 'google-video'])).toEqual([
+      { id: 'google', protocols: ['google-generative'] },
+      { id: 'google-video', protocols: ['google-video'] },
     ])
   })
 
-  it('ignores capabilities the family has no protocol for (e.g. image on anthropic)', () => {
-    expect(customEndpointsFor('anthropic', ['image'], 'https://x/v1')).toEqual([])
-  })
-
-  it('derives the sora-shaped video wire for an openai-compatible relay', () => {
-    expect(customEndpointsFor('openai', ['video'], 'https://x/v1')).toEqual([
-      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-video'] },
+  it("keeps Ark's image and video wires in their own family rather than under openai", () => {
+    expect(customEndpointsFor(['ark-images', 'ark-video', 'openai-chat'])).toEqual([
+      { id: 'openai', protocols: ['openai-chat'] },
+      { id: 'volcengine', protocols: ['ark-images'] },
+      { id: 'ark-video', protocols: ['ark-video'] },
     ])
   })
 
-  it('keeps veo on its own wire alongside generateContent in one gemini endpoint', () => {
-    expect(customEndpointsFor('google', ['chat', 'video'], 'https://x/v1')).toEqual([
-      { id: 'google', baseUrl: 'https://x/v1', protocols: ['google-generative', 'google-video'] },
-    ])
+  it('ignores an unpicked protocol and returns [] when nothing is picked', () => {
+    expect(customEndpointsFor([])).toEqual([])
   })
 
-  it('appends an opt-in extra wire (openai-responses) ahead of chat/completions in priority order', () => {
-    expect(customEndpointsFor('openai', ['chat'], 'https://x/v1', ['openai-responses'])).toEqual([
-      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-responses', 'openai-chat'] },
-    ])
-  })
-
-  it('builds a Responses-only endpoint (Codex gateway) when only the extra wire is picked', () => {
-    expect(customEndpointsFor('openai', [], 'https://x/v1', ['openai-responses'])).toEqual([
-      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-responses'] },
-    ])
-  })
-
-  it('drops an extra wire the family does not offer', () => {
-    expect(customEndpointsFor('anthropic', ['chat'], 'https://x/v1', ['openai-responses'])).toEqual([
-      { id: 'anthropic', baseUrl: 'https://x/v1', protocols: ['anthropic-messages'] },
-    ])
+  it('stores no URL at all — the site root belongs to the plan', () => {
+    // The whole point of the split: an endpoint says which wires it speaks, never where it lives.
+    for (const endpoint of customEndpointsFor(['anthropic-messages', 'openai-chat', 'ark-video'])) {
+      expect(endpoint.baseUrl).toBeUndefined()
+      expect(endpoint.routes).toBeUndefined()
+    }
   })
 })
 
-describe('customPlatformEndpoints (multiple compat formats, per-format capabilities)', () => {
-  it('emits one endpoint per selected family sharing the base URL (Claude + OpenAI relay)', () => {
-    const endpoints = customPlatformEndpoints({ anthropic: ['chat'], openai: ['chat'] }, 'https://relay/v1')
-    expect(endpoints).toEqual([
-      { id: 'anthropic', baseUrl: 'https://relay/v1', protocols: ['anthropic-messages'] },
-      { id: 'openai', baseUrl: 'https://relay/v1', protocols: ['openai-chat'] },
-    ])
+describe('endpointBaseUrl', () => {
+  it('hands each family the base its driver expects, off one shared root', () => {
+    const [anthropic, openai] = customEndpointsFor(['anthropic-messages', 'openai-chat'])
+    expect(endpointBaseUrl('https://x', anthropic, 'anthropic-messages')).toBe('https://x')
+    expect(endpointBaseUrl('https://x', openai, 'openai-chat')).toBe('https://x/v1')
   })
 
-  it('honors a different capability set per format', () => {
-    // openai exposes chat+image (one endpoint, two protocols); gemini only chat.
-    const endpoints = customPlatformEndpoints({ openai: ['chat', 'image'], google: ['chat'] }, 'https://relay/v1')
-    expect(endpoints.map((e) => e.protocols)).toEqual([['openai-chat', 'openai-images'], ['google-generative']])
+  it('round-trips the default route back to the family base, for every wire', () => {
+    // The invariant that keeps route and base two views of one fact: strip what the driver appends
+    // and you are back at the base the resolver hands it.
+    for (const protocol of WIRE_PROTOCOLS) {
+      const endpoint = { id: endpointIdFor(protocol), protocols: [protocol] }
+      expect(endpointBaseUrl('https://x', endpoint, protocol)).toBe(familyBaseUrl(PROTOCOL_FAMILY[protocol], 'https://x'))
+    }
   })
 
-  it('drops capabilities a format cannot serve (image passed to anthropic)', () => {
-    const endpoints = customPlatformEndpoints({ anthropic: ['chat', 'image'] }, 'https://relay/v1')
-    expect(endpoints.map((e) => e.protocols)).toEqual([['anthropic-messages']])
+  it('honours a route override by handing the SDK everything before its own segment', () => {
+    // GLM's real shape: Claude on /api/anthropic, OpenAI on /api/coding/paas/v4, one host.
+    const anthropic = { id: 'anthropic', protocols: ['anthropic-messages' as const], routes: { 'anthropic-messages': '/api/anthropic/v1/messages' } }
+    const openai = { id: 'openai', protocols: ['openai-chat' as const], routes: { 'openai-chat': '/api/coding/paas/v4/chat/completions' } }
+    expect(endpointBaseUrl('https://open.bigmodel.cn', anthropic, 'anthropic-messages')).toBe('https://open.bigmodel.cn/api/anthropic')
+    expect(endpointBaseUrl('https://open.bigmodel.cn', openai, 'openai-chat')).toBe('https://open.bigmodel.cn/api/coding/paas/v4')
   })
 
-  it('orders families canonically regardless of map key order', () => {
-    const endpoints = customPlatformEndpoints({ google: ['chat'], anthropic: ['chat'] }, 'https://relay/v1')
-    expect(endpoints.map((e) => e.id)).toEqual(['anthropic', 'google'])
+  it('lets a per-endpoint host win over the plan root, for a format served elsewhere', () => {
+    const endpoint = { id: 'ark-video', protocols: ['ark-video' as const], baseUrl: 'https://ark.cn-beijing.volces.com' }
+    expect(endpointBaseUrl('https://relay.example.com', endpoint, 'ark-video')).toBe('https://ark.cn-beijing.volces.com/api/v3')
   })
 
-  it('skips a selected format with no capabilities picked', () => {
-    expect(customPlatformEndpoints({ anthropic: ['chat'], openai: [] }, 'https://relay/v1').map((e) => e.id)).toEqual([
-      'anthropic',
-    ])
+  it('falls back to the family default when a route cannot be honoured', () => {
+    // Nothing coherent to hand an SDK that appends /v1/messages itself, so do not invent a URL.
+    const endpoint = { id: 'anthropic', protocols: ['anthropic-messages' as const], routes: { 'anthropic-messages': '/weird/path' } }
+    expect(endpointBaseUrl('https://x', endpoint, 'anthropic-messages')).toBe('https://x')
   })
 
-  it('carries an opt-in extra wire onto its family endpoint', () => {
-    const endpoints = customPlatformEndpoints({ openai: ['chat'] }, 'https://relay/v1', { openai: ['openai-responses'] })
-    expect(endpoints).toEqual([
-      { id: 'openai', baseUrl: 'https://relay/v1', protocols: ['openai-responses', 'openai-chat'] },
-    ])
-  })
-
-  it('emits a family endpoint even when only its extra wire is picked (no tasks)', () => {
-    const endpoints = customPlatformEndpoints({}, 'https://relay/v1', { openai: ['openai-responses'] })
-    expect(endpoints).toEqual([{ id: 'openai', baseUrl: 'https://relay/v1', protocols: ['openai-responses'] }])
+  it('keeps an empty root empty rather than turning it into a relative path', () => {
+    const endpoint = { id: 'openai', protocols: ['openai-chat' as const] }
+    expect(endpointBaseUrl('', endpoint, 'openai-chat')).toBe('')
   })
 })
 
-describe('familyBaseUrl (single relay root → per-protocol base URL)', () => {
-  it('appends /v1 to an openai root that has no version segment', () => {
-    expect(familyBaseUrl('openai', 'https://relay.com')).toBe('https://relay.com/v1')
-  })
-
-  it('leaves an openai root that already carries a version segment untouched', () => {
-    expect(familyBaseUrl('openai', 'https://relay.com/v1')).toBe('https://relay.com/v1')
-    expect(familyBaseUrl('openai', 'https://relay.com/v3')).toBe('https://relay.com/v3')
-  })
-
-  it('strips a trailing slash before appending /v1', () => {
-    expect(familyBaseUrl('openai', 'https://relay.com/')).toBe('https://relay.com/v1')
-  })
-
-  it('addresses anthropic from the root verbatim (trailing slash stripped)', () => {
-    expect(familyBaseUrl('anthropic', 'https://relay.com')).toBe('https://relay.com')
-    expect(familyBaseUrl('anthropic', 'https://relay.com/')).toBe('https://relay.com')
-  })
-
-  it('appends /v1beta to a google root with no API version', () => {
-    expect(familyBaseUrl('google', 'https://relay.com')).toBe('https://relay.com/v1beta')
-    expect(familyBaseUrl('google', 'https://relay.com/')).toBe('https://relay.com/v1beta')
-  })
-
-  it('leaves explicit google API versions untouched', () => {
-    expect(familyBaseUrl('google', 'https://relay.com/v1')).toBe('https://relay.com/v1')
-    expect(familyBaseUrl('google', 'https://relay.com/v1beta')).toBe('https://relay.com/v1beta')
-  })
-
-  it('returns an empty root unchanged (official OAuth platforms carry no base)', () => {
-    expect(familyBaseUrl('openai', '')).toBe('')
+describe('endpointIdFor', () => {
+  it('keys non-video protocols by family and video wires by themselves', () => {
+    expect(endpointIdFor('openai-chat')).toBe('openai')
+    expect(endpointIdFor('ark-images')).toBe('volcengine')
+    expect(endpointIdFor('ark-video')).toBe('ark-video')
+    expect(endpointIdFor('google-video')).toBe('google-video')
   })
 })
 
-describe('customPlatformEndpoints (NewAPI-style relay: one site root, all protocols)', () => {
-  it('splits a bare site root into anthropic={root} + openai={root}/v1 (chat + codex + image)', () => {
-    const endpoints = customPlatformEndpoints({ anthropic: ['chat'], openai: ['chat', 'image'] }, 'https://relay.com')
-    expect(endpoints).toEqual([
-      { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'] },
-      { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat', 'openai-images'] },
-    ])
+describe('protocolsForSlot', () => {
+  it('expands a family slot to the inferable protocols serving the given tasks', () => {
+    expect(protocolsForSlot('openai', ['chat', 'image'])).toEqual(['openai-chat', 'openai-images'])
   })
 
-  it('is idempotent when the root already ends in /v1', () => {
-    const endpoints = customPlatformEndpoints({ anthropic: ['chat'], openai: ['chat', 'image'] }, 'https://relay.com/v1')
-    expect(endpoints.map((e) => e.baseUrl)).toEqual(['https://relay.com/v1', 'https://relay.com/v1'])
+  it('never infers an opt-in wire from a bare capability', () => {
+    expect(isInferableProtocol('openai-responses')).toBe(false)
+    expect(protocolsForSlot('openai', ['chat'])).toEqual(['openai-chat'])
+  })
+
+  it('never puts video on a family slot — video wires own their endpoints', () => {
+    expect(protocolsForSlot('openai', ['video'])).toEqual([])
+    expect(protocolsForSlot('openai-video', ['video'])).toEqual(['openai-video'])
+  })
+})
+
+describe('slotTasks', () => {
+  it('reports a video wire as video-only and a family as its non-video union', () => {
+    expect(slotTasks('ark-video')).toEqual(['video'])
+    expect(slotTasks('openai')).toEqual(['chat', 'image', 'tts', 'asr'])
+    expect(slotTasks('volcengine')).toEqual(['image'])
+  })
+})
+
+describe('protocolForRoute', () => {
+  it('round-trips every wire, so a relay that publishes a path is identified exactly', () => {
+    // Also asserts route uniqueness: a collision would make one protocol unreachable here.
+    for (const protocol of WIRE_PROTOCOLS) {
+      expect(protocolForRoute(protocolRoute(protocol))).toBe(protocol)
+    }
+  })
+
+  it('separates the two video wires New API gives the same endpoint-type name', () => {
+    expect(protocolForRoute('/v1/videos')).toBe('openai-video')
+    expect(protocolForRoute('/v1/video/generations')).toBe('newapi-video')
+  })
+
+  it('accepts the forms relays publish: absolute URL, trailing slash, mixed case, query', () => {
+    expect(protocolForRoute('https://relay.example.com/v1/chat/completions')).toBe('openai-chat')
+    expect(protocolForRoute('/v1/messages/')).toBe('anthropic-messages')
+    expect(protocolForRoute('/V1/Images/Generations')).toBe('openai-images')
+    expect(protocolForRoute('/v1/responses?stream=true')).toBe('openai-responses')
+  })
+
+  it('matches Gemini regardless of what the path parameter is named', () => {
+    expect(protocolForRoute('/v1beta/models/{model}:generateContent')).toBe('google-generative')
+    expect(protocolForRoute('/v1beta/models/{model_name}:generateContent')).toBe('google-generative')
+  })
+
+  it('returns undefined for wires we do not implement, so callers fall back to the name', () => {
+    expect(protocolForRoute('/v1/rerank')).toBeUndefined()
+    expect(protocolForRoute('/v1/embeddings')).toBeUndefined()
+    expect(protocolForRoute('')).toBeUndefined()
+  })
+})
+
+describe('protocolRoute', () => {
+  it('measures every wire from the site root, not from its endpoint base', () => {
+    // What a user compares against their relay's docs. Anthropic is the one that catches a
+    // relative-path bug: its base URL is a bare root, so the version segment rides the route.
+    expect(protocolRoute('anthropic-messages')).toBe('/v1/messages')
+    expect(protocolRoute('openai-chat')).toBe('/v1/chat/completions')
+    expect(protocolRoute('openai-video')).toBe('/v1/videos')
+    expect(protocolRoute('ark-images')).toBe('/api/v3/images/generations')
+    expect(protocolRoute('ark-video')).toBe('/api/v3/contents/generations/tasks')
+    expect(protocolRoute('newapi-video')).toBe('/v1/video/generations')
+    expect(protocolRoute('google-video')).toBe('/v1beta/models/{model}:predictLongRunning')
+  })
+
+  it('agrees with the base URL the resolver builds, for every wire', () => {
+    // The invariant that keeps the displayed path honest: whatever the driver appends to the base URL
+    // the resolver hands it must land on exactly the path shown in the picker.
+    for (const protocol of WIRE_PROTOCOLS) {
+      const base = familyBaseUrl(PROTOCOL_FAMILY[protocol], 'https://x')
+      expect(`${base}${PROTOCOL_ROUTE[protocol]}`).toBe(`https://x${protocolRoute(protocol)}`)
+    }
+  })
+})
+
+describe('hand-typed routes are normalized before use', () => {
+  // These are user input from the Route field, not values the app generated.
+  it('adds a leading slash so the route never concatenates onto the host', () => {
+    const ep = { routes: { 'anthropic-messages': 'api/v1/messages' } }
+    expect(endpointRoute(ep, 'anthropic-messages')).toBe('/api/v1/messages')
+    // PROTOCOL_ROUTE['anthropic-messages'] is '/v1/messages' and the SDK re-appends it,
+    // so the base the driver gets is the route minus that suffix.
+    expect(endpointBaseUrl('https://relay.example', ep, 'anthropic-messages')).toBe('https://relay.example/api')
+  })
+
+  it('drops a trailing slash so the suffix match still finds the protocol path', () => {
+    const ep = { routes: { 'anthropic-messages': '/api/v1/messages/' } }
+    expect(endpointRoute(ep, 'anthropic-messages')).toBe('/api/v1/messages')
+    // Without normalization this fell back to the family default and lost the '/api'.
+    expect(endpointBaseUrl('https://relay.example', ep, 'anthropic-messages')).toBe('https://relay.example/api')
+  })
+
+  it('treats whitespace and a bare slash as no override', () => {
+    expect(endpointRoute({ routes: { 'openai-chat': '   ' } }, 'openai-chat')).toBe(protocolRoute('openai-chat'))
+    expect(endpointRoute({ routes: { 'openai-chat': '/' } }, 'openai-chat')).toBe('/')
   })
 })

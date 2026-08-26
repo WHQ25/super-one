@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baseUrlHasHost, ensureHttpsPrefix, identityKey, siteRootFromEndpoints } from './site-url'
+import { baseUrlHasHost, ensureHttpsPrefix, identityKey, siteRootOf } from './site-url'
 
 describe('site-url helpers', () => {
   it('adds https when the value has no scheme', () => {
@@ -16,8 +16,6 @@ describe('site-url helpers', () => {
 
   it('normalizes a pasted family URL to the site root', () => {
     expect(identityKey('https://api.example.com/v1')).toBe('https://api.example.com')
-    expect(siteRootFromEndpoints([
-      { id: 'openai', baseUrl: 'https://api.example.com/v1', protocols: ['openai-chat'] },
-    ])).toBe('https://api.example.com')
+    expect(siteRootOf('https://api.example.com/v1')).toBe('https://api.example.com')
   })
 })

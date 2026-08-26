@@ -1,3 +1,4 @@
+import { endpointBaseUrl } from './protocols'
 import { describe, expect, it } from 'vitest'
 import type { CatalogModel, ModelCatalog } from '../model-catalog-types'
 import {
@@ -64,7 +65,11 @@ describe('builtin registry', () => {
       const plan = findPlan(findPlatform(BUILTIN_PLATFORMS, row.id), row.planId)
       expect(plan?.endpoints.some((e) => e.protocols.includes('anthropic-messages')), `${row.id}/${row.planId} anthropic`).toBe(true)
       const openai = plan?.endpoints.find((e) => e.protocols.includes('openai-chat'))
-      expect(openai?.baseUrl, `${row.id}/${row.planId} openai base`).toBe(row.openaiBase)
+      // The URL a driver is handed — routes and the plan root are two halves of one fact, and this
+      // is the half that has to stay byte-identical across the move off per-endpoint base URLs.
+      expect(openai && endpointBaseUrl(plan!.baseUrl, openai, 'openai-chat'), `${row.id}/${row.planId} openai base`).toBe(
+        row.openaiBase,
+      )
     }
   })
 
@@ -103,12 +108,14 @@ describe('builtin registry', () => {
     expect(allegretto?.defaults?.extraEnv?.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe('1048576')
     expect(allegretto?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBe('max')
 
-    expect(findPlan(moonshot, 'cn')?.endpoints.find((e) => e.id === 'anthropic')?.baseUrl).toBe(
-      'https://api.moonshot.cn/anthropic',
-    )
-    expect(findPlan(moonshot, 'global')?.endpoints.find((e) => e.id === 'anthropic')?.baseUrl).toBe(
-      'https://api.moonshot.ai/anthropic',
-    )
+    for (const [planId, base] of [
+      ['cn', 'https://api.moonshot.cn/anthropic'],
+      ['global', 'https://api.moonshot.ai/anthropic'],
+    ] as const) {
+      const p = findPlan(moonshot, planId)!
+      const ep = p.endpoints.find((e) => e.id === 'anthropic')!
+      expect(endpointBaseUrl(p.baseUrl, ep, 'anthropic-messages')).toBe(base)
+    }
     expect(
       findPlan(moonshot, 'cn')?.endpoints.find((e) => e.id === 'anthropic')?.defaults?.modelMapping?.default?.id,
     ).toBe('kimi-k3')
@@ -267,6 +274,36 @@ describe('selectEndpoint', () => {
   })
 })
 
+describe('archived endpoints', () => {
+  const plan = (endpoints: ServiceEndpoint[]): Plan => ({ id: 'api', name: 'API', auth: 'api-key', endpoints })
+  const video = (disabled?: boolean): ServiceEndpoint => ({
+    id: 'ark-video',
+    baseUrl: 'https://ark.example.com/api/v3',
+    protocols: ['ark-video'],
+    models: [{ id: 'doubao-seedance-2-0-260128', tasks: ['video'] }],
+    ...(disabled ? { disabled: true } : {}),
+  })
+
+  it('never resolves an endpoint that is switched off', () => {
+    const cred = { endpoints: [video(true)] }
+    // The archived endpoint still lists its protocol and its enabled model, so nothing but the flag
+    // stops it from looking usable — which is exactly the regression this guards.
+    expect(selectEndpoint(plan([video(true)]), 'media:video', undefined, cred)).toBeUndefined()
+    expect(selectEndpoint(plan([video()]), 'media:video', undefined, { endpoints: [video()] })?.endpoint.id).toBe(
+      'ark-video',
+    )
+  })
+
+  it('does not let an archived endpoint answer a model-routed lookup either', () => {
+    const cred = { endpoints: [video(true)] }
+    expect(
+      selectEndpoint(plan([video(true)]), 'media:video', undefined, cred, undefined, {
+        modelId: 'doubao-seedance-2-0-260128',
+      }),
+    ).toBeUndefined()
+  })
+})
+
 describe('validatePlatform', () => {
   it('flags an endpoint with an unknown protocol', () => {
     const bad: Platform = {
@@ -318,7 +355,10 @@ describe('synthesizePlatformFromCatalog', () => {
     })
     expect(platform.id).toBe('catalog:groq')
     expect(platform.plans[0].endpoints[0].protocols).toEqual(['openai-chat'])
-    expect(platform.plans[0].endpoints[0].baseUrl).toBe('https://api.groq.com/openai/v1')
+    expect(platform.plans[0].baseUrl).toBe('https://api.groq.com/openai')
+    expect(endpointBaseUrl(platform.plans[0].baseUrl, platform.plans[0].endpoints[0], 'openai-chat')).toBe(
+      'https://api.groq.com/openai/v1',
+    )
   })
 })
 

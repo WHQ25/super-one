@@ -20,11 +20,11 @@ import { useSettingsStore } from '@/stores/settings'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useIsDark } from '@/hooks/use-is-dark'
-import { siteRootFromEndpoints } from './providers/site-url'
+import { siteRootOf } from './providers/site-url'
 import { platformsByBrand } from '@/lib/provider-resolve'
 import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
-import { CapabilityPicker, toPlanCapabilities, useCapabilityState } from './providers/CapabilityPicker'
+import { EndpointConfigSection } from './providers/EndpointConfigSection'
 import { CredentialConfig, OverridesEditor } from './providers/CredentialConfig'
 import { CredentialTabs } from './providers/CredentialTabs'
 import { CustomPlatformForm } from './providers/CustomPlatformForm'
@@ -178,32 +178,27 @@ function AdvancedConfigSection({
         <span className="text-sm font-semibold">{t('resources.providers.advanced')}</span>
         <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
-      {open && (
-        <>
-          {isCustom && (
-            <CustomCapabilitiesSection
-              key={selected?.id ?? 'no-key'}
+      {open &&
+        (pending ? (
+          // A key being created has no credential to write through yet, so its overrides stay in the
+          // parent's draft and every endpoint is shown at once.
+          <div className="flex flex-col gap-4 rounded-md border border-border bg-muted/30 p-3">
+            <OverridesEditor
               platform={platform}
               plan={plan}
-              credential={selected}
+              siteRoot={plan.baseUrl}
+              value={pendingOverrides}
+              onChange={onPendingOverridesChange}
             />
-          )}
-          {pending ? (
-            <div className="flex flex-col gap-4 rounded-md border border-border bg-muted/30 p-3">
-              <OverridesEditor platform={platform} plan={plan} value={pendingOverrides} onChange={onPendingOverridesChange} />
-            </div>
-          ) : (
-            selected && (
-              <CredentialConfig
-                key={`${selected.id}:${(selected.endpoints ?? []).map((e) => e.baseUrl).join('|')}`}
-                platform={platform}
-                plan={plan}
-                credential={selected}
-              />
-            )
-          )}
-        </>
-      )}
+          </div>
+        ) : (
+          <EndpointConfigSection
+            key={`${selected?.id ?? 'no-key'}:${(selected?.endpoints ?? []).map((e) => e.baseUrl).join('|')}`}
+            platform={platform}
+            plan={plan}
+            credential={selected}
+          />
+        ))}
     </div>
   )
 }
@@ -236,8 +231,7 @@ function PlatformDetail({ platform }: { platform: Platform }) {
     const cred =
       credentials.find((c) => c.id === selectedKeyId) ??
       credentials.find((c) => c.platformId === platform.id && c.planId === selectedPlan.id)
-    const endpoints = cred?.endpoints?.length ? cred.endpoints : selectedPlan.endpoints
-    return siteRootFromEndpoints(endpoints)
+    return siteRootOf(cred?.baseUrl || selectedPlan.baseUrl)
   }, [credentials, selectedKeyId, platform.id, selectedPlan])
 
   const commitName = useCallback(async () => {
@@ -376,64 +370,6 @@ function PlatformDetail({ platform }: { platform: Platform }) {
 }
 
 // --- custom platform dialog --------------------------------------------------
-
-// Per-key capability editor: formats/tasks live on the selected credential.endpoints for custom platforms.
-function CustomCapabilitiesSection({
-  platform,
-  plan,
-  credential,
-}: {
-  platform: Platform
-  plan: Plan
-  credential?: Credential
-}) {
-  const { t } = useTranslation()
-  const updateCredential = useSettingsStore((s) => s.updateCredential)
-  const keyEndpoints = credential?.endpoints?.length ? credential.endpoints : plan.endpoints
-  const seedPlan = useMemo(() => ({ ...plan, endpoints: keyEndpoints }), [plan, keyEndpoints])
-  const initial = useMemo(() => planCapabilities(seedPlan), [seedPlan])
-  const baseUrl = initial.baseUrl
-  const { families, familyTasks, familyExtras, selection, toggleFamily, toggleTask, toggleExtra } = useCapabilityState(initial)
-  const [busy, setBusy] = useState(false)
-
-  const endpoints = applyCapabilitiesToPlan(seedPlan, toPlanCapabilities(selection), baseUrl)
-  const dirty = JSON.stringify(keyEndpoints) !== JSON.stringify(endpoints)
-  const canSave = !!credential && endpoints.length > 0 && dirty
-
-  const save = useCallback(async () => {
-    if (!canSave || !credential) return
-    setBusy(true)
-    try {
-      await updateCredential(credential.id, { endpoints })
-    } finally {
-      setBusy(false)
-    }
-  }, [canSave, credential, endpoints, updateCredential])
-
-  if (!credential) {
-    return (
-      <p className="text-xs text-muted-foreground">{t('resources.providers.capabilitiesNeedKey')}</p>
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-2.5">
-      <span className="text-xs font-medium text-muted-foreground">{t('resources.providers.capabilities')}</span>
-      <span className="text-[11px] text-muted-foreground">{t('resources.providers.capabilitiesPerKeyHint')}</span>
-      <CapabilityPicker
-        families={families}
-        familyTasks={familyTasks}
-        familyExtras={familyExtras}
-        onToggleFamily={toggleFamily}
-        onToggleTask={toggleTask}
-        onToggleExtra={toggleExtra}
-      />
-      <Button size="sm" className="self-start" disabled={busy || !canSave} onClick={save}>
-        {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.save')}
-      </Button>
-    </div>
-  )
-}
 
 // --- page --------------------------------------------------------------------
 

@@ -8,20 +8,20 @@ import {
   capabilityEndpoints,
   cloneEndpoints,
   foldOverridesIntoEndpoints,
-  PROTOCOL_FAMILIES,
   relaySiteRoot,
-  type CapabilityTask,
+  WIRE_PROTOCOLS,
   type EndpointDefaults,
   type EndpointOverride,
   type Plan,
   type Platform,
-  type ProtocolFamily,
+  type WireProtocol,
 } from '@superone/shared/platform-registry'
 import type { DiscoverModelsResult, DiscoveredOpenAiModel, ProviderModelEnv } from '@superone/shared/agent-types'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { useSettingsStore } from '@/stores/settings'
 import { BrowserFavicon } from '../browser/BrowserFavicon'
 import { CapabilityPicker, toPlanCapabilities, useCapabilityState } from './CapabilityPicker'
+import { protocolsForDiscoveredSlots } from './discovery-apply'
 import { EnvEditor, ModelEnvEditor } from './CredentialConfig'
 import { upsertCustomModel } from './custom-models'
 import { DraftDiscoveredModels } from './DraftDiscoveredModels'
@@ -39,7 +39,7 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
   const isDark = useIsDark()
   const [modelsOpen, setModelsOpen] = useState(false)
   const [baseUrl, setBaseUrl] = useState('')
-  const { families, familyTasks, familyExtras, selection, toggleFamily, toggleTask, toggleExtra } = useCapabilityState()
+  const { protocols, selection, toggleProtocol } = useCapabilityState()
   const [extraEnv, setExtraEnv] = useState<Record<string, string>>({})
   const [modelMapping, setModelMapping] = useState<ProviderModelEnv>({})
   const [secret, setSecret] = useState('')
@@ -57,8 +57,8 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
   const [enabledIds, setEnabledIds] = useState<Set<string>>(() => new Set())
 
   const hasExtraEnv = Object.keys(extraEnv).length > 0
-  const hasModelMapping = families.has('anthropic') && Object.keys(modelMapping).length > 0
-  const rawEndpoints = capabilityEndpoints(toPlanCapabilities(selection), baseUrl.trim())
+  const hasModelMapping = protocols.has('anthropic-messages') && Object.keys(modelMapping).length > 0
+  const rawEndpoints = capabilityEndpoints(toPlanCapabilities(selection))
   const endpoints = rawEndpoints.map((e) => {
     const extra = { ...e.defaults?.extraEnv, ...(hasExtraEnv ? extraEnv : {}) }
     const mapping =
@@ -74,7 +74,10 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
   const canNext = baseUrlHasHost(baseUrl) && !!secret.trim()
   const canSubmit = canNext && endpoints.length > 0
   const { state: testState, run: runTest } = useEndpointTest()
-  const test = useCallback(() => void runTest(endpoints, secret.trim()), [runTest, endpoints, secret])
+  const test = useCallback(
+    () => void runTest(baseUrl.trim(), endpoints, secret.trim()),
+    [runTest, baseUrl, endpoints, secret],
+  )
 
   const resetIdentity = useCallback(() => {
     identityGen.current += 1
@@ -131,34 +134,21 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
   const applyDiscoverResult = useCallback((result: DiscoverModelsResult) => {
     const hasHits = result.models.length > 0 || (result.extras?.length ?? 0) > 0
     if (hasHits) {
-      const seen = new Set<ProtocolFamily>()
-      for (const m of result.models) {
-        for (const [family, tasks] of Object.entries(m.byFamily) as [ProtocolFamily, CapabilityTask[]][]) {
-          if (!tasks?.length) continue
-          seen.add(family)
-          toggleFamily(family, true)
-          for (const tk of tasks) toggleTask(family, tk, true)
-        }
-      }
-      if (result.extras?.includes('openai-responses')) {
-        seen.add('openai')
-        toggleFamily('openai', true)
-        toggleExtra('openai', 'openai-responses', true)
-      }
-      for (const family of PROTOCOL_FAMILIES) {
-        if (!seen.has(family)) toggleFamily(family, false)
-      }
+      // Discovery reports an endpoint slot per model — a video wire names itself, a family slot names
+      // the shared endpoint. Both map straight onto protocols now, with no capability round-trip.
+      const wanted = new Set<WireProtocol>(protocolsForDiscoveredSlots(result.models, result.extras))
+      for (const protocol of WIRE_PROTOCOLS) toggleProtocol(protocol, wanted.has(protocol))
     }
     setDraftModels(result.models)
     setEnabledIds((prev) => new Set([...prev].filter((id) => result.models.some((m) => m.id === id))))
-  }, [toggleFamily, toggleTask, toggleExtra])
+  }, [toggleProtocol])
 
   const submit = useCallback(async () => {
     if (!canSubmit) return
     setBusy(true)
     try {
       const id = `custom:${crypto.randomUUID()}`
-      const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints: cloneEndpoints(endpoints) }
+      const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', baseUrl: baseUrl.trim(), endpoints: cloneEndpoints(endpoints) }
       const platform: Platform = {
         id,
         brand: 'custom',
@@ -184,6 +174,7 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
         planId: 'api',
         name: DEFAULT_LABEL,
         secret: secret.trim(),
+        baseUrl: baseUrl.trim(),
         endpoints: keyEndpoints,
       })
       onDone(id)
@@ -298,15 +289,8 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
             </button>
             {advancedOpen && (
               <div className="flex flex-col gap-3">
-                <CapabilityPicker
-                  families={families}
-                  familyTasks={familyTasks}
-                  familyExtras={familyExtras}
-                  onToggleFamily={toggleFamily}
-                  onToggleTask={toggleTask}
-                  onToggleExtra={toggleExtra}
-                />
-                {families.has('anthropic') && (
+                <CapabilityPicker protocols={protocols} onToggleProtocol={toggleProtocol} />
+                {protocols.has('anthropic-messages') && (
                   <div className="flex flex-col gap-1.5">
                     <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
                     <ModelEnvEditor value={modelMapping} onChange={setModelMapping} />

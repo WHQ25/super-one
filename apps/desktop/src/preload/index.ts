@@ -1545,7 +1545,7 @@ const appAPI = {
     name: string
     secret?: string
     secretEnv?: string
-    overrides?: Record<string, EndpointOverride>
+    baseUrl?: string; overrides?: Record<string, EndpointOverride>
     endpoints?: ServiceEndpoint[]
     notes?: string
   }): Promise<Credential> => ipcRenderer.invoke(AgentIpcChannels.CREDENTIALS_CREATE, input),
@@ -1555,7 +1555,7 @@ const appAPI = {
       name?: string
       secret?: string
       secretEnv?: string
-      overrides?: Record<string, EndpointOverride>
+      baseUrl?: string; overrides?: Record<string, EndpointOverride>
       endpoints?: ServiceEndpoint[] | null
       notes?: string
       sortOrder?: number
@@ -1567,9 +1567,9 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BINDINGS_SET, binding),
   clearBinding: (consumer: ConsumerId): Promise<void> =>
     ipcRenderer.invoke(AgentIpcChannels.BINDINGS_CLEAR, consumer),
-  testProviderEndpoint: (data: { apiKey: string; credentialId?: string; endpoints: ServiceEndpoint[] }) =>
+  testProviderEndpoint: (data: { apiKey: string; credentialId?: string; baseUrl: string; endpoints: ServiceEndpoint[] }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, data) as Promise<ProviderEndpointTestResponse>,
-  discoverProviderModels: (data: { apiKey: string; credentialId?: string; endpoint: ServiceEndpoint }) =>
+  discoverProviderModels: (data: { apiKey: string; credentialId?: string; baseUrl: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, data) as Promise<DiscoverModelsResult>,
   listAcpAgents: () =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_LIST_AGENTS) as Promise<import('@superone/shared/agent-types').AcpResources>,

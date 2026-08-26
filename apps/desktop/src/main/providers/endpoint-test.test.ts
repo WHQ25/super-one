@@ -29,33 +29,29 @@ describe('endpoint-test isolation', () => {
   it('derives family from each endpoint, not a sibling', () => {
     const anthropic: ServiceEndpoint = {
       id: 'anthropic',
-      baseUrl: 'https://relay.com',
       protocols: ['anthropic-messages'],
     }
     const openai: ServiceEndpoint = {
       id: 'openai',
-      baseUrl: 'https://relay.com/v1',
       protocols: ['openai-chat'],
     }
     expect(endpointFamily(anthropic)).toBe('anthropic')
     expect(endpointFamily(openai)).toBe('openai')
-    expect(testEndpointModelsUrl(anthropic)).toBe('https://relay.com/v1/models')
-    expect(testEndpointModelsUrl(openai)).toBe('https://relay.com/v1/models')
+    expect(testEndpointModelsUrl('https://relay.com', anthropic)).toBe('https://relay.com/v1/models')
+    expect(testEndpointModelsUrl('https://relay.com', openai)).toBe('https://relay.com/v1/models')
   })
 
-  it('keeps moonshot-style dual bases on separate paths', () => {
+  it('keeps moonshot-style dual paths apart, off one site root', () => {
+    // The shape every real relay has: one host, each format on its own path. The probe has to
+    // follow the endpoint's route, not the family default, or a routed endpoint tests the wrong URL.
     const anthropic: ServiceEndpoint = {
       id: 'anthropic',
-      baseUrl: 'https://api.moonshot.cn/anthropic',
       protocols: ['anthropic-messages'],
+      routes: { 'anthropic-messages': '/anthropic/v1/messages' },
     }
-    const openai: ServiceEndpoint = {
-      id: 'openai',
-      baseUrl: 'https://api.moonshot.cn/v1',
-      protocols: ['openai-chat'],
-    }
-    expect(testEndpointModelsUrl(anthropic)).toBe('https://api.moonshot.cn/anthropic/v1/models')
-    expect(testEndpointModelsUrl(openai)).toBe('https://api.moonshot.cn/v1/models')
+    const openai: ServiceEndpoint = { id: 'openai', protocols: ['openai-chat'] }
+    expect(testEndpointModelsUrl('https://api.moonshot.cn', anthropic)).toBe('https://api.moonshot.cn/anthropic/v1/models')
+    expect(testEndpointModelsUrl('https://api.moonshot.cn', openai)).toBe('https://api.moonshot.cn/v1/models')
   })
 
   it('auth headers follow the family of the endpoint under test', () => {
@@ -88,14 +84,14 @@ describe('endpoint-test isolation', () => {
   })
 
   it('returns empty results for an empty endpoint list', async () => {
-    expect(await testServiceEndpoints([], 'sk')).toEqual([])
+    expect(await testServiceEndpoints('https://relay.com', [], 'sk')).toEqual([])
   })
 
   it('testServiceEndpoint reports network errors without throwing', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => {
       throw new Error('ECONNREFUSED')
     }))
-    const result = await testServiceEndpoint(
+    const result = await testServiceEndpoint('https://relay.com',
       { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-chat'] },
       'sk',
     )
@@ -104,7 +100,7 @@ describe('endpoint-test isolation', () => {
 
   it('maps 401/403 on models list to Invalid API key', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => textResponse('Unauthorized', 401)))
-    const result = await testServiceEndpoint(
+    const result = await testServiceEndpoint('https://relay.com',
       { id: 'openai', baseUrl: 'https://api.deepseek.com', protocols: ['openai-chat'] },
       'bad-key',
     )
@@ -169,7 +165,7 @@ describe('connection vs endpoint test semantics', () => {
       { id: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', protocols: ['anthropic-messages'] },
       { id: 'openai', baseUrl: 'https://api.deepseek.com', protocols: ['openai-chat'] },
     ]
-    const results = await testServiceEndpoints(endpoints, 'sk-key')
+    const results = await testServiceEndpoints('https://relay.com', endpoints, 'sk-key')
 
     expect(results).toHaveLength(1)
     expect(results[0]).toMatchObject({ endpointId: 'openai', success: true, status: 200 })
@@ -189,10 +185,10 @@ describe('connection vs endpoint test semantics', () => {
 
     const anthropic: ServiceEndpoint = {
       id: 'anthropic',
-      baseUrl: 'https://api.deepseek.com/anthropic',
       protocols: ['anthropic-messages'],
+      routes: { 'anthropic-messages': '/anthropic/v1/messages' },
     }
-    const results = await testServiceEndpoints([anthropic], 'sk-key')
+    const results = await testServiceEndpoints('https://api.deepseek.com', [anthropic], 'sk-key')
 
     expect(results).toHaveLength(1)
     // models 404 → messages fallback also 404 → failure (endpoint config issue)
@@ -216,7 +212,7 @@ describe('connection vs endpoint test semantics', () => {
       }),
     )
 
-    const result = await testServiceEndpoint(
+    const result = await testServiceEndpoint('https://relay.com',
       { id: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', protocols: ['anthropic-messages'] },
       'sk-key',
     )
@@ -232,7 +228,7 @@ describe('connection vs endpoint test semantics', () => {
       }),
     )
 
-    const result = await testServiceEndpoint(
+    const result = await testServiceEndpoint('https://relay.com',
       { id: 'anthropic', baseUrl: 'https://open.bigmodel.cn/api/anthropic', protocols: ['anthropic-messages'] },
       'sk-key',
     )
@@ -248,7 +244,7 @@ describe('connection vs endpoint test semantics', () => {
       }),
     )
 
-    const result = await testServiceEndpoint(
+    const result = await testServiceEndpoint('https://relay.com',
       { id: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', protocols: ['anthropic-messages'] },
       'bad',
     )
@@ -264,7 +260,7 @@ describe('connection vs endpoint test semantics', () => {
     const fetchMock = vi.fn(async () => textResponse('Not Found', 404))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await testServiceEndpoint(
+    const result = await testServiceEndpoint('https://relay.com',
       { id: 'openai', baseUrl: 'https://x.example/v1', protocols: ['openai-chat'] },
       'sk',
     )

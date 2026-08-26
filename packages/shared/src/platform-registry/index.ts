@@ -1,3 +1,4 @@
+import { relaySiteRoot } from './relay-identify'
 import type { CapabilityTask } from '../agent-types'
 import type { CatalogProvider, ModelCatalog } from '../model-catalog-types'
 import {
@@ -20,6 +21,7 @@ export * from './merge'
 export * from './relay-discovery'
 export * from './relay-identify'
 export * from './effective-endpoints'
+export * from './legacy-endpoints'
 export { BUILTIN_PLATFORMS } from './builtin'
 
 // --- lookups -----------------------------------------------------------------
@@ -69,12 +71,28 @@ export function selectProtocol(
   return [...serving].sort((a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))[0]
 }
 
+/** Extra constraints for endpoint selection beyond the consumer's task. */
+export interface SelectEndpointOptions extends HarnessProtocolOptions {
+  /**
+   * Route to the endpoint whose enabled models contain this id.
+   *
+   * Load-bearing when one credential exposes several wires for the same task — a relay serving both
+   * Sora's `/videos` and Ark's `/contents/generations/tasks` has one video endpoint per wire, and only
+   * the model id says which. Matching is by explicit model list, never by id prefix: relays routinely
+   * rename models (`dreamina-seedance-2-5-hc` is Seedance over the Ark wire), so a prefix rule would
+   * misroute exactly the cases this exists for. An unmatched id falls through to the normal
+   * first-endpoint-that-serves-the-task behaviour rather than failing, so a model the user has not
+   * enabled anywhere still reaches a usable endpoint.
+   */
+  modelId?: string
+}
+
 /**
  * Pick the endpoint + protocol that satisfies a consumer.
  * `endpoints` defaults to `plan.endpoints`; callers that support per-key custom endpoints
  * should pass `effectiveEndpoints(platform, plan, credential)` instead.
  * chat:claude/chat:codex additionally require a harness-compatible protocol.
- * An explicit endpointId wins when present and valid.
+ * `options.modelId` wins when it matches an enabled model, then an explicit endpointId, then declaration order.
  */
 export function selectEndpoint(
   plan: Plan,
@@ -82,26 +100,29 @@ export function selectEndpoint(
   endpointId?: string,
   credential?: Pick<Credential, 'overrides' | 'endpoints'>,
   endpoints: ServiceEndpoint[] = plan.endpoints,
-  options?: HarnessProtocolOptions,
+  options?: SelectEndpointOptions,
 ): SelectedEndpoint | undefined {
   const task = CONSUMER_TASK[consumer]
   const harness = consumer === 'chat:claude' ? 'claude' : consumer === 'chat:codex' ? 'codex' : undefined
+  // An archived endpoint keeps its protocols so it still reports a family, so it would otherwise
+  // still look resolvable. Switching a protocol off has to actually stop routing to it.
+  endpoints = endpoints.filter((e) => !e.disabled)
   const pick = (e: ServiceEndpoint): WireProtocol | undefined => {
     const protocol = selectProtocol(e, task, harness, options)
     if (!protocol) return undefined
-    if (harness) return protocol
-    // Media: require an explicit enable list. Builtin uses overrides[ep].models; custom keys with
-    // credential.endpoints store enables on endpoint.models. No credential → protocol only.
-    if (!credential) return protocol
-    const overrideModels = credential.overrides?.[e.id]?.models
-    if (overrideModels !== undefined) {
-      return overrideModels.some((m) => !m.tasks || m.tasks.includes(task)) ? protocol : undefined
+    if (harness || !credential) return protocol
+    // Media: require an explicit enable list.
+    return enabledEndpointModels(e, task, credential).length > 0 ? protocol : undefined
+  }
+  // A model id beats a bound endpointId: the binding is the user's *default* wire for this credential,
+  // while the model is the concrete thing being generated. Picking Seedance while the default endpoint
+  // is Sora must reach the Ark wire, not fail or silently generate on the wrong one.
+  if (options?.modelId && !harness) {
+    for (const e of endpoints) {
+      if (!enabledEndpointModels(e, task, credential).some((m) => m.id === options.modelId)) continue
+      const protocol = pick(e)
+      if (protocol) return { endpoint: e, protocol }
     }
-    if (credential.endpoints && credential.endpoints.length > 0) {
-      const models = e.models ?? []
-      return models.some((m) => !m.tasks || m.tasks.includes(task)) ? protocol : undefined
-    }
-    return undefined
   }
   if (endpointId) {
     const explicit = endpoints.find((e) => e.id === endpointId)
@@ -122,6 +143,31 @@ export function selectEndpoint(
     if (protocol) return { endpoint: e, protocol }
   }
   return undefined
+}
+
+/**
+ * Models enabled on an endpoint for a task — the single definition of "configured", shared by
+ * endpoint selection, model→endpoint routing, and the media provider listing so the three can never
+ * disagree about which list is authoritative.
+ *
+ * Precedence mirrors how enables are stored: a builtin platform records them in
+ * `credential.overrides[endpointId].models`; a custom platform owns its endpoints outright and
+ * records them on `endpoint.models`. Anything else is unconfigured and enables nothing — media is
+ * opt-in, so an endpoint with no enabled model is not a usable endpoint. Passing no credential means
+ * "ignore enablement" (registry-level queries), which yields the endpoint's own list.
+ */
+export function enabledEndpointModels(
+  endpoint: ServiceEndpoint,
+  task: CapabilityTask,
+  credential?: Pick<Credential, 'overrides' | 'endpoints'>,
+): EndpointModel[] {
+  const byTask = (models: EndpointModel[]): EndpointModel[] =>
+    models.filter((m) => !m.tasks || m.tasks.includes(task))
+  if (!credential) return byTask(endpoint.models ?? [])
+  const override = credential.overrides?.[endpoint.id]?.models
+  if (override !== undefined) return byTask(override)
+  if (credential.endpoints && credential.endpoints.length > 0) return byTask(endpoint.models ?? [])
+  return []
 }
 
 /** The models.dev catalog provider id backing a plan; plan overrides platform. */
@@ -199,14 +245,11 @@ export function synthesizePlatformFromCatalog(provider: CatalogProvider): Platfo
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        // The catalog publishes a family base (`.../openai/v1`); the plan stores the site root the
+        // endpoint's route hangs off, or the version segment would be appended a second time.
+        baseUrl: relaySiteRoot(provider.api ?? ''),
         apiKeyUrl: provider.doc || undefined,
-        endpoints: [
-          {
-            id: 'openai',
-            baseUrl: provider.api ?? '',
-            protocols: ['openai-chat'],
-          },
-        ],
+        endpoints: [{ id: 'openai', protocols: ['openai-chat'] }],
       },
     ],
   }

@@ -27,6 +27,7 @@ import {
   type Platform,
   type Plan,
   type ServiceEndpoint,
+  protocolRoute,
 } from '@superone/shared/platform-registry'
 
 import { useModelCatalog } from '@/hooks/useModelCatalog'
@@ -315,12 +316,13 @@ function ModelSlotSelect({
 // --- per-endpoint override config --------------------------------------------
 
 function isEmptyOverride(o: EndpointOverride): boolean {
-  return !o.baseUrl && !o.models?.length && !o.extraEnv && !o.modelMapping
+  return !o.baseUrl && !o.routes && !o.models?.length && !o.extraEnv && !o.modelMapping
 }
 
 function pruneOverride(o: EndpointOverride): EndpointOverride {
   const out: EndpointOverride = {}
   if (o.baseUrl?.trim()) out.baseUrl = o.baseUrl.trim()
+  if (o.routes && Object.keys(o.routes).length > 0) out.routes = o.routes
   const models = o.models?.filter((m) => m.id.trim())
   if (models && models.length > 0) out.models = models
   if (o.extraEnv && Object.keys(o.extraEnv).length > 0) out.extraEnv = o.extraEnv
@@ -336,9 +338,10 @@ export interface EndpointTestContext {
   canTest?: boolean
 }
 
-function EndpointOverrideFields({
+export function EndpointOverrideFields({
   platform,
   plan,
+  siteRoot,
   endpoint,
   showLabel,
   value,
@@ -347,6 +350,8 @@ function EndpointOverrideFields({
 }: {
   platform: Platform
   plan: Plan
+  /** The key's site root — `credential.baseUrl` when set, else `plan.baseUrl`. */
+  siteRoot: string
   endpoint: ServiceEndpoint
   showLabel: boolean
   value: EndpointOverride
@@ -381,11 +386,12 @@ function EndpointOverrideFields({
   const testThisEndpoint = useCallback(() => {
     if (!testContext) return
     void runTest(
+      siteRoot,
       [singleTestEndpoint(endpoint, value)],
       testContext.apiKey,
       testContext.credentialId,
     )
-  }, [testContext, runTest, endpoint, value])
+  }, [testContext, runTest, siteRoot, endpoint, value])
 
   return (
     <div className="flex flex-col gap-3">
@@ -393,24 +399,40 @@ function EndpointOverrideFields({
         <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">{endpoint.protocols.join(' · ')}</span>
       )}
 
+      {/*
+        One row per protocol: the path this endpoint answers on, relative to the platform's base URL.
+        This is an override, not a second base — a vendor serving Claude at `/api/anthropic` and
+        OpenAI at `/api/coding/paas/v4` off one host is the norm, and both are just routes.
+      */}
       {!isFirstPartyAnthropic && (
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground">{isAnthropic ? t('resources.providers.claudeBaseUrl') : t('resources.providers.baseUrl')}</span>
-          <div className="flex items-center gap-1.5">
-            <Input
-              className="min-w-0 flex-1"
-              value={value.baseUrl ?? ''}
-              onChange={(e) => onChange({ ...value, baseUrl: e.target.value })}
-              placeholder={endpoint.baseUrl}
-            />
-            {canTest && (
-              <TestConnectionButton
-                state={testState}
-                onTest={testThisEndpoint}
-                label={t('resources.providerDialog.testEndpoint')}
+          <span className="text-xs font-medium text-muted-foreground">{t('resources.providers.endpointRoute')}</span>
+          {endpoint.protocols.map((protocol) => (
+            <div key={protocol} className="flex items-center gap-1.5">
+              {endpoint.protocols.length > 1 && (
+                <span className="w-28 shrink-0 truncate font-mono text-[10px] text-muted-foreground/70">{protocol}</span>
+              )}
+              <Input
+                className="min-w-0 flex-1 font-mono text-xs"
+                value={value.routes?.[protocol] ?? ''}
+                onChange={(e) =>
+                  onChange({ ...value, routes: { ...value.routes, [protocol]: e.target.value } })
+                }
+                placeholder={protocolRoute(protocol)}
               />
-            )}
-          </div>
+              {canTest && protocol === endpoint.protocols[0] && (
+                <TestConnectionButton
+                  state={testState}
+                  onTest={testThisEndpoint}
+                  label={t('resources.providerDialog.testEndpoint')}
+                />
+              )}
+            </div>
+          ))}
+          <span className="text-[10px] text-muted-foreground/70">
+            {siteRoot}
+            {value.routes?.[endpoint.protocols[0]] || protocolRoute(endpoint.protocols[0])}
+          </span>
           {canTest && <TestConnectionStatus state={testState} />}
         </div>
       )}
@@ -456,12 +478,14 @@ export function pruneOverrides(value: Record<string, EndpointOverride>): Record<
 export function OverridesEditor({
   platform,
   plan,
+  siteRoot,
   value,
   onChange,
   testContext,
 }: {
   platform: Platform
   plan: Plan
+  siteRoot: string
   value: Record<string, EndpointOverride>
   onChange: (v: Record<string, EndpointOverride>) => void
   testContext?: EndpointTestContext
@@ -473,6 +497,7 @@ export function OverridesEditor({
           key={endpoint.id}
           platform={platform}
           plan={plan}
+          siteRoot={siteRoot}
           endpoint={endpoint}
           showLabel={plan.endpoints.length > 1}
           value={value[endpoint.id] ?? {}}
@@ -484,11 +509,12 @@ export function OverridesEditor({
   )
 }
 
-function endpointsAsOverrideMap(endpoints: ServiceEndpoint[]): Record<string, EndpointOverride> {
+export function endpointsAsOverrideMap(endpoints: ServiceEndpoint[]): Record<string, EndpointOverride> {
   const out: Record<string, EndpointOverride> = {}
   for (const e of endpoints) {
     const ov: EndpointOverride = {}
     if (e.baseUrl) ov.baseUrl = e.baseUrl
+    if (e.routes && Object.keys(e.routes).length > 0) ov.routes = { ...e.routes }
     if (e.models?.length) ov.models = e.models
     if (e.defaults?.extraEnv && Object.keys(e.defaults.extraEnv).length > 0) ov.extraEnv = e.defaults.extraEnv
     if (e.defaults?.modelMapping && Object.keys(e.defaults.modelMapping).length > 0) {
@@ -547,7 +573,14 @@ export function CredentialConfig({ platform, plan, credential }: { platform: Pla
 
   return (
     <div className="flex flex-col gap-4 rounded-md border border-border bg-muted/30 p-3" onBlur={commit}>
-      <OverridesEditor platform={platform} plan={editPlan} value={draft} onChange={setDraft} testContext={testContext} />
+      <OverridesEditor
+        platform={platform}
+        plan={editPlan}
+        siteRoot={credential.baseUrl || editPlan.baseUrl}
+        value={draft}
+        onChange={setDraft}
+        testContext={testContext}
+      />
     </div>
   )
 }

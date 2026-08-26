@@ -129,3 +129,32 @@ describe('isCustomPlatform', () => {
     expect(isCustomPlatform({ id: 'moonshot' })).toBe(false)
   })
 })
+
+describe('routes survive the credential layer', () => {
+  // A route override is the only record of "this relay answers Anthropic at /api/anthropic/v1".
+  // Anything that copies an endpoint and drops it silently sends the harness to the default path.
+  const routed: ServiceEndpoint = {
+    id: 'anthropic',
+    protocols: ['anthropic-messages'],
+    routes: { 'anthropic-messages': '/api/anthropic/v1/messages' },
+  }
+
+  it('foldOverridesIntoEndpoints keeps a route the endpoint already carries', () => {
+    const [folded] = foldOverridesIntoEndpoints([routed], { anthropic: { models: [] } })
+    expect(folded.routes).toEqual({ 'anthropic-messages': '/api/anthropic/v1/messages' })
+  })
+
+  it('foldOverridesIntoEndpoints lets the override replace the route', () => {
+    const [folded] = foldOverridesIntoEndpoints([routed], {
+      anthropic: { routes: { 'anthropic-messages': '/relay/v1/messages' } },
+    })
+    expect(folded.routes).toEqual({ 'anthropic-messages': '/relay/v1/messages' })
+  })
+
+  it('cloneEndpoints deep-copies routes so keys never share one object', () => {
+    const [clone] = cloneEndpoints([routed])
+    expect(clone.routes).toEqual(routed.routes)
+    clone.routes!['anthropic-messages'] = '/mutated'
+    expect(routed.routes!['anthropic-messages']).toBe('/api/anthropic/v1/messages')
+  })
+})

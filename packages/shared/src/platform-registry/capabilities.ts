@@ -1,89 +1,106 @@
-import type { CapabilityTask } from '../agent-types'
-import {
-  customPlatformEndpoints,
-  FAMILY_EXTRA_PROTOCOLS,
-  FAMILY_TASK_PROTOCOL,
-  FAMILY_TASKS,
-  PROTOCOL_FAMILIES,
-  PROTOCOL_FAMILY,
-  type ProtocolFamily,
-  type WireProtocol,
-} from './protocols'
+import { customEndpointsFor, endpointRoute, PROTOCOL_ORDER, protocolRoute, type WireProtocol } from './protocols'
 import { withCustomAnthropicDefaults } from './effective-endpoints'
-import { relaySiteRoot } from './relay-identify'
 import type { Plan, ServiceEndpoint } from './types'
 
 /**
- * A custom platform's wire selection in its serializable form: which compat families it speaks,
- * which capabilities each family exposes, and which opt-in extra wires are enabled. This is the
- * user-facing shape behind the "Formats + capabilities" checkbox group — the endpoints array is
- * derived from it, never edited directly. Arrays (not Sets) so it survives IPC/JSON round-trips.
+ * A custom platform's wire selection in its serializable form: the protocols it speaks, and nothing
+ * else. Endpoints are derived from this, never edited directly.
+ *
+ * Capabilities are deliberately absent — `PROTOCOL_TASKS` already states what each protocol serves,
+ * so asking the user for both means storing one fact twice and letting the two disagree. Which
+ * models are enabled for which task stays a per-model concern (`EndpointModel.tasks`).
  */
 export interface PlanCapabilities {
-  families: ProtocolFamily[]
-  tasks: Partial<Record<ProtocolFamily, CapabilityTask[]>>
-  extras: Partial<Record<ProtocolFamily, WireProtocol[]>>
+  protocols: WireProtocol[]
 }
 
-/**
- * Recover the capability selection (and the shared base URL) from an existing plan's endpoints.
- * A task counts as selected only when its own wire protocol is present, so an endpoint speaking
- * only openai-responses recovers as Responses without spuriously checking chat/image.
- */
-export function planCapabilities(plan: Plan): PlanCapabilities & { baseUrl: string } {
-  const families: ProtocolFamily[] = []
-  const tasks: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
-  const extras: Partial<Record<ProtocolFamily, WireProtocol[]>> = {}
-  let baseUrl = ''
+/** Recover the protocol selection from an existing plan's endpoints. */
+export function planCapabilities(plan: Plan): PlanCapabilities {
+  const protocols = new Set<WireProtocol>()
   for (const endpoint of plan.endpoints) {
-    const family = PROTOCOL_FAMILY[endpoint.protocols[0]]
-    if (!families.includes(family)) families.push(family)
-    const picked = FAMILY_TASKS[family].filter((task) => {
-      const protocol = FAMILY_TASK_PROTOCOL[family][task]
-      return !!protocol && endpoint.protocols.includes(protocol)
-    })
-    tasks[family] = [...(tasks[family] ?? []), ...picked.filter((t) => !tasks[family]?.includes(t))]
-    const pickedExtras = FAMILY_EXTRA_PROTOCOLS[family].filter((p) => endpoint.protocols.includes(p))
-    if (pickedExtras.length > 0) extras[family] = pickedExtras
-    if (!baseUrl) baseUrl = relaySiteRoot(endpoint.baseUrl) || endpoint.baseUrl
+    if (endpoint.disabled) continue
+    for (const protocol of endpoint.protocols) protocols.add(protocol)
   }
-  return { families: PROTOCOL_FAMILIES.filter((f) => families.includes(f)), tasks, extras, baseUrl }
+  return { protocols: PROTOCOL_ORDER.filter((p) => protocols.has(p)) }
+}
+
+/** Collapse a protocol selection into the endpoints it describes. */
+export function capabilityEndpoints(caps: PlanCapabilities): ServiceEndpoint[] {
+  return withCustomAnthropicDefaults(customEndpointsFor(caps.protocols))
 }
 
 /**
- * Collapse a capability selection into the endpoints it describes. A single-capability family
- * (anthropic → chat, newapi → video) contributes its one task implicitly, matching the dialog
- * where such a family shows no sub-picker.
+ * Rebuild a plan's endpoints from a protocol selection, preserving each endpoint's defaults, models,
+ * and any hand-edited route or host.
  */
-export function capabilityEndpoints(caps: PlanCapabilities, baseUrl: string): ServiceEndpoint[] {
-  const tasksByFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
-  const extraByFamily: Partial<Record<ProtocolFamily, WireProtocol[]>> = {}
-  for (const family of PROTOCOL_FAMILIES) {
-    if (!caps.families.includes(family)) continue
-    const all = FAMILY_TASKS[family]
-    tasksByFamily[family] = all.length > 1 ? all.filter((t) => caps.tasks[family]?.includes(t)) : all
-    const picked = FAMILY_EXTRA_PROTOCOLS[family].filter((p) => caps.extras[family]?.includes(p))
-    if (picked.length > 0) extraByFamily[family] = picked
-  }
-  return withCustomAnthropicDefaults(customPlatformEndpoints(tasksByFamily, baseUrl, extraByFamily))
-}
-
-/** Rebuild a plan's endpoints from a capability selection, preserving defaults + models by id. */
-export function applyCapabilitiesToPlan(plan: Plan, caps: PlanCapabilities, baseUrl: string): ServiceEndpoint[] {
+export function applyCapabilitiesToPlan(plan: Plan, caps: PlanCapabilities): ServiceEndpoint[] {
   const prevById = new Map(plan.endpoints.map((e) => [e.id, e]))
-  return capabilityEndpoints(caps, baseUrl).map((endpoint) => {
+  const live = capabilityEndpoints(caps).map((endpoint) => {
     const prev = prevById.get(endpoint.id)
     if (!prev) return endpoint
     const next = { ...endpoint }
+    if (prev.baseUrl) next.baseUrl = prev.baseUrl
+    if (prev.routes) next.routes = prev.routes
     if (prev.defaults) next.defaults = prev.defaults
     if (prev.models) next.models = prev.models
     return next
   })
+  // An endpoint the selection no longer derives is archived, not deleted, so switching its protocol
+  // back on restores the models / env / mapping / routes configured for it. Only endpoints that
+  // actually carry configuration are kept — archiving bare ones would grow the list forever.
+  const liveIds = new Set(live.map((e) => e.id))
+  const archived = plan.endpoints
+    .filter((e) => !liveIds.has(e.id) && endpointHasConfig(e))
+    .map((e) => ({ ...e, disabled: true as const }))
+  return [...live, ...archived]
 }
 
-/** Rebuild every family URL from a shared site root, keeping protocols / models / defaults. */
-export function rebaseEndpoints(endpoints: ServiceEndpoint[], baseUrl: string): ServiceEndpoint[] {
-  if (endpoints.length === 0) return endpoints
-  const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints }
-  return applyCapabilitiesToPlan(plan, planCapabilities(plan), baseUrl)
+/** Whether an endpoint holds anything a user would be upset to lose: models, defaults, or a moved URL. */
+export function endpointHasConfig(endpoint: ServiceEndpoint): boolean {
+  if (endpoint.models?.length) return true
+  if (endpoint.defaults?.modelMapping && Object.keys(endpoint.defaults.modelMapping).length > 0) return true
+  if (endpoint.defaults?.extraEnv && Object.keys(endpoint.defaults.extraEnv).length > 0) return true
+  if (endpoint.baseUrl) return true
+  return endpoint.protocols.some((p) => endpointRoute(endpoint, p) !== protocolRoute(p))
+}
+
+/**
+ * Replace one protocol's route on one endpoint — the escape hatch for a vendor that answers a format
+ * somewhere other than its standard path (GLM's `/api/anthropic/v1/messages`).
+ *
+ * Passing the default route clears the override rather than storing a copy of it, so a plan only ever
+ * carries the routes that actually differ.
+ */
+export function overrideEndpointRoute(
+  endpoints: ServiceEndpoint[],
+  endpointId: string,
+  protocol: WireProtocol,
+  route: string,
+): ServiceEndpoint[] {
+  return endpoints.map((e) => {
+    if (e.id !== endpointId) return e
+    const routes = { ...e.routes }
+    const trimmed = route.trim()
+    if (!trimmed || trimmed === protocolRoute(protocol)) delete routes[protocol]
+    else routes[protocol] = trimmed
+    const next = { ...e }
+    if (Object.keys(routes).length > 0) next.routes = routes
+    else delete next.routes
+    return next
+  })
+}
+
+/** Replace one endpoint's host — for a vendor serving a format from a different origin entirely. */
+export function overrideEndpointBaseUrl(
+  endpoints: ServiceEndpoint[],
+  endpointId: string,
+  baseUrl: string,
+): ServiceEndpoint[] {
+  return endpoints.map((e) => {
+    if (e.id !== endpointId) return e
+    const next = { ...e }
+    if (baseUrl.trim()) next.baseUrl = baseUrl.trim()
+    else delete next.baseUrl
+    return next
+  })
 }

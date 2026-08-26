@@ -22,6 +22,7 @@ const plan: Plan = {
   id: 'api',
   name: 'API',
   auth: 'api-key',
+  baseUrl: 'https://api.moonshot.cn',
   endpoints: [anthropic, openai],
 }
 

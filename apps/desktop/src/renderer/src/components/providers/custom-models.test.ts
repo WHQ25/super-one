@@ -11,6 +11,7 @@ const plan: Plan = {
   id: 'api',
   name: 'API',
   auth: 'api-key',
+  baseUrl: 'https://x',
   endpoints: [
     { id: 'chat', baseUrl: 'https://x/chat', protocols: ['anthropic-messages'] },
     { id: 'img', baseUrl: 'https://x/img', protocols: ['openai-images'] },
@@ -62,9 +63,10 @@ describe('custom model routing', () => {
       id: 'api',
       name: 'API',
       auth: 'api-key',
+      baseUrl: 'https://x',
       endpoints: [
-        { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] },
-        { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'] },
+        { id: 'openai', protocols: ['openai-chat'] },
+        { id: 'anthropic', protocols: ['anthropic-messages'] },
       ],
     }
     const out = upsertCustomModel({}, multi, {

@@ -11,25 +11,15 @@ export type WireProtocol =
   | 'openai-images' // image (/images/generations|edits)
   | 'openai-audio' // tts, asr (/audio/speech, /audio/transcriptions)
   | 'openai-video' // video (/videos submit + poll + /content — Sora and relays that copy its shape)
+  | 'ark-images' // image (/images/generations only — reference images ride a JSON `image` field, no /edits)
+  // video (/contents/generations/tasks submit + poll — Volcengine Ark's own Seedance wire; settings
+  // ride as top-level JSON fields). Direct-to-Ark only: New API-style relays run Seedance through
+  // their own `DoubaoVideo` *upstream channel* but expose only `newapi-video` to clients, so a relay
+  // base URL on this protocol 404s. The relay's channel name is not this protocol.
+  | 'ark-video'
   | 'newapi-video' // video (/video/generations submit + poll + /videos/{id}/content — New API's own generic multi-vendor task relay, distinct from the Sora-shaped /videos wire; fans out to Doubao/Kling/etc. by model id)
   | 'google-generative' // chat, image, tts (generateContent)
   | 'google-video' // video (Veo via predictLongRunning + operations poll; same key/base as generateContent)
-  | 'ark-images' // image (/images/generations only — reference images ride a JSON `image` field, no /edits)
-  | 'ark-video' // video (/contents/generations/tasks submit + poll; settings ride as top-level JSON fields)
-
-export const WIRE_PROTOCOLS: WireProtocol[] = [
-  'anthropic-messages',
-  'openai-chat',
-  'openai-responses',
-  'openai-images',
-  'openai-audio',
-  'openai-video',
-  'newapi-video',
-  'google-generative',
-  'google-video',
-  'ark-images',
-  'ark-video',
-]
 
 /** Capabilities each protocol can serve. An endpoint may narrow this set, never widen it. */
 export const PROTOCOL_TASKS: Record<WireProtocol, CapabilityTask[]> = {
@@ -39,11 +29,11 @@ export const PROTOCOL_TASKS: Record<WireProtocol, CapabilityTask[]> = {
   'openai-images': ['image'],
   'openai-audio': ['tts', 'asr'],
   'openai-video': ['video'],
+  'ark-images': ['image'],
+  'ark-video': ['video'],
   'newapi-video': ['video'],
   'google-generative': ['chat', 'image', 'tts'],
   'google-video': ['video'],
-  'ark-images': ['image'],
-  'ark-video': ['video'],
 }
 
 export function protocolServes(protocol: WireProtocol, task: CapabilityTask): boolean {
@@ -51,166 +41,288 @@ export function protocolServes(protocol: WireProtocol, task: CapabilityTask): bo
 }
 
 /**
- * Vendor family a protocol belongs to. Derived UI grouping only — never a source of truth.
- * `newapi` is not a real AI vendor — it groups New API/one-api-style relays' own proprietary
- * multi-vendor video wire (`newapi-video`), which is neither OpenAI's nor any single upstream
- * vendor's actual protocol shape (unlike `openai-video`, which genuinely is Sora's `/videos`
- * shape copied by relays). It gets its own family instead of hiding inside `openai` so the
- * custom-platform dialog doesn't label a non-OpenAI wire "OpenAI".
+ * Who defined a protocol — the vendor whose API shape it is, not who happens to relay it.
+ *
+ * This is a real property of the wire, not a UI convenience: a family's protocols share a base path
+ * (`/v1`, `/v1beta`, `/api/v3`) and are reached from one root with one key, which is exactly what
+ * makes them groupable in the picker AND collapsible into one endpoint. Ark's image and video wires
+ * are Volcengine's own shape, so they are a family of their own rather than filed under `openai`
+ * because a relay happens to expose them next to OpenAI's. Same for New API's private video wire.
  */
-export type ProtocolFamily = 'anthropic' | 'openai' | 'newapi' | 'google'
+export type ProtocolFamily = 'anthropic' | 'openai' | 'volcengine' | 'newapi' | 'google'
 
-export const PROTOCOL_FAMILIES: ProtocolFamily[] = ['anthropic', 'openai', 'newapi', 'google']
-
-export const PROTOCOL_FAMILY: Record<WireProtocol, ProtocolFamily> = {
-  'anthropic-messages': 'anthropic',
-  'openai-chat': 'openai',
-  'openai-responses': 'openai',
-  'openai-images': 'openai',
-  'openai-audio': 'openai',
-  'openai-video': 'openai',
-  'newapi-video': 'newapi',
-  'google-generative': 'google',
-  'google-video': 'google',
-  'ark-images': 'openai',
-  'ark-video': 'openai',
-}
+export const PROTOCOL_FAMILIES: ProtocolFamily[] = ['anthropic', 'openai', 'volcengine', 'newapi', 'google']
 
 /**
- * Protocols a family offers in the custom-platform dialog.
- * Order is behavioral: selectEndpoint() returns the first endpoint serving a task,
- * so responses precedes chat (codex's native wire is Responses; chat/completions is being deprecated upstream).
- * Vendor-private protocols (ark-images, ark-video) are deliberately absent — they are only reachable
- * from the builtin platform that speaks them, never offered to an arbitrary custom platform of the
- * same family.
+ * Protocols each family offers, in selection priority order.
+ *
+ * Order is behavioral, not cosmetic: `selectProtocol` takes the first protocol serving a task, so
+ * responses precedes chat (codex's native wire is Responses; chat/completions is deprecated upstream).
  */
 export const FAMILY_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   anthropic: ['anthropic-messages'],
-  openai: [
-    'openai-responses',
-    'openai-chat',
-    'openai-images',
-    'openai-audio',
-    'openai-video',
-  ],
+  openai: ['openai-responses', 'openai-chat', 'openai-images', 'openai-audio', 'openai-video'],
+  volcengine: ['ark-images', 'ark-video'],
   newapi: ['newapi-video'],
-  google: [
-    'google-generative',
-    'google-video'
-  ],
+  google: ['google-generative', 'google-video'],
 }
 
-/** Protocol priority within an endpoint / plan (flattened family order). selectEndpoint() takes the first match. */
-export const PROTOCOL_ORDER: WireProtocol[] = PROTOCOL_FAMILIES.flatMap((f) => FAMILY_PROTOCOLS[f])
+export const PROTOCOL_FAMILY: Record<WireProtocol, ProtocolFamily> = Object.fromEntries(
+  PROTOCOL_FAMILIES.flatMap((family) => FAMILY_PROTOCOLS[family].map((protocol) => [protocol, family])),
+) as Record<WireProtocol, ProtocolFamily>
+
+export const WIRE_PROTOCOLS: WireProtocol[] = PROTOCOL_FAMILIES.flatMap((f) => FAMILY_PROTOCOLS[f])
+
+/** Protocol priority within an endpoint / plan. selectProtocol() takes the first match. */
+export const PROTOCOL_ORDER: WireProtocol[] = WIRE_PROTOCOLS
 
 export const CAPABILITY_ORDER: CapabilityTask[] = ['chat', 'image', 'video', 'tts', 'asr']
 
 /**
- * The wire protocol that serves each capability within a family — the mapping behind the
- * capability-driven custom-platform dialog. A user picks a compat family + the capabilities their
- * endpoint exposes; we derive the endpoints.
- * openai chat → chat/completions (what "OpenAI-compatible" relays actually implement; the Responses
- * wire is offered separately via FAMILY_EXTRA_PROTOCOLS). tts+asr share one audio endpoint; video is
- * Sora's `/videos` shape, which relays copy (see ENDPOINT_TYPE_MAP's `openai-video`); gemini serves
- * chat/image/tts via generateContent but Veo rides its own predictLongRunning wire, so video is a
- * separate protocol rather than a task added to google-generative — keeping the two off one protocol
- * means a curated Veo model list can live on its own endpoint without replacing the catalog-driven
- * model list of the generateContent endpoint (resolveEndpointModels treats `models` as a full replace).
+ * Protocols that must be declared explicitly rather than inferred from a capability.
+ *
+ * A relay reporting "this model does chat" means `openai-chat` — the wire OpenAI-compatible relays
+ * actually implement. Responses serves the same task but is codex's native wire and far from
+ * universal, so enabling it off a bare `chat` hint would point every discovered relay at an endpoint
+ * most of them do not have. It stays opt-in: discovery turns it on only when the gateway names it.
  */
-export const FAMILY_TASK_PROTOCOL: Record<ProtocolFamily, Partial<Record<CapabilityTask, WireProtocol>>> = {
-  anthropic: { chat: 'anthropic-messages' },
-  openai: {
-    chat: 'openai-chat',
-    image: 'openai-images',
-    video: 'openai-video',
-    tts: 'openai-audio',
-    asr: 'openai-audio',
-  },
-  newapi: { video: 'newapi-video' },
-  google: {
-    chat: 'google-generative',
-    image: 'google-generative',
-    video: 'google-video',
-    tts: 'google-generative',
-  },
+export const OPT_IN_PROTOCOLS: WireProtocol[] = ['openai-responses']
+
+/** Whether a protocol can be inferred from a capability alone. */
+export function isInferableProtocol(protocol: WireProtocol): boolean {
+  return !OPT_IN_PROTOCOLS.includes(protocol)
 }
 
-/** Capabilities a family can expose, in canonical order. Derived from FAMILY_TASK_PROTOCOL. */
-export const FAMILY_TASKS: Record<ProtocolFamily, CapabilityTask[]> = {
-  anthropic: CAPABILITY_ORDER.filter((task) => FAMILY_TASK_PROTOCOL.anthropic[task]),
-  openai: CAPABILITY_ORDER.filter((task) => FAMILY_TASK_PROTOCOL.openai[task]),
-  newapi: CAPABILITY_ORDER.filter((task) => FAMILY_TASK_PROTOCOL.newapi[task]),
-  google: CAPABILITY_ORDER.filter((task) => FAMILY_TASK_PROTOCOL.google[task]),
+/** Video wires — the protocols that get an endpoint to themselves. */
+export const VIDEO_WIRES = ['openai-video', 'ark-video', 'newapi-video', 'google-video'] as const
+
+export type VideoWire = (typeof VIDEO_WIRES)[number]
+
+export function isVideoWire(protocol: string): protocol is VideoWire {
+  return (VIDEO_WIRES as readonly string[]).includes(protocol)
 }
 
 /**
- * Opt-in wire protocols a family exposes as separate toggles beyond its capability tasks — a second wire
- * for a task already served by another protocol. OpenAI's Responses wire serves the same chat task as
- * chat/completions and is codex's native wire; codex also accepts openai-chat through the built-in proxy.
+ * Where a model's task lands: a video wire (which owns its endpoint) or a family (whose endpoint is
+ * shared by every non-video protocol). This is exactly the endpoint-id space, named as a type so
+ * discovery can say *which endpoint* a model belongs on rather than only which vendor.
  */
-export const FAMILY_EXTRA_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
-  anthropic: [],
-  openai: ['openai-responses'],
-  newapi: [],
-  google: [],
+export type EndpointSlot = ProtocolFamily | VideoWire
+
+/** Tasks a slot can serve: `video` alone for a wire slot, the union of the family's non-video protocols otherwise. */
+export function slotTasks(slot: EndpointSlot): CapabilityTask[] {
+  if (isVideoWire(slot)) return ['video']
+  const set = new Set<CapabilityTask>()
+  for (const protocol of FAMILY_PROTOCOLS[slot]) {
+    if (isVideoWire(protocol)) continue
+    for (const task of PROTOCOL_TASKS[protocol]) set.add(task)
+  }
+  return CAPABILITY_ORDER.filter((t) => set.has(t))
 }
 
+/**
+ * The wire protocols a slot needs in order to serve the given tasks.
+ *
+ * A video wire slot IS its protocol. A family slot expands to that family's inferable, non-video
+ * protocols that serve at least one of the tasks — which is how a discovered `{openai: ['chat','image']}`
+ * becomes `openai-chat` + `openai-images` without a hand-written capability→wire table.
+ */
+export function protocolsForSlot(slot: EndpointSlot, tasks: CapabilityTask[]): WireProtocol[] {
+  if (isVideoWire(slot)) return [slot]
+  return FAMILY_PROTOCOLS[slot].filter(
+    (p) => !isVideoWire(p) && isInferableProtocol(p) && tasks.some((t) => protocolServes(p, t)),
+  )
+}
+
+/** The video wire a family defaults to, for classifications that only know the family. */
+export function defaultVideoWire(family: ProtocolFamily): VideoWire | undefined {
+  return FAMILY_PROTOCOLS[family].find(isVideoWire)
+}
+
+/** The slot a (family, task) pair lands in. Non-video tasks stay on their family. */
+export function slotForTask(family: ProtocolFamily, task: CapabilityTask): EndpointSlot {
+  if (task !== 'video') return family
+  return defaultVideoWire(family) ?? family
+}
+
+/**
+ * Version path each family's base URL carries, appended to the shared site root.
+ *
+ * Anthropic is empty on purpose: the Claude SDK is handed a bare root and appends `/v1/messages`
+ * itself, so the version segment lives in the route rather than the base — see `PROTOCOL_ROUTE`.
+ */
+export const FAMILY_PATH: Record<ProtocolFamily, string> = {
+  anthropic: '',
+  openai: '/v1',
+  volcengine: '/api/v3',
+  newapi: '/v1',
+  google: '/v1beta',
+}
+
+/**
+ * Base URL for a family. Already-versioned roots are left alone so a pasted
+ * `https://ark.cn-beijing.volces.com/api/v3` survives verbatim.
+ */
 export function familyBaseUrl(family: ProtocolFamily, baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
-  if (!trimmed || /\/v\d+(?:alpha|beta)?$/.test(trimmed)) return trimmed
-  if (family === 'google') return `${trimmed}/v1beta`
-  if (family === 'openai' || family === 'newapi') return `${trimmed}/v1`
-  return trimmed
+  if (!trimmed || /\/(?:api\/)?v\d+(?:alpha|beta)?$/.test(trimmed)) return trimmed
+  return `${trimmed}${FAMILY_PATH[family]}`
 }
 
 /**
- * Build the endpoint for a custom platform from a compat family + the capabilities it exposes (plus any
- * opt-in extra wires like OpenAI's Responses). One family = one addressable service = **one endpoint**
- * (id = the family name), holding every protocol needed to serve the picked capabilities (e.g. openai
- * chat+image → one endpoint speaking `openai-chat` + `openai-images`). Capability narrowing is not stored
- * on the endpoint — it happens downstream via the enabled models' `tasks` tags. The base URL is derived
- * per family via familyBaseUrl so one relay root fans out to the right sub-path per protocol. Returns `[]`
- * when nothing is picked.
+ * The request path each protocol is addressed at, **relative to its endpoint's base URL** — i.e. what
+ * the driver (or the vendor SDK) appends. Mirrors real call sites; `{model}` marks a path parameter:
+ *
+ * - `anthropic-messages` — Claude SDK, base is a bare root
+ * - `openai-*` — vendor SDK, except `openai-video` (`video/openai/video-model.ts`)
+ * - `ark-images` / `ark-video` — `media-gen/ark/image-model.ts`, `video/ark/video-model.ts`
+ * - `newapi-video` — `video/newapi/video-model.ts` (submission path; status rides `/videos/{id}`)
+ * - `google-video` — `video/google/video-model.ts`
+ *
+ * Display only. Keep it in step with those files when a route changes — nothing enforces it, because
+ * the paths live inside driver template strings and vendor SDKs.
  */
-export function customEndpointsFor(
-  family: ProtocolFamily,
-  tasks: CapabilityTask[],
-  baseUrl: string,
-  extraProtocols: WireProtocol[] = [],
-): ServiceEndpoint[] {
-  const protocols: WireProtocol[] = []
-  for (const task of CAPABILITY_ORDER) {
-    if (!tasks.includes(task)) continue
-    const protocol = FAMILY_TASK_PROTOCOL[family][task]
-    if (protocol && !protocols.includes(protocol)) protocols.push(protocol)
-  }
-  for (const p of extraProtocols) {
-    if (FAMILY_EXTRA_PROTOCOLS[family].includes(p) && !protocols.includes(p)) protocols.push(p)
-  }
-  if (protocols.length === 0) return []
-  protocols.sort((a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))
-  return [{ id: family, baseUrl: familyBaseUrl(family, baseUrl), protocols }]
+export const PROTOCOL_ROUTE: Record<WireProtocol, string> = {
+  'anthropic-messages': '/v1/messages',
+  'openai-chat': '/chat/completions',
+  'openai-responses': '/responses',
+  'openai-images': '/images/generations',
+  'openai-audio': '/audio/speech',
+  'openai-video': '/videos',
+  'ark-images': '/images/generations',
+  'ark-video': '/contents/generations/tasks',
+  'newapi-video': '/video/generations',
+  'google-generative': '/models/{model}:generateContent',
+  'google-video': '/models/{model}:predictLongRunning',
 }
 
 /**
- * Build all endpoints for a custom platform that speaks several compat families over one shared base URL
- * (e.g. a relay exposing both Claude and OpenAI formats). Each family carries its OWN picked capabilities
- * (and optional extra wires) and becomes one endpoint keyed by the family name; families are emitted in
- * canonical order regardless of map order. Endpoint ids are unique by construction (one per family).
+ * A protocol's full request path measured from the shared site root — what a user compares against
+ * their relay's docs. Derived from FAMILY_PATH + PROTOCOL_ROUTE so it cannot drift from the base URL
+ * the resolver actually builds.
  */
-export function customPlatformEndpoints(
-  tasksByFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>,
-  baseUrl: string,
-  extraByFamily: Partial<Record<ProtocolFamily, WireProtocol[]>> = {},
-): ServiceEndpoint[] {
-  const out: ServiceEndpoint[] = []
-  for (const family of PROTOCOL_FAMILIES) {
-    const tasks = tasksByFamily[family] ?? []
-    const extra = extraByFamily[family] ?? []
-    if (tasks.length === 0 && extra.length === 0) continue
-    out.push(...customEndpointsFor(family, tasks, baseUrl, extra))
+export function protocolRoute(protocol: WireProtocol): string {
+  return `${FAMILY_PATH[PROTOCOL_FAMILY[protocol]]}${PROTOCOL_ROUTE[protocol]}`
+}
+
+/** Comparison form for a route: absolute, lowercase, no query/trailing slash, path params collapsed. */
+function normalizeRoutePath(raw: string): string {
+  let path = raw.trim()
+  try {
+    path = new URL(path).pathname
+  } catch {
+    // relative path — relays publish these as written
   }
-  return out
+  path = path.split(/[?#]/)[0].replace(/\/+$/, '')
+  if (path && !path.startsWith('/')) path = `/${path}`
+  return path.toLowerCase().replace(/\{[^}]*\}/g, '{}')
+}
+
+const ROUTE_PROTOCOL = new Map<string, WireProtocol>(
+  WIRE_PROTOCOLS.map((protocol) => [normalizeRoutePath(protocolRoute(protocol)), protocol]),
+)
+
+/**
+ * Inverse of {@link protocolRoute}: which protocol speaks a given site-root-relative path.
+ *
+ * This is what lets a relay's *declared routes* outrank its endpoint-type *names*. New API publishes
+ * `{ "<type name>": { path, method } }` at `/api/pricing`, and the names are its own vocabulary —
+ * its single `openai-video` type is used for both Sora's `/v1/videos` and New API's own
+ * `/v1/video/generations`, which are different wires. The path is unambiguous; the name is not.
+ *
+ * Returns `undefined` for paths we don't implement, so callers fall back to name conventions.
+ */
+export function protocolForRoute(path: string): WireProtocol | undefined {
+  return ROUTE_PROTOCOL.get(normalizeRoutePath(path))
+}
+
+/**
+ * Endpoint id a protocol contributes to. Video wires get an endpoint of their own (id = the
+ * protocol); every other protocol shares its family's single endpoint (id = the family).
+ *
+ * The video exception is load-bearing, not tidiness: model→endpoint routing needs each video wire's
+ * enabled models to be separable, which one shared `models` array cannot express.
+ */
+export function endpointIdFor(protocol: WireProtocol): EndpointSlot {
+  return isVideoWire(protocol) ? protocol : PROTOCOL_FAMILY[protocol]
+}
+
+/**
+ * Build a custom platform's endpoints from the protocols it speaks.
+ *
+ * Endpoints are **derived, never authored**: the user ticks wire protocols and the endpoint list
+ * follows. Non-video protocols of a family collapse into one endpoint (they share a route prefix and
+ * a key, which is what "one addressable service" means); each video wire becomes its own.
+ *
+ * No URL is stored here. The site root lives on the plan, and anything vendor-specific is a `routes`
+ * entry on the endpoint — see `endpointBaseUrl`.
+ */
+export function customEndpointsFor(protocols: WireProtocol[]): ServiceEndpoint[] {
+  const picked = WIRE_PROTOCOLS.filter((p) => protocols.includes(p))
+  const endpoints: ServiceEndpoint[] = []
+  const byId = new Map<string, ServiceEndpoint>()
+  for (const protocol of picked) {
+    const id = endpointIdFor(protocol)
+    const existing = byId.get(id)
+    if (existing) {
+      existing.protocols.push(protocol)
+      continue
+    }
+    const endpoint: ServiceEndpoint = { id, protocols: [protocol] }
+    byId.set(id, endpoint)
+    endpoints.push(endpoint)
+  }
+  return endpoints
+}
+
+/** The path an endpoint answers `protocol` on, measured from the site root. */
+export function endpointRoute(endpoint: Pick<ServiceEndpoint, 'routes'>, protocol: WireProtocol): string {
+  const stored = endpoint.routes?.[protocol]?.trim()
+  return stored ? normalizeRouteShape(stored) : protocolRoute(protocol)
+}
+
+/**
+ * Put a hand-typed route into the one shape the rest of the module assumes: leading slash, no
+ * trailing slash. Without this, `api/v1/messages` concatenates straight onto the host
+ * (`https://relayapi/v1/...`) and `/api/v1/messages/` fails the suffix test, silently falling back
+ * to the family default and dropping the `/api` the user typed.
+ */
+function normalizeRouteShape(route: string): string {
+  const withSlash = route.startsWith('/') ? route : `/${route}`
+  const trimmed = withSlash.replace(/\/+$/, '')
+  return trimmed || '/'
+}
+
+/**
+ * The base URL a driver or vendor SDK is handed for `protocol`: the full request URL minus the
+ * segment the driver appends itself.
+ *
+ * Drivers take a base, relays publish a route, and this is the one place the two meet. The segment
+ * to strip is `PROTOCOL_ROUTE[protocol]` — exactly what the driver will re-append — so the default
+ * route round-trips to `familyBaseUrl`, and an override like `/api/anthropic/v1/messages` yields
+ * `{root}/api/anthropic` for a Claude SDK that appends `/v1/messages` on its own.
+ *
+ * A route that does not end with that segment cannot be honoured (we would have nothing coherent to
+ * hand the SDK), so it falls back to the family default rather than producing a URL that 404s.
+ */
+export function endpointBaseUrl(
+  siteRoot: string,
+  endpoint: Pick<ServiceEndpoint, 'baseUrl' | 'routes'>,
+  protocol: WireProtocol,
+): string {
+  const root = (endpoint.baseUrl || siteRoot).replace(/\/+$/, '')
+  // An empty root means "whatever the vendor SDK defaults to" (official OpenAI / Gemini / Vertex).
+  // Prefixing a route onto nothing would turn that into a relative URL, so leave it empty.
+  if (!root) return ''
+  const route = endpointRoute(endpoint, protocol)
+  const suffix = PROTOCOL_ROUTE[protocol]
+  const prefix = route.endsWith(suffix) ? route.slice(0, route.length - suffix.length) : FAMILY_PATH[PROTOCOL_FAMILY[protocol]]
+  return `${root}${prefix}`
+}
+
+/** Whether a hand-edited route is one `endpointBaseUrl` can honour. */
+export function isUsableRoute(route: string, protocol: WireProtocol): boolean {
+  return route.startsWith('/') && route.endsWith(PROTOCOL_ROUTE[protocol])
 }
 
 /** The protocols a chat harness accepts without experimental adapters. */

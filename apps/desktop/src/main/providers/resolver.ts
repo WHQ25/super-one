@@ -2,14 +2,16 @@ import { expandProviderModelEnv, type EffortLevel, type RemoteActiveProvider } f
 import {
   CONSUMER_TASK,
   effectiveEndpoints,
-  familyBaseUrl,
+  enabledEndpointModels,
+  endpointServes,
+  endpointBaseUrl,
   findPlan,
   findPlatform,
   mergeEndpoint,
-  PROTOCOL_FAMILY,
-  selectEndpoint,
+    selectEndpoint,
   type ConsumerId,
   type Credential,
+  type EndpointModel,
   type Platform,
   type ResolvedService,
 } from '@superone/shared/platform-registry'
@@ -19,6 +21,8 @@ import { getPlatforms } from './registry'
 export interface ResolveOverride {
   credentialId?: string | null
   experimentalClaudeOpenAiChatEnabled?: boolean
+  /** Route to the endpoint that enabled this model — see `selectEndpoint`'s `modelId`. Media only. */
+  modelId?: string
 }
 
 function credentialApiKey(cred: Credential): string {
@@ -57,7 +61,10 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
     usingBoundCredential ? binding?.endpointId : undefined,
     cred,
     endpoints,
-    { experimentalClaudeOpenAiChatEnabled: override?.experimentalClaudeOpenAiChatEnabled },
+    {
+      experimentalClaudeOpenAiChatEnabled: override?.experimentalClaudeOpenAiChatEnabled,
+      modelId: override?.modelId,
+    },
   )
   if (!selected) return null
   const { endpoint, protocol } = selected
@@ -82,13 +89,43 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
     credentialId: cred.id,
     task: CONSUMER_TASK[consumer],
     protocol,
-    baseUrl: familyBaseUrl(PROTOCOL_FAMILY[protocol], merged.baseUrl),
+    baseUrl: endpointBaseUrl(cred.baseUrl || plan.baseUrl, merged, protocol),
     apiKey: credentialApiKey(cred),
     auth: plan.auth,
     models: merged.models,
     modelMapping: modelMapping && Object.keys(modelMapping).length > 0 ? modelMapping : undefined,
     extraEnv: Object.keys(merged.extraEnv).length > 0 ? merged.extraEnv : undefined,
   }
+}
+
+/**
+ * Every model a credential can serve a consumer's task with, across ALL endpoints that serve it.
+ *
+ * `resolveService` answers "which endpoint handles this one call" and so reports a single endpoint's
+ * models. This answers "what can this credential do", which since video wires split into one endpoint
+ * each may span several endpoints under one key — a relay with both Sora and Seedance enabled must
+ * advertise both models, or the model→endpoint routing they exist for can never be triggered.
+ */
+export function listServiceModels(consumer: ConsumerId, credentialId: string): EndpointModel[] {
+  const cred = getCredentialDecrypted(credentialId)
+  if (!cred) return []
+  const platform = findPlatform(getPlatforms(), cred.platformId)
+  const plan = findPlan(platform, cred.planId)
+  if (!platform || !plan) return []
+  const task = CONSUMER_TASK[consumer]
+  const seen = new Set<string>()
+  const out: EndpointModel[] = []
+  for (const endpoint of effectiveEndpoints(platform, plan, cred)) {
+    // Archived endpoints keep their models so they survive a round trip through the switch; they must
+    // not be advertised as usable while switched off.
+    if (endpoint.disabled || !endpointServes(endpoint, task)) continue
+    for (const model of enabledEndpointModels(endpoint, task, cred)) {
+      if (seen.has(model.id)) continue
+      seen.add(model.id)
+      out.push(model)
+    }
+  }
+  return out
 }
 
 export function resolveChatService(
@@ -140,7 +177,7 @@ export function resolveServiceFromCredential(
     credentialId: cred.id,
     task: CONSUMER_TASK[consumer],
     protocol,
-    baseUrl: familyBaseUrl(PROTOCOL_FAMILY[protocol], merged.baseUrl),
+    baseUrl: endpointBaseUrl(cred.baseUrl || plan.baseUrl, merged, protocol),
     apiKey: credentialApiKey(cred),
     auth: plan.auth,
     models: merged.models,

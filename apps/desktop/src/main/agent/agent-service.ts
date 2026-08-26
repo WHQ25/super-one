@@ -2877,17 +2877,17 @@ export class AgentService {
       this.broadcastProviderChanged(harness)
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, async (_event, data: { apiKey: string; credentialId?: string; endpoints: ServiceEndpoint[] }) => {
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, async (_event, data: { apiKey: string; credentialId?: string; baseUrl: string; endpoints: ServiceEndpoint[] }) => {
       const apiKey = resolveTestApiKey({ api_key: data.apiKey, credential_id: data.credentialId })
-      const results = await testServiceEndpoints(data.endpoints, apiKey)
+      const results = await testServiceEndpoints(data.baseUrl, data.endpoints, apiKey)
       trace('providers.test', 'result', results)
       return { success: results.every((r) => r.success), results }
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, async (_event, data: { apiKey: string; credentialId?: string; endpoint: ServiceEndpoint }) => {
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, async (_event, data: { apiKey: string; credentialId?: string; baseUrl: string }) => {
       const apiKey = resolveTestApiKey({ api_key: data.apiKey, credential_id: data.credentialId })
       const catalogIndex = await this.buildDiscoveryCatalogIndex()
-      const result = await discoverModels(data.endpoint, apiKey, catalogIndex)
+      const result = await discoverModels(data.baseUrl, apiKey, catalogIndex)
       trace('providers.discover', 'result', result)
       return result
     })

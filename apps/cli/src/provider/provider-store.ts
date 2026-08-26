@@ -38,6 +38,7 @@ export interface CreateCredentialInput {
   name: string
   secret?: string
   secretEnv?: string
+  baseUrl?: string
   overrides?: Record<string, EndpointOverride>
   endpoints?: ServiceEndpoint[]
   notes?: string
@@ -47,6 +48,7 @@ export interface UpdateCredentialInput {
   name?: string
   secret?: string
   secretEnv?: string
+  baseUrl?: string
   overrides?: Record<string, EndpointOverride>
   endpoints?: ServiceEndpoint[] | null
   notes?: string
@@ -67,6 +69,7 @@ interface CredentialRow {
   name: string
   secret: string
   secret_env: string
+  base_url: string
   overrides_json: string
   endpoints_json: string | null
   notes: string
@@ -117,8 +120,8 @@ export class ProviderStore {
     this.db
       .prepare(
         `INSERT INTO provider_credentials
-          (id, platform_id, plan_id, name, secret, secret_env, overrides_json, endpoints_json, notes, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, platform_id, plan_id, name, secret, secret_env, base_url, overrides_json, endpoints_json, notes, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -127,6 +130,7 @@ export class ProviderStore {
         input.name,
         this.crypto.encrypt(input.secret ?? ''),
         input.secretEnv ?? '',
+        input.baseUrl ?? '',
         JSON.stringify(input.overrides ?? {}),
         this.serializeEndpoints(input.endpoints),
         input.notes ?? '',
@@ -149,13 +153,14 @@ export class ProviderStore {
     this.db
       .prepare(
         `UPDATE provider_credentials SET
-          name = ?, secret = ?, secret_env = ?, overrides_json = ?, endpoints_json = ?, notes = ?, sort_order = ?, updated_at = ?
+          name = ?, secret = ?, secret_env = ?, base_url = ?, overrides_json = ?, endpoints_json = ?, notes = ?, sort_order = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
         patch.name ?? existing.name,
         nextSecret,
         patch.secretEnv ?? existing.secret_env,
+        patch.baseUrl ?? existing.base_url,
         patch.overrides ? JSON.stringify(patch.overrides) : existing.overrides_json,
         nextEndpoints,
         patch.notes ?? existing.notes,
@@ -264,6 +269,7 @@ export class ProviderStore {
           name: c.name,
           secret: c.secret,
           secretEnv: c.secretEnv,
+          baseUrl: c.baseUrl,
           overrides: c.overrides,
           endpoints: c.endpoints ?? null,
           notes: c.notes,
@@ -277,6 +283,7 @@ export class ProviderStore {
           name: c.name,
           secret: c.secret,
           secretEnv: c.secretEnv,
+          baseUrl: c.baseUrl,
           overrides: c.overrides,
           endpoints: c.endpoints,
           notes: c.notes,
@@ -308,6 +315,7 @@ export class ProviderStore {
       name: row.name,
       secret: row.secret,
       secretEnv: row.secret_env || undefined,
+      baseUrl: row.base_url || undefined,
       overrides: safeParse<Record<string, EndpointOverride>>(row.overrides_json, {}),
       endpoints: endpoints && endpoints.length > 0 ? endpoints : undefined,
       notes: row.notes,

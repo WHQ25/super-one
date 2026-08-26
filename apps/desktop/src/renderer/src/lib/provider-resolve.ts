@@ -89,7 +89,7 @@ export function resolveEffective(
     planId: plan.id,
     endpointId: endpoint.id,
     brand: platform.brand,
-    baseUrl: merged.baseUrl,
+    baseUrl: merged.baseUrl || plan.baseUrl,
     modelMapping: merged.modelMapping,
     extraEnv: merged.extraEnv,
     endpoints,

@@ -28,7 +28,13 @@ export function baseUrlHasHost(raw: string): boolean {
   }
 }
 
-export function siteRootFromEndpoints(endpoints: ServiceEndpoint[]): string {
-  const first = endpoints[0]
-  return first ? relaySiteRoot(first.baseUrl) || first.baseUrl : ''
+/**
+ * Normalise a stored site root for display / probing. Endpoints no longer carry one.
+ *
+ * Tolerates a missing value: plans written before the site root moved onto the plan have no
+ * `baseUrl` at all, and the settings page has to stay openable long enough for the user to see them.
+ */
+export function siteRootOf(baseUrl: string | undefined): string {
+  if (!baseUrl) return ''
+  return relaySiteRoot(baseUrl) || baseUrl
 }

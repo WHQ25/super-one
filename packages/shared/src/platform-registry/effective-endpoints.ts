@@ -53,10 +53,11 @@ export function foldOverridesIntoEndpoints(
     else delete defaults.extraEnv
     if (Object.keys(merged.modelMapping).length > 0) defaults.modelMapping = merged.modelMapping
     else delete defaults.modelMapping
-    const next: ServiceEndpoint = {
-      ...endpoint,
-      baseUrl: merged.baseUrl,
-    }
+    const next: ServiceEndpoint = { ...endpoint }
+    if (merged.baseUrl) next.baseUrl = merged.baseUrl
+    else delete next.baseUrl
+    if (merged.routes) next.routes = merged.routes
+    else delete next.routes
     if (ov.models !== undefined || endpoint.models !== undefined) {
       next.models = merged.models
     }
@@ -92,6 +93,7 @@ export function cloneEndpoints(endpoints: ServiceEndpoint[]): ServiceEndpoint[] 
   return endpoints.map((e) => ({
     ...e,
     protocols: [...e.protocols],
+    routes: e.routes ? { ...e.routes } : undefined,
     models: e.models?.map((m) => ({ ...m, tasks: m.tasks ? [...m.tasks] : undefined })),
     defaults: e.defaults
       ? {

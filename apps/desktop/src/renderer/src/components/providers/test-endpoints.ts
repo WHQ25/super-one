@@ -25,11 +25,7 @@ export function planTestEndpoints(
     opts?.platform
       ? effectiveEndpoints(opts.platform, plan, opts.credential ?? { overrides })
       : plan.endpoints
-  return baseList.map((endpoint) => ({
-    ...endpoint,
-    // For custom keys endpoints already include overrides; re-merge is idempotent for baseUrl.
-    baseUrl: mergeEndpoint(endpoint, overrides?.[endpoint.id]).baseUrl,
-  }))
+  return baseList.map((endpoint) => applyOverride(endpoint, overrides?.[endpoint.id]))
 }
 
 /** One endpoint with only its own override applied — used by per-endpoint test buttons. */
@@ -37,10 +33,23 @@ export function singleTestEndpoint(
   endpoint: ServiceEndpoint,
   override: EndpointOverride | undefined,
 ): ServiceEndpoint {
-  return {
-    ...endpoint,
-    baseUrl: mergeEndpoint(endpoint, override).baseUrl,
-  }
+  return applyOverride(endpoint, override)
+}
+
+/**
+ * Fold one override onto an endpoint for probing. Both the host override and the per-protocol
+ * routes have to survive — the probe URL is built from the site root plus the endpoint's route,
+ * so dropping either one silently tests a different address than the harness will use.
+ * For custom keys the endpoint already carries the override; re-merging is idempotent.
+ */
+function applyOverride(endpoint: ServiceEndpoint, override: EndpointOverride | undefined): ServiceEndpoint {
+  const merged = mergeEndpoint(endpoint, override)
+  const next: ServiceEndpoint = { ...endpoint }
+  if (merged.baseUrl) next.baseUrl = merged.baseUrl
+  else delete next.baseUrl
+  if (merged.routes) next.routes = merged.routes
+  else delete next.routes
+  return next
 }
 
 export function formatEndpointTestFailures(results: EndpointTestResult[]): string {
@@ -59,14 +68,19 @@ export type EndpointTestState =
 export function useEndpointTest() {
   const [state, setState] = useState<EndpointTestState>({ status: 'idle' })
 
-  const run = useCallback(async (endpoints: ServiceEndpoint[], apiKey: string, credentialId?: string) => {
+  const run = useCallback(async (
+    siteRoot: string,
+    endpoints: ServiceEndpoint[],
+    apiKey: string,
+    credentialId?: string,
+  ) => {
     if (endpoints.length === 0) {
       setState({ status: 'error', message: 'no endpoints', results: [] })
       return
     }
     setState({ status: 'testing' })
     try {
-      const res = await window.app.testProviderEndpoint({ apiKey, credentialId, endpoints })
+      const res = await window.app.testProviderEndpoint({ apiKey, credentialId, baseUrl: siteRoot, endpoints })
       if (res.success) {
         setState({ status: 'success', results: res.results })
       } else {

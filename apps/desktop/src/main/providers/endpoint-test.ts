@@ -1,5 +1,6 @@
 import type { EndpointTestResult } from '@superone/shared/agent-types'
 import {
+  endpointBaseUrl,
   familyBaseUrl,
   PROTOCOL_FAMILY,
   type ProtocolFamily,
@@ -10,6 +11,7 @@ import {
 const DEFAULT_BASE_URL: Record<ProtocolFamily, string> = {
   anthropic: 'https://api.anthropic.com',
   openai: 'https://api.openai.com/v1',
+  volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
   newapi: '',
   google: 'https://generativelanguage.googleapis.com',
 }
@@ -60,9 +62,11 @@ export function authHeaders(family: ProtocolFamily, apiKey: string): Record<stri
   return { Authorization: `Bearer ${apiKey}` }
 }
 
-export function testEndpointModelsUrl(endpoint: ServiceEndpoint): string {
+/** Probe the same base the driver would get, so a routed endpoint is not tested at the default path. */
+export function testEndpointModelsUrl(siteRoot: string, endpoint: ServiceEndpoint): string {
   const family = endpointFamily(endpoint)
-  return modelsUrl(family, familyBaseUrl(family, endpoint.baseUrl))
+  const protocol = endpoint.protocols[0]
+  return modelsUrl(family, protocol ? endpointBaseUrl(siteRoot, endpoint, protocol) : familyBaseUrl(family, siteRoot))
 }
 
 /**
@@ -100,12 +104,13 @@ function failureResult(endpointId: string, status: number | undefined, error: st
 }
 
 async function probeModelsList(
+  siteRoot: string,
   endpoint: ServiceEndpoint,
   apiKey: string,
   signal: AbortSignal,
 ): Promise<EndpointTestResult & { notFound?: boolean }> {
   const family = endpointFamily(endpoint)
-  const url = testEndpointModelsUrl(endpoint)
+  const url = testEndpointModelsUrl(siteRoot, endpoint)
   const res = await fetch(url, { headers: authHeaders(family, apiKey), signal })
   if (res.ok) return { endpointId: endpoint.id, success: true, status: res.status }
   if (res.status === 401 || res.status === 403) return invalidKeyResult(endpoint.id, res.status)
@@ -128,11 +133,12 @@ async function probeModelsList(
  * Anthropic-compat bases that only implement /v1/messages).
  */
 async function probeAnthropicMessages(
+  siteRoot: string,
   endpoint: ServiceEndpoint,
   apiKey: string,
   signal: AbortSignal,
 ): Promise<EndpointTestResult> {
-  const base = familyBaseUrl('anthropic', endpoint.baseUrl)
+  const base = endpointBaseUrl(siteRoot, endpoint, 'anthropic-messages')
   const url = messagesUrl(base)
   const res = await fetch(url, {
     method: 'POST',
@@ -160,18 +166,22 @@ async function probeAnthropicMessages(
  * Anthropic: GET /v1/models, then POST /v1/messages on 404.
  * OpenAI / Google: GET models list (2xx = success).
  */
-export async function testServiceEndpoint(endpoint: ServiceEndpoint, apiKey: string): Promise<EndpointTestResult> {
+export async function testServiceEndpoint(
+  siteRoot: string,
+  endpoint: ServiceEndpoint,
+  apiKey: string,
+): Promise<EndpointTestResult> {
   const family = endpointFamily(endpoint)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS)
   try {
-    const modelsResult = await probeModelsList(endpoint, apiKey, controller.signal)
+    const modelsResult = await probeModelsList(siteRoot, endpoint, apiKey, controller.signal)
     if (modelsResult.success || modelsResult.status === 401 || modelsResult.status === 403) {
       const { notFound: _n, ...result } = modelsResult
       return result
     }
     if (family === 'anthropic' && modelsResult.notFound) {
-      return await probeAnthropicMessages(endpoint, apiKey, controller.signal)
+      return await probeAnthropicMessages(siteRoot, endpoint, apiKey, controller.signal)
     }
     const { notFound: _n, ...result } = modelsResult
     return result
@@ -193,12 +203,16 @@ export async function testServiceEndpoint(endpoint: ServiceEndpoint, apiKey: str
  * is not rejected because a sibling protocol path lacks /v1/models (e.g. DeepSeek anthropic).
  * Endpoint Test (single endpoint): probe that exact config with family-appropriate fallbacks.
  */
-export async function testServiceEndpoints(endpoints: ServiceEndpoint[], apiKey: string): Promise<EndpointTestResult[]> {
+export async function testServiceEndpoints(
+  siteRoot: string,
+  endpoints: ServiceEndpoint[],
+  apiKey: string,
+): Promise<EndpointTestResult[]> {
   if (endpoints.length === 0) return []
   if (endpoints.length === 1) {
-    return [await testServiceEndpoint(endpoints[0], apiKey)]
+    return [await testServiceEndpoint(siteRoot, endpoints[0], apiKey)]
   }
   const preferred = selectKeyAuthEndpoint(endpoints)
   if (!preferred) return []
-  return [await testServiceEndpoint(preferred, apiKey)]
+  return [await testServiceEndpoint(siteRoot, preferred, apiKey)]
 }

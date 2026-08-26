@@ -2763,10 +2763,24 @@ export type Messages = {
       capabilities: string
       familyAnthropic: string
       familyOpenai: string
-      familyNewapi: string
       familyGoogle: string
+      familyVolcengine: string
+      familyNewapi: string
+      enableEndpoint: string
+      endpointDisabledHint: string
+      endpointSharedWith: string
+      protocolAnthropicMessages: string
       protocolOpenaiChatCompletion: string
       protocolOpenaiResponses: string
+      protocolOpenaiImages: string
+      protocolOpenaiAudio: string
+      protocolOpenaiVideo: string
+      protocolArkImages: string
+      endpointRoute: string
+      protocolArkVideo: string
+      protocolNewapiVideo: string
+      protocolGoogleGenerative: string
+      protocolGoogleVideo: string
       taskChat: string
       taskImage: string
       taskVideo: string
@@ -2858,6 +2872,7 @@ export type Messages = {
         addCustom: string
         customGroup: string
         usedFor: string
+        endpointFor: string
         add: string
         duplicate: string
         deleteCustom: string
@@ -6285,10 +6300,24 @@ export const en: Messages = {
       capabilities: 'Capabilities',
       familyAnthropic: 'Anthropic (Claude)',
       familyOpenai: 'OpenAI',
-      familyNewapi: 'New API Video Relay (Seedance / Kling)',
       familyGoogle: 'Google (Gemini)',
-      protocolOpenaiChatCompletion: 'Chat Completion',
-      protocolOpenaiResponses: 'Chat Response',
+      familyVolcengine: 'Volcengine Ark',
+      familyNewapi: 'New API Relay',
+      enableEndpoint: 'Enable this endpoint',
+      endpointDisabledHint: 'This endpoint is off. Its settings are kept and will apply again when you turn it back on.',
+      endpointSharedWith: 'Shares this endpoint with {{protocols}} — these settings apply to all of them.',
+      protocolAnthropicMessages: 'Messages',
+      protocolOpenaiChatCompletion: 'Chat Completions',
+      protocolOpenaiResponses: 'Responses',
+      protocolOpenaiImages: 'Images',
+      protocolOpenaiAudio: 'Audio',
+      protocolOpenaiVideo: 'Sora Video',
+      protocolArkImages: 'Seedream Images',
+      endpointRoute: 'Route',
+      protocolArkVideo: 'Seedance Video',
+      protocolNewapiVideo: 'Relay Video',
+      protocolGoogleGenerative: 'generateContent',
+      protocolGoogleVideo: 'Veo Video',
       taskChat: 'Chat',
       taskImage: 'Image Generation',
       taskVideo: 'Video Generation',
@@ -6380,6 +6409,7 @@ export const en: Messages = {
         addCustom: 'Add Model',
         customGroup: 'Custom',
         usedFor: 'Used for',
+        endpointFor: '{{task}} endpoint',
         add: 'Add',
         duplicate: 'This model id already exists.',
         deleteCustom: 'Remove custom model',

@@ -1,12 +1,25 @@
 import type { ProviderModelEnv } from '../agent-types'
 import { ENABLE_TOOL_SEARCH_ENV } from './effective-endpoints'
-import { PROXY_TRANSFORMERS_ENV } from './protocols'
+import { PROTOCOL_ROUTE, protocolRoute, PROXY_TRANSFORMERS_ENV, type WireProtocol } from './protocols'
 import type { EndpointModel, Platform, ServiceEndpoint } from './types'
 
 // --- endpoint helpers ---------------------------------------------------------
 
+/**
+ * Turn a plan-relative path prefix into a route override, or nothing when it already lands on the
+ * protocol's standard route.
+ *
+ * Prefixes are how these vendors actually differ: one host serving Claude at `/api/anthropic` and
+ * OpenAI at `/api/coding/paas/v4` is the norm, not the exception — every builtin plan here shares a
+ * single origin across its endpoints.
+ */
+function routes(protocol: WireProtocol, prefix: string): Pick<ServiceEndpoint, 'routes'> {
+  const route = `${prefix.replace(/\/+$/, '')}${PROTOCOL_ROUTE[protocol]}`
+  return route === protocolRoute(protocol) ? {} : { routes: { [protocol]: route } }
+}
+
 function anthropic(
-  baseUrl: string,
+  prefix: string,
   opts: { extraEnv?: Record<string, string>; modelMapping?: ProviderModelEnv; models?: EndpointModel[]; id?: string } = {},
 ): ServiceEndpoint {
   const extraEnv = {
@@ -17,16 +30,28 @@ function anthropic(
     extraEnv,
     ...(opts.modelMapping ? { modelMapping: opts.modelMapping } : {}),
   }
-  return { id: opts.id ?? 'anthropic', baseUrl, protocols: ['anthropic-messages'], defaults, models: opts.models }
+  return {
+    id: opts.id ?? 'anthropic',
+    protocols: ['anthropic-messages'],
+    ...routes('anthropic-messages', prefix),
+    defaults,
+    models: opts.models,
+  }
 }
 
 function openaiChat(
-  baseUrl: string,
+  prefix: string,
   opts: { extraEnv?: Record<string, string>; modelMapping?: ProviderModelEnv; models?: EndpointModel[]; id?: string } = {},
 ): ServiceEndpoint {
   const defaults =
     opts.extraEnv || opts.modelMapping ? { extraEnv: opts.extraEnv, modelMapping: opts.modelMapping } : undefined
-  return { id: opts.id ?? 'openai', baseUrl, protocols: ['openai-chat'], defaults, models: opts.models }
+  return {
+    id: opts.id ?? 'openai',
+    protocols: ['openai-chat'],
+    ...routes('openai-chat', prefix),
+    defaults,
+    models: opts.models,
+  }
 }
 
 // --- shared model mappings ----------------------------------------------------
@@ -230,6 +255,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'subscription',
         name: 'Subscription',
         auth: 'oauth',
+        baseUrl: '',
         endpoints: [anthropic('')],
       },
     ],
@@ -245,7 +271,8 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'subscription',
         name: 'Subscription',
         auth: 'oauth',
-        endpoints: [{ id: 'responses', baseUrl: '', protocols: ['openai-responses'] }],
+        baseUrl: '',
+        endpoints: [{ id: 'responses', protocols: ['openai-responses'] }],
       },
     ],
   },
@@ -263,10 +290,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: 'Coding Plan',
         description: '智谱 GLM 编程套餐 — 中国区，支持 Claude 协议兼容调用',
         auth: 'api-key',
+        baseUrl: 'https://open.bigmodel.cn',
         apiKeyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
         catalogProviderId: 'zhipuai-coding-plan',
         endpoints: [
-          anthropic('https://open.bigmodel.cn/api/anthropic', {
+          anthropic('/api/anthropic', {
             extraEnv: {
               ...CODING_TIMEOUT,
               CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1000000',
@@ -276,7 +304,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             modelMapping: GLM_MODELS,
           }),
           // Coding Plan OpenAI Chat Completions — not the pay-as-you-go /paas/v4 path.
-          openaiChat('https://open.bigmodel.cn/api/coding/paas/v4', {
+          openaiChat('/api/coding/paas/v4', {
             modelMapping: GLM_MODELS,
           }),
         ],
@@ -285,10 +313,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://open.bigmodel.cn',
         apiKeyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
         catalogProviderId: 'zhipuai',
         endpoints: [
-          anthropic('https://open.bigmodel.cn/api/anthropic', {
+          anthropic('/api/anthropic', {
             extraEnv: {
               ...CODING_TIMEOUT,
               CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1000000',
@@ -297,7 +326,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             },
             modelMapping: GLM_MODELS,
           }),
-          openaiChat('https://open.bigmodel.cn/api/paas/v4', {
+          openaiChat('/api/paas/v4', {
             modelMapping: GLM_MODELS,
           }),
         ],
@@ -315,10 +344,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'coding',
         name: 'Coding Plan',
         auth: 'api-key',
+        baseUrl: 'https://api.z.ai',
         apiKeyUrl: 'https://z.ai/manage-apikey/apikey-list',
         catalogProviderId: 'zai-coding-plan',
         endpoints: [
-          anthropic('https://api.z.ai/api/anthropic', {
+          anthropic('/api/anthropic', {
             extraEnv: {
               ...CODING_TIMEOUT,
               CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1000000',
@@ -327,7 +357,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             },
             modelMapping: GLM_MODELS,
           }),
-          openaiChat('https://api.z.ai/api/coding/paas/v4', {
+          openaiChat('/api/coding/paas/v4', {
             modelMapping: GLM_MODELS,
           }),
         ],
@@ -336,10 +366,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://api.z.ai',
         apiKeyUrl: 'https://z.ai/manage-apikey/apikey-list',
         catalogProviderId: 'zai',
         endpoints: [
-          anthropic('https://api.z.ai/api/anthropic', {
+          anthropic('/api/anthropic', {
             extraEnv: {
               ...CODING_TIMEOUT,
               CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1000000',
@@ -348,7 +379,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             },
             modelMapping: GLM_MODELS,
           }),
-          openaiChat('https://api.z.ai/api/paas/v4', {
+          openaiChat('/api/paas/v4', {
             modelMapping: GLM_MODELS,
           }),
         ],
@@ -367,14 +398,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: 'Andante',
         description: 'Kimi Code Andante — kimi-for-coding，256k 上下文',
         auth: 'api-key',
+        baseUrl: 'https://api.kimi.com',
         apiKeyUrl: 'https://www.kimi.com/code/console',
         endpoints: [
-          anthropic('https://api.kimi.com/coding/', {
+          anthropic('/coding', {
             extraEnv: KIMI_ANDANTE_EXTRA_ENV,
             modelMapping: KIMI_ANDANTE_MODELS,
             models: KIMI_ANDANTE_ENDPOINT_MODELS,
           }),
-          openaiChat('https://api.kimi.com/coding/v1', {
+          openaiChat('/coding/v1', {
             modelMapping: KIMI_ANDANTE_MODELS,
             models: KIMI_ANDANTE_ENDPOINT_MODELS,
           }),
@@ -385,14 +417,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: 'Moderato',
         description: 'Kimi Code Moderato — k3 / kimi-for-coding，256k 上下文',
         auth: 'api-key',
+        baseUrl: 'https://api.kimi.com',
         apiKeyUrl: 'https://www.kimi.com/code/console',
         endpoints: [
-          anthropic('https://api.kimi.com/coding/', {
+          anthropic('/coding', {
             extraEnv: KIMI_MODERATO_EXTRA_ENV,
             modelMapping: KIMI_MODERATO_MODELS,
             models: KIMI_MODERATO_ENDPOINT_MODELS,
           }),
-          openaiChat('https://api.kimi.com/coding/v1', {
+          openaiChat('/coding/v1', {
             modelMapping: KIMI_MODERATO_MODELS,
             models: KIMI_MODERATO_ENDPOINT_MODELS,
           }),
@@ -403,14 +436,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: 'Allegretto+',
         description: 'Kimi Code Allegretto 及以上 — k3[1m] / HighSpeed，最高 1M 上下文',
         auth: 'api-key',
+        baseUrl: 'https://api.kimi.com',
         apiKeyUrl: 'https://www.kimi.com/code/console',
         endpoints: [
-          anthropic('https://api.kimi.com/coding/', {
+          anthropic('/coding', {
             extraEnv: KIMI_ALLEGRETTO_EXTRA_ENV,
             modelMapping: KIMI_ALLEGRETTO_MODELS,
             models: KIMI_ALLEGRETTO_ENDPOINT_MODELS,
           }),
-          openaiChat('https://api.kimi.com/coding/v1', {
+          openaiChat('/coding/v1', {
             modelMapping: KIMI_ALLEGRETTO_MODELS,
             models: KIMI_ALLEGRETTO_ENDPOINT_MODELS,
           }),
@@ -430,14 +464,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: '中国版',
         description: 'Moonshot 开放平台 API — 按量计费，中国区端点',
         auth: 'api-key',
+        baseUrl: 'https://api.moonshot.cn',
         apiKeyUrl: 'https://platform.kimi.com/console/api-keys',
         catalogProviderId: 'moonshotai',
         endpoints: [
-          anthropic('https://api.moonshot.cn/anthropic', {
+          anthropic('/anthropic', {
             extraEnv: KIMI_EXTRA_ENV,
             modelMapping: KIMI_API_MODELS,
           }),
-          openaiChat('https://api.moonshot.cn/v1', {
+          openaiChat('/v1', {
             modelMapping: KIMI_API_MODELS,
           }),
         ],
@@ -447,14 +482,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: 'Global',
         description: 'Moonshot Open Platform API — pay-as-you-go, global endpoint',
         auth: 'api-key',
+        baseUrl: 'https://api.moonshot.ai',
         apiKeyUrl: 'https://platform.kimi.ai/console/api-keys',
         catalogProviderId: 'moonshotai',
         endpoints: [
-          anthropic('https://api.moonshot.ai/anthropic', {
+          anthropic('/anthropic', {
             extraEnv: KIMI_EXTRA_ENV,
             modelMapping: KIMI_API_MODELS,
           }),
-          openaiChat('https://api.moonshot.ai/v1', {
+          openaiChat('/v1', {
             modelMapping: KIMI_API_MODELS,
           }),
         ],
@@ -472,13 +508,14 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: '中国版',
         description: 'MiniMax 编程套餐或 API — 中国区，海螺 AI 代码模型',
         auth: 'api-key',
+        baseUrl: 'https://api.minimaxi.com',
         apiKeyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
         endpoints: [
-          anthropic('https://api.minimaxi.com/anthropic', {
+          anthropic('/anthropic', {
             extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
             modelMapping: MINIMAX_MODELS,
           }),
-          openaiChat('https://api.minimaxi.com/v1', {
+          openaiChat('/v1', {
             modelMapping: MINIMAX_MODELS,
           }),
         ],
@@ -488,13 +525,14 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: 'Global',
         description: 'MiniMax Coding Plan or API — Global endpoint for international users',
         auth: 'api-key',
+        baseUrl: 'https://api.minimax.io',
         apiKeyUrl: 'https://platform.minimax.io/user-center/basic-information/interface-key',
         endpoints: [
-          anthropic('https://api.minimax.io/anthropic', {
+          anthropic('/anthropic', {
             extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
             modelMapping: MINIMAX_MODELS,
           }),
-          openaiChat('https://api.minimax.io/v1', {
+          openaiChat('/v1', {
             modelMapping: MINIMAX_MODELS,
           }),
         ],
@@ -513,15 +551,16 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: 'Agent Plan',
         description: '火山方舟 Agent Plan — 编程 + 多模态 + Harness 工具链，需专属 Agent Plan API Key',
         auth: 'api-key',
+        baseUrl: 'https://ark.cn-beijing.volces.com',
         apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
         catalogProviderId: 'volcengine-agent-plan',
         endpoints: [
-          anthropic('https://ark.cn-beijing.volces.com/api/plan', {
+          anthropic('/api/plan', {
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
             modelMapping: ARK_CODE_MODELS,
           }),
           // Agent Plan OpenAI path — do not use /api/v3 (bypasses plan quota).
-          openaiChat('https://ark.cn-beijing.volces.com/api/plan/v3', {
+          openaiChat('/api/plan/v3', {
             modelMapping: ARK_CODE_MODELS,
           }),
         ],
@@ -530,15 +569,16 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'coding',
         name: 'Coding Plan',
         auth: 'api-key',
+        baseUrl: 'https://ark.cn-beijing.volces.com',
         apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
         catalogProviderId: 'volcengine-coding-plan',
         endpoints: [
-          anthropic('https://ark.cn-beijing.volces.com/api/coding', {
+          anthropic('/api/coding', {
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
             modelMapping: ARK_CODE_MODELS,
           }),
           // Coding Plan OpenAI path — do not use /api/v3 (bypasses plan quota).
-          openaiChat('https://ark.cn-beijing.volces.com/api/coding/v3', {
+          openaiChat('/api/coding/v3', {
             modelMapping: ARK_CODE_MODELS,
           }),
         ],
@@ -547,24 +587,23 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://ark.cn-beijing.volces.com',
         apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
         catalogProviderId: 'volcengine',
         endpoints: [
-          anthropic('https://ark.cn-beijing.volces.com/api/compatible', {
+          anthropic('/api/compatible', {
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
             modelMapping: DOUBAO_MODELS,
           }),
-          openaiChat('https://ark.cn-beijing.volces.com/api/v3', {
+          openaiChat('/api/v3', {
             modelMapping: DOUBAO_MODELS,
           }),
           {
             id: 'ark-images',
-            baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
             protocols: ['ark-images'],
           },
           {
             id: 'ark-video',
-            baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
             protocols: ['ark-video'],
             models: SEEDANCE_MODELS,
           },
@@ -582,9 +621,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'token-plan',
         name: 'Token Plan',
         auth: 'api-key',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com',
         apiKeyUrl: 'https://platform.xiaomimimo.com/#/console/api-keys',
         endpoints: [
-          anthropic('https://token-plan-cn.xiaomimimo.com/anthropic', {
+          anthropic('/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: XIAOMI_MODELS,
           }),
@@ -594,9 +634,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://api.xiaomimimo.com',
         apiKeyUrl: 'https://platform.xiaomimimo.com/#/console/api-keys',
         endpoints: [
-          anthropic('https://api.xiaomimimo.com/anthropic', {
+          anthropic('/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: XIAOMI_MODELS,
           }),
@@ -615,15 +656,16 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'coding',
         name: 'Coding Plan',
         auth: 'api-key',
+        baseUrl: 'https://coding.dashscope.aliyuncs.com',
         apiKeyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
         catalogProviderId: 'alibaba-coding-plan-cn',
         endpoints: [
-          anthropic('https://coding.dashscope.aliyuncs.com/apps/anthropic', {
+          anthropic('/apps/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: BAILIAN_CODING_PLAN_MODELS,
           }),
           // Coding Plan OpenAI path — requires Coding Plan key (sk-sp-…), not pay-as-you-go sk-.
-          openaiChat('https://coding.dashscope.aliyuncs.com/v1', {
+          openaiChat('/v1', {
             modelMapping: BAILIAN_CODING_PLAN_MODELS,
           }),
         ],
@@ -632,14 +674,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'token',
         name: 'Token Plan',
         auth: 'api-key',
+        baseUrl: 'https://dashscope.aliyuncs.com',
         apiKeyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
         catalogProviderId: 'alibaba-token-plan-cn',
         endpoints: [
-          anthropic('https://dashscope.aliyuncs.com/apps/anthropic', {
+          anthropic('/apps/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: BAILIAN_TOKEN_PLAN_MODELS,
           }),
-          openaiChat('https://dashscope.aliyuncs.com/compatible-mode/v1', {
+          openaiChat('/compatible-mode/v1', {
             modelMapping: BAILIAN_TOKEN_PLAN_MODELS,
           }),
         ],
@@ -648,14 +691,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://dashscope.aliyuncs.com',
         apiKeyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
         catalogProviderId: 'alibaba-cn',
         endpoints: [
-          anthropic('https://dashscope.aliyuncs.com/apps/anthropic', {
+          anthropic('/apps/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: BAILIAN_API_MODELS,
           }),
-          openaiChat('https://dashscope.aliyuncs.com/compatible-mode/v1', {
+          openaiChat('/compatible-mode/v1', {
             modelMapping: BAILIAN_API_MODELS,
           }),
         ],
@@ -672,9 +716,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'coding',
         name: 'Coding Plan',
         auth: 'api-key',
+        baseUrl: 'https://vanchin.streamlake.ai',
         apiKeyUrl: 'https://console.streamlake.com/console/wanqing/api-key',
         endpoints: [
-          anthropic('https://vanchin.streamlake.ai/api/gateway/v1/endpoints/${ENDPOINT_ID}/claude-code-proxy', {
+          anthropic('/api/gateway/v1/endpoints/${ENDPOINT_ID}/claude-code-proxy', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: {
               default: { id: 'kat-coder-pro-v2', name: 'KAT-Coder Pro V2' },
@@ -697,9 +742,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'coding',
         name: 'Coding Plan',
         auth: 'api-key',
+        baseUrl: 'https://api.longcat.chat',
         apiKeyUrl: 'https://longcat.chat/platform/api_keys',
         endpoints: [
-          anthropic('https://api.longcat.chat/anthropic', {
+          anthropic('/anthropic', {
             extraEnv: {
               ...EMPTY_AUTH_TOKEN,
               CLAUDE_CODE_MAX_OUTPUT_TOKENS: '6000',
@@ -729,8 +775,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://api.anthropic.com',
         apiKeyUrl: 'https://console.anthropic.com/settings/keys',
-        endpoints: [anthropic('https://api.anthropic.com')],
+        endpoints: [anthropic('')],
       },
     ],
   },
@@ -745,10 +792,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://api.deepseek.com',
         apiKeyUrl: 'https://platform.deepseek.com/api_keys',
         endpoints: [
-          openaiChat('https://api.deepseek.com'),
-          anthropic('https://api.deepseek.com/anthropic', {
+          openaiChat('/v1'),
+          anthropic('/anthropic', {
             extraEnv: {
               ...EMPTY_AUTH_TOKEN,
               ...DISABLE_NONESSENTIAL,
@@ -778,10 +826,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://openrouter.ai',
         apiKeyUrl: 'https://openrouter.ai/settings/keys',
         endpoints: [
-          anthropic('https://openrouter.ai/api'),
-          openaiChat('https://openrouter.ai/api/v1', {
+          anthropic('/api'),
+          openaiChat('/api/v1', {
             extraEnv: { OPENAI_BASE_URL: 'https://openrouter.ai/api/v1' },
           }),
         ],
@@ -798,9 +847,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://api-inference.modelscope.cn',
         apiKeyUrl: 'https://modelscope.cn/my/myaccesstoken',
         endpoints: [
-          anthropic('https://api-inference.modelscope.cn', {
+          anthropic('', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: {
               default: { id: 'ZhipuAI/GLM-5.1', name: 'GLM-5.1' },
@@ -823,9 +873,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://api.siliconflow.cn',
         apiKeyUrl: 'https://cloud.siliconflow.cn/account/ak',
         endpoints: [
-          anthropic('https://api.siliconflow.cn', {
+          anthropic('', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: {
               default: { id: 'Pro/MiniMaxAI/MiniMax-M2.7', name: 'MiniMax M2.7' },
@@ -849,9 +900,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: 'https://integrate.api.nvidia.com',
         apiKeyUrl: 'https://build.nvidia.com/settings/api-keys',
         endpoints: [
-          openaiChat('https://integrate.api.nvidia.com/v1', {
+          openaiChat('/v1', {
             modelMapping: NVIDIA_MODELS,
             extraEnv: { [PROXY_TRANSFORMERS_ENV]: 'openai,reasoning' },
           }),
@@ -871,8 +923,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'aws',
         name: 'AWS',
         auth: 'api-key',
+        baseUrl: 'https://bedrock-mantle.<your-region>.api.aws',
         endpoints: [
-          anthropic('https://bedrock-mantle.<your-region>.api.aws/anthropic', {
+          anthropic('/anthropic', {
             extraEnv: {
               CLAUDE_CODE_USE_BEDROCK: '1'
             },
@@ -891,6 +944,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'gcp',
         name: 'GCP',
         auth: 'gcp',
+        baseUrl: '',
         endpoints: [
           anthropic('', {
             extraEnv: {
@@ -916,16 +970,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: '',
         apiKeyUrl: 'https://platform.openai.com/api-keys',
         endpoints: [
           {
             id: 'openai',
-            baseUrl: '',
             protocols: ['openai-responses', 'openai-images', 'openai-audio'],
           },
           {
             id: 'sora',
-            baseUrl: '',
             protocols: ['openai-video'],
             models: SORA_MODELS,
           },
@@ -944,16 +997,15 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'api',
         name: 'API',
         auth: 'api-key',
+        baseUrl: '',
         apiKeyUrl: 'https://aistudio.google.com/apikey',
         endpoints: [
           {
             id: 'generative',
-            baseUrl: '',
             protocols: ['google-generative'],
           },
           {
             id: 'veo',
-            baseUrl: '',
             protocols: ['google-video'],
             models: VEO_MODELS,
           },

@@ -196,11 +196,9 @@ describe('harness.resources RPC', () => {
           id: 'api',
           name: 'API',
           auth: 'api-key',
+          baseUrl: 'https://relay.example',
           endpoints: [
-            {
-              id: 'anthropic',
-              baseUrl: 'https://relay.example',
-              protocols: ['anthropic-messages'],
+            { id: 'anthropic', protocols: ['anthropic-messages'],
               models: [{ id: 'relay-opus', name: 'Relay Opus' }],
             },
           ],
@@ -254,10 +252,8 @@ describe('harness.resources RPC', () => {
         id: 'api',
         name: 'API',
         auth: 'api-key',
-        endpoints: [{
-          id: 'openai',
-          baseUrl: 'https://relay.example/v1',
-          protocols: ['openai-chat'],
+        baseUrl: 'https://relay.example',
+        endpoints: [{ id: 'openai', protocols: ['openai-chat'],
           models: [{ id: 'relay-chat', name: 'Relay Chat' }],
         }],
       }],

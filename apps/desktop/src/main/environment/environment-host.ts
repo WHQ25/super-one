@@ -1356,6 +1356,7 @@ export class EnvironmentHost {
         name: string
         secret: string
         secretEnv?: string
+        baseUrl?: string
         overrides?: Record<string, unknown>
         endpoints?: unknown[]
         notes?: string
@@ -1400,6 +1401,7 @@ export class EnvironmentHost {
           name: c.name,
           secret: c.secret,
           secretEnv: c.secretEnv,
+          baseUrl: c.baseUrl,
           overrides: c.overrides as never,
           endpoints: (c.endpoints as never) ?? null,
           notes: c.notes,
@@ -1413,6 +1415,7 @@ export class EnvironmentHost {
           name: c.name,
           secret: c.secret,
           secretEnv: c.secretEnv,
+          baseUrl: c.baseUrl,
           overrides: c.overrides as never,
           endpoints: c.endpoints as never,
           notes: c.notes,

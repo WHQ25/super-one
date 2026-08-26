@@ -401,14 +401,14 @@ interface AppAPI {
   updateCustomPlatform(def: Platform): Promise<Platform>
   deleteCustomPlatform(id: string): Promise<boolean>
   listCredentials(): Promise<Credential[]>
-  createCredential(input: { platformId: string; planId: string; name: string; secret?: string; secretEnv?: string; overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[]; notes?: string }): Promise<Credential>
-  updateCredential(id: string, patch: { name?: string; secret?: string; secretEnv?: string; overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[] | null; notes?: string; sortOrder?: number }): Promise<Credential | undefined>
+  createCredential(input: { platformId: string; planId: string; name: string; secret?: string; secretEnv?: string; baseUrl?: string; overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[]; notes?: string }): Promise<Credential>
+  updateCredential(id: string, patch: { name?: string; secret?: string; secretEnv?: string; baseUrl?: string; overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[] | null; notes?: string; sortOrder?: number }): Promise<Credential | undefined>
   deleteCredential(id: string): Promise<boolean>
   listBindings(): Promise<ConsumerBinding[]>
   setBinding(binding: ConsumerBinding): Promise<void>
   clearBinding(consumer: ConsumerId): Promise<void>
-  testProviderEndpoint(data: { apiKey: string; credentialId?: string; endpoints: ServiceEndpoint[] }): Promise<ProviderEndpointTestResponse>
-  discoverProviderModels(data: { apiKey: string; credentialId?: string; endpoint: ServiceEndpoint }): Promise<DiscoverModelsResult>
+  testProviderEndpoint(data: { apiKey: string; credentialId?: string; baseUrl: string; endpoints: ServiceEndpoint[] }): Promise<ProviderEndpointTestResponse>
+  discoverProviderModels(data: { apiKey: string; credentialId?: string; baseUrl: string }): Promise<DiscoverModelsResult>
   listAcpAgents(): Promise<import('@superone/shared/agent-types').AcpResources>
   refreshAcpModels(agentId?: string): Promise<import('@superone/shared/agent-types').AcpResources>
 

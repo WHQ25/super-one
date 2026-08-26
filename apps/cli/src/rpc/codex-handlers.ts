@@ -13,7 +13,7 @@
  */
 
 import { hasAllScopes, OPERATION_SCOPES, type RpcErrorCode } from '@superone/shared/environment'
-import type { CodexExternalAgentItem, CodexSetAuthRequest } from '@superone/shared/agent-types'
+import type { CodexExternalAgentItem, CodexMcpOauthLoginOptions, CodexSetAuthRequest } from '@superone/shared/agent-types'
 import type { AuthenticatedClient } from '../auth/auth-service'
 import type { ProjectRegistry } from '../workspace/project-registry'
 import type { HarnessManager } from '../session/harness-manager'
@@ -409,7 +409,7 @@ async function handleLoginMcpOauth(
     const apiProviderId =
       typeof p.apiProviderId === 'string' ? p.apiProviderId : null
     const rawOptions = asRecord(p.options)
-    const options = {
+    const options: CodexMcpOauthLoginOptions = {
       ...(rawOptions.clientRegistration === 'auto' || rawOptions.clientRegistration === 'cimd' || rawOptions.clientRegistration === 'dcr'
         ? { clientRegistration: rawOptions.clientRegistration }
         : {}),

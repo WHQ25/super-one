@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Trash2 } from 'lucide-react'
+import type { WebmcpAlwaysAllowTool } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Switch } from '@superone/ui/components/ui/switch'
 
 function ExperimentalRow({
@@ -33,6 +36,7 @@ export function BrowserSettingsPage() {
   const { t } = useTranslation()
   const [cdpEnabled, setCdpEnabled] = useState(false)
   const [webmcpEnabled, setWebmcpEnabled] = useState(false)
+  const [webmcpAlwaysAllowTools, setWebmcpAlwaysAllowTools] = useState<WebmcpAlwaysAllowTool[]>([])
   const [cookiesEnabled, setCookiesEnabled] = useState(false)
   const [mockEnabled, setMockEnabled] = useState(false)
   const [emulateEnabled, setEmulateEnabled] = useState(false)
@@ -45,6 +49,7 @@ export function BrowserSettingsPage() {
       if (!mounted) return
       setCdpEnabled(settings.cdpEnabled)
       setWebmcpEnabled(settings.webmcpEnabled)
+      setWebmcpAlwaysAllowTools(settings.webmcpAlwaysAllowTools)
       setCookiesEnabled(settings.cdpCookiesEnabled)
       setMockEnabled(settings.cdpMockEnabled)
       setEmulateEnabled(settings.cdpEmulateEnabled)
@@ -60,6 +65,15 @@ export function BrowserSettingsPage() {
     setCookiesEnabled(result.cdpCookiesEnabled)
     setMockEnabled(result.cdpMockEnabled)
     setEmulateEnabled(result.cdpEmulateEnabled)
+  }
+
+  async function removeWebMcpGrant(grant: WebmcpAlwaysAllowTool) {
+    const result = await window.app.saveAppSettings({
+      webmcpAlwaysAllowTools: webmcpAlwaysAllowTools.filter(
+        (entry) => entry.origin !== grant.origin || entry.toolName !== grant.toolName,
+      ),
+    })
+    setWebmcpAlwaysAllowTools(result.webmcpAlwaysAllowTools)
   }
 
   const expDisabled = loading || !cdpEnabled
@@ -130,6 +144,38 @@ export function BrowserSettingsPage() {
             disabled={loading}
           />
         </div>
+        {webmcpEnabled && (
+          <div className="border-t border-border p-4">
+            <p className="text-sm font-medium">{t('settings.browser.webmcp.grants.title')}</p>
+            {webmcpAlwaysAllowTools.length === 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('settings.browser.webmcp.grants.empty')}
+              </p>
+            ) : (
+              <div className="mt-2 divide-y divide-border">
+                {webmcpAlwaysAllowTools.map((grant) => (
+                  <div
+                    key={`${grant.origin}::${grant.toolName}`}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium">{grant.toolName}</p>
+                      <p className="truncate text-xs text-muted-foreground">{grant.origin}</p>
+                    </div>
+                    <IconButton
+                      size="xs"
+                      variant="ghost"
+                      tooltip={t('settings.browser.webmcp.grants.remove')}
+                      onClick={() => void removeWebMcpGrant(grant)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </IconButton>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mt-6 rounded-lg border border-border">

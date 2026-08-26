@@ -41,6 +41,7 @@ const BROWSER_READ_NAMES = new Set<string>([
   'browser_network_body',
   'browser_network_wait',
   'browser_action_list',
+  'browser_tools_list',
 ])
 
 /** Mutating browser tools — claim TTL cancels (no requeue). */

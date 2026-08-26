@@ -940,6 +940,11 @@ export const zh: Messages = {
         title: 'WebMCP 页面工具',
         description: '允许智能体发现内置浏览器中安全页面注册的工具。',
         restartNote: '更改此设置后需要重启 SuperOne。',
+        grants: {
+          title: '始终允许的页面工具',
+          empty: '暂无始终允许的页面工具。',
+          remove: '移除授权',
+        },
       },
       experimental: {
         title: '实验工具',

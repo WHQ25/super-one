@@ -18,6 +18,7 @@ import type {
   SuggestionHarnessPreference,
   ThemeMode,
   UpdateChannel,
+  WebmcpAlwaysAllowTool,
 } from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
@@ -83,6 +84,7 @@ const defaults: AppSettings = {
   liquidGlass: false,
   cdpEnabled: false,
   webmcpEnabled: false,
+  webmcpAlwaysAllowTools: [],
   cdpCookiesEnabled: false,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
@@ -313,6 +315,25 @@ function readComputerUseAlwaysAllowApps(value: unknown): ComputerUseAlwaysAllowA
   return out
 }
 
+function readWebmcpAlwaysAllowTools(value: unknown): WebmcpAlwaysAllowTool[] {
+  if (!Array.isArray(value)) return []
+  const out: WebmcpAlwaysAllowTool[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const grant = item as Record<string, unknown>
+    if (typeof grant.origin !== 'string' || typeof grant.toolName !== 'string') continue
+    const origin = grant.origin.trim()
+    const toolName = grant.toolName.trim()
+    if (!origin || !toolName) continue
+    const key = `${origin}::${toolName}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ origin, toolName })
+  }
+  return out
+}
+
 function readBookmarks(value: unknown): BrowserBookmark[] {
   if (!Array.isArray(value)) return []
   const out: BrowserBookmark[] = []
@@ -491,6 +512,7 @@ export function readAppSettings(): AppSettings {
       liquidGlass: typeof data.liquidGlass === 'boolean' ? data.liquidGlass : defaults.liquidGlass,
       cdpEnabled: typeof data.cdpEnabled === 'boolean' ? data.cdpEnabled : defaults.cdpEnabled,
       webmcpEnabled: typeof data.webmcpEnabled === 'boolean' ? data.webmcpEnabled : defaults.webmcpEnabled,
+      webmcpAlwaysAllowTools: readWebmcpAlwaysAllowTools(data.webmcpAlwaysAllowTools),
       cdpCookiesEnabled: typeof data.cdpCookiesEnabled === 'boolean' ? data.cdpCookiesEnabled : defaults.cdpCookiesEnabled,
       cdpMockEnabled: typeof data.cdpMockEnabled === 'boolean' ? data.cdpMockEnabled : defaults.cdpMockEnabled,
       cdpEmulateEnabled: typeof data.cdpEmulateEnabled === 'boolean' ? data.cdpEmulateEnabled : defaults.cdpEmulateEnabled,
@@ -570,6 +592,7 @@ export function readAppSettings(): AppSettings {
       liquidGlass: defaults.liquidGlass,
       cdpEnabled: defaults.cdpEnabled,
       webmcpEnabled: defaults.webmcpEnabled,
+      webmcpAlwaysAllowTools: [],
       cdpCookiesEnabled: defaults.cdpCookiesEnabled,
       cdpMockEnabled: defaults.cdpMockEnabled,
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
@@ -689,6 +712,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     liquidGlass: patch.liquidGlass === undefined ? current.liquidGlass : patch.liquidGlass,
     cdpEnabled: patch.cdpEnabled === undefined ? current.cdpEnabled : patch.cdpEnabled,
     webmcpEnabled: patch.webmcpEnabled === undefined ? current.webmcpEnabled : patch.webmcpEnabled,
+    webmcpAlwaysAllowTools: patch.webmcpAlwaysAllowTools === undefined
+      ? current.webmcpAlwaysAllowTools
+      : readWebmcpAlwaysAllowTools(patch.webmcpAlwaysAllowTools),
     cdpCookiesEnabled: patch.cdpCookiesEnabled === undefined ? current.cdpCookiesEnabled : patch.cdpCookiesEnabled,
     cdpMockEnabled: patch.cdpMockEnabled === undefined ? current.cdpMockEnabled : patch.cdpMockEnabled,
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,

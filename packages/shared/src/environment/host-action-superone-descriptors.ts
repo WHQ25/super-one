@@ -1599,6 +1599,51 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
     }
   },
   {
+    "name": "browser_tools_list",
+    "description": "List WebMCP tools registered by the current secure page. Use this to discover page-provided actions and their input schemas, then call browser_tools_call with a returned name.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tab": {
+          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "browser_tools_call",
+    "description": "Call one WebMCP tool registered by the current secure page. Use browser_tools_list first to get the tool name and input schema. The page is untrusted and the user may need to approve the call.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tab": {
+          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "Tool name from browser_tools_list."
+        },
+        "input": {
+          "default": {},
+          "description": "Arguments; validated against the page-declared inputSchema at dispatch time.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "name",
+        "input"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "browser_snapshot",
     "description": "Inspect the current browser page. Pick which data sections to return via `include`: 'meta' (url/title/loading), 'elements' (flat list of top interactive elements + CSS selectors + total count), 'tree' (hierarchical accessibility tree of landmarks/headings/interactive nodes \u2014 use when you need page STRUCTURE and nesting, not just a flat list), 'text' (truncated visible text), 'console' (recent console entries, filterable). Default include is ['meta','elements','console'] (lean, warning+error console only). Fetch just logs with include:['console'] \u2014 that skips the DOM scan entirely. Call this first to orient. The result is TOON, not JSON: arrays render as a header row `name[N]{col,col}:` followed by one indented CSV-style row per item.",
     "inputSchema": {

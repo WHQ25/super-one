@@ -189,6 +189,22 @@ describe('stripProjectPath', () => {
 })
 
 describe('computeToolMeta', () => {
+  describe('WebMCP browser tools', () => {
+    it('uses the called page-tool name as the mobile summary', () => {
+      const block = toolUseBlock('mcp__superone__browser_tools_call', {
+        name: 'add-todo',
+        input: { text: 'Buy milk' },
+      })
+
+      expect(computeToolMeta(block).toolSummary).toBe('add-todo')
+    })
+
+    it('leaves the discovery summary empty', () => {
+      const block = toolUseBlock('mcp__superone__browser_tools_list', { tab: 'tab-1' })
+      expect(computeToolMeta(block).toolSummary).toBeUndefined()
+    })
+  })
+
   describe('touch-device tools', () => {
     it('carries the agent description over as the summary the phone shows', () => {
       // `input` is blanked before a tool_use reaches the phone, so without this the
@@ -540,6 +556,19 @@ describe('stripMessagesForRemote', () => {
     ])
     const [result] = stripMessagesForRemote([msg], '/proj')
     expect(result.content[0]).toMatchObject({ type: 'read', input: '', toolFilePath: 'src/file.ts' })
+  })
+
+  it('keeps the WebMCP call summary but strips its page-tool input', () => {
+    const msg = makeMessage([
+      toolUseBlock('mcp__superone__browser_tools_call', {
+        name: 'add-todo',
+        input: { text: 'Buy milk' },
+      }),
+    ])
+
+    const [result] = stripMessagesForRemote([msg])
+
+    expect(result.content[0]).toMatchObject({ input: '', toolSummary: 'add-todo' })
   })
 
   it('should convert Bash tool_result to bash_result with command prefix', () => {

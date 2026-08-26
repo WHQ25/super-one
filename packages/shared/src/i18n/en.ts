@@ -882,6 +882,11 @@ export type Messages = {
         title: string
         description: string
         restartNote: string
+        grants: {
+          title: string
+          empty: string
+          remove: string
+        }
       }
       experimental: {
         title: string
@@ -4416,6 +4421,11 @@ export const en: Messages = {
         title: 'WebMCP page tools',
         description: 'Let the agent discover tools registered by secure pages in the built-in browser.',
         restartNote: 'Restart SuperOne after changing this setting.',
+        grants: {
+          title: 'Always allowed page tools',
+          empty: 'No page tools are always allowed.',
+          remove: 'Remove grant',
+        },
       },
       experimental: {
         title: 'Experimental Tools',

@@ -23,6 +23,13 @@ const webMcpMocks = vi.hoisted(() => ({
   invokeWebMcpTool: vi.fn(),
 }))
 
+const settingsMocks = vi.hoisted(() => ({
+  readAppSettings: vi.fn(),
+  saveAppSettings: vi.fn(),
+}))
+
+vi.mock('../app-settings-service', () => settingsMocks)
+
 vi.mock('../browser/browser-webmcp', () => ({
   isWebMcpEnabled: () => gates.webmcp,
   getWebMcpTools: webMcpMocks.getWebMcpTools,
@@ -99,6 +106,7 @@ import {
   clearBrowserToolHandlers,
   clearWebMcpToolPreapprovalsForTests,
   setBrowserWebMcpHostEventResolver,
+  syncWebMcpPreapprovalsFromSettings,
 } from './browser-mcp-tools'
 import { setBrowserToolSurfaceForTests, clearBrowserToolSurfaceLocks } from './browser-tool-surface'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
@@ -136,6 +144,8 @@ describe('browser tool registration under experimental gates', () => {
     vi.clearAllMocks()
     webMcpMocks.getWebMcpTools.mockReset()
     webMcpMocks.invokeWebMcpTool.mockReset()
+    settingsMocks.readAppSettings.mockReturnValue({ webmcpAlwaysAllowTools: [] })
+    settingsMocks.saveAppSettings.mockImplementation((patch) => patch)
     clearWebMcpToolPreapprovalsForTests()
     setBrowserWebMcpHostEventResolver(null)
     clearBrowserToolSurfaceLocks()
@@ -206,6 +216,59 @@ describe('browser tool registration under experimental gates', () => {
     expect(resolveBrowserWebContentsId).toHaveBeenCalledWith('sess-1', 'tab-1')
     const descriptor = getBrowserToolDescriptors().find(({ name }) => name === 'browser_tools_list')
     expect(descriptor?.description).toContain('browser_tools_call')
+  })
+
+  it('prepends a WebMCP preference hint to successful snapshots with page tools', async () => {
+    gates.webmcp = true
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ url: 'https://example.com', elements: [] })
+    webMcpMocks.getWebMcpTools.mockReturnValueOnce({
+      origin: 'https://example.com',
+      tools: [
+        { name: 'add-todo', description: '', inputSchema: '{"type":"object"}' },
+        { name: 'late-tool', description: '', inputSchema: '{"type":"object"}' },
+      ],
+    })
+
+    const reply = await buildTools().get('browser_snapshot')!({ tab: 'tab-1' })
+
+    expect(reply.isError).not.toBe(true)
+    expect(resultText(reply)).toMatch(
+      /^This page exposes 2 WebMCP tools — prefer browser_tools_list \/ browser_tools_call over DOM interaction\./,
+    )
+    expect(resolveBrowserWebContentsId).toHaveBeenCalledWith('sess-1', 'tab-1')
+  })
+
+  it('leaves snapshots unchanged when WebMCP is disabled or the page has no tools', async () => {
+    vi.mocked(browserAutomationCall).mockResolvedValue({ url: 'https://example.com', elements: [] })
+
+    const disabled = await buildTools().get('browser_snapshot')!({})
+    gates.webmcp = true
+    webMcpMocks.getWebMcpTools.mockReturnValueOnce({ origin: 'https://example.com', tools: [] })
+    const empty = await buildTools().get('browser_snapshot')!({})
+
+    expect(resultText(disabled)).not.toContain('WebMCP tools')
+    expect(resultText(empty)).not.toContain('WebMCP tools')
+  })
+
+  it('never turns a snapshot into an error when WebMCP hint lookup fails', async () => {
+    gates.webmcp = true
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ url: 'https://example.com', elements: [] })
+    vi.mocked(resolveBrowserWebContentsId).mockRejectedValueOnce(new Error('no renderer'))
+
+    const reply = await buildTools().get('browser_snapshot')!({})
+
+    expect(reply.isError).not.toBe(true)
+    expect(resultText(reply)).not.toContain('WebMCP tools')
+  })
+
+  it('does not attempt a WebMCP hint after a snapshot error', async () => {
+    gates.webmcp = true
+    vi.mocked(browserAutomationCall).mockRejectedValueOnce(new Error('snapshot failed'))
+
+    const reply = await buildTools().get('browser_snapshot')!({})
+
+    expect(reply.isError).toBe(true)
+    expect(resolveBrowserWebContentsId).not.toHaveBeenCalled()
   })
 
   it('returns per-field schema errors before prompting or invoking', async () => {
@@ -344,6 +407,54 @@ describe('browser tool registration under experimental gates', () => {
     expect(webMcpMocks.invokeWebMcpTool).toHaveBeenNthCalledWith(1, 7, 'add-todo', { text: 'one' })
     expect(webMcpMocks.invokeWebMcpTool).toHaveBeenNthCalledWith(2, 7, 'add-todo', { text: 'two' })
     expect(webMcpMocks.invokeWebMcpTool).toHaveBeenCalledTimes(2)
+  })
+
+  it('syncs durable grants from settings and removes revoked grants immediately', async () => {
+    gates.webmcp = true
+    webMcpMocks.getWebMcpTools.mockReturnValue({
+      origin: 'https://example.com',
+      tools: [{ name: 'add-todo', description: '', inputSchema: '{"type":"object"}' }],
+    })
+    webMcpMocks.invokeWebMcpTool.mockResolvedValue({ outputJson: '{"ok":true}' })
+    settingsMocks.readAppSettings.mockReturnValue({
+      webmcpAlwaysAllowTools: [{ origin: 'https://example.com', toolName: 'add-todo' }],
+    })
+    syncWebMcpPreapprovalsFromSettings()
+    const call = buildTools().get('browser_tools_call')!
+
+    const allowed = await call({ name: 'add-todo', input: {} })
+    settingsMocks.readAppSettings.mockReturnValue({ webmcpAlwaysAllowTools: [] })
+    syncWebMcpPreapprovalsFromSettings()
+    const revoked = await call({ name: 'add-todo', input: {} })
+
+    expect(allowed.isError).not.toBe(true)
+    expect(revoked.isError).toBe(true)
+    expect(resultText(revoked)).toContain('user must be present to approve')
+    expect(webMcpMocks.invokeWebMcpTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('persists concurrent always-allow decisions once per origin and tool', async () => {
+    gates.webmcp = true
+    webMcpMocks.getWebMcpTools.mockReturnValue({
+      origin: 'https://example.com',
+      tools: [{ name: 'add-todo', description: '', inputSchema: '{"type":"object"}' }],
+    })
+    webMcpMocks.invokeWebMcpTool.mockResolvedValue({ outputJson: '{"ok":true}' })
+    setBrowserWebMcpHostEventResolver(() => (event) => {
+      if (event.type !== 'permission_request') return
+      queueMicrotask(() => resolveWebmcpCallConfirm(event.request.requestId, 'accept', true))
+    })
+    const call = buildTools().get('browser_tools_call')!
+
+    await Promise.all([
+      call({ name: 'add-todo', input: { text: 'one' } }),
+      call({ name: 'add-todo', input: { text: 'two' } }),
+    ])
+
+    expect(settingsMocks.saveAppSettings).toHaveBeenCalledOnce()
+    expect(settingsMocks.saveAppSettings).toHaveBeenCalledWith({
+      webmcpAlwaysAllowTools: [{ origin: 'https://example.com', toolName: 'add-todo' }],
+    })
   })
 
   it('returns a non-error disabled hint for a stale browser_tools_list call', async () => {

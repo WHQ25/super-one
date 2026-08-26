@@ -39,6 +39,7 @@ import {
   type BrowserToolSurface,
   resolveBrowserToolSurface,
 } from './browser-tool-surface'
+import { readAppSettings, saveAppSettings } from '../app-settings-service'
 export { BROWSER_TOOL_NAMES, BROWSER_COMPACT_TOOL_NAMES, BROWSER_LEGACY_TOOL_NAMES }
 
 interface ScreenshotResult {
@@ -206,6 +207,7 @@ type BrowserWebMcpHostEventResolver = (
 
 let browserWebMcpHostEventResolver: BrowserWebMcpHostEventResolver = () => null
 const preapprovedWebMcpTools = new Set<string>()
+const pendingWebMcpPreapprovalWrites = new Map<string, Promise<void>>()
 
 export function setBrowserWebMcpHostEventResolver(
   resolver: BrowserWebMcpHostEventResolver | null,
@@ -215,10 +217,43 @@ export function setBrowserWebMcpHostEventResolver(
 
 export function clearWebMcpToolPreapprovalsForTests(): void {
   preapprovedWebMcpTools.clear()
+  pendingWebMcpPreapprovalWrites.clear()
 }
 
 function webMcpPreapprovalKey(origin: string, toolName: string): string {
   return `${origin}::${toolName}`
+}
+
+export function syncWebMcpPreapprovalsFromSettings(): void {
+  try {
+    const grants = readAppSettings().webmcpAlwaysAllowTools
+    preapprovedWebMcpTools.clear()
+    for (const { origin, toolName } of grants) {
+      preapprovedWebMcpTools.add(webMcpPreapprovalKey(origin, toolName))
+    }
+  } catch {
+    // Keep the current in-memory policy when settings are temporarily unreadable.
+  }
+}
+
+function persistWebMcpPreapproval(origin: string, toolName: string): Promise<void> {
+  const key = webMcpPreapprovalKey(origin, toolName)
+  const pending = pendingWebMcpPreapprovalWrites.get(key)
+  if (pending) return pending
+
+  const write = Promise.resolve().then(() => {
+    try {
+      const current = readAppSettings().webmcpAlwaysAllowTools
+      if (current.some((grant) => webMcpPreapprovalKey(grant.origin, grant.toolName) === key)) return
+      saveAppSettings({ webmcpAlwaysAllowTools: [...current, { origin, toolName }] })
+    } catch {
+      // The accepted call remains allowed for this process even if persistence fails.
+    }
+  }).finally(() => {
+    pendingWebMcpPreapprovalWrites.delete(key)
+  })
+  pendingWebMcpPreapprovalWrites.set(key, write)
+  return write
 }
 
 async function executeWebMcpCall(
@@ -285,13 +320,45 @@ async function executeWebMcpCall(
           hint: "The user did not approve this page tool. Do not retry without the user's instruction.",
         })
       }
-      if (outcome.alwaysAllow) preapprovedWebMcpTools.add(key)
+      if (outcome.alwaysAllow) {
+        preapprovedWebMcpTools.add(key)
+        await persistWebMcpPreapproval(entry.origin, args.name)
+      }
     }
 
     const { outputJson } = await invokeWebMcpTool(webContentsId, args.name, args.input)
     return webmcpUntrustedOutputReply(entry.origin, outputJson)
   } catch (err) {
     return errorReply(err)
+  }
+}
+
+async function browserSnapshotWithWebMcpHint(
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<ToolReply> {
+  const reply = await dataTool(sessionId, 'snapshot', args, toonReply)
+  if (reply.isError) return reply
+
+  try {
+    if (!isWebMcpEnabled()) return reply
+    const webContentsId = await resolveBrowserWebContentsId(
+      sessionId,
+      typeof args.tab === 'string' ? args.tab : undefined,
+    )
+    const count = getWebMcpTools(webContentsId)?.tools.length ?? 0
+    if (count === 0) return reply
+    const textIndex = reply.content.findIndex((block) => block.type === 'text')
+    if (textIndex < 0) return reply
+    const hint = `This page exposes ${count} WebMCP tools — prefer browser_tools_list / browser_tools_call over DOM interaction.`
+    return {
+      ...reply,
+      content: reply.content.map((block, index) => index === textIndex && block.type === 'text'
+        ? { ...block, text: `${hint}\n\n${block.text}` }
+        : block),
+    }
+  } catch {
+    return reply
   }
 }
 
@@ -577,7 +644,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
           .describe("Console section filtering. Only consulted when `include` contains 'console'."),
       },
     },
-    (args) => dataTool(sessionId, 'snapshot', args, toonReply),
+    (args) => browserSnapshotWithWebMcpHint(sessionId, args),
   )
 
   server.registerTool(

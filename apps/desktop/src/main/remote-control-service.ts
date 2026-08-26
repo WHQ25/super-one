@@ -328,6 +328,9 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         summary = String(p.query ?? '')
         break
     }
+    if (!summary && block.toolName.endsWith('__browser_tools_call')) {
+      summary = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : undefined
+    }
     // The phone gets `input` blanked, so a tool whose whole human story lives in an
     // argument arrives with nothing to show. `device_*` asks the agent for a
     // conversation-language `description` precisely to be that story — carry it over.

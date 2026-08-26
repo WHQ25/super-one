@@ -1106,6 +1106,12 @@ export interface ComputerUseAlwaysAllowApp {
   bundleId: string
 }
 
+/** Persistent always-allow entry for one WebMCP page tool at one origin. */
+export interface WebmcpAlwaysAllowTool {
+  origin: string
+  toolName: string
+}
+
 /** Connected macOS display exposed to the Computer Use settings UI. */
 export interface ComputerUseDisplayInfo {
   id: string
@@ -4151,6 +4157,8 @@ export interface AppSettings {
   liquidGlass: boolean
   cdpEnabled: boolean
   webmcpEnabled: boolean
+  /** WebMCP origin + tool-name grants persisted across app sessions. */
+  webmcpAlwaysAllowTools: WebmcpAlwaysAllowTool[]
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
@@ -4291,6 +4299,7 @@ export interface AppSettingsPatch {
   liquidGlass?: boolean
   cdpEnabled?: boolean
   webmcpEnabled?: boolean
+  webmcpAlwaysAllowTools?: WebmcpAlwaysAllowTool[]
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean

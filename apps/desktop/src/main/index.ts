@@ -842,6 +842,14 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       // ignore if computer-use module not loaded
     }
   }
+  if (patch?.webmcpAlwaysAllowTools !== undefined) {
+    try {
+      const { syncWebMcpPreapprovalsFromSettings } = await import('./mcp/browser-mcp-tools')
+      syncWebMcpPreapprovalsFromSettings()
+    } catch {
+      // ignore if browser tool module is not loaded
+    }
+  }
   safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
   return result
 }
@@ -5442,7 +5450,15 @@ app.whenReady().then(async () => {
     }
   })()
   registerIpcHandlers()
-  if (readAppSettings().webmcpEnabled === true) initBrowserWebmcp()
+  if (readAppSettings().webmcpEnabled === true) {
+    try {
+      const { syncWebMcpPreapprovalsFromSettings } = await import('./mcp/browser-mcp-tools')
+      syncWebMcpPreapprovalsFromSettings()
+    } catch {
+      // Settings service already normalizes grants; leave the runtime set empty on load failure.
+    }
+    initBrowserWebmcp()
+  }
   screen.on('display-added', pushComputerUseDisplaysChanged)
   screen.on('display-removed', pushComputerUseDisplaysChanged)
   screen.on('display-metrics-changed', pushComputerUseDisplaysChanged)

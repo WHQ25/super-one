@@ -3,6 +3,10 @@ import { getDeviceAgentToolDescriptors } from '../device-agent/tools'
 import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment/host-action-superone-descriptors'
 import { classifyHostActionTool } from '@superone/shared/environment/host-action-browser-catalog'
 import {
+  BROWSER_TOOLS_CALL_DESCRIPTION,
+  BROWSER_TOOLS_LIST_DESCRIPTION,
+} from './browser-webmcp-tool-defs'
+import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
   LAUNCH_CWD_DESCRIPTION,
@@ -72,6 +76,24 @@ describe('built-in superone tool registration surfaces', () => {
     expect(classifyHostActionTool('device_query').replayPolicy).toBe('safe')
     expect(classifyHostActionTool('device_wait_for').replayPolicy).toBe('safe')
     expect(classifyHostActionTool('device_act').replayPolicy).toBe('unsafe')
+  })
+
+  it('keeps WebMCP browser descriptors in the remote Host Action dump', () => {
+    const list = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === 'browser_tools_list')
+    const call = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === 'browser_tools_call')
+
+    expect(list?.description).toBe(BROWSER_TOOLS_LIST_DESCRIPTION)
+    expect(list?.inputSchema.required).toBeUndefined()
+    expect(call?.description).toBe(BROWSER_TOOLS_CALL_DESCRIPTION)
+    expect(call?.inputSchema.required).toEqual(['name', 'input'])
+    expect(classifyHostActionTool('browser_tools_list')).toMatchObject({
+      toolGroup: 'browser.read',
+      replayPolicy: 'safe',
+    })
+    expect(classifyHostActionTool('browser_tools_call')).toMatchObject({
+      toolGroup: 'browser.act',
+      replayPolicy: 'unsafe',
+    })
   })
 
   it('does not describe a tool that is absent from the name allowlist', () => {

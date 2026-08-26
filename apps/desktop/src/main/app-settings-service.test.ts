@@ -89,6 +89,7 @@ describe('app-settings-service', () => {
     onboardingEpoch: 0,
     cdpEnabled: false,
     webmcpEnabled: false,
+    webmcpAlwaysAllowTools: [],
     computerUseEnabled: false,
     computerUsePictureInPicture: true,
     computerUseDedicatedDisplayId: null,
@@ -165,6 +166,7 @@ describe('app-settings-service', () => {
         onboardingEpoch: 0,
         cdpEnabled: false,
         webmcpEnabled: false,
+        webmcpAlwaysAllowTools: [],
         computerUseEnabled: false,
         computerUsePictureInPicture: true,
         computerUseDedicatedDisplayId: null,
@@ -203,6 +205,25 @@ describe('app-settings-service', () => {
     it('ignores invalid boolean values and falls back to default', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({ analyticsEnabled: 'yes' }))
       expect(readAppSettings()).toEqual(defaultSettings)
+    })
+
+    it('normalizes and deduplicates durable WebMCP grants', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        webmcpAlwaysAllowTools: [
+          { origin: ' https://example.com ', toolName: ' add-todo ' },
+          { origin: 'https://example.com', toolName: 'add-todo' },
+          { origin: 'https://example.com', toolName: 'late-tool' },
+          { origin: '', toolName: 'missing-origin' },
+          { origin: 'https://example.com', toolName: ' ' },
+          { origin: 42, toolName: 'wrong-type' },
+          null,
+        ],
+      }))
+
+      expect(readAppSettings().webmcpAlwaysAllowTools).toEqual([
+        { origin: 'https://example.com', toolName: 'add-todo' },
+        { origin: 'https://example.com', toolName: 'late-tool' },
+      ])
     })
 
     it('migrates the legacy closed-lid boolean to the highest power mode', () => {
@@ -295,6 +316,7 @@ describe('app-settings-service', () => {
         onboardingEpoch: 0,
         cdpEnabled: false,
         webmcpEnabled: false,
+        webmcpAlwaysAllowTools: [],
         computerUseEnabled: false,
         computerUsePictureInPicture: true,
         computerUseDedicatedDisplayId: null,
@@ -453,6 +475,20 @@ describe('app-settings-service', () => {
       const saved = saveAppSettings({ webmcpEnabled: true })
       expect(saved.webmcpEnabled).toBe(true)
       expect(saved.cdpEnabled).toBe(false)
+    })
+
+    it('normalizes durable WebMCP grants on save', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      const saved = saveAppSettings({
+        webmcpAlwaysAllowTools: [
+          { origin: ' https://example.com ', toolName: ' add-todo ' },
+          { origin: 'https://example.com', toolName: 'add-todo' },
+        ],
+      })
+
+      expect(saved.webmcpAlwaysAllowTools).toEqual([
+        { origin: 'https://example.com', toolName: 'add-todo' },
+      ])
     })
 
     it('persists the selected power mode', () => {

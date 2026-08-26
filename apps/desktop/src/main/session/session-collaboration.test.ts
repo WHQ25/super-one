@@ -487,6 +487,55 @@ describe('@agent mention targets', () => {
     ])
   })
 
+  it('reads the Cursor catalog for a Cursor profile instead of the OpenCode one', () => {
+    state.db!.prepare('UPDATE sessions SET provider_id = ?').run('cursor-base')
+    state.providers = [{
+      id: 'cursor-base', harnessId: 'cursor', name: 'Cursor', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
+    }]
+    state.resourceCache = {
+      opencode: { models: [{ id: 'anthropic/wrong', name: 'Wrong Harness Model' }] },
+      cursor: {
+        models: [
+          { id: 'composer-1', name: 'Composer 1', supportedEffortLevels: ['low', 'medium'] },
+          { id: 'gpt-5', name: 'GPT-5', isDefault: true, supportedEffortLevels: ['medium', 'high'] },
+          { id: 'retired', name: 'Retired' },
+        ],
+        disabledModelIds: ['retired'],
+      },
+    }
+
+    expect(listSessionAgentProfiles()).toEqual([
+      expect.objectContaining({
+        id: 'cursor-base',
+        models: [
+          expect.objectContaining({ id: 'composer-1', name: 'Composer 1' }),
+          expect.objectContaining({ id: 'gpt-5', name: 'GPT-5' }),
+        ],
+        defaultConfig: { model: 'gpt-5', effort: 'medium' },
+      }),
+    ])
+  })
+
+  it('reads the dsh catalog for a DeepSeek profile', () => {
+    state.db!.prepare('UPDATE sessions SET provider_id = ?').run('dsh-base')
+    state.providers = [{
+      id: 'dsh-base', harnessId: 'dsh', name: 'DeepSeek', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
+    }]
+    state.resourceCache = {
+      dsh: {
+        models: [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', supportedEffortLevels: ['medium', 'high'] }],
+      },
+    }
+
+    expect(listSessionAgentProfiles()).toEqual([
+      expect.objectContaining({
+        id: 'dsh-base',
+        models: [expect.objectContaining({ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' })],
+        defaultConfig: { model: 'deepseek-v4-pro', effort: 'medium' },
+      }),
+    ])
+  })
+
   it('exposes the selected Grok model and effort as profile defaults', () => {
     state.db!.prepare('UPDATE sessions SET provider_id = ?').run('acp-base')
     state.providers = [{

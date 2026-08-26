@@ -14,10 +14,12 @@
 import type {
   AgentMentionTarget,
   EffortLevel,
+  HarnessId,
   ModelOption,
   SessionAgentLaunchConfig,
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
+import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
 import {
@@ -54,6 +56,21 @@ export function resolveAcpAgentId(provider: ReturnType<typeof listSessionProvide
   return null
 }
 
+/**
+ * Catalog for one non-ACP harness, read from *its own* cache row.
+ *
+ * Every harness keys the same cache table, so this is a straight lookup — the
+ * one twist is Cursor, whose picker hides models the user disabled in harness
+ * config. Collab launches must offer exactly what the composer offers.
+ */
+function cachedHarnessModels(harnessId: Exclude<HarnessId, 'acp'>): ModelOption[] {
+  if (harnessId === 'cursor') {
+    const cached = getCachedHarnessResources('cursor')
+    return cached ? filterEnabledCursorModels(cached.models, cached) : []
+  }
+  return getCachedHarnessResources(harnessId)?.models ?? []
+}
+
 function profileResources(
   provider: ReturnType<typeof listSessionProviders>[number],
   acpAgentId?: string | null,
@@ -81,13 +98,8 @@ function profileResources(
       ?? sessionCatalog?.modes.find((mode) => mode.isDefault)?.id
       ?? sessionCatalog?.modes[0]?.id
   } else {
-    const cached = provider.harnessId === 'claude'
-      ? getCachedHarnessResources('claude')
-      : provider.harnessId === 'codex'
-        ? getCachedHarnessResources('codex')
-        : getCachedHarnessResources('opencode')
-    if (!cached) return { models: [], efforts: [], defaultConfig: {} }
-    models = cached.models
+    models = cachedHarnessModels(provider.harnessId)
+    if (models.length === 0) return { models: [], efforts: [], defaultConfig: {} }
     const preferences = readAppSettings().agentPreference
     if (provider.harnessId === 'claude') {
       defaultModel = models.find((model) => model.id === preferences.claude.defaultModel) ?? models[0]

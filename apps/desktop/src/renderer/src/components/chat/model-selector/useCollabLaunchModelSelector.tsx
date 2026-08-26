@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
+  CursorResources,
   EffortLevel,
   HarnessId,
   ModelOption,
   ProviderModelEnv,
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
+import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
@@ -131,6 +133,32 @@ function hasSlashModelIds(models: ModelOption[]): boolean {
 }
 
 /**
+ * Cursor and dsh share one shape — a flat catalog whose effort levels hang off
+ * the selected model. Cursor additionally hides models the user disabled in
+ * harness config, exactly as the composer picker does. The profile catalog is
+ * the fallback when the live cache has not arrived yet; other harnesses get an
+ * empty list because they resolve their catalog elsewhere in the hook.
+ */
+export function flatHarnessCatalog(args: {
+  harnessId: HarnessId
+  cursorResources: CursorResources | null | undefined
+  dshModels: ModelOption[]
+  profileCatalog: ModelOption[]
+}): ModelOption[] {
+  if (args.harnessId === 'cursor') {
+    const enabled = filterEnabledCursorModels(
+      args.cursorResources?.models ?? EMPTY_MODELS,
+      args.cursorResources,
+    )
+    return enabled.length > 0 ? enabled : args.profileCatalog
+  }
+  if (args.harnessId === 'dsh') {
+    return args.dshModels.length > 0 ? args.dshModels : args.profileCatalog
+  }
+  return EMPTY_MODELS
+}
+
+/**
  * Model + AI-provider controls for one collab launch row.
  * Mirrors the main chat selectors (Claude / Codex / OpenCode / ACP) for labels,
  * model catalog, effort chips, and third-party keys — without writing the parent session.
@@ -177,6 +205,8 @@ export function useCollabLaunchModelSelector(args: {
   const activeProject = useChatStore((s) => s.activeProject)
   const claudeCatalog = useChatStore((s) => s.harnessResources.claude?.models ?? EMPTY_MODELS)
   const openCodeCatalog = useChatStore((s) => s.harnessResources.opencode?.models ?? EMPTY_MODELS)
+  const cursorResources = useChatStore((s) => s.harnessResources.cursor)
+  const dshCatalog = useChatStore((s) => s.harnessResources.dsh?.models ?? EMPTY_MODELS)
 
   const [codexModels, setCodexModels] = useState<ModelOption[]>([])
   const [codexLoading, setCodexLoading] = useState(false)
@@ -310,6 +340,16 @@ export function useCollabLaunchModelSelector(args: {
     return profileCatalog
   }, [openCodeCatalog, profileCatalog])
 
+  const flatBaseCatalog = useMemo<ModelOption[]>(
+    () => flatHarnessCatalog({
+      harnessId,
+      cursorResources,
+      dshModels: dshCatalog,
+      profileCatalog,
+    }),
+    [harnessId, cursorResources, dshCatalog, profileCatalog],
+  )
+
   const claudeSelectorModels = useMemo(
     () => (harnessId === 'claude' ? claudeModelsForProvider(claudeBaseCatalog, activeModelEnv) : []),
     [harnessId, claudeBaseCatalog, activeModelEnv],
@@ -350,8 +390,9 @@ export function useCollabLaunchModelSelector(args: {
       }))
     }
     if (harnessId === 'opencode') return openCodeModels
-    // ACP + fallback: profile names as stored.
-    return profileCatalog.map((model) => ({
+    // Cursor / dsh use the live catalog; ACP + fallback use profile names.
+    const catalog = flatBaseCatalog.length > 0 ? flatBaseCatalog : profileCatalog
+    return catalog.map((model) => ({
       id: model.id,
       name: model.name || model.id,
       ...(model.description ? { description: model.description } : {}),
@@ -362,6 +403,7 @@ export function useCollabLaunchModelSelector(args: {
     codexModels,
     profileModels,
     openCodeModels,
+    flatBaseCatalog,
     profileCatalog,
   ])
 
@@ -375,6 +417,9 @@ export function useCollabLaunchModelSelector(args: {
     : undefined
   const selectedOpenCodeModel = harnessId === 'opencode'
     ? openCodeBaseCatalog.find((model) => model.id === selectedModelId)
+    : undefined
+  const selectedFlatModel = harnessId === 'cursor' || harnessId === 'dsh'
+    ? flatBaseCatalog.find((model) => model.id === selectedModelId)
     : undefined
 
   const selectedModelLabel = useMemo(() => {
@@ -445,6 +490,15 @@ export function useCollabLaunchModelSelector(args: {
         label: formatClaudeStyleEffortLabel(level),
       }))
     }
+    // Cursor / dsh: per-model levels are authoritative — a model with none shows
+    // no chips at all. `profile.efforts` is a union across every model, so using
+    // it here would offer levels the picked model cannot run.
+    if (selectedFlatModel) {
+      return (selectedFlatModel.supportedEffortLevels ?? []).map((level) => ({
+        value: level,
+        label: formatClaudeStyleEffortLabel(level),
+      }))
+    }
     // ACP: mode ids — prefer compact human labels like AcpModelSelector.
     return (profile?.efforts ?? []).map((effort) => ({
       value: effort,
@@ -457,6 +511,7 @@ export function useCollabLaunchModelSelector(args: {
     profile?.efforts,
     selectedCodexModel,
     selectedOpenCodeModel,
+    selectedFlatModel,
   ])
 
   const selectedEffortLabel = useMemo(() => {
@@ -480,8 +535,12 @@ export function useCollabLaunchModelSelector(args: {
       onChange({ model: id, ...(effort ? { effort } : {}) })
       return
     }
-    if (harnessId === 'claude' || harnessId === 'opencode') {
-      const catalog = harnessId === 'claude' ? claudeBaseCatalog : openCodeBaseCatalog
+    if (harnessId === 'claude' || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') {
+      const catalog = harnessId === 'claude'
+        ? claudeBaseCatalog
+        : harnessId === 'opencode'
+          ? openCodeBaseCatalog
+          : flatBaseCatalog
       const model = catalog.find((entry) => entry.id === id)
       const levels = model?.supportedEffortLevels ?? []
       if (levels.length > 0) {

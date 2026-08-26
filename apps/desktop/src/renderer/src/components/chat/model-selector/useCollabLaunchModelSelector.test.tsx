@@ -5,6 +5,7 @@ import {
   claudeModelsForProvider,
   codexModelsToSelectorOptions,
   compactEffortLabel,
+  flatHarnessCatalog,
   formatClaudeStyleEffortLabel,
   mergeCollabProviders,
 } from './useCollabLaunchModelSelector'
@@ -74,6 +75,43 @@ describe('codexModelsToSelectorOptions', () => {
       { id: 'gpt-5.4', name: 'GPT5.4' },
       { id: 'custom-model', name: 'My Custom', description: 'x' },
     ])
+  })
+})
+
+describe('flatHarnessCatalog', () => {
+  const cursorResources = {
+    models: [
+      { id: 'composer-1', name: 'Composer 1', description: '' },
+      { id: 'retired', name: 'Retired', description: '' },
+    ],
+    disabledModelIds: ['retired'],
+  }
+  const profileCatalog: ModelOption[] = [{ id: 'from-profile', name: 'From Profile', description: '' }]
+
+  it('offers the live Cursor catalog minus models disabled in harness config', () => {
+    expect(flatHarnessCatalog({
+      harnessId: 'cursor',
+      cursorResources,
+      dshModels: [],
+      profileCatalog,
+    }).map((model) => model.id)).toEqual(['composer-1'])
+  })
+
+  it('falls back to the profile catalog before the live Cursor cache arrives', () => {
+    expect(flatHarnessCatalog({
+      harnessId: 'cursor',
+      cursorResources: null,
+      dshModels: [],
+      profileCatalog,
+    })).toEqual(profileCatalog)
+  })
+
+  it('serves dsh from its own catalog and leaves other harnesses to their own path', () => {
+    const dshModels: ModelOption[] = [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: '' }]
+    expect(flatHarnessCatalog({ harnessId: 'dsh', cursorResources: null, dshModels, profileCatalog }))
+      .toEqual(dshModels)
+    expect(flatHarnessCatalog({ harnessId: 'claude', cursorResources, dshModels, profileCatalog }))
+      .toEqual([])
   })
 })
 

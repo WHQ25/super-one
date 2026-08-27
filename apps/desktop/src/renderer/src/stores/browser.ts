@@ -137,12 +137,15 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       const next = (s.captureRefs[id] ?? 0) - 1
       return { captureRefs: next > 0 ? { ...s.captureRefs, [id]: next } : withoutKey(s.captureRefs, id) }
     }),
+  // Readiness is a first-paint gate, not a per-call one: it keeps a blank tab off
+  // screen until it has something to show. Once a tab has been presentable it stays
+  // presentable for the rest of the turn — re-gating it here made the preview blink
+  // on every navigation and on every call issued while the page was still loading.
   beginAutomation: (id) =>
     set((s) => ({
       automationCounts: { ...s.automationCounts, [id]: (s.automationCounts[id] ?? 0) + 1 },
       activeAutomationId: id,
       pendingPreviewBrowserId: id,
-      automationPreviewReady: withoutKey(s.automationPreviewReady, id),
       hiddenPreviewBrowserId: s.hiddenPreviewBrowserId === id ? null : s.hiddenPreviewBrowserId,
     })),
   endAutomation: (id) =>

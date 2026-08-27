@@ -26,6 +26,22 @@ describe('the shared agent viewfinder', () => {
     expect(target()).toEqual({ kind: 'browser', targetId: 'browser-b' })
   })
 
+  it('keeps the resolved target while the next tool call is still unresolved', () => {
+    const store = useAgentViewfinderStore.getState()
+    store.activate('session-a', 'browser', 'browser-a')
+    store.activate('session-a', 'browser')
+
+    expect(target()).toEqual({ kind: 'browser', targetId: 'browser-a' })
+  })
+
+  it('drops the resolved target when an unresolved call switches surface', () => {
+    const store = useAgentViewfinderStore.getState()
+    store.activate('session-a', 'browser', 'browser-a')
+    store.activate('session-a', 'device')
+
+    expect(target()).toEqual({ kind: 'device', targetId: null })
+  })
+
   it('shows nothing when the latest target exits instead of falling back', () => {
     const store = useAgentViewfinderStore.getState()
     store.activate('session-a', 'device', 'device-a')

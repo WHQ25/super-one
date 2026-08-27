@@ -251,10 +251,30 @@ describe('browser picture in picture', () => {
     await waitFor(() => expect(screen.queryByLabelText('Browser picture in picture')).not.toBeInTheDocument())
   })
 
-  it('shows nothing while a newly operated browser target is still unresolved', () => {
+  it('stays on the last operated browser while the next tool call is still unresolved', async () => {
+    act(() => startReadyAutomation())
+    render(<BrowserPictureInPicture />)
+    expect(await screen.findByLabelText('Browser picture in picture')).toBeInTheDocument()
+
+    // The tool event names the surface before the runtime resolves the tab id, and
+    // the next call re-enters automation on a page that is loading again.
+    act(() => {
+      useAgentViewfinderStore.getState().activate('session-a', 'browser')
+      useBrowserStore.getState().patch('browser-a', { loading: true })
+      useBrowserStore.getState().beginAutomation('browser-a')
+    })
+
+    // Outlast the 160ms exit animation: a blink would have unmounted it by now.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 320)) })
+    expect(screen.getByLabelText('Browser picture in picture')).toBeInTheDocument()
+    expect(screen.getByTestId('pip-browser-view')).toHaveAttribute('data-browser-id', 'browser-a')
+  })
+
+  it('shows nothing while the first operated browser target is still unresolved', () => {
     act(() => {
       startReadyAutomation()
       useBrowserStore.getState().expandPreview('browser-a')
+      useAgentViewfinderStore.getState().activate('session-a', 'device')
       useAgentViewfinderStore.getState().activate('session-a', 'browser')
     })
 

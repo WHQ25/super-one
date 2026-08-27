@@ -108,7 +108,7 @@ describe('browser automation activity', () => {
     expect(useBrowserStore.getState().automationPreviewBrowserId).toBeNull()
   })
 
-  it('tracks readiness independently across sessions and invalidates only the new operation', () => {
+  it('tracks readiness independently across sessions and latches it until the turn ends', () => {
     const store = useBrowserStore.getState()
     store.ensure('browser-a', 'https://a.example', 'session-a')
     store.ensure('browser-b', 'https://b.example', 'session-b')
@@ -124,10 +124,19 @@ describe('browser automation activity', () => {
       'browser-b': true,
     })
 
+    // A tab that has already been presentable stays presentable across the rest of
+    // the turn: re-gating it per call is what made the preview blink between calls.
+    store.patch('browser-a', { loading: true })
     store.beginAutomation('browser-a')
-    expect(useBrowserStore.getState().automationPreviewReady).toEqual({ 'browser-b': true })
+    expect(useBrowserStore.getState().automationPreviewReady).toEqual({
+      'browser-a': true,
+      'browser-b': true,
+    })
 
     store.clearAutomationPreview('session-b')
+    expect(useBrowserStore.getState().automationPreviewReady).toEqual({ 'browser-a': true })
+
+    store.clearAutomationPreview('session-a')
     expect(useBrowserStore.getState().automationPreviewReady).toEqual({})
   })
 })

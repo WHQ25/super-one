@@ -29,11 +29,18 @@ export const useAgentViewfinderStore = create<AgentViewfinderState>()((set) => (
     if (!sessionId) return
     set((state) => {
       const current = state.activeBySession[sessionId]
-      if (current && current.kind === kind && current.targetId === targetId) return state
+      // A tool event names the surface one round-trip before the runtime resolves
+      // which target it operates. On the same surface that unresolved id means
+      // "still whatever we were showing", not "nothing" — downgrading it to null
+      // blanked the viewfinder between every pair of tool calls.
+      const next = targetId == null && current?.kind === kind && current.targetId != null
+        ? current.targetId
+        : targetId
+      if (current && current.kind === kind && current.targetId === next) return state
       return {
         activeBySession: {
           ...state.activeBySession,
-          [sessionId]: { kind, targetId },
+          [sessionId]: { kind, targetId: next },
         },
       }
     })

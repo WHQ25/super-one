@@ -1,6 +1,8 @@
 ---
 name: release
 description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, harness R2 mirror (when pins change), promote artifacts to draft release, and publish. Trigger with /release [alpha|beta|public] [major|feature|patch]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
+arguments: "[alpha|beta|public] [major|feature|patch]"
+argument-hint: "[alpha|beta|public] [major|feature|patch]"
 compatibility: "Requires git, gh, bun, npm, curl, GitHub Actions access, and network approval for GitHub, npm, and dl.super-one.dev."
 ---
 

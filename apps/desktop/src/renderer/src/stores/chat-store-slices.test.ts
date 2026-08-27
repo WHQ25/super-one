@@ -521,6 +521,23 @@ describe('session-slice: queued-message edit/delete', () => {
     expect(activeSession().codexPlanRejectHintActive).toBe(false)
   })
 
+  it('editQueuedMessage drops the doc snapshot the send left behind, so the text is not blanked', async () => {
+    setupProject()
+    patchSession({
+      queuedMessages: [queued('q1', 'first')],
+      draftText: '',
+      // What clearing the composer after the queued send wrote: an empty doc.
+      // The composer prefers `draftJson` over `draftText` when restoring, so a
+      // surviving snapshot would wipe the text we just handed back.
+      draftJson: { type: 'doc', content: [{ type: 'paragraph' }] },
+    })
+
+    await useChatStore.getState().editQueuedMessage('q1')
+
+    expect(activeSession().draftText).toBe('first')
+    expect(activeSession().draftJson).toBeNull()
+  })
+
   it('editQueuedMessage is a no-op when the backend rejects dequeue', async () => {
     mockWindowAgent.dequeueMessage.mockResolvedValueOnce(false as never)
     setupProject()
@@ -605,6 +622,30 @@ describe('session-slice: setDraftText', () => {
     patchSession({ codexPlanRejectHintActive: true, draftText: 'x' })
     useChatStore.getState().setDraftText('')
     expect(activeSession().codexPlanRejectHintActive).toBe(true)
+  })
+
+  it('invalidates the doc snapshot, because a plain-text write no longer matches it', () => {
+    setupProject()
+    // Left behind by the composer's own last update (clearing it after a send
+    // still writes an empty doc). The composer restores from `draftJson` when
+    // it is set, so a caller like the "make a commit" button would otherwise
+    // write text that is immediately painted over by this stale doc.
+    patchSession({ draftJson: { type: 'doc', content: [{ type: 'paragraph' }] } })
+
+    useChatStore.getState().setDraftText('make a commit')
+
+    expect(activeSession().draftText).toBe('make a commit')
+    expect(activeSession().draftJson).toBeNull()
+  })
+
+  it('keeps the doc snapshot for the editor\'s own echo, which writes the fresh JSON next', () => {
+    setupProject()
+    const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hi' }] }] }
+    patchSession({ draftJson: doc })
+
+    useChatStore.getState().setDraftText('hi', undefined, { keepDoc: true })
+
+    expect(activeSession().draftJson).toBe(doc)
   })
 
   it('writes to the scoped target session, not the project-active one (mosaic pane isolation)', () => {

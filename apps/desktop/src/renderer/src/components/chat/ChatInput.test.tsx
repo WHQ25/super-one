@@ -9,6 +9,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
   }
   const activeSessionState = {
     draftText: '',
+    draftJson: null as object | null,
     status: 'idle' as const,
     attachments: [] as Array<{ mimeType: string; base64: string; name: string }>,
     browserAnnotations: [] as Array<{ id: string }>,
@@ -54,10 +55,15 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
   }
 
   const chatActions = {
-    setDraftText: vi.fn((text: string) => {
+    // Mirrors the real action: a plain-text write drops the doc snapshot unless
+    // the composer is echoing its own editor (see stores/.../session-slice.ts).
+    setDraftText: vi.fn((text: string, _target?: unknown, opts?: { keepDoc?: boolean }) => {
       activeSessionState.draftText = text
+      if (!opts?.keepDoc) activeSessionState.draftJson = null
     }),
-    setDraftJson: vi.fn(),
+    setDraftJson: vi.fn((json: object | null) => {
+      activeSessionState.draftJson = json
+    }),
     sendMessage: vi.fn(async () => undefined),
     editQueuedMessage: vi.fn(),
     interrupt: vi.fn(),
@@ -102,6 +108,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
 
   const editorState = {
     text: '',
+    /** Every value handed to `editor.commands.setContent`, newest last. */
+    setContentCalls: [] as unknown[],
     onUpdate: null as null | ((payload: { editor: unknown }) => void),
     handleKeyDown: null as null | ((view: unknown, event: KeyboardEvent) => boolean),
     editor: null as unknown,
@@ -132,6 +140,15 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
 vi.mock('@tiptap/react', () => {
   const stripHtml = (value: string) => value.replace(/<[^>]+>/g, '')
 
+  /** Accepts both shapes `setContent` is called with: an HTML string or doc JSON. */
+  const textFromContent = (value: unknown) => {
+    if (typeof value === 'string') return stripHtml(value)
+    if (!value || typeof value !== 'object') return ''
+    const doc = value as { content?: Array<{ content?: Array<{ type: string; text?: string }> }> }
+    const nodes = doc.content?.[0]?.content ?? []
+    return nodes.map((node) => (node.type === 'hardBreak' ? '\n' : node.text ?? '')).join('')
+  }
+
   const createEditor = () => {
     const editor = {
       storage: {
@@ -146,13 +163,6 @@ vi.mock('@tiptap/react', () => {
       },
       getJSON: () => ({ type: 'doc', content: [{ type: 'paragraph', content: editorState.text ? [{ type: 'text', text: editorState.text }] : [] }] }),
       chain: () => {
-        const textFromContent = (value: unknown) => {
-          if (typeof value === 'string') return stripHtml(value)
-          if (!value || typeof value !== 'object') return ''
-          const doc = value as { content?: Array<{ content?: Array<{ type: string; text?: string }> }> }
-          const nodes = doc.content?.[0]?.content ?? []
-          return nodes.map((node) => (node.type === 'hardBreak' ? '\n' : node.text ?? '')).join('')
-        }
         const chain = {
           focus: () => chain,
           setContent: (value: unknown) => {
@@ -181,8 +191,9 @@ vi.mock('@tiptap/react', () => {
           editorState.text = ''
           editorState.onUpdate?.({ editor })
         }),
-        setContent: vi.fn((value: string) => {
-          editorState.text = stripHtml(value)
+        setContent: vi.fn((value: unknown) => {
+          editorState.setContentCalls.push(value)
+          editorState.text = textFromContent(value)
           editorState.onUpdate?.({ editor })
         }),
         blur: vi.fn(),
@@ -235,7 +246,10 @@ vi.mock('@tiptap/react', () => {
     }) => {
       editorState.onUpdate = config.onUpdate ?? null
       editorState.handleKeyDown = config.editorProps?.handleKeyDown ?? null
-      editorState.editor = createEditor()
+      // Real `useEditor` hands back the same instance across renders. Handing
+      // back a fresh one would re-run every effect that depends on the editor,
+      // hiding bugs that only show when an effect legitimately does not re-run.
+      editorState.editor ??= createEditor()
       return editorState.editor
     },
     EditorContent: () => (
@@ -374,12 +388,14 @@ import { ChatInput } from './ChatInput'
 beforeEach(() => {
   vi.clearAllMocks()
   editorState.text = ''
+  editorState.setContentCalls = []
   editorState.onUpdate = null
   editorState.handleKeyDown = null
   editorState.editor = null
   editorState.composing = false
   editorState.destroyed = false
   activeSessionState.draftText = ''
+  activeSessionState.draftJson = null
   activeSessionState.attachments = []
   activeSessionState.mentions = []
   activeSessionState.preferredProvider = 'claude'
@@ -580,6 +596,81 @@ describe('ChatInput', () => {
       expect.any(Array),
       { projectPath: '/project', sessionId: 'sid-new' },
     )
+  })
+})
+
+describe('ChatInput draft restore', () => {
+  it('rebuilds the composer from a plain-text draft without swallowing mention tags', async () => {
+    // What editing a queued message hands back: the raw text, no doc snapshot.
+    // Restoring it through an HTML string would drop the `<superone-ref>` element
+    // and take the file mention with it.
+    const draft =
+      'check <superone-ref><kind>file</kind><name>a.ts</name><value>src/a.ts</value></superone-ref> please'
+    activeSessionState.draftText = draft
+
+    render(<ChatInput />)
+
+    await waitFor(() => expect(editorState.text).toBe(draft))
+  })
+
+  it('paints an external plain-text write into a composer that was already typed in', async () => {
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('half typed')
+
+    // What a writer outside the composer does (the "make a commit" button, a
+    // widget, a mini-app): replace the draft text, with no doc snapshot to go
+    // with it. The composer has to rebuild from that text.
+    expect(activeSessionState.draftJson).not.toBeNull()
+    chatActions.setDraftText('make a commit')
+    rerender(<ChatInput />)
+
+    await waitFor(() => expect(editorState.text).toBe('make a commit'))
+  })
+
+  it('still paints an external write after an editor update that left the text alone', async () => {
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('half typed')
+
+    // Inserting an attachment chip updates the doc without changing getText(),
+    // so this effect never re-runs to consume the echo marker.
+    act(() => {
+      editorState.onUpdate?.({ editor: editorState.editor })
+    })
+
+    chatActions.setDraftText('make a commit')
+    rerender(<ChatInput />)
+
+    await waitFor(() => expect(editorState.text).toBe('make a commit'))
+  })
+
+  it('keeps the doc snapshot when the composer echoes its own typing', () => {
+    render(<ChatInput />)
+
+    typeInEditor('hello')
+
+    // Dropping the snapshot on every keystroke would rebuild the doc from plain
+    // text and cost the mention/attachment chips their inline positions.
+    expect(chatActions.setDraftText).toHaveBeenCalledWith('hello', undefined, { keepDoc: true })
+  })
+
+  it('restores a multi-line plain-text draft as doc JSON, so the breaks survive', async () => {
+    activeSessionState.draftText = 'first line\nsecond line'
+
+    render(<ChatInput />)
+
+    // An HTML string would collapse the newline; hardBreak nodes do not.
+    await waitFor(() => expect(editorState.setContentCalls).toHaveLength(1))
+    expect(editorState.setContentCalls[0]).toEqual({
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'first line' },
+          { type: 'hardBreak' },
+          { type: 'text', text: 'second line' },
+        ],
+      }],
+    })
   })
 })
 

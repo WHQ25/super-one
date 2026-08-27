@@ -161,7 +161,10 @@ export function ChatInput() {
     } = useMemo(() => {
       const target = sessionScope ?? undefined
       return {
-        setText: (value: string) => storeActions.setDraftText(value, target),
+        // Every `setText` below is the composer echoing its own editor (each is
+        // paired with an editor command whose `onUpdate` writes the matching
+        // doc snapshot), so the snapshot must survive the text write.
+        setText: (value: string) => storeActions.setDraftText(value, target, { keepDoc: true }),
         setDraftJson: (json: object | null) => storeActions.setDraftJson(json, target),
         editQueuedMessage: (id: string) => storeActions.editQueuedMessage(id, target),
         addAttachment: (a: Parameters<typeof storeActions.addAttachment>[0]) => storeActions.addAttachment(a, target),
@@ -1218,9 +1221,11 @@ export function ChatInput() {
             .run()
           return
         }
-        setText(`${text}@${value}`)
+        // No editor at all — plain text is the whole draft, and any snapshot
+        // left by a previous editor instance no longer describes it.
+        storeActions.setDraftText(`${text}@${value}`, sessionScope ?? undefined)
       },
-      [addMention, setText, text],
+      [addMention, storeActions, sessionScope, text],
     )
     chatInputAPI.insertMention = insertMention
 
@@ -1466,12 +1471,12 @@ export function ChatInput() {
         handleDrop: () => true,
       },
       onUpdate: ({ editor: ed }) => {
-        isEditorUpdateRef.current = true
         // Captured before the flag is consumed below: a programmatic content set
         // (session restore) must NOT prune attachments — the nodes are being
         // rebuilt from persisted session.attachments, not deleted by the user.
         const wasProgrammaticSet = isProgrammaticSetRef.current
         const plainText = ed.getText()
+        editorEchoTextRef.current = plainText
         setTextRef.current(plainText)
         // Snapshot the full doc (text + chip nodes + positions) so a session
         // switch can restore it exactly, not just the plain text.
@@ -1590,17 +1595,24 @@ export function ChatInput() {
     })
     editorRef.current = editor && !editor.isDestroyed ? editor : null
 
-    const isEditorUpdateRef = useRef(false)
+    /**
+     * The plain text the editor last reported through `onUpdate`. A store write
+     * that matches it is the editor echoing itself, and restoring content for it
+     * would fight the user's typing. It holds the text rather than a flag
+     * because an update that leaves `getText()` untouched (inserting an
+     * attachment chip, or typing that React bails out of re-rendering) never
+     * re-runs the effect below — a sticky flag would sit armed and swallow the
+     * next *external* write instead.
+     */
+    const editorEchoTextRef = useRef<string | null>(null)
     const isProgrammaticSetRef = useRef(false)
     const prevSessionIdRef = useRef(displayedSessionId)
     useEffect(() => {
       const sessionChanged = prevSessionIdRef.current !== displayedSessionId
       prevSessionIdRef.current = displayedSessionId
-      if (!sessionChanged && isEditorUpdateRef.current) {
-        isEditorUpdateRef.current = false
-        return
-      }
-      isEditorUpdateRef.current = false
+      const isEditorEcho = editorEchoTextRef.current === text
+      editorEchoTextRef.current = null
+      if (!sessionChanged && isEditorEcho) return
       if (!editor || editor.isDestroyed) return
       // Attachments live in per-session store state, not in the text draft, so
       // detect when the editor's chip nodes drift from session.attachments
@@ -1626,9 +1638,11 @@ export function ChatInput() {
             // Restore the exact doc — chip nodes keep their inline positions.
             editor.commands.setContent(json)
           } else {
-            // Legacy fallback (draft has no JSON snapshot): rebuild from text and
-            // append attachment chips from the persisted store.
-            editor.commands.setContent(textSnapshot ? `<p>${textSnapshot}</p>` : '')
+            // No JSON snapshot (legacy draft, or a plain-text write such as
+            // editing a queued message): rebuild from text and append attachment
+            // chips from the persisted store. Doc JSON, not an HTML string —
+            // HTML would swallow newlines and the `<superone-*>` mention tags.
+            editor.commands.setContent(textSnapshot ? plainTextToTiptapDoc(textSnapshot) : '')
             if (storeAtts.length > 0) {
               editor.commands.insertContent(
                 storeAtts.map((a) => ({ type: 'attachment' as const, attrs: { id: a.id } })),

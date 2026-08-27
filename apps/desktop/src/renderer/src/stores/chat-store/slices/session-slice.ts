@@ -1,7 +1,7 @@
 import type { StateCreator } from 'zustand'
 import type { ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
 import { useActivityViewStateStore } from '../../activity-view-state'
-import type { ChatStore, SessionWriteTarget } from '../types'
+import type { ChatStore, SessionWriteTarget, SetDraftTextOptions } from '../types'
 import { freshSubagentColorPool } from '../defaults'
 import {
   _truncateAtCheckpoint,
@@ -29,7 +29,7 @@ export interface SessionSlice {
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
-  setDraftText: (text: string, target?: SessionWriteTarget) => void
+  setDraftText: (text: string, target?: SessionWriteTarget, opts?: SetDraftTextOptions) => void
   setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
   assignSubagentColor: (toolUseId: string) => void
   setDetailedUsage: (projectPath: string, sessionId: string, usage: ContextUsageInfo | null) => void
@@ -90,6 +90,11 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     set((s) => commitPerSession(s, target, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
       draftText: text && 'text' in text ? text.text : '',
+      // The composer restores from `draftJson` when it is set, so leaving the
+      // stale snapshot (an empty doc, written when the send cleared the editor)
+      // would blank the text we just put back. Plain text is the only source
+      // this message carries — drop the snapshot and let the editor rebuild.
+      draftJson: null,
       attachments,
       codexPlanRejectHintActive: false,
     })))
@@ -124,9 +129,14 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     return window.agent.startQueuedMessages(projectPath, target?.sessionId)
   },
 
-  setDraftText: (text, target) => {
+  setDraftText: (text, target, opts) => {
     const updates = () => ({
       draftText: text,
+      // A plain-text write invalidates the doc snapshot — restoring the composer
+      // from a doc that no longer matches the text would paint over this write.
+      // The editor's own echo keeps it: its `onUpdate` writes the fresh JSON in
+      // the same batch, so nulling here would only cost a needless rebuild.
+      ...(opts?.keepDoc ? {} : { draftJson: null }),
       ...(text.length > 0 ? { codexPlanRejectHintActive: false } : {}),
     })
     if (target) {

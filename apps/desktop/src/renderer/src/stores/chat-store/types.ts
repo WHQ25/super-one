@@ -49,6 +49,15 @@ export interface SessionWriteTarget {
   sessionId: string
 }
 
+export interface SetDraftTextOptions {
+  /**
+   * The write is the composer echoing its own content, so `draftJson` stays —
+   * the editor writes the matching doc snapshot right after. Every other caller
+   * writes plain text the snapshot knows nothing about, and must let it go.
+   */
+  keepDoc?: boolean
+}
+
 export type MentionKind =
   | 'file'
   | 'directory'
@@ -401,7 +410,7 @@ export interface ChatStore {
   steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
 
-  setDraftText: (text: string, target?: SessionWriteTarget) => void
+  setDraftText: (text: string, target?: SessionWriteTarget, opts?: SetDraftTextOptions) => void
   setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
 
   assignSubagentColor: (toolUseId: string) => void

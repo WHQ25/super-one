@@ -1,5 +1,5 @@
 import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGenerationItem, VideoGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
-import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, memo, Fragment, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Bot, Inbox } from 'lucide-react'
@@ -9,10 +9,11 @@ import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import {
+  collapsibleItems,
   countVisibleClaudeProcessSegments,
-  isClaudeConclusionSegment,
+  isClaudePinnedSegment,
   MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
-  splitTurnForCompactMode,
+  partitionTurnForCompactMode,
 } from './compact-chat-mode'
 import { summarizeClaudeProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
@@ -837,6 +838,12 @@ function isCollabMailboxWakeText(text: string): boolean {
   return /collaboration mailbox message is ready/i.test(text)
 }
 
+/** A run's slice bounds in the full segment list. */
+const runRange = (run: { start: number; items: unknown[] }) => ({
+  start: run.start,
+  end: run.start + run.items.length,
+})
+
 function ClaudeTurnBody({
   grouped,
   isStreaming,
@@ -859,31 +866,39 @@ function ClaudeTurnBody({
     projectPath,
   }
   if (!detailChatMode && !isStreaming) {
-    const { process, conclusion } = splitTurnForCompactMode(segs, isClaudeConclusionSegment)
+    const runs = partitionTurnForCompactMode(segs, isClaudePinnedSegment)
     const processOpts = {
       toolResultAt: (id: string) => grouped.toolResultMap.get(id),
       isHiddenTool: isHiddenToolBlock,
       isErrorTool: (id: string) => grouped.errorToolIds.has(id),
     }
+    const process = collapsibleItems(runs)
     const visibleProcessCount = countVisibleClaudeProcessSegments(process, processOpts)
-    const processStats = summarizeClaudeProcess(process, processOpts)
-    return (
-      <>
-        {visibleProcessCount === 0
-          ? null
-          : visibleProcessCount < MIN_PROCESS_SEGMENTS_TO_COLLAPSE
+    const sealedOpts = { ...segOpts, forceSealed: true }
+    // Nothing collapsible paints: render the turn flat (the process segments emit no UI).
+    if (visibleProcessCount === 0) return <>{renderClaudeSegments(segs, sealedOpts)}</>
+    if (visibleProcessCount < MIN_PROCESS_SEGMENTS_TO_COLLAPSE) {
+      return (
+        <>
+          {runs.map((run, i) => (run.collapsible
             ? (
-              <div className="turn-process">
-                {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
+              <div key={`run-${i}`} className="turn-process">
+                {renderClaudeSegments(segs, sealedOpts, runRange(run))}
               </div>
             )
-            : (
-              <TurnDetailSection stats={processStats}>
-                {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
-              </TurnDetailSection>
-            )}
-        {renderClaudeSegments(conclusion, { ...segOpts, forceSealed: true })}
-      </>
+            : <Fragment key={`run-${i}`}>{renderClaudeSegments(segs, sealedOpts, runRange(run))}</Fragment>))}
+        </>
+      )
+    }
+    return (
+      <TurnDetailSection
+        stats={summarizeClaudeProcess(process, processOpts)}
+        runs={runs.map((run, i) => ({
+          key: `run-${i}`,
+          collapsible: run.collapsible,
+          content: renderClaudeSegments(segs, sealedOpts, runRange(run)),
+        }))}
+      />
     )
   }
   return renderClaudeSegments(segs, segOpts)
@@ -900,6 +915,8 @@ function renderClaudeSegments(
     outputPathMap: Map<string, string>
     projectPath: string | null
   },
+  /** Render only this slice, while neighbour lookups still see the whole turn. */
+  range?: { start: number; end: number },
 ): ReactNode[] {
   const {
     isStreaming,
@@ -911,7 +928,10 @@ function renderClaudeSegments(
     projectPath,
   } = opts
 
-  return segs.map((seg, segIdx) => {
+  const from = range?.start ?? 0
+  const to = range?.end ?? segs.length
+  return segs.slice(from, to).map((seg, i) => {
+    const segIdx = from + i
     const sealed = forceSealed || !isStreaming || segIdx < segs.length - 1
     if (seg.kind === 'subagent') {
       return (

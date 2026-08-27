@@ -1,108 +1,148 @@
 import { describe, expect, it } from 'vitest'
 import {
+  collapsibleItems,
   countVisibleClaudeProcessSegments,
-  isClaudeConclusionSegment,
-  isCodexConclusionSegment,
+  isClaudePinnedSegment,
+  isCodexPinnedSegment,
   isVisibleClaudeProcessSegment,
-  splitTurnForCompactMode,
+  partitionTurnForCompactMode,
 } from './compact-chat-mode'
 
-describe('splitTurnForCompactMode', () => {
-  it('returns empty process when the whole turn is conclusion text', () => {
-    const items = [
-      { kind: 'block', block: { type: 'text' } },
-      { kind: 'block', block: { type: 'text' } },
-    ]
-    const split = splitTurnForCompactMode(items, isClaudeConclusionSegment)
-    expect(split.process).toEqual([])
-    expect(split.conclusion).toEqual(items)
+const WIDGET_SHOW = 'mcp__superone__widget_show'
+
+/** Compact label for a run list: `p:` prefixes a pinned run. */
+const shape = <T extends { id?: string; kind: string }>(
+  runs: ReadonlyArray<{ collapsible: boolean; items: T[] }>,
+) => runs.map((run) => `${run.collapsible ? 'c' : 'p'}:${run.items.map((i) => i.id ?? i.kind).join(',')}`)
+
+const text = (id: string) => ({ kind: 'block', block: { type: 'text' }, id })
+
+describe('partitionTurnForCompactMode', () => {
+  it('pins the whole turn when it is all text', () => {
+    const items = [text('a'), text('b')]
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['p:a,b'])
+    expect(collapsibleItems(runs)).toEqual([])
   })
 
-  it('returns empty conclusion when the turn has no markdown at all', () => {
+  it('collapses the whole turn when it has no pinned content at all', () => {
+    const items = [{ kind: 'thinking' }, { kind: 'tools' }]
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['c:thinking,tools'])
+    expect(collapsibleItems(runs)).toEqual(items)
+  })
+
+  it('keeps mid-turn markdown visible in place instead of collapsing it', () => {
     const items = [
       { kind: 'thinking' },
-      { kind: 'tools' },
+      text('mid'),
+      { kind: 'tools', id: 'tools' },
+      text('final-1'),
+      text('final-2'),
     ]
-    const split = splitTurnForCompactMode(items, isClaudeConclusionSegment)
-    expect(split.process).toEqual(items)
-    expect(split.conclusion).toEqual([])
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['c:thinking', 'p:mid', 'c:tools', 'p:final-1,final-2'])
+    expect(collapsibleItems(runs).map((s) => ('id' in s ? s.id : s.kind))).toEqual(['thinking', 'tools'])
   })
 
-  it('keeps only trailing contiguous text as conclusion', () => {
+  it('pins widget_show tool calls wherever they appear', () => {
     const items = [
-      { kind: 'thinking' },
-      { kind: 'block', block: { type: 'text' }, id: 'mid' },
-      { kind: 'tools' },
-      { kind: 'block', block: { type: 'text' }, id: 'final-1' },
-      { kind: 'block', block: { type: 'text' }, id: 'final-2' },
+      { kind: 'tools', id: 'early' },
+      { kind: 'block', block: { type: 'tool_use', toolName: WIDGET_SHOW }, id: 'widget' },
+      { kind: 'tools', id: 'late' },
+      text('answer'),
     ]
-    const split = splitTurnForCompactMode(items, isClaudeConclusionSegment)
-    expect(split.process.map((s) => ('id' in s ? s.id : s.kind))).toEqual(['thinking', 'mid', 'tools'])
-    expect(split.conclusion.map((s) => ('id' in s ? s.id : s.kind))).toEqual(['final-1', 'final-2'])
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['c:early', 'p:widget', 'c:late', 'p:answer'])
   })
 
-  it('on interrupt (ends mid-process), shows last markdown and everything after it', () => {
+  it('does not pin an ordinary tool call', () => {
+    const items = [
+      { kind: 'block', block: { type: 'tool_use', toolName: 'Read' }, id: 'read' },
+      text('answer'),
+    ]
+    expect(shape(partitionTurnForCompactMode(items, isClaudePinnedSegment))).toEqual(['c:read', 'p:answer'])
+  })
+
+  it('on interrupt (ends mid-process), pins everything after the last markdown', () => {
     const items = [
       { kind: 'thinking' },
       { kind: 'tools', id: 'early-tools' },
-      { kind: 'block', block: { type: 'text' }, id: 'answer' },
+      text('answer'),
       { kind: 'tools', id: 'after-tools' },
     ]
-    const split = splitTurnForCompactMode(items, isClaudeConclusionSegment)
-    expect(split.process.map((s) => ('id' in s ? s.id : s.kind))).toEqual(['thinking', 'early-tools'])
-    expect(split.conclusion.map((s) => ('id' in s ? s.id : s.kind))).toEqual(['answer', 'after-tools'])
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['c:thinking,early-tools', 'p:answer,after-tools'])
   })
 
-  it('on interrupt after contiguous final text, keeps the whole final text block plus tail', () => {
-    const items = [
-      { kind: 'tools', id: 'early' },
-      { kind: 'block', block: { type: 'text' }, id: 'mid' },
-      { kind: 'tools', id: 'mid-tools' },
-      { kind: 'block', block: { type: 'text' }, id: 'final-1' },
-      { kind: 'block', block: { type: 'text' }, id: 'final-2' },
-      { kind: 'tools', id: 'interrupted-tools' },
-    ]
-    const split = splitTurnForCompactMode(items, isClaudeConclusionSegment)
-    expect(split.process.map((s) => s.id)).toEqual(['early', 'mid', 'mid-tools'])
-    expect(split.conclusion.map((s) => s.id)).toEqual([
-      'final-1',
-      'final-2',
-      'interrupted-tools',
-    ])
+  it('returns no runs for an empty turn', () => {
+    expect(partitionTurnForCompactMode([], isClaudePinnedSegment)).toEqual([])
   })
 })
 
-describe('isCodexConclusionSegment', () => {
-  const types = ['reasoning', 'command_execution', 'agent_message', 'plan'] as const
-  const itemTypeAt = (index: number) => types[index]
+describe('isCodexPinnedSegment', () => {
+  const itemAt = (items: ReadonlyArray<{ type: string; server?: string; tool?: string }>) =>
+    (index: number) => items[index]
 
-  it('treats trailing agent_message and plan as conclusion', () => {
-    const segs = [
-      { kind: 'reasoning' as const },
-      { kind: 'item' as const, index: 1 },
-      { kind: 'item' as const, index: 2 },
-      { kind: 'item' as const, index: 3 },
+  it('pins agent_message and plan items', () => {
+    const items = [
+      { type: 'reasoning' },
+      { type: 'command_execution' },
+      { type: 'agent_message' },
+      { type: 'plan' },
     ]
-    const split = splitTurnForCompactMode(segs, (s) => isCodexConclusionSegment(s, itemTypeAt))
-    expect(split.process).toHaveLength(2)
-    expect(split.conclusion.map((s) => s.index)).toEqual([2, 3])
+    const segs = [
+      { kind: 'reasoning' as const, id: 'reasoning' },
+      { kind: 'item' as const, index: 1, id: 'cmd' },
+      { kind: 'item' as const, index: 2, id: 'msg' },
+      { kind: 'item' as const, index: 3, id: 'plan' },
+    ]
+    const runs = partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))
+    expect(shape(runs)).toEqual(['c:reasoning,cmd', 'p:msg,plan'])
   })
 
-  it('on interrupt ending in a command, shows last agent_message and the command after it', () => {
-    // reasoning, command, agent_message, command (interrupted)
-    const interruptTypes = ['reasoning', 'command_execution', 'agent_message', 'command_execution'] as const
-    const segs = [
-      { kind: 'reasoning' as const },
-      { kind: 'item' as const, index: 1 },
-      { kind: 'item' as const, index: 2 },
-      { kind: 'item' as const, index: 3 },
+  it('pins a mid-turn widget_show mcp call', () => {
+    const items = [
+      { type: 'command_execution' },
+      { type: 'mcp_tool_call', server: 'superone', tool: 'widget_show' },
+      { type: 'command_execution' },
+      { type: 'agent_message' },
     ]
-    const split = splitTurnForCompactMode(
-      segs,
-      (s) => isCodexConclusionSegment(s, (i) => interruptTypes[i]),
-    )
-    expect(split.process.map((s) => ('index' in s ? s.index : s.kind))).toEqual(['reasoning', 1])
-    expect(split.conclusion.map((s) => s.index)).toEqual([2, 3])
+    const segs = [
+      { kind: 'item' as const, index: 0, id: 'cmd-1' },
+      { kind: 'item' as const, index: 1, id: 'widget' },
+      { kind: 'item' as const, index: 2, id: 'cmd-2' },
+      { kind: 'item' as const, index: 3, id: 'msg' },
+    ]
+    const runs = partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))
+    expect(shape(runs)).toEqual(['c:cmd-1', 'p:widget', 'c:cmd-2', 'p:msg'])
+  })
+
+  it('does not pin other mcp calls', () => {
+    const items = [{ type: 'mcp_tool_call', server: 'superone', tool: 'browser_click' }, { type: 'agent_message' }]
+    const segs = [
+      { kind: 'item' as const, index: 0, id: 'click' },
+      { kind: 'item' as const, index: 1, id: 'msg' },
+    ]
+    expect(shape(partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))))
+      .toEqual(['c:click', 'p:msg'])
+  })
+
+  it('on interrupt ending in a command, pins the last agent_message and the command after it', () => {
+    const items = [
+      { type: 'reasoning' },
+      { type: 'command_execution' },
+      { type: 'agent_message' },
+      { type: 'command_execution' },
+    ]
+    const segs = [
+      { kind: 'reasoning' as const, id: 'reasoning' },
+      { kind: 'item' as const, index: 1, id: 'cmd-1' },
+      { kind: 'item' as const, index: 2, id: 'msg' },
+      { kind: 'item' as const, index: 3, id: 'cmd-2' },
+    ]
+    const runs = partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))
+    expect(shape(runs)).toEqual(['c:reasoning,cmd-1', 'p:msg,cmd-2'])
   })
 })
 

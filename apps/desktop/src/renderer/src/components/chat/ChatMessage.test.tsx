@@ -509,4 +509,60 @@ describe('ChatMessage compact process header', () => {
     expect(screen.getByText('-2')).toBeTruthy()
     expect(screen.getByText('All done.')).toBeTruthy()
   })
+
+  it('keeps mid-turn markdown visible while the tools around it collapse', () => {
+    useAppStore.setState({ detailChatMode: false })
+    render(
+      <ChatMessage
+        message={createClaudeMessage([
+          { type: 'thinking', thinking: 'plan the edit' },
+          { type: 'text', text: 'Here is the plan.' },
+          { type: 'tool_use', toolName: 'Read', toolUseId: 'r1', input: '{"file_path":"a.ts"}' },
+          { type: 'tool_result', toolUseId: 'r1', summary: 'ok' },
+          {
+            type: 'tool_use',
+            toolName: 'Edit',
+            toolUseId: 'e1',
+            input: '{"file_path":"a.ts","old_string":"a","new_string":"b"}',
+          },
+          { type: 'tool_result', toolUseId: 'e1', summary: 'ok' },
+          { type: 'text', text: 'All done.' },
+        ])}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByText('Here is the plan.')).toBeTruthy()
+    expect(screen.getByText('All done.')).toBeTruthy()
+  })
+
+  it('still tightens a text block onto the reasoning it follows across a collapsed run', () => {
+    useAppStore.setState({ detailChatMode: false })
+    const { container } = render(
+      <ChatMessage
+        message={createClaudeMessage([
+          { type: 'thinking', thinking: 'plan the edit' },
+          { type: 'text', text: 'Here is the plan.' },
+          { type: 'tool_use', toolName: 'Read', toolUseId: 'r1', input: '{"file_path":"a.ts"}' },
+          { type: 'tool_result', toolUseId: 'r1', summary: 'ok' },
+          {
+            type: 'tool_use',
+            toolName: 'Edit',
+            toolUseId: 'e1',
+            input: '{"file_path":"a.ts","old_string":"a","new_string":"b"}',
+          },
+          { type: 'tool_result', toolUseId: 'e1', summary: 'ok' },
+          { type: 'text', text: 'All done.' },
+        ])}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+
+    // The thinking segment sits in a collapsed run, so the pinned text opens its own run —
+    // its spacing must still be derived from the real turn, not from the run it starts.
+    const afterThinking = container.querySelector('.after-thinking')
+    expect(afterThinking?.textContent).toContain('Here is the plan.')
+  })
 })

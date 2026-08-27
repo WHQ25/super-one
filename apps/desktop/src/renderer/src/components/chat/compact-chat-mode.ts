@@ -1,14 +1,15 @@
+import { isWidgetShowTool } from './media-generation'
+
 /**
- * Helpers for compact chat mode: split a completed turn into process vs
- * trailing conclusion. Process is collapsed under a "Detail" disclosure;
- * conclusion stays visible.
+ * Helpers for compact chat mode: partition a completed turn into collapsible
+ * process runs and pinned runs. Process is collapsed under a single "Detail"
+ * disclosure; pinned content stays visible at its original position, so
+ * expanding Detail restores the turn's real order instead of re-ordering it.
  *
- * Conclusion starts at the last contiguous block of text-like segments and
- * includes everything after it. That way a normal turn ending in markdown
- * only shows the trailing answer, while an interrupted turn that ends mid-
- * tool still surfaces the last answer plus the incomplete tail.
- *
- * Intermediate narration between earlier tools stays in process.
+ * Pinned = the agent's own prose (markdown) and widget_show calls, wherever
+ * they appear — mid-turn narration is content, not process. Everything after
+ * the last pinned item is pinned too, so an interrupted turn that ends mid-
+ * tool still surfaces its incomplete tail.
  *
  * Collapse threshold and Detail badge use *visible* process segments only
  * (hidden tool calls / paired tool_result shells do not count).
@@ -17,66 +18,74 @@
 /** Min visible process segments before compact mode collapses them under Detail. */
 export const MIN_PROCESS_SEGMENTS_TO_COLLAPSE = 3
 
-export interface CompactTurnSplit<T> {
-  process: T[]
-  conclusion: T[]
+/** One contiguous stretch of a turn: either collapsible process or pinned content. */
+export interface TurnRun<T> {
+  /** True when this run hides behind the Detail disclosure. */
+  collapsible: boolean
+  /** Index of the run's first item in the original turn — renderers read neighbours by position. */
+  start: number
+  items: T[]
 }
 
 /**
- * Split items so the final answer (and any tail after it) stays visible.
+ * Split a turn into ordered runs so pinned items stay visible in place.
  *
- * - Finds the last conclusion item, then expands left through contiguous
- *   conclusion items — that block is the start of the visible conclusion.
- * - Everything after that block is also visible (e.g. tools after the last
- *   markdown when the turn was interrupted).
- * - If there is no conclusion item, the whole turn is process.
+ * - Pinned items (and everything after the last pinned one) render always.
+ * - Every other item joins the adjacent collapsible run.
+ * - A turn with no pinned item at all is one collapsible run.
  */
-export function splitTurnForCompactMode<T>(
+export function partitionTurnForCompactMode<T>(
   items: readonly T[],
-  isConclusion: (item: T) => boolean,
-): CompactTurnSplit<T> {
-  let lastConclusion = -1
+  isPinned: (item: T) => boolean,
+): TurnRun<T>[] {
+  if (items.length === 0) return []
+  let lastPinned = -1
   for (let i = items.length - 1; i >= 0; i--) {
-    if (isConclusion(items[i])) {
-      lastConclusion = i
+    if (isPinned(items[i])) {
+      lastPinned = i
       break
     }
   }
-  if (lastConclusion < 0) {
-    return {
-      process: items.slice() as T[],
-      conclusion: [],
-    }
+  if (lastPinned < 0) return [{ collapsible: true, start: 0, items: items.slice() as T[] }]
+
+  const runs: TurnRun<T>[] = []
+  for (let i = 0; i < items.length; i++) {
+    const collapsible = i < lastPinned && !isPinned(items[i])
+    const last = runs[runs.length - 1]
+    if (last && last.collapsible === collapsible) last.items.push(items[i])
+    else runs.push({ collapsible, start: i, items: [items[i]] })
   }
-  let splitAt = lastConclusion
-  while (splitAt > 0 && isConclusion(items[splitAt - 1])) {
-    splitAt--
-  }
-  return {
-    process: items.slice(0, splitAt) as T[],
-    conclusion: items.slice(splitAt) as T[],
-  }
+  return runs
 }
 
-/** Claude / ACP content segments: only bare text blocks are conclusions. */
-export function isClaudeConclusionSegment(seg: {
+/** Flatten the collapsible runs — what the threshold and the Detail badge measure. */
+export function collapsibleItems<T>(runs: ReadonlyArray<TurnRun<T>>): T[] {
+  return runs.flatMap((run) => (run.collapsible ? run.items : []))
+}
+
+/** Claude / ACP content segments: bare text blocks and widget_show calls are pinned. */
+export function isClaudePinnedSegment(seg: {
   kind: string
-  block?: { type: string }
+  block?: { type: string; toolName?: string }
 }): boolean {
-  return seg.kind === 'block' && seg.block?.type === 'text'
+  if (seg.kind !== 'block' || !seg.block) return false
+  if (seg.block.type === 'text') return true
+  return seg.block.type === 'tool_use' && isWidgetShowTool(seg.block.toolName ?? '')
 }
 
 /**
- * Codex topology segments: trailing agent_message / plan items are conclusions.
- * `items` is the full codex item list; segment indices point into it.
+ * Codex topology segments: agent_message / plan / widget_show items are pinned.
+ * `itemAt` resolves a segment index into the full codex item list.
  */
-export function isCodexConclusionSegment(
+export function isCodexPinnedSegment(
   seg: { kind: string; index?: number },
-  itemTypeAt: (index: number) => string | undefined,
+  itemAt: (index: number) => { type: string; server?: string; tool?: string } | undefined,
 ): boolean {
   if (seg.kind !== 'item' || seg.index == null) return false
-  const type = itemTypeAt(seg.index)
-  return type === 'agent_message' || type === 'plan'
+  const item = itemAt(seg.index)
+  if (!item) return false
+  if (item.type === 'agent_message' || item.type === 'plan') return true
+  return item.type === 'mcp_tool_call' && isWidgetShowTool(`mcp__${item.server}__${item.tool}`)
 }
 
 type ClaudeVisibilitySeg = {

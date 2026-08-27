@@ -227,19 +227,26 @@
   }
 }
 
-/* Compact mode: conclusion under process (Detail disclosure or single item).
-   Cap the usual .chat-md first-block margin so it isn't a full 1–1.5rem gap. */
+/* Compact mode: pinned content sitting under collapsed process (Detail disclosure,
+   collapsed run, or single item). Cap the usual .chat-md first-block margin so it
+   isn't a full 1–1.5rem gap. Scoped to `[data-expanded="false"]`: an OPEN run must
+   measure exactly like Detail mode, and any cap here would outrank the rules that
+   define that spacing (`.after-thinking .chat-md`, `.codex-turn .chat-md`). */
 .assistant-reply > .turn-detail-section + * .chat-md,
+.assistant-reply > .turn-detail-region[data-expanded="false"] + * .chat-md,
 .assistant-reply > .turn-process + * .chat-md,
 .assistant-reply .codex-turn > .turn-detail-section + * .chat-md,
+.assistant-reply .codex-turn > .turn-detail-region[data-expanded="false"] + * .chat-md,
 .assistant-reply .codex-turn > .turn-process + * .chat-md {
   margin-top: 0.5rem;
 }
 
 @container (min-width: 512px) {
   .assistant-reply > .turn-detail-section + * .chat-md,
+  .assistant-reply > .turn-detail-region[data-expanded="false"] + * .chat-md,
   .assistant-reply > .turn-process + * .chat-md,
   .assistant-reply .codex-turn > .turn-detail-section + * .chat-md,
+  .assistant-reply .codex-turn > .turn-detail-region[data-expanded="false"] + * .chat-md,
   .assistant-reply .codex-turn > .turn-process + * .chat-md {
     margin-top: 0.5rem;
   }
@@ -247,10 +254,27 @@
 
 @container (min-width: 672px) {
   .assistant-reply > .turn-detail-section + * .chat-md,
+  .assistant-reply > .turn-detail-region[data-expanded="false"] + * .chat-md,
   .assistant-reply > .turn-process + * .chat-md,
   .assistant-reply .codex-turn > .turn-detail-section + * .chat-md,
+  .assistant-reply .codex-turn > .turn-detail-region[data-expanded="false"] + * .chat-md,
   .assistant-reply .codex-turn > .turn-process + * .chat-md {
     margin-top: 0.5rem;
+  }
+}
+
+/* The run's height and its handed-over outer margins must move as one motion —
+   animating only the height would grow the box while its spacing jumped. */
+.turn-detail-region {
+  transition:
+    grid-template-rows 0.2s ease-out,
+    margin-top 0.2s ease-out,
+    margin-bottom 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-detail-region {
+    transition: none;
   }
 }
 

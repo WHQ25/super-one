@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, CodexPlanApprovalState, ImageGenerationItem, CodexMcpToolCallItem, CodexReasoningItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { BookOpenText, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -17,12 +17,19 @@ import { ReasoningBlock } from './ReasoningBlock'
 import { isAlwaysHiddenToolBlock, isHiddenToolBlock } from './tool-display'
 import { isMediaGenerateImageTool, isMediaVideoStatusTool } from './media-generation'
 import {
-  isCodexConclusionSegment,
+  collapsibleItems,
+  isCodexPinnedSegment,
   MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
-  splitTurnForCompactMode,
+  partitionTurnForCompactMode,
 } from './compact-chat-mode'
 import { summarizeCodexProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
+
+/** A run's slice bounds in the full segment list. */
+const runRange = (run: { start: number; items: unknown[] }) => ({
+  start: run.start,
+  end: run.start + run.items.length,
+})
 
 function safeStringify(value: unknown): string {
   try { return JSON.stringify(value) } catch { return String(value) }
@@ -458,8 +465,14 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
 
   const imageItems = imageIndices.map((index) => codex.items[index] as ImageGenerationItem)
 
-  const renderSegments = (segs: CodexSegment[], forceSealed: boolean): ReactNode[] =>
-    segs.map((seg, segIdx) => {
+  // `range` renders one run while neighbour lookups (isFirst, sealed) still see the whole turn.
+  const renderSegments = (
+    segs: CodexSegment[],
+    forceSealed: boolean,
+    range?: { start: number; end: number },
+  ): ReactNode[] =>
+    segs.slice(range?.start ?? 0, range?.end ?? segs.length).map((seg, i) => {
+      const segIdx = (range?.start ?? 0) + i
       const sealed = forceSealed || !isStreaming || segIdx < segs.length - 1
       if (seg.kind === 'subagent') {
         const item = codex.items[seg.index] as CodexCollabToolCallItem
@@ -525,32 +538,42 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
 
   const body = (() => {
     if (!detailChatMode && !isStreaming) {
-      const { process, conclusion } = splitTurnForCompactMode(
+      const runs = partitionTurnForCompactMode(
         segments,
-        (seg) => isCodexConclusionSegment(seg, (index) => codex.items[index]?.type),
+        (seg) => isCodexPinnedSegment(seg, (index) => codex.items[index]),
       )
+      const process = collapsibleItems(runs)
       const showFallback = !hasAssistantMessage && !!fallbackText
-      return (
-        <>
-          {process.length === 0
-            ? null
-            : process.length < MIN_PROCESS_SEGMENTS_TO_COLLAPSE
+      const fallback = showFallback && (
+        <div className="my-0.5">
+          <CopyableMarkdown text={fallbackText} isStreaming={false} components={fileLinkComponents} />
+        </div>
+      )
+      if (process.length < MIN_PROCESS_SEGMENTS_TO_COLLAPSE) {
+        return (
+          <>
+            {runs.map((run, i) => (run.collapsible
               ? (
-                <div className="turn-process">
-                  {renderSegments(process, true)}
+                <div key={`run-${i}`} className="turn-process">
+                  {renderSegments(segments, true, runRange(run))}
                 </div>
               )
-              : (
-                <TurnDetailSection stats={summarizeCodexProcess(process, codex.items)}>
-                  {renderSegments(process, true)}
-                </TurnDetailSection>
-              )}
-          {renderSegments(conclusion, true)}
-          {showFallback && (
-            <div className="my-0.5">
-              <CopyableMarkdown text={fallbackText} isStreaming={false} components={fileLinkComponents} />
-            </div>
-          )}
+              : <Fragment key={`run-${i}`}>{renderSegments(segments, true, runRange(run))}</Fragment>))}
+            {fallback}
+          </>
+        )
+      }
+      return (
+        <>
+          <TurnDetailSection
+            stats={summarizeCodexProcess(process, codex.items)}
+            runs={runs.map((run, i) => ({
+              key: `run-${i}`,
+              collapsible: run.collapsible,
+              content: renderSegments(segments, true, runRange(run)),
+            }))}
+          />
+          {fallback}
         </>
       )
     }

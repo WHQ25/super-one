@@ -3508,6 +3508,8 @@ export const AgentIpcChannels = {
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SETTINGS_CHANGED: 'app:settings-changed',
+  /** Resolved OS Downloads folder, shown as the placeholder for an unset download directory. */
+  APP_DEFAULT_DOWNLOAD_DIR: 'app:default-download-dir',
   /** Stable per-installation id used as the analytics distinct id. */
   APP_INSTALL_ID_GET: 'app:install-id-get',
   /**
@@ -4208,6 +4210,12 @@ export interface AppSettings {
    * Env `SUPERONE_BROWSER_TOOLS` overrides this. Locked per session at first use.
    */
   browserToolSurface: 'legacy' | 'compact'
+  /**
+   * Where built-in browser downloads land — both agent-driven `browser_download`
+   * and files the user or page starts. Null → the OS Downloads folder.
+   * A `browser_download` call may still override it per download.
+   */
+  browserDownloadDir: string | null
   /** Opt-in Computer Use (desktop GUI automation). Default off. */
   computerUseEnabled: boolean
   /** Show the active Computer Use target in a floating native preview. Default on. */
@@ -4343,6 +4351,8 @@ export interface AppSettingsPatch {
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean
   browserToolSurface?: 'legacy' | 'compact'
+  /** Empty string or null resets to the OS Downloads folder. */
+  browserDownloadDir?: string | null
   computerUseEnabled?: boolean
   computerUsePictureInPicture?: boolean
   computerUseDedicatedDisplayId?: string | null

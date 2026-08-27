@@ -574,6 +574,7 @@ export function registerCompactBrowserTools(
         url: z.string().optional().describe('wait: substring to match. download: absolute URL. mock: url substring.'),
         timeoutMs: z.number().int().optional(),
         filename: z.string().optional(),
+        dir: z.string().optional().describe('download only: absolute directory to save into. Defaults to the configured download directory.'),
         state: z.enum(['all', 'progressing', 'completed', 'failed']).optional(),
         wait: z.boolean().optional().describe('downloads only: block until captures settle.'),
         urls: z.array(z.string()).optional().describe('cookies only.'),

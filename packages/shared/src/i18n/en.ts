@@ -874,6 +874,13 @@ export type Messages = {
         compact: string
         legacy: string
       }
+      downloadDir: {
+        label: string
+        description: string
+        usingSystemDefault: string
+        change: string
+        reset: string
+      }
       cdp: {
         label: string
         description: string
@@ -4435,6 +4442,13 @@ export const en: Messages = {
         description: 'Advertise phase-oriented tools instead of the classic per-verb list. Takes effect in new chat sessions. Turn off to restore the classic list.',
         compact: 'Compact',
         legacy: 'Classic (30 tools)',
+      },
+      downloadDir: {
+        label: 'Download Directory',
+        description: 'Where files downloaded in the built-in browser are saved. The agent may override it per download.',
+        usingSystemDefault: 'Using the system Downloads folder.',
+        change: 'Change',
+        reset: 'Use the system Downloads folder',
       },
       cdp: {
         label: 'Chrome DevTools Protocol (CDP)',

@@ -1337,7 +1337,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     'browser_download',
     {
       description:
-        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Files land in a temp dir — Read the path, or copy/move if the user wants it kept.",
+        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Without `dir` the file lands in the user's configured download directory; pass `dir` when it belongs somewhere specific, such as the project the user is working in.",
       inputSchema: {
         ...descriptionField,
         url: z.string().min(1).describe('Absolute URL (or data: URL) of the file to download.'),
@@ -1345,6 +1345,10 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
           .string()
           .optional()
           .describe("Override the saved file name. Defaults to Content-Disposition or the URL path segment."),
+        dir: z
+          .string()
+          .optional()
+          .describe("Absolute directory to save into, created if missing. Defaults to the user's configured download directory."),
         timeoutMs: z
           .number()
           .int()
@@ -1356,7 +1360,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     },
     async (args) => {
       try {
-        const snap = startUrlDownloadTask(sessionId, args.url, args.filename)
+        const snap = startUrlDownloadTask(sessionId, args.url, args.filename, args.dir)
         const raced = await raceDownloadTask(snap.taskId, args.timeoutMs)
         if (raced.mode === 'background') {
           return textReply({

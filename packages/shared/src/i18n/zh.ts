@@ -932,6 +932,13 @@ export const zh: Messages = {
         compact: '精简',
         legacy: '经典（30 个工具）',
       },
+      downloadDir: {
+        label: '下载目录',
+        description: '内置浏览器下载的文件保存位置。智能体可在单次下载中指定其他目录。',
+        usingSystemDefault: '当前使用系统下载文件夹。',
+        change: '更改',
+        reset: '恢复为系统下载文件夹',
+      },
       cdp: {
         label: 'Chrome 开发者工具协议 (CDP)',
         description: '内置浏览器工具将路由到 CDP 实现,并解锁文件上传工具。',

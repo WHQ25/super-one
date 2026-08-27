@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import log from '../logger'
-import { downloadUrl, type DownloadResult } from './browser-downloads'
+import { downloadUrl, type DownloadProgress, type DownloadResult } from './browser-downloads'
 
 export type DownloadTaskStatus = 'running' | 'completed' | 'failed' | 'stopped'
 
@@ -198,9 +198,14 @@ async function notifyAgent(task: InternalTask, settled: Settled): Promise<void> 
   await taskHost.injectTaskNotification(task.sessionId, content)
 }
 
-export function startUrlDownloadTask(sessionId: string, url: string, filename?: string): DownloadTaskSnapshot {
+export function startUrlDownloadTask(
+  sessionId: string,
+  url: string,
+  filename?: string,
+  dir?: string,
+): DownloadTaskSnapshot {
   const task = createTask(sessionId, { url, filename })
-  void downloadUrl(url, filename, (p) => {
+  const onProgress = (p: DownloadProgress): void => {
     task.filename = p.filename
     task.bytes = p.bytes
     task.mimeType = p.mimeType
@@ -214,7 +219,8 @@ export function startUrlDownloadTask(sessionId: string, url: string, filename?: 
       mimeType: p.mimeType,
       url,
     })
-  })
+  }
+  void downloadUrl(url, { filename, dir, onProgress })
     .then((result) => settle(task, { ok: true, result }))
     .catch((err) => settle(task, { ok: false, error: err instanceof Error ? err.message : String(err) }))
   return snapshotOf(task)

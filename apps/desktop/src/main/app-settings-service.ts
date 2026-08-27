@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { isAbsolute, join } from 'path'
 import { app } from 'electron'
 import type {
   AppSettings,
@@ -50,6 +50,13 @@ function normalizeComputerUseDisplayId(value: unknown): string | null {
   return displayId || null
 }
 
+/** Only absolute paths are usable as a save root; anything else means "use the OS default". */
+function readBrowserDownloadDir(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const dir = value.trim()
+  return dir && isAbsolute(dir) ? dir : null
+}
+
 function readPowerMode(data: Record<string, unknown>): PowerMode {
   if (data.powerMode === 'system'
     || data.powerMode === 'prevent-idle-sleep'
@@ -89,6 +96,7 @@ const defaults: AppSettings = {
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
   browserToolSurface: 'legacy',
+  browserDownloadDir: null,
   computerUseEnabled: false,
   computerUsePictureInPicture: true,
   computerUseDedicatedDisplayId: null,
@@ -522,6 +530,7 @@ export function readAppSettings(): AppSettings {
       browserToolSurface: data.browserToolSurface === 'legacy' || data.browserToolSurface === 'compact'
         ? data.browserToolSurface
         : defaults.browserToolSurface,
+      browserDownloadDir: readBrowserDownloadDir(data.browserDownloadDir),
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
       computerUsePictureInPicture: typeof data.computerUsePictureInPicture === 'boolean'
         ? data.computerUsePictureInPicture
@@ -600,6 +609,7 @@ export function readAppSettings(): AppSettings {
       cdpMockEnabled: defaults.cdpMockEnabled,
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
       browserToolSurface: defaults.browserToolSurface,
+      browserDownloadDir: defaults.browserDownloadDir,
       computerUseEnabled: defaults.computerUseEnabled,
       computerUsePictureInPicture: defaults.computerUsePictureInPicture,
       computerUseDedicatedDisplayId: defaults.computerUseDedicatedDisplayId,
@@ -722,6 +732,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     cdpMockEnabled: patch.cdpMockEnabled === undefined ? current.cdpMockEnabled : patch.cdpMockEnabled,
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,
     browserToolSurface: patch.browserToolSurface === undefined ? current.browserToolSurface : patch.browserToolSurface,
+    browserDownloadDir: patch.browserDownloadDir === undefined
+      ? current.browserDownloadDir
+      : readBrowserDownloadDir(patch.browserDownloadDir),
     computerUseEnabled: patch.computerUseEnabled === undefined ? current.computerUseEnabled : patch.computerUseEnabled,
     computerUsePictureInPicture: patch.computerUsePictureInPicture === undefined
       ? current.computerUsePictureInPicture

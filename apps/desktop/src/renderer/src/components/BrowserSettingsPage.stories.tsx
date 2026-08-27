@@ -10,6 +10,7 @@ const BASE = {
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
   browserToolSurface: 'compact',
+  browserDownloadDir: null as string | null,
   webmcpEnabled: false,
   webmcpTrustedOrigins: [] as WebmcpTrustedOrigin[],
 }
@@ -17,6 +18,8 @@ const BASE = {
 let settings = { ...BASE }
 
 mockIpc('app', 'getAppSettings', async () => settings)
+mockIpc('app', 'getDefaultDownloadDir', async () => '/Users/dev/Downloads')
+mockIpc('app', 'selectFolder', async () => '/Users/dev/Downloads/SuperOne')
 mockIpc('app', 'saveAppSettings', async (patch: unknown) => {
   settings = { ...settings, ...(patch as Partial<typeof settings>) }
   return settings

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Trash2 } from 'lucide-react'
+import { RotateCcw, Trash2 } from 'lucide-react'
 import type { WebmcpTrustedOrigin } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
+import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Switch } from '@superone/ui/components/ui/switch'
 
@@ -41,6 +42,8 @@ export function BrowserSettingsPage() {
   const [mockEnabled, setMockEnabled] = useState(false)
   const [emulateEnabled, setEmulateEnabled] = useState(false)
   const [compactSurface, setCompactSurface] = useState(false)
+  const [downloadDir, setDownloadDir] = useState<string | null>(null)
+  const [systemDownloadDir, setSystemDownloadDir] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -54,7 +57,11 @@ export function BrowserSettingsPage() {
       setMockEnabled(settings.cdpMockEnabled)
       setEmulateEnabled(settings.cdpEmulateEnabled)
       setCompactSurface(settings.browserToolSurface !== 'legacy')
+      setDownloadDir(settings.browserDownloadDir)
       setLoading(false)
+    })
+    window.app.getDefaultDownloadDir().then((dir) => {
+      if (mounted) setSystemDownloadDir(dir)
     })
     return () => { mounted = false }
   }, [])
@@ -65,6 +72,18 @@ export function BrowserSettingsPage() {
     setCookiesEnabled(result.cdpCookiesEnabled)
     setMockEnabled(result.cdpMockEnabled)
     setEmulateEnabled(result.cdpEmulateEnabled)
+  }
+
+  async function pickDownloadDir() {
+    const dir = await window.app.selectFolder(downloadDir ?? systemDownloadDir)
+    if (!dir) return
+    const result = await window.app.saveAppSettings({ browserDownloadDir: dir })
+    setDownloadDir(result.browserDownloadDir)
+  }
+
+  async function resetDownloadDir() {
+    const result = await window.app.saveAppSettings({ browserDownloadDir: null })
+    setDownloadDir(result.browserDownloadDir)
   }
 
   async function revokeWebMcpOrigin(origin: string) {
@@ -105,6 +124,41 @@ export function BrowserSettingsPage() {
         </div>
       </div>
       )}
+
+      <div className="mb-6 rounded-lg border border-border">
+        <div className="flex items-start justify-between gap-4 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{t('settings.browser.downloadDir.label')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t('settings.browser.downloadDir.description')}
+            </p>
+            <p className="mt-1.5 truncate font-mono text-xs" title={downloadDir ?? systemDownloadDir}>
+              {downloadDir ?? systemDownloadDir}
+            </p>
+            {!downloadDir && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.browser.downloadDir.usingSystemDefault')}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {downloadDir && (
+              <IconButton
+                size="sm"
+                variant="ghost"
+                tooltip={t('settings.browser.downloadDir.reset')}
+                onClick={() => void resetDownloadDir()}
+                disabled={loading}
+              >
+                <RotateCcw className="size-3.5" />
+              </IconButton>
+            )}
+            <Button variant="outline" size="sm" onClick={() => void pickDownloadDir()} disabled={loading}>
+              {t('settings.browser.downloadDir.change')}
+            </Button>
+          </div>
+        </div>
+      </div>
 
       <div className="rounded-lg border border-border">
         <div className="flex items-start justify-between gap-4 p-4">

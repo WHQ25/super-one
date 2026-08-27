@@ -192,6 +192,7 @@ import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { getInstallId } from './install-id'
+import { systemDownloadDir } from './agent/browser-download-store'
 import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
 import { foldWindow, unfoldWindow } from './window-fold'
@@ -3932,6 +3933,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
+  ipcMain.handle(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR, () => systemDownloadDir())
+
   ipcMain.handle(AgentIpcChannels.APP_INSTALL_ID_GET, () => getInstallId())
   ipcMain.handle(
     AgentIpcChannels.COMPUTER_USE_OPEN_PERMISSIONS,

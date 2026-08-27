@@ -1,9 +1,12 @@
-import { mkdirSync } from 'fs'
-import { basename, extname, join } from 'path'
+import { closeSync, mkdirSync, openSync } from 'fs'
+import { basename, extname, isAbsolute, join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
+import { app } from 'electron'
+import { readAppSettings } from '../app-settings-service'
+import log from '../logger'
 
-const DOWNLOAD_DIR = join(tmpdir(), 'super-one-browser-downloads')
+const FALLBACK_DIR = join(tmpdir(), 'super-one-browser-downloads')
 
 const MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -51,14 +54,81 @@ export function filenameFor(rawName: string, url: string, mimeType: string): str
   return extname(name) ? name : `${name}.${ext}`
 }
 
+/** The OS Downloads folder, or a temp dir on the rare platform without one. */
+export function systemDownloadDir(): string {
+  try {
+    return app.getPath('downloads')
+  } catch {
+    return FALLBACK_DIR
+  }
+}
+
+/**
+ * Where a download should land, in precedence order: the caller's explicit
+ * directory, the user's configured default, then the OS Downloads folder.
+ * Only absolute paths are honoured — a relative one has no meaningful base in
+ * the main process, so it is rejected rather than resolved against cwd.
+ */
+export function resolveDownloadDir(explicitDir?: string | null): string {
+  const explicit = explicitDir?.trim()
+  if (explicit) {
+    if (!isAbsolute(explicit)) throw new Error(`Download directory must be an absolute path: ${explicit}`)
+    return explicit
+  }
+  return readAppSettings().browserDownloadDir || systemDownloadDir()
+}
+
+/**
+ * Create the target directory. A directory the agent named explicitly is its
+ * responsibility, so a failure surfaces as an error; a failing *configured*
+ * default must not break downloading, so it degrades to the OS folder.
+ */
+function ensureDir(explicitDir?: string | null): string {
+  const root = resolveDownloadDir(explicitDir)
+  try {
+    mkdirSync(root, { recursive: true })
+    return root
+  } catch (err) {
+    if (explicitDir?.trim()) throw err
+    log.warn(`[browser-download] cannot use ${root}, falling back: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  const fallback = systemDownloadDir()
+  try {
+    mkdirSync(fallback, { recursive: true })
+    return fallback
+  } catch {
+    mkdirSync(FALLBACK_DIR, { recursive: true })
+    return FALLBACK_DIR
+  }
+}
+
+function uniqueCandidate(dir: string, filename: string, attempt: number): string {
+  if (attempt === 0) return join(dir, filename)
+  const ext = extname(filename)
+  const stem = ext ? filename.slice(0, -ext.length) : filename
+  return join(dir, `${stem} (${attempt})${ext}`)
+}
+
 /**
  * Reserve an absolute path for a download and return it. Mirrors
- * persistScreenshot's contract: the model gets a path, not bytes. Each download
- * lands in its own uuid subdir so the site's real filename survives verbatim
- * without any collision handling.
+ * persistScreenshot's contract: the model gets a path, not bytes. Downloads
+ * share one user-visible directory, so the reservation is an exclusive create
+ * (`wx`) — that both skips names already on disk and keeps two concurrent
+ * downloads of the same file from racing onto the same path.
  */
-export function reserveDownloadPath(filename: string): string {
-  const dir = join(DOWNLOAD_DIR, randomUUID())
-  mkdirSync(dir, { recursive: true })
-  return join(dir, filename)
+export function reserveDownloadPath(filename: string, dir?: string | null): string {
+  const root = ensureDir(dir)
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const candidate = uniqueCandidate(root, filename, attempt)
+    try {
+      closeSync(openSync(candidate, 'wx'))
+      return candidate
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    }
+  }
+  // 100 same-named files in one folder: stop guessing and make the name unique.
+  const ext = extname(filename)
+  const stem = ext ? filename.slice(0, -ext.length) : filename
+  return join(root, `${stem} (${randomUUID().slice(0, 8)})${ext}`)
 }

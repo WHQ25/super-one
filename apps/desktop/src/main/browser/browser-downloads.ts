@@ -88,16 +88,21 @@ export async function fetchBrowserBytes(
 
 export type DownloadProgress = { bytes: number; totalBytes: number | null; filename: string; mimeType: string }
 
-export async function downloadUrl(
-  url: string,
-  filenameOverride?: string,
-  onProgress?: (p: DownloadProgress) => void,
-): Promise<DownloadResult> {
+export interface DownloadUrlOptions {
+  /** Override the saved file name. Defaults to Content-Disposition or the URL path. */
+  filename?: string
+  /** Absolute directory to save into. Defaults to the configured download directory. */
+  dir?: string | null
+  onProgress?: (p: DownloadProgress) => void
+}
+
+export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): Promise<DownloadResult> {
+  const { filename: filenameOverride, dir, onProgress } = opts
   if (!url) throw new Error('Invalid URL')
   if (url.startsWith('data:')) {
     const { buf, mimeType } = parseDataUrl(url, 'application/octet-stream')
     const filename = filenameFor(filenameOverride || '', url, mimeType)
-    const path = reserveDownloadPath(filename)
+    const path = reserveDownloadPath(filename, dir)
     await writeFile(path, buf)
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
     return { path, filename, bytes: buf.byteLength, mimeType }
@@ -108,7 +113,7 @@ export async function downloadUrl(
   const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream'
   const disposition = resp.headers.get('content-disposition')
   const filename = filenameFor(filenameOverride || nameFromDisposition(disposition), url, mimeType)
-  const path = reserveDownloadPath(filename)
+  const path = reserveDownloadPath(filename, dir)
   const totalBytes = Number(resp.headers.get('content-length')) || null
 
   if (!resp.body) {

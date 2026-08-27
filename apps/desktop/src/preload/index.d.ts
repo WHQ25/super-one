@@ -488,6 +488,8 @@ interface AppAPI {
   setFastMode(enabled: boolean): Promise<void>
   getAppSettings(): Promise<AppSettings>
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
+  /** OS Downloads folder — the effective target when `browserDownloadDir` is unset. */
+  getDefaultDownloadDir(): Promise<string>
   getInstallId(): Promise<string>
   /**
    * false — status only.

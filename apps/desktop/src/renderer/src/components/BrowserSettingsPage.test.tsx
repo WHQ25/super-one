@@ -13,10 +13,12 @@ Object.defineProperties(HTMLElement.prototype, {
 
 const getAppSettings = vi.fn()
 const saveAppSettings = vi.fn()
+const getDefaultDownloadDir = vi.fn()
+const selectFolder = vi.fn()
 
 Object.defineProperty(window, 'app', {
   configurable: true,
-  value: { getAppSettings, saveAppSettings },
+  value: { getAppSettings, saveAppSettings, getDefaultDownloadDir, selectFolder },
 })
 
 const { BrowserSettingsPage } = await import('./BrowserSettingsPage')
@@ -33,6 +35,7 @@ function settings(overrides: Record<string, unknown> = {}) {
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
     browserToolSurface: 'compact',
+    browserDownloadDir: null,
     webmcpEnabled: true,
     webmcpTrustedOrigins: [] as WebmcpTrustedOrigin[],
     ...overrides,
@@ -55,6 +58,9 @@ function webmcpSwitch(): HTMLElement {
 beforeEach(() => {
   getAppSettings.mockReset()
   saveAppSettings.mockReset()
+  getDefaultDownloadDir.mockReset()
+  getDefaultDownloadDir.mockResolvedValue('/Users/dev/Downloads')
+  selectFolder.mockReset()
 })
 
 describe('browser settings — WebMCP grants', () => {
@@ -110,5 +116,58 @@ describe('browser settings — WebMCP grants', () => {
     await renderPage({ cdpEnabled: false })
     expect(screen.getByText('Trusted sites')).toBeTruthy()
     expect(webmcpSwitch().getAttribute('data-disabled')).toBeNull()
+  })
+})
+
+describe('browser settings — download directory', () => {
+  it('shows the OS Downloads folder, labelled as the default, when nothing is configured', async () => {
+    await renderPage()
+
+    expect(await screen.findByText('/Users/dev/Downloads')).toBeInTheDocument()
+    expect(screen.getByText('Using the system Downloads folder.')).toBeInTheDocument()
+  })
+
+  it('shows the configured directory without the system-default note', async () => {
+    await renderPage({ browserDownloadDir: '/Users/dev/Downloads/SuperOne' })
+
+    expect(await screen.findByText('/Users/dev/Downloads/SuperOne')).toBeInTheDocument()
+    expect(screen.queryByText('Using the system Downloads folder.')).not.toBeInTheDocument()
+  })
+
+  it('persists the folder the user picks and shows it straight away', async () => {
+    selectFolder.mockResolvedValue('/Users/dev/Desktop/dl')
+    saveAppSettings.mockResolvedValue(settings({ browserDownloadDir: '/Users/dev/Desktop/dl' }))
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }))
+
+    await waitFor(() => {
+      expect(saveAppSettings).toHaveBeenCalledWith({ browserDownloadDir: '/Users/dev/Desktop/dl' })
+    })
+    expect(await screen.findByText('/Users/dev/Desktop/dl')).toBeInTheDocument()
+  })
+
+  it('leaves the setting untouched when the folder dialog is cancelled', async () => {
+    selectFolder.mockResolvedValue(null)
+    await renderPage({ browserDownloadDir: '/Users/dev/Downloads/SuperOne' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }))
+
+    await waitFor(() => expect(selectFolder).toHaveBeenCalled())
+    expect(saveAppSettings).not.toHaveBeenCalled()
+    expect(screen.getByText('/Users/dev/Downloads/SuperOne')).toBeInTheDocument()
+  })
+
+  it('offers the reset control only once a directory is configured, and restores the OS folder', async () => {
+    saveAppSettings.mockResolvedValue(settings({ browserDownloadDir: null }))
+    const { unmount } = await renderPage()
+    expect(screen.queryByRole('button', { name: 'Use the system Downloads folder' })).toBeNull()
+    unmount()
+
+    await renderPage({ browserDownloadDir: '/Users/dev/Downloads/SuperOne' })
+    fireEvent.click(screen.getByRole('button', { name: 'Use the system Downloads folder' }))
+
+    await waitFor(() => expect(saveAppSettings).toHaveBeenCalledWith({ browserDownloadDir: null }))
+    expect(await screen.findByText('/Users/dev/Downloads')).toBeInTheDocument()
   })
 })

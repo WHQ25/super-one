@@ -1737,6 +1737,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_GET),
   saveAppSettings: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
+  getDefaultDownloadDir: () =>
+    ipcRenderer.invoke(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR),
   getInstallId: () => ipcRenderer.invoke(AgentIpcChannels.APP_INSTALL_ID_GET),
   openComputerUsePermissions: (
     request: boolean | 'guided' | 'accessibility' | 'screenRecording' = true,

@@ -789,10 +789,26 @@ describe('browser_download', () => {
     const tools = buildTools()
     const reply = await tools.get('browser_download')!({ url: 'https://x.test/a.png', timeoutMs: 15000 })
 
-    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined)
+    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined, undefined)
     expect(raceDownloadTask).toHaveBeenCalledWith('bdl_1', 15000)
     expect(reply.isError).toBeUndefined()
     expect(JSON.parse(resultText(reply))).toMatchObject({ status: 'completed', path: '/tmp/dl/a.png', filename: 'a.png' })
+  })
+
+  it('forwards the target directory when the agent chooses where the file goes', async () => {
+    const tools = buildTools()
+    await tools.get('browser_download')!({
+      url: 'https://x.test/a.png',
+      dir: '/Users/dev/project/assets',
+      timeoutMs: 15000,
+    })
+
+    expect(startUrlDownloadTask).toHaveBeenCalledWith(
+      'sess-1',
+      'https://x.test/a.png',
+      undefined,
+      '/Users/dev/project/assets',
+    )
   })
 
   it('returns background status with taskId when the download exceeds timeout', async () => {

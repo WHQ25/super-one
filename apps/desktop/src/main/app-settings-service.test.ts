@@ -99,6 +99,7 @@ describe('app-settings-service', () => {
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
     browserToolSurface: 'legacy',
+    browserDownloadDir: null,
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -191,6 +192,7 @@ describe('app-settings-service', () => {
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
         browserToolSurface: 'legacy',
+        browserDownloadDir: null,
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -340,6 +342,7 @@ describe('app-settings-service', () => {
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
         browserToolSurface: 'legacy',
+        browserDownloadDir: null,
         agentPreference: {
           claude: defaultClaude,
           codex: {
@@ -832,6 +835,35 @@ describe('app-settings-service', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({ customAppIconPath: '/some/icon.png' }))
       const result = saveAppSettings({ analyticsEnabled: false })
       expect(result.customAppIconPath).toBe('/some/icon.png')
+    })
+  })
+
+  describe('browserDownloadDir', () => {
+    it('defaults to null so downloads follow the OS Downloads folder', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      expect(readAppSettings().browserDownloadDir).toBeNull()
+    })
+
+    it('stores an absolute directory the user picked', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      const result = saveAppSettings({ browserDownloadDir: '/Users/dev/Downloads/SuperOne' })
+      expect(result.browserDownloadDir).toBe('/Users/dev/Downloads/SuperOne')
+    })
+
+    it('clears back to the OS folder on null or an empty string', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ browserDownloadDir: '/Users/dev/dl' }))
+      expect(saveAppSettings({ browserDownloadDir: null }).browserDownloadDir).toBeNull()
+      expect(saveAppSettings({ browserDownloadDir: '  ' }).browserDownloadDir).toBeNull()
+    })
+
+    it('rejects a relative path, which has no meaningful base in the main process', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      expect(saveAppSettings({ browserDownloadDir: 'downloads' }).browserDownloadDir).toBeNull()
+    })
+
+    it('drops a stored value that is not a usable absolute path', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ browserDownloadDir: 42 }))
+      expect(readAppSettings().browserDownloadDir).toBeNull()
     })
   })
 })

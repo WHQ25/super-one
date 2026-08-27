@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const hoisted = vi.hoisted(() => ({
   openDeviceTab: vi.fn(),
   openTrajectoryTab: vi.fn(),
+  focusActivePanelContent: vi.fn(),
   chatState: {
     activeProject: '/repo',
     projectSessions: {
@@ -18,6 +19,7 @@ const hoisted = vi.hoisted(() => ({
 }))
 
 vi.mock('./activity-panel-api', () => ({
+  focusActivePanelContent: hoisted.focusActivePanelContent,
   openBrowserTab: vi.fn(),
   openDeviceTab: hoisted.openDeviceTab,
   openTerminalTab: vi.fn(),
@@ -108,6 +110,21 @@ describe('activity launcher entries', () => {
     result.current.find((type) => type.id === 'device')?.onOpen()
 
     expect(hoisted.openDeviceTab).toHaveBeenCalledWith('s1', 'activity.device.title')
+  })
+
+  /**
+   * Dockview activates a new panel without moving DOM focus, and the panel's own
+   * shortcuts are gated on the activity panel holding it — so a launcher that did
+   * not hand focus over left ⌘T dead until the user clicked something.
+   */
+  it('hands focus to the panel it just opened', async () => {
+    hoisted.focusActivePanelContent.mockClear()
+    const { useActivityLaunchTypes } = await import('./activity-launch-types')
+    const { result } = renderHook(() => useActivityLaunchTypes())
+
+    result.current.find((type) => type.id === 'device')?.onOpen()
+
+    expect(hoisted.focusActivePanelContent).toHaveBeenCalledOnce()
   })
 
   /**

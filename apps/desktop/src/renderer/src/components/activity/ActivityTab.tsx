@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
 import { Bug, Globe, Maximize, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, X } from 'lucide-react'
@@ -72,10 +72,47 @@ export function HoverCloseSlot({
 
 export function tabChipClass(active: boolean): string {
   return cn(
-    'flex max-w-[180px] items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors',
+    'flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition-[max-width,color,background-color] duration-200',
+    // The active tab is the one you are reading, so it keeps the room. Clamping the
+    // rest harder is what keeps a full strip legible instead of two tabs wide.
     active
-      ? 'bg-muted text-foreground'
-      : 'text-muted-foreground hover:text-foreground',
+      ? 'max-w-[200px] bg-muted text-foreground'
+      : 'max-w-[128px] text-muted-foreground hover:text-foreground',
+  )
+}
+
+/**
+ * A tab label that dissolves its tail rather than showing an ellipsis.
+ *
+ * The mask has to be measured, not always-on: applied unconditionally it would
+ * wash out the last characters of every title that already fits. `scrollWidth`
+ * vs `clientWidth` is the only thing that knows, so a ResizeObserver re-asks
+ * whenever the flex row hands this span a different width.
+ */
+function TabTitle({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [clipped, setClipped] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => setClipped(el.scrollWidth > el.clientWidth + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [children])
+
+  return (
+    <span
+      ref={ref}
+      className={cn(
+        'min-w-0 overflow-hidden whitespace-nowrap text-xs',
+        clipped && '[mask-image:linear-gradient(to_right,black_calc(100%-1.25rem),transparent)]',
+      )}
+    >
+      {children}
+    </span>
   )
 }
 
@@ -88,7 +125,7 @@ export function FilePreviewTab(props: IDockviewPanelHeaderProps<{ filePath: stri
       <HoverCloseSlot onClose={() => props.api.close()}>
         {fileName && <FileIcon name={fileName} size={14} className="shrink-0" />}
       </HoverCloseSlot>
-      <span className="min-w-0 truncate text-xs">{fileName || 'File'}</span>
+      <TabTitle>{fileName || 'File'}</TabTitle>
       <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
@@ -152,7 +189,7 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: strin
       <HoverCloseSlot onClose={() => { void closeApp(instanceKey) }}>
         <MiniAppIcon appId={appId} className="size-3.5 shrink-0" />
       </HoverCloseSlot>
-      <span className="min-w-0 truncate text-xs">{props.api.title}</span>
+      <TabTitle>{props.api.title}</TabTitle>
       {isDev && devControls && (
         <>
           <TabActionButton
@@ -193,7 +230,7 @@ export function BrowserTab(props: IDockviewPanelHeaderProps<{ browserId: string 
           fallback={<Globe className="size-3.5 shrink-0" />}
         />
       </HoverCloseSlot>
-      <span className="min-w-0 truncate text-xs">{title}</span>
+      <TabTitle>{title}</TabTitle>
       <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
@@ -207,7 +244,7 @@ export function TerminalTab(props: IDockviewPanelHeaderProps<{ terminalId: strin
       <HoverCloseSlot onClose={() => closeActivityTerminalTab(props.params.terminalId)}>
         <TerminalIcon className="size-3.5 shrink-0" />
       </HoverCloseSlot>
-      <span className="min-w-0 truncate text-xs">{title || 'Terminal'}</span>
+      <TabTitle>{title || 'Terminal'}</TabTitle>
       <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
@@ -222,7 +259,7 @@ export function TrajectoryTab(props: IDockviewPanelHeaderProps<{ sessionId: stri
       <HoverCloseSlot onClose={() => closeTrajectoryTab(props.params.sessionId)}>
         <Route className="size-3.5 shrink-0" />
       </HoverCloseSlot>
-      <span className="min-w-0 truncate text-xs">{title || t('trajectory.title')}</span>
+      <TabTitle>{title || t('trajectory.title')}</TabTitle>
       <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
@@ -245,9 +282,7 @@ export function DeviceTab(props: IDockviewPanelHeaderProps<{ instanceId: string 
       <HoverCloseSlot onClose={() => closeDeviceTab(props.params.instanceId)}>
         <Icon className="size-3.5 shrink-0" />
       </HoverCloseSlot>
-      <span className="min-w-0 truncate text-xs">
-        {device?.name || title || t('activity.device.title')}
-      </span>
+      <TabTitle>{device?.name || title || t('activity.device.title')}</TabTitle>
       {actions && (
         <TabActionButton
           active={active}

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { openBrowserTab, openDeviceTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
+import { focusActivePanelContent, openBrowserTab, openDeviceTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
 
 export interface ActivityLaunchType {
   id: string
@@ -36,7 +36,10 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
     return project?._activeSessionId ?? null
   })
 
-  return [
+  // Every launcher here is a deliberate user action, so the tab it opens takes
+  // focus — otherwise focus stays wherever it was and the panel's own shortcuts
+  // (⌘T) go dead until the next click.
+  const types: ActivityLaunchType[] = [
     {
       id: 'browser',
       icon: Globe,
@@ -83,4 +86,9 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
         onOpen: () => openTrajectoryTab(trajectorySessionId, t('trajectory.title')),
       }]),
   ]
+
+  return types.map((type) => ({
+    ...type,
+    onOpen: () => { type.onOpen(); focusActivePanelContent() },
+  }))
 }

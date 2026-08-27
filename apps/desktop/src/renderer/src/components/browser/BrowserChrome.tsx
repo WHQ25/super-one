@@ -45,7 +45,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
   }, [browserId, t])
 
   return (
-    <div className="relative flex h-9 shrink-0 items-center gap-0.5 border-b border-border bg-transparent px-2">
+    <div className="relative flex h-7 shrink-0 items-center gap-0.5 border-b border-border bg-transparent px-2">
       <AnimatePresence>
         {loading && (
           <motion.div
@@ -68,7 +68,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
       <IconButton size="xs" variant="ghost" tooltip="Reload" onClick={onReload}>
         <RotateCw className="size-3" />
       </IconButton>
-      <BrowserOmnibox url={url} isHome={isHome} onNavigate={onNavigate} />
+      <BrowserOmnibox browserId={browserId} url={url} isHome={isHome} onNavigate={onNavigate} />
       {annotating ? (
           <TooltipProvider delayDuration={300}>
             <Tooltip>

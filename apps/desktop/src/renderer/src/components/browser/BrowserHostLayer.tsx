@@ -98,6 +98,8 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   })
   const certErrored = useBrowserStore((s) => s.tabs[browserId]?.certError != null)
   const webviewRef = useRef<Electron.WebviewTag>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
+  const zoomLevelRef = useRef(0)
   const lastRecordedUrl = useRef<string | null>(null)
   const initialSrcRef = useRef(useBrowserStore.getState().tabs[browserId]?.url || 'about:blank')
   const { t } = useTranslation()
@@ -267,6 +269,31 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       ? { width: emulation.width, height: emulation.height }
       : { width: '100%', height: '100%' }
 
+  // ⌘+/-/0 zooms the page under the pointer. Hover is what picks the target here,
+  // the same way the chat transcript and the file preview claim these keys — and it
+  // has to be the host layer that answers, not the panel content, because the
+  // webview is overlaid on top of that content and takes the hover itself. The keys
+  // arrive whether the host window or the guest holds focus (browser-popup-redirect).
+  useEffect(() => {
+    return window.app.onContentZoom((action) => {
+      const wv = webviewRef.current
+      if (!wv || !hostRef.current?.matches(':hover')) return
+      // Electron zoom levels are exponential (factor = 1.2^level), so a half step is
+      // ~10% per press — Chrome's own rhythm — and the clamp lands near 40%–250%.
+      const next = action === 'reset'
+        ? 0
+        : action === 'in'
+          ? Math.min(zoomLevelRef.current + 0.5, 5)
+          : Math.max(zoomLevelRef.current - 0.5, -5)
+      zoomLevelRef.current = next
+      try {
+        wv.setZoomLevel(next)
+      } catch {
+        // webview may be mid-teardown
+      }
+    })
+  }, [])
+
   // Agent (and guest-page) focus must never stick on a webview the user is not
   // looking at — otherwise a background session's type/click steals the caret.
   // Visible panels keep normal click-to-focus; isolation still covers steals
@@ -289,6 +316,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   return (
     <>
     <div
+      ref={hostRef}
       data-browser-host=""
       data-browser-id={browserId}
       data-browser-presentation={slot?.mode ?? restingSlot?.mode}

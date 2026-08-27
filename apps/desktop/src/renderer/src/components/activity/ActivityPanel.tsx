@@ -229,7 +229,9 @@ export function ActivityPanel({ getMaxWidth, hidden, transitionMs }: ActivityPan
           transitionTimingFunction: ACTIVITY_PANEL_TRANSITION.easing,
         }}
       >
-        <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col overflow-hidden" style={{ width: maximized ? '100%' : panelWidth }}>
+        {/* tabIndex makes this a focus sink — see activity-focus.ts for why the
+            panel must never be left without an owner for its own shortcuts. */}
+        <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: maximized ? '100%' : panelWidth }}>
           <div className="min-h-0 flex-1">
             <DockviewReact
               className="dockview-theme-superone"
@@ -237,6 +239,8 @@ export function ActivityPanel({ getMaxWidth, hidden, transitionMs }: ActivityPan
               disableDnd={maximized}
               disableFloatingGroups={maximized}
               tabAnimation="smooth"
+              scrollbars="native"
+              disableTabsOverflowList
               onReady={onReady}
               components={activityPanelComponents}
               tabComponents={activityTabComponents}

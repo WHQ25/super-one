@@ -90,10 +90,69 @@
   align-items: center;
 }
 
+/* Driven by the scroll timeline below, so they have to be registered lengths —
+   plain custom properties are not interpolatable. */
+@property --dv-tabs-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --dv-tabs-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 .dockview-theme-superone .dv-tabs-container {
   align-items: center;
   height: 100%;
   gap: 4px;
+  /* Native overflow (scrollbars="native") so a trackpad two-finger swipe scrolls
+     the strip. Chromium maps a vertical wheel onto the only scrollable axis, so
+     both gestures work. The bar itself stays hidden — the edge fades below are
+     the overflow cue, and reserving 3px inside a 34px header shifts the tabs. */
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  /* Each edge dissolves only once there is something hidden past it. A scroll
+     timeline is inactive when the strip does not overflow, so the animation
+     drops out entirely and both fades fall back to their 0px initial value —
+     which resolves to a fully opaque mask. */
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--dv-tabs-fade-start),
+    #000 calc(100% - var(--dv-tabs-fade-end)),
+    transparent 100%
+  );
+  animation-name: dv-tabs-edge-fade;
+  animation-duration: auto;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self inline);
+}
+
+@keyframes dv-tabs-edge-fade {
+  0% {
+    --dv-tabs-fade-start: 0px;
+    --dv-tabs-fade-end: 24px;
+  }
+  4% {
+    --dv-tabs-fade-start: 24px;
+    --dv-tabs-fade-end: 24px;
+  }
+  96% {
+    --dv-tabs-fade-start: 24px;
+    --dv-tabs-fade-end: 24px;
+  }
+  100% {
+    --dv-tabs-fade-start: 24px;
+    --dv-tabs-fade-end: 0px;
+  }
+}
+
+.dockview-theme-superone .dv-tabs-container::-webkit-scrollbar {
+  display: none;
 }
 
 .dockview-theme-superone .dv-tab {
@@ -104,31 +163,26 @@
   min-height: 0;
 }
 
-.dockview-theme-superone .dv-tabs-overflow-container {
-  padding: 6px;
-  gap: 2px;
-  border-radius: 8px;
-}
-
-.dockview-theme-superone .dv-tabs-overflow-container .dv-tab {
-  align-self: stretch;
-}
-
-.dockview-theme-superone .dv-tabs-overflow-container .dv-tab > div {
-  width: 100%;
-  justify-content: flex-start;
-}
-
-.dockview-theme-superone .dv-tabs-overflow-container .dv-tab:not(:last-child) {
-  border-bottom: none;
-}
-
 .dockview-theme-superone .dv-tabs-and-actions-container {
   -webkit-app-region: drag;
 }
 
+/* The whole strip, not just the tabs. A drag region swallows mouse input, so the
+   4px gaps between tabs were dead spots that stalled a scroll gesture the moment
+   the pointer crossed one. The void container right of the strip still has
+   flex-grow, and that is the area windows actually get dragged by. */
+.dockview-theme-superone .dv-tabs-container,
 .dockview-theme-superone .dv-tab {
   -webkit-app-region: no-drag;
+}
+
+/* Opening a tab from the keyboard focuses this container (activity-panel-api.ts),
+   and the app's global focus ring is a box-shadow, not an outline — so without
+   this every ⌘T would ring the whole panel content. */
+.dockview-theme-superone .dv-content-container:focus,
+.dockview-theme-superone .dv-content-container:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .dockview-theme-superone .dv-drop-target > .dv-drop-target-dropzone {

@@ -26,7 +26,10 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }
 ;(globalThis as unknown as { window: typeof window }).window = globalThis as unknown as typeof window
 ;(globalThis as unknown as { app: Record<string, unknown> }).app = new Proxy(
   {},
-  { get: (_t, prop) => (prop === 'onBrowserAnnotateShortcut' || prop === 'onBrowserCertError' || prop === 'onBrowserOpenTab' ? () => () => {} : () => Promise.resolve()) },
+  // Every `on*` is a subscription that must hand back an unsubscribe, or React
+  // throws "destroy is not a function" on cleanup. Matched by shape rather than by
+  // name so adding a listener to the component does not silently break every test.
+  { get: (_t, prop) => (typeof prop === 'string' && prop.startsWith('on') ? () => () => {} : () => Promise.resolve()) },
 )
 
 let useBrowserStore: typeof import('@/stores/browser').useBrowserStore

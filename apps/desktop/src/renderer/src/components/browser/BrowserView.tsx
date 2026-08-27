@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useBrowserStore, type BrowserSlotMode } from '@/stores/browser'
 import { useSlotBounds } from '@/hooks/useSlotBounds'
+import { returnFocusToActivityPanel } from '@/components/activity/activity-focus'
 import { BrowserChrome } from './BrowserChrome'
 import { BrowserNewTab } from './BrowserNewTab'
 import { BrowserCertWarning } from './BrowserCertWarning'
@@ -25,6 +26,7 @@ export function BrowserView({
   showChrome = true,
   trackBoundsContinuously = false,
 }: BrowserViewProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const isHome = useBrowserStore((s) => {
     const tab = s.tabs[browserId]
@@ -49,6 +51,17 @@ export function BrowserView({
   const goForward = useCallback(() => browserGoForward(browserId), [browserId])
   const reload = useCallback(() => browserReload(browserId), [browserId])
 
+  // Navigating away unmounts the new-tab grid on the same commit, and the tile the
+  // user just clicked goes with it — holding focus. Reclaim it for the panel before
+  // it settles on <body>, which would leave ⌘T dead for the whole page load. Only
+  // on the transition: a view that mounts already navigated never held focus.
+  const wasHomeRef = useRef(isHome)
+  useEffect(() => {
+    const leftHome = wasHomeRef.current && !isHome
+    wasHomeRef.current = isHome
+    if (leftHome && interactive) returnFocusToActivityPanel(rootRef.current)
+  }, [isHome, interactive])
+
   const certBack = useCallback(() => {
     const store = useBrowserStore.getState()
     if (store.tabs[browserId]?.canGoBack) { browserGoBack(browserId); return }
@@ -66,7 +79,7 @@ export function BrowserView({
   }, [browserId])
 
   return (
-    <div className={cn('flex h-full w-full flex-col bg-transparent', className)}>
+    <div ref={rootRef} className={cn('flex h-full w-full flex-col bg-transparent', className)}>
       {showChrome && (
         <BrowserChrome
           browserId={browserId}

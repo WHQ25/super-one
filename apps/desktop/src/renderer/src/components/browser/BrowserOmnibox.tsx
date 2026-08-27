@@ -5,11 +5,14 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useBrowserStore } from '@/stores/browser'
+import { returnFocusToActivityPanel } from '@/components/activity/activity-focus'
+import { claimNewTabOmniboxFocus } from '@/components/activity/activity-panel-api'
 import { useOmniboxSuggestions, type OmniboxKind } from './browser-suggest'
 import { hostOf, isSecureScheme } from './browser-url'
 import { BrowserFavicon } from './BrowserFavicon'
 
 interface BrowserOmniboxProps {
+  browserId: string
   url: string
   isHome: boolean
   onNavigate: (input: string) => void
@@ -30,7 +33,7 @@ function certReasonKey(error: string): string {
   return 'chat.browser.insecureReasonGeneric'
 }
 
-export function BrowserOmnibox({ url, isHome, onNavigate }: BrowserOmniboxProps) {
+export function BrowserOmnibox({ browserId, url, isHome, onNavigate }: BrowserOmniboxProps) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState(url)
   const [editing, setEditing] = useState(false)
@@ -47,6 +50,13 @@ export function BrowserOmnibox({ url, isHome, onNavigate }: BrowserOmniboxProps)
   })
   const insecure = insecureReason != null
 
+  // A tab the user just opened blank lands the caret here, Chrome-style, so a URL
+  // can be typed without reaching for the mouse. The queue is set when the panel is
+  // added; this is the first moment an input exists to take it.
+  useEffect(() => {
+    if (claimNewTabOmniboxFocus(browserId)) inputRef.current?.focus()
+  }, [browserId])
+
   useEffect(() => {
     if (!editing) setDraft(isHome ? '' : url)
   }, [url, editing, isHome])
@@ -55,10 +65,19 @@ export function BrowserOmnibox({ url, isHome, onNavigate }: BrowserOmniboxProps)
     if (active >= suggestions.length) setActive(suggestions.length - 1)
   }, [suggestions.length, active])
 
+  // Blurring is what leaves editing mode, so the field shows the resolved URL
+  // instead of the draft — but a bare blur drops focus to <body> and takes the
+  // panel out of the running for its own shortcuts. Hand it back instead.
+  const releaseFocus = () => {
+    const input = inputRef.current
+    input?.blur()
+    returnFocusToActivityPanel(input)
+  }
+
   const commit = (value: string) => {
     setOpen(false)
     setActive(-1)
-    inputRef.current?.blur()
+    releaseFocus()
     onNavigate(value)
   }
 
@@ -75,7 +94,7 @@ export function BrowserOmnibox({ url, isHome, onNavigate }: BrowserOmniboxProps)
       commit(active >= 0 && suggestions[active] ? suggestions[active].url : draft)
     } else if (e.key === 'Escape') {
       setOpen(false)
-      inputRef.current?.blur()
+      releaseFocus()
     }
   }
 
@@ -97,7 +116,7 @@ export function BrowserOmnibox({ url, isHome, onNavigate }: BrowserOmniboxProps)
                 'h-6 w-full rounded-md px-1.5 text-xs text-foreground outline-none transition-colors',
                 showDropdown
                   ? 'rounded-b-none border border-b-0 border-border bg-popover/70 backdrop-blur-md backdrop-saturate-150 dark:bg-popover/85'
-                  : 'bg-transparent hover:bg-muted focus:bg-muted focus:ring-1 focus:ring-border/60',
+                  : 'bg-transparent hover:bg-muted',
                 insecure && 'px-6',
                 editing ? 'text-left' : 'text-center',
               )}

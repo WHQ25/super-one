@@ -67,7 +67,17 @@ export function registerBrowserPopupRedirect(): void {
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
       const mod = process.platform === 'darwin' ? input.meta : input.control
-      if (!mod || input.shift || input.alt) return
+      if (!mod || input.alt) return
+      // Zoom before the shift bail: ⌘+ is ⌘⇧= on most layouts. The host owns these
+      // keys too (main/index.ts), but that listener only fires while the host itself
+      // holds keyboard focus — so with a page focused, zoom died everywhere.
+      if (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0') {
+        event.preventDefault()
+        const action = input.key === '-' ? 'out' : input.key === '0' ? 'reset' : 'in'
+        contents.hostWebContents?.send(AgentIpcChannels.CONTENT_ZOOM, action)
+        return
+      }
+      if (input.shift) return
       if (input.key === '.') {
         event.preventDefault()
         contents.hostWebContents?.send(AgentIpcChannels.BROWSER_ANNOTATE_SHORTCUT, contents.id)

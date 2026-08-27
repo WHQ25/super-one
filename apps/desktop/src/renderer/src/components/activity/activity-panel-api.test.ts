@@ -16,6 +16,7 @@ import {
   toggleMaximizedActivityGroup,
   setCurrentSessionIdGetter,
   setDockApi,
+  claimNewTabOmniboxFocus,
 } from './activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
@@ -252,6 +253,48 @@ describe('Cmd/Ctrl+click opens a browser tab in the background', () => {
     openBrowserTab('example.com', 'browser-bg', null, { background: true })
 
     expect(dock.addPanel).toHaveBeenCalledWith(expect.objectContaining({ id: 'browser-bg', inactive: true }))
+  })
+
+  /**
+   * ⌘T should land the caret in the address bar, Chrome-style. The panel's React
+   * content only mounts after addPanel returns, so the open queues the intent and
+   * the omnibox claims it — which means the queue itself is the contract to pin.
+   */
+  describe('address-bar focus handoff', () => {
+    it('queues the omnibox for a blank tab the user opened in the foreground', () => {
+      fakeDock()
+
+      openBrowserTab('about:blank', 'browser-blank')
+
+      expect(claimNewTabOmniboxFocus('browser-blank')).toBe(true)
+    })
+
+    it('is single-shot, so a remount does not re-steal the caret', () => {
+      fakeDock()
+      openBrowserTab('about:blank', 'browser-once')
+
+      expect(claimNewTabOmniboxFocus('browser-once')).toBe(true)
+      expect(claimNewTabOmniboxFocus('browser-once')).toBe(false)
+    })
+
+    it('leaves a tab opened at a URL alone — the page is what you came for', () => {
+      fakeDock()
+
+      openBrowserTab('example.com', 'browser-url')
+
+      expect(claimNewTabOmniboxFocus('browser-url')).toBe(false)
+    })
+
+    it.each([
+      ['background (Cmd+click)', { background: true }],
+      ['agent automation', { reveal: false }],
+    ])('does not queue for a %s open', (_label, opts) => {
+      fakeDock()
+
+      openBrowserTab('about:blank', 'browser-quiet', null, opts)
+
+      expect(claimNewTabOmniboxFocus('browser-quiet')).toBe(false)
+    })
   })
 
   it('does not steal focus when the background target tab already exists', () => {

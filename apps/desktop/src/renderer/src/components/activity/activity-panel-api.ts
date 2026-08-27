@@ -2,7 +2,7 @@ import type { DockviewApi, AddPanelPositionOptions, IDockviewPanel, SerializedDo
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
-import { normalizeUrl } from '@/components/browser/browser-url'
+import { isBlankUrl, normalizeUrl } from '@/components/browser/browser-url'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
 import { disposeActivityTermInstance } from './activity-terminal'
 
@@ -101,6 +101,38 @@ function execOrDefer(fn: () => void) {
   } else {
     pendingAction = fn
   }
+}
+
+/**
+ * Move DOM focus onto the active panel's content.
+ *
+ * Dockview activates a panel without touching focus — its `panel.focus()` only
+ * flips the active flag — so a tab opened from the keyboard leaves focus wherever
+ * it was, which after the first ⌘T is nowhere. Panel-scoped shortcuts are gated on
+ * the activity panel owning focus (see activity-focus.ts), so the second ⌘T in a
+ * row did nothing until the user clicked. The group's content container is
+ * dockview's own focus target (tabIndex -1); whatever the panel renders can still
+ * claim focus off it once mounted, as the terminal does.
+ */
+export function focusActivePanelContent(): void {
+  const container = dockApi?.activeGroup?.element.querySelector<HTMLElement>('.dv-content-container')
+  container?.focus({ preventScroll: true })
+}
+
+/**
+ * Browser tabs the user just opened blank and in the foreground, waiting for their
+ * omnibox to mount and claim focus — the Chrome behaviour where ⌘T lands the caret
+ * in the address bar so a URL can be typed straight away.
+ *
+ * A handoff rather than a direct focus call because the panel's React content only
+ * mounts after `addPanel` returns, so there is no input to focus yet. Blank tabs
+ * only: opening a link in a new tab means the page is the thing you came for.
+ */
+const pendingOmniboxFocus = new Set<string>()
+
+/** Consume the pending focus for this tab, if any. Single-shot. */
+export function claimNewTabOmniboxFocus(browserId: string): boolean {
+  return pendingOmniboxFocus.delete(browserId)
 }
 
 function getMaximizedGroup() {
@@ -316,6 +348,7 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
   if (resolvedOwner != null && resolvedOwner !== currentSession) return
 
   if (opts?.reveal !== false) ensureVisible()
+  const foreground = !opts?.background && opts?.reveal !== false
   recordMosaicOpen(browserId, () => openBrowserTab(url, browserId, resolvedOwner, opts))
   execOrDefer(() => {
     if (!dockApi) return
@@ -333,7 +366,11 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
         ...(opts?.background ? { inactive: true } : {}),
         ...(position ? { position } : {}),
       })
+      if (foreground && isBlankUrl(url)) pendingOmniboxFocus.add(browserId)
     }
+    // Foreground opens only: `reveal: false` is the agent's automation path and
+    // `background` is Cmd+click, neither of which may take focus off the user.
+    if (foreground) focusActivePanelContent()
   })
 }
 

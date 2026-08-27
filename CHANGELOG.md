@@ -4,6 +4,35 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.58.0-alpha] - 2026-08-27
+
+### Added
+
+- Browser: WebMCP page tools. With the new Browser setting on, the agent can
+  list and call tools a page registers via `document.modelContext`, read from
+  an isolated world so the page's own scripts cannot hijack them. Page output
+  is wrapped as untrusted content before it reaches the model.
+- Browser: page tools are gated on trusting the site — a decision kept out of
+  the harness permission modes, because "do I trust this website" is a question
+  about a third party rather than about how much rope the agent was given.
+  Trust pins each tool's description and schema, so a page that re-registers a
+  name with a different implementation prompts again. Grants are listed and
+  revocable in Settings → Browser.
+- Browser: page tool listings and calls have designed chat rows — the page's
+  favicon in place of a globe, the tool catalog with clamped descriptions, and
+  the sentence describing what the call set out to do.
+
+### Fixed
+
+- Chat: an MCP tool's result is unwrapped once from its reply envelope, which
+  also restores snapshot output, download counts and action counts on
+  already-persisted sessions.
+- Browser: the automation viewfinder stays on the last operated tab between
+  tool calls instead of blanking for a frame on each one.
+- Collab: the request panel reads Cursor and dsh model catalogs from their own
+  harness cache instead of falling back to OpenCode's — which previously left
+  it offering no models at all, or the wrong harness's.
+
 ## [0.57.5-alpha] - 2026-08-26
 
 ### Added

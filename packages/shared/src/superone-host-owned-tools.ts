@@ -192,9 +192,29 @@ export function isStaticHostOwnedSuperoneToolQualified(qualifiedName: string): b
  * computer_* is deliberately excluded: this list must stay static so it cannot
  * drift against a warm session spawned under different settings.
  */
+/**
+ * Registered SuperOne tools that must NEVER be auto-approved, at any layer.
+ *
+ * `browser_tools_call` executes code a third-party website wrote. The host asks once whether the
+ * site may offer tools at all; the individual call then belongs to the harness permission layer
+ * like any ordinary MCP tool, so the user manages it with controls they already know.
+ *
+ * Auto-approval has three independent projections — the `canUseTool` short-circuit, the Claude
+ * SDK `allowedTools` array, and the Codex `approval_mode` map — and the SDK ones run *earlier*
+ * than `canUseTool`. Excluding a name from only one of them silently changes nothing, so every
+ * projection filters through this list.
+ */
+export const NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES: readonly string[] = ['browser_tools_call']
+
+export function isNeverAutoAllowSuperoneBareName(bare: string): boolean {
+  return NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES.includes(bare)
+}
+
 export const STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES: readonly string[] = [
   ...BUILT_IN_SUPERONE_TOOL_NAMES,
   MOBILE_SHARE_FILE_TOOL_NAME,
   MINIAPP_LIST_BARE_NAME,
   MINIAPP_CALL_BARE_NAME,
-].map((bare) => `${MCP_SUPERONE_TOOL_PREFIX}${bare}`)
+]
+  .filter((bare) => !isNeverAutoAllowSuperoneBareName(bare))
+  .map((bare) => `${MCP_SUPERONE_TOOL_PREFIX}${bare}`)

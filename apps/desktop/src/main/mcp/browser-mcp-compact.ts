@@ -210,7 +210,11 @@ export function registerCompactBrowserTools(
         inputSchema: {
           ...tabField,
           description: z.string().optional().describe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION),
-          name: z.string().describe('Tool name from browser_tools_list.'),
+          // Typed optional on purpose. Declared required, the MCP layer rejects a missing `name`
+          // before the host runs, and the agent gets an `MCP error -32602` the chat row cannot
+          // attribute to any page — no origin, no favicon, no available-tool list. Letting the
+          // call through lets `executeWebMcpCall` answer with its own identified reply instead.
+          name: z.string().optional().describe('Tool name from browser_tools_list. Required.'),
           input: z
             .record(z.string(), z.unknown())
             .default({})

@@ -886,6 +886,7 @@ export type Messages = {
           title: string
           empty: string
           remove: string
+          toolCount: string
         }
       }
       experimental: {
@@ -1778,6 +1779,24 @@ export type Messages = {
       busy: string
       busyWarning: string
       approve: string
+      deny: string
+    }
+    webmcpTrust: {
+      badge: string
+      title: string
+      titleChanged: string
+      collapsed: string
+      description: string
+      toolsHeading: string
+      toolCount: string
+      writerCount: string
+      pageClaimHint: string
+      readOnly: string
+      writes: string
+      toolChanged: string
+      changedWarning: string
+      trustSession: string
+      trustAlways: string
       deny: string
     }
     computerUseGrant: {
@@ -4426,9 +4445,10 @@ export const en: Messages = {
         description: 'Let the agent discover tools registered by secure pages in the built-in browser.',
         restartNote: 'Restart SuperOne after changing this setting.',
         grants: {
-          title: 'Always allowed page tools',
-          empty: 'No page tools are always allowed.',
-          remove: 'Remove grant',
+          title: 'Trusted sites',
+          empty: 'No sites are trusted to offer page tools.',
+          remove: 'Stop trusting this site',
+          toolCount: '{{count}} tools trusted',
         },
       },
       experimental: {
@@ -5354,6 +5374,24 @@ export const en: Messages = {
       busy: 'In use',
       busyWarning: 'This device is bound to another chat. Approving it moves it here.',
       approve: 'Approve',
+      deny: 'Deny',
+    },
+    webmcpTrust: {
+      badge: 'Page tools',
+      title: 'Trust page tools from {{origin}}?',
+      titleChanged: '{{origin}} changed its page tools',
+      collapsed: '{{origin}} is waiting for a trust decision',
+      description: 'Trusting a site lets the agent use the tools it publishes. Each call is still approved through your normal tool permissions. Everything listed above is written by the site and is not verified by SuperOne.',
+      toolsHeading: 'Tools this site publishes',
+      toolCount: '{{count}} tools',
+      writerCount: '{{count}} change data',
+      pageClaimHint: 'Declared by the site — not verified',
+      readOnly: 'read-only',
+      writes: 'changes data',
+      toolChanged: 'changed',
+      changedWarning: 'This site re-registered {{tools}} with a different description or input schema. The earlier trust no longer covers it.',
+      trustSession: 'Trust in this chat',
+      trustAlways: 'Always trust',
       deny: 'Deny',
     },
     computerUseGrant: {

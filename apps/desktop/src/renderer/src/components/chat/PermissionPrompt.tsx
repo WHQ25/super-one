@@ -22,6 +22,7 @@ import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromp
 import { SessionCleanupConfirmPromptContainer } from './SessionCleanupConfirmPrompt'
 import { AutomationConfirmPromptContainer } from './AutomationConfirmPrompt'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
+import { WebMcpTrustPrompt } from './WebMcpTrustPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
@@ -140,6 +141,7 @@ export function PermissionPrompt() {
   const isConfigConfirm = pendingPermission?.requestKind === 'config_confirm'
   const isSessionAgentsConfirm = pendingPermission?.requestKind === 'session_agents_confirm'
   const isComputerUseGrant = pendingPermission?.requestKind === 'computer_use_grant'
+  const isWebMcpTrustConfirm = pendingPermission?.requestKind === 'webmcp_trust_confirm'
   const isSessionCleanupConfirm = pendingPermission?.requestKind === 'session_cleanup_confirm'
   const isAutomationConfirm = pendingPermission?.requestKind === 'automation_confirm'
   const isSelfManagedConfirm =
@@ -147,6 +149,7 @@ export function PermissionPrompt() {
     || isConfigConfirm
     || isSessionAgentsConfirm
     || isComputerUseGrant
+    || isWebMcpTrustConfirm
     || isSessionCleanupConfirm
     || isAutomationConfirm
   const elicitationForm = pendingPermission?.elicitationForm ?? []
@@ -392,6 +395,22 @@ export function PermissionPrompt() {
 
   if (isAutomationConfirm) {
     return <AutomationConfirmPromptContainer request={pendingPermission} />
+  }
+
+  if (isWebMcpTrustConfirm && pendingPermission) {
+    return (
+      <WebMcpTrustPrompt
+        request={pendingPermission}
+        onTrust={(scope) => {
+          if (!requestId) return
+          respondToPermission(requestId, true, scope === 'always', undefined, undefined, undefined, { scope })
+        }}
+        onDeny={() => {
+          if (!requestId) return
+          respondToPermission(requestId, false)
+        }}
+      />
+    )
   }
 
   if (isComputerUseGrant && pendingPermission) {

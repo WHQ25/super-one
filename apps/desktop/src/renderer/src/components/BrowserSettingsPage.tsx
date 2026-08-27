@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Trash2 } from 'lucide-react'
-import type { WebmcpAlwaysAllowTool } from '@superone/shared/agent-types'
+import type { WebmcpTrustedOrigin } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Switch } from '@superone/ui/components/ui/switch'
@@ -36,7 +36,7 @@ export function BrowserSettingsPage() {
   const { t } = useTranslation()
   const [cdpEnabled, setCdpEnabled] = useState(false)
   const [webmcpEnabled, setWebmcpEnabled] = useState(false)
-  const [webmcpAlwaysAllowTools, setWebmcpAlwaysAllowTools] = useState<WebmcpAlwaysAllowTool[]>([])
+  const [webmcpTrustedOrigins, setWebmcpTrustedOrigins] = useState<WebmcpTrustedOrigin[]>([])
   const [cookiesEnabled, setCookiesEnabled] = useState(false)
   const [mockEnabled, setMockEnabled] = useState(false)
   const [emulateEnabled, setEmulateEnabled] = useState(false)
@@ -49,7 +49,7 @@ export function BrowserSettingsPage() {
       if (!mounted) return
       setCdpEnabled(settings.cdpEnabled)
       setWebmcpEnabled(settings.webmcpEnabled)
-      setWebmcpAlwaysAllowTools(settings.webmcpAlwaysAllowTools)
+      setWebmcpTrustedOrigins(settings.webmcpTrustedOrigins)
       setCookiesEnabled(settings.cdpCookiesEnabled)
       setMockEnabled(settings.cdpMockEnabled)
       setEmulateEnabled(settings.cdpEmulateEnabled)
@@ -67,13 +67,11 @@ export function BrowserSettingsPage() {
     setEmulateEnabled(result.cdpEmulateEnabled)
   }
 
-  async function removeWebMcpGrant(grant: WebmcpAlwaysAllowTool) {
+  async function revokeWebMcpOrigin(origin: string) {
     const result = await window.app.saveAppSettings({
-      webmcpAlwaysAllowTools: webmcpAlwaysAllowTools.filter(
-        (entry) => entry.origin !== grant.origin || entry.toolName !== grant.toolName,
-      ),
+      webmcpTrustedOrigins: webmcpTrustedOrigins.filter((entry) => entry.origin !== origin),
     })
-    setWebmcpAlwaysAllowTools(result.webmcpAlwaysAllowTools)
+    setWebmcpTrustedOrigins(result.webmcpTrustedOrigins)
   }
 
   const expDisabled = loading || !cdpEnabled
@@ -147,26 +145,27 @@ export function BrowserSettingsPage() {
         {webmcpEnabled && (
           <div className="border-t border-border p-4">
             <p className="text-sm font-medium">{t('settings.browser.webmcp.grants.title')}</p>
-            {webmcpAlwaysAllowTools.length === 0 ? (
+            {webmcpTrustedOrigins.length === 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">
                 {t('settings.browser.webmcp.grants.empty')}
               </p>
             ) : (
               <div className="mt-2 divide-y divide-border">
-                {webmcpAlwaysAllowTools.map((grant) => (
-                  <div
-                    key={`${grant.origin}::${grant.toolName}`}
-                    className="flex items-center justify-between gap-3 py-2"
-                  >
+                {webmcpTrustedOrigins.map((entry) => (
+                  <div key={entry.origin} className="flex items-center justify-between gap-3 py-2">
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-medium">{grant.toolName}</p>
-                      <p className="truncate text-xs text-muted-foreground">{grant.origin}</p>
+                      <p className="truncate font-mono text-xs font-medium">{entry.origin}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {t('settings.browser.webmcp.grants.toolCount', {
+                          count: Object.keys(entry.tools).length,
+                        })}
+                      </p>
                     </div>
                     <IconButton
                       size="xs"
                       variant="ghost"
                       tooltip={t('settings.browser.webmcp.grants.remove')}
-                      onClick={() => void removeWebMcpGrant(grant)}
+                      onClick={() => void revokeWebMcpOrigin(entry.origin)}
                     >
                       <Trash2 className="size-3.5" />
                     </IconButton>

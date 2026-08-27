@@ -1,56 +1,69 @@
-/** Host permission gate for page-provided WebMCP tool calls. */
+/** Host gate for whether a site may expose page tools to the agent at all. */
 
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, WebmcpTrustConfirmPayload } from '@superone/shared/agent-types'
 import { HostConfirmRegistry } from '../session/host-confirm-registry'
+import type { WebMcpTrustScope } from './webmcp-trust'
 
-const WEBMCP_CALL_QUALIFIED = 'mcp__superone__browser_tools_call'
+const WEBMCP_TRUST_QUALIFIED = 'mcp__superone__browser_tools_list'
 const CONFIRM_TIMEOUT_MS = 120_000
 
-export type WebmcpCallConfirmOutcome =
-  | { action: 'accept'; alwaysAllow: boolean }
+export type WebmcpTrustConfirmOutcome =
+  | { action: 'accept'; scope: WebMcpTrustScope }
   | { action: 'decline' | 'cancel'; reason?: string }
 
-const confirms = new HostConfirmRegistry<WebmcpCallConfirmOutcome>({
-  idPrefix: 'webmcpcall',
+const confirms = new HostConfirmRegistry<WebmcpTrustConfirmOutcome>({
+  idPrefix: 'webmcptrust',
   timeoutMs: CONFIRM_TIMEOUT_MS,
   timeoutError: () => new Error(
-    `WebMCP page-tool confirmation timed out after ${CONFIRM_TIMEOUT_MS}ms`,
+    `WebMCP site-trust confirmation timed out after ${CONFIRM_TIMEOUT_MS}ms`,
   ),
 })
 
-export function resolveWebmcpCallConfirm(
+/**
+ * The prompt offers two levels of "yes", but `respondToPermission` only carries a boolean
+ * `alwaysAllow`. `formAnswers.scope` is the explicit channel; the boolean is the fallback for
+ * callers (remote clients, older prompts) that only know the two-state shape.
+ */
+function readScope(alwaysAllow: boolean, formAnswers?: Record<string, unknown>): WebMcpTrustScope {
+  const raw = formAnswers?.scope
+  if (raw === 'session' || raw === 'always') return raw
+  return alwaysAllow ? 'always' : 'session'
+}
+
+export function resolveWebmcpTrustConfirm(
   requestId: string,
   action: 'accept' | 'decline' | 'cancel',
   alwaysAllow = false,
   reason?: string,
+  formAnswers?: Record<string, unknown>,
 ): boolean {
-  const outcome: WebmcpCallConfirmOutcome = action === 'accept'
-    ? { action: 'accept', alwaysAllow }
+  const outcome: WebmcpTrustConfirmOutcome = action === 'accept'
+    ? { action: 'accept', scope: readScope(alwaysAllow, formAnswers) }
     : { action, reason }
   return confirms.settle(requestId, action === 'accept', outcome)
 }
 
-export function rejectWebmcpCallConfirm(requestId: string, reason: string): boolean {
+export function rejectWebmcpTrustConfirm(requestId: string, reason: string): boolean {
   return confirms.fail(requestId, new Error(reason))
 }
 
-export function awaitWebmcpCallConfirm(opts: {
+export function awaitWebmcpTrustConfirm(opts: {
   emitHostEvent: (event: AgentEvent) => void
-  origin: string
-  toolName: string
-  toolInput: Record<string, unknown>
-}): Promise<WebmcpCallConfirmOutcome> {
+  confirm: WebmcpTrustConfirmPayload
+}): Promise<WebmcpTrustConfirmOutcome> {
+  const { confirm } = opts
+  const message = confirm.reason === 'tool_changed'
+    ? `The page at ${confirm.origin} changed the tools you trusted (${confirm.changedTools.join(', ')}). Trust it again?`
+    : `Allow ${confirm.origin} to offer its ${confirm.tools.length} page tools to the agent?`
   return confirms.open({ emitHostEvent: opts.emitHostEvent }, (requestId) => ({
     requestId,
-    toolName: WEBMCP_CALL_QUALIFIED,
+    toolName: WEBMCP_TRUST_QUALIFIED,
     toolUseId: requestId,
-    input: {
-      name: opts.toolName,
-      input: opts.toolInput,
-      origin: opts.origin,
-    },
+    input: { origin: confirm.origin, tools: confirm.tools.map(({ name }) => name) },
+    requestKind: 'webmcp_trust_confirm',
+    webmcpTrustConfirm: confirm,
     allowAlwaysAllow: true,
     serverName: 'superone',
-    message: `Allow the page at ${opts.origin} to run its tool "${opts.toolName}"?`,
+    message,
   }))
 }

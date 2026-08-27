@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight } from 'lucide-react'
 import { Streamdown } from 'streamdown'
@@ -11,6 +11,20 @@ import type { QuestionAnnotations, QuestionPreviewFormat, UserQuestion } from '@
 
 export function SectionLabel({ children }: { children: string }) {
   return <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground/70">{children}</div>
+}
+
+/**
+ * The failure message inside a tool body — small, amber, wrapped. Errors are prose, so they get
+ * prose treatment: a code block would frame a sentence as a payload and invite the reader (and
+ * the copy button) to treat it as data. `text-warning` is the error tone the row already uses;
+ * `destructive` is reserved for actions that destroy something.
+ */
+export function ToolErrorText({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn('whitespace-pre-wrap break-words text-xs text-warning/90', className)}>
+      {children}
+    </div>
+  )
 }
 
 /** Lazily prettify a JS snippet with Prettier (loaded on demand). Falls back to the raw source. */

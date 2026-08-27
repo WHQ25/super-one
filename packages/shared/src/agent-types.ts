@@ -996,6 +996,7 @@ export interface PermissionRequest {
     | 'computer_use_grant'
     | 'session_cleanup_confirm'
     | 'automation_confirm'
+    | 'webmcp_trust_confirm'
   serverName?: string
   message?: string
   subtitle?: string
@@ -1008,6 +1009,8 @@ export interface PermissionRequest {
   configConfirm?: ConfigConfirmPayload
   /** Present only when requestKind === 'session_agents_confirm'. */
   sessionAgentsConfirm?: SessionAgentRequestPayload
+  /** Present only when requestKind === 'webmcp_trust_confirm'. */
+  webmcpTrustConfirm?: WebmcpTrustConfirmPayload
   /** Present only when requestKind === 'computer_use_grant'. */
   computerUseGrant?: ComputerUseGrantPayload
   /** Present only when requestKind === 'session_cleanup_confirm'. */
@@ -1106,10 +1109,46 @@ export interface ComputerUseAlwaysAllowApp {
   bundleId: string
 }
 
-/** Persistent always-allow entry for one WebMCP page tool at one origin. */
-export interface WebmcpAlwaysAllowTool {
+/** Page-declared WebMCP tool annotations. Self-reported by an untrusted page — hints only. */
+export interface WebmcpToolAnnotations {
+  /** Page claims the tool does not change state. Never used to relax a permission check. */
+  readOnlyHint?: boolean
+  /** Page claims the output embeds user-generated / third-party content. */
+  untrustedContentHint?: boolean
+}
+
+/**
+ * A site the user allowed to expose page tools to the agent.
+ *
+ * `tools` pins each tool's body (description + inputSchema) as it stood when trust was granted.
+ * A page may re-register an existing name with a different implementation, so trust that keyed
+ * on origin alone would silently cover a tool the user never saw. A mismatch drops the origin
+ * back to undecided and re-asks; a *new* name is simply learned, since the user already decided
+ * they trust this site to publish tools.
+ */
+export interface WebmcpTrustedOrigin {
   origin: string
-  toolName: string
+  tools: Record<string, string>
+}
+
+/** One page tool as summarised for the trust prompt. All text is page-authored. */
+export interface WebmcpTrustToolSummary {
+  name: string
+  title?: string
+  description: string
+  annotations: WebmcpToolAnnotations
+  /** Body differs from what it was when this origin was trusted. */
+  changed?: boolean
+}
+
+/** Present only when requestKind === 'webmcp_trust_confirm'. */
+export interface WebmcpTrustConfirmPayload {
+  origin: string
+  /** `first_use` — never decided. `tool_changed` — trusted, then a tool was re-registered. */
+  reason: 'first_use' | 'tool_changed'
+  tools: WebmcpTrustToolSummary[]
+  /** Names whose body changed since the trust decision; empty on first use. */
+  changedTools: string[]
 }
 
 /** Connected macOS display exposed to the Computer Use settings UI. */
@@ -4158,7 +4197,7 @@ export interface AppSettings {
   cdpEnabled: boolean
   webmcpEnabled: boolean
   /** WebMCP origin + tool-name grants persisted across app sessions. */
-  webmcpAlwaysAllowTools: WebmcpAlwaysAllowTool[]
+  webmcpTrustedOrigins: WebmcpTrustedOrigin[]
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
@@ -4299,7 +4338,7 @@ export interface AppSettingsPatch {
   liquidGlass?: boolean
   cdpEnabled?: boolean
   webmcpEnabled?: boolean
-  webmcpAlwaysAllowTools?: WebmcpAlwaysAllowTool[]
+  webmcpTrustedOrigins?: WebmcpTrustedOrigin[]
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean

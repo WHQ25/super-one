@@ -60,6 +60,7 @@ describe('superone host-owned tool auto-approve matrix', () => {
   it('auto-allows every static builtin when qualified (Claude/ACP path)', () => {
     gates.webmcp = true
     for (const bare of BUILT_IN_SUPERONE_TOOL_NAMES) {
+      if (bare === 'browser_tools_call') continue // deliberately harness-gated, see below
       expect(isBuiltInSuperoneToolQualified(toQualifiedSuperoneToolName(bare)), bare).toBe(true)
     }
   })
@@ -72,9 +73,32 @@ describe('superone host-owned tool auto-approve matrix', () => {
     }
 
     gates.webmcp = true
-    for (const name of ['browser_tools_list', 'browser_tools_call']) {
-      expect(isBuiltInSuperoneToolQualified(`mcp__superone__${name}`)).toBe(true)
-      expect(listOpenCodeAutoAllowSuperoneBareNames()).toContain(name)
+    // Read-only reconnaissance is auto-allowed like browser_snapshot; the host's site-trust gate
+    // is what actually guards it.
+    expect(isBuiltInSuperoneToolQualified('mcp__superone__browser_tools_list')).toBe(true)
+    expect(listOpenCodeAutoAllowSuperoneBareNames()).toContain('browser_tools_list')
+  })
+
+  it('keeps browser_tools_call out of the SDK-level allowlists too, not just canUseTool', async () => {
+    // The Claude SDK consults `allowedTools` BEFORE canUseTool, and Codex reads an
+    // `approval_mode` map — excluding the name from only the canUseTool short-circuit changes
+    // nothing observable. This is the assertion that catches a half-done removal.
+    const { STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES, BUILT_IN_SUPERONE_TOOL_NAMES: names } =
+      await import('@superone/shared/superone-host-owned-tools')
+    expect(names).toContain('browser_tools_call') // still a registered tool…
+    expect(STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES) // …just never a pre-approved one
+      .not.toContain('mcp__superone__browser_tools_call')
+    expect(STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES)
+      .toContain('mcp__superone__browser_tools_list')
+  })
+
+  it('never auto-allows browser_tools_call, so page tools flow through harness permissions', () => {
+    // It executes code a third-party website wrote. Site trust bounds *which* sites reach it;
+    // the harness permission layer bounds each call, using controls the user already knows.
+    for (const enabled of [false, true]) {
+      gates.webmcp = enabled
+      expect(isBuiltInSuperoneToolQualified('mcp__superone__browser_tools_call')).toBe(false)
+      expect(listOpenCodeAutoAllowSuperoneBareNames()).not.toContain('browser_tools_call')
     }
   })
 
@@ -97,6 +121,7 @@ describe('superone host-owned tool auto-approve matrix', () => {
       gates.webmcp = true
       const off = listOpenCodeAutoAllowSuperoneBareNames()
       for (const bare of [...BUILT_IN_SUPERONE_TOOL_NAMES, 'mobile_share_file']) {
+        if (bare === 'browser_tools_call') continue // never auto-allowed, by design
         expect(off).toContain(bare)
       }
       expect(off).not.toContain('computer_apps')

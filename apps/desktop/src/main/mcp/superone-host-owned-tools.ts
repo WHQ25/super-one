@@ -21,6 +21,7 @@ import {
   MINIAPP_CALL_BARE_NAME,
   MINIAPP_LIST_BARE_NAME,
   MOBILE_SHARE_FILE_TOOL_NAME,
+  isNeverAutoAllowSuperoneBareName,
   isStaticHostOwnedSuperoneBareName,
 } from '@superone/shared/superone-host-owned-tools'
 import {
@@ -37,7 +38,12 @@ export {
 
 /** Deprecated alias still registered on the MCP server for one release. */
 const COMPUTER_USE_REGISTERED_ALIASES = ['computer_observe'] as const
-const WEBMCP_TOOL_NAMES = new Set(['browser_tools_list', 'browser_tools_call'])
+/**
+ * `browser_tools_list` is read-only reconnaissance, auto-allowed like `browser_snapshot` once
+ * WebMCP is on — the host's own site-trust gate is what actually guards it. `browser_tools_call`
+ * is excluded everywhere via {@link isNeverAutoAllowSuperoneBareName}.
+ */
+const WEBMCP_AUTO_ALLOW_TOOL_NAMES = new Set(['browser_tools_list'])
 
 /**
  * Whether a bare tool name (no mcp__superone__ prefix) is SuperOne host-owned.
@@ -64,7 +70,8 @@ export function toQualifiedSuperoneToolName(bare: string): string {
 export function isBuiltInSuperoneToolQualified(qualifiedName: string): boolean {
   if (!qualifiedName.startsWith(MCP_SUPERONE_TOOL_PREFIX)) return false
   const bare = qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length)
-  if (WEBMCP_TOOL_NAMES.has(bare)) return isWebMcpEnabled()
+  if (isNeverAutoAllowSuperoneBareName(bare)) return false
+  if (WEBMCP_AUTO_ALLOW_TOOL_NAMES.has(bare)) return isWebMcpEnabled()
   if (isStaticHostOwnedSuperoneBareName(bare)) return true
   if (isComputerUseEnabled() && normalizeComputerUseToolName(bare) != null) return true
   return false
@@ -78,7 +85,8 @@ export function isBuiltInSuperoneToolQualified(qualifiedName: string): boolean {
 export function listOpenCodeAutoAllowSuperoneBareNames(): string[] {
   const names: string[] = [
     ...BUILT_IN_SUPERONE_TOOL_NAMES.filter(
-      (name) => !WEBMCP_TOOL_NAMES.has(name) || isWebMcpEnabled(),
+      (name) => !isNeverAutoAllowSuperoneBareName(name)
+        && (!WEBMCP_AUTO_ALLOW_TOOL_NAMES.has(name) || isWebMcpEnabled()),
     ),
     MOBILE_SHARE_FILE_TOOL_NAME,
     MINIAPP_LIST_BARE_NAME,

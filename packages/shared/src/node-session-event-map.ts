@@ -490,6 +490,12 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           payload.sessionAgentsConfirm && typeof payload.sessionAgentsConfirm === 'object'
             ? (payload.sessionAgentsConfirm as PermissionRequest['sessionAgentsConfirm'])
             : undefined
+        // Rebuilt field-by-field, so every prompt payload has to be let through explicitly or
+        // the remote client renders an empty shell.
+        const webmcpTrustConfirm =
+          payload.webmcpTrustConfirm && typeof payload.webmcpTrustConfirm === 'object'
+            ? (payload.webmcpTrustConfirm as PermissionRequest['webmcpTrustConfirm'])
+            : undefined
         const request: PermissionRequest = {
           requestId: interactionId,
           toolName,
@@ -507,6 +513,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           ...(asString(payload.serverName) ? { serverName: asString(payload.serverName)! } : {}),
           ...(asString(payload.message) ? { message: asString(payload.message)! } : {}),
           ...(sessionAgentsConfirm ? { sessionAgentsConfirm } : {}),
+          ...(webmcpTrustConfirm ? { webmcpTrustConfirm } : {}),
         }
         push({ type: 'permission_request', request })
         break

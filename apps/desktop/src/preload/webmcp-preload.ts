@@ -2,8 +2,10 @@ import { ipcRenderer } from 'electron'
 
 interface PageTool {
   name?: unknown
+  title?: unknown
   description?: unknown
   inputSchema?: unknown
+  annotations?: unknown
 }
 
 interface ModelContext {
@@ -16,6 +18,20 @@ interface ModelContext {
 const MAX_TOOLS = 64
 const MAX_SCHEMA_BYTES = 8 * 1024
 const FALLBACK_SCHEMA = '{"type":"object"}'
+
+/**
+ * `annotations.readOnlyHint` / `untrustedContentHint` are declared by the page itself, so they
+ * are carried across as claims, not as facts — the host only ever uses them to *tighten* a
+ * prompt (extra warnings, fewer grant tiers), never to skip one.
+ */
+function readAnnotations(value: unknown): { readOnlyHint?: boolean; untrustedContentHint?: boolean } | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const input = value as Record<string, unknown>
+  const out: { readOnlyHint?: boolean; untrustedContentHint?: boolean } = {}
+  if (typeof input.readOnlyHint === 'boolean') out.readOnlyHint = input.readOnlyHint
+  if (typeof input.untrustedContentHint === 'boolean') out.untrustedContentHint = input.untrustedContentHint
+  return Object.keys(out).length > 0 ? out : undefined
+}
 
 function initialize(): void {
   const candidate = (document as Document & { modelContext?: unknown }).modelContext
@@ -44,10 +60,13 @@ function initialize(): void {
           inputSchema = FALLBACK_SCHEMA
           truncated = true
         }
+        const annotations = readAnnotations(tool.annotations)
         return {
           name: tool.name,
+          ...(typeof tool.title === 'string' && tool.title ? { title: tool.title } : {}),
           description: tool.description,
           inputSchema,
+          ...(annotations ? { annotations } : {}),
           ...(truncated ? { truncated: true } : {}),
         }
       })

@@ -444,6 +444,15 @@ export const BrowserPageTools: Story = {
         {tool('tools_list', { status: 'streaming', elapsedSeconds: 2 })}
         {tool('tools_list', { result: PAGE_TOOLS_RESULT })}
         {tool('tools_list', { result: JSON.stringify({ count: 0, hint: 'This page has not registered any WebMCP tools.' }) })}
+        {tool('tools_list', {
+          result: JSON.stringify({
+            status: 'denied',
+            origin: 'https://shop.example.com',
+            hint: "The user did not trust this site's page tools.",
+          }),
+        })}
+        {tool('tools_list', { result: 'No browser tab is open.', isError: true })}
+        {tool('tools_list', { result: 'MCP error -32603: WebMCP bridge is not attached to this tab.' })}
       </Section>
       <Section title="browser_tools_call">
         {tool('tools_call', {
@@ -460,12 +469,71 @@ export const BrowserPageTools: Story = {
           input: { name: 'checkout', input: {} },
           result: JSON.stringify({ status: 'denied', reason: 'User declined the page tool call.' }),
         })}
+        {tool('tools_call', {
+          input: { name: 'add_to_cart', input: { sku: 'TS-BLK-M' } },
+          result: JSON.stringify({ ok: false, error: 'Page tool "add_to_cart" threw: sku not found' }),
+        })}
+        {tool('tools_call', {
+          input: { name: 'add_to_cart', input: { sku: 'TS-BLK-M' } },
+          result: 'The page navigated away before the tool answered.',
+          isError: true,
+        })}
+        {tool('tools_call', {
+          input: { description: '列出当前评论', input: { status: 'all' } },
+          result: 'MCP error -32602: Input validation error: Invalid arguments for tool browser_tools_call: Invalid input: expected string, received undefined at name',
+        })}
+        {tool('tools_call', {
+          input: { name: 'add_to_cart', description: 'Add the black shirt to the cart', input: { qty: 2 } },
+          result: JSON.stringify({
+            ok: false,
+            origin: 'https://shop.example.com',
+            name: 'add_to_cart',
+            error: 'Invalid input for page tool "add_to_cart" — sku: Required.',
+            hint: 'Fix the fields and retry. The schema comes from browser_tools_list.',
+          }),
+          isError: true,
+        })}
+        {tool('tools_call', {
+          input: { name: 'add_to_car', input: { sku: 'TS-BLK-M' } },
+          result: JSON.stringify({
+            ok: false,
+            origin: 'https://shop.example.com',
+            name: 'add_to_car',
+            availableTools: ['add_to_cart', 'search_catalog', 'checkout'],
+            error: 'This page does not register a tool named "add_to_car".',
+            hint: 'Call browser_tools_list to see available tools.',
+          }),
+        })}
       </Section>
       <Note>
         Page tool names are page-authored identifiers (<code>request_switch_to_editor</code>); the row
         title-cases them and keeps the raw name on hover. The leading icon is the page favicon (resolved from the origin-keyed main-process cache);
         it falls back to a globe when the origin has no cached icon. The call row shows the agent's
         <code> description</code> when it wrote one, and the raw arguments otherwise.
+      </Note>
+      <Note>
+        Three failure tones, deliberately distinct: <b>denied</b> is a user decision (trust refused
+        or call declined), <b>error</b> is the tool failing — either the page answering{' '}
+        <code>ok: false</code> or the harness marking the whole call <code>isError</code>. Both error
+        shapes drop the disclosure and show the reason inline, so a refused site never reads as
+        &ldquo;this page has 0 tools&rdquo;.
+      </Note>
+      <Note>
+        A failed page tool is still <em>that page&apos;s</em> tool, so the row keeps its identity:
+        the favicon stays (<code>iconIsIdentity</code> — the amber tint and the Error badge carry
+        the outcome instead), the header keeps showing what the agent was trying to do, and the
+        failure moves into the body under an <code>Error</code> label where the whole message is
+        readable. That is also why the host answers a bad call in its own JSON envelope: the
+        envelope is what carries <code>origin</code>, and the origin is what resolves the favicon.
+      </Note>
+      <Note>
+        The <code>MCP error -32602</code> row carries no <code>isError</code> flag at all: an{' '}
+        <code>MCP error -32602</code> is the MCP layer rejecting <code>browser_tools_call</code>{' '}
+        before the host runs, and some harnesses flatten that into result text with{' '}
+        <code>isError: false</code>. The row classifies by <em>shape</em> instead — a result that is
+        neither an untrusted-content banner nor a host JSON envelope was produced above the host, so
+        it is an error. Without that, the row painted a normal tone and filed the host&apos;s own
+        error under RESULT as if the page had returned it.
       </Note>
     </StoryShell>
   ),

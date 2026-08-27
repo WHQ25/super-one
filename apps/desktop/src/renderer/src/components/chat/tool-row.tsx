@@ -115,6 +115,13 @@ export interface ToolRowProps {
   headerClassName?: string
   detailsClassName?: string
   trailing?: ReactNode
+  /**
+   * The icon says *whose* tool this is (page favicon, mini-app icon) rather than what kind it is,
+   * so it survives denied / error states instead of being swapped for the status glyph. The tone
+   * tint and the outcome badge already carry the state; dropping the identity on failure leaves
+   * the row unattributable — exactly when the user most needs to know which page or app it was.
+   */
+  iconIsIdentity?: boolean
   showStatusBadge?: boolean
   defaultExpanded?: boolean
   expanded?: boolean
@@ -137,6 +144,7 @@ export function ToolRow({
   headerClassName,
   detailsClassName = 'border-t border-border/40 px-2 py-2 text-xs',
   trailing,
+  iconIsIdentity = false,
   showStatusBadge = true,
   defaultExpanded = false,
   expanded: controlledExpanded,
@@ -160,7 +168,7 @@ export function ToolRow({
         className={cn('flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs', headerClassName)}
         onClick={canExpand ? toggle : undefined}
       >
-        <ToolStatusIcon tone={tone} fallback={icon} />
+        {iconIsIdentity ? icon : <ToolStatusIcon tone={tone} fallback={icon} />}
         {children}
         {showStatusBadge ? <ToolStatusBadge tone={tone} /> : null}
         {trailing}

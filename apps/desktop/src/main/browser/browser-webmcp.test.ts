@@ -113,13 +113,51 @@ describe('browser WebMCP registry', () => {
     wc.emit('destroyed')
   })
 
+  it('clips an over-budget description instead of dropping the tool', () => {
+    const wc = browserContents(120)
+    emitIpc('webmcp:sync', wc, {
+      tools: [{ ...tool('verbose'), description: 'x'.repeat(600) }],
+    })
+    const [registered] = getWebMcpTools(wc.id)?.tools ?? []
+    expect(registered?.name).toBe('verbose')
+    expect(registered?.description).toBe(`${'x'.repeat(500)}…`)
+    expect(registered?.truncated).toBe(true)
+    wc.emit('destroyed')
+  })
+
+  it('carries the page-declared title and annotations through', () => {
+    const wc = browserContents(121)
+    emitIpc('webmcp:sync', wc, {
+      tools: [{
+        ...tool('checkout'),
+        title: 'Check out',
+        annotations: { readOnlyHint: false, untrustedContentHint: true, bogus: 'x' },
+      }],
+    })
+    const [registered] = getWebMcpTools(wc.id)?.tools ?? []
+    expect(registered?.title).toBe('Check out')
+    expect(registered?.annotations).toEqual({ readOnlyHint: false, untrustedContentHint: true })
+    wc.emit('destroyed')
+  })
+
+  it('refuses to register tools from a non-secure page', () => {
+    const wc = browserContents(122, 'http://shop.example.com/cart')
+    emitIpc('webmcp:sync', wc, { tools: [tool('add_to_cart')] })
+    expect(getWebMcpTools(wc.id)).toBeNull()
+
+    const local = browserContents(123, 'http://localhost:5173/dev')
+    emitIpc('webmcp:sync', local, { tools: [tool('add_to_cart')] })
+    expect(local.id && getWebMcpTools(local.id)?.tools).toHaveLength(1)
+    local.emit('destroyed')
+  })
+
   it('drops malformed entries and caps a full sync at 64 tools', () => {
     const malformed = [
       null,
       { ...tool(''), name: '' },
       { ...tool('x'.repeat(129)), name: 'x'.repeat(129) },
       { ...tool('bad-description'), description: 42 },
-      { ...tool('long-description'), description: 'x'.repeat(1025) },
+      { ...tool('flood-description'), description: 'x'.repeat(8 * 1024 + 1) },
       { ...tool('bad-schema'), inputSchema: {} },
       { ...tool('large-schema'), inputSchema: 'é'.repeat(4097) },
     ]

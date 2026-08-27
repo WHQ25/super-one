@@ -7,12 +7,12 @@ import { useBrowserStore } from '@/stores/browser'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { ToolIcon } from './ToolIcon'
 import { ToolName, ToolRow, ToolSummary, type ToolRowTone } from './tool-row'
-import { PrettyJSONCodeBlock, SectionLabel } from './tool-result-views'
-import { parseBrowserResult } from './browser-tool-display'
+import { PrettyJSONCodeBlock, SectionLabel, ToolErrorText } from './tool-result-views'
 import {
   originHost,
   pageToolInputSummary,
   parsePageToolCall,
+  parsePageToolOutcome,
   parsePageToolsList,
 } from './page-tools-display'
 
@@ -116,13 +116,15 @@ export function BrowserPageToolsListBlock({
 }: BrowserPageToolsBlockProps) {
   const { t } = useTranslation()
   const info = useMemo(() => parsePageToolsList(result), [result])
-  const outcome = useMemo(() => parseBrowserResult('tools_list', result, !!isError), [result, isError])
+  const outcome = useMemo(() => parsePageToolOutcome(result, { isError, isDenied }), [result, isError, isDenied])
   const tabUrl = useTabUrl(params)
 
-  const denied = !!isDenied || outcome.status === 'denied'
+  const denied = outcome.status === 'denied'
   const errored = outcome.status === 'error'
   const tone = toneOf(denied, errored)
-  const tools = info?.tools ?? []
+  // A failed list has no catalog to show, so `info` is null — reading the count off it would
+  // print "No Page Tools" and make a refusal look like a page that publishes nothing.
+  const tools = denied || errored ? [] : info?.tools ?? []
   const count = info?.count ?? 0
 
   const label = isStreaming
@@ -134,12 +136,13 @@ export function BrowserPageToolsListBlock({
         : t('chat.toolBlock.browser.pageToolsEmpty')
 
   const summary = denied || errored
-    ? outcome.errorText ?? ''
+    ? outcome.message
     : originHost(info?.origin) || (count === 0 ? info?.hint ?? '' : '')
 
   return (
     <ToolRow
-      icon={<PageIcon origin={info?.origin} tabUrl={tabUrl} />}
+      icon={<PageIcon origin={outcome.origin ?? info?.origin} tabUrl={tabUrl} />}
+      iconIsIdentity
       tone={tone}
       expandable={allowExpand && !isStreaming && tools.length > 0}
       details={tools.length > 0 ? (
@@ -168,11 +171,11 @@ export function BrowserPageToolCallBlock({
   allowExpand = true,
 }: BrowserPageToolsBlockProps) {
   const { t } = useTranslation()
-  const outcome = useMemo(() => parseBrowserResult('tools_call', result, !!isError), [result, isError])
+  const outcome = useMemo(() => parsePageToolOutcome(result, { isError, isDenied }), [result, isError, isDenied])
   const call = useMemo(() => parsePageToolCall(result), [result])
   const tabUrl = useTabUrl(params)
 
-  const denied = !!isDenied || outcome.status === 'denied'
+  const denied = outcome.status === 'denied'
   const errored = outcome.status === 'error'
   const tone = toneOf(denied, errored)
 
@@ -186,33 +189,47 @@ export function BrowserPageToolCallBlock({
   // what the person watching can actually read, so it wins the header. Raw args move to the body.
   const description = typeof params.description === 'string' ? params.description.trim() : ''
   const inputSummary = pageToolInputSummary(params.input)
-  const summary = denied || errored
-    ? outcome.errorText || description || inputSummary
-    : description || inputSummary
+  // An errored call is still *this page's* call. The header keeps reading like every other page
+  // tool row — favicon, name, what the agent was trying to do — and the failure is layered on:
+  // the amber tone and the Error badge say it broke, the body says why. Replacing the header with
+  // the error string instead loses the intent exactly when the user is trying to understand it.
+  // A denial has no body worth opening (it is a decision, not an outcome), so its reason stays inline.
+  const failure = errored ? outcome.message : ''
+  const summary = denied
+    ? outcome.message || description || inputSummary
+    : description || inputSummary || failure
   const output = denied || errored ? '' : call.output.trim()
   const argsJson = useMemo(() => {
     const input = params.input
     if (!input || typeof input !== 'object' || Array.isArray(input)) return ''
     return Object.keys(input).length > 0 ? JSON.stringify(input, null, 2) : ''
   }, [params.input])
+  // When there is no description the failure already *is* the header summary; repeating it in the
+  // body would just be the same sentence twice.
+  const failureBody = failure && failure !== summary ? failure : ''
+  const hasBody = !!failureBody || !!output
 
   return (
     <ToolRow
-      icon={<PageIcon origin={call.origin} tabUrl={tabUrl} />}
+      icon={<PageIcon origin={outcome.origin ?? call.origin} tabUrl={tabUrl} />}
+      iconIsIdentity
       tone={tone}
-      expandable={allowExpand && !isStreaming && !!output}
-      details={output ? (
+      expandable={allowExpand && !isStreaming && hasBody}
+      details={hasBody ? (
         <div className="space-y-2">
+          {failureBody ? <ToolErrorText>{failureBody}</ToolErrorText> : null}
           {argsJson ? (
             <div>
               <SectionLabel>{t('chat.toolBlock.browser.pageToolArguments')}</SectionLabel>
               <PrettyJSONCodeBlock text={argsJson} />
             </div>
           ) : null}
-          <div>
-            {argsJson ? <SectionLabel>{t('chat.toolBlock.browser.result')}</SectionLabel> : null}
-            <PrettyJSONCodeBlock text={output} />
-          </div>
+          {output ? (
+            <div>
+              {argsJson ? <SectionLabel>{t('chat.toolBlock.browser.result')}</SectionLabel> : null}
+              <PrettyJSONCodeBlock text={output} />
+            </div>
+          ) : null}
         </div>
       ) : null}
       detailsClassName="px-2 pb-1.5 text-xs"

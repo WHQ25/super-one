@@ -842,10 +842,10 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       // ignore if computer-use module not loaded
     }
   }
-  if (patch?.webmcpAlwaysAllowTools !== undefined) {
+  if (patch?.webmcpTrustedOrigins !== undefined) {
     try {
-      const { syncWebMcpPreapprovalsFromSettings } = await import('./mcp/browser-mcp-tools')
-      syncWebMcpPreapprovalsFromSettings()
+      const { syncWebMcpTrustFromSettings } = await import('./mcp/webmcp-trust')
+      syncWebMcpTrustFromSettings()
     } catch {
       // ignore if browser tool module is not loaded
     }
@@ -5452,8 +5452,8 @@ app.whenReady().then(async () => {
   registerIpcHandlers()
   if (readAppSettings().webmcpEnabled === true) {
     try {
-      const { syncWebMcpPreapprovalsFromSettings } = await import('./mcp/browser-mcp-tools')
-      syncWebMcpPreapprovalsFromSettings()
+      const { syncWebMcpTrustFromSettings } = await import('./mcp/webmcp-trust')
+      syncWebMcpTrustFromSettings()
     } catch {
       // Settings service already normalizes grants; leave the runtime set empty on load failure.
     }

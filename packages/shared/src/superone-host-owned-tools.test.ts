@@ -5,6 +5,8 @@ import {
   isStaticHostOwnedSuperoneBareName,
   isStaticHostOwnedSuperoneToolQualified,
   STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES,
+  NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES,
+  isNeverAutoAllowSuperoneBareName
 } from './superone-host-owned-tools'
 
 describe('static host-owned SuperOne tool names', () => {
@@ -25,7 +27,20 @@ describe('STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES', () => {
     }
     const listed = new Set(STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES)
     for (const bare of BUILT_IN_SUPERONE_TOOL_NAMES) {
+      if (isNeverAutoAllowSuperoneBareName(bare)) continue
       expect(listed.has(`mcp__superone__${bare}`), `missing from allow list: ${bare}`).toBe(true)
+    }
+  })
+
+  it('withholds every never-auto-allow tool from the harness allow list', () => {
+    // These are registered tools the user must still approve per call. The allow list is read by
+    // the Claude SDK *before* canUseTool runs, so a name leaking in here is not caught anywhere
+    // else — it just silently stops prompting.
+    expect(NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES.length).toBeGreaterThan(0)
+    for (const bare of NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES) {
+      expect(BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[], bare).toContain(bare)
+      expect(STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES, bare)
+        .not.toContain(`mcp__superone__${bare}`)
     }
   })
 

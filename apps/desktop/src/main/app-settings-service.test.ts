@@ -89,7 +89,7 @@ describe('app-settings-service', () => {
     onboardingEpoch: 0,
     cdpEnabled: false,
     webmcpEnabled: false,
-    webmcpAlwaysAllowTools: [],
+    webmcpTrustedOrigins: [],
     computerUseEnabled: false,
     computerUsePictureInPicture: true,
     computerUseDedicatedDisplayId: null,
@@ -113,6 +113,21 @@ describe('app-settings-service', () => {
     it('returns defaults when file does not exist', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)
       expect(readAppSettings()).toEqual(defaultSettings)
+    })
+
+    it('round-trips trusted sites and drops malformed tool pins', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        webmcpTrustedOrigins: [
+          { origin: 'https://a.test', tools: { search: 'abc123', broken: 42 } },
+          { origin: 'https://b.test' },
+          { origin: 'https://a.test', tools: { search: 'duplicate-dropped' } },
+          { tools: {} },
+        ],
+      }))
+      expect(readAppSettings().webmcpTrustedOrigins).toEqual([
+        { origin: 'https://a.test', tools: { search: 'abc123' } },
+        { origin: 'https://b.test', tools: {} },
+      ])
     })
 
     it('reads saved settings for both agents', () => {
@@ -166,7 +181,7 @@ describe('app-settings-service', () => {
         onboardingEpoch: 0,
         cdpEnabled: false,
         webmcpEnabled: false,
-        webmcpAlwaysAllowTools: [],
+        webmcpTrustedOrigins: [],
         computerUseEnabled: false,
         computerUsePictureInPicture: true,
         computerUseDedicatedDisplayId: null,
@@ -207,22 +222,21 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual(defaultSettings)
     })
 
-    it('normalizes and deduplicates durable WebMCP grants', () => {
+    it('normalizes and deduplicates trusted WebMCP sites', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({
-        webmcpAlwaysAllowTools: [
-          { origin: ' https://example.com ', toolName: ' add-todo ' },
-          { origin: 'https://example.com', toolName: 'add-todo' },
-          { origin: 'https://example.com', toolName: 'late-tool' },
-          { origin: '', toolName: 'missing-origin' },
-          { origin: 'https://example.com', toolName: ' ' },
-          { origin: 42, toolName: 'wrong-type' },
+        webmcpTrustedOrigins: [
+          { origin: ' https://example.com ', tools: { 'add-todo': 'fp1' } },
+          { origin: 'https://example.com', tools: { 'add-todo': 'later-wins-not' } },
+          { origin: 'https://other.test', tools: { 'late-tool': 'fp2' } },
+          { origin: '', tools: {} },
+          { origin: 42, tools: {} },
           null,
         ],
       }))
 
-      expect(readAppSettings().webmcpAlwaysAllowTools).toEqual([
-        { origin: 'https://example.com', toolName: 'add-todo' },
-        { origin: 'https://example.com', toolName: 'late-tool' },
+      expect(readAppSettings().webmcpTrustedOrigins).toEqual([
+        { origin: 'https://example.com', tools: { 'add-todo': 'fp1' } },
+        { origin: 'https://other.test', tools: { 'late-tool': 'fp2' } },
       ])
     })
 
@@ -316,7 +330,7 @@ describe('app-settings-service', () => {
         onboardingEpoch: 0,
         cdpEnabled: false,
         webmcpEnabled: false,
-        webmcpAlwaysAllowTools: [],
+        webmcpTrustedOrigins: [],
         computerUseEnabled: false,
         computerUsePictureInPicture: true,
         computerUseDedicatedDisplayId: null,
@@ -477,17 +491,17 @@ describe('app-settings-service', () => {
       expect(saved.cdpEnabled).toBe(false)
     })
 
-    it('normalizes durable WebMCP grants on save', () => {
+    it('normalizes trusted WebMCP sites on save', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)
       const saved = saveAppSettings({
-        webmcpAlwaysAllowTools: [
-          { origin: ' https://example.com ', toolName: ' add-todo ' },
-          { origin: 'https://example.com', toolName: 'add-todo' },
+        webmcpTrustedOrigins: [
+          { origin: ' https://example.com ', tools: { 'add-todo': 'fp1' } },
+          { origin: 'https://example.com', tools: { 'add-todo': 'dupe' } },
         ],
       })
 
-      expect(saved.webmcpAlwaysAllowTools).toEqual([
-        { origin: 'https://example.com', toolName: 'add-todo' },
+      expect(saved.webmcpTrustedOrigins).toEqual([
+        { origin: 'https://example.com', tools: { 'add-todo': 'fp1' } },
       ])
     })
 

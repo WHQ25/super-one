@@ -16,7 +16,7 @@ import { ArtifactLinkChip } from './ArtifactLinkChip'
 import { resolveArtifactLink } from './artifact-link'
 import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { isWorkflowSmokeCheck } from './workflow-utils'
-import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
+import { PrettyJSONCodeBlock, AskUserQuestionResult, ToolErrorText } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
 import { DeviceToolBlock } from './DeviceToolBlock'
@@ -679,7 +679,7 @@ function SetupMiniAppDevBlock({ appName, isStreaming, params, result, isDenied, 
     >
       <div className="space-y-1">
         {errorMsg ? (
-          <div className="mb-2 text-xs text-warning/90">{errorMsg}</div>
+          <ToolErrorText className="mb-2">{errorMsg}</ToolErrorText>
         ) : null}
         {rows.map(({ key, label, value, mono }) => (
           <div key={key} className="flex items-baseline gap-2">
@@ -785,7 +785,7 @@ function ConfigApplyBlock({ params, result, isStreaming, isError, isDenied }: {
       expandable={expandable}
     >
       <div className="space-y-1.5">
-        {errorMsg ? <div className="mb-1 text-xs text-warning/90">{errorMsg}</div> : null}
+        {errorMsg ? <ToolErrorText className="mb-1">{errorMsg}</ToolErrorText> : null}
         {rows.map((r) => (
           <div key={r.key} className="flex items-baseline gap-2">
             <span className="w-32 shrink-0 truncate text-muted-foreground" title={r.label}>{r.label}</span>

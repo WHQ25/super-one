@@ -16,8 +16,10 @@ it('keeps Blink schema strings single-encoded and replaces invalid JSON', async 
     getTools: vi.fn(async () => [
       {
         name: 'string-schema',
+        title: 'Nice title',
         description: 'Already serialized by Blink.',
         inputSchema: '{"type":"object"}',
+        annotations: { readOnlyHint: true, untrustedContentHint: false, bogus: 'ignored' },
       },
       {
         name: 'object-schema',
@@ -48,7 +50,10 @@ it('keeps Blink schema strings single-encoded and replaces invalid JSON', async 
   expect(sync.tools).toEqual([
     expect.objectContaining({
       name: 'string-schema',
+      title: 'Nice title',
       inputSchema: '{"type":"object"}',
+      // Page-declared claims are carried, but only the two the spec defines.
+      annotations: { readOnlyHint: true, untrustedContentHint: false },
     }),
     expect.objectContaining({
       name: 'object-schema',

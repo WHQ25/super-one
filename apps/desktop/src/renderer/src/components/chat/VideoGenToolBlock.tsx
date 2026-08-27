@@ -5,6 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession } from '@/stores/chat'
 import { FileChip } from './ToolBlock'
 import { ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
+import { ToolErrorText } from './tool-result-views'
 import { mediaToolErrorMessage } from './media-generation'
 import { MediaImageRefThumb, MediaParamRow } from './media-tool-params'
 
@@ -115,7 +116,7 @@ export function VideoGenToolBlock({ params, result, isStreaming, isError }: Vide
       details={(
         <>
           {isFailed && statusError ? (
-            <div className="whitespace-pre-wrap break-words text-warning/90">{statusError}</div>
+            <ToolErrorText>{statusError}</ToolErrorText>
           ) : null}
           {hasRefs && (
             <div className="space-y-2">

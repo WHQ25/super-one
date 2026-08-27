@@ -30,11 +30,11 @@ vi.mock('../mcp/miniapp-call-confirm', () => ({
   rejectMiniappCallConfirm: () => false,
 }))
 
-const resolveWebmcpCallConfirmMock = vi.fn(() => false)
-const rejectWebmcpCallConfirmMock = vi.fn(() => false)
+const resolveWebmcpTrustConfirmMock = vi.fn(() => false)
+const rejectWebmcpTrustConfirmMock = vi.fn(() => false)
 vi.mock('../mcp/browser-webmcp-confirm', () => ({
-  resolveWebmcpCallConfirm: (...args: unknown[]) => resolveWebmcpCallConfirmMock(...args),
-  rejectWebmcpCallConfirm: (...args: unknown[]) => rejectWebmcpCallConfirmMock(...args),
+  resolveWebmcpTrustConfirm: (...args: unknown[]) => resolveWebmcpTrustConfirmMock(...args),
+  rejectWebmcpTrustConfirm: (...args: unknown[]) => rejectWebmcpTrustConfirmMock(...args),
 }))
 
 vi.mock('./session-collaboration-confirm', () => ({
@@ -245,8 +245,8 @@ describe('Session.respondToPermission host confirms', () => {
     rejectConfigConfirmMock.mockReset().mockReturnValue(false)
     resolveVideoConfirmMock.mockReset().mockReturnValue(false)
     rejectVideoConfirmMock.mockReset().mockReturnValue(false)
-    resolveWebmcpCallConfirmMock.mockReset().mockReturnValue(false)
-    rejectWebmcpCallConfirmMock.mockReset().mockReturnValue(false)
+    resolveWebmcpTrustConfirmMock.mockReset().mockReturnValue(false)
+    rejectWebmcpTrustConfirmMock.mockReset().mockReturnValue(false)
   })
 
   it('resolves config_confirm before backends so OpenCode/ACP unblocks config_apply', () => {
@@ -272,25 +272,36 @@ describe('Session.respondToPermission host confirms', () => {
     expect(backend.respondToPermissionCalls).toHaveLength(0)
   })
 
-  it('resolves WebMCP confirm with alwaysAllow before reaching the backend', () => {
+  it('forwards the WebMCP trust scope to the confirm before reaching the backend', () => {
     const { session, backend } = makeSession({ harnessId: 'opencode' as never })
-    resolveWebmcpCallConfirmMock.mockReturnValue(true)
+    resolveWebmcpTrustConfirmMock.mockReturnValue(true)
 
-    const handled = session.respondToPermission('webmcpcall_1', true, true, 'approved')
+    const handled = session.respondToPermission(
+      'webmcpcall_1',
+      true,
+      false,
+      'approved',
+      undefined,
+      undefined,
+      { scope: 'session' },
+    )
 
     expect(handled).toBe(true)
-    expect(resolveWebmcpCallConfirmMock).toHaveBeenCalledWith(
+    // The scope only exists in formAnswers, so dropping it here would silently downgrade
+    // "trust in this chat" into a persisted, site-wide decision.
+    expect(resolveWebmcpTrustConfirmMock).toHaveBeenCalledWith(
       'webmcpcall_1',
       'accept',
-      true,
+      false,
       'approved',
+      { scope: 'session' },
     )
     expect(backend.respondToPermissionCalls).toHaveLength(0)
   })
 
   it('rejects WebMCP confirm on cancel without reaching the backend', () => {
     const { session, backend } = makeSession()
-    rejectWebmcpCallConfirmMock.mockReturnValue(true)
+    rejectWebmcpTrustConfirmMock.mockReturnValue(true)
 
     const handled = session.respondToPermission(
       'webmcpcall_2',
@@ -302,7 +313,7 @@ describe('Session.respondToPermission host confirms', () => {
     )
 
     expect(handled).toBe(true)
-    expect(rejectWebmcpCallConfirmMock).toHaveBeenCalledWith('webmcpcall_2', 'closed prompt')
+    expect(rejectWebmcpTrustConfirmMock).toHaveBeenCalledWith('webmcpcall_2', 'closed prompt')
     expect(backend.respondToPermissionCalls).toHaveLength(0)
   })
 

@@ -6,18 +6,18 @@ import {
 } from './codex-realtime'
 
 describe('Codex realtime protocol mapping', () => {
-  it('uses the standard WebRTC session without forcing the Codex-only v3 model', () => {
+  it('uses frameless v3 so Codex negotiates quicksilver v2', () => {
     const params = buildCodexRealtimeStartParams('t1', { sdp: 'offer', voice: 'cove' })
 
     expect(params).toMatchObject({
       threadId: 't1',
+      version: 'v3',
       outputModality: 'audio',
+      codexResponseHandoffMode: 'bemTags',
       voice: 'cove',
       transport: { type: 'webrtc', sdp: 'offer' },
     })
-    expect(params).not.toHaveProperty('version')
     expect(params).not.toHaveProperty('model')
-    expect(params).not.toHaveProperty('codexResponseHandoffMode')
   })
 
   it('maps SDP and transcript notifications to harness-neutral events', () => {

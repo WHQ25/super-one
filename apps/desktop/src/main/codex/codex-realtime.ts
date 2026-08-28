@@ -21,7 +21,9 @@ export function buildCodexRealtimeStartParams(
 ) {
   return {
     threadId,
+    version: 'v3',
     outputModality: 'audio',
+    codexResponseHandoffMode: 'bemTags',
     includeStartupContext: true,
     flushTranscriptTailOnSessionEnd: true,
     voice: request.voice ?? 'cove',

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SendMessageRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 
 const state = vi.hoisted(() => ({
@@ -59,6 +59,7 @@ import {
   buildUserMessage,
   buildClaudeOptions,
   createSessionQuery,
+  iterateMessages,
   isResumeDropsTurnRefusal,
   RESUME_DROPS_TURN_REFUSAL_PREFIX,
 } from './claude-query'
@@ -1939,5 +1940,74 @@ describe('user_message_uuid anchors a failure to the turn that caused it', () =>
 
     const error = events.find((e) => e.type === 'message_error') as { messageId?: string } | undefined
     expect(error?.messageId).toBe('msg-only')
+  })
+})
+
+describe('iterateMessages: tools the SDK abandons mid-turn', () => {
+  const TOOL_START = {
+    type: 'stream_event',
+    event: {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'toolu_snap', name: 'mcp__superone__computer_snapshot' },
+    },
+  }
+
+  /**
+   * A steer (`priority: 'now'`) aborts whatever tool is in flight. The SDK closes
+   * the round with a *successful* result and never sends that tool's tool_result,
+   * so the chat row would sit at "Taking snapshot…" for the rest of the turn.
+   */
+  const ABORTED_RESULT = {
+    type: 'result',
+    subtype: 'success',
+    terminal_reason: 'aborted_tools',
+    permission_denials: [
+      { tool_name: 'mcp__superone__computer_snapshot', tool_use_id: 'toolu_snap', tool_input: {} },
+    ],
+  }
+
+  async function driveTurn(messages: Array<Record<string, unknown>>): Promise<AgentEvent[]> {
+    const events: AgentEvent[] = []
+    const q = {
+      async *[Symbol.asyncIterator]() {
+        for (const msg of messages) yield msg
+      },
+    }
+    await iterateMessages(q as never, {
+      emit: (e) => events.push(e),
+      getCurrentMessageId: () => 'msg-1',
+      getCurrentStartTime: () => 0,
+      getInterrupted: () => false,
+      superoneSessionId: 'sess-1',
+      bridge: { consumedTags: [], drainConsumedTag: () => undefined } as never,
+      timing: { pausedMs: 0 },
+    })
+    return events
+  }
+
+  function toolResultsFor(events: AgentEvent[], toolUseId: string) {
+    return events.filter(
+      (e) => e.type === 'content_delta' && e.delta.type === 'tool_result' && e.delta.toolUseId === toolUseId,
+    ) as Array<{ delta: { summary: string; isError?: boolean } }>
+  }
+
+  it('mints the tool_result the wire owes so the row leaves its running state', async () => {
+    const events = await driveTurn([TOOL_START, ABORTED_RESULT])
+    const results = toolResultsFor(events, 'toolu_snap')
+    expect(results).toHaveLength(1)
+    expect(results[0].delta.isError).toBe(true)
+    expect(results[0].delta.summary.startsWith('[denied] ')).toBe(true)
+  })
+
+  it('does not double-emit when the tool already reported its own result', async () => {
+    const events = await driveTurn([
+      TOOL_START,
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_snap', content: 'ok' }] } },
+      ABORTED_RESULT,
+    ])
+    const results = toolResultsFor(events, 'toolu_snap')
+    expect(results).toHaveLength(1)
+    expect(results[0].delta.summary).toBe('ok')
   })
 })

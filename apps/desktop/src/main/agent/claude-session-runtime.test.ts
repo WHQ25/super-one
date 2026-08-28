@@ -763,3 +763,42 @@ describe('applyClaudeEventToRuntime: messages_retracted', () => {
     expect(next).toBe(runtime)
   })
 })
+
+describe('terminal events seal in-flight tool rows before persistence', () => {
+  function streamingToolMessage(): ChatMessage {
+    return {
+      id: 'msg-1',
+      role: 'assistant',
+      status: 'streaming',
+      content: [
+        {
+          type: 'tool_use',
+          toolName: 'mcp__superone__computer_snapshot',
+          toolUseId: 'toolu_snap',
+          input: '{}',
+          status: 'streaming',
+        },
+      ],
+      createdAt: '',
+      providerId: 'claude',
+    }
+  }
+
+  function sealedStatus(rt: ReturnType<typeof createClaudeRuntime>): unknown {
+    const block = rt.messages[0].content[0]
+    return block.type === 'tool_use' ? block.status : null
+  }
+
+  // The renderer store seals on these events; the persisted copy is written from
+  // this runtime, so a divergence means the row comes back shimmering on reload.
+  it.each([
+    ['message_interrupted', { type: 'message_interrupted', messageId: 'msg-1' }, 'interrupted'],
+    ['message_error', { type: 'message_error', messageId: 'msg-1', error: 'boom' }, 'error'],
+    ['message_complete', { type: 'message_complete', messageId: 'msg-1' }, 'complete'],
+  ] as const)('%s seals the tool_use the SDK never resolved', (_name, event, expectedStatus) => {
+    let rt = makeRuntime([streamingToolMessage()])
+    rt = applyClaudeEventToRuntime(rt, event as AgentEvent)
+    expect(rt.messages[0].status).toBe(expectedStatus)
+    expect(sealedStatus(rt)).toBe('complete')
+  })
+})

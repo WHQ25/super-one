@@ -1,5 +1,9 @@
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 
+// Re-exported from the shared package: the main-process session runtime seals on
+// the same terminal events, and both sides must use one implementation.
+export { sealStreamingTools } from '@superone/shared/content-delta'
+
 /**
  * Tool names that we accumulate partial JSON for across `tool_input_delta`
  * events so we can extract a live preview before the tool actually runs.
@@ -53,20 +57,6 @@ export function dropStreamingToolInputPreview(
   if (!previews[toolUseId]) return undefined
   const { [toolUseId]: _, ...rest } = previews
   return rest
-}
-
-/**
- * Stop in-flight tool chrome (wait_for shimmer, running verbs) when the turn
- * is already over. Returns the same `content` ref when nothing was streaming.
- */
-export function sealStreamingTools(content: ContentBlock[]): ContentBlock[] {
-  let changed = false
-  const next = content.map((block) => {
-    if (block.type !== 'tool_use' || block.status !== 'streaming') return block
-    changed = true
-    return { ...block, status: 'complete' as const }
-  })
-  return changed ? next : content
 }
 
 /** Terminal turns must not accept a late `status: 'streaming'` tool_use delta. */

@@ -278,6 +278,14 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   const activeToolBlocks = new Map<number, string>()
   // Track tool_use_id → tool_name so we can tag tool_result events
   const toolIdToName = new Map<string, string>()
+  /**
+   * Tool calls we announced but never resolved. A `tool_use` block only leaves
+   * `streaming` when its `tool_result` lands, and a steer (`priority: 'now'`)
+   * abandons the in-flight call without one — the row would shimmer for the rest
+   * of the turn. `result.permission_denials` is the authoritative record of which
+   * calls died that way; this map tells us where to send the synthetic result.
+   */
+  const unresolvedToolUses = new Map<string, { messageId: string; parentToolUseId: string | null }>()
   // Track the last assistant message's usage (= current context window snapshot)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastAssistantUsage: any = null
@@ -473,6 +481,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           for (const block of msgContent) {
             if (block.type === 'tool_result' && block.tool_use_id) {
               hasToolResult = true
+              unresolvedToolUses.delete(block.tool_use_id)
               const toolName = toolIdToName.get(block.tool_use_id)
               const text = extractToolResultText(block.content)
               const isBash = toolName === 'Bash'
@@ -840,6 +849,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 })
               } else if (block.type === 'tool_use') {
                 toolIdToName.set(block.id ?? '', block.name ?? 'unknown')
+                unresolvedToolUses.set(block.id ?? '', { messageId, parentToolUseId: assistantParent })
 
                 if (block.name === 'Bash') {
                   const inp = typeof block.input === 'string' ? block.input : JSON.stringify(block.input ?? {})
@@ -885,6 +895,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             // Track index → toolUseId for input_json_delta correlation
             activeToolBlocks.set(event.index, event.content_block.id ?? '')
             toolIdToName.set(event.content_block.id ?? '', event.content_block.name ?? 'unknown')
+            unresolvedToolUses.set(event.content_block.id ?? '', { messageId, parentToolUseId: streamParent })
             emit({
               type: 'content_delta',
               messageId,
@@ -1005,6 +1016,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           const summaryText = raw.summary as string | undefined
           if (summaryText) {
             const toolUseId = raw.preceding_tool_use_ids?.[0] ?? raw.tool_use_id ?? ''
+            unresolvedToolUses.delete(toolUseId)
             const toolName = toolIdToName.get(toolUseId)
             const isBash = toolName === 'Bash'
             const outputPath = isBash ? extractBashOutputPath(summaryText) : undefined
@@ -1047,6 +1059,29 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             }
           } catch (err) {
             log.warn('[usage-stats] failed to record Claude usage: %s', err instanceof Error ? err.message : String(err))
+          }
+
+          // A steer (`priority: 'now'`) aborts whatever tool was in flight: the SDK
+          // closes the round with no tool_result for it, so the row would shimmer
+          // ("Taking snapshot…") until the whole turn ends. `permission_denials` is
+          // the authoritative record of those calls — mint the result the wire owes
+          // us so the row lands on a denied state instead of spinning.
+          for (const denial of (result.permission_denials ?? []) as { tool_use_id?: string }[]) {
+            const toolUseId = denial.tool_use_id
+            const pending = toolUseId ? unresolvedToolUses.get(toolUseId) : undefined
+            if (!toolUseId || !pending) continue
+            unresolvedToolUses.delete(toolUseId)
+            emit({
+              type: 'content_delta',
+              messageId: pending.messageId,
+              delta: {
+                type: 'tool_result',
+                toolUseId,
+                summary: '[denied] Tool call was interrupted before it ran',
+                isError: true,
+                parentToolUseId: pending.parentToolUseId,
+              },
+            })
           }
 
           if (getInterrupted()) {

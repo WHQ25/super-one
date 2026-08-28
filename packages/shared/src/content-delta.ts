@@ -170,3 +170,27 @@ export function applyContentDelta(content: ContentBlock[], delta: ContentBlock):
   }
   return [...content, delta]
 }
+
+/**
+ * Stop in-flight tool chrome (wait_for shimmer, running verbs) on a turn that
+ * already reached a terminal state. A `tool_use` only leaves `streaming` when a
+ * matching `tool_result` lands (see `applyContentDelta`), and an aborted tool —
+ * user Stop, or a steer that abandons the in-flight call — never sends one.
+ * Without this the row shimmers forever and persists that way.
+ *
+ * Returns the same `content` ref when nothing was streaming, so React.memo and
+ * the structural-sharing reducers keep working.
+ *
+ * Single source of truth for the renderer store AND the main-process session
+ * runtime — both terminal paths must seal or the persisted transcript diverges
+ * from what the user saw.
+ */
+export function sealStreamingTools(content: ContentBlock[]): ContentBlock[] {
+  let changed = false
+  const next = content.map((block) => {
+    if (block.type !== 'tool_use' || block.status !== 'streaming') return block
+    changed = true
+    return { ...block, status: 'complete' as const }
+  })
+  return changed ? next : content
+}

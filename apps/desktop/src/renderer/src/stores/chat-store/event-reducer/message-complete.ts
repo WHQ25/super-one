@@ -2,7 +2,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 import { getCodexCompletionEventMeta, getCodexContextTokens } from '../helpers/codex-helpers'
 import type { PerSessionState } from '../types'
-import { clearStreamingToolInput } from './shared'
+import { clearStreamingToolInput, sealStreamingTools } from './shared'
 
 type MessageCompleteEvent = Extract<AgentEvent, { type: 'message_complete' }>
 
@@ -73,7 +73,14 @@ export function reduceMessageComplete(session: PerSessionState, event: MessageCo
       return {
         ...msg,
         status: 'complete' as const,
-        ...(codexCompletionMeta?.finalResponse ? { content: [{ type: 'text', text: codexCompletionMeta.finalResponse }] } : {}),
+        // A tool only leaves `streaming` when its tool_result lands. A turn that
+        // ends without one — steer aborting the in-flight call, a queued-turn
+        // split, a harness that drops the result — would otherwise leave the row
+        // shimmering ("Taking snapshot…") for as long as the message is live,
+        // and persist that way. Interrupt/error already seal; completion must too.
+        ...(codexCompletionMeta?.finalResponse
+          ? { content: [{ type: 'text', text: codexCompletionMeta.finalResponse }] }
+          : { content: sealStreamingTools(msg.content) }),
         metadata: nextMetadata,
       }
     }),

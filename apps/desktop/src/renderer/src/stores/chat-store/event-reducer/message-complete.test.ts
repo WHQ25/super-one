@@ -266,3 +266,33 @@ describe('reduceMessageComplete: uncompleted subagents', () => {
     expect(patch.taskProgress).toBeUndefined()
   })
 })
+
+describe('reduceMessageComplete: in-flight tool rows', () => {
+  const toolUse = (toolUseId: string, status: 'streaming' | 'complete'): ContentBlock => ({
+    type: 'tool_use',
+    toolName: 'mcp__superone__computer_snapshot',
+    toolUseId,
+    input: '{}',
+    status,
+  })
+
+  it('seals a tool_use whose result never arrived so the row stops shimmering', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [assistant('m1', [toolUse('t1', 'streaming'), toolUse('t2', 'complete')])]
+    const patch = reduceMessageComplete(session, {
+      type: 'message_complete', messageId: 'm1',
+    } as never)
+    const content = patch.messages?.[0].content as ContentBlock[]
+    expect(content.map((b) => b.type === 'tool_use' && b.status)).toEqual(['complete', 'complete'])
+  })
+
+  it('leaves an unrelated message untouched', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [assistant('m0', [toolUse('t0', 'streaming')]), assistant('m1')]
+    const patch = reduceMessageComplete(session, {
+      type: 'message_complete', messageId: 'm1',
+    } as never)
+    const other = patch.messages?.[0].content as ContentBlock[]
+    expect(other[0].type === 'tool_use' && other[0].status).toBe('streaming')
+  })
+})

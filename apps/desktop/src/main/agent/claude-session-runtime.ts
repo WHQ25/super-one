@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, SessionInfo } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
-import { applyContentDelta } from '@superone/shared/content-delta'
+import { applyContentDelta, sealStreamingTools } from '@superone/shared/content-delta'
 import { resolveDeltaHomeMessageId, resolveTaskToolUseId } from '@superone/shared/subagent-routing'
 
 export interface PersistedClaudeSessionState {
@@ -286,6 +286,7 @@ export function applyClaudeEventToRuntime(
           return {
             ...message,
             status: 'complete' as const,
+            content: sealStreamingTools(message.content),
             metadata,
           }
         }),
@@ -370,6 +371,7 @@ export function applyClaudeEventToRuntime(
             : {
                 ...message,
                 status: 'interrupted' as const,
+                content: sealStreamingTools(message.content),
                 metadata: event.metadata ? { ...message.metadata, ...event.metadata } : message.metadata,
               }
         )),
@@ -385,6 +387,7 @@ export function applyClaudeEventToRuntime(
             : {
                 ...message,
                 status: 'error' as const,
+                content: sealStreamingTools(message.content),
                 metadata: { ...message.metadata, errorInfo: event.errorInfo ?? { raw: event.error } },
               }
         )),

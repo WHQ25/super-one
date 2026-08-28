@@ -99,6 +99,38 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(call).toHaveBeenCalledWith('session_clear_visuals', { sessionId: 'session-a' })
   })
 
+  it('does not claim a preview target rejected by the native dismissal guard', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'capture') {
+        return {
+          mimeType: 'image/png',
+          data: 'abc',
+          width: 800,
+          height: 600,
+          coordinateSpace: {
+            width: 800,
+            height: 600,
+            scale: 1,
+            fullScreen: false,
+            kind: 'window',
+            windowId: 12345,
+            capturedBounds: { x: 0, y: 0, width: 800, height: 600 },
+          },
+        }
+      }
+      if (method === 'pip_show_target') return { ok: true, shown: false }
+      return { ok: true }
+    })
+
+    await adapter.look(root(), 'visual')
+
+    expect(call).toHaveBeenCalledWith('pip_show_target', expect.objectContaining({
+      sessionId: 'session-a',
+      windowId: 12345,
+    }))
+    expect(claim).not.toHaveBeenCalled()
+  })
+
   it('moves a target to the dedicated display before capturing it', async () => {
     const dedicatedAdapter = new MacosPlatformAdapter({
       client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,

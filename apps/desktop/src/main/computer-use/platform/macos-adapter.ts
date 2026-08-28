@@ -228,7 +228,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         ...this.coordinatePayload(opts?.coordinateSpace),
       })
       if (showPictureInPicture && typeof root.windowId === 'number') {
-        await this.client.call('pip_show_target', {
+        const preview = await this.client.call<{ shown?: boolean }>('pip_show_target', {
           sessionId: this.sessionId,
           windowId: root.windowId,
           app: root.app,
@@ -241,6 +241,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
             : {}),
           ...this.coordinatePayload(opts?.coordinateSpace),
         })
+        if (preview.shown === false) return
         this.onViewfinderClaim({
           sessionId: this.sessionId,
           windowId: root.windowId,

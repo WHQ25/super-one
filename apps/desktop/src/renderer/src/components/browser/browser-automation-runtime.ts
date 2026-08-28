@@ -17,8 +17,12 @@ import { beginBrowserFocusIsolation, endBrowserFocusIsolation, withBrowserFocusI
 import { isBlankUrl } from './browser-url'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
+import { fitScreenshotWidth } from './screenshot-fit'
 
-const MAX_SCREENSHOT_WIDTH = 1280
+// Video, not stills: this bounds the canvas the MediaRecorder encodes at 2 Mbps,
+// so it answers to bitrate rather than to the agent's context budget. Screenshots
+// go through fitScreenshotWidth instead.
+const MAX_RECORDING_WIDTH = 1280
 const RECORDING_FRAME_INTERVAL_MS = 100
 const RECORDING_MAX_MS = 60_000
 const BLANK_PAGE_HAS_CUSTOM_CONTENT_SCRIPT = `(() => {
@@ -68,7 +72,7 @@ async function paintRecordingFrame(recording: ActiveBrowserRecording): Promise<v
   try {
     let frame = await browserCapture(recording.tabId)
     if (!frame || frame.isEmpty()) return
-    if (frame.getSize().width > MAX_SCREENSHOT_WIDTH) frame = frame.resize({ width: MAX_SCREENSHOT_WIDTH })
+    if (frame.getSize().width > MAX_RECORDING_WIDTH) frame = frame.resize({ width: MAX_RECORDING_WIDTH })
     const size = frame.getSize()
     if (recording.canvas.width !== size.width || recording.canvas.height !== size.height) {
       recording.canvas.width = size.width
@@ -93,8 +97,8 @@ async function startBrowserRecording(tabId: string): Promise<{ recordingId: stri
     await nextPaint()
     const first = await browserCapture(tabId)
     if (!first || first.isEmpty()) throw new Error('Browser recording could not capture its first frame')
-    const sized = first.getSize().width > MAX_SCREENSHOT_WIDTH
-      ? first.resize({ width: MAX_SCREENSHOT_WIDTH })
+    const sized = first.getSize().width > MAX_RECORDING_WIDTH
+      ? first.resize({ width: MAX_RECORDING_WIDTH })
       : first
     const size = sized.getSize()
     const canvas = document.createElement('canvas')
@@ -895,8 +899,14 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
           image = await browserCapture(id, rect)
         }
         if (!image || image.isEmpty()) throw new Error('Screenshot capture failed')
+        // getSize() reports PHYSICAL pixels, so on a 2x display this is twice the CSS
+        // width. Capping it directly meant every retina capture wider than 640 CSS px
+        // got resampled by a fractional factor, smearing the text the screenshot was
+        // taken to show. fitScreenshotWidth reduces by whole factors only, and returns
+        // null when the capture is already small enough to hand over as-is.
         const sized = image.getSize()
-        const final = sized.width > MAX_SCREENSHOT_WIDTH ? image.resize({ width: MAX_SCREENSHOT_WIDTH }) : image
+        const target = fitScreenshotWidth(sized.width)
+        const final = target === null ? image : image.resize({ width: target })
         const size = final.getSize()
         const data = final.toDataURL().split(',')[1] ?? ''
         return { mimeType: 'image/png' as const, data, width: size.width, height: size.height }

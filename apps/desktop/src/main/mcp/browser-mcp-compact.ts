@@ -158,28 +158,32 @@ export const BROWSER_QUERY_DESCRIPTION =
   + 'Use this instead of snapshot when you already know what you are looking for. Do not use this to click or type (browser_act).'
 
 export const BROWSER_ACT_DESCRIPTION =
-  'Submit 1–20 page actions as one call: click, hover, type, press, scroll, drag, select, upload. '
+  'Act on the page: click, hover, type, press, scroll, drag, select, upload. '
+  + 'Send ONE action per call by default. Batch 2–20 only for a sequence you would not stop between '
+  + '(fill a form then submit) — the user sees a batch as one step. Re-read the page between anything else. '
   + 'Prefer a CSS selector from snapshot/query; click/hover also accept text or x/y. '
   + 'engine=auto|cdp|synthetic (default auto). description is shown to the user instead of raw selectors. '
-  + 'Set recording=true to save a short video containing only this action transaction. '
-  + 'Optional expect keeps the recording open until an explicit page condition is met. '
-  + 'Do not use this to navigate (browser_tabs), wait (browser_wait_for), or run JS (browser_evaluate). Fail-fast: stops at the first error.'
+  + 'recording=true saves a video of just this transaction; expect holds it open until a page condition is met. '
+  + 'Not for navigation (browser_tabs), waiting (browser_wait_for), or JS (browser_evaluate). Fail-fast: stops at the first error.'
 
 export const BROWSER_PERF_DESCRIPTION =
-  "Profile what a page (or SuperOne itself) burns CPU on: hotspot functions by self time, plus layout/style/heap deltas. Pass `action` to measure ONE interaction — the app opens and closes the window around it, so your thinking time never dilutes the result. It first samples a ~1s baseline of ambient load and waits for load to return to it, so it works on pages that never go idle; hotspots are reported AFTER subtracting it. Omit `action` to profile steady state for `sampleMs` (no baseline; the only mode for target='app'). Read `settled`: 'timeout' = window cut at maxWaitMs, durations are LOWER BOUNDS. `jsSelfMs` far below `metrics.TaskDurationMs` means the cost is layout/paint/GC, not script."
+  "Profile what a page (or SuperOne itself) burns CPU on: hotspot functions by self time, plus layout/style/heap deltas. "
+  + "Pass `action` to measure ONE interaction: the window opens and closes around it, and a ~1s ambient baseline is subtracted. "
+  + "Omit `action` to profile steady state for `sampleMs` (no baseline; the only mode for target='app'). "
+  + "The reply flags a truncated window or a non-script bottleneck when either applies."
 
 const BROWSER_NETWORK_DESCRIPTION =
   'Network, downloads, and page environment. '
   + 'Recording ladder: action=start → do an act/navigate → action=wait or stop (lean manifest) → action=body({requestId}) for one response. '
   + 'action=download fetches a URL through the session; action=downloads lists page-triggered captures. '
-  + 'action=cookies|mock|emulate need CDP experimental settings. emulate with only preset/width/height/reset resizes without CDP. '
+  + 'action=cookies|mock|emulate need CDP experimental settings, except emulate with only preset/width/height/reset. '
   + 'Prefer snapshot/query for page content.'
 
 export const BROWSER_ACTION_DESCRIPTION =
   'Saved semantic browser actions (dynamic catalog — list then do). '
   + 'action=list (optional domain; includeSteps to see the full definition). '
-  + 'action=save creates or replaces a named flow (domain+name). '
   + 'action=do runs one saved action with input. '
+  + 'action=save creates or replaces a named flow (domain+name) — read the manual first. '
   + 'This does not record prior browser calls. Use browser_act for one-off clicks/types.'
 
 export const BROWSER_WAIT_FOR_DESCRIPTION =
@@ -392,7 +396,7 @@ export function registerCompactBrowserTools(
       inputSchema: {
         ...tabField,
         ...descriptionField,
-        actions: z.array(actItemSchema).min(1).max(20).describe('1–20 related actions, run in order, fail-fast.'),
+        actions: z.array(actItemSchema).min(1).max(20).describe('Normally one action. Use 2–20 only for a single uninterruptible sequence; they run in order, fail-fast.'),
         recording: z.boolean().optional().describe('Save a video of only this action transaction. Default false.'),
         expect: z.object({
           selector: z.string().optional(),
@@ -629,7 +633,13 @@ export function registerCompactBrowserTools(
         includeSteps: z.boolean().optional(),
         description: browserActionSchema.shape.description.optional(),
         parameters: browserActionSchema.shape.parameters.optional(),
-        steps: browserActionSchema.shape.steps.optional(),
+        // Deliberately loose: the real grammar is a recursive discriminated union whose
+        // $defs cost ~1.2k tokens on EVERY turn, to serve `action=save` alone. The full
+        // schema still runs server-side in normalizeAction, so a malformed save is
+        // rejected with the same Zod error — only the advertising is deferred.
+        steps: z.array(z.record(z.string(), z.unknown())).min(1).max(50).optional()
+          .describe('save only: 1-50 flow steps, each {kind:"tool"|"action"|"set"|"if"|"forEach"|"repeat"}. '
+            + 'Read read_manual({ domain: "product", topic: "browser" }) for the grammar before writing them.'),
         input: z.record(z.string(), z.unknown()).optional(),
         tab: z.string().optional(),
       },

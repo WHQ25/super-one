@@ -90,20 +90,21 @@ const conditionSchema = z.object({
  * cannot express "required depending on runtime state" in a form every harness obeys.
  * The refusal names the devices it could have meant, so the next call is right.
  */
+/** Pointer to the manual, so shared prose is billed once per read rather than every turn. */
+const MANUAL = 'See read_manual({ domain: "product", topic: "devices" }).'
+
 const deviceField = {
   device: z.string().optional().describe(
-    'Which controlled device to act on — the id from device_list, or its name. '
-    + 'Optional while this session controls exactly one device; required once it controls more than one '
-    + '(driving the wrong app there looks like a bug in the right one). '
-    + 'Use device_request_control to be granted another.',
+    // Shared by four tools, so every word here is billed four times over.
+    'Device id or name from device_list. Optional while this session controls exactly one; '
+    + 'required once it holds more. Use device_request_control to be granted another.',
   ),
 }
 
 const descriptionField = {
   description: z.string().trim().min(1).max(160).describe(
-    'A short human-friendly explanation of what this step accomplishes, phrased for the user watching '
-    + "(e.g. 'Open the profile tab', 'Check the order total'). Shown in the UI in place of refs and coordinates. "
-    + "Write it in the conversation's language.",
+    'Short explanation of this step for the user watching, in the conversation\'s language '
+    + "(e.g. 'Open the profile tab'). Shown in place of refs and coordinates.",
   ),
 }
 
@@ -111,13 +112,10 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
   {
     name: 'device_list',
     description:
-      'Browse the devices this machine can offer, one tier at a time — a dev machine holds '
-      + 'over a hundred simulators, so this never dumps them all. No arguments: what is running '
-      + '(attaching is instant; a cold boot costs ~20s), what this project used before, and which '
-      + 'kinds exist. kind: that kind\'s models. model: that model\'s devices, one per runtime, '
-      + 'with the ids. Prefer a running or recent device; ids only matter when you need a specific '
-      + 'runtime, since device_request_control also takes a model name and picks its newest. '
-      + 'Free and side-effect-free — it grants nothing and boots nothing.',
+      'Browse the devices this machine can offer, one tier at a time. No arguments: what is '
+      + 'running, what this project used before, and which kinds exist. kind: its models. model: '
+      + 'its devices, one per runtime, with ids. Prefer a running or recent one — attaching is '
+      + 'instant, a cold boot costs ~20s. Free: it grants nothing and boots nothing.',
     shape: {
       kind: z.string().optional()
         .describe('Narrow to one family: "iphone", "ipad", "watch", "tv", "vision". Returns its models.'),
@@ -128,31 +126,26 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
   {
     name: 'device_request_control',
     description:
-      'Ask the user to let this session control one specific device, and wait for their answer. '
-      + 'Every other device_* tool needs that grant and fails with NO_DEVICE until this succeeds — call it '
-      + 'first, not after a failure. Pick the device from device_list yourself; the user only approves or '
-      + 'declines, and a decline carries their feedback (often naming a different device — read it before '
-      + 'retrying). Returns it once bound and ready, booting it if it was not running; asking again for one '
-      + 'this session already holds returns it without prompting. A session may hold several, and then every '
-      + 'device_* call must name one with `device`. Install a build afterwards with `xcrun simctl install/launch`.',
+      'Ask the user to let this session control one device, and wait for their answer. Every other '
+      + 'device_* tool fails with NO_DEVICE until this succeeds — call it first, not after a failure. '
+      + 'Pick the device from device_list yourself; a decline carries feedback that often names a '
+      + 'different one. Returns it bound and booted. ' + MANUAL,
     shape: {
       ...descriptionField,
       device: z.string()
-        .describe('The id from device_list. A device name ("iPhone 17 Pro Max") is matched loosely against the '
-          + 'catalog as a fallback, but the id is what makes the approved device the one you meant.'),
+        .describe('The id from device_list. A name is matched loosely as a fallback, but the id is what '
+          + 'makes the approved device the one you meant.'),
     },
   },
   {
     name: 'device_snapshot',
     description:
-      'Capture the screen and return a stateId later calls must quote. '
-      + 'mode=semantic (default) returns the accessibility tree with @eN refs, labels, identifiers and bounds — '
-      + 'prefer it: refs survive animation and rotation, coordinates do not. '
-      + 'mode=visual saves a PNG and returns image.path (not pixels); Read it to look. fused returns both. '
-      + 'Waits for animation to stop; settled=false means geometry is approximate. '
-      + 'A region with no accessibility tree — a WebView, a canvas — has its text read from pixels and merged in, '
-      + 'marked (ocr): tap those, never press. The reply says source=ocr or hybrid. '
-      + 'Re-snapshot after anything that changes the screen — refs are positional and device_act rejects a stale stateId.',
+      'Capture the screen and return a stateId later calls must quote. Waits for animation to stop. '
+      + 'mode=semantic (default) returns the accessibility tree with @eN refs — prefer it: refs survive '
+      + 'animation and rotation, coordinates do not. mode=visual saves a PNG and returns image.path (not '
+      + 'pixels); Read it to look. fused returns both. Regions with no tree (WebView, canvas) are read from '
+      + 'pixels and marked (ocr): tap those, never press. Re-snapshot after anything that changes the '
+      + 'screen — refs are positional and device_act rejects a stale stateId. ' + MANUAL,
     shape: {
       ...descriptionField,
       ...deviceField,
@@ -164,10 +157,10 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
   {
     name: 'device_query',
     description:
-      'Search or inspect an existing snapshot without re-capturing the device. '
-      + 'Use this instead of taking another snapshot when you only need to find an element or read its details — '
-      + 'it costs no device round trip and cannot race an animation. '
-      + 'op=search matches text against labels, values and identifiers. op=inspect returns one element and its children.',
+      'Search or inspect an existing snapshot without re-capturing the device. Prefer it over another '
+      + 'snapshot when you only need to find an element or read its details: no device round trip, and it '
+      + 'cannot race an animation. op=search matches labels, values and identifiers; op=inspect returns one '
+      + 'element and its children.',
     shape: {
       ...descriptionField,
       ...deviceField,
@@ -181,11 +174,10 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
     name: 'device_act',
     description:
       'Run 1-10 touch actions against a snapshot, then re-observe to judge if they worked. '
-      + 'Actions: tap, doubleTap, longPress, swipe(direction|toX/toY), pinch(scale), press(ref), type, key, rotate, keyboard. '
-      + 'Prefer refs; press uses accessibility and is resilient to animation (use tap for source=ocr). Raw x/y is a last resort. '
-      + 'The batch and stale stateId are validated before side effects. rotate must be last; re-snapshot afterwards. '
-      + 'Set recording=true to save a short video containing only this action transaction. '
-      + 'Returns worked|didnt|unknown. Pass expect to define and wait for success.',
+      // The action list is not repeated here — `actions[].type` is an enum in the schema below.
+      + 'Prefer refs; press survives animation, but use tap for source=ocr and raw x/y only as a last resort. '
+      + 'The batch and a stale stateId are validated before any side effect. rotate must be last, then re-snapshot. '
+      + 'Returns worked|didnt|unknown; pass expect to define success. ' + MANUAL,
     shape: {
       ...descriptionField,
       ...deviceField,
@@ -200,12 +192,10 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
   {
     name: 'device_wait_for',
     description:
-      'Wait until the screen satisfies a condition. Use this instead of snapshotting in a loop. '
-      + 'Distinguishes preexisting (already true when asked) from verified (became true while waiting), '
-      + 'so you can tell a real transition from a check that was never going to fail. '
-      + 'Returns a fresh settled stateId and matching tree when successful. '
-      + 'Target the element by label or identifier, not by ref: refs belong to one snapshot, and what you are waiting for usually does not exist yet. '
-      + 'Every condition must name an element that way — text only says what to compare, it never selects.',
+      'Wait until the screen satisfies a condition, instead of snapshotting in a loop. '
+      + 'Target the element by label or identifier, never by ref: refs belong to one snapshot and what you '
+      + 'are waiting for usually does not exist yet — text only says what to compare, it never selects. '
+      + 'Returns a fresh settled stateId and tree, and reports preexisting vs verified.',
     shape: {
       ...descriptionField,
       ...deviceField,

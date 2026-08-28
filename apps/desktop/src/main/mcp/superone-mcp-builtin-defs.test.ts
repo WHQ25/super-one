@@ -86,7 +86,8 @@ describe('built-in superone tool registration surfaces', () => {
     expect(list?.description).toBe(BROWSER_TOOLS_LIST_DESCRIPTION)
     expect(list?.inputSchema.required).toBeUndefined()
     expect(call?.description).toBe(BROWSER_TOOLS_CALL_DESCRIPTION)
-    expect(call?.inputSchema.required).toEqual(['name', 'input'])
+    // `name` is deliberately optional — see browser-mcp-tools.test.ts for why.
+    expect(call?.inputSchema.required).toEqual(['input'])
     // The chat row shows this summary instead of the page-author tool name, so a remote node
     // that dropped the field would silently degrade the desktop UI it feeds.
     const callProps = call?.inputSchema.properties as Record<string, { description?: string }>
@@ -144,20 +145,29 @@ describe('built-in superone tool registration surfaces', () => {
     expect(submit.description).toMatch(/media_video_status/)
   })
 
-  it('puts the launch autonomy guidance on the permissionMode field, where the 700-char budget does not apply', () => {
+  // This used to assert the full autonomy guidance sat on the field, on the grounds that
+  // the 700-char budget does not reach into the input schema. The budget does not, but the
+  // token cost does: field descriptions are the larger half of the always-loaded surface.
+  // The field now carries the decision rule and points at the manual for the rest; the mode
+  // names it used to spell out are already in the enum beside it.
+  it('keeps the launch autonomy rule on permissionMode and the detail in product/collaboration', () => {
     const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_request')!
     const launch = (def.inputSchema.properties as Record<string, { items?: { properties?: Record<string, unknown> } }>)
       .launches.items!.properties!
-    const config = (launch.config as { properties: Record<string, { description?: string }> }).properties
+    const config = (launch.config as { properties: Record<string, { description?: string; enum?: string[] }> }).properties
     expect(config.permissionMode.description).toBe(LAUNCH_PERMISSION_MODE_DESCRIPTION)
-    expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).toMatch(/bypassPermissions/)
+    expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).toMatch(/most autonomous mode/i)
+    expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).toMatch(/read_manual/)
+    // Not repeated in prose — the schema already offers them.
+    expect(config.permissionMode.enum).toContain('bypassPermissions')
+    expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).not.toMatch(/bypassPermissions/)
   })
 
   it('points session_collab_request at product/collaboration for worktree recipes', () => {
     expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toContain(
       'read_manual({ domain: "product", topic: "collaboration" })',
     )
-    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/same-repo isolation belongs in config\.worktree/i)
+    // The cwd-vs-worktree rule lives on those two fields (and in the manual), not repeated here.
     expect(SESSION_REQUEST_AGENTS_DESCRIPTION.length).toBeLessThanOrEqual(700)
     const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_request')!
     const launch = (def.inputSchema.properties as Record<string, { items?: { properties?: Record<string, unknown> } }>)
@@ -169,11 +179,12 @@ describe('built-in superone tool registration surfaces', () => {
 
   it('reserves cwd for a different project and worktree for same-repo isolation', () => {
     expect(LAUNCH_CWD_DESCRIPTION).toMatch(/different project root/i)
-    expect(LAUNCH_CWD_DESCRIPTION).toMatch(/never pass ~\/\.worktrees/i)
+    expect(LAUNCH_CWD_DESCRIPTION).toMatch(/same-repo worktree leaf/i)
     expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/same-repo isolation/i)
-    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/cwd stays omitted or at the project root/i)
-    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/not for default read-only review/i)
-    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/detach only when reviewing/i)
+    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/leave cwd unset/i)
+    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/not for read-only review/i)
+    // `detach` guidance moved to product/collaboration — the field points there.
+    expect(LAUNCH_WORKTREE_DESCRIPTION).toMatch(/read_manual/)
   })
 
   it('keeps collaboration host-action descriptors aligned with desktop discovery', () => {
@@ -290,9 +301,12 @@ describe('built-in superone tool registration surfaces', () => {
     expect(properties.task).not.toHaveProperty('minLength')
   })
 
-  it('documents link + handoff modes and sessionId on session_collab_request', () => {
-    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/"link"/i)
-    expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/"handoff"/i)
+  // The three modes are named once, on the field the model fills in — the tool description
+  // used to repeat them, which billed the same sentence twice on every turn.
+  it('documents link + handoff modes and sessionId on the mode field', () => {
+    expect(LAUNCH_MODE_DESCRIPTION).toMatch(/"link"/i)
+    expect(LAUNCH_MODE_DESCRIPTION).toMatch(/"handoff"/i)
+    expect(LAUNCH_MODE_DESCRIPTION).toMatch(/sessionId/)
     expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toMatch(/sessionId/)
     expect(SESSION_REQUEST_AGENTS_DESCRIPTION.length).toBeLessThanOrEqual(700)
   })

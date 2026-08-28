@@ -64,6 +64,32 @@ function toonReply(data: unknown): ToolReply {
   return browserToonReply(toonEncode, data)
 }
 
+/**
+ * Guidance the agent only needs on the runs it applies to.
+ *
+ * Both notes used to live in the tool description, where the always-loaded surface
+ * paid for them every turn regardless of whether perf was ever called. Emitting them
+ * from the reply, and only when the condition they explain actually holds, means a
+ * clean measurement pays nothing either.
+ */
+function perfHint(result: unknown): string | undefined {
+  const r = result as { settled?: string; jsSelfMs?: number; metrics?: Record<string, number> }
+  const notes: string[] = []
+  if (r?.settled === 'timeout') {
+    notes.push('settled=timeout: the window was cut at maxWaitMs, so actionDurationMs and every duration are LOWER BOUNDS, not measurements.')
+  }
+  const taskMs = r?.metrics?.TaskDurationMs
+  if (typeof taskMs === 'number' && typeof r?.jsSelfMs === 'number' && taskMs > 0 && r.jsSelfMs < taskMs * 0.5) {
+    notes.push('jsSelfMs is far below metrics.TaskDurationMs: most main-thread cost is layout, paint, style or GC rather than script, so tuning JS will not help.')
+  }
+  return notes.length > 0 ? notes.join(' ') : undefined
+}
+
+function perfReply(result: unknown): ToolReply {
+  const hint = perfHint(result)
+  return toonReply(hint ? { ...(result as Record<string, unknown>), hint } : result)
+}
+
 async function dataTool(
   sessionId: string,
   op: BrowserAutomationOp,
@@ -1555,11 +1581,11 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
               new Error("target 'app' profiles SuperOne's own renderer and cannot run a browser action; omit `action` to sample it, or use target 'tab'."),
             )
           }
-          return toonReply(await samplePerf({ webContentsId: resolveAppTarget(), durationMs: args.sampleMs }))
+          return perfReply(await samplePerf({ webContentsId: resolveAppTarget(), durationMs: args.sampleMs }))
         }
         const webContentsId = await resolveCdpTarget(sessionId, args.tab)
         if (!args.action) {
-          return toonReply(await samplePerf({ webContentsId, durationMs: args.sampleMs }))
+          return perfReply(await samplePerf({ webContentsId, durationMs: args.sampleMs }))
         }
         if (args.action.tool === 'browser_perf_measure') {
           return errorReply(new Error('browser_perf_measure cannot measure itself; name the browser primitive you want profiled.'))
@@ -1570,7 +1596,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         // errors as ambiguous or measures a different tab than it acts on.
         const actionArgs = { ...(action.args as Record<string, unknown>) }
         if (args.tab != null && actionArgs.tab == null) actionArgs.tab = args.tab
-        return toonReply(
+        return perfReply(
           await measurePerf({
             webContentsId,
             runAction: async () => {

@@ -44,7 +44,7 @@ export {
 export const MANUAL_DOMAINS = ['product', 'miniapp', 'media', 'widget'] as const
 export type ManualDomain = (typeof MANUAL_DOMAINS)[number]
 
-export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug', 'collaboration', 'sessions'] as const
+export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug', 'collaboration', 'sessions', 'automation', 'devices', 'browser'] as const
 
 export const READ_MANUAL_INPUT_SCHEMA = {
   type: 'object',
@@ -125,9 +125,11 @@ export const MOBILE_SHARE_FILE_INPUT_SCHEMA = {
 export const MANUAL_READ_DESCRIPTION =
   'Read bundled SuperOne manuals. Omit domain to list all domains; pass domain to list its topics; ' +
   'pass domain with topic to read one topic. For widget, pass either topic or modules, never both. ' +
-  'Use product/contribute for GitHub issues and PRs (any bug or idea; issue-first, optional red–green PR), product/debug for support and runtime paths, ' +
-  'product/collaboration before session_collab_request (spawn vs handoff vs link, worktree vs cwd), ' +
-  'product/sessions for session_list/search/read/cleanup (archive cite/handoff), ' +
+  // The full topic list is not repeated here: calling this tool with no arguments returns
+  // exactly that index. Only the "read X before doing Y" triggers stay, because those are
+  // the ones a model cannot discover after the fact — by then it has already acted.
+  'Read product/collaboration before session_collab_request, product/automation before automation_apply, ' +
+  'product/devices before device_request_control, product/browser before saving a browser action, ' +
   'miniapp/overview before mini-app development, and media/overview before provider-specific options. ' +
   'Use config_read for live settings and widget_list_templates for saved widgets.'
 
@@ -152,9 +154,11 @@ export const UPDATE_SUPERONE_TYPES_DESCRIPTION =
 export const RENAME_SESSION_DESCRIPTION =
   'Rename the current chat session to a concise topic label shown in the sidebar. ' +
   'Always pass tags (set): 1–4 short kebab-case labels you choose so session_list/session_search can find this chat. ' +
-  'Reuse names from session_tag_list when they fit; invent one when they don\'t.\n\n' +
-  'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
-  'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again. Tags in the same call were still applied; use session_tag for later tag edits.'
+  'Reuse names from session_tag_list when they fit; invent one when they don\'t. ' +
+  // The user_locked recovery path is not described here: the error reply itself already
+  // says "Do not call session_rename again for this session", so spelling it out in the
+  // always-loaded surface charged every turn for advice only one reply ever needs.
+  'Top-level agent only — a Task/subagent worker does not own the user-facing title and must not call it.'
 
 export const SESSION_TAG_DESCRIPTION =
   'Tag SuperOne sessions so session_list/session_search can filter by tag. Default: current session. ' +
@@ -176,10 +180,8 @@ export const PROJECT_LIST_DESCRIPTION =
 export const SESSION_LIST_DESCRIPTION =
   'List SuperOne sessions (metadata only). Default: current project. ' +
   'Pass projectId (from project_list) or allProjects=true. Rows include projectId only — use project_list for path/name. ' +
-  'Use before session_read/session_search. Filter by title query, harness, pin/hidden, dates, or tags + tagMatch (any=at least one, all=every tag; default any). ' +
-  'Discover tags with session_tag_list. Sort with order (default last_active_desc; also created_*, message_count_*, size_*). ' +
-  'When order is size_*, rows include sizeBytes (character length of message JSON, not disk bytes). ' +
-  'Paginate with limit/offset. Not live collab or harness resume.'
+  'Filter by title query, harness, pin/hidden, dates or tags (discover them with session_tag_list). ' +
+  'Use before session_read/session_search. Not live collab or harness resume.'
 
 export const SESSION_SEARCH_DESCRIPTION =
   'Search SuperOne chat transcripts by text (title + message body). Default: current project; projectId or allProjects for cross-project. ' +
@@ -227,9 +229,9 @@ export const GENERATE_IMAGE_DESCRIPTION =
   'Before provider-specific options, call media_list_providers and read media/overview plus the matching provider topic. Check result warnings for ignored options.'
 
 export const GENERATE_VIDEO_DESCRIPTION =
-  'Submit an asynchronous video generation after the user reviews its parameters. Stop on cancelled or error; use feedback before retrying a rejected proposal. ' +
-  'After submission, poll media_video_status about every 30 seconds until generated or error. The finished video is displayed automatically; do not embed it again. ' +
-  'Before provider-specific options, call media_list_providers with category "video" and read media/overview plus the matching provider topic. Check warnings for ignored options.'
+  'Submit an asynchronous video generation after the user reviews its parameters. Stop on cancelled or error; use feedback before retrying. ' +
+  'Poll media_video_status about every 30s until generated or error. The finished video is displayed automatically — do not embed it again. ' +
+  'For provider options call media_list_providers(category:"video"), then read media/overview and the matching provider topic.'
 
 export const VIDEO_STATUS_DESCRIPTION =
   'Check on a video generation started by media_generate_video. ' +
@@ -244,9 +246,10 @@ export const SESSION_LIST_AGENTS_DESCRIPTION =
   'Skip this call when the user already named an agent with @ — that mention carries its agentId.'
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
-  'Request user approval for collaboration launches: "spawn" (default) creates a nested child you keep messaging; "handoff" creates a top-level sibling that takes the task over one-way (no mailbox); "link" opens a mailbox with an existing sessionId. ' +
-  'Spawn/handoff: list_agents; require agentId, name, role, summary, task; for cwd/worktree call read_manual({ domain: "product", topic: "collaboration" }); same-repo isolation belongs in config.worktree. ' +
-  'Link: require sessionId + summary; optional task opening (turn-injected, not system prompt). User must approve; credential for session_collab_start.'
+  'Request user approval for collaboration launches. See the mode field for spawn vs handoff vs link. ' +
+  'Spawn/handoff: pick an agentId from session_collab_list_agents; require name, role, summary, task. Link: require sessionId + summary. ' +
+  'Read read_manual({ domain: "product", topic: "collaboration" }) before the first launch in a session. ' +
+  'User must approve; returns the credential for session_collab_start.'
 
 export const LAUNCH_SUMMARY_DESCRIPTION =
   'Short 2–3 sentence task summary shown collapsed in the confirm dialog. Not the full brief — put detail in task.'
@@ -257,10 +260,9 @@ export const LAUNCH_TASK_DESCRIPTION =
   'Link: optional opening for the peer (mailbox + turn wake, never system prompt). Expandable in the confirm UI.'
 
 export const LAUNCH_MODE_DESCRIPTION =
-  '"spawn" (default) creates a new child session nested under this one, with a two-way mailbox. ' +
-  '"handoff" creates a new top-level sibling session that receives the task and owns it from then on — no mailbox, no reply, not nested. ' +
-  'Use it to pass work forward (fresh context, next phase, unattended follow-up) instead of supervising it. ' +
-  '"link" connects to an already-existing SuperOne session (sessionId required).'
+  '"spawn" (default) = nested child with a two-way mailbox. ' +
+  '"handoff" = top-level sibling, not nested: it owns the task from then on, with no mailbox and no reply — pass work forward rather than supervise it. ' +
+  '"link" = connect to an existing session (sessionId required).'
 
 export const LAUNCH_SESSION_ID_DESCRIPTION =
   'Existing SuperOne session id to link with (mode "link" only). Required for link; ignore for spawn. Prefer ids from @session mentions or session_list — never invent ids.'
@@ -276,20 +278,17 @@ export const LAUNCH_SESSION_ID_DESCRIPTION =
  * field blurbs short and point there.
  */
 export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
-  'How autonomous the child session is. Prefer the most autonomous mode it can finish the task under — "bypassPermissions" (shown as Bypass on Claude-family harnesses, Full Access on Codex/Cursor), "agent" for Cursor, or "auto" for ACP agents. ' +
-  'Nobody watches a child session, so a conservative mode strands it on an approval prompt that is never answered. ' +
-  'Requesting an autonomous mode is safe by construction: nothing runs until the user approves this very request, and that approval dialog is where they downgrade permission or sandbox per launch. ' +
-  'Pick "plan" or "default" only when stopping for human review is the point of the launch.'
+  'How autonomous the child session is. Nobody watches a child, so prefer the most autonomous mode it can finish under; "plan"/"default" only when stopping for human review is the point. ' +
+  'Per-harness mode names, and why requesting autonomy is safe here: See read_manual({ domain: "product", topic: "collaboration" }).'
 
 export const LAUNCH_CWD_DESCRIPTION =
-  'Set only to a genuinely different project root. Omit for the current project. ' +
-  'Never pass ~/.worktrees/... or another same-repo worktree leaf; use config.worktree for same-repo isolation. ' +
+  'Only for a genuinely different project root; omit for the current project. ' +
+  'Never a same-repo worktree leaf — express isolation with config.worktree. ' +
   'See read_manual({ domain: "product", topic: "collaboration" }).'
 
 export const LAUNCH_WORKTREE_DESCRIPTION =
-  'Request a host-managed worktree for same-repo isolation while cwd stays omitted or at the project root. ' +
-  'Use for parallel implementers (mode branch + unique branchName), not for default read-only review of the current shared checkout. ' +
-  'Use mode detach only when reviewing a feature branch another implementer already has checked out. ' +
+  'Host-managed worktree for same-repo isolation; leave cwd unset. ' +
+  'For parallel implementers, not for read-only review of the shared checkout. ' +
   'See read_manual({ domain: "product", topic: "collaboration" }).'
 
 export const LAUNCH_BRANCH_NAME_DESCRIPTION =
@@ -317,10 +316,9 @@ export const AUTOMATION_LIST_DESCRIPTION =
   'Call before automation_apply or automation_delete. Current project only — not session archive tools.'
 
 export const AUTOMATION_APPLY_DESCRIPTION =
-  'Create or update a project automation. action=create needs name, prompt, schedule; agentConfig optional (defaults claude + bypassPermissions). ' +
-  'action=update needs id plus any of name/prompt/enabled/schedule/agentConfig (toggle via enabled). ' +
-  'Always set schedule.summary to a short natural-language phrase for the UI (user language). ' +
-  'Always opens a user confirmation dialog; applies nothing without approval. Call automation_list first for ids. Delete with automation_delete.'
+  'Create or update a project automation. create needs name, prompt, schedule; update needs id plus any field (pause via enabled=false). ' +
+  'Call automation_list first for ids; remove with automation_delete. Always opens a user confirmation dialog and applies nothing without approval. ' +
+  'For schedule and agentConfig shapes see read_manual({ domain: "product", topic: "automation" }).'
 
 export const AUTOMATION_DELETE_DESCRIPTION =
   'Permanently delete project automations by id (from automation_list). ' +
@@ -330,9 +328,8 @@ export const AUTOMATION_DELETE_DESCRIPTION =
 export const AUTOMATION_SCHEDULE_INPUT_SCHEMA = {
   type: 'object',
   description:
-    'When to run. one-time needs runAt (ISO). recurring needs cron (e.g. "0 9 * * *"). '
-    + 'Always include summary: natural language for the confirm UI in the user\'s language '
-    + '(e.g. "Every weekday at 9:00 AM", "每天上午 9 点"). Machine fields still drive the scheduler.',
+    'When to run. one-time needs runAt (ISO); recurring needs cron. Always include summary. '
+    + 'Preset fields and examples: read_manual({ domain: "product", topic: "automation" }).',
   properties: {
     type: { type: 'string', enum: ['one-time', 'recurring'] },
     cron: { type: 'string', description: 'Cron expression for recurring (required when type=recurring).' },
@@ -350,8 +347,8 @@ export const AUTOMATION_SCHEDULE_INPUT_SCHEMA = {
       minLength: 1,
       maxLength: 200,
       description:
-        'Natural-language schedule shown in the UI (list + confirm). Use the user\'s language. '
-        + 'Examples: "Every weekday at 9:00 AM", "每天上午 9 点", "Once on May 1 at 3pm". Required for create.',
+        'Natural-language schedule shown in the list and confirm dialog, in the user\'s language '
+        + '(e.g. "Every weekday at 9:00 AM"). Required for create.',
     },
   },
   required: ['type', 'summary'],
@@ -361,8 +358,8 @@ export const AUTOMATION_SCHEDULE_INPUT_SCHEMA = {
 export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
   type: 'object',
   description:
-    'Harness + model for the automation run. type is required (claude|codex|acp|opencode). ' +
-    'Defaults on create: claude + bypassPermissions + sandbox off. Prefer unified fields: model, effort, permissionMode, sandboxMode, apiProviderId, acpAgentId.',
+    'Harness for the run; only type is required. Create defaults to claude + bypassPermissions. ' +
+    'Field-by-field: read_manual({ domain: "product", topic: "automation" }).',
   properties: {
     type: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'] },
     agentName: { type: 'string', description: 'Claude only: named agent profile.' },

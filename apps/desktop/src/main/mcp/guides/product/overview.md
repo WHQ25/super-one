@@ -1,6 +1,6 @@
 # SuperOne — product overview
 
-SuperOne is an Electron desktop meta-app: chat agents (Claude / Codex / Grok), mini-apps, generative media, and an in-app browser.
+SuperOne is an Electron desktop app that puts every coding-agent harness on one surface: Claude, Codex, Cursor, OpenCode, DeepSeek and any ACP agent share one project, one session store and one tool surface. It **extends** each harness with abilities its own CLI never had (embedded browser, computer use, iOS/Android devices, generative media, widgets), lets sessions **collaborate across harness boundaries** (`session_collab_*`), and is a place to **build your own agentic apps** (mini-apps).
 
 ## Links
 

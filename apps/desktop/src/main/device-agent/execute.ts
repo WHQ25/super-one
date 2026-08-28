@@ -76,6 +76,9 @@ function errorReply(error: unknown): DeviceToolReply {
  * The first sentence is the one that matters: an agent that reads "could not" without
  * "the device is fine" goes and checks the device, which is a long way from the fix.
  */
+const UNSETTLED_NOTE =
+  'Animation had not stopped when this was captured, so bounds are approximate. Re-snapshot before acting on coordinates.'
+
 const TREE_UNAVAILABLE_NOTE =
   'This screen exposes no readable accessibility tree right now — `uiautomator dump` waits '
   + 'for the UI to go idle, and a playing video or a secure window never gets there. The '
@@ -225,6 +228,9 @@ export class DeviceAgentSession {
       orientation: observation.orientation,
       screen: observation.screen,
       settled: observation.settled,
+      // Explained here rather than in the tool description: an unsettled capture is the
+      // exception, so the always-loaded surface should not pay for the caveat every turn.
+      ...(observation.settled ? {} : { settledNote: UNSETTLED_NOTE }),
       ...(observation.truncated ? { truncated: true } : {}),
       ...sourceNote(observation.root),
       ...(image ? { image } : {}),

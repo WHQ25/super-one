@@ -26,6 +26,9 @@ import productContributeMd from './guides/product/contribute.md?raw'
 import productDebugMd from './guides/product/debug.md?raw'
 import productCollaborationMd from './guides/product/collaboration.md?raw'
 import productSessionsMd from './guides/product/sessions.md?raw'
+import productAutomationMd from './guides/product/automation.md?raw'
+import productDevicesMd from './guides/product/devices.md?raw'
+import productBrowserMd from './guides/product/browser.md?raw'
 import {
   MANUAL_DOMAINS,
   MANUAL_READ_DESCRIPTION,
@@ -76,6 +79,9 @@ const PRODUCT_GUIDES = {
   debug: productDebugMd,
   collaboration: productCollaborationMd,
   sessions: productSessionsMd,
+  automation: productAutomationMd,
+  devices: productDevicesMd,
+  browser: productBrowserMd,
 } satisfies Record<ProductGuideTopic, string>
 
 const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
@@ -164,6 +170,9 @@ function formatDomainIndex(domain: ManualDomain): string {
       '- debug — log paths, userData, monorepo map, this machine’s runtime paths',
       '- collaboration — session_collab_* launches: same-repo worktrees, cross-project cwd, implementers, and reviewers',
       '- sessions — session_list / session_search / session_read / session_cleanup: archive cite, handoff, cleanup',
+      '- automation — automation_apply schedule and agentConfig shapes, presets, and the approval dialog',
+      '- devices — device_* loop for phones and tablets: grants, refs vs OCR, settling, batching, waits',
+      '- browser — browser_* recording ladder, perf modes, and the saved-action step grammar',
       '',
       'Call `read_manual({ domain: "product", topic: "contribute" })` for issues / PRs.',
       'Call `read_manual({ domain: "product", topic: "debug" })` for logs and local diagnosis.',

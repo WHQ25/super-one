@@ -34,7 +34,6 @@ function settings(overrides: Record<string, unknown> = {}) {
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
-    browserToolSurface: 'compact',
     browserDownloadDir: null,
     webmcpEnabled: true,
     webmcpTrustedOrigins: [] as WebmcpTrustedOrigin[],

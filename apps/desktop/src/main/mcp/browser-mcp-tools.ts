@@ -587,8 +587,8 @@ function ensureAllHandlers(sessionId: string): Map<string, BrowserToolHandler> {
   return handlers
 }
 
-export function getBrowserToolDescriptors(sessionId?: string): SuperoneMcpToolDescriptor[] {
-  const surface = resolveBrowserToolSurface(sessionId)
+export function getBrowserToolDescriptors(): SuperoneMcpToolDescriptor[] {
+  const surface = resolveBrowserToolSurface()
   const webMcpEnabled = isWebMcpEnabled()
   const cacheKey = `${surface}:${webMcpEnabled}`
   const cached = browserToolDescriptors.get(cacheKey)
@@ -624,7 +624,7 @@ export function registerBrowserTools(
   sessionId: string,
   surface?: BrowserToolSurface,
 ): void {
-  const resolved = surface ?? resolveBrowserToolSurface(sessionId)
+  const resolved = surface ?? resolveBrowserToolSurface()
   const webMcpEnabled = isWebMcpEnabled()
   if (resolved === 'compact') {
     registerCompactBrowserTools(server, sessionId, (name, args) => runPrimitive(sessionId, name, args), webMcpEnabled)

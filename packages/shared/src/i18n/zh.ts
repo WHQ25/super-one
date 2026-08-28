@@ -926,12 +926,6 @@ export const zh: Messages = {
     browser: {
       title: '浏览器',
       subtitle: '配置内置浏览器及其自动化工具',
-      surface: {
-        label: '精简工具面',
-        description: '向智能体暴露阶段化工具，而不是经典的逐动词列表。新会话生效。关闭则恢复经典列表。',
-        compact: '精简',
-        legacy: '经典（30 个工具）',
-      },
       downloadDir: {
         label: '下载目录',
         description: '内置浏览器下载的文件保存位置。智能体可在单次下载中指定其他目录。',
@@ -2353,6 +2347,8 @@ export const zh: Messages = {
         savingAction: '正在保存浏览器动作',
         actionDo: '执行浏览器动作',
         doingAction: '正在执行浏览器动作',
+        act: '页面动作',
+        acting: '正在执行页面动作',
         toolsList: '列出页面工具',
         listingPageTools: '正在列出页面工具',
         toolsCall: '调用页面工具',

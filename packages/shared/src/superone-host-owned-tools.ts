@@ -11,8 +11,10 @@
 export const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__' as const
 
 // Single source of truth for the browser tool surface. Permission / execute
-// accept the union; list/register advertise either the legacy 30-tool surface
-// or the compact 8-tool surface (see resolveBrowserToolSurface).
+// accept the union; list/register advertise the compact phase-oriented surface
+// (see resolveBrowserToolSurface). The legacy per-verb primitives stay callable
+// so old transcripts, saved actions and host-actions keep resolving, and are
+// re-advertised only via the SUPERONE_BROWSER_TOOLS=legacy debug escape hatch.
 export const BROWSER_PRIMITIVE_TOOL_NAMES = [
   'browser_snapshot',
   'browser_query',
@@ -57,7 +59,7 @@ export const BROWSER_LEGACY_TOOL_NAMES = [
   ...BROWSER_ACTION_TOOL_NAMES,
 ] as const
 
-/** Compact surface union; WebMCP registration is feature-gated by the desktop host. */
+/** The advertised surface; WebMCP registration is feature-gated by the desktop host. */
 export const BROWSER_COMPACT_TOOL_NAMES = [
   'browser_tabs',
   'browser_snapshot',

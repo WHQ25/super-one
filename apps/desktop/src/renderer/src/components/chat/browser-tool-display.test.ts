@@ -33,7 +33,10 @@ describe('getBrowserOp', () => {
   it('resolves compact dispatcher names through action/type args', () => {
     expect(getBrowserOp('browser_act', { actions: [{ type: 'type', text: 'hi' }] })).toBe('type')
     expect(getBrowserOp('browser_act', { actions: [{ type: 'upload', files: ['/a'] }] })).toBe('upload_file')
+    // Partial input while the call streams in: stay on the single-action default so a
+    // plain click does not flip verbs once `actions` finishes arriving.
     expect(getBrowserOp('browser_act', {})).toBe('click')
+    expect(getBrowserOp('browser_act', { actions: [] })).toBe('click')
     expect(getBrowserOp('browser_network', { action: 'body' })).toBe('network_body')
     expect(getBrowserOp('browser_network', { action: 'emulate', preset: 'mobile' })).toBe('resize')
     expect(getBrowserOp('browser_action', { action: 'do' })).toBe('action_do')
@@ -270,5 +273,40 @@ describe('parseListDownloadsResult', () => {
     }))
     expect(items[0]?.filename).toBe('report.pdf')
     expect(items[0]?.path).toBe('/tmp/dl/report.pdf')
+  })
+})
+
+describe('browser_act rendering', () => {
+  it('reads a single action from actions[0] instead of the empty top level', () => {
+    const click = { actions: [{ type: 'click', selector: '#submit' }] }
+    expect(getBrowserOp('browser_act', click)).toBe('click')
+    expect(browserInputSummary('click', click)).toBe('#submit')
+
+    const typing = { actions: [{ type: 'type', selector: '#email', text: 'a@b.test' }] }
+    expect(getBrowserOp('browser_act', typing)).toBe('type')
+    expect(browserInputSummary('type', typing)).toBe('#email \u2190 a@b.test')
+  })
+
+  it('masks a secret typed through the batch wrapper, as the flat tool did', () => {
+    const p = { actions: [{ type: 'type', selector: '#password', text: 'hunter2hunter2' }] }
+    expect(browserInputSummary('type', p)).toBe('#password \u2190 \u2022\u2022\u2022\u2022\u2022\u2022')
+  })
+
+  it('renders a multi-action call as its own op listing every step', () => {
+    const p = {
+      actions: [
+        { type: 'type', selector: '#email', text: 'a@b.test' },
+        { type: 'click', selector: '#submit' },
+      ],
+    }
+    // Not 'type' \u2014 reporting the first action's verb would claim the call did less than it did.
+    expect(getBrowserOp('browser_act', p)).toBe('act')
+    expect(browserInputSummary('act', p)).toBe('type #email \u2190 a@b.test \u00b7 click #submit')
+    expect(browserVerbKey('act')).toBe('act')
+    expect(browserVerbKey('act', true)).toBe('acting')
+  })
+
+  it('leaves the batch summary empty while its input is still streaming', () => {
+    expect(browserInputSummary('act', {})).toBe('')
   })
 })

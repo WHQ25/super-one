@@ -95,7 +95,6 @@ const defaults: AppSettings = {
   cdpCookiesEnabled: false,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
-  browserToolSurface: 'legacy',
   browserDownloadDir: null,
   computerUseEnabled: false,
   computerUsePictureInPicture: true,
@@ -527,9 +526,6 @@ export function readAppSettings(): AppSettings {
       cdpCookiesEnabled: typeof data.cdpCookiesEnabled === 'boolean' ? data.cdpCookiesEnabled : defaults.cdpCookiesEnabled,
       cdpMockEnabled: typeof data.cdpMockEnabled === 'boolean' ? data.cdpMockEnabled : defaults.cdpMockEnabled,
       cdpEmulateEnabled: typeof data.cdpEmulateEnabled === 'boolean' ? data.cdpEmulateEnabled : defaults.cdpEmulateEnabled,
-      browserToolSurface: data.browserToolSurface === 'legacy' || data.browserToolSurface === 'compact'
-        ? data.browserToolSurface
-        : defaults.browserToolSurface,
       browserDownloadDir: readBrowserDownloadDir(data.browserDownloadDir),
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
       computerUsePictureInPicture: typeof data.computerUsePictureInPicture === 'boolean'
@@ -608,7 +604,6 @@ export function readAppSettings(): AppSettings {
       cdpCookiesEnabled: defaults.cdpCookiesEnabled,
       cdpMockEnabled: defaults.cdpMockEnabled,
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
-      browserToolSurface: defaults.browserToolSurface,
       browserDownloadDir: defaults.browserDownloadDir,
       computerUseEnabled: defaults.computerUseEnabled,
       computerUsePictureInPicture: defaults.computerUsePictureInPicture,
@@ -731,7 +726,6 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     cdpCookiesEnabled: patch.cdpCookiesEnabled === undefined ? current.cdpCookiesEnabled : patch.cdpCookiesEnabled,
     cdpMockEnabled: patch.cdpMockEnabled === undefined ? current.cdpMockEnabled : patch.cdpMockEnabled,
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,
-    browserToolSurface: patch.browserToolSurface === undefined ? current.browserToolSurface : patch.browserToolSurface,
     browserDownloadDir: patch.browserDownloadDir === undefined
       ? current.browserDownloadDir
       : readBrowserDownloadDir(patch.browserDownloadDir),

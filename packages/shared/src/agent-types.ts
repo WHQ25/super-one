@@ -4208,13 +4208,6 @@ export interface AppSettings {
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
   /**
-   * Which browser MCP surface to advertise.
-   * `legacy` = 30 per-verb tools (default, including packaged builds);
-   * `compact` = phase-oriented tools (dev opt-in).
-   * Env `SUPERONE_BROWSER_TOOLS` overrides this. Locked per session at first use.
-   */
-  browserToolSurface: 'legacy' | 'compact'
-  /**
    * Where built-in browser downloads land — both agent-driven `browser_download`
    * and files the user or page starts. Null → the OS Downloads folder.
    * A `browser_download` call may still override it per download.
@@ -4354,7 +4347,6 @@ export interface AppSettingsPatch {
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean
-  browserToolSurface?: 'legacy' | 'compact'
   /** Empty string or null resets to the OS Downloads folder. */
   browserDownloadDir?: string | null
   computerUseEnabled?: boolean

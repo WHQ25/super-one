@@ -868,12 +868,6 @@ export type Messages = {
     browser: {
       title: string
       subtitle: string
-      surface: {
-        label: string
-        description: string
-        compact: string
-        legacy: string
-      }
       downloadDir: {
         label: string
         description: string
@@ -2271,6 +2265,8 @@ export type Messages = {
         savingAction: string
         actionDo: string
         doingAction: string
+        act: string
+        acting: string
         toolsList: string
         listingPageTools: string
         toolsCall: string
@@ -4441,12 +4437,6 @@ export const en: Messages = {
     browser: {
       title: 'Browser',
       subtitle: 'Configure the built-in browser and its automation tools',
-      surface: {
-        label: 'Compact tool surface',
-        description: 'Advertise phase-oriented tools instead of the classic per-verb list. Takes effect in new chat sessions. Turn off to restore the classic list.',
-        compact: 'Compact',
-        legacy: 'Classic (30 tools)',
-      },
       downloadDir: {
         label: 'Download Directory',
         description: 'Where files downloaded in the built-in browser are saved. The agent may override it per download.',
@@ -5872,6 +5862,8 @@ export const en: Messages = {
         savingAction: 'Saving Browser Action',
         actionDo: 'Run Browser Action',
         doingAction: 'Running Browser Action',
+        act: 'Page Actions',
+        acting: 'Running Page Actions',
         toolsList: 'List Page Tools',
         listingPageTools: 'Listing Page Tools',
         toolsCall: 'Call Page Tool',

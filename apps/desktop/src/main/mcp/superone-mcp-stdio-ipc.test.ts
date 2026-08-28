@@ -225,11 +225,12 @@ describe('superone-mcp-stdio-ipc', () => {
     expect(names).toContain('miniapp_call')
     expect(names).not.toContain('myapp__do_thing')
     expect(names).toContain('browser_snapshot')
-    expect(names).toContain('browser_click')
-    expect(names).toContain('browser_navigate')
-    expect(names).toContain('browser_action_list')
-    expect(names).not.toContain('browser_act')
-    expect(names).not.toContain('browser_action')
+    expect(names).toContain('browser_act')
+    expect(names).toContain('browser_action')
+    // The legacy per-verb primitives stay executable but are no longer advertised.
+    expect(names).not.toContain('browser_click')
+    expect(names).not.toContain('browser_navigate')
+    expect(names).not.toContain('browser_action_list')
     client.close()
   })
 

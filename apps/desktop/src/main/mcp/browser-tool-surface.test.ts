@@ -1,15 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
-vi.mock('../app-settings-service', () => ({
-  readAppSettings: () => {
-    throw new Error('unavailable')
-  },
-}))
+import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   advertisedBrowserToolNames,
-  clearBrowserToolSurfaceLock,
-  clearBrowserToolSurfaceLocks,
   parseBrowserToolSurface,
   resolveBrowserToolSurface,
   setBrowserToolSurfaceForTests,
@@ -18,12 +10,11 @@ import {
 describe('browser tool surface', () => {
   afterEach(() => {
     setBrowserToolSurfaceForTests(null)
-    clearBrowserToolSurfaceLocks()
     delete process.env.SUPERONE_BROWSER_TOOLS
   })
 
-  it('defaults to the legacy 30-tool surface', () => {
-    expect(resolveBrowserToolSurface()).toBe('legacy')
+  it('defaults to the compact surface', () => {
+    expect(resolveBrowserToolSurface()).toBe('compact')
   })
 
   it('parses only the two known surfaces', () => {
@@ -39,25 +30,14 @@ describe('browser tool surface', () => {
     expect(resolveBrowserToolSurface()).toBe('compact')
   })
 
-  it('honours SUPERONE_BROWSER_TOOLS when no override is set', () => {
+  it('honours SUPERONE_BROWSER_TOOLS as the legacy escape hatch', () => {
     process.env.SUPERONE_BROWSER_TOOLS = 'legacy'
     expect(resolveBrowserToolSurface()).toBe('legacy')
   })
 
-  it('locks the first resolve per sessionId', () => {
-    setBrowserToolSurfaceForTests('compact')
-    expect(resolveBrowserToolSurface('sess-a')).toBe('compact')
-    setBrowserToolSurfaceForTests('legacy')
-    expect(resolveBrowserToolSurface('sess-a')).toBe('compact')
-    expect(resolveBrowserToolSurface('sess-b')).toBe('legacy')
-  })
-
-  it('drops a session lock so the next resolve re-reads the flag', () => {
-    setBrowserToolSurfaceForTests('compact')
-    expect(resolveBrowserToolSurface('sess-a')).toBe('compact')
-    clearBrowserToolSurfaceLock('sess-a')
-    setBrowserToolSurfaceForTests('legacy')
-    expect(resolveBrowserToolSurface('sess-a')).toBe('legacy')
+  it('ignores an unrecognised env value and stays compact', () => {
+    process.env.SUPERONE_BROWSER_TOOLS = 'classic'
+    expect(resolveBrowserToolSurface()).toBe('compact')
   })
 
   it('includes both WebMCP tools in both browser surfaces', () => {

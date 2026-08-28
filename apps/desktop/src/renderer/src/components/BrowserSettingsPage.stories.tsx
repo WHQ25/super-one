@@ -9,7 +9,6 @@ const BASE = {
   cdpCookiesEnabled: true,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
-  browserToolSurface: 'compact',
   browserDownloadDir: null as string | null,
   webmcpEnabled: false,
   webmcpTrustedOrigins: [] as WebmcpTrustedOrigin[],

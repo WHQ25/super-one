@@ -60,9 +60,12 @@ describe('Host Action MCP server', () => {
     const tools = await client.listTools()
     const names = tools.tools.map((t) => t.name)
     expect(names).toContain('browser_snapshot')
-    expect(names).toContain('browser_navigate')
-    expect(names).toContain('browser_click')
-    expect(names).toContain('browser_action_list')
+    expect(names).toContain('browser_act')
+    expect(names).toContain('browser_action')
+    // The legacy per-verb primitives are executable on the desktop but not advertised.
+    expect(names).not.toContain('browser_navigate')
+    expect(names).not.toContain('browser_click')
+    expect(names).not.toContain('browser_action_list')
     expect(names).toContain('read_manual')
     expect(names).toContain('session_rename')
     expect(names).toContain('session_tag')
@@ -201,12 +204,12 @@ describe('Host Action MCP server', () => {
     })
     const { client } = await connectClient(h, 'sess-nav')
     await client.callTool({
-      name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      name: 'browser_act',
+      arguments: { actions: [{ type: 'click', selector: '#go' }] },
     })
     expect(seen).toEqual([
       {
-        toolName: 'browser_navigate',
+        toolName: 'browser_act',
         toolGroup: HOST_ACTION_TOOL_GROUPS.browserAct,
         replayPolicy: 'unsafe',
       },

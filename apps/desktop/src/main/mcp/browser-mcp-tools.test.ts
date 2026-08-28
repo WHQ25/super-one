@@ -111,7 +111,8 @@ import {
   syncWebMcpTrustFromSettings,
   webMcpToolFingerprint,
 } from './webmcp-trust'
-import { setBrowserToolSurfaceForTests, clearBrowserToolSurfaceLocks } from './browser-tool-surface'
+import { setBrowserToolSurfaceForTests } from './browser-tool-surface'
+import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
 import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId } from '../browser/browser-automation-bridge'
 import { cdpClick, cdpHover } from '../browser/browser-cdp'
@@ -172,7 +173,6 @@ describe('browser tool registration under experimental gates', () => {
     settingsMocks.saveAppSettings.mockImplementation((patch) => patch)
     clearWebMcpTrustForTests()
     setBrowserWebMcpHostEventResolver(null)
-    clearBrowserToolSurfaceLocks()
     setBrowserToolSurfaceForTests('legacy')
   })
 
@@ -879,7 +879,6 @@ describe('compact browser surface', () => {
     vi.clearAllMocks()
     clearBrowserToolHandlers('sess-1')
     clearBrowserToolHandlers('__descriptor__')
-    clearBrowserToolSurfaceLocks()
     setBrowserToolSurfaceForTests('compact')
   })
 
@@ -910,6 +909,20 @@ describe('compact browser surface', () => {
     for (const d of descriptors) {
       expect(d.description.length, d.name).toBeGreaterThan(0)
       expect(d.description.length, d.name).toBeLessThanOrEqual(700)
+    }
+  })
+
+  // The node advertises browser tools from a checked-in dump, not from this module, so
+  // nothing else fails when the two drift — which is how the dump ended up carrying the
+  // legacy 30 tools, a stale browser_tools_call schema, and no browser_perf at all.
+  it('keeps the remote Host Action dump aligned with the advertised surface', () => {
+    const remote = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.filter((d) => d.name.startsWith('browser_'))
+    const desktop = getBrowserToolDescriptors()
+    expect(remote.map((d) => d.name).sort()).toEqual(desktop.map((d) => d.name).sort())
+    for (const d of desktop) {
+      const hostAction = remote.find((r) => r.name === d.name)
+      expect(hostAction?.description, `${d.name} description`).toBe(d.description)
+      expect(hostAction?.inputSchema, `${d.name} input schema`).toEqual(d.inputSchema)
     }
   })
 

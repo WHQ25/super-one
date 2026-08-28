@@ -98,7 +98,6 @@ describe('app-settings-service', () => {
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
-    browserToolSurface: 'legacy',
     browserDownloadDir: null,
     agentPreference: {
       claude: defaultClaude,
@@ -191,7 +190,6 @@ describe('app-settings-service', () => {
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
-        browserToolSurface: 'legacy',
         browserDownloadDir: null,
         agentPreference: {
           claude: {
@@ -341,7 +339,6 @@ describe('app-settings-service', () => {
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
-        browserToolSurface: 'legacy',
         browserDownloadDir: null,
         agentPreference: {
           claude: defaultClaude,

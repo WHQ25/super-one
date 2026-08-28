@@ -42,7 +42,6 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
-    browserToolSurface: 'legacy',
     miniAppOrder: {},
     customAppIconPath: null,
     browserBookmarks: [],

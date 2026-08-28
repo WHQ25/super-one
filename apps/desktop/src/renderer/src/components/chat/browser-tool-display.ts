@@ -29,6 +29,7 @@ export type BrowserOp =
   | 'action_list'
   | 'action_save'
   | 'action_do'
+  | 'act'
   | 'tools_list'
   | 'tools_call'
 
@@ -37,14 +38,14 @@ const BROWSER_OPS = new Set<BrowserOp>([
   'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs', 'resize',
   'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file',
   'download', 'list_downloads', 'emulate', 'mock', 'action_list', 'action_save', 'action_do',
-  'tools_list', 'tools_call',
+  'act', 'tools_list', 'tools_call',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
 const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list', 'tools_list'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
-const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do', 'tools_call'])
+const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do', 'act', 'tools_call'])
 
 const NETWORK_ACTION_OP: Record<string, BrowserOp> = {
   start: 'network_start',
@@ -73,15 +74,24 @@ const TABS_ACTION_OP: Record<string, BrowserOp> = {
   reload: 'navigate',
 }
 
+/** One `browser_act` step type → the op that renders it as if it were its own tool. */
+function actTypeOp(type: unknown): BrowserOp | null {
+  if (type === 'upload') return 'upload_file'
+  return typeof type === 'string' && BROWSER_OPS.has(type as BrowserOp) ? (type as BrowserOp) : null
+}
+
 /** Strip the `browser_` prefix; compact tools resolve through action/type args. */
 export function getBrowserOp(mcpToolName: string, params?: Record<string, unknown>): BrowserOp | null {
   if (!mcpToolName.startsWith('browser_')) return null
   const rest = mcpToolName.slice('browser_'.length)
   if (rest === 'act') {
-    const first = Array.isArray(params?.actions) ? (params.actions[0] as { type?: string } | undefined) : undefined
-    const type = first?.type
-    if (type === 'upload') return 'upload_file'
-    return type && BROWSER_OPS.has(type as BrowserOp) ? (type as BrowserOp) : 'click'
+    const list = Array.isArray(params?.actions) ? (params.actions as Array<{ type?: string }>) : []
+    // A batch is its own op: reporting it as its first action's verb would claim a
+    // `click` did what a click-then-type-then-press transaction actually did.
+    if (list.length > 1) return 'act'
+    // Absent/partial `actions` is the streaming case — stay on the single-action
+    // default so a plain click does not flip verbs once its input finishes arriving.
+    return actTypeOp(list[0]?.type) ?? 'click'
   }
   if (rest === 'network') {
     const action = typeof params?.action === 'string' ? params.action : ''
@@ -139,6 +149,7 @@ const VERB_BASE: Record<BrowserOp, string> = {
   action_list: 'actionList',
   action_save: 'actionSave',
   action_do: 'actionDo',
+  act: 'act',
   tools_list: 'toolsList',
   tools_call: 'toolsCall',
 }
@@ -174,6 +185,7 @@ const VERB_STREAMING: Record<BrowserOp, string> = {
   action_list: 'listingActions',
   action_save: 'savingAction',
   action_do: 'doingAction',
+  act: 'acting',
   tools_list: 'listingPageTools',
   tools_call: 'callingPageTool',
 }
@@ -208,8 +220,23 @@ function isSecretType(selector: string, text: string): boolean {
   return t.length >= 16 && !/\s/.test(t) && /[a-z]/i.test(t) && /[0-9]/.test(t)
 }
 
+/** `type selector` for one batch step, so the row lists what actually ran. */
+function actStepSummary(step: Record<string, unknown>): string {
+  const op = actTypeOp(step.type)
+  if (!op) return ''
+  const target = browserInputSummary(op, step)
+  return target ? `${s(step.type)} ${target}` : s(step.type)
+}
+
 /** A language-neutral summary of the tool's target, derived from its input. */
 export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): string {
+  const steps = Array.isArray(p.actions) ? (p.actions as Array<Record<string, unknown>>) : null
+  if (steps) {
+    // A batch summarises every step; a single action reads its own args, which live
+    // one level down in `actions[0]` rather than at the top level.
+    if (op === 'act') return steps.map(actStepSummary).filter(Boolean).join(' · ')
+    if (steps.length === 1) p = { ...p, ...steps[0] }
+  }
   switch (op) {
     case 'navigate':
       if (p.action != null) return s(p.action)
@@ -315,6 +342,8 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       return p.url != null ? s(p.url) : ''
     case 'action_list':
       return s(p.domain)
+    case 'act':
+      return ''
     case 'action_save':
     case 'action_do':
       return [s(p.domain), s(p.name)].filter(Boolean).join('/')

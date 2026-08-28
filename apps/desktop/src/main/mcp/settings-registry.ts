@@ -286,15 +286,6 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
     description: 'Built-in browser download location and Chrome DevTools Protocol (CDP) automation toggles.',
     fields: [
       {
-        key: 'browserToolSurface',
-        label: 'Browser Tool Surface',
-        type: 'enum',
-        enumValues: ['legacy', 'compact'],
-        note: 'legacy = 30 per-verb tools (default); compact = 8 phase tools. Takes effect in new sessions.',
-        read: (s) => s.browserToolSurface,
-        toPatch: (v) => ({ browserToolSurface: v as AppSettings['browserToolSurface'] }),
-      },
-      {
         key: 'browserDownloadDir',
         label: 'Download Directory',
         type: 'string',

@@ -40,6 +40,11 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   const loadingRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const filePathRef = useRef(filePath)
+  // Markdown this editor itself produced. The parent publishes our live draft
+  // back through `content`, and treating that echo as an external update would
+  // rebuild the doc (caret jumps to the end) and re-baseline `contentRef` so
+  // autosave thinks the typed text is already on disk.
+  const emittedRef = useRef<string | null>(null)
   const [mathEdit, setMathEdit] = useState<MathEditTarget | null>(null)
   const [linkHref, setLinkHref] = useState<string | null>(null)
   const [tableMenu, setTableMenu] = useState<TableMenuPos | null>(null)
@@ -47,6 +52,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
 
   useEffect(() => {
     filePathRef.current = filePath
+    emittedRef.current = null
   }, [filePath])
 
   const save = useCallback(async (text: string) => {
@@ -120,6 +126,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
     onUpdate: ({ editor: ed }) => {
       if (loadingRef.current) return
       const text = docToMarkdown(ed as never)
+      emittedRef.current = text
       const dirty = text !== contentRef.current
       setIsDirty(dirty)
       onContentChange(text)
@@ -134,7 +141,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
 
   useEffect(() => {
     if (!editor || savingRef.current) return
-    if (content === loadedRef.current) return
+    if (content === loadedRef.current || content === emittedRef.current) return
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     contentRef.current = content
     let cancelled = false
@@ -143,6 +150,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
       if (cancelled || !editor) return
       editor.commands.setContent(doc)
       loadedRef.current = content
+      emittedRef.current = null
       setIsDirty(false)
       loadingRef.current = false
     }).catch(() => {

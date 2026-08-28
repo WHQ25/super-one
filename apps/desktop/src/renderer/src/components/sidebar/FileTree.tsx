@@ -9,7 +9,7 @@ import { useSourceControlStore } from '@/stores/source-control'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { TreeRow, autoExpandedDirs } from './TreeRow'
 import { FileTreeSearch } from './FileTreeSearch'
-import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay, isWithinFolder, internalDragSource } from './drag-drop-utils'
+import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay, getDropTargetName, isWithinFolder, internalDragSource } from './drag-drop-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import {
   Dialog,
@@ -97,7 +97,7 @@ export function FileTree() {
   const isRemote = !!fileRoot && parseRemoteProjectKey(fileRoot) !== null
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const dragCounterRef = useRef(0)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
   const [externalDragOver, setExternalDragOver] = useState(false)
   const [altKeyHeld, setAltKeyHeld] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
@@ -128,22 +128,46 @@ export function FileTree() {
     }
   }, [dragOverPath, fileRoot, toggleDir])
 
-  useEffect(() => {
-    const reset = () => {
-      dragCounterRef.current = 0
-      setExternalDragOver(false)
-      setAltKeyHeld(false)
-      setDragOverPath(null)
-      autoExpandedDirs.clear()
-      autoScroll.stop()
-    }
-    document.addEventListener('mouseup', reset)
-    document.addEventListener('dragend', reset)
-    return () => {
-      document.removeEventListener('mouseup', reset)
-      document.removeEventListener('dragend', reset)
-    }
+  const resetDragState = useCallback(() => {
+    setExternalDragOver(false)
+    setAltKeyHeld(false)
+    setDragOverPath(null)
+    autoExpandedDirs.clear()
+    autoScroll.stop()
   }, [setDragOverPath, autoScroll])
+
+  useEffect(() => {
+    document.addEventListener('mouseup', resetDragState)
+    document.addEventListener('dragend', resetDragState)
+    return () => {
+      document.removeEventListener('mouseup', resetDragState)
+      document.removeEventListener('dragend', resetDragState)
+    }
+  }, [resetDragState])
+
+  // Rows unmount mid-drag (virtualizer scroll, auto-expand), so their pending `dragleave`
+  // never fires and the tree can miss the pointer leaving. Watch the document instead:
+  // any drag activity outside the drop zone — or a drag that left the window entirely —
+  // retires the overlay.
+  useEffect(() => {
+    if (!externalDragOver) return
+    const clearIfOutside = (e: globalThis.DragEvent) => {
+      const node = e.target as Node | null
+      if (node && dropZoneRef.current?.contains(node)) return
+      resetDragState()
+    }
+    const clearIfLeftWindow = (e: globalThis.DragEvent) => {
+      if (!e.relatedTarget) resetDragState()
+    }
+    document.addEventListener('dragover', clearIfOutside)
+    document.addEventListener('drop', clearIfOutside)
+    document.addEventListener('dragleave', clearIfLeftWindow)
+    return () => {
+      document.removeEventListener('dragover', clearIfOutside)
+      document.removeEventListener('drop', clearIfOutside)
+      document.removeEventListener('dragleave', clearIfLeftWindow)
+    }
+  }, [externalDragOver, resetDragState])
 
   useEffect(() => {
     setSearching(false)
@@ -162,31 +186,29 @@ export function FileTree() {
     [dragOverPath, visibleList],
   )
 
+  const dropTargetName = useMemo(
+    () => getDropTargetName(dragOverPath, folderName),
+    [dragOverPath, folderName],
+  )
+
   const isFileDrag = useCallback((e: DragEvent) => {
     return e.dataTransfer.types.includes('Files')
   }, [])
 
   const handleContainerDragEnter = useCallback((e: DragEvent) => {
-    if (isFileDrag(e)) {
-      e.preventDefault()
-      dragCounterRef.current++
-      if (dragCounterRef.current === 1 && !internalDragSource.active) {
-        setExternalDragOver(true)
-      }
-    }
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    if (!internalDragSource.active) setExternalDragOver(true)
   }, [isFileDrag])
 
   const handleContainerDragLeave = useCallback((e: DragEvent) => {
-    if (isFileDrag(e)) {
-      dragCounterRef.current--
-      if (dragCounterRef.current === 0) {
-        setExternalDragOver(false)
-        setDragOverPath(null)
-        autoExpandedDirs.clear()
-        autoScroll.stop()
-      }
-    }
-  }, [isFileDrag, autoScroll, setDragOverPath])
+    if (!isFileDrag(e)) return
+    // `dragleave` bubbles from every descendant; only the one that hands the pointer
+    // to a node outside the tree (or out of the window, relatedTarget === null) counts.
+    const next = e.relatedTarget as Node | null
+    if (next && dropZoneRef.current?.contains(next)) return
+    resetDragState()
+  }, [isFileDrag, resetDragState])
 
   const handleContainerDragOver = useCallback((e: DragEvent) => {
     autoScroll.update(e.clientY)
@@ -198,11 +220,7 @@ export function FileTree() {
   }, [isFileDrag, autoScroll])
 
   const handleContainerDrop = useCallback((e: DragEvent) => {
-    autoScroll.stop()
-    dragCounterRef.current = 0
-    setExternalDragOver(false)
-    setDragOverPath(null)
-    autoExpandedDirs.clear()
+    resetDragState()
 
     if (!fileRoot || !e.dataTransfer.files.length || e.defaultPrevented) return
     e.preventDefault()
@@ -222,7 +240,7 @@ export function FileTree() {
       if (action === 'move') moveFilesIn(fileRoot, '', externalPaths)
       else copyFilesIn(fileRoot, '', externalPaths)
     }
-  }, [fileRoot, copyFilesIn, moveFilesIn, autoScroll, setDragOverPath])
+  }, [fileRoot, copyFilesIn, moveFilesIn, resetDragState])
 
   const handleDeleteRequest = useCallback((item: VisibleItem) => {
     setDeleteTarget({ path: item.path, name: item.name, isDirectory: item.isDirectory })
@@ -274,6 +292,8 @@ export function FileTree() {
       </div>
 
       <div
+        ref={dropZoneRef}
+        data-testid="file-tree-dropzone"
         className="relative min-h-0 flex-1"
         onDragEnter={handleContainerDragEnter}
         onDragLeave={handleContainerDragLeave}
@@ -331,16 +351,31 @@ export function FileTree() {
         )}
 
         {externalDragOver && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-primary/50 bg-sidebar/90 backdrop-blur-sm">
-            <span className="text-sm font-medium text-primary/70">
-              {altKeyHeld ? 'Move files here' : 'Copy files here'}
-            </span>
-            {!altKeyHeld && (
-              <span className="flex items-center gap-1 text-xs text-primary/40">
-                Hold <Kbd>{navigator.platform.startsWith('Mac') ? 'option' : 'alt'}</Kbd> to move
+          <>
+            {/* Outer ring says "this tree accepts the drop"; the row overlay above says
+                *where* it lands. Keep this one flat — a filled/blurred mask here competes
+                with the row highlight and reads as two stacked drop zones. */}
+            <div className="pointer-events-none absolute inset-0 z-10 rounded-md border-2 border-dashed border-primary/40" />
+            {/* `bg-primary`, NOT a sidebar surface token. `--sidebar-accent` is the vivid
+                fill only in light mode; `.dark` redefines it to oklch(0.30 0 0), so the pill
+                painted near-black on a near-black sidebar. `--primary` stays saturated at
+                L 0.55 in both modes and is not remapped by the [data-sidebar-inner] scope,
+                so it clears the ground either way — and matches the ring and row overlay. */}
+            <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-lg">
+              <span className="min-w-0 truncate font-medium">
+                {altKeyHeld ? 'Move to' : 'Copy to'} {dropTargetName}
               </span>
-            )}
-          </div>
+              {!altKeyHeld && (
+                <span className="flex shrink-0 items-center gap-1 whitespace-nowrap opacity-75">
+                  Hold
+                  <Kbd className="border border-current/40 bg-transparent text-inherit">
+                    {navigator.platform.startsWith('Mac') ? 'option' : 'alt'}
+                  </Kbd>
+                  to move
+                </span>
+              )}
+            </div>
+          </>
         )}
       </div>
 

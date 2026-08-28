@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState, memo } from 'react'
+import { useCallback, useRef, useEffect, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, Pencil, FolderOpen, Trash2, Copy, AtSign, Globe } from 'lucide-react'
 import { FileIcon, FolderIcon } from '@superone/ui/components/ui/FileIcon'
@@ -125,8 +125,6 @@ export const TreeRow = memo(function TreeRow({
 
   const targetDir = getTargetDir(item.path, item.isDirectory)
 
-  const [isDropTarget, setIsDropTarget] = useState(false)
-  const dragCounterRef = useRef(0)
   const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragIconRef = useRef<HTMLImageElement | null>(null)
 
@@ -197,33 +195,28 @@ export const TreeRow = memo(function TreeRow({
     return e.dataTransfer.types.includes('Files')
   }, [])
 
+  // `dragenter` bubbles from every child element, and rows unmount mid-drag (virtualizer
+  // scroll, auto-expand), so an enter/leave counter drifts and strands the highlight.
+  // Compare against the store instead — re-entering the same target is a no-op.
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     if (!isAcceptedDrag(e)) return
     e.preventDefault()
-    dragCounterRef.current++
-    if (dragCounterRef.current === 1) {
-      setDragOverPath(targetDir)
-      if (item.isDirectory) {
-        setIsDropTarget(true)
-        if (!item.isExpanded) {
-          expandTimerRef.current = setTimeout(() => {
-            autoExpandedDirs.add(item.path)
-            toggleDir(currentFolder, item.path)
-          }, EXPAND_HOVER_DELAY)
-        }
-      }
+    if (useFileTreeStore.getState().dragOverPath === targetDir) return
+    setDragOverPath(targetDir)
+    if (item.isDirectory && !item.isExpanded) {
+      clearExpandTimer()
+      expandTimerRef.current = setTimeout(() => {
+        autoExpandedDirs.add(item.path)
+        toggleDir(currentFolder, item.path)
+      }, EXPAND_HOVER_DELAY)
     }
-  }, [item.isDirectory, item.isExpanded, item.path, targetDir, currentFolder, toggleDir, isAcceptedDrag, setDragOverPath])
+  }, [item.isDirectory, item.isExpanded, item.path, targetDir, currentFolder, toggleDir, isAcceptedDrag, setDragOverPath, clearExpandTimer])
 
-  const handleDragLeave = useCallback(() => {
-    dragCounterRef.current--
-    if (dragCounterRef.current === 0) {
-      if (item.isDirectory) {
-        setIsDropTarget(false)
-        clearExpandTimer()
-      }
-    }
-  }, [item.isDirectory, clearExpandTimer])
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    const next = e.relatedTarget as Node | null
+    if (next && e.currentTarget.contains(next)) return
+    clearExpandTimer()
+  }, [clearExpandTimer])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!isAcceptedDrag(e)) return
@@ -232,12 +225,8 @@ export const TreeRow = memo(function TreeRow({
   }, [isAcceptedDrag])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
-    dragCounterRef.current = 0
     setDragOverPath(null)
-    if (item.isDirectory) {
-      setIsDropTarget(false)
-      clearExpandTimer()
-    }
+    clearExpandTimer()
 
     if (!e.dataTransfer.files.length) return
     e.preventDefault()
@@ -265,7 +254,7 @@ export const TreeRow = memo(function TreeRow({
       if (action === 'move') moveFilesIn(currentFolder, targetDir, externalPaths)
       else copyFilesIn(currentFolder, targetDir, externalPaths)
     }
-  }, [targetDir, item.isDirectory, currentFolder, copyFilesIn, moveFilesIn, clearExpandTimer, setDragOverPath])
+  }, [targetDir, currentFolder, copyFilesIn, moveFilesIn, clearExpandTimer, setDragOverPath])
 
   const rowContent = (
     <button
@@ -281,7 +270,6 @@ export const TreeRow = memo(function TreeRow({
       className={cn(
         'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors hover:bg-sidebar-hover',
         !item.isDirectory && isSelected && 'bg-sidebar-accent sidebar-selected',
-        isDropTarget && 'bg-sidebar-accent sidebar-selected',
         isRevealed && 'bg-sidebar-accent sidebar-selected ring-1 ring-inset ring-primary/40',
       )}
       style={{ paddingLeft: `${item.depth * 8 + 8}px` }}

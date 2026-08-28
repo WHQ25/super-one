@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useEffect } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import type { FileTreeEntry, GitFileStatus } from '@superone/shared/agent-types'
 import { FileTree } from './FileTree'
 import { useAppStore } from '@/stores/app'
@@ -108,7 +108,70 @@ function installListDirMock(items: Mock[]): void {
   w.app = { ...(w.app ?? {}), listDir: fn, startDrag: () => {}, getPathForFile: () => '', trace: () => {} }
 }
 
-function StoryHost({ items, dark }: { items: Mock[]; dark?: boolean }) {
+interface SimulatedDrag {
+  /** Folder under the pointer. Omit to park the drag on the project root. */
+  over?: string
+  /** Expand this dir first, so the row overlay spans a subtree rather than one row. */
+  expand?: string
+  /** Hold the move modifier (option/alt). */
+  alt?: boolean
+}
+
+/**
+ * Parks the tree in its external-file-drag state. There is no way to set this from
+ * props — `externalDragOver` is local state fed by a real `dragenter` — so the story
+ * dispatches genuine DragEvents carrying a File, which is what makes
+ * `dataTransfer.types` report 'Files' and satisfy the component's drag filter.
+ */
+function useSimulatedFileDrag(
+  hostRef: RefObject<HTMLDivElement | null>,
+  drag: SimulatedDrag | undefined,
+  visibleCount: number,
+) {
+  useEffect(() => {
+    if (!drag || visibleCount === 0) return
+    if (drag.expand && !useFileTreeStore.getState().expandedDirs.has(drag.expand)) {
+      // Re-runs on its own once the expanded rows land in _visibleList.
+      useFileTreeStore.getState().toggleDir(PROJECT, drag.expand)
+      return
+    }
+    const zone = hostRef.current?.querySelector('[data-testid="file-tree-dropzone"]')
+    if (!zone) return
+
+    const dataTransfer = new DataTransfer()
+    dataTransfer.items.add(new File(['x'], 'screenshot.png', { type: 'image/png' }))
+
+    const arm = () => {
+      useFileTreeStore.setState({ dragOverPath: drag.over ?? null })
+      const rect = zone.getBoundingClientRect()
+      zone.dispatchEvent(new DragEvent('dragenter', { bubbles: true, dataTransfer }))
+      zone.dispatchEvent(new DragEvent('dragover', {
+        bubbles: true,
+        dataTransfer,
+        altKey: !!drag.alt,
+        // Must sit mid-zone: the tree edge-scrolls within 40px of either end, and a
+        // default clientY of 0 would leave the story scrolling upward forever.
+        clientY: rect.top + rect.height / 2,
+      }))
+    }
+    arm()
+
+    // The tree retires the overlay on any document mouseup/dragend, so a stray click
+    // in the canvas would empty the story. Re-arm instead of suppressing the reset —
+    // that reset is the behaviour under test elsewhere.
+    const rearm = () => { window.setTimeout(arm, 0) }
+    document.addEventListener('mouseup', rearm)
+    return () => {
+      document.removeEventListener('mouseup', rearm)
+      useFileTreeStore.setState({ dragOverPath: null })
+    }
+  }, [drag, visibleCount, hostRef])
+}
+
+function StoryHost({ items, drag }: { items: Mock[]; drag?: SimulatedDrag }) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const visibleCount = useFileTreeStore((s) => s._visibleList.length)
+
   useEffect(() => {
     installListDirMock(items)
     useFileTreeStore.getState().reset()
@@ -120,12 +183,11 @@ function StoryHost({ items, dark }: { items: Mock[]; dark?: boolean }) {
     }
   }, [items])
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', !!dark)
-  }, [dark])
+  useSimulatedFileDrag(hostRef, drag, visibleCount)
 
   return (
     <div
+      ref={hostRef}
       className="flex h-[640px] w-72 flex-col rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground"
     >
       <FileTree />
@@ -220,5 +282,38 @@ export const DirectoryAggregation: Story = {
 
 export const Dark: Story = {
   name: 'Dark theme',
-  args: { items: TREE, dark: true },
+  // Not an `args.dark` prop: `.storybook/preview.tsx`'s ThemeDecorator owns the `dark`
+  // class and re-applies it after the story's own effect, so only the global sticks.
+  globals: { theme: 'dark' },
+  args: { items: TREE },
+}
+
+/*
+ * External file drag. Three layers can be on screen at once and they must stay
+ * legible as one affordance, not stack into a mask: the dashed ring (this tree
+ * accepts the drop), the row overlay (which folder it lands in), and the hint pill
+ * (what the drop will do).
+ */
+
+export const DragOverRoot: Story = {
+  name: 'Drag · over project root',
+  args: { items: TREE, drag: {} },
+}
+
+export const DragOverFolder: Story = {
+  name: 'Drag · over an expanded folder',
+  args: { items: TREE, drag: { over: 'src', expand: 'src' } },
+}
+
+export const DragMoveModifier: Story = {
+  name: 'Drag · option held (move)',
+  args: { items: TREE, drag: { over: 'src', expand: 'src', alt: true } },
+}
+
+/** The pill lived on `--sidebar-accent`, which `.dark` redefines to a near-black
+ *  neutral — it painted dark-on-dark. Dark mode is the load-bearing case here. */
+export const DragOverFolderDark: Story = {
+  name: 'Drag · over a folder (dark)',
+  globals: { theme: 'dark' },
+  args: { items: TREE, drag: { over: 'src', expand: 'src' } },
 }

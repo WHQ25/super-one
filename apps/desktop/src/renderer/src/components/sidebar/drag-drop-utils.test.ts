@@ -7,6 +7,7 @@ import {
   toAbsolutePath,
   shouldCollapseAutoExpanded,
   computeDropOverlay,
+  getDropTargetName,
 } from './drag-drop-utils'
 
 describe('getDropAction', () => {
@@ -153,5 +154,21 @@ describe('computeDropOverlay', () => {
 
   it('should return null when path not found', () => {
     expect(computeDropOverlay('nonexistent', paths, rowH)).toBeNull()
+  })
+})
+
+
+describe('getDropTargetName', () => {
+  it('names the project root when no row is hovered', () => {
+    expect(getDropTargetName(null, 'super-one')).toBe('super-one')
+    expect(getDropTargetName('', 'super-one')).toBe('super-one')
+  })
+
+  it('names a top-level folder by itself', () => {
+    expect(getDropTargetName('scripts', 'super-one')).toBe('scripts')
+  })
+
+  it('names a nested folder by its basename only', () => {
+    expect(getDropTargetName('apps/desktop/src', 'super-one')).toBe('src')
   })
 })

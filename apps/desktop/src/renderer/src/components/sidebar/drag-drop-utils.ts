@@ -29,6 +29,13 @@ export function toAbsolutePath(folder: string, relativePath: string): string {
   return folder.endsWith('/') ? folder + relativePath : folder + '/' + relativePath
 }
 
+/** Label for the folder a drop would land in — the project root when nothing specific is hovered. */
+export function getDropTargetName(dragOverPath: string | null, rootName: string): string {
+  if (!dragOverPath) return rootName
+  const lastSlash = dragOverPath.lastIndexOf('/')
+  return lastSlash >= 0 ? dragOverPath.slice(lastSlash + 1) : dragOverPath
+}
+
 export function shouldCollapseAutoExpanded(dir: string, dragOverPath: string | null): boolean {
   return dragOverPath !== dir && !dragOverPath?.startsWith(dir + '/')
 }

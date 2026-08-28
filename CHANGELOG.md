@@ -4,6 +4,86 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.59.0-alpha] - 2026-08-28
+
+### Added
+
+- Codex: realtime voice with a live transcript timeline. Official-account
+  sessions stream audio over the Codex app-server WebRTC path, while durable
+  history stays sourced from the thread timeline, so a voice-only session
+  survives a reload with both its timeline and backing thread intact.
+- Codex: aligned with Codex 0.150.1 — the replaced auth command flows are
+  routed to their new equivalents, and voice timeline entries tied to a thread
+  are persisted.
+- Codex: managed browser and computer-use policy is now enforced for Codex
+  sessions.
+- Browser: the phase-oriented compact tool surface is what every harness sees.
+  The 30 per-verb primitives stay callable, so old transcripts, saved actions
+  and host-actions keep resolving — only the advertised list changed. A
+  multi-step `browser_act` now renders as its own `act` row summarising every
+  step instead of being reported under its first action's verb.
+- Browser: configurable download directory. A new `browserDownloadDir` setting
+  (empty = the OS Downloads folder) with a folder picker, plus an optional
+  `dir` on `browser_download` so the agent can drop a file straight into the
+  project it is working in. Name collisions are numbered atomically
+  (`report (1).pdf`).
+- Chat: prose and widgets stay visible when a turn collapses. A finished turn
+  is partitioned into ordered runs — mid-turn narration and `widget_show`
+  results are pinned where they appear, everything else joins the adjacent
+  collapsed run, and one Detail toggle restores the turn's real order.
+- Activity: the tab strip scrolls with a trackpad in either direction, with a
+  scroll-driven edge fade and no dead spots between tabs. Panel-scoped
+  keyboard shortcuts keep working after the first use, and Cmd +/-/0 zooms the
+  page while it holds focus.
+
+### Fixed
+
+- Chat: tool rows no longer shimmer after a turn ends. A turn that finished
+  without a tool_result — including a steer, which aborts the in-flight call
+  — left rows spinning ("Taking snapshot…") and persisted them that way. Both
+  the renderer store and the main-process runtime now seal in-flight rows
+  through the same shared path, so the persisted transcript matches what was
+  on screen.
+- Chat: the composer no longer swallows draft writes it did not make. Editing
+  a queued message left the composer empty, and the same failure hit every
+  external writer (the commit button, the app-drawer prompt, widget fill-in,
+  mini-app writes). Restoring a queued message also keeps its mention chips
+  and newlines.
+- Desktop: the markdown editor caret no longer jumps when the editor echoes
+  its own draft back.
+- Browser: picture-in-picture screenshots are captured at full resolution
+  instead of upscaling a stale low-resolution guest surface.
+- Browser: screenshots are downscaled only by whole factors, and the width cap
+  is compared against CSS pixels rather than physical ones — an ordinary
+  retina capture now passes through untouched instead of being resampled by a
+  fractional factor that smeared text.
+- Browser / Computer Use: picture-in-picture lifecycle is unified — dismissal
+  is tracked per target, there is one restore control for hidden previews,
+  native capture resolution adapts, and streams retire when their target
+  window closes.
+- Computer Use: the viewfinder is no longer claimed when the PiP helper
+  declined to show the window, which used to strand a stale owner that the
+  next claim had to fight.
+- Sidebar: dragging external files over the file tree paints one drop
+  indication instead of two stacked masks, and the overlay no longer outlives
+  the drag when auto-scroll or hover-to-expand unmounts a row mid-gesture.
+
+### Changed
+
+- Codex: the managed runtime pin moves to 0.150.1, matching the bundled
+  integration.
+- MCP: always-loaded tool prose moved behind `read_manual`. Tool descriptions
+  are billed every turn whether or not the tool is called, so only the "read X
+  before doing Y" triggers stay inline; the rest is now on-demand, with new
+  manuals for automation, devices and browser.
+- Browser: the `browserToolSurface` setting is retired. Resolution is
+  env-or-default, with `SUPERONE_BROWSER_TOOLS=legacy` left as a debug escape
+  hatch.
+- Docs: the product framing is restated across README, site metadata and the
+  intro scene — integrate every harness on one surface, extend each with
+  SuperOne's own tool surface, let sessions collaborate across harness
+  boundaries, and build agentic apps.
+
 ## [0.58.0-alpha] - 2026-08-27
 
 ### Added

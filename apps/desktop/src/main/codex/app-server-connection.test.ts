@@ -264,6 +264,7 @@ describe('createAppServerConnection', () => {
     expect(cIdx).toBeLessThan(appServerIdx)
     expect(args).toContain('model_provider=superone_custom')
     expect(args).toContain('model_providers.superone_custom.base_url="https://gw/v1"')
+    expect(args).toContain('features.realtime_conversation=true')
     expect(args).toContain('skills.config=[{name="computer-use:computer-use",enabled=false},{name="browser:control-in-app-browser",enabled=false}]')
     expect(args).toContain('mcp_servers.computer-use.enabled=false')
 

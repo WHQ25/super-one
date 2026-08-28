@@ -526,6 +526,7 @@ export async function createAppServerConnection(
   await ensureCodexProxyUrl(apiProviderId)
   const overrideArgs = [
     ...(cliOverrides ?? buildCodexProviderCliOverridesFor(apiProviderId)),
+    '-c', 'features.realtime_conversation=true',
     ...buildCodexBundledCapabilityIsolationCliOverrides(),
   ]
   const expectedPackage = resolveCodexPlatformPackage()

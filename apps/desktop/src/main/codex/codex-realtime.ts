@@ -15,6 +15,20 @@ export interface CodexRealtimeHandle {
   closed: Promise<void>
 }
 
+export function buildCodexRealtimeStartParams(
+  threadId: string,
+  request: RealtimeVoiceStartRequest,
+) {
+  return {
+    threadId,
+    outputModality: 'audio',
+    includeStartupContext: true,
+    flushTranscriptTailOnSessionEnd: true,
+    voice: request.voice ?? 'cove',
+    transport: { type: 'webrtc', sdp: request.sdp },
+  }
+}
+
 function transcriptRole(value: unknown): RealtimeTranscriptRole {
   return value === 'assistant' ? 'assistant' : 'user'
 }
@@ -124,16 +138,10 @@ export async function startCodexRealtime(
       const cancellation = { cancelled: false }
       const closed = pumpRealtime(inbox, dispatcher, threadId, emit, cancellation)
       try {
-        await connection.request('thread/realtime/start', {
-          threadId,
-          outputModality: 'audio',
-          includeStartupContext: true,
-          flushTranscriptTailOnSessionEnd: true,
-          codexResponseHandoffMode: 'bemTags',
-          version: 'v3',
-          voice: request.voice ?? 'cove',
-          transport: { type: 'webrtc', sdp: request.sdp },
-        })
+        await connection.request(
+          'thread/realtime/start',
+          buildCodexRealtimeStartParams(threadId, request),
+        )
       } catch (error) {
         cancellation.cancelled = true
         dispatcher.unregisterRealtimeInbox(threadId)

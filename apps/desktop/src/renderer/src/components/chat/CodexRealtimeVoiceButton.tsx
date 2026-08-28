@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Mic, Square, X } from 'lucide-react'
+import { AudioLines, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import type { AgentEvent, RealtimeTimelineSegment } from '@superone/shared/agent-types'
+import type { AgentEvent } from '@superone/shared/agent-types'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 
 type VoiceState = 'idle' | 'starting' | 'active' | 'stopping'
 
@@ -29,21 +30,28 @@ async function waitForIceGathering(peer: RTCPeerConnection): Promise<void> {
 export interface CodexRealtimeVoiceButtonProps {
   projectPath: string
   sessionId: string
+  additionalDirs?: string[]
   disabled?: boolean
 }
 
-export function CodexRealtimeVoiceButton({ projectPath, sessionId, disabled = false }: CodexRealtimeVoiceButtonProps) {
+export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDirs, disabled = false }: CodexRealtimeVoiceButtonProps) {
   const { t } = useTranslation()
   const [state, setState] = useState<VoiceState>('idle')
-  const [panelOpen, setPanelOpen] = useState(false)
-  const [segments, setSegments] = useState<RealtimeTimelineSegment[]>([])
-  const [liveText, setLiveText] = useState<{ role: 'user' | 'assistant'; text: string } | null>(null)
+  const setView = useCodexRealtimeViewStore((store) => store.setView)
+  const setTimeline = useCodexRealtimeViewStore((store) => store.setTimeline)
+  const setRealtimeSession = useCodexRealtimeViewStore((store) => store.setRealtimeSession)
+  const appendTranscriptDelta = useCodexRealtimeViewStore((store) => store.appendTranscriptDelta)
+  const finalizeTranscript = useCodexRealtimeViewStore((store) => store.finalizeTranscript)
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const stateRef = useRef<VoiceState>('idle')
   const timelineLoadedRef = useRef(false)
   const negotiationTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    timelineLoadedRef.current = false
+  }, [projectPath, sessionId])
 
   const updateState = useCallback((next: VoiceState) => {
     stateRef.current = next
@@ -64,15 +72,20 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, disabled = fa
   const refreshTimeline = useCallback(async () => {
     try {
       const timeline = await window.agent.getRealtimeTimeline(projectPath, sessionId)
-      setSegments(timeline.segments)
+      setTimeline(sessionId, timeline)
       timelineLoadedRef.current = true
     } catch {
       // Timeline is supplementary; a live call can still proceed.
     }
-  }, [projectPath, sessionId])
+  }, [projectPath, sessionId, setTimeline])
 
   useEffect(() => window.agent.onAgentEvent((event: AgentEvent) => {
     if (event.sessionId !== sessionId) return
+    if (event.type === 'realtime_started') {
+      setRealtimeSession(sessionId, event.realtimeSessionId ?? 'live')
+      setView(sessionId, 'realtime')
+      return
+    }
     if (event.type === 'realtime_sdp') {
       const peer = peerRef.current
       if (!peer || peer.signalingState === 'closed') return
@@ -86,20 +99,10 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, disabled = fa
       return
     }
     if (event.type === 'realtime_transcript') {
-      setPanelOpen(true)
       if (event.final) {
-        setSegments((current) => [...current, {
-          id: `live-${Date.now()}-${current.length}`,
-          realtimeSessionId: 'live',
-          role: event.role,
-          text: event.text,
-        }])
-        setLiveText(null)
+        finalizeTranscript(sessionId, event.role, event.text)
       } else {
-        setLiveText((current) => ({
-          role: event.role,
-          text: current?.role === event.role ? `${current.text}${event.text}` : event.text,
-        }))
+        appendTranscriptDelta(sessionId, event.role, event.text)
       }
       return
     }
@@ -112,18 +115,19 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, disabled = fa
     if (event.type === 'realtime_closed') {
       releaseMedia()
       updateState('idle')
+      setRealtimeSession(sessionId, null)
       void refreshTimeline()
     }
-  }), [refreshTimeline, releaseMedia, sessionId, updateState])
+  }), [appendTranscriptDelta, finalizeTranscript, refreshTimeline, releaseMedia, sessionId, setRealtimeSession, setView, updateState])
 
   useEffect(() => () => {
     releaseMedia()
+    setRealtimeSession(sessionId, null)
     if (stateRef.current !== 'idle') void window.agent.stopRealtimeVoice(projectPath, sessionId)
-  }, [projectPath, releaseMedia, sessionId])
+  }, [projectPath, releaseMedia, sessionId, setRealtimeSession])
 
   const start = useCallback(async () => {
     updateState('starting')
-    setPanelOpen(true)
     if (!timelineLoadedRef.current) void refreshTimeline()
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -151,7 +155,11 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, disabled = fa
       await waitForIceGathering(peer)
       const sdp = peer.localDescription?.sdp
       if (!sdp) throw new Error(t('chat.realtimeVoice.offerFailed'))
-      await window.agent.startRealtimeVoice(projectPath, sessionId, { sdp, voice: 'cove' })
+      await window.agent.startRealtimeVoice(projectPath, sessionId, {
+        sdp,
+        voice: 'cove',
+        ...(additionalDirs !== undefined ? { additionalDirs } : {}),
+      })
       if (stateRef.current === 'starting') {
         negotiationTimerRef.current = window.setTimeout(() => {
           if (stateRef.current !== 'starting') return
@@ -166,7 +174,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, disabled = fa
       updateState('idle')
       toast.error(error instanceof Error ? error.message : String(error))
     }
-  }, [projectPath, refreshTimeline, releaseMedia, sessionId, t, updateState])
+  }, [additionalDirs, projectPath, refreshTimeline, releaseMedia, sessionId, t, updateState])
 
   const stop = useCallback(async () => {
     updateState('stopping')
@@ -183,50 +191,22 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, disabled = fa
 
   const active = state === 'active' || state === 'stopping'
   const busy = state === 'starting' || state === 'stopping'
-  const transcript = [...segments, ...(liveText ? [{
-    id: 'live',
-    realtimeSessionId: 'live',
-    ...liveText,
-  }] : [])]
 
   return (
-    <div className="relative">
-      <IconButton
-        size="sm"
-        disabled={disabled || busy}
-        tooltip={t(active ? 'chat.realtimeVoice.stop' : 'chat.realtimeVoice.start')}
-        className={cn(active && 'bg-red-500/15 text-red-500 hover:bg-red-500/20 hover:text-red-500')}
-        onClick={() => { void (active ? stop() : start()) }}
-      >
-        {busy ? <Loader2 className="animate-spin" /> : active ? <Square className="fill-current" /> : <Mic />}
-      </IconButton>
-      {panelOpen && (state !== 'idle' || transcript.length > 0) && (
-        <div className="absolute bottom-full right-0 z-50 mb-2 flex max-h-64 w-80 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-          <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs font-medium">
-            <span className={cn('size-2 rounded-full', active ? 'animate-pulse bg-red-500' : 'bg-muted-foreground')} />
-            <span className="flex-1">{t(active ? 'chat.realtimeVoice.listening' : 'chat.realtimeVoice.timeline')}</span>
-            {!active && (
-              <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setPanelOpen(false)}>
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
-          <div className="space-y-2 overflow-y-auto p-3 text-xs">
-            {transcript.length === 0 ? (
-              <p className="text-muted-foreground">{t('chat.realtimeVoice.waiting')}</p>
-            ) : transcript.slice(-20).map((segment) => (
-              <div key={segment.id} className={cn('flex', segment.role === 'assistant' ? 'justify-start' : 'justify-end')}>
-                <p className={cn(
-                  'max-w-[85%] rounded-lg px-2.5 py-1.5 leading-relaxed',
-                  segment.role === 'assistant' ? 'bg-muted text-foreground' : 'bg-primary text-primary-foreground',
-                )}>
-                  {segment.text}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
+    <IconButton
+      size="sm"
+      variant="ghost"
+      disabled={disabled || busy}
+      tooltip={t(active ? 'chat.realtimeVoice.stop' : 'chat.realtimeVoice.start')}
+      className={cn(
+        'rounded-full border',
+        active
+          ? 'border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90 hover:text-destructive-foreground'
+          : 'border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background',
       )}
-    </div>
+      onClick={() => { void (active ? stop() : start()) }}
+    >
+      {busy ? <Loader2 className="animate-spin" /> : active ? <X /> : <AudioLines />}
+    </IconButton>
   )
 }

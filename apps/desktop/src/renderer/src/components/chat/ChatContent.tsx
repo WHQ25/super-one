@@ -40,11 +40,13 @@ const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ 
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
+import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -220,6 +222,9 @@ function ChatTranscript({
     startQueuedMessages: s.startQueuedMessages,
     dismissCompactError: s.dismissCompactError,
   })))
+  const hasRealtimeTimeline = useCodexRealtimeViewStore(
+    (state) => displayedSessionId ? state.sessions[displayedSessionId]?.hasTimeline ?? false : false,
+  )
   const queueTarget = scope ?? undefined
   const queueProvider = resolveProvider({ sessionProvider, preferredProvider })
   const isLocalQueue = !parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')
@@ -357,7 +362,9 @@ function ChatTranscript({
   return (
     <div className="relative min-w-0 flex-1 overflow-hidden">
       {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
-        draftId ? <DraftSessionSurface /> : <ChatSuggestions />
+        draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
+          ? <DraftSessionSurface />
+          : <ChatSuggestions />
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
@@ -476,10 +483,36 @@ function ChatTranscript({
 
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
   const scope = useSessionScope()
-  const { pendingPlanApproval, displayedSessionId } = useActiveSession(useShallow((s) => ({
+  const activeProject = useChatStore((s) => s.activeProject)
+  const { pendingPlanApproval, displayedSessionId, sessionProvider, preferredProvider, messagesLength } = useActiveSession(useShallow((s) => ({
     pendingPlanApproval: s.pendingPlanApproval,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
+    sessionProvider: s.sessionProvider,
+    preferredProvider: s.preferredProvider,
+    messagesLength: s.messages.length,
   })))
+  const conversationView = useCodexRealtimeViewStore(
+    (state) => displayedSessionId ? state.sessions[displayedSessionId]?.view ?? 'thread' : 'thread',
+  )
+  const realtimeThreadMessagesLength = useCodexRealtimeViewStore(
+    (state) => displayedSessionId ? state.sessions[displayedSessionId]?.threadMessages.length ?? 0 : 0,
+  )
+  const projectPath = scope?.projectPath ?? activeProject
+  const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
+  const showRealtime = Boolean(
+    displayedSessionId
+    && projectPath
+    && isCodexSession
+    && conversationView === 'realtime',
+  )
+  const showRealtimeThread = Boolean(
+    displayedSessionId
+    && projectPath
+    && isCodexSession
+    && conversationView === 'thread'
+    && messagesLength === 0
+    && realtimeThreadMessagesLength > 0,
+  )
 
   // ChatContent is the single render root for a visible session — mounted once per
   // single-mode pane, per mosaic tile, and per mini window. Reporting foreground here
@@ -612,13 +645,23 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
         <PlanApprovalPrompt />
       ) : (
         <>
-          <ChatTranscript
-            scrollViewportRef={scrollViewportRef}
-            showScrollButton={showScrollButton}
-            scrollToBottom={scrollToBottom}
-            stopAutoScroll={stopAutoScroll}
-            liquidGlass={liquidGlass}
-          />
+          {(showRealtime || showRealtimeThread) && displayedSessionId && projectPath ? (
+            <CodexRealtimeTranscript
+              projectPath={projectPath}
+              sessionId={displayedSessionId}
+              scrollViewportRef={scrollViewportRef}
+              liquidGlass={liquidGlass}
+              view={showRealtime ? 'realtime' : 'thread'}
+            />
+          ) : (
+            <ChatTranscript
+              scrollViewportRef={scrollViewportRef}
+              showScrollButton={showScrollButton}
+              scrollToBottom={scrollToBottom}
+              stopAutoScroll={stopAutoScroll}
+              liquidGlass={liquidGlass}
+            />
+          )}
           <div className="mx-auto w-full min-w-0 max-w-3xl">
             <ChatComposerShell />
           </div>

@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
 
 class FakePeerConnection {
@@ -32,6 +33,7 @@ describe('CodexRealtimeVoiceButton', () => {
 
   beforeEach(() => {
     emit = null
+    useCodexRealtimeViewStore.setState({ sessions: {} })
     startRealtimeVoice.mockClear()
     stopRealtimeVoice.mockClear()
     stopTrack.mockClear()
@@ -50,7 +52,7 @@ describe('CodexRealtimeVoiceButton', () => {
       value: {
         startRealtimeVoice,
         stopRealtimeVoice,
-        getRealtimeTimeline: vi.fn(async () => ({ segments: [], activeRealtimeSessionId: null })),
+        getRealtimeTimeline: vi.fn(async () => ({ segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false })),
         onAgentEvent: (callback: (event: AgentEvent) => void) => {
           emit = callback
           return () => { emit = null }
@@ -64,16 +66,30 @@ describe('CodexRealtimeVoiceButton', () => {
   })
 
   it('negotiates WebRTC through the session API and stops the microphone', async () => {
-    render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
-    fireEvent.click(screen.getByRole('button'))
+    render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" additionalDirs={['/extra']} />)
+    const voiceButton = screen.getByRole('button')
+    expect(voiceButton.querySelector('.lucide-audio-lines')).not.toBeNull()
+    expect(voiceButton).toHaveClass('size-6', 'rounded-full', 'bg-foreground', 'text-background')
+    fireEvent.click(voiceButton)
 
     await waitFor(() => expect(startRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1', {
       sdp: 'local-offer',
       voice: 'cove',
+      additionalDirs: ['/extra'],
     }))
+
+    expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.view).toBe('thread')
+    emit?.({
+      type: 'realtime_started',
+      sessionId: 'session-1',
+      realtimeSessionId: 'realtime-1',
+      version: 'v3',
+    })
+    expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.view).toBe('realtime')
 
     emit?.({ type: 'realtime_sdp', sessionId: 'session-1', sdp: 'remote-answer' })
     await waitFor(() => expect(screen.getByRole('button')).not.toBeDisabled())
+    expect(screen.getByRole('button').querySelector('.lucide-x')).not.toBeNull()
     fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => expect(stopRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1'))

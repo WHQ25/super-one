@@ -103,6 +103,22 @@ vi.mock('../../codex/codex-turn', () => ({
   buildCodexQueuedInput: turnMocks.buildCodexQueuedInput,
 }))
 
+const realtimeMocks = vi.hoisted(() => ({
+  startCodexRealtime: vi.fn(async () => ({
+    threadId: 'thread-realtime',
+    stop: vi.fn(async () => {}),
+    closed: new Promise<void>(() => {}),
+  })),
+  listCodexRealtimeTimeline: vi.fn(async () => ({
+    segments: [],
+    threadMessages: [],
+    activeRealtimeSessionId: null,
+    hasTimeline: false,
+  })),
+}))
+
+vi.mock('../../codex/codex-realtime', () => realtimeMocks)
+
 vi.mock('../../codex/codex-session', () => ({
   createCodexSession: (
     superoneSessionId: string,
@@ -246,6 +262,8 @@ describe('CodexBackend lifecycle', () => {
   beforeEach(() => {
     service = makeFakeService()
     backend = new CodexBackend(service)
+    realtimeMocks.startCodexRealtime.mockClear()
+    realtimeMocks.listCodexRealtimeTimeline.mockClear()
   })
 
   it('kind is codex', () => {
@@ -276,6 +294,22 @@ describe('CodexBackend lifecycle', () => {
   it('providerSessionId is preset from start opts', async () => {
     await backend.start({ ...makeStartOpts(), providerSessionId: 'thread-123' })
     expect(backend.getCurrentProviderSessionId()).toBe('thread-123')
+  })
+
+  it('publishes the backing thread id when realtime voice starts', async () => {
+    const events: AgentEvent[] = []
+    const providerSessionIds: string[] = []
+    backend.onEvent((event) => events.push(event))
+    backend.onProviderSessionId((id) => providerSessionIds.push(id))
+    await backend.start(makeStartOpts())
+
+    await backend.startRealtimeVoice({ sdp: 'offer' })
+
+    expect(providerSessionIds).toEqual(['thread-realtime'])
+    expect(events).toContainEqual({
+      type: 'provider_session_id',
+      providerSessionId: 'thread-realtime',
+    })
   })
 
   it('adopts a prewarmed connection and keeps it when the first send sets Codex options', async () => {

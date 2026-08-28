@@ -67,6 +67,7 @@ interface ChatMessageProps {
   sessionStatus: AgentStatus
   isLastAssistant: boolean
   hideUserActions?: boolean
+  hideFooter?: boolean
 }
 
 /** Tools whose consecutive calls can be collapsed into a summary group. */
@@ -1009,7 +1010,7 @@ function renderClaudeSegments(
   })
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions, hideFooter }: ChatMessageProps) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
   const detailChatMode = useAppStore((s) => s.detailChatMode)
@@ -1138,7 +1139,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
         {!isUser && message.metadata?.turnSummary && (
           <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
         )}
-        {!isUser && (
+        {!isUser && !hideFooter && (
           <DurationFooter
             message={message}
             copyText={assistantCopyText}

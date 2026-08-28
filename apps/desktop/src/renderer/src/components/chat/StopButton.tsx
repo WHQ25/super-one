@@ -93,7 +93,7 @@ export function StopButton({ onInterrupt, softCancel = false }: StopButtonProps)
 
   const isHolding = progress > 0 && !cancelling
   const showRing = isHolding || cancelling
-  const size = 28
+  const size = 24
   const r = size / 2 - 1
   const circumference = 2 * Math.PI * r
   // 8 equal dash/gap pairs → segmented ring while soft-cancel is in flight.
@@ -109,7 +109,7 @@ export function StopButton({ onInterrupt, softCancel = false }: StopButtonProps)
         if (!triggeredRef.current && !cancelling) fireInterrupt()
       }}
       className={[
-        'relative size-7 rounded-full border border-border',
+        'relative size-6 rounded-full border border-border',
         cancelling ? 'pointer-events-none' : '',
       ].filter(Boolean).join(' ')}
     >

@@ -1745,6 +1745,7 @@ export type RealtimeTranscriptRole = 'user' | 'assistant'
 export interface RealtimeVoiceStartRequest {
   sdp: string
   voice?: string
+  additionalDirs?: string[]
 }
 
 export interface RealtimeTimelineSegment {
@@ -1756,7 +1757,9 @@ export interface RealtimeTimelineSegment {
 
 export interface RealtimeTimelineResult {
   segments: RealtimeTimelineSegment[]
+  threadMessages: ChatMessage[]
   activeRealtimeSessionId: string | null
+  hasTimeline: boolean
 }
 
 // --- Renderer → Main requests ---

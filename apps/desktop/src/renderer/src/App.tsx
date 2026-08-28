@@ -50,6 +50,7 @@ import { useTerminalStore } from '@/stores/terminal'
 import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
+import { CodexConversationViewToggle } from '@/components/chat/CodexConversationViewToggle'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
@@ -60,6 +61,7 @@ import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
 import { LAYOUT, maxSidebarWidth } from '@/lib/layout-constants'
 import { toggleSidebar } from '@/lib/layout-actions'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 export { LAYOUT }
 
@@ -491,6 +493,11 @@ function App(): React.JSX.Element {
 
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
   const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
+  const providerSessionId = useActiveSession((s) => s._providerSessionId)
+  const isCodexSession = useActiveSession((s) => resolveProvider({
+    sessionProvider: s.sessionProvider,
+    preferredProvider: s.preferredProvider,
+  }) === 'codex')
 
   useEffect(() => {
     useActivityPanelStore.getState().resetUserResized()
@@ -635,6 +642,12 @@ function App(): React.JSX.Element {
           {/* Mini-app controls */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <MiniAppMediaIndicator />
+            <CodexConversationViewToggle
+              projectPath={currentFolder ?? ''}
+              sessionId={sessionId}
+              providerSessionId={providerSessionId}
+              enabled={isCodexSession}
+            />
             {(() => {
               const terminalButton = (
                 <TooltipProvider delayDuration={300}>

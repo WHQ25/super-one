@@ -1,9 +1,9 @@
-import type { ChatMessage, CodexAuthStatus, CodexThreadItem, CodexUsageInfo, ContentBlock, ModelOption } from '@superone/shared/agent-types'
+import type { ChatMessage, CodexThreadItem, CodexUsageInfo, ContentBlock, ModelOption } from '@superone/shared/agent-types'
 import {
   accumulateCodexFooterTokens,
   applyDelta,
   findLatestCodexUsage,
-  formatCodexAuthStatus,
+  formatCodexLoginStart,
   getLatestCodexThreadId,
   parseCodexCommand,
   removeCodexItem,
@@ -66,8 +66,8 @@ describe('parseCodexCommand', () => {
     expect(parseCodexCommand('/unknown')).toBeNull()
   })
 
-  it('should parse /help', () => {
-    expect(parseCodexCommand('/help')).toEqual({ kind: 'help' })
+  it('should no longer parse /help', () => {
+    expect(parseCodexCommand('/help')).toBeNull()
   })
 
   it('should parse /reset', () => {
@@ -94,43 +94,32 @@ describe('parseCodexCommand', () => {
   })
 
   it('should open the branch picker for /review branch without a branch name', () => {
-    expect(parseCodexCommand('/review branch')).toEqual({ kind: 'review-picker' })
+    expect(parseCodexCommand('/review branch')).toEqual({ kind: 'review-picker', mode: 'branch' })
   })
 
   it('should parse /review commit <sha>', () => {
     expect(parseCodexCommand('/review commit abc123')).toEqual({ kind: 'review', target: { type: 'commit', sha: 'abc123' } })
   })
 
-  it('should return help for /review commit without sha', () => {
-    expect(parseCodexCommand('/review commit')).toEqual({ kind: 'help' })
+  it('should open the commit picker for /review commit without sha', () => {
+    expect(parseCodexCommand('/review commit')).toEqual({ kind: 'review-picker', mode: 'commit' })
   })
 
-  it('should parse /auth as auth-status', () => {
-    expect(parseCodexCommand('/auth')).toEqual({ kind: 'auth-status' })
+  it('should parse /login', () => {
+    expect(parseCodexCommand('/login')).toEqual({ kind: 'login' })
   })
 
-  it('should parse /auth auto', () => {
-    expect(parseCodexCommand('/auth auto')).toEqual({ kind: 'auth-set', mode: 'auto' })
+  it('should parse /logout', () => {
+    expect(parseCodexCommand('/logout')).toEqual({ kind: 'logout' })
   })
 
-  it('should parse /auth chatgpt', () => {
-    expect(parseCodexCommand('/auth chatgpt')).toEqual({ kind: 'auth-set', mode: 'chatgpt' })
-  })
-
-  it('should parse /auth apikey with key', () => {
-    expect(parseCodexCommand('/auth apikey sk-test-123')).toEqual({ kind: 'auth-set', mode: 'apiKey', apiKey: 'sk-test-123' })
-  })
-
-  it('should parse /auth apikey without key', () => {
-    expect(parseCodexCommand('/auth apikey')).toEqual({ kind: 'auth-set', mode: 'apiKey', apiKey: undefined })
-  })
-
-  it('should return help for unknown auth subcommand', () => {
-    expect(parseCodexCommand('/auth invalid')).toEqual({ kind: 'help' })
+  it('should no longer parse removed /auth commands', () => {
+    expect(parseCodexCommand('/auth')).toBeNull()
+    expect(parseCodexCommand('/auth chatgpt')).toBeNull()
   })
 
   it('should handle whitespace after slash', () => {
-    expect(parseCodexCommand('/ help')).toEqual({ kind: 'help' })
+    expect(parseCodexCommand('/ help')).toBeNull()
   })
 })
 
@@ -223,34 +212,16 @@ describe('resolveCodexModelSelection', () => {
   })
 })
 
-describe('formatCodexAuthStatus', () => {
-  it('should format all fields correctly', () => {
-    const status: CodexAuthStatus = {
-      mode: 'auto',
-      resolvedMode: 'apiKey',
-      hasEnvApiKey: true,
-      hasSessionApiKey: false,
-      isRunning: false,
-    }
-    const result = formatCodexAuthStatus(status)
-    expect(result).toContain('configured mode: auto')
-    expect(result).toContain('resolved mode: apiKey')
-    expect(result).toContain('env CODEX_API_KEY: set')
-    expect(result).toContain('session API key: not set')
-    expect(result).toContain('runtime state: idle')
-  })
-
-  it('should show running state and session key', () => {
-    const status: CodexAuthStatus = {
-      mode: 'chatgpt',
-      resolvedMode: 'chatgpt',
-      hasEnvApiKey: false,
-      hasSessionApiKey: true,
-      isRunning: true,
-    }
-    const result = formatCodexAuthStatus(status)
-    expect(result).toContain('session API key: set')
-    expect(result).toContain('runtime state: running')
+describe('formatCodexLoginStart', () => {
+  it('includes a device code when the app server returns one', () => {
+    const result = formatCodexLoginStart({
+      type: 'chatgptDeviceCode',
+      loginId: 'login-1',
+      verificationUrl: 'https://example.com/device',
+      userCode: 'ABCD-EFGH',
+    })
+    expect(result).toContain('Continue signing in to ChatGPT in your browser.')
+    expect(result).toContain('Device code: ABCD-EFGH')
   })
 })
 

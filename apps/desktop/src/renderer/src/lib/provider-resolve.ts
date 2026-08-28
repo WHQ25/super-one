@@ -96,6 +96,27 @@ export function resolveEffective(
   }
 }
 
+/** Credential id currently selected after applying a session override and global binding. */
+export function resolveEffectiveProviderId(
+  platforms: Platform[],
+  credentials: Credential[],
+  bindings: ConsumerBinding[],
+  consumer: ConsumerId,
+  sessionCredentialId?: string | null,
+  options?: ProviderResolveOptions,
+): string | null {
+  // Preserve an explicit session choice while provider metadata is still loading.
+  if (sessionCredentialId) return sessionCredentialId
+  return resolveEffective(
+    platforms,
+    credentials,
+    bindings,
+    consumer,
+    sessionCredentialId,
+    options,
+  )?.credential.id ?? null
+}
+
 export function brandOfCredential(platforms: Platform[], credential: Credential): string | null {
   return findPlatform(platforms, credential.platformId)?.brand ?? null
 }

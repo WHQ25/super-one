@@ -1,6 +1,7 @@
 import { Folder } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useSessionScope } from '@/stores/chat'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { cn } from '@superone/ui/lib/utils'
 import { shortenPath } from '@/lib/path-utils'
@@ -17,6 +18,8 @@ function basename(p: string): string {
 
 export function ChatInputDirsHint() {
   const { t } = useTranslation()
+  const sessionScope = useSessionScope()
+  const sessionId = useActiveSession((s) => sessionScope?.sessionId ?? s._activeSessionId)
   const provider = useActiveSession((s) => resolveProvider(s))
   const sessionDirs = useActiveSession((s) => s.additionalDirs)
   const projectDirs = useActiveSession((s) => s.projectExtraDirs)
@@ -24,9 +27,13 @@ export function ChatInputDirsHint() {
   const dirty = useActiveSession((s) => s.additionalDirsDirty)
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
+  const hasRealtimeTimeline = useCodexRealtimeViewStore(
+    (state) => sessionId ? state.sessions[sessionId]?.hasTimeline ?? false : false,
+  )
 
   // A harness that reads only its cwd would show folders it silently ignores.
   if (!HARNESS_CAPABILITIES[provider]?.supportsAdditionalDirs) return null
+  if (provider === 'codex' && hasRealtimeTimeline) return null
   if (messagesLen > 0 && !dirty) return null
 
   const entries: Array<{ dir: string; scope: DirScope }> = []

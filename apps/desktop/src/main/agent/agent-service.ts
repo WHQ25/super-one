@@ -1101,9 +1101,7 @@ export class AgentService {
             await respond?.(command.requestId, {
               models,
               slashCommands: [
-                { name: 'help', description: 'Show available commands' },
                 { name: 'reset', description: 'Reset Codex thread' },
-                { name: 'auth', description: 'Show auth status' },
                 { name: 'review', description: 'Review code changes' },
                 { name: 'compact', description: 'Compact thread context' },
                 ...userPrompts.map((p) => ({ name: p.name, description: p.description ?? '', argumentHint: p.argumentHint ?? '' })),

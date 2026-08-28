@@ -1278,6 +1278,10 @@ export type Messages = {
       listening: string
       timeline: string
       waiting: string
+      showConversation: string
+      showTimeline: string
+      emptyTimeline: string
+      timelineLoadFailed: string
       offerFailed: string
       connectionTimedOut: string
     }
@@ -2556,13 +2560,9 @@ export type Messages = {
       }
     }
     codexCommands: {
-      helpDesc: string
       resetDesc: string
-      authDesc: string
-      authAutoDesc: string
-      authChatgptDesc: string
-      authApiKeyDesc: string
-      authApiKeyArg: string
+      loginDesc: string
+      logoutDesc: string
       reviewDesc: string
       compactDesc: string
       planDesc: string
@@ -4867,6 +4867,10 @@ export const en: Messages = {
       listening: 'Realtime Voice',
       timeline: 'Voice Timeline',
       waiting: 'Listening for speech…',
+      showConversation: 'Show conversation',
+      showTimeline: 'Show voice timeline',
+      emptyTimeline: 'No voice transcript in this thread yet.',
+      timelineLoadFailed: 'Could not load the voice timeline.',
       offerFailed: 'Could not create the WebRTC offer.',
       connectionTimedOut: 'Realtime voice connection timed out.',
     },
@@ -6162,13 +6166,9 @@ export const en: Messages = {
       },
     },
     codexCommands: {
-      helpDesc: 'Show available commands',
       resetDesc: 'Reset Codex thread',
-      authDesc: 'Show auth status',
-      authAutoDesc: 'Auto auth mode (prefer API key)',
-      authChatgptDesc: 'Use ChatGPT sign-in mode',
-      authApiKeyDesc: 'Use API key mode',
-      authApiKeyArg: '<CODEX_API_KEY>',
+      loginDesc: 'Sign in to ChatGPT',
+      logoutDesc: 'Sign out of ChatGPT',
       reviewDesc: 'Review code changes',
       compactDesc: 'Compact thread context',
       planDesc: 'Enter plan mode',

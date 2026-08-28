@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend } = vi.hoisted(() => {
+const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend, providerSelection } = vi.hoisted(() => {
   const mentionPopup = {
     props: null as null | { query: string; onResultState?: (q: string, isEmpty: boolean) => void },
   }
@@ -134,7 +134,9 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     listeners: new Set<(event: unknown) => void>(),
   }
 
-  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend }
+  const providerSelection = { resolvedId: null as string | null }
+
+  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend, providerSelection }
 })
 
 vi.mock('@tiptap/react', () => {
@@ -344,6 +346,10 @@ vi.mock('./ModelSelector', () => ({
   ModelSelector: () => null,
 }))
 
+vi.mock('./model-selector/useSelectorProviders', () => ({
+  useResolvedProviderId: () => providerSelection.resolvedId,
+}))
+
 vi.mock('./CodexGoalIndicator', () => ({
   CodexGoalIndicator: ({ goal }: { goal: { objective: string } }) => (
     <div data-testid="codex-goal-indicator">{goal.objective}</div>
@@ -383,6 +389,7 @@ vi.mock('@/components/ui/HighlightedText', () => ({
   HighlightedText: ({ text }: { text: string }) => <span>{text}</span>,
 }))
 
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { ChatInput } from './ChatInput'
 
 beforeEach(() => {
@@ -406,11 +413,17 @@ beforeEach(() => {
   activeSessionState.showDirManager = false
   activeSessionState.showReviewPanel = false
   activeSessionState._activeSessionId = 'session-1'
+  activeSessionState.additionalDirs = []
+  activeSessionState.projectExtraDirs = []
+  activeSessionState.additionalDirsDirty = false
+  activeSessionState.messages = []
+  useCodexRealtimeViewStore.setState({ sessions: {} })
   sessionScope.value = null
   goalState.threadId = undefined
   goalState.getGoal.mockReset()
   scheduledSend.row = null
   scheduledSend.listeners.clear()
+  providerSelection.resolvedId = null
   Object.assign(window, {
     app: {
       ...window.app,
@@ -596,6 +609,34 @@ describe('ChatInput', () => {
       expect.any(Array),
       { projectPath: '/project', sessionId: 'sid-new' },
     )
+  })
+
+  it('places the realtime voice control immediately after the send control', () => {
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+
+    render(<ChatInput />)
+
+    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
+    const realtime = document.querySelector('button .lucide-audio-lines')?.closest('button')
+    expect(send).toBeTruthy()
+    expect(realtime).toBeTruthy()
+    expect(send!.compareDocumentPosition(realtime!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  })
+
+  it('hides the additional directory hint after realtime voice starts', () => {
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+    activeSessionState.additionalDirs = ['/extra']
+
+    render(<ChatInput />)
+    expect(screen.getByText('extra')).toBeInTheDocument()
+
+    act(() => {
+      useCodexRealtimeViewStore.getState().setRealtimeSession('session-1', 'realtime-1')
+    })
+
+    expect(screen.queryByText('extra')).toBeNull()
   })
 })
 
@@ -789,6 +830,23 @@ describe('ChatInput @-mention no-match suppression', () => {
 })
 
 describe('ChatInput slash command grouping', () => {
+  it('shows account commands only for Codex with the official OpenAI provider', () => {
+    activeSessionState.preferredProvider = 'codex'
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+    expect(screen.queryByText('Sign in to ChatGPT')).toBeTruthy()
+    expect(screen.queryByText('Sign out of ChatGPT')).toBeTruthy()
+    expect(screen.queryByText('Show auth status')).toBeNull()
+    expect(screen.queryByText('Show available commands')).toBeNull()
+
+    providerSelection.resolvedId = 'custom-provider'
+    rerender(<ChatInput />)
+    expect(screen.queryByText('Sign in to ChatGPT')).toBeNull()
+    expect(screen.queryByText('Sign out of ChatGPT')).toBeNull()
+  })
+
   it('shows the local add-dir command in the Codex slash popup', () => {
     activeSessionState.preferredProvider = 'codex'
 

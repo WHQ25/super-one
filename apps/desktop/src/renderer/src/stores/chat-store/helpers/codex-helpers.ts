@@ -1,7 +1,6 @@
 import type {
   ChatMessage,
-  CodexAuthMode,
-  CodexAuthStatus,
+  CodexAccountLoginStartResult,
   CodexPlanApprovalState,
   CodexReasoningEffort,
   CodexReviewTarget,
@@ -17,13 +16,12 @@ import { resolveProvider } from './provider-routing'
 import { getActivePerSession, getProject } from './store-helpers'
 
 export type CodexCommand =
-  | { kind: 'help' }
   | { kind: 'reset' }
-  | { kind: 'auth-status' }
-  | { kind: 'auth-set'; mode: CodexAuthMode; apiKey?: string }
+  | { kind: 'login' }
+  | { kind: 'logout' }
   | { kind: 'run'; prompt: string }
   | { kind: 'review'; target: CodexReviewTarget }
-  | { kind: 'review-picker' }
+  | { kind: 'review-picker'; mode: 'branch' | 'commit' }
   | { kind: 'compact' }
   | { kind: 'plan' }
 
@@ -80,49 +78,34 @@ export function parseCodexCommand(input: string): CodexCommand | null {
   const body = input.slice(1).trim()
   if (!body) return null
 
-  if (body === 'help') return { kind: 'help' }
   if (body === 'reset') return { kind: 'reset' }
   if (body === 'compact') return { kind: 'compact' }
   if (body === 'plan') return { kind: 'plan' }
+  if (body === 'login') return { kind: 'login' }
+  if (body === 'logout') return { kind: 'logout' }
 
   if (body === 'review' || body.startsWith('review ')) {
     const reviewBody = body.slice('review'.length).trim()
     if (reviewBody === 'branch' || reviewBody.startsWith('branch ')) {
       const branch = reviewBody.slice('branch'.length).trim()
-      if (!branch) return { kind: 'review-picker' }
+      if (!branch) return { kind: 'review-picker', mode: 'branch' }
       return { kind: 'review', target: { type: 'baseBranch', branch } }
     }
     if (reviewBody === 'commit' || reviewBody.startsWith('commit ')) {
       const sha = reviewBody.slice('commit'.length).trim()
-      if (!sha) return { kind: 'help' }
+      if (!sha) return { kind: 'review-picker', mode: 'commit' }
       return { kind: 'review', target: { type: 'commit', sha } }
     }
     return { kind: 'review', target: { type: 'uncommittedChanges' } }
   }
 
-  if (body === 'auth' || body.startsWith('auth ')) {
-    const authBody = body.slice('auth'.length).trim()
-    if (!authBody) return { kind: 'auth-status' }
-    if (authBody === 'auto') return { kind: 'auth-set', mode: 'auto' }
-    if (authBody === 'chatgpt') return { kind: 'auth-set', mode: 'chatgpt' }
-    if (authBody.startsWith('apikey')) {
-      const apiKey = authBody.slice('apikey'.length).trim()
-      return { kind: 'auth-set', mode: 'apiKey', apiKey: apiKey || undefined }
-    }
-    return { kind: 'help' }
-  }
-
   return null
 }
 
-export function formatCodexAuthStatus(status: CodexAuthStatus): string {
+export function formatCodexLoginStart(result: CodexAccountLoginStartResult): string {
   return [
-    'Codex authentication status:',
-    `- configured mode: ${status.mode}`,
-    `- resolved mode: ${status.resolvedMode}`,
-    `- env CODEX_API_KEY: ${status.hasEnvApiKey ? 'set' : 'not set'}`,
-    `- session API key: ${status.hasSessionApiKey ? 'set' : 'not set'}`,
-    `- runtime state: ${status.isRunning ? 'running' : 'idle'}`,
+    'Continue signing in to ChatGPT in your browser.',
+    ...(result.userCode ? ['', `Device code: ${result.userCode}`] : []),
   ].join('\n')
 }
 
@@ -241,27 +224,6 @@ export type CodexRunnableCommand = Extract<CodexCommand, { kind: 'run' | 'review
 
 export function isRunnableCodexCommand(command: CodexCommand): command is CodexRunnableCommand {
   return command.kind === 'run' || command.kind === 'review' || command.kind === 'compact'
-}
-
-export function getCodexHelpText(): string {
-  return [
-    'Codex commands:',
-    '',
-    '/reset — reset thread',
-    '/auth — show auth status',
-    '/auth auto — prefer API key, fallback to ChatGPT login',
-    '/auth chatgpt — force ChatGPT login mode',
-    '/auth apikey <KEY> — force API key mode',
-    '/review — review uncommitted changes',
-    '/review branch <name> — review diff against base branch',
-    '/review commit <sha> — review a specific commit',
-    '/compact — compact thread context',
-    '/plan — enter plan mode',
-    '',
-    'Notes:',
-    '- Type a message directly to send it as a prompt',
-    '- During a running turn, new messages are queued and run automatically (no need to wait)',
-  ].join('\n')
 }
 
 // --- Codex default / persisted selection ---

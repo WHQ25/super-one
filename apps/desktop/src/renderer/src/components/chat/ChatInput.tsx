@@ -76,6 +76,7 @@ import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-
 import { wrapPathRefMention } from './user-mention-parser'
 import { chatInputAPI } from './chat-input-api'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
+import { useResolvedProviderId } from './model-selector/useSelectorProviders'
 
 export { chatInputAPI } from './chat-input-api'
 
@@ -253,6 +254,7 @@ export function ChatInput() {
     const isRemoteLocked = useIsRemoteLocked()
     const isStreaming = status === 'streaming'
     const activeProviderForResources = resolveProvider({ sessionProvider, preferredProvider })
+    const resolvedCodexProviderId = useResolvedProviderId('codex')
     // One folder set for every harness now — nothing swaps with the provider.
     const supportsAdditionalDirs = HARNESS_CAPABILITIES[activeProviderForResources]?.supportsAdditionalDirs ?? false
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
@@ -334,12 +336,13 @@ export function ChatInput() {
     ]), [t])
 
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
-      { name: 'help', description: t('chat.codexCommands.helpDesc'), argumentHint: '', isSkill: false },
       { name: 'reset', description: t('chat.codexCommands.resetDesc'), argumentHint: '', isSkill: false },
-      { name: 'auth', description: t('chat.codexCommands.authDesc'), argumentHint: '', isSkill: false },
-      { name: 'auth auto', description: t('chat.codexCommands.authAutoDesc'), argumentHint: '', isSkill: false },
-      { name: 'auth chatgpt', description: t('chat.codexCommands.authChatgptDesc'), argumentHint: '', isSkill: false },
-      { name: 'auth apikey', description: t('chat.codexCommands.authApiKeyDesc'), argumentHint: t('chat.codexCommands.authApiKeyArg'), isSkill: false },
+      ...(resolvedCodexProviderId === null
+        ? [
+            { name: 'login', description: t('chat.codexCommands.loginDesc'), argumentHint: '', isSkill: false },
+            { name: 'logout', description: t('chat.codexCommands.logoutDesc'), argumentHint: '', isSkill: false },
+          ]
+        : []),
       { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: '', isSkill: false },
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
@@ -349,7 +352,7 @@ export function ChatInput() {
       { name: 'goal', description: t('chat.codexCommands.goalDesc'), argumentHint: t('chat.codexCommands.goalArg'), isSkill: false },
       ...codexPrompts,
       ...codexSkills.map((s): SlashCommandInfo => ({ name: s.name, description: s.description, argumentHint: '', isSkill: true })),
-    ]), [t, codexPrompts, codexSkills])
+    ]), [t, resolvedCodexProviderId, codexPrompts, codexSkills])
 
     const acpSlashCommandsFromAgent = useActiveSession((s) => s.acpSlashCommands)
     const acpSlashCommandsStatus = useActiveSession((s) => s.acpSlashCommandsStatus)
@@ -1946,9 +1949,6 @@ export function ChatInput() {
 
           <div className="flex items-center gap-1.5">
             <ContextUsage />
-            {activeProviderForResources === 'codex' && activeProject && displayedSessionId && (
-              <CodexRealtimeVoiceButton projectPath={activeProject} sessionId={displayedSessionId} disabled={isStreaming} />
-            )}
             {isStreaming && (
               <StopButton
                 onInterrupt={interrupt}
@@ -1964,6 +1964,14 @@ export function ChatInput() {
               onDisarm={handleDisarmScheduled}
               onSetSendAt={setSendAt}
             />
+            {activeProviderForResources === 'codex' && activeProject && displayedSessionId && (
+              <CodexRealtimeVoiceButton
+                projectPath={activeProject}
+                sessionId={displayedSessionId}
+                additionalDirs={additionalDirs}
+                disabled={isStreaming}
+              />
+            )}
           </div>
         </div>
 

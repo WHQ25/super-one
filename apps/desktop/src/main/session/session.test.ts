@@ -117,6 +117,16 @@ class FakeBackend implements SessionBackend {
     await new Promise<void>((resolve) => { this.resolveSend = resolve })
   }
 
+  realtimeCalls: import('@superone/shared/agent-types').RealtimeVoiceStartRequest[] = []
+  async startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void> {
+    this.realtimeCalls.push(request)
+    this.fireProviderSessionId('thread-realtime')
+  }
+  async stopRealtimeVoice(): Promise<void> {}
+  async getRealtimeTimeline() {
+    return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
+  }
+
   async interrupt(): Promise<void> {
     this.interruptCalls++
     await new Promise<void>((resolve) => { this.resolveInterrupt = resolve })
@@ -2757,6 +2767,49 @@ describe('Session persist hook', () => {
     await p
     expect(calls.length).toBeGreaterThan(0)
     expect(calls.some((c) => c.providerSessionId === '019fa-grok')).toBe(true)
+  })
+
+  it('persists an empty voice session after attaching its Codex thread', async () => {
+    const calls: SessionStateChange[] = []
+    const { session, backend } = makeSession({
+      providerId: 'codex-base',
+      harnessId: 'codex',
+      onStateChange: (state) => calls.push(state),
+    })
+
+    await session.startRealtimeVoice({ sdp: 'offer', additionalDirs: ['/extra'] })
+
+    expect(backend.startOpts?.additionalDirectories).toEqual(['/extra'])
+    expect(backend.realtimeCalls).toEqual([{ sdp: 'offer', additionalDirs: ['/extra'] }])
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      providerId: 'codex-base',
+      providerSessionId: 'thread-realtime',
+      messages: [],
+    })
+  })
+
+  it('titles a new voice-only session from the first complete user utterance', async () => {
+    const events: AgentEvent[] = []
+    const { session, backend } = makeSession({
+      providerId: 'codex-base',
+      harnessId: 'codex',
+    })
+    session.on((event) => events.push(event))
+
+    await session.startRealtimeVoice({ sdp: 'offer' })
+    backend.emit({ type: 'realtime_transcript', role: 'assistant', text: 'Hello', final: true })
+    backend.emit({ type: 'realtime_transcript', role: 'user', text: '  Inspect   the logs  ', final: false })
+    expect(session.snapshot.title).toBeNull()
+
+    backend.emit({ type: 'realtime_transcript', role: 'user', text: '  Inspect   the logs  ', final: true })
+    backend.emit({ type: 'realtime_transcript', role: 'user', text: 'Then fix it', final: true })
+
+    expect(session.snapshot.title).toBe('Inspect the logs')
+    expect(backend.setTitleCalls).toEqual(['Inspect the logs'])
+    expect(events.filter((event) => event.type === 'session_title_changed')).toMatchObject([
+      { title: 'Inspect the logs', source: 'agent' },
+    ])
   })
 
   it('does not fire onStateChange when accumulated message list is empty', () => {

@@ -8,8 +8,7 @@ import { runCodexCommand } from '../codex/runner'
 import { createDefaultPerSessionState, createSessionId, freshSubagentColorPool } from '../defaults'
 import {
   createLocalTextUserMessage,
-  formatCodexAuthStatus,
-  getCodexHelpText,
+  formatCodexLoginStart,
   isRunnableCodexCommand,
   parseCodexCommand,
   resolveSessionCodexSelection,
@@ -38,6 +37,21 @@ import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { toastSendFailure } from './send-error-toast'
+import { resolveEffectiveProviderId } from '@/lib/provider-resolve'
+
+async function isOfficialCodexProvider(apiProviderId: string | null): Promise<boolean> {
+  if (apiProviderId) return false
+  // Settings imports the chat store, so resolve it lazily to avoid a module-init cycle.
+  const { useSettingsStore } = await import('../../settings')
+  const { platforms, credentials, bindings } = useSettingsStore.getState()
+  return resolveEffectiveProviderId(
+    platforms,
+    credentials,
+    bindings,
+    'chat:codex',
+    apiProviderId,
+  ) === null
+}
 
 /**
  * Whether a typed `/name` should be handled by SuperOne instead of the agent.
@@ -56,7 +70,7 @@ function shouldInterceptHostSlash(provider: ChatProvider, name: string): boolean
  * - context/quote/miniapp-reminder suffix assembly
  * - provider resolution (claude vs codex) + codex slash-command parsing
  * - rotate SuperOne session id when first switching an empty draft to codex
- * - utility codex commands (help/reset/auth-status/auth-set/plan) routed to the popup
+ * - utility codex commands (reset/login/logout/plan) routed to the popup
  * - intercepted slash commands (/provider, /clear, /mcp, Grok /recap)
  * - user message appended (or queued during a claude streaming turn)
  * - dispatch: codex → runCodexCommand, claude → window.agent.sendMessage
@@ -93,8 +107,52 @@ export async function sendMessageImpl(
     set((s) => commitPerSession(s, writeTarget, updater))
   }
 
+  const handleCodexAccountCommand = async (
+    command: 'login' | 'logout',
+    apiProviderId: string | null,
+  ): Promise<void> => {
+    patchSession(() => ({ _pendingSlashCommand: '' }))
+    try {
+      const isOfficial = await isOfficialCodexProvider(apiProviderId)
+      let popupContent: string
+      if (!isOfficial) {
+        popupContent = `/${command} is only available with the official OpenAI provider.`
+      } else if (command === 'login') {
+        popupContent = formatCodexLoginStart(
+          await window.app.codexStartAccountLogin(projectPath),
+        )
+      } else {
+        await window.app.codexLogoutAccount(projectPath)
+        popupContent = 'Signed out of ChatGPT.'
+      }
+      patchSession(() => ({ slashCommandOutput: { command, content: popupContent } }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      patchSession((session) => ({
+        messages: [...session.messages, {
+          id: `slash-error-${Date.now()}`,
+          role: 'assistant',
+          content: [{ type: 'text', text: `Error: ${message}` }],
+          status: 'error',
+          createdAt: new Date().toISOString(),
+          providerId: 'codex',
+        }],
+      }))
+    }
+  }
+
   // Mobile remote-control lock (another device owns the desktop session) — not node env.
   if (isRemoteSession(get(), projectPath, resolveWriteSid())) return
+
+  const initialSession = getScopedPerSession(get(), writeTarget)
+  const initialProvider = initialSession.sessionProvider ?? initialSession.preferredProvider
+  const initialCodexCommand = initialProvider === 'codex'
+    ? parseCodexCommand(content.trim())
+    : null
+  if (initialCodexCommand?.kind === 'login' || initialCodexCommand?.kind === 'logout') {
+    await handleCodexAccountCommand(initialCodexCommand.kind, initialSession.apiProviderId)
+    return
+  }
 
   {
     const project = getProject(get(), projectPath)
@@ -1009,30 +1067,22 @@ export async function sendMessageImpl(
   // Utility codex commands → popup (no chat messages); errors fall through to in-chat assistant error message
   if (resolvedCodexCommand) {
     const utilityKind = resolvedCodexCommand.kind
-    if (utilityKind === 'help' || utilityKind === 'reset' || utilityKind === 'auth-status' || utilityKind === 'auth-set' || utilityKind === 'plan' || utilityKind === 'review-picker') {
+    if (utilityKind === 'reset' || utilityKind === 'login' || utilityKind === 'logout' || utilityKind === 'plan' || utilityKind === 'review-picker') {
       patchSession(() => ({ _pendingSlashCommand: '' }))
       try {
         let popupContent: string
         if (utilityKind === 'review-picker') {
-          get().setShowReviewPanel(true, 'branch')
+          get().setShowReviewPanel(true, resolvedCodexCommand.mode)
           return
-        } else if (utilityKind === 'help') {
-          popupContent = getCodexHelpText()
         } else if (utilityKind === 'reset') {
           if (codexSessionId) await window.agent.resetSession(codexSessionId)
           popupContent = 'Codex thread has been reset.'
-        } else if (utilityKind === 'auth-status') {
-          const status = await window.app.codexGetAuthStatus(projectPath)
-          popupContent = formatCodexAuthStatus(status)
+        } else if (utilityKind === 'login' || utilityKind === 'logout') {
+          await handleCodexAccountCommand(utilityKind, session.apiProviderId)
+          return
         } else if (utilityKind === 'plan') {
           get().setSelectedCodexCollaborationMode('plan')
           return
-        } else {
-          const status = await window.app.codexSetAuth(projectPath, {
-            mode: resolvedCodexCommand.mode,
-            apiKey: resolvedCodexCommand.apiKey,
-          })
-          popupContent = `Auth mode updated.\n\n${formatCodexAuthStatus(status)}`
         }
         patchSession(() => ({
           slashCommandOutput: { command: utilityKind, content: popupContent },

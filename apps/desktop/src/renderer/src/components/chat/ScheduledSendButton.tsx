@@ -239,7 +239,7 @@ export function ScheduledSendButton({
               onClick={handlePrimary}
               disabled={!canSend}
               aria-label={primaryLabel}
-              className="size-7 rounded-full border border-border disabled:opacity-30"
+              className="size-6 rounded-full border border-border disabled:opacity-30"
             >
               <ArrowUp />
             </IconButton>

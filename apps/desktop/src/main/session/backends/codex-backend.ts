@@ -889,6 +889,7 @@ export class CodexBackend implements SessionBackend {
       request,
       (event) => this.emit(event),
     )
+    this.fireProviderSessionId(handle.threadId)
     this.realtimeHandle = handle
     void handle.closed.finally(() => {
       if (this.realtimeHandle === handle) this.realtimeHandle = null
@@ -905,7 +906,7 @@ export class CodexBackend implements SessionBackend {
     this.assertStarted()
     const session = this.session
     const startOpts = this.startOpts
-    if (!session || !startOpts) return { segments: [], activeRealtimeSessionId: null }
+    if (!session || !startOpts) return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
     return listCodexRealtimeTimeline(
       session,
       this.service.getProjectAuth(startOpts.projectPath),
@@ -1514,6 +1515,7 @@ export class CodexBackend implements SessionBackend {
     for (const cb of this.providerSessionIdListeners) {
       try { cb(threadId) } catch (err) { log.warn('[CodexBackend] providerSessionId listener error:', err) }
     }
+    this.emit({ type: 'provider_session_id', providerSessionId: threadId })
   }
 
   private buildCallbacks(): CodexRunStreamCallbacks {

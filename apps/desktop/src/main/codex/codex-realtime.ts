@@ -1,5 +1,7 @@
 import type {
   AgentEvent,
+  ChatMessage,
+  CodexThreadItem,
   RealtimeTimelineResult,
   RealtimeTranscriptRole,
   RealtimeVoiceStartRequest,
@@ -7,7 +9,7 @@ import type {
 import { asRecord, readString, resolvePermissionProfile, type AppServerNotification, type CodexProjectAuth } from './app-server-connection'
 import type { NotificationDispatcher, NotificationInbox } from './codex-notification-dispatcher'
 import type { CodexSession } from './codex-session'
-import { withThreadConnection } from './codex-turn'
+import { deriveFinalResponse, mapThreadItemFromAppServer, withThreadConnection } from './codex-turn'
 
 export interface CodexRealtimeHandle {
   readonly threadId: string
@@ -68,8 +70,97 @@ export function mapCodexRealtimeNotification(notification: AppServerNotification
   }
 }
 
-export function mapCodexRealtimeTimeline(response: Record<string, unknown>): RealtimeTimelineResult {
+function mapTimelineThreadMessages(entries: unknown[], threadId: string | null): ChatMessage[] {
+  const turns = new Map<string, {
+    position: number
+    status: ChatMessage['status']
+    users: ChatMessage[]
+    items: CodexThreadItem[]
+  }>()
+
+  const turnFor = (turnId: string, position: number) => {
+    const existing = turns.get(turnId)
+    if (existing) {
+      existing.position = Math.min(existing.position, position)
+      return existing
+    }
+    const created = { position, status: 'streaming' as const, users: [], items: [] }
+    turns.set(turnId, created)
+    return created
+  }
+
+  for (const entry of entries) {
+    const record = asRecord(entry)
+    const type = readString(record?.type)
+    const turnId = readString(record?.turnId)
+    if (!record || !turnId || (type !== 'item' && type !== 'turnStarted' && type !== 'turnCompleted')) continue
+    const position = typeof record.position === 'number' ? record.position : Number.MAX_SAFE_INTEGER
+    const turn = turnFor(turnId, position)
+
+    if (type === 'turnCompleted') {
+      const status = readString(record.status)
+      turn.status = status === 'failed' ? 'error' : status === 'interrupted' ? 'interrupted' : 'complete'
+      continue
+    }
+    if (type !== 'item') continue
+
+    const item = asRecord(record.item)
+    if (readString(item?.type) === 'userMessage') {
+      const id = readString(item?.clientId) ?? readString(item?.id)
+      if (!id) continue
+      const text = (Array.isArray(item?.content) ? item.content : [])
+        .map((input) => {
+          const inputRecord = asRecord(input)
+          return readString(inputRecord?.type) === 'text' ? readString(inputRecord?.text) : null
+        })
+        .filter((part): part is string => part !== null)
+        .join('\n')
+      turn.users.push({
+        id,
+        role: 'user',
+        status: 'complete',
+        content: [{ type: 'text', text }],
+        createdAt: '',
+        providerId: 'codex',
+      })
+      continue
+    }
+
+    const mapped = mapThreadItemFromAppServer(item)
+    if (mapped) turn.items.push(mapped)
+  }
+
+  return [...turns.entries()]
+    .sort(([, left], [, right]) => left.position - right.position)
+    .flatMap(([turnId, turn]) => {
+      if (turn.items.length === 0) return turn.users
+      const finalResponse = deriveFinalResponse(turn.items)
+      const assistant: ChatMessage = {
+        id: `codex-timeline-${turnId}`,
+        role: 'assistant',
+        status: turn.status,
+        content: finalResponse ? [{ type: 'text', text: finalResponse }] : [],
+        createdAt: '',
+        providerId: 'codex',
+        metadata: {
+          codex: {
+            threadId,
+            turnId,
+            usage: null,
+            items: turn.items,
+          },
+        },
+      }
+      return [...turn.users, assistant]
+    })
+}
+
+export function mapCodexRealtimeTimeline(
+  response: Record<string, unknown>,
+  threadId: string | null = null,
+): RealtimeTimelineResult {
   const entries = Array.isArray(response.data) ? response.data : []
+  const hasTimeline = entries.some((entry) => readString(asRecord(entry)?.type) === 'realtime')
   const segments = entries.flatMap((entry) => {
     const record = asRecord(entry)
     if (readString(record?.type) !== 'realtime') return []
@@ -88,7 +179,9 @@ export function mapCodexRealtimeTimeline(response: Record<string, unknown>): Rea
   })
   return {
     segments,
+    threadMessages: mapTimelineThreadMessages(entries, threadId),
     activeRealtimeSessionId: readString(response.activeRealtimeSessionAtPageStart),
+    hasTimeline,
   }
 }
 
@@ -167,7 +260,7 @@ export async function listCodexRealtimeTimeline(
   projectPath: string,
   cwd: string,
 ): Promise<RealtimeTimelineResult> {
-  if (session.apiProviderId) return { segments: [], activeRealtimeSessionId: null }
+  if (session.apiProviderId) return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
   return withThreadConnection(
     session,
     auth,
@@ -175,9 +268,9 @@ export async function listCodexRealtimeTimeline(
     projectPath,
     cwd,
     resolvePermissionProfile(session.permissionPreset),
-    async ({ connection, threadId }) => mapCodexRealtimeTimeline(await connection.request('thread/timeline/list', {
+    async ({ connection, threadId }) => mapCodexRealtimeTimeline(
+      await connection.request('thread/timeline/list', { threadId, limit: 200 }),
       threadId,
-      limit: 200,
-    })),
+    ),
   )
 }

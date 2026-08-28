@@ -81,6 +81,12 @@ const mockWindowApp = {
   codexSetAuth: vi.fn().mockResolvedValue({
     mode: 'chatgpt', resolvedMode: 'chatgpt', hasEnvApiKey: false, hasSessionApiKey: false, isRunning: false,
   }),
+  codexStartAccountLogin: vi.fn().mockResolvedValue({
+    type: 'chatgpt', loginId: 'login-1', authUrl: 'https://chatgpt.com/auth',
+  }),
+  codexLogoutAccount: vi.fn().mockResolvedValue({
+    signedIn: false, authMode: null, email: null, planType: null, requiresOpenaiAuth: true,
+  }),
   codexRun: vi.fn().mockResolvedValue({ finalResponse: 'done', usage: null, items: [], threadId: 't-1' }),
   codexReview: vi.fn().mockResolvedValue({ finalResponse: 'done', usage: null, items: [], threadId: 't-1' }),
   codexCompact: vi.fn().mockResolvedValue({ finalResponse: 'compacted', usage: null, items: [], threadId: 't-1' }),
@@ -121,6 +127,7 @@ vi.stubGlobal('window', {
 vi.stubGlobal('localStorage', mockLocalStorage)
 
 const { useChatStore } = await import('./chat')
+const { useSettingsStore } = await import('./settings')
 const { resetProjectExtraDirWrites } = await import('./chat-store/helpers/project-extra-dirs-write')
 
 const PATH = '/test-project'
@@ -185,6 +192,33 @@ function activeSession(path: string = PATH) {
   return proj._sessions[proj._activeSessionId!]
 }
 
+function selectCustomCodexProvider() {
+  useSettingsStore.setState({
+    platforms: [{
+      id: 'custom-openai',
+      brand: 'custom',
+      name: 'Custom OpenAI',
+      plans: [{
+        id: 'api',
+        name: 'API',
+        auth: 'api-key',
+        endpoints: [{ id: 'responses', protocols: ['openai-responses'] }],
+      }],
+    }] as never,
+    credentials: [{
+      id: 'custom-key',
+      platformId: 'custom-openai',
+      planId: 'api',
+      name: 'Custom key',
+      secret: '',
+      notes: '',
+      sortOrder: 0,
+    }] as never,
+    bindings: [],
+  })
+  patchSession({ apiProviderId: 'custom-key' })
+}
+
 /** A promise plus the handle that settles it, for holding a mock mid-flight. */
 function deferred() {
   let release!: () => void
@@ -210,6 +244,7 @@ beforeEach(() => {
   mockLocalStorage.clear()
   mockMiniAppStore.openApps = {}
   mockMiniAppStore.apps = []
+  useSettingsStore.setState({ platforms: [], credentials: [], bindings: [] })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -547,22 +582,37 @@ describe('sendMessage: Codex utility slash commands', () => {
     patchSession({ sessionProvider: 'codex' })
   })
 
-  it('/help shows a popup and never hits codexRun', async () => {
-    await useChatStore.getState().sendMessage('/help')
-    expect(activeSession().slashCommandOutput?.command).toBe('help')
-    expect(mockWindowApp.codexRun).not.toHaveBeenCalled()
+  it('/login starts ChatGPT login for the official OpenAI provider', async () => {
+    await useChatStore.getState().sendMessage('/login')
+    expect(mockWindowApp.codexStartAccountLogin).toHaveBeenCalledWith(PATH)
+    expect(activeSession().slashCommandOutput).toEqual(expect.objectContaining({ command: 'login' }))
   })
 
-  it('/auth shows the auth status popup', async () => {
-    await useChatStore.getState().sendMessage('/auth')
-    expect(activeSession().slashCommandOutput?.command).toBe('auth-status')
-    expect(mockWindowApp.codexGetAuthStatus).toHaveBeenCalledWith(PATH)
+  it('/logout signs out of ChatGPT for the official OpenAI provider', async () => {
+    await useChatStore.getState().sendMessage('/logout')
+    expect(mockWindowApp.codexLogoutAccount).toHaveBeenCalledWith(PATH)
+    expect(activeSession().slashCommandOutput).toEqual({
+      command: 'logout',
+      content: 'Signed out of ChatGPT.',
+    })
   })
 
-  it('/auth chatgpt forwards a mode change and shows a popup', async () => {
-    await useChatStore.getState().sendMessage('/auth chatgpt')
-    expect(mockWindowApp.codexSetAuth).toHaveBeenCalledWith(PATH, { mode: 'chatgpt', apiKey: undefined })
-    expect(activeSession().slashCommandOutput?.command).toBe('auth-set')
+  it('/login refuses to start for a custom provider', async () => {
+    selectCustomCodexProvider()
+
+    await useChatStore.getState().sendMessage('/login')
+
+    expect(mockWindowApp.codexStartAccountLogin).not.toHaveBeenCalled()
+    expect(activeSession().slashCommandOutput?.content).toContain('official OpenAI provider')
+  })
+
+  it('/logout refuses to sign out for a custom provider', async () => {
+    selectCustomCodexProvider()
+
+    await useChatStore.getState().sendMessage('/logout')
+
+    expect(mockWindowApp.codexLogoutAccount).not.toHaveBeenCalled()
+    expect(activeSession().slashCommandOutput?.content).toContain('official OpenAI provider')
   })
 
   it('/reset clears the Codex thread when a session id is bound', async () => {
@@ -570,6 +620,12 @@ describe('sendMessage: Codex utility slash commands', () => {
     await useChatStore.getState().sendMessage('/reset')
     expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(sid)
     expect(activeSession().slashCommandOutput?.command).toBe('reset')
+  })
+
+  it('/review commit opens the commit picker when no SHA is provided', async () => {
+    await useChatStore.getState().sendMessage('/review commit')
+    expect(activeProjectState().showReviewPanel).toBe(true)
+    expect(activeProjectState().reviewPanelInitialMode).toBe('commit')
   })
 
   it('/plan toggles collaborationMode + early-returns (no popup)', async () => {
@@ -580,8 +636,8 @@ describe('sendMessage: Codex utility slash commands', () => {
   })
 
   it('codex utility command surfacing an IPC error renders an in-chat assistant error message', async () => {
-    mockWindowApp.codexGetAuthStatus.mockRejectedValueOnce(new Error('connection lost'))
-    await useChatStore.getState().sendMessage('/auth')
+    mockWindowApp.codexStartAccountLogin.mockRejectedValueOnce(new Error('connection lost'))
+    await useChatStore.getState().sendMessage('/login')
     const last = activeSession().messages.at(-1)
     expect(last?.role).toBe('assistant')
     expect((last?.content[0] as { text: string }).text).toContain('connection lost')

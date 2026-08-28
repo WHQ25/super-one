@@ -5,12 +5,27 @@ import { type Credential } from '@superone/shared/platform-registry'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
-import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential, resolveEffective } from '@/lib/provider-resolve'
+import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential, resolveEffectiveProviderId } from '@/lib/provider-resolve'
 import type { SelectorProviderOption } from './GroupedModelEffortSelector'
+
+export function useResolvedProviderId(harness: HarnessId): string | null {
+  const apiProviderId = useActiveSession((s) => s.apiProviderId)
+  const platforms = useSettingsStore((s) => s.platforms)
+  const credentials = useSettingsStore((s) => s.credentials)
+  const bindings = useSettingsStore((s) => s.bindings)
+  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
+  const consumer = consumerForHarness(harness)
+
+  return useMemo(
+    () => resolveEffectiveProviderId(platforms, credentials, bindings, consumer, apiProviderId, {
+      experimentalClaudeOpenAiChatEnabled,
+    }),
+    [apiProviderId, platforms, credentials, bindings, consumer, experimentalClaudeOpenAiChatEnabled],
+  )
+}
 
 export function useSelectorProviders(harness: HarnessId) {
   const { t } = useTranslation()
-  const apiProviderId = useActiveSession((s) => s.apiProviderId)
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
   const bindings = useSettingsStore((s) => s.bindings)
@@ -21,6 +36,7 @@ export function useSelectorProviders(harness: HarnessId) {
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
+  const resolvedProviderId = useResolvedProviderId(harness)
 
   // Keep scope aligned with host even if chat opened without a host-switch path.
   useEffect(() => {
@@ -42,15 +58,6 @@ export function useSelectorProviders(harness: HarnessId) {
     () => credentialsForConsumer(platforms, credentials, consumer, { experimentalClaudeOpenAiChatEnabled }),
     [platforms, credentials, consumer, experimentalClaudeOpenAiChatEnabled],
   )
-
-  // When the session has no explicit override, show the globally-bound default provider,
-  // not the abstract "Default" entry — resolveEffective mirrors the main-process selection.
-  const resolvedProviderId = useMemo(() => {
-    if (apiProviderId) return apiProviderId
-    return resolveEffective(platforms, credentials, bindings, consumer, apiProviderId, {
-      experimentalClaudeOpenAiChatEnabled,
-    })?.credential.id ?? null
-  }, [apiProviderId, platforms, credentials, bindings, consumer, experimentalClaudeOpenAiChatEnabled])
 
   const providers = useMemo<SelectorProviderOption[]>(() => {
     const defaultLabel = harness === 'codex'

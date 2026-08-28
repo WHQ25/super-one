@@ -75,6 +75,19 @@ afterEach(() => {
 })
 
 describe('ChatMessage token footer', () => {
+  it('omits the assistant footer when requested', () => {
+    const { container } = render(
+      <ChatMessage
+        message={createClaudeMessage([{ type: 'text', text: 'Timeline reply' }])}
+        sessionStatus="idle"
+        isLastAssistant
+        hideFooter
+      />,
+    )
+
+    expect(container.querySelector('[class~="group/footer"]')).toBeNull()
+  })
+
   it('falls back to metadata.usage for completed ACP turns without consumedTokens', () => {
     render(
       <ChatMessage

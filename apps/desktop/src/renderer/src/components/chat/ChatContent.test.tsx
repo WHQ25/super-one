@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 interface FakeSessionState {
@@ -216,6 +216,7 @@ Object.assign(window.app, {
 
 import { ChatContent } from './ChatContent'
 import { useAppStore } from '@/stores/app'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { createRef } from 'react'
 
 function renderContent() {
@@ -224,6 +225,7 @@ function renderContent() {
 }
 
 afterEach(() => {
+  useCodexRealtimeViewStore.setState({ sessions: {} })
   hoisted.sessionState.queuedMessages = []
   hoisted.sessionState.sessionProvider = 'claude'
   hoisted.sessionState.preferredProvider = 'claude'
@@ -353,6 +355,57 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
     expect(screen.getByTestId('draft-session-surface')).toBeInTheDocument()
+  })
+
+  it('does not apply the default harness to a Codex thread with only realtime history', () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    useCodexRealtimeViewStore.getState().setTimeline('sid-1', {
+      segments: [],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    })
+
+    renderContent()
+
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+    expect(screen.getByTestId('draft-session-surface')).toBeInTheDocument()
+  })
+
+  it('renders canonical Codex turns behind a voice-only session', async () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    const timeline = {
+      segments: [],
+      threadMessages: [{
+        id: 'codex-timeline-turn-1',
+        role: 'assistant' as const,
+        status: 'complete' as const,
+        content: [{ type: 'text' as const, text: 'Backing Codex response' }],
+        createdAt: '',
+        providerId: 'codex',
+      }],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    }
+    useCodexRealtimeViewStore.getState().setTimeline('sid-1', timeline)
+    Object.assign(window.agent, { getRealtimeTimeline: vi.fn(async () => timeline) })
+
+    renderContent()
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-message-id="codex-timeline-turn-1"]')).not.toBeNull()
+    })
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
   })
 
   it('does NOT show ChatSuggestions while an un-hydrated stub is still loading (no flash)', () => {

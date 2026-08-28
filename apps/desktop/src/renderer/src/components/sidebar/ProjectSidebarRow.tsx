@@ -7,6 +7,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { useChatStore } from '@/stores/chat'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { MiniAppHostGroup } from './MiniAppHostGroup'
@@ -142,12 +143,18 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onNewSession,
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
+  const realtimeSessionSig = useCodexRealtimeViewStore((state) => Object.entries(state.sessions)
+    .filter(([, session]) => session.hasTimeline)
+    .map(([sessionId]) => sessionId)
+    .sort()
+    .join('\x01'))
   const liveSessionSig = useChatStore(useShallow((s) => {
     const proj = s.projectSessions[folder.path]
     const sig: Record<string, string> = {}
     if (proj?._sessions) {
       for (const [sid, data] of Object.entries(proj._sessions)) {
-        if (data.messages.length === 0) continue
+        const hasRealtimeTimeline = useCodexRealtimeViewStore.getState().sessions[sid]?.hasTimeline ?? false
+        if (data.messages.length === 0 && !hasRealtimeTimeline) continue
         sig[sid] = [
           data.status ?? '',
           data.messages.length,
@@ -162,6 +169,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           data._gitBranch ?? '',
           data._worktreePath ?? '',
           getSessionTitle(data.messages) ?? '',
+          hasRealtimeTimeline ? 1 : 0,
         ].join('\x01')
       }
     }
@@ -203,13 +211,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     if (projectSession?._sessions) {
       const live: SessionHistoryEntry[] = []
       for (const [sid, data] of Object.entries(projectSession._sessions)) {
-        if (data.messages.length === 0) continue
+        const hasRealtimeTimeline = useCodexRealtimeViewStore.getState().sessions[sid]?.hasTimeline ?? false
+        if (data.messages.length === 0 && !hasRealtimeTimeline) continue
         const title = getSessionTitle(data.messages)
         const dbEntry = dbSessionById.get(sid)
         if (dbEntry?.isHidden) continue
         if (dbEntry) continue
         const isUnseen = projectSession.unseenCompletedSessions.has(sid)
-        if (!isLiveSession(data, isUnseen)) continue
+        if (!hasRealtimeTimeline && !isLiveSession(data, isUnseen)) continue
         if (!title && !data._historyHydrated) continue
         live.push({
           sessionId: sid,
@@ -231,6 +240,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       const entry = projectSession?._sessions?.[session.sessionId]
       const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
       if (!entry && !isUnseen) return false
+      if (useCodexRealtimeViewStore.getState().sessions[session.sessionId]?.hasTimeline) return true
       return isLiveSession(entry, isUnseen)
     }
     const liveGroups = isExpanded ? [] : groups.filter((group) =>
@@ -252,7 +262,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       hasOverflow: groups.length > maxSessions,
       isLive,
     }
-  }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel, scheduledBySession])
+  }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, realtimeSessionSig, expandLevel, scheduledBySession])
 
   /**
    * Every opened mini-app owns a host process, so listing live hosts would just

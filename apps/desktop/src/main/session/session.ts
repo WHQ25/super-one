@@ -227,6 +227,8 @@ export class Session implements SessionContract {
    */
   private _needsStaleReconcile = false
   private _title: string | null = null
+  /** Rename a new voice-only session from its first complete user utterance. */
+  private _realtimeTitlePending = false
   private _totalCostUsd = 0
   private _contextTokens = 0
   private _taskProgress: Record<string, TaskProgressEntry> = {}
@@ -781,8 +783,23 @@ export class Session implements SessionContract {
     }
     if (this.isStreaming()) throw new Error('Wait for the current turn to finish before starting voice.')
     await this.waitForRuntimeRelease()
+    if (request.additionalDirs !== undefined) this.callerScopedDirs = [...request.additionalDirs]
+    const nextDirs = this.resolveEffectiveDirs()
+    const dirsChanged = this.dirsReachBackend() && !sameStringArray(nextDirs, this.additionalDirectories)
+    this.additionalDirectories = nextDirs
+    if (dirsChanged && this.backendStarted) {
+      const applied = (await this.backend.setAdditionalDirectories?.(this.additionalDirectories)) ?? false
+      if (!applied) await this.rebuildBackend()
+    }
+    const shouldTitleFromFirstUtterance = this._title === null && this._messages.length === 0
     await this.ensureStarted()
     await this.backend.startRealtimeVoice(request)
+    if (shouldTitleFromFirstUtterance && this._title === null && this._messages.length === 0) {
+      this._realtimeTitlePending = true
+    }
+    // A voice-only conversation has no SuperOne messages yet, but it is still a
+    // durable product session because Codex has now created/attached its thread.
+    this.notifyStateChange(true)
   }
 
   async stopRealtimeVoice(): Promise<void> {
@@ -793,7 +810,7 @@ export class Session implements SessionContract {
   async getRealtimeTimeline(): Promise<import('@superone/shared/agent-types').RealtimeTimelineResult> {
     this.assertNotDisposed()
     if (this.harnessId !== 'codex' || !this.backend.getRealtimeTimeline) {
-      return { segments: [], activeRealtimeSessionId: null }
+      return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
     }
     await this.waitForRuntimeRelease()
     await this.ensureStarted()
@@ -1679,6 +1696,18 @@ export class Session implements SessionContract {
   private forwardEvent(event: AgentEvent): AgentEvent {
     this._lastEventAt = Date.now()
     this.touchRuntimeActivity()
+    if (
+      this._realtimeTitlePending
+      && event.type === 'realtime_transcript'
+      && event.role === 'user'
+      && event.final
+    ) {
+      const title = event.text.trim().replace(/\s+/g, ' ').slice(0, 100)
+      if (title) {
+        this._realtimeTitlePending = false
+        this.setTitle(title, 'agent')
+      }
+    }
     // Stream liveness follows the backend, not the send call — see `_backendStreaming`.
     if (event.type === 'status_change') {
       if (event.status === 'streaming') this.openBackendStream()
@@ -2010,12 +2039,12 @@ export class Session implements SessionContract {
     }
   }
 
-  private notifyStateChange(): void {
+  private notifyStateChange(allowEmpty = false): void {
     if (!this.onStateChange) return
     // Empty transcript is only persisted after an explicit removal (truncate).
     // Avoid creating DB rows / sessions_started for never-messaged sessions
     // (api provider switch, ghost message_complete, etc.).
-    if (this._messages.length === 0 && !this._needsStaleReconcile) return
+    if (this._messages.length === 0 && !this._needsStaleReconcile && !allowEmpty) return
     const isWorktree = this._cwd !== this.projectPath
     if (this.harnessId === 'acp' && !this._acpAgentId) {
       this._acpAgentId = agentIdFromConfig(this.providerConfig)
@@ -2063,6 +2092,7 @@ export class Session implements SessionContract {
     if (this._status === 'disposed') return
     const trimmed = title.trim()
     if (!trimmed) return
+    this._realtimeTitlePending = false
     if (this._title === trimmed) return
     this._title = trimmed
     try {

@@ -96,6 +96,8 @@ export interface NotificationDispatcher {
   readonly mainInbox: NotificationInbox
   registerForkInbox(threadId: string): NotificationInbox
   unregisterForkInbox(threadId: string): void
+  registerRealtimeInbox(threadId: string): NotificationInbox
+  unregisterRealtimeInbox(threadId: string): void
   hasForkInbox(threadId: string): boolean
   forkThreadIds(): string[]
   close(reason?: string): void
@@ -112,6 +114,7 @@ export function createNotificationDispatcher(
 ): NotificationDispatcher {
   const mainState: InboxState = { queue: [], waiters: [], closed: false }
   const forkStates = new Map<string, InboxState>()
+  const realtimeStates = new Map<string, InboxState>()
   let dispatcherClosed = false
 
   const pushTo = (state: InboxState, notif: AppServerNotification): void => {
@@ -157,6 +160,20 @@ export function createNotificationDispatcher(
       forkStates.delete(threadId)
       closeInboxState(state)
     },
+    registerRealtimeInbox: (threadId) => {
+      let state = realtimeStates.get(threadId)
+      if (!state) {
+        state = { queue: [], waiters: [], closed: false }
+        realtimeStates.set(threadId, state)
+      }
+      return makeInbox(state)
+    },
+    unregisterRealtimeInbox: (threadId) => {
+      const state = realtimeStates.get(threadId)
+      if (!state) return
+      realtimeStates.delete(threadId)
+      closeInboxState(state)
+    },
     hasForkInbox: (threadId) => forkStates.has(threadId),
     forkThreadIds: () => Array.from(forkStates.keys()),
     close: (reason) => {
@@ -167,7 +184,11 @@ export function createNotificationDispatcher(
       for (const state of forkStates.values()) {
         closeInboxState(state, err)
       }
+      for (const state of realtimeStates.values()) {
+        closeInboxState(state, err)
+      }
       forkStates.clear()
+      realtimeStates.clear()
     },
   }
 
@@ -180,7 +201,9 @@ export function createNotificationDispatcher(
         const error = err instanceof Error ? err : new Error(String(err))
         closeInboxState(mainState, error)
         for (const state of forkStates.values()) closeInboxState(state, error)
+        for (const state of realtimeStates.values()) closeInboxState(state, error)
         forkStates.clear()
+        realtimeStates.clear()
         dispatcherClosed = true
         return
       }
@@ -200,6 +223,9 @@ export function createNotificationDispatcher(
         }
       }
       const forkState = threadId ? forkStates.get(threadId) : undefined
+      const realtimeState = threadId && notif.method.startsWith('thread/realtime/')
+        ? realtimeStates.get(threadId)
+        : undefined
       if (process.env.NODE_ENV === 'development' && (notif.method === 'mcpServer/elicitation/request' || notif.method.startsWith('applyExecApproval') || notif.method.startsWith('applyPatchApproval'))) {
         trace('codex.dispatch', 'approval_route', {
           method: notif.method,
@@ -209,7 +235,8 @@ export function createNotificationDispatcher(
           paramsKeys: Object.keys(notif.params),
         })
       }
-      if (forkState) pushTo(forkState, notif)
+      if (realtimeState) pushTo(realtimeState, notif)
+      else if (forkState) pushTo(forkState, notif)
       else pushTo(mainState, notif)
     }
   })()

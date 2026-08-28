@@ -1272,6 +1272,15 @@ export type Messages = {
     }
   }
   chat: {
+    realtimeVoice: {
+      start: string
+      stop: string
+      listening: string
+      timeline: string
+      waiting: string
+      offerFailed: string
+      connectionTimedOut: string
+    }
     compactMode: {
       detail: string
       toolCalls: string
@@ -4852,6 +4861,15 @@ export const en: Messages = {
     },
   },
   chat: {
+    realtimeVoice: {
+      start: 'Start Voice Conversation',
+      stop: 'Stop Voice Conversation',
+      listening: 'Realtime Voice',
+      timeline: 'Voice Timeline',
+      waiting: 'Listening for speech…',
+      offerFailed: 'Could not create the WebRTC offer.',
+      connectionTimedOut: 'Realtime voice connection timed out.',
+    },
     compactMode: {
       detail: 'Detail',
       toolCalls: '{{count}} tool calls',

@@ -68,6 +68,7 @@ import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashComman
 import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
 import { CodexGoalDialog } from './CodexGoalDialog'
 import { CodexGoalIndicator } from './CodexGoalIndicator'
+import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
 import { GrokGoalDialog } from './GrokGoalDialog'
 import { GrokGoalIndicator } from './GrokGoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
@@ -1945,6 +1946,9 @@ export function ChatInput() {
 
           <div className="flex items-center gap-1.5">
             <ContextUsage />
+            {activeProviderForResources === 'codex' && displayedSessionId && (
+              <CodexRealtimeVoiceButton sessionId={displayedSessionId} disabled={isStreaming} />
+            )}
             {isStreaming && (
               <StopButton
                 onInterrupt={interrupt}

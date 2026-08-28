@@ -1341,6 +1341,15 @@ export const zh: Messages = {
     },
   },
   chat: {
+    realtimeVoice: {
+      start: '开始语音对话',
+      stop: '结束语音对话',
+      listening: '实时语音',
+      timeline: '语音时间线',
+      waiting: '正在等待语音输入…',
+      offerFailed: '无法创建 WebRTC 连接请求。',
+      connectionTimedOut: '实时语音连接超时。',
+    },
     compactMode: {
       detail: '详细过程',
       toolCalls: '{{count}} 次工具调用',

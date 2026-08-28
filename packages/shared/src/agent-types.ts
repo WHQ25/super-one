@@ -1730,10 +1730,34 @@ export type AgentEventBase =
    * `goal: null` means the agent cleared the goal.
    */
   | { type: 'acp_goal'; goal: AcpGoal | null }
+  | { type: 'realtime_started'; realtimeSessionId?: string; version: string }
+  | { type: 'realtime_sdp'; sdp: string }
+  | { type: 'realtime_transcript'; role: RealtimeTranscriptRole; text: string; final: boolean }
+  | { type: 'realtime_error'; error: string }
+  | { type: 'realtime_closed'; reason?: string }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 
 export type AgentStatus = 'idle' | 'streaming' | 'background' | 'error'
+
+export type RealtimeTranscriptRole = 'user' | 'assistant'
+
+export interface RealtimeVoiceStartRequest {
+  sdp: string
+  voice?: string
+}
+
+export interface RealtimeTimelineSegment {
+  id: string
+  realtimeSessionId: string
+  role: RealtimeTranscriptRole
+  text: string
+}
+
+export interface RealtimeTimelineResult {
+  segments: RealtimeTimelineSegment[]
+  activeRealtimeSessionId: string | null
+}
 
 // --- Renderer → Main requests ---
 
@@ -3297,6 +3321,9 @@ export const AgentIpcChannels = {
   START_QUEUED_MESSAGES: 'agent:start-queued-messages',
   PREWARM: 'agent:prewarm',
   INTERRUPT: 'agent:interrupt',
+  START_REALTIME_VOICE: 'agent:start-realtime-voice',
+  STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
+  GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
   STOP_TASK: 'agent:stop-task',
   EVENT: 'agent:event',
   PERMISSION_RESPONSE: 'agent:permission-response',

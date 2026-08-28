@@ -774,6 +774,32 @@ export class Session implements SessionContract {
     return true
   }
 
+  async startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void> {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex' || !this.backend.startRealtimeVoice) {
+      throw new Error('Realtime voice is not supported by this agent.')
+    }
+    if (this.isStreaming()) throw new Error('Wait for the current turn to finish before starting voice.')
+    await this.waitForRuntimeRelease()
+    await this.ensureStarted()
+    await this.backend.startRealtimeVoice(request)
+  }
+
+  async stopRealtimeVoice(): Promise<void> {
+    if (this._status === 'disposed') return
+    await this.backend.stopRealtimeVoice?.()
+  }
+
+  async getRealtimeTimeline(): Promise<import('@superone/shared/agent-types').RealtimeTimelineResult> {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex' || !this.backend.getRealtimeTimeline) {
+      return { segments: [], activeRealtimeSessionId: null }
+    }
+    await this.waitForRuntimeRelease()
+    await this.ensureStarted()
+    return this.backend.getRealtimeTimeline()
+  }
+
   async requestSessionRecap(auto: boolean): Promise<boolean> {
     if (this._status === 'disposed') return false
     if (this.harnessId !== 'acp') return false

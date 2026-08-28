@@ -101,6 +101,29 @@ describe('NotificationDispatcher', () => {
     dispatcher.close()
   })
 
+  it('isolates realtime notifications without stealing ordinary thread events', async () => {
+    const { connection } = makeQueueConnection([])
+    const dispatcher = createNotificationDispatcher(connection)
+    const realtimeInbox = dispatcher.registerRealtimeInbox('main-1')
+    pushNotification(connection, { method: 'thread/realtime/sdp', params: { threadId: 'main-1', sdp: 'answer' } })
+    pushNotification(connection, { method: 'item/completed', params: { threadId: 'main-1', item: {} } })
+
+    await expect(realtimeInbox.next()).resolves.toMatchObject({ method: 'thread/realtime/sdp' })
+    await expect(dispatcher.mainInbox.next()).resolves.toMatchObject({ method: 'item/completed' })
+    dispatcher.close()
+  })
+
+  it('returns realtime notifications to the main inbox after unregister', async () => {
+    const { connection } = makeQueueConnection([])
+    const dispatcher = createNotificationDispatcher(connection)
+    dispatcher.registerRealtimeInbox('main-1')
+    dispatcher.unregisterRealtimeInbox('main-1')
+    pushNotification(connection, { method: 'thread/realtime/closed', params: { threadId: 'main-1' } })
+
+    await expect(dispatcher.mainInbox.next()).resolves.toMatchObject({ method: 'thread/realtime/closed' })
+    dispatcher.close()
+  })
+
   it('reads threadId from nested params.thread.id', async () => {
     const { connection } = makeQueueConnection([])
     const dispatcher = createNotificationDispatcher(connection)

@@ -1836,6 +1836,27 @@ export class AgentService {
       return session.interrupt()
     })
 
+    ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session) throw new Error('Session not found.')
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      await session.startRealtimeVoice(request)
+    })
+
+    ipcMain.handle(AgentIpcChannels.STOP_REALTIME_VOICE, async (_event, sessionId: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session) return
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      await session.stopRealtimeVoice()
+    })
+
+    ipcMain.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, sessionId: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session) return { segments: [], activeRealtimeSessionId: null }
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      return session.getRealtimeTimeline()
+    })
+
     ipcMain.handle(AgentIpcChannels.STOP_TASK, async (_event, sessionId: string, taskId: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return false
@@ -3131,6 +3152,9 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.START_QUEUED_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
+    ipcMain.removeHandler(AgentIpcChannels.START_REALTIME_VOICE)
+    ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
+    ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_TASK)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)

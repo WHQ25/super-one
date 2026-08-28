@@ -270,6 +270,9 @@ export interface SessionBackend {
   prewarm(opts: BackendStartOptions): void
   send(request: SendMessageRequest): Promise<void>
   interrupt(): Promise<void>
+  startRealtimeVoice?(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void>
+  stopRealtimeVoice?(): Promise<void>
+  getRealtimeTimeline?(): Promise<import('@superone/shared/agent-types').RealtimeTimelineResult>
   close(): Promise<void>
   setModel(model: string): Promise<void>
   /** ACP session config option category=mode; no-op for other harnesses. */
@@ -362,6 +365,9 @@ export interface Session {
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
   send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin }): Promise<void>
   interrupt(): Promise<boolean>
+  startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void>
+  stopRealtimeVoice(): Promise<void>
+  getRealtimeTimeline(): Promise<import('@superone/shared/agent-types').RealtimeTimelineResult>
   setPermissionMode(mode: PermissionMode): Promise<void>
   /** Grok ACP return-from-away / `/recap` — no-op for other harnesses. Returns true if RPC sent. */
   requestSessionRecap?(auto: boolean): Promise<boolean>

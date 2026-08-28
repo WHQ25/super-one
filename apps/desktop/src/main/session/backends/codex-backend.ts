@@ -18,6 +18,8 @@ import type {
   PermissionRequest,
   QuestionAnnotations,
   RewindFilesResult,
+  RealtimeTimelineResult,
+  RealtimeVoiceStartRequest,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
@@ -50,6 +52,11 @@ import {
 } from '../../codex/codex-turn'
 import { CodexTurnUsageAccumulator } from '../../codex/codex-usage-accumulator'
 import { CodexGoalController } from '../../codex/codex-goal-controller'
+import {
+  listCodexRealtimeTimeline,
+  startCodexRealtime,
+  type CodexRealtimeHandle,
+} from '../../codex/codex-realtime'
 import {
   TaskNotificationFlush,
   TaskNotificationQueue,
@@ -255,6 +262,7 @@ export class CodexBackend implements SessionBackend {
   private queueRefreshRequested = false
 
   private session: CodexSession | null = null
+  private realtimeHandle: CodexRealtimeHandle | null = null
   private authChangedUnsub: (() => void) | null = null
 
   private warmHandlePromise: Promise<WarmCodexHandle | null> | null = null
@@ -636,6 +644,7 @@ export class CodexBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     this.assertStarted()
+    if (this.realtimeHandle) throw new Error('Stop realtime voice before sending a text turn.')
     if ((request.priority === 'next' || request.priority === 'later') && this.isTurnBusy()) {
       await this.enqueueDurableMessage(request)
       return
@@ -865,10 +874,52 @@ export class CodexBackend implements SessionBackend {
     this.interruptSession()
   }
 
+  async startRealtimeVoice(request: RealtimeVoiceStartRequest): Promise<void> {
+    this.assertStarted()
+    if (this.realtimeHandle) throw new Error('Realtime voice is already active.')
+    if (this.isTurnBusy()) throw new Error('Wait for the current Codex turn to finish before starting voice.')
+    const session = this.session
+    const startOpts = this.startOpts
+    if (!session || !startOpts) throw new Error('Codex realtime session is unavailable.')
+    const handle = await startCodexRealtime(
+      session,
+      this.service.getProjectAuth(startOpts.projectPath),
+      startOpts.projectPath,
+      startOpts.cwd || startOpts.projectPath,
+      request,
+      (event) => this.emit(event),
+    )
+    this.realtimeHandle = handle
+    void handle.closed.finally(() => {
+      if (this.realtimeHandle === handle) this.realtimeHandle = null
+    })
+  }
+
+  async stopRealtimeVoice(): Promise<void> {
+    const handle = this.realtimeHandle
+    if (!handle) return
+    await handle.stop()
+  }
+
+  async getRealtimeTimeline(): Promise<RealtimeTimelineResult> {
+    this.assertStarted()
+    const session = this.session
+    const startOpts = this.startOpts
+    if (!session || !startOpts) return { segments: [], activeRealtimeSessionId: null }
+    return listCodexRealtimeTimeline(
+      session,
+      this.service.getProjectAuth(startOpts.projectPath),
+      startOpts.projectPath,
+      startOpts.cwd || startOpts.projectPath,
+    )
+  }
+
   async close(): Promise<void> {
     if (this.disposed) return
     this.goalController.stop()
     this.taskNotificationFlush.dispose()
+    try { await this.realtimeHandle?.stop() } catch { /* connection teardown below is authoritative */ }
+    this.realtimeHandle = null
     const session = this.session
     try {
       if (session && (session.runningController || this.activeRun)) resetCodexSession(session)
@@ -1002,7 +1053,7 @@ export class CodexBackend implements SessionBackend {
   }
 
   hasActiveBackgroundTasks(): boolean {
-    return this.goalController.active
+    return this.goalController.active || this.realtimeHandle !== null
   }
 
   async getCodexGoal(threadId: string): Promise<CodexGoal | null> {

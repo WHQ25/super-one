@@ -18,6 +18,12 @@ import { isBlankUrl } from './browser-url'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { fitScreenshotWidth } from './screenshot-fit'
+import {
+  analyzeBrowserCaptureProbe,
+  BROWSER_CAPTURE_PROBE_RECT,
+  INSTALL_BROWSER_CAPTURE_PROBE_SCRIPT,
+  REMOVE_BROWSER_CAPTURE_PROBE_SCRIPT,
+} from './browser-capture-readiness'
 
 // Video, not stills: this bounds the canvas the MediaRecorder encodes at 2 Mbps,
 // so it answers to bitrate rather than to the agent's context budget. Screenshots
@@ -760,6 +766,71 @@ function nextPaint(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 }
 
+async function readBrowserCapturePixels(image: Electron.NativeImage): Promise<{
+  data: Uint8ClampedArray
+  width: number
+  height: number
+}> {
+  const size = image.getSize()
+  const element = await loadCanvasImage(image.toDataURL())
+  const canvas = document.createElement('canvas')
+  canvas.width = size.width
+  canvas.height = size.height
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('Browser capture readiness canvas is unavailable')
+  context.drawImage(element, 0, 0, size.width, size.height)
+  return {
+    data: context.getImageData(0, 0, size.width, size.height).data,
+    width: size.width,
+    height: size.height,
+  }
+}
+
+async function waitForFullResolutionBrowserCapture(id: string, timeoutMs = 1_500): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  let consecutiveSharpFrames = 0
+  let lastAnalysis = { ready: false, matchedPixels: 0, sampledPixels: 0, centerPixels: [] as number[][] }
+
+  await browserExecJs(id, INSTALL_BROWSER_CAPTURE_PROBE_SCRIPT)
+  try {
+    while (Date.now() <= deadline) {
+      const image = await browserCapture(id, BROWSER_CAPTURE_PROBE_RECT)
+      if (image && !image.isEmpty()) {
+        const pixels = await readBrowserCapturePixels(image)
+        lastAnalysis = analyzeBrowserCaptureProbe(pixels.data, pixels.width, pixels.height)
+        consecutiveSharpFrames = lastAnalysis.ready ? consecutiveSharpFrames + 1 : 0
+        if (consecutiveSharpFrames >= 2) break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    if (consecutiveSharpFrames < 2) {
+      throw new Error(
+        `Browser capture did not reach full resolution after ${timeoutMs}ms `
+        + `(${lastAnalysis.matchedPixels}/${lastAnalysis.sampledPixels} probe pixels matched; `
+        + `centers=${lastAnalysis.centerPixels.map((pixel) => pixel.join(',')).join('/')})`,
+      )
+    }
+  } finally {
+    await browserExecJs(id, REMOVE_BROWSER_CAPTURE_PROBE_SCRIPT)
+  }
+
+  // Do not let the transient ruler leak into the returned screenshot. Seeing its
+  // signature disappear is a guest-renderer acknowledgement, unlike a host rAF.
+  const removalDeadline = Date.now() + timeoutMs
+  let consecutiveCleanFrames = 0
+  while (Date.now() <= removalDeadline) {
+    const image = await browserCapture(id, BROWSER_CAPTURE_PROBE_RECT)
+    if (image && !image.isEmpty()) {
+      const pixels = await readBrowserCapturePixels(image)
+      const probeStillVisible = analyzeBrowserCaptureProbe(pixels.data, pixels.width, pixels.height).ready
+      consecutiveCleanFrames = probeStillVisible ? 0 : consecutiveCleanFrames + 1
+      if (consecutiveCleanFrames >= 2) return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`Browser capture probe removal timed out after ${timeoutMs}ms`)
+}
+
 async function waitForTabRegistered(id: string, timeoutMs = 8_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() <= deadline) {
@@ -878,9 +949,10 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       // BrowserHostLayer to render it in-viewport (opacity-masked); endCapture in
       // finally restores the cheap resting state so idle tabs cost nothing.
       const store = useBrowserStore.getState()
-      store.beginCapture(id)
+      store.beginFullResolutionCapture(id)
       try {
         await nextPaint()
+        await waitForFullResolutionBrowserCapture(id)
         // Resolve the selector box only after the tab is in-viewport — a
         // display:none tab reports an all-zero getBoundingClientRect.
         let rect: Electron.Rectangle | undefined
@@ -911,7 +983,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
         const data = final.toDataURL().split(',')[1] ?? ''
         return { mimeType: 'image/png' as const, data, width: size.width, height: size.height }
       } finally {
-        store.endCapture(id)
+        store.endFullResolutionCapture(id)
       }
     }
     case 'navigate': {

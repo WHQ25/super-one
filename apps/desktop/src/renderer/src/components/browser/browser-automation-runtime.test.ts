@@ -125,6 +125,97 @@ describe('browser automation presentation activity', () => {
       unregister()
     }
   })
+
+  it('waits for two sharp guest probes and their removal before reading screenshot pixels', async () => {
+    useBrowserStore.setState({
+      tabs: {},
+      captureRefs: {},
+      fullResolutionCaptureRefs: {},
+      automationCounts: {},
+      activeAutomationId: null,
+      pendingPreviewBrowserId: null,
+      automationPreviewBrowserId: null,
+    })
+    useBrowserStore.getState().ensure('browser-shot', 'https://example.com', 'session-a')
+    const order: string[] = []
+    let probeInstalled = false
+    const originalImage = globalThis.Image
+    const createElement = document.createElement.bind(document)
+    const executeJavaScript = vi.fn(async (script: string) => {
+      probeInstalled = script.includes('appendChild(probe)')
+      order.push(probeInstalled ? 'install' : 'remove')
+      return true
+    })
+    const probeBitmap = (sharp: boolean) => {
+      const width = 64
+      const height = 16
+      const data = new Uint8Array(width * height * 4)
+      const colors = [
+        [0, 0, 255, 255],
+        [0, 255, 0, 255],
+        [255, 0, 0, 255],
+        [255, 255, 255, 255],
+      ]
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          data.set(sharp ? colors[x % 4]! : [255, 255, 255, 255], (y * width + x) * 4)
+        }
+      }
+      return data
+    }
+    class FakeImage {
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.())
+      }
+    }
+    globalThis.Image = FakeImage as unknown as typeof Image
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
+      if (tagName !== 'canvas') return createElement(tagName)
+      return {
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          drawImage: () => {},
+          getImageData: () => ({ data: probeBitmap(probeInstalled) }),
+        }),
+      } as unknown as HTMLCanvasElement
+    }) as typeof document.createElement)
+    const capturePage = vi.fn(async (rect?: Electron.Rectangle) => {
+      if (rect) order.push(probeInstalled ? 'sharp-probe' : 'clean-probe')
+      else order.push('capture')
+      return {
+        isEmpty: () => false,
+        getSize: () => rect ? ({ width: 64, height: 16 }) : ({ width: 400, height: 800 }),
+        toDataURL: () => 'data:image/png;base64,AA==',
+      } as Electron.NativeImage
+    })
+    const unregister = registerBrowserWebview('browser-shot', {
+      executeJavaScript,
+      capturePage,
+    } as unknown as Electron.WebviewTag)
+
+    try {
+      await runBrowserOp('session-a', 'screenshot', { tab: 'browser-shot' })
+
+      expect(order).toEqual([
+        'install',
+        'sharp-probe',
+        'sharp-probe',
+        'remove',
+        'clean-probe',
+        'clean-probe',
+        'capture',
+      ])
+      expect(useBrowserStore.getState().captureRefs['browser-shot']).toBeUndefined()
+      expect(useBrowserStore.getState().fullResolutionCaptureRefs['browser-shot']).toBeUndefined()
+    } finally {
+      unregister()
+      createElementSpy.mockRestore()
+      globalThis.Image = originalImage
+    }
+  })
 })
 
 describe('automation host focus guard', () => {

@@ -38,6 +38,7 @@ interface BrowserStore {
   overlaySlots: Record<string, BrowserSlot>
   emulations: Record<string, BrowserEmulation>
   captureRefs: Record<string, number>
+  fullResolutionCaptureRefs: Record<string, number>
   automationCounts: Record<string, number>
   activeAutomationId: string | null
   pendingPreviewBrowserId: string | null
@@ -59,6 +60,8 @@ interface BrowserStore {
   setEmulation: (id: string, emulation: BrowserEmulation | null) => void
   beginCapture: (id: string) => void
   endCapture: (id: string) => void
+  beginFullResolutionCapture: (id: string) => void
+  endFullResolutionCapture: (id: string) => void
   beginAutomation: (id: string) => void
   endAutomation: (id: string) => void
   markAutomationPreviewReady: (id: string) => void
@@ -83,6 +86,15 @@ const DEFAULT_TAB: BrowserTabState = {
   certError: null,
 }
 
+function incrementRef(refs: Record<string, number>, id: string): Record<string, number> {
+  return { ...refs, [id]: (refs[id] ?? 0) + 1 }
+}
+
+function decrementRef(refs: Record<string, number>, id: string): Record<string, number> {
+  const next = (refs[id] ?? 0) - 1
+  return next > 0 ? { ...refs, [id]: next } : withoutKey(refs, id)
+}
+
 export const useBrowserStore = create<BrowserStore>((set) => ({
   tabs: {},
   slots: {},
@@ -90,6 +102,7 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
   overlaySlots: {},
   emulations: {},
   captureRefs: {},
+  fullResolutionCaptureRefs: {},
   automationCounts: {},
   activeAutomationId: null,
   pendingPreviewBrowserId: null,
@@ -117,6 +130,7 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       overlaySlots: withoutKey(s.overlaySlots, id),
       emulations: withoutKey(s.emulations, id),
       captureRefs: withoutKey(s.captureRefs, id),
+      fullResolutionCaptureRefs: withoutKey(s.fullResolutionCaptureRefs, id),
       automationCounts: withoutKey(s.automationCounts, id),
       activeAutomationId: s.activeAutomationId === id ? null : s.activeAutomationId,
       pendingPreviewBrowserId: s.pendingPreviewBrowserId === id ? null : s.pendingPreviewBrowserId,
@@ -131,12 +145,19 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
   setEmulation: (id, emulation) =>
     set((s) => (emulation ? { emulations: { ...s.emulations, [id]: emulation } } : { emulations: withoutKey(s.emulations, id) })),
   beginCapture: (id) =>
-    set((s) => ({ captureRefs: { ...s.captureRefs, [id]: (s.captureRefs[id] ?? 0) + 1 } })),
+    set((s) => ({ captureRefs: incrementRef(s.captureRefs, id) })),
   endCapture: (id) =>
-    set((s) => {
-      const next = (s.captureRefs[id] ?? 0) - 1
-      return { captureRefs: next > 0 ? { ...s.captureRefs, [id]: next } : withoutKey(s.captureRefs, id) }
-    }),
+    set((s) => ({ captureRefs: decrementRef(s.captureRefs, id) })),
+  beginFullResolutionCapture: (id) =>
+    set((s) => ({
+      captureRefs: incrementRef(s.captureRefs, id),
+      fullResolutionCaptureRefs: incrementRef(s.fullResolutionCaptureRefs, id),
+    })),
+  endFullResolutionCapture: (id) =>
+    set((s) => ({
+      captureRefs: decrementRef(s.captureRefs, id),
+      fullResolutionCaptureRefs: decrementRef(s.fullResolutionCaptureRefs, id),
+    })),
   // Readiness is a first-paint gate, not a per-call one: it keeps a blank tab off
   // screen until it has something to show. Once a tab has been presentable it stays
   // presentable for the rest of the turn — re-gating it here made the preview blink

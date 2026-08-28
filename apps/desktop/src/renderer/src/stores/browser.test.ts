@@ -11,6 +11,8 @@ beforeEach(() => {
     slots: {},
     pipSlots: {},
     overlaySlots: {},
+    captureRefs: {},
+    fullResolutionCaptureRefs: {},
     automationCounts: {},
     activeAutomationId: null,
     pendingPreviewBrowserId: null,
@@ -70,6 +72,22 @@ describe('browser preview controls', () => {
 })
 
 describe('browser automation activity', () => {
+  it('tracks full-resolution screenshots separately from long-lived capture activity', () => {
+    const store = useBrowserStore.getState()
+    store.beginCapture('browser-a')
+    store.beginFullResolutionCapture('browser-a')
+
+    expect(useBrowserStore.getState().captureRefs['browser-a']).toBe(2)
+    expect(useBrowserStore.getState().fullResolutionCaptureRefs['browser-a']).toBe(1)
+
+    store.endFullResolutionCapture('browser-a')
+    expect(useBrowserStore.getState().captureRefs['browser-a']).toBe(1)
+    expect(useBrowserStore.getState().fullResolutionCaptureRefs['browser-a']).toBeUndefined()
+
+    store.endCapture('browser-a')
+    expect(useBrowserStore.getState().captureRefs['browser-a']).toBeUndefined()
+  })
+
   it('tracks nested calls and falls back to another active browser', () => {
     const store = useBrowserStore.getState()
     store.beginAutomation('browser-a')

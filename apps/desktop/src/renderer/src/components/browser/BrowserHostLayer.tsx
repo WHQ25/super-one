@@ -80,6 +80,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   const previewHidden = useBrowserStore((s) => s.hiddenPreviewBrowserId === browserId)
   const emulation = useBrowserStore((s) => s.emulations[browserId])
   const capturing = useBrowserStore((s) => (s.captureRefs[browserId] ?? 0) > 0)
+  const fullResolutionCapturing = useBrowserStore((s) => (s.fullResolutionCaptureRefs[browserId] ?? 0) > 0)
   const activityShown = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
   // Match the main card corners: fullscreen drops outer radii on screen edges.
@@ -258,7 +259,10 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   const width = hasSlot ? restingSlot!.width : BROWSER_FALLBACK_VIEWPORT.width
   const height = hasSlot ? restingSlot!.height : BROWSER_FALLBACK_VIEWPORT.height
   const pipViewport = resolveBrowserPipViewport(emulation, panelSlot)
-  const webviewStyle = slot?.mode === 'pip'
+  const capturingPip = fullResolutionCapturing && slot?.mode === 'pip'
+  const hostWidth = capturingPip ? pipViewport.width : width
+  const hostHeight = capturingPip ? pipViewport.height : height
+  const webviewStyle = slot?.mode === 'pip' && !fullResolutionCapturing
     ? {
         width: pipViewport.width,
         height: pipViewport.height,
@@ -322,12 +326,12 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       data-browser-presentation={slot?.mode ?? restingSlot?.mode}
       style={{
         position: 'absolute',
-        left: inViewport ? (slot?.left ?? 0) : -99999,
-        top: inViewport ? (slot?.top ?? 0) : 0,
-        width,
-        height,
+        left: inViewport ? (capturingPip ? 0 : (slot?.left ?? 0)) : -99999,
+        top: inViewport ? (capturingPip ? 0 : (slot?.top ?? 0)) : 0,
+        width: hostWidth,
+        height: hostHeight,
         display: mounted || capturing ? 'block' : 'none',
-        opacity: visible ? 1 : 0,
+        opacity: visible && !capturingPip ? 1 : 0,
         clipPath,
         transition: capturing
           ? 'none'

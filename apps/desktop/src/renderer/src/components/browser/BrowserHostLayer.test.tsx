@@ -182,6 +182,32 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(webview.style.height).toBe('800px')
     expect(webview.style.transform).toBe('scale(0.5)')
 
+    // Recording keeps the normal PiP presentation for its whole lifetime.
+    act(() => useBrowserStore.getState().beginCapture('browser-a'))
+    expect(host.style.left).toBe('700px')
+    expect(host.style.width).toBe('280px')
+    expect(host.style.opacity).toBe('1')
+    expect(webview.style.transform).toBe('scale(0.5)')
+    act(() => useBrowserStore.getState().endCapture('browser-a'))
+
+    // A still screenshot is short-lived and needs the guest raster at 1:1.
+    act(() => useBrowserStore.getState().beginFullResolutionCapture('browser-a'))
+    expect(host.style.left).toBe('0px')
+    expect(host.style.top).toBe('0px')
+    expect(host.style.width).toBe('560px')
+    expect(host.style.height).toBe('800px')
+    expect(host.style.opacity).toBe('0')
+    expect(webview.style.width).toBe('100%')
+    expect(webview.style.height).toBe('100%')
+    expect(webview.style.transform).toBe('')
+
+    act(() => useBrowserStore.getState().endFullResolutionCapture('browser-a'))
+    expect(host.style.left).toBe('700px')
+    expect(host.style.top).toBe('80px')
+    expect(host.style.width).toBe('280px')
+    expect(host.style.opacity).toBe('1')
+    expect(webview.style.transform).toBe('scale(0.5)')
+
     act(() => useActivityPanelStore.getState().setShowPanel(true))
     expect(host.dataset.browserPresentation).toBe('panel')
     expect(host.style.left).toBe('120px')

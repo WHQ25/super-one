@@ -6,26 +6,9 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { preferTcpIceCandidates, startWebRtcDiagnostics, waitForIceGathering } from '@/lib/realtime-webrtc'
 
 type VoiceState = 'idle' | 'starting' | 'active' | 'stopping'
-
-async function waitForIceGathering(peer: RTCPeerConnection): Promise<void> {
-  if (peer.iceGatheringState === 'complete') return
-  await new Promise<void>((resolve, reject) => {
-    let timeout = 0
-    const onChange = (): void => {
-      if (peer.iceGatheringState !== 'complete') return
-      peer.removeEventListener('icegatheringstatechange', onChange)
-      window.clearTimeout(timeout)
-      resolve()
-    }
-    timeout = window.setTimeout(() => {
-      peer.removeEventListener('icegatheringstatechange', onChange)
-      reject(new Error('WebRTC ICE gathering timed out.'))
-    }, 10_000)
-    peer.addEventListener('icegatheringstatechange', onChange)
-  })
-}
 
 export interface CodexRealtimeVoiceButtonProps {
   projectPath: string
@@ -45,6 +28,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const stopDiagnosticsRef = useRef<(() => void) | null>(null)
   const stateRef = useRef<VoiceState>('idle')
   const timelineLoadedRef = useRef(false)
   const negotiationTimerRef = useRef<number | null>(null)
@@ -61,6 +45,8 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
   const releaseMedia = useCallback(() => {
     if (negotiationTimerRef.current !== null) window.clearTimeout(negotiationTimerRef.current)
     negotiationTimerRef.current = null
+    stopDiagnosticsRef.current?.()
+    stopDiagnosticsRef.current = null
     for (const track of streamRef.current?.getTracks() ?? []) track.stop()
     streamRef.current = null
     peerRef.current?.close()
@@ -89,7 +75,14 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
     if (event.type === 'realtime_sdp') {
       const peer = peerRef.current
       if (!peer || peer.signalingState === 'closed') return
-      void peer.setRemoteDescription({ type: 'answer', sdp: event.sdp }).then(() => {
+      const tcpPreference = preferTcpIceCandidates(event.sdp)
+      window.app?.trace?.('realtime.webrtc', 'tcp_preference', {
+        applied: tcpPreference.applied,
+        tcpCandidateCount: tcpPreference.tcpCandidateCount,
+        fallbackCandidateCount: tcpPreference.fallbackCandidateCount,
+        reprioritizedCandidateCount: tcpPreference.reprioritizedCandidateCount,
+      }, sessionId)
+      void peer.setRemoteDescription({ type: 'answer', sdp: tcpPreference.sdp }).then(() => {
         updateState('active')
       }).catch((error) => {
         toast.error(error instanceof Error ? error.message : String(error))
@@ -136,6 +129,11 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
       streamRef.current = stream
       const peer = new RTCPeerConnection()
       peerRef.current = peer
+      if (import.meta.env.DEV) {
+        stopDiagnosticsRef.current = startWebRtcDiagnostics(peer, (type, data) => {
+          window.app?.trace?.('realtime.webrtc', type, data, sessionId)
+        })
+      }
       peer.createDataChannel('oai-events')
       for (const track of stream.getAudioTracks()) peer.addTrack(track, stream)
       peer.ontrack = (event) => {

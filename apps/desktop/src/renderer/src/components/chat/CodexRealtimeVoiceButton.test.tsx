@@ -87,7 +87,11 @@ describe('CodexRealtimeVoiceButton', () => {
     })
     expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.view).toBe('realtime')
 
-    emit?.({ type: 'realtime_sdp', sessionId: 'session-1', sdp: 'remote-answer' })
+    emit?.({
+      type: 'realtime_sdp',
+      sessionId: 'session-1',
+      sdp: 'v=0\r\na=candidate:tcp 1 tcp 1671430143 192.0.2.1 443 typ host tcptype passive\r\n',
+    })
     await waitFor(() => expect(screen.getByRole('button')).not.toBeDisabled())
     expect(screen.getByRole('button').querySelector('.lucide-x')).not.toBeNull()
     fireEvent.click(screen.getByRole('button'))

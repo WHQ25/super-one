@@ -27,11 +27,12 @@ async function waitForIceGathering(peer: RTCPeerConnection): Promise<void> {
 }
 
 export interface CodexRealtimeVoiceButtonProps {
+  projectPath: string
   sessionId: string
   disabled?: boolean
 }
 
-export function CodexRealtimeVoiceButton({ sessionId, disabled = false }: CodexRealtimeVoiceButtonProps) {
+export function CodexRealtimeVoiceButton({ projectPath, sessionId, disabled = false }: CodexRealtimeVoiceButtonProps) {
   const { t } = useTranslation()
   const [state, setState] = useState<VoiceState>('idle')
   const [panelOpen, setPanelOpen] = useState(false)
@@ -62,13 +63,13 @@ export function CodexRealtimeVoiceButton({ sessionId, disabled = false }: CodexR
 
   const refreshTimeline = useCallback(async () => {
     try {
-      const timeline = await window.agent.getRealtimeTimeline(sessionId)
+      const timeline = await window.agent.getRealtimeTimeline(projectPath, sessionId)
       setSegments(timeline.segments)
       timelineLoadedRef.current = true
     } catch {
       // Timeline is supplementary; a live call can still proceed.
     }
-  }, [sessionId])
+  }, [projectPath, sessionId])
 
   useEffect(() => window.agent.onAgentEvent((event: AgentEvent) => {
     if (event.sessionId !== sessionId) return
@@ -117,8 +118,8 @@ export function CodexRealtimeVoiceButton({ sessionId, disabled = false }: CodexR
 
   useEffect(() => () => {
     releaseMedia()
-    if (stateRef.current !== 'idle') void window.agent.stopRealtimeVoice(sessionId)
-  }, [releaseMedia, sessionId])
+    if (stateRef.current !== 'idle') void window.agent.stopRealtimeVoice(projectPath, sessionId)
+  }, [projectPath, releaseMedia, sessionId])
 
   const start = useCallback(async () => {
     updateState('starting')
@@ -150,11 +151,11 @@ export function CodexRealtimeVoiceButton({ sessionId, disabled = false }: CodexR
       await waitForIceGathering(peer)
       const sdp = peer.localDescription?.sdp
       if (!sdp) throw new Error(t('chat.realtimeVoice.offerFailed'))
-      await window.agent.startRealtimeVoice(sessionId, { sdp, voice: 'cove' })
+      await window.agent.startRealtimeVoice(projectPath, sessionId, { sdp, voice: 'cove' })
       if (stateRef.current === 'starting') {
         negotiationTimerRef.current = window.setTimeout(() => {
           if (stateRef.current !== 'starting') return
-          void window.agent.stopRealtimeVoice(sessionId)
+          void window.agent.stopRealtimeVoice(projectPath, sessionId)
           releaseMedia()
           updateState('idle')
           toast.error(t('chat.realtimeVoice.connectionTimedOut'))
@@ -165,12 +166,12 @@ export function CodexRealtimeVoiceButton({ sessionId, disabled = false }: CodexR
       updateState('idle')
       toast.error(error instanceof Error ? error.message : String(error))
     }
-  }, [refreshTimeline, releaseMedia, sessionId, t, updateState])
+  }, [projectPath, refreshTimeline, releaseMedia, sessionId, t, updateState])
 
   const stop = useCallback(async () => {
     updateState('stopping')
     try {
-      await window.agent.stopRealtimeVoice(sessionId)
+      await window.agent.stopRealtimeVoice(projectPath, sessionId)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -178,7 +179,7 @@ export function CodexRealtimeVoiceButton({ sessionId, disabled = false }: CodexR
       updateState('idle')
       void refreshTimeline()
     }
-  }, [refreshTimeline, releaseMedia, sessionId, updateState])
+  }, [projectPath, refreshTimeline, releaseMedia, sessionId, updateState])
 
   const active = state === 'active' || state === 'stopping'
   const busy = state === 'starting' || state === 'stopping'

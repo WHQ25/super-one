@@ -53,14 +53,14 @@ const agentAPI = {
   interrupt: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, sessionId) as Promise<boolean>,
 
-  startRealtimeVoice: (sessionId: string, request: RealtimeVoiceStartRequest) =>
-    ipcRenderer.invoke(AgentIpcChannels.START_REALTIME_VOICE, sessionId, request) as Promise<void>,
+  startRealtimeVoice: (projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.START_REALTIME_VOICE, projectPath, sessionId, request) as Promise<void>,
 
-  stopRealtimeVoice: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.STOP_REALTIME_VOICE, sessionId) as Promise<void>,
+  stopRealtimeVoice: (projectPath: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.STOP_REALTIME_VOICE, projectPath, sessionId) as Promise<void>,
 
-  getRealtimeTimeline: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.GET_REALTIME_TIMELINE, sessionId) as Promise<RealtimeTimelineResult>,
+  getRealtimeTimeline: (projectPath: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_REALTIME_TIMELINE, projectPath, sessionId) as Promise<RealtimeTimelineResult>,
 
   stopTask: (sessionId: string, taskId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.STOP_TASK, sessionId, taskId) as Promise<boolean>,

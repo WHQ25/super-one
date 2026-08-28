@@ -64,10 +64,10 @@ describe('CodexRealtimeVoiceButton', () => {
   })
 
   it('negotiates WebRTC through the session API and stops the microphone', async () => {
-    render(<CodexRealtimeVoiceButton sessionId="session-1" />)
+    render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
     fireEvent.click(screen.getByRole('button'))
 
-    await waitFor(() => expect(startRealtimeVoice).toHaveBeenCalledWith('session-1', {
+    await waitFor(() => expect(startRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1', {
       sdp: 'local-offer',
       voice: 'cove',
     }))
@@ -76,7 +76,7 @@ describe('CodexRealtimeVoiceButton', () => {
     await waitFor(() => expect(screen.getByRole('button')).not.toBeDisabled())
     fireEvent.click(screen.getByRole('button'))
 
-    await waitFor(() => expect(stopRealtimeVoice).toHaveBeenCalledWith('session-1'))
+    await waitFor(() => expect(stopRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1'))
     expect(stopTrack).toHaveBeenCalled()
   })
 })

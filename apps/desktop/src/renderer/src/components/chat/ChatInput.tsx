@@ -1946,8 +1946,8 @@ export function ChatInput() {
 
           <div className="flex items-center gap-1.5">
             <ContextUsage />
-            {activeProviderForResources === 'codex' && displayedSessionId && (
-              <CodexRealtimeVoiceButton sessionId={displayedSessionId} disabled={isStreaming} />
+            {activeProviderForResources === 'codex' && activeProject && displayedSessionId && (
+              <CodexRealtimeVoiceButton projectPath={activeProject} sessionId={displayedSessionId} disabled={isStreaming} />
             )}
             {isStreaming && (
               <StopButton

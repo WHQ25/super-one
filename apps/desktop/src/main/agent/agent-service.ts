@@ -1836,24 +1836,23 @@ export class AgentService {
       return session.interrupt()
     })
 
-    ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) throw new Error('Session not found.')
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+    ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
+      this.throwIfRemoteLocked(projectPath)
+      const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       await session.startRealtimeVoice(request)
     })
 
-    ipcMain.handle(AgentIpcChannels.STOP_REALTIME_VOICE, async (_event, sessionId: string) => {
+    ipcMain.handle(AgentIpcChannels.STOP_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      if (session.snapshot.projectPath !== projectPath) return
+      this.throwIfRemoteLocked(projectPath)
       await session.stopRealtimeVoice()
     })
 
-    ipcMain.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, sessionId: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return { segments: [], activeRealtimeSessionId: null }
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+    ipcMain.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, projectPath: string, sessionId: string) => {
+      this.throwIfRemoteLocked(projectPath)
+      const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       return session.getRealtimeTimeline()
     })
 

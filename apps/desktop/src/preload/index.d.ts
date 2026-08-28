@@ -31,9 +31,9 @@ interface AgentAPI {
   startQueuedMessages(projectPath: string, sessionId?: string): Promise<boolean>
   prewarm(projectPath: string, hint?: AgentPrewarmHint): Promise<void>
   interrupt(sessionId: string): Promise<boolean>
-  startRealtimeVoice(sessionId: string, request: RealtimeVoiceStartRequest): Promise<void>
-  stopRealtimeVoice(sessionId: string): Promise<void>
-  getRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult>
+  startRealtimeVoice(projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest): Promise<void>
+  stopRealtimeVoice(projectPath: string, sessionId: string): Promise<void>
+  getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
   stopTask(sessionId: string, taskId: string): Promise<boolean>
   respondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): Promise<boolean>
   setPermissionMode(projectPath: string, sessionId: string, mode: PermissionMode): Promise<boolean>

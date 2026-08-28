@@ -597,6 +597,39 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
   })
 })
 
+describe('AgentService Realtime Voice', () => {
+  it('creates a Codex session from the renderer draft before starting voice', async () => {
+    const service = new AgentService()
+    const startRealtimeVoice = vi.fn().mockResolvedValue(undefined)
+    const created = makeMockSession({
+      id: 'draft-voice',
+      cwd: '/repo/main',
+      snapshot: { harnessId: 'codex', messages: [] },
+      isStreaming: vi.fn(() => false),
+      startRealtimeVoice,
+    })
+    const createSession = vi.fn(() => created)
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      getActiveSession: vi.fn(() => null),
+      resumeSession: vi.fn(() => { throw new Error('Session not found: draft-voice') }),
+      createSession,
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.START_REALTIME_VOICE)!
+    const request = { sdp: 'offer', voice: 'cove' }
+
+    await handler(null, '/repo/main', 'draft-voice', request)
+
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      projectPath: '/repo/main',
+      providerId: 'codex-base',
+      id: 'draft-voice',
+    }))
+    expect(startRealtimeVoice).toHaveBeenCalledWith(request)
+  })
+})
+
 describe('AgentService SEND_MESSAGE', () => {
   it('creates a Claude session with the renderer draft id before the first send', async () => {
     const service = new AgentService()

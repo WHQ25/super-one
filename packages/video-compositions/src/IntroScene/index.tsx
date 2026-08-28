@@ -15,7 +15,7 @@ export type IntroSceneProps = {
 
 export const introSceneDefaultProps: IntroSceneProps = {
   title: "SuperOne",
-  tagline: "A meta desktop app for AI-powered creation",
+  tagline: "Every coding agent on one surface",
   brandHue: HARNESS_CLAUDE_HUE,
   darkMode: false,
 }

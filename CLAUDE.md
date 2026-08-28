@@ -4,7 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SuperOne is an meta desktop app built with Electron. It can be a IDE, it also provide a canavs for user to create their own app using coding agent as agentic engine. Inspired by Pencil.dev's MCP Server pattern.
+SuperOne is an Electron desktop app that puts every coding-agent harness on one
+surface and makes each one more capable than it is alone. Four things define it:
+
+1. **Integrate.** Claude, Codex, Cursor, OpenCode, DeepSeek and any ACP agent run over
+   the same project, session history, provider/credential store, MCP servers, skills and
+   UI. Harness differences are declared as data (`HARNESS_CAPABILITIES` in
+   `packages/shared/src/harness/`), not branched at call sites.
+2. **Extend.** Every harness inherits SuperOne's own tool surface through the built-in
+   MCP server (`apps/desktop/src/main/mcp/`): an embedded browser, computer use, iOS
+   Simulator / Android device control, image and video generation, interactive widgets,
+   and SuperOne's own settings. A harness gains abilities its own CLI never shipped.
+3. **Collaborate.** Sessions talk to each other *across* harness boundaries via
+   `session_collab_*` — `spawn` (child you keep talking to), `handoff` (sibling that
+   takes over), `link` (mailbox with an existing session) — with durable Markdown
+   handoffs and optional worktree isolation. A Claude session can hand a task to Codex
+   and read the result back.
+4. **Build agentic apps.** Mini-apps (`.s1app`) pair a trusted Node host that owns
+   computation and agent tools with WebViews that own rendering, so an app you write
+   becomes tools the agent can call.
+
+Keep this framing in mind when placing new code: a feature that only one harness can
+use, or that bypasses the shared tool/collab surfaces, is usually in the wrong layer.
 
 ## Monorepo Layout
 

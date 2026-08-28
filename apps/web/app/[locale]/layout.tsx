@@ -10,7 +10,7 @@ import { SiteHeader } from "@/components/site/site-header"
 
 export const metadata: Metadata = {
   title: "SuperOne",
-  description: "A meta desktop app for AI-powered creation",
+  description: "Every coding agent on one surface — integrated, extended, working together.",
 }
 
 export function generateStaticParams() {

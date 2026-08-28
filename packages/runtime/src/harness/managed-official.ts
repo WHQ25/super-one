@@ -33,7 +33,7 @@ export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.246'
  * Pinned Codex CLI on npm. Bump deliberately with release notes — never bare `latest`
  * in production enable (reproducible remote nodes).
  */
-export const OFFICIAL_CODEX_NPM_VERSION = '0.149.0'
+export const OFFICIAL_CODEX_NPM_VERSION = '0.150.1'
 
 export const OFFICIAL_CLAUDE_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
 export const OFFICIAL_CODEX_PACKAGE = '@openai/codex'

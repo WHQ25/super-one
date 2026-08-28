@@ -23,6 +23,7 @@ import {
   harnessPartialPath,
   installPackageDir,
   parseContentRange,
+  readRuntimeVersion,
   resetDestPathLocksForTests,
   resolveDesktopManagedBinary,
   resolveHarnessManifestChannel,
@@ -95,9 +96,34 @@ describe('desktopPackagePins', () => {
 
   it('pins codex to @openai/codex with a platform-suffixed version', () => {
     const pins = desktopPackagePins('codex')
+    const desktopPackage = JSON.parse(
+      readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+    ) as { dependencies: Record<string, string> }
     expect(pins.packages[0]!.name).toBe('@openai/codex')
+    expect(pins.runtimeVersion).toBe(desktopPackage.dependencies['@openai/codex'])
     expect(pins.packages[0]!.version).toBe(codexPlatformVersion())
     expect(pins.packages[0]!.version).toMatch(/-(darwin|linux|win32)-(arm64|x64)$/)
+  })
+
+  it('reads the installed Codex package version instead of stale install metadata', () => {
+    const prefix = join(tmpdir(), `so-codex-version-${Date.now()}`)
+    const versionDir = managedVersionDir(prefix, '0.149.0')
+    try {
+      mkdirSync(join(versionDir, 'lib/node_modules/@openai/codex'), { recursive: true })
+      writeFileSync(
+        join(versionDir, 'install-meta.json'),
+        JSON.stringify({ harnessId: 'codex', runtimeVersion: '0.149.0' }),
+      )
+      writeFileSync(
+        join(versionDir, 'lib/node_modules/@openai/codex/package.json'),
+        JSON.stringify({ name: '@openai/codex', version: '0.147.0-darwin-arm64' }),
+      )
+      writeCurrentPointer(prefix, '0.149.0', { installRoot: versionDir })
+
+      expect(readRuntimeVersion('codex', prefix)).toBe('0.147.0')
+    } finally {
+      rmSync(prefix, { recursive: true, force: true })
+    }
   })
 })
 
@@ -263,6 +289,45 @@ describe('createDesktopTarballInstaller', () => {
       expect(result.source).toBe('r2-tarball')
       expect(urls).toEqual(['https://dl.super-one.dev/harness/artifacts/test/0.tgz'])
       expect(existsSync(result.command)).toBe(true)
+    } finally {
+      rmSync(packWork, { recursive: true, force: true })
+    }
+  })
+
+  it('ignores a stale R2 artifact pin and installs the requested npm version', async () => {
+    const packWork = mkdtempSync(join(tmpdir(), 'so-pack-stale-r2-'))
+    try {
+      const { bytes } = makeNpmTgz(packWork, {
+        'package.json': JSON.stringify({ name: 'x', version: '0.0.1' }),
+        claude: { body: '#!/bin/sh\necho npm\n', mode: 0o755 },
+      })
+      const integrity = sha512Integrity(bytes)
+      const pins = desktopPackagePins('claude')
+      const urls: string[] = []
+      const installer = createDesktopTarballInstaller({
+        artifactPin: {
+          platform: 'darwin',
+          arch: 'arm64',
+          digestSha256: sha256Hex(bytes),
+          url: 'https://dl.super-one.dev/harness/artifacts/stale.tgz',
+          npmName: pins.packages[0]!.name,
+          npmVersion: '0.0.0-stale',
+        },
+        fetchJson: async () => ({
+          version: pins.packages[0]!.version,
+          dist: { tarball: 'https://registry.npmjs.org/current.tgz', integrity },
+        }),
+        fetchBinary: async (url) => {
+          urls.push(url)
+          return bytes
+        },
+      })
+
+      const result = await installer.install('claude', { root: home })
+
+      expect(result.source).toBe('npm-tarball')
+      expect(result.detail?.packageSpec).toBe(`${pins.packages[0]!.name}@${pins.packages[0]!.version}`)
+      expect(urls).toEqual(['https://registry.npmjs.org/current.tgz'])
     } finally {
       rmSync(packWork, { recursive: true, force: true })
     }

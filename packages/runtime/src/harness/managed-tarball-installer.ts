@@ -255,11 +255,12 @@ export function readRuntimeVersionFromRoot(
   id: ManagedHarnessId,
   installRoot: string,
 ): string | null {
+  let metadataVersion: string | null = null
   try {
     const metaPath = join(installRoot, 'install-meta.json')
     if (existsSync(metaPath)) {
       const raw = JSON.parse(readFileSync(metaPath, 'utf8')) as { runtimeVersion?: string }
-      if (raw.runtimeVersion) return raw.runtimeVersion
+      metadataVersion = raw.runtimeVersion?.trim() || null
     }
   } catch {
     /* fall through */
@@ -278,7 +279,7 @@ export function readRuntimeVersionFromRoot(
   } catch {
     /* ignore */
   }
-  return null
+  return metadataVersion
 }
 
 export function readRuntimeVersion(id: ManagedHarnessId, prefix: string): string | null {
@@ -404,19 +405,29 @@ export function createManagedTarballInstaller(
 
       const channel = resolveHarnessManifestChannel(opts.channel, opts.releaseVersion)
       const artifactPin = await resolveArtifactPin(id, channel, opts, fetchJson)
+      const compatibleArtifactPin = artifactPin && pins.packages.some(
+        (pkg) => pkg.name === artifactPin.npmName && pkg.version === artifactPin.npmVersion,
+      )
+        ? artifactPin
+        : null
+      if (artifactPin && !compatibleArtifactPin) {
+        log?.warn?.(
+          `[harness] ignoring stale ${id} artifact ${artifactPin.npmName}@${artifactPin.npmVersion}; requested ${pins.packages.map((pkg) => `${pkg.name}@${pkg.version}`).join(', ')}`,
+        )
+      }
 
       let packageSpec = ''
       let source: TarballSource = 'npm-tarball'
       mkdirSync(versionDir, { recursive: true })
 
       for (const pkg of pins.packages) {
-        const npmName = artifactPin?.npmName ?? pkg.name
-        const npmVersion = artifactPin?.npmVersion ?? pkg.version
+        const npmName = compatibleArtifactPin?.npmName ?? pkg.name
+        const npmVersion = compatibleArtifactPin?.npmVersion ?? pkg.version
         packageSpec = `${npmName}@${npmVersion}`
 
         const downloadKey = harnessArtifactDownloadKey({
           harnessId: id,
-          digestSha256: artifactPin?.digestSha256,
+          digestSha256: compatibleArtifactPin?.digestSha256,
           npmName,
           npmVersion,
         })
@@ -428,7 +439,7 @@ export function createManagedTarballInstaller(
             destPath: partialPath,
             npmName,
             npmVersion,
-            pin: artifactPin,
+            pin: compatibleArtifactPin,
             npmOnly: opts.npmOnly === true,
             fetchJson,
             downloadToFile,
@@ -463,7 +474,7 @@ export function createManagedTarballInstaller(
             packageSpec,
             source,
             channel,
-            digestSha256: artifactPin?.digestSha256 ?? null,
+            digestSha256: compatibleArtifactPin?.digestSha256 ?? null,
             installedAt: Date.now(),
           },
           null,
@@ -492,7 +503,7 @@ export function createManagedTarballInstaller(
           packageSpec,
           installPrefix: versionDir,
           channel,
-          digestSha256: artifactPin?.digestSha256,
+          digestSha256: compatibleArtifactPin?.digestSha256,
           runtimeVersion: pins.runtimeVersion,
         },
       }

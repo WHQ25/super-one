@@ -21,7 +21,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { x as extractTar } from 'tar'
 import { channelFromVersion } from '@superone/shared/update-channels'
 import {
   fetchHarnessChannelManifest,
@@ -147,23 +147,24 @@ export function harnessPartialPath(homeRoot: string, key: string): string {
 
 // ── extract + place ─────────────────────────────────────────────────────────
 
-/** System tar — preserves mode bits (required for codex nested bins). */
-export function extractTgzWithSystemTar(tgzPath: string, destDir: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    mkdirSync(destDir, { recursive: true })
-    const child = spawn('tar', ['-xzf', tgzPath, '-C', destDir], {
-      stdio: ['ignore', 'ignore', 'pipe'],
-    })
-    let stderr = ''
-    child.stderr?.on('data', (c: Buffer) => {
-      stderr += c.toString()
-    })
-    child.on('error', (err) => reject(new Error(`tar spawn failed: ${err.message}`)))
-    child.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`tar extract failed (exit ${code}): ${stderr.slice(-500)}`))
-    })
-  })
+/**
+ * Extract a `.tgz` with node-tar — preserves mode bits (required for codex
+ * nested bins) and needs no external binary.
+ *
+ * Deliberately NOT `spawn('tar')`: Windows only ships bsdtar as
+ * `System32\tar.exe` (Win10 1803+), so any gap in PATH/PATHEXT surfaces as
+ * `spawn tar ENOENT` and takes down harness install entirely. node-tar is what
+ * the npm client itself uses to unpack registry tarballs — the exact payload
+ * shape we extract here.
+ */
+export async function extractTgzArchive(tgzPath: string, destDir: string): Promise<void> {
+  mkdirSync(destDir, { recursive: true })
+  try {
+    // preservePaths stays false (default): absolute paths and `..` are stripped.
+    await extractTar({ file: tgzPath, cwd: destDir })
+  } catch (err) {
+    throw new Error(`tar extract failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 export function installPackageDir(
@@ -352,7 +353,7 @@ export function createManagedTarballInstaller(
   const log = opts.log
   const downloadToFile =
     opts.downloadToFile ?? createResumableDownloadToFile(httpFetch, log)
-  const extractTgz = opts.extractTgz ?? extractTgzWithSystemTar
+  const extractTgz = opts.extractTgz ?? extractTgzArchive
 
   return {
     async install(

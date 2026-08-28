@@ -43,7 +43,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.58.0-alpha",
+      "version": "0.59.0-alpha",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.2.1",
         "@ai-sdk/google": "^4.0.8",
@@ -576,6 +576,7 @@
         "croner": "^10.0.1",
         "fzf": "^0.5.2",
         "smol-toml": "^1.6.0",
+        "tar": "^7.5.7",
         "ws": "^8.20.0",
         "yaml": "^2.9.0",
       },

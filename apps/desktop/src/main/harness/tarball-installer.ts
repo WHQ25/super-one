@@ -21,7 +21,7 @@ import {
   createResumableDownloadToFile,
   createThrottledProgress as createThrottledProgressShared,
   downloadResumableToFile as downloadResumableToFileShared,
-  extractTgzWithSystemTar as extractTgzShared,
+  extractTgzArchive as extractTgzShared,
   harnessArtifactDownloadKey as harnessArtifactDownloadKeyShared,
   harnessDownloadDir as harnessDownloadDirShared,
   harnessPartialPath as harnessPartialPathShared,
@@ -54,7 +54,7 @@ import log from '../logger'
 
 // ── re-exports (shared kernel) ──────────────────────────────────────────────
 
-export const extractTgzWithSystemTar = extractTgzShared
+export const extractTgzArchive = extractTgzShared
 export const harnessDownloadDir = harnessDownloadDirShared
 export const harnessArtifactDownloadKey = harnessArtifactDownloadKeyShared
 export const harnessPartialPath = harnessPartialPathShared
@@ -153,7 +153,7 @@ export function createDesktopTarballInstaller(
     (opts.fetchBinary
       ? wrapFetchBinaryAsDownload(opts.fetchBinary)
       : createDownloadToFile(httpFetch))
-  const extractTgz = opts.extractTgz ?? extractTgzWithSystemTar
+  const extractTgz = opts.extractTgz ?? extractTgzArchive
 
   let releaseVersion: string | undefined
   try {

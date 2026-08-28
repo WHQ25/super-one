@@ -28,7 +28,7 @@ export {
   verifySha256,
   sha256Hex,
   resolveHarnessManifestChannel,
-  extractTgzWithSystemTar,
+  extractTgzArchive,
   createThrottledProgress,
   createDownloadToFile,
   downloadResumableToFile,

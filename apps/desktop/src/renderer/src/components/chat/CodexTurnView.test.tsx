@@ -112,6 +112,53 @@ describe('CodexTurnView', () => {
     expect(screen.queryByText('Thinking')).toBeNull()
   })
 
+  it('keeps terminal Codex error logs out of the turn body', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'error',
+          metadata: {
+            errorInfo: { raw: 'accumulated stderr log' },
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'error-1', type: 'error', message: 'accumulated stderr log' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.queryByText('accumulated stderr log')).toBeNull()
+  })
+
+  it('keeps non-terminal Codex error items visible', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'error-1', type: 'error', message: 'strict review required' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByText('strict review required')).toBeTruthy()
+  })
+
   it('collapses codex reasoning summary content after completion by default', () => {
     render(
       <CodexTurnView

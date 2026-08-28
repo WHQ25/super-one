@@ -218,6 +218,60 @@ describe('resolveThread fallback', () => {
     expect(session.connectionHandle).toBeNull()
   })
 
+  it('does not treat stderr from an earlier turn as part of the current failure', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })
+    const failure = new Error('current request failed')
+    const handle = {
+      connection: {},
+      close: vi.fn(async () => {}),
+      getStderr: () => 'warning from an earlier turn\n',
+      onClosed: () => () => {},
+    }
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+    session.notificationDispatcher = {} as never
+
+    await expect(withSessionConnection(
+      session,
+      { mode: 'auto' },
+      undefined,
+      async () => { throw failure },
+    )).rejects.toBe(failure)
+
+    expect(handle.close).not.toHaveBeenCalled()
+    expect(session.connectionHandle).toBe(handle)
+    await closeSessionConnection(session)
+  })
+
+  it('logs only new stderr without adding it to the current failure', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })
+    const failure = new Error('current request failed')
+    let stderr = 'warning from an earlier turn\n'
+    const handle = {
+      connection: {},
+      close: vi.fn(async () => {}),
+      getStderr: () => stderr,
+      onClosed: () => () => {},
+    }
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+    session.notificationDispatcher = {} as never
+
+    await expect(withSessionConnection(
+      session,
+      { mode: 'auto' },
+      undefined,
+      async () => {
+        stderr += 'diagnostic from the current turn\n'
+        throw failure
+      },
+    )).rejects.toBe(failure)
+
+    expect(failure.message).toBe('current request failed')
+    expect(handle.close).toHaveBeenCalledOnce()
+    expect(session.connectionHandle).toBeNull()
+  })
+
   it('falls back to thread/start when the stored thread does not exist', async () => {
     const session = makeSession({ model: 'gpt-5', threadId: 'stale-thread' })
     const mockConnection = {

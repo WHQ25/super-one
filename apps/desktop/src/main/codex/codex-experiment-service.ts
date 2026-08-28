@@ -9,8 +9,10 @@ import {
   compactRecord,
   createAppServerConnection,
   getCodexProviderOverrideFor,
+  limitAppServerStderrDiagnostic,
   mapAppServerModel,
   normalizeApiKey,
+  readAppServerStderrSince,
   readString,
   resolveApiKey,
   resolveMode,
@@ -319,7 +321,7 @@ function throwAppServerRequestError(error: unknown, stderr: string): never {
   log.error('[codex] app-server stderr:', stderr)
   const message = error instanceof Error ? error.message : String(error)
   const debugLogPath = String(log.transports.file.getFile().path)
-  throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
+  throw new Error(`${message}\n${limitAppServerStderrDiagnostic(stderr)}\nDebug log: ${debugLogPath}`)
 }
 
 async function closeEphemeralAppServer(handle: AppServerConnectionHandle): Promise<void> {
@@ -646,11 +648,13 @@ export class CodexExperimentService {
       cached.idleTimer = null
     }
     let handle: AppServerConnectionHandle | null = null
+    let stderrBaseline = ''
     try {
       handle = await cached.handlePromise
+      stderrBaseline = handle.getStderr()
       return await fn(handle.connection)
     } catch (error) {
-      const stderr = handle?.getStderr().trim() ?? ''
+      const stderr = handle ? readAppServerStderrSince(handle, stderrBaseline) : ''
       if (stderr) {
         await this.closeAppServerConnection(projectPath)
         throwAppServerRequestError(error, stderr)
@@ -788,10 +792,11 @@ export class CodexExperimentService {
   ): Promise<T> {
     const auth = this.getProjectAuth(projectPath)
     const handle = await createAppServerConnection(auth)
+    const stderrBaseline = handle.getStderr()
     try {
       return await fn(handle.connection.request)
     } catch (error) {
-      const stderr = handle.getStderr().trim()
+      const stderr = readAppServerStderrSince(handle, stderrBaseline)
       if (!stderr) throw error
       throwAppServerRequestError(error, stderr)
     } finally {

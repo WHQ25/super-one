@@ -112,6 +112,7 @@ const {
   buildCodexBundledCapabilityIsolationCliOverrides,
   buildNodeReplDisableCliOverrides,
   isCodexAppServerConnectionError,
+  limitAppServerStderrDiagnostic,
 } = await import('./app-server-connection')
 const { resolveChatService } = await import('../providers/resolver')
 
@@ -390,6 +391,15 @@ describe('buildCodexProviderCliOverrides', () => {
 
     expect(handle.getStderr()).toContain('warning: something happened')
     await handle.close()
+  })
+
+  it('caps stderr included with startup diagnostics', () => {
+    const diagnostic = limitAppServerStderrDiagnostic(`old log\n${'x'.repeat(10_000)}\nlatest failure`)
+
+    expect(diagnostic.length).toBeLessThanOrEqual(8_000)
+    expect(diagnostic).toContain('earlier stderr omitted')
+    expect(diagnostic).not.toContain('old log')
+    expect(diagnostic).toContain('latest failure')
   })
 
   it('onClosed fires when child exits', async () => {

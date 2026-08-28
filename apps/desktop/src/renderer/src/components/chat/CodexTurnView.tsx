@@ -418,7 +418,14 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     }
     return map
   }, [apps])
-  const codexItems = codex?.items ?? EMPTY_CODEX_ITEMS
+  const sourceCodexItems = codex?.items ?? EMPTY_CODEX_ITEMS
+  // Terminal Codex failures already live in the message footer. App Server can
+  // also emit the same accumulated log as an `error` item immediately before
+  // the turn fails; hiding that item keeps the failure detail in one place.
+  // Non-terminal error items remain visible on completed/streaming turns.
+  const codexItems = message.status === 'error'
+    ? sourceCodexItems.filter((item) => item.type !== 'error')
+    : sourceCodexItems
   const topologyKey = codexItems.map((item) => codexTopologyToken(item, groupableAppByTool)).join('\x01')
   const topologyCache = useRef<{
     key: string
@@ -463,7 +470,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     .map((b) => (b.type === 'text' ? b.text : ''))
     .join('\n')
 
-  const imageItems = imageIndices.map((index) => codex.items[index] as ImageGenerationItem)
+  const imageItems = imageIndices.map((index) => codexItems[index] as ImageGenerationItem)
 
   // `range` renders one run while neighbour lookups (isFirst, sealed) still see the whole turn.
   const renderSegments = (
@@ -475,20 +482,20 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       const segIdx = (range?.start ?? 0) + i
       const sealed = forceSealed || !isStreaming || segIdx < segs.length - 1
       if (seg.kind === 'subagent') {
-        const item = codex.items[seg.index] as CodexCollabToolCallItem
+        const item = codexItems[seg.index] as CodexCollabToolCallItem
         return <MemoCodexSubagentMarker key={`sa-${item.id}`} item={item} />
       }
       if (seg.kind === 'group') {
-        const items = seg.indices.map((index) => codex.items[index] as CodexCommandExecutionItem)
+        const items = seg.indices.map((index) => codexItems[index] as CodexCommandExecutionItem)
         if (items.length === 1) {
           return <CodexCommandBlock key={items[0].id} item={items[0]} isStreaming={isStreaming} />
         }
         return <CodexCommandGroup key={`cg-${seg.indices[0]}`} items={items} isStreaming={isStreaming} sealed={sealed} />
       }
       if (seg.kind === 'app-tools') {
-        const items = seg.indices.map((index) => codex.items[index] as CodexMcpToolCallItem)
+        const items = seg.indices.map((index) => codexItems[index] as CodexMcpToolCallItem)
         if (items.length === 1) {
-          return renderCodexItem(items[0], segIdx, isStreaming, codex.items[seg.indices[0] + 1])
+          return renderCodexItem(items[0], segIdx, isStreaming, codexItems[seg.indices[0] + 1])
         }
         return (
           <CodexAppToolGroup
@@ -501,7 +508,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
         )
       }
       if (seg.kind === 'reasoning') {
-        const items = seg.indices.map((index) => codex.items[index] as CodexReasoningItem)
+        const items = seg.indices.map((index) => codexItems[index] as CodexReasoningItem)
         return (
           <CodexReasoningSegment
             key={`reasoning-${seg.startIndex}`}
@@ -513,14 +520,14 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
         )
       }
       if (seg.kind === 'item') {
-        const item = codex.items[seg.index]
+        const item = codexItems[seg.index]
         return (
           <CodexItemSegment
             key={`${item.id}-${seg.index}`}
             item={item}
             index={seg.index}
             isStreaming={isStreaming}
-            nextItem={codex.items[seg.index + 1]}
+            nextItem={codexItems[seg.index + 1]}
             onApprovePlan={item.type === 'plan' && item.id === lastPlanItemId && canRespondToPlan
               ? approveCodexPlan
               : undefined}
@@ -540,7 +547,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     if (!detailChatMode && !isStreaming) {
       const runs = partitionTurnForCompactMode(
         segments,
-        (seg) => isCodexPinnedSegment(seg, (index) => codex.items[index]),
+        (seg) => isCodexPinnedSegment(seg, (index) => codexItems[index]),
       )
       const process = collapsibleItems(runs)
       const showFallback = !hasAssistantMessage && !!fallbackText
@@ -566,7 +573,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       return (
         <>
           <TurnDetailSection
-            stats={summarizeCodexProcess(process, codex.items)}
+            stats={summarizeCodexProcess(process, codexItems)}
             runs={runs.map((run, i) => ({
               key: `run-${i}`,
               collapsible: run.collapsible,

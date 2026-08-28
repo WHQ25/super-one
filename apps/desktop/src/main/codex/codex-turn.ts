@@ -10,6 +10,7 @@ import {
   getCodexProviderOverrideFor,
   isCodexAppServerConnectionError,
   normalizeApiKey,
+  readAppServerStderrSince,
   readString,
   resolvePermissionProfile,
   type AppServerConnection,
@@ -1163,21 +1164,17 @@ export async function withSessionConnection<T>(
     threadId: session.threadId,
     connectionId: handle.id ?? null,
   }, session.superoneSessionId)
+  const stderrBaseline = handle.getStderr()
   try {
     return await fn(handle.connection, dispatcher, handle)
   } catch (error) {
-    const stderr = handle.getStderr().trim()
+    const stderr = readAppServerStderrSince(handle, stderrBaseline)
     const childExited = session.connectionHandle !== handle
     const connectionFailed = isCodexAppServerConnectionError(error)
     if (stderr || childExited || connectionFailed) {
       log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
       if (stderr) log.error('[codex] app-server stderr:', stderr)
       await closeSessionConnection(session)
-      if (stderr) {
-        const message = error instanceof Error ? error.message : String(error)
-        const debugLogPath = String(log.transports.file.getFile().path)
-        throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
-      }
     }
     throw error
   }

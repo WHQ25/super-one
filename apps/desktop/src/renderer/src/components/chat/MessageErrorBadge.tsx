@@ -66,7 +66,7 @@ export function MessageErrorBadge({ info }: { info: AgentErrorInfo }) {
           </IconButton>
         </div>
         {detailsOpen && (
-          <div className="mt-2 rounded-md bg-muted/60 p-2.5 font-mono text-xs leading-relaxed text-muted-foreground">
+          <div className="mt-2 max-h-72 overflow-y-auto overscroll-contain rounded-md bg-muted/60 p-2.5 font-mono text-xs leading-relaxed text-muted-foreground">
             {rows.map((row) => (
               <div key={row.label} className="flex gap-2">
                 <span className="w-28 shrink-0 opacity-60">{row.label}</span>

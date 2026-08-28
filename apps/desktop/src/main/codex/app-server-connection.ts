@@ -47,6 +47,7 @@ export function appServerTimeoutForMethod(method: string): number {
 export const APP_SERVER_BACKPRESSURE_CODE = -32001
 export const APP_SERVER_BACKPRESSURE_MAX_ATTEMPTS = 3
 export const APP_SERVER_BACKPRESSURE_BASE_DELAY_MS = 100
+export const APP_SERVER_STDERR_DIAGNOSTIC_MAX_CHARS = 8_000
 
 export const APP_SERVER_IDEMPOTENT_METHODS = new Set<string>([
   'account/read',
@@ -122,6 +123,23 @@ export interface AppServerConnectionHandle {
   close(): Promise<void>
   getStderr(): string
   onClosed(cb: (info: AppServerExitInfo) => void): () => void
+}
+
+/** Return only stderr written after a caller-owned connection snapshot. */
+export function readAppServerStderrSince(
+  handle: Pick<AppServerConnectionHandle, 'getStderr'>,
+  baseline: string,
+): string {
+  const current = handle.getStderr()
+  return (current.startsWith(baseline) ? current.slice(baseline.length) : current).trim()
+}
+
+/** Keep startup diagnostics useful without putting an unbounded log in UI errors. */
+export function limitAppServerStderrDiagnostic(stderr: string): string {
+  const normalized = stderr.trim()
+  if (normalized.length <= APP_SERVER_STDERR_DIAGNOSTIC_MAX_CHARS) return normalized
+  const marker = '… earlier stderr omitted …\n'
+  return `${marker}${normalized.slice(-(APP_SERVER_STDERR_DIAGNOSTIC_MAX_CHARS - marker.length))}`
 }
 
 let nextAppServerConnectionId = 0
@@ -921,7 +939,7 @@ export async function createAppServerConnection(
     if (stderr) {
       const message = error instanceof Error ? error.message : String(error)
       const debugLogPath = String(log.transports.file.getFile().path)
-      throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
+      throw new Error(`${message}\n${limitAppServerStderrDiagnostic(stderr)}\nDebug log: ${debugLogPath}`)
     }
     throw error
   }

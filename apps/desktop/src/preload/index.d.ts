@@ -551,8 +551,17 @@ interface AppAPI {
   ): () => void
   /** Focus the exact native window currently shown for this session. */
   focusComputerUseViewfinder(sessionId: string): Promise<boolean>
-  /** Stop native capture when this session's Computer Use preview is no longer visible. */
-  hideComputerUseViewfinder(sessionId: string): Promise<boolean>
+  /** Stop native capture; a window id marks an explicit dismissal until the target changes. */
+  hideComputerUseViewfinder(sessionId: string, dismissedWindowId?: number): Promise<boolean>
+  /** Resume native capture for the current Computer Use preview target. */
+  restoreComputerUseViewfinder(sessionId: string): Promise<boolean>
+  /** Match native capture pixels to the visible Computer Use preview size. */
+  resizeComputerUseViewfinder(
+    sessionId: string,
+    windowId: number,
+    width: number,
+    height: number,
+  ): Promise<boolean>
   /** Best-effort PNG data URI for a macOS app bundle id; null when lookup fails. */
   listComputerUseInstalledApps(): Promise<
     Array<{ app: string; bundleId: string; aliases: string[] }>

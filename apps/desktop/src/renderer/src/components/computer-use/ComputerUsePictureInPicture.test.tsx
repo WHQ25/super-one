@@ -9,6 +9,7 @@ import { ComputerUsePictureInPicture } from './ComputerUsePictureInPicture'
 
 const focusComputerUseViewfinder = vi.fn()
 const hideComputerUseViewfinder = vi.fn()
+const resizeComputerUseViewfinder = vi.fn()
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -23,8 +24,14 @@ vi.mock('react-i18next', () => ({
 beforeEach(() => {
   focusComputerUseViewfinder.mockReset()
   hideComputerUseViewfinder.mockReset()
+  resizeComputerUseViewfinder.mockReset()
   hideComputerUseViewfinder.mockResolvedValue(true)
-  Object.assign(window.app, { focusComputerUseViewfinder, hideComputerUseViewfinder })
+  resizeComputerUseViewfinder.mockResolvedValue(true)
+  Object.assign(window.app, {
+    focusComputerUseViewfinder,
+    hideComputerUseViewfinder,
+    resizeComputerUseViewfinder,
+  })
   document.body.innerHTML = ''
   const boundary = document.createElement('div')
   boundary.setAttribute('data-chat-root', '')
@@ -58,10 +65,13 @@ describe('Computer Use picture in picture', () => {
     const pip = await screen.findByLabelText('Computer Use picture in picture')
     expect(pip).toHaveStyle({ left: '888px', top: '62px', width: '200px', height: `${200 / (3 / 2)}px` })
     expect(pip.querySelector('img')).toHaveAttribute('src', 'data:image/jpeg;base64,jpeg')
+    await waitFor(() => {
+      expect(resizeComputerUseViewfinder).toHaveBeenCalledWith('session-a', 42, 480, 320)
+    })
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide Computer Use preview' }))
     await waitFor(() => expect(screen.queryByLabelText('Computer Use picture in picture')).toBeNull())
-    expect(hideComputerUseViewfinder).toHaveBeenCalledWith('session-a')
+    expect(hideComputerUseViewfinder).toHaveBeenCalledWith('session-a', 42)
   })
 
   it('does not leak a target into a different active session', () => {
@@ -73,6 +83,28 @@ describe('Computer Use picture in picture', () => {
     })
     render(<ComputerUsePictureInPicture />)
     expect(screen.queryByLabelText('Computer Use picture in picture')).toBeNull()
+  })
+
+  it('disappears when the native stream reports that its app window closed', async () => {
+    act(() => {
+      useComputerViewfinderStore.getState().applyClaim({
+        sessionId: 'session-a', active: true, windowId: 42,
+      })
+      useAgentViewfinderStore.getState().activate('session-a', 'computer', '42')
+    })
+    render(<ComputerUsePictureInPicture />)
+    await screen.findByLabelText('Computer Use picture in picture')
+
+    act(() => {
+      useComputerViewfinderStore.getState().applyClaim({
+        sessionId: 'session-a', active: false,
+      })
+      useAgentViewfinderStore.getState().clear('session-a', { kind: 'computer' })
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Computer Use picture in picture')).toBeNull()
+    })
   })
 
   it('focuses the controlled window on click but keeps dragging as a move gesture', async () => {
@@ -96,5 +128,31 @@ describe('Computer Use picture in picture', () => {
     fireEvent.pointerMove(window, { clientX: 720, clientY: 90 })
     fireEvent.pointerUp(window, { clientX: 720, clientY: 90 })
     expect(focusComputerUseViewfinder).not.toHaveBeenCalled()
+  })
+
+  it('raises native capture resolution after the preview is enlarged', async () => {
+    act(() => {
+      useComputerViewfinderStore.getState().applyClaim({
+        sessionId: 'session-a', active: true, windowId: 42,
+        sourceWidth: 1600, sourceHeight: 900,
+      })
+      useAgentViewfinderStore.getState().activate('session-a', 'computer', '42')
+    })
+    render(<ComputerUsePictureInPicture />)
+
+    const pip = await screen.findByLabelText('Computer Use picture in picture')
+    await waitFor(() => {
+      expect(resizeComputerUseViewfinder).toHaveBeenCalledWith('session-a', 42, 480, 270)
+    })
+    resizeComputerUseViewfinder.mockClear()
+
+    const resizeHandle = pip.querySelector('[data-computer-use-pip-resize="se"]') as HTMLElement
+    fireEvent.pointerDown(resizeHandle, { button: 0, clientX: 1088, clientY: 175 })
+    fireEvent.pointerMove(window, { clientX: 1688, clientY: 513 })
+    fireEvent.pointerUp(window, { clientX: 1688, clientY: 513 })
+
+    await waitFor(() => {
+      expect(resizeComputerUseViewfinder).toHaveBeenCalledWith('session-a', 42, 800, 450)
+    })
   })
 })

@@ -1866,6 +1866,10 @@ export const zh: Messages = {
       hide: '隐藏使用电脑预览',
       focus: '聚焦正在控制的窗口',
     },
+    pictureInPicture: {
+      restore: '恢复画中画',
+      restoreFailed: '无法恢复画中画',
+    },
     deviceLaunch: {
       badge: '设备',
       title: '允许智能体使用设备？',

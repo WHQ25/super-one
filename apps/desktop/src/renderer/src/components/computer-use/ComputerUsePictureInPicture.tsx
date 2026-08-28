@@ -14,6 +14,7 @@ import type { PipBounds, PipLayout } from '@/lib/pip-layout'
 import {
   clampComputerPipLayout,
   computerPipAspect,
+  computerPipCaptureSize,
   createDefaultComputerPipLayout,
 } from './computer-pip-layout'
 
@@ -27,6 +28,7 @@ const RESIZE_CORNERS: Array<{ corner: ResizeCorner; className: string }> = [
 ]
 
 const CLICK_SLOP = 4
+const CAPTURE_RESIZE_DEBOUNCE_MS = 120
 
 function pipBoundary(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-chat-root]')
@@ -64,6 +66,7 @@ export function ComputerUsePictureInPicture() {
   const [bounds, setBounds] = useState<PipBounds | null>(null)
   const [layout, setLayout] = useState<PipLayout | null>(null)
   const interactionCleanupRef = useRef<(() => void) | null>(null)
+  const lastCaptureSizeRef = useRef('')
 
   useLayoutEffect(() => {
     if (!showPip) return
@@ -91,6 +94,33 @@ export function ComputerUsePictureInPicture() {
     if (!showPip) interactionCleanupRef.current?.()
   }, [showPip])
   useLayoutEffect(() => () => interactionCleanupRef.current?.(), [])
+
+  useEffect(() => {
+    if (!showPip || !target?.sessionId || target.windowId == null || !layout) {
+      lastCaptureSizeRef.current = ''
+      return
+    }
+    const windowId = target.windowId
+    const captureSize = computerPipCaptureSize(layout, window.devicePixelRatio)
+    const requestKey = `${target.sessionId}:${windowId}:${captureSize.width}x${captureSize.height}`
+    if (lastCaptureSizeRef.current === requestKey) return
+    const timer = window.setTimeout(() => {
+      lastCaptureSizeRef.current = requestKey
+      void window.app.resizeComputerUseViewfinder(
+        target.sessionId,
+        windowId,
+        captureSize.width,
+        captureSize.height,
+      ).then((resized) => {
+        if (!resized && lastCaptureSizeRef.current === requestKey) {
+          lastCaptureSizeRef.current = ''
+        }
+      }, () => {
+        if (lastCaptureSizeRef.current === requestKey) lastCaptureSizeRef.current = ''
+      })
+    }, CAPTURE_RESIZE_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [frame?.height, frame?.width, layout, showPip, target?.sessionId, target?.windowId])
 
   const startInteraction = useCallback((
     cursor: string,
@@ -238,7 +268,7 @@ export function ComputerUsePictureInPicture() {
               onClick={() => {
                 if (!currentSessionId) return
                 useComputerViewfinderStore.getState().hide(currentSessionId)
-                void window.app.hideComputerUseViewfinder(currentSessionId)
+                void window.app.hideComputerUseViewfinder(currentSessionId, target.windowId)
               }}
             >
               <EyeOff />

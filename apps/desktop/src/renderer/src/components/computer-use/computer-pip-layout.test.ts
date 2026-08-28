@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clampComputerPipLayout,
   computerPipAspect,
+  computerPipCaptureSize,
   createDefaultComputerPipLayout,
 } from './computer-pip-layout'
 
@@ -31,5 +32,19 @@ describe('Computer Use picture-in-picture layout', () => {
 
   it('uses the captured desktop aspect ratio', () => {
     expect(computerPipAspect({ width: 1920, height: 1080 })).toBeCloseTo(16 / 9)
+  })
+
+  it('keeps the compact preview at least as sharp as the existing 480px stream', () => {
+    expect(computerPipCaptureSize({ width: 200, height: 120 }, 2)).toEqual({
+      width: 480,
+      height: 288,
+    })
+  })
+
+  it('uses Retina pixels and caps enlarged previews at 1440px', () => {
+    expect(computerPipCaptureSize({ width: 800, height: 450 }, 2)).toEqual({
+      width: 1440,
+      height: 810,
+    })
   })
 })

@@ -9,6 +9,8 @@ import {
 
 export const COMPUTER_PIP_DEFAULT_WIDTH = 200
 export const COMPUTER_PIP_MIN_WIDTH = 200
+export const COMPUTER_PIP_MIN_CAPTURE_EDGE = 480
+export const COMPUTER_PIP_MAX_CAPTURE_EDGE = 1440
 
 const DIMENSIONS: PipDimensions = {
   margin: 12,
@@ -35,4 +37,25 @@ export function clampComputerPipLayout(
   aspect: number,
 ): PipLayout {
   return clampPipLayout(layout, bounds, DIMENSIONS, aspect)
+}
+
+export function computerPipCaptureSize(
+  layout: Pick<PipLayout, 'width' | 'height'>,
+  devicePixelRatio: number,
+): { width: number; height: number } {
+  const pixelRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0
+    ? devicePixelRatio
+    : 1
+  const rawWidth = Math.max(1, layout.width * pixelRatio)
+  const rawHeight = Math.max(1, layout.height * pixelRatio)
+  const longEdge = Math.max(rawWidth, rawHeight)
+  const targetLongEdge = Math.min(
+    COMPUTER_PIP_MAX_CAPTURE_EDGE,
+    Math.max(COMPUTER_PIP_MIN_CAPTURE_EDGE, longEdge),
+  )
+  const scale = targetLongEdge / longEdge
+  return {
+    width: Math.max(1, Math.round(rawWidth * scale)),
+    height: Math.max(1, Math.round(rawHeight * scale)),
+  }
 }

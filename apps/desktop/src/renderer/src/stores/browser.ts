@@ -69,6 +69,7 @@ interface BrowserStore {
   expandPreview: (id: string) => void
   shrinkPreview: (id: string) => void
   hidePreview: (id: string) => void
+  restorePreview: (id: string) => void
   clearManualPreview: () => void
   updateSlot: (id: string, mode: BrowserSlotMode, rect: DOMRectReadOnly) => void
   unregisterSlot: (id: string, mode: BrowserSlotMode) => void
@@ -167,7 +168,9 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       automationCounts: { ...s.automationCounts, [id]: (s.automationCounts[id] ?? 0) + 1 },
       activeAutomationId: id,
       pendingPreviewBrowserId: id,
-      hiddenPreviewBrowserId: s.hiddenPreviewBrowserId === id ? null : s.hiddenPreviewBrowserId,
+      // Keep an explicit dismissal for the same target. Switching targets is new
+      // intent and releases the previous target's dismissal.
+      hiddenPreviewBrowserId: s.hiddenPreviewBrowserId === id ? id : null,
     })),
   endAutomation: (id) =>
     set((s) => {
@@ -192,7 +195,12 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       : s),
   clearAutomationPreview: (sessionId) => set((s) => {
     if (!sessionId) {
-      return { pendingPreviewBrowserId: null, automationPreviewBrowserId: null, automationPreviewReady: {} }
+      return {
+        pendingPreviewBrowserId: null,
+        automationPreviewBrowserId: null,
+        automationPreviewReady: {},
+        hiddenPreviewBrowserId: null,
+      }
     }
     const automationPreviewReady = Object.fromEntries(
       Object.entries(s.automationPreviewReady)
@@ -204,6 +212,10 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       automationPreviewReady,
       pendingPreviewBrowserId: pending && s.tabs[pending]?.owner === sessionId ? null : pending,
       automationPreviewBrowserId: automatic && s.tabs[automatic]?.owner === sessionId ? null : automatic,
+      hiddenPreviewBrowserId: s.hiddenPreviewBrowserId
+        && s.tabs[s.hiddenPreviewBrowserId]?.owner === sessionId
+        ? null
+        : s.hiddenPreviewBrowserId,
     }
   }),
   expandPreview: (id) => set({
@@ -222,6 +234,14 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
     expandedBrowserId: s.expandedBrowserId === id ? null : s.expandedBrowserId,
     pinnedPipBrowserId: s.pinnedPipBrowserId === id ? null : s.pinnedPipBrowserId,
     hiddenPreviewBrowserId: id,
+  })),
+  restorePreview: (id) => set((s) => ({
+    expandedBrowserId: null,
+    pinnedPipBrowserId: id,
+    hiddenPreviewBrowserId: s.hiddenPreviewBrowserId === id ? null : s.hiddenPreviewBrowserId,
+    automationPreviewBrowserId: s.automationPreviewReady[id]
+      ? id
+      : s.automationPreviewBrowserId,
   })),
   clearManualPreview: () => set({
     expandedBrowserId: null,

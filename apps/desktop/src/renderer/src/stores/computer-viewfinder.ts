@@ -11,6 +11,7 @@ interface ComputerViewfinderState {
   applyClaim: (claim: ComputerUseViewfinderClaim) => void
   applyFrame: (frame: ComputerUseViewfinderFrame) => void
   hide: (sessionId: string) => void
+  show: (sessionId: string) => void
   reset: () => void
 }
 
@@ -52,5 +53,9 @@ export const useComputerViewfinderStore = create<ComputerViewfinderState>()((set
   hide: (sessionId) => set((state) => ({
     hiddenSessions: { ...state.hiddenSessions, [sessionId]: true },
   })),
+  show: (sessionId) => set((state) => {
+    const { [sessionId]: _hidden, ...hiddenSessions } = state.hiddenSessions
+    return { hiddenSessions }
+  }),
   reset: () => set({ targets: {}, frames: {}, hiddenSessions: {} }),
 }))

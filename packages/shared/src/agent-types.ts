@@ -3549,6 +3549,10 @@ export const AgentIpcChannels = {
   COMPUTER_USE_VIEWFINDER_FOCUS: 'computer-use:viewfinder-focus',
   /** Renderer -> main: stop capture after the Computer Use PiP loses visibility. */
   COMPUTER_USE_VIEWFINDER_HIDE: 'computer-use:viewfinder-hide',
+  /** Renderer -> main: resume a Computer Use PiP explicitly hidden by the user. */
+  COMPUTER_USE_VIEWFINDER_RESTORE: 'computer-use:viewfinder-restore',
+  /** Renderer -> main: match Computer Use capture pixels to the visible PiP size. */
+  COMPUTER_USE_VIEWFINDER_RESIZE: 'computer-use:viewfinder-resize',
   BROWSER_HISTORY_RECORD: 'app:browser-history-record',
   BROWSER_HISTORY_SUGGEST: 'app:browser-history-suggest',
   BROWSER_HISTORY_DELETE: 'app:browser-history-delete',

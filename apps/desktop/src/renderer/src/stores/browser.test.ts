@@ -67,7 +67,13 @@ describe('browser preview controls', () => {
     })
 
     store.beginAutomation('browser-a')
-    expect(useBrowserStore.getState().hiddenPreviewBrowserId).toBeNull()
+    expect(useBrowserStore.getState().hiddenPreviewBrowserId).toBe('browser-a')
+
+    store.restorePreview('browser-a')
+    expect(useBrowserStore.getState()).toMatchObject({
+      pinnedPipBrowserId: 'browser-a',
+      hiddenPreviewBrowserId: null,
+    })
   })
 })
 

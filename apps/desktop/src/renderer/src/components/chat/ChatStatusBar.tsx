@@ -26,6 +26,7 @@ import { useActiveSession, useChatStore, useSessionScope, getActiveSessionView }
 import { useAppStore } from '@/stores/app'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
+import { StatusBarPip, useHiddenPipTarget } from './chat-status-bar/StatusBarPip'
 import { WorkDirIndicator } from './WorkDirIndicator'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { parseToolInput } from './tool-display'
@@ -238,6 +239,7 @@ export function ChatStatusBar() {
   const sessionStatus = useActiveSession((s) => s.status)
   const taskProgress = useActiveSession((s) => s.taskProgress)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
+  const hiddenPipTarget = useHiddenPipTarget(activeSessionId)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const activeProvider = sessionProvider ?? preferredProvider
@@ -700,10 +702,24 @@ export function ChatStatusBar() {
           </>
         )}
 
+        {hiddenPipTarget && (
+          <>
+            {(bashActivities.length > 0 || agentActivities.length > 0 || workflowActivities.length > 0) && (
+              <div className="h-3 w-px bg-border" />
+            )}
+            <StatusBarPip target={hiddenPipTarget} />
+          </>
+        )}
+
         <StatusBarSandbox
           activeProvider={activeProvider}
           compactIndicators={compactIndicators}
-          showDivider={bashActivities.length > 0 || agentActivities.length > 0 || workflowActivities.length > 0}
+          showDivider={
+            bashActivities.length > 0
+            || agentActivities.length > 0
+            || workflowActivities.length > 0
+            || hiddenPipTarget != null
+          }
         />
       </div>
 

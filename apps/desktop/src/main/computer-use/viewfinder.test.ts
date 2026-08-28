@@ -37,10 +37,17 @@ describe('Computer Use viewfinder bridge', () => {
   })
 
   it('releases the renderer claim when the native stream fails', () => {
+    claimComputerUseViewfinder({
+      sessionId: 'session-a', windowId: 42, pid: 123,
+      bundleId: 'com.apple.TextEdit', title: 'Document',
+    })
+    onClaim.mockClear()
+
     expect(forwardComputerUseViewfinderFrame({
       event: 'computer_use_viewfinder_stopped', sessionId: 'session-a', windowId: 42,
     })).toBe(true)
     expect(onClaim).toHaveBeenCalledWith({ sessionId: 'session-a', active: false })
+    expect(getComputerUseViewfinderTarget('session-a')).toBeNull()
   })
 
   it('exposes only the active target for the requested session', () => {

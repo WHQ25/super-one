@@ -1824,8 +1824,29 @@ const appAPI = {
   },
   focusComputerUseViewfinder: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_FOCUS, sessionId) as Promise<boolean>,
-  hideComputerUseViewfinder: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_HIDE, sessionId) as Promise<boolean>,
+  hideComputerUseViewfinder: (sessionId: string, dismissedWindowId?: number) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.COMPUTER_USE_VIEWFINDER_HIDE,
+      sessionId,
+      dismissedWindowId,
+    ) as Promise<boolean>,
+  restoreComputerUseViewfinder: (sessionId: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.COMPUTER_USE_VIEWFINDER_RESTORE,
+      sessionId,
+    ) as Promise<boolean>,
+  resizeComputerUseViewfinder: (
+    sessionId: string,
+    windowId: number,
+    width: number,
+    height: number,
+  ) => ipcRenderer.invoke(
+    AgentIpcChannels.COMPUTER_USE_VIEWFINDER_RESIZE,
+    sessionId,
+    windowId,
+    width,
+    height,
+  ) as Promise<boolean>,
   listComputerUseInstalledApps: () =>
     ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS) as Promise<
       Array<{ app: string; bundleId: string; aliases: string[] }>

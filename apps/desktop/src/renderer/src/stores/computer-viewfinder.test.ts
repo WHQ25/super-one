@@ -41,6 +41,16 @@ describe('computer use viewfinder stream', () => {
     expect(useComputerViewfinderStore.getState().hiddenSessions['session-a']).toBe(false)
   })
 
+  it('shows an explicitly restored target again', () => {
+    useComputerViewfinderStore.getState().applyClaim(target)
+    useComputerViewfinderStore.getState().hide('session-a')
+
+    useComputerViewfinderStore.getState().show('session-a')
+
+    expect(useComputerViewfinderStore.getState().hiddenSessions['session-a']).toBeUndefined()
+    expect(useComputerViewfinderStore.getState().targets['session-a']?.windowId).toBe(42)
+  })
+
   it('ignores a release from a different session', () => {
     useComputerViewfinderStore.getState().applyClaim(target)
     useComputerViewfinderStore.getState().applyClaim({ sessionId: 'session-b', active: false })

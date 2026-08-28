@@ -918,7 +918,8 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 AgentOverlayController.shared.hideImmediately()
             }
             return .success(id: request.id, result: ["ok": true])
-        case "pip_set_enabled", "pip_show_target", "pip_update_cursor", "pip_hide":
+        case "pip_set_enabled", "pip_show_target", "pip_update_cursor", "pip_hide", "pip_restore",
+             "pip_resize":
             let result = try await handlePictureInPictureCommand(request.method, params: params)
             return .success(id: request.id, result: result)
         case "display_place_window", "display_restore_session", "display_restore_all":
@@ -928,11 +929,17 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let sessionId = AnyCodable.string(params, "sessionId") ?? ""
             if sessionId.isEmpty {
                 AgentOverlayController.shared.hideImmediately()
-                await PictureInPictureController.shared.hide(sessionId: nil)
+                await PictureInPictureController.shared.hide(
+                    sessionId: nil,
+                    clearDismissal: true
+                )
                 _ = WindowPlacementController.shared.restoreAll()
             } else {
                 AgentOverlayController.shared.hideImmediately(sessionId: sessionId)
-                await PictureInPictureController.shared.hide(sessionId: sessionId)
+                await PictureInPictureController.shared.hide(
+                    sessionId: sessionId,
+                    clearDismissal: true
+                )
                 _ = WindowPlacementController.shared.restore(sessionId: sessionId)
             }
             return .success(id: request.id, result: ["ok": true])

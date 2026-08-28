@@ -76,6 +76,7 @@ interface DevicePipState {
   forgetReady: (instanceId: string) => void
   activateReady: (instanceId: string) => void
   hidePreview: (instanceId: string) => void
+  restorePreview: (instanceId: string) => void
   expandPreview: (instanceId: string) => void
   shrinkPreview: () => void
 }
@@ -150,6 +151,10 @@ export const useDevicePipStore = create<DevicePipState>()((set) => ({
       return withSlots(mode, withoutKey(target, instanceId))
     }),
   hidePreview: (instanceId) => set({ hiddenInstanceId: instanceId, expandedInstanceId: null }),
+  restorePreview: (instanceId) => set((state) => ({
+    hiddenInstanceId: state.hiddenInstanceId === instanceId ? null : state.hiddenInstanceId,
+    expandedInstanceId: null,
+  })),
   expandPreview: (instanceId) => set({ expandedInstanceId: instanceId }),
   shrinkPreview: () => set({ expandedInstanceId: null }),
 }))

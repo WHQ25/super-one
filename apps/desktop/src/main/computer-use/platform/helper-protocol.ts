@@ -33,6 +33,8 @@ export type HelperMethod =
   | 'pip_show_target'
   | 'pip_update_cursor'
   | 'pip_hide'
+  | 'pip_restore'
+  | 'pip_resize'
   | 'display_place_window'
   | 'display_restore_session'
   | 'display_restore_all'

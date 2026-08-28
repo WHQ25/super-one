@@ -146,5 +146,8 @@ describe('iOS Simulator preview box', () => {
 
     await waitFor(() => expect(document.querySelector('[data-device-pip]')).toBeNull())
     expect(useDevicePipStore.getState().hiddenInstanceId).toBe(INSTANCE_ID)
+
+    act(() => { useDevicePipStore.getState().restorePreview(INSTANCE_ID) })
+    await waitFor(() => expect(document.querySelector('[data-device-pip]')).not.toBeNull())
   })
 })

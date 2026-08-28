@@ -1776,6 +1776,10 @@ export type Messages = {
       hide: string
       focus: string
     }
+    pictureInPicture: {
+      restore: string
+      restoreFailed: string
+    }
     deviceLaunch: {
       badge: string
       title: string
@@ -5377,6 +5381,10 @@ export const en: Messages = {
       label: 'Computer Use picture in picture',
       hide: 'Hide Computer Use preview',
       focus: 'Focus controlled window',
+    },
+    pictureInPicture: {
+      restore: 'Restore picture in picture',
+      restoreFailed: 'Failed to restore picture in picture',
     },
     deviceLaunch: {
       badge: 'Device',

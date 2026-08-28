@@ -74,6 +74,10 @@ import {
 } from './superone-mcp-server'
 import { resolveMiniappCallConfirm } from './miniapp-call-confirm'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-tool-surface'
+import {
+  clearCodexManagedCapabilityPolicy,
+  setCodexManagedCapabilityPolicy,
+} from '../codex/codex-managed-capability-policy'
 import { LAUNCH_PERMISSION_MODE_DESCRIPTION } from './superone-mcp-builtin-defs'
 import type { ZodArray, ZodObject, ZodOptional, ZodRawShape, ZodTypeAny } from 'zod'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
@@ -138,6 +142,8 @@ beforeEach(() => {
     disposeSuperoneMcpServer(sid)
   }
   setToolSyncCallbacks(null)
+  clearCodexManagedCapabilityPolicy(PROJ_A)
+  clearCodexManagedCapabilityPolicy(PROJ_B)
   createSuperoneMcpServer(PROJ_A)
 })
 
@@ -486,6 +492,26 @@ describe('stdio SuperOne MCP tool surface', () => {
     expect(names).not.toContain('browser_click')
     expect(names).not.toContain('browser_navigate')
     expect(names).not.toContain('browser_action_list')
+  })
+
+  it('hides and rejects browser tools when Codex managed policy disables browser and computer use', async () => {
+    setCodexManagedCapabilityPolicy(PROJ_A, { allowBrowserAndComputerUse: false })
+
+    const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
+    const result = await executeSuperoneMcpTool(PROJ_A, 'browser_snapshot', {})
+
+    expect(names.some((name) => name.startsWith('browser_'))).toBe(false)
+    expect(result).toMatchObject({
+      isError: true,
+      content: [{ text: expect.stringMatching(/managed policy/i) }],
+    })
+  })
+
+  it('keeps browser tools available when the managed requirement is absent or allows them', () => {
+    expect(listSuperoneMcpTools(PROJ_A).some((tool) => tool.name === 'browser_snapshot')).toBe(true)
+
+    setCodexManagedCapabilityPolicy(PROJ_A, { allowBrowserAndComputerUse: true })
+    expect(listSuperoneMcpTools(PROJ_A).some((tool) => tool.name === 'browser_snapshot')).toBe(true)
   })
 
   it('does not notify stdio clients when mini-app authorization changes', () => {

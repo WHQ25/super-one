@@ -71,10 +71,15 @@ import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment
 import { buildCodexWorkspaceWriteSandboxPolicy } from '@superone/codex'
 import {
   readCodexAgentMessageDelivery,
+  readCodexConfigRequirements,
   readCodexErrorOverrides,
   readCodexImageGenerationFailure,
 } from '@superone/codex'
 import { CodexTurnUsageAccumulator } from './codex-usage-accumulator'
+import {
+  clearCodexManagedCapabilityPolicy,
+  setCodexManagedCapabilityPolicy,
+} from './codex-managed-capability-policy'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 
@@ -994,6 +999,7 @@ export async function closeSessionConnection(session: CodexSession): Promise<voi
   }
   const handle = session.connectionHandle
   const threadId = session.threadId
+  clearCodexManagedCapabilityPolicy(session.superoneSessionId)
   tearDownForkRuntime(session, 'connection closed')
   if (handle) {
     log.info(
@@ -1069,6 +1075,16 @@ export async function withSessionConnection<T>(
         try { await handle.close() } catch { /* ignore discarded connection close */ }
         throw new Error('Codex app-server connection discarded while starting')
       }
+      try {
+        const requirements = await readCodexConfigRequirements(handle.connection)
+        setCodexManagedCapabilityPolicy(session.superoneSessionId, requirements)
+      } catch (error) {
+        clearCodexManagedCapabilityPolicy(session.superoneSessionId)
+        log.warn(
+          '[codex] configRequirements/read failed while attaching session policy: %s',
+          error instanceof Error ? error.message : String(error),
+        )
+      }
       handle.onClosed((info) => {
         if (session.connectionHandle === handle) {
           const dispatcher = session.notificationDispatcher
@@ -1078,6 +1094,7 @@ export async function withSessionConnection<T>(
           session.threadId = null
           session.threadReady = false
           session.notificationDispatcher = null
+          clearCodexManagedCapabilityPolicy(session.superoneSessionId)
           if (dispatcher) {
             try { dispatcher.close('app-server exited') } catch {}
           }

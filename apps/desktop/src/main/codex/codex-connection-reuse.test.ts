@@ -40,8 +40,9 @@ vi.mock('./app-server-connection', async () => {
 const { createCodexSession } = await import('./codex-session')
 const { runCodexTurn, closeSessionConnection, resetCodexSession } = await import('./codex-turn')
 const { CodexExperimentService } = await import('./codex-experiment-service')
+const { isCodexBrowserAndComputerUseDenied } = await import('./codex-managed-capability-policy')
 
-function makeFakeHandle() {
+function makeFakeHandle(requirements: Record<string, unknown> | null = null) {
   let closed = false
   const closedListeners = new Set<(info: { code: number | null; signal: NodeJS.Signals | null; stderr: string }) => void>()
   const completeImmediately = async () => ({ method: 'turn/completed', params: { turn: { status: 'completed' } } })
@@ -49,6 +50,7 @@ function makeFakeHandle() {
     connection: {
       request: vi.fn<(method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>>()
         .mockImplementation(async (method: string) => {
+          if (method === 'configRequirements/read') return { requirements }
           if (method === 'thread/start' || method === 'thread/resume') return { thread: { id: 'thread-abc' } }
           if (method === 'turn/start') return { turn: { id: 'turn-1' } }
           return {}
@@ -103,6 +105,26 @@ describe('Codex session connection reuse', () => {
 
     expect(createHandleMock).toHaveBeenCalledTimes(1)
     expect(handle.close).not.toHaveBeenCalled()
+  })
+
+  it('loads managed browser and computer policy before starting the Codex thread and clears it on close', async () => {
+    const handle = makeFakeHandle({ allowBrowserAndComputerUse: false })
+    createHandleMock.mockResolvedValue(handle)
+    const session = trackSession(createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default'))
+
+    await runCodexTurn(session, { mode: 'auto' }, '/project', {
+      prompt: 'policy check',
+      model: 'gpt-5.4',
+      permissionPreset: 'default',
+    })
+
+    const methods = handle.connection.request.mock.calls.map(([method]) => method)
+    expect(methods.indexOf('configRequirements/read')).toBeGreaterThanOrEqual(0)
+    expect(methods.indexOf('configRequirements/read')).toBeLessThan(methods.indexOf('thread/start'))
+    expect(isCodexBrowserAndComputerUseDenied(session.superoneSessionId)).toBe(true)
+
+    await closeSessionConnection(session)
+    expect(isCodexBrowserAndComputerUseDenied(session.superoneSessionId)).toBe(false)
   })
 
   it('tears down and respawns the connection when the session is reset', async () => {

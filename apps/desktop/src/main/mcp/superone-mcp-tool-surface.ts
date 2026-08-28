@@ -48,6 +48,10 @@ import {
   listWidgetTemplatesHandler,
   executeWidgetShowTool,
 } from '../generative-ui/mcp-server'
+import {
+  CODEX_MANAGED_BROWSER_COMPUTER_DENIED_MESSAGE,
+  isCodexBrowserAndComputerUseDenied,
+} from '../codex/codex-managed-capability-policy'
 
 const WIDGET_LIST_TEMPLATES_NAME = 'widget_list_templates'
 const WIDGET_SHOW_NAME = 'widget_show'
@@ -80,15 +84,16 @@ const WIDGET_SHOW_DESCRIPTOR: SuperoneMcpToolDescriptor = {
 }
 
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
+  const browserAndComputerUseDenied = isCodexBrowserAndComputerUseDenied(sessionId)
   const tools = [
     ...BUILT_IN_SUPERONE_TOOL_DEFS,
-    ...getBrowserToolDescriptors(),
+    ...(browserAndComputerUseDenied ? [] : getBrowserToolDescriptors()),
     ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
     WIDGET_LIST_TEMPLATES_DESCRIPTOR,
     WIDGET_SHOW_DESCRIPTOR,
   ]
   // Computer Use is opt-in (default off). P0 exposes the 6-tool contract only when enabled.
-  if (isComputerUseEnabled()) {
+  if (!browserAndComputerUseDenied && isComputerUseEnabled()) {
     tools.push(...getComputerUseToolDescriptors())
   }
   // Gated on the platform, not on whether a device is booted: Codex snapshots
@@ -116,6 +121,16 @@ export async function executeSuperoneMcpTool(
   args: Record<string, unknown>,
   signal?: AbortSignal,
 ) {
+  if (
+    isCodexBrowserAndComputerUseDenied(sessionId)
+    && (isBrowserToolName(toolName) || isComputerUseToolName(toolName))
+  ) {
+    return {
+      content: [{ type: 'text' as const, text: CODEX_MANAGED_BROWSER_COMPUTER_DENIED_MESSAGE }],
+      isError: true,
+    }
+  }
+
   if (isBrowserToolName(toolName)) {
     return executeBrowserTool(sessionId, toolName, args)
   }

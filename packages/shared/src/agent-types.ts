@@ -2727,6 +2727,44 @@ export interface CodexServerDiagnostics {
 }
 
 /** Selected managed settings from configRequirements/read; unknown 149+ fields stay available. */
+export type CodexAllowDenyRequirement = 'allow' | 'deny'
+
+export interface CodexBrowserUseOriginPolicy {
+  access?: CodexAllowDenyRequirement | null
+  downloads?: CodexAllowDenyRequirement | null
+  uploads?: CodexAllowDenyRequirement | null
+  fullCdpAccess?: CodexAllowDenyRequirement | null
+  autoReview?: CodexAllowDenyRequirement | null
+  persistentApproval?: boolean | null
+  accessApprovalLifetime?: 'turn' | 'thread' | null
+}
+
+export interface CodexBrowserUseRequirements {
+  allowHistoryAccess?: boolean | null
+  disableAutoReview?: boolean | null
+  allowGlobalPersistentApproval?: boolean | null
+  defaultOriginPolicy?: CodexBrowserUseOriginPolicy | null
+  origins?: Record<string, CodexBrowserUseOriginPolicy> | null
+}
+
+export interface CodexComputerUseRequirements {
+  allowLockedComputerUse?: boolean | null
+  allowPersistentApproval?: boolean | null
+  defaultAppAccess?: CodexAllowDenyRequirement | null
+  macos?: {
+    bundleIds?: Record<string, CodexAllowDenyRequirement> | null
+  } | null
+  windows?: {
+    aumids?: Record<string, CodexAllowDenyRequirement> | null
+    exes?: Array<{
+      publisherName: string
+      productName: string
+      binaryName?: string | null
+      access: CodexAllowDenyRequirement
+    }> | null
+  } | null
+}
+
 export interface CodexConfigRequirements {
   [key: string]: unknown
   additionalDeveloperInstructions?: string | null
@@ -2736,7 +2774,14 @@ export interface CodexConfigRequirements {
   allowedPermissionProfiles?: Record<string, boolean> | null
   defaultPermissions?: string | null
   allowManagedHooksOnly?: boolean | null
+  allowBrowserAndComputerUse?: boolean | null
+  allowAppshots?: boolean | null
   allowRemoteControl?: boolean | null
+  browserUse?: CodexBrowserUseRequirements | null
+  computerUse?: CodexComputerUseRequirements | null
+  inAppBrowser?: {
+    allowExternalBrowserSettingsImport?: boolean | null
+  } | null
   featureRequirements?: Record<string, boolean> | null
   models?: {
     newThread?: {

@@ -781,6 +781,9 @@ export class Session implements SessionContract {
     if (this.harnessId !== 'codex' || !this.backend.startRealtimeVoice) {
       throw new Error('Realtime voice is not supported by this agent.')
     }
+    // A cold session starts its backend while the optional realtime timeline is
+    // loading. Share that startup instead of mistaking it for an active turn.
+    if (this._status === 'starting') await this.ensureStarted()
     if (this.isStreaming()) throw new Error('Wait for the current turn to finish before starting voice.')
     await this.waitForRuntimeRelease()
     if (request.additionalDirs !== undefined) this.callerScopedDirs = [...request.additionalDirs]

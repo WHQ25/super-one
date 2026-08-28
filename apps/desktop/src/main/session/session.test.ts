@@ -63,6 +63,8 @@ class FakeBackend implements SessionBackend {
   interruptCalls = 0
   startShouldFail: Error | null = null
   sendShouldFail: Error | null = null
+  resolveStart: (() => void) | null = null
+  startBlocked = false
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -72,6 +74,9 @@ class FakeBackend implements SessionBackend {
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.startShouldFail) throw this.startShouldFail
+    if (this.startBlocked) {
+      await new Promise<void>((resolve) => { this.resolveStart = resolve })
+    }
     this.started = true
     this.activeRuntime = true
     this.startOpts = opts
@@ -2787,6 +2792,42 @@ describe('Session persist hook', () => {
       providerSessionId: 'thread-realtime',
       messages: [],
     })
+  })
+
+  it('waits for cold backend startup shared with timeline before starting voice', async () => {
+    const { session, backend } = makeSession({
+      providerId: 'codex-base',
+      harnessId: 'codex',
+      resumedProviderSessionId: 'thread-existing',
+    })
+    backend.startBlocked = true
+
+    const timeline = session.getRealtimeTimeline()
+    await vi.waitFor(() => expect(session.getStatus()).toBe('starting'))
+    const voice = session.startRealtimeVoice({ sdp: 'offer' })
+
+    backend.resolveStart?.()
+
+    await expect(Promise.all([timeline, voice])).resolves.toBeDefined()
+    expect(backend.startOpts?.providerSessionId).toBe('thread-existing')
+    expect(backend.realtimeCalls).toEqual([{ sdp: 'offer' }])
+  })
+
+  it('still rejects voice while a text turn is active', async () => {
+    const { session, backend } = makeSession({
+      providerId: 'codex-base',
+      harnessId: 'codex',
+    })
+    const turn = session.send({ content: 'Inspect the logs' })
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(1))
+
+    await expect(session.startRealtimeVoice({ sdp: 'offer' })).rejects.toThrow(
+      'Wait for the current turn to finish before starting voice.',
+    )
+
+    backend.resolveSend?.()
+    await turn
+    expect(backend.realtimeCalls).toHaveLength(0)
   })
 
   it('titles a new voice-only session from the first complete user utterance', async () => {

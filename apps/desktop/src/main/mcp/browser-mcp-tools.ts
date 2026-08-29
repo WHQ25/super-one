@@ -1143,6 +1143,22 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
   )
 
   server.registerTool(
+    'browser_close',
+    {
+      description:
+        'Close a browser tab this session opened and discard its view. Use it to clean up tabs you are finished with so later calls are not ambiguous about which tab they mean. Pass an array of ids to close several at once — they are closed independently, so a stale id is reported in `failed` instead of stopping the rest. Only tabs belonging to this session can be closed; omit "tab" only when the session has exactly one. Closing is not undoable — never close a tab the user is reading or one you did not open yourself.',
+      inputSchema: {
+        tab: z
+          .union([z.string(), z.array(z.string()).min(1)])
+          .optional()
+          .describe('Browser view id, or an array of ids to close together. Omit to target the focused browser view (errors if multiple are open).'),
+        ...descriptionField,
+      },
+    },
+    (args) => dataTool(sessionId, 'close', args),
+  )
+
+  server.registerTool(
     'browser_evaluate',
     {
       description:

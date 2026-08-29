@@ -15,7 +15,7 @@ import {
 } from './browser-host-api'
 import { beginBrowserFocusIsolation, endBrowserFocusIsolation, withBrowserFocusIsolation } from './browser-focus-isolation'
 import { isBlankUrl } from './browser-url'
-import { openBrowserTab } from '@/components/activity/activity-panel-api'
+import { closeBrowserTab, openBrowserTab } from '@/components/activity/activity-panel-api'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { fitScreenshotWidth } from './screenshot-fit'
 import {
@@ -235,6 +235,11 @@ interface PointTarget {
 function ownedTabIds(sessionId: string): string[] {
   const state = useBrowserStore.getState()
   return Object.keys(state.tabs).filter((id) => state.tabs[id].owner === sessionId)
+}
+
+function closeOwnedTab(sessionId: string, id: string): void {
+  closeBrowserTab(id)
+  useAgentViewfinderStore.getState().clear(sessionId, { kind: 'browser', targetId: id })
 }
 
 function resolveBrowserId(tab: string | undefined, sessionId: string): string {
@@ -881,6 +886,43 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       .map((id) => webContentsIdForBrowser(id))
       .filter((id): id is number => id != null)
     return { webContentsIds: ids }
+  }
+  // Handled before the shared beginAutomation block below: that path opens a
+  // presentation scope on the target and hands the viewfinder to it, which is the
+  // opposite of what closing means — the tab is gone by the time it would end.
+  if (op === 'close') {
+    // `tab` widens to a list for this op alone, so it is read off the raw input
+    // rather than through BaseInput's single-tab shape.
+    const requested = (rawInput as { tab?: string | string[] } | null)?.tab
+    // A missing or ambiguous single `tab` is a caller error and still throws. A
+    // list is best-effort instead: these tabs are independent, so one stale id
+    // must not block the rest — unlike browser_act, whose steps share page state.
+    if (!Array.isArray(requested)) {
+      const target = resolveBrowserId(requested, sessionId)
+      closeOwnedTab(sessionId, target)
+      return { ok: true, closed: [target], remaining: ownedTabIds(sessionId).length }
+    }
+    const closed: string[] = []
+    const failed: Array<{ tab: string; error: string }> = []
+    for (const candidate of requested) {
+      try {
+        // Resolved per item against the live store, so a duplicate id fails the
+        // second time instead of closing an unrelated tab that reused the slot.
+        const target = resolveBrowserId(candidate, sessionId)
+        closeOwnedTab(sessionId, target)
+        closed.push(target)
+      } catch (err) {
+        failed.push({ tab: candidate, error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+    return {
+      ok: failed.length === 0,
+      closed,
+      ...(failed.length
+        ? { error: `${failed.length} of ${requested.length} tabs could not be closed`, failed }
+        : {}),
+      remaining: ownedTabIds(sessionId).length,
+    }
   }
   if (op === 'tabs') {
     const state = useBrowserStore.getState()

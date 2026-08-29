@@ -2317,6 +2317,8 @@ export const zh: Messages = {
         navigating: '正在导航',
         open: '打开标签页',
         opening: '正在打开标签页',
+        close: '关闭标签页',
+        closing: '正在关闭标签页',
         snapshot: '快照',
         snapshotting: '正在截取快照',
         query: '查询',

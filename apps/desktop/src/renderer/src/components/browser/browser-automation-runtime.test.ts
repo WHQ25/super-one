@@ -250,3 +250,116 @@ describe('automation host focus guard', () => {
     unmount()
   })
 })
+
+describe('close op', () => {
+  beforeEach(() => {
+    useAgentViewfinderStore.setState({ activeBySession: {} })
+    useBrowserStore.setState({
+      tabs: {},
+      automationCounts: {},
+      activeAutomationId: null,
+      pendingPreviewBrowserId: null,
+      automationPreviewBrowserId: null,
+      automationPreviewReady: {},
+    })
+  })
+
+  it('drops the tab from the store and releases the viewfinder', async () => {
+    useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
+    useBrowserStore.getState().ensure('browser-b', 'https://other.test', 'session-a')
+    useAgentViewfinderStore.getState().activate('session-a', 'browser', 'browser-a')
+
+    const result = await runBrowserOp('session-a', 'close', { tab: 'browser-a' })
+
+    expect(result).toEqual({ ok: true, closed: ['browser-a'], remaining: 1 })
+    expect(useBrowserStore.getState().tabs['browser-a']).toBeUndefined()
+    expect(useBrowserStore.getState().tabs['browser-b']).toBeDefined()
+    expect(selectViewfinderTarget(useAgentViewfinderStore.getState(), 'session-a')).toBeNull()
+  })
+
+  it('refuses to close a tab owned by another session', async () => {
+    useBrowserStore.getState().ensure('browser-other', 'https://example.com', 'session-b')
+
+    await expect(runBrowserOp('session-a', 'close', { tab: 'browser-other' })).rejects.toThrow(
+      /not found in this session/,
+    )
+    expect(useBrowserStore.getState().tabs['browser-other']).toBeDefined()
+  })
+
+  it('leaves another session-a tab addressable and keeps a stale viewfinder target', async () => {
+    // Clearing is scoped to the closed tab: a viewfinder already pointing at the
+    // session's *other* tab must survive, or the preview blanks for no reason.
+    useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
+    useBrowserStore.getState().ensure('browser-b', 'https://other.test', 'session-a')
+    useAgentViewfinderStore.getState().activate('session-a', 'browser', 'browser-b')
+
+    await runBrowserOp('session-a', 'close', { tab: 'browser-a' })
+
+    expect(selectViewfinderTarget(useAgentViewfinderStore.getState(), 'session-a'))
+      .toEqual({ kind: 'browser', targetId: 'browser-b' })
+  })
+
+  it('requires an explicit tab when the session has more than one open', async () => {
+    useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
+    useBrowserStore.getState().ensure('browser-b', 'https://other.test', 'session-a')
+
+    await expect(runBrowserOp('session-a', 'close', {})).rejects.toThrow(/specify "tab"/)
+    expect(Object.keys(useBrowserStore.getState().tabs)).toHaveLength(2)
+  })
+})
+
+describe('close op with a list of tabs', () => {
+  beforeEach(() => {
+    useAgentViewfinderStore.setState({ activeBySession: {} })
+    useBrowserStore.setState({
+      tabs: {},
+      automationCounts: {},
+      activeAutomationId: null,
+      pendingPreviewBrowserId: null,
+      automationPreviewBrowserId: null,
+      automationPreviewReady: {},
+    })
+  })
+
+  it('closes every listed tab in one call', async () => {
+    for (const id of ['browser-a', 'browser-b', 'browser-c']) {
+      useBrowserStore.getState().ensure(id, `https://${id}.test`, 'session-a')
+    }
+
+    const result = await runBrowserOp('session-a', 'close', { tab: ['browser-a', 'browser-c'] })
+
+    expect(result).toEqual({ ok: true, closed: ['browser-a', 'browser-c'], remaining: 1 })
+    expect(Object.keys(useBrowserStore.getState().tabs)).toEqual(['browser-b'])
+  })
+
+  it('keeps closing after a bad id instead of failing the whole batch', async () => {
+    useBrowserStore.getState().ensure('browser-a', 'https://a.test', 'session-a')
+    useBrowserStore.getState().ensure('browser-b', 'https://b.test', 'session-a')
+    useBrowserStore.getState().ensure('browser-other', 'https://c.test', 'session-b')
+
+    const result = await runBrowserOp('session-a', 'close', {
+      tab: ['browser-a', 'browser-other', 'browser-b'],
+    }) as { ok: boolean; closed: string[]; failed: Array<{ tab: string }>; remaining: number }
+
+    expect(result.ok).toBe(false)
+    expect(result.closed).toEqual(['browser-a', 'browser-b'])
+    expect(result.failed).toEqual([
+      { tab: 'browser-other', error: expect.stringContaining('not found in this session') },
+    ])
+    expect(result.remaining).toBe(0)
+    // The other session's tab is untouched, not just unreported.
+    expect(useBrowserStore.getState().tabs['browser-other']).toBeDefined()
+  })
+
+  it('reports a repeated id once as closed and once as failed', async () => {
+    useBrowserStore.getState().ensure('browser-a', 'https://a.test', 'session-a')
+
+    const result = await runBrowserOp('session-a', 'close', { tab: ['browser-a', 'browser-a'] }) as {
+      closed: string[]
+      failed: Array<{ tab: string }>
+    }
+
+    expect(result.closed).toEqual(['browser-a'])
+    expect(result.failed).toHaveLength(1)
+  })
+})

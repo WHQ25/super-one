@@ -18,6 +18,7 @@ export type BrowserAutomationOp =
   | 'drag'
   | 'select'
   | 'open'
+  | 'close'
   | 'evaluate'
   | 'tabs'
   | 'resolveWebContentsId'

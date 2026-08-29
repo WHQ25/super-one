@@ -145,6 +145,7 @@ export const BROWSER_TABS_DESCRIPTION =
   + 'action=list (default) returns a TOON table of tab id / url / title / loading. '
   + 'action=open creates or reuses a tab (optional url). '
   + 'action=navigate|back|forward|reload changes that tab\'s page — pass url, or port (+ optional path) for localhost. '
+  + 'action=close discards tabs you opened and are done with — pass one id or an array; it is not undoable, so never close a tab the user is reading. '
   + 'Use the returned tab id as `tab` on other browser tools. Not for clicking or typing (browser_act).'
 
 export const BROWSER_SNAPSHOT_DESCRIPTION =
@@ -266,10 +267,13 @@ export function registerCompactBrowserTools(
       inputSchema: {
         ...descriptionField,
         action: z
-          .enum(['list', 'open', 'navigate', 'back', 'forward', 'reload'])
+          .enum(['list', 'open', 'navigate', 'back', 'forward', 'reload', 'close'])
           .optional()
           .describe('Default list.'),
-        tab: z.string().optional().describe('Existing tab id to reuse (open) or target (navigate/history).'),
+        tab: z
+          .union([z.string(), z.array(z.string()).min(1)])
+          .optional()
+          .describe('Existing tab id to reuse (open) or target (navigate/history/close). An array is only valid with action=close.'),
         url: z.string().optional().describe('Website URL for open/navigate. Schemeless host gets https; loopback gets http.'),
         port: z.number().int().min(1).max(65535).optional().describe('Localhost port for navigate.'),
         path: z.string().optional().describe('Optional path/query for the port form.'),
@@ -280,6 +284,17 @@ export function registerCompactBrowserTools(
     async (args) => {
       const action = args.action ?? 'list'
       if (action === 'list') return runPrimitive('browser_tabs', {})
+      if (action === 'close') {
+        return runPrimitive('browser_close', {
+          description: args.description,
+          tab: args.tab,
+        })
+      }
+      // Only close is a set operation. Silently using the first id for open or
+      // navigate would act on a tab the caller did not single out.
+      if (Array.isArray(args.tab)) {
+        return browserErrorReply(new Error('An array of tab ids is only valid with action=close.'))
+      }
       if (action === 'open') {
         return runPrimitive('browser_open', {
           description: args.description,

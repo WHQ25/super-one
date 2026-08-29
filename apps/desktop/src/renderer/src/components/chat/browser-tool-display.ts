@@ -13,6 +13,7 @@ export type BrowserOp =
   | 'drag'
   | 'select'
   | 'open'
+  | 'close'
   | 'evaluate'
   | 'tabs'
   | 'resize'
@@ -35,7 +36,7 @@ export type BrowserOp =
 
 const BROWSER_OPS = new Set<BrowserOp>([
   'snapshot', 'query', 'inspect', 'screenshot', 'click', 'hover', 'type', 'navigate',
-  'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs', 'resize',
+  'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'close', 'evaluate', 'tabs', 'resize',
   'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file',
   'download', 'list_downloads', 'emulate', 'mock', 'action_list', 'action_save', 'action_do',
   'act', 'tools_list', 'tools_call',
@@ -45,7 +46,7 @@ const BROWSER_OPS = new Set<BrowserOp>([
 const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list', 'tools_list'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
-const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do', 'act', 'tools_call'])
+const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'close', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do', 'act', 'tools_call'])
 
 const NETWORK_ACTION_OP: Record<string, BrowserOp> = {
   start: 'network_start',
@@ -72,6 +73,7 @@ const TABS_ACTION_OP: Record<string, BrowserOp> = {
   back: 'navigate',
   forward: 'navigate',
   reload: 'navigate',
+  close: 'close',
 }
 
 /** One `browser_act` step type → the op that renders it as if it were its own tool. */
@@ -133,6 +135,7 @@ const VERB_BASE: Record<BrowserOp, string> = {
   drag: 'drag',
   select: 'select',
   open: 'open',
+  close: 'close',
   evaluate: 'evaluate',
   tabs: 'tabs',
   resize: 'resize',
@@ -169,6 +172,7 @@ const VERB_STREAMING: Record<BrowserOp, string> = {
   drag: 'dragging',
   select: 'selecting',
   open: 'opening',
+  close: 'closing',
   evaluate: 'evaluating',
   tabs: 'listingTabs',
   resize: 'resizing',
@@ -245,6 +249,11 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       return ''
     case 'open':
       return p.url != null ? stripProtocol(s(p.url)) : ''
+    // The tab id is a UUID — meaningless to the user, and the closed tab's url is
+    // no longer resolvable from the store by the time the row renders. The count of
+    // tabs actually closed comes from the result instead.
+    case 'close':
+      return ''
     case 'click':
     case 'hover':
       if (p.selector != null) return s(p.selector)
@@ -440,6 +449,12 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
       return { status: 'neutral' }
     case 'screenshot':
       return { status: 'ok', imagePath: typeof obj?.path === 'string' ? obj.path : undefined }
+    case 'close': {
+      // A partly-failed batch already returned above on `ok === false`, so anything
+      // reaching here closed everything it was asked to.
+      const n = Array.isArray(obj?.closed) ? obj.closed.length : undefined
+      return n != null ? { status: 'ok', count: { kind: 'tabs', n } } : { status: 'ok' }
+    }
     case 'download': {
       if (obj?.status === 'background') {
         return {

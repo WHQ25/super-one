@@ -2226,6 +2226,8 @@ export type Messages = {
         navigating: string
         open: string
         opening: string
+        close: string
+        closing: string
         snapshot: string
         snapshotting: string
         query: string
@@ -5861,6 +5863,8 @@ export const en: Messages = {
         navigating: 'Navigating',
         open: 'Open Tab',
         opening: 'Opening Tab',
+        close: 'Close Tab',
+        closing: 'Closing Tab',
         snapshot: 'Snapshot',
         snapshotting: 'Taking snapshot',
         query: 'Query',

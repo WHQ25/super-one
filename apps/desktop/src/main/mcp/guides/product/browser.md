@@ -4,7 +4,7 @@ Nine tools drive one browser that lives inside SuperOne. Every tool takes an
 optional `tab`; omit it and the session's current tab is used.
 
 ```
-browser_tabs      open / navigate / list / back / forward / reload
+browser_tabs      open / navigate / list / back / forward / reload / close
 browser_snapshot  read the page (meta, elements, tree, text, console, screenshot)
 browser_query     search or inspect when you already know the target
 browser_act       click, hover, type, press, scroll, drag, select, upload

@@ -42,7 +42,7 @@ describe('browser tool surface', () => {
 
   it('includes both WebMCP tools in both browser surfaces', () => {
     expect(advertisedBrowserToolNames('compact')).toHaveLength(11)
-    expect(advertisedBrowserToolNames('legacy')).toHaveLength(33)
+    expect(advertisedBrowserToolNames('legacy')).toHaveLength(34)
     expect(advertisedBrowserToolNames('compact')).toContain('browser_act')
     expect(advertisedBrowserToolNames('compact')).toContain('browser_tools_list')
     expect(advertisedBrowserToolNames('compact')).toContain('browser_tools_call')

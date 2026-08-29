@@ -1050,6 +1050,37 @@ describe('compact browser surface', () => {
     )
   })
 
+  it('maps browser_tabs close to the close primitive', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall).mockResolvedValue({ ok: true, tab: 'browser-a', remaining: 0 })
+    await tools.get('browser_tabs')!({ action: 'close', tab: 'browser-a' })
+    expect(vi.mocked(browserAutomationCall)).toHaveBeenLastCalledWith(
+      'sess-1',
+      'close',
+      expect.objectContaining({ tab: 'browser-a' }),
+    )
+  })
+
+  it('passes a list of tab ids straight through to the close primitive', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall).mockResolvedValue({ ok: true, closed: ['browser-a', 'browser-b'], remaining: 0 })
+    await tools.get('browser_tabs')!({ action: 'close', tab: ['browser-a', 'browser-b'] })
+    expect(vi.mocked(browserAutomationCall)).toHaveBeenLastCalledWith(
+      'sess-1',
+      'close',
+      expect.objectContaining({ tab: ['browser-a', 'browser-b'] }),
+    )
+  })
+
+  it('rejects a list of tab ids on any action but close', async () => {
+    const tools = buildCompact()
+    vi.mocked(browserAutomationCall).mockReset()
+    const reply = await tools.get('browser_tabs')!({ action: 'navigate', tab: ['browser-a', 'browser-b'], url: 'https://example.com' })
+    expect(reply.isError).toBe(true)
+    expect(resultText(reply)).toMatch(/only valid with action=close/)
+    expect(vi.mocked(browserAutomationCall)).not.toHaveBeenCalled()
+  })
+
   it('maps browser_network emulate-with-preset to resize (no CDP)', async () => {
     const tools = buildCompact()
     vi.mocked(browserAutomationCall).mockResolvedValue({ ok: true })

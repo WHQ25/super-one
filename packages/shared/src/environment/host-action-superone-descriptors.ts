@@ -1441,7 +1441,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "browser_tabs",
-    "description": "Discover and change browser tabs for this session. action=list (default) returns a TOON table of tab id / url / title / loading. action=open creates or reuses a tab (optional url). action=navigate|back|forward|reload changes that tab's page — pass url, or port (+ optional path) for localhost. Use the returned tab id as `tab` on other browser tools. Not for clicking or typing (browser_act).",
+    "description": "Discover and change browser tabs for this session. action=list (default) returns a TOON table of tab id / url / title / loading. action=open creates or reuses a tab (optional url). action=navigate|back|forward|reload changes that tab's page — pass url, or port (+ optional path) for localhost. action=close discards tabs you opened and are done with — pass one id or an array; it is not undoable, so never close a tab the user is reading. Use the returned tab id as `tab` on other browser tools. Not for clicking or typing (browser_act).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1458,12 +1458,16 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
             "navigate",
             "back",
             "forward",
-            "reload"
+            "reload",
+            "close"
           ]
         },
         "tab": {
-          "description": "Existing tab id to reuse (open) or target (navigate/history).",
-          "type": "string"
+          "description": "Existing tab id to reuse (open) or target (navigate/history/close). An array is only valid with action=close.",
+          "anyOf": [
+            { "type": "string" },
+            { "minItems": 1, "type": "array", "items": { "type": "string" } }
+          ]
         },
         "url": {
           "description": "Website URL for open/navigate. Schemeless host gets https; loopback gets http.",

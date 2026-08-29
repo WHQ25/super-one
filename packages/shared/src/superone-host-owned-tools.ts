@@ -30,6 +30,7 @@ export const BROWSER_PRIMITIVE_TOOL_NAMES = [
   'browser_drag',
   'browser_select',
   'browser_open',
+  'browser_close',
   'browser_evaluate',
   'browser_tabs',
   'browser_resize',

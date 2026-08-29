@@ -67,8 +67,6 @@ interface ChatMessageProps {
   sessionStatus: AgentStatus
   isLastAssistant: boolean
   hideUserActions?: boolean
-  hideFooter?: boolean
-  compactSpacing?: boolean
 }
 
 /** Tools whose consecutive calls can be collapsed into a summary group. */
@@ -1011,7 +1009,7 @@ function renderClaudeSegments(
   })
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions, hideFooter, compactSpacing = false }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
   const detailChatMode = useAppStore((s) => s.detailChatMode)
@@ -1085,7 +1083,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
       'w-0 min-w-full flex',
       isUser
         ? (isCollab ? 'justify-start' : 'justify-end')
-        : compactSpacing ? 'mb-1 justify-start' : 'mb-2 justify-start',
+        : 'mb-2 justify-start',
     )}>
       <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col' : 'w-full', isUser && !isCollab && 'items-end', isUser && isCollab && 'items-start')}>
         {isCollab && collabLabelKey && (
@@ -1145,7 +1143,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
         {!isUser && message.metadata?.turnSummary && (
           <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
         )}
-        {!isUser && !hideFooter && (
+        {!isUser && (
           <DurationFooter
             message={message}
             copyText={assistantCopyText}

@@ -5,7 +5,11 @@ import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { refreshCodexRealtimeTimeline, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import {
+  refreshCodexRealtimeTimeline,
+  useCodexRealtimeViewStore,
+  type CodexConversationView,
+} from '@/stores/codex-realtime-view'
 import { preferTcpIceCandidates, startWebRtcDiagnostics, waitForIceGathering } from '@/lib/realtime-webrtc'
 
 type VoiceState = 'idle' | 'starting' | 'active' | 'stopping'
@@ -22,6 +26,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
   const [state, setState] = useState<VoiceState>('idle')
   const setView = useCodexRealtimeViewStore((store) => store.setView)
   const setRealtimeSession = useCodexRealtimeViewStore((store) => store.setRealtimeSession)
+  const setRealtimeStarting = useCodexRealtimeViewStore((store) => store.setRealtimeStarting)
   const startTranscriptItem = useCodexRealtimeViewStore((store) => store.startTranscriptItem)
   const appendTranscriptItemDelta = useCodexRealtimeViewStore((store) => store.appendTranscriptItemDelta)
   const completeTranscriptItem = useCodexRealtimeViewStore((store) => store.completeTranscriptItem)
@@ -32,6 +37,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
   const stateRef = useRef<VoiceState>('idle')
   const timelineLoadedRef = useRef(false)
   const negotiationTimerRef = useRef<number | null>(null)
+  const viewBeforeCallRef = useRef<CodexConversationView>('thread')
 
   useEffect(() => {
     timelineLoadedRef.current = false
@@ -41,6 +47,11 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
     stateRef.current = next
     setState(next)
   }, [])
+
+  const abandonStart = useCallback(() => {
+    setRealtimeStarting(sessionId, false)
+    setView(sessionId, viewBeforeCallRef.current)
+  }, [sessionId, setRealtimeStarting, setView])
 
   const releaseMedia = useCallback(() => {
     if (negotiationTimerRef.current !== null) window.clearTimeout(negotiationTimerRef.current)
@@ -68,6 +79,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
     if (event.sessionId !== sessionId) return
     if (event.type === 'realtime_started') {
       setRealtimeSession(sessionId, event.realtimeSessionId ?? 'live')
+      // The view switched on the click, so there is nothing to switch here.
       setView(sessionId, 'realtime')
       return
     }
@@ -87,6 +99,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
         toast.error(error instanceof Error ? error.message : String(error))
         releaseMedia()
         updateState('idle')
+        abandonStart()
       })
       return
     }
@@ -102,6 +115,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
         realtimeSessionId: event.realtimeSessionId,
         role: event.role,
         text: event.text,
+        ...(event.startedAtMs === undefined ? {} : { startedAtMs: event.startedAtMs }),
       }
       if (event.phase === 'started') startTranscriptItem(sessionId, item)
       else completeTranscriptItem(sessionId, item)
@@ -111,6 +125,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
       toast.error(event.error)
       releaseMedia()
       updateState('idle')
+      abandonStart()
       return
     }
     if (event.type === 'realtime_closed') {
@@ -119,7 +134,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
       setRealtimeSession(sessionId, null)
       void refreshTimeline()
     }
-  }), [appendTranscriptItemDelta, completeTranscriptItem, refreshTimeline, releaseMedia, sessionId, setRealtimeSession, setView, startTranscriptItem, updateState])
+  }), [abandonStart, appendTranscriptItemDelta, completeTranscriptItem, refreshTimeline, releaseMedia, sessionId, setRealtimeSession, setView, startTranscriptItem, updateState])
 
   useEffect(() => () => {
     releaseMedia()
@@ -129,6 +144,13 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
 
   const start = useCallback(async () => {
     updateState('starting')
+    // Enter the call view on the click. Everything downstream — SDP negotiation, the
+    // first transcript item — takes seconds, and rendering the empty-pane chrome for
+    // that whole span remounts the harness picker through its own branch changes.
+    viewBeforeCallRef.current = useCodexRealtimeViewStore.getState()
+      .sessions[sessionId]?.view ?? 'thread'
+    setRealtimeStarting(sessionId, true)
+    setView(sessionId, 'realtime')
     if (!timelineLoadedRef.current) void refreshTimeline()
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -171,15 +193,20 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
           void window.agent.stopRealtimeVoice(projectPath, sessionId)
           releaseMedia()
           updateState('idle')
+          abandonStart()
           toast.error(t('chat.realtimeVoice.connectionTimedOut'))
         }, 15_000)
       }
     } catch (error) {
       releaseMedia()
       updateState('idle')
+      abandonStart()
       toast.error(error instanceof Error ? error.message : String(error))
     }
-  }, [additionalDirs, projectPath, refreshTimeline, releaseMedia, sessionId, t, updateState])
+  }, [
+    abandonStart, additionalDirs, projectPath, refreshTimeline, releaseMedia, sessionId,
+    setRealtimeStarting, setView, t, updateState,
+  ])
 
   const stop = useCallback(async () => {
     updateState('stopping')

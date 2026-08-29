@@ -4,15 +4,11 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
-import { CodexRealtimeTranscript, realtimeSegmentToChatMessage } from './CodexRealtimeTranscript'
+import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 
 vi.mock('./ChatMessage', () => ({
-  ChatMessage: ({ message, hideFooter, compactSpacing }: { message: ChatMessageType; hideFooter?: boolean; compactSpacing?: boolean }) => (
-    <div
-      data-testid={`realtime-${message.role}`}
-      data-hide-footer={String(Boolean(hideFooter))}
-      data-compact-spacing={String(Boolean(compactSpacing))}
-    >
+  ChatMessage: ({ message }: { message: ChatMessageType }) => (
+    <div data-testid={`realtime-${message.role}`}>
       {message.content.map((block) => block.type === 'text' ? block.text : '').join('')}
     </div>
   ),
@@ -53,6 +49,29 @@ describe('CodexRealtimeTranscript', () => {
     })
   })
 
+  it('says it is listening rather than loading while a new call has no transcript yet', async () => {
+    // A call started on a session whose timeline was never fetched: the mount kicks off
+    // a hydrate, and showing "Loading..." for that beat reads as the chat blanking out.
+    window.agent.getRealtimeTimeline = vi.fn(async () => ({
+      activeRealtimeSessionId: 'realtime-1', hasTimeline: true, threadMessages: [], segments: [],
+    }))
+    useCodexRealtimeViewStore.getState().setRealtimeSession('session-a', 'realtime-1')
+
+    render(
+      <CodexRealtimeTranscript
+        projectPath="/repo"
+        sessionId="session-a"
+        scrollViewportRef={{ current: null }}
+        liquidGlass
+      />,
+    )
+
+    // The very first paint, before the mount-triggered hydrate has resolved.
+    expect(screen.getByText('Listening for speech…')).toBeInTheDocument()
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
+    await screen.findByText('Listening for speech…')
+  })
+
   it('loads and renders transcript segments for the selected session', async () => {
     render(
       <CodexRealtimeTranscript
@@ -65,8 +84,8 @@ describe('CodexRealtimeTranscript', () => {
 
     expect(await screen.findByText('Please inspect the logs.')).toBeInTheDocument()
     expect(screen.getByText('I will check them now.')).toBeInTheDocument()
-    expect(screen.getByTestId('realtime-assistant')).toHaveAttribute('data-hide-footer', 'true')
-    expect(screen.getByTestId('realtime-assistant')).toHaveAttribute('data-compact-spacing', 'true')
+    // The realtime view is the vertical timeline, not the chat message renderer.
+    expect(screen.queryByTestId('realtime-assistant')).not.toBeInTheDocument()
     expect(window.agent.getRealtimeTimeline).toHaveBeenCalledWith('/repo', 'session-a')
   })
 
@@ -95,21 +114,7 @@ describe('CodexRealtimeTranscript', () => {
     )
 
     await screen.findByText('Please inspect the logs.')
-    const rendered = screen.getAllByTestId(/^realtime-/).map((node) => node.textContent)
-    expect(rendered.slice(-2)).toEqual(['Read the file', 'On it.'])
-  })
-
-  it('maps realtime segments onto the normal Codex chat message shape', () => {
-    expect(realtimeSegmentToChatMessage({
-      id: 'segment-1',
-      realtimeSessionId: 'realtime-1',
-      role: 'assistant',
-      text: '**Done**',
-    })).toMatchObject({
-      role: 'assistant',
-      status: 'complete',
-      providerId: 'codex',
-      content: [{ type: 'text', text: '**Done**' }],
-    })
+    const spoken = [...document.querySelectorAll('p')].map((node) => node.textContent)
+    expect(spoken.slice(-2)).toEqual(['Read the file', 'On it.'])
   })
 })

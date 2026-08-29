@@ -382,7 +382,7 @@ function ChatTranscript({
                 ? <DraftSessionSurface />
                 : <ChatSuggestions />
       ) : (
-        <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
+        <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
             {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
             {renderEntries.map((entry) => {
@@ -672,23 +672,32 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
         <PlanApprovalPrompt />
       ) : (
         <>
-          {(showRealtime || showRealtimeThread) && displayedSessionId && projectPath ? (
-            <CodexRealtimeTranscript
-              projectPath={projectPath}
-              sessionId={displayedSessionId}
-              scrollViewportRef={scrollViewportRef}
-              liquidGlass={liquidGlass}
-              view={showRealtime ? 'realtime' : 'thread'}
-            />
-          ) : (
-            <ChatTranscript
-              scrollViewportRef={scrollViewportRef}
-              showScrollButton={showScrollButton}
-              scrollToBottom={scrollToBottom}
-              stopAutoScroll={stopAutoScroll}
-              liquidGlass={liquidGlass}
-            />
-          )}
+          {/* The fade belongs to arriving at a different session. Both transcripts are
+              views of the SAME session, so keying the fade here — rather than on each
+              of them — keeps starting a call from replaying it as a blank flash. */}
+          <div
+            key={displayedSessionId ?? 'default'}
+            data-transcript-frame=""
+            className="flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_150ms_ease-out]"
+          >
+            {(showRealtime || showRealtimeThread) && displayedSessionId && projectPath ? (
+              <CodexRealtimeTranscript
+                projectPath={projectPath}
+                sessionId={displayedSessionId}
+                scrollViewportRef={scrollViewportRef}
+                liquidGlass={liquidGlass}
+                view={showRealtime ? 'realtime' : 'thread'}
+              />
+            ) : (
+              <ChatTranscript
+                scrollViewportRef={scrollViewportRef}
+                showScrollButton={showScrollButton}
+                scrollToBottom={scrollToBottom}
+                stopAutoScroll={stopAutoScroll}
+                liquidGlass={liquidGlass}
+              />
+            )}
+          </div>
           <div className="mx-auto w-full min-w-0 max-w-3xl">
             <ChatComposerShell />
           </div>

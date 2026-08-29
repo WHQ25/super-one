@@ -20,6 +20,8 @@ export interface CodexRealtimeLiveItem {
   role: RealtimeTranscriptRole
   text: string
   done: boolean
+  /** Epoch ms of when this speaker opened the item; absent if the view mounted mid-item. */
+  startedAtMs?: number
 }
 
 export interface CodexRealtimeSessionViewState {
@@ -31,6 +33,13 @@ export interface CodexRealtimeSessionViewState {
   realtimeSessionId: string | null
   realtimeSessionSource: 'timeline' | 'event'
   hasTimeline: boolean
+  /**
+   * The user asked for a call and the SDP round trip has not answered yet. The view
+   * must switch on the click, not on `realtime_started` — waiting means the empty-pane
+   * chrome keeps rendering for the length of the negotiation, and its three mutually
+   * exclusive branches remount the harness picker on the way through.
+   */
+  starting: boolean
 }
 
 export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = {
@@ -42,6 +51,7 @@ export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = 
   realtimeSessionId: null,
   realtimeSessionSource: 'timeline',
   hasTimeline: false,
+  starting: false,
 }
 
 export type CodexRealtimeTranscriptItem = Omit<CodexRealtimeLiveItem, 'done'>
@@ -53,6 +63,7 @@ interface CodexRealtimeViewStore {
   setTimelineError: (sessionId: string) => void
   setTimeline: (sessionId: string, timeline: RealtimeTimelineResult) => void
   setRealtimeSession: (sessionId: string, realtimeSessionId: string | null) => void
+  setRealtimeStarting: (sessionId: string, starting: boolean) => void
   startTranscriptItem: (sessionId: string, item: CodexRealtimeTranscriptItem) => void
   appendTranscriptItemDelta: (sessionId: string, itemId: string, text: string) => void
   completeTranscriptItem: (sessionId: string, item: CodexRealtimeTranscriptItem) => void
@@ -75,6 +86,7 @@ export function liveItemToSegment(item: CodexRealtimeLiveItem): RealtimeTimeline
     realtimeSessionId: item.realtimeSessionId,
     role: item.role,
     text: item.text,
+    ...(item.startedAtMs === undefined ? {} : { startedAtMs: item.startedAtMs }),
   }
 }
 
@@ -90,6 +102,11 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
   setTimelineLoading: (sessionId) => set((state) => {
     const current = sessionState(state.sessions, sessionId)
     if (current.loadStatus === 'loading') return state
+    // A timeline already on screen must keep rendering while it revalidates. Flipping
+    // a loaded session back to `loading` blanks the transcript for as long as the
+    // refresh takes — visible as a flash every time the realtime view is mounted,
+    // since mounting is itself what triggers the refresh.
+    if (current.loadStatus === 'loaded') return state
     return { sessions: { ...state.sessions, [sessionId]: { ...current, loadStatus: 'loading' } } }
   }),
 
@@ -139,10 +156,17 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
           ...current,
           realtimeSessionId,
           realtimeSessionSource: 'event',
+          starting: false,
           hasTimeline: current.hasTimeline || realtimeSessionId !== null,
         },
       },
     }
+  }),
+
+  setRealtimeStarting: (sessionId, starting) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    if (current.starting === starting) return state
+    return { sessions: { ...state.sessions, [sessionId]: { ...current, starting } } }
   }),
 
   startTranscriptItem: (sessionId, item) => set((state) => {
@@ -184,7 +208,11 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
     const known = current.liveItems.some((live) => live.itemId === item.itemId)
     const liveItems = known
       ? current.liveItems.map((live) => (
-        live.itemId === item.itemId ? { ...live, ...item, done: true } : live
+        // The completion may arrive without a stamp; the one taken when the item
+        // opened is the earlier and more accurate of the two, so it wins.
+        live.itemId === item.itemId
+          ? { ...live, ...item, startedAtMs: live.startedAtMs ?? item.startedAtMs, done: true }
+          : live
       ))
       : [...current.liveItems, { ...item, done: true }]
     return {

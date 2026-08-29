@@ -1303,6 +1303,10 @@ export type Messages = {
       timelineLoadFailed: string
       offerFailed: string
       connectionTimedOut: string
+      speakerUser: string
+      speaking: string
+      silence: string
+      callStartedAt: string
     }
     compactMode: {
       detail: string
@@ -4923,6 +4927,10 @@ export const en: Messages = {
       timelineLoadFailed: 'Could not load the voice timeline.',
       offerFailed: 'Could not create the WebRTC offer.',
       connectionTimedOut: 'Realtime voice connection timed out.',
+      speakerUser: 'You',
+      speaking: 'speaking',
+      silence: 'Silent for {{duration}}',
+      callStartedAt: 'Call started at {{time}}',
     },
     compactMode: {
       detail: 'Detail',

@@ -13,6 +13,22 @@ describe('codex realtime view store', () => {
     useCodexRealtimeViewStore.setState({ sessions: {} })
   })
 
+  it('keeps a loaded timeline on screen while a remount revalidates it', () => {
+    const store = useCodexRealtimeViewStore.getState()
+    store.setTimeline('session-a', {
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+      threadMessages: [],
+      segments: [{ id: 'segment-1', realtimeSessionId: 'rt-1', role: 'user', text: 'Read the file' }],
+    })
+
+    // Mounting the realtime view is itself what triggers a refresh, so a loaded
+    // timeline must not be flipped back to `loading` — that blanks the transcript.
+    store.setTimelineLoading('session-a')
+
+    expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.loadStatus).toBe('loaded')
+  })
+
   it('keeps the selected view isolated by Codex session', () => {
     useCodexRealtimeViewStore.getState().setView('session-a', 'realtime')
 

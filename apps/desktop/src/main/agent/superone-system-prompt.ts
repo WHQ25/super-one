@@ -7,6 +7,15 @@ const CODEX_PLAN_COMPLETION_APPEND = 'Plan hygiene: whenever you track work with
 export const CODEX_SYSTEM_PROMPT_APPEND = `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\n${CODEX_PLAN_COMPLETION_APPEND}`
 
 /**
+ * Realtime prompt injection placeholders. Keep empty values off the wire so
+ * Codex retains its built-in realtime and mode-transition instructions.
+ */
+export const CODEX_REALTIME_PROMPT_OVERRIDE = ''
+export const CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS = ''
+export const CODEX_REALTIME_START_INSTRUCTIONS = ''
+export const CODEX_REALTIME_END_INSTRUCTIONS = ''
+
+/**
  * ACP has no system-prompt field (`session/new` and `session/prompt` carry neither
  * `systemPrompt` nor `instructions`), so the text ships as a tagged block prepended
  * to the first prompt — the only channel the spec guarantees is delivered.

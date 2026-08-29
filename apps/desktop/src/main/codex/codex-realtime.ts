@@ -8,6 +8,12 @@ import type {
   RealtimeVoiceStartRequest,
 } from '@superone/shared/agent-types'
 import {
+  CODEX_REALTIME_END_INSTRUCTIONS,
+  CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS,
+  CODEX_REALTIME_PROMPT_OVERRIDE,
+  CODEX_REALTIME_START_INSTRUCTIONS,
+} from '../agent/superone-system-prompt'
+import {
   asRecord,
   readString,
   resolvePermissionProfile,
@@ -27,16 +33,30 @@ export interface CodexRealtimeHandle {
 
 const CODEX_REALTIME_VERSION = 'v3'
 
+function nonBlankInstruction(value: string): string | undefined {
+  return value.trim() ? value : undefined
+}
+
 export function buildCodexRealtimeStartParams(
   threadId: string,
   request: RealtimeVoiceStartRequest,
 ) {
+  const prompt = nonBlankInstruction(CODEX_REALTIME_PROMPT_OVERRIDE)
+  const initialDeveloperInstructions = nonBlankInstruction(CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS)
+  const startInstructions = nonBlankInstruction(CODEX_REALTIME_START_INSTRUCTIONS)
+  const endInstructions = nonBlankInstruction(CODEX_REALTIME_END_INSTRUCTIONS)
   return {
     threadId,
     version: CODEX_REALTIME_VERSION,
     outputModality: 'audio',
     codexResponseHandoffMode: 'bemTags',
     includeStartupContext: true,
+    ...(prompt ? { prompt } : {}),
+    ...(initialDeveloperInstructions
+      ? { initialItems: [{ role: 'developer', text: initialDeveloperInstructions }] }
+      : {}),
+    ...(startInstructions ? { realtimeStartInstructions: startInstructions } : {}),
+    ...(endInstructions ? { realtimeEndInstructions: endInstructions } : {}),
     flushTranscriptTailOnSessionEnd: true,
     ...(request.voice ? { voice: request.voice } : {}),
     transport: { type: 'webrtc', sdp: request.sdp },

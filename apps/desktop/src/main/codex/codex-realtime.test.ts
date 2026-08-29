@@ -19,6 +19,10 @@ describe('Codex realtime protocol mapping', () => {
       transport: { type: 'webrtc', sdp: 'offer' },
     })
     expect(params).not.toHaveProperty('model')
+    expect(params).not.toHaveProperty('prompt')
+    expect(params).not.toHaveProperty('initialItems')
+    expect(params).not.toHaveProperty('realtimeStartInstructions')
+    expect(params).not.toHaveProperty('realtimeEndInstructions')
   })
 
   it('lets app-server choose its current default voice when none is configured', () => {

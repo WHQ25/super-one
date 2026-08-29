@@ -44,6 +44,29 @@ describe('realtime timeline repository', () => {
     })
   })
 
+  it('stores the start stamp of a completed item and keeps it across a provider snapshot', () => {
+    applyRealtimeTimelineEvent('sid-1', { type: 'realtime_started', realtimeSessionId: 'rt-1', version: 'v3' })
+    applyRealtimeTimelineEvent('sid-1', {
+      type: 'realtime_transcript_item', phase: 'completed', itemId: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello', startedAtMs: 1000,
+    })
+    expect(loadRealtimeTimeline('sid-1')?.segments).toMatchObject([{ sourceItemId: 'item-1', startedAtMs: 1000 }])
+
+    // Codex republishes the same utterance without any timestamp of its own.
+    const provider: RealtimeTimelineResult = {
+      segments: [{ id: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' }],
+      threadMessages: [],
+      activeRealtimeSessionId: 'rt-1',
+      hasTimeline: true,
+    }
+
+    expect(reconcileRealtimeTimeline('sid-1', provider).segments).toEqual([
+      { id: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello', startedAtMs: 1000 },
+    ])
+    expect(loadRealtimeTimeline('sid-1')?.segments).toEqual([
+      { id: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello', startedAtMs: 1000 },
+    ])
+  })
+
   it('matches a split transcript by item id instead of its repeated text', () => {
     applyRealtimeTimelineEvent('sid-1', { type: 'realtime_started', realtimeSessionId: 'rt-1', version: 'v3' })
     applyRealtimeTimelineEvent('sid-1', {

@@ -109,6 +109,7 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
     realtimeSessionId,
     role: event.role,
     text: event.text,
+    ...(event.startedAtMs === undefined ? {} : { startedAtMs: event.startedAtMs }),
   }
   const existing = current.segments.findIndex((candidate) => (
     candidate.sourceItemId === event.itemId || candidate.id === event.itemId
@@ -117,7 +118,9 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
     ...current,
     segments: existing >= 0
       ? current.segments.map((candidate, index) => (
-        index === existing ? { ...candidate, text: segment.text } : candidate
+        index === existing
+          ? { ...candidate, text: segment.text, startedAtMs: candidate.startedAtMs ?? segment.startedAtMs }
+          : candidate
       ))
       : [...current.segments, segment],
     hasTimeline: true,

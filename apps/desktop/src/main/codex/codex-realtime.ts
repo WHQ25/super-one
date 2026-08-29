@@ -113,6 +113,31 @@ function mapRealtimeTranscriptItem(
   }
 }
 
+/**
+ * Codex publishes realtime items without any timestamp, so the timeline has no scale
+ * unless SuperOne stamps one. A call keeps its own clock: `started` records when the
+ * speaker opened the item, and its `completed` event inherits that stamp rather than
+ * the later moment transcription finished. The map lives for one call and drops each
+ * item as it completes.
+ */
+export function createRealtimeStartClock(): (event: AgentEvent) => AgentEvent {
+  const startedAt = new Map<string, number>()
+  return (event) => {
+    if (event.type !== 'realtime_transcript_item') return event
+    if (event.phase === 'started') {
+      const startedAtMs = Date.now()
+      startedAt.set(event.itemId, startedAtMs)
+      return { ...event, startedAtMs }
+    }
+    if (event.phase !== 'completed') return event
+    const startedAtMs = startedAt.get(event.itemId)
+    startedAt.delete(event.itemId)
+    // An item this connection never saw start stays unstamped: order is still known,
+    // an invented start time would not be.
+    return startedAtMs === undefined ? event : { ...event, startedAtMs }
+  }
+}
+
 export function mapCodexRealtimeNotification(notification: AppServerNotification): AgentEvent | null {
   const { method, params } = notification
   switch (method) {
@@ -288,11 +313,12 @@ async function pumpRealtime(
   emit: (event: AgentEvent) => void,
   cancellation: { cancelled: boolean },
 ): Promise<void> {
+  const stampStart = createRealtimeStartClock()
   try {
     while (true) {
       const notification = await inbox.next()
       const event = mapCodexRealtimeNotification(notification)
-      if (event) emit(event)
+      if (event) emit(stampStart(event))
       if (notification.method === 'thread/realtime/closed') return
     }
   } catch (error) {

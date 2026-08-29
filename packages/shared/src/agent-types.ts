@@ -1779,6 +1779,12 @@ export type AgentEventBase =
       text: string
       role?: RealtimeTranscriptRole
       realtimeSessionId?: string
+      /**
+       * Wall clock of the moment the speaker opened this item, stamped locally on
+       * `started` and carried onto its `completed` event. Codex publishes no
+       * timestamps of its own, so this is the only ordering scale the timeline has.
+       */
+      startedAtMs?: number
     }
   | { type: 'realtime_error'; error: string }
   | { type: 'realtime_closed'; reason?: string }
@@ -1812,6 +1818,13 @@ export interface RealtimeTimelineSegment {
    * by text, which a split transcript would repeat.
    */
   sourceItemId?: string
+  /**
+   * Epoch ms of when this utterance began, stamped by SuperOne when the realtime
+   * item opened. Absent on segments recorded before timestamps existed and on any
+   * provider entry SuperOne never saw start live — a timeline must degrade to plain
+   * order rather than invent a scale.
+   */
+  startedAtMs?: number
 }
 
 export interface RealtimeTimelineResult {

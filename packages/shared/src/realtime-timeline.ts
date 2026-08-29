@@ -31,6 +31,14 @@ export function mergePendingRealtimeTimelineSegments(
   const isPending = (segment: RealtimeTimelineSegment) => (
     pendingIdPrefixes.some((prefix) => segment.id.startsWith(prefix))
   )
+  // Codex publishes no timestamps, so a canonical entry only ever carries the start
+  // time SuperOne stamped locally. Every match below hands that stamp forward, or a
+  // snapshot refresh would silently erase the timeline's scale.
+  const stamps = new Map<number, number>()
+  const claim = (index: number, segment: RealtimeTimelineSegment) => {
+    unmatched.delete(index)
+    if (segment.startedAtMs !== undefined) stamps.set(index, segment.startedAtMs)
+  }
 
   // Existing provider entries identify the part of the canonical snapshot we
   // had already observed. Only newly available entries may replace pending UI
@@ -40,7 +48,7 @@ export function mergePendingRealtimeTimelineSegments(
     const index = canonical.findIndex((candidate, candidateIndex) => (
       unmatched.has(candidateIndex) && candidate.id === segment.id
     ))
-    if (index >= 0) unmatched.delete(index)
+    if (index >= 0) claim(index, segment)
   }
 
   // A pending segment committed from the realtime item stream already knows the id
@@ -53,7 +61,7 @@ export function mergePendingRealtimeTimelineSegments(
     const index = segment.sourceItemId === undefined ? -1 : canonical.findIndex((candidate, candidateIndex) => (
       unmatched.has(candidateIndex) && candidate.id === segment.sourceItemId
     ))
-    if (index >= 0) unmatched.delete(index)
+    if (index >= 0) claim(index, segment)
     else unresolved.push(segment)
   }
 
@@ -63,9 +71,15 @@ export function mergePendingRealtimeTimelineSegments(
     const index = canonical.findIndex((candidate, candidateIndex) => (
       unmatched.has(candidateIndex) && transcriptKey(candidate) === key
     ))
-    if (index >= 0) unmatched.delete(index)
+    if (index >= 0) claim(index, segment)
     else unpublished.push(segment)
   }
 
-  return dedupeRealtimeTimelineSegments([...canonical, ...unpublished])
+  const stamped = canonical.map((segment, index) => {
+    const startedAtMs = stamps.get(index)
+    return startedAtMs === undefined || segment.startedAtMs !== undefined
+      ? segment
+      : { ...segment, startedAtMs }
+  })
+  return dedupeRealtimeTimelineSegments([...stamped, ...unpublished])
 }
